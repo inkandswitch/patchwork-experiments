@@ -1,7 +1,7 @@
 // Pure, framework-free model logic for newspace — extracted so it can be unit
 // tested (the interaction/CSS bugs need a real browser, but these data rules
 // caused most of the regressions: reconcile, transfer dedupe, coord transforms).
-import { shapeBounds, strokeBounds } from "./draw.js";
+import { shapeBounds, strokeBounds, strokeWorldPoints } from "./draw.js";
 import { sketchBounds } from "./sketch.js";
 import { chainToOuter, chainToLocal } from "./box-transform.js";
 
@@ -29,6 +29,91 @@ export function transformKindOf(it) {
 }
 export function itemBox(it) {
   return { id: it.id, x: it.x || 0, y: it.y || 0, w: it.w || 0, h: it.h || 0, rotation: it.rotation || 0, transform: { kind: transformKindOf(it) } };
+}
+
+// Does this item OWN a coordinate space other items' marks can live in? A frame is a
+// sub-space; a map REPROJECTS (lat/lng). These are the draw-claim boundaries: a stroke/shape
+// drawn over one from outside gets `parent: <boxId>` + BOX-LOCAL coords.
+//
+// LOCAL-COORD CONVENTION for a parented item (matches what frames call local coords):
+//   • frame parent — frame-local px (origin = the frame's top-left, rotated with it).
+//   • map parent   — geo, `{ x: lng, y: lat }` (box-transform's geo-local convention):
+//     a stroke's points are [lng, lat, pressure]; a shape's x/y is its first corner in
+//     lng/lat and h is typically NEGATIVE (lat decreases as screen y grows). The same
+//     x/y/w/h + points slots, just numbers in the box's own space.
+export const ownsSpace = (it) => !!it && (it.kind === "frame" || transformKindOf(it) !== "translate");
+
+// ANNOTATION PARENTING — convert a stroke/shape drawn in WORLD coords into a spatial box's
+// LOCAL space (via the box's own transform: rotate for a frame, reproject for a map) and tag
+// it `parent: box.id`. The item stays in the OUTER surface's items array — it's an annotation
+// ON the box (it travels with the outer canvas), not content OF the inner document. Mutates
+// and returns `item` (callers pass a fresh draft or an automerge proxy inside change()).
+// a ROTATE-kind box (a frame) turns its content; a REPROJECT box (the map) warps scale
+// instead. Shapes convert CENTRE+rotation under a turning box (w/h are angle-invariant
+// there), and both CORNERS under a warping one (that's where the local scale lives).
+const boxTurn = (box) => (transformKindOf(box) === "rotate" ? box.rotation || 0 : 0);
+
+export function annotateItemIntoBox(item, box) {
+  const chain = [itemBox(box)];
+  const toL = (x, y) => { const l = chainToLocal(chain, { x, y }); return [l.x, l.y]; };
+  if (item.kind === "stroke") {
+    item.points = strokeWorldPoints(item).map(([x, y, pr]) => { const [lx, ly] = toL(x, y); return pr == null ? [lx, ly] : [lx, ly, pr]; });
+    item.x = 0; item.y = 0;
+  } else if (item.kind === "shape") {
+    const turn = boxTurn(box);
+    if (item.cx != null) { const [ncx, ncy] = toL(item.cx, item.cy); item.cx = ncx; item.cy = ncy; } // a bent control point travels
+    if (turn) {
+      const w = item.w || 0, h = item.h || 0;
+      const [lcx, lcy] = toL(item.x + w / 2, item.y + h / 2);
+      item.x = lcx - w / 2; item.y = lcy - h / 2; item.rotation = (item.rotation || 0) - turn;
+    } else {
+      // convert both corners (keeps a line/arrow pointing the same way, captures geo scale)
+      const [ax, ay] = toL(item.x, item.y);
+      const [bx, by] = toL(item.x + (item.w || 0), item.y + (item.h || 0));
+      item.x = ax; item.y = ay; item.w = bx - ax; item.h = by - ay;
+    }
+  }
+  item.parent = box.id;
+  return item;
+}
+
+// the inverse: a PARENTED item projected back into world coords — used to RENDER it through
+// the canvas's normal rough.js/perfect-freehand pipeline, and (verbatim) as the drag-OUT
+// conversion. Returns a plain projected copy; the stored item stays box-local.
+export function projectItemFromBox(item, box) {
+  const chain = [itemBox(box)];
+  const toW = (x, y) => { const w = chainToOuter(chain, { x, y }); return [w.x, w.y]; };
+  if (item.kind === "stroke") {
+    const points = strokeWorldPoints(item).map(([x, y, pr]) => { const [wx, wy] = toW(x, y); return pr == null ? [wx, wy] : [wx, wy, pr]; });
+    return { ...item, points, x: 0, y: 0 };
+  }
+  if (item.kind === "shape") {
+    const out = { ...item };
+    const turn = boxTurn(box);
+    if (item.cx != null) { const [ncx, ncy] = toW(item.cx, item.cy); out.cx = ncx; out.cy = ncy; }
+    if (turn) {
+      const w = item.w || 0, h = item.h || 0;
+      const [wcx, wcy] = toW(item.x + w / 2, item.y + h / 2);
+      out.x = wcx - w / 2; out.y = wcy - h / 2; out.rotation = (item.rotation || 0) + turn;
+    } else {
+      const [ax, ay] = toW(item.x, item.y);
+      const [bx, by] = toW(item.x + (item.w || 0), item.y + (item.h || 0));
+      out.x = ax; out.y = ay; out.w = bx - ax; out.h = by - ay;
+    }
+    return out;
+  }
+  return item;
+}
+
+// is `surfaceId` the box's own surface, or a surface nested anywhere inside it? Feeds the
+// claim decision's `entered` (entering a box re-roots the claim over its whole subtree).
+// `itemsOf(url)` returns a loaded box's items (or null); depth-limited like rendering is.
+export function surfaceWithinBox(box, surfaceId, itemsOf, depth = 3) {
+  if (!box || surfaceId == null) return false;
+  if (box.url != null && box.url === surfaceId) return true;
+  if (depth <= 0 || box.kind !== "frame" || typeof itemsOf !== "function") return false;
+  const items = itemsOf(box.url) || [];
+  return items.some((c) => c && c.kind === "frame" && surfaceWithinBox(c, surfaceId, itemsOf, depth - 1));
 }
 
 // folders and newspaces both render as a "box" (a managed sub-doc)

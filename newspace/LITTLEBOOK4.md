@@ -29,6 +29,12 @@ handles, build derived streams, manage its own lifecycle.
 - When the `component` attr is set, `doc-url`/`tool-id` are ignored. Registry id is
   `"patchwork:component"`.
 
+> Built (2026-07): tool.jsx provides the folder/layout/user docs as opstreams over a
+> MessagePort (sketchy-streams.js on port-opstream.js — ops cross the port natively,
+> stale client ops are rebased via `transformOp`/`RESYNC` in ops.js); component.js
+> subscribes and runs the headless Canvas on `docHandleFromOpstream` adapters, with
+> a repo fallback when no provider answers.
+
 ---
 
 ## 2. Opstreams (lb's model + complement passthrough)
@@ -159,13 +165,14 @@ deciding yet; `:editor` does the job.)
 - **Ports can be individual divs.** A div may carry `data-automerge-url=""` (a subdoc
   handle path). A special **wiring brush** drags from such a div to anything whose
   schema accepts an automerge handle — connecting them.
-- **[want]** A way to **visualize opstreams** (the wires/graph between ports).
+- **[want → built]** A way to **visualize opstreams** — the rough.js wires, the
+  value pulse, red error wires, the port schema popover.
 
 This sits naturally on Sketchy's canvas: boxes with ports, edges between them.
 
 ---
 
-## 3a. Headless component + signals vs opstreams — **[decided]**
+## 3a. Headless component + signals vs opstreams — **[decided, built]**
 
 The `patchwork:component` "sketchy" defaults to **no UI at all**. The concept it *is*
 = a **layout** (the canvas layout): it binds a doc (opstream), renders surfaces/items
@@ -225,7 +232,7 @@ mechanism as `pointer` transposition). So per-selector nesting policy:
 - `camera`, `pointer` → **accept-and-derive** (transform of the container's)
 - `tool`, `brush`, `selection` → **accept-or-own** (share from parent, else own)
 
-## 3b. Brush API, reconsidered — **[decided, not yet built]**
+## 3b. Brush API, reconsidered — **[decided, built]**
 
 The current brush module (`{ stroke?, behavior?:{down,move,up}, params? }`, driven by
 `Canvas` via a 12-field `brushCtx`) predates opstreams/context and fights them. New
@@ -254,6 +261,11 @@ canvas = { context, layout, surface }   // context = Sources; layout = the doc o
   the palette just lists `sketchy:brush`s and sets `context.tool`.
 - Depends on the signal↔opstream bridges (`storeOpstream` = how `layout` ops-out).
   Land those first, then do this as its own pass.
+
+> Built (2026-06, see TODO.md "Brush API"): every tool is a `use(canvas)` brush
+> through one host (brush-host.js); `paramsSchema` generates the params panel for
+> brushes AND nodes. Remaining tail there: chrome still prop-drills instead of
+> reading the context; context-ports-as-inlets.
 
 ## 4. Primitives (revised)
 
@@ -317,7 +329,8 @@ commands, opstreams, layouts, surfaces — all reachable and invocable from the 
    reads the complement). 7 tests incl. full automerge↔codemirror round-trip. Core
    `@codemirror/{state,view,language}` externalized in `vite.config.js`; lang packs
    bundle. NOT yet wired into the tool entry / no `sketchy:editor` wrapper yet.
-3. **[in progress]** The `sketchy:editor` port model + wiring.
+3. **[done]** The `sketchy:editor` port model + wiring (registry type since renamed
+   `sketchy:window` — see NODES.md).
    - **[done]** `src/editors.js` — descriptor contract (typed inlets/outlets),
      registry helpers (`listEditors`/`editorsFor`), `defaultInlets`, `mountEditor`.
    - **[done]** read-only opstream = **absence of `apply`** (automerge `{heads}` pins
@@ -335,19 +348,25 @@ commands, opstreams, layouts, surfaces — all reachable and invocable from the 
      `makeEditorItem` (the persisted `editor` item). DECISIONS: wires are **live by
      default** (store `{url,path}`, rebuild a live opstream; `heads` pins read-only);
      the wire brush is a **dedicated toolbar tool**.
-   - **[todo]** the tool.jsx INTEGRATION (live canvas surgery): `EditorItem`
-     component (mount `mountEditor` into a box, like `DocOrFrame` mounts a
-     patchwork-view) added to the `Item` Show-dispatch; a "wire" entry in the
-     toolbar; the wire-drag gesture (grab port → drop on a matching editor inlet, or
-     empty-canvas 300ms → popup of `editorsForStream` → place wired). `editor` items
-     persist `{editorId, x,y,w,h, inlets:{name:{url,path,heads?}}}`;
-     `ensureCanvasFields` already tolerates them; `itemBounds` already handles them
-     via its default branch.
-   - **[todo]** opstream visualization (the wires).
-4. Primitives: `layout` (canvas first, named layers; must also satisfy television /
-   dockview / grid) → `surface` → `command`/`keybinding`/`setting`/`event`; fold
-   existing keydown + history in.
-5. Reflection provenance + `element.api`.
+   - **[done]** the tool.jsx INTEGRATION: `EditorItem` in the `Item` dispatch, wire
+     as a toolbar tool, the wire-drag gesture + add/drop popups. `editor` items
+     persist `{editorId, x,y,w,h, inlets:{name:{url,path,heads?}}}` — and `null` for
+     an explicitly-cut inlet (unwire tombstones). (`ensureCanvasFields` no longer
+     exists: `ensureLayout` in brush/constants.js migrates items into the separate
+     `.sketch` layout doc.)
+   - **[done]** opstream visualization — rough.js wires with a travelling value
+     PULSE, red error wires, click-a-wire selection, click-a-port schema popover.
+4. **[in progress]** Primitives. `layout` shipped as the `sketchy:layout` registry
+   (canvas / list / grid registered; list + grid surface the canvas complement —see
+   LAYOUTS.md; dock/television still unbuilt) and NAMED LAYERS shipped as the layer
+   stack (layers.js: `sketchy:layer-transform` + `sketchy:layer-kind` registries —
+   a layer is a coordinate space; camera + frosted viewport overlay built in).
+   `command`/`keybinding`/`setting`/`event` not started (keydown + history are
+   still hardcoded).
+5. **[in progress]** `element.api` shipped (api.js: `find` via the protocols.js
+   url→opstream registry, `describe`, editors — devtools-reachable). Reflection
+   provenance (registration stacktrace + acorn docstring) not ported.
 
 > Safety rail throughout: the existing vitest harness (real in-memory
-> automerge-repo + Solid projection). Don't regress the 79→ green tests.
+> automerge-repo + Solid projection). Don't regress the 79→ green tests
+> (~1160 as of 2026-07-01).

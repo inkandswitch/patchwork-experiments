@@ -62,7 +62,7 @@ export function SketchItem(props) {
   function mergeNodes(keepId, dropId) { change((s) => mergeSketchNodes(s, keepId, dropId)); }
 
   return (
-    <div class="ns-mark ns-sketch" style={props.baseStyle()}>
+    <div class="ns-mark ns-sketch" data-item-id={it().id} style={props.baseStyle()}>
       <svg class="ns-mark-svg" style={{ overflow: "visible" }}>
         <g transform={`translate(${-b().x}, ${-b().y})`}>
           <Show when={selectMode() && ctx.isSelected(it().id)}>

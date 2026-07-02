@@ -1,19 +1,25 @@
 // map-node.js — a MAP box (Leaflet, bundled). A geo coordinate space:
 //  • pan/zoom the map (select/hand brush) — view persists
-//  • DRAW on it with a drawing brush → the stroke is stored as lat/lng and Leaflet reprojects
-//    it, so it stays on the GROUND as you pan/zoom
-//  • click to drop a marker (also geo)
-// It reads the active brush off the canvas `context` to decide draw-vs-pan. Raw callbacks, no
-// Solid. (Next: drag a canvas item onto the map → convert into this geo space.)
+//  • DRAW on it with a drawing brush → the mark is stored as lat/lng and Leaflet
+//    reprojects it, so it stays on the GROUND as you pan/zoom. Strokes freehand;
+//    rectangle/ellipse/line/arrow land as geo shapes; the eraser removes marks.
+//  • click to drop a marker (select mode, geo)
+// It reads the active brush off the canvas `context` to decide draw-vs-pan. Raw
+// callbacks, no Solid. (Next: drag a canvas item onto the map → convert into this geo space.)
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { bindMapInstance } from "./box-transform.js";
+import { bindMapInstance, notifySpaceChanged } from "./box-transform.js";
+import { drawClaim, drawsClaimed } from "./context.js";
+import { makeMarkStreams, reconcilePlan, normalizeMarks, sameMarks } from "./map-schemas.js";
+// the schemas live in map-schemas.js (Leaflet-free) so index.jsx can put them on
+// the descriptor's outlets WITHOUT loading this lazy chunk; re-exported here too.
+export { geoMarksSchema, pixelMarksSchema } from "./map-schemas.js";
 
-export function mountMap({ element, config = {}, setConfig, context, itemId, onConfig }) {
-  element.style.position = "relative";
+export function mountMap({ element, config = {}, setConfig, setOutlet, context, itemId, onConfig }) {
+  // NOTE: no position override — .ns-doc-body is position:absolute inset:0 (fills the box);
+  // forcing `relative` here knocked it out of absolute fill and it collapsed to min-height.
   element.style.padding = "0";
   element.style.overflow = "hidden";
-  element.style.minHeight = "140px";
   const root = document.createElement("div");
   root.className = "ns-map";
   root.style.cssText = "position:absolute;inset:0;";
@@ -24,6 +30,25 @@ export function mountMap({ element, config = {}, setConfig, context, itemId, onC
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
   bindMapInstance(itemId, map); // this map is now a coordinate-space BOX: its `reproject` transform composes with the canvas
 
+  // THEME: derive the map's appearance from the tool theme. The OSM tiles get a
+  // dark filter when the theme's paper is dark — resolved through a probe element
+  // (custom props may hold var()/color-mix, so read a COMPUTED color, not the raw
+  // token), re-applied when the host flips its theme (class/data attrs on html/body).
+  const resolvedPaper = () => {
+    const probe = document.createElement("div");
+    probe.style.cssText = "position:absolute;visibility:hidden;color:var(--ns-paper,#f0e8d6)";
+    element.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c || "";
+  };
+  const paperIsDark = () => { const m = resolvedPaper().match(/\d+(?:\.\d+)?/g); if (!m) return false; const [r, g, b] = m.map(Number); return 0.2126 * r + 0.7152 * g + 0.0722 * b < 110; };
+  const applyTheme = () => { const pane = root.querySelector(".leaflet-tile-pane"); if (pane) pane.style.filter = paperIsDark() ? "invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.55)" : ""; };
+  applyTheme();
+  const themeMo = new MutationObserver(applyTheme);
+  themeMo.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
+  if (document.body) themeMo.observe(document.body, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
+
   // resize WITH the editor box (Leaflet needs to be told)
   const ro = new ResizeObserver(() => { try { map.invalidateSize(); } catch {} });
   ro.observe(element);
@@ -32,25 +57,88 @@ export function mountMap({ element, config = {}, setConfig, context, itemId, onC
   const saveView = () => { if (!setConfig) return; const c = map.getCenter(); setConfig({ view: { lat: c.lat, lng: c.lng, zoom: map.getZoom() } }); };
   map.on("moveend", saveView);
   map.on("zoomend", saveView);
+  // the map's projection CHANGES on pan/zoom — notify so items PARENTED into this box
+  // (canvas strokes/shapes stored as lat/lng) re-project through the reproject transform,
+  // AND re-emit the view-dependent `pixels` outlet (the geo `shapes` outlet stays quiet:
+  // the marks themselves didn't move).
+  let streams = null; // the two bidi outlets — created below, once marks exist
+  const bumpSpace = () => { notifySpaceChanged(itemId); if (streams) streams.viewChanged(); };
+  map.on("move zoom viewreset", bumpSpace);
 
-  // geo markers + geo strokes — both stored as lat/lng, reprojected natively by Leaflet
+  // geo markers + geo strokes — both stored as lat/lng, reprojected natively by Leaflet.
+  // THEME: marker/ink colours come from the tool theme vars (same convention as ink()
+  // below), not hardcoded hex — the accent is --ns-pink (the riso accent, style.css).
+  const accent = () => "var(--ns-pink, #e36588)";
   let markerData = Array.isArray(config.markers) ? [...config.markers] : [];
-  const dropMarker = (lat, lng) => L.circleMarker([lat, lng], { radius: 6, color: "#e36588", weight: 2, fillColor: "#e36588", fillOpacity: 0.85 }).addTo(map);
+  const dropMarker = (lat, lng) => L.circleMarker([lat, lng], { radius: 6, color: accent(), weight: 2, fillColor: accent(), fillOpacity: 0.85 }).addTo(map);
   for (const m of markerData) dropMarker(m.lat, m.lng);
 
-  let strokes = Array.isArray(config.strokes) ? config.strokes.map((s) => [...s]) : [];
-  const drawPolyline = (pts) => L.polyline(pts.map((p) => [p[0], p[1]]), { color: "var(--ns-ink, #1c1a17)", weight: 3, lineCap: "round", lineJoin: "round" }).addTo(map);
-  for (const s of strokes) drawPolyline(s);
+  // GEO MARKS — everything drawn on the map lives in ITS coordinate space (lat/lng) and
+  // reprojects with pan/zoom. `marks` is the unified array ({kind:"stroke"|"shape"});
+  // legacy bare `config.strokes` (pre-marks polylines) still render and stay erasable.
+  const ink = () => "var(--ns-ink, #1c1a17)";
+  const mkStyle = (m) => ({ color: m.color || ink(), weight: m.weight || 3, fill: false, lineCap: "round", lineJoin: "round" });
+  const drawPolyline = (pts, style) => L.polyline(pts.map((p) => [p[0], p[1]]), style || { color: ink(), weight: 3, lineCap: "round", lineJoin: "round" }).addTo(map);
+  // an ellipse sampled in lat/lng space: cheap, and it stays glued to the ground
+  const ellipsePts = (a, b, n = 48) => {
+    const cy = (a[0] + b[0]) / 2, cx = (a[1] + b[1]) / 2, ry = Math.abs(a[0] - b[0]) / 2, rx = Math.abs(a[1] - b[1]) / 2;
+    return Array.from({ length: n }, (_, i) => { const t = (i / n) * Math.PI * 2; return [cy + ry * Math.sin(t), cx + rx * Math.cos(t)]; });
+  };
+  const drawShape = (m) => {
+    const st = mkStyle(m);
+    if (m.type === "rectangle") return L.rectangle([m.a, m.b], st).addTo(map);
+    if (m.type === "ellipse") return L.polygon(ellipsePts(m.a, m.b), st).addTo(map);
+    const layers = [L.polyline([m.a, m.b], st)];
+    if (m.type === "arrow" && m.head) layers.push(L.polyline([m.head[0], m.b, m.head[1]], st));
+    const g = L.layerGroup(layers).addTo(map);
+    g.setStyle = (s) => layers.forEach((l) => l.setStyle(s)); // uniform erase-highlight surface
+    return g;
+  };
+  const drawMark = (m) => (m.kind === "shape" ? drawShape(m) : drawPolyline(m.pts, mkStyle(m)));
+  let marks = Array.isArray(config.marks) ? config.marks.map((m) => JSON.parse(JSON.stringify(m))) : [];
+  let legacy = Array.isArray(config.strokes) ? config.strokes.map((s) => [...s]) : [];
+  const markLayers = new Map(); // mark|legacy entry → leaflet layer (for erase)
+  for (const m of marks) markLayers.set(m, drawMark(m));
+  for (const s of legacy) markLayers.set(s, drawPolyline(s));
+
+  // ── the two BIDI outlets: `shapes` (lat/lng) + `pixels` (container px) ──────
+  // Views over the SAME marks (the source of truth above). The lens core is pure
+  // (map-schemas.js); only project/unproject touch Leaflet, at the CURRENT view.
+  const projectPt = (p) => { const c = map.latLngToContainerPoint(L.latLng(p[0], p[1])); return [c.x, c.y]; };
+  const unprojectPt = (p) => { const ll = map.containerPointToLatLng(L.point(p[0], p[1])); return [ll.lat, ll.lng]; };
+  // an external write (either outlet) landed on the marks: reconcile the Leaflet
+  // layers by identity diff — removals and edits included (the same markLayers
+  // bookkeeping the eraser uses), then persist. COW apply keeps untouched marks'
+  // identity, so only the marks the op changed are redrawn.
+  const reconcileMarks = (next, prev) => {
+    const plan = reconcilePlan(prev, next);
+    for (const m of plan.remove) { const layer = markLayers.get(m); if (layer) { try { map.removeLayer(layer); } catch {} } markLayers.delete(m); }
+    for (const m of plan.add) markLayers.set(m, drawMark(m));
+    marks = next;
+  };
+  streams = makeMarkStreams({
+    marks, project: projectPt, unproject: unprojectPt, local: `map:${itemId || ""}`,
+    // no persistMarks here — it would loop back through streams.changed (double emit)
+    onChange: (next, prev) => { reconcileMarks(next, prev); if (setConfig) setConfig({ marks, strokes: legacy }); },
+  });
+  if (setOutlet) { setOutlet("shapes", streams.shapes); setOutlet("pixels", streams.pixels); }
+  // every LOCAL change (draw / erase) already flows through here — persist + emit both outlets
+  const persistMarks = () => { if (setConfig) setConfig({ marks, strokes: legacy }); if (streams) streams.changed(marks); };
 
   // draw vs pan, from the active brush on the canvas context
+  const SHAPES = new Set(["rectangle", "ellipse", "line", "arrow"]); // = SHAPE_TOOLS (kept local: this chunk lazy-loads)
   let tool = "select";
-  const isDraw = () => tool && tool !== "select" && tool !== "hand" && tool !== "wire";
+  let brushCfg = {};
+  const isDraw = () => tool && !["select", "hand", "wire", "text", "place"].includes(tool);
   const applyMode = () => {
     if (isDraw()) { map.dragging.disable(); root.style.cursor = "crosshair"; }
     else { map.dragging.enable(); root.style.cursor = ""; }
   };
   const offTool = context && context.tool && typeof context.tool.connect === "function"
     ? context.tool.connect(() => { tool = context.tool.value; applyMode(); })
+    : null;
+  const offBrush = context && context.brush && typeof context.brush.connect === "function"
+    ? context.brush.connect(() => { brushCfg = context.brush.value || {}; })
     : null;
   applyMode();
 
@@ -104,8 +192,18 @@ export function mountMap({ element, config = {}, setConfig, context, itemId, onC
     for (const [k, r] of [...rendered]) if (!want.has(k)) { try { map.removeLayer(r.marker); } catch {} rendered.delete(k); } // pin removed elsewhere
   };
   syncPins(pinData);
-  // reactive: the canvas/tool may add or remove pins in THIS item's config
-  if (typeof onConfig === "function") onConfig((c) => { if (Array.isArray(c && c.pins)) { pinData = [...c.pins]; syncPins(pinData); } });
+  // reactive: the canvas/tool may add or remove pins in THIS item's config; and an
+  // EXTERNAL write to config.marks (another peer, or the tool writing this item's
+  // config) must reconcile the Leaflet layers too — removals and edits included, not
+  // just adds. Our own persistMarks round-trips back here value-equal, so sameMarks
+  // is the echo guard; the emit carries no setConfig (this CAME from config).
+  if (typeof onConfig === "function") onConfig((c) => {
+    if (Array.isArray(c && c.pins)) { pinData = [...c.pins]; syncPins(pinData); }
+    if (Array.isArray(c && c.marks) && !sameMarks(c.marks, marks)) {
+      reconcileMarks(normalizeMarks(JSON.parse(JSON.stringify(c.marks))), marks);
+      if (streams) streams.changed(marks);
+    }
+  });
 
   root.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
   root.addEventListener("drop", (e) => {
@@ -116,7 +214,8 @@ export function mountMap({ element, config = {}, setConfig, context, itemId, onC
     if (!links.length) (e.dataTransfer.getData("text/plain") || "").split(/\r?\n/).forEach((s) => { s = s.trim(); if (s.startsWith("automerge:")) links.push({ url: s }); });
     if (!links.length) return;
     const ll = map.mouseEventToLatLng(e); // screen → the map's coordinate space (reproject)
-    for (const l of links) pinData.push({ lat: ll.lat, lng: ll.lng, url: l.url, name: l.name || l.title });
+    // name must be a real string — persisting `undefined` throws inside handle.change
+    for (const l of links) pinData.push({ lat: ll.lat, lng: ll.lng, url: l.url, name: l.name || l.title || (l.url ? String(l.url).replace(/^automerge:/, "").slice(0, 8) : "untitled") });
     syncPins(pinData); persist();
   });
 
@@ -128,34 +227,82 @@ export function mountMap({ element, config = {}, setConfig, context, itemId, onC
     if (setConfig) setConfig({ markers: markerData });
   });
 
-  // FREEHAND draw when a drawing brush is active → geo stroke
+  // DRAW when a drawing brush is active → geo marks IN the map's space.
+  // mouseEventToLatLng accounts for the box's CSS scale (the canvas camera zoom) — a
+  // manual clientX-rect.left is off whenever the map box is zoomed.
+  const arrowHead = (a, b) => {
+    // head geometry in projected pixel space (angles are wrong in raw lat/lng), stored as geo
+    const pa = map.latLngToLayerPoint(a), pb = map.latLngToLayerPoint(b);
+    const ang = Math.atan2(pb.y - pa.y, pb.x - pa.x), len = 12;
+    const wing = (da) => map.layerPointToLatLng(L.point(pb.x - len * Math.cos(ang + da), pb.y - len * Math.sin(ang + da)));
+    const w1 = wing(0.5), w2 = wing(-0.5);
+    return [[w1.lat, w1.lng], [w2.lat, w2.lng]];
+  };
+  const eraseNear = (ev) => {
+    const p = map.mouseEventToContainerPoint(ev);
+    for (const [m, layer] of [...markLayers]) {
+      const pts = m.kind === "shape" ? (m.type === "ellipse" ? ellipsePts(m.a, m.b, 24) : [m.a, m.b]) : (m.pts || m);
+      const hit = pts.some((pt) => map.latLngToContainerPoint(pt).distanceTo(p) < 12);
+      if (!hit) continue;
+      try { map.removeLayer(layer); } catch {}
+      markLayers.delete(m);
+      if (m.kind) marks = marks.filter((x) => x !== m); else legacy = legacy.filter((x) => x !== m);
+    }
+  };
   const onDown = (e) => {
     if (!isDraw()) return;
+    // THE CLAIM PROTOCOL (context.js): when an ancestor canvas CLAIMS drawing, the map does
+    // NOT capture draw gestures — they go to the canvas, which draws rough.js marks parented
+    // into this box's geo space (selectable, draggable out). This capture path is the
+    // FALLBACK for viewing/drawing on the map standalone (no claiming host), unchanged.
+    // Select/hand interactivity (pan, pins, popups) is never claimed and stays as-is.
+    if (drawClaim({ tool, claimed: drawsClaimed(context), entered: false }) !== "own") return;
     e.stopPropagation();
     e.preventDefault();
-    const pts = [];
+    const finish = (move, up) => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    if (tool === "eraser") {
+      eraseNear(e);
+      const move = (ev) => eraseNear(ev);
+      const up = () => { finish(move, up); persistMarks(); };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      return;
+    }
+    const style = { color: brushCfg.color || ink(), weight: brushCfg.size || 3 };
+    if (SHAPES.has(tool)) {
+      const start = map.mouseEventToLatLng(e);
+      const a = [start.lat, start.lng];
+      let m = { kind: "shape", type: tool, a, b: a, ...style };
+      let preview = null;
+      const redraw = () => { if (preview) { try { map.removeLayer(preview); } catch {} } preview = drawShape(m); };
+      const move = (ev) => { const ll = map.mouseEventToLatLng(ev); m.b = [ll.lat, ll.lng]; if (tool === "arrow") m.head = arrowHead(m.a, m.b); redraw(); };
+      const up = () => {
+        finish(move, up);
+        if (m.b === a) { if (preview) { try { map.removeLayer(preview); } catch {} } return; } // no drag, no mark
+        marks = [...marks, m]; markLayers.set(m, preview); persistMarks();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      return;
+    }
+    // any stroke brush → freehand geo polyline
+    const m = { kind: "stroke", pts: [], ...style };
     let pl = null;
-    const add = (ev) => {
-      // mouseEventToLatLng accounts for the box's CSS scale (the canvas camera zoom) — a
-      // manual clientX-rect.left is off whenever the map box is zoomed.
-      const ll = map.mouseEventToLatLng(ev);
-      pts.push([ll.lat, ll.lng]);
-      if (pl) pl.setLatLngs(pts); else pl = drawPolyline(pts);
-    };
+    const add = (ev) => { const ll = map.mouseEventToLatLng(ev); m.pts.push([ll.lat, ll.lng]); if (pl) pl.setLatLngs(m.pts); else pl = drawPolyline(m.pts, mkStyle(m)); };
     add(e);
     const move = (ev) => add(ev);
     const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      if (pts.length > 1) { strokes = [...strokes, pts]; if (setConfig) setConfig({ strokes }); }
+      finish(move, up);
+      if (m.pts.length > 1) { marks = [...marks, m]; markLayers.set(m, pl); persistMarks(); }
+      else if (pl) { try { map.removeLayer(pl); } catch {} }
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
-  root.addEventListener("pointerdown", onDown, true); // capture → beat Leaflet's own drag
+  root.addEventListener("pointerdown", onDown, true); // capture → beat Leaflet's own drag AND the body's stopPropagation
 
   return () => {
-    try { bindMapInstance(itemId, null); if (offTool) offTool(); ro.disconnect(); map.remove(); } catch {}
+    try { bindMapInstance(itemId, null); if (streams) streams.stop(); themeMo.disconnect(); if (offTool) offTool(); if (offBrush) offBrush(); ro.disconnect(); map.remove(); } catch {}
     root.remove();
   };
 }

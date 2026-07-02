@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { chainToLocal, chainToOuter, chainScale, ownTransform, registerTransform, bindMapInstance } from "./box-transform.js";
+import { chainToLocal, chainToOuter, chainScale, ownTransform, registerTransform, bindMapInstance, onSpaceChanged, notifySpaceChanged } from "./box-transform.js";
 import { localToWorld, worldToLocal, itemBox, transformKindOf } from "./model.js";
 
 // a FRAME as a box: origin = frame top-left, own transform = rotate about its centre. This is
@@ -100,6 +100,57 @@ describe("reproject (a MAP as a box) — Leaflet lat/lng projection bound at run
     roundTrips([box], { x: 137, y: 88 });
     bindMapInstance("m1", null); // unbind ⇒ identity again (map removed)
     expect(chainToLocal([box], { x: 50, y: 30 })).toEqual({ x: 50, y: 30 });
+  });
+});
+
+// a Web-Mercator-flavoured FAKE Leaflet (no Leaflet in vitest): px-per-degree scales with
+// zoom, and Y INVERTS (lat decreases as container y grows) — the two things a real map does
+// that a naive linear stub misses.
+export const fakeMercatorMap = (zoom, center = { lat: 51.5, lng: -0.09 }, size = { w: 400, h: 300 }) => {
+  const scale = (256 * Math.pow(2, zoom)) / 360; // px per degree
+  return {
+    latLngToContainerPoint: ([lat, lng]) => ({ x: size.w / 2 + (lng - center.lng) * scale, y: size.h / 2 - (lat - center.lat) * scale }),
+    containerPointToLatLng: ([x, y]) => ({ lng: center.lng + (x - size.w / 2) / scale, lat: center.lat - (y - size.h / 2) / scale }),
+  };
+};
+
+describe("reproject through a zooming fake map — world→local→world identity at multiple zooms", () => {
+  it("round-trips (and honours the y-inversion) at zooms 1, 5, 13", () => {
+    const box = { id: "mz", x: 40, y: 25, w: 400, h: 300, kind: "editor", editorId: "map" };
+    for (const zoom of [1, 5, 13]) {
+      bindMapInstance("mz", fakeMercatorMap(zoom));
+      for (const pt of [{ x: 40, y: 25 }, { x: 240, y: 175 }, { x: 391.5, y: 60.25 }]) {
+        const l = chainToLocal([itemBox(box)], pt);
+        const o = chainToOuter([itemBox(box)], l);
+        near(o.x, pt.x); near(o.y, pt.y);
+      }
+      // y-inversion: a point LOWER on screen has a SMALLER latitude
+      const top = chainToLocal([itemBox(box)], { x: 240, y: 30 });
+      const bottom = chainToLocal([itemBox(box)], { x: 240, y: 300 });
+      expect(bottom.y).toBeLessThan(top.y); // y = lat
+      expect(top.x).toBeCloseTo(bottom.x, 9); // x = lng, same column
+    }
+    bindMapInstance("mz", null);
+  });
+});
+
+describe("space-change notification (map pan/zoom → re-project)", () => {
+  it("notifySpaceChanged reaches subscribers with the box id; unsubscribe stops it", () => {
+    const seen = [];
+    const off = onSpaceChanged((id) => seen.push(id));
+    notifySpaceChanged("m9");
+    expect(seen).toEqual(["m9"]);
+    off();
+    notifySpaceChanged("m9");
+    expect(seen).toEqual(["m9"]);
+  });
+  it("bindMapInstance itself notifies (items re-project as soon as the map mounts/unmounts)", () => {
+    const seen = [];
+    const off = onSpaceChanged((id) => seen.push(id));
+    bindMapInstance("mNotify", fakeMercatorMap(3));
+    bindMapInstance("mNotify", null);
+    off();
+    expect(seen).toEqual(["mNotify", "mNotify"]);
   });
 });
 

@@ -23,17 +23,30 @@ const clone = (v) => { try { return (typeof structuredClone === "function") ? st
 // the subscriber's port. `streamFor(type, selector)` returns the opstream for a selector type
 // (e.g. "sketchy:items" → automergeOpstream(layoutHandle, {path:["items"]})), or null to ignore.
 export function provideSketchyStreams(element, streamFor) {
-  const offs = [];
+  // Each subscription gets its OWN teardown, keyed by (subscribing element, selector): a
+  // remounted component re-subscribing REPLACES its old bridge instead of accumulating one
+  // per remount. Where the platform supports the MessagePort `close` event, a consumer
+  // closing (or GC'ing) its port also tears its bridge down directly.
+  const subs = new Map(); // source element → Map(selector key → dispose)
   const onSub = (e) => {
     const sel = e.detail && e.detail.selector, port = e.detail && e.detail.port;
     if (!sel || !port || typeof sel.type !== "string" || !sel.type.startsWith("sketchy:")) return;
     const stream = streamFor(sel.type, sel);
     if (!stream) return;
     e.stopPropagation(); // claim it so ancestor providers don't double-answer
-    offs.push(serveOpstreamOverPort(stream, port));
+    const source = (e.composedPath && e.composedPath()[0]) || e.target || element;
+    let key; try { key = JSON.stringify(sel); } catch { key = sel.type; }
+    let bySel = subs.get(source);
+    if (!bySel) subs.set(source, (bySel = new Map()));
+    const prev = bySel.get(key);
+    if (prev) try { prev(); } catch {}
+    const off = serveOpstreamOverPort(stream, port);
+    const dispose = () => { try { off && off(); } catch {} try { port.close && port.close(); } catch {} if (bySel.get(key) === dispose) bySel.delete(key); };
+    bySel.set(key, dispose);
+    if (port.addEventListener) try { port.addEventListener("close", dispose); } catch {}
   };
   element.addEventListener(SUB, onSub);
-  return () => { element.removeEventListener(SUB, onSub); for (const o of offs) try { o && o(); } catch {} };
+  return () => { element.removeEventListener(SUB, onSub); for (const bySel of [...subs.values()]) for (const d of [...bySel.values()]) try { d(); } catch {} subs.clear(); };
 }
 
 // CONSUMER (component side): open a raw subscription port for `selectorType`. Dispatches the
@@ -69,19 +82,25 @@ export function subscribeSketchyDoc(element, selectorType, url, { args, ephemera
 // non-persisted presence channel, off the main doc handle — falls back to nothing if the host
 // handle can't broadcast (WebRTC via ShareSession is the heavier alternative).
 export function provideSketchyEphemeral(element, handle) {
-  const offs = [];
+  // per-subscription teardown, replace-on-resubscribe — same discipline as provideSketchyStreams
+  const subs = new Map(); // source element → dispose
   const onSub = (e) => {
     const sel = e.detail && e.detail.selector, port = e.detail && e.detail.port;
     if (!sel || !port || sel.type !== "sketchy:ephemeral") return;
     e.stopPropagation();
+    const source = (e.composedPath && e.composedPath()[0]) || e.target || element;
+    const prev = subs.get(source);
+    if (prev) try { prev(); } catch {}
     const relay = (p) => { try { port.postMessage(p && p.message); } catch {} };
     if (handle && handle.on) handle.on("ephemeral-message", relay);
     port.onmessage = (ev) => { if (handle && handle.broadcast) try { handle.broadcast(ev.data); } catch {} };
     if (port.start) port.start();
-    offs.push(() => { if (handle && handle.off) handle.off("ephemeral-message", relay); try { port.onmessage = null; } catch {} });
+    const dispose = () => { if (handle && handle.off) handle.off("ephemeral-message", relay); try { port.onmessage = null; port.close && port.close(); } catch {} if (subs.get(source) === dispose) subs.delete(source); };
+    subs.set(source, dispose);
+    if (port.addEventListener) try { port.addEventListener("close", dispose); } catch {}
   };
   element.addEventListener(SUB, onSub);
-  return () => { element.removeEventListener(SUB, onSub); for (const o of offs) try { o && o(); } catch {} };
+  return () => { element.removeEventListener(SUB, onSub); for (const d of [...subs.values()]) try { d(); } catch {} subs.clear(); };
 }
 
 export function automergeDocOverPort(port, url, ephemeralPort) {

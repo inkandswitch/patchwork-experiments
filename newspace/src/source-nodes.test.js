@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mountRawValue, mountBang, mountTimer, makeSourceMount } from "./source-nodes.js";
+import { mountRawValue, mountBang, mountTimer, makeSourceMount, playSharedStream } from "./source-nodes.js";
 
 // a fake setOutlet that captures the Source registered per outlet name
 function makeOutlets() {
@@ -400,5 +400,17 @@ describe("makeSourceMount (non-gated, synchronous fake start)", () => {
     expect(proxy.value).toBe(3);
     expect(seen[seen.length - 1]).toBe(3);
     cleanup();
+  });
+});
+
+describe("playSharedStream — the one shared-audio receiver (mic + audio-file)", () => {
+  it("appends a playing <audio> to the root and stop() removes it", () => {
+    const root = document.createElement("div");
+    const out = { complement: {} };
+    const stop = playSharedStream({ id: "remote" }, { root, out });
+    expect(root.querySelector("audio")).toBeTruthy();
+    stop();
+    expect(root.querySelector("audio")).toBeFalsy();
+    expect(() => stop()).not.toThrow(); // idempotent
   });
 });

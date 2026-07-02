@@ -295,7 +295,7 @@
   color: var(--ns-ink);
 }
 .ns-portinfo-title { font-weight: 700; margin-bottom: 4px; word-break: break-word; }
-.ns-portinfo-line { opacity: 0.85; line-height: 1.5; word-break: break-word; }
+.ns-portinfo-line { opacity: 0.85; line-height: 1.5; word-break: break-word; white-space: pre-wrap; /* a big schema shape renders one INDENTED field per line */ }
 .ns-chooser-item {
   text-align: left;
   padding: 5px 9px;
@@ -351,38 +351,39 @@
 /* sit a bit further out so the edge-mid RESIZE HANDLE doesn't clobber a centred nub */
 .ns-node-inlets { left: -18px; align-items: flex-start; }
 .ns-node-outlets { right: -18px; align-items: flex-end; }
+/* the HOST div is the (invisible) HIT AREA — 12px, pointer-events auto, exactly as
+   before. The visible nub is a rough.js drawing (PortNub in chrome.jsx): a rough
+   CIRCLE for a one-way port, a rough DIAMOND for a bidi one (matching the wire's
+   midpoint marker), deterministic per item id + port name. Colour semantics are
+   unchanged: outlet mint, inlet lemon, wired mint, required pink ring, hover pink. */
 .ns-node-port {
   pointer-events: auto;
+  position: relative;
   width: 12px;
   height: 12px;
-  border-radius: 50%;
-  border: 1.5px solid #000;
   cursor: crosshair;
-  box-shadow: 1px 1px 0 var(--ns-shadow);
 }
-.ns-node-outlet { background: #40dcba; } /* a source nub (drag from here) */
-.ns-node-inlet { background: #fffdc7; }  /* a sink nub (drop onto here) */
-.ns-node-inlet.req { border-color: #ff2284; } /* required */
-.ns-node-inlet.wired { background: #40dcba; } /* connected */
-.ns-node-port:hover { background: #ff2284; transform: scale(1.25); }
-/* the SPLAT corner inlet — top-left, feeds every inlet from one wired object */
+.ns-node-port .ns-nub { position: absolute; inset: -3px; width: 18px; height: 18px; overflow: visible; pointer-events: none; }
+.ns-node-port .ns-nub-line { stroke: #000; }
+.ns-node-port .ns-nub-fill { fill: #fffdc7; }              /* a sink nub (drop onto here) */
+.ns-node-outlet .ns-nub-fill { fill: #40dcba; }            /* a source nub (drag from here) */
+.ns-node-inlet.req .ns-nub-line { stroke: #ff2284; }       /* required */
+.ns-node-inlet.wired .ns-nub-fill { fill: #40dcba; }       /* connected */
+.ns-node-port:hover { transform: scale(1.25); }
+.ns-node-port:hover .ns-nub-fill { fill: #ff2284; }
+/* the SPLAT corner inlet — top-left, feeds every inlet from one wired object
+   (a corner triangle, not a circle/diamond — it keeps its CSS shape) */
 .ns-node-splat {
   position: absolute;
   left: -8px; top: -8px;
   z-index: 47;
   background: #fffdc7;
+  border: 1.5px solid #000;
   clip-path: polygon(0 0, 100% 0, 0 100%); /* a little corner triangle */
   border-radius: 0;
 }
 .ns-node-splat.wired { background: #40dcba; }
 .ns-node-splat:hover { background: #ff2284; transform: scale(1.3); }
-/* a BIDI port (its stream is writable — you can push back through it) reads as a
-   DIAMOND, matching the wire's bidi marker; a one-way port stays a round nub. The
-   diamond is drawn on ::before (rotated) so the HOST stays axis-aligned and its
-   tooltip isn't tilted. */
-/* a diamond via clip-path — same 12px footprint, host stays axis-aligned (so the
-   tooltip isn't tilted and it doesn't blow up with the node's own rotation) */
-.ns-node-port.bidi { clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%); border-radius: 0; box-shadow: none; }
 /* a nicer port tooltip (System-7 chip): name : type, on hover */
 .ns-node-port[data-tip]:hover::after {
   content: attr(data-tip);
@@ -402,6 +403,11 @@
   z-index: 60;
 }
 .ns-node-inlet[data-tip]:hover::after { left: 0; transform: none; } /* inlets hug the left edge */
+
+/* param-wins-when-wired + inline raw-inlet flags in the properties popup */
+.ns-wired-flag { margin-left: 5px; font-size: 10px; color: #ff2284; cursor: help; }
+.ns-raw-flag { margin-left: 5px; font: 600 8px ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 4px; border: 1px solid currentColor; border-radius: 4px; opacity: 0.75; cursor: help; }
+.ns-props button[disabled], .ns-props input[disabled] { opacity: 0.45; pointer-events: none; }
 
 /* inspector JSON syntax highlight (riso palette) */
 .ns-j-key { color: #ff2284; }            /* keys — hot pink */
@@ -940,12 +946,36 @@
 .ns-zoom:hover { background: var(--ns-paper); }
 
 /* customize-this-layout control (sits left of the eye/views button) */
-.ns-layout-cust { position: absolute; bottom: 18px; right: 124px; z-index: 46; }
+.ns-layout-cust { position: absolute; bottom: 18px; right: 124px; z-index: 46; display: flex; gap: 6px; align-items: center; }
+
+/* INSPECT MODE — the canvas's own context ports as inlets along the top edge */
+.ns-ctx-inlets {
+  position: absolute;
+  top: 0; left: 50%;
+  transform: translateX(-50%);
+  z-index: 46;
+  display: flex;
+  gap: 10px;
+  padding: 4px 12px 6px;
+  border: 1.5px solid var(--ns-ink);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: var(--ns-chrome);
+  color: var(--ns-ink);
+  box-shadow: 2px 2px 0 var(--ns-shadow);
+}
+.ns-ctx-inlet { display: flex; align-items: center; gap: 5px; font: 600 10px ui-monospace, monospace; cursor: crosshair; }
+.ns-ctx-inlet svg.ns-nub { width: 16px; height: 16px; overflow: visible; pointer-events: none; }
+.ns-ctx-inlet .ns-nub-line { stroke: #000; }
+.ns-ctx-inlet .ns-nub-fill { fill: #fffdc7; }
+.ns-ctx-inlet:hover .ns-nub-fill { fill: #ff2284; }
 .ns-layout-btn { width: 30px; height: 30px; display: grid; place-items: center; border: 1.5px solid var(--ns-ink); border-radius: 7px; background: var(--ns-chrome); color: var(--ns-ink); cursor: pointer; box-shadow: 2px 2px 0 var(--ns-shadow); }
 .ns-layout-btn.active { background: var(--ns-sky); color: #fff; }
 .ns-layout-panel { position: absolute; right: 0; bottom: 38px; min-width: 134px; padding: 5px; border: 1.5px solid var(--ns-ink); border-radius: 8px; background: var(--ns-paper); box-shadow: 3px 3px 0 var(--ns-shadow); }
 .ns-layout-row { display: flex; gap: 6px; align-items: center; padding: 4px 6px; font: 11px ui-monospace, monospace; color: var(--ns-ink); cursor: pointer; text-transform: capitalize; }
 .ns-layout-row:hover { background: color-mix(in srgb, var(--ns-ink) 8%, transparent); border-radius: 4px; }
+/* the layout SWITCHER row inside the ⊞ tray (the shared layout-switch.js buttons) */
+.ns-layout-sw { display: flex; padding: 2px 4px 5px; color: var(--ns-ink); }
 .ns-layout-scope { display: flex; gap: 3px; padding: 2px; margin: 1px; border: 1.5px solid var(--ns-ink); border-radius: 6px; }
 .ns-layout-scope button { flex: 1; font: 600 9px ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 5px; border: 0; border-radius: 4px; background: transparent; color: var(--ns-ink); opacity: 0.55; cursor: pointer; }
 .ns-layout-scope button.active { background: var(--ns-ink); color: var(--ns-paper); opacity: 1; }
@@ -1023,12 +1053,17 @@
 .ns-bare-x:hover { opacity: 1; }
 
 /* the canvas-context source node — a small labelled chip on a layer (outlets on the right) */
+/* the canvas-as-a-source chip: a passive STAND-IN for the space around you (icon:
+   SquareDashed), so it reads dashed + flat — not a pressable button. Only visible
+   while its layer is the active one (you see it when editing the overlay wiring;
+   plain canvas mode hides it — the wires' source needn't label itself all day). */
 .ns-canvas-source {
   display: grid; place-items: center; width: 100%; height: 100%; box-sizing: border-box;
-  padding: 2px 8px; border: 1.5px solid var(--ns-ink); border-radius: 6px;
-  background: var(--ns-chrome); box-shadow: 2px 2px 0 var(--ns-shadow);
+  padding: 2px 8px; border: 1.5px dashed var(--ns-ink); border-radius: 6px;
+  background: color-mix(in oklab, var(--ns-paper, #fff) 60%, transparent);
   font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); white-space: nowrap;
 }
+.ns-layer:not(.ns-layer-active) .ns-canvas-source { visibility: hidden; }
 
 /* a geo PIN on a map — a labelled chip anchored at its lat/lng (Leaflet reprojects it) */
 .ns-map-pin-wrap { background: none !important; border: none !important; width: auto !important; height: auto !important; }
@@ -1045,3 +1080,72 @@
 .ns-map-pin-view { display: block; width: 100%; height: 180px; overflow: hidden; border-radius: 5px; border: 1px solid var(--ns-ink); background: var(--ns-paper); }
 .ns-map-pin-open { margin-top: 6px; width: 100%; padding: 3px 8px; border: 1.5px solid var(--ns-ink); border-radius: 6px; background: var(--ns-chrome); font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); cursor: pointer; box-shadow: 1px 1px 0 var(--ns-shadow); }
 .ns-map-pin-open:hover { background: var(--ns-paper); }
+
+/* ---- FLAPS (Squeak-style edge tabs + drawers — flaps.jsx) ------------------ */
+/* each edge gets one strip; tabs stick out of the edge, drawers open inward.
+   Sticker style: paper drawer, hard ink outline, offset shadow, mono tab words. */
+.ns-flaps { position: absolute; z-index: 48; display: flex; pointer-events: none; }
+.ns-flaps > .ns-flap { pointer-events: auto; }
+.ns-flaps-bottom { left: 16px; bottom: 0; flex-direction: row; align-items: flex-end; gap: 8px; max-width: calc(50% - 260px); }
+.ns-flaps-left  { left: 0; top: 96px; flex-direction: column; align-items: flex-start; gap: 8px; }
+.ns-flaps-right { right: 0; top: 96px; flex-direction: column; align-items: flex-end; gap: 8px; }
+
+.ns-flap { display: flex; }
+.ns-flaps-bottom .ns-flap { flex-direction: column; align-items: flex-start; }
+.ns-flaps-left   .ns-flap { flex-direction: row; align-items: flex-start; }
+.ns-flaps-right  .ns-flap { flex-direction: row-reverse; align-items: flex-start; }
+
+.ns-flap-tab {
+  padding: 4px 12px 3px;
+  border: 1.5px solid var(--ns-ink);
+  background: var(--ns-chrome);
+  color: var(--ns-ink);
+  font: 600 11px ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+}
+.ns-flap-tab:hover { background: var(--ns-paper); }
+.ns-flap.open > .ns-flap-tab { background: var(--ns-ink); color: var(--ns-chrome); }
+.ns-flap.dragging > .ns-flap-tab { opacity: 0.6; cursor: grabbing; }
+/* the tab pokes out of its edge: rounded away from the edge, flush against it */
+.ns-flaps-bottom .ns-flap-tab { border-radius: 7px 7px 0 0; border-bottom: none; box-shadow: 3px 0 0 var(--ns-shadow); }
+.ns-flaps-left   .ns-flap-tab { border-radius: 0 7px 7px 0; border-left: none;  box-shadow: 0 3px 0 var(--ns-shadow); writing-mode: vertical-rl; padding: 12px 3px 12px 4px; }
+.ns-flaps-right  .ns-flap-tab { border-radius: 7px 0 0 7px; border-right: none; box-shadow: 0 3px 0 var(--ns-shadow); writing-mode: vertical-rl; padding: 12px 4px 12px 3px; }
+
+.ns-flap-drawer {
+  box-sizing: border-box;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--ns-paper);
+  border: 1.5px solid var(--ns-ink);
+  color: var(--ns-ink);
+  padding: 6px;
+}
+.ns-flaps-bottom .ns-flap-drawer { width: min(560px, 70vw); height: min(280px, 45vh); border-bottom: none; border-radius: 8px 8px 0 0; box-shadow: 3px -3px 0 var(--ns-shadow); }
+.ns-flaps-left   .ns-flap-drawer { width: min(300px, 40vw); height: min(440px, 60vh); border-left: none;  border-radius: 0 8px 8px 0; box-shadow: 3px 3px 0 var(--ns-shadow); }
+.ns-flaps-right  .ns-flap-drawer { width: min(300px, 40vw); height: min(440px, 60vh); border-right: none; border-radius: 8px 0 0 8px; box-shadow: -3px 3px 0 var(--ns-shadow); }
+
+/* ---- the PARTS BIN (the flagship flap — parts-bin.js) ---------------------- */
+.ns-partsbin { display: flex; flex-direction: column; }
+.ns-parts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 5px; padding: 2px 2px 8px; }
+.ns-part {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 7px 4px 5px;
+  border: 1.5px solid var(--ns-ink);
+  border-radius: 7px;
+  background: var(--ns-chrome);
+  color: var(--ns-ink);
+  cursor: grab;
+  box-shadow: 2px 2px 0 var(--ns-shadow);
+}
+.ns-part:hover { background: var(--ns-paper); }
+.ns-part:active { transform: translate(2px, 2px); box-shadow: none; } /* the sticker press */
+.ns-part-glyph { width: 24px; height: 24px; display: grid; place-items: center; }
+.ns-part-mark { font: 700 16px ui-monospace, monospace; line-height: 24px; }
+.ns-part-name {
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 600 10px ui-monospace, monospace;
+}

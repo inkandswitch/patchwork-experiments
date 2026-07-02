@@ -43,4 +43,37 @@ describe("provideSketchyStreams — the tool-side provider", () => {
     expect(posts.at(-1)).toEqual({ type: "snapshot", value: ["x", "y"] });
     stop();
   });
+
+  it("a re-subscribe from the same source REPLACES the old bridge (no per-remount accumulation)", () => {
+    const el = document.createElement("div");
+    const items = new Opstream(["x"]);
+    const stop = provideSketchyStreams(el, (type) => (type === "sketchy:items" ? items : null));
+    const mkPort = () => { const p = { posts: [], closed: false, onmessage: null, postMessage(d) { p.posts.push(d); }, start() {}, close() { p.closed = true; } }; return p; };
+    const sub = (port) => el.dispatchEvent(new CustomEvent("patchwork:subscribe", { detail: { selector: { type: "sketchy:items" }, port }, bubbles: true }));
+    const p1 = mkPort(); sub(p1);
+    const p2 = mkPort(); sub(p2); // the component remounted and re-subscribed
+    expect(p1.closed).toBe(true); // the stale bridge is torn down + its port closed
+    const n1 = p1.posts.length;
+    items.apply({ type: "snapshot", value: ["x", "y"] });
+    expect(p1.posts.length).toBe(n1); // the dead port no longer receives
+    expect(p2.posts.at(-1)).toEqual({ type: "snapshot", value: ["x", "y"] }); // the live one does
+    stop();
+    expect(p2.closed).toBe(true); // provider teardown disposes the live bridge too
+  });
+
+  it("tears a bridge down when the consumer's port fires `close` (where supported)", () => {
+    const el = document.createElement("div");
+    const items = new Opstream([1]);
+    const stop = provideSketchyStreams(el, () => items);
+    let closeCb = null;
+    const posts = [];
+    const port = { onmessage: null, postMessage: (d) => posts.push(d), start() {}, close() {}, addEventListener(t, cb) { if (t === "close") closeCb = cb; } };
+    el.dispatchEvent(new CustomEvent("patchwork:subscribe", { detail: { selector: { type: "sketchy:items" }, port }, bubbles: true }));
+    expect(typeof closeCb).toBe("function");
+    closeCb(); // the consumer side closed / was GC'd
+    const n = posts.length;
+    items.apply({ type: "snapshot", value: [1, 2] });
+    expect(posts.length).toBe(n); // nothing posted into the dead port
+    stop();
+  });
 });

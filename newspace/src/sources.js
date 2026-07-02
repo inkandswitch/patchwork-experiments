@@ -126,17 +126,22 @@ export function snapshotMidi(e) {
 // the most recent MIDI message from any input (prompts for permission)
 export function midiSource() {
   const stream = new Source(null);
-  let inputs = [], onMsg = null, cancelled = false;
+  let inputs = [], onMsg = null, cancelled = false, access = null, onState = null;
   if (typeof navigator !== "undefined" && navigator.requestMIDIAccess) {
-    navigator.requestMIDIAccess().then((access) => {
+    navigator.requestMIDIAccess().then((a) => {
       if (cancelled) return;
+      access = a;
       onMsg = (e) => stream.push(snapshotMidi(e));
-      access.inputs.forEach((inp) => { inp.addEventListener("midimessage", onMsg); inputs.push(inp); });
+      const subscribe = () => access.inputs.forEach((inp) => { if (!inputs.includes(inp)) { inp.addEventListener("midimessage", onMsg); inputs.push(inp); } });
+      subscribe();
+      // hot-plugged devices only appear via statechange — subscribe them as they arrive
+      onState = () => subscribe();
+      if (access.addEventListener) access.addEventListener("statechange", onState);
     }).catch((e) => stream.push({ error: e && e.message }));
   } else {
     stream.push({ error: "Web MIDI unavailable" });
   }
-  return { stream, stop: () => { cancelled = true; if (onMsg) inputs.forEach((inp) => inp.removeEventListener("midimessage", onMsg)); } };
+  return { stream, stop: () => { cancelled = true; if (access && onState && access.removeEventListener) access.removeEventListener("statechange", onState); if (onMsg) inputs.forEach((inp) => inp.removeEventListener("midimessage", onMsg)); } };
 }
 
 // pure: snapshot a MediaStream's track metadata (the stream itself is opaque —

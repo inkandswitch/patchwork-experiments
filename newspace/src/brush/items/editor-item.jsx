@@ -4,12 +4,13 @@
 // here we resolve the descriptor (editor OR lens), rebuild each inlet opstream from
 // its wiring, and either mount the editor or apply the lens. An editor/lens
 // exposes OUTLET ports (right edge) you can wire FROM into another node's inlet.
-import { createEffect, createMemo, onCleanup, untrack, For, Show } from "solid-js";
-import { listEditors, mountEditor, inletDefsFor, outletDefsFor } from "../../editors.js";
+import { createEffect, createMemo, createRoot, getOwner, runWithOwner, onCleanup, untrack, For, Show } from "solid-js";
+import { listEditors, mountEditor, inletDefsFor, outletDefsFor, paramsAsInlets } from "../../editors.js";
 import { listLensDescriptors, applyLens } from "../../lenses.js";
 import { roughRectPath, roughEllipsePath, seedFromId } from "../../draw.js";
+import { PortNub } from "../ui/chrome.jsx";
 import { jsonPathStream } from "../../json-path.js";
-import { snapshot, describeBinary, isError, fmtNum, previewReplacer } from "../../ops.js";
+import { snapshot, describeBinary, isError, fmtNum, previewReplacer, valuesEqual } from "../../ops.js";
 import { Opstream } from "../../opstreams.js";
 
 // A node is a function: set up reactive data once, return DOM. Inlets are STABLE
@@ -50,11 +51,37 @@ export function inletProxy() {
   };
 }
 
+// Which backing an inlet should take, given the item's persisted wiring. THE unwire
+// invariant rides on this: a `null` wiring entry is the EXPLICIT-DISCONNECT tombstone
+// (unwire writes it instead of deleting the key) — a cut inlet reverts to the proxy's
+// own buffer and must NOT be re-fed by the splat or a bare tool's ambient canvas
+// outlet; those fallbacks are only for inlets that were never wired (no entry at all).
+export function inletBackingPlan(wiring, name, { splat = false, auto = false } = {}) {
+  const w = wiring ? wiring[name] : undefined;
+  if (w) return { kind: "wired", wire: w };
+  if (w !== undefined) return { kind: "cut" }; // the null tombstone
+  if (splat) return { kind: "splat" };
+  if (auto) return { kind: "auto" };
+  return { kind: "buffer" };
+}
+
+// Which tools PRESS an editor item's chrome (grab/move/select/erase). Anything else —
+// a drawing/placing/text brush — must fall through to the canvas's draw handler (the
+// embed convention, cf. DocOrFrame.grab: return early WITHOUT stopping propagation).
+export const chromePressTool = (t) => t === "select" || t === "wire" || t === "eraser";
+
 export function EditorItem(props) {
   const it = props.it, ctx = props.ctx;
+  // draw brushes pass THROUGH the node chrome to the canvas; pointer-ish tools grab it
+  const chromePress = (e) => { if (chromePressTool(ctx.tool())) props.down(e); };
   let host;
   let cleanup = null;
   let token = 0;
+  // per-mount owner for effects created AFTER an await boundary (onConfig/onShared):
+  // mountEditor resolves in a microtask, so a bare createEffect there has no owner and
+  // would never be disposed — run them under this root, disposed with the mount/item.
+  let fxDispose = null;
+  const disposeFx = () => { if (fxDispose) { try { fxDispose(); } catch {} fxDispose = null; } };
 
   // resolve from the editor registry first, then the lens registry (reactive: JSX
   // renders outlet ports from it, mount() applies it)
@@ -91,6 +118,7 @@ export function EditorItem(props) {
   async function mount() {
     const mine = ++token;
     if (cleanup) { try { cleanup(); } catch {} cleanup = null; }
+    disposeFx();
     ctx.unregisterOutlets && ctx.unregisterOutlets(it().id);
     if (!host) return;
     host.replaceChildren();
@@ -104,6 +132,11 @@ export function EditorItem(props) {
     // those reads land in this effect's scope, every keystroke (setConfig) remounts the
     // node. The reactive inlet SET is handled by the inner effect below, not here.
     for (const def of untrack(() => inletDefsFor(d, it()))) ensure(def.name);
+    // PARAM-INLETS (paramsAsInlets): every param is also a wireable inlet. Static per
+    // descriptor, so resolved once per mount; wired ones get a backing below and their
+    // values MIRROR INTO CONFIG (the wire wins — the node reacts via onConfig, and the
+    // properties panel shows the wired value + disables its control).
+    const pdefs = untrack(() => paramsAsInlets(d));
 
     createEffect(() => {
       if (mine !== token) return;
@@ -112,18 +145,34 @@ export function EditorItem(props) {
       for (const def of defs) ensure(def.name);
       const splatW = wiring["*"];
       const splatSync = splatW && !splatW.url ? resolveInletSync(splatW) : null;
-      if (splatW && splatW.url) resolveInlet(splatW).then((s) => { if (mine === token && s) for (const def of defs) if (!wiring[def.name]) proxies[def.name].setBacking(jsonPathStream(s, () => "." + def.name)); });
+      // the splat fills only NEVER-wired inlets — not ones explicitly cut (null tombstone)
+      if (splatW && splatW.url) resolveInlet(splatW).then((s) => { if (mine === token && s) for (const def of defs) if (wiring[def.name] === undefined) proxies[def.name].setBacking(jsonPathStream(s, () => "." + def.name)); });
       // a BARE layer tool (minimap, map) is fed the canvas's own reactive state: any inlet
       // whose name matches a canvas outlet (items/bounds/peers/camera/view/…) auto-wires to
-      // it unless you've wired it explicitly. The widget always sees live canvas data.
+      // it unless you've wired it explicitly. The widget always sees live canvas data —
+      // EXCEPT an inlet whose wire the user REMOVED (the null tombstone): removing a wire
+      // must actually stop delivery, not silently rewire to the same ambient stream.
       const autoOutlets = d.bare && ctx.canvasOutlets ? ctx.canvasOutlets() : null;
       for (const def of defs) {
-        const w = wiring[def.name];
+        const plan = inletBackingPlan(wiring, def.name, { splat: !!splatSync, auto: !!(autoOutlets && autoOutlets[def.name]) });
+        const w = plan.kind === "wired" ? plan.wire : null;
         if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token) proxies[def.name].setBacking(s); }); else proxies[def.name].setBacking(resolveInletSync(w)); }
-        else if (splatSync) proxies[def.name].setBacking(jsonPathStream(splatSync, () => "." + def.name));
-        else if (autoOutlets && autoOutlets[def.name]) proxies[def.name].setBacking(autoOutlets[def.name].stream);
-        else proxies[def.name].setBacking(null); // ⇒ the proxy's own editable buffer
+        else if (plan.kind === "splat") proxies[def.name].setBacking(jsonPathStream(splatSync, () => "." + def.name));
+        else if (plan.kind === "auto") proxies[def.name].setBacking(autoOutlets[def.name].stream);
+        else proxies[def.name].setBacking(null); // cut or never wired ⇒ the proxy's own editable buffer
         proxies[def.name].setDir(w && w.dir); // per-wire flow override (undefined ⇒ "both")
+      }
+      // param-inlets: same backing plan, but NO splat/auto fallback ever feeds a param
+      // (a param's fallback is its config/default, not an ambient stream).
+      const declared = new Set(defs.map((x) => x.name));
+      for (const def of pdefs) {
+        if (declared.has(def.name)) continue; // a real inlet of the same name owns it
+        const plan = inletBackingPlan(wiring, def.name, {});
+        const w = plan.kind === "wired" ? plan.wire : null;
+        const px = ensure(def.name);
+        if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token) px.setBacking(s); }); else px.setBacking(resolveInletSync(w)); }
+        else px.setBacking(null);
+        px.setDir(w && w.dir);
       }
     });
 
@@ -157,7 +206,22 @@ export function EditorItem(props) {
     // DEEP-track config: `{...c}` only subscribes to the keys present at first run, so a
     // newly-ADDED key (e.g. an owner's first `sharedValue` write) wouldn't re-fire. Read
     // it deeply (JSON walk) so adding a key or changing a nested value always re-runs.
-    const onConfig = (cb) => { createEffect(() => { const c = it().config || {}; let snap; try { snap = JSON.parse(JSON.stringify(c)); } catch { snap = { ...c }; } cb(snap); }); };
+    // these run after `await mountEditor` — no reactive owner — so hang each effect off
+    // the per-mount root (fxOwner), disposed when the mount is replaced / the item unmounts.
+    const fxOwner = createRoot((dispose) => { fxDispose = dispose; return getOwner(); });
+    const onConfig = (cb) => { runWithOwner(fxOwner, () => createEffect(() => { const c = it().config || {}; let snap; try { snap = JSON.parse(JSON.stringify(c)); } catch { snap = { ...c }; } cb(snap); })); };
+    // WIRED PARAM values mirror into config — the runtime half of param-inlet-wins:
+    // the stream drives the persisted knob; the node reacts through its normal
+    // onConfig path. Raw callbacks on the stable proxies (unwired ⇒ own buffer ⇒
+    // `wired` is false ⇒ no-op), disconnected with the mount.
+    const paramOffs = pdefs.map((def) => { const px = ensure(def.name); return px.connect(() => {
+      if (!px.wired) return;
+      const v = px.value;
+      if (v === undefined) return;
+      const cur = untrack(() => (it().config || {})[def.name]);
+      if (!valuesEqual(cur, v)) setConfig({ [def.name]: v });
+    }); });
+    const offParams = () => { for (const o of paramOffs) { try { o(); } catch {} } };
     // SHARE — the per-item view of the WebRTC mesh (ShareSession). Values over a data
     // channel, streams over tracks, keyed to THIS item id. The own/mine sharing uses it.
     const ss = ctx.shareSession;
@@ -172,7 +236,7 @@ export function EditorItem(props) {
     // -level fields sync like x/y/positions (no nested-config-reactivity surprises). The
     // owner writes it; receivers read it reactively.
     const shareDoc = (v) => { const h = props.surface && props.surface.handle; if (!h) return; h.change((dd) => { const o = (dd.items || []).find((x) => x.id === it().id); if (o) o.shared = (v === undefined ? null : v); }); };
-    const onShared = (cb) => createEffect(() => { cb(it().shared); });
+    const onShared = (cb) => runWithOwner(fxOwner, () => createEffect(() => { cb(it().shared); }));
 
     // a LENS: transform its single inlet proxy → its outlet (reactive via the proxy)
     if (d.lens) {
@@ -184,19 +248,19 @@ export function EditorItem(props) {
       render();
       const off = out.connect ? out.connect(render) : null;
       host.append(wrap);
-      cleanup = () => { if (off) off(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
+      cleanup = () => { if (off) off(); offParams(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
       return;
     }
 
     const c = await mountEditor(d, { element: host, itemId: it().id, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, broadcast, onBroadcast, onConfig, share, shareDoc, onShared, canvas: ctx.canvasOutlets ? ctx.canvasOutlets() : null, context: ctx.context });
-    if (mine !== token) { try { c(); } catch {} return; }
+    if (mine !== token) { try { c(); } catch {} offParams(); return; }
     ctx.registerOutlets && ctx.registerOutlets(it().id, { ...outlets });
-    cleanup = () => { try { c(); } catch {} ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
+    cleanup = () => { try { c(); } catch {} offParams(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
   }
 
   // mount ONCE per node TYPE; wiring changes flow through the reactive proxies above
   createEffect(() => { it().editorId; descriptor(); mount(); });
-  onCleanup(() => { token++; if (cleanup) { try { cleanup(); } catch {} } });
+  onCleanup(() => { token++; if (cleanup) { try { cleanup(); } catch {} } disposeFx(); });
 
   // ports — shown for a lens always, for an editor while wiring. Outlets (right)
   // are grabbable sources; inlets (left) are drop targets you wire INTO. Each has
@@ -211,8 +275,9 @@ export function EditorItem(props) {
     return d.lens || ctx.tool() === "wire";
   };
   // a bare tool's inlet that matches a canvas outlet is fed by the (hidden) canvas provider —
-  // show its nub as CONNECTED even though there's no drawn wire.
-  const autoWired = (name) => bare() && ctx.canvasOutlets && !!ctx.canvasOutlets()[name];
+  // show its nub as CONNECTED even though there's no drawn wire. NOT when explicitly wired,
+  // and NOT when the wire was removed (null tombstone — the auto-feed is suppressed then too).
+  const autoWired = (name) => bare() && ctx.canvasOutlets && !!ctx.canvasOutlets()[name] && it().inlets?.[name] === undefined;
   const inletDefs = () => inletDefsFor(descriptor(), it()); // dynamic-aware (template doc)
   const outletDefs = () => outletDefsFor(descriptor(), it()); // dynamic-aware (LLM @out)
   const hasInlets = () => inletDefs().length > 0;
@@ -238,7 +303,7 @@ export function EditorItem(props) {
   };
 
   return (
-    <div class={bare() ? "ns-bare ns-editor" : "ns-doc ns-editor"} classList={{ "ns-lens": !!descriptor()?.lens, "ns-round": isRound(), "ns-glass": !!descriptor()?.glass, sel: ctx.isSelected(it().id) }} data-item-id={it().id} style={props.baseStyle()} onPointerDown={props.down}>
+    <div class={bare() ? "ns-bare ns-editor" : "ns-doc ns-editor"} classList={{ "ns-lens": !!descriptor()?.lens, "ns-round": isRound(), "ns-glass": !!descriptor()?.glass, sel: ctx.isSelected(it().id) }} data-item-id={it().id} style={props.baseStyle()} onPointerDown={chromePress}>
       <Show when={!bare()}>
         <div class="ns-doc-title"><span class="ns-doc-name">{descriptor()?.name || it().editorId}</span></div>
         <svg class="ns-doc-outline" style={{ overflow: "visible" }}>
@@ -253,7 +318,7 @@ export function EditorItem(props) {
           can't also be the move-grip. While its layer is active, a little chrome bar gives a
           grab handle + name + remove — that's how you edit/move/delete a bare window. */}
       <Show when={bare() && ctx.layerIsActive && ctx.layerIsActive(it())}>
-        <div class="ns-bare-chrome" onPointerDown={props.down}>
+        <div class="ns-bare-chrome" onPointerDown={chromePress}>
           <span class="ns-bare-name">{descriptor()?.name || it().editorId}</span>
           <button class="ns-bare-x" title="remove" onPointerDown={(e) => e.stopPropagation()} onClick={() => ctx.removeItem(it().id)}>×</button>
         </div>
@@ -262,18 +327,20 @@ export function EditorItem(props) {
       <Show when={showPorts() && hasInlets()}>
         <div class="ns-node-port ns-node-splat" classList={{ wired: !!it().inlets?.["*"] }} data-item-id={it().id} data-sketchy-inlet="*" title="all fields — wire one object/doc to fill every inlet" />
       </Show>
-      {/* ports are little PD/Max nubs on the edge — name shows in the hover tooltip */}
+      {/* ports are little PD/Max nubs on the edge — name shows in the hover tooltip.
+          The div is the (unchanged, 12px) HIT AREA; the visible nub is a rough.js
+          circle/diamond (PortNub), deterministic per item id + port name. */}
       <Show when={showPorts() && hasInlets()}>
         <div class="ns-node-inlets">
           <For each={inletDefs()}>
-            {(i) => <div class="ns-node-port ns-node-inlet" classList={{ wired: !!it().inlets?.[i.name] || autoWired(i.name), req: !!i.required, bidi: inletBidi(i.name) }} data-item-id={it().id} data-sketchy-inlet={i.name} data-tip={`${i.name}${i.required ? " *" : ""}${i.type ? " : " + i.type : ""}${autoWired(i.name) ? " ← canvas" : ""}${inletBidi(i.name) ? " ⇄" : ""}`} />}
+            {(i) => <div class="ns-node-port ns-node-inlet" classList={{ wired: !!it().inlets?.[i.name] || autoWired(i.name), req: !!i.required, bidi: inletBidi(i.name) }} data-item-id={it().id} data-sketchy-inlet={i.name} data-tip={`${i.name}${i.required ? " *" : ""}${i.type ? " : " + i.type : ""}${autoWired(i.name) ? " ← canvas" : ""}${inletBidi(i.name) ? " ⇄" : ""}`}><PortNub id={it().id} name={i.name} bidi={inletBidi(i.name)} /></div>}
           </For>
         </div>
       </Show>
       <Show when={showPorts() && hasOutlets()}>
         <div class="ns-node-outlets">
           <For each={outletDefs()}>
-            {(o) => <div class="ns-node-port ns-node-outlet" classList={{ bidi: outletBidi(o.name) }} data-sketchy-node={it().id} data-sketchy-outlet={o.name} data-tip={`${o.name}${o.type ? " : " + o.type : ""}${outletBidi(o.name) ? " ⇄" : ""}`} />}
+            {(o) => <div class="ns-node-port ns-node-outlet" classList={{ bidi: outletBidi(o.name) }} data-sketchy-node={it().id} data-sketchy-outlet={o.name} data-tip={`${o.name}${o.type ? " : " + o.type : ""}${outletBidi(o.name) ? " ⇄" : ""}`}><PortNub id={it().id} name={o.name} bidi={outletBidi(o.name)} /></div>}
           </For>
         </div>
       </Show>

@@ -79,3 +79,44 @@ describe.runIf(typeof MessageChannel !== "undefined")("provide/accept round-trip
     provider.destroy();
   });
 });
+
+// ── the DRAW-CLAIM protocol (the pure predicate + the context marker) ─────────
+import { drawClaim, claimDraws, drawsClaimed, toolIsClaimable, UNCLAIMABLE_TOOLS } from "./context.js";
+
+describe("drawClaim — the claim decision (pure, load-bearing beyond the map)", () => {
+  it("select/hand/wire/text/place are NEVER claimed — the inner tool stays live", () => {
+    for (const tool of UNCLAIMABLE_TOOLS) {
+      expect(toolIsClaimable(tool)).toBe(false);
+      expect(drawClaim({ tool, claimed: true, entered: false })).toBe("none");
+      expect(drawClaim({ tool, claimed: false, entered: false })).toBe("none");
+    }
+    expect(drawClaim({ tool: null, claimed: true, entered: false })).toBe("none");
+  });
+  it("an UN-ENTERED spatial box under a claiming canvas → the outer canvas claims (annotation)", () => {
+    for (const tool of ["pen", "marker", "rectangle", "ellipse", "line", "arrow", "eraser"]) {
+      expect(drawClaim({ tool, claimed: true, entered: false })).toBe("annotation");
+    }
+  });
+  it("an ENTERED box owns its gestures — entering RE-ROOTS the claim (content)", () => {
+    expect(drawClaim({ tool: "pen", claimed: true, entered: true })).toBe("content");
+    expect(drawClaim({ tool: "eraser", claimed: true, entered: true })).toBe("content");
+  });
+  it("standalone (nobody claims) → fallback-to-own: the box captures its own draws", () => {
+    expect(drawClaim({ tool: "pen", claimed: false, entered: false })).toBe("own");
+    expect(drawClaim({ tool: "eraser", claimed: false, entered: false })).toBe("own");
+  });
+});
+
+describe("claimDraws / drawsClaimed — the marker on the context object", () => {
+  it("a canvas claims by marking its own context; a mount reads the same object", () => {
+    const ctx = createCanvasContext(null, { fallbacks: { tool: "select" } });
+    expect(drawsClaimed(ctx)).toBe(false); // fresh context: unclaimed (standalone hosts)
+    claimDraws(ctx);
+    expect(drawsClaimed(ctx)).toBe(true);
+    ctx.destroy();
+  });
+  it("tolerates absent/foreign contexts (a standalone map has none)", () => {
+    expect(drawsClaimed(null)).toBe(false);
+    expect(drawsClaimed({})).toBe(false);
+  });
+});

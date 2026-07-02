@@ -34,7 +34,10 @@ function preview(v) {
 // (resolved via the sketchy api's protocol `find`). The whole doc flows out — wire it
 // into json-path / inspector / a patchwork-tool. The url rides in the complement.
 export function mountAutomergeSource({ element, setOutlet, api, config = {}, setConfig, onConfig }) {
-  let off = null, curUrl = null;
+  let off = null, curUrl = null, curStream = null, disposed = false;
+  // an automergeOpstream holds its own handle.on("change") — it must be disconnect()ed
+  // when replaced or on teardown, or every url entered leaks a change listener
+  const dropStream = (s) => { if (s && typeof s.disconnect === "function") { try { s.disconnect(); } catch {} } };
   const root = document.createElement("div");
   root.className = "ns-source";
   const input = document.createElement("input");
@@ -55,7 +58,10 @@ export function mountAutomergeSource({ element, setOutlet, api, config = {}, set
   // wire an opstream up to the outlet + persist its url + show a readout
   const useStream = (stream, url) => {
     if (!stream) { status.textContent = "not found"; return; }
+    if (disposed) { dropStream(stream); return; } // resolved after teardown
     if (off) { off(); off = null; }
+    if (curStream && curStream !== stream) dropStream(curStream);
+    curStream = stream;
     curUrl = url;
     if (setOutlet) setOutlet("doc", stream);
     if (setConfig) setConfig({ url });
@@ -86,7 +92,7 @@ export function mountAutomergeSource({ element, setOutlet, api, config = {}, set
   // REACT to config.url set from OUTSIDE (e.g. a doc dropped onto this node) — adopt it live
   if (onConfig) onConfig((c) => { if (c.url && c.url !== curUrl) { input.value = c.url; open(c.url); } });
 
-  return () => { if (off) off(); root.remove(); };
+  return () => { disposed = true; if (off) off(); dropStream(curStream); curStream = null; root.remove(); };
 }
 
 // BANG — a momentary trigger (PD/Max/Orca). Each fire pushes a UNIQUE value (a
@@ -127,7 +133,8 @@ export function mountTimer({ element, setOutlet, config = {}, setConfig }) {
 // EDITABLE (read/write) opstream on `doc` — a shared sync point you can wire both
 // into and out of. The created doc's url is persisted (config) so it's stable.
 export function mountNewDoc({ element, setOutlet, api, config = {}, setConfig }) {
-  let off = null;
+  let off = null, curStream = null, disposed = false;
+  const dropStream = (s) => { if (s && typeof s.disconnect === "function") { try { s.disconnect(); } catch {} } };
   const root = document.createElement("div");
   root.className = "ns-source ns-newdoc";
   const status = document.createElement("div");
@@ -147,6 +154,8 @@ export function mountNewDoc({ element, setOutlet, api, config = {}, setConfig })
       }
       const stream = await resolveDoc(url, api);
       if (!stream) { status.textContent = "no repo"; return; }
+      if (disposed) { dropStream(stream); return; } // resolved after teardown
+      curStream = stream;
       if (setOutlet) setOutlet("doc", stream);
       const render = () => { status.textContent = "◎ " + url.replace(/^automerge:/, "").slice(0, 8); };
       render();
@@ -154,7 +163,7 @@ export function mountNewDoc({ element, setOutlet, api, config = {}, setConfig })
     } catch (e) { status.textContent = (e && e.message) || "failed"; }
   })();
 
-  return () => { if (off) off(); root.remove(); };
+  return () => { disposed = true; if (off) off(); dropStream(curStream); curStream = null; root.remove(); };
 }
 
 // a RAW VALUE source: type a literal (text/number/boolean/json) → emit it on
@@ -218,6 +227,26 @@ export function mountRawValue({ element, setOutlet, config = {}, setConfig }) {
   return () => { root.remove(); };
 }
 
+// play a SHARED audio MediaStream: an <audio> appended to `root` plays it, and an
+// analyser lands on the OUTLET's complement (so a wired Scope works on the shared
+// audio). Returns stop() (removes the element + closes the AudioContext). Used by
+// the mic path below AND the audio-file node (media-nodes.js) — one receiver.
+export function playSharedStream(stream, { root, out }) {
+  let el = null, ac = null;
+  try { el = document.createElement("audio"); el.autoplay = true; root.append(el); try { el.srcObject = stream; } catch {} } catch {}
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    ac = new AC();
+    const an = ac.createAnalyser(); an.fftSize = 1024;
+    ac.createMediaStreamSource(stream).connect(an);
+    out.complement = { ...(out.complement || {}), mediaStream: stream, analyser: an, audioContext: ac };
+  } catch {}
+  return () => {
+    if (el) { try { el.remove(); } catch {} el = null; }
+    if (ac) { try { ac.close().catch(() => {}); } catch {} ac = null; }
+  };
+}
+
 // generic device-source mount: `start()` returns `{stream, stop}` synchronously
 // (the stream already exists), which we register on `outlet` and read for a readout.
 // the canvas CONTEXT as a source: camera/pointer/tool/brush/selection are Sources on
@@ -262,14 +291,14 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
     const shared = () => share === "mine";
     const amOwner = () => shared() && owner && myUrl && owner === myUrl;
 
-    let active = null, off = null, offRecv = null, enabled = !gated, shareStop = null, streamRecvStop = null, sharedAudio = null, lastW = 0, wT = null;
+    let active = null, off = null, offRecv = null, enabled = !gated, shareStop = null, streamRecvStop = null, sharedStop = null, lastW = 0, wT = null;
     // throttle the owner's value→doc writes so a 60fps source doesn't churn the CRDT
     let wrote = 0;
     const shareValueDoc = (v) => { if (!shareDoc) return; const now = Date.now(); clearTimeout(wT); const gap = now - lastW; const write = (val) => { lastW = Date.now(); shareDoc(val); if (!wrote++) console.log(`[share:${label}] writing item.shared → doc (owner)`); }; if (gap >= 150) write(v); else wT = setTimeout(() => write(active && active.stream.value), 150 - gap); };
     // RECEIVE the shared value from the top-level doc field (reliable, reactive like x/y)
     if (onShared) onShared((v) => { if (shared() && !amOwner() && v != null) { out.push(v); status.textContent = `${label} (shared) ▸ ${preview(v)}`; } });
     const stopDevice = () => { if (off) { off(); off = null; } clearTimeout(wT); if (shareStop) { shareStop(); shareStop = null; } if (active && active.stop) { try { active.stop(); } catch {} } active = null; };
-    const stopRecv = () => { if (offRecv) { offRecv(); offRecv = null; } if (streamRecvStop) { streamRecvStop(); streamRecvStop = null; } if (sharedAudio) { try { sharedAudio.remove(); } catch {} sharedAudio = null; } };
+    const stopRecv = () => { if (offRecv) { offRecv(); offRecv = null; } if (streamRecvStop) { streamRecvStop(); streamRecvStop = null; } if (sharedStop) { sharedStop(); sharedStop = null; } };
 
     const runDevice = () => {
       try { active = start({ element, api }); } catch (e) { status.textContent = `${label}: ${(e && e.message) || e}`; return; }
@@ -300,8 +329,9 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
       // on the outlet complement (so a wired scope works on the shared audio).
       if (isStream && mesh) {
         streamRecvStop = mesh.onStream((s) => {
-          try { sharedAudio = document.createElement("audio"); sharedAudio.autoplay = true; sharedAudio.srcObject = s; root.append(sharedAudio); } catch {}
-          try { const AC = window.AudioContext || window.webkitAudioContext; const ac = new AC(); const an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(s).connect(an); out.complement = { ...(out.complement || {}), mediaStream: s, analyser: an, audioContext: ac }; } catch {}
+          // a re-shared stream replaces the previous receiver — close its AudioContext too
+          if (sharedStop) { sharedStop(); sharedStop = null; }
+          sharedStop = playSharedStream(s, { root, out });
           out.push({ shared: true }); status.textContent = `${label} 📡 (shared audio)`;
         });
       }
@@ -380,7 +410,7 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
 //   bytes — the raw Uint8Array
 //   file  — a {name,type,size,…,text} snapshot that tracks the editable text
 export function mountFileSource({ element, outlets, setOutlet }) {
-  const offs = [], stops = [];
+  let stopWatch = null, offText = null; // the CURRENT pick's watcher + dirty subscription (replaced on re-pick)
   const expose = (name, s) => { if (setOutlet) setOutlet(name, s); else if (outlets) outlets[name] = s; };
   const root = document.createElement("div");
   root.className = "ns-source";
@@ -390,6 +420,12 @@ export function mountFileSource({ element, outlets, setOutlet }) {
   const status = document.createElement("div");
   status.className = "ns-source-status";
   root.append(btn, status);
+  // the Save affordance — created ONCE, rewired per pick (a re-pick must not append a second one)
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "ns-source-enable";
+  saveBtn.textContent = "Save";
+  saveBtn.style.display = "none";
+  root.append(saveBtn);
   element.append(root);
 
   btn.onclick = async () => {
@@ -397,10 +433,13 @@ export function mountFileSource({ element, outlets, setOutlet }) {
     let handle;
     try { handle = await pickFile(); } catch (e) { status.textContent = e && e.message; return; }
     if (!handle) { status.textContent = "cancelled"; return; }
+    // stop the PREVIOUS pick's watcher + subscription — the old file must not keep polling
+    if (stopWatch) { stopWatch(); stopWatch = null; }
+    if (offText) { offText(); offText = null; }
 
     // text: an editable opstream (save() in its complement), reloaded unless dirty
     const text = await fileHandleOpstream(handle);
-    stops.push(watchFileStream(text, {}));
+    stopWatch = watchFileStream(text, {});
     expose("text", text);
 
     const file = await handle.getFile();
@@ -421,22 +460,17 @@ export function mountFileSource({ element, outlets, setOutlet }) {
     };
     expose("file", snap);
 
-    // dirty tracking + a Save affordance (the file's been edited downstream)
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "ns-source-enable";
-    saveBtn.textContent = "Save";
-    saveBtn.style.display = "none";
+    // dirty tracking via the shared Save button (the file's been edited downstream)
     saveBtn.onclick = async () => { try { await text.complement.save(); } catch {} refresh(); };
-    root.append(saveBtn);
     const refresh = () => {
       const dirty = text.value !== text.complement.diskText;
       saveBtn.style.display = dirty ? "" : "none";
       status.textContent = `${file.name} · ${file.size}b${dirty ? " · edited" : ""}`;
     };
-    offs.push(text.connect(refresh));
+    offText = text.connect(refresh);
     refresh();
     btn.textContent = "Change file…";
   };
 
-  return () => { offs.forEach((o) => o && o()); stops.forEach((s) => s && s()); root.remove(); };
+  return () => { if (offText) offText(); if (stopWatch) stopWatch(); root.remove(); };
 }

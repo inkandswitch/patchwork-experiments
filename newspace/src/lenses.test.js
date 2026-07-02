@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { lensDescriptor, lensSpec, applyLens } from "./lenses.js";
+import { lensDescriptor, lensSpec, applyLens, SKIP, isSkip, mapLens, mapPrettyLens, mapNumberToStringLens } from "./lenses.js";
 import { Source, Opstream } from "./opstreams.js";
 import { numberSchema, stringSchema, snapshot } from "./ops.js";
 import { firstMatchingInlet, inletAcceptsValue } from "./wire.js";
@@ -110,6 +110,105 @@ describe("lensSpec", () => {
     const spec = lensSpec(numToStr);
     expect(spec.value(5)).toBe("5");
     expect(spec.schema).toBe(numToStr.outlet.schema);
+  });
+});
+
+describe("SKIP — the explicit \"don't write this source\" sentinel", () => {
+  it("unproject → SKIP leaves the source untouched (like the historical undefined)", () => {
+    const src = new Opstream(5);
+    const declining = { ...numToStr, unproject: () => SKIP };
+    const out = applyLens(lensDescriptor(declining), src);
+    out.apply(snapshot("999"));
+    expect(src.value).toBe(5); // declined — never written
+  });
+
+  it("is recognised by TAG, so it survives a JSON / structured-clone port hop", () => {
+    expect(isSkip(SKIP)).toBe(true);
+    expect(isSkip(JSON.parse(JSON.stringify(SKIP)))).toBe(true); // identity lost, tag kept
+    expect(isSkip(undefined)).toBe(false);
+    expect(isSkip({})).toBe(false);
+    expect(isSkip("skip")).toBe(false);
+  });
+});
+
+describe("mapLens — an element lens lifted over a list", () => {
+  // count the writes reaching the source (and keep them applying for real)
+  const spying = (src) => { const calls = []; const orig = src.apply.bind(src); src.apply = (op) => { calls.push(op); orig(op); }; return calls; };
+
+  it("READ: projects each element; a non-list projects to []", () => {
+    const out = applyLens(lensDescriptor(mapNumberToStringLens), new Source([1, 2, 3]));
+    expect(out.value).toEqual(["1", "2", "3"]);
+    expect(applyLens(lensDescriptor(mapNumberToStringLens), new Source("nope")).value).toEqual([]);
+  });
+
+  it("WRITE (same length): only the changed element is written, as a targeted assign to element i", () => {
+    const src = new Opstream([1, 2, 3]);
+    const calls = spying(src);
+    const out = applyLens(lensDescriptor(mapNumberToStringLens), src);
+    out.apply(snapshot(["1", "99", "3"]));
+    expect(src.value).toEqual([1, 99, 3]);
+    expect(calls).toEqual([{ path: [], range: 1, value: 99 }]); // ONE write, to element 1
+  });
+
+  it("WRITE: an element whose unproject declines (invalid number) keeps its source element", () => {
+    const src = new Opstream([1, 2, 3]);
+    const calls = spying(src);
+    const out = applyLens(lensDescriptor(mapNumberToStringLens), src);
+    out.apply(snapshot(["1", "not a number", "3"]));
+    expect(src.value).toEqual([1, 2, 3]); // untouched
+    expect(calls).toEqual([]);
+  });
+
+  it("LENGTH CHANGE: an appended element is unprojected in; a shorter view truncates (one snapshot)", () => {
+    const src = new Opstream([1, 2]);
+    const out = applyLens(lensDescriptor(mapNumberToStringLens), src);
+    out.apply(snapshot(["1", "2", "3"])); // insert
+    expect(src.value).toEqual([1, 2, 3]);
+    out.apply(snapshot(["1"])); // delete
+    expect(src.value).toEqual([1]);
+  });
+
+  it("LENGTH CHANGE: an appended element the lens can't invert is dropped (no write at all here)", () => {
+    const src = new Opstream([1, 2, 3]);
+    const calls = spying(src);
+    const out = applyLens(lensDescriptor(mapNumberToStringLens), src);
+    out.apply(snapshot(["1", "2", "3", "junk"])); // rebuilt == src ⇒ idempotent, no write
+    expect(src.value).toEqual([1, 2, 3]);
+    expect(calls).toEqual([]);
+  });
+
+  it("SKIP from the inner unproject keeps that source element", () => {
+    const inner = { id: "gate", project: (v) => v, unproject: (v) => (v === "keep" ? SKIP : v) };
+    const src = new Opstream(["a", "b"]);
+    const out = applyLens(lensDescriptor(mapLens(inner)), src);
+    out.apply(snapshot(["keep", "B"]));
+    expect(src.value).toEqual(["a", "B"]); // slot 0 declined, slot 1 written
+  });
+
+  it("a projection-only inner lens yields a Getter (no apply)", () => {
+    const d = mapLens({ id: "double", project: (v) => v * 2 });
+    const out = applyLens(lensDescriptor(d), new Opstream([1, 2]));
+    expect(out.value).toEqual([2, 4]);
+    expect(out.apply).toBeUndefined();
+  });
+
+  it("map-pretty round-trips a list of JSON values through pretty text", () => {
+    const src = new Opstream([{ a: 1 }, { b: 2 }]);
+    const out = applyLens(lensDescriptor(mapPrettyLens), src);
+    expect(out.value.map((s) => JSON.parse(s))).toEqual([{ a: 1 }, { b: 2 }]);
+    out.apply(snapshot([JSON.stringify({ a: 9 }), out.value[1]]));
+    expect(src.value).toEqual([{ a: 9 }, { b: 2 }]);
+  });
+
+  it("the shipped variants are registrable lens descriptors", () => {
+    for (const d of [mapPrettyLens, mapNumberToStringLens]) {
+      expect(d.type).toBe("sketchy:lens");
+      expect(typeof d.id).toBe("string");
+      expect(typeof d.project).toBe("function");
+      expect(typeof d.apply).toBe("function"); // bidirectional (inner has unproject)
+    }
+    expect(mapPrettyLens.id).toBe("map-pretty");
+    expect(mapNumberToStringLens.id).toBe("map-number-to-string");
   });
 });
 

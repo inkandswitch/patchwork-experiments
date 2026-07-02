@@ -27,6 +27,7 @@ describe("pointerLockSource factory", () => {
     };
     const fakeDoc = {
       body: fakeBody,
+      pointerLockElement: fakeBody, // the lock was granted to us
       addEventListener(type, cb) { listeners[type] = cb; },
       removeEventListener(type, cb) { if (listeners[type] === cb) delete listeners[type]; },
       exitPointerLock() { calls.exit++; },
@@ -44,6 +45,36 @@ describe("pointerLockSource factory", () => {
       src.stop();
       expect(listeners.mousemove).toBeUndefined();
       expect(calls.exit).toBe(1);
+    } finally {
+      globalThis.document = prevDoc;
+    }
+  });
+
+  it("stops emitting once the lock is lost (Esc), and stop() never exits a lock it doesn't hold", () => {
+    const calls = { exit: 0 };
+    const listeners = {};
+    const fakeBody = { requestPointerLock() {} };
+    const fakeDoc = {
+      body: fakeBody,
+      pointerLockElement: fakeBody,
+      addEventListener(type, cb) { listeners[type] = cb; },
+      removeEventListener(type, cb) { if (listeners[type] === cb) delete listeners[type]; },
+      exitPointerLock() { calls.exit++; },
+    };
+    const prevDoc = globalThis.document;
+    globalThis.document = fakeDoc;
+    try {
+      const src = pointerLockSource();
+      listeners.mousemove({ movementX: 1, movementY: 1 });
+      expect(src.stream.value).toEqual({ dx: 1, dy: 1 });
+      // Esc: the browser releases the lock — ordinary mouse motion must NOT leak out
+      fakeDoc.pointerLockElement = null;
+      listeners.mousemove({ movementX: 9, movementY: 9 });
+      expect(src.stream.value).toEqual({ dx: 1, dy: 1 }); // unchanged
+      // another component now holds the lock — stop() must not steal it
+      fakeDoc.pointerLockElement = { other: true };
+      src.stop();
+      expect(calls.exit).toBe(0);
     } finally {
       globalThis.document = prevDoc;
     }
@@ -101,8 +132,10 @@ describe("gated mount behaviour", () => {
     let exited = 0;
     const prevDoc = globalThis.document;
     const realDoc = prevDoc; // keep real createElement for the element above
+    const fakeBody = { requestPointerLock() {} };
     globalThis.document = {
-      body: { requestPointerLock() {} },
+      body: fakeBody,
+      pointerLockElement: fakeBody, // the lock was granted to us
       addEventListener(type, cb) { listeners[type] = cb; },
       removeEventListener(type, cb) { if (listeners[type] === cb) delete listeners[type]; },
       exitPointerLock() { exited++; },

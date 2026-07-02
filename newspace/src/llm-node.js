@@ -9,7 +9,8 @@
 import { Source, apply as applyOp } from "./opstreams.js";
 import { snapshot, isSnapshot, describeBinary, binarySafeReplacer } from "./ops.js";
 import { generate, popup } from "@chee/patchwork-llm";
-import { VAR_RE, promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks } from "./llm-inlets.js";
+import { VAR_RE, promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks, outletConsumers, schemaSpec, schemaRule, validationPlan } from "./llm-inlets.js";
+import { listEditors, inletDefsFor } from "./editors.js";
 export { promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks };
 
 function stringify(v) {
@@ -57,8 +58,28 @@ function coerceOut(text) {
   return text;
 }
 
-export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConfig }) {
+export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConfig, itemId, api, context }) {
   let prompt = typeof config.prompt === "string" ? config.prompt : "";
+  // REAL schema→schema: the Standard Schema of the inlet our `out` outlet FEEDS.
+  // Scan the live board for consumers wired {node: itemId, outlet: "out"} and take
+  // the first wired inlet's declared schema (dynamic inlets included). Guarded —
+  // with no canvas context / consumer / schema the plain best-effort path runs.
+  const outSchema = () => {
+    try {
+      const board = (context && context.board) || (api && api.context && api.context.board);
+      const items = board && board.value;
+      if (!items || !itemId) return null;
+      const eds = listEditors();
+      for (const c of outletConsumers(items, itemId, "out")) {
+        const d = eds.find((e) => e.id === c.item.editorId);
+        if (!d) continue;
+        const def = inletDefsFor(d, c.item).find((i) => i.name === c.inlet);
+        const schema = def && (def.schema || def.accepts);
+        if (schema && schema["~standard"]) return schema;
+      }
+    } catch {}
+    return null;
+  };
   // OUTLETS, created lazily and cached. `out` = clean final result; `think` = live
   // tokens / reasoning (so `out` never carries half-streamed text); plus one per
   // `@out name` line in the prompt. Ports re-render from llmOutlets reactively; here
@@ -75,7 +96,7 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   const promptStream = inlets.prompt; // wired prompt overrides the UI field
 
   let reversePrompt = typeof config.reversePrompt === "string" ? config.reversePrompt : "";
-  let running = false;
+  let running = false, rerun = false; // rerun: a run requested mid-flight re-runs once with the latest inputs
 
   const root = document.createElement("div"); root.className = "ns-llm ns-source";
   const ta = document.createElement("textarea");
@@ -170,7 +191,7 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   codeOut.apply = (op) => { const next = isSnapshot(op) ? op.value : applyOp(codeOut.value, op); applyCode(next); };
 
   const run = async () => {
-    if (running) return;
+    if (running) { rerun = true; return; } // don't drop an input change that lands mid-generation
     running = true;
     let acc = "";
     try {
@@ -186,27 +207,52 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
         status.textContent = "running…";
         const names = promptOutlets(prompt); // extra @out outlets → multi-block mode
         const rule = names.length ? multiRule(names) : OUTPUT_RULE;
-        const sys = [rule, currentPrompt()].filter(Boolean).join("\n\n");
-        const messages = inWired()
-          ? [{ role: "system", content: sys }, { role: "user", content: capStr(stringify(inStream.value), 16000) }] // cap so a huge frame can't degenerate the run
-          : [{ role: "system", content: rule }, { role: "user", content: currentPrompt() || "" }];
-        // stream into `think` so `out` only ever holds a finished, clean value
-        const { text } = await generate(messages, { onToken: (d) => { acc += d; think.push(acc); status.textContent = `… ${acc.length} chars`; } });
-        const raw = text != null ? text : acc;
-        think.push(raw);
+        // REAL schema→schema (single-out mode only): when `out` feeds an inlet that
+        // declares a Standard Schema with a derivable spec, ask for the shape in the
+        // prompt and VALIDATE the parsed result before emitting. No schema (or no
+        // derivable constraint, e.g. anySchema) ⇒ exactly the old best-effort path.
+        const schema = names.length ? null : outSchema();
+        const spec = schema ? schemaSpec(schema) : null;
+        const shape = spec ? schemaRule(spec) : "";
+        const genOnce = async (appendix) => {
+          acc = "";
+          const sys = [rule, shape, currentPrompt(), appendix].filter(Boolean).join("\n\n");
+          const messages = inWired()
+            ? [{ role: "system", content: sys }, { role: "user", content: capStr(stringify(inStream.value), 16000) }] // cap so a huge frame can't degenerate the run
+            : [{ role: "system", content: [rule, shape, appendix].filter(Boolean).join("\n\n") }, { role: "user", content: currentPrompt() || "" }];
+          // stream into `think` so `out` only ever holds a finished, clean value
+          const { text } = await generate(messages, { onToken: (d) => { acc += d; think.push(acc); status.textContent = `… ${acc.length} chars`; } });
+          const raw = text != null ? text : acc;
+          think.push(raw);
+          return raw;
+        };
+        const raw = await genOnce("");
         if (names.length) {
           const blocks = parseOutletBlocks(raw); // { out, think?, <named>… }
           for (const [k, v] of Object.entries(blocks)) outletFor(k).push(coerceOut(stripFences(v)));
           if (setConfig) setConfig({ last: blocks.out != null ? coerceOut(stripFences(blocks.out)) : null });
-        } else {
+        } else if (!spec) {
           const result = coerceOut(stripFences(raw));
           out.push(result);
           if (setConfig) setConfig({ last: result });
+        } else {
+          // validate → retry once with the issues → error op (never emit garbage)
+          let result = coerceOut(stripFences(raw));
+          let plan = validationPlan(schema, result, 0);
+          if (plan.action === "retry") {
+            status.textContent = "shape mismatch — retrying…";
+            result = coerceOut(stripFences(await genOnce(plan.appendix)));
+            plan = validationPlan(schema, result, 1);
+          }
+          if (plan.action !== "emit") throw new Error(plan.message); // → catch: ⚠ status + an error op
+          out.push(plan.value);
+          if (setConfig) setConfig({ last: plan.value });
         }
         status.textContent = "done";
       }
     } catch (e) { status.textContent = `⚠ ${(e && e.message) || e}`; out.pushError(e); }
     running = false;
+    if (rerun) { rerun = false; run(); } // once, with the latest inputs
   };
 
   ta.oninput = () => { prompt = ta.value; if (setConfig) setConfig({ prompt }); syncOutlets(); }; // new @out/{{var}} → new ports
@@ -222,7 +268,10 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   };
   const offs = [];
   if (inStream && inStream.connect) offs.push(inStream.connect(onInput));
-  if (promptStream && promptStream.connect) offs.push(promptStream.connect(() => { syncPromptDisabled(); if (promptWired()) { ta.value = stringify(promptStream.value); onInput(); } }));
+  // a wired prompt flows through the SAME state as typing: the local `prompt` (so
+  // promptOutlets/@out blocks see it), config.prompt (so {{var}} inlets regenerate),
+  // and the new-port sync — not just the textarea display.
+  if (promptStream && promptStream.connect) offs.push(promptStream.connect(() => { syncPromptDisabled(); if (promptWired()) { prompt = stringify(promptStream.value); ta.value = prompt; if (setConfig) setConfig({ prompt }); syncOutlets(); onInput(); } }));
   // a wired {{var}} changing re-runs (or re-applies the code), like any input
   for (const [k, s] of Object.entries(inlets)) { if (k === "in" || k === "prompt" || k === "bang") continue; if (s && s.connect) offs.push(s.connect(onInput)); }
   // a BANG on the trigger inlet runs it (skip the initial connect snapshot)

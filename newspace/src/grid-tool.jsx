@@ -4,12 +4,11 @@
 // complement like the list does.
 //
 // Plain DOM + a `change` listener; self-contained styles.
-import { complementSummary, complementBanner, layoutsFor } from "./layouts.js";
+import { complementSummary, complementBanner } from "./layouts.js";
+import { layoutSwitcher } from "./layout-switch.js";
+import { layoutDocUrl } from "./brush/constants.js";
 
 const WRAP = "display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:auto;padding:8px;gap:8px;color:var(--ns-ink,inherit);";
-const SWITCH = "display:flex;gap:4px;";
-const SWBTN = "padding:3px 9px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;font:600 11px ui-monospace,monospace;cursor:pointer;";
-const SWBTN_ON = SWBTN + "background:var(--ns-ink,#2b2b2b);color:var(--ns-paper,#fff);";
 const BANNER = "padding:6px 9px;border:1.5px dashed #ff2284;border-radius:6px;font:600 11px ui-monospace,monospace;color:#ff2284;line-height:1.4;";
 const GRID = "display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;";
 const TILE = "display:flex;flex-direction:column;height:220px;border:1.5px solid var(--ns-ink,#2b2b2b);border-radius:8px;overflow:hidden;background:var(--editor-fill,#fff);box-shadow:3px 3px 0 var(--ns-shadow);";
@@ -20,57 +19,75 @@ export function GridTool(handle, element) {
   root.style.cssText = WRAP;
   element.append(root);
   let complementHandle = null;
+  let disposed = false;
+  let complementLoad = 0; // ticket — a stale in-flight find must not attach
   const repo = element.repo || (typeof window !== "undefined" && window.repo) || (typeof globalThis !== "undefined" && globalThis.repo);
+
+  // static chrome, built ONCE — render only updates it in place
+  const sw = layoutSwitcher(element, handle.url, "sketchy:grid");
+  if (sw) root.append(sw);
+  const banner = document.createElement("div"); banner.style.cssText = BANNER; banner.style.display = "none";
+  const empty = document.createElement("div"); empty.style.cssText = "opacity:.5;padding:8px;display:none;"; empty.textContent = "empty folder";
+  const grid = document.createElement("div"); grid.style.cssText = GRID;
+  root.append(banner, empty, grid);
+
+  // tiles are KEYED by doc url and REUSED across renders (patchwork-tool.js's rule):
+  // rebuilding a <patchwork-view> on every change event remounts the embedded tool —
+  // someone drawing on the canvas must not blow away your focus/scroll in a tile.
+  const tiles = new Map(); // url -> tile element (with ._name for in-place rename)
+  function makeTile(link) {
+    const tile = document.createElement("div"); tile.style.cssText = TILE;
+    const head = document.createElement("div"); head.style.cssText = THEAD;
+    head.dataset.automergeUrl = link.url; head.dataset.automergePath = "[]"; // tile header is a PORT
+    const name = document.createElement("span"); name.style.cssText = "flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    const open = document.createElement("button"); open.textContent = "open"; open.style.cssText = "font:600 10px ui-monospace,monospace;padding:1px 6px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;cursor:pointer;";
+    open.onclick = (e) => { e.preventDefault(); element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: link.url }, bubbles: true, composed: true })); };
+    head.append(name, open);
+    const body = document.createElement("div"); body.style.cssText = "flex:1;min-height:0;";
+    const view = document.createElement("patchwork-view"); view.setAttribute("doc-url", link.url); view.style.cssText = "display:block;width:100%;height:100%;";
+    body.append(view); tile.append(head, body);
+    tile._name = name;
+    return tile;
+  }
 
   function render() {
     const doc = handle.doc() || {};
     const docs = doc.docs || [];
-    root.replaceChildren();
-
-    // layout switcher
-    const layouts = layoutsFor("folder");
-    if (layouts.length > 1) {
-      const sw = document.createElement("div"); sw.style.cssText = SWITCH;
-      for (const l of layouts) {
-        const b = document.createElement("button"); b.textContent = l.name;
-        b.style.cssText = l.toolId === "sketchy:grid" ? SWBTN_ON : SWBTN;
-        b.onclick = () => l.toolId !== "sketchy:grid" && element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: handle.url, toolId: l.toolId }, bubbles: true, composed: true }));
-        sw.append(b);
-      }
-      root.append(sw);
-    }
 
     // surface the canvas complement
     const summary = complementSummary(doc, complementHandle && complementHandle.doc());
-    if (summary.has) { const banner = document.createElement("div"); banner.style.cssText = BANNER; banner.textContent = complementBanner(summary); root.append(banner); }
+    banner.style.display = summary.has ? "" : "none";
+    banner.textContent = summary.has ? complementBanner(summary) : "";
+    empty.style.display = docs.length ? "none" : "";
 
-    if (!docs.length) { const e = document.createElement("div"); e.style.cssText = "opacity:.5;padding:8px;"; e.textContent = "empty folder"; root.append(e); return; }
-
-    const grid = document.createElement("div"); grid.style.cssText = GRID;
-    for (const link of docs) {
-      const tile = document.createElement("div"); tile.style.cssText = TILE;
-      const head = document.createElement("div"); head.style.cssText = THEAD;
-      head.dataset.automergeUrl = link.url; head.dataset.automergePath = "[]"; // tile header is a PORT
-      const name = document.createElement("span"); name.textContent = link.name || link.url; name.style.cssText = "flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-      const open = document.createElement("button"); open.textContent = "open"; open.style.cssText = "font:600 10px ui-monospace,monospace;padding:1px 6px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;cursor:pointer;";
-      open.onclick = (e) => { e.preventDefault(); element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: link.url }, bubbles: true, composed: true })); };
-      head.append(name, open);
-      const body = document.createElement("div"); body.style.cssText = "flex:1;min-height:0;";
-      const view = document.createElement("patchwork-view"); view.setAttribute("doc-url", link.url); view.style.cssText = "display:block;width:100%;height:100%;";
-      body.append(view); tile.append(head, body); grid.append(tile);
-    }
-    root.append(grid);
+    // keyed reconcile: reuse, rename, reorder; only add/remove what changed
+    const seen = new Set();
+    docs.forEach((link, i) => {
+      let tile = tiles.get(link.url);
+      if (!tile) { tile = makeTile(link); tiles.set(link.url, tile); }
+      tile._name.textContent = link.name || link.url;
+      seen.add(link.url);
+      if (grid.children[i] !== tile) grid.insertBefore(tile, grid.children[i] || null);
+    });
+    for (const [url, tile] of tiles) if (!seen.has(url)) { tiles.delete(url); tile.remove(); }
   }
 
   async function loadComplement() {
-    const url = handle.doc() && handle.doc().newspace;
+    const url = layoutDocUrl(handle.doc(), "canvas"); // @layouts.canvas / .sketch / .newspace
     if (url && repo && (!complementHandle || complementHandle.url !== url)) {
-      try { complementHandle = await repo.find(url); complementHandle.on("change", render); } catch (e) { console.warn("[grid] complement", e); }
+      const ticket = ++complementLoad;
+      try {
+        const h = await repo.find(url);
+        if (disposed || ticket !== complementLoad) return; // unmounted / superseded while pending
+        if (complementHandle) complementHandle.off("change", render); // never leak the old listener
+        complementHandle = h;
+        complementHandle.on("change", render);
+      } catch (e) { console.warn("[grid] complement", e); }
     }
     render();
   }
   const onChange = () => loadComplement();
   handle.on("change", onChange);
   loadComplement();
-  return () => { handle.off("change", onChange); if (complementHandle) complementHandle.off("change", render); root.remove(); };
+  return () => { disposed = true; handle.off("change", onChange); if (complementHandle) complementHandle.off("change", render); root.remove(); };
 }

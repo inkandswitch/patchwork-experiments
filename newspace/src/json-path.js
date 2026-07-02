@@ -21,7 +21,14 @@ export function parsePath(expr) {
     const ch = s[i];
     if (ch === ".") { i++; continue; }
     if (ch === "[") {
-      const end = s.indexOf("]", i);
+      // quote-aware scan for the closing ] — a quoted key may CONTAIN a ] (["a]b"])
+      let end = -1, quote = null;
+      for (let k = i + 1; k < s.length; k++) {
+        const c = s[k];
+        if (quote) { if (c === quote) quote = null; }
+        else if (c === '"' || c === "'") quote = c;
+        else if (c === "]") { end = k; break; }
+      }
       if (end < 0) throw new Error("unclosed [");
       let tok = s.slice(i + 1, end).trim();
       if ((tok[0] === '"' && tok.at(-1) === '"') || (tok[0] === "'" && tok.at(-1) === "'")) {

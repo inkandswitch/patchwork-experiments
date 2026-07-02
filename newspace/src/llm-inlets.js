@@ -46,6 +46,88 @@ export function llmOutlets(config) {
   ];
 }
 
+// ── REAL schema→schema (ask for + validate the consumer's Standard Schema) ───
+// Which inlets (on which items) does an outlet of node `itemId` feed? A pure scan
+// of the layout items — an editor item's `inlets` map stores its wiring, a
+// node-outlet wiring being `{node, outlet}` (see portWiring in wire.js).
+export function outletConsumers(items, itemId, outlet = "out") {
+  const found = [];
+  for (const it of items || []) {
+    if (!it || it.kind !== "editor" || !it.inlets) continue;
+    for (const [name, w] of Object.entries(it.inlets)) {
+      if (w && w.node === itemId && (w.outlet || "out") === outlet) found.push({ item: it, inlet: name });
+    }
+  }
+  return found;
+}
+
+const STD = "~standard";
+// Derive a READABLE spec of a Standard Schema for the prompt. Two sources:
+//   • a paramsSchema-style schema carries `.fields` — describe each field;
+//   • otherwise PROBE the validator with a value no meaningful schema accepts
+//     (a symbol passes no typeof/instanceof check), so the schema's own
+//     rejection message ("expected a number") becomes the spec.
+// anySchema / bang accept everything ⇒ null: no constraint worth prompting (and
+// the caller then keeps the plain best-effort path).
+const PROBE = typeof Symbol === "function" ? Symbol("schema probe") : { "schema probe": true };
+const FIELD_TYPE = { color: "string (a colour)", text: "string", size: "number", slider: "number", number: "number", toggle: "boolean", select: "string" };
+export function schemaSpec(schema) {
+  if (!schema || !schema[STD]) return null;
+  if (Array.isArray(schema.fields) && schema.fields.length) {
+    const lines = schema.fields.map((f) => {
+      const opts = f.type === "select" && f.options ? ` (one of: ${f.options.map((o) => (o && typeof o === "object" ? o.value : o)).join(", ")})` : "";
+      return `  "${f.key}": ${FIELD_TYPE[f.type] || f.type}${opts}`;
+    });
+    return "a JSON object with these fields:\n" + lines.join("\n");
+  }
+  try {
+    const res = schema[STD].validate(PROBE);
+    if (!res || typeof res.then === "function") return null; // async — can't probe sync
+    const msg = (res.issues || []).map((i) => i && i.message).filter(Boolean).join("; ");
+    return msg || null;
+  } catch {
+    return null;
+  }
+}
+
+// the system-prompt line derived from a spec
+export const schemaRule = (spec) =>
+  spec ? `The output MUST be ${spec}. Output ONLY a value matching that shape — nothing else.` : "";
+
+// Validate a parsed result against a Standard Schema → { ok:true, value } (the
+// schema may coerce it) or { ok:false, issues, message }. Async validation can't
+// be awaited synchronously, so it passes through unchecked.
+export function validateAgainst(schema, value) {
+  const std = schema && schema[STD];
+  if (!std) return { ok: true, value };
+  let res;
+  try { res = std.validate(value); } catch (e) { return failure([{ message: (e && e.message) || String(e) }]); }
+  if (!res || typeof res.then === "function") return { ok: true, value };
+  if (res.issues && res.issues.length) return failure(res.issues);
+  return { ok: true, value: "value" in res ? res.value : value };
+}
+const failure = (issues) => ({ ok: false, issues, message: issues.map((i) => (i && i.message) || "invalid").join("; ") });
+
+// The validate-or-retry DECISION (pure): a first failure ⇒ retry once with the
+// validation issues appended to the prompt; a failing retry ⇒ surface an error
+// op — never emit garbage. Returns one of:
+//   { action:"emit",  value }               valid (possibly schema-coerced)
+//   { action:"retry", appendix, message }   re-generate with `appendix` added
+//   { action:"error", message, issues }     give up — push an error op
+export function validationPlan(schema, value, attempt = 0, maxRetries = 1) {
+  const check = validateAgainst(schema, value);
+  if (check.ok) return { action: "emit", value: check.value };
+  if (attempt < maxRetries)
+    return {
+      action: "retry",
+      message: check.message,
+      appendix:
+        `Your previous output did not match the required shape. Validation issues: ${check.message}. ` +
+        "Produce ONLY a corrected result that matches the required shape.",
+    };
+  return { action: "error", message: `output did not match the expected shape: ${check.message}`, issues: check.issues };
+}
+
 // Split a multi-outlet response into named blocks delimited by lines like
 // `[[outlet:NAME]]`. Text before the first marker lands on `out`, so an unmarked
 // response still works. Returns { name: content }.

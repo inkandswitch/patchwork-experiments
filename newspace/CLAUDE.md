@@ -46,7 +46,7 @@ Published at `automerge:3EoRD6Adef8TitsP2SX3peY5bWxq`.
 
 - **`src/index.jsx`** — registers a `newspace` datatype and a `newspace` tool
   (`supportedDatatypes: ["newspace", "folder"]`, so it opens any folder).
-- **`src/datatype.js`** — the doc model + `ensureCanvasFields` migration.
+- **`src/datatype.js`** — the doc model.
 - **`src/tool.jsx`** — `NewspaceTool(handle, element)` render contract. Holds the
   camera, active tool, pointer gestures, eraser hit-testing, doc creation, and
   image paste. Reactivity comes from `makeDocumentProjection(handle)` of
@@ -81,14 +81,11 @@ a container: items dropped inside get `parent: frameId`, store FRAME-LOCAL coord
 and render nested + clipped — so they move/rotate/clip with the frame. Frames
 rotate too. No frame-in-frame.
 
-`ensureCanvasFields` migrates the older `windows`/`strokes`/`shapes` model into
-`items` (emptying the old arrays via splice — never `delete` a top-level key, that
-crashes the projection). Arrays only, never deletable map keys.
-
-Everything canvas-related is a flat **array**, never a keyed map. Automerge list
-deletions are index splices, which the Solid document projection applies
-cleanly; map-key deletion is the one patch the upstream projection trips on, so
-we never model anything deletable as a map.
+Everything canvas-related is a flat **array**, never a keyed map — a design
+choice (array order is z-order, splices merge well), not a projection
+workaround: the current Solid document projection (`solid-automerge@2`)
+reconciles map-key deletion cleanly, both nested and top-level (pinned by
+tests in `history.test.js`).
 
 ## Bundling notes
 

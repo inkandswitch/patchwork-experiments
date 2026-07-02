@@ -19,10 +19,13 @@ export { Canvas } from "./brush/canvas.jsx"; // the headless component, re-expor
 //   defaultTool — which tool is active on open (e.g. "pen")
 //   tools       — an explicit SUBSET of tool ids in the toolbar (e.g. ["pen","eraser"])
 //   slots       — REPLACE a chrome part with your own: { toolbar|properties|minimap|
-//                 presence|zoom: (host) => JSXElement }. The `host` is the chrome context
-//                 (tool/setTool, selection, cam, the param target, …) — so a custom part is
-//                 a drop-in. This is how you build a different-looking tool over the SAME
-//                 component: ship your own toolbar/properties without forking the canvas.
+//                 presence|zoom: (host) => JSXElement }. The `host` carries `context` —
+//                 the canvas's camera/pointer/tool/brush/selection (+ peers/board/…)
+//                 Sources, the SAME state the built-in chrome reads — plus the narrow
+//                 command surface (setTool, the param target, doc mutations, …). So a
+//                 custom part is a drop-in. This is how you build a different-looking
+//                 tool over the SAME component: ship your own toolbar/properties
+//                 without forking the canvas.
 export function makeNewspaceTool(opts = {}) {
   return function NewspaceToolVariant(handle, element) {
     element.api = createSketchyApi({ repo: element.repo, element });

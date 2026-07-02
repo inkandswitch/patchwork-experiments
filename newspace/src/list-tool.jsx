@@ -8,11 +8,9 @@
 // doc straight from the list and wire it into an editor.
 //
 // Plain DOM + a `change` listener (the house default), self-contained styles.
-import { complementSummary, complementBanner, layoutsFor } from "./layouts.js";
-
-const SWITCH = "display:flex;gap:4px;margin:2px 4px 8px;";
-const SWBTN = "padding:3px 9px;border:1px solid currentColor;border-radius:5px;background:transparent;color:inherit;font:600 11px ui-monospace,monospace;cursor:pointer;";
-const SWBTN_ON = SWBTN + "background:var(--ns-ink,#2b2b2b);color:var(--ns-paper,#fff);";
+import { complementSummary, complementBanner } from "./layouts.js";
+import { layoutSwitcher } from "./layout-switch.js";
+import { layoutDocUrl } from "./brush/constants.js";
 
 const WRAP = "display:flex;flex-direction:column;gap:2px;padding:6px;font:13px ui-sans-serif,system-ui,sans-serif;color:var(--ns-ink,inherit);";
 const BANNER = "margin:2px 4px 8px;padding:6px 9px;border:1.5px dashed #ff2284;border-radius:6px;font:600 11px ui-monospace,monospace;color:#ff2284;line-height:1.4;";
@@ -28,7 +26,36 @@ export function ListTool(handle, element) {
   element.append(root);
 
   let complementHandle = null;
+  let disposed = false;
+  let complementLoad = 0; // ticket — a stale in-flight find must not attach
   const repo = element.repo || (typeof window !== "undefined" && window.repo) || (typeof globalThis !== "undefined" && globalThis.repo);
+
+  // static chrome, built ONCE — render only updates it in place
+  // layout switcher — re-open this folder through another lens (same docs)
+  const sw = layoutSwitcher(element, handle.url, "sketchy:list");
+  if (sw) { sw.style.margin = "2px 4px 8px"; root.append(sw); }
+  const banner = document.createElement("div"); banner.style.cssText = BANNER; banner.style.display = "none";
+  const empty = document.createElement("div"); empty.style.cssText = "padding:8px;opacity:.5;display:none;"; empty.textContent = "empty folder";
+  const list = document.createElement("div"); list.style.cssText = "display:flex;flex-direction:column;gap:2px;";
+  root.append(banner, empty, list);
+
+  // rows are KEYED by doc url and REUSED across renders (the patchwork-tool.js rule) —
+  // a canvas edit elsewhere must not rebuild every row out from under you
+  const rows = new Map(); // url -> row element (with ._name/._type/._tag for in-place updates)
+  function makeRow(link) {
+    const row = document.createElement("label");
+    row.style.cssText = ROW;
+    row.dataset.automergeUrl = link.url; // a PORT: wire the whole doc from the list
+    row.dataset.automergePath = "[]";
+    const name = document.createElement("span"); name.style.cssText = NAME;
+    const type = document.createElement("span"); type.style.cssText = TYPE;
+    const tag = document.createElement("span"); tag.style.cssText = TAG;
+    const open = document.createElement("button"); open.style.cssText = OPEN; open.textContent = "open";
+    open.onclick = (e) => { e.preventDefault(); element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: link.url }, bubbles: true, composed: true })); };
+    row.append(name, type, tag, open);
+    row._name = name; row._type = type; row._tag = tag;
+    return row;
+  }
 
   function render() {
     const doc = handle.doc() || {};
@@ -36,61 +63,35 @@ export function ListTool(handle, element) {
     const summary = complementSummary(doc, complementHandle && complementHandle.doc());
     const positioned = summary.positioned;
 
-    root.replaceChildren();
-
-    // layout switcher — re-open this folder through another lens (same docs)
-    const layouts = layoutsFor("folder");
-    if (layouts.length > 1) {
-      const sw = document.createElement("div");
-      sw.style.cssText = SWITCH;
-      for (const l of layouts) {
-        const b = document.createElement("button");
-        b.textContent = l.name;
-        b.style.cssText = l.toolId === "sketchy:list" ? SWBTN_ON : SWBTN;
-        b.onclick = () => {
-          if (l.toolId === "sketchy:list") return;
-          element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: handle.url, toolId: l.toolId }, bubbles: true, composed: true }));
-        };
-        sw.append(b);
-      }
-      root.append(sw);
-    }
-
     // surface the complement: what this list ISN'T showing
-    if (summary.has) {
-      const banner = document.createElement("div");
-      banner.style.cssText = BANNER;
-      banner.textContent = complementBanner(summary);
-      root.append(banner);
-    }
+    banner.style.display = summary.has ? "" : "none";
+    banner.textContent = summary.has ? complementBanner(summary) : "";
+    empty.style.display = docs.length ? "none" : "";
 
-    for (const link of docs) {
-      const row = document.createElement("label");
-      row.style.cssText = ROW;
-      row.dataset.automergeUrl = link.url; // a PORT: wire the whole doc from the list
-      row.dataset.automergePath = "[]";
-      const name = document.createElement("span"); name.style.cssText = NAME; name.textContent = link.name || link.url;
-      const type = document.createElement("span"); type.style.cssText = TYPE; type.textContent = link.type || "";
-      const tag = document.createElement("span"); tag.style.cssText = TAG; tag.textContent = positioned.has(link.url) ? "on canvas" : "";
-      const open = document.createElement("button"); open.style.cssText = OPEN; open.textContent = "open";
-      open.onclick = (e) => { e.preventDefault(); element.dispatchEvent(new CustomEvent("patchwork:open-document", { detail: { url: link.url }, bubbles: true, composed: true })); };
-      row.append(name, type, tag, open);
-      root.append(row);
-    }
-    if (!docs.length) {
-      const empty = document.createElement("div");
-      empty.style.cssText = "padding:8px;opacity:.5;";
-      empty.textContent = "empty folder";
-      root.append(empty);
-    }
+    // keyed reconcile: reuse, retitle, reorder; only add/remove what changed
+    const seen = new Set();
+    docs.forEach((link, i) => {
+      let row = rows.get(link.url);
+      if (!row) { row = makeRow(link); rows.set(link.url, row); }
+      row._name.textContent = link.name || link.url;
+      row._type.textContent = link.type || "";
+      row._tag.textContent = positioned.has(link.url) ? "on canvas" : "";
+      seen.add(link.url);
+      if (list.children[i] !== row) list.insertBefore(row, list.children[i] || null);
+    });
+    for (const [url, row] of rows) if (!seen.has(url)) { rows.delete(url); row.remove(); }
   }
 
-  // load the canvas complement doc (folder.newspace) so we can surface it
+  // load the canvas complement doc so we can surface it
   async function loadComplement() {
-    const url = handle.doc() && handle.doc().newspace;
+    const url = layoutDocUrl(handle.doc(), "canvas"); // @layouts.canvas / .sketch / .newspace
     if (url && repo && (!complementHandle || complementHandle.url !== url)) {
+      const ticket = ++complementLoad;
       try {
-        complementHandle = await repo.find(url);
+        const h = await repo.find(url);
+        if (disposed || ticket !== complementLoad) return; // unmounted / superseded while pending
+        if (complementHandle) complementHandle.off("change", render); // never leak the old listener
+        complementHandle = h;
         complementHandle.on("change", render);
       } catch (e) {
         console.warn("[list] complement load failed", e);
@@ -104,6 +105,7 @@ export function ListTool(handle, element) {
   loadComplement();
 
   return () => {
+    disposed = true;
     handle.off("change", onChange);
     if (complementHandle) complementHandle.off("change", render);
     root.remove();

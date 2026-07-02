@@ -29,3 +29,31 @@ describe("RLE — run-length encode/decode through an opstream", () => {
     expect(rleLength("abc")).toBe(3);
   });
 });
+
+describe("RLE is self-distinguishing — a genuine {rle, runs}-shaped VALUE survives", () => {
+  it("decode(encode(v)) round-trips a value that collides with the marker shape", () => {
+    const v = { rle: "a", runs: [[1, 2]] }; // a GENUINE value that merely looks encoded
+    const enc = rleEncode(v);
+    expect(enc).toEqual({ rle: "esc", value: v }); // escape-wrapped, not passed raw
+    expect(rleDecode(enc)).toEqual(v); // round-trips intact — decode∘encode = id
+  });
+  it("the escape wrapper itself round-trips (double collision)", () => {
+    const v = { rle: "esc", value: { x: 1 } };
+    expect(rleDecode(rleEncode(v))).toEqual(v);
+  });
+  it("a malformed rle-ish object without a runs ARRAY is never expanded", () => {
+    const v = { rle: "s" }; // no runs — decode must not fabricate ""
+    expect(rleDecode(v)).toEqual(v);
+    expect(rleDecode(rleEncode(v))).toEqual(v);
+  });
+});
+
+describe("RLE decode does not ALIAS repeated objects", () => {
+  it("a run of n equal objects decodes to n independent clones", () => {
+    const out = rleDecode(rleEncode([{ c: "red" }, { c: "red" }]));
+    expect(out).toEqual([{ c: "red" }, { c: "red" }]);
+    expect(out[0]).not.toBe(out[1]); // distinct references
+    out[0].c = "blue"; // mutating one…
+    expect(out[1].c).toBe("red"); // …leaves the other alone
+  });
+});

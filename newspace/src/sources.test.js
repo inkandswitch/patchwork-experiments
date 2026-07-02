@@ -95,6 +95,38 @@ describe("midiSource", () => {
     expect(stream.value).toMatchObject({ command: 9, data1: 60, data2: 100 });
     un();
   });
+
+  it("hot-plug: a device appearing via statechange gets subscribed too, and stop unhooks it all", async () => {
+    const mkInput = () => { const i = { handlers: {}, addEventListener: (t, h) => { i.handlers[t] = h; }, removeEventListener: vi.fn() }; return i; };
+    const a = mkInput();
+    const live = [a];
+    let stateHandler = null;
+    const access = {
+      inputs: { forEach: (fn) => live.forEach(fn) }, // live map: reflects hot-plugs
+      addEventListener: (t, h) => { if (t === "statechange") stateHandler = h; },
+      removeEventListener: vi.fn(),
+    };
+    const un = stub(navigator, "requestMIDIAccess", () => Promise.resolve(access));
+    const { stream, stop } = midiSource();
+    await Promise.resolve(); await Promise.resolve();
+    expect(typeof stateHandler).toBe("function"); // hot-plug listener registered
+    // plug a new device in AFTER the grant
+    const b = mkInput();
+    live.push(b);
+    stateHandler({ port: b });
+    expect(typeof b.handlers.midimessage).toBe("function"); // the new input is subscribed
+    b.handlers.midimessage({ data: [0x80, 61, 0], target: { name: "B" }, timeStamp: 2 });
+    expect(stream.value).toMatchObject({ command: 8, data1: 61 });
+    // a re-fired statechange must not double-subscribe (inputs are deduped) — count via a spy
+    const before = Object.keys(a.handlers).length;
+    stateHandler({ port: a });
+    expect(Object.keys(a.handlers).length).toBe(before);
+    stop();
+    expect(access.removeEventListener).toHaveBeenCalledWith("statechange", stateHandler);
+    expect(a.removeEventListener).toHaveBeenCalled();
+    expect(b.removeEventListener).toHaveBeenCalled();
+    un();
+  });
 });
 
 describe("makeSourceMount", () => {

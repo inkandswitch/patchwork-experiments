@@ -64,23 +64,32 @@ export async function startVoiceStream(handlers) {
   recorder.start();
   // the live stream consumes a CLONED track so it doesn't fight the recorder
   const track = mediaStream.getAudioTracks()[0].clone();
-  const session = await createTranscriptionStream({
-    track,
-    onStatus: handlers.onStatus,
-    onReady: handlers.onReady,
-    onInterim: handlers.onInterim,
-    onFinal: handlers.onFinal,
-    onError: (e) => console.warn("[voice] stream error", e),
-  });
+  const releaseMic = () => { try { track.stop(); } catch {} mediaStream.getTracks().forEach((t) => { try { t.stop(); } catch {} }); };
+  let session;
+  try {
+    session = await createTranscriptionStream({
+      track,
+      onStatus: handlers.onStatus,
+      onReady: handlers.onReady,
+      onInterim: handlers.onInterim,
+      onFinal: handlers.onFinal,
+      onError: (e) => console.warn("[voice] stream error", e),
+    });
+  } catch (e) {
+    // the mic is already live — a failed stream init must not leave it on
+    try { recorder.stop(); } catch {}
+    releaseMic();
+    throw e;
+  }
   return {
     stop: () => new Promise((resolve) => {
       try { session.close(); } catch {}
       try { track.stop(); } catch {}
       recorder.onstop = () => {
-        mediaStream.getTracks().forEach((t) => t.stop());
+        releaseMic();
         resolve(new Blob(chunks, { type: recorder.mimeType || "audio/webm" }));
       };
-      try { recorder.stop(); } catch { resolve(null); }
+      try { recorder.stop(); } catch { releaseMic(); resolve(null); } // tracks are released even if the recorder can't stop
     }),
   };
 }

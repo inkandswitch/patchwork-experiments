@@ -16,6 +16,41 @@
 import { subscribe, accept } from "@inkandswitch/patchwork-providers";
 import { Source, isSnapshot } from "./opstreams.js";
 
+// ── THE DRAW-CLAIM PROTOCOL ──────────────────────────────────────────────────
+// "Inner things should have shapes, but they should ask their parent if it wants to draw."
+// A spatial box (the map, a frame) can capture draw gestures itself — but when it's embedded
+// in a canvas that CLAIMS drawing, it must let those gestures through so the canvas draws
+// rough.js/perfect-freehand marks INTO the box's coordinate space (selectable, draggable out).
+//
+// MECHANISM (the least invasive one available): the claim rides the context OBJECT that
+// editor mounts already receive (`context: ctx.context` in editor-item.jsx) — a plain
+// `claims.draw` marker set by the claiming canvas via `claimDraws(context)`. No provide/
+// accept transport is needed: a box gets the claiming canvas's own context object directly,
+// and a NESTED canvas builds its OWN context (and claims for itself), which re-roots the
+// claim exactly as LITTLEBOOK4's fallback-to-own prescribes.
+export function claimDraws(context) { if (context) context.claims = { ...(context.claims || {}), draw: true }; }
+export const drawsClaimed = (context) => !!(context && context.claims && context.claims.draw);
+
+// Claims are PER-BRUSH-KIND: only draw/erase gestures are claimable. select/hand (and
+// wire/text/place) are NEVER claimed — the inner tool stays live for them (panning the
+// map, clicking inside an embed). This list matches the map's historical draw-vs-pan split.
+export const UNCLAIMABLE_TOOLS = ["select", "hand", "wire", "text", "place"];
+export const toolIsClaimable = (tool) => !!tool && !UNCLAIMABLE_TOOLS.includes(tool);
+
+// The claim decision, PURE — the one predicate both sides consult. It is load-bearing
+// beyond the map: it's how a box can be simultaneously drawable-over from outside
+// (annotation), enterable (content), and viewable standalone (fallback-to-own).
+//   • tool not claimable            → "none"        (select/hand/…: nobody intercepts)
+//   • entered (the box — or a surface inside it — is the ACTIVE surface: entering
+//     RE-ROOTS the claim; the entered surface is the top of its own chain) → "content"
+//   • an ancestor canvas claims     → "annotation"  (the outer canvas draws, parented onto the box)
+//   • standalone / nobody claims    → "own"         (the box's fallback captures its own draws)
+export function drawClaim({ tool, claimed, entered }) {
+  if (!toolIsClaimable(tool)) return "none";
+  if (entered) return "content";
+  return claimed ? "annotation" : "own";
+}
+
 export const CONTEXT_SELECTORS = {
   camera: "sketchy:camera",
   pointer: "sketchy:pointer",

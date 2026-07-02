@@ -4,7 +4,7 @@ import { createStore } from "solid-js/store";
 import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../surface-doc.js";
 import { useLayerTransform, itemLayer, defaultLayers, layerKind } from "../layers.js";
-import { chainToOuter, chainToLocal, chainScale, mapInstanceFor } from "../box-transform.js";
+import { chainToOuter, chainToLocal, chainScale, mapInstanceFor, onSpaceChanged } from "../box-transform.js";
 import { makePersisted } from "@solid-primitives/storage";
 import {
   getRegistry,
@@ -15,11 +15,15 @@ import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesyst
 import { NewspaceDatatype } from "../datatype.js";
 import { createHistory, snapshotItems, diffCommand } from "../history.js";
 import { createSketchyApi } from "../api.js";
-import { createCanvasContext } from "../context.js";
+import { createCanvasContext, claimDraws, drawClaim, toolIsClaimable } from "../context.js";
 import { opstreamToSignal, Source, automergeOpstream, numberSchema, anySchema, apply as applyOp } from "../opstreams.js";
 import { mountInspector } from "../inspector-editor.js";
-import { readPort, portWiring, makeEditorItem, editorsForStream, firstMatchingInlet, firstMatchingInletForOutlet, streamType, descriptorsFeeding, outletFeedsInlet, usedContextOutlets as computeUsedContextOutlets } from "../wire.js";
+import { readPort, portWiring, makeEditorItem, editorsForStream, firstMatchingInlet, firstMatchingInletForOutlet, streamType, descriptorsFeeding, outletFeedsInlet, usedContextOutlets as computeUsedContextOutlets, paramWireFor, rawValueInlets, formatShape, seedConfigFor } from "../wire.js";
 import { listEditors, nodeRole, inletDefsFor, outletDefsFor } from "../editors.js";
+import { listLayouts } from "../layouts.js";
+import { layoutSwitcher } from "../layout-switch.js";
+import { FlapDock } from "../flaps.jsx";
+import { PART_DRAG_TYPE, decodePartId } from "../parts-bin.js";
 import { resolveBrushHandlers, brushParamDefault, paramDefs } from "../brush-host.js";
 import { penHandlers } from "../pen-brush.js";
 import { shapeHandlers } from "../shape-brush.js";
@@ -27,18 +31,19 @@ import { textHandlers } from "../text-brush.js";
 import { eraserHandlers } from "../eraser-brush.js";
 import { wireHandlers } from "../wire-brush.js";
 import { placeHandlers } from "../place-brush.js";
-import { describeBinary, isError, binarySafeReplacer, paramsSchema, valuesEqual, isSnapshot } from "../ops.js";
+import { describeBinary, isError, binarySafeReplacer, paramsSchema, valuesEqual, isSnapshot, describeSchema } from "../ops.js";
 import { ShareSession, myContactUrl as sessionMyUrl } from "../share-session.js";
 import { listLensDescriptors } from "../lenses.js";
 import { viewRect, fitRect, centerCam, zoomAt, contentBounds } from "./camera.js";
 import { Item } from "./items/item.jsx";
 import { PresenceLayer } from "./ui/presence.jsx"; // Minimap is now a bare tool (minimap-node.js)
-import { Handles, Toolbar, Properties } from "./ui/chrome.jsx";
+import { Handles, Toolbar, Properties, PortNub, STAMPS, STAMP_IDS, sampleSvgPath } from "./ui/chrome.jsx";
 import {
   freehandPath, shapePaths, roughLinkPath, roughLink, roughChevron, seedFromId, strokeWorldPoints,
 } from "../draw.js";
 import {
   rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame, itemBox,
+  ownsSpace, projectItemFromBox, annotateItemIntoBox, surfaceWithinBox,
   itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc, arrowGeometry, worldAnchor,
   linkItemId, duplicateItemIds,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
@@ -145,6 +150,15 @@ export function Canvas(props) {
     fallbacks: { camera: { x: 0, y: 0, z: 1 }, pointer: { x: 0, y: 0 }, tool: opts.defaultTool || "select", brush: {}, selection: [] },
   });
   onCleanup(() => context.destroy());
+  // THE DRAW CLAIM (context.js): this canvas claims draw/erase gestures over embedded
+  // spatial boxes — a map checks `drawsClaimed(context)` (mounts receive this very context
+  // object) and, when claimed, does NOT capture draws; they land here and become items
+  // parented into the box's space. Entering a box re-roots the claim (see drawTarget).
+  claimDraws(context);
+  // spatial boxes' projections move (a map pans/zooms): box-transform notifies, this signal
+  // makes it reactive — parented items re-project on render (the one Solid seam for it).
+  const [spaceEpoch, setSpaceEpoch] = createSignal(0);
+  onCleanup(onSpaceChanged(() => setSpaceEpoch((n) => n + 1)));
   // a `board` source: the live root items, so a node can see what's on the canvas (the LLM
   // magnifying glass reads what its bounds cover). A plain Source kept fresh by an effect
   // below — NOT provide/accept (it's local read-only state, not inherited chrome).
@@ -291,6 +305,49 @@ export function Canvas(props) {
   // frames are CANVAS-layer containers; from a non-base layer the coords are a different
   // space, so never route an item into a frame (it'd mismatch screen coords vs world bounds).
   const frameAtWorld = (wx, wy, exclude) => { if (activeLayerId() !== baseLayer()?.id) return null; let f = null; for (const it of rootItems()) if (it.kind === "frame" && it.id !== exclude && pointInFrame(it, wx, wy)) f = it; return f; };
+  // the TOPMOST root item at (wx,wy) that owns a coordinate space (a frame OR a map) — the
+  // draw-claim boundary. Rotation-aware containment via worldAnchor; base layer only, like frames.
+  const spatialBoxAtWorld = (wx, wy, exclude) => {
+    if (activeLayerId() !== baseLayer()?.id) return null;
+    let hit = null;
+    for (const it of rootItems()) {
+      if (!ownsSpace(it) || it.id === exclude) continue;
+      const a = worldAnchor(it, wx, wy);
+      if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) hit = it;
+    }
+    return hit;
+  };
+  // a parented mark's spatial box (null if the parent is gone or not a space-owner)
+  const parentBoxOf = (it) => {
+    if (!it || !it.parent) return null;
+    const p = rootItems().find((x) => x.id === it.parent);
+    return p && ownsSpace(p) ? p : null;
+  };
+  // an item as the selection/gesture machinery should see it: parented marks project to
+  // WORLD through their box (reactive to the box's projection moving — map pan/zoom)
+  const projected = (it) => {
+    const pb = it && parentBoxOf(it);
+    if (!pb) return it;
+    spaceEpoch(); // re-derive when the box's projection moves
+    return projectItemFromBox(it, pb);
+  };
+  // WHERE a draw gesture starting at world (wx,wy) lands — the ANNOTATION vs CONTENT
+  // convention, decided by the pure drawClaim predicate (context.js):
+  //   • drawn from OUTSIDE an un-entered box → { targetBox }: the mark goes in THIS surface's
+  //     items array with `parent: boxId` + box-local coords — an annotation ON the box (it
+  //     travels with the outer canvas, and is NOT part of the inner document).
+  //   • drawn while the box (or a surface inside it) is ENTERED (the active surface) → the
+  //     inner surface owns the gesture: { targetFrame }, content OF the document — exactly
+  //     the push-into-frame path that entering already used.
+  function drawTarget(wx, wy) {
+    const box = spatialBoxAtWorld(wx, wy);
+    if (!box) return {};
+    const entered = activeId() !== "root" && surfaceWithinBox(box, activeId(), (url) => surfaceReg.get(url)?.doc?.items);
+    const route = drawClaim({ tool: tool(), claimed: true, entered });
+    if (route === "content") return { targetFrame: box.kind === "frame" ? box : null };
+    if (route === "annotation") return { targetBox: box };
+    return {};
+  }
   // topmost root item an arrow endpoint can bind to (not strokes/lines/arrows)
   const bindAtWorld = (wx, wy) => {
     const items = rootItems();
@@ -323,12 +380,16 @@ export function Canvas(props) {
     }
     else { const w = item.w || 0, h = item.h || 0; const [lcx, lcy] = worldToLocal(frame, item.x + w / 2, item.y + h / 2); item.x = lcx - w / 2; item.y = lcy - h / 2; item.rotation = (item.rotation || 0) - (frame.rotation || 0); }
   }
-  // push a freshly-made item into whichever frame it's inside (else root)
+  // push a freshly-made item into whichever frame it's inside (else root). `opts.box` is the
+  // ANNOTATION route (draw-claim): the item stays in the ROOT surface's items array, parented
+  // onto the spatial box with box-local coords (lat/lng for a map) — see annotateItemIntoBox.
   async function pushItem(targetFrame, item, opts = {}) {
     let dstHandle = rootLayoutH(), dstFrame = null;
-    if (targetFrame) { const s = await loadSpace(targetFrame.url); if (s) { dstHandle = s.layoutHandle; dstFrame = targetFrame; } }
+    const annotate = opts.box && (item.kind === "stroke" || item.kind === "shape");
+    if (annotate) annotateItemIntoBox(item, opts.box);
+    else if (targetFrame) { const s = await loadSpace(targetFrame.url); if (s) { dstHandle = s.layoutHandle; dstFrame = targetFrame; } }
     if (!dstHandle) return;
-    convertToLocal(item, dstFrame);
+    if (!annotate) convertToLocal(item, dstFrame);
     const id = uid();
     // born on the active layer: its coords are already in that layer's space (toWorld
     // routed them there). The base layer is the untagged default, so don't store it.
@@ -406,6 +467,16 @@ export function Canvas(props) {
 
   // alt-drag duplicates the selection in place, then drags the copies. doc/frame
   // copies KEEP the same url (two shapes → one doc), so we add NO .docs link.
+  // snapshot the fields a move gesture rewrites. A PARENTED mark snapshots its box-local
+  // geometry (points for a stroke, corners for a shape): the move applies the world delta
+  // THROUGH the box transform (see onPointerMove), exact even in a warped geo space.
+  const moveOrig = (o) => {
+    if (parentBoxOf(o)) return o.kind === "stroke"
+      ? { parent: o.parent, points: (o.points || []).map((p) => p.slice()) }
+      : { parent: o.parent, x: o.x, y: o.y, w: o.w, h: o.h, cx: o.cx, cy: o.cy };
+    return o.kind === "stroke" ? { x: o.x || 0, y: o.y || 0 } : o.kind === "sketch" ? { nodes: o.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
+  };
+
   function startCopyMove(e, surface) {
     const ids = selected();
     if (!ids.length) return;
@@ -417,14 +488,18 @@ export function Canvas(props) {
       const o = surface.doc.items.find((x) => x.id === id);
       if (!o) continue;
       const c = cloneItem(o); c.id = uid();
+      if (o.parent && parentBoxOf(o)) c.parent = o.parent; // an in-surface copy keeps its annotation parent (cloneItem strips it for cross-doc moves)
       clones.push(c);
-      orig[c.id] = c.kind === "stroke" ? { points: c.points.map((p) => p.slice()) } : c.kind === "sketch" ? { nodes: c.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: c.x, y: c.y };
+      // same orig format as startMove: strokes are translate-only (origin bump)
+      orig[c.id] = moveOrig(c);
     }
     if (!clones.length) return;
+    // one txn spanning the clone insertion AND the drag, so ⌘Z removes the duplicate
+    const txn = beginTxn(surface.handle);
     surface.handle.change((d) => { for (const c of clones) d.items.push(c); });
     const newIds = clones.map((c) => c.id);
     setSelected(newIds);
-    gesture = { kind: "move", ids: newIds, start, orig, surface, fr };
+    gesture = { kind: "move", ids: newIds, start, orig, surface, fr, txn };
     beginGesture(e);
   }
 
@@ -436,7 +511,7 @@ export function Canvas(props) {
     const orig = {};
     for (const id of ids) {
       const o = surface.doc.items.find((x) => x.id === id);
-      if (o) orig[id] = o.kind === "stroke" ? { x: o.x || 0, y: o.y || 0 } : o.kind === "sketch" ? { nodes: o.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
+      if (o) orig[id] = moveOrig(o);
     }
     gesture = { kind: "move", ids, start, orig, surface, fr, txn: beginTxn(surface.handle) };
     beginGesture(e);
@@ -515,10 +590,12 @@ export function Canvas(props) {
   function startResizeSel(hx, hy, e) {
     e.stopPropagation(); e.preventDefault();
     if (selected().length > 1) return startGroupResize(hx, hy, e);
-    const it = single();
-    if (!it) return;
+    const it0 = single();
+    if (!it0) return;
     const surface = active();
     const frame = surface.frame;
+    const pb = parentBoxOf(it0); // a parented mark resizes in WORLD, written back box-local (applyResize)
+    const it = projected(it0);
     // anchored widgets store a corner OFFSET; the gesture runs in absolute screen space, so
     // resolve the bounds first and convert back to an offset on write (applyResize).
     const rp = resolveItemPos(it);
@@ -538,20 +615,22 @@ export function Canvas(props) {
       if (hy !== 0) { miny = Math.min(ay, ply); maxy = Math.max(ay, ply); }
       const nw = Math.max(8, maxx - minx), nh = Math.max(8, maxy - miny);
       const [ncx, ncy] = rot((minx + maxx) / 2, (miny + maxy) / 2, r);
-      applyResize(surface.handle, it.id, ob, { x: cx0 + ncx - nw / 2, y: cy0 + ncy - nh / 2, w: nw, h: nh }, orig, it.kind);
+      applyResize(surface.handle, it.id, ob, { x: cx0 + ncx - nw / 2, y: cy0 + ncy - nh / 2, w: nw, h: nh }, orig, it.kind, pb);
     };
     const up = () => { endTxn(txn, "resize"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   }
 
-  function applyResize(h, id, ob, nb, orig, kind) {
+  function applyResize(h, id, ob, nb, orig, kind, pb) {
     const sx = ob.w > 0.001 ? nb.w / ob.w : 1, sy = ob.h > 0.001 ? nb.h / ob.h : 1;
     const mapX = (x) => nb.x + (x - ob.x) * sx, mapY = (y) => nb.y + (y - ob.y) * sy;
+    // a PARENTED mark's gesture ran on its world projection; write back box-local coords
+    const rebox = (o) => { if (pb) annotateItemIntoBox(o, pb); };
     h.change((d) => {
       const o = d.items.find((x) => x.id === id);
       if (!o) return;
-      if (kind === "stroke") { o.points = orig.map(([x, y, pr]) => [mapX(x), mapY(y), pr]); o.x = 0; o.y = 0; } // world result → flatten to origin 0
-      else if (kind === "shape") { const x1 = mapX(orig.x), y1 = mapY(orig.y), x2 = mapX(orig.x + orig.w), y2 = mapY(orig.y + orig.h); o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1; }
+      if (kind === "stroke") { o.points = orig.map(([x, y, pr]) => (pr == null ? [mapX(x), mapY(y)] : [mapX(x), mapY(y), pr])); o.x = 0; o.y = 0; rebox(o); } // world result → flatten to origin 0
+      else if (kind === "shape") { const x1 = mapX(orig.x), y1 = mapY(orig.y), x2 = mapX(orig.x + orig.w), y2 = mapY(orig.y + orig.h); o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1; rebox(o); }
       else if (kind === "text") { o.fontSize = Math.max(6, Math.round((orig.fontSize || 20) * (ob.h > 0.001 ? nb.h / ob.h : 1))); o.x = nb.x; o.y = nb.y; if (orig.wrap) o.w = nb.w; /* height re-measures from content */ }
       else {
         let nx = mapX(orig.x), ny = mapY(orig.y);
@@ -566,7 +645,7 @@ export function Canvas(props) {
     if (ids.length < 2) return null;
     const frame = active().frame;
     let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-    for (const id of ids) { const it = itemById(id); if (!it) continue; const b = itemBounds(it); const [wx, wy] = localToWorld(frame, b.x, b.y); minx = Math.min(minx, wx); miny = Math.min(miny, wy); maxx = Math.max(maxx, wx + b.w); maxy = Math.max(maxy, wy + b.h); }
+    for (const id of ids) { const it = projected(itemById(id)); if (!it) continue; const b = itemBounds(it); const [wx, wy] = localToWorld(frame, b.x, b.y); minx = Math.min(minx, wx); miny = Math.min(miny, wy); maxx = Math.max(maxx, wx + b.w); maxy = Math.max(maxy, wy + b.h); }
     return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
   });
 
@@ -577,7 +656,7 @@ export function Canvas(props) {
     if (ids.length < 2) return [];
     const frame = active().frame, fr = frame ? frame.rotation || 0 : 0;
     return ids.map((id) => {
-      const it = itemById(id); if (!it) return null;
+      const it = projected(itemById(id)); if (!it) return null;
       const b = itemBounds(it);
       const [wx, wy] = localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2);
       return { x: wx - b.w / 2, y: wy - b.h / 2, w: b.w, h: b.h, cx: wx, cy: wy, rot: (it.rotation || 0) + fr };
@@ -611,7 +690,7 @@ export function Canvas(props) {
     const ids = selected();
     const U = selWorldBounds();
     if (!U) return;
-    const snaps = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o) return null; return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, kind: o.kind, x: o.x, y: o.y, w: o.w, h: o.h }; }).filter(Boolean);
+    const snaps = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || parentBoxOf(o)) return null; /* parented marks sit out group transforms (their coords are box-local) */ return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, kind: o.kind, x: o.x, y: o.y, w: o.w, h: o.h }; }).filter(Boolean);
     const move = (ev) => {
       const p = toWorld(ev.clientX, ev.clientY);
       let nx = U.x, ny = U.y, nw = U.w, nh = U.h;
@@ -643,7 +722,7 @@ export function Canvas(props) {
     const U = selWorldBounds();
     if (!U) return;
     const [gcx, gcy] = worldToLocal(frame, U.x + U.w / 2, U.y + U.h / 2); // group centre (surface-local)
-    const snaps = selected().map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o) return null; return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, x: o.x, y: o.y, w: o.w, h: o.h, rotation: o.rotation || 0, cx: o.cx, cy: o.cy }; }).filter(Boolean);
+    const snaps = selected().map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || parentBoxOf(o)) return null; /* parented marks sit out group transforms */ return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, x: o.x, y: o.y, w: o.w, h: o.h, rotation: o.rotation || 0, cx: o.cx, cy: o.cy }; }).filter(Boolean);
     const s0 = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s0.y - gcy, s0.x - gcx);
     const move = (ev) => {
@@ -676,13 +755,16 @@ export function Canvas(props) {
   function startRotate(e) {
     if (selected().length > 1) return startGroupRotate(e);
     e.stopPropagation(); e.preventDefault();
-    const it = single();
+    const it = projected(single()); // parented: rotate about the WORLD-projected centre (rotation is a plain field either way)
     if (!it) return;
     const surface = active();
     const txn = beginTxn(surface.handle);
     const frame = surface.frame;
-    const b = itemBounds(it); const rp = resolveItemPos(it); // anchored ⇒ absolute centre
-    const cx = rp.x + b.w / 2, cy = rp.y + b.h / 2;
+    // like startResizeSel: rotate about the item BOUNDS centre (strokes/up-left shapes
+    // have bounds ≠ (x,y)); anchored ⇒ absolute centre
+    const rp = resolveItemPos(it);
+    const ob = it.anchor ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
+    const cx = ob.x + ob.w / 2, cy = ob.y + ob.h / 2;
     const s = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s.y - cy, s.x - cx);
     const r0 = it.rotation || 0;
@@ -706,10 +788,12 @@ export function Canvas(props) {
     const isArrow = it.type === "arrow";
     const surface = active();
     const frame = surface.frame;
+    const pb = parentBoxOf(it); // a parented segment's endpoints live in its box's space
     const move = (ev) => {
       const p = toWorld(ev.clientX, ev.clientY);
-      const [lx, ly] = worldToLocal(frame, p.x, p.y);
-      const targetId = (isArrow && which !== "control" && !frame) ? bindAtWorld(p.x, p.y) : null;
+      let [lx, ly] = worldToLocal(frame, p.x, p.y);
+      if (pb) { const l = chainToLocal([itemBox(pb)], { x: lx, y: ly }, boxEnv); lx = l.x; ly = l.y; }
+      const targetId = (isArrow && which !== "control" && !frame && !pb) ? bindAtWorld(p.x, p.y) : null;
       const target = targetId && rootItems().find((x) => x.id === targetId);
       const anchor = target ? worldAnchor(target, lx, ly) : null;
       setArrowHover(targetId);
@@ -803,8 +887,19 @@ export function Canvas(props) {
       // text-brush helpers: create point text / a wrapped box (both inline-edit on drop)
       createText: (x, y) => createTextAt({ x, y }),
       createTextBox: (x, y, w, h) => createTextBox(g.targetFrame, x, y, w, h),
-      // eraser-brush helper: remove the item under a pointer event (hit-test via the DOM)
-      eraseAt: (ev) => { if (!ev) return; const el = document.elementFromPoint(ev.clientX, ev.clientY); const itEl = el && el.closest && el.closest("[data-item-id]"); const id = itEl && itEl.getAttribute("data-item-id"); if (id) removeItems(null, [id]); },
+      // eraser-brush helper: remove the item under a pointer event (hit-test via the DOM).
+      // A sweep CLAIMED over a spatial box (g.targetBox) never erases the box itself —
+      // it stops there (no erasing THROUGH the box at items visually beneath it).
+      eraseAt: (ev) => {
+        if (!ev) return;
+        for (const el of document.elementsFromPoint(ev.clientX, ev.clientY)) {
+          const itEl = el.closest && el.closest("[data-item-id]");
+          const id = itEl && itEl.getAttribute("data-item-id");
+          if (!id) continue;
+          if (!(g.targetBox && id === g.targetBox.id)) removeItems(null, [id]);
+          return;
+        }
+      },
       // place-brush helper: materialise the drawn rect — a folder "Box", or the chosen
       // doc/editor/lens (`placing()`); a click (tiny rect) gets a sensible default size.
       placeAt: (d) => {
@@ -820,8 +915,9 @@ export function Canvas(props) {
       bindArrow: (d) => {
         const extra = {};
         // an arrow drawn at the root binds its ends to whatever shapes/docs they land on,
-        // so moving those shapes drags the arrow with them
-        if (d && d.type === "arrow" && !g.targetFrame) {
+        // so moving those shapes drags the arrow with them. (Not when it's headed into a
+        // box — content OR annotation coords wouldn't match the bound shapes' world space.)
+        if (d && d.type === "arrow" && !g.targetFrame && !g.targetBox) {
           const fromId = bindAtWorld(d.x, d.y);
           const toId = bindAtWorld(d.x + d.w, d.y + d.h);
           if (fromId) { const fi = rootItems().find((x) => x.id === fromId); extra.fromId = fromId; if (fi) extra.fromAnchor = worldAnchor(fi, d.x, d.y); }
@@ -831,7 +927,7 @@ export function Canvas(props) {
       },
       // mutate the surface the gesture started on (root for v1 behaviour brushes)
       change: (fn) => { const h = rootLayoutH(); if (h) h.change((d) => fn(d.items, d)); },
-      commit: (item) => { if (item) pushItem(g.targetFrame, item); },
+      commit: (item) => { if (item) pushItem(g.targetFrame, item, { box: g.targetBox }); },
     };
   }
   // the active surface's items as a REAL opstream (read + apply) — the "storeOpstream"
@@ -842,9 +938,13 @@ export function Canvas(props) {
   function layoutStream() {
     const h = rootLayoutH();
     if (!h) return null;
-    if (_layoutStreamH !== h) { _layoutStreamH = h; _layoutStream = automergeOpstream(h, { path: ["items"] }); }
+    if (_layoutStreamH !== h) {
+      if (_layoutStream) _layoutStream.disconnect(); // drop the old handle's "change" listener
+      _layoutStreamH = h; _layoutStream = automergeOpstream(h, { path: ["items"] });
+    }
     return _layoutStream;
   }
+  onCleanup(() => { if (_layoutStream) { _layoutStream.disconnect(); _layoutStream = null; _layoutStreamH = null; } });
   // the STABLE BrushHost handed to `use(host)` at gesture start — the live context Sources,
   // transforms, the layout opstream, and resolved params. (Per-phase work uses brushCtx.)
   const brushHost = {
@@ -924,7 +1024,10 @@ export function Canvas(props) {
       const named = rawName === "*" ? { name: "*" } : (rawName && defs.find((i) => i.name === rawName)); // "*" = the splat corner
       const inlet = named || (descriptor && firstMatchingInletForOutlet(defs, outletType, stream.value));
       if (item && inlet) {
-        transact(active().handle, "wire", () => active().handle.change((dd) => {
+        // the wiring graph is ROOT-only (the item was found in rootItems) — mutate the
+        // root layout doc, not whichever box surface happens to be active
+        const rh = rootLayoutH();
+        if (rh) transact(rh, "wire", () => rh.change((dd) => {
           const o = dd.items.find((x) => x.id === id);
           if (o) { if (!o.inlets) o.inlets = {}; o.inlets[inlet.name] = wiring; }
         }));
@@ -962,10 +1065,11 @@ export function Canvas(props) {
   // dragged a wire FROM an inlet: drop on an OUTPUT port → wire it in; drop on empty
   // canvas → place a raw-value source feeding the inlet (always available for any value).
   function dropFromInlet(inletPort, clientX, clientY) {
-    const setInlet = (wiring) => transact(active().handle, "wire", () => active().handle.change((dd) => {
+    // root-graph operation: the inlet's node lives in the root layout doc
+    const setInlet = (wiring) => { const rh = rootLayoutH(); if (rh) transact(rh, "wire", () => rh.change((dd) => {
       const o = dd.items.find((x) => x.id === inletPort.node);
       if (o) { if (!o.inlets) o.inlets = {}; o.inlets[inletPort.inlet] = wiring; }
-    }));
+    })); };
     const el = document.elementFromPoint(clientX, clientY);
     const target = el && readPort(el);
     if (target && target.kind !== "inlet") { setInlet(portWiring(target)); return; } // wire an existing output in
@@ -978,7 +1082,12 @@ export function Canvas(props) {
     const p = toWorld(clientX, clientY);
     const place = (descriptor) => {
       const id = "ed-" + uid();
-      pushItem(frameAtWorld(p.x, p.y), makeEditorItem({ id, editorId: descriptor.id, x: p.x, y: p.y, w: descriptor.lens ? 220 : 320, h: descriptor.lens ? 96 : 240, inlets: {} }));
+      // PREFILL FROM THE INLET'S SCHEMA: a template doc / raw value chosen here is
+      // seeded with schemaExample(inlet.schema) — it arrives already shaped like
+      // what the inlet wants (fields present, typed defaults, validating). No
+      // derivable example ⇒ seed is null ⇒ exactly the old behaviour.
+      const seed = seedConfigFor(descriptor, inletDef);
+      pushItem(frameAtWorld(p.x, p.y), makeEditorItem({ id, editorId: descriptor.id, x: p.x, y: p.y, w: descriptor.lens ? 220 : 320, h: descriptor.lens ? 96 : 240, inlets: {}, config: seed || undefined }));
       const outlet = (descriptor.outlets || []).find((o) => outletFeedsInlet(o, inletDef)) || (descriptor.outlets || [])[0];
       if (outlet) setInlet({ node: id, outlet: outlet.name });
     };
@@ -1010,6 +1119,55 @@ export function Canvas(props) {
     beginGesture(e);
   }
 
+  // build a draw/erase gesture for the CLAIMABLE tools (stroke brushes, shapes, eraser) —
+  // shared by the bubble path (onPointerDown) and the capture path (onDrawClaimCapture).
+  // `target` is drawTarget()'s routing: { targetFrame } = content, { targetBox } = annotation.
+  function drawGestureFor(t, p, target = {}) {
+    const start = { x: p.x, y: p.y };
+    if (t === "eraser") return { kind: "brush", handlers: eraserHandlers, ...target, start, state: {}, txn: null };
+    if (SHAPE_TOOLS.has(t)) return { kind: "brush", handlers: shapeHandlers, shapeType: t, ...target, start, state: {}, txn: null };
+    if (t === "pen" || isBrushTool(t)) {
+      // ALL stroke-y tools flow through the brush host: resolve the brush's handlers
+      // (use(host) → legacy behavior → the built-in pen fallback for passive stroke
+      // brushes). The pen is no longer special-cased — it's just the fallback brush.
+      const mod = brushMods.get(t);
+      const handlers = resolveBrushHandlers(mod, brushHost) || penHandlers;
+      const usesTxn = !!(mod && mod.behavior); // legacy behaviour brushes mutate via change → need a txn
+      return { kind: "brush", mod, handlers, brushId: t, ...target, start, state: {}, txn: usesTxn ? beginTxn(rootLayoutH()) : null };
+    }
+    return null;
+  }
+
+  // DRAW-CLAIM capture: an embedded spatial box whose BODY swallows bubbling pointerdowns
+  // (an editor box like the map — its .ns-doc-body stopPropagations to keep grabs out of
+  // the tool) would otherwise eat a claimed draw gesture. So claimed draws over such a box
+  // start HERE, in the capture phase — the same trick the map's own fallback capture used,
+  // now owned by the claiming canvas. Frames don't need this: their bodies bubble through
+  // to onPointerDown, which routes via the same drawTarget.
+  function onDrawClaimCapture(e) {
+    if (e.button !== 0 || gesture) return;
+    const t = tool();
+    if (!toolIsClaimable(t)) return; // select/hand/wire/text/place: never claimed
+    const path = (e.composedPath && e.composedPath()) || [e.target];
+    if (viewportRef && !path.includes(viewportRef)) return; // not this canvas
+    let boxIt = null;
+    for (const el of path) {
+      if (!el || el.nodeType !== 1 || !el.classList || !el.classList.contains("ns-doc-body")) continue;
+      const itEl = el.closest && el.closest("[data-item-id]");
+      const id = itEl && itEl.getAttribute("data-item-id");
+      const it = id && rootItems().find((x) => x.id === id);
+      if (it && it.kind !== "frame" && ownsSpace(it)) { boxIt = it; break; }
+    }
+    if (!boxIt) return;
+    if (drawClaim({ tool: t, claimed: true, entered: false }) !== "annotation") return; // (an editor box isn't enterable)
+    e.stopPropagation(); // claim it: the box's own draw fallback / Leaflet must not also act
+    const p = toWorld(e.clientX, e.clientY);
+    gesture = drawGestureFor(t, p, { targetBox: boxIt });
+    if (!gesture) return;
+    callBrush("down", gesture, e, p);
+    beginGesture(e);
+  }
+
   // ---- canvas-level gestures (root surface) ---------------------------
   function onPointerDown(e) {
     if (e.button === 1 || (e.button === 0 && tool() === "hand")) return startPan(e);
@@ -1035,21 +1193,11 @@ export function Canvas(props) {
       setActiveId("root");
       gesture = { kind: "marquee", x0: p.x, y0: p.y, add: selected() };
       setDraft({ kind: "marquee", x: p.x, y: p.y, w: 0, h: 0 });
-    } else if (t === "pen" || isBrushTool(t)) {
-      // ALL stroke-y tools flow through the brush host: resolve the brush's handlers
-      // (use(host) → legacy behavior → the built-in pen fallback for passive stroke
-      // brushes). The pen is no longer special-cased here — it's just the fallback brush.
-      const mod = brushMods.get(t);
-      const handlers = resolveBrushHandlers(mod, brushHost) || penHandlers;
-      const usesTxn = !!(mod && mod.behavior); // legacy behaviour brushes mutate via change → need a txn
-      gesture = { kind: "brush", mod, handlers, brushId: t, targetFrame: frameAtWorld(p.x, p.y), start: { x: p.x, y: p.y }, state: {}, txn: usesTxn ? beginTxn(rootLayoutH()) : null };
-      callBrush("down", gesture, e, p);
-      beginGesture(e);
-      return;
-    } else if (SHAPE_TOOLS.has(t)) {
-      // shapes draw through the brush host too (the ShapeBrush). `shapeType` tells the one
-      // brush which shape; no txn (its commit self-records, like the pen).
-      gesture = { kind: "brush", handlers: shapeHandlers, shapeType: t, targetFrame: frameAtWorld(p.x, p.y), start: { x: p.x, y: p.y }, state: {}, txn: null };
+    } else if (t === "pen" || isBrushTool(t) || SHAPE_TOOLS.has(t)) {
+      // stroke brushes + shapes flow through the brush host (drawGestureFor), routed by
+      // the draw-claim decision: content into an entered box, annotation onto an
+      // un-entered spatial box, plain root item otherwise.
+      gesture = drawGestureFor(t, p, drawTarget(p.x, p.y));
       callBrush("down", gesture, e, p);
       beginGesture(e);
       return;
@@ -1067,8 +1215,9 @@ export function Canvas(props) {
       beginGesture(e);
       return;
     } else if (t === "eraser") {
-      // drag-to-erase across empty canvas (clicking a single item still deletes via its grab)
-      gesture = { kind: "brush", handlers: eraserHandlers, start: { x: p.x, y: p.y }, state: {}, txn: null };
+      // drag-to-erase across empty canvas (clicking a single item still deletes via its
+      // grab). Routed like a draw: a targetBox scopes the sweep (the box itself survives).
+      gesture = drawGestureFor(t, p, drawTarget(p.x, p.y));
       callBrush("down", gesture, e, p);
       beginGesture(e);
       return;
@@ -1119,7 +1268,23 @@ export function Canvas(props) {
         for (const id of gesture.ids) {
           const o = d.items.find((x) => x.id === id); const og = gesture.orig[id];
           if (!o || !og) continue;
-          if (o.kind === "stroke") { o.x = (og.x || 0) + ldx; o.y = (og.y || 0) + ldy; } // translate-only box: bump ORIGIN, points untouched (one tiny op, not the whole array)
+          if (og.parent) {
+            // a PARENTED mark moves THROUGH its box's transform: newLocal = toLocal(toOuter(orig) + Δworld)
+            // — exact even in a warped (geo) space, recomputed from orig each event (no drift).
+            // Annotations live at root, so the raw world delta applies (no surface-frame rotation).
+            const pb = parentBoxOf(o);
+            if (!pb) continue;
+            const chain = [itemBox(pb)];
+            const shift = (x, y) => { const w0 = chainToOuter(chain, { x, y }, boxEnv); const l = chainToLocal(chain, { x: w0.x + dx, y: w0.y + dy }, boxEnv); return [l.x, l.y]; };
+            if (o.kind === "stroke") o.points = og.points.map(([x, y, pr]) => { const [nx, ny] = shift(x, y); return pr == null ? [nx, ny] : [nx, ny, pr]; });
+            else {
+              const [nx1, ny1] = shift(og.x, og.y);
+              const [nx2, ny2] = shift(og.x + (og.w || 0), og.y + (og.h || 0));
+              o.x = nx1; o.y = ny1; o.w = nx2 - nx1; o.h = ny2 - ny1;
+              if (og.cx != null) { const [ncx, ncy] = shift(og.cx, og.cy); o.cx = ncx; o.cy = ncy; }
+            }
+          }
+          else if (o.kind === "stroke") { o.x = (og.x || 0) + ldx; o.y = (og.y || 0) + ldy; } // translate-only box: bump ORIGIN, points untouched (one tiny op, not the whole array)
           else if (o.kind === "sketch") for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x + ldx; o.nodes[i].y = og.nodes[i].y + ldy; }
           else {
             // an anchored widget stores an offset from a viewport corner, so dragging toward
@@ -1162,6 +1327,7 @@ export function Canvas(props) {
         dropToExternal(e.clientX, e.clientY, links);
         g.surface.handle.change((dd) => { for (const id of g.ids) { const o = dd.items.find((x) => x.id === id); const og = g.orig[id]; if (!o || !og) continue; if (o.kind === "stroke") { o.x = og.x || 0; o.y = og.y || 0; } else if (o.kind === "sketch") { for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x; o.nodes[i].y = og.nodes[i].y; } } else { o.x = og.x; o.y = og.y; } } });
       } else if (dropOntoMap(e.clientX, e.clientY, g.surface, g.ids)) { /* dropped onto a map → geo pin(s) */ }
+      else if (g.ids.length === 1 && maybeRebox(g.surface, g.ids[0])) { /* annotation drag-out / drag-in (box-transform) */ }
       else if (selected().length === 1) maybeReparent(g.surface, selected()[0]);
       if (!links.length) endTxn(g.txn, "move"); // record the move for undo (in-surface moves; revert/drag-out are no-ops)
     }
@@ -1174,6 +1340,7 @@ export function Canvas(props) {
     // store a corner OFFSET, so resolve them to absolute coords the screen-space rect can hit.
     const onLayer = rootItems()
       .filter((it) => itemLayer(it) === activeLayerId())
+      .map((it) => projected(it)) // parented marks hit at their world projection
       .map((it) => (it.anchor ? { ...it, ...resolveItemPos(it), anchor: undefined } : it));
     const hit = itemsInRect(onLayer, x0, y0, x1, y1);
     setSelected(expandGroups([...new Set([...(add || []), ...hit])]));
@@ -1213,9 +1380,56 @@ export function Canvas(props) {
     removeItems(null, links.map((l) => l.id));
     return true;
   }
+  // ANNOTATION drag-OUT / drag-IN — the other half of the draw claim, the same code path
+  // through box-transform both ways:
+  //   • a mark parented onto a spatial box, dragged OFF it → local→world via
+  //     projectItemFromBox and `parent` cleared: it becomes a plain canvas mark (or
+  //     re-annotates onto the spatial box it landed on).
+  //   • a plain root stroke/shape dropped ONTO a map → world→lat/lng via
+  //     annotateItemIntoBox, parent set. (Dropping onto a FRAME keeps today's content
+  //     move — maybeReparent — a drag isn't a draw.)
+  // Returns true when it settled the drop (skip the frame reparent).
+  function maybeRebox(srcSurface, id) {
+    if (srcSurface.frame) return false; // annotations live at root
+    const it = srcSurface.doc.items.find((x) => x.id === id);
+    if (!it || (it.kind !== "stroke" && it.kind !== "shape")) return false;
+    const pb = parentBoxOf(it);
+    if (!pb && it.parent) return false; // parent gone — leave stored coords alone
+    if (!pb) {
+      // maybe drag-IN: centre landed on a non-enterable spatial box (a map)?
+      const b = itemBounds(it);
+      const over = spatialBoxAtWorld(b.x + b.w / 2, b.y + b.h / 2, id);
+      if (!over || over.kind === "frame") return false;
+      // plain change: the enclosing move txn (endTxn "move") records this for undo
+      srcSurface.handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) annotateItemIntoBox(o, over); });
+      return true;
+    }
+    const pit = projectItemFromBox(it, pb);
+    const b = itemBounds(pit);
+    const over = spatialBoxAtWorld(b.x + b.w / 2, b.y + b.h / 2, id);
+    if (over && over.id === pb.id) return true; // still on its box — settled
+    srcSurface.handle.change((d) => {
+      const o = d.items.find((x) => x.id === id);
+      if (!o) return;
+      // drag-OUT: write the projected WORLD geometry, clear parent
+      if (o.kind === "stroke") { o.points = pit.points.map((p) => p.slice()); o.x = 0; o.y = 0; }
+      else {
+        o.x = pit.x; o.y = pit.y; o.w = pit.w; o.h = pit.h;
+        if (pit.cx != null) { o.cx = pit.cx; o.cy = pit.cy; }
+        if (pit.rotation != null) o.rotation = pit.rotation;
+      }
+      delete o.parent;
+      // landed on ANOTHER map → adopt its space in the same write
+      if (over && over.kind !== "frame") annotateItemIntoBox(o, over);
+    });
+    // landed over a FRAME → the normal content reparent takes it from here
+    return !(over && over.kind === "frame");
+  }
+
   function moveDropTarget(srcSurface, id) {
     const it = srcSurface.doc.items.find((x) => x.id === id);
     if (!it) return null;
+    if (parentBoxOf(it)) return null; // a parented mark's drop routing is maybeRebox's
     const b = itemBounds(it);
     const [wx, wy] = localToWorld(srcSurface.frame, b.x + b.w / 2, b.y + b.h / 2);
     const tf = frameAtWorld(wx, wy, id);
@@ -1350,8 +1564,10 @@ export function Canvas(props) {
       .map((o) => { const l = surface.folderDoc?.docs.find((ll) => ll.url === o.url); return { url: o.url, name: l?.name || "", type: l?.type || (o.kind === "frame" ? "folder" : "") }; });
   }
 
-  // create a shape/face/brush dragged off the toolbar, centred on the drop point
-  const TOOL_DRAG = "text/x-newspace-tool";
+  // create a shape/face/brush dragged off the toolbar — or a PART dragged out of
+  // the parts bin (same DnD type, namespaced part ids; see parts-bin.js) —
+  // centred on the drop point
+  const TOOL_DRAG = PART_DRAG_TYPE;
   // drop a multi-stroke stamp (cat face, pencil, mitten, mouse) centred on `p`,
   // scaled up, as freehand pencil strokes
   function dropStamp(id, p) {
@@ -1372,6 +1588,15 @@ export function Canvas(props) {
     }
   }
   function dropToolAt(id, p) {
+    // a namespaced PART from the parts bin → land an instance at the drop point,
+    // through the SAME machinery the + menu / node palette use.
+    const part = decodePartId(id);
+    if (part.kind === "datatype") { createDocAt(part.id, p.x - 180, p.y - 140, 360, 280); return; }
+    if (part.kind === "window" || part.kind === "lens") {
+      const d = (part.kind === "lens" ? listLensDescriptors() : listEditors()).find((x) => x.id === part.id);
+      if (d) placeNode(d, p);
+      return;
+    }
     const tf = frameAtWorld(p.x, p.y);
     if (STAMP_IDS.has(id)) return dropStamp(id, p);
     if (!SHAPE_TOOLS.has(id)) { setTool(id); return; } // a brush etc — just arm it
@@ -1404,7 +1629,10 @@ export function Canvas(props) {
     e.preventDefault();
     // dropping a doc from the sidebar ONTO a surface → WIRE the doc into its inlet
     // (attach the dochandle to that tool), instead of embedding it as a doc item.
+    // Read the drag-data store SYNCHRONOUSLY — after any await it's in protected
+    // mode and returns empty (files + getData both).
     const dragged = parseDrop(e.dataTransfer);
+    const files = e.dataTransfer.files;
     const firstUrl = dragged[0] && dragged[0].url;
     if (firstUrl) {
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -1415,7 +1643,9 @@ export function Canvas(props) {
         // drop a doc ON an AUTOMERGE source node → adopt it as the source, then SHOW it
         // by ensuring a Tool is wired to its `doc` outlet (the dataflow made visible).
         if (item && item.editorId === "automerge") {
-          transact(active().handle, "wire", () => active().handle.change((dd) => {
+          // root-graph operation (the item came from rootItems) — mutate the root layout doc
+          const rh = rootLayoutH();
+          if (rh) transact(rh, "wire", () => rh.change((dd) => {
             const o = dd.items.find((x) => x.id === id);
             if (o) { if (!o.config) o.config = {}; o.config.url = firstUrl; }
           }));
@@ -1428,7 +1658,9 @@ export function Canvas(props) {
         const named = inletEl && inletEl.getAttribute("data-item-id") === id && (desc?.inlets || []).find((i) => i.name === inletEl.getAttribute("data-sketchy-inlet"));
         const inlet = named || (desc?.inlets || []).find((i) => i.name === "doc") || (desc?.inlets || [])[0];
         if (item && inlet) {
-          transact(active().handle, "wire", () => active().handle.change((dd) => {
+          // root-graph operation (the item came from rootItems) — mutate the root layout doc
+          const rh = rootLayoutH();
+          if (rh) transact(rh, "wire", () => rh.change((dd) => {
             const o = dd.items.find((x) => x.id === id);
             if (o) { if (!o.inlets) o.inlets = {}; o.inlets[inlet.name] = { url: firstUrl, path: [] }; }
           }));
@@ -1443,7 +1675,6 @@ export function Canvas(props) {
     if (tf) { const s = await loadSpace(tf.url); if (s) { layout = s.layoutHandle; folder = s.folderHandle; frame = tf; } }
     if (!layout) return;
     const at = (i) => { const [lx, ly] = worldToLocal(frame, p.x + i * 24, p.y + i * 24); return { x: lx, y: ly }; };
-    const files = e.dataTransfer.files;
     if (files && files.length) {
       let i = 0;
       for (const file of files) {
@@ -1458,7 +1689,7 @@ export function Canvas(props) {
       }
       return;
     }
-    const fresh = parseDrop(e.dataTransfer).filter((it) => !(layout.doc().items || []).some((x) => x.url === it.url));
+    const fresh = dragged.filter((it) => !(layout.doc().items || []).some((x) => x.url === it.url));
     layout.change((d) => {
       fresh.forEach((it, i) => {
         if (d.items.some((x) => x.url === it.url)) return;
@@ -1494,11 +1725,14 @@ export function Canvas(props) {
     // Escape always works (even while an embedded tool has focus): blur it,
     // drop selection, back to the pointer
     if (e.key === "Escape") { const a = document.activeElement; if (a && a.blur) a.blur(); if (enteredGroup()) { setEnteredGroup(null); return; } setSelected([]); setSelectedWire(null); setPlacing(null); setPlaceGhost(null); setTool("select"); return; }
-    // group / ungroup + undo / redo (work even with an embedded tool focused)
+    // group / ungroup (works even with an embedded tool focused)
     if ((e.metaKey || e.ctrlKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); if (e.shiftKey) ungroupSelected(); else groupSelected(); return; }
+    // undoing IN a text buffer / an embedded tool must NOT canvas-undo: everything below
+    // (⌘Z/⌘Y, Backspace/Delete, bare z, tool keys) declines when the keystroke is aimed at
+    // editable content or an embed's subtree — the inner editor owns its own history.
+    if (isTypingTarget(e.target)) return;
     if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); if (e.shiftKey) history.redo(); else history.undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) { e.preventDefault(); history.redo(); return; }
-    if (isTypingTarget(e.target)) return;
     if ((e.key === "Backspace" || e.key === "Delete") && selectedWire()) { e.preventDefault(); return deleteWire(selectedWire()); }
     if ((e.key === "Backspace" || e.key === "Delete") && selected().length) { e.preventDefault(); return deleteSelected(); }
     // bare z = undo, shift-z = redo; = / - zoom
@@ -1522,6 +1756,9 @@ export function Canvas(props) {
   // wire-tool port grab — document capture so embedded tools can't swallow it
   document.addEventListener("pointerdown", onPointerDownCapture, true);
   onCleanup(() => document.removeEventListener("pointerdown", onPointerDownCapture, true));
+  // claimed draws over body-swallowing spatial boxes (the map) start in the capture phase
+  document.addEventListener("pointerdown", onDrawClaimCapture, true);
+  onCleanup(() => document.removeEventListener("pointerdown", onDrawClaimCapture, true));
   // wire-from-embed: an embedded tool (e.g. the Form) owns its drag and announces it
   // via COMPOSED custom events that bubble out to us — robust across embed boundaries.
   const clientToLocal = (cx, cy) => { const r = viewportRef.getBoundingClientRect(); return { x: cx - r.left, y: cy - r.top }; };
@@ -1594,6 +1831,7 @@ export function Canvas(props) {
   const [myCursor, setMyCursor] = createSignal(null);
   let myContactUrl = null;
 
+  let selfOff = null, selfGone = false; // the contact-doc listener, removed on cleanup
   (async function loadSelf() {
     try {
       const acct = window.accountDocHandle?.doc();
@@ -1606,9 +1844,12 @@ export function Canvas(props) {
         setSelfP({ contactUrl: myContactUrl, name: c.type === "registered" ? c.name : "Anonymous", color: c.color || colorFor(myContactUrl), avatarUrl: (c.type === "registered" && c.avatarUrl) || null });
       };
       refresh();
+      if (selfGone) return; // unmounted while we were loading — don't attach
       ch.on("change", refresh);
+      selfOff = () => ch.off("change", refresh);
     } catch (e) { console.warn("[newspace] presence self", e); }
   })();
+  onCleanup(() => { selfGone = true; if (selfOff) { selfOff(); selfOff = null; } });
 
   function myViewRect() {
     const r = viewportRef?.getBoundingClientRect();
@@ -1646,7 +1887,7 @@ export function Canvas(props) {
 
   // bounds of everything (for the minimap), including peers' cursors + my view
   const worldBounds = createMemo(() =>
-    contentBounds(rootItems().map(itemBounds), [...peers().values()].map((p) => p.cursor), myViewRect())
+    contentBounds(rootItems().map((it) => itemBounds(projected(it))), [...peers().values()].map((p) => p.cursor), myViewRect())
   );
 
   // THE CANVAS AS A NODE — its full reactive state exposed as opstream OUTLETS, so a tool
@@ -1664,7 +1905,7 @@ export function Canvas(props) {
   createEffect(() => context.view.push(myViewRect()));
   // item bounds rects {x,y,w,h,box} — precomputed because itemBounds() (per-kind geometry)
   // lives here, not in a placed node. The map (D) uses `items` raw; the minimap uses these.
-  createEffect(() => context.rects.push(rootItems().map((it) => { const b = itemBounds(it); return { x: b.x, y: b.y, w: b.w, h: b.h, box: it.kind === "frame" }; })));
+  createEffect(() => context.rects.push(rootItems().map((it) => { const b = itemBounds(projected(it)); return { x: b.x, y: b.y, w: b.w, h: b.h, box: it.kind === "frame" }; })));
   // the named outlet bundle (id → { stream, type }) the layer-tool wiring enumerates.
   const canvasOutlets = () => ({
     camera: { stream: context.camera, type: "json" },
@@ -1696,7 +1937,7 @@ export function Canvas(props) {
   // The per-sketch layout is a real shared doc seeded from the tool's defaults (tier 3 is
   // the seed: an unset part resolves to the tool default until someone edits it). A NEW
   // patchwork:tool over the same component just ships different `opts` → different seed.
-  const CHROME_PARTS = ["toolbar", "properties", "presence"]; // minimap + zoom migrated to bare tools
+  const CHROME_PARTS = ["toolbar", "properties", "presence", "flaps"]; // minimap + zoom migrated to bare tools
   const chromePart = (part) => {
     const mine = topLayerDoc()?.chrome?.[part];          // tier 1 — per viewer
     if (mine === true || mine === false) return mine;
@@ -1718,6 +1959,14 @@ export function Canvas(props) {
     }
   };
   const [layoutMenu, setLayoutMenu] = createSignal(false);
+  // FLAP state — per-viewer (which edge each flap docks on + open/closed), in the
+  // top-layer user-state doc alongside brushCfg/chrome (the same mechanism).
+  const flapState = (id) => topLayerDoc()?.flaps?.[id] || null;
+  const setFlapState = (id, patch) => changeTop((d) => {
+    if (!d.flaps) d.flaps = {};
+    if (!d.flaps[id]) d.flaps[id] = {};
+    for (const k of Object.keys(patch || {})) if (patch[k] !== undefined) d.flaps[id][k] = patch[k];
+  });
   const addFloat = (source, x, y) => changeTop((d) => { if (!d.floats) d.floats = []; d.floats.push({ id: "fl-" + uid(), x, y, w: 220, h: 150, source }); });
   const removeFloat = (id) => changeTop((d) => { const i = (d.floats || []).findIndex((f) => f.id === id); if (i >= 0) d.floats.splice(i, 1); });
   const moveFloat = (id, x, y) => changeTop((d) => { const f = (d.floats || []).find((f) => f.id === id); if (f) { f.x = x; f.y = y; } });
@@ -1779,9 +2028,21 @@ export function Canvas(props) {
   // a line from each wired editor inlet back to its source port; drawn whether or
   // not the wire tool is active, until the wire (inlet) is deleted (click it).
   const CTX_NAMES = ["camera", "pointer", "tool", "brush", "selection"];
+  // INSPECT MODE — render the canvas's own context ports as inlets along the TOP EDGE
+  // (the provide/accept ports the canvas subscribes/owns, made visible + wireable).
+  const [inspect, setInspect] = createSignal(false);
   const worldToScreen = (wx, wy) => chainToOuter([layerBoxOf(activeLayerId())], { x: wx, y: wy }, boxEnv); // active-layer world → screen, via the composer (one path)
   function ctxPortPos(name) {
     if (!viewportRef) return null;
+    // inspect mode: a context wire anchors to its visible top-edge port (reading
+    // inspect() here keeps the per-wire geometry memo reactive to the toggle)
+    if (inspect()) {
+      const el = viewportRef.querySelector(`.ns-ctx-inlet[data-sketchy-port="${name}"]`);
+      if (el) {
+        const r = el.getBoundingClientRect(), vr = viewportRef.getBoundingClientRect();
+        return { x: r.left - vr.left + r.width / 2, y: r.top - vr.top + r.height };
+      }
+    }
     const i = CTX_NAMES.indexOf(name); if (i < 0) return null;
     const H = viewportRef.offsetHeight;
     const chipH = 24, gap = 5, n = CTX_NAMES.length, total = n * chipH + (n - 1) * gap;
@@ -1832,7 +2093,7 @@ export function Canvas(props) {
       s.apply = (op) => {
         if (!op) return;
         if (op.type === "snapshot") { if (op.value && typeof op.value === "object") setItemFields(id, op.value); return; }
-        if ((!op.path || op.path.length === 0) && op.range != null && !Array.isArray(op.range) && op.value !== undefined) setItemField(id, op.range, op.value);
+        if ((!op.path || op.path.length === 0) && op.range != null && !Array.isArray(op.range) && op.value !== undefined) setItemFields(id, { [op.range]: op.value }); // root-graph write (shape streams are root-only)
       };
       shapeStreams.set(id, s);
     }
@@ -1849,17 +2110,11 @@ export function Canvas(props) {
   });
 
   // Click a port (no drag) → a world-anchored popover describing it FULLY: name,
-  // direction, declared type, what its Standard Schema actually accepts (probed),
-  // and — for a live port — the current value's shape + a short preview. "json" alone
-  // wasn't enough; this shows the real story.
-  function schemaAccepts(schema) {
-    const std = schema && schema["~standard"];
-    if (!std) return null;
-    const samples = [["string", "x"], ["number", 1], ["boolean", true], ["object", { k: 1 }], ["array", [1]], ["null", null]];
-    const ok = samples.filter(([, v]) => { try { const r = std.validate(v); return !(r && r.issues); } catch { return false; } }).map(([n]) => n);
-    if (ok.length === samples.length) return "anything";
-    return ok.join(", ") || "(specific shape)";
-  }
+  // direction, declared type, what its Standard Schema actually accepts — the REAL
+  // field structure via describeSchema ("{ name: string, count?: number }", one
+  // field per line when big — formatShape), and — for a live port — the current
+  // value's shape + a short preview. "json" alone (or the old probed
+  // "(specific shape)") wasn't enough; this shows the real story.
   function valueShape(v) {
     if (v === undefined) return "—";
     if (v === null) return "null";
@@ -1886,7 +2141,11 @@ export function Canvas(props) {
     else if (port.kind === "automerge") { title = `doc field`; dir = "field"; lines.push(`path: .${(port.path || []).join(".")}`); }
     lines.unshift(`${dir}${def?.type ? " · type " + def.type : ""}`);
     if (def?.options) lines.push(`one of: ${def.options.join(" | ")}`);
-    if (def?.schema) { const a = schemaAccepts(def.schema); if (a) lines.push(`accepts: ${a}`); }
+    if (def?.schema) {
+      // the ACTUAL shape the schema accepts, one field per line when it's big
+      const [first, ...rest] = formatShape(describeSchema(def.schema));
+      if (first) lines.push(`accepts: ${first}`, ...rest);
+    }
     if (def?.required) lines.push("required");
     if (stream) { lines.push(`value: ${valueShape(stream.value)}`); if (typeof stream.apply === "function") lines.push("writable (bidi)"); }
     setPortInfo({ world: toWorld(clientX, clientY), title, lines });
@@ -2011,9 +2270,16 @@ export function Canvas(props) {
   // — these stay visible after the wire tool is deselected. (pure: wire.js)
   const usedContextOutlets = createMemo(() => computeUsedContextOutlets(rootItems(), floats()));
   function unwire(editorId, inlet) {
-    transact(active().handle, "unwire", () => active().handle.change((d) => {
+    // wire specs come from rootItems — the wiring graph lives in the root layout doc
+    const rh = rootLayoutH();
+    if (rh) transact(rh, "unwire", () => rh.change((d) => {
       const o = d.items.find((x) => x.id === editorId);
-      if (o && o.inlets) delete o.inlets[inlet];
+      // null (not delete): the EXPLICIT-DISCONNECT tombstone. A bare tool's inlet whose
+      // name matches a canvas outlet auto-wires whenever it has NO entry — deleting the
+      // key would let the minimap etc. silently rebind to the same ambient stream, so
+      // "remove the wire" would be a no-op. editor-item's inletBackingPlan honours the
+      // tombstone: a cut inlet reverts to its own buffer (no splat/auto fallback).
+      if (o && o.inlets && o.inlets[inlet] !== undefined) o.inlets[inlet] = null;
     }));
   }
   // delete a SELECTED wire (Backspace/Delete) — disconnects it / removes the float
@@ -2027,7 +2293,9 @@ export function Canvas(props) {
   function cycleWireDir(spec) {
     if (!spec || spec.floatId || !spec.bidi) return;
     const next = { both: "fwd", fwd: "back", back: "both" }[spec.dir || "both"];
-    transact(active().handle, "wire-dir", () => active().handle.change((d) => {
+    // wire specs come from rootItems — the wiring graph lives in the root layout doc
+    const rh = rootLayoutH();
+    if (rh) transact(rh, "wire-dir", () => rh.change((d) => {
       const o = d.items.find((x) => x.id === spec.editorId);
       if (!o || !o.inlets || !o.inlets[spec.inlet]) return;
       if (next === "both") delete o.inlets[spec.inlet].dir; else o.inlets[spec.inlet].dir = next;
@@ -2040,7 +2308,7 @@ export function Canvas(props) {
   function ensureToolWiredTo(srcId, srcItem) {
     const already = rootItems().some((x) => x.kind === "editor" && x.inlets && Object.values(x.inlets).some((w) => w && w.node === srcId && w.outlet === "doc"));
     if (already) return;
-    const lh = active().handle || rootLayoutH(); if (!lh) return;
+    const lh = rootLayoutH(); if (!lh) return; // root graph: srcItem + its coords are root's
     const x = (srcItem?.x || 0) + (srcItem?.w || 220) + 60, y = srcItem?.y || 0;
     const tid = "ed-" + uid();
     lh.change((d) => { if (!d.items) d.items = []; d.items.push(makeEditorItem({ id: tid, editorId: "patchwork-tool", x, y, w: 360, h: 280, inlets: { doc: { node: srcId, outlet: "doc" } } })); });
@@ -2099,8 +2367,11 @@ export function Canvas(props) {
     }
     setBrush(key, val);
   }
+  // setItemField/setItemConfig edit the SELECTED item (Properties panel) — the selection
+  // lives on the active surface, so `active()` is right there. setItemFields is only
+  // driven by the shape streams (root-only wiring graph), so it targets the ROOT doc.
   function setItemField(id, field, val) { transact(active().handle, "edit", () => active().handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) o[field] = val; })); }
-  function setItemFields(id, obj) { transact(active().handle, "param", () => active().handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) for (const k in obj) if (k !== "id" && k !== "kind") o[k] = obj[k]; })); }
+  function setItemFields(id, obj) { const rh = rootLayoutH(); if (!rh) return; transact(rh, "param", () => rh.change((d) => { const o = d.items.find((x) => x.id === id); if (o) for (const k in obj) if (k !== "id" && k !== "kind") o[k] = obj[k]; })); }
   // write a key into a NODE's persisted config (its params live here; a mounted node reacts
   // via onConfig). Same shape setConfig uses inside editor-item, but driven from the popup.
   function setItemConfig(id, key, val) { transact(active().handle, "param", () => active().handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) { if (!o.config) o.config = {}; o.config[key] = val; } })); }
@@ -2114,14 +2385,30 @@ export function Canvas(props) {
     const d = listEditors().find((e) => e.id === it.editorId) || listLensDescriptors().find((e) => e.id === it.editorId);
     return d ? { it, d } : null;
   });
+  // the SYNC-resolvable stream behind a wiring entry (url wires resolve async — the
+  // panel just disables those and shows the config value with the wire hint).
+  const wireStreamSync = (w) => {
+    if (!w) return null;
+    if (w.context) return context[w.context];
+    if (w.peer) return peerStream(w.peer, w.part);
+    if (w.node) return nodeStream(w.node, w.outlet);
+    return null;
+  };
   const paramTarget = createMemo(() => {
     const n = selectedNodeDesc();
     if (n) {
-      const defs = paramDefs(n.d); if (!defs.length) return null;
-      const key = (p) => p.key || p.name;
-      return { title: n.d.name, defs,
+      const defs = paramDefs(n.d);
+      // inlets wired to a RAW VALUE node — editable inline in the popup (through the
+      // raw node's stream), not just on the node itself.
+      const raws = rawValueInlets(n.it, inletDefsFor(n.d, n.it), rootItems());
+      if (!defs.length && !raws.length) return null;
+      return { title: n.d.name, defs, raws,
         get: (k) => { const c = n.it.config || {}; return k in c ? c[k] : brushParamDefault(n.d, k); },
-        set: (k, v) => setItemConfig(n.it.id, k, v) };
+        set: (k, v) => setItemConfig(n.it.id, k, v),
+        // param-inlet-wins-when-wired: the wiring entry for a param key (null/absent ⇒
+        // unwired) + the live stream behind any wiring, for the panel to display.
+        wire: (k) => paramWireFor(n.it, k),
+        stream: wireStreamSync };
     }
     const bid = activeBrushId();
     if (bid) { const m = brushMods.get(bid); const defs = paramDefs(m); if (defs.length) return { title: m?.name, defs, get: (k) => brushParam(bid, k), set: (k, v) => setBrushParam(bid, k, v) }; }
@@ -2141,29 +2428,37 @@ export function Canvas(props) {
   // show the popup for a style mode OR whenever there are params to show (node or brush)
   const showProps = createMemo(() => chromePart("properties") && (propMode() !== null || !!paramTarget()));
 
-  // CHROME HOST — the ONE object the chrome reads from, instead of ~15 drilled props. It's
-  // also what a wrapping tool's SLOT receives (opts.slots[part](host)), so a custom part is a
-  // drop-in replacement with full access to the canvas's state + actions. This is the
-  // "chrome reads the context" seam + the slot infrastructure in one.
+  // CHROME HOST — what every chrome part (and a wrapping tool's SLOT,
+  // opts.slots[part](host)) receives. STATE is read from `host.context` — the same
+  // camera/pointer/tool/brush/selection (+ peers/board/…) Sources the canvas itself
+  // runs on (LITTLEBOOK4 §3a: the component exposes state; it doesn't own chrome) —
+  // while the host adds only the narrow COMMAND/QUERY surface (setTool, doc
+  // mutations, the param target). No mirrored state accessors: chrome derives its
+  // signals from the context (opstreamToSignal), so a custom slot renderer reads
+  // exactly what the built-ins read.
   const chromeHost = {
+    context, // camera/pointer/tool/brush/selection (+ board/bounds/peers/view/rects) Sources
     // toolbar — `tools` is the per-sketch list from the LAYOUT DOC (editable as data),
     // falling back to the tool's opts. A getter so it stays reactive to the doc.
     minimal: opts.minimal,
     get tools() { return rootLayoutDoc()?.layout?.tools ?? opts.tools; },
-    tool, setTool, datatypes, brushes,
+    setTool, datatypes, brushes,
     addOpen, setAddOpen, shapeMenuOpen, setShapeMenuOpen, extraShape, setExtraShape,
     selectPlacing, editors: listEditors, lenses: listLensDescriptors,
     addById: addDocById, placeEditor: placeUnwiredEditor, placeLens: placeUnwiredLens,
     // properties
     mode: propMode, params: paramTarget, get: getProp, set: setProp, pos: propsPos, setPos: setPropsPos,
     single, setField: setItemField, linkFor, reorder,
-    hasSel: () => selected().length > 0, selCount: () => selected().length,
     hasGroup, group: groupSelected, ungroup: ungroupSelected,
     rect: () => { const it = single(); return it ? (it.kind === "shape" && it.type === "rectangle") : tool() === "rectangle"; },
     arrow: () => { const it = single(); return it ? (it.kind === "shape" && it.type === "arrow") : tool() === "arrow"; },
     fillable: () => { const it = single(); const t = it ? (it.kind === "shape" ? it.type : null) : tool(); return t === "rectangle" || t === "ellipse"; },
-    // shared canvas state (for richer custom slots)
-    cam, setCam, peers, selected, setSelected,
+    // presence (commands/queries; peer + camera STATE come from the context)
+    serviceUrl: automergeUrlToServiceWorkerUrl,
+    showViews, setShowViews, following,
+    follow: (id) => setFollowing((f) => (f === id ? null : id)),
+    // commands for richer custom slots (their state reads come from `context`)
+    setCam, setSelected,
   };
   // a chrome part's SLOT, if a wrapping tool supplied one (opts.slots[part]) — else null.
   const slot = (part) => (opts.slots && opts.slots[part]) || null;
@@ -2188,6 +2483,7 @@ export function Canvas(props) {
   const ctx = {
     shareSession,
     tool, interactive, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
+    spaceEpoch, // bumps when a spatial box's projection moves (map pan/zoom) → parented items re-project
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
     editingId, setEditingId, tombstoned: (url) => tombstones.has(url),
     deselect: () => setSelected([]),
@@ -2212,13 +2508,16 @@ export function Canvas(props) {
     if (!selectish()) return null;
     if (editingId()) return null; // while editing text, show only the caret — no box/handles
     const z = boxScale(active());
-    const it = single();
+    const it = projected(single()); // a parented mark's handles sit on its WORLD projection
     if (it) {
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) return null; // use endpoint handles
       if (it.kind === "sketch") return null; // sketches articulate via their nodes, not resize/rotate handles
-      const b = itemBounds(it); const frame = active().frame; const p = resolveItemPos(it);
-      const s = boxToScreen(active(), { x: p.x + b.w / 2, y: p.y + b.h / 2 }); // compose layer → frame → screen
-      const sw = b.w * z, sh = b.h * z;
+      const frame = active().frame;
+      // like startResizeSel: strokes/up-left shapes have bounds ≠ (x,y); anchored ⇒ absolute
+      const rp = resolveItemPos(it);
+      const ob = it.anchor ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
+      const s = boxToScreen(active(), { x: ob.x + ob.w / 2, y: ob.y + ob.h / 2 }); // compose layer → frame → screen
+      const sw = ob.w * z, sh = ob.h * z;
       return { x: s.x - sw / 2, y: s.y - sh / 2, w: sw, h: sh, rot: (it.rotation || 0) + (frame ? frame.rotation || 0 : 0), kind: it.kind };
     }
     const u = selWorldBounds();
@@ -2231,7 +2530,7 @@ export function Canvas(props) {
   // line's bezier control point)
   const segSel = createMemo(() => {
     if (!selectish() || editingId()) return null;
-    const it = single();
+    const it = projected(single()); // parented line/arrow: endpoint dots on the world projection
     if (!it || it.kind !== "shape" || (it.type !== "arrow" && it.type !== "line")) return null;
     const frame = active().frame;
     const g = (it.type === "arrow" && (it.fromId || it.toId)) ? arrowGeometry(it, active().doc?.items || []) : it;
@@ -2343,8 +2642,10 @@ export function Canvas(props) {
                         </circle>
                       );
                     }}</For>
-                    {/* click to SELECT (like any item); Backspace/Delete removes it */}
-                    <path d={`M0 0 C ${dx() / 2} 0 ${dx() / 2} ${dy()} ${dx()} ${dy()}`} fill="none" stroke="transparent" stroke-width="12" style={{ "pointer-events": "stroke", cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); setSelected([]); setSelectedWire(spec); }}><title>click to select · ⌫ to delete</title></path>
+                    {/* click to SELECT (like any item); Backspace/Delete removes it.
+                        stop the POINTERDOWN (never the click — Solid delegates clicks to
+                        document) so the canvas marquee doesn't also start/clear selection */}
+                    <path d={`M0 0 C ${dx() / 2} 0 ${dx() / 2} ${dy()} ${dx()} ${dy()}`} fill="none" stroke="transparent" stroke-width="12" style={{ "pointer-events": "stroke", cursor: "pointer" }} onPointerDown={(e) => e.stopPropagation()} onClick={() => { setSelected([]); setSelectedWire(spec); }}><title>click to select · ⌫ to delete</title></path>
                     <circle cx="0" cy="0" r="3.5" fill="currentColor" />
                     <circle cx={dx()} cy={dy()} r="3.5" fill="currentColor" />
                     {/* DEBUG: the actual op JSON, flashed on the wire as each op flows (` to toggle).
@@ -2370,7 +2671,8 @@ export function Canvas(props) {
                       const hot = () => spec.bidi && selectedWire()?.key === spec.key; // clickable to cycle
                       return (
                         <g transform={`translate(${dx() / 2} ${dy() / 2})`} style={{ cursor: hot() ? "pointer" : "default", "pointer-events": hot() ? "auto" : "none" }}
-                           onClick={(e) => { if (!hot()) return; e.stopPropagation(); cycleWireDir(spec); }}>
+                           onPointerDown={(e) => { if (hot()) e.stopPropagation(); }}
+                           onClick={() => { if (hot()) cycleWireDir(spec); }}>
                           <Show when={effDir() === "both"} fallback={
                             <g transform={`rotate(${effDir() === "back" ? ang() + 180 : ang()})`}>
                               <For each={roughChevron(seed)}>{(p) => <path d={p.d} fill="none" stroke="currentColor" stroke-width={p.strokeWidth} stroke-linecap="round" stroke-linejoin="round" />}</For>
@@ -2411,7 +2713,9 @@ export function Canvas(props) {
       {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on. */}
       <Show when={layersList().length > 1}>
         <div class="ns-layers" onPointerDown={(e) => e.stopPropagation()}>
-          <For each={layersList()}>
+          {/* tabs listed TOPMOST space first (reverse of doc order — array order stays z-order);
+              the base canvas is still the default active layer */}
+          <For each={layersList().toReversed()}>
             {(layer) => {
               const k = () => layerKind(layer.kind) || {};
               return <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind}>{layer.name || k().name || layer.id}</button>;
@@ -2420,12 +2724,27 @@ export function Canvas(props) {
         </div>
       </Show>
 
-      {/* the canvas's own context as OUTLET ports down the right edge. All show with
-          the wire tool; an in-use outlet STAYS visible after the tool is off (so its
-          live wire keeps an anchor). */}
       {/* the canvas-level context inputs (camera/pointer/tool/brush/selection) are no
           longer bottom chips — they're placeable source NODES (each with the 👤 own ⟷
           📡 mine toggle), added from the palette. */}
+
+      {/* INSPECT MODE (the 👁 in the layout tray) — the canvas's OWN context ports as
+          inlets along the top edge: the provide/accept wiring made visible. These are
+          REAL ports (data-sketchy-port → {kind:"context"}): with the wire tool a drag
+          wires one into a node inlet (or drops a floating inspector on empty canvas)
+          and a click shows the schema popover — the exact same paths as node ports.
+          Existing context wires re-anchor here while the ports are visible. */}
+      <Show when={inspect()}>
+        <div class="ns-ctx-inlets" onPointerDown={(e) => e.stopPropagation()}>
+          <For each={CTX_NAMES}>{(name) => (
+            <div class="ns-ctx-inlet" data-sketchy-port={name}
+                 title={`context ▸ ${name} — ${context[name] && context[name].owned && context[name].owned() ? "owned by this canvas" : "inherited from a provider"} · wire tool: drag to wire, click for schema`}>
+              <PortNub id="ctx" name={name} bidi={typeof context[name]?.apply === "function"} />
+              <span>{name}</span>
+            </div>
+          )}</For>
+        </div>
+      </Show>
 
       {/* user-state floating inspectors — local to this viewer, on the top layer (not
           the shared doc). Wired from a context/peer outlet. */}
@@ -2490,7 +2809,7 @@ export function Canvas(props) {
           presence/minimap/toolbar/properties/zoom each gate on opts.<part> !== false. */}
       <Show when={chromePart("presence")}>
         <Show when={slot("presence")} fallback={<>
-          <PresenceLayer peers={peers} cam={cam} showViews={showViews} serviceUrl={ctx.serviceUrl} following={following} onFollow={(id) => setFollowing((f) => (f === id ? null : id))} wiring={() => tool() === "wire"} />
+          <PresenceLayer host={chromeHost} />
           <button class="ns-views" classList={{ active: showViews() }} title="Overlay other people's views" onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowViews(!showViews())}>
             <svg viewBox="0 0 22 22" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 11s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" /><circle cx="11" cy="11" r="2.5" /></svg>
           </button>
@@ -2504,6 +2823,14 @@ export function Canvas(props) {
         {slot("toolbar") ? slot("toolbar")(chromeHost) : <Toolbar host={chromeHost} />}
       </Show>
 
+      {/* FLAPS — Squeak-style edge-docked tabs/drawers (flaps.jsx), a chrome part
+          like any other: gated, slottable, listed in the ⊞ layout tray. Definitions
+          come from the `sketchy:flap` registry (the parts bin is the flagship);
+          per-viewer dock/open state lives in the top-layer doc. */}
+      <Show when={chromePart("flaps")}>
+        {slot("flaps") ? slot("flaps")(chromeHost) : <FlapDock host={chromeHost} state={flapState} setState={setFlapState} viewport={() => viewportRef} />}
+      </Show>
+
       <Show when={showProps()}>
         {slot("properties") ? slot("properties")(chromeHost) : <Properties host={chromeHost} />}
       </Show>
@@ -2514,11 +2841,23 @@ export function Canvas(props) {
           sketch (persisted in your per-user top layer). Always available so you can get
           a hidden part back. */}
       <div class="ns-layout-cust" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
+        {/* INSPECT — toggle the top-edge context ports (see the strip above) */}
+        <button class="ns-layout-btn ns-inspect-btn" classList={{ active: inspect() }} title="Inspect — the canvas's context ports as top-edge inlets" onClick={() => setInspect((v) => !v)}>
+          <svg viewBox="0 0 22 22" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 11s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" /><circle cx="11" cy="11" r="2.5" /></svg>
+        </button>
         <button class="ns-layout-btn" classList={{ active: layoutMenu() }} title="Customize this layout" onClick={() => setLayoutMenu((v) => !v)}>
           <svg viewBox="0 0 22 22" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="6.5" height="6.5" rx="1" /><rect x="12.5" y="3" width="6.5" height="6.5" rx="1" /><rect x="3" y="12.5" width="6.5" height="6.5" rx="1" /><rect x="12.5" y="12.5" width="6.5" height="6.5" rx="1" /></svg>
         </button>
         <Show when={layoutMenu()}>
           <div class="ns-layout-panel">
+            {/* SWITCH LAYOUT — re-open this folder through another registered lens
+                (list / grid / dock), via the ONE shared switcher (layout-switch.js) the
+                other layouts' banners use. In the tray, not floating buttons. */}
+            {(() => {
+              const active = listLayouts().find((l) => l.id === "canvas");
+              const sw = layoutSwitcher(viewportRef || element, handle.url, active && active.toolId);
+              return sw ? <><div class="ns-menu-sep">layout</div><div class="ns-layout-sw">{sw}</div></> : null;
+            })()}
             <div class="ns-layout-scope">
               <button classList={{ active: chromeScope() === "sketch" }} onClick={() => setChromeScope("sketch")}>this sketch</button>
               <button classList={{ active: chromeScope() === "mine" }} onClick={() => setChromeScope("mine")}>just me</button>

@@ -37,14 +37,18 @@ export function pointerLockSource() {
     stream.push({ error: "Pointer Lock API unavailable" });
     return { stream, stop: () => {} };
   }
-  const onMove = (e) => stream.push(snapshotDelta(e));
+  // only emit while WE hold the lock — after Esc (or someone else's lock) ordinary
+  // mouse motion must not leak out as deltas
+  const locked = () => doc.pointerLockElement === body;
+  const onMove = (e) => { if (locked()) stream.push(snapshotDelta(e)); };
   try { body.requestPointerLock(); } catch (e) { stream.push({ error: e && e.message }); }
   (doc.addEventListener ? doc : body).addEventListener("mousemove", onMove);
   return {
     stream,
     stop: () => {
       (doc.removeEventListener ? doc : body).removeEventListener("mousemove", onMove);
-      if (typeof doc.exitPointerLock === "function") doc.exitPointerLock();
+      // only release OUR lock — never steal a lock another component holds
+      if (locked() && typeof doc.exitPointerLock === "function") doc.exitPointerLock();
     },
   };
 }

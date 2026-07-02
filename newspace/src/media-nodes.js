@@ -3,6 +3,7 @@
 // AnalyserNode) on the stream/complement; the JSON-shaped bits travel as values.
 import { Source } from "./opstreams.js";
 import { myContactUrl } from "./share-session.js";
+import { playSharedStream } from "./source-nodes.js";
 
 const isMediaStream = (v) => typeof MediaStream !== "undefined" && v instanceof MediaStream;
 
@@ -18,7 +19,7 @@ export function mountCamera({ element, inlets = {}, setOutlet, config = {}, setC
   const amOwner = () => shared() && owner && myUrl && owner === myUrl;
   const receiving = () => shared() && !amOwner(); // someone ELSE shares their camera here
 
-  let media = null, timer = null, off = null, shareStop = null, recvStop = null;
+  let media = null, timer = null, off = null, shareStop = null, recvStop = null, disposed = false;
   const root = document.createElement("div"); root.className = "ns-source ns-camera";
   const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
   const btn = document.createElement("button"); btn.className = "ns-source-enable"; btn.textContent = "Enable camera";
@@ -54,13 +55,21 @@ export function mountCamera({ element, inlets = {}, setOutlet, config = {}, setC
   const showStream = (s) => { video.srcObject = s; video.style.display = ""; videoOut.push(s); };
 
   const startOwner = async () => {
+    if (media || btn.disabled) return; // already live / a permission prompt is already pending
+    btn.disabled = true; // a double-click must not open two streams
     status.textContent = "starting…";
-    try { media = await navigator.mediaDevices.getUserMedia({ video: true }); }
-    catch (e) { status.textContent = (e && e.message) || "denied"; return; }
+    let ms;
+    try { ms = await navigator.mediaDevices.getUserMedia({ video: true }); }
+    catch (e) { btn.disabled = false; status.textContent = (e && e.message) || "denied"; return; }
+    btn.disabled = false;
+    // torn down (or switched to receiving, or raced by another start) while the prompt
+    // was pending → stop the tracks NOW, never leave the camera light on
+    if (disposed || media || receiving()) { ms.getTracks().forEach((t) => t.stop()); return; }
+    media = ms;
     showStream(media); status.textContent = amOwner() ? "📡 live (sharing)" : "live";
     let first = true;
     if (inlets.bang && inlets.bang.connect) off = inlets.bang.connect(() => { if (first) { first = false; return; } if (media) grabFrame(); });
-    const loop = () => { if (media && !(inlets.bang && inlets.bang.wired)) grabFrame(); timer = setTimeout(loop, 100); };
+    const loop = () => { if (disposed || !media) { timer = null; return; } if (!(inlets.bang && inlets.bang.wired)) grabFrame(); timer = setTimeout(loop, 100); };
     loop();
     if (amOwner() && mesh && media) { mesh.stream(media); shareStop = () => mesh.unshare(); } // share over the WebRTC mesh
   };
@@ -92,7 +101,7 @@ export function mountCamera({ element, inlets = {}, setOutlet, config = {}, setC
   if (onConfig) onConfig((c) => { const ns = c.share === "mine" ? "mine" : "own", no = c.owner || null; if (ns === share && no === owner) return; share = ns; owner = no; resolveOwnerName().then(renderShare); reconcile(); });
   resolveOwnerName().then(renderShare); renderShare(); reconcile();
 
-  return () => { stopLocal(); stopRecv(); root.remove(); };
+  return () => { disposed = true; stopLocal(); stopRecv(); root.remove(); };
 }
 
 // VIDEO display — plays a wired MediaStream (or an image/video url).
@@ -113,16 +122,54 @@ export function mountVideo({ element, inlets = {} }) {
 
 // AUDIO FILE — pick a music file, play it (Web Audio), and emit {time,duration,
 // playing,rms,peak} with an AnalyserNode in the complement (for a Scope). Audible.
-export function mountAudioFile({ element, setOutlet }) {
+// STREAM-SHAREABLE like the mic/camera: 👤 own (default — everyone plays their own
+// file) ⟷ 📡 mine (the OWNER's playback is captured as a MediaStream and sent over
+// the WebRTC mesh; receivers play it + get an analyser on the outlet complement,
+// via the same playSharedStream receiver the mic uses).
+export function mountAudioFile({ element, setOutlet, config = {}, setConfig, onConfig, share: mesh }) {
+  const myUrl = myContactUrl();
+  let share = config.share === "mine" ? "mine" : "own", owner = config.owner || null;
+  const shared = () => share === "mine";
+  const amOwner = () => shared() && owner && myUrl && owner === myUrl;
+  const receiving = () => shared() && !amOwner(); // someone ELSE shares their audio here
+
   const out = new Source(null, { complement: {} });
   setOutlet && setOutlet("audio", out);
   const root = document.createElement("div"); root.className = "ns-source ns-audiofile";
   const file = document.createElement("input"); file.type = "file"; file.accept = "audio/*"; file.className = "ns-text";
   const audio = document.createElement("audio"); audio.controls = true; audio.style.cssText = "width:100%;";
+  const bar = document.createElement("div"); bar.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
+  const shareL = document.createElement("label"); shareL.style.cssText = "font:11px ui-monospace,monospace;display:inline-flex;gap:5px;align-items:center;cursor:pointer;";
+  const shareCb = document.createElement("input"); shareCb.type = "checkbox"; const shareT = document.createElement("span"); shareL.append(shareCb, shareT);
+  const ownerTag = document.createElement("div"); ownerTag.style.cssText = "font:700 12px ui-monospace,monospace;";
+  bar.append(shareL, ownerTag);
   const status = document.createElement("div"); status.className = "ns-source-status";
-  root.append(file, audio, status); element.append(root);
+  root.append(file, audio, bar, status); element.append(root);
 
-  let ctx = null, analyser = null, raf = null, wired = false;
+  let ctx = null, analyser = null, raf = null, wired = false, shareStop = null, recvStop = null, playStop = null;
+
+  // OWNER capture: prefer a web-audio tap off the analyser once the graph exists
+  // (createMediaElementSource reroutes the element's output, so captureStream()
+  // can go silent after setup); before the graph, fall back to captureStream().
+  const captureShareStream = () => {
+    try {
+      if (ctx && analyser) { const dest = ctx.createMediaStreamDestination(); analyser.connect(dest); return dest.stream; }
+      const cap = audio.captureStream || audio.mozCaptureStream;
+      return cap ? cap.call(audio) : null;
+    } catch { return null; }
+  };
+  const stopShare = () => { if (shareStop) { shareStop(); shareStop = null; } };
+  const startShare = () => { if (shareStop || !mesh) return; const ms = captureShareStream(); if (ms) { mesh.stream(ms); shareStop = () => mesh.unshare(); } };
+  const stopRecv = () => { if (recvStop) { recvStop(); recvStop = null; } if (playStop) { playStop(); playStop = null; } };
+  const startRecv = () => {
+    status.textContent = "receiving shared audio…";
+    if (mesh) recvStop = mesh.onStream((s) => {
+      if (playStop) { playStop(); playStop = null; } // a re-shared stream replaces the previous receiver
+      playStop = playSharedStream(s, { root, out });
+      out.push({ shared: true }); status.textContent = "📡 (shared audio)";
+    });
+  };
+
   const setup = () => {
     if (wired) return; wired = true;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -131,6 +178,7 @@ export function mountAudioFile({ element, setOutlet }) {
     analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
     src.connect(analyser); analyser.connect(ctx.destination); // audible
     Object.assign(out.complement, { audioContext: ctx, analyser });
+    if (amOwner()) { stopShare(); startShare(); } // re-tap through the fresh graph
     const buf = new Float32Array(analyser.fftSize);
     const tick = () => {
       analyser.getFloatTimeDomainData(buf);
@@ -140,9 +188,28 @@ export function mountAudioFile({ element, setOutlet }) {
     };
     tick();
   };
-  file.onchange = () => { const f = file.files && file.files[0]; if (!f) return; audio.src = URL.createObjectURL(f); status.textContent = f.name; };
+
+  let ownerName = null;
+  const resolveOwnerName = async () => { if (!receiving() || !owner) { ownerName = null; return; } try { const h = window.repo && (await window.repo.find(owner)); ownerName = (h && h.doc().name) || "someone"; } catch { ownerName = "someone"; } };
+  const renderShare = () => {
+    if (receiving()) { shareL.style.display = "none"; ownerTag.style.display = ""; ownerTag.textContent = `📡 ${ownerName || "…"}’s audio`; file.style.display = "none"; audio.style.display = "none"; }
+    else { shareL.style.display = ""; ownerTag.style.display = "none"; shareCb.checked = shared(); shareT.textContent = shared() ? "📡 everyone hears yours" : "share to everyone"; file.style.display = ""; audio.style.display = ""; }
+  };
+  // NON-DESTRUCTIVE like the camera: toggling share only starts/stops the SHARING;
+  // local playback is only paused when switching INTO receive mode.
+  const reconcile = () => {
+    if (receiving()) { stopShare(); try { audio.pause(); } catch {} if (!recvStop) startRecv(); }
+    else { if (recvStop) stopRecv(); if (amOwner()) startShare(); else stopShare(); }
+    renderShare();
+  };
+  shareCb.onchange = () => { share = shareCb.checked ? "mine" : "own"; owner = shareCb.checked ? myUrl : null; if (setConfig) setConfig({ share, owner: owner || null }); resolveOwnerName().then(renderShare); reconcile(); };
+  if (onConfig) onConfig((c) => { const ns = c.share === "mine" ? "mine" : "own", no = c.owner || null; if (ns === share && no === owner) return; share = ns; owner = no; resolveOwnerName().then(renderShare); reconcile(); });
+
+  let objectUrl = null; // revoked on re-pick + disposal (blob URLs otherwise pin the file in memory)
+  file.onchange = () => { const f = file.files && file.files[0]; if (!f) return; if (objectUrl) { try { URL.revokeObjectURL(objectUrl); } catch {} } objectUrl = URL.createObjectURL(f); audio.src = objectUrl; status.textContent = f.name; };
   audio.onplay = () => { setup(); if (ctx && ctx.state === "suspended") ctx.resume(); };
-  return () => { if (raf) cancelAnimationFrame(raf); if (ctx) ctx.close().catch(() => {}); root.remove(); };
+  resolveOwnerName().then(renderShare); renderShare(); reconcile();
+  return () => { if (raf) cancelAnimationFrame(raf); if (ctx) ctx.close().catch(() => {}); stopShare(); stopRecv(); if (objectUrl) { try { URL.revokeObjectURL(objectUrl); } catch {} } root.remove(); };
 }
 
 // SPEAKER — plays a wired audio source through the speakers (connects its analyser to
@@ -173,12 +240,14 @@ export function mountImage({ element, inlets = {} }) {
   const canvas = document.createElement("canvas"); canvas.style.cssText = "width:100%;height:100%;object-fit:contain;display:block;background:#111;";
   element.append(canvas);
   const s = inlets.image || inlets.in;
+  let gen = 0; // generation token: an async url load only paints if still the LATEST draw
   const draw = () => {
     const v = s ? s.value : null;
+    const g = ++gen;
     const ctx = canvas.getContext("2d");
     if (typeof ImageData !== "undefined" && v instanceof ImageData) { canvas.width = v.width; canvas.height = v.height; ctx.putImageData(v, 0, 0); }
     else if (typeof ImageBitmap !== "undefined" && v instanceof ImageBitmap) { canvas.width = v.width; canvas.height = v.height; ctx.drawImage(v, 0, 0); }
-    else if (typeof v === "string" && v) { const img = new Image(); img.onload = () => { canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; canvas.getContext("2d").drawImage(img, 0, 0); }; img.src = v; }
+    else if (typeof v === "string" && v) { const img = new Image(); img.onload = () => { if (g !== gen) return; canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; canvas.getContext("2d").drawImage(img, 0, 0); }; img.src = v; }
   };
   const off = s && s.connect ? s.connect(draw) : null;
   draw();

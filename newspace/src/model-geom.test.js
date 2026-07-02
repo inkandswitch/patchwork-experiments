@@ -226,3 +226,121 @@ describe("portPoint — distribution", () => {
     expect(hi.y - lo.y).toBeCloseTo(10); // not capped at 20
   });
 });
+
+// ── draw delegation: annotation parenting in/out of a spatial box ─────────────
+import { ownsSpace, annotateItemIntoBox, projectItemFromBox, surfaceWithinBox } from "./model.js";
+import { bindMapInstance } from "./box-transform.js";
+
+// a fake Leaflet (no Leaflet in vitest): Mercator-ish px-per-degree with the Y INVERSION
+const fakeMap = (zoom = 13, center = { lat: 51.5, lng: -0.09 }, size = { w: 400, h: 300 }) => {
+  const scale = (256 * Math.pow(2, zoom)) / 360;
+  return {
+    latLngToContainerPoint: ([lat, lng]) => ({ x: size.w / 2 + (lng - center.lng) * scale, y: size.h / 2 - (lat - center.lat) * scale }),
+    containerPointToLatLng: ([x, y]) => ({ lng: center.lng + (x - size.w / 2) / scale, lat: center.lat - (y - size.h / 2) / scale }),
+  };
+};
+const mapBox = { id: "geo1", kind: "editor", editorId: "map", x: 100, y: 50, w: 400, h: 300 };
+
+describe("ownsSpace — which items are draw-claim boundaries", () => {
+  it("frames and maps own a space; strokes/shapes/docs/other editors don't", () => {
+    expect(ownsSpace({ kind: "frame" })).toBe(true);
+    expect(ownsSpace({ kind: "editor", editorId: "map" })).toBe(true);
+    expect(ownsSpace({ kind: "editor", editorId: "minimap" })).toBe(false);
+    expect(ownsSpace({ kind: "stroke" })).toBe(false);
+    expect(ownsSpace({ kind: "doc" })).toBe(false);
+    expect(ownsSpace(null)).toBe(false);
+  });
+});
+
+describe("annotateItemIntoBox — a mark drawn over a spatial box gets parent + LOCAL coords", () => {
+  it("a stroke over a MAP stores geo points ({x:lng, y:lat} slots), parent set, origin 0", () => {
+    bindMapInstance("geo1", fakeMap(13));
+    const item = { kind: "stroke", points: [[300, 200, 0.5], [340, 260, 0.7]], x: 0, y: 0, color: "line", size: 4 };
+    annotateItemIntoBox(item, mapBox);
+    expect(item.parent).toBe("geo1");
+    expect(item.x).toBe(0); expect(item.y).toBe(0);
+    // convention: point[0] = lng (x slot), point[1] = lat (y slot); pressure travels
+    const [lng, lat, pr] = item.points[0];
+    expect(pr).toBe(0.5);
+    expect(Math.abs(lng)).toBeLessThan(180); expect(Math.abs(lat)).toBeLessThan(90);
+    // the second point is LOWER on screen → SMALLER latitude (y-inversion honoured)
+    expect(item.points[1][1]).toBeLessThan(lat);
+    bindMapInstance("geo1", null);
+  });
+  it("a shape over a MAP converts both corners (h goes negative: lat shrinks downward)", () => {
+    bindMapInstance("geo1", fakeMap(5));
+    const item = { kind: "shape", type: "rectangle", x: 250, y: 120, w: 80, h: 60, color: "line" };
+    annotateItemIntoBox(item, mapBox);
+    expect(item.parent).toBe("geo1");
+    expect(item.w).toBeGreaterThan(0);  // lng grows rightward
+    expect(item.h).toBeLessThan(0);     // lat shrinks downward
+    bindMapInstance("geo1", null);
+  });
+  it("a shape over a rotated FRAME converts its centre and folds the frame's turn into rotation", () => {
+    const frame = { id: "f1", kind: "frame", url: "automerge:f1", x: 40, y: 40, w: 200, h: 150, rotation: 30 };
+    const item = { kind: "shape", type: "rectangle", x: 100, y: 80, w: 60, h: 40, rotation: 10 };
+    annotateItemIntoBox(item, frame);
+    expect(item.parent).toBe("f1");
+    expect(item.rotation).toBe(-20); // 10 - 30
+    expect(item.w).toBe(60); expect(item.h).toBe(40); // a turning box keeps w/h
+  });
+});
+
+describe("projectItemFromBox — render/drag-OUT projection is the exact inverse", () => {
+  it("stroke round-trips world → geo → world at several zooms (the drag-out conversion)", () => {
+    const world = [[300, 200, 0.5], [340, 260, 0.7], [123.25, 77.5, 1]];
+    for (const zoom of [1, 5, 13]) {
+      bindMapInstance("geo1", fakeMap(zoom));
+      const item = { kind: "stroke", points: world.map((p) => p.slice()), x: 0, y: 0 };
+      annotateItemIntoBox(item, mapBox);
+      const back = projectItemFromBox(item, mapBox);
+      expect(back.parent).toBe("geo1"); // projection is a COPY; parent clears on the real drag-out write
+      back.points.forEach((p, i) => {
+        expect(p[0]).toBeCloseTo(world[i][0], 6);
+        expect(p[1]).toBeCloseTo(world[i][1], 6);
+        expect(p[2]).toBe(world[i][2]);
+      });
+    }
+    bindMapInstance("geo1", null);
+  });
+  it("shape round-trips through a map, and through a rotated frame (rotation restored)", () => {
+    bindMapInstance("geo1", fakeMap(9));
+    const shape = { kind: "shape", type: "ellipse", x: 180, y: 90, w: 120, h: 90, rotation: 0 };
+    const geo = annotateItemIntoBox({ ...shape }, mapBox);
+    const back = projectItemFromBox(geo, mapBox);
+    expect(back.x).toBeCloseTo(shape.x, 6); expect(back.y).toBeCloseTo(shape.y, 6);
+    expect(back.w).toBeCloseTo(shape.w, 6); expect(back.h).toBeCloseTo(shape.h, 6);
+    bindMapInstance("geo1", null);
+    const frame = { id: "f2", kind: "frame", x: 10, y: 20, w: 300, h: 200, rotation: 45 };
+    const inFrame = annotateItemIntoBox({ ...shape, rotation: 5 }, frame);
+    const out = projectItemFromBox(inFrame, frame);
+    expect(out.rotation).toBeCloseTo(5, 9);
+    expect(out.x).toBeCloseTo(shape.x, 6); expect(out.y).toBeCloseTo(shape.y, 6);
+  });
+  it("without a live map binding the reproject kind is identity — projection never throws", () => {
+    const item = { kind: "stroke", points: [[1, 2, 0.5]], x: 0, y: 0, parent: "geoGone" };
+    const back = projectItemFromBox(item, { ...mapBox, id: "geoGone" });
+    expect(back.points[0][0]).toBeCloseTo(101); // origin-only (identity own-transform)
+    expect(back.points[0][1]).toBeCloseTo(52);
+  });
+});
+
+describe("surfaceWithinBox — entering re-roots the claim over the whole subtree", () => {
+  const itemsOf = (url) => ({
+    "automerge:A": [{ kind: "frame", url: "automerge:B" }, { kind: "doc", url: "automerge:D" }],
+    "automerge:B": [{ kind: "frame", url: "automerge:C" }],
+  })[url] || null;
+  const A = { kind: "frame", url: "automerge:A" };
+  it("matches the box itself, and surfaces nested inside it", () => {
+    expect(surfaceWithinBox(A, "automerge:A", itemsOf)).toBe(true);
+    expect(surfaceWithinBox(A, "automerge:B", itemsOf)).toBe(true);  // one level in
+    expect(surfaceWithinBox(A, "automerge:C", itemsOf)).toBe(true);  // two levels in
+    expect(surfaceWithinBox(A, "automerge:elsewhere", itemsOf)).toBe(false);
+    expect(surfaceWithinBox(A, "root", itemsOf)).toBe(false);
+  });
+  it("non-frame boxes (a map) never contain surfaces; missing loaders are safe", () => {
+    expect(surfaceWithinBox({ kind: "editor", editorId: "map", id: "m" }, "anything", itemsOf)).toBe(false);
+    expect(surfaceWithinBox(A, "automerge:B", null)).toBe(false);
+    expect(surfaceWithinBox(null, "x", itemsOf)).toBe(false);
+  });
+});

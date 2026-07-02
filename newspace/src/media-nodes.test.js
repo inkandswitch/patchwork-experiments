@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { pixelsToRGBA } from "./media-nodes.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { pixelsToRGBA, mountAudioFile } from "./media-nodes.js";
 
 describe("pixelsToRGBA — normalise a raw pixel buffer to RGBA", () => {
   it("null/undefined → null", () => {
@@ -49,5 +49,101 @@ describe("pixelsToRGBA — normalise a raw pixel buffer to RGBA", () => {
   it("non-array junk → null", () => {
     expect(pixelsToRGBA({ nope: 1 })).toBe(null);
     expect(pixelsToRGBA(42)).toBe(null);
+  });
+});
+
+describe("mountAudioFile — own/mine stream sharing", () => {
+  beforeEach(() => { window.accountDocHandle = { doc: () => ({ contactUrl: "me" }) }; });
+  afterEach(() => { delete window.accountDocHandle; });
+
+  // a fake per-item ShareSession mesh (the `share` prop the mount receives)
+  const fakeMesh = () => ({
+    streams: [], onStreamCb: null, unshared: 0,
+    stream(s) { this.streams.push(s); },
+    unshare() { this.unshared++; },
+    onStream(cb) { this.onStreamCb = cb; return () => { this.onStreamCb = null; }; },
+  });
+
+  it("own (default): local UI shown, checkbox unchecked, nothing shared", () => {
+    const element = document.createElement("div");
+    const mesh = fakeMesh();
+    const cleanup = mountAudioFile({ element, setOutlet() {}, share: mesh });
+    expect(element.querySelector('input[type="file"]').style.display).toBe("");
+    expect(element.querySelector('input[type="checkbox"]').checked).toBe(false);
+    expect(mesh.streams).toEqual([]);
+    expect(mesh.onStreamCb).toBe(null); // never receiving in own mode
+    cleanup();
+  });
+
+  it("toggling share persists {share:'mine', owner:me} and captures the element's stream; untoggling unshares", () => {
+    const element = document.createElement("div");
+    const mesh = fakeMesh();
+    const cfgs = [];
+    const cleanup = mountAudioFile({ element, setOutlet() {}, setConfig: (p) => cfgs.push(p), share: mesh });
+    const fake = { fake: "stream" };
+    element.querySelector("audio").captureStream = () => fake; // pre-graph captureStream fallback
+    const cb = element.querySelector('input[type="checkbox"]');
+    cb.checked = true; cb.onchange();
+    expect(cfgs.at(-1)).toEqual({ share: "mine", owner: "me" }); // the toggle state persists
+    expect(mesh.streams).toEqual([fake]);                        // owner shares the captured stream
+    cb.checked = false; cb.onchange();
+    expect(cfgs.at(-1)).toEqual({ share: "own", owner: null });
+    expect(mesh.unshared).toBe(1);
+    cleanup();
+  });
+
+  it("receiver (someone else owns): hides local UI, subscribes, plays the shared stream + pushes {shared:true}", () => {
+    const element = document.createElement("div");
+    const mesh = fakeMesh();
+    let out;
+    const cleanup = mountAudioFile({ element, setOutlet: (_n, s) => (out = s), config: { share: "mine", owner: "someone-else" }, share: mesh });
+    expect(element.querySelector('input[type="file"]').style.display).toBe("none"); // receivers pick no file
+    expect(typeof mesh.onStreamCb).toBe("function"); // subscribed to the owner's stream
+    expect(mesh.streams).toEqual([]);                // a receiver never shares
+    const before = element.querySelectorAll("audio").length;
+    mesh.onStreamCb({ id: "remote" });
+    expect(out.value).toEqual({ shared: true });
+    expect(element.querySelectorAll("audio").length).toBe(before + 1); // playSharedStream's element
+    cleanup();
+  });
+
+  it("onConfig flips the node live between own and receiving (and unsubscribes on the way back)", () => {
+    const element = document.createElement("div");
+    const mesh = fakeMesh();
+    let onCfg;
+    const cleanup = mountAudioFile({ element, setOutlet() {}, config: {}, onConfig: (cb) => (onCfg = cb), share: mesh });
+    const file = element.querySelector('input[type="file"]');
+    expect(file.style.display).toBe("");
+    onCfg({ share: "mine", owner: "someone-else" }); // another viewer flips it to "mine"
+    expect(file.style.display).toBe("none");
+    expect(typeof mesh.onStreamCb).toBe("function");
+    onCfg({ share: "own", owner: null });            // …and back
+    expect(file.style.display).toBe("");
+    expect(mesh.onStreamCb).toBe(null);              // receiver unsubscribed
+    cleanup();
+  });
+});
+
+describe("mountAudioFile — object URL lifecycle", () => {
+  it("revokes the previous object URL on re-pick, and the last one on disposal", () => {
+    const revoked = [];
+    const spyCreate = vi.spyOn(URL, "createObjectURL").mockImplementation((f) => `blob:${f.name}`);
+    const spyRevoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation((u) => revoked.push(u));
+    try {
+      const element = document.createElement("div");
+      const cleanup = mountAudioFile({ element, setOutlet() {} });
+      const input = element.querySelector('input[type="file"]');
+      Object.defineProperty(input, "files", { configurable: true, value: [{ name: "a.mp3" }] });
+      input.onchange();
+      expect(revoked).toEqual([]); // nothing to revoke yet
+      Object.defineProperty(input, "files", { configurable: true, value: [{ name: "b.mp3" }] });
+      input.onchange();
+      expect(revoked).toEqual(["blob:a.mp3"]); // the previous pick's URL is released
+      cleanup();
+      expect(revoked).toEqual(["blob:a.mp3", "blob:b.mp3"]); // and the current one on disposal
+    } finally {
+      spyCreate.mockRestore();
+      spyRevoke.mockRestore();
+    }
   });
 });

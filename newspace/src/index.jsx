@@ -21,14 +21,21 @@ import { plugin as delayPlugin } from "./delay-node.js";
 import { plugin as clampPlugin } from "./clamp-node.js";
 import { plugin as roundPlugin } from "./round-node.js";
 import { plugin as jsonPrettyLens } from "./json-pretty-lens.js";
+import { mapPrettyLens, mapNumberToStringLens } from "./lenses.js";
 import { plugin as throttlePlugin } from "./throttle-node.js";
 import { plugin as pointerLockPlugin } from "./pointerlock-source.js";
 import { plugin as magnifierPlugin } from "./llm-magnifier.js";
 import { plugin as minimapPlugin } from "./minimap-node.js";
+import { geoMarksSchema, pixelMarksSchema } from "./map-schemas.js";
 import { plugin as zoomPlugin } from "./zoom-node.js";
 import { plugin as canvasSourcePlugin } from "./canvas-source-node.js";
 // map: metadata static, code (+ bundled Leaflet) lazy-loaded only when a map is placed
-const mapPlugin = { type: "sketchy:window", id: "map", name: "Map", icon: "Map", inlets: [], outlets: [], async load() { return (await import("./map-node.js")).mountMap; } };
+// map: metadata static (schemas from the cheap map-schemas.js), code (+ bundled
+// Leaflet) lazy-loaded only when a map is placed
+const mapPlugin = { type: "sketchy:window", id: "map", name: "Map", icon: "Map", inlets: [], outlets: [
+  { name: "shapes", type: "json", schema: geoMarksSchema() },  // BIDI: the map's own marks, lat/lng (identity over storage)
+  { name: "pixels", type: "json", schema: pixelMarksSchema() }, // BIDI: same marks in container px at the CURRENT view (re-emits on pan/zoom)
+], async load() { return (await import("./map-node.js")).mountMap; } };
 import { plugin as shareTrayPlugin } from "./share-tray.js";
 import { markerPlugin } from "./marker-brush.js";
 import { inkPenPlugin } from "./ink-pen-brush.js";
@@ -481,6 +488,23 @@ export const plugins = [
     outlets: [{ name: "out", type: "json", schema: anySchema() }],
     async load() { return (await import("./js-node.js")).mountJs; },
   },
+  // sandbox — a box that IS an iframe boundary: JS from the `code` inlet runs in a
+  // sandboxed iframe (allow-scripts only, never the host realm) with `input` (a live
+  // mirror of `in`, op-rebased over a MessagePort), `output(v)` → `out`, and the in
+  // stream's complement across the boundary (capabilities as async stubs, drops listed).
+  // New code tears the iframe down and boots a fresh realm.
+  {
+    type: "sketchy:window",
+    id: "sandbox",
+    name: "Sandbox",
+    icon: "Shield",
+    inlets: [
+      { name: "code", type: "text", schema: stringSchema() }, // JS source — each new value reboots the iframe
+      { name: "in", type: "json", schema: anySchema() },      // mirrored into the iframe as `input`
+    ],
+    outlets: [{ name: "out", type: "json", schema: anySchema() }],
+    async load() { return (await import("./sandbox-box.js")).mountSandbox; },
+  },
   // json-set — the WRITE counterpart: wire a value + a target doc, give a path, and
   // it writes the value into that field. A sink (no outlet). The target must be
   // editable (its opstream has `apply`).
@@ -629,6 +653,24 @@ export const plugins = [
     unlisted: true, supportedDatatypes: ["folder", "newspace", "sketch"],
     async load() { return (await import("./grid-tool.jsx")).GridTool; },
   },
+  // DOCK layout — recursive split panes over the same folder docs; pane tree persists in
+  // @layouts.dock. The `sketchy:layout` id must stay "dock" to match ensureLayoutDoc's key.
+  {
+    type: "sketchy:layout", id: "dock", name: "Dock", icon: "LayoutPanelLeft",
+    toolId: "sketchy:dock", supportedDatatypes: ["folder", "newspace", "sketch"],
+    async load() { return { toolId: "sketchy:dock" }; },
+  },
+  {
+    type: "patchwork:tool", id: "sketchy:dock", name: "Dock", icon: "LayoutPanelLeft",
+    unlisted: true, supportedDatatypes: ["folder", "newspace", "sketch"],
+    async load() { return (await import("./dock-tool.js")).DockTool; },
+  },
+  // the PARTS BIN — a Squeak-style flap: the whole placeable registry census as
+  // draggable tiles (drag out to instantiate, click to arm the place brush)
+  {
+    type: "sketchy:flap", id: "parts", name: "Parts", icon: "Shapes", edge: "bottom",
+    async load() { return (await import("./parts-bin.js")).mountPartsBin; },
+  },
   // a LIST layout for a folder — same docs as the canvas, different lens; surfaces
   // the canvas complement ("what you're not seeing"). See LAYOUTS.md.
   {
@@ -713,6 +755,8 @@ export const plugins = [
   clampPlugin,
   roundPlugin,
   jsonPrettyLens,
+  mapPrettyLens, // map-over-list: pretty-JSON per element
+  mapNumberToStringLens, // map-over-list: numbers ⇄ strings per element
   throttlePlugin,
   pointerLockPlugin,
   magnifierPlugin, // LLM magnifying glass — describes what's under it on the board

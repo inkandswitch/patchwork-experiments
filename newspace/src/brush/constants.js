@@ -138,21 +138,71 @@ export const ctxMmSeedItem = () => canvasCtxItem("ns-ctx-mm", "bottom-left", 16,
 export const ctxZoomSeedItem = () => canvasCtxItem("ns-ctx-zoom", "bottom-right", 16, 54); // above the zoom
 export const defaultOverlayItems = () => [ctxMmSeedItem(), minimapSeedItem(), ctxZoomSeedItem(), zoomSeedItem()];
 
-// a "space" doc (a folder/sketch) references its canvas layout doc via `.sketch` (was
-// `.newspace` — still read for back-compat + migrated forward). ensureLayout makes/loads
-// that layout doc, seeding DEFAULT_LAYOUT and migrating any older top-level `items`.
-export async function ensureLayout(repo, folderHandle) {
+// ── MULTIPLE complement docs (LAYOUTS.md "still needed" #1) ─────────────────────
+// A "space" doc (a folder/sketch) references ONE complement doc PER LAYOUT under the
+// `@layouts` map: `{ "@layouts": { canvas: url, dock: url, … } }` — the key is the
+// `sketchy:layout` descriptor id, so a registered layout finds its complement by its
+// own id. Each complement is created LAZILY on first open through that lens.
+//
+// Migration story (all ADDITIVE — nothing is ever deleted, no map-key deletion):
+// the legacy single-field reference (`.sketch`, formerly `.newspace`) IS the canvas
+// entry. It's mirrored into `@layouts.canvas`, and `.sketch` KEEPS being written so
+// old clients — which converge on `.sketch` (canvas.jsx reacts to it) — still work.
+// For `canvas` the legacy field also WINS on read when present, because old clients
+// only ever update `.sketch`; new clients follow it and re-mirror.
+
+// resolve a layout's complement url from a folder doc (a pure read, no writes)
+export function layoutDocUrl(folderDoc, key = "canvas") {
+  const legacy = key === "canvas" ? folderDoc && (folderDoc.sketch || folderDoc.newspace) : undefined;
+  const mapped = folderDoc && folderDoc["@layouts"] && folderDoc["@layouts"][key];
+  return legacy || mapped || undefined;
+}
+
+// make/load the complement doc for `key`. The canvas complement keeps the full
+// sketch-layout seed (DEFAULT_LAYOUT, overlay chrome, legacy top-level `items`
+// migration); other layouts get the same doc SHAPE minimally ({items:[]}) and add
+// their own arrays (e.g. the dock's `panes`) on first open.
+export async function ensureLayoutDoc(repo, folderHandle, key = "canvas") {
   folderHandle.change((d) => { if (!d.docs) d.docs = []; });
-  let url = folderHandle.doc().sketch || folderHandle.doc().newspace;
+  const canvas = key === "canvas";
+  let url = layoutDocUrl(folderHandle.doc(), key);
   if (!url) {
-    const old = folderHandle.doc().items;
+    const old = canvas ? folderHandle.doc().items : null;
     const seed = Array.isArray(old) ? old.map(clonePlain) : [];
-    const layout = await repo.create2({ "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT } });
-    folderHandle.change((d) => { d.sketch = layout.url; if (Array.isArray(d.items)) d.items.splice(0); });
+    const layout = await repo.create2(
+      canvas
+        ? { "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT } }
+        : { "@patchwork": { type: "sketch-layout" }, items: [] },
+    );
+    folderHandle.change((d) => {
+      if (!d["@layouts"]) d["@layouts"] = {};
+      d["@layouts"][key] = layout.url;
+      if (canvas) { d.sketch = layout.url; if (Array.isArray(d.items)) d.items.splice(0); } // back-compat: old clients read .sketch
+    });
     return layout;
   }
-  if (!folderHandle.doc().sketch) folderHandle.change((d) => { d.sketch = url; }); // migrate .newspace → .sketch
+  // mirror the reference forward (guarded — no write when already in place)
+  const cur = folderHandle.doc();
+  if (!cur["@layouts"] || cur["@layouts"][key] !== url || (canvas && cur.sketch !== url)) {
+    folderHandle.change((d) => {
+      if (!d["@layouts"]) d["@layouts"] = {};
+      if (d["@layouts"][key] !== url) d["@layouts"][key] = url;
+      if (canvas && d.sketch !== url) d.sketch = url; // keep the legacy field written
+    });
+  }
   const lh = await repo.find(url);
+  if (canvas) upgradeCanvasLayoutDoc(lh);
+  return lh;
+}
+
+// the canvas path, exactly as before — every existing caller keeps working
+export function ensureLayout(repo, folderHandle) {
+  return ensureLayoutDoc(repo, folderHandle, "canvas");
+}
+
+// the canvas complement's seed/upgrade pass (unchanged behavior, incl. the
+// tombstone-aware inlet upgrade: `null` = an explicit unwire, never re-seeded)
+function upgradeCanvasLayoutDoc(lh) {
   lh.change((d) => {
     if (!d.items) d.items = [];
     if (!d.layout) d.layout = { ...DEFAULT_LAYOUT };
@@ -168,15 +218,15 @@ export async function ensureLayout(repo, folderHandle) {
     const mm = d.items.find((it) => it.id === "ns-minimap");
     if (mm) {
       if (!mm.anchor) Object.assign(mm, { anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136 });
-      if (!mm.inlets || !mm.inlets.rects || !mm.inlets.rects.node) mm.inlets = { ...MINIMAP_INLETS };
+      // null = an explicit unwire (tombstone) — only upgrade genuinely-missing/old-format wiring
+      if (!mm.inlets || (mm.inlets.rects !== null && !mm.inlets.rects?.node)) mm.inlets = { ...MINIMAP_INLETS };
     }
     const zm = d.items.find((it) => it.id === "ns-zoom");
     if (zm) {
       if (!zm.anchor) Object.assign(zm, { anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28 });
-      if (!zm.inlets || !zm.inlets.camera || !zm.inlets.camera.node) zm.inlets = { ...ZOOM_INLETS };
+      if (!zm.inlets || (zm.inlets.camera !== null && !zm.inlets.camera?.node)) zm.inlets = { ...ZOOM_INLETS };
     }
   });
-  return lh;
 }
 
 // stable fallback colour from a contact url
@@ -186,10 +236,13 @@ export function colorFor(s) {
   return `oklch(0.62 0.19 ${Math.abs(h) % 360})`;
 }
 
+// is this keystroke aimed at editable content or an embedded tool's subtree (which owns
+// its own keys — incl. its own undo history), rather than the canvas itself?
 export function isTypingTarget(t) {
   const el = t || document.activeElement;
   if (!el) return false;
   if (el.isContentEditable) return true;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
+  if (el.closest && el.closest("patchwork-view")) return true; // an embedded patchwork tool, wherever it's hosted
   return !!(el.closest && el.closest(".ns-doc-body:not(.ns-frame-body)"));
 }

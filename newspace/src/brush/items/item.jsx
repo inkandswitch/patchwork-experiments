@@ -5,7 +5,7 @@ import { createSignal, createMemo, createEffect, createResource, onCleanup, Show
 import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../../surface-doc.js";
 import { getType } from "@inkandswitch/patchwork-filesystem";
-import { isBoxType, rad, rot, itemBounds, arrowGeometry } from "../../model.js";
+import { isBoxType, rad, rot, itemBounds, arrowGeometry, linksNeedingItems, linkItemId, duplicateItemIds, ownsSpace, projectItemFromBox } from "../../model.js";
 import { roughRectPath, seedFromId, freehandPath, shapePaths, strokeWorldPoints } from "../../draw.js";
 import { shapeRenderProps, colorVar, fontFamily, sortById, enableAtomicMove, anchorAxes } from "../constants.js";
 import { InlineEdit, TextEdit } from "./text-edit.jsx";
@@ -16,10 +16,25 @@ import { EditorItem } from "./editor-item.jsx";
 export function Item(props) {
   const it = () => props.it;
   const ctx = props.ctx;
+  // a PARENTED mark (stroke/shape with `parent: <spatial box id>`) stores BOX-LOCAL coords
+  // (lat/lng for a map, frame-local px for a frame — see model.js). It renders through this
+  // same rough.js/perfect-freehand pipeline, projected to world via the parent box's
+  // transform — so selection, undo, z-order, properties all apply with zero special cases.
+  const parentBox = createMemo(() => {
+    const i = it();
+    if (!i.parent || (i.kind !== "stroke" && i.kind !== "shape")) return null;
+    const p = (props.surface.doc?.items || []).find((x) => x.id === i.parent);
+    return p && ownsSpace(p) ? p : null; // parent gone/unspatial → render coords as-is
+  });
   // a bound arrow's geometry is DERIVED from the shapes it connects (so it
   // follows them); everything else renders from its own stored coords
   const renderIt = createMemo(() => {
     const i = it();
+    const pb = parentBox();
+    if (pb) {
+      if (ctx.spaceEpoch) ctx.spaceEpoch(); // re-project when the parent's projection moves (map pan/zoom)
+      return projectItemFromBox(i, pb);
+    }
     if (i.kind === "shape" && i.type === "arrow" && (i.fromId || i.toId)) return { ...i, ...arrowGeometry(i, props.surface.doc?.items || []) };
     return i;
   });
@@ -45,14 +60,27 @@ export function Item(props) {
     const local = corners.map(([wx, wy]) => { const [rx, ry] = rot(wx - wcx, wy - wcy, r); return `${rx + a.w / 2}px ${ry + a.h / 2}px`; });
     return `polygon(${local.join(", ")})`;
   };
+  // a parented mark CLIPS to its box (like frame children clip): the parent's (possibly
+  // rotated) world rect expressed in the item's own local space (clip-path is pre-transform)
+  const parentClip = () => {
+    const pb = parentBox();
+    if (!pb) return null;
+    const a = b();
+    const r = -rad(renderIt().rotation || 0), wcx = a.x + a.w / 2, wcy = a.y + a.h / 2;
+    const pr = rad(pb.rotation || 0), pcx = pb.x + (pb.w || 0) / 2, pcy = pb.y + (pb.h || 0) / 2;
+    const corners = [[pb.x, pb.y], [pb.x + pb.w, pb.y], [pb.x + pb.w, pb.y + pb.h], [pb.x, pb.y + pb.h]]
+      .map(([x, y]) => { const [rx, ry] = rot(x - pcx, y - pcy, pr); return [pcx + rx, pcy + ry]; });
+    const local = corners.map(([wx, wy]) => { const [rx, ry] = rot(wx - wcx, wy - wcy, r); return `${rx + a.w / 2}px ${ry + a.h / 2}px`; });
+    return `polygon(${local.join(", ")})`;
+  };
   const baseStyle = () => {
-    const clip = dropClip();
+    const clip = dropClip() || parentClip();
     // anchored widgets pin to a viewport CORNER via bottom/right (auto resize-reactive); the
     // stored x/y is the offset from that corner. Everything else is plain top-left.
     const { right, bottom } = anchorAxes(it().anchor);
     const horiz = right ? { right: `${b().x}px` } : { left: `${b().x}px` };
     const vert = bottom ? { bottom: `${b().y}px` } : { top: `${b().y}px` };
-    return { ...horiz, ...vert, width: `${b().w}px`, height: `${b().h}px`, transform: `rotate(${it().rotation || 0}deg)`, "transform-origin": "center", "z-index": clip ? 8000 : z() + 1, ...(clip ? { "clip-path": clip } : {}) };
+    return { ...horiz, ...vert, width: `${b().w}px`, height: `${b().h}px`, transform: `rotate(${renderIt().rotation || 0}deg)`, "transform-origin": "center", "z-index": dropClip() ? 8000 : z() + 1, ...(clip ? { "clip-path": clip } : {}) };
   };
   const down = (e) => ctx.onItemDown(it(), props.surface, e);
   const edit = () => { if (selectMode()) ctx.setEditingId(it().id); };
@@ -81,7 +109,7 @@ export function Item(props) {
     <Show when={it().kind === "doc" || it().kind === "frame"} fallback={
       <Show when={it().kind === "text"} fallback={
         // ---- shape / stroke ----
-        <div class="ns-mark" style={baseStyle()}>
+        <div class="ns-mark" data-item-id={it().id} style={baseStyle()}>
           <svg class="ns-mark-svg" style={{ overflow: "visible" }}>
             <g transform={`translate(${-b().x}, ${-b().y})`}>
               <Show when={it().kind === "stroke"} fallback={
@@ -89,7 +117,7 @@ export function Item(props) {
                   {(p) => <path d={p.d} stroke={p.stroke} fill={p.fill} stroke-width={p.strokeWidth} stroke-dasharray={p.dash} stroke-linecap="round" stroke-linejoin="round" fill-rule="nonzero" />}
                 </For>
               }>
-                <path d={freehandPath(strokeWorldPoints(it()), it().size, it())} style={{ fill: colorVar(it().color), opacity: it().opacity, "mix-blend-mode": it().blend }} />
+                <path d={freehandPath(strokeWorldPoints(renderIt()), it().size, it())} style={{ fill: colorVar(it().color), opacity: it().opacity, "mix-blend-mode": it().blend }} />
               </Show>
             </g>
             </svg>
@@ -124,7 +152,7 @@ export function Item(props) {
         </div>
       }>
         {/* ---- text ---- */}
-        <div class="ns-text-item" style={baseStyle()}>
+        <div class="ns-text-item" data-item-id={it().id} style={baseStyle()}>
           <Show when={editing()} fallback={
             <div class="ns-text-static" classList={{ "ns-text-wrap": !!it().wrap }} ref={staticEl} style={{ color: colorVar(it().color), "font-family": fontFamily(it().font), "font-size": `${it().fontSize || 20}px`, ...(it().wrap ? { width: `${it().w}px` } : {}) }} onPointerDown={(e) => hittable() && down(e)} onDblClick={onDbl}>
               {it().text || ""}
@@ -236,8 +264,9 @@ export function DocOrFrame(props) {
     return props.selectMode() || ctx.tool() === "wire" ? "auto" : "none";
   };
   const openToolId = () => isFrame() ? (isList() ? "folder-viewer" : "newspace") : it().toolId || undefined;
+  // no stopPropagation on click (breaks Solid's document-level delegation) — the
+  // button's own pointerdown already stops the grab; the click just dispatches.
   const open = (e) => {
-    e.stopPropagation();
     e.currentTarget.dispatchEvent(new CustomEvent("patchwork:open-document", {
       detail: { url: it().url, toolId: openToolId(), title: title() },
       bubbles: true, composed: true,
@@ -254,7 +283,7 @@ export function DocOrFrame(props) {
   }
 
   return (
-    <div class="ns-doc" classList={{ "ns-frame": isFrame(), well: isFrame() && !!it().well, sel: ctx.isSelected(it().id), "ns-drop-into": isFrame() && ctx.dropTarget() === it().id }} {...(it().theme ? { theme: it().theme } : {})} style={props.baseStyle()} onPointerDown={grab}>
+    <div class="ns-doc" classList={{ "ns-frame": isFrame(), well: isFrame() && !!it().well, sel: ctx.isSelected(it().id), "ns-drop-into": isFrame() && ctx.dropTarget() === it().id }} {...(it().theme ? { theme: it().theme } : {})} data-item-id={it().id} style={props.baseStyle()} onPointerDown={grab}>
       <div class="ns-doc-title">
         <Show when={titleEditing()} fallback={
           <span class="ns-doc-name" onDblClick={(e) => { e.stopPropagation(); if (props.selectMode()) setTitleEditing(true); }}>{title()}</span>

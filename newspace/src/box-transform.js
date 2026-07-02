@@ -105,7 +105,23 @@ registerTransform("rotate", (box) => {
 // the transform looks it up. Geo-local coords are { x: lng, y: lat }. Until the map has mounted
 // (or if it's gone) the kind is identity, so composition never throws.
 const MAP_INSTANCES = new Map();
-export function bindMapInstance(id, map) { if (id == null) return; if (map) MAP_INSTANCES.set(id, map); else MAP_INSTANCES.delete(id); }
+export function bindMapInstance(id, map) { if (id == null) return; if (map) MAP_INSTANCES.set(id, map); else MAP_INSTANCES.delete(id); notifySpaceChanged(id); }
+
+// ── space-change notification ────────────────────────────────────────────────
+// A bound instance's projection CHANGES over time (a Leaflet map pans/zooms), so anything
+// rendering through a `reproject` box must re-project. This module stays Solid-free: the map
+// calls `notifySpaceChanged(itemId)` on its move/zoom events (and bind/unbind above), and a
+// reactive host (canvas.jsx) subscribes once via `onSpaceChanged` and bumps a signal.
+// Listeners are a COW array (cheap add/remove, safe iteration mid-notify).
+let SPACE_LISTENERS = [];
+export function notifySpaceChanged(id) {
+  const ls = SPACE_LISTENERS;
+  for (const l of ls) { try { l(id); } catch {} }
+}
+export function onSpaceChanged(cb) {
+  SPACE_LISTENERS = [...SPACE_LISTENERS, cb];
+  return () => { SPACE_LISTENERS = SPACE_LISTENERS.filter((x) => x !== cb); };
+}
 export const mapInstanceFor = (id) => MAP_INSTANCES.get(id) || null; // the live Leaflet for a map box (for screen↔geo outside the composer)
 registerTransform("reproject", (box) => {
   const map = box && MAP_INSTANCES.get(box.id);

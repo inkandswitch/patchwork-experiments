@@ -75,3 +75,57 @@ describe("templateInlets (the dynamicInlets hook)", () => {
     expect(templateInlets({}).length).toBeGreaterThan(0);
   });
 });
+
+import { stripUndefinedDeep, reconcileTemplateDoc } from "./template-doc.js";
+import { makeRepo, flush } from "./test-harness.js";
+
+describe("stripUndefinedDeep", () => {
+  it("drops undefined-valued keys at ANY depth; array holes become null", () => {
+    expect(stripUndefinedDeep({ a: undefined, b: { c: undefined, d: 1 }, e: [1, undefined, 2] }))
+      .toEqual({ b: { d: 1 }, e: [1, null, 2] });
+  });
+  it("passes primitives and null through untouched", () => {
+    expect(stripUndefinedDeep(null)).toBe(null);
+    expect(stripUndefinedDeep(7)).toBe(7);
+    expect(stripUndefinedDeep("s")).toBe("s");
+  });
+});
+
+describe("reconcileTemplateDoc (the writeDoc reconcile)", () => {
+  it("NEVER deletes keys other tools put on the doc — only its own previous keys", async () => {
+    const repo = makeRepo();
+    const handle = repo.create({ "@patchwork": { type: "file" }, title: "kept" });
+    let managed = new Set();
+    handle.change((d) => { managed = reconcileTemplateDoc(d, { a: 1, b: "x" }, managed); });
+    await flush();
+    expect(handle.doc()["@patchwork"]).toEqual({ type: "file" }); // survived the first write
+    expect(handle.doc().title).toBe("kept");
+    expect(handle.doc().a).toBe(1);
+    // template edited: `a` gone, `c` new — only `a` (template-managed) is deleted
+    handle.change((d) => { managed = reconcileTemplateDoc(d, { b: "x", c: 2 }, managed); });
+    await flush();
+    const doc = handle.doc();
+    expect(doc["@patchwork"]).toEqual({ type: "file" }); // STILL here after the recompute
+    expect(doc.title).toBe("kept");
+    expect("a" in doc).toBe(false); // the template's own stale key IS reconciled away
+    expect(doc.c).toBe(2);
+  });
+
+  it("strips undefined-valued keys — including NESTED ones — so the change never throws", async () => {
+    const repo = makeRepo();
+    const handle = repo.create({});
+    let managed = new Set();
+    expect(() =>
+      handle.change((d) => {
+        managed = reconcileTemplateDoc(d, { top: undefined, nest: { hole: undefined, ok: 1 }, list: [undefined, "v"] }, managed);
+      })
+    ).not.toThrow();
+    await flush();
+    const doc = handle.doc();
+    expect("top" in doc).toBe(false); // unwired top-level hole dropped
+    expect(doc.nest).toEqual({ ok: 1 }); // unwired NESTED hole dropped, not thrown
+    expect(doc.list.length).toBe(2);
+    expect(doc.list[0]).toBe(null); // array hole becomes null (indices keep their spots)
+    expect(String(doc.list[1])).toBe("v");
+  });
+});

@@ -10,7 +10,7 @@
 //   s.shareValue(itemId, value)         // broadcast a value to all peers
 //   s.onValue(itemId, (value) => …)     // receive a value
 //   s.shareStream(itemId, stream)       // add a MediaStream's tracks + map them to itemId
-//   s.onStream(itemId, (stream) => …)   // receive the remote stream for an item
+//   s.onStream(itemId, (stream) => …)   // receive the remote stream for an item (null when the owner unshares)
 //   s.unshare(itemId);  s.destroy()
 const RTC_CONFIG = { iceServers: [
   { urls: "stun:stun.l.google.com:19302" },
@@ -32,7 +32,7 @@ export class ShareSession {
     this.handle = handle;
     this.myUrl = myUrl || ("anon-" + Math.random().toString(36).slice(2));
     sessionRegistry.add(this);
-    this.peers = new Map();              // peerUrl -> { pc, dc, polite, makingOffer, pendingIce[], remote: MediaStream, trackMap: Map<trackId,item> }
+    this.peers = new Map();              // peerUrl -> { pc, dc, polite, makingOffer, pendingIce[], tracks: Map<trackId,track>, itemStreams: Map<item,MediaStream>, trackMap: Map<trackId,item> }
     this.shared = new Map();             // itemId -> { value? , stream? , trackIds?[] }
     this.valueCb = new Map();            // itemId -> Set<cb>
     this.streamCb = new Map();           // itemId -> Set<cb>
@@ -48,7 +48,7 @@ export class ShareSession {
   onValue(item, cb) { return this._on(this.valueCb, item, cb); }
   onStream(item, cb) {
     const off = this._on(this.streamCb, item, cb);
-    for (const pr of this.peers.values()) if (pr.trackMap) for (const [, it] of pr.trackMap) if (it === item && pr.remote) cb(pr.remote); // late subscriber
+    for (const pr of this.peers.values()) { const ms = pr.itemStreams && pr.itemStreams.get(item); if (ms && ms.getTracks().length) cb(ms); } // late subscriber
     return off;
   }
   shareValue(item, value) {
@@ -67,14 +67,18 @@ export class ShareSession {
   }
   unshare(item) {
     const rec = this.shared.get(item); this.shared.delete(item);
-    if (rec && rec.stream) for (const pr of this.peers.values()) this._removeStreamFrom(pr, rec.stream);
+    if (rec && rec.stream) {
+      // tell receivers the mapping is gone so they drop the frozen frame
+      const msg = JSON.stringify({ t: "unmap", item });
+      for (const pr of this.peers.values()) { this._removeStreamFrom(pr, rec.stream); this._send(pr, msg); }
+    }
     bump();
   }
   destroy() {
     this.destroyed = true;
     if (this._hb) clearInterval(this._hb);
     if (this.handle && this._onMsg) { try { this.handle.off("ephemeral-message", this._onMsg); } catch {} }
-    for (const pr of this.peers.values()) { try { pr.pc.close(); } catch {} }
+    for (const pr of this.peers.values()) { if (pr.disconnectTimer) clearTimeout(pr.disconnectTimer); try { pr.pc.close(); } catch {} }
     this.peers.clear();
     sessionRegistry.delete(this); bump();
   }
@@ -94,19 +98,40 @@ export class ShareSession {
   _announce() { this.handle.broadcast({ ns: "share", t: "join", from: this.myUrl }); }
   _polite(other) { return this.myUrl < other; }
 
+  // a pc we must not reuse: closed, or its transport gave up — a reloading peer's
+  // fresh offer can never be applied to it, so it has to be torn down + rebuilt
+  _dead(pr) { const cs = pr.pc.connectionState; return cs === "failed" || cs === "closed" || pr.pc.signalingState === "closed"; }
+  _evict(other, pr) {
+    if (this.peers.get(other) !== pr) return; // already replaced by a fresh pc
+    if (pr.disconnectTimer) clearTimeout(pr.disconnectTimer);
+    try { pr.pc.close(); } catch {}
+    this.peers.delete(other);
+    console.log("[share] peer -", other.slice(-6), "(evicted:", pr.pc.connectionState + ")");
+    bump();
+  }
+
   _peer(other) {
     let pr = this.peers.get(other);
+    if (pr && this._dead(pr)) { this._evict(other, pr); pr = null; } // zombie — rebuild
     if (pr) return pr;
     const pc = new RTCPeerConnection(RTC_CONFIG);
-    pr = { pc, dc: null, polite: this._polite(other), makingOffer: false, pendingIce: [], remote: new MediaStream(), trackMap: new Map() };
+    pr = { pc, dc: null, polite: this._polite(other), makingOffer: false, pendingIce: [], tracks: new Map(), itemStreams: new Map(), trackMap: new Map(), disconnectTimer: null };
     this.peers.set(other, pr);
     console.log("[share] peer +", other.slice(-6), pr.polite ? "(polite)" : "(impolite)");
-    pc.onconnectionstatechange = () => { console.log("[share]", other.slice(-6), "→", pc.connectionState); bump(); };
+    pc.onconnectionstatechange = () => {
+      console.log("[share]", other.slice(-6), "→", pc.connectionState);
+      const cs = pc.connectionState;
+      if (cs === "failed" || cs === "closed") this._evict(other, pr);
+      else if (cs === "disconnected") { // give ICE a chance to recover, then evict
+        if (!pr.disconnectTimer) pr.disconnectTimer = setTimeout(() => { pr.disconnectTimer = null; if (pc.connectionState === "disconnected") this._evict(other, pr); }, 8000);
+      } else if (pr.disconnectTimer) { clearTimeout(pr.disconnectTimer); pr.disconnectTimer = null; }
+      bump();
+    };
     pc.oniceconnectionstatechange = () => bump();
     // the polite peer creates the data channel; both see it via ondatachannel
     if (pr.polite) { pr.dc = pc.createDataChannel("ns-share"); this._wireDc(pr); }
     pc.ondatachannel = (e) => { pr.dc = e.channel; this._wireDc(pr); };
-    pc.ontrack = (e) => { if (!pr.remote.getTrackById(e.track.id)) pr.remote.addTrack(e.track); this._routeTrack(pr, e.track.id); };
+    pc.ontrack = (e) => { pr.tracks.set(e.track.id, e.track); this._routeTrack(pr, e.track.id); };
     pc.onicecandidate = (e) => { if (e.candidate) this.handle.broadcast({ ns: "share", t: "ice", from: this.myUrl, to: other, candidate: e.candidate.toJSON() }); };
     pc.onnegotiationneeded = async () => {
       try { pr.makingOffer = true; await pc.setLocalDescription(); this.handle.broadcast({ ns: "share", t: "offer", from: this.myUrl, to: other, sdp: pc.localDescription.toJSON() }); }
@@ -125,6 +150,12 @@ export class ShareSession {
   _onData(pr, m) {
     if (m.t === "val") { const s = this.valueCb.get(m.item); if (s) for (const cb of [...s]) cb(m.value); }
     else if (m.t === "map") { for (const id of m.trackIds || []) pr.trackMap.set(id, m.item); this._routeTrack(pr, null, m.item); }
+    else if (m.t === "unmap") { // the sender unshared: drop the mapping + clear the frozen frame
+      for (const [id, it] of [...pr.trackMap]) if (it === m.item) { pr.trackMap.delete(id); pr.tracks.delete(id); }
+      pr.itemStreams.delete(m.item);
+      const s = this.streamCb.get(m.item); if (s) for (const cb of [...s]) cb(null);
+      bump();
+    }
   }
   _addStreamTo(pr, item, stream, ids) {
     for (const track of stream.getTracks()) { if (!pr.pc.getSenders().some((s) => s.track === track)) pr.pc.addTrack(track, stream); }
@@ -133,20 +164,32 @@ export class ShareSession {
   _removeStreamFrom(pr, stream) {
     for (const track of stream.getTracks()) { const s = pr.pc.getSenders().find((x) => x.track === track); if (s) try { pr.pc.removeTrack(s); } catch {} }
   }
-  // once we know a track↔item mapping (from a "map" msg) AND have the track, deliver the remote stream
+  // once we know a track↔item mapping (from a "map" msg) AND have the track, deliver
+  // a PER-ITEM stream carrying only that item's tracks (two shares from one peer must
+  // not conflate into one stream)
   _routeTrack(pr, trackId, item) {
     const it = item || (trackId && pr.trackMap.get(trackId));
     if (!it) return;
+    let ms = pr.itemStreams.get(it);
+    if (!ms) { ms = new MediaStream(); pr.itemStreams.set(it, ms); }
+    for (const [id, mapped] of pr.trackMap) {
+      if (mapped !== it) continue;
+      const track = pr.tracks.get(id);
+      if (track && !ms.getTrackById(id)) ms.addTrack(track);
+    }
     const cbs = this.streamCb.get(it);
-    if (cbs && pr.remote.getTracks().length) for (const cb of [...cbs]) cb(pr.remote);
+    if (cbs && ms.getTracks().length) for (const cb of [...cbs]) cb(ms);
   }
 
   async _signal(m) {
     if (this.destroyed || !m || m.ns !== "share" || m.from === this.myUrl) return;
     if (m.to && m.to !== this.myUrl) return;
-    if (m.t === "join") { this._peer(m.from); return; } // discovering a peer triggers negotiation (onnegotiationneeded fires once we add tracks / a dc)
-    const pr = this._peer(m.from);
+    if (m.t === "join") { this._peer(m.from); return; } // discovering a peer triggers negotiation (onnegotiationneeded fires once we add tracks / a dc); a dead pc is rebuilt inside _peer
+    let pr = this._peer(m.from);
     try {
+      // a fresh offer aimed at a pc that can no longer take one (peer reloaded and the
+      // old connection died mid-signal) — tear it down and apply to a fresh pc instead
+      if (m.t === "offer" && this._dead(pr)) { this._evict(m.from, pr); pr = this._peer(m.from); }
       if (m.t === "offer") {
         const collision = pr.makingOffer || pr.pc.signalingState !== "stable";
         if (collision && !pr.polite) return;             // impolite peer ignores a glare offer
@@ -161,7 +204,7 @@ export class ShareSession {
         if (!pr.pc.remoteDescription) pr.pendingIce.push(m.candidate);
         else await pr.pc.addIceCandidate(ice(m.candidate));
       }
-    } catch {}
+    } catch (e) { console.warn("[share] signal", m.t, "from", (m.from || "").slice(-6), e); }
   }
   async _flush(pr) { const cs = pr.pendingIce.splice(0); for (const c of cs) { try { await pr.pc.addIceCandidate(ice(c)); } catch {} } }
 }

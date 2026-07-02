@@ -19,8 +19,10 @@ the only, hardcoded one) and to *split the per-layout complement* off the folder
 - A **layout** is a *lens over the folder* that decides how those docs are presented.
   Each layout carries its own **complement**: the layout-specific data that the folder
   itself doesn't hold.
-  - **canvas** (today) → a `newspace` layout doc: `items[]` with x/y/w/h, rotation,
-    z-order, frames, ink, editor wiring. *That positional data is the canvas's
+  - **canvas** (today) → a `sketch-layout` doc (referenced from the folder as
+    `.sketch`; was `.newspace`, migrated): `items[]` with x/y/w/h, rotation,
+    z-order, frames, ink, editor wiring, plus `layers` (the coordinate-space
+    stack) and `layout` (the shared chrome config). *That is the canvas's
     complement.*
   - **dock / tiling** → a dock layout doc: a split/tab tree of pane → doc.
   - **list** → little or no complement (just order, maybe).
@@ -71,21 +73,25 @@ the complement is visible *as* complement.
 ## What's actually built vs. what's needed
 
 Built / proven:
-- the **canvas as one layout** (folder doc + `newspace` complement doc), with surfaces
-  that carry their own editors/opstreams/wires;
+- the **canvas as one layout** (folder doc + the `.sketch` complement doc), with
+  surfaces that carry their own editors/opstreams/wires;
 - **opstreams with an explicit complement** that passes through lenses (the mechanism);
-- the **two-doc split** (folder = docs; `newspace` = the canvas complement) — already
-  the "folder + per-layout complement" shape, for one layout.
+- the **two-doc split** (folder = docs; `.sketch` = the canvas complement) — already
+  the "folder + per-layout complement" shape;
+- the **`sketchy:layout` registry** (layouts.js + index.jsx): canvas, list, and grid
+  are registered descriptors, each pointing at the patchwork:tool that renders it —
+  layouts ARE pluggable now;
+- the **list + grid layouts** — keyed-reconcile rows/cells over the same folder, each
+  with a switcher (`layoutsFor` re-opens the folder through another lens) and each
+  **surfacing the canvas complement** (`complementSummary`/`complementBanner`:
+  "also a canvas layout … not shown here") — the honest-lens payoff, demonstrated.
 
-To make the full vision real:
-1. a **`patchwork:layout`** (or `sketchy:layout`) plugin type + the `Layout` contract,
-   so layouts are pluggable (canvas becomes one registration among several);
-2. the folder referencing **multiple** complement docs, e.g. `@layouts: { canvas: url,
-   dock: url, list: url }`, instead of the single `newspace: url` — switching picks one;
-3. a **layout switcher** in the chrome;
-4. the **dock / tiling / list** layouts themselves;
-5. each layout **surfacing the other layouts' complements** ("you're not seeing …").
-
-The list layout (being built now alongside this note) is the first concrete second
-layout: it renders a folder's docs as rows and *surfaces the canvas complement* —
-demonstrating "same docs, different lens, and here's what this lens isn't showing."
+Still needed for the full vision:
+1. the folder referencing **multiple** complement docs, e.g. `@layouts: { canvas: url,
+   dock: url, list: url }`, instead of the single `sketch: url` — switching picks one
+   (generalise `ensureLayout` → `ensureLayoutDoc(repo, fh, key)`);
+2. a **layout switcher in the canvas chrome** (list and grid have one; the canvas
+   doesn't yet);
+3. the **dock / tiling** layouts themselves;
+4. dock (and the canvas) surfacing the other layouts' complements the way list/grid
+   already surface the canvas's.

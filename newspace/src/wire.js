@@ -6,6 +6,8 @@
 // rewires a matching editor inlet, or — on empty canvas — places a new
 // `sketchy:editor` whose inlet accepts the stream's type.
 
+import { schemaExample } from "./ops.js";
+
 // Walk up from `el` to the nearest port and describe it. Two kinds:
 //   { kind:"context",   name }         — a canvas context outlet (camera/pointer/…),
 //                                         whose opstream IS `context[name]` directly
@@ -153,10 +155,113 @@ export function usedContextOutlets(items = [], floats = []) {
   return s;
 }
 
+// PARAM-INLET-WINS-WHEN-WIRED: a param (paramsAsInlets) is also a wireable inlet.
+// The wiring entry for a param key — `null` is the explicit-cut tombstone and no
+// entry means never wired; both resolve to "not wired" (the panel edits config as
+// usual). A real entry means the WIRE WINS: the panel shows the wired value and
+// disables its control instead of fighting the stream.
+export function paramWireFor(item, key) {
+  const w = item && item.inlets ? item.inlets[key] : undefined;
+  return w || null;
+}
+
+// Inline-editable RAW-VALUE inlets: the inlets of `item` (defs = its inlet defs)
+// whose wiring points at a RAW VALUE source node (`editorId: "value"`). Those are
+// the ones the properties popup can edit inline — writing through the raw node's
+// stream (its `apply` reflects into the node's input + config), not around it.
+export function rawValueInlets(item, defs, items) {
+  const out = [];
+  const wiring = (item && item.inlets) || {};
+  for (const def of defs || []) {
+    const w = wiring[def.name];
+    if (!w || !w.node) continue; // unwired, cut (null tombstone), or not a node wire
+    const up = (items || []).find((x) => x && x.id === w.node);
+    if (up && up.kind === "editor" && up.editorId === "value")
+      out.push({ name: def.name, node: up.id, outlet: w.outlet || "value", kind: (up.config && up.config.kind) || "text" });
+  }
+  return out;
+}
+
+// ── the schema, shown + used ─────────────────────────────────────────────────
+// `describeSchema` gives one line ("{ name: string, count?: number }"); the port
+// popover wants BIG shapes readable too. formatShape breaks a long description
+// into one-field-per-line (brace-aware, so nested shapes indent), leaving short
+// ones alone. Pure; the popover renders each line mono.
+export function formatShape(desc, width = 44, indent = "") {
+  if (typeof desc !== "string" || !desc) return [];
+  if (indent.length + desc.length <= width) return [indent + desc];
+  // an array-of-object shape: format the element, tag the closing line with []
+  const arr = desc.match(/^(\{ .* \})((?:\[\])+)$/);
+  if (arr) { const lines = formatShape(arr[1], width, indent); lines[lines.length - 1] += arr[2]; return lines; }
+  if (!(desc.startsWith("{ ") && desc.endsWith(" }"))) return [indent + desc]; // not a struct — leave it whole
+  const body = desc.slice(2, -2);
+  const parts = [];
+  let depth = 0, cur = "";
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "{" || c === "[" || c === "(") depth++;
+    else if (c === "}" || c === "]" || c === ")") depth--;
+    if (depth === 0 && c === "," && body[i + 1] === " ") { parts.push(cur); cur = ""; i++; continue; }
+    cur += c;
+  }
+  if (cur) parts.push(cur);
+  const lines = [indent + "{"];
+  for (const p of parts) lines.push(...formatShape(p, width, indent + "  "));
+  lines.push(indent + "}");
+  return lines;
+}
+
+// Print a plain JSON value as TEMPLATE-DOC SOURCE (template-ts's TypeScript-ish
+// object-literal syntax): keys bare when identifier-ish, strings JSON-quoted,
+// object members newline-separated (the template's house format). Round-trips:
+// parseTemplateTS(templateSourceFromValue(v)).build() === v.
+const IDENTISH = /^[A-Za-z_@$][A-Za-z0-9_@$.]*$/;
+export function templateSourceFromValue(v, indent = "") {
+  if (typeof v === "string") return JSON.stringify(v);
+  if (typeof v === "number" || typeof v === "boolean" || v === null) return String(v);
+  const pad = indent + "  ";
+  if (Array.isArray(v)) {
+    if (!v.length) return "[]";
+    return "[\n" + v.map((x) => pad + templateSourceFromValue(x, pad)).join(",\n") + "\n" + indent + "]";
+  }
+  const keys = Object.keys(v || {});
+  if (!keys.length) return "{}";
+  return "{\n" + keys.map((k) => `${pad}${IDENTISH.test(k) ? k : JSON.stringify(k)}: ${templateSourceFromValue(v[k], pad)}`).join("\n") + "\n" + indent + "}";
+}
+
+// PREFILL A FRESH NODE FROM THE INLET'S SCHEMA — the config to seed a node placed
+// by the drag-from-an-inlet flow, so what lands is already shaped like what the
+// inlet wants (schemaExample: fields present, typed defaults, validating).
+//   template  — seeded with GENERATED TEMPLATE SOURCE (literal example values,
+//               not type-holes: a hole is an unwired inlet, so an all-holes seed
+//               would materialise an EMPTY doc that doesn't validate. Literals
+//               give an immediately-valid doc AND stay editable — replace any
+//               literal with its type name to punch a wireable hole).
+//   value     — the raw-value node, seeded with the example + its kind.
+// Anything else (or a schema with no derivable example) → null: behave as today.
+export function seedConfigFor(descriptor, inletDef) {
+  if (!descriptor) return null;
+  const schema = inletDef && (inletDef.schema || inletDef.accepts);
+  const example = schemaExample(schema);
+  if (example === undefined) return null;
+  if (descriptor.id === "template") {
+    // the template doc materialises an OBJECT — other example shapes don't fit it
+    if (!example || typeof example !== "object" || Array.isArray(example)) return null;
+    return { template: templateSourceFromValue(example) };
+  }
+  if (descriptor.id === "value") {
+    const kind = typeof example === "number" ? "number" : typeof example === "boolean" ? "boolean" : typeof example === "string" ? "text" : "json";
+    return { raw: kind === "text" ? example : JSON.stringify(example), kind };
+  }
+  return null;
+}
+
 let n = 0;
 // Build an `editor` item for the layout doc. `inlets` maps a port name to a
 // wiring `{url, path, heads?}` (live by default — pin with `heads` for read-only).
-export function makeEditorItem({ id, editorId, x, y, w = 360, h = 260, inlets = {}, rotation, parent }, seed) {
+// `config` (optional) seeds the node's persisted config (e.g. a schema-derived
+// template source — see seedConfigFor).
+export function makeEditorItem({ id, editorId, x, y, w = 360, h = 260, inlets = {}, config, rotation, parent }, seed) {
   const it = {
     id: id || "ed-" + (seed != null ? seed : Date.now().toString(36)) + "-" + n++,
     kind: "editor",
@@ -167,6 +272,7 @@ export function makeEditorItem({ id, editorId, x, y, w = 360, h = 260, inlets = 
     h,
     inlets,
   };
+  if (config) it.config = config;
   if (rotation) it.rotation = rotation;
   if (parent) it.parent = parent;
   return it;

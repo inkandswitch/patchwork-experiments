@@ -16,6 +16,7 @@ export function VoiceItem(props) {
   const [playing, setPlaying] = createSignal(false);
   const [progress, setProgress] = createSignal(0); // 0..1 playback position
   let session = null, recStart = 0, audioEl;
+  let cancelled = false; // set on cleanup — an in-flight startVoiceStream must stop, not leak the mic
   let textEl; // the editable transcript element
   const fmtDur = (s) => { s = Math.max(0, Math.round(s || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
@@ -30,23 +31,26 @@ export function VoiceItem(props) {
   onMount(async () => {
     if (!it().recording || !claimVoice(it().id)) return;
     try {
-      session = await startVoiceStream({
+      const s = await startVoiceStream({
         onStatus: (m) => setStatus(m || ""),
         onReady: () => setStatus(""),
         onInterim: (t) => setInterim(t),
         onFinal: (t) => { setInterim(""); if (t) setItem((o) => { o.text = ((o.text || "") + " " + t).trim(); }); },
       });
+      if (cancelled) { s.stop(); return; } // unmounted while the mic prompt/model load was pending
+      session = s;
       recStart = Date.now();
       setLive(true);
     } catch (e) {
       console.warn("[voice] mic unavailable", e);
-      ctx.removeItem(it().id);
+      if (!cancelled) ctx.removeItem(it().id);
     }
   });
-  onCleanup(() => { if (session) session.stop(); if (audioEl) audioEl.pause(); });
+  onCleanup(() => { cancelled = true; if (session) session.stop(); if (audioEl) audioEl.pause(); });
 
-  async function stop(e) {
-    e.stopPropagation();
+  // no stopPropagation on click — Solid delegates clicks to document (banned in this
+  // repo); the buttons' pointerdown handlers already keep the canvas gesture out.
+  async function stop() {
     const s = session; session = null; setLive(false);
     const dur = recStart ? (Date.now() - recStart) / 1000 : 0;
     const blob = s ? await s.stop() : null;
@@ -57,8 +61,7 @@ export function VoiceItem(props) {
       setItem((o) => { o.url = url; o.duration = dur; o.recording = false; });
     } else setItem((o) => { o.recording = false; });
   }
-  function togglePlay(e) {
-    e.stopPropagation();
+  function togglePlay() {
     if (!audioEl || !it().url) return;
     if (playing()) { audioEl.pause(); setPlaying(false); }
     else audioEl.play().then(() => setPlaying(true)).catch((err) => console.warn("[voice] play", err));

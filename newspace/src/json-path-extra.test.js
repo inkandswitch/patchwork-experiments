@@ -170,3 +170,73 @@ describe("jsonPathStream — bidirectional idempotency (no emit on no-op)", () =
     expect(out.value).toEqual({ b: 1 });
   });
 });
+
+import { makeRepo, flush } from "./test-harness.js";
+import { automergeOpstream } from "./opstreams.js";
+
+describe("parsePath — a quoted key CONTAINING ] (quote-aware bracket scan)", () => {
+  it('["a]b"] parses to the single step "a]b"', () => {
+    expect(parsePath('["a]b"]')).toEqual(["a]b"]);
+    expect(parsePath("['a]b']")).toEqual(["a]b"]);
+  });
+  it("brackets and dots inside the quotes are not re-parsed as path syntax", () => {
+    expect(parsePath('.x["w]e[i.rd"].y')).toEqual(["x", "w]e[i.rd", "y"]);
+  });
+  it("still throws on a genuinely unclosed bracket, even with a quote inside", () => {
+    expect(() => parsePath('["a]b"')).toThrow();
+    expect(() => parsePath('["a]b')).toThrow();
+  });
+});
+
+describe("negative-index WRITE parity (in-memory apply ⇄ applyAutomerge)", () => {
+  it("[-1] writes hit the LAST element on an in-memory opstream (no bogus '-1' key)", () => {
+    const doc = new Opstream({ xs: [1, 2, 3] });
+    doc.apply(writeOp(parsePath(".xs[-1]"), 99));
+    expect(doc.value.xs).toEqual([1, 2, 99]);
+    expect(Object.prototype.hasOwnProperty.call(doc.value.xs, "-1")).toBe(false);
+  });
+
+  it("[-1] writes hit the LAST element on a REAL automerge doc (no throw in handle.change)", async () => {
+    const repo = makeRepo();
+    const handle = repo.create({ xs: [1, 2, 3] });
+    const s = automergeOpstream(handle);
+    expect(() => s.apply(writeOp(parsePath(".xs[-1]"), 99))).not.toThrow();
+    await flush();
+    expect([...handle.doc().xs]).toEqual([1, 2, 99]);
+  });
+
+  it("a negative index in the MIDDLE of a path resolves the same on both paths", async () => {
+    const repo = makeRepo();
+    const handle = repo.create({ rows: [{ v: 1 }, { v: 2 }] });
+    automergeOpstream(handle).apply(writeOp(parsePath(".rows[-1].v"), 9));
+    await flush();
+    expect(handle.doc().rows[1].v).toBe(9);
+
+    const mem = new Opstream({ rows: [{ v: 1 }, { v: 2 }] });
+    mem.apply(writeOp(parsePath(".rows[-1].v"), 9));
+    expect(mem.value.rows[1].v).toBe(9); // same landing spot in memory
+  });
+
+  it("negative-index DELETE splices the resolved element (in memory)", () => {
+    const doc = new Opstream({ xs: ["a", "b", "c"] });
+    doc.apply({ path: ["xs"], range: -1, value: undefined }); // delete last
+    expect(doc.value.xs).toEqual(["a", "b"]);
+  });
+});
+
+describe("missing-intermediate WRITE parity — both paths autovivify objects", () => {
+  it("in-memory: writing .a.b.c into {} vivifies {a:{b:{c:1}}}", () => {
+    const doc = new Opstream({});
+    doc.apply(writeOp(parsePath(".a.b.c"), 1));
+    expect(doc.value).toEqual({ a: { b: { c: 1 } } });
+  });
+
+  it("automerge: the same write vivifies the same shape instead of throwing", async () => {
+    const repo = makeRepo();
+    const handle = repo.create({});
+    const s = automergeOpstream(handle);
+    expect(() => s.apply(writeOp(parsePath(".a.b.c"), 1))).not.toThrow();
+    await flush();
+    expect(handle.doc().a.b.c).toBe(1);
+  });
+});
