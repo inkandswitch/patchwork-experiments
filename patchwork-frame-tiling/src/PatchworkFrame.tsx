@@ -66,12 +66,14 @@ import type {
   TilingLayoutDoc,
   TinyPatchworkConfigDoc,
   ToolPreferences,
+  ToolSlot,
 } from "./types";
+import { slotDocUrl, slotId } from "./slots";
 import {
-  useContextTools,
   useDocTitle,
   useEffectiveTool,
-  type ContextTool,
+  useSlotTools,
+  type SlotTool,
 } from "./useDocTitle";
 import { rememberToolInDoc } from "./toolMemory";
 
@@ -288,9 +290,9 @@ type LayoutOps = {
   setSizes: (splitId: string, sizes: [number, number]) => void;
   setTool: (leafId: string, toolId: string | undefined) => void;
   /** Open a context tool (comments, history, …) as a panel beside `sourceLeafId`. */
-  openContext: (sourceLeafId: string, toolId: string) => void;
+  openContext: (sourceLeafId: string, slot: ToolSlot) => void;
   /** Context tools available to launch from a content panel. */
-  contextTools: ContextTool[];
+  contextTools: SlotTool[];
   /** The viewer's own root-folder url, used to resolve `"root-folder"` panels. */
   rootFolderUrl: AutomergeUrl | undefined;
   /** Id of the content panel that is the current "selected document". */
@@ -470,7 +472,7 @@ const ContextLauncher = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
               key={tool.id}
               className="tile-context-launcher__item"
               onClick={() => {
-                ops.openContext(leaf.id, tool.id);
+                ops.openContext(leaf.id, tool.slot);
                 setOpen(false);
               }}
             >
@@ -590,7 +592,8 @@ const TilePanel = ({
   const isRootFolder = leaf.view.role === "root-folder";
   // A `"root-folder"` panel stores no url; resolve it to the *viewer's* own
   // root folder so a shared layout shows the recipient's folders, not the
-  // author's.
+  // author's. A `"context"` panel's url (if any) names the doc its
+  // tool-tuple slot renders against — absent for a bare-component slot.
   const resolvedUrl = isRootFolder ? ops.rootFolderUrl : leaf.view.url;
   const isEmpty = !isContext && !isRootFolder && !resolvedUrl;
   const docTitle = useDocTitle(resolvedUrl);
@@ -705,6 +708,21 @@ const TilePanel = ({
             <p>No document open</p>
             <span>Open one from the folder, or use + in the top bar.</span>
           </div>
+        ) : isContext ? (
+          leaf.view.url ? (
+            <patchwork-view
+              key={leaf.id}
+              className="tile-panel__view"
+              doc-url={leaf.view.url}
+              tool-id={leaf.view.toolId}
+            />
+          ) : (
+            <patchwork-view
+              key={leaf.id}
+              className="tile-panel__view"
+              component={leaf.view.toolId}
+            />
+          )
         ) : (
           <patchwork-view
             key={leaf.id}
@@ -780,14 +798,15 @@ export const PatchworkFrame = ({
     suspense: false,
   });
 
-  // The shared frame-layout config (also used by the threepane frame). We only
-  // consume its `tray` lane to render the system tray in the top bar; the frame
-  // configurator (opened from the gear) edits the rest.
+  // The shared frame-layout config (owned by, and also used by, the threepane
+  // frame): its `tray` and `contextbar` lanes are shared so both frames render
+  // the same tray and context tools, edited via the same frame configurator.
   const [frameConfigDoc] = useDocument<ThreepaneConfigDoc>(
     accountDoc.tools?.["threepane"],
     { suspense: false },
   );
   const traySlots = frameConfigDoc?.tray?.tools ?? [];
+  const contextSlots = frameConfigDoc?.contextbar?.tabs ?? [];
 
   // Each tab gets its own layout document, identified in the URL, so tabs are
   // independent sessions rather than one mirrored workspace. A freshly-minted
@@ -898,7 +917,7 @@ export const PatchworkFrame = ({
     });
   }, [layout, commitFocus]);
 
-  const contextTools = useContextTools(accountDoc.contextToolIds);
+  const contextTools = useSlotTools(contextSlots);
 
   // The "selected document" is the most-recently-focused *content* panel
   // (context panels are excluded so opening Comments doesn't make Comments the
@@ -1122,19 +1141,20 @@ export const PatchworkFrame = ({
 
   // Spawn a context tool as a new panel beside the source. The source becomes
   // the selected subject; the context panel is marked so it never becomes the
-  // subject itself.
+  // subject itself. A tool-tuple slot carries its own doc (rendered as a
+  // `patchwork:tool` against it); a bare component slot carries no doc.
   const openContext = useCallback(
-    (sourceLeafId: string, toolId: string) => {
+    (sourceLeafId: string, slot: ToolSlot) => {
       focusLeaf(sourceLeafId);
       const newLeaf = makeLeaf({
-        url: accountDocUrl,
-        toolId,
+        url: slotDocUrl(slot),
+        toolId: slotId(slot),
         role: "context",
       });
       change((d) => splitLeafIn(d, sourceLeafId, "horizontal", newLeaf));
       focusLeaf(newLeaf.id);
     },
-    [change, focusLeaf, accountDocUrl],
+    [change, focusLeaf],
   );
 
   const close = useCallback(

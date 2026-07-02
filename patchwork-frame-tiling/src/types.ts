@@ -1,9 +1,12 @@
 import { AutomergeUrl } from "@automerge/automerge-repo";
 
 /**
- * The frame is mounted against an `account` document. Only `rootFolderUrl` is
- * required by the tiling frame; the other fields are kept for compatibility
- * with the wider patchwork frame ecosystem.
+ * The frame is mounted against an `account` document, shared with (and
+ * switchable to/from) other frame implementations like threepane. Only
+ * `rootFolderUrl` is required by the tiling frame itself; the rest exist for
+ * compatibility with the wider patchwork frame ecosystem — in particular
+ * `tools["threepane"]`, which both frames read for tray/context-tool config
+ * (see {@link ThreepaneConfigDoc}).
  */
 export type TinyPatchworkConfigDoc = {
   rootFolderUrl?: AutomergeUrl;
@@ -24,17 +27,15 @@ export type TinyPatchworkConfigDoc = {
    */
   tilingLayoutUrl?: AutomergeUrl;
 
-  frameToolId?: string;
-  accountSidebarToolId?: string;
-  contextSidebarToolId?: string;
+  /** @deprecated seeds migration into the threepane config doc's contextbar.tabs */
   contextToolIds?: string[];
-  documentToolbarToolIds?: string[];
 
   /**
-   * Per-tool config doc urls, keyed by tool id. `tools["threepane"]` points at a
-   * {@link ThreepaneConfigDoc}; the tiling frame reuses it (shared with the
-   * threepane frame) so the frame configurator and **system tray** are driven by
-   * the same configuration across frames.
+   * Per-tool config doc urls, keyed by tool id. `tools["threepane"]` points at
+   * a {@link ThreepaneConfigDoc} — owned by, and shared with, the threepane
+   * frame — holding the `tray` and `contextbar` lanes the tiling frame reads,
+   * so an account switching between frames sees the same tray and context
+   * tools either way, edited via the same frame configurator.
    */
   tools?: { [toolId: string]: AutomergeUrl };
 
@@ -42,14 +43,26 @@ export type TinyPatchworkConfigDoc = {
   toolPreferences?: ToolPreferences;
 };
 
-/** A configured tool: a `[toolId, docId]` tuple, or a bare `patchwork:component` id. */
+/**
+ * A configured tool slot: which tool, and which document it renders against.
+ * The docid is a real pin — every lane renders the tuple's tool against the
+ * document the tuple itself names.
+ */
 export type ToolRef = [toolId: string, docId: AutomergeUrl];
+
+/**
+ * One entry in a tool lane (tray / contextbar). Either a `[toolId, docId]`
+ * tuple rendered as a `patchwork:tool` against the doc the tuple names, or a
+ * bare component id rendered as a `patchwork:component` (with no document).
+ * Mirrors threepane's `ToolSlot`.
+ */
 export type ToolSlot = ToolRef | string;
 
 /**
  * The shared frame layout config (its own document, referenced from
- * `tools["threepane"]`). The tiling frame only consumes the **tray** lane; the
- * other lanes are owned by the threepane frame but kept here for type parity.
+ * `tools["threepane"]`). Owned by the threepane frame; the tiling frame only
+ * reads its `tray` and `contextbar` lanes (the `sidebar` and `doctitle` lanes
+ * are threepane-specific UI it doesn't have).
  */
 export type ThreepaneConfigDoc = {
   sidebar?: { widgets: ToolSlot[] };
@@ -75,7 +88,10 @@ export type PanelView = {
    * The document shown in this panel. **Absent** for an *empty content frame* —
    * a placeholder content panel kept beside the folder/context panes so they
    * never span the full width. The next document opened fills the empty frame
-   * instead of splitting the folder.
+   * instead of splitting the folder. Also absent for a `"context"` panel whose
+   * slot is a bare component (mounted against no document) — but **present**
+   * for a context panel backed by a `[toolId, docId]` tool-tuple slot, which
+   * names the document that tool renders against.
    */
   url?: AutomergeUrl;
   toolId?: string;

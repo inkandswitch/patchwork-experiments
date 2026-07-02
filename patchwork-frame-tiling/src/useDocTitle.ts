@@ -11,8 +11,9 @@ import {
 } from "@inkandswitch/patchwork-plugins";
 import { PluginRegistry } from "@inkandswitch/patchwork-plugins/dist/registry/registry";
 import { useEffect, useMemo, useState } from "react";
+import { slotId } from "./slots";
 import { resolvePreferredTool } from "./toolMemory";
-import type { ToolPreferences } from "./types";
+import type { ToolPreferences, ToolSlot } from "./types";
 
 /**
  * Resolve a human-readable title for a document by loading its datatype and
@@ -53,43 +54,56 @@ export function useDocTitle(url?: AutomergeUrl): string {
   return url.replace(/^automerge:/, "").slice(0, 8);
 }
 
-export type ContextTool = {
+export type SlotTool = {
   id: string;
   name: string;
   icon?: string;
+  /** The configured slot itself, so callers can render/open it correctly. */
+  slot: ToolSlot;
 };
 
 /**
- * Resolve the context tools (comments, history, …) the account is configured to
- * offer, refreshing as plugins register. We deliberately mirror patchwork-base's
- * model: the source of truth is the account doc's `contextToolIds` list (edited
- * via frame-configurator, rendered by context-sidebar), *not* the `context-tool`
- * tag. Upstream only uses that tag to populate the configurator's option picker,
- * and it's applied inconsistently (history-view isn't tagged; the default list
- * still references the deleted context-view), so a tag filter would diverge from
- * what the base frame actually shows. Ids that don't resolve to a loaded tool
- * (e.g. the stale context-view) are skipped.
+ * Resolve display metadata (name, icon) for a configured tool lane (tray /
+ * contextbar), read from the shared frame config doc. A slot is either a
+ * `[toolId, docId]` tuple (a `patchwork:tool`) or a bare component id (a
+ * `patchwork:component`); labels come from whichever registry matches,
+ * mirroring threepane's `ContextTabs`. Refreshes as plugins register — a
+ * slot's name resolves the moment its plugin loads.
  */
-export function useContextTools(toolIds: string[] | undefined): ContextTool[] {
+export function useSlotTools(slots: ToolSlot[] | undefined): SlotTool[] {
   const [registryVersion, setRegistryVersion] = useState(0);
 
   useEffect(() => {
-    const registry = getRegistry("patchwork:tool");
-    return registry.on("changed", () => setRegistryVersion((v) => v + 1));
+    const toolRegistry = getRegistry("patchwork:tool");
+    const componentRegistry = getRegistry("patchwork:component");
+    const bump = () => setRegistryVersion((v) => v + 1);
+    const offTool = toolRegistry.on("changed", bump);
+    const offComponent = componentRegistry.on("changed", bump);
+    return () => {
+      offTool();
+      offComponent();
+    };
   }, []);
 
-  const idsKey = toolIds?.join("\u0000") ?? "";
+  const slotsKey = (slots ?? []).map(slotId).join("\u0000");
 
   return useMemo(() => {
-    if (!toolIds || toolIds.length === 0) return [];
-    const registry = getRegistry<ToolDescription>("patchwork:tool");
-    return toolIds
-      .map((id) => registry.get(id))
-      .filter((tool): tool is NonNullable<typeof tool> => tool != null)
-      .map((tool) => ({ id: tool.id, name: tool.name ?? tool.id, icon: tool.icon }));
-    // idsKey + registryVersion drive recomputation as config or plugins change.
+    if (!slots || slots.length === 0) return [];
+    const toolRegistry = getRegistry<ToolDescription>("patchwork:tool");
+    const componentRegistry = getRegistry<ToolDescription>("patchwork:component");
+    return slots.map((slot) => {
+      const id = slotId(slot);
+      const description = toolRegistry.get(id) ?? componentRegistry.get(id);
+      return {
+        id,
+        name: description?.name ?? id,
+        icon: description?.icon,
+        slot,
+      };
+    });
+    // slotsKey + registryVersion drive recomputation as config or plugins change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, registryVersion]);
+  }, [slotsKey, registryVersion]);
 }
 
 export type SupportedTools = {

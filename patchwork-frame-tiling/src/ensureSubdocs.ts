@@ -5,7 +5,7 @@ import {
   type DatatypeDescription,
   type LoadedDatatype,
 } from "@inkandswitch/patchwork-plugins";
-import type { ThreepaneConfigDoc, TinyPatchworkConfigDoc } from "./types";
+import type { ThreepaneConfigDoc, TinyPatchworkConfigDoc, ToolRef } from "./types";
 
 type SubdocField = "rootFolderUrl" | "moduleSettingsUrl" | "contactUrl";
 
@@ -78,10 +78,11 @@ async function ensureContact(
 }
 
 /**
- * Default context tools, mirroring patchwork-base's `AccountDatatype.init`. We
- * seed the same list (including the upstream-stale `context-view`) for parity;
- * `useContextTools` skips any id that doesn't resolve to a loaded tool. A list
- * the host already configured always wins (only written when absent).
+ * Default context tools for an account that has never configured any (no
+ * `contextToolIds` migrated from elsewhere, and no existing threepane config
+ * doc). Mirrors threepane's `AccountDatatype.init` default, including the
+ * upstream-stale `context-view` id, for parity: `useSlotTools` resolves it to
+ * its raw id with no matching registry entry, so it simply renders nothing.
  */
 const DEFAULT_CONTEXT_TOOL_IDS = [
   "comments-view",
@@ -89,22 +90,18 @@ const DEFAULT_CONTEXT_TOOL_IDS = [
   "context-view",
 ];
 
-function ensureContextToolIds(
-  accountHandle: DocHandle<TinyPatchworkConfigDoc>,
-) {
-  if (accountHandle.doc()?.contextToolIds) return;
-  accountHandle.change((doc) => {
-    if (!doc.contextToolIds) doc.contextToolIds = [...DEFAULT_CONTEXT_TOOL_IDS];
-  });
-}
-
 /**
- * Ensure the shared frame-layout config doc (`tools["threepane"]`) exists, so the
- * frame configurator and system tray have something to read/write. It's shared
- * with the threepane frame; whichever frame mounts first creates it. We use the
- * `threepane:config` datatype directly (not `loadDatatypeWhenReady`, which would
- * wait forever) so that when threepane isn't installed we simply skip — the tray
- * just stays empty. Idempotent and concurrency-safe.
+ * Ensure the shared frame-layout config doc (`tools["threepane"]`) exists and
+ * has `tray`/`contextbar` lanes, migrating legacy `contextToolIds` into the
+ * latter exactly like threepane's own `ensureThreepaneConfig` — so an account
+ * switching between the tiling and threepane frames sees the same context
+ * tools and system tray either way, and (shared) frame-configurator edits
+ * apply regardless of which frame is active.
+ *
+ * Uses the `threepane:config` datatype directly (not `loadDatatypeWhenReady`,
+ * which would wait forever) so that when threepane isn't installed we simply
+ * skip — the tray/context bar just stay empty. Idempotent and
+ * concurrency-safe.
  */
 async function ensureThreepaneConfig(
   accountHandle: DocHandle<TinyPatchworkConfigDoc>,
@@ -112,21 +109,34 @@ async function ensureThreepaneConfig(
 ) {
   const existing = accountHandle.doc()?.tools?.["threepane"];
   if (existing) {
-    // Backfill the tray lane for configs created before it existed.
+    // Backfill lanes added by later builds of this config doc.
     const configHandle = await repo.find<ThreepaneConfigDoc>(existing);
     configHandle.change((doc) => {
       if (!doc.tray) doc.tray = { tools: [] };
+      if (!doc.contextbar) doc.contextbar = { tabs: [] };
     });
     return;
   }
   const registry = getRegistry<DatatypeDescription>("patchwork:datatype");
   const datatype = await registry.load("threepane:config");
-  if (!datatype) return; // threepane not installed → no tray/configurator config
+  if (!datatype) return; // threepane not installed → no tray/context config
   if (accountHandle.doc()?.tools?.["threepane"]) return; // raced with another tab
+
+  const account = accountHandle.doc();
+  const accountDocUrl = accountHandle.url;
+  const contextTabs: ToolRef[] = (
+    account?.contextToolIds ?? DEFAULT_CONTEXT_TOOL_IDS
+  ).map((id) => [id, accountDocUrl]);
+
   const configHandle = await createDocOfDatatype2<ThreepaneConfigDoc>(
     datatype,
     repo,
   );
+  configHandle.change((doc) => {
+    if (!doc.contextbar) doc.contextbar = { tabs: [] };
+    doc.contextbar.tabs = contextTabs;
+  });
+
   accountHandle.change((doc) => {
     if (!doc.tools) doc.tools = {};
     if (!doc.tools["threepane"]) doc.tools["threepane"] = configHandle.url;
@@ -141,7 +151,6 @@ export async function ensureAccountSubdocs(
   accountHandle: DocHandle<TinyPatchworkConfigDoc>,
   repo: Repo,
 ) {
-  ensureContextToolIds(accountHandle);
   await Promise.all([
     ensureSubdoc(accountHandle, repo, "rootFolderUrl", "folder"),
     ensureSubdoc(

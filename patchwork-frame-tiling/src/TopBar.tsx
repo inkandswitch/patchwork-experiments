@@ -246,10 +246,11 @@ const CreateNewMenu = ({
 
 /**
  * The system tray: a row of configured `patchwork:component`s (tagged
- * `system-tray`) from the shared frame config's `tray` lane. A bare slot is a
- * component id; a `[toolId, docId]` tuple renders that tool against its doc.
- * Discriminate by `Array.isArray` (an Automerge raw-string slot isn't a native
- * `string`, so `typeof` would misfire).
+ * `system-tray`) from the shared frame config's `tray` lane — the same
+ * config the threepane frame uses. A bare slot is a component id; a
+ * `[toolId, docId]` tuple renders that tool against its doc. Discriminate by
+ * `Array.isArray` (an Automerge raw-string slot isn't a native `string`, so
+ * `typeof` would misfire).
  */
 const Tray = ({ slots }: { slots: ToolSlot[] }) => {
   if (slots.length === 0) return null;
