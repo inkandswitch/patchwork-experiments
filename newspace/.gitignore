@@ -2,3 +2,4 @@ node_modules
 dist
 .pushwork
 perf-baseline.md
+lb/
