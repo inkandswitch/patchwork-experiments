@@ -16,7 +16,6 @@ import {
   type Suggestion,
 } from "@embark/commands";
 import type { RouteCardDoc } from "./datatype";
-import "./route.css";
 
 // Wait this long after the query last changed before resolving it, so each
 // keystroke of `/Drive berl…` doesn't fire a routing request.
@@ -40,10 +39,10 @@ type RouteResult = { coords: LatLon[]; distanceKm: number; durationS: number };
 // and `/Transit` commands. For each it resolves the two places (`<from> to
 // <to>`) to coordinates — reusing the shared place resolver, so it biases toward
 // places already on the canvas just like weather — fetches a route from the
-// configured router, mints a `card` whose `props.route` is the decoded polyline (which
-// the map then draws as a line), and offers it as a suggestion. It is
-// handle-less: there is no backing document, so all of its state lives in the
-// shared canvas context.
+// configured router, mints a route-card whose `route` is the decoded polyline
+// (which the map then draws as a line), and offers it as a suggestion. The
+// card's face is drawn by the shared card shell, so it renders nothing into the
+// middle slot; all of its working state lives in the shared canvas context.
 export function RouteProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
 
@@ -55,7 +54,9 @@ export function RouteProvider(props: { element: ToolElement }) {
   const inFlight = new Set<string>();
   const cardCache = new Map<string, { url: AutomergeUrl; label: string }>();
 
-  let store: ContextStore | undefined;
+  // Resolved on mount (always a store now: the enclosing context, or the
+  // page-global body store). Assigned before any of the callbacks below run.
+  let store!: ContextStore;
   let resolver: PlaceResolver | undefined;
   let suggestions: ScopeHandle<Record<string, Suggestion[]>> | undefined;
   let unsubscribeQueries: (() => void) | undefined;
@@ -63,7 +64,6 @@ export function RouteProvider(props: { element: ToolElement }) {
 
   onMount(() => {
     store = findContextStore(props.element);
-    if (!store) return; // opened outside a canvas — nothing to contribute to
     resolver = createPlaceResolver(store, repo);
     suggestions = store.handle(CommandSuggestions);
     unsubscribeQueries = store.subscribe(CommandQueries, onQueries);
@@ -82,7 +82,6 @@ export function RouteProvider(props: { element: ToolElement }) {
   // Reconcile scheduled work against the active command queries: debounce a
   // resolve for each new routing query, and forget the ones that disappeared.
   const onQueries = () => {
-    if (!store) return;
     const active = new Set(Object.keys(store.read(CommandQueries)));
 
     for (const query of active) {
@@ -118,7 +117,7 @@ export function RouteProvider(props: { element: ToolElement }) {
   // the canvas. Bails out (leaving the query unanswered) if a place can't be
   // located, the route fails, or the query is dropped mid-way.
   const resolve = async (query: string) => {
-    if (!store || disposed || !resolver) return;
+    if (disposed || !resolver) return;
     inFlight.add(query);
     try {
       const parsed = parseRoute(query);
@@ -188,50 +187,9 @@ export function RouteProvider(props: { element: ToolElement }) {
     }).url;
   };
 
-  return (
-    <div class="embark-route-card">
-      <span class="embark-route-card__pip embark-route-card__pip--tl">
-        <RouteIcon />
-      </span>
-      <div class="embark-route-card__body">
-        <div class="embark-route-card__title">Routes</div>
-        <p class="embark-route-card__desc">
-          Adds <code>/Drive</code>, <code>/Walk</code>, and{" "}
-          <code>/Transit</code> commands. Type{" "}
-          <code>/Drive berlin to munich</code> in a note to drop a route,
-          resolved from places already on the canvas or a quick search.
-        </p>
-        <div class="embark-route-card__source">
-          {ROUTE_PROVIDER === "osrm" ? "OSRM" : "Valhalla"}
-        </div>
-      </div>
-      <span class="embark-route-card__pip embark-route-card__pip--br">
-        <RouteIcon />
-      </span>
-    </div>
-  );
-}
-
-// A small route glyph used as the card's corner "pips", the way a playing card
-// carries its suit in opposite corners.
-function RouteIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="6" cy="19" r="2.5" />
-      <circle cx="18" cy="5" r="2.5" />
-      <path d="M8.5 19H14a3.5 3.5 0 0 0 0-7H10a3.5 3.5 0 0 1 0-7h5.5" />
-    </svg>
-  );
+  // The card face (title, description, corner pips) is drawn by the shared card
+  // shell; this contributor renders nothing into the middle slot.
+  return null;
 }
 
 // Parse a `/`-command query into its mode and the two places. The first token

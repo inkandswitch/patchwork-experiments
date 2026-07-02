@@ -24,6 +24,35 @@ export const plugins: Plugin<any>[] = [
       return EmbarkCanvasDatatype;
     },
   },
+  {
+    // A context sidebar tool (the `context-tool` tag surfaces it in the frame's
+    // context sidebar / configurator, like drafts and comments). It is handed
+    // the account doc — which it ignores — and instead hosts a single per-browser
+    // context canvas whose url lives in localStorage (see ContextCanvasTool).
+    type: "patchwork:tool",
+    id: "context-canvas",
+    tags: ["context-tool"],
+    name: "Context",
+    icon: "Globe",
+    supportedDatatypes: ["account"],
+    async load() {
+      const { ContextCanvasTool } = await import("./canvas");
+      return ContextCanvasTool;
+    },
+  },
+  {
+    type: "patchwork:datatype",
+    id: "context-canvas",
+    name: "Context",
+    icon: "Globe",
+    // Created programmatically by the context tool, never from the "new document"
+    // menu, so keep it out of the datatype picker.
+    unlisted: true,
+    async load() {
+      const { ContextCanvasDatatype } = await import("./datatype");
+      return ContextCanvasDatatype;
+    },
+  },
   ...partsBinPlugins,
   ...deckPlugins,
 ];

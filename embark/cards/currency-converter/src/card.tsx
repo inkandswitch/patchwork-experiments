@@ -1,41 +1,36 @@
-import type { JSX } from "solid-js";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { onCleanup, onMount } from "solid-js";
+import { render } from "solid-js/web";
 import {
-  stickerSourceCard,
+  runStickerSource,
   type ScanContext,
   type Sticker,
-  type StickerSource,
 } from "@embark/stickers";
 
-// A handle-less `patchwork:component` that scans text for amounts in other
-// currencies and annotates each with today's value in US dollars. Unlike the
-// unit converter its `scan` needs live exchange rates, so the card fetches them
-// once on mount (keyless, from frankfurter.app / ECB data) and forces a rescan
-// when they land. `stickerSourceCard` ignores its doc handle, so the default
-// export adapts it to the handle-less component shape.
-const CurrencyConverterCard = stickerSourceCard(
-  {
-    title: "Currency Converter",
-    description:
-      "Scans your notes for amounts in other currencies — €10, £5, 10 euro, 1000 JPY — and annotates each with today's value in US dollars.",
-    source: "frankfurter.app · ECB",
-    accent: "#15803d",
-    icon: DollarIcon,
-  },
-  { scan: scanCurrency },
-  onReady,
-);
+// Currency Converter card behavior, loaded by the shared card shell as this
+// package's `card.js`. It scans text for amounts in other currencies and
+// annotates each with today's value in US dollars. Unlike the unit converter its
+// `scan` needs live exchange rates, so it fetches them once on mount (keyless,
+// from frankfurter.app / ECB data) and forces a rescan when they land. The
+// card's face is drawn by the shell, so it renders nothing into the middle slot.
+const card: ToolRender = (_handle, element) =>
+  render(() => <CurrencyConverter element={element} />, element);
 
-export default (element: ToolElement): (() => void) | void =>
-  CurrencyConverterCard(undefined as never, element);
-
-// Kick off the (deduped, module-level) rate fetch, then re-publish stickers once
-// rates are available — scans before that point produce nothing.
-function onReady(source: StickerSource) {
-  void loadRates().then((ok) => {
-    if (ok) source.rescanAll();
+function CurrencyConverter(props: { element: ToolElement }) {
+  onMount(() => {
+    const source = runStickerSource(props.element, { scan: scanCurrency });
+    // Kick off the (deduped, module-level) rate fetch, then re-publish stickers
+    // once rates land — scans before that point produce nothing.
+    void loadRates().then((ok) => {
+      if (ok) source.rescanAll();
+    });
+    onCleanup(source.stop);
   });
+
+  return null;
 }
+
+export default card;
 
 // USD-based rates: `rates[C]` is how much of currency C one USD buys, so an
 // amount in C is worth `amount / rates[C]` dollars. Cached module-side and
@@ -163,23 +158,4 @@ function format(usd: number): string {
     currency: "USD",
     maximumFractionDigits: 2,
   })})`;
-}
-
-function DollarIcon(): JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v20" />
-      <path d="M17 6.5C17 4.6 14.8 3.5 12 3.5S7 4.6 7 6.5 9.2 9.5 12 10s5 1.5 5 3.5-2.2 3-5 3-5-1.1-5-3" />
-    </svg>
-  );
 }

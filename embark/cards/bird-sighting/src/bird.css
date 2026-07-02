@@ -1,33 +1,17 @@
-/* A hard-coded "card" rendered to look like a playing card in a game: a framed
-   surface filling the embed, with the title and a fill-in-the-blank sentence,
-   plus a small bird-shaped pip in opposite corners (mirroring the poi card). */
-.embark-bird-card {
-  position: relative;
+/* The Bird Sightings card's middle-slot content: a madlib sentence, a status
+   line, and a compact list of found species. The card frame, title, and pips
+   are drawn by the shared card shell. */
+.embark-bird {
   display: flex;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 16px;
-  border: 1px solid #e0f2fe;
-  border-radius: 12px;
-  background: linear-gradient(160deg, #ffffff 0%, #f0f9ff 100%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-  font-family:
-    system-ui,
-    -apple-system,
-    sans-serif;
-  user-select: none;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
   overflow: hidden;
-}
-
-/* A subtle ring while this card is the selected embed. */
-.embark-bird-card.is-selected {
-  outline: 2px solid #0ea5e9;
-  outline-offset: -2px;
 }
 
 /* The "map" word in the sentence: an underlined affordance that, on hover,
    glows the map(s) this card searches. */
-.embark-bird-card__maplink {
+.embark-bird__maplink {
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 2px;
@@ -36,39 +20,20 @@
   cursor: pointer;
 }
 
-.embark-bird-card__maplink:hover {
+.embark-bird__maplink:hover {
   color: #0ea5e9;
-}
-
-.embark-bird-card__body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 20px 20px;
-  text-align: left;
-  overflow: hidden;
-}
-
-.embark-bird-card__title {
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: #0c4a6e;
 }
 
 /* The madlib sentence: normal prose with the two choices rendered as editable
    "blanks" rather than obvious form controls. */
-.embark-bird-card__madlib {
+.embark-bird__madlib {
   margin: 0;
   font-size: 14px;
   line-height: 1.7;
   color: #292524;
 }
 
-.embark-bird-card__swap {
+.embark-bird__swap {
   appearance: none;
   -webkit-appearance: none;
   border: none;
@@ -83,26 +48,26 @@
   cursor: pointer;
 }
 
-.embark-bird-card__swap:focus {
+.embark-bird__swap:focus {
   outline: none;
   background: #e0f2fe;
 }
 
-.embark-bird-card__status {
+.embark-bird__status {
   font-size: 12px;
   color: #78716c;
 }
 
-.embark-bird-card__status.is-error {
+.embark-bird__status.is-error {
   color: #dc2626;
 }
 
-.embark-bird-card__status.is-busy {
+.embark-bird__status.is-busy {
   color: #0284c7;
 }
 
 /* The compact list of found species (the full cards live on the map as pins). */
-.embark-bird-card__list {
+.embark-bird__list {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -114,7 +79,7 @@
   max-height: 180px;
 }
 
-.embark-bird-card__row {
+.embark-bird__row {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -126,39 +91,21 @@
 }
 
 /* Hovering a row glows its pin on the map; tint the row so the link is felt. */
-.embark-bird-card__row:hover {
+.embark-bird__row:hover {
   background: #e0f2fe;
 }
 
-.embark-bird-card__row-name {
+.embark-bird__row-name {
   font-size: 13px;
   font-weight: 600;
   color: #1c1917;
   white-space: nowrap;
 }
 
-.embark-bird-card__row-sub {
+.embark-bird__row-sub {
   font-size: 11px;
   color: #94a3b8;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Corner pips, mirrored like a playing card's suit marks. */
-.embark-bird-card__pip {
-  position: absolute;
-  display: flex;
-  color: #0ea5e9;
-}
-
-.embark-bird-card__pip--tl {
-  top: 10px;
-  left: 10px;
-}
-
-.embark-bird-card__pip--br {
-  bottom: 10px;
-  right: 10px;
-  transform: rotate(180deg);
 }

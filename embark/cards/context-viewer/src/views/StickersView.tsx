@@ -150,7 +150,6 @@ function stickerChip(sticker: Sticker): JSX.Element {
     return (
       <span
         class="cm-sticker cm-sticker--text"
-        classList={{ "cm-sticker--emphasized": Boolean(sticker.emphasized) }}
         style={sticker.styles ? cssText(sticker.styles) : undefined}
       >
         {sticker.text}
@@ -159,20 +158,13 @@ function stickerChip(sticker: Sticker): JSX.Element {
   }
   if (sticker.type === "tool") {
     return (
-      <span
-        class="cm-sticker cm-sticker--tool"
-        classList={{ "cm-sticker--emphasized": Boolean(sticker.emphasized) }}
-      >
+      <span class="cm-sticker cm-sticker--tool">
         <patchwork-view doc-url={sticker.docUrl} tool-id={sticker.toolId} />
       </span>
     );
   }
   return (
-    <span
-      class="cm-sticker cm-sticker--style"
-      classList={{ "cm-sticker--emphasized": Boolean(sticker.emphasized) }}
-      style={cssText(sticker.styles)}
-    >
+    <span class="cm-sticker cm-sticker--style" style={cssText(sticker.styles)}>
       Aa
     </span>
   );

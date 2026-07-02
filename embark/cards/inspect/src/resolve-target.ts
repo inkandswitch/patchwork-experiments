@@ -36,25 +36,16 @@ export function isFolderDoc(doc: unknown): boolean {
   return type === "folder" || type === "directory";
 }
 
-// Find the closest rendered `<patchwork-view>` (a tool) or component host under
-// `root` and resolve the package that paints it — plus, for a tool, the document
-// it shows. The package is always an `automerge:` folder doc (a pushwork
-// `rootUrl`): for a tool it is the registered plugin's `importUrl`; for a
-// component it is parsed out of the component module url. Returns null when
-// nothing renderable is found (e.g. a tool whose package is an HTTP bundle).
+// Find the closest rendered `<patchwork-view>` under `root` and resolve the
+// package that paints it, plus the document it shows. The package is always an
+// `automerge:` folder doc (a pushwork `rootUrl`): normally the registered
+// tool's `importUrl`, but for a card (rendered by the shared card tool) it is
+// the card's own behavior-module package, parsed out of `doc.src`. Returns null
+// when nothing renderable is found (e.g. a tool whose package is an HTTP bundle).
 export async function resolveInspectTarget(
   root: HTMLElement,
   repo: Repo,
 ): Promise<InspectTarget | null> {
-  // A component embed is unambiguous (its host carries the module url), so check
-  // it first: a tool's own content could itself contain a `<patchwork-view>`.
-  const componentUrl = root.querySelector<HTMLElement>("[data-component-url]")
-    ?.dataset.componentUrl;
-  if (componentUrl) {
-    const packageUrl = folderDocFromComponentUrl(componentUrl);
-    return packageUrl ? { packageUrl } : null;
-  }
-
   const view = root.querySelector("patchwork-view");
   return view ? resolveFromView(view, repo) : null;
 }
@@ -69,6 +60,14 @@ async function resolveFromView(
   const rawDocUrl = view.getAttribute("doc-url");
   const documentUrl =
     rawDocUrl && isValidAutomergeUrl(rawDocUrl) ? rawDocUrl : undefined;
+
+  // Every card renders through the one shared card tool, so its `importUrl`
+  // would always name @embark/card. The package worth inspecting is the card's
+  // own feature package — recover it from the card document's `src` module url.
+  if (documentUrl) {
+    const cardPackage = await cardPackageFromDoc(repo, documentUrl);
+    if (cardPackage) return { packageUrl: cardPackage, documentUrl };
+  }
 
   const toolId =
     view.getAttribute("tool-id") ??
@@ -112,15 +111,30 @@ async function fallbackToolId(
   }
 }
 
-// The `automerge:` folder doc a component module url points at. The url is
-// `/automerge%3A<rootUrl>/component.js` (the worker-served module path), so the
+// The feature package of a card, read from its document's `src` module url, or
+// undefined when the document isn't a card. A card's `src` is
+// `/automerge%3A<rootUrl>/dist/card.js` (the worker-served module path), so the
 // first path segment decodes to the package's folder doc; normalize to the
 // stable, head-less url.
-function folderDocFromComponentUrl(
-  componentUrl: string,
-): AutomergeUrl | undefined {
-  const segment = componentUrl.replace(/^\//, "").split("/")[0];
-  const decoded = decodeURIComponent(segment);
-  if (!isValidAutomergeUrl(decoded)) return undefined;
-  return stringifyAutomergeUrl({ documentId: parseAutomergeUrl(decoded).documentId });
+async function cardPackageFromDoc(
+  repo: Repo,
+  documentUrl: AutomergeUrl,
+): Promise<AutomergeUrl | undefined> {
+  try {
+    const handle = await repo.find(documentUrl);
+    const doc = handle.doc() as {
+      "@patchwork"?: { type?: string };
+      src?: unknown;
+    };
+    if (doc?.["@patchwork"]?.type !== "card") return undefined;
+    if (typeof doc.src !== "string" || !doc.src) return undefined;
+    const segment = doc.src.replace(/^\//, "").split("/")[0];
+    const decoded = decodeURIComponent(segment);
+    if (!isValidAutomergeUrl(decoded)) return undefined;
+    return stringifyAutomergeUrl({
+      documentId: parseAutomergeUrl(decoded).documentId,
+    });
+  } catch {
+    return undefined;
+  }
 }

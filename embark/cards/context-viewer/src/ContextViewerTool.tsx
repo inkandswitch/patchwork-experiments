@@ -15,24 +15,15 @@ export const ContextViewerTool: ToolRender = (_handle, element) => {
 };
 
 function ContextViewer(props: { element: ToolElement }) {
+  // Always resolves a store (the enclosing context, or the page-global body
+  // store); it just isn't known until mount, so it starts undefined.
   const [store, setStore] = createSignal<ContextStore>();
-  const [resolved, setResolved] = createSignal(false);
 
-  onMount(() => {
-    setStore(() => findContextStore(props.element));
-    setResolved(true);
-  });
+  onMount(() => setStore(() => findContextStore(props.element)));
 
   return (
     <div class="embark-context">
-      <Show
-        when={store()}
-        fallback={
-          <Show when={resolved()}>
-            <div class="embark-context__empty">No canvas context here.</div>
-          </Show>
-        }
-      >
+      <Show when={store()}>
         {(ctx) => <ContextBody store={ctx()} element={props.element} />}
       </Show>
     </div>

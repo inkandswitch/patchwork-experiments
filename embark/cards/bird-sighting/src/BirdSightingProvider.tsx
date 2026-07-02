@@ -1,10 +1,5 @@
-import {
-  isValidAutomergeUrl,
-  parseAutomergeUrl,
-  type AutomergeUrl,
-  type DocHandle,
-} from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import {
   For,
   Show,
@@ -13,10 +8,9 @@ import {
   createSignal,
   onCleanup,
 } from "solid-js";
-import { render } from "solid-js/web";
-import { RepoContext, useDocument } from "solid-automerge";
+import { useDocument } from "solid-automerge";
 import { readContext, useContextHandle } from "@embark/context";
-import { Highlight, Selection } from "@embark/selection";
+import { Highlight } from "@embark/selection";
 import {
   SchemaMatches,
   SchemaQueries,
@@ -25,12 +19,7 @@ import {
   type JsonSchema,
   type SchemaQuery,
 } from "@embark/schema";
-import type {
-  BirdCardDoc,
-  BirdKind,
-  BirdPeriod,
-  BirdSightingDoc,
-} from "./datatype";
+import type { BirdCardDoc, BirdKind, BirdPeriod } from "./datatype";
 import {
   fetchSightings,
   lookupImage,
@@ -39,6 +28,13 @@ import {
   type Sighting,
 } from "./ebird";
 import "./bird.css";
+
+// The Bird Sightings card's persisted state, stored on its `card` document: the
+// two swappable madlib choices that drive the eBird query.
+export type BirdSightingState = {
+  kind?: BirdKind;
+  period?: BirdPeriod;
+};
 
 // Re-search 500ms after the last map move / setting change, so a drag that emits
 // a burst of bounds updates only fires one lookup.
@@ -82,35 +78,19 @@ type Status =
   | { state: "empty" }
   | { state: "error" };
 
-// Tool entry point for the `bird-sighting` datatype: a document-backed card that
-// watches the canvas for an open map, reads its visible box, and asks eBird
-// what's been seen there — minting a `bird-card` per species so the map pins
-// them. `element.repo` is the embed contract; the context store is found by DOM
-// discovery from `element`.
-export const BirdSightingTool: ToolRender = (handle, element) =>
-  render(
-    () => (
-      <RepoContext.Provider value={element.repo}>
-        <BirdSighting
-          element={element}
-          handle={handle as DocHandle<BirdSightingDoc>}
-          selfUrl={handle.url}
-        />
-      </RepoContext.Provider>
-    ),
-    element,
-  );
-
-function BirdSighting(props: {
+// The Bird Sightings card watches the canvas for an open map, reads its visible
+// box, and asks eBird what's been seen there — minting a `bird-card` per species
+// so the map pins them. `element.repo` is the embed contract; the context store
+// is found by DOM discovery from `element`.
+export function BirdSighting(props: {
   element: ToolElement;
-  handle: DocHandle<BirdSightingDoc>;
-  selfUrl: AutomergeUrl;
+  handle: DocHandle<BirdSightingState>;
 }) {
   const repo = props.element.repo;
 
-  // The two madlib choices live on the backing doc, read reactively so the card
-  // face re-renders — and the search re-runs — when either changes.
-  const [doc] = useDocument<BirdSightingDoc>(() => props.handle.url);
+  // The two madlib choices live on the card document, read reactively so the
+  // middle slot re-renders — and the search re-runs — when either changes.
+  const [doc] = useDocument<BirdSightingState>(() => props.handle.url);
   const kind = (): BirdKind => doc()?.kind ?? "all";
   const period = (): BirdPeriod => doc()?.period ?? "week";
 
@@ -183,19 +163,6 @@ function BirdSighting(props: {
       for (const url of urls) entries[url] = true;
     });
   };
-
-  // A subtle ring on the card itself while it's the selected embed — purely the
-  // card's own affordance; it no longer lights its pins.
-  const selection = readContext(props.element, Selection);
-  const isSelected = createMemo(() => {
-    if (!isValidAutomergeUrl(props.selfUrl)) return false;
-    const selfId = parseAutomergeUrl(props.selfUrl).documentId;
-    return Object.keys(selection()).some(
-      (url) =>
-        isValidAutomergeUrl(url) &&
-        parseAutomergeUrl(url).documentId === selfId,
-    );
-  });
 
   const clearCards = () => {
     setRows([]);
@@ -317,76 +284,70 @@ function BirdSighting(props: {
     highlight.release();
   });
 
+  // The middle-slot content: the madlib sentence, a status line, and the list
+  // of found species. The card face (title, description, corner pips) is drawn
+  // by the shared card shell.
   return (
-    <div class="embark-bird-card" classList={{ "is-selected": isSelected() }}>
-      <span class="embark-bird-card__pip embark-bird-card__pip--tl">
-        <BirdIcon />
-      </span>
-      <div class="embark-bird-card__body">
-        <div class="embark-bird-card__title">Bird Sightings</div>
-        <p class="embark-bird-card__madlib">
-          {"Showing "}
-          <select
-            class="embark-bird-card__swap"
-            value={kind()}
-            onChange={(e) => setKind(e.currentTarget.value as BirdKind)}
-          >
-            <option value="all">all birds</option>
-            <option value="rare">rare birds</option>
-          </select>
-          {" spotted "}
-          <select
-            class="embark-bird-card__swap"
-            value={period()}
-            onChange={(e) => setPeriod(e.currentTarget.value as BirdPeriod)}
-          >
-            <option value="today">today</option>
-            <option value="week">this week</option>
-            <option value="month">this month</option>
-          </select>
-          {" on any "}
-          <span
-            class="embark-bird-card__maplink"
-            onMouseEnter={() => setHighlight(mapUrls())}
-            onMouseLeave={() => setHighlight([])}
-          >
-            map
-          </span>
-          {"."}
-        </p>
-
-        <div
-          class="embark-bird-card__status"
-          classList={{
-            "is-error": status().state === "error",
-            "is-busy": status().state === "searching",
-          }}
+    <div class="embark-bird">
+      <p class="embark-bird__madlib">
+        {"Showing "}
+        <select
+          class="embark-bird__swap"
+          value={kind()}
+          onChange={(e) => setKind(e.currentTarget.value as BirdKind)}
         >
-          {statusText(status())}
-        </div>
+          <option value="all">all birds</option>
+          <option value="rare">rare birds</option>
+        </select>
+        {" spotted "}
+        <select
+          class="embark-bird__swap"
+          value={period()}
+          onChange={(e) => setPeriod(e.currentTarget.value as BirdPeriod)}
+        >
+          <option value="today">today</option>
+          <option value="week">this week</option>
+          <option value="month">this month</option>
+        </select>
+        {" on any "}
+        <span
+          class="embark-bird__maplink"
+          onMouseEnter={() => setHighlight(mapUrls())}
+          onMouseLeave={() => setHighlight([])}
+        >
+          map
+        </span>
+        {"."}
+      </p>
 
-        <Show when={rows().length > 0}>
-          <ul class="embark-bird-card__list">
-            <For each={rows()}>
-              {(s) => (
-                <li
-                  class="embark-bird-card__row"
-                  onMouseEnter={() => setHighlight([s.url])}
-                  onMouseLeave={() => setHighlight([])}
-                >
-                  <span class="embark-bird-card__row-name">{s.comName}</span>
-                  <Show when={s.locName}>
-                    <span class="embark-bird-card__row-sub">{s.locName}</span>
-                  </Show>
-                </li>
-              )}
-            </For>
-          </ul>
-        </Show>
+      <div
+        class="embark-bird__status"
+        classList={{
+          "is-error": status().state === "error",
+          "is-busy": status().state === "searching",
+        }}
+      >
+        {statusText(status())}
       </div>
-      <span class="embark-bird-card__pip embark-bird-card__pip--br">
-        <BirdIcon />
-      </span>
+
+      <Show when={rows().length > 0}>
+        <ul class="embark-bird__list">
+          <For each={rows()}>
+            {(s) => (
+              <li
+                class="embark-bird__row"
+                onMouseEnter={() => setHighlight([s.url])}
+                onMouseLeave={() => setHighlight([])}
+              >
+                <span class="embark-bird__row-name">{s.comName}</span>
+                <Show when={s.locName}>
+                  <span class="embark-bird__row-sub">{s.locName}</span>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
     </div>
   );
 }
@@ -419,29 +380,4 @@ function statusText(status: Status): string {
     case "done":
       return `${status.count} species seen recently`;
   }
-}
-
-// A small bird glyph used as the card's corner "pips", mirroring the poi card's
-// map-pin suit marks.
-function BirdIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M16 7h.01" />
-      <path d="M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L3.4 18Z" />
-      <path d="m20 7 2 .5-2 .5" />
-      <path d="M10 18v3" />
-      <path d="M14 17.75V21" />
-      <path d="M7 18a6 6 0 0 0 3.84-10.61" />
-    </svg>
-  );
 }

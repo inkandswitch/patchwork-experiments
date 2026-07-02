@@ -1,13 +1,10 @@
 import { isValidAutomergeUrl, type AutomergeUrl } from "@automerge/automerge-repo";
 
 // A single droppable extracted from a drag. Mirrors the payload Patchwork's
-// sideboard writes when you drag a document out of a folder/list. A drag carries
-// either a document (`url`) or a standalone `patchwork:component` (`componentUrl`
-// — a head-less module url); exactly one is set.
+// sideboard writes when you drag a document out of a folder/list. Every drag
+// carries a document (`url`).
 export type DocumentDragItem = {
   url?: AutomergeUrl;
-  // A stable, head-less component module url for component embeds (no document).
-  componentUrl?: string;
   name?: string;
   type?: string;
   // The tool to render the item with, carried by canvas-embed drags so a parts
@@ -20,10 +17,9 @@ export type DocumentDragItem = {
   height?: number;
 };
 
-// True when a drag item resolves to something droppable: a component url, or a
-// valid automerge document url.
+// True when a drag item resolves to something droppable: a valid automerge
+// document url.
 function isDroppableItem(item: DocumentDragItem): boolean {
-  if (typeof item.componentUrl === "string" && item.componentUrl) return true;
   return item.url != null && isValidAutomergeUrl(item.url);
 }
 

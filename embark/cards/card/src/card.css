@@ -1,0 +1,128 @@
+/* The one card surface: a playing-card frame filling the embed, with the title
+   pinned to the top, a middle slot (blank, or the card's own visualization /
+   controls) that grows to fill, and the description pinned to the bottom — the
+   shared Title / middle / Description pattern. A small suit-like pip sits in
+   opposite corners, and a flip affordance appears on hover. */
+.embark-card {
+  position: relative;
+  display: flex;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #ffffff 0%, #fafaf9 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* The deactivated back face: a muted, hatched surface with no middle content,
+   showing only the title and description. */
+.embark-card--flipped {
+  background: repeating-linear-gradient(
+    45deg,
+    #f5f5f4,
+    #f5f5f4 8px,
+    #efedec 8px,
+    #efedec 16px
+  );
+}
+
+.embark-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 20px;
+  text-align: left;
+}
+
+.embark-card__title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #1c1917;
+}
+
+.embark-card--flipped .embark-card__title {
+  color: #57534e;
+}
+
+/* The middle slot: blank space, or the card's own live content. Grows to push
+   the title to the top and the description to the bottom. */
+.embark-card__middle {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* No middle content on the back face. */
+.embark-card--flipped .embark-card__middle {
+  display: none;
+}
+
+.embark-card__desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #57534e;
+}
+
+/* Corner pips, mirrored like a playing card's suit marks. */
+.embark-card__pip {
+  position: absolute;
+  display: flex;
+  color: var(--embark-card-accent, #16a34a);
+}
+
+.embark-card--flipped .embark-card__pip {
+  color: #a8a29e;
+}
+
+.embark-card__pip--tl {
+  top: 10px;
+  left: 10px;
+}
+
+.embark-card__pip--br {
+  bottom: 10px;
+  right: 10px;
+  transform: rotate(180deg);
+}
+
+/* Flip affordance: revealed on hover in the top-right corner (clear of the
+   corner pips). Toggles the card between its active face and its inert back. */
+.embark-card__flip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #57534e;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.embark-card:hover .embark-card__flip {
+  opacity: 1;
+}
+
+.embark-card__flip:hover {
+  color: #1c1917;
+  border-color: #d6d3d1;
+}

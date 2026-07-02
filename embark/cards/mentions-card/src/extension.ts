@@ -26,7 +26,6 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import {
-  findContextStore,
   getContextHandle,
   subscribeContext,
   type ScopeHandle,
@@ -75,10 +74,12 @@ export function mentionSearch(): Extension {
 
 const activation = new Compartment();
 
-// Stays dormant until a canvas context is reachable from this editor (so a
-// markdown editor opened outside a canvas leaves `@` inert). Discovery is a
-// synchronous one-shot, retried on updates until the editor is connected; the
-// activation dispatch is deferred to a microtask so it never runs mid-update.
+// Activates once the editor's DOM is in the document. This whole extension is
+// only installed in an editor when a Mentions card publishes it into that
+// editor's `CodemirrorExtensions` channel, so the on/off gating already happened
+// upstream; here we just wait for the DOM to connect (a synchronous one-shot
+// retried on updates) before activating, deferring the dispatch to a microtask
+// so it never runs mid-update.
 const brokerProbe = ViewPlugin.fromClass(
   class {
     private activated = false;
@@ -94,7 +95,7 @@ const brokerProbe = ViewPlugin.fromClass(
 
     private schedule(view: EditorView) {
       if (this.activated || this.destroyed) return;
-      if (!findContextStore(view.dom)) return;
+      if (!view.dom.isConnected) return;
       this.activated = true;
       queueMicrotask(() => {
         if (this.destroyed) return;

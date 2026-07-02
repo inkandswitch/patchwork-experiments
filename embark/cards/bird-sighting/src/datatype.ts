@@ -1,31 +1,9 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 
-// The two swappable madlib choices, persisted on the finder card so the phrasing
-// (and the search it drives) survives a reload and syncs to peers.
+// The two swappable madlib choices, persisted on the card document so the
+// phrasing (and the search it drives) survives a reload and syncs to peers.
 export type BirdKind = "all" | "rare";
 export type BirdPeriod = "today" | "week" | "month";
-
-// The Bird Sightings finder card: a document-backed contributor that watches any
-// map open on the canvas, reads its visible box, and asks eBird what's been seen
-// there recently — minting a `bird-card` per species (below) so the map plots
-// them as pins. Only the two madlib choices live here; everything else is
-// ephemeral working state or lives on the minted cards.
-export type BirdSightingDoc = {
-  "@patchwork": { type: "bird-sighting" };
-  kind: BirdKind;
-  period: BirdPeriod;
-};
-
-export const BirdSightingDatatype: DatatypeImplementation<BirdSightingDoc> = {
-  init(doc) {
-    doc["@patchwork"] = { type: "bird-sighting" };
-    doc.kind = "all";
-    doc.period = "week";
-  },
-  getTitle() {
-    return "Bird Sightings";
-  },
-};
 
 // One recent sighting, minted per species found. Coordinates live at the TOP
 // level (not under `props`) so the canvas's `{ lat, lon }` schema matcher finds

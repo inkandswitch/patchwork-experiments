@@ -15,7 +15,6 @@ import {
   type Suggestion,
 } from "@embark/commands";
 import type { WeatherCardDoc } from "./datatype";
-import "./weather.css";
 
 // Wait this long after the query last changed before resolving it (so each
 // keystroke of `/weather berl…` doesn't fire a fetch).
@@ -33,11 +32,11 @@ type DayWeather = {
 
 // A contributor that answers the canvas command channel with a `/weather
 // <place>` command. It reads the active queries and, for each weather query,
-// resolves the place to coordinates, fetches the day's forecast, mints a `card`
-// document, and offers it as a suggestion whose inserted token renders an inline
-// weather widget. The component itself only shows a title and a description of
-// what it does — like a playing card in a game. It is handle-less: there is no
-// backing document, so all of its state lives in the shared canvas context.
+// resolves the place to coordinates, fetches the day's forecast, mints a
+// weather-card document, and offers it as a suggestion whose inserted token
+// renders an inline weather widget. The card's face is drawn by the shared card
+// shell, so it renders nothing into the middle slot; all of its working state
+// lives in the shared canvas context.
 export function WeatherProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
 
@@ -49,7 +48,9 @@ export function WeatherProvider(props: { element: ToolElement }) {
   const inFlight = new Set<string>();
   const cardCache = new Map<string, { url: AutomergeUrl; label: string }>();
 
-  let store: ContextStore | undefined;
+  // Resolved on mount (always a store now: the enclosing context, or the
+  // page-global body store). Assigned before any of the callbacks below run.
+  let store!: ContextStore;
   let resolver: PlaceResolver | undefined;
   let suggestions: ScopeHandle<Record<string, Suggestion[]>> | undefined;
   let unsubscribeQueries: (() => void) | undefined;
@@ -57,7 +58,6 @@ export function WeatherProvider(props: { element: ToolElement }) {
 
   onMount(() => {
     store = findContextStore(props.element);
-    if (!store) return; // opened outside a canvas — nothing to contribute to
     // Shared place resolution (canvas {lat, lon} matches first, then search).
     resolver = createPlaceResolver(store, repo);
     suggestions = store.handle(CommandSuggestions);
@@ -80,7 +80,6 @@ export function WeatherProvider(props: { element: ToolElement }) {
   // debounce a resolve for each new weather query, and forget the ones that
   // disappeared (cancel timers, drop our answered set, prune our suggestions).
   const onQueries = () => {
-    if (!store) return;
     const active = new Set(Object.keys(store.read(CommandQueries)));
 
     for (const query of active) {
@@ -120,7 +119,7 @@ export function WeatherProvider(props: { element: ToolElement }) {
   // (leaving the query unanswered, so a later edit re-queues it) if no place can
   // be located or the query is dropped mid-way.
   const resolve = async (query: string) => {
-    if (!store || disposed || !resolver) return;
+    if (disposed || !resolver) return;
     inFlight.add(query);
     try {
       const place = parseWeather(query);
@@ -170,46 +169,9 @@ export function WeatherProvider(props: { element: ToolElement }) {
     }).url;
   };
 
-  return (
-    <div class="embark-weather-card">
-      <span class="embark-weather-card__pip embark-weather-card__pip--tl">
-        <SunIcon />
-      </span>
-      <div class="embark-weather-card__body">
-        <div class="embark-weather-card__title">Weather</div>
-        <p class="embark-weather-card__desc">
-          Adds a <code>/weather</code> command. Type{" "}
-          <code>/weather berlin</code> in a note to drop today's forecast,
-          resolved from places already on the canvas or a quick search.
-        </p>
-        <div class="embark-weather-card__source">Open-Meteo</div>
-      </div>
-      <span class="embark-weather-card__pip embark-weather-card__pip--br">
-        <SunIcon />
-      </span>
-    </div>
-  );
-}
-
-// A small sun glyph used as the card's corner "pips", the way a playing card
-// carries its suit in opposite corners.
-function SunIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-    </svg>
-  );
+  // The card face (title, description, corner pips) is drawn by the shared card
+  // shell; this contributor renders nothing into the middle slot.
+  return null;
 }
 
 // Parse a `/`-command query into the place to look up, or null when it isn't a

@@ -1,21 +1,12 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
-// The Weather package ships four plugins: the handle-less `weather` component
-// (the feature card + `/weather` command contributor the canvas embeds by url),
-// the `weather-card` datatype it mints for each forecast, a board tool that
-// renders a weather-card full-size, and a `"token"`-tagged tool that paints the
-// compact inline chip used wherever a weather-card is embedded in text.
+// The Weather package ships the `weather-card` datatype it mints for each
+// forecast, a board tool that renders a weather-card full-size, and a
+// `"token"`-tagged tool that paints the compact inline chip used wherever a
+// weather-card is embedded in text. The Weather card itself (the `/weather`
+// command contributor) is no longer a component: it is a `card` document whose
+// behavior module (./card) the shared card shell loads.
 export const plugins: Plugin<any>[] = [
-  {
-    type: "patchwork:component",
-    id: "weather",
-    name: "Weather",
-    icon: "CloudSun",
-    async load() {
-      const { default: component } = await import("./component");
-      return component;
-    },
-  },
   {
     type: "patchwork:datatype",
     id: "weather-card",

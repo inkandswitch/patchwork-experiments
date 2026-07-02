@@ -232,15 +232,6 @@
   pointer-events: none;
 }
 
-/* A component example previews into a plain host div (no <patchwork-view>); size
-   it the same way and keep it non-interactive so the wrapper stays grabbable. */
-.embark-parts-bin__component {
-  display: block;
-  width: 100%;
-  min-height: 140px;
-  pointer-events: none;
-}
-
 /* The drag image: a title token shown under the cursor while dragging. Parked
    off-screen so it never flashes in place; setDragImage snapshots it. */
 .embark-parts-bin__drag-token {

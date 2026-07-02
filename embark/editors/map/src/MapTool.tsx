@@ -68,6 +68,10 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     center: initial?.center ?? DEFAULT_CENTER,
     zoom: initial?.zoom ?? DEFAULT_ZOOM,
     attributionControl: false,
+    // Resizes are handled by our own observer below (un-throttled, with a
+    // synchronous redraw); maplibre's built-in tracking is throttled to 50ms
+    // and would double-resize in between.
+    trackResize: false,
   });
 
   // The map keeps two viewports apart: the *persisted* one (center/zoom/bounds
@@ -146,14 +150,19 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   };
   handle.on("change", onDocChange);
 
-  // maplibre only tracks window resizes; the embed is resized directly, so
-  // observe the container and tell the map to re-measure. Resizing changes the
-  // home box (center/zoom hold steady, so no moveend fires) — re-persist it,
-  // debounced, but only while resting at home so an active overlay never leaks
-  // its widened box into the persisted bounds.
+  // The embed is resized continuously during a drag, so re-measure on every
+  // container change (trackResize is off — maplibre's built-in observer is
+  // throttled to 50ms). `resize()` clears the WebGL buffer and only schedules
+  // an async repaint, so without the synchronous `redraw()` the browser paints
+  // blank frames between clears — the resize flicker. ResizeObserver callbacks
+  // run after layout but before paint, so the redraw lands in the same frame.
+  // Resizing also changes the home box (center/zoom hold steady, so no moveend
+  // fires) — re-persist it, debounced, but only while resting at home so an
+  // active overlay never leaks its widened box into the persisted bounds.
   let resizeSyncTimer: ReturnType<typeof setTimeout> | undefined;
   const resizeObserver = new ResizeObserver(() => {
     map.resize();
+    map.redraw();
     if (overlayActive) return;
     if (resizeSyncTimer) clearTimeout(resizeSyncTimer);
     resizeSyncTimer = setTimeout(persistBounds, 150);

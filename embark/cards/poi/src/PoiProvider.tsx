@@ -1,30 +1,12 @@
 import { type AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import { createEffect, onCleanup } from "solid-js";
-import { render } from "solid-js/web";
-import { RepoContext } from "solid-automerge";
 import { readContext, useContextHandle } from "@embark/context";
 import { SearchQueries, SearchResults } from "@embark/search";
 import { SchemaMatches, SchemaQueries } from "@embark/schema";
 import { LATLNG_KEY, LATLNG_QUERY } from "./latlng";
 import type { PoiCardDoc } from "./datatype";
-import "./poi.css";
-
-// Tool entry point for the `place-finder` datatype: a document-backed view that
-// runs the Place Finder card + search contributor against the shared canvas
-// context it's mounted inside. The backing doc is just a marker (see
-// ./datatype). `element.repo` is the embed contract; the context store is found
-// by DOM discovery from `element`.
-export const PlaceFinderTool: ToolRender = (_handle, element) =>
-  render(
-    () => (
-      <RepoContext.Provider value={element.repo}>
-        <PoiProvider element={element} />
-      </RepoContext.Provider>
-    ),
-    element,
-  );
 
 // A single OpenStreetMap place, flattened from a Nominatim result. Minted into a
 // `poi-card` document with top-level coordinates so the schema matcher can find
@@ -56,9 +38,8 @@ type NominatimItem = {
 
 // A contributor that answers the canvas search channel with OpenStreetMap
 // places. It reads the active queries and writes a result document url back
-// under each. Its backing `place-finder` document carries no state (it exists
-// only to give the card a stable url); all working state lives in the shared
-// canvas context.
+// under each. Its backing `card` document carries no search state; all working
+// state lives in the shared canvas context.
 export function PoiProvider(props: { element: ToolElement }) {
   const repo = props.element.repo;
   // Read the active queries from the context and write results back as our own
@@ -227,43 +208,10 @@ export function PoiProvider(props: { element: ToolElement }) {
     }
   };
 
-  return (
-    <div class="embark-poi-card">
-      <span class="embark-poi-card__pip embark-poi-card__pip--tl">
-        <PinIcon />
-      </span>
-      <div class="embark-poi-card__body">
-        <div class="embark-poi-card__title">Find Places</div>
-        <p class="embark-poi-card__desc">
-          For any active search lookup place names on Open Street Map
-        </p>
-      </div>
-      <span class="embark-poi-card__pip embark-poi-card__pip--br">
-        <PinIcon />
-      </span>
-    </div>
-  );
-}
-
-// A small map-pin glyph used as the card's corner "pips", the way a playing
-// card carries its suit in opposite corners.
-function PinIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M20 10c0 4.4-8 12-8 12s-8-7.6-8-12a8 8 0 0 1 16 0Z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
+  // The card face (title, description, corner pips) is drawn by the shared card
+  // shell from the card document; this contributor renders nothing into the
+  // middle slot.
+  return null;
 }
 
 // Read a [lng, lat] tuple from a matched node shaped like `{ lat, lon }` (the

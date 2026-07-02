@@ -1,13 +1,6 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import {
-  For,
-  Show,
-  createEffect,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { For, createEffect, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import {
@@ -21,7 +14,6 @@ import {
   registerContextElement,
   type PatchworkContextElement,
 } from "@embark/context";
-import { renderComponentEmbed } from "../component-embed";
 import { getDocumentDragPayload, getDragSource, hasDocumentDrag } from "../dnd";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
@@ -32,16 +24,17 @@ import "./parts-bin.css";
 // it as an embed. The payload points at a clone, so the example stays editable
 // in place.
 export const PartsBinTool: ToolRender = (handle, element) => {
-  // Host a local context and render the previews into it. Context discovery
-  // resolves to the nearest <patchwork-context> (which stops the request), so
-  // the previews' search boxes, sticker sources, etc. find this throwaway store
-  // instead of the live canvas one — the bin's contents are examples, not
-  // active participants in the canvas. Nothing answers their queries here, so
-  // they stay inert.
+  // Host an isolated context and render the previews into it. The `isolated`
+  // attribute makes this store a root with no parent, so the previews neither
+  // read from nor write to the enclosing canvas (or the page-global body) store
+  // — the bin's contents are examples, not active participants. Discovery from a
+  // preview resolves here (nearest host wins, stopping the request) and finds a
+  // dead-end store, so their search boxes, sticker sources, etc. stay inert.
   registerContextElement();
   const contextEl = document.createElement(
     "patchwork-context",
   ) as PatchworkContextElement;
+  contextEl.setAttribute("isolated", "");
   element.appendChild(contextEl);
 
   // Keep the previews' mount/unmount events from reaching the canvas: the
@@ -126,21 +119,6 @@ function PartsBin(props: { handle: DocHandle<PartsBinDoc> }) {
     const payload = getDocumentDragPayload(event.dataTransfer);
     if (!payload) return;
     for (const item of payload) {
-      // Component items have no document — store the (shared, head-less) url as
-      // an example directly, no cloning.
-      if (item.componentUrl) {
-        const componentUrl = item.componentUrl;
-        props.handle.change((binDoc) => {
-          binDoc.items.push({
-            id: crypto.randomUUID(),
-            componentUrl,
-            ...(item.toolId !== undefined && { toolId: item.toolId }),
-            ...(item.width !== undefined && { width: item.width }),
-            ...(item.height !== undefined && { height: item.height }),
-          });
-        });
-        continue;
-      }
       if (!item.url) continue;
       const url = item.url;
       props.handle.change((binDoc) => {
@@ -276,19 +254,14 @@ function PartsBinRow(props: {
   onRemove: () => void;
   onRename: (label: string) => void;
 }) {
-  const isComponent = () => Boolean(props.item.componentUrl);
-
   // Resolve the source handle up front (waits for ready) so dragstart — which
   // must write its payload synchronously — always has a loaded doc to clone
-  // instead of falling back to sharing the original. Component items have no
-  // document, so these stay inert for them.
+  // instead of falling back to sharing the original.
   const source = useDocHandle<unknown>(() => props.item.url);
   const [doc] = useDocument<NamedDoc>(() => props.item.url);
 
-  // The stored label wins; otherwise fall back to the document's own title/type
-  // (component items have no document, so they fall back to a generic name).
+  // The stored label wins; otherwise fall back to the document's own title/type.
   const fallbackName = () => {
-    if (isComponent()) return "Component";
     const value = doc();
     return (
       value?.["@patchwork"]?.title ||
@@ -301,29 +274,6 @@ function PartsBinRow(props: {
 
   const onDragStart = (event: DragEvent) => {
     if (!event.dataTransfer) return;
-
-    // A component item drops a reference to its shared, head-less url — no
-    // cloning, no document. The canvas imports and runs it directly.
-    if (props.item.componentUrl) {
-      event.dataTransfer.effectAllowed = "copy";
-      const item: {
-        componentUrl: string;
-        toolId?: string;
-        width?: number;
-        height?: number;
-      } = {
-        componentUrl: props.item.componentUrl,
-        ...(props.item.toolId !== undefined && { toolId: props.item.toolId }),
-        ...(props.item.width !== undefined && { width: props.item.width }),
-        ...(props.item.height !== undefined && { height: props.item.height }),
-      };
-      event.dataTransfer.setData(
-        "text/x-patchwork-dnd",
-        JSON.stringify({ source: "parts-bin", items: [item] }),
-      );
-      setDragToken(event, name());
-      return;
-    }
 
     const handle = source();
     if (!handle) return;
@@ -389,36 +339,14 @@ function PartsBinRow(props: {
         on:pointerdown={(event) => event.stopPropagation()}
         on:dragstart={onDragStart}
       >
-        <Show
-          when={props.item.componentUrl}
-          fallback={
-            <patchwork-view
-              doc-url={props.item.url}
-              tool-id={props.item.toolId}
-              hide-controls=""
-            />
-          }
-        >
-          {(componentUrl) => <ComponentPreview componentUrl={componentUrl()} />}
-        </Show>
+        <patchwork-view
+          doc-url={props.item.url}
+          tool-id={props.item.toolId}
+          hide-controls=""
+        />
       </div>
     </div>
   );
-}
-
-// A non-interactive live preview of a component example: a host div that imports
-// and runs the component module (against the bin's throwaway context, so its
-// provider logic stays inert). renderComponentEmbed stamps `repo` on the host.
-function ComponentPreview(props: { componentUrl: string }) {
-  const repo = useRepo();
-  let hostEl: HTMLDivElement | undefined;
-  onMount(() => {
-    const host = hostEl;
-    if (!host) return;
-    const dispose = renderComponentEmbed(host, props.componentUrl, repo);
-    onCleanup(dispose);
-  });
-  return <div ref={hostEl} class="embark-parts-bin__component" />;
 }
 
 // Use a small title token as the drag image instead of the browser's snapshot of

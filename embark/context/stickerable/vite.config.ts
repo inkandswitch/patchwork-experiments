@@ -7,15 +7,15 @@ export default defineConfig({
   base: "./",
   plugins: [
     solidPlugin(),
-    // Keep all injected CSS on the component entry (it renders the card and the
-    // overlay); index.js only registers the plugin.
+    // The card entry carries the card behavior and the overlay styles; inject the
+    // CSS into card.js.
     cssInjectedByJsPlugin({
-      jsAssetsFilterFunction: (chunk) => chunk.fileName === "component.js",
+      jsAssetsFilterFunction: (chunk) => chunk.fileName === "card.js",
     }),
   ],
   build: {
     lib: {
-      entry: { index: "src/index.ts", component: "src/component.tsx" },
+      entry: { index: "src/index.ts", card: "src/card.tsx" },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,
     },

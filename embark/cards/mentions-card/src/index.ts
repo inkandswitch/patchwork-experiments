@@ -1,29 +1,8 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
-// The Mentions card: a document whose tool, while on a canvas, publishes the
-// @mention codemirror extension into the shared `CodemirrorExtensions` channel
-// (see @embark/codemirror-extensions-host). Drop it on a canvas to turn mentions
-// on for every editor there; remove it to turn them off.
-export const plugins: Plugin<any>[] = [
-  {
-    type: "patchwork:datatype",
-    id: "mentions-card",
-    name: "Mentions",
-    icon: "AtSign",
-    async load() {
-      const { MentionsCardDatatype } = await import("./datatype");
-      return MentionsCardDatatype;
-    },
-  },
-  {
-    type: "patchwork:tool",
-    id: "mentions-card",
-    name: "Mentions",
-    icon: "AtSign",
-    supportedDatatypes: ["mentions-card"],
-    async load() {
-      const { MentionsCardTool } = await import("./MentionsCardTool");
-      return MentionsCardTool;
-    },
-  },
-];
+// The Mentions card is no longer a datatype/tool: it is a `card` document whose
+// behavior module (./card) the shared card shell loads. While the card sits
+// face-up on a canvas, that module publishes the @mention codemirror extension
+// into the canvas `CodemirrorExtensions` channel. This package registers
+// nothing; it exists only to publish that module.
+export const plugins: Plugin<any>[] = [];

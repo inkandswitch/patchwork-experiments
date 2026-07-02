@@ -155,18 +155,13 @@ function decorationFor(
     if (from === to) return null;
     return Decoration.mark({
       attributes: { style: cssText(sticker.styles) },
-      ...(sticker.emphasized ? { class: "cm-sticker--emphasized" } : {}),
     }).range(from, to);
   }
 
   const widget =
     sticker.type === "text"
-      ? new TextStickerWidget(sticker.text, sticker.styles, sticker.emphasized)
-      : new ToolStickerWidget(
-          sticker.docUrl,
-          sticker.toolId,
-          sticker.emphasized,
-        );
+      ? new TextStickerWidget(sticker.text, sticker.styles)
+      : new ToolStickerWidget(sticker.docUrl, sticker.toolId);
 
   if (sticker.slot === "replace") {
     return Decoration.replace({ widget }).range(from, to);
@@ -199,23 +194,17 @@ class TextStickerWidget extends WidgetType {
   constructor(
     readonly text: string,
     readonly styles?: Record<string, string>,
-    readonly emphasized?: boolean,
   ) {
     super();
   }
 
   eq(other: TextStickerWidget): boolean {
-    return (
-      other.text === this.text &&
-      sameStyles(other.styles, this.styles) &&
-      other.emphasized === this.emphasized
-    );
+    return other.text === this.text && sameStyles(other.styles, this.styles);
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = "cm-sticker cm-sticker--text";
-    if (this.emphasized) span.classList.add("cm-sticker--emphasized");
     span.textContent = this.text;
     if (this.styles) span.style.cssText = cssText(this.styles);
     return span;
@@ -241,23 +230,17 @@ class ToolStickerWidget extends WidgetType {
   constructor(
     readonly docUrl: AutomergeUrl,
     readonly toolId: string,
-    readonly emphasized?: boolean,
   ) {
     super();
   }
 
   eq(other: ToolStickerWidget): boolean {
-    return (
-      other.docUrl === this.docUrl &&
-      other.toolId === this.toolId &&
-      other.emphasized === this.emphasized
-    );
+    return other.docUrl === this.docUrl && other.toolId === this.toolId;
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = "cm-sticker cm-sticker--tool";
-    if (this.emphasized) span.classList.add("cm-sticker--emphasized");
     const view = document.createElement("patchwork-view");
     view.setAttribute("doc-url", this.docUrl);
     view.setAttribute("tool-id", this.toolId);

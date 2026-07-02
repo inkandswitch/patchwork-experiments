@@ -1,6 +1,6 @@
 import { Compartment, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
-import { findContextStore, subscribeContext } from "@embark/context";
+import { subscribeContext } from "@embark/context";
 import { CodemirrorExtensions } from "./channel";
 
 // The single globally-installed CodeMirror extension that turns the canvas into
@@ -27,14 +27,15 @@ export function codemirrorExtensionsHost(): Extension {
         this.start(update.view);
       }
 
-      // Attach the first time a canvas store is reachable. The editor's DOM may
-      // not be connected to the canvas `<patchwork-context>` when the plugin is
-      // first constructed, so retry on updates until discovery succeeds (the
-      // same probe the mention search uses). Outside a canvas it simply never
-      // starts.
+      // Attach once the editor's DOM is in the document, so context discovery
+      // resolves to the right store (the nearest `<patchwork-context>`, or the
+      // page-global body store). The DOM may not be connected when the plugin is
+      // first constructed, so retry on updates until it is. Gating on *which*
+      // features are on lives in the `CodemirrorExtensions` channel contents, not
+      // here: with no card publishing an extension, this installs nothing.
       private start(view: EditorView) {
         if (this.started || this.destroyed) return;
-        if (!findContextStore(view.dom)) return;
+        if (!view.dom.isConnected) return;
         this.started = true;
         this.unsubscribe = subscribeContext(
           view.dom,

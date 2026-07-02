@@ -211,12 +211,29 @@
   height: 100%;
 }
 
-/* A component embed renders into a plain host div (no <patchwork-view>); fill
-   the embed body the same way so the component sizes to the frame. */
-.embark-embed__component {
-  display: block;
-  width: 100%;
-  height: 100%;
+/* While a move is carried outside the canvas the embed hides (parked at its
+   origin) and the cursor-following pill below stands in for it; on release it
+   springs back, is deleted (claimed), or was copied by the target. */
+.embark-embed--carried {
+  visibility: hidden;
+}
+
+/* The stand-in for an embed carried outside the canvas: a small title pill
+   trailing the cursor. Fixed at body level so the canvas's overflow clipping
+   can't touch it; pointer-events: none keeps it out of drop hit-testing. */
+.embark-embed__drag-pill {
+  position: fixed;
+  z-index: 2147483647;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #6366f1;
+  color: #ffffff;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
 }
 
 /* Invisible resize target in the bottom-right corner: no fill, just the

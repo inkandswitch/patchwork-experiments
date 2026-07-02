@@ -1,41 +1,41 @@
-import type { JSX } from "solid-js";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { onCleanup, onMount } from "solid-js";
+import { render } from "solid-js/web";
 import {
-  stickerSourceCard,
+  runStickerSource,
   type ScanContext,
   type Sticker,
 } from "@embark/stickers";
 
 // The timer sticker's backing-doc shape (rendered by @embark/stickers' timer
-// tool). Inlined here as a contract type so this component keeps zero dependency
-// on the stickers package — it only mints docs of this shape.
+// tool). Inlined here as a contract type so this card keeps zero dependency on
+// the stickers package's doc types — it only mints docs of this shape.
 type TimerDoc = {
   "@patchwork": { type: "timer" };
   durationMs: number;
   startedAt?: number;
 };
 
-// A handle-less `patchwork:component` that turns timer tokens into live timer
-// widgets via a `tool` sticker in the "replace" slot. Each token gets a backing
-// `timer` document, reused across edits (keyed by the cursor-based target url).
-// The countdown widget itself is the separate timer tool (@embark/stickers'
-// timer); this component only finds the tokens and mints the widgets.
-// `stickerSourceCard` ignores its doc handle, so the default export adapts it to
-// the handle-less component shape.
-const TimerSourceCard = stickerSourceCard(
-  {
-    title: "Timer",
-    description:
-      "Turns timer tokens in your notes — @timer 5m or a bare 5:00 — into live countdown widgets you can start and reset.",
-    source: "@timer 5m · MM:SS",
-    accent: "#8b5cf6",
-    icon: ClockIcon,
-  },
-  { scan: scanTimers },
-);
+// Timer card behavior, loaded by the shared card shell as this package's
+// `card.js`. It turns timer tokens into live timer widgets via a `tool` sticker
+// in the "replace" slot. Each token gets a backing `timer` document, reused
+// across edits (keyed by the cursor-based target url). The countdown widget
+// itself is the separate timer tool (@embark/stickers' timer); this card only
+// finds the tokens and mints the widgets. The card's face is drawn by the shell,
+// so it renders nothing into the middle slot.
+const card: ToolRender = (_handle, element) =>
+  render(() => <TimerSource element={element} />, element);
 
-export default (element: ToolElement): (() => void) | void =>
-  TimerSourceCard(undefined as never, element);
+function TimerSource(props: { element: ToolElement }) {
+  onMount(() => {
+    const source = runStickerSource(props.element, { scan: scanTimers });
+    onCleanup(source.stop);
+  });
+
+  return null;
+}
+
+export default card;
 
 // `@timer <n><h|m|s>` (e.g. `@timer 5m`) or a bare `MM:SS` (e.g. `5:00`).
 const TOKEN_RE = /@timer\s+(\d+)\s*(h|m|s)\b|\b(\d{1,2}):([0-5]\d)\b/gi;
@@ -79,23 +79,4 @@ function durationOf(match: RegExpMatchArray): number | null {
     return (Number(match[3]) * 60 + Number(match[4])) * 1000;
   }
   return null;
-}
-
-function ClockIcon(): JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
 }

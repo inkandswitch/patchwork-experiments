@@ -48,8 +48,7 @@
 
 /* The thumbnail is a live but non-interactive window onto the card's document;
    clicks/drags fall through to the grabbable wrapper. */
-.embark-deck__card patchwork-view,
-.embark-deck__card .embark-deck__component {
+.embark-deck__card patchwork-view {
   display: block;
   width: 100%;
   height: 100%;

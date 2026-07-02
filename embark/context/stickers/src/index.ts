@@ -12,10 +12,8 @@ export const plugins: Plugin<any>[] = [...timerPlugins];
 export { stickerRenderer } from "./renderer";
 
 // The sticker vocabulary, the shared `Stickers` context channel, and the
-// scanning engine + source-card helper that example sources (unit/metric/
-// currency converters, timer, schedule) build on. Absorbed from the old
-// @embark/core "kitchen sink".
+// scanning engine that example sources (unit/metric/currency converters, timer,
+// schedule) build on. Absorbed from the old @embark/core "kitchen sink".
 export * from "./sticker";
 export * from "./channels";
 export * from "./source-lib";
-export * from "./source-card";

@@ -1,6 +1,5 @@
 import {
   cursor,
-  isValidAutomergeUrl,
   parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
@@ -11,7 +10,6 @@ import { z } from "zod";
 import { getContextHandle, subscribeContext } from "@embark/context";
 import { SchemaMatches, SchemaQueries, schemaKey } from "@embark/schema";
 import type { JsonSchema } from "@embark/schema";
-import { Selection } from "@embark/selection";
 import { Stickers } from "./channels";
 import type { Sticker } from "./sticker";
 
@@ -101,7 +99,6 @@ export function runStickerSource(
   element: ToolElement,
   config: StickerSourceConfig,
   onCount?: (count: number) => void,
-  selfUrl?: AutomergeUrl,
 ): StickerSource {
   const repo = element.repo;
   const docs = new Map<AutomergeUrl, DocEntry>();
@@ -109,19 +106,6 @@ export function runStickerSource(
   // releasing it drops every sticker we published (scope GC replaces the old
   // manual registry-doc deletion).
   const stickersHandle = getContextHandle(element, Stickers);
-
-  // When this source's own card embed is selected on the canvas, every sticker
-  // it publishes is re-emitted with `emphasized: true` so the renderer makes
-  // its annotations stand out — a visible link between the card and the
-  // stickers it owns. Selection arrives keyed by the selected embed's document
-  // url; we match it by documentId against our own. Component-backed sources
-  // pass no `selfUrl` (they have no document to select), so they never
-  // emphasize.
-  const selfId =
-    selfUrl && isValidAutomergeUrl(selfUrl)
-      ? parseAutomergeUrl(selfUrl).documentId
-      : undefined;
-  let selected = false;
 
   // Discover text-bearing documents on the canvas; add/drop watched docs to
   // match. Only root matches (a bare document url) are kept — nested matches
@@ -209,7 +193,7 @@ export function runStickerSource(
 
     entry.count = stickers.length;
     stickersHandle.change((slice) => {
-      slice[url] = selected ? stickers.map(emphasize) : stickers;
+      slice[url] = stickers;
     });
     emitCount();
   };
@@ -231,27 +215,8 @@ export function runStickerSource(
     onMatches(all[TEXT_KEY] ?? []);
   });
 
-  // Track whether our own card is the selected embed and re-emit our stickers
-  // (with/without emphasis) whenever that flips. Re-emitting is a cheap in-memory
-  // rescan of the docs we already watch — no refetch — so emphasis toggles
-  // immediately on selection rather than after the edit debounce.
-  const unsubscribeSelection =
-    selfId === undefined
-      ? undefined
-      : subscribeContext(element, Selection, (sel) => {
-          const now = Object.keys(sel).some(
-            (candidate) =>
-              isValidAutomergeUrl(candidate) &&
-              parseAutomergeUrl(candidate).documentId === selfId,
-          );
-          if (now === selected) return;
-          selected = now;
-          for (const url of docs.keys()) rescan(url);
-        });
-
   const stop = () => {
     unsubscribeMatches();
-    unsubscribeSelection?.();
     schemaQueries?.release();
     // Releasing the slice drops every sticker we published; here we only need
     // to reclaim minted resource docs (no per-key sticker writes needed).
@@ -264,12 +229,6 @@ export function runStickerSource(
   };
 
   return { stop, rescanAll };
-}
-
-// Tag a sticker as emphasized (a fresh object so the renderer's identity-based
-// change detection notices the flip).
-function emphasize(sticker: Sticker): Sticker {
-  return { ...sticker, emphasized: true };
 }
 
 // True when the url points at a whole document (no sub-path), i.e. a root match.

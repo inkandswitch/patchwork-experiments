@@ -1,40 +1,26 @@
-import type { JSX } from "solid-js";
-import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import type { Repo } from "@automerge/automerge-repo";
 import { isValidAutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
-import { render } from "solid-js/web";
 import {
   runStickerSource,
   type ScanContext,
   type Sticker,
   type StickerSource,
 } from "@embark/stickers";
-import "./schedule.css";
 
-// Tool entry point for the `schedule` datatype: a document-backed view that runs
-// the shared sticker-scanning engine against the canvas it's mounted inside. It
-// highlights every clock time and duration and runs a little schedule
-// calculator: within a paragraph it carries a running clock so each duration
-// shows the time you'll finish, flagging any computed time that overruns a later
-// target. Embedded docs that expose a `duration` (e.g. a route card) count as
-// durations too. The backing doc is just a marker (see ./datatype); its url is
-// passed down as `selfUrl` so the engine emphasizes this card's stickers while
-// it is the selected embed.
-export const ScheduleTool: ToolRender = (handle, element) =>
-  render(() => <ScheduleCard element={element} selfUrl={handle.url} />, element);
-
-// The card face: a playing-card surface that starts the scanning engine on mount
-// and tears it down on cleanup. It registers the running source so a
-// resolved/changed embedded duration can re-run every source's scan.
-function ScheduleCard(props: { element: ToolElement; selfUrl: AutomergeUrl }) {
+// Schedule card behavior: runs the shared sticker-scanning engine against the
+// canvas it's mounted inside. It highlights every clock time and duration and
+// runs a little schedule calculator: within a paragraph it carries a running
+// clock so each duration shows the time you'll finish, flagging any computed
+// time that overruns a later target. Embedded docs that expose a `duration`
+// (e.g. a route card) count as durations too. The card's face is drawn by the
+// shared card shell, so it renders nothing into the middle slot. It registers
+// the running source so a resolved/changed embedded duration can re-run every
+// source's scan.
+export function ScheduleCard(props: { element: ToolElement }) {
   onMount(() => {
-    const source = runStickerSource(
-      props.element,
-      { scan: scanSchedule },
-      undefined,
-      props.selfUrl,
-    );
+    const source = runStickerSource(props.element, { scan: scanSchedule });
     sources.add(source);
     onCleanup(() => {
       sources.delete(source);
@@ -42,22 +28,7 @@ function ScheduleCard(props: { element: ToolElement; selfUrl: AutomergeUrl }) {
     });
   });
 
-  return (
-    <div class="embark-schedule-card">
-      <span class="embark-schedule-card__pip embark-schedule-card__pip--tl">
-        <ClockIcon />
-      </span>
-      <div class="embark-schedule-card__body">
-        <div class="embark-schedule-card__title">Schedule</div>
-        <p class="embark-schedule-card__desc">
-          Adds up times and durations in your notes into a running clock.
-        </p>
-      </div>
-      <span class="embark-schedule-card__pip embark-schedule-card__pip--br">
-        <ClockIcon />
-      </span>
-    </div>
-  );
+  return null;
 }
 
 // Highlight colors for the matched spans and the computed-time chip. Times and
@@ -294,23 +265,4 @@ function formatTime(total: number): string {
   const hours = Math.floor(wrapped / 60);
   const minutes = wrapped % 60;
   return `${hours}:${String(minutes).padStart(2, "0")}`;
-}
-
-function ClockIcon(): JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
 }

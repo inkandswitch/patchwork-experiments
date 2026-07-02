@@ -3,8 +3,9 @@ import {
   parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
+  type Repo,
 } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import {
   For,
   Show,
@@ -27,10 +28,11 @@ import {
   registerContextElement,
   readContext,
   useContextHandle,
+  getBodyContextStore,
+  type ContextStore,
   type PatchworkContextElement,
 } from "@embark/context";
 import { Highlight, Selection } from "@embark/selection";
-import { renderComponentEmbed } from "./component-embed";
 import {
   resolveInspectTarget,
   isFolderDoc,
@@ -45,13 +47,12 @@ import "./styles.css";
 // canvas pixels, `z` is the stacking order, and `toolId` optionally pins which
 // tool renders it (otherwise the embedded doc's default tool is used).
 //
-// An embed renders either a document (`docUrl`) or a standalone
-// `patchwork:component` (`componentUrl` — a stable, head-less module url that is
-// imported and run directly, with no backing document). Exactly one is set.
+// Every embed renders a document (`docUrl`) through `<patchwork-view>`. Cards
+// (title/description/behavior + a source module url) are just `card` documents
+// — see @embark/card — so there is no separate "component" embed kind.
 export type EmbarkEmbed = {
   id: string;
   docUrl?: AutomergeUrl;
-  componentUrl?: string;
   x: number;
   y: number;
   width: number;
@@ -69,7 +70,11 @@ export type EmbarkEmbed = {
 };
 
 export type EmbarkCanvasDoc = {
-  "@patchwork": { type: "embark-canvas" };
+  // Two datatypes share this shape and the canvas UI: `embark-canvas` (a normal
+  // canvas, scoped by its own <patchwork-context>) and `context-canvas` (the
+  // sidebar surface, mounted without one so its cards land on the page-global
+  // body store — see EmbarkCanvasTool vs ContextCanvasTool).
+  "@patchwork": { type: "embark-canvas" | "context-canvas" };
   title: string;
   embeds: { [id: string]: EmbarkEmbed };
 };
@@ -80,7 +85,7 @@ export type EmbarkCanvasDoc = {
 // it (see the right-click "Show frame" toggle). Keyed by tool id; an embed with
 // no explicit `toolId` falls back to its document's datatype, which for these
 // tools matches the tool id.
-const FRAMELESS_TOOLS = new Set<string>(["parts-bin"]);
+const FRAMELESS_TOOLS = new Set<string>(["parts-bin", "context-canvas"]);
 
 // Auto-size tools report their own intrinsic size and change it as their state
 // changes (e.g. the deck, which grows when fanned and shrinks when folded).
@@ -105,49 +110,130 @@ const INSPECT_GAP = 24;
 const INSPECT_WIDTH = 360;
 const INSPECT_MIN_HEIGHT = 280;
 
-// Tool entry point: Solid renders into the host element and returns its own
-// disposer. Absolutely-positioned embeds need a positioned ancestor, so the
-// host element (often `position: static`) is promoted once up front.
+// The normal canvas tool. It owns a <patchwork-context> that answers discovery
+// requests from anywhere in its subtree, so its embeds form a local scope
+// (search boxes, sticker sources, editors, the map, and dynamically-loaded card
+// code all resolve to that store — which itself inherits reads from the
+// page-global body store). Rendering the canvas *into* the context element makes
+// it an ancestor of every embed; it is `display: contents`, so it doesn't
+// disturb positioning.
 export const EmbarkCanvasTool: ToolRender = (handle, element) => {
-  if (getComputedStyle(element).position === "static") {
-    element.style.position = "relative";
-  }
-
-  // A <patchwork-context> owns the shared store and answers discovery requests
-  // from anywhere in its subtree. Rendering the canvas *into* it makes it an
-  // ancestor of every embed, so search boxes, sticker sources, editors, the
-  // map, and dynamically-loaded card code all resolve to the same store. It is
-  // `display: contents`, so it doesn't disturb the embeds' positioning.
   registerContextElement();
   const contextEl = document.createElement(
     "patchwork-context",
   ) as PatchworkContextElement;
   element.appendChild(contextEl);
 
-  // Schema resolution is plain canvas code, not a provider: it reads requested
-  // schemas from the context and writes match urls back. Mount discovery still
-  // rides the `patchwork:mounted` / `patchwork:unmounted` events on `element`.
-  const disposeResolver = runSchemaResolver(
-    contextEl.store,
+  const disposeCanvas = mountCanvas(
+    handle as DocHandle<EmbarkCanvasDoc>,
     element,
-    element.repo,
+    contextEl,
+    contextEl.store,
   );
+
+  return () => {
+    disposeCanvas();
+    contextEl.remove();
+  };
+};
+
+// localStorage key holding this browser's context-canvas url.
+const CONTEXT_CANVAS_URL_KEY = "embark:context-canvas-url";
+
+// The context canvas tool: the exact same canvas UI, mounted as a sidebar
+// context tool. Registered with the `context-tool` tag, it is handed the account
+// doc (which it ignores) and instead hosts a single per-browser context canvas
+// whose url is stashed in localStorage. It mounts WITHOUT a <patchwork-context>,
+// so its embeds' discovery finds no local host and falls back to the page-global
+// body store — the cards placed here (mentions, command providers, sticker
+// sources, …) therefore apply to every editor and canvas on the page.
+export const ContextCanvasTool: ToolRender = (_accountHandle, element) => {
+  if (getComputedStyle(element).position === "static") {
+    element.style.position = "relative";
+  }
+
+  const store = getBodyContextStore();
+  const disposeResolver = runSchemaResolver(store, element, element.repo);
+
+  // The canvas doc is resolved asynchronously (find-or-create), so render a
+  // wrapper that shows the canvas once its handle arrives.
+  const [handle, setHandle] = createSignal<DocHandle<EmbarkCanvasDoc>>();
+  void resolveContextCanvas(element.repo).then(setHandle);
 
   const disposeRender = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <EmbarkCanvas handle={handle as DocHandle<EmbarkCanvasDoc>} />
+        <Show when={handle()}>
+          {(ready) => <EmbarkCanvas handle={ready()} />}
+        </Show>
       </RepoContext.Provider>
     ),
-    contextEl,
+    element,
   );
 
   return () => {
     disposeRender();
     disposeResolver();
-    contextEl.remove();
   };
 };
+
+// Find-or-create this browser's single context canvas. Its url lives in
+// localStorage — deliberately per-device, not synced through the account — so
+// the same global surface reopens across sessions. Seeded empty (no parts bin).
+// A stored url that can't be resolved in this repo (e.g. a different device or
+// account) is treated as absent and a fresh canvas is minted.
+async function resolveContextCanvas(
+  repo: Repo,
+): Promise<DocHandle<EmbarkCanvasDoc>> {
+  const stored = localStorage.getItem(CONTEXT_CANVAS_URL_KEY);
+  if (stored && isValidAutomergeUrl(stored)) {
+    try {
+      return await repo.find<EmbarkCanvasDoc>(stored);
+    } catch {
+      // Fall through and mint a new one.
+    }
+  }
+  const created = repo.create<EmbarkCanvasDoc>({
+    "@patchwork": { type: "context-canvas" },
+    title: "Context",
+    embeds: {},
+  });
+  localStorage.setItem(CONTEXT_CANVAS_URL_KEY, created.url);
+  return created;
+}
+
+// Shared setup behind both tools: promote the host so absolutely-positioned
+// embeds have a positioned ancestor, start schema resolution against `store`
+// (plain canvas code that reads requested schemas from the context and writes
+// match urls back; mount discovery rides the `patchwork:mounted` /
+// `patchwork:unmounted` events on `element`), and render the canvas into
+// `target`. Returns a disposer.
+function mountCanvas(
+  handle: DocHandle<EmbarkCanvasDoc>,
+  element: ToolElement,
+  target: HTMLElement,
+  store: ContextStore,
+): () => void {
+  if (getComputedStyle(element).position === "static") {
+    element.style.position = "relative";
+  }
+
+  const disposeResolver = runSchemaResolver(store, element, element.repo);
+
+  const disposeRender = render(
+    () => (
+      <RepoContext.Provider value={element.repo}>
+        <EmbarkCanvas handle={handle} />
+      </RepoContext.Provider>
+    ),
+    target,
+  );
+
+  return () => {
+    disposeRender();
+    disposeResolver();
+  };
+}
 
 function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   const [doc] = useDocument<EmbarkCanvasDoc>(() => props.handle.url);
@@ -207,8 +293,8 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   };
 
   // Cmd/Ctrl+D: duplicate the selected embed. The copy references the same
-  // document (or shared, head-less component url) as the original — there is no
-  // deep copy — and is dropped slightly down-and-right.
+  // document as the original — there is no deep copy — and is dropped slightly
+  // down-and-right.
   const duplicateEmbed = (id: string) => {
     const newId = crypto.randomUUID();
     props.handle.change((canvas) => {
@@ -225,7 +311,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         z: highestZ(canvas.embeds) + 1,
       };
       if (src.docUrl !== undefined) copy.docUrl = src.docUrl;
-      if (src.componentUrl !== undefined) copy.componentUrl = src.componentUrl;
       if (src.toolId !== undefined) copy.toolId = src.toolId;
       if (src.locked !== undefined) copy.locked = src.locked;
       if (src.showFrame !== undefined) copy.showFrame = src.showFrame;
@@ -274,10 +359,9 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     setMenu(null);
   };
 
-  // Inspect: resolve what paints the clicked embed (its package, and — for a
-  // tool — the document it shows) from the rendered DOM, mint a small inspect
-  // doc carrying those urls, and drop a fresh embed beside it that renders that
-  // inspect doc. Works for both document embeds and standalone components.
+  // Inspect: resolve what paints the clicked embed (its package and the document
+  // it shows) from the rendered DOM, mint a small inspect doc carrying those
+  // urls, and drop a fresh embed beside it that renders that inspect doc.
   const inspectEmbed = async (id: string) => {
     setMenu(null);
     const source = doc()?.embeds[id];
@@ -381,8 +465,8 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     const dropX = rect ? event.clientX - rect.left : event.clientX;
     const dropY = rect ? event.clientY - rect.top : event.clientY;
 
-    // Dropped items become embeds that reference the dragged document (or
-    // shared, head-less component url) directly — there is no deep copy.
+    // Dropped items become embeds that reference the dragged document directly
+    // — there is no deep copy.
     props.handle.change((canvas) => {
       let z = highestZ(canvas.embeds);
       payload.forEach((item, index) => {
@@ -400,8 +484,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         };
         // Automerge rejects an explicit `undefined`, so only set the fields the
         // dropped item actually carries.
-        if (item.componentUrl) embed.componentUrl = item.componentUrl;
-        else if (item.url) embed.docUrl = item.url;
+        if (item.url) embed.docUrl = item.url;
         if (item.toolId !== undefined) embed.toolId = item.toolId;
         canvas.embeds[id] = embed;
       });
@@ -477,7 +560,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
                 clientX,
                 clientY,
                 toolId,
-                Boolean(embed.docUrl || embed.componentUrl),
+                Boolean(embed.docUrl),
               )
             }
           />
@@ -529,7 +612,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.18</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.22</div>
     </div>
   );
 }
@@ -561,6 +644,11 @@ function EmbedView(props: {
   // document, plus the drop target currently under the cursor. Null for resizes
   // and moves that haven't started.
   let drag: DragBridge | null = null;
+  // True while a move is outside the canvas bounds: the embed parks (hidden)
+  // at its origin and a cursor-following title pill stands in for it.
+  const [carried, setCarried] = createSignal(false);
+  let pillEl: HTMLDivElement | null = null;
+  onCleanup(() => pillEl?.remove());
 
   const beginInteraction = (mode: InteractionMode) => (event: PointerEvent) => {
     // Locked embeds can't be moved or resized — leave the event alone so the
@@ -588,7 +676,7 @@ function EmbedView(props: {
         ? {
             data: buildDragData(),
             overEl: null,
-            overEmbed: null,
+            overScope: null,
             accepted: false,
           }
         : null;
@@ -599,20 +687,45 @@ function EmbedView(props: {
     if (!state || state.pointerId !== event.pointerId) return;
     const dx = event.clientX - state.startClientX;
     const dy = event.clientY - state.startClientY;
-    props.handle.change((canvas) => {
-      const target = canvas.embeds[props.embed.id];
-      if (!target) return;
-      if (state.mode === "move") {
-        target.x = state.originX + dx;
-        target.y = state.originY + dy;
-      } else {
+
+    if (state.mode === "resize") {
+      props.handle.change((canvas) => {
+        const target = canvas.embeds[props.embed.id];
+        if (!target) return;
         target.width = Math.max(MIN_WIDTH, state.originWidth + dx);
         target.height = Math.max(MIN_HEIGHT, state.originHeight + dy);
-      }
-    });
-    if (state.mode === "move" && drag) {
-      updateDragOver(event.clientX, event.clientY);
+      });
+      return;
     }
+
+    // A move follows the cursor while it stays on the canvas. Once it crosses
+    // the edge the embed parks back at its origin and hides, and a title pill
+    // follows the cursor instead — out there the embed would be clipped by the
+    // canvas (overflow: hidden) and a stored position is meaningless anyway.
+    if (pointerInsideCanvas(event.clientX, event.clientY)) {
+      if (carried()) {
+        setCarried(false);
+        removePill();
+      }
+      props.handle.change((canvas) => {
+        const target = canvas.embeds[props.embed.id];
+        if (!target) return;
+        target.x = state.originX + dx;
+        target.y = state.originY + dy;
+      });
+    } else {
+      if (!carried()) {
+        setCarried(true);
+        props.handle.change((canvas) => {
+          const target = canvas.embeds[props.embed.id];
+          if (!target) return;
+          target.x = state.originX;
+          target.y = state.originY;
+        });
+      }
+      positionPill(event.clientX, event.clientY);
+    }
+    if (drag) updateDragOver(event.clientX, event.clientY);
   };
 
   const endInteraction = (event: PointerEvent) => {
@@ -623,6 +736,9 @@ function EmbedView(props: {
       handle.releasePointerCapture(event.pointerId);
     }
     interaction = null;
+    const wasCarried = carried();
+    setCarried(false);
+    removePill();
 
     // Resizes, and moves that never hovered a drop target, just leave the embed
     // where it landed (the live position updates already happened).
@@ -630,8 +746,10 @@ function EmbedView(props: {
     drag = null;
     if (state.mode !== "move" || !bridge) return;
 
-    // Released over the bare canvas, or over an embed that didn't accept the
-    // drop: clear any lingering hover state and keep the embed where it landed.
+    // Released over the bare canvas, or over a target that didn't accept the
+    // drop: clear any lingering hover state. Inside the canvas the embed keeps
+    // its dropped position; outside (carried, parked at its origin) it springs
+    // back home from the release point.
     if (!bridge.overEl || !bridge.accepted) {
       if (bridge.overEl) {
         dispatchDragEvent(
@@ -642,14 +760,16 @@ function EmbedView(props: {
           bridge.data,
         );
       }
+      if (wasCarried) springBack(event, state);
       return;
     }
 
     // Hand the document to the drop target. If it claimed the embed (e.g. the
     // deck moving the card in), delete it here; otherwise it took a copy (e.g.
-    // the parts bin) and the original springs back to where the drag began. We
-    // can't read this off `dropEffect` — the bridge's DataTransfer ignores the
-    // effect setters — so targets mark the drop event itself (see drop-claim).
+    // the parts bin, or a host target outside the canvas) and the original
+    // springs back to where the drag began. We can't read this off
+    // `dropEffect` — the bridge's DataTransfer ignores the effect setters — so
+    // targets mark the drop event itself (see drop-claim).
     const dropEvent = dispatchDragEvent(
       "drop",
       bridge.overEl,
@@ -662,6 +782,13 @@ function EmbedView(props: {
       return;
     }
 
+    springBack(event, state);
+  };
+
+  // Return the embed to where the drag began: reset the stored position (a
+  // no-op if it was parked there while carried) and animate the transform from
+  // the release point back to zero, so it visibly springs home.
+  const springBack = (event: PointerEvent, state: Interaction) => {
     const dx = event.clientX - state.startClientX;
     const dy = event.clientY - state.startClientY;
     props.handle.change((canvas) => {
@@ -670,8 +797,6 @@ function EmbedView(props: {
       target.x = state.originX;
       target.y = state.originY;
     });
-    // The reset above moves the element to its origin synchronously, so animate
-    // the transform from the drop point back to zero for the spring-back.
     rootEl?.animate(
       [
         { transform: `translate(${dx}px, ${dy}px)` },
@@ -681,9 +806,43 @@ function EmbedView(props: {
     );
   };
 
-  // Build the drag payload describing this embed (document or component), in the
-  // same shape a real document drag carries — so a drop target (e.g. a parts
-  // bin) handles canvas embeds with no special-casing.
+  // Whether the pointer is over the canvas this embed lives on. Everything
+  // else — host chrome, other tools, the page around the canvas — counts as
+  // outside, where a move is represented by the pill.
+  const pointerInsideCanvas = (clientX: number, clientY: number): boolean => {
+    const canvas = rootEl?.closest(".embark-canvas");
+    if (!canvas) return true;
+    const rect = canvas.getBoundingClientRect();
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom
+    );
+  };
+
+  // The stand-in shown while carried outside the canvas: a small fixed-position
+  // pill with the embed's title, trailing the cursor. pointer-events: none, so
+  // it never occludes the drop target hit-testing underneath.
+  const positionPill = (clientX: number, clientY: number) => {
+    if (!pillEl) {
+      pillEl = document.createElement("div");
+      pillEl.className = "embark-embed__drag-pill";
+      pillEl.textContent = embedName();
+      document.body.appendChild(pillEl);
+    }
+    pillEl.style.left = `${clientX + 14}px`;
+    pillEl.style.top = `${clientY + 12}px`;
+  };
+
+  const removePill = () => {
+    pillEl?.remove();
+    pillEl = null;
+  };
+
+  // Build the drag payload describing this embed's document, in the same shape a
+  // real document drag carries — so a drop target (e.g. a parts bin) handles
+  // canvas embeds with no special-casing.
   const buildDragData = (): DataTransfer => {
     const data = new DataTransfer();
     const item: DocumentDragItem = {
@@ -691,14 +850,11 @@ function EmbedView(props: {
       height: props.embed.height,
       ...(props.embed.toolId !== undefined && { toolId: props.embed.toolId }),
     };
-    if (props.embed.componentUrl) item.componentUrl = props.embed.componentUrl;
-    else if (props.embed.docUrl) item.url = props.embed.docUrl;
+    if (props.embed.docUrl) item.url = props.embed.docUrl;
     data.setData(
       "text/x-patchwork-dnd",
       JSON.stringify({ source: "canvas", items: [item] }),
     );
-    // Only document embeds advertise a bare url list; a component embed has no
-    // document, so it travels in the rich payload alone.
     if (props.embed.docUrl) {
       data.setData(
         "text/x-patchwork-urls",
@@ -711,11 +867,14 @@ function EmbedView(props: {
 
   // Keep the hovered drop target informed with dragleave/dragover (so it can
   // highlight and advertise its drop effect), tracking whether it accepts.
+  // Enter/leave are deduped per scope: the containing embed for canvas targets
+  // (hopping between children of one embed shouldn't thrash its hover state),
+  // the element itself for host targets outside the canvas.
   const updateDragOver = (clientX: number, clientY: number) => {
     if (!drag) return;
     const overEl = dropElementUnder(clientX, clientY);
-    const overEmbed = overEl?.closest(".embark-embed") ?? null;
-    if (overEmbed !== drag.overEmbed) {
+    const overScope = overEl ? (overEl.closest(".embark-embed") ?? overEl) : null;
+    if (overScope !== drag.overScope) {
       if (drag.overEl) {
         dispatchDragEvent(
           "dragleave",
@@ -725,7 +884,7 @@ function EmbedView(props: {
           drag.data,
         );
       }
-      drag.overEmbed = overEmbed;
+      drag.overScope = overScope;
       drag.accepted = false;
     }
     drag.overEl = overEl;
@@ -740,16 +899,21 @@ function EmbedView(props: {
     }
   };
 
-  // The topmost element under the cursor that belongs to a *different* embed, or
-  // null when that's the bare canvas (dragging over empty space is a no-op).
-  // elementsFromPoint is needed because the dragged embed sits on top; it also
-  // skips pointer-events:none chrome, so it lands on a bin's panel directly.
+  // The topmost element under the cursor that could take the drop: inside the
+  // canvas that's an element of a *different* embed (bare canvas is a no-op —
+  // dropping there just leaves the embed where it lands); outside the canvas
+  // any host element qualifies, so app chrome like the sideboard can receive
+  // the same synthetic drag events. elementsFromPoint is needed because the
+  // dragged embed sits on top; it also skips pointer-events:none chrome (and
+  // the pill), so it lands on real targets directly.
   const dropElementUnder = (
     clientX: number,
     clientY: number,
   ): Element | null => {
+    const canvas = rootEl?.closest(".embark-canvas") ?? null;
     for (const el of document.elementsFromPoint(clientX, clientY)) {
       if (rootEl && rootEl.contains(el)) continue; // skip the dragged embed
+      if (canvas && !canvas.contains(el)) return el; // outside the canvas
       const embed = el.closest(".embark-embed");
       return embed && embed !== rootEl ? el : null;
     }
@@ -781,10 +945,23 @@ function EmbedView(props: {
   // `toolId` when set, otherwise fall back to the document's datatype (which
   // equals the default tool id for these tools). The doc loads async, so these
   // may settle a frame after mount.
-  const [embedDoc] = useDocument<{ "@patchwork"?: { type?: string } }>(
-    () => props.embed.docUrl,
-  );
+  const [embedDoc] = useDocument<{
+    "@patchwork"?: { title?: string; type?: string };
+    title?: string;
+  }>(() => props.embed.docUrl);
   const toolId = () => props.embed.toolId ?? embedDoc()?.["@patchwork"]?.type;
+  // Display name for the drag pill: the document's title (Patchwork keeps it
+  // under `@patchwork.title`; some datatypes mirror it at the root), falling
+  // back to the datatype or a generic label.
+  const embedName = () => {
+    const value = embedDoc();
+    return (
+      value?.["@patchwork"]?.title ||
+      value?.title ||
+      value?.["@patchwork"]?.type ||
+      "Untitled"
+    );
+  };
   // An explicit `showFrame` wins; otherwise the tool's default decides. Framed
   // is the default for anything dropped in from outside — only tools in
   // FRAMELESS_TOOLS default to frameless.
@@ -863,7 +1040,7 @@ function EmbedView(props: {
         drag = {
           data: buildDragData(),
           overEl: null,
-          overEmbed: null,
+          overScope: null,
           accepted: false,
         };
       }
@@ -887,6 +1064,7 @@ function EmbedView(props: {
         "embark-embed--frameless": frameless(),
         "embark-embed--locked": locked(),
         "embark-embed--autosize": autosize(),
+        "embark-embed--carried": carried(),
       }}
       style={{
         left: `${props.embed.x}px`,
@@ -943,17 +1121,10 @@ function EmbedView(props: {
         on:pointerup={onSurfacePointerEnd}
         on:pointercancel={onSurfacePointerEnd}
       >
-        <Show
-          when={props.embed.componentUrl}
-          fallback={
-            <patchwork-view
-              doc-url={props.embed.docUrl}
-              tool-id={props.embed.toolId}
-            />
-          }
-        >
-          {(componentUrl) => <ComponentEmbed componentUrl={componentUrl()} />}
-        </Show>
+        <patchwork-view
+          doc-url={props.embed.docUrl}
+          tool-id={props.embed.toolId}
+        />
       </div>
       <Show when={resizable()}>
         <div
@@ -966,29 +1137,6 @@ function EmbedView(props: {
         />
       </Show>
     </div>
-  );
-}
-
-// A component embed's body: a host div that imports and runs the standalone
-// `patchwork:component` module at `componentUrl`. The host lives inside the
-// canvas <patchwork-context>, so the component resolves the shared store through
-// DOM discovery; renderComponentEmbed stamps `repo` on the host (the embed
-// contract) and tears the component down on cleanup.
-function ComponentEmbed(props: { componentUrl: string }) {
-  const repo = useRepo();
-  let hostEl: HTMLDivElement | undefined;
-  onMount(() => {
-    const host = hostEl;
-    if (!host) return;
-    const dispose = renderComponentEmbed(host, props.componentUrl, repo);
-    onCleanup(dispose);
-  });
-  return (
-    <div
-      ref={hostEl}
-      class="embark-embed__component"
-      data-component-url={props.componentUrl}
-    />
   );
 }
 
@@ -1089,12 +1237,14 @@ type PendingMove = {
 };
 
 // Live state for a move's native-DnD bridge: the DataTransfer offered to drop
-// targets, the element/embed currently under the cursor, and whether that target
-// accepted the latest dragover.
+// targets, the element currently under the cursor, the scope enter/leave is
+// deduped by (the containing embed for canvas targets, the element itself for
+// host targets outside the canvas), and whether that target accepted the
+// latest dragover.
 type DragBridge = {
   data: DataTransfer;
   overEl: Element | null;
-  overEmbed: Element | null;
+  overScope: Element | null;
   accepted: boolean;
 };
 

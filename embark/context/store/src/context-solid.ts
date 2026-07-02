@@ -28,7 +28,6 @@ export function readContext<T extends Record<string, unknown>>(
     const element = resolveElement(source);
     if (!element) return;
     const store = findContextStore(element);
-    if (!store) return;
     setValue(() => store.read(channel));
     const unsubscribe = store.subscribe(
       channel,
@@ -56,7 +55,6 @@ export function useContextHandle<T extends Record<string, unknown>>(
     const element = resolveElement(source);
     if (!element || released) return;
     const store = findContextStore(element);
-    if (!store) return;
     real = store.handle(channel, resolveOwner(element));
     for (const mutate of buffered) real.change(mutate);
     buffered.length = 0;

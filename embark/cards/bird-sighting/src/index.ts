@@ -1,33 +1,12 @@
 import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
-// The Bird Sightings package ships five plugins: the `bird-sighting` datatype +
-// tool pair (the finder card that watches an open map and queries eBird — a
-// document-backed view so the card has a stable url), the `bird-card` datatype
-// it mints per species, a board tool that renders a bird-card full-size (also
-// used in the map's hover popup), and a `"token"`-tagged tool that paints the
-// compact inline chip used wherever a bird-card is embedded in text.
+// The Bird Sightings package ships the `bird-card` datatype it mints per
+// species, a board tool that renders a bird-card full-size (also used in the
+// map's hover popup), and a `"token"`-tagged tool that paints the compact inline
+// chip used wherever a bird-card is embedded in text. The finder card itself is
+// no longer a datatype/tool: it is a `card` document whose behavior module
+// (./card) the shared card shell loads.
 export const plugins: Plugin<any>[] = [
-  {
-    type: "patchwork:tool",
-    id: "bird-sighting",
-    name: "Bird Sightings",
-    icon: "Bird",
-    supportedDatatypes: ["bird-sighting"],
-    async load() {
-      const { BirdSightingTool } = await import("./BirdSightingProvider");
-      return BirdSightingTool;
-    },
-  },
-  {
-    type: "patchwork:datatype",
-    id: "bird-sighting",
-    name: "Bird Sightings",
-    icon: "Bird",
-    async load() {
-      const { BirdSightingDatatype } = await import("./datatype");
-      return BirdSightingDatatype;
-    },
-  },
   {
     type: "patchwork:datatype",
     id: "bird-card",

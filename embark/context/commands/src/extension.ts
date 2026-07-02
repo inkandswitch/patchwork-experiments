@@ -17,7 +17,6 @@ import {
 } from "@codemirror/view";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
-  findContextStore,
   getContextHandle,
   subscribeContext,
   type ScopeHandle,
@@ -54,10 +53,13 @@ export function slashCommands(): Extension {
 
 const activation = new Compartment();
 
-// Stays dormant until a canvas context is reachable from this editor (so a
-// markdown editor opened outside a canvas leaves `/` inert). Discovery is a
-// synchronous one-shot, retried on updates until the editor is connected; the
-// activation dispatch is deferred to a microtask so it never runs mid-update.
+// Activates once the editor's DOM is in the document, so context reads/writes
+// resolve to the right store (the nearest `<patchwork-context>`, or the
+// page-global body store). Discovery is a synchronous one-shot retried on
+// updates until the editor is connected; the activation dispatch is deferred to
+// a microtask so it never runs mid-update. Suggestions only appear when a
+// contributor fills the `CommandSuggestions` channel of the resolved store, so
+// the feature stays quiet where nothing answers.
 const brokerProbe = ViewPlugin.fromClass(
   class {
     private activated = false;
@@ -73,7 +75,7 @@ const brokerProbe = ViewPlugin.fromClass(
 
     private schedule(view: EditorView) {
       if (this.activated || this.destroyed) return;
-      if (!findContextStore(view.dom)) return;
+      if (!view.dom.isConnected) return;
       this.activated = true;
       queueMicrotask(() => {
         if (this.destroyed) return;

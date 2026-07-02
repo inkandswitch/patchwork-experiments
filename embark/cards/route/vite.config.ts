@@ -7,18 +7,17 @@ export default defineConfig({
   base: "./",
   plugins: [
     solidPlugin(),
-    // The component entry renders the feature card and pulls in route.css;
-    // index.js only registers plugins, and the board/token tools use inline
-    // styles, so the component entry is the only one that needs injected CSS.
+    // The card entry carries the card behavior; the board/token tools use inline
+    // styles, so inject any CSS into card.js.
     cssInjectedByJsPlugin({
-      jsAssetsFilterFunction: (chunk) => chunk.fileName === "component.js",
+      jsAssetsFilterFunction: (chunk) => chunk.fileName === "card.js",
     }),
   ],
   build: {
     lib: {
       entry: {
         index: "src/index.ts",
-        component: "src/component.tsx",
+        card: "src/card.tsx",
       },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,

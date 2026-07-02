@@ -1,4 +1,3 @@
-import type { JSX } from "solid-js";
 import {
   For,
   Show,
@@ -18,7 +17,7 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { z } from "zod";
 import { getContextHandle, subscribeContext } from "@embark/context";
 import {
@@ -32,8 +31,8 @@ import { extractText, type TextExtract } from "./extract";
 import "@inkandswitch/patchwork-elements";
 import "./stickerable.css";
 
-// "Make stickerable": a handle-less component that lets stickers reach text that
-// isn't an automerge document. It lists the datatypes present on the canvas
+// "Make stickerable": a card that lets stickers reach text that isn't an
+// automerge document. Its middle slot lists the datatypes present on the canvas
 // (found by schema-matching `@patchwork.type`); for each one you switch on, it
 // watches the canvas for `<patchwork-view>`s showing that datatype, mirrors each
 // view's visible text into a throwaway markdown document, and announces that
@@ -56,9 +55,13 @@ const MIRROR_TOOL = "stickerable-mirror";
 // visible text, so the text sticker sources (which scan `content`) pick it up.
 type MirrorDoc = { "@patchwork": { type: "markdown" }; content: string };
 
-export default function component(element: ToolElement): () => void {
-  return render(() => <Stickerable element={element} />, element);
-}
+// Make stickerable card behavior, loaded by the shared card shell as this
+// package's `card.js`. Its middle slot is the datatype toggle list; the card's
+// face (title, description, pips) is drawn by the shell from the card document.
+const card: ToolRender = (_handle, element) =>
+  render(() => <Stickerable element={element} />, element);
+
+export default card;
 
 function Stickerable(props: { element: ToolElement }) {
   const repo = props.element.repo;
@@ -81,9 +84,6 @@ function Stickerable(props: { element: ToolElement }) {
       return next;
     });
 
-  const [viewCount, setViewCount] = createSignal(0);
-  const [stickerCount, setStickerCount] = createSignal(0);
-
   onMount(() => {
     discoverTypes(props.element, repo, setTypeByUrl, onCleanup);
 
@@ -91,10 +91,6 @@ function Stickerable(props: { element: ToolElement }) {
       element: props.element,
       repo,
       enabled,
-      onStatus: (views, stickers) => {
-        setViewCount(views);
-        setStickerCount(stickers);
-      },
     });
     // Re-evaluate which views to mirror whenever the enabled set changes.
     createEffect(() => {
@@ -104,41 +100,29 @@ function Stickerable(props: { element: ToolElement }) {
     onCleanup(bridge.stop);
   });
 
+  // The middle-slot content: a toggle per datatype present on the canvas. The
+  // card face (title, description, pips) is drawn by the shared card shell.
   return (
-    <div class="stickerable-card">
-      <div class="stickerable-card__title">
-        <SparklesIcon />
-        <span>Make stickerable</span>
-      </div>
-      <p class="stickerable-card__desc">
-        Bridge other cards' text into the sticker system. Switch on a datatype
-        and any sticker source can annotate views that show it.
-      </p>
-      <div class="stickerable-card__types">
-        <Show
-          when={presentTypes().length > 0}
-          fallback={
-            <div class="stickerable-card__empty">No documents in context.</div>
-          }
-        >
-          <For each={presentTypes()}>
-            {(type) => (
-              <label class="stickerable-card__type">
-                <input
-                  type="checkbox"
-                  checked={enabled().has(type)}
-                  on:change={() => toggle(type)}
-                />
-                <span>{type}</span>
-              </label>
-            )}
-          </For>
-        </Show>
-      </div>
-      <div class="stickerable-card__status">
-        {viewCount()} view{viewCount() === 1 ? "" : "s"} · {stickerCount()}{" "}
-        sticker{stickerCount() === 1 ? "" : "s"}
-      </div>
+    <div class="stickerable">
+      <Show
+        when={presentTypes().length > 0}
+        fallback={
+          <div class="stickerable__empty">No documents in context.</div>
+        }
+      >
+        <For each={presentTypes()}>
+          {(type) => (
+            <label class="stickerable__type">
+              <input
+                type="checkbox"
+                checked={enabled().has(type)}
+                on:change={() => toggle(type)}
+              />
+              <span>{type}</span>
+            </label>
+          )}
+        </For>
+      </Show>
     </div>
   );
 }
@@ -190,7 +174,6 @@ type BridgeConfig = {
   element: ToolElement;
   repo: Repo;
   enabled: () => Set<string>;
-  onStatus: (views: number, stickers: number) => void;
 };
 
 // The DOM<->sticker bridge: discovers views, mirrors their text, and paints the
@@ -261,7 +244,6 @@ function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => voi
     for (const [el, url] of want) {
       if (!tracked.has(el)) addView(el, url);
     }
-    emitStatus();
   };
 
   // Every `<patchwork-view>` on the page except the ones we inject for tool
@@ -386,7 +368,6 @@ function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => voi
       overlay.appendChild(chip);
       anchors.push({ chip, range, slot: slotOf(item.sticker) });
     }
-    emitStatus();
     ensureRaf();
   };
 
@@ -444,8 +425,6 @@ function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => voi
     }
     return chip;
   };
-
-  const emitStatus = () => config.onStatus(tracked.size, anchors.length);
 
   // --- lifecycle ------------------------------------------------------------
 
@@ -506,23 +485,4 @@ function cssText(styles: Record<string, string>): string {
   return Object.entries(styles)
     .map(([property, value]) => `${property}: ${value}`)
     .join("; ");
-}
-
-function SparklesIcon(): JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3l1.8 4.6L18 9.4l-4.2 1.8L12 16l-1.8-4.8L6 9.4l4.2-1.8z" />
-      <path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9z" />
-    </svg>
-  );
 }

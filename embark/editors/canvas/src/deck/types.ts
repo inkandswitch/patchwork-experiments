@@ -18,11 +18,8 @@ export type DeckCard = {
   // Stable per-card identity, used to reconcile across changes and to splice a
   // dealt-out card from the pile.
   id: string;
-  // A card points at an automerge document...
+  // A card points at an automerge document.
   url?: AutomergeUrl;
-  // ...or at a standalone `patchwork:component` module (a head-less url).
-  // Exactly one of `url` / `componentUrl` is set.
-  componentUrl?: string;
   // Which tool renders the card's thumbnail (the host default is used on drop).
   toolId?: string;
   // The canvas footprint captured when the card was dragged in, so dealing it

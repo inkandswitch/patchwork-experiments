@@ -1,11 +1,10 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
-import { renderComponentEmbed } from "../component-embed";
 import {
   getDocumentDragPayload,
   getDragSource,
@@ -130,11 +129,10 @@ function Deck(props: { handle: DocHandle<DeckDoc> }) {
     props.handle.change((d) => {
       for (const item of payload) {
         const card: DeckCard = { id: crypto.randomUUID() };
-        // Cards are held by reference: store the dropped url / component url
-        // directly (no clone). Automerge rejects explicit `undefined`, so only
-        // set the optional fields the drag actually carried.
-        if (item.componentUrl) card.componentUrl = item.componentUrl;
-        else if (item.url) card.url = item.url;
+        // Cards are held by reference: store the dropped url directly (no
+        // clone). Automerge rejects explicit `undefined`, so only set the
+        // optional fields the drag actually carried.
+        if (item.url) card.url = item.url;
         else continue;
         if (item.toolId !== undefined) card.toolId = item.toolId;
         if (item.width !== undefined) card.width = item.width;
@@ -304,10 +302,8 @@ function DeckCardView(props: {
   z: number;
   onDealt: () => void;
 }) {
-  const isComponent = () => Boolean(props.card.componentUrl);
   const [doc] = useDocument<NamedDoc>(() => props.card.url);
   const name = () => {
-    if (isComponent()) return "Component";
     const value = doc();
     return (
       value?.["@patchwork"]?.title ||
@@ -323,8 +319,7 @@ function DeckCardView(props: {
     // dragend sees a non-"none" effect and we treat the card as dealt out.
     event.dataTransfer.effectAllowed = "copyMove";
     const item: DocumentDragItem = {};
-    if (props.card.componentUrl) item.componentUrl = props.card.componentUrl;
-    else if (props.card.url) item.url = props.card.url;
+    if (props.card.url) item.url = props.card.url;
     if (props.card.toolId !== undefined) item.toolId = props.card.toolId;
     if (props.card.width !== undefined) item.width = props.card.width;
     if (props.card.height !== undefined) item.height = props.card.height;
@@ -361,37 +356,13 @@ function DeckCardView(props: {
       on:dragstart={onDragStart}
       on:dragend={onDragEnd}
     >
-      <Show
-        when={props.card.componentUrl}
-        fallback={
-          <patchwork-view
-            doc-url={props.card.url}
-            tool-id={props.card.toolId}
-            hide-controls=""
-          />
-        }
-      >
-        {(componentUrl) => <ComponentPreview componentUrl={componentUrl()} />}
-      </Show>
+      <patchwork-view
+        doc-url={props.card.url}
+        tool-id={props.card.toolId}
+        hide-controls=""
+      />
     </div>
   );
-}
-
-// A non-interactive live preview of a component card: a host div that imports
-// and runs the component module. The host lives inside the canvas
-// <patchwork-context> (the deck adds none of its own), so the component
-// resolves the shared store through DOM discovery and runs as a live canvas
-// participant; renderComponentEmbed stamps `repo` on the host.
-function ComponentPreview(props: { componentUrl: string }) {
-  const repo = useRepo();
-  let hostEl: HTMLDivElement | undefined;
-  onMount(() => {
-    const host = hostEl;
-    if (!host) return;
-    const dispose = renderComponentEmbed(host, props.componentUrl, repo);
-    onCleanup(dispose);
-  });
-  return <div ref={hostEl} class="embark-deck__component" />;
 }
 
 // Use a small title token as the drag image instead of the browser's snapshot of

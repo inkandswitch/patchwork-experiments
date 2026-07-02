@@ -73,6 +73,15 @@ export type ContextStore = {
   // changes (a reader subscribing or unsubscribing). Lets inspectors refresh
   // even when the reader attaches to an empty channel that emits no value.
   subscribeReaders(cb: () => void): () => void;
+  // The store this one inherits reads from (its enclosing scope), or undefined
+  // for a root store (the page-global body store, or an `isolated` context).
+  // Reads merge the whole parent chain (nearest wins); writes never leave the
+  // store they were made in.
+  readonly parent: ContextStore | undefined;
+  // Re-point this store's parent. Called by the host element as the DOM tree
+  // changes (connect/disconnect), rewiring live subscriptions and re-emitting any
+  // channel whose inherited value changed.
+  setParent(parent: ContextStore | undefined): void;
 };
 
 type AnyRecord = Record<string, unknown>;
@@ -83,14 +92,17 @@ type Scope = { owner?: ScopeOwner; slice: AnyRecord };
 type Listener = (value: AnyRecord) => void;
 
 type ChannelState = {
-  empty: AnyRecord;
+  // The channel this state belongs to, kept so the flush loop and parent
+  // subscription can recompute the merged value and re-subscribe by identity.
+  channel: Channel<AnyRecord>;
   // scope id -> that scope's owner + slice.
   slices: Map<number, Scope>;
   subscribers: Set<Listener>;
   // subscriber listener -> the owner (embed/document) that reads through it.
   readers: Map<Listener, ScopeOwner | undefined>;
-  // Cached merged value; null means "recompute on next read".
-  merged: AnyRecord | null;
+  // Live subscription to the parent store's same channel, held only while this
+  // channel has local subscribers, so a parent-side change re-emits here.
+  parentUnsub: (() => void) | null;
   // What subscribers last saw, for emit-on-change.
   lastEmitted: AnyRecord | null;
 };
@@ -101,6 +113,8 @@ export function createContextStore(): ContextStore {
   const channels = new Map<string, ChannelState>();
   const dirty = new Set<ChannelState>();
   let flushScheduled = false;
+  // The enclosing store this one inherits reads from (see `setParent`).
+  let parent: ContextStore | undefined;
 
   // Reader-registry change notification, coalesced onto a microtask so a burst
   // of (un)subscriptions in one tick fires listeners at most once.
@@ -119,11 +133,11 @@ export function createContextStore(): ContextStore {
     let state = channels.get(channel.name);
     if (!state) {
       state = {
-        empty: channel.empty,
+        channel,
         slices: new Map(),
         subscribers: new Set(),
         readers: new Map(),
-        merged: null,
+        parentUnsub: null,
         lastEmitted: null,
       };
       channels.set(channel.name, state);
@@ -131,17 +145,27 @@ export function createContextStore(): ContextStore {
     return state;
   };
 
-  const computeMerged = (state: ChannelState): AnyRecord => {
-    if (state.merged === null) {
-      state.merged = mergeSlices(state.empty, state.slices.values());
+  // The merged value seen by a reader: every live slice across the parent chain,
+  // outermost contributions first so the nearest store wins on scalar/object
+  // keys and arrays concatenate parent-before-local. `channel.empty` is returned
+  // only when no scope anywhere in the chain contributes.
+  const readMerged = (channel: Channel<AnyRecord>): AnyRecord => {
+    const ancestors: ContextStore[] = [];
+    for (let p = parent; p; p = p.parent) ancestors.push(p);
+    ancestors.reverse();
+    const slices: AnyRecord[] = [];
+    for (const ancestor of ancestors) {
+      for (const { slice } of ancestor.scopes(channel)) slices.push(slice);
     }
-    return state.merged;
+    for (const scope of stateFor(channel).slices.values()) {
+      slices.push(scope.slice);
+    }
+    return mergeSlices(channel.empty, slices);
   };
 
-  // A write invalidates the cache and schedules a coalesced notification, so a
-  // multi-key write (or several writes in one tick) emits at most once.
+  // A write schedules a coalesced notification, so a multi-key write (or several
+  // writes in one tick) emits at most once.
   const invalidate = (state: ChannelState) => {
-    state.merged = null;
     dirty.add(state);
     if (flushScheduled) return;
     flushScheduled = true;
@@ -153,7 +177,7 @@ export function createContextStore(): ContextStore {
     const pending = [...dirty];
     dirty.clear();
     for (const state of pending) {
-      const merged = computeMerged(state);
+      const merged = readMerged(state.channel);
       // Emit only when the merged value structurally changed.
       if (state.lastEmitted !== null && deepEqual(merged, state.lastEmitted)) {
         continue;
@@ -164,7 +188,21 @@ export function createContextStore(): ContextStore {
   };
 
   const read = <T extends AnyRecord>(channel: Channel<T>): T =>
-    computeMerged(stateFor(channel as Channel<AnyRecord>)) as T;
+    readMerged(channel as Channel<AnyRecord>) as T;
+
+  // Hold a subscription to the parent's same channel while (and only while) this
+  // channel has local subscribers, so a parent-side change re-emits here. Kept
+  // idle otherwise to avoid registering phantom readers on the parent.
+  const ensureParentSubscription = (state: ChannelState) => {
+    if (state.parentUnsub || !parent || state.subscribers.size === 0) return;
+    state.parentUnsub = parent.subscribe(state.channel, () => invalidate(state));
+  };
+
+  const releaseParentSubscriptionIfIdle = (state: ChannelState) => {
+    if (state.subscribers.size > 0 || !state.parentUnsub) return;
+    state.parentUnsub();
+    state.parentUnsub = null;
+  };
 
   const subscribe = <T extends AnyRecord>(
     channel: Channel<T>,
@@ -175,12 +213,31 @@ export function createContextStore(): ContextStore {
     const listener = cb as Listener;
     state.subscribers.add(listener);
     state.readers.set(listener, owner);
+    ensureParentSubscription(state);
     notifyReaders();
     return () => {
       state.subscribers.delete(listener);
       state.readers.delete(listener);
+      releaseParentSubscriptionIfIdle(state);
       notifyReaders();
     };
+  };
+
+  // Re-point the parent: drop every live parent subscription, rewire it to the
+  // new parent, and re-emit each still-subscribed channel (its inherited value
+  // may have appeared or vanished). Cheap because it runs only per host
+  // connect/disconnect, not per write.
+  const setParent = (next: ContextStore | undefined) => {
+    if (next === parent) return;
+    parent = next;
+    for (const state of channels.values()) {
+      if (state.parentUnsub) {
+        state.parentUnsub();
+        state.parentUnsub = null;
+      }
+      ensureParentSubscription(state);
+      if (state.subscribers.size > 0) invalidate(state);
+    }
   };
 
   const handle = <T extends AnyRecord>(
@@ -245,7 +302,18 @@ export function createContextStore(): ContextStore {
     };
   };
 
-  return { read, subscribe, handle, scopes, readers, subscribeReaders };
+  return {
+    read,
+    subscribe,
+    handle,
+    scopes,
+    readers,
+    subscribeReaders,
+    get parent() {
+      return parent;
+    },
+    setParent,
+  };
 }
 
 // One-level record merge (deliberately not a recursive deep-merge): union the
@@ -255,11 +323,11 @@ export function createContextStore(): ContextStore {
 // scope contributes, the channel's resting `empty` value is returned.
 function mergeSlices(
   empty: AnyRecord,
-  scopes: Iterable<Scope>,
+  slices: Iterable<AnyRecord>,
 ): AnyRecord {
   const out: AnyRecord = {};
   let any = false;
-  for (const { slice } of scopes) {
+  for (const slice of slices) {
     any = true;
     for (const key of Object.keys(slice)) {
       const incoming = slice[key];
@@ -313,10 +381,27 @@ const ELEMENT_NAME = "patchwork-context";
 // The discovery event: a consumer dispatches it from its own node and the
 // nearest enclosing <patchwork-context> answers synchronously by writing its
 // store into `detail` (and stopping propagation so an outer host doesn't
-// double-answer). `undefined` when none is found, so a tool opened outside a
-// canvas degrades gracefully.
+// double-answer). When none is found the caller falls back to the page-global
+// body store, so a tool opened outside a canvas still has somewhere to read and
+// write (see `findContextStore`).
 export type ContextRequestDetail = { store?: ContextStore };
 export type ContextRequestEvent = CustomEvent<ContextRequestDetail>;
+
+// The page-global root store, stashed on document.body under a registered
+// symbol. Shared across bundles because Symbol.for() uses the per-realm global
+// symbol registry and document.body is a per-document singleton — so N copies of
+// this library (each with its own createContextStore) still resolve to one
+// store. The version lives in the key: an incompatible future store would use a
+// v2 key and coexist rather than corrupt a v1 store pinned by an older bundle.
+const BODY_STORE_KEY = Symbol.for("patchwork.context-store.v1");
+
+export function getBodyContextStore(): ContextStore {
+  const host = document.body as unknown as Record<
+    symbol,
+    ContextStore | undefined
+  >;
+  return (host[BODY_STORE_KEY] ??= createContextStore());
+}
 
 // A dedicated custom element that owns one store and answers discovery requests
 // aimed at it from anywhere in its subtree (across sibling-embed and shadow
@@ -339,6 +424,19 @@ export class PatchworkContextElement extends HTMLElement {
     // (e.g. absolutely-positioned canvas embeds) resolve against the real
     // positioned ancestor.
     if (!this.style.display) this.style.display = "contents";
+    // An `isolated` context is a root: it keeps no parent, so its subtree
+    // neither reads from nor writes to the enclosing (e.g. body) store. Used by
+    // the parts bin to keep its example cards inert.
+    if (this.hasAttribute("isolated")) return;
+    // Otherwise inherit reads from the nearest enclosing store. Resolve from the
+    // parent node (not this element) so our own handler doesn't answer, falling
+    // back to the page-global body store when nothing encloses us.
+    this.store.setParent(findContextStore(this.parentNode ?? document.body));
+  }
+
+  disconnectedCallback() {
+    // Unwire on disconnect so a re-parented context re-resolves on reconnect.
+    this.store.setParent(undefined);
   }
 }
 
@@ -347,9 +445,10 @@ export function registerContextElement(): void {
   customElements.define(ELEMENT_NAME, PatchworkContextElement);
 }
 
-// One-shot synchronous lookup: dispatch a request from `node` and read back
-// whatever a host wrote into the event detail.
-export function findContextStore(node: Node): ContextStore | undefined {
+// One-shot synchronous lookup: dispatch a request from `node`, and return
+// whatever a host wrote into the event detail — or the page-global body store
+// when nothing answered, so there is always a store to read from and write to.
+export function findContextStore(node: Node): ContextStore {
   const detail: ContextRequestDetail = {};
   node.dispatchEvent(
     new CustomEvent<ContextRequestDetail>(CONTEXT_REQUEST, {
@@ -358,19 +457,19 @@ export function findContextStore(node: Node): ContextStore | undefined {
       composed: true,
     }),
   );
-  return detail.store;
+  return detail.store ?? getBodyContextStore();
 }
 
 // Node-relative subscribe: resolve the store from `node`, deliver the current
 // value once (asynchronously, to avoid re-entrancy in CodeMirror/Solid setup),
-// then notify on every change. No-op when no host answers.
+// then notify on every change. Always resolves a store (the enclosing context,
+// or the page-global body store).
 export function subscribeContext<T extends Record<string, unknown>>(
   node: Node,
   channel: Channel<T>,
   cb: (value: T) => void,
 ): () => void {
   const store = findContextStore(node);
-  if (!store) return () => {};
   let delivered = false;
   const wrapped = (value: T) => {
     delivered = true;
@@ -384,13 +483,13 @@ export function subscribeContext<T extends Record<string, unknown>>(
 }
 
 // Node-relative handle: resolve the store from `node` and hand back a fresh
-// scope to write into, tagged with the embed/document `node` lives in.
-// `undefined` when no host answers.
+// scope to write into, tagged with the embed/document `node` lives in. Always
+// resolves a store (the enclosing context, or the page-global body store).
 export function getContextHandle<T extends Record<string, unknown>>(
   node: Node,
   channel: Channel<T>,
-): ScopeHandle<T> | undefined {
-  return findContextStore(node)?.handle(channel, resolveOwner(node));
+): ScopeHandle<T> {
+  return findContextStore(node).handle(channel, resolveOwner(node));
 }
 
 // Walk up from a writer's `node` to the embed/document it lives in so the store

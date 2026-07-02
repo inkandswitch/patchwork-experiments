@@ -1,62 +1,25 @@
-import type { JSX } from "solid-js";
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
-import { render } from "solid-js/web";
 import {
   runStickerSource,
   type ScanContext,
   type Sticker,
 } from "@embark/stickers";
-import "./unit-converter.css";
 
-// Tool entry point for the `convert-to-metric` datatype: a document-backed view
-// that runs the shared sticker-scanning engine against the canvas it's mounted
-// inside, annotating imperial quantities with their metric equivalents. The
-// backing doc is just a marker (see ./datatype); `element.repo` is the embed
-// contract and the shared context store is found by DOM discovery from
-// `element`. Its url is passed down as `selfUrl` so the engine can emphasize
-// this card's stickers while it is the selected embed. It shares no scanning
-// code with the Convert-to-imperial card.
-export const ConvertToMetricTool: ToolRender = (handle, element) =>
-  render(
-    () => <UnitConverterCard element={element} selfUrl={handle.url} />,
-    element,
-  );
-
-// The card face: a playing-card surface that starts the scanning engine on mount
-// and tears it down on cleanup. It carries no live state of its own — releasing
-// the engine drops every sticker it published.
-function UnitConverterCard(props: {
-  element: ToolElement;
-  selfUrl: AutomergeUrl;
-}) {
+// "Convert to metric" card behavior: runs the shared sticker-scanning engine
+// against the canvas it's mounted inside, annotating imperial quantities with
+// their metric equivalents. `element.repo` is the embed contract and the shared
+// context store is found by DOM discovery from `element`. It carries no live
+// state of its own — releasing the engine drops every sticker it published. The
+// card's face is drawn by the shared card shell, so it renders nothing into the
+// middle slot. Shares no scanning code with Convert-to-imperial.
+export function UnitConverterCard(props: { element: ToolElement }) {
   onMount(() => {
-    const source = runStickerSource(
-      props.element,
-      { scan: scanUnits },
-      undefined,
-      props.selfUrl,
-    );
+    const source = runStickerSource(props.element, { scan: scanUnits });
     onCleanup(source.stop);
   });
 
-  return (
-    <div class="embark-unit-card">
-      <span class="embark-unit-card__pip embark-unit-card__pip--tl">
-        <RulerIcon />
-      </span>
-      <div class="embark-unit-card__body">
-        <div class="embark-unit-card__title">Convert to metric</div>
-        <p class="embark-unit-card__desc">
-          Annotates imperial quantities in your notes with metric equivalents.
-        </p>
-      </div>
-      <span class="embark-unit-card__pip embark-unit-card__pip--br">
-        <RulerIcon />
-      </span>
-    </div>
-  );
+  return null;
 }
 
 function scanUnits(ctx: ScanContext): Sticker[] {
@@ -126,23 +89,4 @@ function findUnits(content: string): UnitMatch[] {
 
 function round(value: number): string {
   return (Math.round(value * 10) / 10).toString();
-}
-
-function RulerIcon(): JSX.Element {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 8h18v8H3z" transform="rotate(45 12 12)" />
-      <path d="M9 7v2M12 6v3M15 7v2" transform="rotate(45 12 12)" />
-    </svg>
-  );
 }
