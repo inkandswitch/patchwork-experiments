@@ -7,6 +7,7 @@
 import { complementSummary, complementBanner } from "./layouts.js";
 import { layoutSwitcher } from "./layout-switch.js";
 import { layoutDocUrl } from "./brush/constants.js";
+import { log } from "./log.js";
 
 const WRAP = "display:flex;flex-direction:column;height:100%;box-sizing:border-box;overflow:auto;padding:8px;gap:8px;color:var(--ns-ink,inherit);";
 const BANNER = "padding:6px 9px;border:1.5px dashed #ff2284;border-radius:6px;font:600 11px ui-monospace,monospace;color:#ff2284;line-height:1.4;";
@@ -82,7 +83,7 @@ export function GridTool(handle, element) {
         if (complementHandle) complementHandle.off("change", render); // never leak the old listener
         complementHandle = h;
         complementHandle.on("change", render);
-      } catch (e) { console.warn("[grid] complement", e); }
+      } catch (e) { log.warn("grid: complement", e); }
     }
     render();
   }

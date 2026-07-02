@@ -1,5 +1,5 @@
-// A highlighter, defined as a `newspace:brush` plugin (a separate export the
-// host registers into the `newspace:brush` registry). newspace reads the
+// A highlighter, defined as a `sketchy:brush` plugin (a separate export the
+// host registers into the `sketchy:brush` registry). The canvas reads the
 // registry, lists brushes in the shape overflow, and — when one is active —
 // draws freehand strokes using the brush's `stroke` config.
 //
@@ -24,7 +24,7 @@ export const HighlighterBrush = {
 };
 
 export const highlighterPlugin = {
-  type: "newspace:brush",
+  type: "sketchy:brush",
   id: "highlighter",
   name: "Highlighter",
   icon: "Highlighter",

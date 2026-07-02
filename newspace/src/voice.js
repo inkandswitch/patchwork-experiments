@@ -2,7 +2,7 @@
 // text-tool-style card (hand font) as you talk, and the audio is saved as a real
 // Patchwork file doc with its `.transcript`. Click ■ to stop.
 //
-// Registered as a `newspace:brush` plugin. The brush places a `voice` item and
+// Registered as a `sketchy:brush` plugin. The brush places a `voice` item and
 // "claims" it for THIS client; the host's VoiceItem renderer (only on the
 // claiming client) opens the live transcription stream + an audio recorder, and
 // shows the stop button. Streaming is @chee/patchwork-transcript's
@@ -10,6 +10,7 @@
 // as a shared service-worker bundle via the @chee/patchwork-bundles vite plugin.
 
 import { createTranscriptionStream } from "@chee/patchwork-transcript";
+import { log } from "./log.js";
 
 // ---- self-contained styling (injected once) --------------------------------
 const CSS = `
@@ -73,7 +74,7 @@ export async function startVoiceStream(handlers) {
       onReady: handlers.onReady,
       onInterim: handlers.onInterim,
       onFinal: handlers.onFinal,
-      onError: (e) => console.warn("[voice] stream error", e),
+      onError: (e) => log.warn("voice: stream error", e),
     });
   } catch (e) {
     // the mic is already live — a failed stream init must not leave it on
@@ -124,7 +125,7 @@ export const VoiceBrush = {
 };
 
 export const voicePlugin = {
-  type: "newspace:brush",
+  type: "sketchy:brush",
   id: "voice",
   name: "Voice note",
   icon: "Mic",

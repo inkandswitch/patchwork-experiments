@@ -6,6 +6,7 @@
 import { createSignal, createEffect, onMount, onCleanup, Show } from "solid-js";
 import { claimVoice, startVoiceStream, saveAudioFile } from "../../voice.js";
 import { fontFamily, colorVar } from "../constants.js";
+import { log } from "../../log.js";
 
 export function VoiceItem(props) {
   const it = props.it, ctx = props.ctx, surface = props.surface;
@@ -42,7 +43,7 @@ export function VoiceItem(props) {
       recStart = Date.now();
       setLive(true);
     } catch (e) {
-      console.warn("[voice] mic unavailable", e);
+      log.warn("voice: mic unavailable", e);
       if (!cancelled) ctx.removeItem(it().id);
     }
   });
@@ -64,7 +65,7 @@ export function VoiceItem(props) {
   function togglePlay() {
     if (!audioEl || !it().url) return;
     if (playing()) { audioEl.pause(); setPlaying(false); }
-    else audioEl.play().then(() => setPlaying(true)).catch((err) => console.warn("[voice] play", err));
+    else audioEl.play().then(() => setPlaying(true)).catch((err) => log.warn("voice: play", err));
   }
 
   const textStyle = () => ({

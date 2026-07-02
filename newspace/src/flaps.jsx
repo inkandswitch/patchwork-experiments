@@ -14,6 +14,7 @@
 // syncs across your devices without touching the shared sketch.
 import { createSignal, onMount, onCleanup, For, Show } from "solid-js";
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { log } from "./log.js";
 
 export const FLAP_EDGES = ["bottom", "left", "right"]; // no top flaps (the layer tabs live there)
 
@@ -118,7 +119,7 @@ function FlapBody(props) {
         if (gone || typeof m !== "function") return;
         cleanup = m({ element: ref, host: props.host });
       })
-      .catch((e) => console.warn("[sketchy] flap", props.f.id, e));
+      .catch((e) => log.warn("flap", props.f.id, e));
     onCleanup(() => { gone = true; if (typeof cleanup === "function") cleanup(); });
   });
   return <div class="ns-flap-drawer" ref={ref} />;

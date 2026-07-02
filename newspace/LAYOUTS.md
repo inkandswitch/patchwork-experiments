@@ -40,6 +40,19 @@ the only, hardcoded one) and to *split the per-layout complement* off the folder
 So a layout = `lens.get(folder, complement) → presentation`, and edits flow back via
 `lens.put`. The folder is the constant; the complement is what each lens adds.
 
+## Layout-doc convergence
+
+The folder references its canvas complement by URL (`folder.sketch`; `.newspace`
+back-compat). If two peers open the same folder for the first time
+simultaneously, each creates a layout doc and writes the field; the CRDT
+resolves the race last-write-wins, so the field converges to ONE url. The
+canvas must therefore treat the field as reactive and SWITCH to the winning doc
+when it changes — every peer has to end up on the SAME layout doc. A canvas
+that kept its own losing doc would look shared (each peer placing items
+independently) while config/value writes silently went to different docs —
+"sharing doesn't work". The doc-acquisition effect at the top of
+`brush/canvas.jsx` implements the switch.
+
 ## Your questions, point by point
 
 **Dockview as the root of a sketchy, keeping sub-doc affordances?** Yes. A dockview is

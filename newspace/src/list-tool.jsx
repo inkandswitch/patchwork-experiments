@@ -11,6 +11,7 @@
 import { complementSummary, complementBanner } from "./layouts.js";
 import { layoutSwitcher } from "./layout-switch.js";
 import { layoutDocUrl } from "./brush/constants.js";
+import { log } from "./log.js";
 
 const WRAP = "display:flex;flex-direction:column;gap:2px;padding:6px;font:13px ui-sans-serif,system-ui,sans-serif;color:var(--ns-ink,inherit);";
 const BANNER = "margin:2px 4px 8px;padding:6px 9px;border:1.5px dashed #ff2284;border-radius:6px;font:600 11px ui-monospace,monospace;color:#ff2284;line-height:1.4;";
@@ -94,7 +95,7 @@ export function ListTool(handle, element) {
         complementHandle = h;
         complementHandle.on("change", render);
       } catch (e) {
-        console.warn("[list] complement load failed", e);
+        log.warn("list: complement load failed", e);
       }
     }
     render();

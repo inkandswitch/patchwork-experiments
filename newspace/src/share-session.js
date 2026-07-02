@@ -12,6 +12,8 @@
 //   s.shareStream(itemId, stream)       // add a MediaStream's tracks + map them to itemId
 //   s.onStream(itemId, (stream) => …)   // receive the remote stream for an item (null when the owner unshares)
 //   s.unshare(itemId);  s.destroy()
+import { log } from "./log.js";
+
 const RTC_CONFIG = { iceServers: [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
@@ -61,7 +63,7 @@ export class ShareSession {
     if (!stream) return;
     const ids = stream.getTracks().map((t) => t.id);
     const rec = this.shared.get(item) || {}; rec.stream = stream; rec.trackIds = ids; this.shared.set(item, rec);
-    console.log("[share] streaming", item, "to", this.peers.size, "peer(s)");
+    log.debug("share: streaming", item, "to", this.peers.size, "peer(s)");
     for (const pr of this.peers.values()) this._addStreamTo(pr, item, stream, ids);
     bump();
   }
@@ -106,7 +108,7 @@ export class ShareSession {
     if (pr.disconnectTimer) clearTimeout(pr.disconnectTimer);
     try { pr.pc.close(); } catch {}
     this.peers.delete(other);
-    console.log("[share] peer -", other.slice(-6), "(evicted:", pr.pc.connectionState + ")");
+    log.debug("share: peer -", other.slice(-6), "(evicted:", pr.pc.connectionState + ")");
     bump();
   }
 
@@ -117,9 +119,9 @@ export class ShareSession {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     pr = { pc, dc: null, polite: this._polite(other), makingOffer: false, pendingIce: [], tracks: new Map(), itemStreams: new Map(), trackMap: new Map(), disconnectTimer: null };
     this.peers.set(other, pr);
-    console.log("[share] peer +", other.slice(-6), pr.polite ? "(polite)" : "(impolite)");
+    log.debug("share: peer +", other.slice(-6), pr.polite ? "(polite)" : "(impolite)");
     pc.onconnectionstatechange = () => {
-      console.log("[share]", other.slice(-6), "→", pc.connectionState);
+      log.debug("share:", other.slice(-6), "→", pc.connectionState);
       const cs = pc.connectionState;
       if (cs === "failed" || cs === "closed") this._evict(other, pr);
       else if (cs === "disconnected") { // give ICE a chance to recover, then evict
@@ -204,7 +206,7 @@ export class ShareSession {
         if (!pr.pc.remoteDescription) pr.pendingIce.push(m.candidate);
         else await pr.pc.addIceCandidate(ice(m.candidate));
       }
-    } catch (e) { console.warn("[share] signal", m.t, "from", (m.from || "").slice(-6), e); }
+    } catch (e) { log.warn("share: signal", m.t, "from", (m.from || "").slice(-6), e); }
   }
   async _flush(pr) { const cs = pr.pendingIce.splice(0); for (const c of cs) { try { await pr.pc.addIceCandidate(ice(c)); } catch {} } }
 }

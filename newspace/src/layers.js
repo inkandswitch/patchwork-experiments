@@ -5,9 +5,9 @@
 // `sketchy:layer-transform`; what KIND of layer it is comes from a `sketchy:layer-kind`.
 // The core only ever asks the registry. camera + viewport ship as plugins below; a map
 // (or anything) gains a coordinate space by REGISTERING a transform — never by extending
-// a switch in here. That is the whole point: no `transform === "geo"` lives in the core.
+// a switch in here: no `transform === "geo"` lives in the core.
 //
-// A transform plugin — the ENTIRE API, deliberately tiny + reactive + dommy:
+// A transform plugin — the ENTIRE API, tiny + reactive + dommy:
 //   { type:"sketchy:layer-transform", id,
 //     use(env) -> {                      // env = { camera, viewport, layer } — reactive accessors
 //       transform(): string              // CSS transform for the layer's container ("dommy")

@@ -12,6 +12,7 @@ import { render } from "solid-js/web";
 import { createSketchyApi } from "./api.js";
 import { Canvas } from "./brush/canvas.jsx";
 import { subscribeSketchyDoc } from "./sketchy-streams.js";
+import { log } from "./log.js";
 
 function elementDocUrl(element) {
   const a = element && element.getAttribute && (element.getAttribute("doc-url") || element.getAttribute("docUrl"));
@@ -37,7 +38,7 @@ export function SketchyComponent(element) {
   const fallback = setTimeout(() => {
     if (disposed || Object.keys(folderH.doc() || {}).length > 0 || !repo || !url) return;
     try { if (dispose) { dispose(); dispose = null; } } catch {}
-    repo.find(url.split("#")[0]).then((h) => mount(h)).catch((e) => console.error("[sketchy:component] fallback find", e));
+    repo.find(url.split("#")[0]).then((h) => mount(h)).catch((e) => log.error("component: fallback find", e));
   }, 300);
 
   return () => {

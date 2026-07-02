@@ -1,7 +1,46 @@
-import { describe, it, expect } from "vitest";
-import { resolveBrushHandlers, brushIsImperative, brushParamDefs, brushParamDefault } from "./brush-host.js";
+import { describe, it, expect, vi } from "vitest";
+import { registerPlugins } from "@inkandswitch/patchwork-plugins";
+import { resolveBrushHandlers, brushIsImperative, brushParamDefs, brushParamDefault, listRegistryBrushes } from "./brush-host.js";
 import { paramsSchema } from "./ops.js";
 import { PenBrush, penHandlers } from "./pen-brush.js";
+
+describe("listRegistryBrushes — the sketchy:brush registry", () => {
+  it("finds a brush registered solely as sketchy:brush, without warning", () => {
+    registerPlugins([{ type: "sketchy:brush", id: "onlysketchy", name: "Only Sketchy" }]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const ids = listRegistryBrushes().map((b) => b.id);
+      expect(ids).toContain("onlysketchy");
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it("still loads a legacy newspace:brush registrant, once, with a deprecation warning", () => {
+    registerPlugins([
+      { type: "newspace:brush", id: "legacyonly", name: "Legacy Only" },
+      // the same id under both names — the canonical entry wins, no dupe
+      { type: "sketchy:brush", id: "bothnames", name: "Both (canonical)" },
+      { type: "newspace:brush", id: "bothnames", name: "Both (legacy)" },
+    ]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const all = listRegistryBrushes();
+      const ids = all.map((b) => b.id);
+      expect(ids).toContain("legacyonly");
+      expect(ids.filter((id) => id === "bothnames")).toEqual(["bothnames"]);
+      expect(all.find((b) => b.id === "bothnames").name).toBe("Both (canonical)");
+      expect(warn).toHaveBeenCalledTimes(1);
+      // the log wrapper prepends the "[sketchy]" tag — assert on the whole call
+      const call = warn.mock.calls[0].join(" ");
+      expect(call).toContain("[sketchy]");
+      expect(call).toContain("deprecated");
+      expect(call).toContain("legacyonly");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
 
 describe("paramsSchema — validation + introspection", () => {
   const s = paramsSchema([

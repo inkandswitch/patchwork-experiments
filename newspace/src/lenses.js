@@ -35,7 +35,7 @@ import { toPretty, fromPretty } from "./json-pretty-lens.js";
 // nameable whole — you can put it IN a value (a fan-in slot) where `undefined`
 // would just mean "absent".
 //
-// SKIP is a TAGGED OBJECT, not a symbol, deliberately: write-backs travel as op
+// SKIP is a TAGGED OBJECT, not a symbol: write-backs travel as op
 // VALUES, and ops cross MessagePorts as plain JSON / structured clones
 // (port-opstream.js) — a symbol dies at that boundary, a tagged object survives.
 // Identity is lost in transit, so `isSkip` checks the tag, never `===`.

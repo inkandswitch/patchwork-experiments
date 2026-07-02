@@ -14,11 +14,9 @@
 //   frame  { id, kind, url, x, y, w, h, style, well }   // a sub-space (a folder/newspace)
 //
 // Arrays only for canvas content — order IS z/draw order, and list splices
-// reconcile cleanly through the solid document projection. (Historical note:
-// this model was chosen when the projection tripped on map-key deletion; with
-// the current solid-automerge (2.0.0) nested AND top-level key deletion both
-// reconcile fine — pinned in history.test.js — so `delete o.group` etc. is
-// safe, and arrays-only is a design choice here, not a workaround.)
+// reconcile cleanly through the solid document projection. Map-key deletion
+// also reconciles (pinned in history.test.js), so `delete o.group` etc. is
+// safe. Rationale: ARCHITECTURE.md §Document model.
 
 export const NewspaceDatatype = {
   init(doc) {

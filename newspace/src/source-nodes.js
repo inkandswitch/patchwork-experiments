@@ -5,6 +5,7 @@
 import { pickFile, fileHandleOpstream, watchFileStream, fileSnapshot } from "./fs-opstream.js";
 import { Source, automergeOpstream, apply } from "./opstreams.js";
 import { snapshot, isSnapshot, valuesEqual, fmtNum, previewReplacer } from "./ops.js";
+import { log } from "./log.js";
 
 // Resolve an automerge:url[#path] → an editable opstream. Prefer window.repo (always
 // present per the host globals) so a source works even before ctx.api is ready;
@@ -294,7 +295,7 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
     let active = null, off = null, offRecv = null, enabled = !gated, shareStop = null, streamRecvStop = null, sharedStop = null, lastW = 0, wT = null;
     // throttle the owner's value→doc writes so a 60fps source doesn't churn the CRDT
     let wrote = 0;
-    const shareValueDoc = (v) => { if (!shareDoc) return; const now = Date.now(); clearTimeout(wT); const gap = now - lastW; const write = (val) => { lastW = Date.now(); shareDoc(val); if (!wrote++) console.log(`[share:${label}] writing item.shared → doc (owner)`); }; if (gap >= 150) write(v); else wT = setTimeout(() => write(active && active.stream.value), 150 - gap); };
+    const shareValueDoc = (v) => { if (!shareDoc) return; const now = Date.now(); clearTimeout(wT); const gap = now - lastW; const write = (val) => { lastW = Date.now(); shareDoc(val); if (!wrote++) log.debug(`share:${label} writing item.shared → doc (owner)`); }; if (gap >= 150) write(v); else wT = setTimeout(() => write(active && active.stream.value), 150 - gap); };
     // RECEIVE the shared value from the top-level doc field (reliable, reactive like x/y)
     if (onShared) onShared((v) => { if (shared() && !amOwner() && v != null) { out.push(v); status.textContent = `${label} (shared) ▸ ${preview(v)}`; } });
     const stopDevice = () => { if (off) { off(); off = null; } clearTimeout(wT); if (shareStop) { shareStop(); shareStop = null; } if (active && active.stop) { try { active.stop(); } catch {} } active = null; };
@@ -366,7 +367,7 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
       else { shareLabel.style.display = ""; ownerTag.style.display = "none"; shareCb.checked = shared(); shareText.textContent = shared() ? "📡 everyone sees yours" : "share to everyone"; }
       if (enableBtn) enableBtn.style.display = receiving || enabled ? "none" : ""; // receivers never enable a device
     };
-    shareCb.onchange = () => { share = shareCb.checked ? "mine" : "own"; owner = shareCb.checked ? myUrl : null; console.log(`[share:${label}] TOGGLE → ${share}, owner=${(owner || "").slice(-6)} (myUrl=${(myUrl || "null").slice(-6)})`); if (setConfig) setConfig({ share, owner: owner || null }); resolveOwnerName().then(renderShare); reconcile(); };
+    shareCb.onchange = () => { share = shareCb.checked ? "mine" : "own"; owner = shareCb.checked ? myUrl : null; log.debug(`share:${label} TOGGLE → ${share}, owner=${(owner || "").slice(-6)} (myUrl=${(myUrl || "null").slice(-6)})`); if (setConfig) setConfig({ share, owner: owner || null }); resolveOwnerName().then(renderShare); reconcile(); };
     resolveOwnerName().then(renderShare);
     renderShare();
 
@@ -392,7 +393,7 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
       const ns = c.share === "mine" ? "mine" : "own";
       const no = c.owner || null;
       if (ns === share && no === owner) return;
-      console.log(`[share:${label}] mode → ${ns}${no ? " owner=" + no.slice(-6) : ""}${ns === "mine" ? (no === myUrl ? " (me)" : " (receiving)") : ""}`);
+      log.debug(`share:${label} mode → ${ns}${no ? " owner=" + no.slice(-6) : ""}${ns === "mine" ? (no === myUrl ? " (me)" : " (receiving)") : ""}`);
       share = ns; owner = no;
       resolveOwnerName().then(renderShare);
       renderShare(); reconcile();

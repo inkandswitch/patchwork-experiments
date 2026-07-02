@@ -6,6 +6,7 @@ import { coreBrushPlugins, contributedBrushPlugins } from "./registry/brushes.js
 import { contributedNodePlugins } from "./registry/contributed-nodes.js";
 import { layoutPlugins, sketchyToolPlugins } from "./registry/layout-tools.js";
 import { mediaLensPlugins, wireLensPlugins } from "./registry/lenses.js";
+import { log } from "./log.js";
 
 export const plugins = [
   ...layerPlugins,
@@ -428,4 +429,4 @@ export const plugins = [
   ...sketchyToolPlugins,
 ];
 
-console.log("sketchy plugin loaded");
+log.debug("plugin loaded");

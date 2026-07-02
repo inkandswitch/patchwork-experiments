@@ -10,8 +10,8 @@
 // namespaced parts fall through to the canvas drop), or tick it in the ⚙ popover.
 // Remove: untick it in the ⚙ popover, or click the × badge each button grows while
 // the popover is open (the ns-bare-x convention).
-import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { snapshot } from "./ops.js";
+import { listRegistryBrushes } from "./brush-host.js";
 import { TOOL_META, STAMP_IDS, BRUSH_FALLBACK_PATH } from "./brush/ui/chrome.jsx";
 import { DEFAULT_LAYOUT } from "./brush/constants.js";
 import { PART_DRAG_TYPE, decodePartId } from "./parts-bin.js";
@@ -44,19 +44,9 @@ export function acceptDrop(part) {
 export const toolLabel = (id) => ((TOOL_META[id] || [])[0] || id).replace(/\s*\([^)]*\)\s*$/, "").trim();
 export const toolPath = (id) => (TOOL_META[id] || [, BRUSH_FALLBACK_PATH])[1];
 
-// registry brushes, defensively (mirrors the canvas's brush loading: both the
-// `sketchy:brush` registry and the legacy `newspace:brush` name, deduped)
-export function listRegistryBrushes() {
-  const all = [], seen = new Set();
-  for (const reg of ["sketchy:brush", "newspace:brush"]) {
-    try {
-      const r = getRegistry(reg);
-      const list = r ? (typeof r.filter === "function" ? r.filter(() => true) : Array.isArray(r) ? r : []) : [];
-      for (const b of list) if (b && b.id && !seen.has(b.id)) { seen.add(b.id); all.push(b); }
-    } catch {}
-  }
-  return all;
-}
+// registry brushes come from brush-host.js's listRegistryBrushes (the same
+// list the canvas loads), re-exported for the palette's tests/consumers
+export { listRegistryBrushes };
 
 // everything armable: the built-in tools (TOOL_META) + the registry brushes.
 // Each row: { id, name, path } — path is the toolbar's own glyph source.

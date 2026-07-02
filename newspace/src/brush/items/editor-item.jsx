@@ -12,6 +12,7 @@ import { PortNub } from "../ui/chrome.jsx";
 import { jsonPathStream } from "../../json-path.js";
 import { snapshot, describeBinary, isError, fmtNum, previewReplacer, valuesEqual } from "../../ops.js";
 import { Opstream } from "../../opstreams.js";
+import { log } from "../../log.js";
 
 // A node is a function: set up reactive data once, return DOM. Inlets are STABLE
 // proxies whose BACKING swaps as you plug/unplug — the node connects once and just
@@ -131,7 +132,7 @@ export function EditorItem(props) {
     if (wire.url && ctx.api) {
       const frag = wire.path && wire.path.length ? "#" + wire.path.join("/") : "";
       try { return await ctx.api.find(wire.url + frag, { heads: wire.heads }); }
-      catch (e) { console.warn("[sketchy] editor inlet failed:", e); return null; }
+      catch (e) { log.warn("editor inlet failed:", e); return null; }
     }
     return null;
   }
@@ -237,7 +238,7 @@ export function EditorItem(props) {
     // presence/cursors use (which is proven to relay ephemeral). The layout-doc handle
     // did NOT relay reliably. (frames: their own folderHandle, also shared.)
     const surfaceHandle = props.surface && (props.surface.folderHandle || props.surface.handle);
-    const broadcast = (msg) => { try { if (surfaceHandle && surfaceHandle.broadcast) surfaceHandle.broadcast({ __ns: it().id, ...msg }); } catch (e) { console.warn("[sketchy] broadcast failed:", e); } };
+    const broadcast = (msg) => { try { if (surfaceHandle && surfaceHandle.broadcast) surfaceHandle.broadcast({ __ns: it().id, ...msg }); } catch (e) { log.warn("broadcast failed:", e); } };
     const onBroadcast = (cb) => {
       if (!surfaceHandle || !surfaceHandle.on) return () => {};
       const h = (p) => { const m = p && p.message; if (m && m.__ns === it().id) cb(m); };

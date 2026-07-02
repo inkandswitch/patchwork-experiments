@@ -3,6 +3,8 @@ import { createSignal, createMemo, createEffect, For, Show, onCleanup, onMount, 
 import { createStore } from "solid-js/store";
 import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../surface-doc.js";
+import { log } from "../log.js";
+import { migrateStorageKey } from "../persist.js";
 import { useLayerTransform, itemLayer, defaultLayers, layerKind } from "../layers.js";
 import { chainToOuter, chainToLocal, chainScale, mapInstanceFor, onSpaceChanged } from "../box-transform.js";
 import { makePersisted } from "@solid-primitives/storage";
@@ -24,7 +26,7 @@ import { listLayouts } from "../layouts.js";
 import { layoutSwitcher } from "../layout-switch.js";
 import { FlapDock } from "../flaps.jsx";
 import { PART_DRAG_TYPE, decodePartId } from "../parts-bin.js";
-import { resolveBrushHandlers, brushParamDefault, paramDefs } from "../brush-host.js";
+import { resolveBrushHandlers, brushParamDefault, paramDefs, listRegistryBrushes } from "../brush-host.js";
 import { penHandlers } from "../pen-brush.js";
 import { shapeHandlers } from "../shape-brush.js";
 import { textHandlers } from "../text-brush.js";
@@ -105,29 +107,29 @@ export function Canvas(props) {
   // separate LAYOUT doc referenced by `.newspace`.
   const folderDoc = surfaceDoc(handle); // seam: real handle OR an opstream-backed adapter
   const [rootLayoutH, setRootLayoutH] = createSignal(null);
-  // REACT to `folder.newspace`: if two peers raced to create the layout doc at first open,
-  // the field converges (CRDT, last-write-wins) to ONE url — we must SWITCH to it so all
-  // peers share the SAME layout doc. Otherwise items can look shared (placed independently)
-  // while config/value writes silently go to different docs → "sharing doesn't work".
-  // COMPONENT MODE: a patchwork:component can INJECT the layout handle (an opstream-backed
-  // adapter it built from a provided stream). When present we use it verbatim and skip the
-  // folder→ensureLayout derivation. The tool path leaves it undefined → derive as before.
+  // REACT to `folder.sketch` and switch to the converged layout-doc url when two peers
+  // raced to create it — see LAYOUTS.md §Layout-doc convergence.
+  // COMPONENT MODE: a patchwork:component can INJECT the layout handle (opts.layoutHandle,
+  // an opstream-backed adapter); used verbatim, skipping the folder→ensureLayout derivation.
   if (opts.layoutHandle) setRootLayoutH(opts.layoutHandle);
   let ensuring = false;
   createEffect(() => {
     if (opts.layoutHandle) return; // injected — don't derive/switch
     const url = folderDoc.sketch || folderDoc.newspace; // reactive (.sketch; .newspace back-compat)
-    if (!url) { if (!ensuring) { ensuring = true; ensureLayout(repo, handle).then((h) => { ensuring = false; setRootLayoutH(h); }).catch((e) => { ensuring = false; console.error("[newspace] ensureLayout", e); }); } return; }
+    if (!url) { if (!ensuring) { ensuring = true; ensureLayout(repo, handle).then((h) => { ensuring = false; setRootLayoutH(h); }).catch((e) => { ensuring = false; log.error("ensureLayout", e); }); } return; }
     const cur = rootLayoutH();
     if (cur && cur.url === url) return;
-    repo.find(url).then((h) => { h.change((d) => { if (!d.items) d.items = []; }); if (cur && cur.url !== url) console.log(`[newspace] layout converged → ${url.slice(-8)} (was ${cur.url.slice(-8)})`); setRootLayoutH(h); }).catch((e) => console.error("[newspace] layout switch", e));
+    repo.find(url).then((h) => { h.change((d) => { if (!d.items) d.items = []; }); if (cur && cur.url !== url) log.debug(`layout converged → ${url.slice(-8)} (was ${cur.url.slice(-8)})`); setRootLayoutH(h); }).catch((e) => log.error("layout switch", e));
   });
   const rootLayoutDoc = createMemo(() => { const h = rootLayoutH(); return h ? surfaceDoc(h) : null; }); // seam: real handle OR opstream-backed
 
   const [themeTick, setThemeTick] = createSignal(0);
-  // pan/zoom is remembered per-doc in localStorage (local to this viewer)
+  // pan/zoom is remembered per-doc in localStorage (local to this viewer);
+  // migrate the pre-rename `newspace:camera:` key before makePersisted reads
+  const camKey = `sketchy:camera:${handle.url}`;
+  migrateStorageKey(`newspace:camera:${handle.url}`, camKey);
   const [cam, setCam] = makePersisted(createSignal({ x: 0, y: 0, z: 1 }), {
-    name: `newspace:camera:${handle.url}`,
+    name: camKey,
     storage: localStorage,
   });
   // ── LAYERS ─────────────────────────────────────────────────────────────────
@@ -242,7 +244,7 @@ export function Canvas(props) {
   const [nodeMenu, setNodeMenu] = createSignal(null); // {x,y, world} — the wire-tool dbl-click add palette
   const [portInfo, setPortInfo] = createSignal(null); // {world, title, lines} — click a port to see its full schema
   const [datatypes, setDatatypes] = createSignal([]);
-  const [brushes, setBrushes] = createSignal([]); // newspace:brush plugins (used later)
+  const [brushes, setBrushes] = createSignal([]); // sketchy:brush plugins (used later)
   const [addOpen, setAddOpen] = createSignal(false);   // docs overflow menu
   const [shapeMenuOpen, setShapeMenuOpen] = createSignal(false); // shape overflow menu
   const [extraShape, setExtraShape] = createSignal("line"); // last-used overflow shape, surfaced in the bar
@@ -271,10 +273,10 @@ export function Canvas(props) {
   // `undefined` for the rest of the frame the ref appears in.
   const readViewportRect = perFrame(() => { perfCount("gbcr"); return viewportRef.getBoundingClientRect(); });
   const viewportRect = () => (viewportRef ? readViewportRect() : undefined);
-  try { setDatatypes(getRegistry("patchwork:datatype").filter((d) => !d.unlisted)); } catch (e) { console.warn("[newspace] datatypes", e); }
-  // custom brushes live in the `sketchy:brush` registry (legacy `newspace:brush`
-  // still supported). We list them in the shape overflow, and load each brush
-  // MODULE (its stroke config / behaviour) so drawing with the brush uses it.
+  try { setDatatypes(getRegistry("patchwork:datatype").filter((d) => !d.unlisted)); } catch (e) { log.warn("datatypes", e); }
+  // custom brushes live in the `sketchy:brush` registry. We list them in the
+  // shape overflow, and load each brush MODULE (its stroke config / behaviour)
+  // so drawing with the brush uses it.
   const brushMods = new Map(); // id -> brush module ({ stroke, iconPath, ... })
   // modules land ASYNC, and a plain Map is invisible to Solid — bump a version
   // signal when one resolves so isBrushTool / paramDefs / the properties panel
@@ -282,14 +284,7 @@ export function Canvas(props) {
   // the moment they arrive, not on the next unrelated update). PERF.md Phase 10.
   const [brushVer, setBrushVer] = createSignal(0);
   {
-    const all = [], seen = new Set();
-    for (const reg of ["sketchy:brush", "newspace:brush"]) {
-      try {
-        const r = getRegistry(reg);
-        const list = r ? (typeof r.filter === "function" ? r.filter(() => true) : (Array.isArray(r) ? r : [])) : [];
-        for (const b of list) { if (b && !seen.has(b.id)) { seen.add(b.id); all.push(b); } }
-      } catch {}
-    }
+    const all = listRegistryBrushes();
     setBrushes(all);
     for (const b of all) Promise.resolve(b.load ? b.load() : b).then((m) => { if (m) { brushMods.set(m.id || b.id, m); setBrushVer((v) => v + 1); } }).catch(() => {});
   }
@@ -314,7 +309,6 @@ export function Canvas(props) {
   // resize, marquee, edit) AND it can see/grab ports. So select behaviours gate on
   // `selectish`, not just "select". (For power users it can stand in for the pointer.)
   const selectish = () => tool() === "select" || tool() === "wire";
-  const interactive = createMemo(() => selectish());
 
   // ---- surfaces -------------------------------------------------------
   // a surface manages a space: `handle`/`doc` = its LAYOUT doc (items),
@@ -362,7 +356,7 @@ export function Canvas(props) {
   const spaceCache = new Map();
   function loadSpace(url) {
     if (!spaceCache.has(url)) {
-      spaceCache.set(url, repo.find(url).then(async (fh) => ({ folderHandle: fh, layoutHandle: await ensureLayout(repo, fh) })).catch((e) => { console.error("[newspace] loadSpace", e); return null; }));
+      spaceCache.set(url, repo.find(url).then(async (fh) => ({ folderHandle: fh, layoutHandle: await ensureLayout(repo, fh) })).catch((e) => { log.error("loadSpace", e); return null; }));
     }
     return spaceCache.get(url);
   }
@@ -521,7 +515,15 @@ export function Canvas(props) {
     const a = document.activeElement;
     if (a && a.closest && a.closest(".ns-doc-body")) a.blur();
     if (surface.id !== activeId()) { setActiveId(surface.id); setSelected([]); }
-    if (tool() === "eraser") return removeItems(surface, [it.id]);
+    if (tool() === "eraser") {
+      // rubbing: delete the pressed item, then keep the erase gesture going so the
+      // drag erases everything else it crosses (pinned in eraser-drag.test.js)
+      removeItems(surface, [it.id]);
+      const p = toWorld(e.clientX, e.clientY);
+      gesture = drawGestureFor("eraser", p, drawTarget(p.x, p.y));
+      beginGesture(e);
+      return;
+    }
     if (!selectish()) return;
     setSelectedWire(null); // selecting an item drops any wire selection
     // inside an entered group, a click picks the individual member; otherwise a
@@ -904,7 +906,7 @@ export function Canvas(props) {
   }
 
   // ---- behaviour brushes ---------------------------------------------
-  // A `newspace:brush` may carry a `behavior` ({down,move,up}) instead of (or
+  // A `sketchy:brush` may carry a `behavior` ({down,move,up}) instead of (or
   // besides) a passive `stroke`. Such a brush owns its whole gesture: we hand it
   // a context with the live pointer, the existing canvas geometry (in world
   // coords, for snapping), a screen-constant snap tolerance, and callbacks to
@@ -1070,7 +1072,7 @@ export function Canvas(props) {
     } else {
       if (!api) return;
       const frag = port.path && port.path.length ? "#" + port.path.join("/") : "";
-      try { stream = await api.find(port.url + frag); } catch (err) { return console.warn("[sketchy] wire: find failed", err); }
+      try { stream = await api.find(port.url + frag); } catch (err) { return log.warn("wire: find failed", err); }
     }
     if (!stream) return;
     const type = streamType(stream);
@@ -1120,7 +1122,7 @@ export function Canvas(props) {
     // a DOC field → place a matching consumer on the canvas. Editors AND lenses that
     // accept the stream are offered (a lens lets you transform it on the way out).
     const candidates = editorsForStream([...listEditors(), ...listLensDescriptors()], stream);
-    if (!candidates.length) return console.warn("[sketchy] wire: no editor accepts", type);
+    if (!candidates.length) return log.warn("wire: no editor accepts", type);
     const p = toWorld(clientX, clientY);
     const place = (descriptor) => {
       const inlet = firstMatchingInlet(descriptor, stream.value);
@@ -1620,7 +1622,7 @@ export function Canvas(props) {
         else d.items.push({ id, kind: "doc", url, x, y, w, h, rotation: 0, toolId: "" });
       });
       handle.change((d) => { if (!d.docs.some((l) => l.url === url)) d.docs.push({ name: name || datatype.name || datatypeId, type: datatypeId, url }); });
-    } catch (e) { console.error("[newspace] createDocAt", e); }
+    } catch (e) { log.error("createDocAt", e); }
   }
   function selectPlacing(dt) { setPlacing({ what: "doc", descriptor: dt }); setTool("place"); setAddOpen(false); }
   function linkFor(url) { return (folderDoc.docs || []).find((l) => l.url === url); }
@@ -1713,7 +1715,7 @@ export function Canvas(props) {
     if (!portData) { const t = e.dataTransfer.getData("text/plain"); if (t && t[0] === "{" && t.includes("\"kind\"")) portData = t; }
     if (portData) {
       e.preventDefault();
-      try { dropWire(JSON.parse(portData), e.clientX, e.clientY); } catch (err) { console.warn("[sketchy] port drop", err); }
+      try { dropWire(JSON.parse(portData), e.clientX, e.clientY); } catch (err) { log.warn("port drop", err); }
       return;
     }
     if (e.dataTransfer.types.includes(TOOL_DRAG)) {
@@ -1945,7 +1947,7 @@ export function Canvas(props) {
       if (selfGone) return; // unmounted while we were loading — don't attach
       ch.on("change", refresh);
       selfOff = () => ch.off("change", refresh);
-    } catch (e) { console.warn("[newspace] presence self", e); }
+    } catch (e) { log.warn("presence self", e); }
   })();
   onCleanup(() => { selfGone = true; if (selfOff) { selfOff(); selfOff = null; } });
 
@@ -2037,14 +2039,14 @@ export function Canvas(props) {
   // palette/zoom/minimap/params later). Per-user, syncs across your devices.
   // (declared before `wires`, which reads `floats()`.)
   const [topLayerH, setTopLayerH] = createSignal(null);
-  ensureTopLayer().then(setTopLayerH).catch((e) => console.warn("[sketchy] top layer", e));
+  ensureTopLayer().then(setTopLayerH).catch((e) => log.warn("top layer", e));
   const topLayerDoc = createMemo(() => { const h = topLayerH(); return h ? makeDocumentProjection(h) : null; });
   const floats = () => topLayerDoc()?.floats || [];
   const changeTop = (fn) => { const h = topLayerH(); if (h) h.change(fn); };
   // CHROME / LAYOUT customization — which parts show. LAYERED (3 tiers, most-specific wins):
   //   1. per-VIEWER override  (top-layer doc `chrome[part]`)   — "just me"
   //   2. per-SKETCH shared    (layout doc `layout[part]`)      — "this sketch", seeded
-  //   3. the TOOL default     (`opts[part]`)                   — what makeNewspaceTool shipped
+  //   3. the TOOL default     (`opts[part]`)                   — what makeSketchyTool shipped
   // The per-sketch layout is a real shared doc seeded from the tool's defaults (tier 3 is
   // the seed: an unset part resolves to the tool default until someone edits it). A NEW
   // patchwork:tool over the same component just ships different `opts` → different seed.
@@ -2244,7 +2246,7 @@ export function Canvas(props) {
   // keeps the value synced from the item (so wiring OUT reflects moves/resizes).
   const shapeStreams = new Map();
   const shapeProps = (it) => {
-    // SHALLOW copy of the shape's own fields (params + geometry). Deliberately NOT a deep JSON
+    // SHALLOW copy of the shape's own fields (params + geometry) — NOT a deep JSON
     // clone: the sync effect below runs on every rootItems change (every drawn point), so a
     // deep clone of every wired shape — including a growing stroke's whole points array — was
     // O(n²). Nested reassignments (points/geometry are replaced, not mutated) still re-fire.
@@ -2601,7 +2603,7 @@ export function Canvas(props) {
   // CHROME HOST — what every chrome part (and a wrapping tool's SLOT,
   // opts.slots[part](host)) receives. STATE is read from `host.context` — the same
   // camera/pointer/tool/brush/selection (+ peers/board/…) Sources the canvas itself
-  // runs on (LITTLEBOOK4 §3a: the component exposes state; it doesn't own chrome) —
+  // runs on (ARCHITECTURE.md §3a: the component exposes state; it doesn't own chrome) —
   // while the host adds only the narrow COMMAND/QUERY surface (setTool, doc
   // mutations, the param target). No mirrored state accessors: chrome derives its
   // signals from the context (opstreamToSignal), so a custom slot renderer reads
@@ -2653,7 +2655,7 @@ export function Canvas(props) {
   const ctx = {
     shareSession,
     indexById, // the per-tick root-items index (PERF.md Phase 2) — item.jsx z/parent lookups
-    tool, interactive, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
+    tool, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
     spaceEpoch, // bumps when a spatial box's projection moves (map pan/zoom) → parented items re-project
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
     editingId, setEditingId, tombstoned: (url) => tombstones.has(url),

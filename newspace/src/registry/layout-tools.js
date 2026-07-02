@@ -92,6 +92,8 @@ export const layoutPlugins = [
 ];
 
 export const sketchyToolPlugins = [
+  // `sketchy` — the DEFAULT tool: the thin acquisition tool over the `sketchy`
+  // patchwork:component (see src/tool.jsx for the dated decision note).
   {
     type: "patchwork:tool",
     id: "sketchy",

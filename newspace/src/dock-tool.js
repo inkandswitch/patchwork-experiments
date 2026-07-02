@@ -4,9 +4,9 @@
 // dock's OWN complement doc (`@layouts.dock`, via ensureLayoutDoc), so switching
 // away and back restores your tiling exactly — the constant-complement property.
 //
-// PANE-TREE DOC MODEL (arrays only, on purpose — automerge list deletions are
-// index splices, which project cleanly; we never model anything deletable as a
-// map key). The tree is ONE FLAT ARRAY of panes with parent refs:
+// PANE-TREE DOC MODEL (arrays only — automerge list deletions are index
+// splices, which project cleanly; nothing deletable is modelled as a map
+// key). The tree is ONE FLAT ARRAY of panes with parent refs:
 //
 //   panes: [ { id, parent, dir, url, size } ]
 //
@@ -26,6 +26,7 @@
 import { complementSummary, complementBanner } from "./layouts.js";
 import { layoutSwitcher } from "./layout-switch.js";
 import { ensureLayoutDoc, layoutDocUrl, uid } from "./brush/constants.js";
+import { log } from "./log.js";
 
 // ── pure pane-tree operations (mutate a plain array OR an automerge proxy) ────
 
@@ -329,7 +330,7 @@ export function DockTool(handle, element) {
       dockHandle = h;
       dockHandle.on("change", render);
     } catch (e) {
-      console.warn("[dock] layout doc", e);
+      log.warn("dock: layout doc", e);
     }
     render();
   }
@@ -345,7 +346,7 @@ export function DockTool(handle, element) {
         if (complementHandle) complementHandle.off("change", render); // never leak the old listener
         complementHandle = h;
         complementHandle.on("change", render);
-      } catch (e) { console.warn("[dock] complement", e); }
+      } catch (e) { log.warn("dock: complement", e); }
     }
     render();
   }

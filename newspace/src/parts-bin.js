@@ -2,8 +2,8 @@
 // everything placeable, straight from the registries — shapes + stamps (the
 // toolbar's drag-outs), datatypes (new docs), and the `sketchy:window` nodes +
 // `sketchy:lens` lenses, grouped exactly like the + add menu (sources · editors ·
-// lenses, via nodeRole). Raw callbacks + DOM on purpose (flap CONTENT is not
-// canvas shell — no Solid here; see opstream-processing rules).
+// lenses, via nodeRole). Raw callbacks + DOM — flap CONTENT is not canvas
+// shell, and only the canvas shell gets Solid (the opstream-processing rule).
 //
 // DRAG-OUT PROTOCOL: tiles extend the toolbar's existing `text/x-newspace-tool`
 // DnD type with a namespaced part id — `datatype:folder`, `window:codemirror`,

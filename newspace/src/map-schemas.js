@@ -1,13 +1,13 @@
 // map-schemas.js — the map node's outlet SCHEMAS + the pure lens core behind its
 // two BIDIRECTIONAL marks outlets (`shapes` = lat/lng, `pixels` = container px).
-// This file is Leaflet-free ON PURPOSE: index.jsx imports the schemas at
+// This file must stay Leaflet-free: index.jsx imports the schemas at
 // registration time (the map's code + bundled Leaflet stay lazy behind load()),
 // and the tests exercise the geo↔pixel op-mapping and the echo/reconcile
 // machinery with injected project/unproject fns (a fake Mercator).
 //
 // Both outlets are views over the SAME source of truth — the map's OWN geo marks
 // (config.marks; NOT the canvas items parented onto the map, which are outer-doc
-// annotations — content/annotation separation is deliberate):
+// annotations — content and annotations never mix):
 //
 //   stroke { kind:"stroke", pts:[[lat,lng],…], color?, weight? }
 //   shape  { kind:"shape",  type:"rectangle"|"ellipse"|"line"|"arrow",

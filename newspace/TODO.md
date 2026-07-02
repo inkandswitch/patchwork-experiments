@@ -71,6 +71,8 @@ archive). Design rationale: [ARCHITECTURE.md](./ARCHITECTURE.md) · wiring:
       `api.describe` (basic describe already exists).
 - [ ] cosmetic: rename internals (`listEditors`/`EditorItem`/`editor-item.jsx`
       → surface*).
+- [ ] delete `NewspaceTool` (tool.jsx) — unregistered since 24d81514 flipped
+      `sketchy` to the thin SketchyTool (plan-3 Phase 6, noted 2026-07-02).
 - [ ] browser re-test: wire SELECTION (click a wire to select, ⌫ to delete) —
       should work now the box-remount churn is gone.
 - [ ] browser re-test: the PROPERTIES panel — intact but contextual (shows on

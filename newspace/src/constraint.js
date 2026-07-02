@@ -1,5 +1,5 @@
 // A constraint-SKETCH brush — Ivan Sutherland's Sketchpad / Ink & Switch
-// Crosscut, the buildable version. Registered as a `newspace:brush` plugin, it
+// Crosscut, the buildable version. Registered as a `sketchy:brush` plugin, it
 // owns its whole gesture through the host's `behavior` hooks and builds a real
 // articulable figure (a `sketch` item) rather than dropping loose lines.
 //
@@ -261,7 +261,7 @@ export const ConstraintBrush = {
 };
 
 export const constraintPlugin = {
-  type: "newspace:brush",
+  type: "sketchy:brush",
   id: "constraint",
   name: "Constraint sketch",
   icon: "Ruler",

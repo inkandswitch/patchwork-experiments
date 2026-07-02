@@ -3,7 +3,7 @@
 // SYNCHRONOUSLY (so a node can register it as an outlet immediately) and the
 // device wired up to push into it. `stop()` tears the device down.
 //
-// These are deliberately thin: they snapshot the platform object into a plain,
+// These are thin: they snapshot the platform object into a plain,
 // JSON-shaped value (lens-friendly) and push it. The heavy/opaque handle (a
 // MediaStream, a MIDIAccess) rides in the complement when it can't be serialised.
 //

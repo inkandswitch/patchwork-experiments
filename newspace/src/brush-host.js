@@ -18,6 +18,28 @@
 //   • behavior   — the legacy imperative hook             → adapted as-is
 //   • neither    — a passive STROKE brush (just `stroke`) → null; the host strokes for it
 //     (the built-in pen handlers in pen-brush.js)
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { log } from "./log.js";
+
+// The registered brush plugins, deduped by id. Canonical registry: `sketchy:brush`.
+// The legacy `newspace:` lookup is a one-release deprecation fallback for external
+// registrants (optimization-plan-3 Phase 1) — delete it next release.
+export function listRegistryBrushes() {
+  const all = [], seen = new Set();
+  const take = (name) => {
+    const found = [];
+    try {
+      const r = getRegistry(name);
+      const list = r ? (typeof r.filter === "function" ? r.filter(() => true) : Array.isArray(r) ? r : []) : [];
+      for (const b of list) if (b && b.id && !seen.has(b.id)) { seen.add(b.id); all.push(b); found.push(b); }
+    } catch {}
+    return found;
+  };
+  take("sketchy:brush");
+  const legacy = take("newspace:brush");
+  if (legacy.length) log.warn(`deprecated newspace:brush registration (${legacy.map((b) => b.id).join(", ")}) — register as sketchy:brush`);
+  return all;
+}
 
 // Resolve a brush module's gesture handlers given the stable host. Returns null for a
 // passive stroke brush (the caller falls back to the built-in pen).
