@@ -196,23 +196,53 @@ export const itemPresent = (items, id) => items.some((x) => x.id === id);
 // stable id order — the render-order comparator (see sortById in brush/constants.js)
 export const byIdAsc = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
-// PERF.md Phase 2 — ONE pass over `items` builds both hot lookups: `indexById`
-// (id → doc index; doc index IS the z) and `byLayer` (per-layer buckets, id-sorted
-// so render order stays stable — live embeds must never be relocated).
+// LAYER MEMBERSHIP — an item's `layers: string[]`. The FIRST entry is the HOME
+// space: it owns the item's coordinates + transform (semantically the legacy
+// single `layer:` field). Every FURTHER entry is a pure VISIBILITY membership:
+// the item shows whenever ANY of its layers is visible, and always renders in
+// its home space. Reading is additive + back-compat: `layers` wins; else a
+// legacy `layer: "x"` reads as ["x"]; else ["canvas"]. Writers NEVER delete the
+// legacy `layer` field; new/edited items write `layers` (mirroring `layer` to a
+// non-base home so old clients keep the item in the right space). An entry may
+// later grow into { id, x, y } (per-mode placement) — object entries already
+// normalize to their id here, so that's not a model break.
+export function itemLayers(it) {
+  const ls = it && it.layers;
+  if (Array.isArray(ls) && ls.length) {
+    const out = [];
+    for (const e of ls) { const id = typeof e === "string" ? e : e && e.id; if (id) out.push(id); }
+    if (out.length) return out;
+  }
+  return [(it && it.layer) || "canvas"];
+}
+export const itemHomeLayer = (it) => itemLayers(it)[0];
+// visibility = ANY member layer visible (`layerVisible` is a per-layer predicate)
+export const itemVisibleOn = (it, layerVisible) => itemLayers(it).some((id) => layerVisible(id));
+
+// PERF.md Phase 2 — ONE pass over `items` builds the hot lookups: `indexById`
+// (id → doc index; doc index IS the z), `byHome` (per-HOME-layer render buckets,
+// id-sorted so render order stays stable — live embeds must never be relocated;
+// an item renders in EXACTLY ONE home bucket, never twice) and `byLayer`
+// (MEMBERSHIP buckets: an item appears under every layer it's on, for
+// visibility). `layersOf` returns an item's layer list, home first (itemLayers);
+// a plain-string return still works.
 // The index is a per-tick view of `items`: never hold it across ticks.
-export function buildItemsIndex(items, layerOf) {
+export function buildItemsIndex(items, layersOf = itemLayers) {
   const indexById = new Map();
   const byLayer = new Map();
+  const byHome = new Map();
+  const put = (m, k, it) => { let arr = m.get(k); if (!arr) { arr = []; m.set(k, arr); } arr.push(it); };
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     indexById.set(it.id, i);
-    const k = layerOf(it);
-    let arr = byLayer.get(k);
-    if (!arr) { arr = []; byLayer.set(k, arr); }
-    arr.push(it);
+    const ls = layersOf(it);
+    const list = Array.isArray(ls) ? ls : [ls];
+    put(byHome, list[0], it);
+    for (let j = 0; j < list.length; j++) if (list.indexOf(list[j]) === j) put(byLayer, list[j], it);
   }
+  for (const arr of byHome.values()) arr.sort(byIdAsc);
   for (const arr of byLayer.values()) arr.sort(byIdAsc);
-  return { byLayer, indexById };
+  return { byLayer, byHome, indexById };
 }
 
 // find an item by id — O(1) through an `indexMap` (a per-tick buildItemsIndex

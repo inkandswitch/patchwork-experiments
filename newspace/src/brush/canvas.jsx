@@ -5,7 +5,7 @@ import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../surface-doc.js";
 import { log } from "../log.js";
 import { migrateStorageKey } from "../persist.js";
-import { useLayerTransform, itemLayer, defaultLayers, layerKind } from "../layers.js";
+import { useLayerTransform, itemLayers, itemHomeLayer, defaultLayers, defaultModes, resolveLayerVisible, layerKind } from "../layers.js";
 import { chainToOuter, chainToLocal, chainScale, mapInstanceFor, onSpaceChanged } from "../box-transform.js";
 import { makePersisted } from "@solid-primitives/storage";
 import {
@@ -149,6 +149,38 @@ export function Canvas(props) {
   const baseLayer = () => layersList()[0];
   // editing a frosting layer (e.g. the overlay) dims + blurs everything beneath it
   const frosting = () => !!(layerKind(activeLayer()?.kind) || {}).frost;
+  // ── MODES — layer-visibility presets (workshop/play, layers.js) ─────────────
+  // presets are shared layout-doc data; the CURRENT mode + any 👁 overrides are
+  // per-viewer in the top-layer user-state doc (topLayerDoc/changeTop, declared
+  // below — read lazily at render time, like brushCfg).
+  const modesList = () => { const m = rootLayoutDoc()?.layout?.modes; return Array.isArray(m) && m.length ? m : defaultModes(); };
+  const activeMode = () => { const id = topLayerDoc()?.mode; return modesList().find((m) => m.id === id) || modesList()[0]; };
+  const setMode = (id) => changeTop((d) => { d.mode = id; });
+  const eyeOverride = (layerId) => topLayerDoc()?.layerVis?.[activeMode()?.id]?.[layerId];
+  // a layer's LIVE visibility: edit-reveal (the active tab is always shown) →
+  // per-viewer 👁 override → the mode's preset (resolveLayerVisible).
+  const layerVisible = (layerId) => resolveLayerVisible(layerId, { mode: activeMode(), override: eyeOverride(layerId), editLayerId: activeLayerId() });
+  // the 👁 state as the MODE resolves it (no edit-reveal) — what the eye shows + flips
+  const layerEyeOn = (layerId) => resolveLayerVisible(layerId, { mode: activeMode(), override: eyeOverride(layerId) });
+  const toggleLayerEye = (layerId) => {
+    const m = activeMode(); if (!m) return;
+    const next = !layerEyeOn(layerId);
+    changeTop((d) => { if (!d.layerVis) d.layerVis = {}; if (!d.layerVis[m.id]) d.layerVis[m.id] = {}; d.layerVis[m.id][layerId] = next; });
+  };
+  // edit WHICH layers a preset includes — shared (layout doc), from the ⊞ tray
+  const togglePresetLayer = (modeId, layerId) => {
+    const h = rootLayoutH(); if (!h) return;
+    h.change((d) => {
+      if (!d.layout) d.layout = {};
+      if (!Array.isArray(d.layout.modes)) d.layout.modes = defaultModes();
+      const m = d.layout.modes.find((x) => x.id === modeId); if (!m) return;
+      const i = m.layers.indexOf(layerId);
+      if (i >= 0) m.layers.splice(i, 1); else m.layers.push(layerId);
+    });
+  };
+  // an item shows iff ANY of its member layers is visible (hidden ⇒ inert too:
+  // item.jsx renders it display:none, so no hit surface exists)
+  const itemVisible = (it) => itemLayers(it).some(layerVisible);
   // ALWAYS the base camera space — for coords that are inherently world (peer presence
   // cursors/views), which must not be run through the active layer's transform.
   const cameraToScreen = (wx, wy) => txFor(baseLayer()).toScreen(wx, wy);
@@ -326,7 +358,7 @@ export function Canvas(props) {
   // PERF.md Phase 2 — one per-tick index over the root items (id → doc index),
   // shared by item.jsx (z/parent lookups via ctx.indexById) and the wire
   // geometry below (Phase 6), replacing per-read rootItems().find scans.
-  const itemsIdx = createMemo(() => buildItemsIndex(rootItems(), itemLayer));
+  const itemsIdx = createMemo(() => buildItemsIndex(rootItems(), itemLayers));
   const indexById = () => itemsIdx().indexById;
   // keep the `board` context source fresh with the live root items (read by the magnifier)
   createEffect(() => context.board.push(rootItems()));
@@ -367,14 +399,14 @@ export function Canvas(props) {
   function loadDatatype(type) { if (!datatypeCache.has(type)) { try { datatypeCache.set(type, getRegistry("patchwork:datatype").load(type).catch(() => null)); } catch { datatypeCache.set(type, Promise.resolve(null)); } } return datatypeCache.get(type); }
   // frames are CANVAS-layer containers; from a non-base layer the coords are a different
   // space, so never route an item into a frame (it'd mismatch screen coords vs world bounds).
-  const frameAtWorld = (wx, wy, exclude) => { if (activeLayerId() !== baseLayer()?.id) return null; let f = null; for (const it of rootItems()) if (it.kind === "frame" && it.id !== exclude && pointInFrame(it, wx, wy)) f = it; return f; };
+  const frameAtWorld = (wx, wy, exclude) => { if (activeLayerId() !== baseLayer()?.id) return null; let f = null; for (const it of rootItems()) if (it.kind === "frame" && it.id !== exclude && itemVisible(it) && pointInFrame(it, wx, wy)) f = it; return f; };
   // the TOPMOST root item at (wx,wy) that owns a coordinate space (a frame OR a map) — the
   // draw-claim boundary. Rotation-aware containment via worldAnchor; base layer only, like frames.
   const spatialBoxAtWorld = (wx, wy, exclude) => {
     if (activeLayerId() !== baseLayer()?.id) return null;
     let hit = null;
     for (const it of rootItems()) {
-      if (!ownsSpace(it) || it.id === exclude) continue;
+      if (!ownsSpace(it) || it.id === exclude || !itemVisible(it)) continue;
       const a = worldAnchor(it, wx, wy);
       if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) hit = it;
     }
@@ -416,7 +448,7 @@ export function Canvas(props) {
     const items = rootItems();
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
-      if (it.kind === "stroke") continue;
+      if (it.kind === "stroke" || !itemVisible(it)) continue;
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) continue;
       // hit-test the ROTATED shape (anchor in [0,1] ⇔ inside it), so you only
       // bind when over the actual tool and the stored anchor is in-bounds
@@ -455,9 +487,13 @@ export function Canvas(props) {
     if (!annotate) convertToLocal(item, dstFrame);
     const id = uid();
     // born on the active layer: its coords are already in that layer's space (toWorld
-    // routed them there). The base layer is the untagged default, so don't store it.
-    const lyr = !dstFrame && activeLayerId() !== baseLayer()?.id ? activeLayerId() : null;
-    transact(dstHandle, "add", () => dstHandle.change((d) => { if (!d.items) d.items = []; d.items.push(lyr ? { id, layer: lyr, ...item } : { id, ...item }); }));
+    // routed them there). `layers[0]` is the HOME; the legacy `layer` mirror is written
+    // only for a non-base home (base was the untagged default), so old clients keep
+    // placing the item in the right space. Frame children live in another doc's space —
+    // no layer tags there.
+    const home = !dstFrame ? activeLayerId() : null;
+    const lyr = home && home !== baseLayer()?.id ? home : null;
+    transact(dstHandle, "add", () => dstHandle.change((d) => { if (!d.items) d.items = []; d.items.push(home ? { id, layers: [home], ...(lyr ? { layer: lyr } : {}), ...item } : { id, ...item }); }));
     setActiveId(dstFrame ? targetFrame.url : "root");
     setSelected([id]);
     if (opts.edit) setEditingId(id);
@@ -1438,7 +1474,7 @@ export function Canvas(props) {
     // (else a box on the frosted overlay would grab canvas items underneath). Anchored widgets
     // store a corner OFFSET, so resolve them to absolute coords the screen-space rect can hit.
     const onLayer = rootItems()
-      .filter((it) => itemLayer(it) === activeLayerId())
+      .filter((it) => itemHomeLayer(it) === activeLayerId()) // HOME = the space the marquee rect is in (the active layer is always visible: edit-reveal)
       .map((it) => projected(it)) // parented marks hit at their world projection
       .map((it) => (it.anchor ? { ...it, ...resolveItemPos(it), anchor: undefined } : it));
     const hit = itemsInRect(onLayer, x0, y0, x1, y1);
@@ -2369,7 +2405,7 @@ export function Canvas(props) {
     // a non-base layer (the overlay) is CHROME — its wires are plumbing (minimap ← canvas node,
     // etc.). Hide them unless you're actually wiring, so the overlay isn't a tangle of pink.
     if (active !== base && tool() !== "wire") return [];
-    const layerById = new Map(rootItems().map((it) => [it.id, itemLayer(it)])); // built ONCE, not per-spec
+    const layerById = new Map(rootItems().map((it) => [it.id, itemHomeLayer(it)])); // built ONCE, not per-spec (a wire lives in its node's HOME space)
     return wireSpecs().filter((s) => (s.floatId ? base : (layerById.get(s.editorId) || base)) === active);
   });
 
@@ -2673,8 +2709,10 @@ export function Canvas(props) {
     peerStream, // (contactUrl, part) → a live Source of a peer's state, for peer-wired inlets
     nodeStream, registerOutlets, unregisterOutlets, // node outlets (lens outputs) — see registry above
     canvasOutlets, // the canvas-as-node reactive state (items/bounds/peers/camera/…) for bare layer tools
-    // a bare tool shows its ports + auto-wires while ITS layer is the active one
-    layerIsActive: (it) => itemLayer(it) === activeLayerId(),
+    // a bare tool shows its ports + auto-wires while ITS (home) layer is the active one
+    layerIsActive: (it) => itemHomeLayer(it) === activeLayerId(),
+    // layer-visibility (modes): item.jsx hides root items whose layers are all hidden
+    itemVisible,
   };
 
   const handleBox = createMemo(() => {
@@ -2721,9 +2759,11 @@ export function Canvas(props) {
 
   return (
     <div class={"ns-root " + cursorClass()} classList={{ "ns-wiring": tool() === "wire", "ns-frosted": frosting() }} ref={viewportRef} onPointerDown={onPointerDown} onPointerMove={trackCursor} onDblClick={onCanvasDblClick} onWheel={onWheel} onDragOver={onDragOver} onDrop={onDrop}>
-      {/* BASE layer (the camera coordinate space). Only items tagged onto it live here. */}
+      {/* BASE layer (the camera coordinate space). An item renders in its HOME layer's
+          space only (one DOM node, never twice) — the byHome buckets are id-sorted, the
+          old sortById(filter) order. Extra memberships affect VISIBILITY, not placement. */}
       <div class="ns-world" ref={(el) => enableAtomicMove(el)} style={{ transform: worldTransform() }}>
-        <For each={sortById(rootItems().filter((it) => itemLayer(it) === baseLayer()?.id))}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
+        <For each={itemsIdx().byHome.get(baseLayer()?.id) || []}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
       </div>
       {/* while a pan is in flight this captures the wheel (over iframes too) so
           the pan keeps going; idle → pointer-events:none, tools interactive */}
@@ -2884,12 +2924,16 @@ export function Canvas(props) {
       <For each={layersList().filter((l) => l.id !== baseLayer()?.id)}>
         {(layer) => (
           <div class="ns-layer" classList={{ "ns-layer-active": activeLayerId() === layer.id }} style={{ transform: txFor(layer).transform() }}>
-            <For each={sortById(rootItems().filter((it) => itemLayer(it) === layer.id))}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
+            <For each={itemsIdx().byHome.get(layer.id) || []}>{(it) => <Item it={it} surface={rootSurface()} ctx={ctx} depth={0} />}</For>
           </div>
         )}
       </For>
 
-      {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on. */}
+      {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on. Each tab
+          carries a 👁 (this mode's visibility; clicking writes a just-me override), and the
+          strip ends in the MODE chips (workshop/play — play is the "run it" affordance).
+          Switching to a hidden layer's tab EDIT-REVEALS it (layers.js resolveLayerVisible);
+          leaving the tab restores the mode's visibility. */}
       <Show when={layersList().length > 1}>
         <div class="ns-layers" onPointerDown={(e) => e.stopPropagation()}>
           {/* tabs listed TOPMOST space first (reverse of doc order — array order stays z-order);
@@ -2897,8 +2941,24 @@ export function Canvas(props) {
           <For each={layersList().toReversed()}>
             {(layer) => {
               const k = () => layerKind(layer.kind) || {};
-              return <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind}>{layer.name || k().name || layer.id}</button>;
+              const eye = () => layerEyeOn(layer.id);
+              return (
+                <span class="ns-layer-tabwrap" classList={{ "ns-layer-off": !eye(), "ns-layer-revealed": !eye() && activeLayerId() === layer.id }}>
+                  <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind + (!eye() && activeLayerId() === layer.id ? " — hidden in this mode, revealed while you edit it" : "")}>{layer.name || k().name || layer.id}</button>
+                  <button class="ns-layer-eye" classList={{ off: !eye() }} title={(eye() ? "shown" : "hidden") + ` in ${activeMode()?.id} — click to override, just for you`} onClick={() => toggleLayerEye(layer.id)}>
+                    <svg viewBox="0 0 22 22" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 11s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" /><Show when={eye()} fallback={<path d="M4 18L18 4" />}><circle cx="11" cy="11" r="2.5" /></Show></svg>
+                  </button>
+                </span>
+              );
             }}
+          </For>
+          <span class="ns-mode-sep" />
+          <For each={modesList()}>
+            {(m) => (
+              <button class="ns-mode-chip" classList={{ active: activeMode()?.id === m.id, play: m.id === "play" }} title={m.id === "play" ? "play — run the sketch: only its play layers show" : `${m.id} — show this mode's layers`} onClick={() => setMode(m.id)}>
+                {m.id === "play" ? "▶ play" : m.id}
+              </button>
+            )}
           </For>
         </div>
       </Show>
@@ -3045,6 +3105,20 @@ export function Canvas(props) {
             <For each={CHROME_PARTS}>{(part) => (
               <label class="ns-layout-row"><input type="checkbox" checked={chromePart(part)} onChange={() => toggleChrome(part)} />{part}</label>
             )}</For>
+            {/* MODE PRESETS — which layers each mode shows. SHARED (layout doc): editing a
+                preset changes it for everyone; the 👁 toggles in the layer strip are the
+                per-viewer overrides on top. */}
+            <Show when={layersList().length > 1}>
+              <div class="ns-menu-sep">modes · everyone sees this</div>
+              <For each={modesList()}>{(m) => (
+                <div class="ns-mode-edit">
+                  <div class="ns-mode-edit-name" classList={{ active: activeMode()?.id === m.id }}>{m.id}</div>
+                  <For each={layersList()}>{(layer) => (
+                    <label class="ns-layout-row"><input type="checkbox" checked={(m.layers || []).includes(layer.id)} onChange={() => togglePresetLayer(m.id, layer.id)} />{layer.name || layer.id}</label>
+                  )}</For>
+                </div>
+              )}</For>
+            </Show>
           </div>
         </Show>
       </div>

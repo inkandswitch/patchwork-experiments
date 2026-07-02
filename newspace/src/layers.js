@@ -54,14 +54,44 @@ export function useLayerTransform(layer, env) {
   try { return plugin.use(env) || IDENTITY_BINDING; } catch { return IDENTITY_BINDING; }
 }
 
-// which layer an item belongs to (un-tagged ⇒ the base canvas layer)
-export const itemLayer = (it) => (it && it.layer) || "canvas";
+// layer MEMBERSHIP lives in model.js (itemLayers/itemHomeLayer — the home space
+// owns coordinates, further entries are visibility memberships; see LAYOUTS.md
+// §Layers, membership, and modes). `itemLayer` stays as the HOME alias for the
+// many space-math callers: transforms/coords always go through the home.
+export { itemLayers, itemHomeLayer, itemHomeLayer as itemLayer } from "./model.js";
 
 // the default stack a fresh sketch gets (drawn bottom → top)
 export const defaultLayers = () => [
   { id: "canvas", kind: "canvas" },
   { id: "overlay", kind: "overlay" },
 ];
+
+// ── MODES — named layer-visibility presets (Max/MSP workshop/play) ──────────
+// Presets are SHARED data in the layout doc (`layout.modes`); the CURRENT mode
+// is per-viewer (top-layer user-state doc, like brushCfg). "workshop" shows
+// everything (today's behavior) and is the default; "play" shows only the base
+// canvas — the seeded overlay chrome disappears, which is the point.
+export const defaultModes = () => {
+  const ids = defaultLayers().map((l) => l.id);
+  return [
+    { id: "workshop", layers: ids },
+    { id: "play", layers: [ids[0]] },
+  ];
+};
+
+// one layer's visibility under a mode. Precedence (most temporary wins):
+//   1. edit-reveal — the layer whose tab you're editing is always shown:
+//      switching to a hidden layer's tab temporarily reveals it, leaving the
+//      tab restores the mode's visibility
+//   2. per-viewer override — a 👁 toggle (top-layer doc), customizing the mode
+//      just for you (the shared preset is untouched)
+//   3. the mode's preset — `mode.layers` membership (no list ⇒ all visible)
+export function resolveLayerVisible(layerId, { mode, override, editLayerId } = {}) {
+  if (editLayerId != null && layerId === editLayerId) return true;
+  if (override === true || override === false) return override;
+  const ls = mode && mode.layers;
+  return Array.isArray(ls) ? ls.includes(layerId) : true;
+}
 
 // ── the two BUILT-IN plugins (registered from index.jsx, exactly like a map would) ──
 export const cameraTransform = {

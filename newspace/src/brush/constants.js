@@ -1,7 +1,7 @@
 // Pure constants + helpers for the Sketchy canvas ("brush"). Extracted from
 // tool.jsx so the canvas can be split into modules. No Solid/component state here
 // — only values and pure functions (plus `ensureLayout`, which takes its repo).
-import { defaultLayers } from "../layers.js"; // the base + overlay layer stack (a literal)
+import { defaultLayers, defaultModes } from "../layers.js"; // the base + overlay layer stack + the workshop/play presets
 import { byIdAsc } from "../model.js"; // the id comparator, shared with buildItemsIndex
 import { valuesEqual } from "../ops.js"; // the deep fallback in shapePropsEqual
 import { count as perfCount } from "../perf.js";
@@ -153,9 +153,11 @@ export const anchorAxes = (anchor) => ({ right: anchor === "bottom-right" || anc
 // `dismissedSeeds` so ensureLayout does NOT re-seed it on the next open (the "delete like any
 // item" contract). Fresh sketches + never-dismissed ones still get seeded.
 export const SEED_IDS = ["ns-ctx-mm", "ns-minimap", "ns-ctx-zoom", "ns-zoom"];
-const canvasCtxItem = (id, anchor, x, y) => ({ id, kind: "editor", editorId: "canvas", layer: "overlay", anchor, x, y, w: 74, h: 22, rotation: 0, inlets: {} });
-export const minimapSeedItem = () => ({ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136, rotation: 0, inlets: { ...MINIMAP_INLETS } });
-export const zoomSeedItem = () => ({ id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28, rotation: 0, inlets: { ...ZOOM_INLETS } });
+// overlay-ONLY (`layers` home = overlay, no other membership): hidden in play
+// mode, which is the point. `layer` stays mirrored for old clients.
+const canvasCtxItem = (id, anchor, x, y) => ({ id, kind: "editor", editorId: "canvas", layer: "overlay", layers: ["overlay"], anchor, x, y, w: 74, h: 22, rotation: 0, inlets: {} });
+export const minimapSeedItem = () => ({ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", layers: ["overlay"], anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136, rotation: 0, inlets: { ...MINIMAP_INLETS } });
+export const zoomSeedItem = () => ({ id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", layers: ["overlay"], anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28, rotation: 0, inlets: { ...ZOOM_INLETS } });
 export const ctxMmSeedItem = () => canvasCtxItem("ns-ctx-mm", "bottom-left", 16, 162);   // above the minimap
 export const ctxZoomSeedItem = () => canvasCtxItem("ns-ctx-zoom", "bottom-right", 16, 54); // above the zoom
 export const defaultOverlayItems = () => [ctxMmSeedItem(), minimapSeedItem(), ctxZoomSeedItem(), zoomSeedItem()];
@@ -193,7 +195,7 @@ export async function ensureLayoutDoc(repo, folderHandle, key = "canvas") {
     const seed = Array.isArray(old) ? old.map(clonePlain) : [];
     const layout = await repo.create2(
       canvas
-        ? { "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT } }
+        ? { "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT, modes: defaultModes() } }
         : { "@patchwork": { type: "sketch-layout" }, items: [] },
     );
     folderHandle.change((d) => {
@@ -229,6 +231,7 @@ function upgradeCanvasLayoutDoc(lh) {
     if (!d.items) d.items = [];
     if (!d.layout) d.layout = { ...DEFAULT_LAYOUT };
     if (!d.layers) d.layers = defaultLayers();
+    if (!d.layout.modes) d.layout.modes = defaultModes(); // the workshop/play presets (shared, editable in the ⊞ tray)
     // seed the overlay chrome — but NEVER re-seed something the user deleted (dismissedSeeds).
     const dismissed = d.dismissedSeeds || [];
     const seed = (id, make) => { if (!dismissed.includes(id) && !d.items.some((it) => it.id === id)) d.items.push(make()); };
