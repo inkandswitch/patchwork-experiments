@@ -1,7 +1,7 @@
 // Self-contained module-settings registrar for the embark workspace.
 //
 // Reads every pushed feature package's pushwork rootUrl
-// (packages/*/.pushwork/config.json) and writes them into a module-settings
+// ({editors,context,cards}/*/.pushwork/config.json) and writes them into a module-settings
 // Automerge doc over the Subduction sync server, deduping. No external CLI
 // (pw-modules) required; it uses the same automerge-repo + subduction stack
 // pushwork itself uses.
@@ -30,22 +30,33 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const packagesDir = path.join(here, "..", "packages");
+// Packages live in three buckets under embark/; scan them all.
+const bucketDirs = ["editors", "context", "cards"].map((b) =>
+  path.join(here, "..", b),
+);
 const configPath = path.join(here, "..", "module-settings.json");
 const AUTOMERGE_URL_RE = /^automerge:[1-9A-HJ-NP-Za-km-z]+$/;
 
 function readPackageUrls() {
   const urls = [];
-  for (const dir of readdirSync(packagesDir)) {
-    const cfg = path.join(packagesDir, dir, ".pushwork", "config.json");
-    let rootUrl;
+  for (const bucketDir of bucketDirs) {
+    let entries;
     try {
-      rootUrl = JSON.parse(readFileSync(cfg, "utf8")).rootUrl;
+      entries = readdirSync(bucketDir);
     } catch {
-      continue; // core / non-pushed packages have no .pushwork
+      continue; // bucket dir may not exist
     }
-    if (rootUrl && AUTOMERGE_URL_RE.test(rootUrl)) {
-      urls.push({ name: dir, url: rootUrl });
+    for (const dir of entries) {
+      const cfg = path.join(bucketDir, dir, ".pushwork", "config.json");
+      let rootUrl;
+      try {
+        rootUrl = JSON.parse(readFileSync(cfg, "utf8")).rootUrl;
+      } catch {
+        continue; // lib / non-pushed packages have no .pushwork
+      }
+      if (rootUrl && AUTOMERGE_URL_RE.test(rootUrl)) {
+        urls.push({ name: dir, url: rootUrl });
+      }
     }
   }
   return urls.sort((a, b) => a.name.localeCompare(b.name));
@@ -175,7 +186,7 @@ async function sync(settingsUrl, removeUrls) {
   const packages = readPackageUrls();
   if (packages.length === 0) {
     throw new Error(
-      "No published packages found (packages/*/.pushwork/config.json). Run `pnpm -r sync` first.",
+      "No published packages found ({editors,context,cards}/*/.pushwork/config.json). Run `pnpm -r sync` first.",
     );
   }
 

@@ -1,0 +1,323 @@
+/* A scrollable column of channel cards: a monospace channel name over its
+   pretty-printed merged JSON value (or "empty"). */
+.embark-context {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  overflow: auto;
+  background: #ffffff;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.embark-context__channel {
+  /* Keep each card at its natural height so the column scrolls instead of
+     squishing the sections together when the content overflows. */
+  flex: 0 0 auto;
+  border: 1px solid #f0eeec;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.embark-context__channel--empty {
+  opacity: 0.55;
+}
+
+.embark-context__name {
+  padding: 6px 8px;
+  background: #faf9f8;
+  border-bottom: 1px solid #f0eeec;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c1917;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.embark-context__value {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #44403c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.embark-context__value--empty {
+  color: #a8a29e;
+  font-style: italic;
+}
+
+.embark-context__empty {
+  padding: 16px;
+  color: #a8a29e;
+  font-size: 12px;
+}
+
+/* --- Focused embed view -------------------------------------------------- */
+/* The default layout: two labeled sections (contributed / used) for the
+   currently-selected embed. */
+.embark-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.embark-focus__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.embark-focus__heading {
+  padding: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #78716c;
+}
+
+.embark-focus__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.embark-focus__empty {
+  padding: 8px;
+  color: #a8a29e;
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* When any channel card rendered into a focus body, drop its "nothing" note. */
+.embark-focus__body:has(.embark-context__channel) > .embark-focus__empty {
+  display: none;
+}
+
+/* --- Chips --------------------------------------------------------------- */
+/* Small monospace pills for string-keyed channels (query text, schema names). */
+.embark-schema__token {
+  padding: 4px 10px;
+  border: 1px solid #cbd2da;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  background: #f7f8fa;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.embark-schema__token:hover {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+  background: #eef4ff;
+}
+
+/* --- Document tokens (selection / highlight / search / commands) ---------- */
+/* Each document renders its real embed face (see EmbedToken, via the shared
+   `token-view`), falling back to a title pill. The wrapper drives the shared
+   Highlight channel on hover and lights up while its document is highlighted by
+   anyone. */
+.embark-tokens-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.embark-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.embark-token-row__empty {
+  font-size: 11px;
+  font-style: italic;
+  color: #a8a29e;
+}
+
+.embark-token {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #1d4ed8;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.embark-token::before {
+  content: "@";
+  opacity: 0.55;
+  margin-right: 1px;
+}
+
+.embark-token:hover {
+  background: rgba(59, 130, 246, 0.22);
+}
+
+/* The hover/highlight wrapper around an embed's inline face. Kept separate from
+   the face itself (a pill or a card's custom token view) so highlighting works
+   regardless of what the embed renderer paints inside. Named distinctly from the
+   canvas's own `.embark-embed` frame class (this stylesheet is injected page-
+   wide) to avoid clobbering it. */
+.embark-embed-token {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 999px;
+  cursor: default;
+  transition: box-shadow 0.12s ease;
+}
+
+.embark-embed-token--highlighted {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.6);
+}
+
+/* --- Search results table ------------------------------------------------ */
+/* `search → results`, one row per active query, results grouped by the card
+   that produced them. */
+.embark-results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.embark-results th {
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #78716c;
+  border-bottom: 1px solid #f0eeec;
+}
+
+.embark-results td {
+  padding: 8px;
+  vertical-align: top;
+  border-bottom: 1px solid #f0eeec;
+}
+
+.embark-results tr:last-child td {
+  border-bottom: none;
+}
+
+.embark-results__query {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #1c1917;
+  white-space: pre-wrap;
+  word-break: break-word;
+  width: 30%;
+}
+
+.embark-results__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.embark-results__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-results__card {
+  font-size: 11px;
+  font-weight: 600;
+  color: #57534e;
+}
+
+/* --- Stickers ------------------------------------------------------------ */
+/* The `stickers` channel, grouped by source (Uses) or target (Contributes),
+   with each sticker drawn the way it appears in the document. The .cm-sticker*
+   rules mirror @embark/stickers' stylesheet, scoped under .embark-stickers so
+   the viewer looks right whether or not that (CodeMirror-injected) stylesheet
+   is present on the page. */
+.embark-stickers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.embark-stickers__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-stickers__label {
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  color: #57534e;
+}
+
+.embark-stickers .cm-sticker {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+}
+
+.embark-stickers .cm-sticker--text {
+  padding: 0 0.35em;
+  border-radius: 0.5em;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: #1f2937;
+  background: #e5e7eb;
+  white-space: nowrap;
+}
+
+.embark-stickers .cm-sticker--tool {
+  vertical-align: middle;
+}
+
+.embark-stickers .cm-sticker--tool patchwork-view {
+  display: inline-block;
+  width: 5.5em;
+  height: 1.6em;
+  vertical-align: middle;
+}
+
+.embark-stickers .cm-sticker--style {
+  padding: 0 0.35em;
+  border-radius: 0.35em;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.embark-stickers .cm-sticker--emphasized {
+  outline: 1.5px solid #f59e0b;
+  outline-offset: 1px;
+  border-radius: 0.4em;
+  background-color: #fef3c7;
+}
+
+.embark-stickers .cm-sticker--text.cm-sticker--emphasized {
+  color: #92400e;
+  font-weight: 600;
+}

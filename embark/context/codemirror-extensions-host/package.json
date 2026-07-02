@@ -1,0 +1,31 @@
+{
+  "name": "@embark/codemirror-extensions-host",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "dependencies": {
+    "@embark/context": "workspace:*",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.4",
+    "@inkandswitch/patchwork-plugins": "^0.0.11"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.2.5",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.16"
+  }
+}

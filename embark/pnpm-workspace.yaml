@@ -1,5 +1,7 @@
 packages:
-  - "packages/*"
+  - "editors/*"
+  - "context/*"
+  - "cards/*"
 
 onlyBuiltDependencies:
   - cbor-extract
