@@ -1,19 +1,31 @@
 /**
- * bootIsolation — the host-side boot sequence for one `<patchwork-isolation>`
- * instance. Given the element and a serializable boot spec, it:
+ * bootIsolation — the host-side boot sequence for one isolated iframe. Given the
+ * mounted host element (a `<patchwork-view component="patchwork-isolation">`), it
+ * reads all of its config directly off that element and:
  *
  *  1. Fetches boot assets (es-module-shims, WASM, host styles) — cached
  *  2. Gets the shared denylist (singleton, populated once from sensitive docs)
- *  3. Builds the allowlist seeded from `spec.rootUrls` (+ transitive content)
+ *  3. Builds the allowlist seeded from the `automerge-allowlist` attribute
+ *     (+ transitive content)
  *  4. Creates the intermediary repo gated by allowlist + denylist
  *  5. Starts host-side RPC for plugin loading, navigation, and bridged providers
  *  6. Creates the sandboxed iframe and posts the boot message
  *
+ * The element IS the config surface — there is no separate spec object. Reads
+ * off `host`:
+ *   - `root-component` attribute      → the root `patchwork:component` to mount
+ *   - `automerge-allowlist` attribute → sync allowlist seeds (comma-separated)
+ *   - `shared-providers` attribute    → bridged providers (via the providers bridge)
+ *   - the inert `<script data-root-component-data>` child → opaque root-component data
+ *   - nearest `<repo-provider>` ancestor → the host repo
+ *
  * It returns an {@link IsolationHandle} synchronously; the async work runs in
  * the background. `teardown()` cancels any in-flight boot and tears down
- * everything wired so far — it is idempotent and safe to call at any point.
+ * everything wired so far — idempotent, safe at any point. Live changes to the
+ * data `<script>` are watched here and streamed to the running iframe (no
+ * reboot) via `root-component-data-update` messages.
  *
- * No tool code ever runs in the host: the spec is data only, and the iframe
+ * No tool code ever runs in the host: everything read is data, and the iframe
  * resolves/mounts the root component against its own registry.
  */
 
@@ -36,16 +48,26 @@ import {
   makeBridgedValueFilter,
 } from "../../bridges/index.js";
 import { generateIframeSrcdoc } from "./srcdoc.js";
-import type { IsolationBootSpec } from "../../types.js";
 import { log } from "../../log.js";
 import { fetchBootAssets } from "./assets.js";
 import { readHostAppearance } from "./styles.js";
 import { getResolvedImportMap } from "./import-map.js";
+import {
+  readRootComponentId,
+  readAllowlistUrls,
+  readRootComponentData,
+  findRootComponentDataScript,
+} from "./config.js";
 
 export interface IsolationHandle {
   /**
    * Cancel any in-flight boot and tear down everything wired so far (bridges,
-   * intermediary repo, iframe). Idempotent.
+   * intermediary repo, iframe, the root-component-data observer). Idempotent.
+   *
+   * Live data updates are handled internally: `bootIsolation` watches the data
+   * `<script>` and streams changes to the running iframe with no reboot, so the
+   * caller drives everything by mutating the host element's DOM — attributes to
+   * reboot, the data `<script>` text to update in place.
    */
   teardown(): void;
 }
@@ -58,15 +80,18 @@ function getRepo(host: HTMLElement) {
   return repo;
 }
 
-export function bootIsolation(
-  host: HTMLElement,
-  spec: IsolationBootSpec
-): IsolationHandle {
+export function bootIsolation(host: HTMLElement): IsolationHandle {
   // Cancellation: teardown (or a reconfigure that tears this down) flips this,
   // and every async step re-checks it after an await and bails before mutating
   // more state — a stale boot can't keep running.
   let cancelled = false;
   const stale = () => cancelled;
+
+  // Snapshot the structural config at boot time. (The root-component data is
+  // read lazily — on the initial boot message and on each push — so it is never
+  // captured here.)
+  const rootComponentId = readRootComponentId(host);
+  const rootUrls = readAllowlistUrls(host);
 
   // State wired up during the boot, torn down together. All start empty, so
   // teardown() before/during boot is a safe no-op over them.
@@ -76,8 +101,7 @@ export function bootIsolation(
   let iframe: HTMLIFrameElement | null = null;
 
   async function run() {
-    const rootUrls = spec.rootUrls;
-    log(`init root "${spec.rootComponentId}" with ${rootUrls.length} root URLs`);
+    log(`init root "${rootComponentId}" with ${rootUrls.length} root URLs`);
 
     const repo = getRepo(host);
     if (!repo) return;
@@ -155,8 +179,7 @@ export function bootIsolation(
 
     // ── Iframe ──────────────────────────────────────────────
     createIframe(rpcChannel.port2, intermediary.iframePort, mapper, assets, {
-      rootComponentId: spec.rootComponentId,
-      props: spec.props,
+      rootComponentId,
       importMap,
     });
   }
@@ -168,7 +191,6 @@ export function bootIsolation(
     assets: Awaited<ReturnType<typeof fetchBootAssets>>,
     config: {
       rootComponentId: string;
-      props: Record<string, unknown>;
       importMap: ReturnType<typeof getResolvedImportMap>;
     }
   ) {
@@ -200,7 +222,10 @@ export function bootIsolation(
         {
           type: "boot",
           rootComponentId: config.rootComponentId,
-          props: config.props,
+          // Read the data fresh at send time (not a boot-start snapshot): a
+          // change between boot start and this async send is reflected in the
+          // initial boot rather than lost, since a pre-port push no-ops.
+          rootComponentData: readRootComponentData(host),
           registryEntries,
           esmsSource: assets.esmsSource,
           hostStyles: assets.hostStyles,
@@ -248,6 +273,45 @@ export function bootIsolation(
 
     iframe?.remove();
     iframe = null;
+  }
+
+  // Push the current root-component data to the running iframe (no reboot).
+  // No-op if torn down or the RPC port isn't wired yet — the boot is still in
+  // flight and its boot message reads the data fresh at send time, so the latest
+  // is delivered regardless. (We don't buffer here — a stale in-flight push would
+  // race the boot message.)
+  function pushRootComponentData() {
+    if (toreDown || !hostRpcPort) return;
+    hostRpcPort.postMessage({
+      type: "root-component-data-update",
+      rootComponentData: readRootComponentData(host),
+    });
+  }
+
+  // Watch the data <script> for changes and stream them to the iframe. Scoped
+  // to the script node itself (not `host`, whose children include the appended
+  // iframe): `characterData` catches an in-place text edit, `childList` a
+  // text-node swap, and `subtree` extends both to the script's text node —
+  // together, "the JSON changed, however the consumer applied it." Debounced so
+  // one render touching the text pushes once. Torn down with the rest.
+  const dataScript = findRootComponentDataScript(host);
+  if (dataScript) {
+    let pushQueued = false;
+    const dataObserver = new MutationObserver(() => {
+      if (pushQueued) return;
+      pushQueued = true;
+      queueMicrotask(() => {
+        pushQueued = false;
+        log("root component data changed; pushing to iframe");
+        pushRootComponentData();
+      });
+    });
+    dataObserver.observe(dataScript, {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    cleanups.push(() => dataObserver.disconnect());
   }
 
   void run();

@@ -29,6 +29,10 @@ import type {
 } from "./providers-bridge.js";
 import type { setupEsModuleShims } from "./es-module-shims.js";
 import type { createRegistry, Registry } from "./registry.js";
+import type {
+  createRootComponentData,
+  RootComponentData,
+} from "./root-component-data.js";
 
 // ---------------------------------------------------------------------------
 // Type declarations for runtime globals available inside the iframe.
@@ -39,7 +43,14 @@ interface InitMessage {
   syncPort: MessagePort;
   data: {
     rootComponentId: string;
-    props: Record<string, unknown>;
+    /**
+     * Opaque JSON data for the root component, relayed verbatim from the host
+     * (the boundary never parses it). Materialized as-is into the root's inert
+     * `<script type="application/json" data-root-component-data>`; the root
+     * parses + re-reads it. Live changes arrive later as
+     * `root-component-data-update` RPC messages.
+     */
+    rootComponentData: string;
     registryEntries: RegistryEntry[];
     esmsSource: string;
     hostStyles: string;
@@ -64,6 +75,7 @@ interface BootDeps {
   createProvidersBridge: typeof createProvidersBridge;
   setupEsModuleShims: typeof setupEsModuleShims;
   createRegistry: typeof createRegistry;
+  createRootComponentData: typeof createRootComponentData;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +91,7 @@ export async function boot(deps: BootDeps) {
     createProvidersBridge,
     setupEsModuleShims,
     createRegistry,
+    createRootComponentData,
   } = deps;
   // Minimal debug-compatible logger. The real `debug` package isn't available
   // until modules load, but we need logging during bootstrap.
@@ -127,12 +140,14 @@ export async function boot(deps: BootDeps) {
   let rpc: RpcClient;
   let providers: ProvidersBridge;
   let registry: Registry;
+  let rootComponentData: RootComponentData;
 
   // Route an inbound RPC message to whichever consumer owns it.
   function handleRpcMessage(event: MessageEvent) {
     if (rpc.handle(event)) return;
     if (providers.handle(event)) return;
     if (registry.handle(event)) return;
+    if (rootComponentData.handle(event)) return;
   }
 
   // 3. Wait for the init ("boot") message from the host.
@@ -153,6 +168,7 @@ export async function boot(deps: BootDeps) {
   rpc = createRpcClient(rpcPort);
   providers = createProvidersBridge(rpcPort, log);
   registry = createRegistry(log);
+  rootComponentData = createRootComponentData(log);
   rpcPort.addEventListener("message", handleRpcMessage);
   rpcPort.start();
 
@@ -258,17 +274,16 @@ export async function boot(deps: BootDeps) {
     // The root is an ordinary patchwork:component named by the boot spec; the
     // normal <patchwork-view component=...> path resolves and mounts it from the
     // iframe's own registry (incl. the not-yet-loaded and hot-reload cases). Its
-    // props travel as an inert <script type="application/json"> child the root
-    // reads on mount — data, never executable, so nothing tool-bearing is ever
-    // constructed from host-supplied code. The script is appended before the
-    // <patchwork-view> connects, and patchwork-view defers its render by a
-    // microtask, so the props are in place before the root's mount fn runs.
+    // data travels as an inert <script> child (created by rootComponentData.mount)
+    // — data, never executable, so nothing tool-bearing is ever constructed from
+    // host-supplied content. It is appended before the <patchwork-view> connects,
+    // and patchwork-view defers its render by a microtask, so the data is in
+    // place before the root's mount fn runs. Later changes arrive as
+    // `root-component-data-update` messages (see handleRpcMessage / the
+    // rootComponentData helper); the root re-reads reactively without a reboot.
     const rootView = document.createElement("patchwork-view");
     rootView.setAttribute("component", d.rootComponentId);
-    const propsScript = document.createElement("script");
-    propsScript.type = "application/json";
-    propsScript.textContent = JSON.stringify(d.props ?? {});
-    rootView.appendChild(propsScript);
+    rootComponentData.mount(rootView, d.rootComponentData ?? "{}");
     repoProvider.appendChild(rootView);
 
     // 15. Providers bridge — forward unclaimed patchwork:subscribe events to

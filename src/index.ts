@@ -20,5 +20,3 @@ export const plugins: Plugin<any>[] = [
     load: async () => mountIsolation,
   },
 ];
-
-export type { IsolationBootSpec } from "./types.js";

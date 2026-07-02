@@ -14,6 +14,7 @@ import { createRpcClient } from "../iframe/rpc.js";
 import { createProvidersBridge } from "../iframe/providers-bridge.js";
 import { setupEsModuleShims } from "../iframe/es-module-shims.js";
 import { createRegistry } from "../iframe/registry.js";
+import { createRootComponentData } from "../iframe/root-component-data.js";
 
 /**
  * The host's current resolved appearance, used to paint the iframe's first
@@ -106,6 +107,7 @@ export function generateIframeSrcdoc(appearance?: IframeAppearance): string {
       createProvidersBridge: ${createProvidersBridge.toString()},
       setupEsModuleShims: ${setupEsModuleShims.toString()},
       createRegistry: ${createRegistry.toString()},
+      createRootComponentData: ${createRootComponentData.toString()},
     });
   </script>
 </body>

@@ -6,9 +6,13 @@
 > `@patchwork/isolation` package that surface is replaced by the
 > `patchwork-isolation` **`patchwork:component`**, driven by DOM attributes
 > (`root-component`, `automerge-allowlist`, `shared-providers`) plus an inert
-> props `<script>` child — see the package [`README.md`](./README.md). The threat
-> model, boundary design, and security guarantees below are unchanged and still
-> apply; only the mount/drive mechanism differs.
+> props `<script>` child — see the package [`README.md`](./README.md). Also, the
+> root's **props** are no longer part of the boot spec: the boundary treats them
+> as an opaque string it ferries (never parsing), and prop changes stream into
+> the running iframe (`payload-update`) without a reboot, rather than being a
+> spec field that reboots. The threat model, boundary design, and security
+> guarantees below are unchanged and still apply; only the mount/drive mechanism
+> and the props channel differ.
 
 ## Threat model
 
