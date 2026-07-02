@@ -231,9 +231,12 @@ function Deck(props: { handle: DocHandle<DeckDoc> }) {
         class="embark-deck__cover"
         style={{ transform: `translate(${PAD}px, ${PAD}px)`, "z-index": coverZ() }}
         title="Click to fan / gather"
-        // Keep the press off the canvas so a framed embed doesn't read it as a
-        // surface drag, and so it doesn't clear the canvas selection.
-        on:pointerdown={(event) => event.stopPropagation()}
+        // The press deliberately bubbles to the embed surface: on a frameless
+        // deck that's what lets the cover drag the deck around. A stationary
+        // press still comes back as a click (the canvas defers the move behind
+        // a travel threshold) and toggles the fan; a pull captures the pointer
+        // and the trailing click retargets away from the cover, so it doesn't
+        // also toggle.
         on:click={() => {
           if (!editing()) toggleFan();
         }}

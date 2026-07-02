@@ -90,10 +90,6 @@
   overflow: visible;
 }
 
-.embark-embed--frameless .embark-embed__view {
-  cursor: grab;
-}
-
 /* Locked embeds are pinned, so the surface isn't a drag handle. The embedded
    tool (e.g. the parts-bin drawer) may also leave transparent margins around
    its chrome; dropping pointer events here lets clicks fall through to the
@@ -101,10 +97,6 @@
 .embark-embed--locked .embark-embed__view {
   cursor: default;
   pointer-events: none;
-}
-
-.embark-embed--frameless .embark-embed__view:active {
-  cursor: grabbing;
 }
 
 /* Selection for a frameless embed: a drop-shadow follows the content's own
@@ -239,17 +231,6 @@
   touch-action: none;
 }
 
-/* When resize is only unlocked by holding Shift (a normally fixed-size tool),
-   paint a faint corner wedge so the temporary affordance is discoverable. */
-.embark-embed__resize--forced {
-  background: linear-gradient(
-    135deg,
-    transparent 55%,
-    rgba(120, 113, 108, 0.55) 55%
-  );
-  border-bottom-right-radius: 4px;
-}
-
 /* Right-click menu: a small floating list anchored at the click point. Sits
    above every embed and is dismissed by any press on the canvas. */
 .embark-canvas__menu {
@@ -267,7 +248,9 @@
 }
 
 .embark-canvas__menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   padding: 6px 10px;
   border: none;
@@ -278,6 +261,17 @@
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease;
+}
+
+/* Fixed-width column so item labels line up whether or not a check is shown. */
+.embark-canvas__menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: #57534e;
 }
 
 .embark-canvas__menu-item:hover:not(:disabled) {

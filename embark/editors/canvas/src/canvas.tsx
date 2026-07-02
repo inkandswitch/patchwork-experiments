@@ -61,6 +61,11 @@ export type EmbarkEmbed = {
   // Locked embeds are pinned in place: the canvas won't move or resize them.
   // (Used by the parts-bin drawer; there's no UI yet to lock arbitrary embeds.)
   locked?: boolean;
+  // Per-embed frame override, toggled from the right-click "Show frame" menu:
+  // `true` forces the canvas frame (drag bar + border), `false` makes the embed
+  // frameless (dragged by its surface). Unset falls back to the tool's default
+  // (see FRAMELESS_TOOLS).
+  showFrame?: boolean;
 };
 
 export type EmbarkCanvasDoc = {
@@ -69,16 +74,13 @@ export type EmbarkCanvasDoc = {
   embeds: { [id: string]: EmbarkEmbed };
 };
 
-// Framelessness is intrinsic to a tool rather than configured per embed: these
-// tools bring their own chrome, so they render without the canvas drag border /
-// clipping and are dragged by grabbing their surface. Keyed by tool id; an
-// embed with no explicit `toolId` falls back to its document's datatype, which
-// for these tools matches the tool id.
+// Per-tool default framelessness: these tools bring their own chrome, so they
+// render without the canvas drag border / clipping and are dragged by grabbing
+// their surface. This is only the default — a per-embed `showFrame` overrides
+// it (see the right-click "Show frame" toggle). Keyed by tool id; an embed with
+// no explicit `toolId` falls back to its document's datatype, which for these
+// tools matches the tool id.
 const FRAMELESS_TOOLS = new Set<string>(["parts-bin"]);
-
-// Likewise, some tools own their size (e.g. a fixed-size card) and shouldn't
-// expose the canvas resize handle. Resolved the same way as FRAMELESS_TOOLS.
-const NOT_RESIZABLE_TOOLS = new Set<string>(["deck"]);
 
 // Auto-size tools report their own intrinsic size and change it as their state
 // changes (e.g. the deck, which grows when fanned and shrinks when folded).
@@ -90,6 +92,10 @@ const DEFAULT_WIDTH = 360;
 const DEFAULT_HEIGHT = 280;
 const MIN_WIDTH = 160;
 const MIN_HEIGHT = 100;
+// How far a frameless surface press must travel before it becomes a move.
+// Below this it stays a plain click and reaches the tool (e.g. the deck's
+// cover toggling its fan).
+const SURFACE_DRAG_THRESHOLD = 4;
 // Offset stacked drops so dragging several docs in at once doesn't hide them.
 const DROP_CASCADE = 28;
 // How far a Cmd+D duplicate is nudged down-and-right from its original.
@@ -178,21 +184,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     return ids;
   });
 
-  // Holding Shift temporarily exposes the resize handle on tools that are
-  // normally fixed-size. Tracked at the window so it stays in sync regardless
-  // of which element has focus.
-  const [shiftHeld, setShiftHeld] = createSignal(false);
-  const syncShift = (event: KeyboardEvent) => setShiftHeld(event.shiftKey);
-  const clearShift = () => setShiftHeld(false);
-  window.addEventListener("keydown", syncShift);
-  window.addEventListener("keyup", syncShift);
-  window.addEventListener("blur", clearShift);
-  onCleanup(() => {
-    window.removeEventListener("keydown", syncShift);
-    window.removeEventListener("keyup", syncShift);
-    window.removeEventListener("blur", clearShift);
-  });
-
   // Selecting focuses the canvas root so it — not an embedded document —
   // receives key events. That's what lets Backspace/Delete remove the selected
   // embed without also firing while you type inside an embed. Selecting also
@@ -237,6 +228,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       if (src.componentUrl !== undefined) copy.componentUrl = src.componentUrl;
       if (src.toolId !== undefined) copy.toolId = src.toolId;
       if (src.locked !== undefined) copy.locked = src.locked;
+      if (src.showFrame !== undefined) copy.showFrame = src.showFrame;
       canvas.embeds[newId] = copy;
     });
     selectEmbed(newId);
@@ -261,6 +253,25 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       x: rect ? clientX - rect.left : clientX,
       y: rect ? clientY - rect.top : clientY,
     });
+  };
+
+  // The live framed state of a menu's target: an explicit `showFrame` wins,
+  // otherwise the tool's default (frameless tools default to no frame). Reads
+  // doc() so the checkmark reflects the current value when the menu opens.
+  const menuShowsFrame = (target: ContextMenu): boolean => {
+    const embed = doc()?.embeds[target.embedId];
+    if (embed?.showFrame !== undefined) return embed.showFrame;
+    return !(target.toolId !== undefined && FRAMELESS_TOOLS.has(target.toolId));
+  };
+
+  // Flip the target embed's frame on/off, then dismiss the menu.
+  const toggleFrame = (target: ContextMenu) => {
+    const next = !menuShowsFrame(target);
+    props.handle.change((canvas) => {
+      const embed = canvas.embeds[target.embedId];
+      if (embed) embed.showFrame = next;
+    });
+    setMenu(null);
   };
 
   // Inspect: resolve what paints the clicked embed (its package, and — for a
@@ -458,7 +469,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
                 ? highlightedDocIds().has(docIdOf(embed.docUrl))
                 : false
             }
-            shiftHeld={shiftHeld()}
             onSelect={() => selectEmbed(embed.id)}
             onDelete={() => deleteEmbed(embed.id)}
             onContextMenu={(clientX, clientY, toolId) =>
@@ -479,9 +489,10 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         </div>
       </Show>
 
-      {/* Right-click menu. Its only action is Inspect, which opens the embed's
-          package (and the document it renders, if any). It's disabled on inspect
-          embeds themselves to avoid inspecting an inspector. */}
+      {/* Right-click menu. Inspect opens the embed's package (and the document
+          it renders, if any); it's disabled on inspect embeds themselves to
+          avoid inspecting an inspector. Show frame toggles the canvas chrome for
+          this embed and is hidden for locked embeds (which can't be dragged). */}
       <Show when={menu()}>
         {(activeMenu) => (
           <div
@@ -498,12 +509,27 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
               }
               on:click={() => void inspectEmbed(activeMenu().embedId)}
             >
+              <span class="embark-canvas__menu-check" />
               Inspect
             </button>
+            <Show when={!doc()?.embeds[activeMenu().embedId]?.locked}>
+              <button
+                type="button"
+                class="embark-canvas__menu-item"
+                on:click={() => toggleFrame(activeMenu())}
+              >
+                <span class="embark-canvas__menu-check">
+                  <Show when={menuShowsFrame(activeMenu())}>
+                    <CheckIcon />
+                  </Show>
+                </span>
+                Show frame
+              </button>
+            </Show>
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.17</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.18</div>
     </div>
   );
 }
@@ -516,7 +542,6 @@ function EmbedView(props: {
   handle: DocHandle<EmbarkCanvasDoc>;
   selected: boolean;
   highlighted: boolean;
-  shiftHeld: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onContextMenu: (
@@ -527,6 +552,11 @@ function EmbedView(props: {
 }) {
   let rootEl: HTMLDivElement | undefined;
   let interaction: Interaction | null = null;
+  // A frameless surface press that hasn't traveled past the drag threshold yet.
+  // The move (with its capture and preventDefault) is deferred so a plain click
+  // still reaches the tool under the press — e.g. the deck's cover fans on
+  // click but drags the deck when pulled.
+  let pendingMove: PendingMove | null = null;
   // Native-DnD bridge for a move: the DataTransfer describing this embed's
   // document, plus the drop target currently under the cursor. Null for resizes
   // and moves that haven't started.
@@ -747,15 +777,19 @@ function EmbedView(props: {
     return event;
   };
 
-  // Framelessness / resizability are properties of the rendering tool: use the
-  // pinned `toolId` when set, otherwise fall back to the document's datatype
-  // (which equals the default tool id for these tools). The doc loads async, so
-  // these may settle a frame after mount.
+  // Framelessness / auto-sizing derive from the rendering tool: use the pinned
+  // `toolId` when set, otherwise fall back to the document's datatype (which
+  // equals the default tool id for these tools). The doc loads async, so these
+  // may settle a frame after mount.
   const [embedDoc] = useDocument<{ "@patchwork"?: { type?: string } }>(
     () => props.embed.docUrl,
   );
   const toolId = () => props.embed.toolId ?? embedDoc()?.["@patchwork"]?.type;
+  // An explicit `showFrame` wins; otherwise the tool's default decides. Framed
+  // is the default for anything dropped in from outside — only tools in
+  // FRAMELESS_TOOLS default to frameless.
   const frameless = () => {
+    if (props.embed.showFrame !== undefined) return !props.embed.showFrame;
     const id = toolId();
     return id !== undefined && FRAMELESS_TOOLS.has(id);
   };
@@ -766,25 +800,80 @@ function EmbedView(props: {
     const id = toolId();
     return id !== undefined && AUTOSIZE_TOOLS.has(id);
   };
-  // Tools in NOT_RESIZABLE_TOOLS own their size, so the handle is normally
-  // hidden — but holding Shift exposes it anyway (locked embeds stay pinned).
-  const baseResizable = () => {
-    const id = toolId();
-    return id === undefined || !NOT_RESIZABLE_TOOLS.has(id);
-  };
-  const resizable = () => {
-    if (locked() || autosize()) return false;
-    return baseResizable() || props.shiftHeld;
-  };
+  // Locked embeds are pinned, and auto-size embeds derive their bounds from the
+  // tool's content, so neither exposes the resize handle.
+  const resizable = () => !locked() && !autosize();
 
-  // Frameless embeds have no handle bar, so the whole surface moves them. The
-  // embedded tool opts a region out of dragging by calling stopPropagation on
-  // its pointerdown (then this never fires). Framed embeds move from the bar
-  // only, so the surface press is ignored there.
+  // Frameless embeds have no handle bar, so the whole surface moves them —
+  // except where the press lands on something interactive or on actual text, so
+  // you can still focus inputs, click buttons/links, and select text. (Tools can
+  // also opt a region out entirely by calling stopPropagation on its
+  // pointerdown.) Framed embeds move from the bar only, so this is ignored.
+  //
+  // The move itself is deferred behind a small travel threshold: preventDefault
+  // fires immediately (suppressing focus/selection), but per the pointer-events
+  // spec a canceled pointerdown still produces a click — so a stationary press
+  // stays a click for the tool under it (e.g. the deck's cover fanning), and
+  // only a pull becomes a drag.
   const beginMove = beginInteraction("move");
   const onSurfacePointerDown = (event: PointerEvent) => {
-    if (!frameless()) return;
-    beginMove(event);
+    if (!frameless() || props.embed.locked) return;
+    if (event.button !== 0) return;
+    if (pressLandsOnInteractiveOrText(event)) return;
+    event.preventDefault();
+    props.onSelect();
+    pendingMove = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originX: props.embed.x,
+      originY: props.embed.y,
+    };
+  };
+
+  // Promote a pending surface press to a real move once it travels far enough.
+  // Capturing here retargets the rest of the gesture — including the trailing
+  // click — to the surface, so the tool under the press doesn't also react.
+  const onSurfacePointerMove = (event: PointerEvent) => {
+    const pending = pendingMove;
+    if (pending && pending.pointerId === event.pointerId && !interaction) {
+      // A mouse keeps its pointer id across gestures, so a press released
+      // off-surface (no pointerup reached us) must not spring back to life on
+      // the next hover — only track while the primary button is still down.
+      if ((event.buttons & 1) === 0) {
+        pendingMove = null;
+      } else if (
+        Math.hypot(
+          event.clientX - pending.startClientX,
+          event.clientY - pending.startClientY,
+        ) >= SURFACE_DRAG_THRESHOLD
+      ) {
+        pendingMove = null;
+        (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+        interaction = {
+          mode: "move",
+          pointerId: pending.pointerId,
+          startClientX: pending.startClientX,
+          startClientY: pending.startClientY,
+          originX: pending.originX,
+          originY: pending.originY,
+          originWidth: props.embed.width,
+          originHeight: props.embed.height,
+        };
+        drag = {
+          data: buildDragData(),
+          overEl: null,
+          overEmbed: null,
+          accepted: false,
+        };
+      }
+    }
+    onPointerMove(event);
+  };
+
+  const onSurfacePointerEnd = (event: PointerEvent) => {
+    if (pendingMove?.pointerId === event.pointerId) pendingMove = null;
+    endInteraction(event);
   };
 
   return (
@@ -850,9 +939,9 @@ function EmbedView(props: {
       <div
         class="embark-embed__view"
         on:pointerdown={onSurfacePointerDown}
-        on:pointermove={onPointerMove}
-        on:pointerup={endInteraction}
-        on:pointercancel={endInteraction}
+        on:pointermove={onSurfacePointerMove}
+        on:pointerup={onSurfacePointerEnd}
+        on:pointercancel={onSurfacePointerEnd}
       >
         <Show
           when={props.embed.componentUrl}
@@ -869,7 +958,6 @@ function EmbedView(props: {
       <Show when={resizable()}>
         <div
           class="embark-embed__resize"
-          classList={{ "embark-embed__resize--forced": !baseResizable() }}
           title="Drag to resize"
           on:pointerdown={beginInteraction("resize")}
           on:pointermove={onPointerMove}
@@ -924,6 +1012,25 @@ function GripIcon() {
   );
 }
 
+// Check glyph for a toggled-on menu item; inherits the item's text color.
+function CheckIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
 // Thin "x" glyph for the delete button; inherits the button's text color.
 function CloseIcon() {
   return (
@@ -970,6 +1077,17 @@ type Interaction = {
   originHeight: number;
 };
 
+// A frameless surface press waiting to cross the drag threshold: where it
+// started and the embed's position at press time. Discarded if the pointer is
+// released (or the button found up) before traveling far enough.
+type PendingMove = {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  originX: number;
+  originY: number;
+};
+
 // Live state for a move's native-DnD bridge: the DataTransfer offered to drop
 // targets, the element/embed currently under the cursor, and whether that target
 // accepted the latest dragover.
@@ -979,6 +1097,86 @@ type DragBridge = {
   overEmbed: Element | null;
   accepted: boolean;
 };
+
+// Elements that own a press on a frameless surface: form controls, buttons,
+// links, and editable regions. A press here should reach the element rather
+// than start a drag.
+const INTERACTIVE_SELECTOR =
+  "input, textarea, select, button, a[href], [contenteditable]";
+
+// True when a surface press should be left alone instead of starting a drag:
+// it landed on an interactive element, or directly on a run of selectable text.
+function pressLandsOnInteractiveOrText(event: PointerEvent): boolean {
+  const target = event.target as Element | null;
+  if (target?.closest(INTERACTIVE_SELECTOR)) return true;
+  return pointHitsText(event.clientX, event.clientY);
+}
+
+// True when (clientX, clientY) falls on actual rendered, selectable text. The
+// caret hit-test snaps to the nearest character even in empty padding, so
+// confirm the point really lies within that character's box (with a little
+// slack) — a press in the gaps beside text still starts a drag.
+function pointHitsText(clientX: number, clientY: number): boolean {
+  const hit = caretHitAtPoint(clientX, clientY);
+  if (!hit || hit.node.nodeType !== Node.TEXT_NODE) return false;
+  const text = hit.node.textContent ?? "";
+  if (!text.trim()) return false;
+
+  // Text the user can't select anyway (user-select: none — e.g. a card's
+  // decorative labels) shouldn't hold up the drag; there's no selection
+  // gesture to protect.
+  const parent = hit.node.parentElement;
+  if (parent && getComputedStyle(parent).userSelect === "none") return false;
+
+  const range = document.createRange();
+  const start = Math.max(0, Math.min(hit.offset, text.length - 1));
+  range.setStart(hit.node, start);
+  range.setEnd(hit.node, start + 1);
+
+  const TOLERANCE = 2;
+  const rects = range.getClientRects();
+  for (let i = 0; i < rects.length; i++) {
+    const rect = rects[i];
+    if (
+      clientX >= rect.left - TOLERANCE &&
+      clientX <= rect.right + TOLERANCE &&
+      clientY >= rect.top - TOLERANCE &&
+      clientY <= rect.bottom + TOLERANCE
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Cross-browser caret hit-test: the standard `caretPositionFromPoint` (Firefox)
+// vs WebKit's `caretRangeFromPoint` (Chrome/Safari). Returns the node + offset
+// under the point, or null when neither is available or the point hits nothing.
+function caretHitAtPoint(
+  clientX: number,
+  clientY: number,
+): { node: Node; offset: number } | null {
+  const withPosition = document as Document & {
+    caretPositionFromPoint?: (
+      x: number,
+      y: number,
+    ) => { offsetNode: Node; offset: number } | null;
+  };
+  if (typeof withPosition.caretPositionFromPoint === "function") {
+    const pos = withPosition.caretPositionFromPoint(clientX, clientY);
+    return pos ? { node: pos.offsetNode, offset: pos.offset } : null;
+  }
+  const withRange = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  if (typeof withRange.caretRangeFromPoint === "function") {
+    const range = withRange.caretRangeFromPoint(clientX, clientY);
+    return range
+      ? { node: range.startContainer, offset: range.startOffset }
+      : null;
+  }
+  return null;
+}
 
 // The document id of an embed's url, used to match against the (possibly
 // sub-document) urls in the Highlight channel. Falls back to the raw url when it
