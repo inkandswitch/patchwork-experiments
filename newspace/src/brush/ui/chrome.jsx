@@ -47,6 +47,9 @@ export const TOOL_META = {
   voice: ["Voice note", "M12 4a2.5 2.5 0 012.5 2.5v4a2.5 2.5 0 01-5 0v-4A2.5 2.5 0 0112 4z M7 10a5 5 0 0010 0 M12 15v4 M9 19h6"],
 };
 export const SHAPE_DRAGGABLE = new Set(["rectangle", "ellipse", "line", "arrow"]);
+// the generic brush squiggle — the glyph for a registry brush without a TOOL_META
+// entry (the shape overflow and the palette node both draw from this one source)
+export const BRUSH_FALLBACK_PATH = "M5 16c4-1 5-9 9-10M14 6l3-2";
 
 // little hand-drawn "stamps" — multi-stroke line drawings. Dragging the matching
 // toolbar item drops them onto the canvas as freehand (pencil) strokes; the same
@@ -187,7 +190,7 @@ export function Toolbar(outer) {
           <div class="ns-menu ns-menu-grid" onWheel={(e) => e.stopPropagation()}>
             <button class="ns-tool" title="Line" classList={{ active: tool() === "line" }} onClick={() => armOverflow("line")}><Icon d={TOOL_META.line[1]} /></button>
             <button class="ns-tool" title="Box" classList={{ active: tool() === "box" }} onClick={() => armOverflow("box")}><Icon d={TOOL_META.box[1]} /></button>
-            <For each={props.brushes()}>{(b) => <button class="ns-tool" title={b.name || b.id} classList={{ active: tool() === b.id }} onClick={() => armOverflow(b.id)}><Icon d={(TOOL_META[b.id] || [, "M5 16c4-1 5-9 9-10M14 6l3-2"])[1]} /></button>}</For>
+            <For each={props.brushes()}>{(b) => <button class="ns-tool" title={b.name || b.id} classList={{ active: tool() === b.id }} onClick={() => armOverflow(b.id)}><Icon d={(TOOL_META[b.id] || [, BRUSH_FALLBACK_PATH])[1]} /></button>}</For>
           </div>
         </Show>
       </div>

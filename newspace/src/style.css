@@ -126,6 +126,9 @@
 .ns-magnify-btn:hover { background: var(--ns-pink); }
 .ns-magnify-cap:not(:empty) { position: absolute; left: 50%; bottom: -8px; transform: translate(-50%, 100%); z-index: 2; max-width: 220px; padding: 5px 9px; border-radius: 8px; background: var(--ns-ink); color: var(--ns-paper); font: 12px var(--ns-font, system-ui); line-height: 1.35; text-align: center; box-shadow: 2px 2px 0 var(--ns-shadow); }
 .ns-debug-badge { position: absolute; top: 12px; left: 12px; z-index: 60; display: flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 6px; background: #1a1a1a; color: #7CFFB2; font: 600 11px ui-monospace, monospace; letter-spacing: 0.04em; cursor: pointer; box-shadow: 2px 2px 0 var(--ns-shadow); }
+/* PERF.md Phase 0 overlay — same register as the debug badge, sits just below it */
+.ns-perf { position: absolute; top: 42px; left: 12px; z-index: 60; padding: 5px 8px; border-radius: 6px; background: #1a1a1a; color: #7CFFB2; font: 600 10px/1.5 ui-monospace, monospace; white-space: pre; pointer-events: none; box-shadow: 2px 2px 0 var(--ns-shadow); }
+.ns-perf:empty { display: none; }
 .ns-mark { position: absolute; transform-origin: center; pointer-events: none; }
 .ns-mark-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .ns-hit-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -1064,6 +1067,37 @@
   font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); white-space: nowrap;
 }
 .ns-layer:not(.ns-layer-active) .ns-canvas-source { visibility: hidden; }
+
+/* ---- the PALETTE (a bare window of brush stickers — palette-node.js) -------- */
+.ns-palette {
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; align-items: center; gap: 3px; padding: 4px 5px;
+  background: var(--ns-chrome); border: 1px solid var(--ns-ink); border-radius: 6px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow);
+  color: var(--ns-ink);
+}
+.ns-palette-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow: hidden; }
+.ns-palette-slot { position: relative; display: inline-flex; }
+.ns-palette-gear { flex: none; font-size: 14px; }
+/* the remove badge each button grows while the ⚙ popover is open */
+.ns-palette-x {
+  position: absolute; top: -6px; right: -6px; z-index: 2;
+  width: 15px; height: 15px; padding: 0; display: grid; place-items: center;
+  border: 1px solid var(--ns-ink); border-radius: 50%;
+  background: var(--ns-paper); color: var(--ns-ink);
+  font: 700 10px/1 var(--ns-font, system-ui); cursor: pointer;
+  box-shadow: 1px 1px 0 var(--ns-shadow);
+}
+.ns-palette-x:active { transform: translate(1px, 1px); box-shadow: none; } /* the sticker press */
+/* the ⚙ popover — the shared .ns-menu chrome, positioned under the palette */
+.ns-palette-menu { position: absolute; top: calc(100% + 6px); left: 0; }
+.ns-palette-check {
+  display: flex; align-items: center; gap: 7px; padding: 3px 8px;
+  border-radius: 4px; font: 600 12px var(--ns-font, system-ui); color: var(--ns-ink); cursor: pointer;
+}
+.ns-palette-check:hover { background: var(--ns-paper); }
+.ns-palette-check svg { flex: none; }
+.ns-palette-check-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* a geo PIN on a map — a labelled chip anchored at its lat/lng (Leaflet reprojects it) */
 .ns-map-pin-wrap { background: none !important; border: none !important; width: auto !important; height: auto !important; }

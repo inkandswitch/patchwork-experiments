@@ -1,5 +1,11 @@
 # Layouts, lenses, and the complement — can a folder be a canvas AND a dock AND a list?
 
+> A hot reference — src comments point here (layouts.js, layout-switch.js,
+> list-tool.jsx, grid-tool.jsx, dock-tool.js, index.jsx, brush/constants.js),
+> so it stays its own file. The wider design rationale is
+> [ARCHITECTURE.md](./ARCHITECTURE.md) (layouts are §4 primitives); open
+> layout work is tracked in [TODO.md](./TODO.md).
+
 > Your question: can we add a **dockview** layout that loads as the root of a sketchy
 > (keeping the sub-doc affordances)? Can we **switch layouts** while keeping the same
 > documents (a lens?) and **display the complement**? Can a user build a tiling WM /

@@ -1,37 +1,32 @@
-# New Space
+# New Space (Sketchy)
 
-A themed spatial canvas for Patchwork folders — **no tldraw**. Built with Solid
-(JSX, bundled with vite), it renders folder contents as draggable HTML windows on
-an infinite pan/zoom canvas and lets you draw **on top of the tools** with
-[perfect-freehand](https://github.com/steveruizok/perfect-freehand) (pressure
-ink) and [rough.js](https://roughjs.com) (sketchy rectangles, ellipses, lines,
-arrows — excalidraw style).
+A themed spatial canvas for Patchwork folders — no tldraw. Solid (JSX, vite),
+perfect-freehand ink + rough.js shapes drawn over live embedded tools.
 
-## Interaction
+This file is the **operating manual**: names, build, policies. Design rationale
+lives in [ARCHITECTURE.md](./ARCHITECTURE.md); the wiring system in
+[NODES.md](./NODES.md); layouts/lenses/complement in [LAYOUTS.md](./LAYOUTS.md);
+open work in [TODO.md](./TODO.md).
 
-- **Bottom toolbar** (a System-7 palette): select, hand/pan, pen, rectangle,
-  ellipse, line, arrow, eraser, and **+** (new doc).
-- **New doc = "draw the tool you want":** click **+**, pick a datatype, then drag
-  a box on the canvas — the doc is created at those bounds.
-- **Select & move:** in select mode, click a stroke/shape to select it (dashed
-  box), drag to move, Backspace/Delete to remove.
-- **Properties panel** (left): edits the active brush, or — when something is
-  selected — that mark's own properties, including **stroke colour, fill colour +
-  fill style, perfect-freehand thinning/smoothing/streamline, and rough.js
-  roughness/bowing**.
-- Ink renders in an always-on-top SVG layer (`pointer-events: none`), so you can
-  draw over live embedded tools without blocking them.
-- Keyboard tool shortcuts (`v h p r o l a e`) are suppressed while typing inside
-  an embedded patchwork tool.
+## Names
 
-## Theming
+One canonical name per layer (decided in optimization-plan-3 Phase 0).
+Persisted identifiers are **never** renamed; the renames are limited to
+non-persisted namespace.
 
-Theme-aware: derives `--ns-ink`/`--ns-chrome`/`--ns-paper` from the Patchwork
-theme vars (`--studio-line`, `--studio-fill`, `--editor-fill-offset-10`) so it
-follows the host's dark/light switch, with System-7 cream fallbacks when run
-unthemed. The riso accent colours (chee-rabbit / Mimi-Reyburn character) stay
-constant. Visual register: System 7 chrome (bevels, pinstripe title bars, close
-boxes) warmed into a risograph palette.
+| Layer | Current value(s) | Persisted? | Canonical (this plan) |
+|---|---|---|---|
+| Directory | `newspace/` | no | **`newspace/`** (keep — moving a patchwork tool dir churns the host's path mapping for no value) |
+| Datatype id | `newspace` **and** `sketch` (both registered, both in every `supportedDatatypes`) | **yes** (stored on docs) | **keep both, as-is** — `sketch` is the forward name, `newspace` stays as a back-compat alias forever |
+| Doc field | `.sketch` (was `.newspace`) | **yes** | **`.sketch`** (read `.newspace` for back-compat, as the code already does) |
+| Plugin type prefix | `sketchy:brush` **and** `newspace:brush` (split — see Phase 1) | no (registry key) | **`sketchy:`** for all plugin types |
+| Tool id | `sketchy`, `sketchy:list`, `sketchy:grid`, `sketchy:dock`, `sketchy:pencil` | yes (tool registration) | **keep as-is** (already consistent) |
+| Console tag | `[newspace]` **and** `[sketchy]` mixed | no | **`[sketchy]`** (one logger — Phase 2) |
+| localStorage prefix | `newspace:camera:` | no | **`sketchy:camera:`** with a one-time migrate-read of the old key (Phase 2) |
+| Design doc codename | `LITTLEBOOK4.md` | no (a doc) | **keep the codename** — it's a name for the *project*, not a code identifier; just stop using it as if it were a fourth runtime name |
+
+(The design doc itself is now [ARCHITECTURE.md](./ARCHITECTURE.md); "Littlebook
+4" survives only as the project codename.)
 
 ## Build & deploy
 
@@ -42,51 +37,6 @@ pushwork sync   # publish dist + source to automerge
 
 Published at `automerge:3EoRD6Adef8TitsP2SX3peY5bWxq`.
 
-## Architecture
-
-- **`src/index.jsx`** — registers a `newspace` datatype and a `newspace` tool
-  (`supportedDatatypes: ["newspace", "folder"]`, so it opens any folder).
-- **`src/datatype.js`** — the doc model.
-- **`src/tool.jsx`** — `NewspaceTool(handle, element)` render contract. Holds the
-  camera, active tool, pointer gestures, eraser hit-testing, doc creation, and
-  image paste. Reactivity comes from `makeDocumentProjection(handle)` of
-  `automerge-repo-solid-primitives`.
-- **`src/draw.js`** — perfect-freehand → SVG path, and rough.js → declarative
-  `<path>` data (via `generator.toPaths`, deterministic per stored `seed`).
-- **`src/style.css`** — dark glassy neon theme, injected into the JS bundle.
-
-## Document model (one ordered `items` array — arrays only, on purpose)
-
-```
-{ title, docs: DocLink[],           // the folder contract
-  items: Item[] }                   // array ORDER = drawing/z order
-
-Item kinds:
-  stroke { id, kind, points:[[x,y,pressure]], color, size,
-           thinning, smoothing, streamline, rotation, parent? }
-  shape  { id, kind, type, x, y, w, h, color, fill, strokeWidth,
-           roughness, bowing, fillStyle, seed, rotation, parent? }
-  doc    { id, kind, url, x, y, w, h, rotation, toolId, parent? }   // patchwork-view shape
-  frame  { id, kind, url, x, y, w, h, title, rotation?, parent? }   // a sub-space
-```
-
-Everything is a regular shape sharing the same rules: select (shift / marquee
-multi-select), move, resize (8 handles), rotate (knob), reorder (front/back),
-configure via the draggable palette. `fill` is a colour or `"none"`. The two
-mono palette colours are theme tokens (`var(--studio-line)` / `var(--studio-fill)`)
-so black/white flip with dark mode.
-
-**Frames** are sub-spaces (placing the `newspace` datatype makes one). A frame is
-a container: items dropped inside get `parent: frameId`, store FRAME-LOCAL coords,
-and render nested + clipped — so they move/rotate/clip with the frame. Frames
-rotate too. No frame-in-frame.
-
-Everything canvas-related is a flat **array**, never a keyed map — a design
-choice (array order is z-order, splices merge well), not a projection
-workaround: the current Solid document projection (`solid-automerge@2`)
-reconciles map-key deletion cleanly, both nested and top-level (pinned by
-tests in `history.test.js`).
-
 ## Bundling notes
 
 `vite.config.js` externalizes everything the **host importmap** provides
@@ -96,3 +46,23 @@ The installed `@inkandswitch/patchwork-bootloader/externals` list lags the live
 host (it predates solid-js being host-provided), so the config augments it — if
 solid-js were bundled we'd get a second reactive runtime and every signal would
 break.
+
+## Comment policy
+
+- A comment answers **why**, once. If the *why* is non-obvious and stable, it's
+  a doc paragraph; inline, leave a pointer.
+- Don't argue with an imagined reviewer. "not a workaround", "on purpose",
+  "this is fine" — banned phrases; if the choice is genuinely surprising, state
+  the invariant it preserves instead.
+- Caps comments (`// ATTACH THE PROVIDER FIRST`) are allowed **only** for
+  ordering invariants whose violation causes a silent bug.
+
+## Commit messages
+
+- Subject line: imperative, ≤72 chars, lowercase prefix matching the area
+  (`canvas:`, `brush:`, `nodes:`, `docs:`, `rename:`, `fix:`).
+- No subjects that are only a codename or interjection (`lb`, `ok`, `prable`).
+  A genuine scratch commit is `wip: <thing>` — squash before it lands on
+  `main`, or follow up.
+- Frustration goes in the **body**, not the subject. `fix: block recursive
+  frame render in picker` with a body explaining why it's fragile is the ideal.

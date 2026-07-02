@@ -27,6 +27,7 @@ import { plugin as pointerLockPlugin } from "./pointerlock-source.js";
 import { plugin as magnifierPlugin } from "./llm-magnifier.js";
 import { plugin as minimapPlugin } from "./minimap-node.js";
 import { geoMarksSchema, pixelMarksSchema } from "./map-schemas.js";
+import { plugin as palettePlugin } from "./palette-node.js";
 import { plugin as zoomPlugin } from "./zoom-node.js";
 import { plugin as canvasSourcePlugin } from "./canvas-source-node.js";
 // map: metadata static, code (+ bundled Leaflet) lazy-loaded only when a map is placed
@@ -760,6 +761,7 @@ export const plugins = [
   throttlePlugin,
   pointerLockPlugin,
   magnifierPlugin, // LLM magnifying glass — describes what's under it on the board
+  palettePlugin, // BARE layer tool: a configurable window of brush stickers — click to arm
   minimapPlugin, // BARE layer tool: the minimap, fed by the canvas's own reactive outlets
   zoomPlugin, // BARE layer tool: the zoom %, reads/writes the camera outlet
   mapPlugin, // a MAP box (Leaflet from esm.sh) — place geo-located things on a map

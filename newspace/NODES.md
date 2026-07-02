@@ -2,7 +2,9 @@
 
 The canvas wires **opstreams** between **nodes**. A node has typed **inlets** (it
 consumes) and **outlets** (it provides). Everything else is a *role* — a
-consequence of a node's port topology, not a separate plugin type.
+consequence of a node's port topology, not a separate plugin type. (Wider design
+rationale: [ARCHITECTURE.md](./ARCHITECTURE.md) · layouts:
+[LAYOUTS.md](./LAYOUTS.md) · open work: [TODO.md](./TODO.md).)
 
 ## Roles are topology (see `nodeRole` in `editors.js`)
 

@@ -2,6 +2,9 @@
 // tool.jsx so the canvas can be split into modules. No Solid/component state here
 // — only values and pure functions (plus `ensureLayout`, which takes its repo).
 import { defaultLayers } from "../layers.js"; // the base + overlay layer stack (a literal)
+import { byIdAsc } from "../model.js"; // the id comparator, shared with buildItemsIndex
+import { valuesEqual } from "../ops.js"; // the deep fallback in shapePropsEqual
+import { count as perfCount } from "../perf.js";
 
 // colours are stored as semantic NAMES, mapped to a --space-color-* palette
 export const PALETTE = [
@@ -68,12 +71,31 @@ export function shapeRenderProps(it, resolve) {
   return { ...it, color: resolve(colorVar(it.color)), fill: resolve(fillVar(it.fill)) };
 }
 
+// Equality for the shape-stream sync (canvas.jsx, PERF.md Phase 7). `shapeProps`
+// is a SHALLOW copy of the item, so a field the change didn't touch keeps its
+// projection identity — compare per key by identity first, and fall back to the
+// deep `valuesEqual` (a JSON walk) only for keys whose identity changed. A big
+// stroke's untouched `points` array is one `===`, never a stringify; a replaced-
+// but-equal value still compares equal through the fallback, exactly as before.
+export function shapePropsEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  const ak = Object.keys(a);
+  if (ak.length !== Object.keys(b).length) return false;
+  for (const k of ak) {
+    if (a[k] === b[k]) continue;
+    if (!(k in b)) return false;
+    perfCount("shapeEqDeep"); // an ACTUAL deep-compare fallback (identity miss)
+    if (!valuesEqual(a[k], b[k])) return false;
+  }
+  return true;
+}
+
 // Render items in a STABLE (id-sorted) order, while stacking order comes from
 // the array index via z-index. So reordering a layer changes only a z-index —
 // the DOM node never moves, so live embeds (a call, an iframe) are never torn
 // down or relocated. (ids are stable, so this order doesn't shuffle.)
-export const sortById = (items) =>
-  [...(items || [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+export const sortById = (items) => [...(items || [])].sort(byIdAsc);
 
 // Reordering a layer makes Solid relocate that item's DOM node with
 // insertBefore, which RESETS iframes / live embeds (a call drops its WebRTC).

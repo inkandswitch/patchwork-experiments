@@ -193,6 +193,38 @@ export function linksNeedingItems(docs, items, tombstoned = () => false) {
 // and dropped the transferred shape — this is that regression, pinned.)
 export const itemPresent = (items, id) => items.some((x) => x.id === id);
 
+// stable id order — the render-order comparator (see sortById in brush/constants.js)
+export const byIdAsc = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+// PERF.md Phase 2 — ONE pass over `items` builds both hot lookups: `indexById`
+// (id → doc index; doc index IS the z) and `byLayer` (per-layer buckets, id-sorted
+// so render order stays stable — live embeds must never be relocated).
+// The index is a per-tick view of `items`: never hold it across ticks.
+export function buildItemsIndex(items, layerOf) {
+  const indexById = new Map();
+  const byLayer = new Map();
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    indexById.set(it.id, i);
+    const k = layerOf(it);
+    let arr = byLayer.get(k);
+    if (!arr) { arr = []; byLayer.set(k, arr); }
+    arr.push(it);
+  }
+  for (const arr of byLayer.values()) arr.sort(byIdAsc);
+  return { byLayer, indexById };
+}
+
+// find an item by id — O(1) through an `indexMap` (a per-tick buildItemsIndex
+// product over the SAME array) when one is passed, linear `.find` otherwise.
+export function findById(items, id, indexMap) {
+  if (indexMap) {
+    const i = indexMap.get(id);
+    return i == null ? undefined : items[i];
+  }
+  return (items || []).find((x) => x.id === id);
+}
+
 // where a ray from a box's centre toward `tx,ty` crosses the box edge
 export function edgePoint(box, tx, ty) {
   const cx = box.x + box.w / 2, cy = box.y + box.h / 2;

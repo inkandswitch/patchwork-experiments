@@ -2,8 +2,8 @@
 
 A single, verified, sequenced plan to cut frame time and CPU/GC during the hot
 paths (pan, drag, resize, rotate, wiring, live doc change). This **supersedes**
-the two existing perf plans (`optimization-plan-1.md`, `optimization-plan-2.md`)
-by consolidating them into one ordered roadmap with **line numbers verified
+the two earlier perf plans (`optimization-plan-1.md`, `optimization-plan-2.md`,
+since deleted) by consolidating them into one ordered roadmap with **line numbers verified
 against the current code** (canvas.jsx is 2928 lines as of this plan).
 Maintainability/hygiene (`optimization-plan-3.md`) is explicitly out of scope.
 
@@ -247,6 +247,101 @@ shape sync path.
 
 ---
 
+## Phase 11 — reduce `snapshotItems` cloning per gesture
+
+**Goal:** stop the two full-doc `structuredClone` passes each gesture does.
+
+Today `snapshotItems` (`history.js:27`) `structuredClone`s **every** item into a
+Map; it's called at gesture start (`beginTxn`, `canvas.jsx:544`) and end
+(`endTxn`, `:545`), and twice in `transact` (before + after). For a doc with big
+strokes (thousands of points) that's an O(total-data) allocation + GC spike per
+gesture — cheap at 3 items, expensive at 300.
+
+**Change:**
+- Add `snapshotItemsFor(items, ids)` in `history.js` that clones **only** the
+  ids a gesture actually touches (the gesture already knows its `ids`); the
+  before/after diff only needs the touched set plus reorder detection.
+- Gestures (`beginTxn`/`endTxn`) pass their `ids`; `transact` (whole-doc atomic
+  ops like delete/reorder) keeps the full `snapshotItems`.
+- Keep `structuredClone` per-item, but skip it for `stroke.points` when the
+  gesture is translate-only (origin bump, points untouched — `canvas.jsx:1287`):
+  snapshot the scalar `x/y` origin, not the whole points array.
+
+**Why safe:** the diff command only restores fields the command touched
+(`restoreFields`, `history.js:45`); an item not in the gesture's id set can't
+change, so cloning it is wasted. Reorder detection stays whole-array (cheap: ids
+only, no per-item clone).
+
+**Budget:** gesture start/end clone cost is O(selected · avg-item-size), not
+O(all-items-and-their-points).
+
+**Risk:** medium — undo/redo correctness. Covered by `history.test.js`; extend
+with a case that drags one of many items and asserts undo restores exactly it.
+
+**Files:** `history.js`, `canvas.jsx`.
+
+---
+
+## Phase 12 — dedupe + cache the per-item bounds pass
+
+**Goal:** compute `itemBounds(projected(it))` over all items **once** per change,
+not twice, and not on every camera/presence tick.
+
+Today it's computed in two places that both map over all `rootItems()`:
+`worldBounds` (`canvas.jsx:1889`) and the `context.rects` effect (`:1908`).
+`worldBounds` also depends on `peers()` and `myViewRect()`, so it re-runs on
+every presence tick and every camera move (60Hz during a pan) even though item
+bounds didn't change.
+
+**Change:**
+- Add one memo `itemRects = createMemo(() => rootItems().map((it) => { const b =
+  itemBounds(projected(it)); return { id: it.id, x:b.x, y:b.y, w:b.w, h:b.h,
+  box: it.kind === "frame" }; }))` — depends only on `rootItems()` (and the
+  camera-independent projection). Fold this into Phase 2's `itemsIndex` memo if
+  the bounds map wants to share the single pass.
+- `context.rects` pushes `itemRects()` directly (still coalesced by Phase 4).
+- Split `worldBounds` so the **item** contribution reads `itemRects()` (memoized)
+  and only the **cursor/viewport** contribution re-runs on peers/camera change —
+  `contentBounds(itemRects()-derived box, peer cursors, myViewRect())`.
+
+**Why safe:** `itemBounds`/`projected` are pure functions of an item (+ its
+layer transform); memoizing the map is caching. Cursor/view still update live.
+
+**Budget:** one O(N) bounds pass per `rootItems()` change; zero bounds passes on
+a pan or presence tick (only the cheap cursor/view merge re-runs).
+
+**Files:** `canvas.jsx`.
+
+---
+
+## Phase 13 — rAF-throttle per-event drop-target / escape during move
+
+**Goal:** stop running the surface-scanning drop-target + escape computation on
+every pointer event of a move.
+
+`onPointerMove`'s `move` branch runs `setDropTarget(moveDropTarget(...))`
+(`canvas.jsx:1298`, scans surfaces) and `setEscapeId(childLeavingBox(...))`
+(`:1302`) every event — independent of Phase 1's doc-write coalescing, and each
+`set*` triggers reactivity.
+
+**Change:**
+- Move the `moveDropTarget`/`childLeavingBox` computation into the same
+  `rafBatch` used for the doc write in Phase 1, so it runs ≤1/frame. Keep the
+  last pointer position on `gesture`; compute drop-target/escape in the rAF from
+  it.
+- `pointerup` flush (Phase 1) already resolves the final drop-target before
+  `endTxn`, so drop precision is unchanged.
+
+**Why safe:** drop-target/escape are visual affordances (highlight + un-clip
+feel); a one-frame lag is imperceptible and the final drop is computed on the
+synchronous pointerup flush.
+
+**Budget:** ≤1 `moveDropTarget` call per frame during a move.
+
+**Files:** `canvas.jsx`.
+
+---
+
 ## Kept from the superseded plans (amendments, agreed 2026-07-02)
 
 Items plans 1/2 contained that this consolidation dropped, kept by decision:
@@ -289,8 +384,13 @@ Items plans 1/2 contained that this consolidation dropped, kept by decision:
 | 5 | 4 | coalesce context sources |
 | 6 | 5 | per-item render memo + color cache |
 | 7 | 6 + 7 | wire memo + nodeStreams Map + shape equality |
+| 8 | 11 | snapshotItems clone reduction (rides Phase 1's gesture path) |
+| 9 | 12 | bounds pass dedupe + cache (rides Phase 2's index) |
+| 10 | 13 | rAF-throttle drop-target/escape (rides Phase 1's rafBatch) |
 
-After PR 1, gate each subsequent PR on the overlay showing its budget met.
+Phases 11–13 depend on earlier phases (11→1, 12→2, 13→1), so they land after
+their prerequisites. After PR 1, gate each subsequent PR on the overlay showing
+its budget met.
 
 ## Verification
 

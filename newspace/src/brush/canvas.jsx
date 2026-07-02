@@ -31,7 +31,7 @@ import { textHandlers } from "../text-brush.js";
 import { eraserHandlers } from "../eraser-brush.js";
 import { wireHandlers } from "../wire-brush.js";
 import { placeHandlers } from "../place-brush.js";
-import { describeBinary, isError, binarySafeReplacer, paramsSchema, valuesEqual, isSnapshot, describeSchema } from "../ops.js";
+import { describeBinary, isError, binarySafeReplacer, paramsSchema, isSnapshot, describeSchema } from "../ops.js";
 import { ShareSession, myContactUrl as sessionMyUrl } from "../share-session.js";
 import { listLensDescriptors } from "../lenses.js";
 import { viewRect, fitRect, centerCam, zoomAt, contentBounds } from "./camera.js";
@@ -45,15 +45,58 @@ import {
   rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame, itemBox,
   ownsSpace, projectItemFromBox, annotateItemIntoBox, surfaceWithinBox,
   itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc, arrowGeometry, worldAnchor,
-  linkItemId, duplicateItemIds,
+  linkItemId, duplicateItemIds, buildItemsIndex, findById,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
 } from "../model.js";
+import { count as perfCount, perFrame, rafBatch } from "../perf.js";
 import "../style.css";
 import {
-  colorVar, SIZES, shapeRenderProps, sortById, enableAtomicMove,
+  colorVar, SIZES, shapeRenderProps, shapePropsEqual, sortById, enableAtomicMove,
   SHAPE_TOOLS, clamp, rndSeed, uid, ensureLayout, colorFor, isTypingTarget,
   anchorAxes, SEED_IDS,
 } from "./constants.js";
+
+// PERF.md Phase 4 — coalesce a high-frequency Source's PUSH side to a 16ms
+// trailing edge (≤60 emissions/sec however fast the upstream writes). The lib's
+// coalesce() can't do this: a Source emits only snapshots, and coalesce forwards
+// snapshots immediately (pinned in its own tests). So the source's own `push` is
+// wrapped instead, keeping the Source contract exact between emissions:
+// `.value` is synchronously current on EVERY write (toWorld/drawClaim read it,
+// and connect() snapshots it, mid-window), only the emitter is deferred — one
+// emission per window carrying the latest value. Counters: `ctxSet:<name>` raw
+// writes, `ctxPush:<name>` coalesced emissions. `.cancelPending()` drops a
+// buffered emission (called on unmount).
+function coalesceSource(src, name, ms = 16) {
+  if (src.cancelPending) return src; // already wrapped
+  const emit = src.push.bind(src);
+  let timer = null;
+  let agent0;
+  src.push = (value, agent) => {
+    perfCount(`ctxSet:${name}`);
+    src._val = value; // current for synchronous readers + connect snapshots
+    src._error = null; // a fresh value clears the error state (as push does)
+    agent0 = agent; // the latest write's agent rides the coalesced emission
+    if (timer == null) timer = setTimeout(() => { timer = null; perfCount(`ctxPush:${name}`); emit(src._val, agent0); }, ms);
+  };
+  src.cancelPending = () => { if (timer != null) { clearTimeout(timer); timer = null; } };
+  return src;
+}
+
+// PERF.md Phase 5 — a Map-keyed memo over a colour resolver: `resolve` runs
+// ONCE per distinct input string until `.clear()`. The canvas clears on theme
+// change (clear-before-tick, so themeTick subscribers re-resolving on the bump
+// see fresh colours). Exported for the color-cache pins.
+export function cachedColorResolver(resolve) {
+  const cache = new Map();
+  const cached = (c) => {
+    if (cache.has(c)) return cache.get(c);
+    const v = resolve(c);
+    cache.set(c, v);
+    return v;
+  };
+  cached.clear = () => cache.clear();
+  return cached;
+}
 
 export function Canvas(props) {
   const { handle, repo, element } = props;
@@ -150,6 +193,12 @@ export function Canvas(props) {
     fallbacks: { camera: { x: 0, y: 0, z: 1 }, pointer: { x: 0, y: 0 }, tool: opts.defaultTool || "select", brush: {}, selection: [] },
   });
   onCleanup(() => context.destroy());
+  // Phase 4: the pointer is written per pointermove and fans out to every
+  // subscriber (providers, magnifier, wired nodes) — coalesce its emissions.
+  // Synchronous readers (toWorld, drawClaim geometry) go through `.value`,
+  // which stays current on every write.
+  coalesceSource(context.pointer, "pointer");
+  onCleanup(() => context.pointer.cancelPending());
   // THE DRAW CLAIM (context.js): this canvas claims draw/erase gestures over embedded
   // spatial boxes — a map checks `drawsClaimed(context)` (mounts receive this very context
   // object) and, when claimed, does NOT capture draws; they land here and become items
@@ -213,11 +262,25 @@ export function Canvas(props) {
   const [editingId, setEditingId] = createSignal(null); // item being text-edited
 
   let viewportRef;
+  // PERF.md Phase 3 — the viewport rect is read ONCE per rAF frame: every
+  // consumer below goes through this perFrame cache instead of its own
+  // getBoundingClientRect (a layout flush each). When the frame loop isn't
+  // ticking (headless tests) perFrame degrades to a fresh read. `gbcr` counts
+  // only the real underlying reads, so the budget (≤1/frame) is measurable.
+  // The no-ref case stays OUTSIDE the cache — a pre-mount call must not pin
+  // `undefined` for the rest of the frame the ref appears in.
+  const readViewportRect = perFrame(() => { perfCount("gbcr"); return viewportRef.getBoundingClientRect(); });
+  const viewportRect = () => (viewportRef ? readViewportRect() : undefined);
   try { setDatatypes(getRegistry("patchwork:datatype").filter((d) => !d.unlisted)); } catch (e) { console.warn("[newspace] datatypes", e); }
   // custom brushes live in the `sketchy:brush` registry (legacy `newspace:brush`
   // still supported). We list them in the shape overflow, and load each brush
   // MODULE (its stroke config / behaviour) so drawing with the brush uses it.
   const brushMods = new Map(); // id -> brush module ({ stroke, iconPath, ... })
+  // modules land ASYNC, and a plain Map is invisible to Solid — bump a version
+  // signal when one resolves so isBrushTool / paramDefs / the properties panel
+  // re-read it (selecting a brush before its module loads must show the params
+  // the moment they arrive, not on the next unrelated update). PERF.md Phase 10.
+  const [brushVer, setBrushVer] = createSignal(0);
   {
     const all = [], seen = new Set();
     for (const reg of ["sketchy:brush", "newspace:brush"]) {
@@ -228,9 +291,10 @@ export function Canvas(props) {
       } catch {}
     }
     setBrushes(all);
-    for (const b of all) Promise.resolve(b.load ? b.load() : b).then((m) => { if (m) brushMods.set(m.id || b.id, m); }).catch(() => {});
+    for (const b of all) Promise.resolve(b.load ? b.load() : b).then((m) => { if (m) { brushMods.set(m.id || b.id, m); setBrushVer((v) => v + 1); } }).catch(() => {});
   }
-  const isBrushTool = (t) => brushMods.has(t);
+  const brushMod = (id) => (brushVer(), brushMods.get(id));
+  const isBrushTool = (t) => (brushVer(), brushMods.has(t));
   // PER-BRUSH config — editing a custom brush's params (size/opacity/…) is stored
   // against THAT brush's id, so it doesn't bleed into the pen or other brushes. Backed
   // by the per-user top-layer doc (so it persists + is per-viewer). Resolution order:
@@ -240,7 +304,7 @@ export function Canvas(props) {
     const cfg = id && topLayerDoc()?.brushCfg?.[id];
     if (cfg && key in cfg) return cfg[key];
     // the brush's DECLARED default: schema default → legacy stroke[key] (brush-host.js)
-    const def = id ? brushParamDefault(brushMods.get(id), key) : undefined;
+    const def = id ? brushParamDefault(brushMod(id), key) : undefined;
     if (def !== undefined) return def;
     return brush[key];
   };
@@ -265,6 +329,11 @@ export function Canvas(props) {
   const [activeId, setActiveId] = createSignal("root");
   const active = () => surfaceById(activeId());
   const rootItems = () => rootSurface().doc?.items || [];
+  // PERF.md Phase 2 — one per-tick index over the root items (id → doc index),
+  // shared by item.jsx (z/parent lookups via ctx.indexById) and the wire
+  // geometry below (Phase 6), replacing per-read rootItems().find scans.
+  const itemsIdx = createMemo(() => buildItemsIndex(rootItems(), itemLayer));
+  const indexById = () => itemsIdx().indexById;
   // keep the `board` context source fresh with the live root items (read by the magnifier)
   createEffect(() => context.board.push(rootItems()));
 
@@ -416,7 +485,7 @@ export function Canvas(props) {
   // via its transform. On the base canvas layer this is the camera inverse (as before);
   // on the viewport-pinned overlay it's screen coords; on a map it'd be lat/lon.
   function toWorld(clientX, clientY) {
-    const r = viewportRef.getBoundingClientRect();
+    const r = viewportRect();
     const sx = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
     const sy = viewportRef.offsetHeight ? r.height / viewportRef.offsetHeight : 1;
     // input goes through the SAME box composer as output (one projection path): screen → the
@@ -427,15 +496,20 @@ export function Canvas(props) {
   function itemCenterWorld(it, frame) { const b = itemBounds(it); return localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2); }
 
   // resolve any colour (var() chains, color-mix(), light-dark()) to a concrete
-  // value for rough.js, by letting the browser compute it on a probe element
+  // value for rough.js, by letting the browser compute it on a probe element.
+  // PERF.md Phase 5: results go through a Map cache (one getComputedStyle per
+  // unique colour per theme — bumpTheme clears it). Non-resolvable inputs
+  // ("none", pre-mount) bypass the cache so a value the probe never actually
+  // computed can't be pinned stale.
   let _probe;
-  function resolveColor(c) {
-    if (typeof c !== "string" || c === "none" || !viewportRef) return c;
+  const colorCache = cachedColorResolver((c) => {
+    perfCount("colorResolve"); // PERF.md Phase 5: an ACTUAL probe resolution (cache miss)
     if (!_probe) { _probe = document.createElement("span"); _probe.style.cssText = "position:absolute;width:0;height:0;visibility:hidden;pointer-events:none"; viewportRef.appendChild(_probe); }
     _probe.style.color = "";
     _probe.style.color = c;
     return getComputedStyle(_probe).color || c;
-  }
+  });
+  const resolveColor = (c) => (typeof c !== "string" || c === "none" || !viewportRef ? c : colorCache(c));
 
   // ---- selection / gestures -------------------------------------------
   let gesture = null;
@@ -607,6 +681,7 @@ export function Canvas(props) {
     const ax = -hx * ob.w / 2, ay = -hy * ob.h / 2;
     const txn = beginTxn(surface.handle);
     const move = (ev) => {
+      perfCount("gestureEvent");
       const p = toSpace(ev.clientX, ev.clientY, frame);
       const cx0 = ob.x + ob.w / 2, cy0 = ob.y + ob.h / 2;
       const [plx, ply] = rot(p.x - cx0, p.y - cy0, -r);
@@ -615,10 +690,9 @@ export function Canvas(props) {
       if (hy !== 0) { miny = Math.min(ay, ply); maxy = Math.max(ay, ply); }
       const nw = Math.max(8, maxx - minx), nh = Math.max(8, maxy - miny);
       const [ncx, ncy] = rot((minx + maxx) / 2, (miny + maxy) / 2, r);
-      applyResize(surface.handle, it.id, ob, { x: cx0 + ncx - nw / 2, y: cy0 + ncy - nh / 2, w: nw, h: nh }, orig, it.kind, pb);
+      scheduleDocWrite(() => applyResize(surface.handle, it.id, ob, { x: cx0 + ncx - nw / 2, y: cy0 + ncy - nh / 2, w: nw, h: nh }, orig, it.kind, pb));
     };
-    const up = () => { endTxn(txn, "resize"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    gestureListeners(move, () => endTxn(txn, "resize"));
   }
 
   function applyResize(h, id, ob, nb, orig, kind, pb) {
@@ -692,6 +766,7 @@ export function Canvas(props) {
     if (!U) return;
     const snaps = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || parentBoxOf(o)) return null; /* parented marks sit out group transforms (their coords are box-local) */ return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, kind: o.kind, x: o.x, y: o.y, w: o.w, h: o.h }; }).filter(Boolean);
     const move = (ev) => {
+      perfCount("gestureEvent");
       const p = toWorld(ev.clientX, ev.clientY);
       let nx = U.x, ny = U.y, nw = U.w, nh = U.h;
       if (hx === 1) nw = Math.max(8, p.x - U.x);
@@ -700,17 +775,16 @@ export function Canvas(props) {
       if (hy === -1) { nh = Math.max(8, U.y + U.h - p.y); ny = U.y + U.h - nh; }
       const sx = U.w > 0.001 ? nw / U.w : 1, sy = U.h > 0.001 ? nh / U.h : 1;
       const mapX = (x) => nx + (x - U.x) * sx, mapY = (y) => ny + (y - U.y) * sy;
-      surface.handle.change((d) => {
+      scheduleDocWrite(() => surface.handle.change((d) => {
         for (const s of snaps) {
           const o = d.items.find((x) => x.id === s.id);
           if (!o) continue;
           if (s.kind === "stroke") { o.points = s.points.map(([x, y, pr]) => [mapX(x), mapY(y), pr]); o.x = 0; o.y = 0; }
           else { o.x = mapX(s.x); o.y = mapY(s.y); o.w = s.w * sx; o.h = s.h * sy; }
         }
-      });
+      }));
     };
-    const up = () => { endTxn(txn, "transform"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    gestureListeners(move, () => endTxn(txn, "transform"));
   }
 
   // rotate a multi-selection as one: each item orbits the group centre AND spins
@@ -726,11 +800,12 @@ export function Canvas(props) {
     const s0 = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s0.y - gcy, s0.x - gcx);
     const move = (ev) => {
+      perfCount("gestureEvent");
       const p = toSpace(ev.clientX, ev.clientY, frame);
       let delta = Math.atan2(p.y - gcy, p.x - gcx) - startAng;
       if (ev.shiftKey) delta = Math.round(delta / (Math.PI / 12)) * (Math.PI / 12);
       const deg = (delta * 180) / Math.PI;
-      surface.handle.change((d) => {
+      scheduleDocWrite(() => surface.handle.change((d) => {
         for (const sn of snaps) {
           const o = d.items.find((x) => x.id === sn.id); if (!o) continue;
           if (sn.kind === "stroke") { o.points = sn.points.map(([x, y, pr]) => { const [rx, ry] = rot(x - gcx, y - gcy, delta); return [gcx + rx, gcy + ry, pr]; }); o.x = 0; o.y = 0; }
@@ -741,10 +816,9 @@ export function Canvas(props) {
             if (sn.cx != null) { const [cxr, cyr] = rot(sn.cx - gcx, sn.cy - gcy, delta); o.cx = gcx + cxr; o.cy = gcy + cyr; }
           }
         }
-      });
+      }));
     };
-    const up = () => { endTxn(txn, "transform"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    gestureListeners(move, () => endTxn(txn, "transform"));
   }
 
   // double-clicking the rotate knob resets the selection's rotation to 0
@@ -769,13 +843,13 @@ export function Canvas(props) {
     const startAng = Math.atan2(s.y - cy, s.x - cx);
     const r0 = it.rotation || 0;
     const move = (ev) => {
+      perfCount("gestureEvent");
       const p = toSpace(ev.clientX, ev.clientY, frame);
       let deg = r0 + ((Math.atan2(p.y - cy, p.x - cx) - startAng) * 180) / Math.PI;
       if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
-      surface.handle.change((d) => { const o = d.items.find((x) => x.id === it.id); if (o) o.rotation = deg; });
+      scheduleDocWrite(() => surface.handle.change((d) => { const o = d.items.find((x) => x.id === it.id); if (o) o.rotation = deg; }));
     };
-    const up = () => { endTxn(txn, "transform"); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    gestureListeners(move, () => endTxn(txn, "transform"));
   }
 
   // drag an endpoint (or a line's bezier control point). for arrows, dropping an
@@ -790,6 +864,7 @@ export function Canvas(props) {
     const frame = surface.frame;
     const pb = parentBoxOf(it); // a parented segment's endpoints live in its box's space
     const move = (ev) => {
+      perfCount("gestureEvent");
       const p = toWorld(ev.clientX, ev.clientY);
       let [lx, ly] = worldToLocal(frame, p.x, p.y);
       if (pb) { const l = chainToLocal([itemBox(pb)], { x: lx, y: ly }, boxEnv); lx = l.x; ly = l.y; }
@@ -797,7 +872,7 @@ export function Canvas(props) {
       const target = targetId && rootItems().find((x) => x.id === targetId);
       const anchor = target ? worldAnchor(target, lx, ly) : null;
       setArrowHover(targetId);
-      surface.handle.change((d) => {
+      scheduleDocWrite(() => surface.handle.change((d) => {
         const o = d.items.find((x) => x.id === it.id);
         if (!o) return;
         if (which === "control") {
@@ -818,10 +893,9 @@ export function Canvas(props) {
           o.x = g.x; o.y = g.y; o.w = lx - g.x; o.h = ly - g.y;
           if (isArrow) { if (targetId) { o.toId = targetId; o.toAnchor = anchor; } else { delete o.toId; delete o.toAnchor; } }
         }
-      });
+      }));
     };
-    const up = () => { setArrowHover(null); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    gestureListeners(move, () => setArrowHover(null));
   }
 
   function reorder(mode) {
@@ -972,7 +1046,7 @@ export function Canvas(props) {
   }
 
   // viewport-local screen coords (ns-root origin), matching the .ns-end handles
-  const localXY = (e) => { const r = viewportRef.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const localXY = (e) => { const r = viewportRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
   // resolve the dragged port → an opstream, then either rewire an editor it was
   // dropped on, or place a matching editor on empty canvas wired to it.
@@ -1038,7 +1112,7 @@ export function Canvas(props) {
     // empty canvas. A USER-STATE source (context/peer) → a LOCAL floating inspector
     // on the top layer (not the shared doc — it's this viewer's state).
     if (port.kind === "context" || port.kind === "peer") {
-      const r = viewportRef.getBoundingClientRect();
+      const r = viewportRect();
       addFloat(wiring, clientX - r.left, clientY - r.top);
       return;
     }
@@ -1058,7 +1132,6 @@ export function Canvas(props) {
     };
     if (candidates.length === 1) return place(candidates[0]);
     // several match → a little chooser at the drop point
-    const r = viewportRef.getBoundingClientRect();
     setEditorChooser({ world: toWorld(clientX, clientY), candidates, place });
   }
 
@@ -1094,7 +1167,6 @@ export function Canvas(props) {
     const candidates = descriptorsFeeding([...listEditors(), ...listLensDescriptors()], inletDef);
     if (!candidates.length) return place({ id: "value", outlets: [{ name: "value" }] }); // fallback: a raw value
     if (candidates.length === 1) return place(candidates[0]);
-    const r = viewportRef.getBoundingClientRect();
     setEditorChooser({ world: toWorld(clientX, clientY), candidates, place });
   }
 
@@ -1130,7 +1202,7 @@ export function Canvas(props) {
       // ALL stroke-y tools flow through the brush host: resolve the brush's handlers
       // (use(host) → legacy behavior → the built-in pen fallback for passive stroke
       // brushes). The pen is no longer special-cased — it's just the fallback brush.
-      const mod = brushMods.get(t);
+      const mod = brushMod(t);
       const handlers = resolveBrushHandlers(mod, brushHost) || penHandlers;
       const usesTxn = !!(mod && mod.behavior); // legacy behaviour brushes mutate via change → need a txn
       return { kind: "brush", mod, handlers, brushId: t, ...target, start, state: {}, txn: usesTxn ? beginTxn(rootLayoutH()) : null };
@@ -1242,7 +1314,7 @@ export function Canvas(props) {
     if (!selectish()) return;
     if (e.target.closest(".ns-mark, .ns-text-item, .ns-doc, .ns-hit, .ns-handle, .ns-toolbar, .ns-props, .ns-minimap")) return;
     // wire tool: a searchable "add a node" palette (source / transform / sink)
-    if (tool() === "wire") { const r = viewportRef.getBoundingClientRect(); setNodeMenu({ x: e.clientX - r.left, y: e.clientY - r.top, world: toWorld(e.clientX, e.clientY) }); return; }
+    if (tool() === "wire") { const r = viewportRect(); setNodeMenu({ x: e.clientX - r.left, y: e.clientY - r.top, world: toWorld(e.clientX, e.clientY) }); return; }
     createTextAt(toWorld(e.clientX, e.clientY));
   }
   // place a surface/lens (chosen from the dbl-click palette) at a world point
@@ -1250,7 +1322,31 @@ export function Canvas(props) {
     pushItem(frameAtWorld(world.x, world.y), makeEditorItem({ id: "ed-" + uid(), editorId: descriptor.id, x: world.x, y: world.y, w: descriptor.lens ? 220 : 320, h: descriptor.lens ? 96 : 240, inlets: {} }));
   }
 
-  function beginGesture(e) { e.preventDefault(); window.addEventListener("pointermove", onPointerMove); window.addEventListener("pointerup", onPointerUp); }
+  // PERF.md Phase 1 — every gesture's doc write goes through ONE shared rAF
+  // batch (latest state wins): raw pointer events stay imperative, the
+  // handle.change lands ≤1/frame. `docWrite` counts actual post-coalesce writes.
+  const gestureWrite = rafBatch();
+  const scheduleDocWrite = (write) => gestureWrite.schedule(() => { perfCount("docWrite"); write(); });
+  // each gesture registers its window pointermove/pointerup pair here so an
+  // unmount mid-gesture detaches them (and drops the pending write)
+  const liveGestures = [];
+  function gestureListeners(move, up) {
+    const detach = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", onUp);
+      const i = liveGestures.indexOf(detach);
+      if (i >= 0) liveGestures.splice(i, 1);
+    };
+    // FLUSH BEFORE the up handler's endTxn — the gesture must end with the doc
+    // fully current or the undo diff misses the final position
+    const onUp = (e) => { detach(); gestureWrite.flush(); up(e); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", onUp);
+    liveGestures.push(detach);
+  }
+  onCleanup(() => { gestureWrite.cancel(); for (const d of liveGestures.splice(0)) d(); });
+
+  function beginGesture(e) { e.preventDefault(); gestureListeners(onPointerMove, onPointerUp); }
   function startPan(e) { setFollowing(null); const s = cam(); gesture = { kind: "pan", sx: e.clientX, sy: e.clientY, cx: s.x, cy: s.y }; beginGesture(e); }
 
   function onPointerMove(e) {
@@ -1262,11 +1358,13 @@ export function Canvas(props) {
     if (k === "brush") return callBrush("move", gesture, e, p);
     else if (k === "marquee") setDraft((d) => ({ ...d, w: p.x - gesture.x0, h: p.y - gesture.y0 }));
     else if (k === "move") {
+      perfCount("gestureEvent");
       const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
       const [ldx, ldy] = rot(dx, dy, -rad(gesture.fr));
-      gesture.surface.handle.change((d) => {
-        for (const id of gesture.ids) {
-          const o = d.items.find((x) => x.id === id); const og = gesture.orig[id];
+      const g = gesture; // the deferred write outlives onPointerUp nulling `gesture`
+      scheduleDocWrite(() => g.surface.handle.change((d) => {
+        for (const id of g.ids) {
+          const o = d.items.find((x) => x.id === id); const og = g.orig[id];
           if (!o || !og) continue;
           if (og.parent) {
             // a PARENTED mark moves THROUGH its box's transform: newLocal = toLocal(toOuter(orig) + Δworld)
@@ -1294,7 +1392,7 @@ export function Canvas(props) {
             o.x = og.x + sx * ldx; o.y = og.y + sy * ldy; if (og.cx != null) { o.cx = og.cx + ldx; o.cy = og.cy + ldy; }
           }
         }
-      });
+      }));
       setDropTarget(gesture.ids.length === 1 ? moveDropTarget(gesture.surface, gesture.ids[0]) : null);
       // un-clip a box ONLY once the dragged child's CENTRE has actually left it
       // (dropping there would put it outside) — so while it's still inside it
@@ -1306,7 +1404,6 @@ export function Canvas(props) {
   function onPointerUp(e) {
     const g = gesture; gesture = null;
     setDropTarget(null); setEscapeId(null);
-    window.removeEventListener("pointermove", onPointerMove); window.removeEventListener("pointerup", onPointerUp);
     if (!g) return;
     if (g.kind === "wire") {
       setWireDraft(null);
@@ -1320,7 +1417,7 @@ export function Canvas(props) {
       // released OUTSIDE the canvas while moving doc(s): hand them to whatever's
       // under the pointer (the sideboard, say) and snap them back — so a normal
       // move that wanders off the edge becomes a drag-out, no separate handle
-      const r = e && viewportRef ? viewportRef.getBoundingClientRect() : null;
+      const r = e && viewportRef ? viewportRect() : null;
       const outside = r && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom);
       const links = outside ? selectedDocLinks(g.surface) : [];
       if (links.length) {
@@ -1491,7 +1588,7 @@ export function Canvas(props) {
     bumpPan();
     const c = cam();
     if (e.ctrlKey) {
-      const r = viewportRef.getBoundingClientRect();
+      const r = viewportRect();
       const k = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
       const px = (e.clientX - r.left) / k, py = (e.clientY - r.top) / k;
       const nz = clamp(c.z * Math.exp(-e.deltaY * 0.01), 0.15, 8);
@@ -1713,7 +1810,7 @@ export function Canvas(props) {
     const ext = (file.type.split("/")[1] || "png").replace("jpeg", "jpg");
     const name = `Pasted image.${ext}`;
     const child = await repo.create2({ "@patchwork": { type: "file" }, content: buf, extension: ext, mimeType: file.type, name });
-    const r = viewportRef.getBoundingClientRect();
+    const r = viewportRect();
     const c = cam();
     const layout = rootLayoutH();
     if (!layout) return;
@@ -1761,7 +1858,7 @@ export function Canvas(props) {
   onCleanup(() => document.removeEventListener("pointerdown", onDrawClaimCapture, true));
   // wire-from-embed: an embedded tool (e.g. the Form) owns its drag and announces it
   // via COMPOSED custom events that bubble out to us — robust across embed boundaries.
-  const clientToLocal = (cx, cy) => { const r = viewportRef.getBoundingClientRect(); return { x: cx - r.left, y: cy - r.top }; };
+  const clientToLocal = (cx, cy) => { const r = viewportRect(); return { x: cx - r.left, y: cy - r.top }; };
   const ownsEvent = (e) => { const p = (e.composedPath && e.composedPath()) || []; return !viewportRef || p.includes(viewportRef); };
   const onWireFrom = (e) => { if (!ownsEvent(e)) return; const a = clientToLocal(e.detail.clientX, e.detail.clientY); setWireDraft({ from: a, to: a }); };
   const onWireMove = (e) => setWireDraft((w) => (w ? { ...w, to: clientToLocal(e.detail.clientX, e.detail.clientY) } : w));
@@ -1774,14 +1871,15 @@ export function Canvas(props) {
     document.removeEventListener("sketchy:wire-move", onWireMove);
     document.removeEventListener("sketchy:wire-drop", onWireDropEvt);
   });
-  const bumpTheme = () => setThemeTick((t) => t + 1);
+  // clear BEFORE ticking: renderPaths memos re-run synchronously on the bump
+  // and must re-resolve against the NEW theme, not the cached old one
+  const bumpTheme = () => { colorCache.clear(); setThemeTick((t) => t + 1); };
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
   mq.addEventListener?.("change", bumpTheme);
   const themeObserver = new MutationObserver(bumpTheme);
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "theme", "data-theme", "style"] });
   onCleanup(() => {
     window.removeEventListener("keydown", onKeyDown); window.removeEventListener("paste", onPaste);
-    window.removeEventListener("pointermove", onPointerMove); window.removeEventListener("pointerup", onPointerUp);
     mq.removeEventListener?.("change", bumpTheme); themeObserver.disconnect();
   });
 
@@ -1800,7 +1898,7 @@ export function Canvas(props) {
     const missing = linksNeedingItems(folderDoc.docs || [], items, (u) => tombstones.has(u));
     if (!missing.length) return;
     const c = cam();
-    const r = viewportRef?.getBoundingClientRect();
+    const r = viewportRect();
     const bx = r ? (r.width / 2 - c.x) / c.z : 0, by = r ? (r.height / 2 - c.y) / c.z : 0;
     layout.change((d) => {
       let i = 0;
@@ -1852,20 +1950,30 @@ export function Canvas(props) {
   onCleanup(() => { selfGone = true; if (selfOff) { selfOff(); selfOff = null; } });
 
   function myViewRect() {
-    const r = viewportRef?.getBoundingClientRect();
+    const r = viewportRect();
     if (!r) return null;
     const k = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
     return viewRect(cam(), r.width / k, r.height / k);
   }
   let lastBroadcast = 0;
+  // Phase 4: the 55ms rate cap stays, but a send suppressed by it now schedules
+  // ONE trailing send at the window's edge — a burst that ends mid-window no
+  // longer leaves peers holding a stale cursor. The trailing send re-enters
+  // broadcastPresence, so it reads the LATEST cursor/view/selection at fire time.
+  let presenceTrailer = null;
   function broadcastPresence(force) {
     const s = selfP();
     if (!s) return;
     const now = Date.now();
-    if (!force && now - lastBroadcast < 55) return;
+    if (!force && now - lastBroadcast < 55) {
+      if (presenceTrailer == null) presenceTrailer = setTimeout(() => { presenceTrailer = null; broadcastPresence(true); }, 55 - (now - lastBroadcast));
+      return;
+    }
+    if (presenceTrailer != null) { clearTimeout(presenceTrailer); presenceTrailer = null; }
     lastBroadcast = now;
     if (handle.broadcast) handle.broadcast({ type: "ns-presence", contactUrl: s.contactUrl, name: s.name, color: s.color, avatarUrl: s.avatarUrl, cursor: myCursor(), view: myViewRect(), selection: selected(), tool: tool(), ts: now });
   }
+  onCleanup(() => { if (presenceTrailer != null) { clearTimeout(presenceTrailer); presenceTrailer = null; } });
   function onPresence({ message: m }) {
     if (!m || m.contactUrl === myContactUrl) return;
     if (m.type === "ns-presence-bye") { setPeers((p) => { p.delete(m.contactUrl); return p; }); return; }
@@ -1896,10 +2004,13 @@ export function Canvas(props) {
   // layer tool (minimap, map) wires its inlets to these — auto-wired by type while on the
   // layer, still real ports. The map reprojects `items`+`bounds`; its outlet IS its layer's
   // transform. These are the same reactive values the canvas uses, not a parallel copy.
-  context.bounds = context.bounds || new Source(null);
-  context.peers = context.peers || new Source([]);
-  context.view = context.view || new Source(null);
-  context.rects = context.rects || new Source([]);
+  // Phase 4: these are fed per doc-change / per presence message — coalesced
+  // like the pointer, one emission per 16ms window with the latest value.
+  context.bounds = coalesceSource(context.bounds || new Source(null), "bounds");
+  context.peers = coalesceSource(context.peers || new Source([]), "peers");
+  context.view = coalesceSource(context.view || new Source(null), "view");
+  context.rects = coalesceSource(context.rects || new Source([]), "rects");
+  onCleanup(() => { for (const s of [context.bounds, context.peers, context.view, context.rects]) s.cancelPending(); });
   createEffect(() => context.bounds.push(worldBounds()));
   createEffect(() => context.peers.push([...peers().values()]));
   createEffect(() => context.view.push(myViewRect()));
@@ -1975,13 +2086,20 @@ export function Canvas(props) {
 
   // live outlet streams of placed NODES (e.g. a lens's derived output), keyed by
   // item id. An EditorItem registers its outlets on mount; a downstream inlet wired
-  // `{node, outlet}` resolves through here. A store so the read is REACTIVE — a
-  // consumer remounts when its upstream producer (re)registers a stream.
-  const [nodeStreams, setNodeStreams] = createStore({});
-  const registerOutlets = (id, outlets) => setNodeStreams(id, outlets || {});
-  const unregisterOutlets = (id) => setNodeStreams(id, undefined);
+  // `{node, outlet}` resolves through here. A plain Map — an O(1) read, no store
+  // proxy (PERF.md Phase 7). (Un)registration must still be REACTIVE: outlets land
+  // AFTER an async mount (no rootItems change fires then), and wireSpecs' bidi
+  // flags, the wire-subscription effect, editor-item's inlet backings and the port
+  // nubs all resolve through nodeStream — so a manual bump signal replaces the
+  // store's per-key tracking (coarser, but (un)registration is rare: mount/unmount
+  // and setOutlet, never per frame).
+  const nodeStreamsMap = new Map();
+  const [nodeStreamsAt, setNodeStreamsAt] = createSignal(0);
+  const registerOutlets = (id, outlets) => { nodeStreamsMap.set(id, outlets || {}); setNodeStreamsAt((n) => n + 1); };
+  const unregisterOutlets = (id) => { if (nodeStreamsMap.delete(id)) setNodeStreamsAt((n) => n + 1); };
   const nodeStream = (id, outlet) => {
-    const o = nodeStreams[id]; if (o && o[outlet]) return o[outlet];
+    nodeStreamsAt(); // subscribe reactive callers to (un)registration
+    const o = nodeStreamsMap.get(id); if (o && o[outlet]) return o[outlet];
     // a drawn shape's geometry outlet → its writable stream (seeded from the item's value)
     if (outlet === "props") {
       const it = rootItems().find((x) => x.id === id);
@@ -1991,7 +2109,7 @@ export function Canvas(props) {
   };
 
   // viewport-centre in world coords (where "add" actions drop things)
-  const centerWorld = () => { if (!viewportRef) return { x: 0, y: 0 }; const r = viewportRef.getBoundingClientRect(); return toWorld(r.left + r.width / 2, r.top + r.height / 2); };
+  const centerWorld = () => { if (!viewportRef) return { x: 0, y: 0 }; const r = viewportRect(); return toWorld(r.left + r.width / 2, r.top + r.height / 2); };
   // add an EXISTING doc to this folder by its automerge url (link + a canvas item)
   function addDocById(url) {
     url = (url || "").trim();
@@ -2032,14 +2150,65 @@ export function Canvas(props) {
   // (the provide/accept ports the canvas subscribes/owns, made visible + wireable).
   const [inspect, setInspect] = createSignal(false);
   const worldToScreen = (wx, wy) => chainToOuter([layerBoxOf(activeLayerId())], { x: wx, y: wy }, boxEnv); // active-layer world → screen, via the composer (one path)
+  // PERF.md Phase 3 — the PORT INDEX. Wire endpoints resolve through two lazy
+  // Maps (automerge `url|pathJSON` → element, ctx port name → element) instead
+  // of a querySelectorAll walk per geometry recompute. ONE viewport-scoped
+  // MutationObserver — filtered to port-bearing nodes/attributes, so pan/zoom
+  // style churn and the wires' own SVG never trip it — drops both maps and
+  // bumps `portsTick`; the geometry reads that tick, so a wire appears the
+  // moment its port mounts and drops the moment it unmounts. `portScan`
+  // counts actual rebuilds (the budget: zero on pure geometry recomputes).
+  const [portsTick, setPortsTick] = createSignal(0);
+  let domPortIndex = null, ctxPortIndex = null;
+  const invalidatePorts = () => { domPortIndex = null; ctxPortIndex = null; setPortsTick((t) => t + 1); };
+  const PORT_SEL = "[data-automerge-path],[data-sketchy-port]";
+  const hasPorts = (n) => n.nodeType === 1 && ((n.matches && n.matches(PORT_SEL)) || (n.querySelector && n.querySelector(PORT_SEL)));
+  const portObserver = new MutationObserver((records) => {
+    for (const rec of records) {
+      if (rec.type === "attributes") return invalidatePorts();
+      for (const n of rec.addedNodes) if (hasPorts(n)) return invalidatePorts();
+      for (const n of rec.removedNodes) if (hasPorts(n)) return invalidatePorts();
+    }
+  });
+  onMount(() => { if (viewportRef) portObserver.observe(viewportRef, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-automerge-url", "data-automerge-path", "data-sketchy-port"] }); });
+  // embedded tools render their ports ASYNC inside <patchwork-view> — the mount
+  // event is the sure signal a fresh batch of port elements just landed
+  const onToolMounted = () => invalidatePorts();
+  document.addEventListener("patchwork:mounted", onToolMounted);
+  onCleanup(() => { portObserver.disconnect(); document.removeEventListener("patchwork:mounted", onToolMounted); });
+  function buildDomPortIndex() {
+    perfCount("portScan");
+    const m = new Map();
+    for (const el of viewportRef.querySelectorAll("[data-automerge-path]")) {
+      // key by the CANONICAL path JSON (the attribute may format it differently)
+      let p; try { p = JSON.stringify(JSON.parse(el.dataset.automergePath)); } catch { continue; }
+      m.set((el.dataset.automergeUrl || "") + "|" + p, el);
+    }
+    return m;
+  }
+  function buildCtxPortIndex() {
+    perfCount("portScan");
+    const m = new Map();
+    for (const el of viewportRef.querySelectorAll(".ns-ctx-inlet[data-sketchy-port]")) m.set(el.dataset.sketchyPort, el);
+    return m;
+  }
+  // Map hit → element; a DISCONNECTED hit (the observer's invalidation hasn't
+  // delivered yet) forces one rebuild so a wire never anchors to a zero-rect.
+  function portFromIndex(get, build, key) {
+    const idx = get() || build();
+    let hit = idx.get(key);
+    if (hit && !hit.isConnected) hit = build().get(key);
+    return hit;
+  }
   function ctxPortPos(name) {
     if (!viewportRef) return null;
+    portsTick(); // the index is REACTIVE: port mount/unmount re-runs the geometry
     // inspect mode: a context wire anchors to its visible top-edge port (reading
     // inspect() here keeps the per-wire geometry memo reactive to the toggle)
     if (inspect()) {
-      const el = viewportRef.querySelector(`.ns-ctx-inlet[data-sketchy-port="${name}"]`);
+      const el = portFromIndex(() => ctxPortIndex, () => (ctxPortIndex = buildCtxPortIndex()), name);
       if (el) {
-        const r = el.getBoundingClientRect(), vr = viewportRef.getBoundingClientRect();
+        const r = el.getBoundingClientRect(), vr = viewportRect();
         return { x: r.left - vr.left + r.width / 2, y: r.top - vr.top + r.height };
       }
     }
@@ -2050,15 +2219,11 @@ export function Canvas(props) {
   }
   function domPortPos(url, path) {
     if (!viewportRef) return null;
-    const key = JSON.stringify(path);
-    for (const el of viewportRef.querySelectorAll("[data-automerge-path]")) {
-      if ((el.dataset.automergeUrl || "") !== url) continue;
-      let p; try { p = JSON.parse(el.dataset.automergePath); } catch { continue; }
-      if (JSON.stringify(p) !== key) continue;
-      const r = el.getBoundingClientRect(), vr = viewportRef.getBoundingClientRect();
-      return { x: r.left - vr.left + r.width, y: r.top - vr.top + r.height / 2 };
-    }
-    return null;
+    portsTick(); // the index is REACTIVE: port mount/unmount re-runs the geometry
+    const el = portFromIndex(() => domPortIndex, () => (domPortIndex = buildDomPortIndex()), url + "|" + JSON.stringify(path));
+    if (!el) return null;
+    const r = el.getBoundingClientRect(), vr = viewportRect();
+    return { x: r.left - vr.left + r.width, y: r.top - vr.top + r.height / 2 };
   }
   // a node port's SCREEN position, from item bounds + the port's index in its
   // descriptor (pure math — no DOM, so it's lag-free and survives hidden chips).
@@ -2105,7 +2270,9 @@ export function Canvas(props) {
       const it = items.find((x) => x.id === id);
       if (!it) { shapeStreams.delete(id); continue; } // GC: shape deleted, drop its stream
       const props = shapeProps(it);
-      if (!valuesEqual(s.value, props)) s.push(props);
+      // per-key identity-first compare (PERF.md Phase 7) — an untouched `points`
+      // array keeps its projection identity, so no JSON walk of a big stroke here
+      if (!shapePropsEqual(s.value, props)) s.push(props);
     }
   });
 
@@ -2192,14 +2359,17 @@ export function Canvas(props) {
   });
   // a wire belongs to the layer of its downstream node; render only the active layer's wires
   // (each in that layer's space, via worldToScreen → activeToScreen). floats sit in the base.
-  const visibleWires = () => {
+  // PERF.md Phase 6 — a MEMO, so the two JSX callsites (the <Show> gate + the
+  // <For>) share ONE computation per change instead of filtering twice per render.
+  const visibleWires = createMemo(() => {
+    perfCount("visibleWires"); // PERF.md Phase 6: an ACTUAL wire-list recompute
     const active = activeLayerId(), base = baseLayer()?.id;
     // a non-base layer (the overlay) is CHROME — its wires are plumbing (minimap ← canvas node,
     // etc.). Hide them unless you're actually wiring, so the overlay isn't a tangle of pink.
     if (active !== base && tool() !== "wire") return [];
     const layerById = new Map(rootItems().map((it) => [it.id, itemLayer(it)])); // built ONCE, not per-spec
     return wireSpecs().filter((s) => (s.floatId ? base : (layerById.get(s.editorId) || base)) === active);
-  };
+  });
 
   // geometry for one wire spec — reads cam + the live item positions, so it updates
   // fine-grained (just the transform/d attrs) on pan/zoom/move without rebuilding DOM.
@@ -2213,13 +2383,13 @@ export function Canvas(props) {
       else if (f.source.peer) { const p = peers().get(f.source.peer); if (p && p.view) from = cameraToScreen(p.view.x + p.view.w, p.view.y + p.view.h / 2); }
       return from ? { from, to: { x: f.x, y: f.y + 10 } } : null;
     }
-    const it = rootItems().find((x) => x.id === spec.editorId);
+    const it = findById(rootItems(), spec.editorId, indexById()); // O(1) port lookups (Phase 2 index)
     if (!it) return null;
     const w = spec.wire;
     let from = null;
     if (w.context) from = ctxPortPos(w.context);
     else if (w.peer) { const p = peers().get(w.peer); if (p && p.view) from = cameraToScreen(p.view.x + p.view.w, p.view.y + p.view.h / 2); }
-    else if (w.node) { const up = rootItems().find((x) => x.id === w.node); if (up) from = descFor(up)?.round ? roundPortToward(up, nodePortScreen(it, "in", spec.inlet)) : nodePortScreen(up, "out", w.outlet); }
+    else if (w.node) { const up = findById(rootItems(), w.node, indexById()); if (up) from = descFor(up)?.round ? roundPortToward(up, nodePortScreen(it, "in", spec.inlet)) : nodePortScreen(up, "out", w.outlet); }
     else if (w.url) from = domPortPos(w.url, w.path);
     return from ? { from, to: nodePortScreen(it, "in", spec.inlet) } : null;
   }
@@ -2334,14 +2504,14 @@ export function Canvas(props) {
   }
 
   function centerOn(wx, wy) {
-    const r = viewportRef.getBoundingClientRect();
+    const r = viewportRect();
     const k = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
     setCam(centerCam(cam(), wx, wy, r.width / k, r.height / k));
   }
   // FOLLOW MODE: fit my camera to a peer's view rect (whole rect visible, centred).
   function fitCameraTo(pv) {
     if (!viewportRef || !pv || !pv.w || !pv.h) return;
-    const r = viewportRef.getBoundingClientRect();
+    const r = viewportRect();
     const k = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
     setCam(fitRect(pv, r.width / k, r.height / k));
   }
@@ -2411,7 +2581,7 @@ export function Canvas(props) {
         stream: wireStreamSync };
     }
     const bid = activeBrushId();
-    if (bid) { const m = brushMods.get(bid); const defs = paramDefs(m); if (defs.length) return { title: m?.name, defs, get: (k) => brushParam(bid, k), set: (k, v) => setBrushParam(bid, k, v) }; }
+    if (bid) { const m = brushMod(bid); const defs = paramDefs(m); if (defs.length) return { title: m?.name, defs, get: (k) => brushParam(bid, k), set: (k, v) => setBrushParam(bid, k, v) }; }
     return null;
   });
 
@@ -2422,7 +2592,7 @@ export function Canvas(props) {
     if (tool() === "pen") return "stroke";
     if (SHAPE_TOOLS.has(tool())) return "shape";
     if (tool() === "text") return "text";
-    if (isBrushTool(tool()) && paramDefs(brushMods.get(tool())).length) return "brush";
+    if (isBrushTool(tool()) && paramDefs(brushMod(tool())).length) return "brush";
     return null;
   });
   // show the popup for a style mode OR whenever there are params to show (node or brush)
@@ -2482,6 +2652,7 @@ export function Canvas(props) {
 
   const ctx = {
     shareSession,
+    indexById, // the per-tick root-items index (PERF.md Phase 2) — item.jsx z/parent lookups
     tool, interactive, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
     spaceEpoch, // bumps when a spatial box's projection moves (map pan/zoom) → parented items re-project
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
@@ -2624,14 +2795,20 @@ export function Canvas(props) {
               // pan/zoom/move, never rebuilds these DOM nodes. rough paths are
               // cached + pan-invariant (drawn relative to `from`, positioned by translate).
               const g = createMemo(() => geomFor(spec));
-              const seed = seedFromId(spec.key);
-              const dx = () => g().to.x - g().from.x;
-              const dy = () => g().to.y - g().from.y;
+              const seed = seedFromId(spec.key); // per-row constant, computed once
+              // PERF.md Phase 6 — dx/dy as MEMOS (numbers, equality-cut) instead of
+              // accessors re-run at every read site: a pure pan moves from+to together
+              // so dx/dy hold and only the <g> translate updates; the rough-link paths
+              // memo below then rebuilds only when the span actually changes (and
+              // draw.js's roughLink cache still absorbs repeat spans).
+              const dx = createMemo(() => { const v = g(); return v ? v.to.x - v.from.x : 0; });
+              const dy = createMemo(() => { const v = g(); return v ? v.to.y - v.from.y : 0; });
+              const link = createMemo(() => roughLink(dx(), dy(), seed));
               return (
                 <Show when={g()}>
                   <g style={{ color: wireErrors[spec.key] ? "#e5484d" : selectedWire()?.key === spec.key ? "var(--ns-sky, #5b8def)" : "#ff2284" }} transform={`translate(${g().from.x} ${g().from.y})`}>
                     <Show when={wireErrors[spec.key]}><title>{"⚠ " + wireErrors[spec.key]}</title></Show>
-                    <For each={roughLink(dx(), dy(), seed)}>{(p) => <path d={p.d} fill="none" stroke="currentColor" stroke-width={selectedWire()?.key === spec.key ? p.strokeWidth + 1.5 : p.strokeWidth} opacity={selectedWire()?.key === spec.key ? 1 : 0.7} stroke-linecap="round" />}</For>
+                    <For each={link()}>{(p) => <path d={p.d} fill="none" stroke="currentColor" stroke-width={selectedWire()?.key === spec.key ? p.strokeWidth + 1.5 : p.strokeWidth} opacity={selectedWire()?.key === spec.key ? 1 : 0.7} stroke-linecap="round" />}</For>
                     {/* PULSE: a fresh keyed dot per value-flow tick → its animateMotion replays once */}
                     <For each={wirePulse[spec.key] ? [wirePulse[spec.key]] : []}>{() => {
                       const d = untrack(() => `M0 0 C ${dx() / 2} 0 ${dx() / 2} ${dy()} ${dx()} ${dy()}`); // frozen at flow time (no pan-replay)

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
-  colorVar, fillVar, FILL_BG, fontFamily, FONTS, shapeRenderProps,
+  colorVar, fillVar, FILL_BG, fontFamily, FONTS, shapeRenderProps, shapePropsEqual,
   sortById, clamp, clonePlain, colorFor, SHAPE_TOOLS, rndSeed, uid,
 } from "./constants.js";
 
@@ -159,5 +159,40 @@ describe("rndSeed / uid (id generators)", () => {
   it("uid produces distinct ids", () => {
     const ids = new Set(Array.from({ length: 200 }, uid));
     expect(ids.size).toBe(200);
+  });
+});
+
+describe("shapePropsEqual (PERF.md Phase 7 — the shape-stream sync equality)", () => {
+  afterEach(() => vi.restoreAllMocks());
+  const points = Array.from({ length: 500 }, (_, i) => [i, i * 2, 0.5]);
+  const stroke = { id: "s1", kind: "stroke", points, color: "line", size: 5, x: 10, y: 20 };
+
+  it("same-identity points short-circuit — no stringify of the big array", () => {
+    const spy = vi.spyOn(JSON, "stringify");
+    expect(shapePropsEqual(stroke, { ...stroke })).toBe(true); // points share identity
+    expect(spy).not.toHaveBeenCalled(); // every key compared by identity alone
+  });
+
+  it("changed identity but equal content still compares equal (deep fallback)", () => {
+    const spy = vi.spyOn(JSON, "stringify");
+    expect(shapePropsEqual(stroke, { ...stroke, points: structuredClone(points) })).toBe(true);
+    expect(spy).toHaveBeenCalled(); // only the replaced key took the deep path
+  });
+
+  it("changed content is unequal", () => {
+    const moved = structuredClone(points); moved[0][0] = 999;
+    expect(shapePropsEqual(stroke, { ...stroke, points: moved })).toBe(false);
+    expect(shapePropsEqual(stroke, { ...stroke, x: 11 })).toBe(false);
+  });
+
+  it("first push (previous value undefined) and key-set changes are unequal", () => {
+    expect(shapePropsEqual(undefined, { ...stroke })).toBe(false);
+    expect(shapePropsEqual({ ...stroke }, { ...stroke, extra: 1 })).toBe(false);
+    const { size, ...smaller } = stroke;
+    expect(shapePropsEqual(stroke, { ...smaller, other: 1 })).toBe(false); // same length, different keys
+  });
+
+  it("identical reference is equal", () => {
+    expect(shapePropsEqual(stroke, stroke)).toBe(true);
   });
 });

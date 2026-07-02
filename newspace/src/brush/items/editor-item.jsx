@@ -65,6 +65,38 @@ export function inletBackingPlan(wiring, name, { splat = false, auto = false } =
   return { kind: "buffer" };
 }
 
+// The stale-async-resolution guard. A url wire resolves through `api.find` — a REAL
+// await — so a resolution launched under an OLD wiring can land AFTER the user
+// rewired, cut (the null tombstone) or unwired the inlet, and would clobber the newer
+// backing with an outdated stream. The gate mints a per-inlet GENERATION:
+// `ticket(name, entry)` is called synchronously every time a wiring pass processes
+// the inlet, bumping the generation whenever the persisted entry CHANGED BY VALUE
+// (null and undefined are DISTINCT states — explicitly cut vs never wired). A landing
+// presents its ticket to `shouldApply(ticket, currentEntry)` and applies only if the
+// generation is still current AND the entry persisted NOW still equals the one it
+// launched with — losers drop silently, so `inletBackingPlan`'s precedence (wired >
+// cut > splat > auto > buffer) is never bypassed by a straggler. Entries are
+// snapshotted to strings at mint time: a live projection node reconciles IN PLACE, so
+// holding the reference would make the stale entry compare equal to the new one.
+// (Remount/unmount staleness is the mount token's job — the gate covers same-mount
+// races.)
+export function inletResolutionGate() {
+  const gens = Object.create(null);
+  const last = Object.create(null);
+  const ser = (e) => {
+    if (e === undefined) return "\x00never-wired";
+    try { const s = JSON.stringify(e); return s === undefined ? "\x00unserializable" : s; } catch { return "\x00unserializable"; }
+  };
+  return {
+    ticket(name, entry) {
+      const key = ser(entry);
+      if (gens[name] === undefined || last[name] !== key) { gens[name] = (gens[name] || 0) + 1; last[name] = key; }
+      return { name, gen: gens[name], key };
+    },
+    shouldApply(t, currentEntry) { return gens[t.name] === t.gen && ser(currentEntry) === t.key; },
+  };
+}
+
 // Which tools PRESS an editor item's chrome (grab/move/select/erase). Anything else —
 // a drawing/placing/text brush — must fall through to the canvas's draw handler (the
 // embed convention, cf. DocOrFrame.grab: return early WITHOUT stopping propagation).
@@ -138,15 +170,25 @@ export function EditorItem(props) {
     // properties panel shows the wired value + disables its control).
     const pdefs = untrack(() => paramsAsInlets(d));
 
+    // per-inlet generations for url resolutions (see inletResolutionGate): `mine`/`token`
+    // covers remount/unmount, the gate covers same-mount rewire/cut/unwire while a
+    // `api.find` is in flight. `entryNow` reads the wiring persisted at LANDING time.
+    const gate = inletResolutionGate();
+    const entryNow = (name) => untrack(() => (it().inlets || {})[name]);
+
     createEffect(() => {
       if (mine !== token) return;
       const wiring = it().inlets || {};
       const defs = inletDefsFor(d, it()); // tracks config ⇒ dynamic inlets (template) appear
       for (const def of defs) ensure(def.name);
       const splatW = wiring["*"];
+      const splatT = gate.ticket("*", splatW);
       const splatSync = splatW && !splatW.url ? resolveInletSync(splatW) : null;
-      // the splat fills only NEVER-wired inlets — not ones explicitly cut (null tombstone)
-      if (splatW && splatW.url) resolveInlet(splatW).then((s) => { if (mine === token && s) for (const def of defs) if (wiring[def.name] === undefined) proxies[def.name].setBacking(jsonPathStream(s, () => "." + def.name)); });
+      // the splat fills only NEVER-wired inlets — not ones explicitly cut (null tombstone).
+      // Both checks happen at LANDING time against the wiring persisted THEN: the splat
+      // itself may have been rewired (the ticket) and any target inlet may have gained a
+      // wire or a tombstone while the find was in flight (entryNow).
+      if (splatW && splatW.url) resolveInlet(splatW).then((s) => { if (mine === token && s && gate.shouldApply(splatT, entryNow("*"))) for (const def of defs) if (entryNow(def.name) === undefined) proxies[def.name].setBacking(jsonPathStream(s, () => "." + def.name)); });
       // a BARE layer tool (minimap, map) is fed the canvas's own reactive state: any inlet
       // whose name matches a canvas outlet (items/bounds/peers/camera/view/…) auto-wires to
       // it unless you've wired it explicitly. The widget always sees live canvas data —
@@ -156,7 +198,8 @@ export function EditorItem(props) {
       for (const def of defs) {
         const plan = inletBackingPlan(wiring, def.name, { splat: !!splatSync, auto: !!(autoOutlets && autoOutlets[def.name]) });
         const w = plan.kind === "wired" ? plan.wire : null;
-        if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token) proxies[def.name].setBacking(s); }); else proxies[def.name].setBacking(resolveInletSync(w)); }
+        const t = gate.ticket(def.name, wiring[def.name]);
+        if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token && gate.shouldApply(t, entryNow(def.name))) proxies[def.name].setBacking(s); }); else proxies[def.name].setBacking(resolveInletSync(w)); }
         else if (plan.kind === "splat") proxies[def.name].setBacking(jsonPathStream(splatSync, () => "." + def.name));
         else if (plan.kind === "auto") proxies[def.name].setBacking(autoOutlets[def.name].stream);
         else proxies[def.name].setBacking(null); // cut or never wired ⇒ the proxy's own editable buffer
@@ -169,8 +212,9 @@ export function EditorItem(props) {
         if (declared.has(def.name)) continue; // a real inlet of the same name owns it
         const plan = inletBackingPlan(wiring, def.name, {});
         const w = plan.kind === "wired" ? plan.wire : null;
+        const t = gate.ticket(def.name, wiring[def.name]);
         const px = ensure(def.name);
-        if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token) px.setBacking(s); }); else px.setBacking(resolveInletSync(w)); }
+        if (w) { if (w.url) resolveInlet(w).then((s) => { if (mine === token && gate.shouldApply(t, entryNow(def.name))) px.setBacking(s); }); else px.setBacking(resolveInletSync(w)); }
         else px.setBacking(null);
         px.setDir(w && w.dir);
       }
@@ -291,7 +335,8 @@ export function EditorItem(props) {
   // BIDI = can you write back through this port's stream (it has `apply`)? Shown as a
   // diamond nub (matching the wire's diamond), vs a round nub for read-only. An
   // outlet's stream may be writable on its own (a bidirectional lens); an inlet is
-  // bidi when wired to a writable source. (reactive via the nodeStreams store.)
+  // bidi when wired to a writable source. (reactive via the nodeStreams bump
+  // signal — nodeStream() tracks it, so a late-registered outlet updates these.)
   const streamWritable = (s) => !!(s && typeof s.apply === "function");
   const outletBidi = (name) => streamWritable(ctx.nodeStream && ctx.nodeStream(it().id, name));
   const inletBidi = (name) => {

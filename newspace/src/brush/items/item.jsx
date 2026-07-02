@@ -1,13 +1,14 @@
 // Item — the per-item renderer + kind dispatch — and DocOrFrame (the embedded
 // patchwork-view / box). Mutually recursive (a box renders child Items), so they
 // live together. Extracted from tool.jsx; prop-driven via `ctx`.
-import { createSignal, createMemo, createEffect, createResource, onCleanup, Show, For, Suspense } from "solid-js";
+import { createSignal, createMemo, createEffect, createResource, onCleanup, untrack, Show, For, Suspense } from "solid-js";
 import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../../surface-doc.js";
 import { getType } from "@inkandswitch/patchwork-filesystem";
-import { isBoxType, rad, rot, itemBounds, arrowGeometry, linksNeedingItems, linkItemId, duplicateItemIds, ownsSpace, projectItemFromBox } from "../../model.js";
+import { isBoxType, rad, rot, itemBounds, arrowGeometry, linksNeedingItems, linkItemId, duplicateItemIds, ownsSpace, projectItemFromBox, findById } from "../../model.js";
 import { roughRectPath, seedFromId, freehandPath, shapePaths, strokeWorldPoints } from "../../draw.js";
 import { shapeRenderProps, colorVar, fontFamily, sortById, enableAtomicMove, anchorAxes } from "../constants.js";
+import { count as perfCount, rafBatch } from "../../perf.js";
 import { InlineEdit, TextEdit } from "./text-edit.jsx";
 import { VoiceItem } from "./voice-item.jsx";
 import { SketchItem } from "./sketch-item.jsx";
@@ -23,7 +24,8 @@ export function Item(props) {
   const parentBox = createMemo(() => {
     const i = it();
     if (!i.parent || (i.kind !== "stroke" && i.kind !== "shape")) return null;
-    const p = (props.surface.doc?.items || []).find((x) => x.id === i.parent);
+    // ctx.indexById is per-tick (rebuilt with each memo recompute), used only for root items
+    const p = findById(props.surface.doc?.items || [], i.parent, props.surface.id === "root" ? ctx.indexById() : null);
     return p && ownsSpace(p) ? p : null; // parent gone/unspatial → render coords as-is
   });
   // a bound arrow's geometry is DERIVED from the shapes it connects (so it
@@ -39,8 +41,20 @@ export function Item(props) {
     return i;
   });
   const b = createMemo(() => ctx.itemBounds(renderIt()));
-  // stacking comes from the item's position in its surface's array (not DOM order)
-  const z = createMemo(() => (props.surface.doc?.items || []).findIndex((x) => x.id === it().id));
+  // PERF.md Phase 5: resolve colours + rough.js paths once per shape/theme change
+  // instead of per reactive flush. Deps: renderIt() (carries the spaceEpoch /
+  // parent-projection tracking, so parented marks keep re-projecting on map
+  // pan/zoom) + themeTick (canvas.jsx clears its colour cache on the same bump).
+  const renderPaths = createMemo(() => {
+    const i = renderIt();
+    if (i.kind !== "shape") return [];
+    ctx.themeTick();
+    perfCount("shapePaths"); // PERF.md Phase 5: an ACTUAL per-shape path rebuild
+    return shapePaths(shapeRenderProps(i, ctx.resolveColor));
+  });
+  // stacking comes from the item's position in its surface's array (not DOM order);
+  // root items read it O(1) off the shared index, child surfaces stay linear
+  const z = createMemo(() => (props.surface.id === "root" ? ctx.indexById().get(it().id) ?? -1 : (props.surface.doc?.items || []).findIndex((x) => x.id === it().id)));
   // the wire tool is a pointer++ — items are selectable/movable/editable in it too
   const selectMode = () => ctx.tool() === "select" || ctx.tool() === "wire";
   const hittable = () => selectMode() || ctx.tool() === "eraser";
@@ -89,17 +103,28 @@ export function Item(props) {
   const onDbl = (e) => { e?.stopPropagation?.(); if (selectMode() && ctx.enterGroup(it())) return; edit(); };
 
   // keep a text item's stored w/h in sync with the actually-rendered text, so
-  // the selection box always fits (size changes from the panel re-measure too)
+  // the selection box always fits (size changes from the panel re-measure too).
+  // The element sizes ITSELF — the stored w/h only feed the selection box — so
+  // the persist is deferred a frame (rafBatch, latest wins): it lands OUTSIDE
+  // any synchronous transact/gesture-txn window and creates no undo entry.
+  // The measure tracks only text/font/fontSize/wrap — NOT w/h — so an undo
+  // that restores a size can't re-trigger the measurer into fighting it.
+  // PERF.md Phase 10 (plan-2 §9).
   let staticEl;
+  const persistSize = rafBatch();
+  onCleanup(() => persistSize.flush());
   createEffect(() => {
     const item = it();
     if (item.kind !== "text" || editing() || !staticEl) return;
-    const _deps = [item.text, item.font, item.fontSize]; // track for re-measure
+    void [item.text, item.font, item.fontSize, item.wrap]; // the re-measure deps
+    const id = item.id, wrap = !!item.wrap;
     // a wrapped text box keeps its (fixed) width, only its height grows
-    const w = item.wrap ? (item.w || 0) : Math.max(8, staticEl.offsetWidth);
+    const w = wrap ? 0 : Math.max(8, staticEl.offsetWidth);
     const h = Math.max(1, staticEl.offsetHeight);
-    if ((!item.wrap && Math.abs((item.w || 0) - w) > 1) || Math.abs((item.h || 0) - h) > 1)
-      props.surface.handle.change((d) => { const o = d.items.find((x) => x.id === item.id); if (o && o.kind === "text") { if (!item.wrap) o.w = w; o.h = h; } });
+    untrack(() => {
+      if ((!wrap && Math.abs((item.w || 0) - w) > 1) || Math.abs((item.h || 0) - h) > 1)
+        persistSize.schedule(() => props.surface.handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o && o.kind === "text") { if (!wrap) o.w = w; o.h = h; } }));
+    });
   });
 
   return (
@@ -113,7 +138,7 @@ export function Item(props) {
           <svg class="ns-mark-svg" style={{ overflow: "visible" }}>
             <g transform={`translate(${-b().x}, ${-b().y})`}>
               <Show when={it().kind === "stroke"} fallback={
-                <For each={(ctx.themeTick(), shapePaths(shapeRenderProps(renderIt(), ctx.resolveColor)))}>
+                <For each={renderPaths()}>
                   {(p) => <path d={p.d} stroke={p.stroke} fill={p.fill} stroke-width={p.strokeWidth} stroke-dasharray={p.dash} stroke-linecap="round" stroke-linejoin="round" fill-rule="nonzero" />}
                 </For>
               }>

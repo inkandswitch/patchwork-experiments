@@ -1,10 +1,16 @@
-# Sketchy as Littlebook 4
+# Sketchy — architecture (codename: Littlebook 4)
 
-A living design note for reshaping Sketchy (the tldraw-free spatial canvas) into a
-Littlebook-style modular editor, delivered as a Patchwork **component**. Captures
-decisions and open questions from the design conversation. Source of truth for lb's
-real code: `./lb` (mirror of `chee/lb`), canonical core in
-`lb/littlebook/system/core/`.
+The design rationale: why Sketchy (the tldraw-free spatial canvas) is being
+reshaped into a Littlebook-style modular editor, delivered as a Patchwork
+**component**. Captures decisions and open questions from the design
+conversation. Source of truth for lb's real code: `./lb` (mirror of `chee/lb`),
+canonical core in `lb/littlebook/system/core/`. (This file was `LITTLEBOOK4.md`;
+the codename names the *project*, not a runtime identifier — see the Names table
+in CLAUDE.md.)
+
+Operating manual (commands, names, policies): [CLAUDE.md](./CLAUDE.md) · wiring
+reference: [NODES.md](./NODES.md) · layouts/lenses/complement:
+[LAYOUTS.md](./LAYOUTS.md) · open work: [TODO.md](./TODO.md).
 
 > Status legend: **[decided]** settled · **[open]** needs a call · **[port]** lift
 > lb code (adapt TS→vanilla JS, house style).
@@ -370,3 +376,87 @@ commands, opstreams, layouts, surfaces — all reachable and invocable from the 
 > Safety rail throughout: the existing vitest harness (real in-memory
 > automerge-repo + Solid projection). Don't regress the 79→ green tests
 > (~1160 as of 2026-07-01).
+
+---
+
+## 8. The tool as shipped
+
+The starting point all of the above reshapes: a themed spatial canvas for
+Patchwork folders — **no tldraw**. Built with Solid (JSX, bundled with vite),
+it renders folder contents as draggable HTML windows on an infinite pan/zoom
+canvas and lets you draw **on top of the tools** with
+[perfect-freehand](https://github.com/steveruizok/perfect-freehand) (pressure
+ink) and [rough.js](https://roughjs.com) (sketchy rectangles, ellipses, lines,
+arrows — excalidraw style).
+
+### Interaction
+
+- **Bottom toolbar** (a System-7 palette): select, hand/pan, pen, rectangle,
+  ellipse, line, arrow, eraser, and **+** (new doc).
+- **New doc = "draw the tool you want":** click **+**, pick a datatype, then drag
+  a box on the canvas — the doc is created at those bounds.
+- **Select & move:** in select mode, click a stroke/shape to select it (dashed
+  box), drag to move, Backspace/Delete to remove.
+- **Properties panel** (left): edits the active brush, or — when something is
+  selected — that mark's own properties, including **stroke colour, fill colour +
+  fill style, perfect-freehand thinning/smoothing/streamline, and rough.js
+  roughness/bowing**.
+- Ink renders in an always-on-top SVG layer (`pointer-events: none`), so you can
+  draw over live embedded tools without blocking them.
+- Keyboard tool shortcuts (`v h p r o l a e`) are suppressed while typing inside
+  an embedded patchwork tool.
+
+### Theming
+
+Theme-aware: derives `--ns-ink`/`--ns-chrome`/`--ns-paper` from the Patchwork
+theme vars (`--studio-line`, `--studio-fill`, `--editor-fill-offset-10`) so it
+follows the host's dark/light switch, with System-7 cream fallbacks when run
+unthemed. The riso accent colours (chee-rabbit / Mimi-Reyburn character) stay
+constant. Visual register: System 7 chrome (bevels, pinstripe title bars, close
+boxes) warmed into a risograph palette.
+
+### Code map
+
+- **`src/index.jsx`** — registers the datatypes (`newspace` + `sketch`) and the
+  tools (`sketchy`, `sketchy:list`, `sketchy:grid`, `sketchy:dock`,
+  `sketchy:pencil`).
+- **`src/datatype.js`** — the doc model.
+- **`src/tool.jsx`** — the `(handle, element) => cleanup` render contract. Holds
+  the camera, active tool, pointer gestures, eraser hit-testing, doc creation,
+  and image paste. Reactivity comes from `makeDocumentProjection(handle)` of
+  `automerge-repo-solid-primitives`.
+- **`src/draw.js`** — perfect-freehand → SVG path, and rough.js → declarative
+  `<path>` data (via `generator.toPaths`, deterministic per stored `seed`).
+- **`src/style.css`** — the theme, injected into the JS bundle.
+
+### Document model (one ordered `items` array)
+
+```
+{ title, docs: DocLink[],           // the folder contract
+  items: Item[] }                   // array ORDER = drawing/z order
+
+Item kinds:
+  stroke { id, kind, points:[[x,y,pressure]], color, size,
+           thinning, smoothing, streamline, rotation, parent? }
+  shape  { id, kind, type, x, y, w, h, color, fill, strokeWidth,
+           roughness, bowing, fillStyle, seed, rotation, parent? }
+  doc    { id, kind, url, x, y, w, h, rotation, toolId, parent? }   // patchwork-view shape
+  frame  { id, kind, url, x, y, w, h, title, rotation?, parent? }   // a sub-space
+```
+
+Everything is a regular shape sharing the same rules: select (shift / marquee
+multi-select), move, resize (8 handles), rotate (knob), reorder (front/back),
+configure via the draggable palette. `fill` is a colour or `"none"`. The two
+mono palette colours are theme tokens (`var(--studio-line)` / `var(--studio-fill)`)
+so black/white flip with dark mode.
+
+**Frames** are sub-spaces (placing the `newspace` datatype makes one). A frame is
+a container: items dropped inside get `parent: frameId`, store FRAME-LOCAL coords,
+and render nested + clipped — so they move/rotate/clip with the frame. Frames
+rotate too. No frame-in-frame.
+
+**Why arrays:** everything canvas-related is a flat **array**, never a keyed
+map. Array order *is* z-order, and splices merge well. It's a design choice,
+not a projection workaround — the current Solid document projection
+(`solid-automerge@2`) reconciles map-key deletion cleanly, both nested and
+top-level (pinned by tests in `history.test.js`).
