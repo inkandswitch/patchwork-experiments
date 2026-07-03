@@ -19,10 +19,10 @@ export const EmbarkCanvasDatatype: DatatypeImplementation<EmbarkCanvasDoc> = {
 };
 
 // The context canvas: the same canvas shape and UI, but a distinct datatype so
-// its tool (ContextCanvasTool) can mount it without a <patchwork-context> — its
-// cards then land on the page-global body store and apply everywhere. Starts
-// empty (no parts bin): it is a surface for context-providing cards, not a
-// document workspace.
+// its tool (ContextCanvasTool) can host it as a per-browser sidebar singleton.
+// Like every canvas its cards land on the page-global body store and apply
+// everywhere. Starts empty (no parts bin): it is a surface for context-providing
+// cards, not a document workspace.
 export const ContextCanvasDatatype: DatatypeImplementation<EmbarkCanvasDoc> = {
   init(doc) {
     doc["@patchwork"] = { type: "context-canvas" };

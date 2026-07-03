@@ -7,11 +7,11 @@ import type { CardDoc } from "./datatype";
 import "./card.css";
 
 // The module every card feature package ships as its `card.js`. It renders the
-// card's middle slot and runs the card's behavior against the shared canvas
-// context. Its shape is the tool-render contract: it receives the card document
-// handle and a host element (with `repo` stamped on, sitting inside the canvas
-// `<patchwork-context>`) and returns an optional teardown. Behavior-only cards
-// render nothing into the slot.
+// card's middle slot and runs the card's behavior against the shared context.
+// Its shape is the tool-render contract: it receives the card document handle
+// and a host element (with `repo` stamped on) whose context discovery resolves
+// to the page-global body store, and returns an optional teardown. Behavior-only
+// cards render nothing into the slot.
 export type CardModule = (
   handle: DocHandle<CardDoc>,
   element: ToolElement,

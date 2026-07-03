@@ -31,17 +31,16 @@ const MAX_PREVIEW_HEIGHT = 200;
 // it as an embed. The payload points at a clone, so the example stays editable
 // in place.
 export const PartsBinTool: ToolRender = (handle, element) => {
-  // Host an isolated context and render the previews into it. The `isolated`
-  // attribute makes this store a root with no parent, so the previews neither
-  // read from nor write to the enclosing canvas (or the page-global body) store
-  // — the bin's contents are examples, not active participants. Discovery from a
+  // Host a context and render the previews into it. Every `<patchwork-context>`
+  // owns a self-contained store (a hard boundary — no inheritance), so the
+  // previews neither read from nor write to the page-global body store: the
+  // bin's contents are examples, not active participants. Discovery from a
   // preview resolves here (nearest host wins, stopping the request) and finds a
   // dead-end store, so their search boxes, sticker sources, etc. stay inert.
   registerContextElement();
   const contextEl = document.createElement(
     "patchwork-context",
   ) as PatchworkContextElement;
-  contextEl.setAttribute("isolated", "");
   element.appendChild(contextEl);
 
   // Keep the previews' mount/unmount events from reaching the canvas: the

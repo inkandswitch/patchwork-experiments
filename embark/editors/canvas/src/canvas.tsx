@@ -25,12 +25,9 @@ import {
   type DocumentDragItem,
 } from "./dnd";
 import {
-  registerContextElement,
   readContext,
   useContextHandle,
   getBodyContextStore,
-  type ContextStore,
-  type PatchworkContextElement,
 } from "@embark/context";
 import { Highlight, Selection } from "@embark/selection";
 import {
@@ -72,9 +69,11 @@ export type EmbarkEmbed = {
 
 export type EmbarkCanvasDoc = {
   // Two datatypes share this shape and the canvas UI: `embark-canvas` (a normal
-  // canvas, scoped by its own <patchwork-context>) and `context-canvas` (the
-  // sidebar surface, mounted without one so its cards land on the page-global
-  // body store — see EmbarkCanvasTool vs ContextCanvasTool).
+  // document canvas, seeded with a parts bin) and `context-canvas` (the sidebar
+  // surface, a per-browser singleton that starts empty). Both mount straight
+  // onto the page-global body store, so every card — wherever it sits — reads
+  // and writes the same shared context (see EmbarkCanvasTool vs
+  // ContextCanvasTool).
   "@patchwork": { type: "embark-canvas" | "context-canvas" };
   title: string;
   embeds: { [id: string]: EmbarkEmbed };
@@ -97,32 +96,13 @@ const INSPECT_GAP = 24;
 const INSPECT_WIDTH = 360;
 const INSPECT_MIN_HEIGHT = 280;
 
-// The normal canvas tool. It owns a <patchwork-context> that answers discovery
-// requests from anywhere in its subtree, so its embeds form a local scope
-// (search boxes, sticker sources, editors, the map, and dynamically-loaded card
-// code all resolve to that store — which itself inherits reads from the
-// page-global body store). Rendering the canvas *into* the context element makes
-// it an ancestor of every embed; it is `display: contents`, so it doesn't
-// disturb positioning.
-export const EmbarkCanvasTool: ToolRender = (handle, element) => {
-  registerContextElement();
-  const contextEl = document.createElement(
-    "patchwork-context",
-  ) as PatchworkContextElement;
-  element.appendChild(contextEl);
-
-  const disposeCanvas = mountCanvas(
-    handle as DocHandle<EmbarkCanvasDoc>,
-    element,
-    contextEl,
-    contextEl.store,
-  );
-
-  return () => {
-    disposeCanvas();
-    contextEl.remove();
-  };
-};
+// The normal document canvas. It mounts straight onto the page-global body
+// store, so its embeds (search boxes, sticker sources, editors, the map, and
+// dynamically-loaded card code) share one context with the sidebar and every
+// other canvas. Discovery from an embed finds no enclosing host and falls back
+// to the body store (see findContextStore).
+export const EmbarkCanvasTool: ToolRender = (handle, element) =>
+  mountCanvas(handle as DocHandle<EmbarkCanvasDoc>, element);
 
 // localStorage key holding this browser's context-canvas url.
 const CONTEXT_CANVAS_URL_KEY = "embark:context-canvas-url";
@@ -130,37 +110,21 @@ const CONTEXT_CANVAS_URL_KEY = "embark:context-canvas-url";
 // The context canvas tool: the exact same canvas UI, mounted as a sidebar
 // context tool. Registered with the `context-tool` tag, it is handed the account
 // doc (which it ignores) and instead hosts a single per-browser context canvas
-// whose url is stashed in localStorage. It mounts WITHOUT a <patchwork-context>,
-// so its embeds' discovery finds no local host and falls back to the page-global
-// body store — the cards placed here (mentions, command providers, sticker
-// sources, …) therefore apply to every editor and canvas on the page.
+// whose url is stashed in localStorage. Like the normal canvas it mounts onto
+// the body store; the only difference is where the handle comes from — a
+// find-or-create rather than a passed-in document — so it is resolved
+// asynchronously before mounting.
 export const ContextCanvasTool: ToolRender = (_accountHandle, element) => {
-  if (getComputedStyle(element).position === "static") {
-    element.style.position = "relative";
-  }
-
-  const store = getBodyContextStore();
-  const disposeResolver = runSchemaResolver(store, element, element.repo);
-
-  // The canvas doc is resolved asynchronously (find-or-create), so render a
-  // wrapper that shows the canvas once its handle arrives.
-  const [handle, setHandle] = createSignal<DocHandle<EmbarkCanvasDoc>>();
-  void resolveContextCanvas(element.repo).then(setHandle);
-
-  const disposeRender = render(
-    () => (
-      <RepoContext.Provider value={element.repo}>
-        <Show when={handle()}>
-          {(ready) => <EmbarkCanvas handle={ready()} />}
-        </Show>
-      </RepoContext.Provider>
-    ),
-    element,
-  );
+  let disposeCanvas: (() => void) | undefined;
+  let disposed = false;
+  void resolveContextCanvas(element.repo).then((handle) => {
+    if (disposed) return;
+    disposeCanvas = mountCanvas(handle, element);
+  });
 
   return () => {
-    disposeRender();
-    disposeResolver();
+    disposed = true;
+    disposeCanvas?.();
   };
 };
 
@@ -190,22 +154,24 @@ async function resolveContextCanvas(
 }
 
 // Shared setup behind both tools: promote the host so absolutely-positioned
-// embeds have a positioned ancestor, start schema resolution against `store`
-// (plain canvas code that reads requested schemas from the context and writes
-// match urls back; mount discovery rides the `patchwork:mounted` /
-// `patchwork:unmounted` events on `element`), and render the canvas into
-// `target`. Returns a disposer.
+// embeds have a positioned ancestor, start schema resolution against the
+// page-global body store (plain canvas code that reads requested schemas from
+// the context and writes match urls back; mount discovery rides the
+// `patchwork:mounted` / `patchwork:unmounted` events on `element`), and render
+// the canvas into `element`. Returns a disposer.
 function mountCanvas(
   handle: DocHandle<EmbarkCanvasDoc>,
   element: ToolElement,
-  target: HTMLElement,
-  store: ContextStore,
 ): () => void {
   if (getComputedStyle(element).position === "static") {
     element.style.position = "relative";
   }
 
-  const disposeResolver = runSchemaResolver(store, element, element.repo);
+  const disposeResolver = runSchemaResolver(
+    getBodyContextStore(),
+    element,
+    element.repo,
+  );
 
   const disposeRender = render(
     () => (
@@ -213,7 +179,7 @@ function mountCanvas(
         <EmbarkCanvas handle={handle} />
       </RepoContext.Provider>
     ),
-    target,
+    element,
   );
 
   return () => {

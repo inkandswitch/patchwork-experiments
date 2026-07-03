@@ -32,13 +32,13 @@ const FAN_TILT = 3;
 
 // Tool entry point. Unlike the parts bin, the deck does NOT host its own
 // context: the cards are live participants, not inert examples. We render the
-// thumbnails straight into `element`, which already sits inside the canvas's
-// <patchwork-context>, so each card's context discovery bubbles past the deck
-// to the shared store — its queries, sticker sources, selection reads, etc. are
-// answered by the canvas. We also let the cards' patchwork:mounted/unmounted
-// events bubble through, so the canvas schema resolver tracks the card docs as
-// real mounted participants. The deck is purely a way to organize and collapse;
-// folding is visual only, so cards stay mounted and active in either state.
+// thumbnails straight into `element`, so each card's context discovery finds no
+// enclosing host and resolves to the page-global body store — its queries,
+// sticker sources, selection reads, etc. are answered there alongside every
+// other card. We also let the cards' patchwork:mounted/unmounted events bubble
+// through, so the canvas schema resolver tracks the card docs as real mounted
+// participants. The deck is purely a way to organize and collapse; folding is
+// visual only, so cards stay mounted and active in either state.
 export const DeckTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
