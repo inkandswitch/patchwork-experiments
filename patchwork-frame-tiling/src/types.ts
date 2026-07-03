@@ -41,6 +41,15 @@ export type TinyPatchworkConfigDoc = {
 
   /** Remembered per-doc / per-datatype tool choices (see {@link ToolPreferences}). */
   toolPreferences?: ToolPreferences;
+
+  /**
+   * Private per-tool storage docs, keyed by an arbitrary tool-chosen id.
+   * Lazily created and populated by the `patchwork:tool-storage` provider
+   * (see `patchwork-base/providers`) the first time a tool requests it — lets
+   * a tool persist account-scoped data (chat history, an API key, …) without
+   * a `docUrl` of its own, and without reaching for `window.accountDocHandle`.
+   */
+  toolStorage?: { [toolId: string]: AutomergeUrl };
 };
 
 /**

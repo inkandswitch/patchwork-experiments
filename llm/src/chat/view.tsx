@@ -19,6 +19,7 @@ export const LLMChatTool: ToolRender = (handle, element) => {
         <LLMChatView 
           handle={handle as DocHandle<LLMChatDoc>} 
           repo={element.repo}
+          element={element}
         />
       </RepoContext.Provider>
     ),
@@ -27,7 +28,7 @@ export const LLMChatTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
+function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo; element: HTMLElement }) {
   const [doc] = useDocument<LLMChatDoc>(() => props.handle.url);
   const [processDoc] = useDocument<LLMProcessDoc>(() => doc()?.processUrl);
   const [activeTab, setActiveTab] = createSignal<"chat" | "documents">("chat");
@@ -79,7 +80,7 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
 
   // Live label of the currently-selected model (kept in sync with the config).
   const [modelLabel, setModelLabel] = createSignal("");
-  const unsubscribe = subscribeConfig(null, (cfg) => setModelLabel(describeConfig(cfg)));
+  const unsubscribe = subscribeConfig(props.element, (cfg) => setModelLabel(describeConfig(cfg)));
   onCleanup(unsubscribe);
 
   return (

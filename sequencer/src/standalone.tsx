@@ -23,7 +23,7 @@ const sequencerRegistration: ToolRegistration<SequencerDoc> = {
     const root = ReactDOM.createRoot(element);
     root.render(
       <RepoContext.Provider value={element.repo}>
-        <Sequencer docUrl={handle.url} />
+        <Sequencer docUrl={handle.url} element={element} />
       </RepoContext.Provider>
     );
     return () => root.unmount();

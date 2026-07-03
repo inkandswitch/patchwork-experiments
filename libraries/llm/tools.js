@@ -514,11 +514,10 @@ export async function resolveCfgPrompts(cfg, repo) {
 }
 
 /**
- * One-time migration. First, `ensureSettingsDoc()` moves any legacy inline
- * `accountDoc.llm` config into its own settings doc (rewriting the pointer to a
- * URL). Then this converts the legacy `tools` (URL array),
- * `systemPrompts`/`prePrompts` (URL arrays) and `prompts` (object) inside that
- * doc into `folder` docs + the new scalar shape. Idempotent.
+ * One-time migration. Converts the legacy `tools` (URL array),
+ * `systemPrompts`/`prePrompts` (URL arrays) and `prompts` (object) inside the
+ * settings doc (see `ensureSettingsDoc`) into `folder` docs + the new scalar
+ * shape. Idempotent.
  * @param {Repo} [repo]
  */
 export async function migrateConfig(repo) {

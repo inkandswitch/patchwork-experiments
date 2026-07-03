@@ -10,6 +10,8 @@
  * algorithmic reverb, DC offset removal, wahwah, pitch shift, LPC vocoder.
  */
 
+import {subscribe} from "@inkandswitch/patchwork-providers"
+
 const DPI = window.devicePixelRatio || 1
 
 const STYLES = `
@@ -1103,19 +1105,18 @@ export default function SoundEditorTool(handle, element) {
 	let presenceInterval = null
 	let lastAudioUrl = doc.audio // track the audio URL for change detection
 
-	// Resolve user identity
-	;(async () => {
+	// Resolve user identity via the account provider's `patchwork:contact`
+	// selector (see patchwork-base/providers) instead of reaching into
+	// `window.accountDocHandle` directly.
+	const offContact = subscribe(element, {type: "patchwork:contact"}, async (contactUrl) => {
+		if (!contactUrl) return
 		try {
-			const adh = window.accountDocHandle
-			if (!adh) return
-			const ad = adh.doc()
-			if (!ad?.contactUrl) return
-			const ch = await repo.find(ad.contactUrl)
+			const ch = await repo.find(contactUrl)
 			const cd = ch.doc()
 			if (cd?.name) myName = cd.name
 			if (cd?.color) myColor = cd.color
 		} catch {}
-	})()
+	})
 
 	// ── Build UI ──
 
@@ -2692,6 +2693,7 @@ export default function SoundEditorTool(handle, element) {
 	// ── Cleanup ──
 	return () => {
 		destroyed = true; teardownAudio()
+		offContact()
 		if (isRecordingAtPlayhead) { isRecordingAtPlayhead = false }
 		if (recNode) { recNode.port.postMessage({type: "stop"}); recNode.disconnect(); recNode = null }
 		if (recStream) { for (const t of recStream.getTracks()) t.stop(); recStream = null }
