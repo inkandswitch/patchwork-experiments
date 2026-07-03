@@ -190,3 +190,51 @@ describe("ShareSession — per-item streams", () => {
     expect(msgs.some((m) => m.t === "unmap" && m.item === "A")).toBe(true);
   });
 });
+
+describe("ShareSession — identity derives from the presence store (one peer store)", () => {
+  let sessions;
+  beforeEach(() => {
+    sessions = [];
+    globalThis.RTCPeerConnection = FakePC;
+    globalThis.MediaStream = FakeMediaStream;
+  });
+  afterEach(() => {
+    for (const s of sessions) s.destroy();
+    delete globalThis.RTCPeerConnection;
+    delete globalThis.MediaStream;
+  });
+
+  it("state() resolves peer + self names through `identify`; the url tail stays the fallback", () => {
+    const presence = new Map([
+      ["me", { contactUrl: "me", name: "Chee", color: "#f0f" }],
+      ["zz-peer", { contactUrl: "zz-peer", name: "Mimi", color: "#0ff" }],
+    ]);
+    const sent = [];
+    let handler = null;
+    const handle = {
+      broadcast: (m) => sent.push(m),
+      on: (ev, cb) => { if (ev === "ephemeral-message") handler = cb; },
+      off: () => { handler = null; },
+    };
+    const session = new ShareSession(handle, "me", (url) => presence.get(url) || null);
+    sessions.push(session);
+    handler({ message: { ns: "share", t: "join", from: "zz-peer" } });
+    handler({ message: { ns: "share", t: "join", from: "anon-x" } }); // not in the presence store
+    const st = session.state();
+    expect(st.me && st.me.name).toBe("Chee");
+    const byUrl = Object.fromEntries(st.peers.map((p) => [p.url, p]));
+    expect(byUrl["zz-peer"].name).toBe("Mimi");
+    expect(byUrl["zz-peer"].color).toBe("#0ff");
+    expect(byUrl["anon-x"].name).toBe(null); // no identity → callers fall back to `short`
+    expect(byUrl["anon-x"].short).toBe("anon-x".slice(-6));
+  });
+
+  it("without an identify lookup, state() carries no names (connection state only)", () => {
+    const { session, deliver } = makeSession();
+    sessions.push(session);
+    deliver({ ns: "share", t: "join", from: "zz-peer" });
+    const st = session.state();
+    expect(st.me).toBe(null);
+    expect(st.peers[0].name).toBe(null);
+  });
+});

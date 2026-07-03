@@ -21,6 +21,9 @@ import { plugin as magnifierPlugin } from "../llm-magnifier.js";
 import { plugin as minimapPlugin } from "../minimap-node.js";
 import { geoMarksSchema, pixelMarksSchema } from "../map-schemas.js";
 import { plugin as palettePlugin } from "../palette-node.js";
+import { plugin as paletteConfigPlugin } from "../palette-config-node.js";
+import { plugin as presencePlugin } from "../presence-node.js";
+import { plugin as partsPlugin } from "../parts-bin.js";
 import { plugin as zoomPlugin } from "../zoom-node.js";
 import { plugin as canvasSourcePlugin } from "../canvas-source-node.js";
 
@@ -62,6 +65,9 @@ export const contributedNodePlugins = [
   pointerLockPlugin,
   magnifierPlugin,
   palettePlugin,
+  paletteConfigPlugin,
+  presencePlugin,
+  partsPlugin,
   minimapPlugin,
   zoomPlugin,
   mapPlugin,

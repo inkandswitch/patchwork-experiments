@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { mountRawValue, mountBang, mountTimer, makeSourceMount, playSharedStream } from "./source-nodes.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { mountRawValue, mountBang, mountTimer, mountAutomergeSource, makeSourceMount, playSharedStream } from "./source-nodes.js";
 
 // a fake setOutlet that captures the Source registered per outlet name
 function makeOutlets() {
@@ -290,6 +290,20 @@ describe("mountTimer", () => {
     cleanup();
   });
 
+  it("persists run/pause via setConfig — a paused timer must stay paused across reload", () => {
+    const element = document.createElement("div");
+    const { setOutlet } = makeOutlets();
+    const { setConfig, last } = makeConfig();
+    const cleanup = mountTimer({ element, setOutlet, config: { ms: 16, running: false }, setConfig });
+    const run = element.querySelector(".ns-source-enable");
+
+    run.click(); // start
+    expect(last()).toEqual({ running: true });
+    run.click(); // pause
+    expect(last()).toEqual({ running: false });
+    cleanup();
+  });
+
   it("persists the interval via setConfig when the ms input changes, clamping to >=16", () => {
     const element = document.createElement("div");
     const { setOutlet } = makeOutlets();
@@ -399,6 +413,61 @@ describe("makeSourceMount (non-gated, synchronous fake start)", () => {
     // the device value gets forwarded into the proxy
     expect(proxy.value).toBe(3);
     expect(seen[seen.length - 1]).toBe(3);
+    cleanup();
+  });
+});
+
+describe("mountAutomergeSource — the in-flight open() token", () => {
+  afterEach(() => { delete window.repo; });
+
+  const deferred = () => { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
+  // enough handle for automergeOpstream: doc()/on/off/url (listener counts observable)
+  const fakeHandle = (url) => ({ url, ons: 0, offs: 0, doc: () => ({}), on() { this.ons++; }, off() { this.offs++; }, change() {} });
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("a slow url resolving AFTER a newer one neither replaces the stream nor re-persists its stale url", async () => {
+    const defs = { "automerge:A": deferred(), "automerge:B": deferred() };
+    window.repo = { find: (url) => defs[url].promise };
+    const element = document.createElement("div");
+    const { outlets, setOutlet } = makeOutlets();
+    const { calls, setConfig, last } = makeConfig();
+    let onCfg;
+    const cleanup = mountAutomergeSource({ element, setOutlet, setConfig, config: {}, onConfig: (cb) => (onCfg = cb) });
+
+    const a = fakeHandle("automerge:A"), b = fakeHandle("automerge:B");
+    onCfg({ url: "automerge:A" }); // slow
+    onCfg({ url: "automerge:B" }); // newer — must win
+    defs["automerge:B"].resolve(b);
+    await flush();
+    expect(outlets.doc.complement.handle).toBe(b);
+    expect(last()).toEqual({ url: "automerge:B" });
+
+    const persisted = calls.length;
+    defs["automerge:A"].resolve(a); // the STALE resolve lands late
+    await flush();
+    expect(outlets.doc.complement.handle).toBe(b); // stream not replaced
+    expect(calls.length).toBe(persisted);          // stale url never persisted back
+    expect(a.offs).toBe(a.ons);                    // the stale stream was fully dropped
+    cleanup();
+    expect(b.offs).toBe(b.ons); // teardown releases the winner's listener too
+  });
+
+  it("a stale rejection does not clobber the newer stream's status", async () => {
+    const defs = { "automerge:A": deferred(), "automerge:B": deferred() };
+    window.repo = { find: (url) => defs[url].promise };
+    const element = document.createElement("div");
+    const { outlets, setOutlet } = makeOutlets();
+    let onCfg;
+    const cleanup = mountAutomergeSource({ element, setOutlet, setConfig() {}, config: {}, onConfig: (cb) => (onCfg = cb) });
+
+    onCfg({ url: "automerge:A" });
+    onCfg({ url: "automerge:B" });
+    defs["automerge:B"].resolve(fakeHandle("automerge:B"));
+    await flush();
+    const status = element.querySelector(".ns-source-status").textContent;
+    defs["automerge:A"].reject(new Error("gone"));
+    await flush();
+    expect(element.querySelector(".ns-source-status").textContent).toBe(status); // untouched
     cleanup();
   });
 });

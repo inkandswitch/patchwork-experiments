@@ -5,7 +5,7 @@ import { makeDocumentProjection } from "solid-automerge";
 import { surfaceDoc } from "../surface-doc.js";
 import { log } from "../log.js";
 import { migrateStorageKey } from "../persist.js";
-import { useLayerTransform, itemLayers, itemHomeLayer, defaultLayers, defaultModes, resolveLayerVisible, layerKind } from "../layers.js";
+import { useLayerTransform, itemLayers, itemHomeLayer, defaultLayers, layerKind } from "../layers.js";
 import { chainToOuter, chainToLocal, chainScale, mapInstanceFor, onSpaceChanged } from "../box-transform.js";
 import { makePersisted } from "@solid-primitives/storage";
 import {
@@ -22,10 +22,9 @@ import { opstreamToSignal, Source, automergeOpstream, numberSchema, anySchema, a
 import { mountInspector } from "../inspector-editor.js";
 import { readPort, portWiring, makeEditorItem, editorsForStream, firstMatchingInlet, firstMatchingInletForOutlet, streamType, descriptorsFeeding, outletFeedsInlet, usedContextOutlets as computeUsedContextOutlets, paramWireFor, rawValueInlets, formatShape, seedConfigFor } from "../wire.js";
 import { listEditors, nodeRole, inletDefsFor, outletDefsFor } from "../editors.js";
-import { listLayouts } from "../layouts.js";
-import { layoutSwitcher } from "../layout-switch.js";
-import { FlapDock } from "../flaps.jsx";
 import { PART_DRAG_TYPE, decodePartId } from "../parts-bin.js";
+import { paletteEntriesById } from "../registry/palettes.js";
+import { stickyFromRect, resolveStickyScreen, stickyOf, isStuck } from "../sticky.js";
 import { resolveBrushHandlers, brushParamDefault, paramDefs, listRegistryBrushes } from "../brush-host.js";
 import { penHandlers } from "../pen-brush.js";
 import { shapeHandlers } from "../shape-brush.js";
@@ -36,16 +35,17 @@ import { placeHandlers } from "../place-brush.js";
 import { describeBinary, isError, binarySafeReplacer, paramsSchema, isSnapshot, describeSchema } from "../ops.js";
 import { ShareSession, myContactUrl as sessionMyUrl } from "../share-session.js";
 import { listLensDescriptors } from "../lenses.js";
+import { catalogDatatypes, catalogWindows, catalogLenses } from "../catalog.js";
 import { viewRect, fitRect, centerCam, zoomAt, contentBounds } from "./camera.js";
 import { Item } from "./items/item.jsx";
 import { PresenceLayer } from "./ui/presence.jsx"; // Minimap is now a bare tool (minimap-node.js)
-import { Handles, Toolbar, Properties, PortNub, STAMPS, STAMP_IDS, sampleSvgPath } from "./ui/chrome.jsx";
+import { Handles, Properties, STAMPS, STAMP_IDS, sampleSvgPath } from "./ui/chrome.jsx"; // (Toolbar stays exported from chrome.jsx for its glyph tables, but the canvas no longer mounts it — the toolbar is the seeded palette window)
 import {
   freehandPath, shapePaths, roughLinkPath, roughLink, roughChevron, seedFromId, strokeWorldPoints,
 } from "../draw.js";
 import {
   rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame, itemBox,
-  ownsSpace, projectItemFromBox, annotateItemIntoBox, surfaceWithinBox,
+  ownsSpace, projectItemFromBox, annotateItemIntoBox, surfaceWithinBox, itemVisibleForActive,
   itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc, arrowGeometry, worldAnchor,
   linkItemId, duplicateItemIds, buildItemsIndex, findById,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
@@ -53,9 +53,9 @@ import {
 import { count as perfCount, perFrame, rafBatch } from "../perf.js";
 import "../style.css";
 import {
-  colorVar, SIZES, shapeRenderProps, shapePropsEqual, sortById, enableAtomicMove,
+  colorVar, SIZES, shapeRenderProps, shapePropsEqual, enableAtomicMove,
   SHAPE_TOOLS, clamp, rndSeed, uid, ensureLayout, colorFor, isTypingTarget,
-  anchorAxes, SEED_IDS,
+  SEED_IDS, makeFlapSpace, seedPartsFlap, windowDrag,
 } from "./constants.js";
 
 // PERF.md Phase 4 — coalesce a high-frequency Source's PUSH side to a 16ms
@@ -80,6 +80,14 @@ function coalesceSource(src, name, ms = 16) {
     agent0 = agent; // the latest write's agent rides the coalesced emission
     if (timer == null) timer = setTimeout(() => { timer = null; perfCount(`ctxPush:${name}`); emit(src._val, agent0); }, ms);
   };
+  // errors must not be masked by a buffered value: pushError emits IMMEDIATELY
+  // and drops any pending coalesced push — the buffered value predates the error,
+  // and flushing it afterwards would re-emit it as fresh (push clears `_error`),
+  // silently swallowing the error downstream.
+  if (typeof src.pushError === "function") {
+    const emitError = src.pushError.bind(src);
+    src.pushError = (e, agent) => { if (timer != null) { clearTimeout(timer); timer = null; } emitError(e, agent); };
+  }
   src.cancelPending = () => { if (timer != null) { clearTimeout(timer); timer = null; } };
   return src;
 }
@@ -122,6 +130,17 @@ export function Canvas(props) {
     repo.find(url).then((h) => { h.change((d) => { if (!d.items) d.items = []; }); if (cur && cur.url !== url) log.debug(`layout converged → ${url.slice(-8)} (was ${cur.url.slice(-8)})`); setRootLayoutH(h); }).catch((e) => log.error("layout switch", e));
   });
   const rootLayoutDoc = createMemo(() => { const h = rootLayoutH(); return h ? surfaceDoc(h) : null; }); // seam: real handle OR opstream-backed
+  // seed the PARTS FLAP (constants.js seedPartsFlap) — async (it creates the
+  // flap's folder+layout docs), so it runs from the ROOT canvas rather than
+  // ensureLayout: boxes' loadSpace must not each grow a flap. Idempotent +
+  // dismissal-respecting; re-runs if the layout doc converges to another url.
+  let seededFlapFor = null;
+  createEffect(() => {
+    const lh = rootLayoutH();
+    if (!lh || opts.minimal || seededFlapFor === lh) return;
+    seededFlapFor = lh;
+    seedPartsFlap(repo, lh).catch((e) => log.warn("parts flap seed", e));
+  });
 
   const [themeTick, setThemeTick] = createSignal(0);
   // pan/zoom is remembered per-doc in localStorage (local to this viewer);
@@ -149,38 +168,18 @@ export function Canvas(props) {
   const baseLayer = () => layersList()[0];
   // editing a frosting layer (e.g. the overlay) dims + blurs everything beneath it
   const frosting = () => !!(layerKind(activeLayer()?.kind) || {}).frost;
-  // ── MODES — layer-visibility presets (workshop/play, layers.js) ─────────────
-  // presets are shared layout-doc data; the CURRENT mode + any 👁 overrides are
-  // per-viewer in the top-layer user-state doc (topLayerDoc/changeTop, declared
-  // below — read lazily at render time, like brushCfg).
-  const modesList = () => { const m = rootLayoutDoc()?.layout?.modes; return Array.isArray(m) && m.length ? m : defaultModes(); };
-  const activeMode = () => { const id = topLayerDoc()?.mode; return modesList().find((m) => m.id === id) || modesList()[0]; };
-  const setMode = (id) => changeTop((d) => { d.mode = id; });
-  const eyeOverride = (layerId) => topLayerDoc()?.layerVis?.[activeMode()?.id]?.[layerId];
-  // a layer's LIVE visibility: edit-reveal (the active tab is always shown) →
-  // per-viewer 👁 override → the mode's preset (resolveLayerVisible).
-  const layerVisible = (layerId) => resolveLayerVisible(layerId, { mode: activeMode(), override: eyeOverride(layerId), editLayerId: activeLayerId() });
-  // the 👁 state as the MODE resolves it (no edit-reveal) — what the eye shows + flips
-  const layerEyeOn = (layerId) => resolveLayerVisible(layerId, { mode: activeMode(), override: eyeOverride(layerId) });
-  const toggleLayerEye = (layerId) => {
-    const m = activeMode(); if (!m) return;
-    const next = !layerEyeOn(layerId);
-    changeTop((d) => { if (!d.layerVis) d.layerVis = {}; if (!d.layerVis[m.id]) d.layerVis[m.id] = {}; d.layerVis[m.id][layerId] = next; });
-  };
-  // edit WHICH layers a preset includes — shared (layout doc), from the ⊞ tray
-  const togglePresetLayer = (modeId, layerId) => {
-    const h = rootLayoutH(); if (!h) return;
-    h.change((d) => {
-      if (!d.layout) d.layout = {};
-      if (!Array.isArray(d.layout.modes)) d.layout.modes = defaultModes();
-      const m = d.layout.modes.find((x) => x.id === modeId); if (!m) return;
-      const i = m.layers.indexOf(layerId);
-      if (i >= 0) m.layers.splice(i, 1); else m.layers.push(layerId);
-    });
-  };
-  // an item shows iff ANY of its member layers is visible (hidden ⇒ inert too:
-  // item.jsx renders it display:none, so no hit surface exists)
-  const itemVisible = (it) => itemLayers(it).some(layerVisible);
+  // ── MEMBERSHIP-DRIVEN VISIBILITY (model.js itemVisibleForActive) ───────────
+  // an item shows iff its HOME layer is at/below the active one (lower layers keep
+  // rendering under it — the frosted compositing) OR its `layers` membership
+  // includes the active layer. Hidden = display:none (DOM kept, so embeds
+  // survive; nothing display:none can be hit or clicked). Root items only —
+  // frame children carry no layer tags and follow their frame's node.
+  const layerIdList = () => layersList().map((l) => l.id);
+  const itemHidden = (it) => !itemVisibleForActive(it, layerIdList(), activeLayerId());
+  // a MEMBER of the active layer that lives elsewhere opts back into pointer
+  // events (its home container is inert while inactive) — membership means
+  // "appears AND is usable on this layer" (the seeded palette while drawing).
+  const memberOnActive = (it) => itemHomeLayer(it) !== activeLayerId() && itemLayers(it).includes(activeLayerId());
   // ALWAYS the base camera space — for coords that are inherently world (peer presence
   // cursors/views), which must not be run through the active layer's transform.
   const cameraToScreen = (wx, wy) => txFor(baseLayer()).toScreen(wx, wy);
@@ -196,27 +195,92 @@ export function Canvas(props) {
     const isCamera = (layerKind(layer && layer.kind) || {}).transform === "camera";
     return { x: 0, y: 0, transform: { kind: isCamera ? "viewport" : "identity" } }; // box "viewport" == pan/zoom
   };
-  // the box chain: active layer, then the surface's frame(s) — each a box via itemBox (uniform).
-  const chainFor = (surface) => { const c = [layerBoxOf(activeLayerId())]; if (surface && surface.frame) c.push(itemBox(surface.frame)); return c; };
-  const boxToScreen = (surface, local) => chainToOuter(chainFor(surface), local, boxEnv);
-  const boxScale = (surface) => chainScale(chainFor(surface), boxEnv);
-  // an anchored item (a corner-pinned overlay widget) stores its (x,y) as an OFFSET from a
-  // viewport CORNER. Positioning is pure CSS (bottom/right — auto resize-reactive); the
-  // selection/handle geometry + drag resolve it to absolute top-left here, per viewer's
-  // viewport (which is why a shared widget can read "bottom-left" for everyone).
-  const resolveItemPos = (it) => {
-    const a = it && it.anchor; if (!a) return { x: (it && it.x) || 0, y: (it && it.y) || 0 };
-    const W = (viewportRef && viewportRef.offsetWidth) || 0, H = (viewportRef && viewportRef.offsetHeight) || 0;
-    const { right, bottom } = anchorAxes(a);
-    return { x: right ? W - (it.w || 0) - (it.x || 0) : (it.x || 0), y: bottom ? H - (it.h || 0) - (it.y || 0) : (it.y || 0) };
+  // the box chain: a LAYER, then the surface's frame(s) — each a box via itemBox (uniform).
+  // The layer half comes from the ITEM's home space when an item is given (selection
+  // geometry must be right for the item's own space — an overlay-home widget selected
+  // while the canvas tab is momentarily active must not project through the camera).
+  // A frame child carries no layer tags, so itemHomeLayer falls back to the base.
+  const chainFor = (surface, it) => {
+    const c = [layerBoxOf(it ? itemHomeLayer(it) : activeLayerId())];
+    if (surface && surface.frame) {
+      c.push(itemBox(effFrame(surface.frame)));
+      // a STUCK frame (an open flap drawer) renders counter-scaled (stickyPlace's
+      // k = 1/zoom, so it holds screen size) — its children's selection/port
+      // geometry must compose that scale too, or it drifts at non-100% zoom.
+      if (isStuck(surface.frame)) c.push({ x: 0, y: 0, transform: { kind: "scale", k: stickyPlace(surface.frame).k } });
+    }
+    return c;
   };
-  // the INVERSE: absolute top-left (ax,ay) + size (w,h) → the stored corner offset. Used when
-  // a resize/rotate gesture (which runs in absolute space) writes an anchored item back.
-  const toAnchorOffset = (it, ax, ay, w, h) => {
-    const a = it && it.anchor; if (!a) return { x: ax, y: ay };
-    const W = (viewportRef && viewportRef.offsetWidth) || 0, H = (viewportRef && viewportRef.offsetHeight) || 0;
-    const { right, bottom } = anchorAxes(a);
-    return { x: right ? W - (w || 0) - ax : ax, y: bottom ? H - (h || 0) - ay : ay };
+  const boxToScreen = (surface, local, it) => chainToOuter(chainFor(surface, it), local, boxEnv);
+  const boxScale = (surface, it) => chainScale(chainFor(surface, it), boxEnv);
+  // ── STICKY (sticky.js) — a window docked to a viewport EDGE by dragging ────
+  // `sticky: { edge, t }` renders viewport-anchored: its screen rect comes from
+  // resolveStickyScreen, converted back into the item's HOME-layer coords through
+  // the box composer so the DOM node stays in its home container (embeds never
+  // relocate). A camera-home stuck window also counter-scales (k) so it holds
+  // screen size. A legacy corner `anchor` READS as sticky (stickyOf normalizes
+  // it, sticky wins when both are present); interactions write sticky only.
+  const [vpTick, setVpTick] = createSignal(0); // sticky positions are computed, so resize must re-run them
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined" || !viewportRef) return;
+    const ro = new ResizeObserver(() => setVpTick((t) => t + 1));
+    ro.observe(viewportRef);
+    onCleanup(() => ro.disconnect());
+  });
+  const stickyScreen = (it) => {
+    vpTick();
+    const { w, h } = viewportSize(); // per-frame cached (no per-event reflow)
+    return resolveStickyScreen(stickyOf(it, w, h), it.w || 0, it.h || 0, w, h);
+  };
+  // a stuck item's render placement in its HOME layer's space: top-left + the
+  // counter-scale that undoes the layer's zoom (identity layers ⇒ k = 1)
+  const stickyPlace = (it) => {
+    const s = stickyScreen(it);
+    const chain = [layerBoxOf(itemHomeLayer(it))];
+    const l = chainToLocal(chain, s, boxEnv);
+    return { x: l.x, y: l.y, k: 1 / (chainScale(chain, boxEnv) || 1) };
+  };
+  // a DOCKED item (sticky, or a legacy corner anchor read as sticky) resolves to
+  // absolute home-space coords here, per viewer's viewport — which is why a
+  // shared widget can read "bottom-left" for everyone. Selection/handle geometry
+  // and drags all flow through this one path.
+  const resolveItemPos = (it) => {
+    if (!it) return { x: 0, y: 0 };
+    if (isStuck(it)) { const s = stickyScreen(it); return chainToLocal([layerBoxOf(itemHomeLayer(it))], s, boxEnv); }
+    return { x: it.x || 0, y: it.y || 0 };
+  };
+  // ── FLAPS — a `flap: true` FRAME (a named sticky container). A STUCK flap
+  // collapses to an edge TAB; clicking the tab opens it as a drawer (the frame
+  // at its size, anchored to the edge — the ordinary sticky render). Open state
+  // is PER-VIEWER (the top-layer doc's `flaps[id].open`, next to brushCfg — not
+  // shared); un-sticking (drag away) makes it a normal floating box for free.
+  const flapCollapsed = (it) => !!(it && it.kind === "frame" && it.flap && it.sticky && !flapOpen(it.id));
+  function flapOpen(id) { return !!topLayerDoc()?.flaps?.[id]?.open; }
+  function setFlapOpen(id, open) { changeTop((d) => { if (!d.flaps) d.flaps = {}; if (!d.flaps[id]) d.flaps[id] = {}; d.flaps[id].open = !!open; }); }
+  // Escape / a click on empty canvas collapses any open flap (per-viewer)
+  function closeOpenFlaps() {
+    const f = topLayerDoc()?.flaps;
+    if (!f) return;
+    const openIds = Object.keys(f).filter((k) => f[k] && f[k].open);
+    if (!openIds.length) return;
+    changeTop((d) => { for (const k of openIds) if (d.flaps && d.flaps[k]) d.flaps[k].open = false; });
+  }
+  // a collapsed flap's TAB placement: a compact tab FLUSH to its sticky edge
+  // (inset 0, unlike the drawer's 12), t along the edge, converted into the
+  // item's home-layer coords exactly like stickyPlace (counter-scaled on a
+  // camera-home layer). Vertical edges swap the tab's axes (the name reads
+  // top-to-bottom there — CSS writing-mode).
+  const FLAP_TAB = { long: 112, thick: 26 };
+  const flapTabPlace = (it) => {
+    vpTick();
+    const edge = (it.sticky && it.sticky.edge) || "left";
+    const vert = edge === "left" || edge === "right";
+    const w = vert ? FLAP_TAB.thick : FLAP_TAB.long, h = vert ? FLAP_TAB.long : FLAP_TAB.thick;
+    const { w: W, h: H } = viewportSize();
+    const s = resolveStickyScreen(it.sticky, w, h, W, H, 0); // flush to the edge
+    const chain = [layerBoxOf(itemHomeLayer(it))];
+    const l = chainToLocal(chain, s, boxEnv);
+    return { x: l.x, y: l.y, w, h, k: 1 / (chainScale(chain, boxEnv) || 1), edge };
   };
 
   // the canvas CONTEXT (camera/pointer/tool/brush/selection) via provide/accept
@@ -281,6 +345,7 @@ export function Canvas(props) {
   const [shapeMenuOpen, setShapeMenuOpen] = createSignal(false); // shape overflow menu
   const [extraShape, setExtraShape] = createSignal("line"); // last-used overflow shape, surfaced in the bar
   const [dropTarget, setDropTarget] = createSignal(null); // frame id a dragged item would drop INTO
+  const [stickyHint, setStickyHint] = createSignal(null); // viewport edge a dragged window is in dock range of
   const [escapeId, setEscapeId] = createSignal(null); // a box child whose CENTRE has left it — render it unclipped (escaping)
   const [panActive, setPanActive] = createSignal(false); // an in-flight pan/zoom — overlay captures wheel so it wins over tool scroll
   const [arrowHover, setArrowHover] = createSignal(null); // item id an arrow end would bind to
@@ -305,7 +370,13 @@ export function Canvas(props) {
   // `undefined` for the rest of the frame the ref appears in.
   const readViewportRect = perFrame(() => { perfCount("gbcr"); return viewportRef.getBoundingClientRect(); });
   const viewportRect = () => (viewportRef ? readViewportRect() : undefined);
-  try { setDatatypes(getRegistry("patchwork:datatype").filter((d) => !d.unlisted)); } catch (e) { log.warn("datatypes", e); }
+  // offsetWidth/offsetHeight are ALSO forced-layout reads, and the sticky/anchor
+  // paths used to take them per POINTERMOVE (stickySnapFor/resolveItemPos) — with
+  // styles dirtied every frame by the gesture's own doc write, that's a synchronous
+  // reflow of the whole canvas (embeds included) per event. Same per-frame cache.
+  const readViewportSize = perFrame(() => { perfCount("vpSize"); return { w: viewportRef.offsetWidth || 0, h: viewportRef.offsetHeight || 0 }; });
+  const viewportSize = () => (viewportRef ? readViewportSize() : { w: 0, h: 0 });
+  setDatatypes(catalogDatatypes()); // the catalog's placeable-datatypes census
   // custom brushes live in the `sketchy:brush` registry. We list them in the
   // shape overflow, and load each brush MODULE (its stroke config / behaviour)
   // so drawing with the brush uses it.
@@ -397,18 +468,41 @@ export function Canvas(props) {
   function loadDoc(url) { if (!docHandleCache.has(url)) docHandleCache.set(url, repo.find(url).catch(() => null)); return docHandleCache.get(url); }
   const datatypeCache = new Map();
   function loadDatatype(type) { if (!datatypeCache.has(type)) { try { datatypeCache.set(type, getRegistry("patchwork:datatype").load(type).catch(() => null)); } catch { datatypeCache.set(type, Promise.resolve(null)); } } return datatypeCache.get(type); }
-  // frames are CANVAS-layer containers; from a non-base layer the coords are a different
-  // space, so never route an item into a frame (it'd mismatch screen coords vs world bounds).
-  const frameAtWorld = (wx, wy, exclude) => { if (activeLayerId() !== baseLayer()?.id) return null; let f = null; for (const it of rootItems()) if (it.kind === "frame" && it.id !== exclude && itemVisible(it) && pointInFrame(it, wx, wy)) f = it; return f; };
+  // a frame is a container ON ITS HOME LAYER: the (wx,wy) being tested is in the
+  // ACTIVE layer's coords, so only frames whose home is the active layer can
+  // match (a canvas frame's world coords would mismatch an overlay-space point).
+  // This is the extend-frames decision: FLAPS are frames placeable on any layer,
+  // so containment works wherever the flap lives — an overlay flap takes drops
+  // while you arrange. A STUCK frame's stored x/y are dormant; test its RESOLVED
+  // position (and return a resolved copy so downstream worldToLocal math is
+  // right). A COLLAPSED flap (an edge tab) is never a drop target.
+  const frameAtWorld = (wx, wy, exclude) => {
+    let f = null;
+    for (const it of rootItems()) {
+      if (it.kind !== "frame" || it.id === exclude) continue;
+      if (itemHomeLayer(it) !== activeLayerId()) continue;
+      if (flapCollapsed(it)) continue;
+      const eff = effFrame(it);
+      if (pointInFrame(eff, wx, wy)) f = eff;
+    }
+    return f;
+  };
+  // a STUCK frame (an open flap drawer) keeps its stored x/y DORMANT — every
+  // geometry computation against a surface's frame must use the RESOLVED dock
+  // position, or gestures/drops on the drawer's children land offset by the
+  // dormant coords. One seam for all of them.
+  const effFrame = (f) => (f && isStuck(f) ? { ...f, ...resolveItemPos(f) } : f);
   // the TOPMOST root item at (wx,wy) that owns a coordinate space (a frame OR a map) — the
   // draw-claim boundary. Rotation-aware containment via worldAnchor; base layer only, like frames.
   const spatialBoxAtWorld = (wx, wy, exclude) => {
     if (activeLayerId() !== baseLayer()?.id) return null;
     let hit = null;
     for (const it of rootItems()) {
-      if (!ownsSpace(it) || it.id === exclude || !itemVisible(it)) continue;
-      const a = worldAnchor(it, wx, wy);
-      if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) hit = it;
+      if (!ownsSpace(it) || it.id === exclude) continue;
+      if (flapCollapsed(it)) continue; // a collapsed flap tab is not a draw target
+      const eff = effFrame(it); // a stuck box's stored x/y are dormant
+      const a = worldAnchor(eff, wx, wy);
+      if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) hit = eff;
     }
     return hit;
   };
@@ -443,17 +537,25 @@ export function Canvas(props) {
     if (route === "annotation") return { targetBox: box };
     return {};
   }
-  // topmost root item an arrow endpoint can bind to (not strokes/lines/arrows)
+  // topmost root item an arrow endpoint can bind to (not strokes/lines/arrows).
+  // ONLY items whose HOME is the active layer — (wx,wy) is in that layer's
+  // coords, and a hidden overlay widget's stored x/y are corner OFFSETS, so
+  // hit-testing raw coords across all layers bound arrows to invisible chrome
+  // with nonsense geometry. Positions resolve like the marquee: parented marks
+  // project to world, anchored/stuck windows resolve to absolute coords.
   const bindAtWorld = (wx, wy) => {
     const items = rootItems();
     for (let i = items.length - 1; i >= 0; i--) {
-      const it = items[i];
-      if (it.kind === "stroke" || !itemVisible(it)) continue;
+      let it = items[i];
+      if (it.kind === "stroke") continue;
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) continue;
+      if (itemHomeLayer(it) !== activeLayerId()) continue;
+      it = projected(it);
+      if (isStuck(it)) it = { ...it, ...resolveItemPos(it), anchor: undefined, sticky: undefined };
       // hit-test the ROTATED shape (anchor in [0,1] ⇔ inside it), so you only
       // bind when over the actual tool and the stored anchor is in-bounds
       const a = worldAnchor(it, wx, wy);
-      if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) return it.id;
+      if (a.x >= 0 && a.x <= 1 && a.y >= 0 && a.y <= 1) return items[i].id;
     }
     return null;
   };
@@ -514,16 +616,17 @@ export function Canvas(props) {
   // "to the ACTIVE layer's item space": client px → viewport px → the layer's coords
   // via its transform. On the base canvas layer this is the camera inverse (as before);
   // on the viewport-pinned overlay it's screen coords; on a map it'd be lat/lon.
-  function toWorld(clientX, clientY) {
+  // `layerId` overrides the target space (presence broadcasts base-world — see trackCursor).
+  function toWorld(clientX, clientY, layerId) {
     const r = viewportRect();
     const sx = viewportRef.offsetWidth ? r.width / viewportRef.offsetWidth : 1;
     const sy = viewportRef.offsetHeight ? r.height / viewportRef.offsetHeight : 1;
     // input goes through the SAME box composer as output (one projection path): screen → the
     // active layer's local space. The layer box is proven-equivalent to txFor(layer).toItem.
-    return chainToLocal([layerBoxOf(activeLayerId())], { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy }, boxEnv);
+    return chainToLocal([layerBoxOf(layerId || activeLayerId())], { x: (clientX - r.left) / sx, y: (clientY - r.top) / sy }, boxEnv);
   }
-  function toSpace(clientX, clientY, frame) { const w = toWorld(clientX, clientY); const [x, y] = worldToLocal(frame, w.x, w.y); return { x, y }; }
-  function itemCenterWorld(it, frame) { const b = itemBounds(it); return localToWorld(frame, b.x + b.w / 2, b.y + b.h / 2); }
+  function toSpace(clientX, clientY, frame) { const w = toWorld(clientX, clientY); const [x, y] = worldToLocal(effFrame(frame), w.x, w.y); return { x, y }; }
+  function itemCenterWorld(it, frame) { const b = itemBounds(it); return localToWorld(effFrame(frame), b.x + b.w / 2, b.y + b.h / 2); }
 
   // resolve any colour (var() chains, color-mix(), light-dark()) to a concrete
   // value for rough.js, by letting the browser compute it on a probe element.
@@ -545,11 +648,14 @@ export function Canvas(props) {
   let gesture = null;
 
   function onItemDown(it, surface, e) {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || gestureLive()) return; // FIRST POINTER WINS — a second finger can't start/steal a gesture
     e.stopPropagation();
-    // grabbing a title/border takes focus off any embedded tool
+    // grabbing a title/border takes focus off any embedded tool / typing target —
+    // the gesture's preventDefault blocks the NATIVE focus transfer, so without
+    // this an embed's editor kept focus and the next Backspace read as typing
+    // (isTypingTarget) instead of deleting the selection
     const a = document.activeElement;
-    if (a && a.closest && a.closest(".ns-doc-body")) a.blur();
+    if (a && a.blur && isTypingTarget(a, viewportRef)) a.blur();
     if (surface.id !== activeId()) { setActiveId(surface.id); setSelected([]); }
     if (tool() === "eraser") {
       // rubbing: delete the pressed item, then keep the erase gesture going so the
@@ -561,6 +667,14 @@ export function Canvas(props) {
       return;
     }
     if (!selectish()) return;
+    // SELECTION STAYS WITHIN THE ACTIVE LAYER (a move computes deltas in ONE
+    // layer's space — see switchLayer). Inactive layers' items are still
+    // clickable (pointer-events:none on the container doesn't inert descendants
+    // that set their own auto, e.g. .ns-hit), so picking an item that lives on
+    // another layer first SWITCHES to its home layer — the click does what it
+    // meant, the invariant holds, and the selection geometry/moves are computed
+    // in the item's own space.
+    if (surface.id === "root") { const home = itemHomeLayer(it); if (home !== activeLayerId() && layersList().some((l) => l.id === home)) switchLayer(home); }
     setSelectedWire(null); // selecting an item drops any wire selection
     // inside an entered group, a click picks the individual member; otherwise a
     // grouped item selects its whole group (clicking elsewhere exits the group)
@@ -586,6 +700,10 @@ export function Canvas(props) {
     if (parentBoxOf(o)) return o.kind === "stroke"
       ? { parent: o.parent, points: (o.points || []).map((p) => p.slice()) }
       : { parent: o.parent, x: o.x, y: o.y, w: o.w, h: o.h, cx: o.cx, cy: o.cy };
+    // a STUCK window's origin is its resolved home-space position; the first real
+    // move UNSTICKS it (delete sticky/anchor) and drags from there — no jump. (Size
+    // stays the stored w/h, so a camera-home window loses its counter-scale on unstick.)
+    if (isStuck(o)) { const p = stickyPlace(o); return { x: p.x, y: p.y, unstick: true }; }
     return o.kind === "stroke" ? { x: o.x || 0, y: o.y || 0 } : o.kind === "sketch" ? { nodes: o.nodes.map((n) => ({ x: n.x, y: n.y })) } : { x: o.x, y: o.y, cx: o.cx, cy: o.cy };
   };
 
@@ -700,6 +818,7 @@ export function Canvas(props) {
   const single = createMemo(() => (selected().length === 1 ? itemById(selected()[0]) : null));
 
   function startResizeSel(hx, hy, e) {
+    if (gestureLive()) return; // first pointer wins (see gestureListeners)
     e.stopPropagation(); e.preventDefault();
     if (selected().length > 1) return startGroupResize(hx, hy, e);
     const it0 = single();
@@ -708,10 +827,13 @@ export function Canvas(props) {
     const frame = surface.frame;
     const pb = parentBoxOf(it0); // a parented mark resizes in WORLD, written back box-local (applyResize)
     const it = projected(it0);
-    // anchored widgets store a corner OFFSET; the gesture runs in absolute screen space, so
-    // resolve the bounds first and convert back to an offset on write (applyResize).
-    const rp = resolveItemPos(it);
-    const ob = it.anchor ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
+    // a STUCK window (sticky, or a legacy anchor read as sticky) renders
+    // counter-scaled — it holds its SCREEN size, so its stored w/h ARE screen
+    // px. Its resize gesture therefore runs in SCREEN space (dock rect +
+    // viewport-px pointer); anything else would write sizes a zoom factor off
+    // what the handle drag looked like.
+    const stuck = isStuck(it) && surface.id === "root";
+    const ob = stuck ? { ...itemBounds(it), ...stickyScreen(it) } : itemBounds(it);
     const r = rad(it.rotation || 0);
     const orig = it.kind === "stroke" ? strokeWorldPoints(it) // resize in WORLD space; result flattens to origin 0
       : it.kind === "text" ? { x: it.x, y: it.y, w: it.w, h: it.h, fontSize: it.fontSize || 20, wrap: !!it.wrap }
@@ -720,7 +842,7 @@ export function Canvas(props) {
     const txn = beginTxn(surface.handle);
     const move = (ev) => {
       perfCount("gestureEvent");
-      const p = toSpace(ev.clientX, ev.clientY, frame);
+      const p = stuck ? localXY(ev) : toSpace(ev.clientX, ev.clientY, frame);
       const cx0 = ob.x + ob.w / 2, cy0 = ob.y + ob.h / 2;
       const [plx, ply] = rot(p.x - cx0, p.y - cy0, -r);
       let minx = -ob.w / 2, maxx = ob.w / 2, miny = -ob.h / 2, maxy = ob.h / 2;
@@ -730,7 +852,7 @@ export function Canvas(props) {
       const [ncx, ncy] = rot((minx + maxx) / 2, (miny + maxy) / 2, r);
       scheduleDocWrite(() => applyResize(surface.handle, it.id, ob, { x: cx0 + ncx - nw / 2, y: cy0 + ncy - nh / 2, w: nw, h: nh }, orig, it.kind, pb));
     };
-    gestureListeners(move, () => endTxn(txn, "resize"));
+    gestureListeners(move, () => endTxn(txn, "resize"), null, e.pointerId);
   }
 
   function applyResize(h, id, ob, nb, orig, kind, pb) {
@@ -745,9 +867,10 @@ export function Canvas(props) {
       else if (kind === "shape") { const x1 = mapX(orig.x), y1 = mapY(orig.y), x2 = mapX(orig.x + orig.w), y2 = mapY(orig.y + orig.h); o.x = x1; o.y = y1; o.w = x2 - x1; o.h = y2 - y1; rebox(o); }
       else if (kind === "text") { o.fontSize = Math.max(6, Math.round((orig.fontSize || 20) * (ob.h > 0.001 ? nb.h / ob.h : 1))); o.x = nb.x; o.y = nb.y; if (orig.wrap) o.w = nb.w; /* height re-measures from content */ }
       else {
-        let nx = mapX(orig.x), ny = mapY(orig.y);
-        if (o.anchor) { const off = toAnchorOffset(o, nx, ny, nb.w, nb.h); nx = off.x; ny = off.y; } // absolute → corner offset
-        o.x = nx; o.y = ny; o.w = nb.w; o.h = nb.h;
+        // a legacy corner-anchored widget persists its normalized sticky form the
+        // first time a gesture rewrites its geometry — interactions write sticky only
+        if (o.anchor) { const { w: W, h: H } = viewportSize(); o.sticky = stickyOf(o, W, H); delete o.anchor; }
+        o.x = mapX(orig.x); o.y = mapY(orig.y); o.w = nb.w; o.h = nb.h;
       }
     });
   }
@@ -755,7 +878,7 @@ export function Canvas(props) {
   const selWorldBounds = createMemo(() => {
     const ids = selected();
     if (ids.length < 2) return null;
-    const frame = active().frame;
+    const frame = effFrame(active().frame);
     let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
     for (const id of ids) { const it = projected(itemById(id)); if (!it) continue; const b = itemBounds(it); const [wx, wy] = localToWorld(frame, b.x, b.y); minx = Math.min(minx, wx); miny = Math.min(miny, wy); maxx = Math.max(maxx, wx + b.w); maxy = Math.max(maxy, wy + b.h); }
     return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
@@ -766,7 +889,7 @@ export function Canvas(props) {
   const selItemOutlines = createMemo(() => {
     const ids = selected();
     if (ids.length < 2) return [];
-    const frame = active().frame, fr = frame ? frame.rotation || 0 : 0;
+    const frame = effFrame(active().frame), fr = frame ? frame.rotation || 0 : 0;
     return ids.map((id) => {
       const it = projected(itemById(id)); if (!it) return null;
       const b = itemBounds(it);
@@ -798,10 +921,10 @@ export function Canvas(props) {
 
   function startGroupResize(hx, hy, e) {
     const surface = active();
-    const txn = beginTxn(surface.handle);
     const ids = selected();
     const U = selWorldBounds();
     if (!U) return;
+    const txn = beginTxn(surface.handle); // after the guard — beginTxn snapshots the whole doc
     const snaps = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || parentBoxOf(o)) return null; /* parented marks sit out group transforms (their coords are box-local) */ return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, kind: o.kind, x: o.x, y: o.y, w: o.w, h: o.h }; }).filter(Boolean);
     const move = (ev) => {
       perfCount("gestureEvent");
@@ -822,7 +945,7 @@ export function Canvas(props) {
         }
       }));
     };
-    gestureListeners(move, () => endTxn(txn, "transform"));
+    gestureListeners(move, () => endTxn(txn, "transform"), null, e.pointerId);
   }
 
   // rotate a multi-selection as one: each item orbits the group centre AND spins
@@ -830,10 +953,10 @@ export function Canvas(props) {
   function startGroupRotate(e) {
     e.stopPropagation(); e.preventDefault();
     const surface = active(), frame = surface.frame;
-    const txn = beginTxn(surface.handle);
     const U = selWorldBounds();
     if (!U) return;
-    const [gcx, gcy] = worldToLocal(frame, U.x + U.w / 2, U.y + U.h / 2); // group centre (surface-local)
+    const txn = beginTxn(surface.handle); // after the guard — beginTxn snapshots the whole doc
+    const [gcx, gcy] = worldToLocal(effFrame(frame), U.x + U.w / 2, U.y + U.h / 2); // group centre (surface-local)
     const snaps = selected().map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || parentBoxOf(o)) return null; /* parented marks sit out group transforms */ return o.kind === "stroke" ? { id, kind: "stroke", points: strokeWorldPoints(o) } : { id, x: o.x, y: o.y, w: o.w, h: o.h, rotation: o.rotation || 0, cx: o.cx, cy: o.cy }; }).filter(Boolean);
     const s0 = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s0.y - gcy, s0.x - gcx);
@@ -856,7 +979,7 @@ export function Canvas(props) {
         }
       }));
     };
-    gestureListeners(move, () => endTxn(txn, "transform"));
+    gestureListeners(move, () => endTxn(txn, "transform"), null, e.pointerId);
   }
 
   // double-clicking the rotate knob resets the selection's rotation to 0
@@ -865,6 +988,7 @@ export function Canvas(props) {
   }
 
   function startRotate(e) {
+    if (gestureLive()) return; // first pointer wins (see gestureListeners)
     if (selected().length > 1) return startGroupRotate(e);
     e.stopPropagation(); e.preventDefault();
     const it = projected(single()); // parented: rotate about the WORLD-projected centre (rotation is a plain field either way)
@@ -873,9 +997,9 @@ export function Canvas(props) {
     const txn = beginTxn(surface.handle);
     const frame = surface.frame;
     // like startResizeSel: rotate about the item BOUNDS centre (strokes/up-left shapes
-    // have bounds ≠ (x,y)); anchored ⇒ absolute centre
+    // have bounds ≠ (x,y)); stuck ⇒ absolute centre
     const rp = resolveItemPos(it);
-    const ob = it.anchor ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
+    const ob = isStuck(it) ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
     const cx = ob.x + ob.w / 2, cy = ob.y + ob.h / 2;
     const s = toSpace(e.clientX, e.clientY, frame);
     const startAng = Math.atan2(s.y - cy, s.x - cx);
@@ -887,13 +1011,14 @@ export function Canvas(props) {
       if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
       scheduleDocWrite(() => surface.handle.change((d) => { const o = d.items.find((x) => x.id === it.id); if (o) o.rotation = deg; }));
     };
-    gestureListeners(move, () => endTxn(txn, "transform"));
+    gestureListeners(move, () => endTxn(txn, "transform"), null, e.pointerId);
   }
 
   // drag an endpoint (or a line's bezier control point). for arrows, dropping an
   // end over a bindable shape attaches it there (snaps to that shape's facing
   // edge midpoint); off it → detach.
   function startSegEnd(which, e) {
+    if (gestureLive()) return; // first pointer wins (see gestureListeners)
     e.stopPropagation(); e.preventDefault();
     const it = single();
     if (!it || it.kind !== "shape" || (it.type !== "arrow" && it.type !== "line")) return;
@@ -901,10 +1026,11 @@ export function Canvas(props) {
     const surface = active();
     const frame = surface.frame;
     const pb = parentBoxOf(it); // a parented segment's endpoints live in its box's space
+    const txn = beginTxn(surface.handle); // endpoint drags are undoable like every other gesture
     const move = (ev) => {
       perfCount("gestureEvent");
       const p = toWorld(ev.clientX, ev.clientY);
-      let [lx, ly] = worldToLocal(frame, p.x, p.y);
+      let [lx, ly] = worldToLocal(effFrame(frame), p.x, p.y);
       if (pb) { const l = chainToLocal([itemBox(pb)], { x: lx, y: ly }, boxEnv); lx = l.x; ly = l.y; }
       const targetId = (isArrow && which !== "control" && !frame && !pb) ? bindAtWorld(p.x, p.y) : null;
       const target = targetId && rootItems().find((x) => x.id === targetId);
@@ -933,7 +1059,7 @@ export function Canvas(props) {
         }
       }));
     };
-    gestureListeners(move, () => setArrowHover(null));
+    gestureListeners(move, () => { setArrowHover(null); endTxn(txn, "segment"); }, null, e.pointerId);
   }
 
   function reorder(mode) {
@@ -954,6 +1080,9 @@ export function Canvas(props) {
   function brushGeometry() {
     const segments = [], points = [];
     for (const it of rootItems()) {
+      // snap only to the ACTIVE layer's items — another layer's stored coords are
+      // in a different space (same class of bug as bindAtWorld, lower stakes)
+      if (itemHomeLayer(it) !== activeLayerId()) continue;
       const b = itemBounds(it);
       if (it.kind === "sketch") {
         // sketch nodes are the prime snap targets — landing on one shares a pivot
@@ -1021,6 +1150,7 @@ export function Canvas(props) {
         if (w < 40 || h < 40) { w = lens ? 220 : 360; h = lens ? 96 : 280; } // a click → default size
         if (g.placeTool === "box") createDocAt("folder", x, y, w, h, "Box");
         else if (pl && pl.what === "doc") createDocAt(pl.descriptor.id, x, y, w, h);
+        else if (pl && pl.what === "flap") createFlapAt(x, y, w, h);
         else if (pl && (pl.what === "editor" || pl.what === "lens")) pushItem(frameAtWorld(x, y), makeEditorItem({ id: "ed-" + uid(), editorId: pl.descriptor.id, x, y, w, h, inlets: {} }));
         setPlacing(null); setPlaceGhost(null);
       },
@@ -1213,7 +1343,7 @@ export function Canvas(props) {
   // stopPropagation; we walk composedPath() so the real port element is found even
   // when the event is retargeted at an embedded-tool boundary.
   function onPointerDownCapture(e) {
-    if (e.button !== 0 || tool() !== "wire") return;
+    if (e.button !== 0 || tool() !== "wire" || gestureLive()) return; // first pointer wins
     const path = (e.composedPath && e.composedPath()) || [e.target];
     if (viewportRef && !path.includes(viewportRef)) return; // not this canvas
     let port = null;
@@ -1255,7 +1385,7 @@ export function Canvas(props) {
   // now owned by the claiming canvas. Frames don't need this: their bodies bubble through
   // to onPointerDown, which routes via the same drawTarget.
   function onDrawClaimCapture(e) {
-    if (e.button !== 0 || gesture) return;
+    if (e.button !== 0 || gesture || gestureLive()) return; // first pointer wins (resize/rotate gestures set no `gesture`)
     const t = tool();
     if (!toolIsClaimable(t)) return; // select/hand/wire/text/place: never claimed
     const path = (e.composedPath && e.composedPath()) || [e.target];
@@ -1280,6 +1410,7 @@ export function Canvas(props) {
 
   // ---- canvas-level gestures (root surface) ---------------------------
   function onPointerDown(e) {
+    if (gestureLive()) return; // first pointer wins (see gestureListeners)
     if (e.button === 1 || (e.button === 0 && tool() === "hand")) return startPan(e);
     if (e.button !== 0) return;
     // clicking anywhere off a focused editor (text item OR a box/doc title
@@ -1297,9 +1428,14 @@ export function Canvas(props) {
     }
     const p = toWorld(e.clientX, e.clientY);
     if (selectish()) {
+      // the marquee's preventDefault (beginGesture) blocks the native focus
+      // transfer — drop any typing-target focus (an embed's editor, a panel
+      // input) so Backspace deletes the fresh selection instead of typing
+      if (ae && ae.blur && isTypingTarget(ae, viewportRef)) ae.blur();
       if (!e.shiftKey) setSelected([]);
       setSelectedWire(null); // clicking empty canvas drops a selected wire too
       setEnteredGroup(null); // clicking empty canvas exits a group
+      closeOpenFlaps(); // clicking the canvas collapses an open flap drawer
       setActiveId("root");
       gesture = { kind: "marquee", x0: p.x, y0: p.y, add: selected() };
       setDraft({ kind: "marquee", x: p.x, y: p.y, w: 0, h: 0 });
@@ -1360,31 +1496,69 @@ export function Canvas(props) {
     pushItem(frameAtWorld(world.x, world.y), makeEditorItem({ id: "ed-" + uid(), editorId: descriptor.id, x: world.x, y: world.y, w: descriptor.lens ? 220 : 320, h: descriptor.lens ? 96 : 240, inlets: {} }));
   }
 
-  // PERF.md Phase 1 — every gesture's doc write goes through ONE shared rAF
-  // batch (latest state wins): raw pointer events stay imperative, the
-  // handle.change lands ≤1/frame. `docWrite` counts actual post-coalesce writes.
-  const gestureWrite = rafBatch();
-  const scheduleDocWrite = (write) => gestureWrite.schedule(() => { perfCount("docWrite"); write(); });
-  // each gesture registers its window pointermove/pointerup pair here so an
-  // unmount mid-gesture detaches them (and drops the pending write)
+  // PERF.md Phase 1 — every gesture's doc writes coalesce through ONE rAF batch
+  // (latest state wins): raw pointer events stay imperative, the handle.change
+  // lands ≤1/frame. The batch is PER GESTURE (created in gestureListeners): a
+  // shared batch let another gesture's closure evict this gesture's FINAL write.
+  // `gestureWrite` points at the ACTIVE gesture's batch; `docWrite` counts actual
+  // post-coalesce writes. (No live gesture ⇒ the write runs immediately.)
+  let gestureWrite = null;
+  const scheduleDocWrite = (write) => {
+    const run = () => { perfCount("docWrite"); write(); };
+    if (gestureWrite) gestureWrite.schedule(run); else run();
+  };
+  // each gesture registers its window pointermove/pointerup/pointercancel set
+  // here so an unmount mid-gesture detaches them (and drops the pending write).
+  //
+  // MULTI-TOUCH DESIGN: ONE gesture at a time, FIRST POINTER WINS. The initiating
+  // pointerId gates every event (a second finger neither drives nor ends the
+  // gesture), and every gesture starter declines while one is live (gestureLive).
+  // Chosen deliberately over true concurrent gestures: `gesture` is single module
+  // state and the selection/undo-txn semantics all assume one unit — enforcing
+  // the single-gesture invariant beats heuristically merging concurrent ones.
   const liveGestures = [];
-  function gestureListeners(move, up) {
+  const gestureLive = () => liveGestures.length > 0;
+  function gestureListeners(move, up, cancel, pointerId) {
+    const batch = rafBatch();
+    gestureWrite = batch;
+    // events with no pointerId (mouse-event test doubles) always match
+    const mine = (e) => pointerId == null || e.pointerId == null || e.pointerId === pointerId;
     const detach = () => {
-      window.removeEventListener("pointermove", move);
+      batch.cancel(); // no-op after a flush; drops the pending write on cancel/unmount
+      if (gestureWrite === batch) gestureWrite = null;
+      window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
       const i = liveGestures.indexOf(detach);
       if (i >= 0) liveGestures.splice(i, 1);
     };
+    const onMove = (e) => { if (mine(e)) move(e); };
     // FLUSH BEFORE the up handler's endTxn — the gesture must end with the doc
     // fully current or the undo diff misses the final position
-    const onUp = (e) => { detach(); gestureWrite.flush(); up(e); };
-    window.addEventListener("pointermove", move);
+    const onUp = (e) => { if (!mine(e)) return; batch.flush(); detach(); up(e); };
+    // a CANCELLED gesture (touch/pen interrupted by the OS/browser) still settles:
+    // the pending write is DROPPED (the doc keeps the last landed state) and the
+    // txn closes via `cancel` (defaults to the up handler). Closing an unchanged
+    // txn is safe: diffCommand returns null and history.push drops it, so a
+    // cancelled gesture never pushes an empty undo entry.
+    const onCancel = (e) => { if (!mine(e)) return; detach(); (cancel || up)(e); };
+    window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
     liveGestures.push(detach);
   }
-  onCleanup(() => { gestureWrite.cancel(); for (const d of liveGestures.splice(0)) d(); });
+  onCleanup(() => { for (const d of liveGestures.splice(0)) d(); });
 
-  function beginGesture(e) { e.preventDefault(); gestureListeners(onPointerMove, onPointerUp); }
+  function beginGesture(e) { e.preventDefault(); gestureListeners(onPointerMove, onPointerUp, onPointerCancel, e.pointerId); }
+  // the canonical gesture path's ABORT: keep what already landed (the txn diff
+  // records it; unchanged ⇒ no entry) but run NO drop routing — a cancelled
+  // pointer didn't finish anywhere meaningful, so no reparent/dock/map-drop.
+  function onPointerCancel() {
+    const g = gesture; gesture = null;
+    setDropTarget(null); setEscapeId(null); setStickyHint(null);
+    setDraft(null); setGuides(null); setWireDraft(null); setArrowHover(null);
+    if (g && (g.kind === "move" || g.kind === "brush")) endTxn(g.txn, g.kind);
+  }
   function startPan(e) { setFollowing(null); const s = cam(); gesture = { kind: "pan", sx: e.clientX, sy: e.clientY, cx: s.x, cy: s.y }; beginGesture(e); }
 
   function onPointerMove(e) {
@@ -1400,7 +1574,30 @@ export function Canvas(props) {
       const dx = p.x - gesture.start.x, dy = p.y - gesture.start.y;
       const [ldx, ldy] = rot(dx, dy, -rad(gesture.fr));
       const g = gesture; // the deferred write outlives onPointerUp nulling `gesture`
-      scheduleDocWrite(() => g.surface.handle.change((d) => {
+      // UNSTICK SYNCHRONOUSLY on the FIRST real move. The decision was made at gesture
+      // start (moveOrig resolved the docked origin + flagged `unstick`); applying it
+      // must NOT ride the rAF-deferred write: while the delete was pending, the render
+      // path still saw `sticky` and drew the item dock-resolved (resolveStickyScreen)
+      // even as the gesture laid down space coords — two positions fighting, a visible
+      // pin-then-jump whenever rAF lagged the pointer. One immediate change (inside the
+      // gesture txn, so undo restores sticky) deletes `sticky` and writes the resolved
+      // origin; from the first move the item has exactly ONE position: the gesture's.
+      // (Not at pointerdown — a plain click must not undock.)
+      if (!g.unstuck) {
+        g.unstuck = true;
+        const stuck = g.ids.filter((id) => g.orig[id] && g.orig[id].unstick);
+        if (stuck.length) g.surface.handle.change((d) => {
+          for (const id of stuck) {
+            const o = d.items.find((x) => x.id === id); const og = g.orig[id];
+            if (!o || !og) continue;
+            if (o.sticky) delete o.sticky;
+            if (o.anchor) delete o.anchor;
+            o.x = og.x; o.y = og.y;
+          }
+        });
+      }
+      scheduleDocWrite(() => {
+        g.surface.handle.change((d) => {
         for (const id of g.ids) {
           const o = d.items.find((x) => x.id === id); const og = g.orig[id];
           if (!o || !og) continue;
@@ -1422,26 +1619,40 @@ export function Canvas(props) {
           }
           else if (o.kind === "stroke") { o.x = (og.x || 0) + ldx; o.y = (og.y || 0) + ldy; } // translate-only box: bump ORIGIN, points untouched (one tiny op, not the whole array)
           else if (o.kind === "sketch") for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x + ldx; o.nodes[i].y = og.nodes[i].y + ldy; }
+          else if (og.unstick) {
+            // dragging a FORMERLY-STUCK window: the synchronous first-move change above
+            // already deleted `sticky`/`anchor` and wrote the resolved origin; here the
+            // batched write just applies the delta from that origin. (The deletes are
+            // kept as a safety net — e.g. a remote peer re-docking mid-gesture.)
+            if (o.sticky) delete o.sticky;
+            if (o.anchor) delete o.anchor;
+            o.x = og.x + ldx; o.y = og.y + ldy;
+          }
           else {
-            // an anchored widget stores an offset from a viewport corner, so dragging toward
-            // that corner DECREASES the offset — flip the delta per anchored axis.
-            const a = o.anchor;
-            const ax = anchorAxes(a); const sx = ax.right ? -1 : 1, sy = ax.bottom ? -1 : 1;
-            o.x = og.x + sx * ldx; o.y = og.y + sy * ldy; if (og.cx != null) { o.cx = og.cx + ldx; o.cy = og.cy + ldy; }
+            o.x = og.x + ldx; o.y = og.y + ldy; if (og.cx != null) { o.cx = og.cx + ldx; o.cy = og.cy + ldy; }
           }
         }
-      }));
-      setDropTarget(gesture.ids.length === 1 ? moveDropTarget(gesture.surface, gesture.ids[0]) : null);
-      // un-clip a box ONLY once the dragged child's CENTRE has actually left it
-      // (dropping there would put it outside) — so while it's still inside it
-      // stays clipped, and you feel it cross the edge
-      setEscapeId(gesture.surface.frame && gesture.ids.length === 1 && childLeavingBox(gesture.surface, gesture.ids[0]) ? gesture.ids[0] : null);
+        });
+        // the per-move DECORATIONS — drop-target highlight, the sticky edge hint,
+        // the escaping-child unclip — each cost an items scan + chain math (and the
+        // snap test a viewport read). They used to run per pointermove OUTSIDE the
+        // rAF batch (per event); now they ride the same batched closure, AFTER the
+        // change lands (≤1/frame, reading the fresher post-write state).
+        setDropTarget(g.ids.length === 1 ? moveDropTarget(g.surface, g.ids[0]) : null);
+        // the edge-dock hint: show which viewport edge the dragged window would stick to
+        setStickyHint(g.ids.length === 1 ? (stickySnapFor(g.surface, g.ids[0])?.edge || null) : null);
+        // un-clip a box ONLY once the dragged child's CENTRE has actually left it
+        // (dropping there would put it outside) — so while it's still inside it
+        // stays clipped, and you feel it cross the edge
+        setEscapeId(g.surface.frame && g.ids.length === 1 && childLeavingBox(g.surface, g.ids[0]) ? g.ids[0] : null);
+      });
+      gesture.moved = true; // a real move happened — the drop may dock/undock (sticky)
     }
   }
 
   function onPointerUp(e) {
     const g = gesture; gesture = null;
-    setDropTarget(null); setEscapeId(null);
+    setDropTarget(null); setEscapeId(null); setStickyHint(null);
     if (!g) return;
     if (g.kind === "wire") {
       setWireDraft(null);
@@ -1463,6 +1674,7 @@ export function Canvas(props) {
         g.surface.handle.change((dd) => { for (const id of g.ids) { const o = dd.items.find((x) => x.id === id); const og = g.orig[id]; if (!o || !og) continue; if (o.kind === "stroke") { o.x = og.x || 0; o.y = og.y || 0; } else if (o.kind === "sketch") { for (let i = 0; i < o.nodes.length; i++) { o.nodes[i].x = og.nodes[i].x; o.nodes[i].y = og.nodes[i].y; } } else { o.x = og.x; o.y = og.y; } } });
       } else if (dropOntoMap(e.clientX, e.clientY, g.surface, g.ids)) { /* dropped onto a map → geo pin(s) */ }
       else if (g.ids.length === 1 && maybeRebox(g.surface, g.ids[0])) { /* annotation drag-out / drag-in (box-transform) */ }
+      else if (g.moved && g.ids.length === 1 && applyStickySnap(g.surface, g.ids[0])) { /* docked to a viewport edge (sticky) */ }
       else if (selected().length === 1) maybeReparent(g.surface, selected()[0]);
       if (!links.length) endTxn(g.txn, "move"); // record the move for undo (in-surface moves; revert/drag-out are no-ops)
     }
@@ -1471,12 +1683,12 @@ export function Canvas(props) {
 
   function selectInRect(x0, y0, x1, y1, add) {
     // marquee is in the ACTIVE layer's coordinate space, so only consider items ON that layer
-    // (else a box on the frosted overlay would grab canvas items underneath). Anchored widgets
-    // store a corner OFFSET, so resolve them to absolute coords the screen-space rect can hit.
+    // (else a box on the frosted overlay would grab canvas items underneath). Stuck windows
+    // resolve to absolute coords the screen-space rect can hit.
     const onLayer = rootItems()
-      .filter((it) => itemHomeLayer(it) === activeLayerId()) // HOME = the space the marquee rect is in (the active layer is always visible: edit-reveal)
+      .filter((it) => itemHomeLayer(it) === activeLayerId()) // HOME = the space the marquee rect is in
       .map((it) => projected(it)) // parented marks hit at their world projection
-      .map((it) => (it.anchor ? { ...it, ...resolveItemPos(it), anchor: undefined } : it));
+      .map((it) => (isStuck(it) ? { ...it, ...resolveItemPos(it), anchor: undefined, sticky: undefined } : it));
     const hit = itemsInRect(onLayer, x0, y0, x1, y1);
     setSelected(expandGroups([...new Set([...(add || []), ...hit])]));
   }
@@ -1507,7 +1719,10 @@ export function Canvas(props) {
     if (!mapItem) return false;
     const inst = mapInstanceFor(mapItem.id);
     if (!inst) return false;
-    const links = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || (o.kind !== "doc" && o.kind !== "frame")) return null; const l = surface.folderDoc && (surface.folderDoc.docs || []).find((dl) => dl.url === o.url); return { id, url: o.url, name: l && l.name }; }).filter(Boolean);
+    // name must be a real string — assigning `undefined` throws inside handle.change
+    // (an orphan shape after an undone delete has no folder link). Same fallback as
+    // map-node's own drop path: the url tail, else "untitled".
+    const links = ids.map((id) => { const o = surface.doc.items.find((x) => x.id === id); if (!o || (o.kind !== "doc" && o.kind !== "frame")) return null; const l = surface.folderDoc && (surface.folderDoc.docs || []).find((dl) => dl.url === o.url); return { id, url: o.url, name: (l && l.name) || (o.url ? String(o.url).replace(/^automerge:/, "").slice(0, 8) : "untitled") }; }).filter(Boolean);
     if (!links.length) return false;
     const ll = inst.mouseEventToLatLng({ clientX, clientY });
     const lh = rootLayoutH();
@@ -1561,12 +1776,38 @@ export function Canvas(props) {
     return !(over && over.kind === "frame");
   }
 
+  // ── the STICKY drop test: would this dragged window dock to a viewport edge? ─
+  // Root windows only (doc/editor — the things with window chrome); the rect is
+  // projected to SCREEN through the item's home layer, so the ~24px threshold is
+  // screen-true at any zoom. Pure math in sticky.js.
+  function stickySnapFor(surface, id) {
+    if (surface.id !== "root") return null;
+    const it = (surface.doc?.items || []).find((x) => x.id === id);
+    // windows (doc/editor) dock; so does a FLAP frame (docking is what collapses it to a tab)
+    if (!it || (it.kind !== "doc" && it.kind !== "editor" && !(it.kind === "frame" && it.flap)) || it.parent) return null;
+    const { w: W, h: H } = viewportSize();
+    if (W < 60 || H < 60) return null; // no viewport (pre-mount/headless) — never snap
+    const pos = resolveItemPos(it);
+    const chain = [layerBoxOf(itemHomeLayer(it))];
+    const p = chainToOuter(chain, pos, boxEnv);
+    const k = chainScale(chain, boxEnv) || 1;
+    return stickyFromRect(p.x, p.y, (it.w || 0) * k, (it.h || 0) * k, W, H);
+  }
+  // dock the dropped window: write `sticky: { edge, t }` (the stored x/y go
+  // dormant until it's dragged off the edge again). Inside the move txn ⇒ undoable.
+  function applyStickySnap(surface, id) {
+    const snap = stickySnapFor(surface, id);
+    if (!snap) return false;
+    surface.handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) { if (o.anchor) delete o.anchor; o.sticky = { edge: snap.edge, t: snap.t }; } });
+    return true;
+  }
+
   function moveDropTarget(srcSurface, id) {
     const it = srcSurface.doc.items.find((x) => x.id === id);
     if (!it) return null;
     if (parentBoxOf(it)) return null; // a parented mark's drop routing is maybeRebox's
     const b = itemBounds(it);
-    const [wx, wy] = localToWorld(srcSurface.frame, b.x + b.w / 2, b.y + b.h / 2);
+    const [wx, wy] = localToWorld(effFrame(srcSurface.frame), b.x + b.w / 2, b.y + b.h / 2);
     const tf = frameAtWorld(wx, wy, id);
     if (!tf) return null;
     if (it.kind === "frame" && tf.url === it.url) return null;
@@ -1577,9 +1818,9 @@ export function Canvas(props) {
   // move an item between docs when it's dragged into / out of a frame
   async function maybeReparent(srcSurface, id) {
     const it = srcSurface.doc.items.find((x) => x.id === id);
-    if (!it) return;
+    if (!it || isStuck(it)) return; // a STUCK window's stored x/y are dormant — never reparent off them
     const b = itemBounds(it);
-    const [wx, wy] = localToWorld(srcSurface.frame, b.x + b.w / 2, b.y + b.h / 2);
+    const [wx, wy] = localToWorld(effFrame(srcSurface.frame), b.x + b.w / 2, b.y + b.h / 2);
     const targetFrame = frameAtWorld(wx, wy, id);
     if (targetFrame && it.kind === "frame" && targetFrame.url === it.url) return; // a box can't go inside itself
     const srcId = srcSurface.frame ? srcSurface.frame.id : "root";
@@ -1603,7 +1844,10 @@ export function Canvas(props) {
     // dst: add the shape FIRST, then the link (so reconcile sees the shape and doesn't duplicate)
     dstLayout.change((dd) => { if (!itemPresent(dd.items, id)) dd.items.push(clone); });
     if (linkCopy) dstFolder.change((dd) => { if (!dd.docs.some((l) => l.url === linkCopy.url)) dd.docs.push(linkCopy); });
-    setActiveId(dstId);
+    // frame surfaces are keyed by URL (item.jsx childSurface / pushItem), NOT the
+    // frame's item id — the item id would dangle to the root fallback and the
+    // selection would silently point at nothing.
+    setActiveId(targetFrame ? targetFrame.url : "root");
     setSelected([id]);
   }
 
@@ -1661,6 +1905,16 @@ export function Canvas(props) {
     } catch (e) { log.error("createDocAt", e); }
   }
   function selectPlacing(dt) { setPlacing({ what: "doc", descriptor: dt }); setTool("place"); setAddOpen(false); }
+  // ── FLAP creation — the place flow, like drawing a box, but the created frame
+  // carries `flap: true`, a chrome-free sub-space (makeFlapSpace) and is born on
+  // the ACTIVE layer (pushItem's home tags) — flaps are placeable on any layer.
+  function placeFlap() { setPlacing({ what: "flap", descriptor: { id: "flap", name: "flap" } }); setTool("place"); setAddOpen(false); }
+  async function createFlapAt(x, y, w, h) {
+    try {
+      const folder = await makeFlapSpace(repo, "flap");
+      await pushItem(null, { kind: "frame", flap: true, url: folder.url, x, y, w: Math.max(w, 160), h: Math.max(h, 120), rotation: 0 });
+    } catch (e) { log.error("createFlapAt", e); }
+  }
   function linkFor(url) { return (folderDoc.docs || []).find((l) => l.url === url); }
 
   const DND_TYPES = ["text/x-patchwork-dnd", "text/x-patchwork-urls", "text/uri-list", "text/plain"];
@@ -1730,6 +1984,19 @@ export function Canvas(props) {
     if (part.kind === "window" || part.kind === "lens") {
       const d = (part.kind === "lens" ? listLensDescriptors() : listEditors()).find((x) => x.id === part.id);
       if (d) placeNode(d, p);
+      return;
+    }
+    // a FLAP tile → a fresh named sticky container centred on the drop point
+    if (part.kind === "flap") { createFlapAt(p.x - 130, p.y - 90, 260, 180); return; }
+    // a PALETTE → a preconfigured palette window at the drop point: a registered
+    // preset id ("palette:full", any sketchy:palette plugin) resolved through the
+    // registry. Writes are ENTRIES-only (the legacy `config.brushes` id list is a
+    // read-shim). (The ⠿-grip identity payload is gone — copying a palette is
+    // alt-drag; saving one is dropping the copy into the parts flap.)
+    if (part.kind === "palette") {
+      const entries = paletteEntriesById(part.id);
+      const w = Math.min(560, Math.max(entries.length, 1) * 34 + 48), h = 44;
+      pushItem(null, makeEditorItem({ id: "ed-" + uid(), editorId: "palette", x: p.x - w / 2, y: p.y - h / 2, w, h, inlets: {}, config: { entries: JSON.parse(JSON.stringify(entries)) } }));
       return;
     }
     const tf = frameAtWorld(p.x, p.y);
@@ -1837,8 +2104,98 @@ export function Canvas(props) {
     folder.change((d) => { for (const it of fresh) if (!d.docs.some((l) => l.url === it.url)) d.docs.push({ name: it.name || "Document", type: it.type || "", url: it.url }); });
   }
 
+  // ── CUT / COPY / PASTE — the selection over the SYSTEM clipboard, as TEXT ──
+  // Copy serializes the selected items to plain JSON ({ type: "sketchy/items",
+  // items: [...] }) so paste works across sketches (and the payload is readable
+  // anywhere text lands). Cut = copy + the ordinary undoable delete. Paste
+  // instantiates with FRESH ids at the pointer (viewport centre fallback),
+  // preserving the relative arrangement, into the ACTIVE surface. The
+  // isTypingTarget guard keeps embeds' own clipboards untouched.
+  const CLIP_KIND = "sketchy/items";
+  function serializeSelection() {
+    const surface = active();
+    const items = selected()
+      .map((id) => (surface.doc?.items || []).find((x) => x.id === id))
+      .filter(Boolean)
+      .map((o) => JSON.parse(JSON.stringify(o))); // plain clones (items are store proxies)
+    return items.length ? JSON.stringify({ type: CLIP_KIND, items }) : null;
+  }
+  function onCopy(e) {
+    if (isTypingTarget(e.target, viewportRef)) return;
+    const text = serializeSelection();
+    if (!text || !e.clipboardData) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", text);
+  }
+  function onCut(e) {
+    if (isTypingTarget(e.target, viewportRef)) return;
+    const text = serializeSelection();
+    if (!text || !e.clipboardData) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", text);
+    deleteSelected(); // records the undoable delete like Backspace
+  }
+  function pasteItems(list) {
+    const surface = active();
+    const h = surface.handle;
+    if (!h) return;
+    // strip what can't travel: a `parent` box, a `sticky` dock and an `anchor`
+    // corner all bind to the SOURCE context — the pasted copy lands free-floating
+    // at the target point. Docs/frames keep their url (alt-drag copy semantics).
+    const clean = list
+      .filter((o) => o && typeof o === "object" && o.kind)
+      .map((o) => { const c = JSON.parse(JSON.stringify(o)); delete c.parent; delete c.sticky; delete c.anchor; return c; });
+    if (!clean.length) return;
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (const o of clean) { const b = itemBounds(o); minx = Math.min(minx, b.x); miny = Math.min(miny, b.y); maxx = Math.max(maxx, b.x + (b.w || 0)); maxy = Math.max(maxy, b.y + (b.h || 0)); }
+    const target = myCursor() || centerWorld(); // the pointer's last world spot, else centre
+    const dx = target.x - (minx + maxx) / 2, dy = target.y - (miny + maxy) / 2;
+    const idMap = new Map(), gidMap = new Map();
+    const home = surface.id === "root" ? activeLayerId() : null; // born on the active layer, like pushItem
+    for (const c of clean) {
+      idMap.set(c.id, c.id = uid());
+      if (c.group != null) { if (!gidMap.has(c.group)) gidMap.set(c.group, "g" + uid()); c.group = gidMap.get(c.group); }
+      if (c.kind === "stroke") { c.x = (c.x || 0) + dx; c.y = (c.y || 0) + dy; }
+      else if (c.kind === "sketch") { for (const n of c.nodes || []) { n.x += dx; n.y += dy; } }
+      else { c.x = (c.x || 0) + dx; c.y = (c.y || 0) + dy; if (c.cx != null) { c.cx += dx; c.cy += dy; } }
+      if (home) {
+        // the paste point is in the ACTIVE layer's coords — retag the home so the
+        // item lands where pasted (pushItem's convention; legacy mirror kept)
+        c.layers = [home];
+        if (home !== baseLayer()?.id) c.layer = home; else delete c.layer;
+      } else { delete c.layers; delete c.layer; } // frame children carry no layer tags
+    }
+    // pasted into an ENTERED box: items were positioned in ACTIVE-LAYER world
+    // coords above, but a frame surface stores FRAME-LOCAL coords — run each
+    // item through the same conversion pushItem uses (origin AND rotation folded
+    // in; a stuck frame's dormant x/y resolve via effFrame). Sketches convert
+    // node-by-node (they have no x/y/w/h box for convertToLocal to transform).
+    const frame = surface.frame ? effFrame(surface.frame) : null;
+    if (frame) for (const c of clean) {
+      if (c.kind === "sketch") { for (const n of c.nodes || []) { const [lx, ly] = worldToLocal(frame, n.x, n.y); n.x = lx; n.y = ly; } }
+      else convertToLocal(c, frame);
+    }
+    // arrow bindings: remap within the pasted set, drop ones pointing outside it
+    for (const c of clean) {
+      for (const [idKey, anchorKey] of [["fromId", "fromAnchor"], ["toId", "toAnchor"]]) {
+        if (c[idKey] == null) continue;
+        const m = idMap.get(c[idKey]);
+        if (m) c[idKey] = m; else { delete c[idKey]; delete c[anchorKey]; }
+      }
+    }
+    transact(h, "paste", () => h.change((d) => { if (!d.items) d.items = []; for (const c of clean) d.items.push(c); }));
+    setSelected(clean.map((c) => c.id));
+  }
   async function onPaste(e) {
-    if (isTypingTarget(e.target)) return;
+    if (isTypingTarget(e.target, viewportRef)) return; // scoped: our own HOST patchwork-view doesn't count
+    // sketchy items travel as plain text (see onCopy) — try that first
+    const text = e.clipboardData?.getData && e.clipboardData.getData("text/plain");
+    if (text && text.includes(CLIP_KIND)) {
+      try {
+        const p = JSON.parse(text);
+        if (p && p.type === CLIP_KIND && Array.isArray(p.items)) { e.preventDefault(); pasteItems(p.items); return; }
+      } catch {} // not ours — fall through
+    }
     const item = [...(e.clipboardData?.items || [])].find((it) => it.type.startsWith("image/"));
     if (!item) return;
     e.preventDefault();
@@ -1859,13 +2216,15 @@ export function Canvas(props) {
   function onKeyDown(e) {
     // Escape always works (even while an embedded tool has focus): blur it,
     // drop selection, back to the pointer
-    if (e.key === "Escape") { const a = document.activeElement; if (a && a.blur) a.blur(); if (enteredGroup()) { setEnteredGroup(null); return; } setSelected([]); setSelectedWire(null); setPlacing(null); setPlaceGhost(null); setTool("select"); return; }
+    if (e.key === "Escape") { const a = document.activeElement; if (a && a.blur) a.blur(); closeOpenFlaps(); if (enteredGroup()) { setEnteredGroup(null); return; } setSelected([]); setSelectedWire(null); setPlacing(null); setPlaceGhost(null); setTool("select"); return; }
     // group / ungroup (works even with an embedded tool focused)
     if ((e.metaKey || e.ctrlKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); if (e.shiftKey) ungroupSelected(); else groupSelected(); return; }
     // undoing IN a text buffer / an embedded tool must NOT canvas-undo: everything below
     // (⌘Z/⌘Y, Backspace/Delete, bare z, tool keys) declines when the keystroke is aimed at
     // editable content or an embed's subtree — the inner editor owns its own history.
-    if (isTypingTarget(e.target)) return;
+    // Scoped to our root: the patchwork-view the canvas ITSELF is mounted in is not an
+    // embed (unscoped it ate every shortcut in the real host — see isTypingTarget).
+    if (isTypingTarget(e.target, viewportRef)) return;
     if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); if (e.shiftKey) history.redo(); else history.undo(); return; }
     if ((e.metaKey || e.ctrlKey) && (e.key === "y" || e.key === "Y")) { e.preventDefault(); history.redo(); return; }
     if ((e.key === "Backspace" || e.key === "Delete") && selectedWire()) { e.preventDefault(); return deleteWire(selectedWire()); }
@@ -1878,9 +2237,13 @@ export function Canvas(props) {
     if (e.key === "]") return reorder("forward");
     if (e.key === "[") return reorder("backward");
     if (e.key === "`") { setDebug((d) => !d); return; } // toggle op-debug (ops as JSON on the wires)
-    // number row selects the toolbar tools by their VISUAL left-to-right order (1..9,
-    // then 0 = 10th) — mirrors the Toolbar in chrome.jsx exactly, incl. wire and the
-    // overflow shape slot. Keep this list in step with that toolbar.
+    // tool-arming shortcuts never fire with a modifier held — ⌘V (paste) must not
+    // also arm select, ⌘A (host select-all) must not arm arrow, ⌥-anything ditto.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // number row selects the standard tools in their classic left-to-right order
+    // (1..9, then 0 = 10th) — the same set the seeded palette ships
+    // (DEFAULT_LAYOUT.tools) plus the last-used overflow shape. These shortcuts
+    // are CANVAS-level: they work with no toolbar/palette mounted at all.
     const palette = ["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text", extraShape()];
     if (/^[0-9]$/.test(e.key)) { const t = palette[e.key === "0" ? 9 : +e.key - 1]; if (t) { setTool(t); if (t === "line" || t === "box") setExtraShape(t); return; } }
     const map = { v: "select", h: "hand", p: "pen", r: "rectangle", o: "ellipse", l: "line", a: "arrow", t: "text", f: "box", e: "eraser", w: "wire" };
@@ -1888,6 +2251,8 @@ export function Canvas(props) {
   }
   window.addEventListener("keydown", onKeyDown);
   window.addEventListener("paste", onPaste);
+  window.addEventListener("copy", onCopy);
+  window.addEventListener("cut", onCut);
   // wire-tool port grab — document capture so embedded tools can't swallow it
   document.addEventListener("pointerdown", onPointerDownCapture, true);
   onCleanup(() => document.removeEventListener("pointerdown", onPointerDownCapture, true));
@@ -1918,6 +2283,7 @@ export function Canvas(props) {
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "theme", "data-theme", "style"] });
   onCleanup(() => {
     window.removeEventListener("keydown", onKeyDown); window.removeEventListener("paste", onPaste);
+    window.removeEventListener("copy", onCopy); window.removeEventListener("cut", onCut);
     mq.removeEventListener?.("change", bumpTheme); themeObserver.disconnect();
   });
 
@@ -1964,8 +2330,20 @@ export function Canvas(props) {
   const [peers, setPeers] = createSignal(new Map(), { equals: false });
   const [showViews, setShowViews] = createSignal(false);
   const [following, setFollowing] = createSignal(null); // a peer's contactUrl we're following
-  const [myCursor, setMyCursor] = createSignal(null);
+  const [myCursor, setMyCursor] = createSignal(null); // ACTIVE-layer coords (the local paste target)
+  let myBaseCursor = null; // BASE-world coords — what presence broadcasts (see trackCursor)
   let myContactUrl = null;
+  // presence CONTROLS on the context — writable Sources, so the presence bare
+  // window (presence-node.js) reads/toggles them over raw connects/apply, the
+  // same way the minimap drives the camera. The mirror effect echoes each write
+  // straight back as a plain push (never re-enters .apply) — no loop.
+  context.showViews = new Source(false);
+  context.showViews.apply = (op) => setShowViews(!!(isSnapshot(op) ? op.value : op && op.value));
+  createEffect(() => context.showViews.push(showViews()));
+  context.following = new Source(null);
+  context.following.apply = (op) => setFollowing((isSnapshot(op) ? op.value : null) || null);
+  createEffect(() => context.following.push(following()));
+  context.serviceUrl = automergeUrlToServiceWorkerUrl; // avatar chips resolve through the service worker
 
   let selfOff = null, selfGone = false; // the contact-doc listener, removed on cleanup
   (async function loadSelf() {
@@ -2009,7 +2387,7 @@ export function Canvas(props) {
     }
     if (presenceTrailer != null) { clearTimeout(presenceTrailer); presenceTrailer = null; }
     lastBroadcast = now;
-    if (handle.broadcast) handle.broadcast({ type: "ns-presence", contactUrl: s.contactUrl, name: s.name, color: s.color, avatarUrl: s.avatarUrl, cursor: myCursor(), view: myViewRect(), selection: selected(), tool: tool(), ts: now });
+    if (handle.broadcast) handle.broadcast({ type: "ns-presence", contactUrl: s.contactUrl, name: s.name, color: s.color, avatarUrl: s.avatarUrl, cursor: myBaseCursor, view: myViewRect(), selection: selected(), tool: tool(), ts: now });
   }
   onCleanup(() => { if (presenceTrailer != null) { clearTimeout(presenceTrailer); presenceTrailer = null; } });
   function onPresence({ message: m }) {
@@ -2029,7 +2407,19 @@ export function Canvas(props) {
     if (myContactUrl && handle.broadcast) handle.broadcast({ type: "ns-presence-bye", contactUrl: myContactUrl, ts: Date.now() });
   });
   createEffect(() => { cam(); broadcastPresence(); }); // share view as it moves
-  const trackCursor = (e) => { const w = toWorld(e.clientX, e.clientY); setMyCursor(w); context.pointer.set(w); broadcastPresence(); if (tool() === "place" && placing()) setPlaceGhost(w); };
+  // DECISION: presence travels in BASE-world coords whatever tab is active —
+  // every peer renders cursors through the base camera (PresenceLayer), so an
+  // overlay-tab pointer is converted before broadcast, never sent in overlay
+  // coords. The local `context.pointer` outlet stays ACTIVE-layer (its consumers
+  // — draw claims, the magnifier, wired nodes — work in the space being edited).
+  const trackCursor = (e) => {
+    const w = toWorld(e.clientX, e.clientY);
+    setMyCursor(w);
+    myBaseCursor = activeLayerId() === baseLayer()?.id ? w : toWorld(e.clientX, e.clientY, baseLayer()?.id);
+    context.pointer.set(w);
+    broadcastPresence();
+    if (tool() === "place" && placing()) setPlaceGhost(w);
+  };
 
   // bounds of everything (for the minimap), including peers' cursors + my view
   const worldBounds = createMemo(() =>
@@ -2086,7 +2476,8 @@ export function Canvas(props) {
   // The per-sketch layout is a real shared doc seeded from the tool's defaults (tier 3 is
   // the seed: an unset part resolves to the tool default until someone edits it). A NEW
   // patchwork:tool over the same component just ships different `opts` → different seed.
-  const CHROME_PARTS = ["toolbar", "properties", "presence", "flaps"]; // minimap + zoom migrated to bare tools
+  // (the ⊞ tray's toggle UI for these parts was removed 2026-07-02 — the resolution
+  // stays; the container-types redesign will bring back the write side)
   const chromePart = (part) => {
     const mine = topLayerDoc()?.chrome?.[part];          // tier 1 — per viewer
     if (mine === true || mine === false) return mine;
@@ -2094,28 +2485,8 @@ export function Canvas(props) {
     if (shared === true || shared === false) return shared;
     return opts[part] !== false;                         // tier 3 — tool default (the seed)
   };
-  // which tier a layout edit writes to. default "sketch" = shared (everyone editing this
-  // sketch); "mine" = a personal override on top. Mirrors the own/mine sharing model.
-  const [chromeScope, setChromeScope] = createSignal("sketch");
-  const toggleChrome = (part) => {
-    const next = !chromePart(part);
-    if (chromeScope() === "mine") {
-      changeTop((d) => { if (!d.chrome) d.chrome = {}; d.chrome[part] = next; });
-    } else {
-      // shared per-sketch: write the base AND clear any personal override so it takes effect
-      changeTop((d) => { if (d.chrome && part in d.chrome) delete d.chrome[part]; });
-      const h = rootLayoutH(); if (h) h.change((d) => { if (!d.layout) d.layout = {}; d.layout[part] = next; });
-    }
-  };
-  const [layoutMenu, setLayoutMenu] = createSignal(false);
-  // FLAP state — per-viewer (which edge each flap docks on + open/closed), in the
-  // top-layer user-state doc alongside brushCfg/chrome (the same mechanism).
-  const flapState = (id) => topLayerDoc()?.flaps?.[id] || null;
-  const setFlapState = (id, patch) => changeTop((d) => {
-    if (!d.flaps) d.flaps = {};
-    if (!d.flaps[id]) d.flaps[id] = {};
-    for (const k of Object.keys(patch || {})) if (patch[k] !== undefined) d.flaps[id][k] = patch[k];
-  });
+  // (per-viewer flap state — `flaps[id]` in this top-layer doc — is orphaned data
+  // now the flap-registry chrome is gone; old docs keep the field, nothing reads it)
   const addFloat = (source, x, y) => changeTop((d) => { if (!d.floats) d.floats = []; d.floats.push({ id: "fl-" + uid(), x, y, w: 220, h: 150, source }); });
   const removeFloat = (id) => changeTop((d) => { const i = (d.floats || []).findIndex((f) => f.id === id); if (i >= 0) d.floats.splice(i, 1); });
   const moveFloat = (id, x, y) => changeTop((d) => { const f = (d.floats || []).find((f) => f.id === id); if (f) { f.x = x; f.y = y; } });
@@ -2177,6 +2548,13 @@ export function Canvas(props) {
       if (!d.tools.sketchy.docs) d.tools.sketchy.docs = {};
       d.tools.sketchy.docs[key] = top.url;
     });
+    // LWW race mitigation: two devices racing first-open both create a top-layer
+    // doc; the map key converges last-writer-wins and the loser's per-user state
+    // orphans. Cheap re-check: if a concurrent merge already overrode our write,
+    // adopt the winner (a merge landing after this read still converges on the
+    // key — only OUR just-created doc is ever abandoned).
+    const winner = acct.doc()?.tools?.sketchy?.docs?.[key];
+    if (winner && winner !== top.url) { try { return await repo.find(winner); } catch {} }
     return top;
   }
 
@@ -2184,22 +2562,22 @@ export function Canvas(props) {
   // a line from each wired editor inlet back to its source port; drawn whether or
   // not the wire tool is active, until the wire (inlet) is deleted (click it).
   const CTX_NAMES = ["camera", "pointer", "tool", "brush", "selection"];
-  // INSPECT MODE — render the canvas's own context ports as inlets along the TOP EDGE
-  // (the provide/accept ports the canvas subscribes/owns, made visible + wireable).
-  const [inspect, setInspect] = createSignal(false);
+  // (the "inspect" top-edge context-port strip and its 👁 tray toggle were removed
+  // 2026-07-02 — context ports are placeable source NODES now; a context wire's
+  // anchor is the fixed chip position in ctxPortPos below)
   const worldToScreen = (wx, wy) => chainToOuter([layerBoxOf(activeLayerId())], { x: wx, y: wy }, boxEnv); // active-layer world → screen, via the composer (one path)
-  // PERF.md Phase 3 — the PORT INDEX. Wire endpoints resolve through two lazy
-  // Maps (automerge `url|pathJSON` → element, ctx port name → element) instead
-  // of a querySelectorAll walk per geometry recompute. ONE viewport-scoped
-  // MutationObserver — filtered to port-bearing nodes/attributes, so pan/zoom
-  // style churn and the wires' own SVG never trip it — drops both maps and
-  // bumps `portsTick`; the geometry reads that tick, so a wire appears the
-  // moment its port mounts and drops the moment it unmounts. `portScan`
-  // counts actual rebuilds (the budget: zero on pure geometry recomputes).
+  // PERF.md Phase 3 — the PORT INDEX. Wire endpoints resolve through a lazy Map
+  // (automerge `url|pathJSON` → element) instead of a querySelectorAll walk per
+  // geometry recompute. ONE viewport-scoped MutationObserver — filtered to
+  // port-bearing nodes/attributes, so pan/zoom style churn and the wires' own
+  // SVG never trip it — drops the map and bumps `portsTick`; the geometry reads
+  // that tick, so a wire appears the moment its port mounts and drops the
+  // moment it unmounts. `portScan` counts actual rebuilds (the budget: zero on
+  // pure geometry recomputes).
   const [portsTick, setPortsTick] = createSignal(0);
-  let domPortIndex = null, ctxPortIndex = null;
-  const invalidatePorts = () => { domPortIndex = null; ctxPortIndex = null; setPortsTick((t) => t + 1); };
-  const PORT_SEL = "[data-automerge-path],[data-sketchy-port]";
+  let domPortIndex = null;
+  const invalidatePorts = () => { domPortIndex = null; setPortsTick((t) => t + 1); };
+  const PORT_SEL = "[data-automerge-path]";
   const hasPorts = (n) => n.nodeType === 1 && ((n.matches && n.matches(PORT_SEL)) || (n.querySelector && n.querySelector(PORT_SEL)));
   const portObserver = new MutationObserver((records) => {
     for (const rec of records) {
@@ -2208,7 +2586,7 @@ export function Canvas(props) {
       for (const n of rec.removedNodes) if (hasPorts(n)) return invalidatePorts();
     }
   });
-  onMount(() => { if (viewportRef) portObserver.observe(viewportRef, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-automerge-url", "data-automerge-path", "data-sketchy-port"] }); });
+  onMount(() => { if (viewportRef) portObserver.observe(viewportRef, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-automerge-url", "data-automerge-path"] }); });
   // embedded tools render their ports ASYNC inside <patchwork-view> — the mount
   // event is the sure signal a fresh batch of port elements just landed
   const onToolMounted = () => invalidatePorts();
@@ -2224,12 +2602,6 @@ export function Canvas(props) {
     }
     return m;
   }
-  function buildCtxPortIndex() {
-    perfCount("portScan");
-    const m = new Map();
-    for (const el of viewportRef.querySelectorAll(".ns-ctx-inlet[data-sketchy-port]")) m.set(el.dataset.sketchyPort, el);
-    return m;
-  }
   // Map hit → element; a DISCONNECTED hit (the observer's invalidation hasn't
   // delivered yet) forces one rebuild so a wire never anchors to a zero-rect.
   function portFromIndex(get, build, key) {
@@ -2240,16 +2612,6 @@ export function Canvas(props) {
   }
   function ctxPortPos(name) {
     if (!viewportRef) return null;
-    portsTick(); // the index is REACTIVE: port mount/unmount re-runs the geometry
-    // inspect mode: a context wire anchors to its visible top-edge port (reading
-    // inspect() here keeps the per-wire geometry memo reactive to the toggle)
-    if (inspect()) {
-      const el = portFromIndex(() => ctxPortIndex, () => (ctxPortIndex = buildCtxPortIndex()), name);
-      if (el) {
-        const r = el.getBoundingClientRect(), vr = viewportRect();
-        return { x: r.left - vr.left + r.width / 2, y: r.top - vr.top + r.height };
-      }
-    }
     const i = CTX_NAMES.indexOf(name); if (i < 0) return null;
     const H = viewportRef.offsetHeight;
     const chipH = 24, gap = 5, n = CTX_NAMES.length, total = n * chipH + (n - 1) * gap;
@@ -2359,17 +2721,30 @@ export function Canvas(props) {
     const d = descFor(item);
     const ports = (side === "out" ? outletDefsFor(d, item) : inletDefsFor(d, item)) || [];
     const idx = Math.max(0, ports.findIndex((p) => p.name === name));
-    const b = item.anchor ? { ...itemBounds(item), ...resolveItemPos(item) } : itemBounds(item); // anchored ⇒ absolute
+    const off = side === "out" ? 12 : -12; // match the nubs' outward offset (screen px)
+    if (isStuck(item)) {
+      // a STUCK window renders counter-scaled (it holds its SCREEN size), so its
+      // port geometry is pure screen math off the resolved dock rect — running
+      // it through the layer zoom put ports 2× off at 200%.
+      const sr = stickyScreen(item);
+      const pt = portPoint({ x: sr.x, y: sr.y, w: item.w || 0, h: item.h || 0 }, side, idx, ports.length || 1);
+      return { x: pt.x + off, y: pt.y };
+    }
+    const b = itemBounds(item);
     const pt = portPoint(b, side, idx, ports.length || 1);
-    const s = worldToScreen(pt.x, pt.y);
-    return { x: s.x + (side === "out" ? 12 : -12), y: s.y }; // match the nubs' outward offset (screen px)
+    // project through the ITEM's HOME layer, not the active tab — an overlay
+    // widget's ports must not run through the base camera (and vice versa)
+    const s = chainToOuter([layerBoxOf(itemHomeLayer(item))], pt, boxEnv);
+    return { x: s.x + off, y: s.y };
   }
   // a ROUND node's port rides the perimeter toward whatever it connects to (the
   // "wire spines around it" behaviour) — point on the ellipse edge facing `toScreen`.
   function roundPortToward(item, toScreen) {
     const b = itemBounds(item);
-    const c = worldToScreen(b.x + b.w / 2, b.y + b.h / 2);
-    const rx = (b.w / 2) * cam().z, ry = (b.h / 2) * cam().z;
+    const chain = [layerBoxOf(itemHomeLayer(item))]; // the node's HOME space (cf. nodePortScreen)
+    const c = chainToOuter(chain, { x: b.x + b.w / 2, y: b.y + b.h / 2 }, boxEnv);
+    const z = chainScale(chain, boxEnv) || 1;
+    const rx = (b.w / 2) * z, ry = (b.h / 2) * z;
     const ang = Math.atan2(toScreen.y - c.y, toScreen.x - c.x);
     return { x: c.x + Math.cos(ang) * rx, y: c.y + Math.sin(ang) * ry };
   }
@@ -2406,7 +2781,18 @@ export function Canvas(props) {
     // etc.). Hide them unless you're actually wiring, so the overlay isn't a tangle of pink.
     if (active !== base && tool() !== "wire") return [];
     const layerById = new Map(rootItems().map((it) => [it.id, itemHomeLayer(it)])); // built ONCE, not per-spec (a wire lives in its node's HOME space)
-    return wireSpecs().filter((s) => (s.floatId ? base : (layerById.get(s.editorId) || base)) === active);
+    const homeOf = (id) => layerById.get(id) || base;
+    return wireSpecs().filter((s) => {
+      if (s.floatId) return base === active;
+      if (homeOf(s.editorId) !== active) return false;
+      // BOTH endpoints must live on the active layer: a wire SPANNING layers is
+      // HIDDEN (rule) — each end needs its own transform and one of them is in a
+      // space that isn't on screen; it draws only on a layer holding both nodes.
+      // (context/peer/url anchors are screen chrome — the downstream check covers them.)
+      const w = s.wire;
+      if (w && w.node && homeOf(w.node) !== active) return false;
+      return true;
+    });
   });
 
   // geometry for one wire spec — reads cam + the live item positions, so it updates
@@ -2579,6 +2965,18 @@ export function Canvas(props) {
   // lives on the active surface, so `active()` is right there. setItemFields is only
   // driven by the shape streams (root-only wiring graph), so it targets the ROOT doc.
   function setItemField(id, field, val) { transact(active().handle, "edit", () => active().handle.change((d) => { const o = d.items.find((x) => x.id === id); if (o) o[field] = val; })); }
+  // the Properties "appears on" row: flip a VISIBILITY membership on/off. The HOME
+  // (layers[0]) is locked on — it owns the coordinates — so it never toggles here,
+  // and the legacy `layer` mirror (home) is left untouched (never deleted).
+  function toggleItemLayer(id, layerId) {
+    const rh = rootLayoutH(); if (!rh) return;
+    transact(rh, "layers", () => rh.change((d) => {
+      const o = d.items.find((x) => x.id === id); if (!o) return;
+      const cur = itemLayers(o);
+      if (layerId === cur[0]) return;
+      o.layers = cur.includes(layerId) ? cur.filter((l) => l !== layerId) : [...cur, layerId];
+    }));
+  }
   function setItemFields(id, obj) { const rh = rootLayoutH(); if (!rh) return; transact(rh, "param", () => rh.change((d) => { const o = d.items.find((x) => x.id === id); if (o) for (const k in obj) if (k !== "id" && k !== "kind") o[k] = obj[k]; })); }
   // write a key into a NODE's persisted config (its params live here; a mounted node reacts
   // via onConfig). Same shape setConfig uses inside editor-item, but driven from the popup.
@@ -2652,11 +3050,15 @@ export function Canvas(props) {
     get tools() { return rootLayoutDoc()?.layout?.tools ?? opts.tools; },
     setTool, datatypes, brushes,
     addOpen, setAddOpen, shapeMenuOpen, setShapeMenuOpen, extraShape, setExtraShape,
-    selectPlacing, editors: listEditors, lenses: listLensDescriptors,
-    addById: addDocById, placeEditor: placeUnwiredEditor, placeLens: placeUnwiredLens,
+    selectPlacing, editors: catalogWindows, lenses: catalogLenses,
+    addById: addDocById, placeEditor: placeUnwiredEditor, placeLens: placeUnwiredLens, placeFlap,
     // properties
     mode: propMode, params: paramTarget, get: getProp, set: setProp, pos: propsPos, setPos: setPropsPos,
     single, setField: setItemField, linkFor, reorder,
+    // the "appears on" row (layer memberships) — root-surface items only (a frame
+    // child lives in another doc's space, so it has no layer tags to edit)
+    layers: () => (activeId() === "root" ? layersList() : []),
+    itemLayersOf: itemLayers, toggleItemLayer,
     hasGroup, group: groupSelected, ungroup: ungroupSelected,
     rect: () => { const it = single(); return it ? (it.kind === "shape" && it.type === "rectangle") : tool() === "rectangle"; },
     arrow: () => { const it = single(); return it ? (it.kind === "shape" && it.type === "arrow") : tool() === "arrow"; },
@@ -2685,7 +3087,10 @@ export function Canvas(props) {
 
   // the WebRTC mesh for node sharing — values over a data channel, streams over tracks,
   // signalled on the folder-doc ephemeral channel (the CallSession concept, reused).
-  const shareSession = new ShareSession(handle, sessionMyUrl());
+  // Identity resolves through the presence heartbeat store (the ONE peer store):
+  // the session holds connection state only, keyed by the same contactUrls.
+  const shareSession = new ShareSession(handle, sessionMyUrl(), (url) =>
+    untrack(() => { const s = selfP(); return (s && s.contactUrl === url ? s : peers().get(url)) || null; }));
   onCleanup(() => shareSession.destroy());
 
   const ctx = {
@@ -2703,7 +3108,7 @@ export function Canvas(props) {
     // double-clicking a grouped item descends INTO its group (figma-style); a
     // second double-click then reaches the member's own action (text edit, …)
     enterGroup: (it) => { if (it.group && it.group !== enteredGroup()) { setEnteredGroup(it.group); setSelected([it.id]); return true; } return false; },
-    boxBounds: (id) => { const f = rootItems().find((x) => x.id === id); return f ? itemBounds(f) : null; },
+    boxBounds: (id) => { const f = rootItems().find((x) => x.id === id); return f ? itemBounds(effFrame(f)) : null; }, // effFrame: a STUCK box's stored x/y are dormant — the drop preview must clip at the resolved dock rect
     api: element?.api, // the sketchy api (find → opstream, editors, …) for EditorItem
     context, // the canvas context Sources, for context-wired editor inlets
     peerStream, // (contactUrl, part) → a live Source of a peer's state, for peer-wired inlets
@@ -2711,26 +3116,40 @@ export function Canvas(props) {
     canvasOutlets, // the canvas-as-node reactive state (items/bounds/peers/camera/…) for bare layer tools
     // a bare tool shows its ports + auto-wires while ITS (home) layer is the active one
     layerIsActive: (it) => itemHomeLayer(it) === activeLayerId(),
-    // layer-visibility (modes): item.jsx hides root items whose layers are all hidden
-    itemVisible,
+    // membership-driven visibility + sticky placement (root items; item.jsx baseStyle)
+    itemHidden, memberOnActive, stickyPlace,
+    // FLAPS — the collapsed-tab render + per-viewer open state (DocOrFrame)
+    flapOpen, setFlapOpen, flapTabPlace,
   };
 
   const handleBox = createMemo(() => {
     if (!selectish()) return null;
     if (editingId()) return null; // while editing text, show only the caret — no box/handles
-    const z = boxScale(active());
-    const it = projected(single()); // a parented mark's handles sit on its WORLD projection
+    const raw = single();
+    const it = projected(raw); // a parented mark's handles sit on its WORLD projection
     if (it) {
       if (it.kind === "shape" && (it.type === "arrow" || it.type === "line")) return null; // use endpoint handles
       if (it.kind === "sketch") return null; // sketches articulate via their nodes, not resize/rotate handles
       const frame = active().frame;
-      // like startResizeSel: strokes/up-left shapes have bounds ≠ (x,y); anchored ⇒ absolute
-      const rp = resolveItemPos(it);
-      const ob = it.anchor ? { ...itemBounds(it), x: rp.x, y: rp.y } : itemBounds(it);
-      const s = boxToScreen(active(), { x: ob.x + ob.w / 2, y: ob.y + ob.h / 2 }); // compose layer → frame → screen
+      // FIT-CONTENT windows (descriptor.fit — the palette) size themselves via
+      // setSize; the Handles chrome suppresses their resize dots (box.fit).
+      const fit = it.kind === "editor" && !!descFor(it)?.fit;
+      if (isStuck(it) && active().id === "root") {
+        // a STUCK window renders counter-scaled (stickyPlace k = 1/zoom) so it
+        // HOLDS its screen size: its handle box is exactly the resolved dock
+        // rect at the stored size — scaling by the layer zoom put the handles
+        // 2× off at 200% (and made resize mistrack).
+        const sr = stickyScreen(it);
+        return { x: sr.x, y: sr.y, w: it.w || 0, h: it.h || 0, rot: it.rotation || 0, kind: it.kind, fit };
+      }
+      const z = boxScale(active(), raw); // the ITEM's home-layer scale (not the active tab's)
+      // like startResizeSel: strokes/up-left shapes have bounds ≠ (x,y)
+      const ob = itemBounds(it);
+      const s = boxToScreen(active(), { x: ob.x + ob.w / 2, y: ob.y + ob.h / 2 }, raw); // compose the item's home layer → frame → screen
       const sw = ob.w * z, sh = ob.h * z;
-      return { x: s.x - sw / 2, y: s.y - sh / 2, w: sw, h: sh, rot: (it.rotation || 0) + (frame ? frame.rotation || 0 : 0), kind: it.kind };
+      return { x: s.x - sw / 2, y: s.y - sh / 2, w: sw, h: sh, rot: (it.rotation || 0) + (frame ? frame.rotation || 0 : 0), kind: it.kind, fit };
     }
+    const z = boxScale(active());
     const u = selWorldBounds();
     // u is already in WORLD (selWorldBounds applied the frame), so project by the LAYER only.
     if (u) { const s = chainToOuter([layerBoxOf(activeLayerId())], { x: u.x, y: u.y }, boxEnv); return { x: s.x, y: s.y, w: u.w * z, h: u.h * z, rot: 0, kind: "multi" }; }
@@ -2741,11 +3160,12 @@ export function Canvas(props) {
   // line's bezier control point)
   const segSel = createMemo(() => {
     if (!selectish() || editingId()) return null;
-    const it = projected(single()); // parented line/arrow: endpoint dots on the world projection
+    const raw = single();
+    const it = projected(raw); // parented line/arrow: endpoint dots on the world projection
     if (!it || it.kind !== "shape" || (it.type !== "arrow" && it.type !== "line")) return null;
     const frame = active().frame;
     const g = (it.type === "arrow" && (it.fromId || it.toId)) ? arrowGeometry(it, active().doc?.items || []) : it;
-    const toScreen = (lx, ly) => boxToScreen(active(), { x: lx, y: ly }); // layer → frame → screen, composed
+    const toScreen = (lx, ly) => boxToScreen(active(), { x: lx, y: ly }, raw); // the item's home layer → frame → screen, composed
     // the control HANDLE rides ON the curve (its midpoint), not at the off-curve
     // quadratic control point — so it sits where you'd grab to bend the line.
     // midpoint of a quadratic = ¼·start + ½·control + ¼·end
@@ -2929,11 +3349,10 @@ export function Canvas(props) {
         )}
       </For>
 
-      {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on. Each tab
-          carries a 👁 (this mode's visibility; clicking writes a just-me override), and the
-          strip ends in the MODE chips (workshop/play — play is the "run it" affordance).
-          Switching to a hidden layer's tab EDIT-REVEALS it (layers.js resolveLayerVisible);
-          leaving the tab restores the mode's visibility. */}
+      {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on.
+          The tabs choose where edits land AND what shows: layers at/below the
+          active one render (frosted beneath it); items from layers above appear
+          only via a membership on the active layer (itemVisibleForActive). */}
       <Show when={layersList().length > 1}>
         <div class="ns-layers" onPointerDown={(e) => e.stopPropagation()}>
           {/* tabs listed TOPMOST space first (reverse of doc order — array order stays z-order);
@@ -2941,49 +3360,18 @@ export function Canvas(props) {
           <For each={layersList().toReversed()}>
             {(layer) => {
               const k = () => layerKind(layer.kind) || {};
-              const eye = () => layerEyeOn(layer.id);
               return (
-                <span class="ns-layer-tabwrap" classList={{ "ns-layer-off": !eye(), "ns-layer-revealed": !eye() && activeLayerId() === layer.id }}>
-                  <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind + (!eye() && activeLayerId() === layer.id ? " — hidden in this mode, revealed while you edit it" : "")}>{layer.name || k().name || layer.id}</button>
-                  <button class="ns-layer-eye" classList={{ off: !eye() }} title={(eye() ? "shown" : "hidden") + ` in ${activeMode()?.id} — click to override, just for you`} onClick={() => toggleLayerEye(layer.id)}>
-                    <svg viewBox="0 0 22 22" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 11s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" /><Show when={eye()} fallback={<path d="M4 18L18 4" />}><circle cx="11" cy="11" r="2.5" /></Show></svg>
-                  </button>
-                </span>
+                <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind}>{layer.name || k().name || layer.id}</button>
               );
             }}
-          </For>
-          <span class="ns-mode-sep" />
-          <For each={modesList()}>
-            {(m) => (
-              <button class="ns-mode-chip" classList={{ active: activeMode()?.id === m.id, play: m.id === "play" }} title={m.id === "play" ? "play — run the sketch: only its play layers show" : `${m.id} — show this mode's layers`} onClick={() => setMode(m.id)}>
-                {m.id === "play" ? "▶ play" : m.id}
-              </button>
-            )}
           </For>
         </div>
       </Show>
 
       {/* the canvas-level context inputs (camera/pointer/tool/brush/selection) are no
           longer bottom chips — they're placeable source NODES (each with the 👤 own ⟷
-          📡 mine toggle), added from the palette. */}
-
-      {/* INSPECT MODE (the 👁 in the layout tray) — the canvas's OWN context ports as
-          inlets along the top edge: the provide/accept wiring made visible. These are
-          REAL ports (data-sketchy-port → {kind:"context"}): with the wire tool a drag
-          wires one into a node inlet (or drops a floating inspector on empty canvas)
-          and a click shows the schema popover — the exact same paths as node ports.
-          Existing context wires re-anchor here while the ports are visible. */}
-      <Show when={inspect()}>
-        <div class="ns-ctx-inlets" onPointerDown={(e) => e.stopPropagation()}>
-          <For each={CTX_NAMES}>{(name) => (
-            <div class="ns-ctx-inlet" data-sketchy-port={name}
-                 title={`context ▸ ${name} — ${context[name] && context[name].owned && context[name].owned() ? "owned by this canvas" : "inherited from a provider"} · wire tool: drag to wire, click for schema`}>
-              <PortNub id="ctx" name={name} bidi={typeof context[name]?.apply === "function"} />
-              <span>{name}</span>
-            </div>
-          )}</For>
-        </div>
-      </Show>
+          📡 mine toggle), added from the palette. (The "inspect" top-edge port strip
+          was removed 2026-07-02 with its tray eyeball.) */}
 
       {/* user-state floating inspectors — local to this viewer, on the top layer (not
           the shared doc). Wired from a context/peer outlet. */}
@@ -3004,7 +3392,7 @@ export function Canvas(props) {
       {/* wire-tool double-click: a searchable palette to add a source/transform/sink.
           WORLD-anchored (worldToScreen) so it pans with the canvas once open. */}
       <Show when={nodeMenu()}>{(m) => (
-        <NodeAddMenu screen={() => worldToScreen(m().world.x, m().world.y)} items={[...listEditors(), ...listLensDescriptors()]} onPick={(d) => { placeNode(d, m().world); setNodeMenu(null); }} onClose={() => setNodeMenu(null)} />
+        <NodeAddMenu screen={() => worldToScreen(m().world.x, m().world.y)} items={[...catalogWindows(), ...catalogLenses()]} onPick={(d) => { placeNode(d, m().world); setNodeMenu(null); }} onClose={() => setNodeMenu(null)} />
       )}</Show>
 
       {/* click a port (no drag) → its FULL schema, world-anchored so it pans with you */}
@@ -3045,30 +3433,23 @@ export function Canvas(props) {
 
       {/* CHROME — every part is composable: a wrapping patchwork:tool passes `opts` to
           turn parts off (this is how the headless component is built on — see tool.jsx).
-          presence/minimap/toolbar/properties/zoom each gate on opts.<part> !== false. */}
+          presence/properties each gate on opts.<part> !== false. */}
+      {/* presence chrome = the CURSOR/VIEW layer only (it draws in world space, so it
+          stays canvas-level). The bar/controls — the user button, the views toggle,
+          follow — are the seeded `presence` bare window now ("ns-presence" —
+          presence-node.js); the fixed .ns-views eyeball went with them. */}
       <Show when={chromePart("presence")}>
-        <Show when={slot("presence")} fallback={<>
-          <PresenceLayer host={chromeHost} />
-          <button class="ns-views" classList={{ active: showViews() }} title="Overlay other people's views" onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowViews(!showViews())}>
-            <svg viewBox="0 0 22 22" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 11s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" /><circle cx="11" cy="11" r="2.5" /></svg>
-          </button>
-        </>}>{slot("presence")(chromeHost)}</Show>
+        <Show when={slot("presence")} fallback={<PresenceLayer host={chromeHost} />}>{slot("presence")(chromeHost)}</Show>
       </Show>
       {/* the minimap is no longer hardcoded chrome — it's a BARE `minimap` tool seeded on
           the overlay layer (minimap-node.js), fed by the canvas outlets. Add/move/remove it
           like any item. */}
 
-      <Show when={chromePart("toolbar")}>
-        {slot("toolbar") ? slot("toolbar")(chromeHost) : <Toolbar host={chromeHost} />}
-      </Show>
-
-      {/* FLAPS — Squeak-style edge-docked tabs/drawers (flaps.jsx), a chrome part
-          like any other: gated, slottable, listed in the ⊞ layout tray. Definitions
-          come from the `sketchy:flap` registry (the parts bin is the flagship);
-          per-viewer dock/open state lives in the top-layer doc. */}
-      <Show when={chromePart("flaps")}>
-        {slot("flaps") ? slot("flaps")(chromeHost) : <FlapDock host={chromeHost} state={flapState} setState={setFlapState} viewport={() => viewportRef} />}
-      </Show>
+      {/* the TOOLBAR is no longer fixed chrome — it's the seeded `palette` bare
+          window ("ns-toolbar-palette"): overlay-home with a canvas membership, so
+          it's arrangeable on the overlay and usable while drawing. Keyboard tool
+          shortcuts live in onKeyDown above, independent of any toolbar DOM.
+          (The flap-registry chrome went with it — see flaps.jsx + TODO.md.) */}
 
       <Show when={showProps()}>
         {slot("properties") ? slot("properties")(chromeHost) : <Properties host={chromeHost} />}
@@ -3076,52 +3457,11 @@ export function Canvas(props) {
 
       {/* zoom is now a bare `zoom` tool seeded on the overlay (zoom-node.js) */}
 
-      {/* CUSTOMIZE THIS LAYOUT — toggle which chrome parts show, just for you, on this
-          sketch (persisted in your per-user top layer). Always available so you can get
-          a hidden part back. */}
-      <div class="ns-layout-cust" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
-        {/* INSPECT — toggle the top-edge context ports (see the strip above) */}
-        <button class="ns-layout-btn ns-inspect-btn" classList={{ active: inspect() }} title="Inspect — the canvas's context ports as top-edge inlets" onClick={() => setInspect((v) => !v)}>
-          <svg viewBox="0 0 22 22" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 11s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" /><circle cx="11" cy="11" r="2.5" /></svg>
-        </button>
-        <button class="ns-layout-btn" classList={{ active: layoutMenu() }} title="Customize this layout" onClick={() => setLayoutMenu((v) => !v)}>
-          <svg viewBox="0 0 22 22" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="6.5" height="6.5" rx="1" /><rect x="12.5" y="3" width="6.5" height="6.5" rx="1" /><rect x="3" y="12.5" width="6.5" height="6.5" rx="1" /><rect x="12.5" y="12.5" width="6.5" height="6.5" rx="1" /></svg>
-        </button>
-        <Show when={layoutMenu()}>
-          <div class="ns-layout-panel">
-            {/* SWITCH LAYOUT — re-open this folder through another registered lens
-                (list / grid / dock), via the ONE shared switcher (layout-switch.js) the
-                other layouts' banners use. In the tray, not floating buttons. */}
-            {(() => {
-              const active = listLayouts().find((l) => l.id === "canvas");
-              const sw = layoutSwitcher(viewportRef || element, handle.url, active && active.toolId);
-              return sw ? <><div class="ns-menu-sep">layout</div><div class="ns-layout-sw">{sw}</div></> : null;
-            })()}
-            <div class="ns-layout-scope">
-              <button classList={{ active: chromeScope() === "sketch" }} onClick={() => setChromeScope("sketch")}>this sketch</button>
-              <button classList={{ active: chromeScope() === "mine" }} onClick={() => setChromeScope("mine")}>just me</button>
-            </div>
-            <div class="ns-menu-sep">{chromeScope() === "sketch" ? "everyone sees this" : "only on your screen"}</div>
-            <For each={CHROME_PARTS}>{(part) => (
-              <label class="ns-layout-row"><input type="checkbox" checked={chromePart(part)} onChange={() => toggleChrome(part)} />{part}</label>
-            )}</For>
-            {/* MODE PRESETS — which layers each mode shows. SHARED (layout doc): editing a
-                preset changes it for everyone; the 👁 toggles in the layer strip are the
-                per-viewer overrides on top. */}
-            <Show when={layersList().length > 1}>
-              <div class="ns-menu-sep">modes · everyone sees this</div>
-              <For each={modesList()}>{(m) => (
-                <div class="ns-mode-edit">
-                  <div class="ns-mode-edit-name" classList={{ active: activeMode()?.id === m.id }}>{m.id}</div>
-                  <For each={layersList()}>{(layer) => (
-                    <label class="ns-layout-row"><input type="checkbox" checked={(m.layers || []).includes(layer.id)} onChange={() => togglePresetLayer(m.id, layer.id)} />{layer.name || layer.id}</label>
-                  )}</For>
-                </div>
-              )}</For>
-            </Show>
-          </div>
-        </Show>
-      </div>
+      {/* the STICKY dock hint — a soft glow on the viewport edge a dragged window
+          is within snap range of (drop there to dock it) */}
+      <Show when={stickyHint()}>
+        <div class={"ns-sticky-hint ns-sticky-hint-" + stickyHint()} />
+      </Show>
     </div>
   );
 }
@@ -3165,9 +3505,7 @@ function FloatInspector(props) {
     e.stopPropagation();
     const sx = e.clientX, sy = e.clientY, ox = props.f.x, oy = props.f.y;
     const m = (ev) => props.onMove(ox + ev.clientX - sx, oy + ev.clientY - sy);
-    const u = () => { window.removeEventListener("pointermove", m); window.removeEventListener("pointerup", u); };
-    window.addEventListener("pointermove", m);
-    window.addEventListener("pointerup", u);
+    windowDrag(m); // settles on pointerup AND pointercancel
   };
   return (
     <div class="ns-float" style={{ left: `${props.f.x}px`, top: `${props.f.y}px`, width: `${props.f.w || 220}px`, height: `${props.f.h || 150}px` }}>

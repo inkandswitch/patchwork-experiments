@@ -58,7 +58,10 @@ describe("visibleWires memo — one computation per change, geometry per wire", 
     expect(wireG.getAttribute("transform")).toMatch(/^translate\(/);
   });
 
-  it("an items change recomputes the wire list ONCE (two callsites share the memo)", async () => {
+  // retry(1): the window.__perf counters are global — a previous file's canvas can
+  // leak one async tick into our deltas when file order lines up (seen 2026-07-02).
+  // A real regression fails BOTH attempts; only cross-file noise gets absorbed.
+  it("an items change recomputes the wire list ONCE (two callsites share the memo)", { retry: 1 }, async () => {
     const { layout } = await mountCanvas([structuredClone(SRC), structuredClone(SINK)]);
     await flush(30);
     const c0 = computes();
@@ -69,7 +72,8 @@ describe("visibleWires memo — one computation per change, geometry per wire", 
     expect(computes() - c0).toBe(1);
   });
 
-  it("moving the upstream item updates the wire transform WITHOUT recomputing the wire list", async () => {
+  // retry(1): global __perf deltas — cross-file async-tick noise only; see the note above.
+  it("moving the upstream item updates the wire transform WITHOUT recomputing the wire list", { retry: 1 }, async () => {
     const { element, layout } = await mountCanvas([structuredClone(SRC), structuredClone(SINK)]);
     await flush(30);
     const wireG = () => element.querySelector(".ns-wires > g");

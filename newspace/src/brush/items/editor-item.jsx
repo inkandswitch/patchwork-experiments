@@ -161,6 +161,11 @@ export function EditorItem(props) {
 
     const proxies = {};
     const ensure = (name) => (proxies[name] || (proxies[name] = inletProxy()));
+    // release every proxy's upstream subscription on teardown — an unmounted node
+    // must not keep context-source / node-outlet / url-opstream (DocHandle change)
+    // listeners alive; reverting each backing to the proxy's own buffer drops the
+    // external connect. (Leak pinned in node-streams.test.js.)
+    const releaseProxies = () => { for (const k in proxies) { try { proxies[k].setBacking(null); } catch {} } };
     // UNTRACK the whole call: inletDefsFor → dynamicInlets(config) reads config.* — if
     // those reads land in this effect's scope, every keystroke (setConfig) remounts the
     // node. The reactive inlet SET is handled by the inner effect below, not here.
@@ -231,6 +236,20 @@ export function EditorItem(props) {
       if (!h) return;
       h.change((dd) => { const o = (dd.items || []).find((x) => x.id === it().id); if (o) { if (!o.config) o.config = {}; Object.assign(o.config, patch); } });
     };
+    // FIT-CONTENT windows (the palette): a node that sizes itself writes its
+    // measured size back to the item's w/h — the text-measure commit pattern
+    // (plain change, no undo entry; the caller defers it a frame via rafBatch).
+    // Sub-pixel echoes are cut here so remote/multi-viewer measures converge
+    // without write churn.
+    const setSize = (w, h) => {
+      const cur = untrack(() => it());
+      const dw = w != null && Math.abs((cur.w || 0) - w) > 1;
+      const dh = h != null && Math.abs((cur.h || 0) - h) > 1;
+      if (!dw && !dh) return;
+      const hh = props.surface && props.surface.handle;
+      if (!hh) return;
+      hh.change((dd) => { const o = (dd.items || []).find((x) => x.id === cur.id); if (!o) return; if (dw) o.w = w; if (dh) o.h = h; });
+    };
     // EPHEMERAL broadcast keyed by THIS item's id — the basis for "everyone sees mine"
     // sharing of a user-local source: the placer broadcasts its value, every viewer's
     // SAME item (same id in the shared doc) receives it. Not persisted (presence only).
@@ -293,14 +312,14 @@ export function EditorItem(props) {
       render();
       const off = out.connect ? out.connect(render) : null;
       host.append(wrap);
-      cleanup = () => { if (off) off(); offParams(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
+      cleanup = () => { if (off) off(); offParams(); releaseProxies(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
       return;
     }
 
-    const c = await mountEditor(d, { element: host, itemId: it().id, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, broadcast, onBroadcast, onConfig, share, shareDoc, onShared, canvas: ctx.canvasOutlets ? ctx.canvasOutlets() : null, context: ctx.context });
-    if (mine !== token) { try { c(); } catch {} offParams(); return; }
+    const c = await mountEditor(d, { element: host, itemId: it().id, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, setSize, broadcast, onBroadcast, onConfig, share, shareDoc, onShared, canvas: ctx.canvasOutlets ? ctx.canvasOutlets() : null, context: ctx.context });
+    if (mine !== token) { try { c(); } catch {} offParams(); releaseProxies(); return; }
     ctx.registerOutlets && ctx.registerOutlets(it().id, { ...outlets });
-    cleanup = () => { try { c(); } catch {} offParams(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
+    cleanup = () => { try { c(); } catch {} offParams(); releaseProxies(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };
   }
 
   // mount ONCE per node TYPE; wiring changes flow through the reactive proxies above

@@ -10,16 +10,15 @@ export { Canvas } from "./brush/canvas.jsx"; // the headless component, re-expor
 // default set of UI — this is the layout/composition/sharing infrastructure: ship a
 // plugin that calls makeSketchyTool with the chrome you want and register it as a
 // patchwork:tool. Opts (all default ON unless noted):
-//   toolbar     — the bottom tool palette
-//   minimal     — toolbar shows ONLY the pencil (a focused sketchpad)
-//   minimap     — the corner minimap
+//   minimal     — locks the tool to the pencil (a focused sketchpad)
 //   properties  — the left properties/brush panel
 //   presence    — collaborators' cursors/views + the "eye" overlay toggle
-//   zoom        — the zoom % chip
 //   defaultTool — which tool is active on open (e.g. "pen")
-//   tools       — an explicit SUBSET of tool ids in the toolbar (e.g. ["pen","eraser"])
-//   slots       — REPLACE a chrome part with your own: { toolbar|properties|minimap|
-//                 presence|zoom: (host) => JSXElement }. The `host` carries `context` —
+//   tools       — the standard tool-id list a fresh sketch's palette seed reads
+//                 (the toolbar itself is now the seeded "ns-toolbar-palette"
+//                 window item, not fixed chrome; minimap/zoom are seeded too)
+//   slots       — REPLACE a chrome part with your own: { properties|
+//                 presence: (host) => JSXElement }. The `host` carries `context` —
 //                 the canvas's camera/pointer/tool/brush/selection (+ peers/board/…)
 //                 Sources, the SAME state the built-in chrome reads — plus the narrow
 //                 command surface (setTool, the param target, doc mutations, …). So a

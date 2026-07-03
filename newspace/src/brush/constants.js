@@ -1,8 +1,8 @@
 // Pure constants + helpers for the Sketchy canvas ("brush"). Extracted from
 // tool.jsx so the canvas can be split into modules. No Solid/component state here
 // — only values and pure functions (plus `ensureLayout`, which takes its repo).
-import { defaultLayers, defaultModes } from "../layers.js"; // the base + overlay layer stack + the workshop/play presets
-import { byIdAsc } from "../model.js"; // the id comparator, shared with buildItemsIndex
+import { defaultLayers } from "../layers.js"; // the base + overlay layer stack
+import { byIdAsc, toolEntry, entriesFromIds } from "../model.js"; // id comparator + palette-entry helpers
 import { valuesEqual } from "../ops.js"; // the deep fallback in shapePropsEqual
 import { count as perfCount } from "../perf.js";
 
@@ -118,6 +118,25 @@ export function enableAtomicMove(el) {
     return insertBefore.call(this, node, ref);
   };
 }
+// a window-level pointer drag: `move` per pointermove, settled by pointerup OR
+// pointercancel — a cancelled touch/pen gesture must still detach, or the stale
+// listeners ride the NEXT foreign pointer's events. `done(cancelled)` runs once
+// on settle; returns a manual detach. (The canvas's own gestures use its
+// txn-aware gestureListeners; this is the shared helper for simple chrome drags.)
+export function windowDrag(move, done) {
+  const off = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", cancel);
+  };
+  const up = (e) => { off(); if (done) done(false, e); };
+  const cancel = (e) => { off(); if (done) done(true, e); };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", cancel);
+  return off;
+}
+
 export const SHAPE_TOOLS = new Set(["rectangle", "ellipse", "line", "arrow"]);
 export const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export const rndSeed = () => Math.floor(Math.random() * 2147483647);
@@ -129,38 +148,115 @@ export function clonePlain(o) {
   return c;
 }
 // The DEFAULT per-sketch LAYOUT — seeded into a new layout doc so the layout is visible +
-// editable AS DATA: the tools in the toolbar, which chrome parts show, and which component
-// renders it. The layered resolver (chromePart / chromeHost.tools) reads this; an empty slot
-// still falls back to the tool's opts. `component` names the patchwork:component.
+// editable AS DATA: the standard tool set (the seeded palette window's brushes), which
+// chrome parts show, and which component renders it. The layered resolver (chromePart /
+// chromeHost.tools) reads this; an empty slot still falls back to the tool's opts.
+// `component` names the patchwork:component. (Older docs may also carry `toolbar: true`
+// from the removed fixed toolbar — ignored, never deleted.)
 export const DEFAULT_LAYOUT = {
   component: "sketchy",
   tools: ["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text"],
-  toolbar: true, properties: true, presence: true, // minimap + zoom are now seeded bare tools
+  properties: true, presence: true, // minimap/zoom/palette/parts are seeded bare tools
 };
 
+// the DEFAULT palette ENTRIES (model.js entry structure) — reproduces the OLD fixed
+// Toolbar's layout exactly: nav+draw tools · divider · shapes + the "more shapes"
+// overflow menu (line/box lived behind the ▾). This is what the seeded
+// palette-config window ships (and emits on its `tools` outlet).
+export const DEFAULT_TOOL_ENTRIES = [
+  toolEntry("select"), toolEntry("hand"), toolEntry("pen"), toolEntry("eraser"), toolEntry("wire"),
+  { kind: "divider" },
+  toolEntry("rectangle"), toolEntry("ellipse"), toolEntry("arrow"), toolEntry("text"),
+  { kind: "menu", label: "more shapes", items: [toolEntry("line"), toolEntry("box")] },
+];
+
 // the former hardcoded chrome, now SEEDED bare tools on the overlay — normal items (move/
-// delete/add like any other), corner-anchored, stable ids so migration stays idempotent.
+// delete/add like any other), stable ids so migration stays idempotent. These carry the
+// legacy corner-`anchor` form (kept so old clients keep positioning them); readers
+// normalize it to sticky (sticky.js stickyOf) — the one docked-positioning system.
 // Each is WIRED to its own `canvas` context node (a placeable source that re-publishes the
 // canvas's live state as outlets): minimap ← ns-ctx-mm, zoom ← ns-ctx-zoom. Real, visible
 // wires — nodeStream(nodeId, outlet) resolves to the context Source. `camera` is read/WRITE.
 export const MINIMAP_INLETS = { rects: { node: "ns-ctx-mm", outlet: "rects" }, bounds: { node: "ns-ctx-mm", outlet: "bounds" }, peers: { node: "ns-ctx-mm", outlet: "peers" }, view: { node: "ns-ctx-mm", outlet: "view" }, camera: { node: "ns-ctx-mm", outlet: "camera" } };
 export const ZOOM_INLETS = { camera: { node: "ns-ctx-zoom", outlet: "camera" } };
-// which viewport edges a corner anchor pins to — the SINGLE source of truth (resolveItemPos,
-// toAnchorOffset, the move delta-flip, item.jsx baseStyle all read this).
-export const anchorAxes = (anchor) => ({ right: anchor === "bottom-right" || anchor === "top-right", bottom: anchor === "bottom-left" || anchor === "bottom-right" });
+// the seeded palette is WIRED to the seeded palette-config window's `tools` outlet
+// (the same seeded-wire convention as MINIMAP_INLETS — a real, visible, persisted wire)
+export const PALETTE_INLETS = { tools: { node: "ns-toolbar-config", outlet: "tools" } };
 
 // the stable ids of the seeded overlay chrome. Deleting one records it in the layout doc's
 // `dismissedSeeds` so ensureLayout does NOT re-seed it on the next open (the "delete like any
 // item" contract). Fresh sketches + never-dismissed ones still get seeded.
-export const SEED_IDS = ["ns-ctx-mm", "ns-minimap", "ns-ctx-zoom", "ns-zoom"];
-// overlay-ONLY (`layers` home = overlay, no other membership): hidden in play
-// mode, which is the point. `layer` stays mirrored for old clients.
+export const SEED_IDS = ["ns-ctx-mm", "ns-minimap", "ns-ctx-zoom", "ns-zoom", "ns-toolbar-palette", "ns-toolbar-config", "ns-parts", "ns-presence"];
+// overlay-home (`layers` home = overlay); `layer` stays mirrored for old clients.
 const canvasCtxItem = (id, anchor, x, y) => ({ id, kind: "editor", editorId: "canvas", layer: "overlay", layers: ["overlay"], anchor, x, y, w: 74, h: 22, rotation: 0, inlets: {} });
 export const minimapSeedItem = () => ({ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", layers: ["overlay"], anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136, rotation: 0, inlets: { ...MINIMAP_INLETS } });
 export const zoomSeedItem = () => ({ id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", layers: ["overlay"], anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28, rotation: 0, inlets: { ...ZOOM_INLETS } });
 export const ctxMmSeedItem = () => canvasCtxItem("ns-ctx-mm", "bottom-left", 16, 162);   // above the minimap
 export const ctxZoomSeedItem = () => canvasCtxItem("ns-ctx-zoom", "bottom-right", 16, 54); // above the zoom
-export const defaultOverlayItems = () => [ctxMmSeedItem(), minimapSeedItem(), ctxZoomSeedItem(), zoomSeedItem()];
+// the TOOLBAR is a seeded palette bare-window — the membership showcase: overlay HOME
+// (arrange it on the overlay tab) with a CANVAS membership (usable while drawing).
+// Sticky-docked bottom-centre; the brushes are the standard DEFAULT_LAYOUT tool set.
+// WIRED (PALETTE_INLETS) to the seeded palette-config window; the unwired fallback
+// is seeded as `config.entries` — ENTRIES are the model; the legacy `config.brushes`
+// id list is a read-shim (normalized on read forever, never written).
+export const paletteSeedItem = () => ({ id: "ns-toolbar-palette", kind: "editor", editorId: "palette", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "bottom", t: 0.5 }, x: 0, y: 0, w: 356, h: 44, rotation: 0, inlets: { ...PALETTE_INLETS }, config: { entries: entriesFromIds([...DEFAULT_LAYOUT.tools]) } });
+// the palette CONFIGURATOR — its own bare window, overlay-ONLY (arrange-your-space
+// territory), owning the entry array in its config and emitting it on `tools`.
+// `brushIds` (an existing palette's customized id list) seeds matching entries so
+// upgrading an old doc never clobbers a customized palette; default = the old
+// Toolbar's layout (dividers + the shape overflow menu).
+export const paletteConfigSeedItem = (brushIds) => ({
+  id: "ns-toolbar-config", kind: "editor", editorId: "palette-config", layer: "overlay", layers: ["overlay"],
+  x: 24, y: 96, w: 236, h: 320, rotation: 0, inlets: {},
+  config: { entries: brushIds ? entriesFromIds(brushIds) : DEFAULT_TOOL_ENTRIES.map((e) => JSON.parse(JSON.stringify(e))) },
+});
+// ── the PARTS FLAP — the bin as a named STICKY container (a `flap: true` frame) ──
+// The bin no longer seeds as a bare window: `ns-parts` is a FLAP — a frame whose
+// sub-space holds ONE parked item, the parts-bin window — overlay-only, stuck on
+// the left edge (so it collapses to an edge TAB until clicked). The flap is a
+// plain frame (old clients render it as one); the bin window inside it is a
+// plain item — nothing about either is special, so anything else you alt-drag
+// into the flap parks there the same way (this replaces the customParts
+// save-a-palette protocol). Seeding creates DOCS (a folder + its layout), so it
+// runs ASYNC from the ROOT canvas (canvas.jsx), NOT from ensureLayout — every
+// box's loadSpace goes through ensureLayout and must not grow a flap + two docs.
+export const partsWindowSeedItem = () => ({ id: "ns-parts-window", kind: "editor", editorId: "parts", x: 8, y: 8, w: 232, h: 324, rotation: 0, inlets: {} });
+export const partsFlapItem = (url) => ({ id: "ns-parts", kind: "frame", flap: true, url, layer: "overlay", layers: ["overlay"], sticky: { edge: "left", t: 1 }, x: 24, y: 96, w: 248, h: 340, rotation: 0 });
+// a flap's SUB-SPACE: a folder + canvas-layout pair like any frame's, except the
+// layout dismisses EVERY seed — a flap is a shelf, not a full sketch space, so
+// re-opens never grow chrome (minimap/palette/…) inside it.
+export async function makeFlapSpace(repo, name = "flap", items = []) {
+  const layout = await repo.create2({
+    "@patchwork": { type: "sketch-layout" },
+    items, layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT },
+    dismissedSeeds: [...SEED_IDS],
+  });
+  return repo.create2({ "@patchwork": { type: "folder" }, title: name, docs: [], sketch: layout.url, "@layouts": { canvas: layout.url } });
+}
+// seed the parts flap into a ROOT layout doc: idempotent (by the stable id),
+// dismissal-respecting, and a no-op when an OLD ns-parts (the pre-flap bare
+// window) is already there — existing docs keep what they have, migration-free.
+export async function seedPartsFlap(repo, lh) {
+  const d = lh.doc();
+  if (!d || (d.dismissedSeeds || []).includes("ns-parts")) return null;
+  if ((d.items || []).some((it) => it.id === "ns-parts")) return null;
+  const folder = await makeFlapSpace(repo, "parts", [partsWindowSeedItem()]);
+  lh.change((dd) => {
+    if ((dd.dismissedSeeds || []).includes("ns-parts")) return;
+    if (!dd.items) dd.items = [];
+    if (dd.items.some((it) => it.id === "ns-parts")) return; // raced another open
+    dd.items.push(partsFlapItem(folder.url));
+  });
+  return folder;
+}
+// the PRESENCE bar — a bare window like the palette: overlay HOME with a canvas
+// membership (presence matters while drawing), sticky near the bottom of the
+// right edge, dismissable like any seed. Its `peers` inlet auto-wires to the
+// canvas's ambient `peers` outlet (the bare-tool convention).
+export const presenceSeedItem = () => ({ id: "ns-presence", kind: "editor", editorId: "presence", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "right", t: 0.9 }, x: 0, y: 0, w: 148, h: 34, rotation: 0, inlets: {} });
+// (ns-parts is NOT here: the parts flap needs docs created, so the root canvas
+// seeds it async via seedPartsFlap above)
+export const defaultOverlayItems = () => [ctxMmSeedItem(), minimapSeedItem(), ctxZoomSeedItem(), zoomSeedItem(), paletteConfigSeedItem(), paletteSeedItem(), presenceSeedItem()];
 
 // ── MULTIPLE complement docs (LAYOUTS.md "still needed" #1) ─────────────────────
 // A "space" doc (a folder/sketch) references ONE complement doc PER LAYOUT under the
@@ -182,21 +278,33 @@ export function layoutDocUrl(folderDoc, key = "canvas") {
   return legacy || mapped || undefined;
 }
 
-// make/load the complement doc for `key`. The canvas complement keeps the full
-// sketch-layout seed (DEFAULT_LAYOUT, overlay chrome, legacy top-level `items`
-// migration); other layouts get the same doc SHAPE minimally ({items:[]}) and add
-// their own arrays (e.g. the dock's `panes`) on first open.
+// Per-key SEED SPECS — the seed content each layout key ships, AS DATA (LAYOUTS.md:
+// a layout's complement carries that layout's defaults, not the canvas's). Each spec:
+//   init(folderHandle) → the initial doc for repo.create2 (first open through this lens)
+//   upgrade(layoutHandle) → the idempotent re-open pass (fill gaps, honour dismissedSeeds)
+// A key WITHOUT a spec gets the minimal sketch-layout shape ({items:[]})
+// and seeds its own arrays on first open.
+export const LAYOUT_SEEDS = {
+  canvas: {
+    init(folderHandle) {
+      const old = folderHandle.doc().items; // legacy top-level folder items migrate in
+      const seed = Array.isArray(old) ? old.map(clonePlain) : [];
+      return { "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT } };
+    },
+    upgrade: upgradeCanvasLayoutDoc,
+  },
+};
+
+// make/load the complement doc for `key`, seeding it from the OWNING layout's spec
+// (LAYOUT_SEEDS[key]) — the canvas complement keeps its full seed exactly as before.
 export async function ensureLayoutDoc(repo, folderHandle, key = "canvas") {
   folderHandle.change((d) => { if (!d.docs) d.docs = []; });
   const canvas = key === "canvas";
+  const spec = LAYOUT_SEEDS[key];
   let url = layoutDocUrl(folderHandle.doc(), key);
   if (!url) {
-    const old = canvas ? folderHandle.doc().items : null;
-    const seed = Array.isArray(old) ? old.map(clonePlain) : [];
     const layout = await repo.create2(
-      canvas
-        ? { "@patchwork": { type: "sketch-layout" }, items: [...seed, ...defaultOverlayItems()], layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT, modes: defaultModes() } }
-        : { "@patchwork": { type: "sketch-layout" }, items: [] },
+      spec ? spec.init(folderHandle) : { "@patchwork": { type: "sketch-layout" }, items: [] },
     );
     folderHandle.change((d) => {
       if (!d["@layouts"]) d["@layouts"] = {};
@@ -215,7 +323,7 @@ export async function ensureLayoutDoc(repo, folderHandle, key = "canvas") {
     });
   }
   const lh = await repo.find(url);
-  if (canvas) upgradeCanvasLayoutDoc(lh);
+  if (spec) spec.upgrade(lh);
   return lh;
 }
 
@@ -231,7 +339,8 @@ function upgradeCanvasLayoutDoc(lh) {
     if (!d.items) d.items = [];
     if (!d.layout) d.layout = { ...DEFAULT_LAYOUT };
     if (!d.layers) d.layers = defaultLayers();
-    if (!d.layout.modes) d.layout.modes = defaultModes(); // the workshop/play presets (shared, editable in the ⊞ tray)
+    // (existing docs may carry a `layout.modes` field from the removed modes
+    // experiment — left alone: persisted fields are never deleted)
     // seed the overlay chrome — but NEVER re-seed something the user deleted (dismissedSeeds).
     const dismissed = d.dismissedSeeds || [];
     const seed = (id, make) => { if (!dismissed.includes(id) && !d.items.some((it) => it.id === id)) d.items.push(make()); };
@@ -239,6 +348,16 @@ function upgradeCanvasLayoutDoc(lh) {
     seed("ns-ctx-zoom", ctxZoomSeedItem);
     seed("ns-minimap", minimapSeedItem);
     seed("ns-zoom", zoomSeedItem);
+    // the palette-config seed PRESERVES an existing palette's customized brush list:
+    // if this doc's palette carries a non-default `config.brushes`, the config window
+    // is seeded with matching entries (so the wire below can't clobber the custom set).
+    const pal0 = d.items.find((it) => it.id === "ns-toolbar-palette");
+    const palBrushes = pal0 && pal0.config && Array.isArray(pal0.config.brushes) ? [...pal0.config.brushes] : null;
+    const customized = palBrushes && !(palBrushes.length === DEFAULT_LAYOUT.tools.length && palBrushes.every((x, i) => x === DEFAULT_LAYOUT.tools[i]));
+    seed("ns-toolbar-config", () => paletteConfigSeedItem(customized ? palBrushes : null));
+    seed("ns-toolbar-palette", paletteSeedItem);
+    // (ns-parts — the parts FLAP — seeds async from the root canvas: seedPartsFlap)
+    seed("ns-presence", presenceSeedItem);
     // rewire/upgrade earlier seeds (older versions used {context} inlets or a top-left zoom).
     const mm = d.items.find((it) => it.id === "ns-minimap");
     if (mm) {
@@ -250,6 +369,14 @@ function upgradeCanvasLayoutDoc(lh) {
     if (zm) {
       if (!zm.anchor) Object.assign(zm, { anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28 });
       if (!zm.inlets || (zm.inlets.camera !== null && !zm.inlets.camera?.node)) zm.inlets = { ...ZOOM_INLETS };
+    }
+    // wire an EXISTING palette seed to the (just-seeded) config window — same
+    // convention: only a genuinely never-wired inlet upgrades; a null tombstone
+    // (the user cut the wire) is respected, and the config-only fallback remains.
+    const pal = d.items.find((it) => it.id === "ns-toolbar-palette");
+    if (pal && !dismissed.includes("ns-toolbar-config")) {
+      if (!pal.inlets) pal.inlets = {};
+      if (pal.inlets.tools === undefined) pal.inlets.tools = { ...PALETTE_INLETS.tools };
     }
   });
 }
@@ -263,11 +390,21 @@ export function colorFor(s) {
 
 // is this keystroke aimed at editable content or an embedded tool's subtree (which owns
 // its own keys — incl. its own undo history), rather than the canvas itself?
-export function isTypingTarget(t) {
+//
+// `within` (optional) is the asking canvas's ROOT element. In the real host the whole
+// canvas renders INSIDE a <patchwork-view>, so the bare ancestor check used to match the
+// canvas's own HOST view and swallow every shortcut (Backspace delete, `, undo, tool
+// keys). With `within`, a patchwork-view ancestor counts as a typing target only when it
+// is NOT the host: the nearest view that CONTAINS `within` is the view we're mounted in —
+// ignore it and fall through to the remaining checks. (Nested sketchies resolve right:
+// an embedded box's view is inside the outer canvas → the outer defers to it; the inner
+// canvas passes its OWN root, so that same view is ITS host and its keys work.)
+export function isTypingTarget(t, within) {
   const el = t || document.activeElement;
   if (!el) return false;
   if (el.isContentEditable) return true;
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
-  if (el.closest && el.closest("patchwork-view")) return true; // an embedded patchwork tool, wherever it's hosted
+  const pv = el.closest && el.closest("patchwork-view");
+  if (pv && !(within && pv.contains(within))) return true; // an embedded patchwork tool (not our own host view)
   return !!(el.closest && el.closest(".ns-doc-body:not(.ns-frame-body)"));
 }

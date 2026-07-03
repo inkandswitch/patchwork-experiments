@@ -128,6 +128,73 @@ describe("keystrokes inside an embed / editable content never reach the canvas h
     input.remove(); ce.remove(); pv.remove(); plain.remove();
   });
 
+  it("isTypingTarget(t, within): the canvas's own HOST patchwork-view doesn't count; embedded views still do", () => {
+    // the real-host shape: <patchwork-view> → canvas root → (bg + an embedded view)
+    const host = document.createElement("patchwork-view");
+    const root = document.createElement("div"); // the canvas's own root (`within`)
+    const bg = document.createElement("div");
+    const embed = document.createElement("patchwork-view");
+    const inEmbed = document.createElement("div");
+    embed.append(inEmbed);
+    root.append(bg, embed);
+    host.append(root);
+    document.body.append(host);
+    // unscoped (old callers): anything under a view reads as typing — unchanged
+    expect(isTypingTarget(bg)).toBe(true);
+    // scoped to the canvas root: the host view is ignored (keys work on the canvas bg)…
+    expect(isTypingTarget(bg, root)).toBe(false);
+    // …but a view INSIDE the canvas (a doc item's embed) still owns its keys
+    expect(isTypingTarget(inEmbed, root)).toBe(true);
+    // and real editables inside the host still count
+    const input = document.createElement("input");
+    root.append(input);
+    expect(isTypingTarget(input, root)).toBe(true);
+    host.remove();
+  });
+
+  it("mounted INSIDE a patchwork-view (the real host): Backspace deletes the selected shape, ` toggles debug, keys in an embedded view stay suppressed", async () => {
+    // hand-rolled mount so the canvas element sits inside a stub host view
+    const repo = new Repo({});
+    const layout = repo.create({ "@patchwork": { type: "sketch-layout" }, items: [structuredClone(STROKE)] });
+    const folder = repo.create({ title: "test", docs: [], sketch: layout.url });
+    const host = document.createElement("patchwork-view");
+    const element = document.createElement("div");
+    host.append(element);
+    document.body.append(host);
+    const dispose = render(() => Canvas({ handle: folder, repo, element, opts: {} }), element);
+    mounted.push({ repo, layout, folder, element, dispose });
+    await flush();
+    try {
+      // ` (aimed at the canvas background, which is inside the HOST view) toggles op-debug
+      const root = element.querySelector(".ns-root");
+      expect(root).toBeTruthy();
+      root.dispatchEvent(new KeyboardEvent("keydown", { key: "`", bubbles: true }));
+      await flush(10);
+      expect(element.querySelector(".ns-debug-badge")).toBeTruthy();
+      root.dispatchEvent(new KeyboardEvent("keydown", { key: "`", bubbles: true }));
+      await flush(10);
+      expect(element.querySelector(".ns-debug-badge")).toBeFalsy();
+      // select the stroke, then Backspace from the canvas background deletes it
+      const hit = element.querySelector('[data-item-id="s1"] .ns-hit');
+      ptr("pointerdown", hit, 505, 505);
+      ptr("pointerup", window, 505, 505);
+      await flush(10);
+      // …but a keystroke from an EMBEDDED view (child of the canvas) is still suppressed
+      const embed = document.createElement("patchwork-view");
+      const inEmbed = document.createElement("div");
+      embed.append(inEmbed);
+      root.append(embed);
+      inEmbed.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+      await flush(10);
+      expect(layout.doc().items.some((x) => x.id === "s1")).toBe(true);
+      root.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+      await flush(10);
+      expect(layout.doc().items.some((x) => x.id === "s1")).toBe(false);
+    } finally {
+      host.remove();
+    }
+  });
+
   it("Backspace from inside a patchwork-view leaves the selected canvas item alone; from the canvas it deletes; ⌘Z is guarded the same way", async () => {
     const { element, layout } = await mountCanvas({}, [structuredClone(STROKE)]);
     // select the stroke the way a user does

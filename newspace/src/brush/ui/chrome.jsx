@@ -9,10 +9,11 @@ import { opstreamToSignal } from "../../opstreams.js";
 import { seedFromId, roughEllipsePath, roughRectPath } from "../../draw.js";
 import { rot } from "../../model.js";
 import { getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
-import { nodeRole } from "../../editors.js";
+import { TOOL_META, SHAPE_DRAGGABLE, BRUSH_FALLBACK_PATH, STAMPS, STAMP_IDS, byName, splitWindowsByRole } from "../../catalog.js";
 import {
   colorVar, fillVar, fontFamily, PALETTE, SIZES, ARROW_SIZES, FILL_STYLES,
   FILL_PREVIEW, STROKE_STYLES, CORNERS, ROUGHNESS_LEVELS, FONT_OPTIONS, FILL_BG,
+  windowDrag,
 } from "../constants.js";
 // ---------------------------------------------------------------------------
 export const HDIRS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
@@ -21,7 +22,12 @@ export function Handles(props) {
   const box = () => props.box;
   return (
     <div class="ns-handles" style={{ left: `${box().x}px`, top: `${box().y}px`, width: `${box().w}px`, height: `${box().h}px`, transform: `rotate(${box().rot}deg)` }}>
-      <For each={HDIRS}>{([hx, hy]) => <div class="ns-handle" style={{ left: `${((hx + 1) / 2) * 100}%`, top: `${((hy + 1) / 2) * 100}%`, cursor: hCursor(hx, hy) }} onPointerDown={(e) => props.onResize(hx, hy, e)} />}</For>
+      {/* FIT-CONTENT windows (box.fit — the palette) size themselves via setSize:
+          manual resize handles would silently fight the next measure (stored w/h
+          drift, then snap back), so they're suppressed. Rotation stays. */}
+      <Show when={!box().fit}>
+        <For each={HDIRS}>{([hx, hy]) => <div class="ns-handle" style={{ left: `${((hx + 1) / 2) * 100}%`, top: `${((hy + 1) / 2) * 100}%`, cursor: hCursor(hx, hy) }} onPointerDown={(e) => props.onResize(hx, hy, e)} />}</For>
+      </Show>
       <div class="ns-rotate" title="drag to rotate · double-click to reset" onPointerDown={(e) => props.onRotate(e)} onDblClick={() => props.onResetRotate?.()} />
       <div class="ns-rotate-stem" />
     </div>
@@ -29,59 +35,9 @@ export function Handles(props) {
 }
 
 // ---------------------------------------------------------------------------
-// id -> [label, icon path]
-export const TOOL_META = {
-  select: ["Select  (V)", "M4 3l14 6-6 2-2 6z"],
-  hand: ["Pan  (H)", "M7 11V6a1.5 1.5 0 013 0v4m0-4.5a1.5 1.5 0 013 0V11m0-3a1.5 1.5 0 013 0v5a5 5 0 01-5 5h-2a4 4 0 01-3-1.7L6 16"],
-  pen: ["Draw  (P)", "M3 17l9-9 3 3-9 9H3v-3zM13 6l2-2 3 3-2 2z"],
-  eraser: ["Eraser  (E)", "M4 14l7-7 7 7-5 5H8z"],
-  rectangle: ["Rectangle  (R)", "M3 5h16v12H3z"],
-  ellipse: ["Ellipse  (O)", "M11 5a8 6 0 100 12 8 6 0 000-12z"],
-  line: ["Line  (L)", "M4 18L18 5"],
-  arrow: ["Arrow  (A)", "M4 18L17 6m0 0H9m8 0v8"],
-  text: ["Text  (T)", "M5 6h12M11 6v11"],
-  box: ["Box  (F)", "M8 3H3V8 M14 3H19V8 M14 19H19V14 M8 19H3V14"],
-  wire: ["Wire — pointer++  (W)", "M4 3l9 3.7-3.7 1.2-1.2 3.7z M12 11c2 2 3.2 3.2 4.2 4.6 M18.8 15.6a2 2 0 10.02 0z"],
-  highlighter: ["Highlighter", "M5 15l7-7 4 4-7 7H5v-4z M14 6l3-3 3 3-3 3z M4 21h8"],
-  constraint: ["Constraint line", "M5 18a1.6 1.6 0 100-.1z M17 6a1.6 1.6 0 100-.1z M6 17L16 7 M6 17h5"],
-  voice: ["Voice note", "M12 4a2.5 2.5 0 012.5 2.5v4a2.5 2.5 0 01-5 0v-4A2.5 2.5 0 0112 4z M7 10a5 5 0 0010 0 M12 15v4 M9 19h6"],
-};
-export const SHAPE_DRAGGABLE = new Set(["rectangle", "ellipse", "line", "arrow"]);
-// the generic brush squiggle — the glyph for a registry brush without a TOOL_META
-// entry (the shape overflow and the palette node both draw from this one source)
-export const BRUSH_FALLBACK_PATH = "M5 16c4-1 5-9 9-10M14 6l3-2";
-
-// little hand-drawn "stamps" — multi-stroke line drawings. Dragging the matching
-// toolbar item drops them onto the canvas as freehand (pencil) strokes; the same
-// paths render the toolbar glyph. Each path string is one stroke.
-export const STAMPS = {
-  // the cat face (replaces the old ◕ᴥ◕)
-  face: { view: "0 0 64 52", paths: [
-    "M17 31 L25 14 L31 29", "M33 29 L40 14 L47 31",
-    "M31 30 C27.5 30 27.5 41 31 41 C34.5 41 34.5 30 31 30",
-    "M28 33 L8 31", "M27 36 L10 45", "M28 39 L18 51",
-    "M35 33 L57 30", "M35 37 L53 43",
-  ] },
-  // a pencil (for the pen tool)
-  pencil: { view: "0 0 48 48", paths: [
-    "M10 38 L30 18 L34 22 L14 42 Z", "M10 38 L14 42 L7 45 Z", "M28 20 L32 24",
-  ] },
-  // an open hand — 4 fingers + thumb (for the hand tool)
-  hand: { view: "0 0 110 124", paths: [
-    "M34 116 C31 104 31 96 34 82 C27 76 17 68 15 58 C13 52 21 49 27 56 C32 62 37 70 39 74 L39 36 C39 27 51 27 51 36 L51 54 L53 54 L53 26 C53 17 65 17 65 26 L65 54 L67 54 L67 32 C67 23 79 23 79 32 L79 56 L81 56 L81 44 C81 36 91 36 91 46 C93 68 93 100 88 116 C80 122 42 122 34 116 Z",
-  ] },
-  // a head-down mouse with a big ear and a long curling tail (for select)
-  mouse: { view: "0 0 120 120", paths: [
-    "M34 104 C26 98 24 84 30 70 C36 48 54 34 74 40 C88 44 92 60 86 76 C80 92 60 102 44 100 C40 99 36 106 34 104 Z",
-    "M58 42 C54 24 80 22 84 40 C86 50 80 58 70 56",
-    "M66 44 C64 36 76 34 78 44",
-    "M33 103 C29 105 29 110 34 110 C38 110 38 105 34 103",
-    "M33 107 L13 112", "M34 110 L15 120", "M35 105 L16 100",
-    "M48 84 C46 82 50 80 51 84",
-    "M72 42 C96 33 108 54 96 72 C90 81 83 83 79 78",
-  ] },
-};
-export const STAMP_IDS = new Set(["face", "pencil", "hand", "mouse"]);
+// the tool/stamp/shape tables live in the CATALOG (catalog.js — the one census
+// of placeable things); re-exported here for the existing importers.
+export { TOOL_META, SHAPE_DRAGGABLE, BRUSH_FALLBACK_PATH, STAMPS, STAMP_IDS };
 // sample an SVG path into [x,y] points (a temp, offscreen <path> does the maths)
 let _samplePath;
 export function sampleSvgPath(d, step = 2.5) {
@@ -159,13 +115,12 @@ export function Toolbar(outer) {
   // those read as clutter). Each section is the filtered slice of its list.
   const q = () => docQuery().trim().toLowerCase();
   const match = (x) => { const s = q(); return !s || (x.name || x.id || "").toLowerCase().includes(s) || (x.id || "").toLowerCase().includes(s); };
-  const byName = (a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || "");
   const docList = createMemo(() => props.datatypes().filter(match).sort(byName));
-  // placeable nodes, split by role: a SOURCE produces (no inlets), everything else
-  // is an editor/sink/transform you wire into
-  const allNodes = () => (props.editors ? props.editors() : []);
-  const sources = createMemo(() => allNodes().filter((e) => nodeRole(e) === "source").filter(match));
-  const editors = createMemo(() => allNodes().filter((e) => nodeRole(e) !== "source").filter(match));
+  // placeable nodes, split by role through the CATALOG's one grouping (the same
+  // split the parts bin's census renders)
+  const split = createMemo(() => splitWindowsByRole(props.editors ? props.editors() : []));
+  const sources = createMemo(() => split().sources.filter(match));
+  const editors = createMemo(() => split().editors.filter(match));
   const lenses = createMemo(() => (props.lenses ? props.lenses() : []).filter(match));
   return (
     <div class="ns-toolbar" onPointerDown={(e) => e.stopPropagation()} onWheel={(e) => e.stopPropagation()}>
@@ -328,8 +283,7 @@ export function Properties(outer) {
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY, o = props.pos();
     const move = (ev) => props.setPos({ x: o.x + (ev.clientX - sx), y: o.y + (ev.clientY - sy) });
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    windowDrag(move); // settles on pointerup AND pointercancel
   }
   const docTools = createMemo(() => { const it = props.single(); if (!it || it.kind !== "doc") return []; const type = props.linkFor(it.url)?.type; try { return type ? getSupportedToolsForType(type) : []; } catch { return []; } });
 
@@ -486,6 +440,26 @@ export function Properties(outer) {
         <ToolPicker value={() => props.single()?.toolId || ""} tools={docTools} onPick={(v) => props.setField(props.single().id, "toolId", v)} />
         <div class="ns-field">theme</div>
         <input class="ns-text" placeholder="(inherit)" value={props.single()?.theme || ""} onChange={(e) => props.setField(props.single().id, "theme", e.currentTarget.value.trim())} />
+      </Show>
+
+      {/* APPEARS ON — the selected item's layer MEMBERSHIPS. The home layer (owns the
+          item's coordinates) is locked on; ticking another layer adds a pure visibility
+          membership: the item shows whenever ANY ticked layer is visible in the current
+          mode, always rendered in its home space. Root items only (host gates `layers`). */}
+      <Show when={props.layers && props.itemLayersOf && props.single() && props.layers().length > 1}>
+        <div class="ns-field">appears on</div>
+        <div class="ns-row ns-appears">
+          <For each={props.layers()}>{(layer) => {
+            const members = () => props.itemLayersOf(props.single() || {});
+            const home = () => members()[0] === layer.id;
+            return (
+              <label class="ns-check" classList={{ "ns-appears-home": home() }} title={home() ? "home layer — owns this item's coordinates" : "show this item while this layer is visible"}>
+                <input type="checkbox" checked={members().includes(layer.id)} disabled={home()} onChange={() => props.toggleItemLayer(props.single().id, layer.id)} />
+                <span>{layer.name || layer.id}{home() ? " · home" : ""}</span>
+              </label>
+            );
+          }}</For>
+        </div>
       </Show>
 
       <Show when={(selCount() > 1 && !props.hasGroup()) || props.hasGroup()}>

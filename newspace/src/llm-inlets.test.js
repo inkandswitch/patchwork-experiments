@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks, outletConsumers, schemaSpec, schemaRule, validateAgainst, validationPlan } from "./llm-inlets.js";
+import { promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks, clampOutletBlocks, outletConsumers, schemaSpec, schemaRule, validateAgainst, validationPlan } from "./llm-inlets.js";
 import { anySchema, numberSchema, stringSchema, fileSchema, paramsSchema, objectSchema, arraySchema, bangSchema } from "./ops.js";
 
 describe("promptVars / llmInlets — {{var}} → text inlets", () => {
@@ -24,6 +24,11 @@ describe("promptVars / llmInlets — {{var}} → text inlets", () => {
   it("no config → just the three fixed inlets", () => {
     expect(llmInlets().map((d) => d.name)).toEqual(["in", "prompt", "bang"]);
   });
+  it("reserved names ({{in}}/{{prompt}}/{{bang}}) never mint a twin of a fixed inlet", () => {
+    expect(promptVars("{{in}} {{prompt}} {{bang}} {{other}}")).toEqual(["other"]);
+    const defs = llmInlets({ prompt: "take {{in}} and {{lang}}" });
+    expect(defs.map((d) => d.name)).toEqual(["in", "prompt", "bang", "lang"]); // no duplicate `in`
+  });
 });
 
 describe("promptOutlets / llmOutlets — @out → outlets", () => {
@@ -41,6 +46,28 @@ describe("promptOutlets / llmOutlets — @out → outlets", () => {
   it("no declarations → out + think only", () => {
     expect(llmOutlets({ prompt: "plain" }).map((d) => d.name)).toEqual(["out", "think"]);
     expect(llmOutlets().map((d) => d.name)).toEqual(["out", "think"]);
+  });
+  it("reserved names (@out out / @out think / @out code) never mint a twin of a fixed outlet", () => {
+    expect(promptOutlets("@out out\n@out think\n@out code\n@out real")).toEqual(["real"]);
+    expect(llmOutlets({ prompt: "@out out\n@out a" }).map((d) => d.name)).toEqual(["out", "think", "a"]);
+    expect(llmOutlets({ prompt: "@out code", code: true }).map((d) => d.name)).toEqual(["out", "think", "code"]);
+  });
+});
+
+describe("clampOutletBlocks — no phantom ports from model-invented block names", () => {
+  it("declared + fixed names pass through untouched", () => {
+    const blocks = { out: "main", think: "t", summary: "s" };
+    expect(clampOutletBlocks(blocks, ["summary"])).toEqual(blocks);
+  });
+  it("an undeclared block name folds into out (like unmarked text), keeping content", () => {
+    expect(clampOutletBlocks({ out: "main", hallucinated: "extra" }, ["summary"]))
+      .toEqual({ out: "main\nextra" });
+    // even with no out block, the stray content still lands on out
+    expect(clampOutletBlocks({ nobody: "x" }, [])).toEqual({ out: "x" });
+  });
+  it("empty / nullish input → empty object", () => {
+    expect(clampOutletBlocks({}, ["a"])).toEqual({});
+    expect(clampOutletBlocks(undefined, ["a"])).toEqual({});
   });
 });
 

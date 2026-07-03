@@ -9,8 +9,10 @@ const isMediaStream = (v) => typeof MediaStream !== "undefined" && v instanceof 
 
 // CAMERA — Enable (permission), shows a live preview, and provides:
 //   video — the MediaStream (drive a Video display)
-//   image — a frame as a JPEG data-URL. Captured on a wired `bang` (wire RAF for
-//           60fps, a Timer for slower); with no bang wired, auto-captures ~10fps.
+//   image — a frame as ImageData (raw RGBA + dims). Captured on a wired `bang`
+//           (wire RAF for 60fps, a Timer for slower); with no bang wired,
+//           auto-captures ~10fps. Works on RECEIVERS of a shared camera too
+//           (frames are grabbed from the received stream at the same cadence).
 // NB: wiring the bang re-runs the mount, so wire it BEFORE you Enable the camera.
 export function mountCamera({ element, inlets = {}, setOutlet, config = {}, setConfig, onConfig, share: mesh }) {
   const myUrl = myContactUrl();
@@ -73,13 +75,21 @@ export function mountCamera({ element, inlets = {}, setOutlet, config = {}, setC
     loop();
     if (amOwner() && mesh && media) { mesh.stream(media); shareStop = () => mesh.unshare(); } // share over the WebRTC mesh
   };
+  // receivers grab frames too — the `image` outlet must work on both ends. Mirrors
+  // the owner's ~10fps cadence, reading from the same <video> (showStream set it).
+  let recvTimer = null;
+  const startRecvLoop = () => {
+    if (recvTimer) return;
+    const loop = () => { if (disposed || !video.srcObject) { recvTimer = null; return; } grabFrame(); recvTimer = setTimeout(loop, 100); };
+    loop();
+  };
   const startReceiver = () => {
     status.textContent = "receiving shared camera…";
-    if (mesh) recvStop = mesh.onStream((s) => { showStream(s); status.textContent = "📡 live (shared)"; });
+    if (mesh) recvStop = mesh.onStream((s) => { showStream(s); status.textContent = "📡 live (shared)"; startRecvLoop(); });
   };
   const stopShare = () => { if (shareStop) { shareStop(); shareStop = null; } };
   const stopLocal = () => { if (timer) { clearTimeout(timer); timer = null; } if (off) { off(); off = null; } stopShare(); if (media) { media.getTracks().forEach((t) => t.stop()); media = null; } };
-  const stopRecv = () => { if (recvStop) { recvStop(); recvStop = null; } };
+  const stopRecv = () => { if (recvStop) { recvStop(); recvStop = null; } if (recvTimer) { clearTimeout(recvTimer); recvTimer = null; } };
   // NON-DESTRUCTIVE: toggling share must NOT kill a running camera — only start/stop the
   // SHARING. We only tear down the camera when switching INTO receive mode.
   const reconcile = () => {
@@ -147,18 +157,22 @@ export function mountAudioFile({ element, setOutlet, config = {}, setConfig, onC
   root.append(file, audio, bar, status); element.append(root);
 
   let ctx = null, analyser = null, raf = null, wired = false, shareStop = null, recvStop = null, playStop = null;
+  let shareDest = null; // the CURRENT share tap (analyser → MediaStreamDestination) — disconnected on stopShare, or re-shares pile taps onto the analyser
 
   // OWNER capture: prefer a web-audio tap off the analyser once the graph exists
   // (createMediaElementSource reroutes the element's output, so captureStream()
   // can go silent after setup); before the graph, fall back to captureStream().
   const captureShareStream = () => {
     try {
-      if (ctx && analyser) { const dest = ctx.createMediaStreamDestination(); analyser.connect(dest); return dest.stream; }
+      if (ctx && analyser) { shareDest = ctx.createMediaStreamDestination(); analyser.connect(shareDest); return shareDest.stream; }
       const cap = audio.captureStream || audio.mozCaptureStream;
       return cap ? cap.call(audio) : null;
     } catch { return null; }
   };
-  const stopShare = () => { if (shareStop) { shareStop(); shareStop = null; } };
+  const stopShare = () => {
+    if (shareStop) { shareStop(); shareStop = null; }
+    if (shareDest) { try { if (analyser) analyser.disconnect(shareDest); } catch {} shareDest = null; }
+  };
   const startShare = () => { if (shareStop || !mesh) return; const ms = captureShareStream(); if (ms) { mesh.stream(ms); shareStop = () => mesh.unshare(); } };
   const stopRecv = () => { if (recvStop) { recvStop(); recvStop = null; } if (playStop) { playStop(); playStop = null; } };
   const startRecv = () => {
@@ -212,24 +226,35 @@ export function mountAudioFile({ element, setOutlet, config = {}, setConfig, onC
   return () => { if (raf) cancelAnimationFrame(raf); if (ctx) ctx.close().catch(() => {}); stopShare(); stopRecv(); if (objectUrl) { try { URL.revokeObjectURL(objectUrl); } catch {} } root.remove(); };
 }
 
-// SPEAKER — plays a wired audio source through the speakers (connects its analyser to
-// the audio context's destination). For sources that don't self-play, e.g. the mic.
+// SPEAKER — plays a wired audio source through the speakers, via its OWN GainNode
+// (analyser → gain → destination). For sources that don't self-play, e.g. the mic.
+// The gain matters at teardown: the source may have its own analyser→destination
+// connection (the audio-file node is audible by itself), and Web Audio dedupes a
+// double-connect — so disconnecting analyser→destination directly would sever the
+// source's audible path too, permanently muting it. Tearing down only OUR gain
+// removes exactly what this node added.
 export function mountSpeaker({ element, inlets = {} }) {
   const root = document.createElement("div"); root.className = "ns-source";
   const status = document.createElement("div"); status.className = "ns-source-status"; status.textContent = "wire an audio source";
   root.append(status); element.append(root);
   const s = inlets.audio || inlets.in;
-  let connected = false;
+  let connected = false, gain = null, tapped = null; // tapped = the analyser OUR gain hangs off
   const connect = () => {
     const c = s && s.complement;
     if (connected || !c || !c.analyser || !c.audioContext) return;
-    try { c.analyser.connect(c.audioContext.destination); connected = true; status.textContent = "▶ playing"; } catch {}
+    try {
+      gain = c.audioContext.createGain();
+      c.analyser.connect(gain);
+      gain.connect(c.audioContext.destination);
+      tapped = c.analyser;
+      connected = true; status.textContent = "▶ playing";
+    } catch {}
   };
   const off = s && s.connect ? s.connect(connect) : null;
   connect();
   return () => {
     if (off) off();
-    try { const c = s && s.complement; if (connected && c && c.analyser && c.audioContext) c.analyser.disconnect(c.audioContext.destination); } catch {}
+    try { if (connected && gain) { if (tapped) tapped.disconnect(gain); gain.disconnect(); } } catch {}
     root.remove();
   };
 }

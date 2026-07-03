@@ -36,6 +36,10 @@ function preview(v) {
 // into json-path / inspector / a patchwork-tool. The url rides in the complement.
 export function mountAutomergeSource({ element, setOutlet, api, config = {}, setConfig, onConfig }) {
   let off = null, curUrl = null, curStream = null, disposed = false;
+  // in-flight generation token (the inletResolutionGate idea, local): only the LATEST
+  // open/new may adopt + persist — a slow url resolving after a newer one must not
+  // replace the newer stream, nor setConfig the stale url back over it
+  let opening = 0;
   // an automergeOpstream holds its own handle.on("change") — it must be disconnect()ed
   // when replaced or on teardown, or every url entered leaks a change listener
   const dropStream = (s) => { if (s && typeof s.disconnect === "function") { try { s.disconnect(); } catch {} } };
@@ -74,18 +78,21 @@ export function mountAutomergeSource({ element, setOutlet, api, config = {}, set
   newBtn.onclick = async () => {
     const repo = typeof window !== "undefined" && window.repo;
     if (!repo) { status.textContent = "no repo"; return; }
+    const gen = ++opening;
     status.textContent = "creating…";
     // use the freshly-created HANDLE directly — re-finding it by url races and reports
     // "unavailable" for a doc that obviously exists.
-    try { const h = await repo.create2({}); input.value = h.url; useStream(automergeOpstream(h), h.url); } catch (e) { status.textContent = (e && e.message) || "failed"; }
+    try { const h = await repo.create2({}); if (gen !== opening) return; input.value = h.url; useStream(automergeOpstream(h), h.url); } catch (e) { if (gen === opening) status.textContent = (e && e.message) || "failed"; }
   };
 
   const open = async (url) => {
     url = (url || "").trim();
     if (!url) return;
+    const gen = ++opening;
     status.textContent = "loading…";
     let stream;
-    try { stream = await resolveDoc(url, api); } catch (e) { status.textContent = (e && e.message) || "not found"; return; }
+    try { stream = await resolveDoc(url, api); } catch (e) { if (gen === opening) status.textContent = (e && e.message) || "not found"; return; }
+    if (gen !== opening) { dropStream(stream); return; } // superseded while resolving
     useStream(stream, url);
   };
   input.onkeydown = (e) => { if (e.key === "Enter") open(input.value); };
@@ -110,7 +117,8 @@ export function mountBang({ element, setOutlet }) {
   return () => root.remove();
 }
 
-// TIMER — fires a bang on an interval (a metronome). Interval persisted; run/pause.
+// TIMER — fires a bang on an interval (a metronome). Interval AND run/pause persisted,
+// so a paused timer stays paused across reload.
 export function mountTimer({ element, setOutlet, config = {}, setConfig }) {
   let n = 0, id = null;
   let ms = Number(config.ms) > 0 ? Number(config.ms) : 1000;
@@ -125,7 +133,7 @@ export function mountTimer({ element, setOutlet, config = {}, setConfig }) {
   const stop = () => { if (id) clearInterval(id); id = null; run.textContent = "▶ run"; };
   const start = () => { stop(); id = setInterval(() => { out.push(++n); status.textContent = `bang ${n}`; }, ms); run.textContent = "⏸ stop"; };
   input.onchange = () => { ms = Math.max(16, Number(input.value) || 1000); if (setConfig) setConfig({ ms }); if (id) start(); };
-  run.onclick = () => (id ? stop() : start());
+  run.onclick = () => { if (id) { stop(); if (setConfig) setConfig({ running: false }); } else { start(); if (setConfig) setConfig({ running: true }); } };
   if (config.running !== false) start();
   return () => { stop(); root.remove(); };
 }
@@ -408,8 +416,9 @@ export function makeSourceMount({ start, outlet, label, gated, stream: isStream,
 // pick; until then the outlet is absent (nothing to provide yet).
 // Three outlets, kept fresh by watching the disk:
 //   text  — the file's text, EDITABLE + carries save() (saveable downstream)
-//   bytes — the raw Uint8Array
-//   file  — a {name,type,size,…,text} snapshot that tracks the editable text
+//   bytes — the raw Uint8Array, re-read on every disk change
+//   file  — a {name,type,size,…,text} snapshot that tracks the editable text,
+//           its size/lastModified tracking the DISK
 export function mountFileSource({ element, outlets, setOutlet }) {
   let stopWatch = null, offText = null; // the CURRENT pick's watcher + dirty subscription (replaced on re-pick)
   const expose = (name, s) => { if (setOutlet) setOutlet(name, s); else if (outlets) outlets[name] = s; };
@@ -440,11 +449,15 @@ export function mountFileSource({ element, outlets, setOutlet }) {
 
     // text: an editable opstream (save() in its complement), reloaded unless dirty
     const text = await fileHandleOpstream(handle);
-    stopWatch = watchFileStream(text, {});
     expose("text", text);
 
-    const file = await handle.getFile();
-    try { expose("bytes", new Source(new Uint8Array(await file.arrayBuffer()), { complement: { fileHandle: handle, name: file.name } })); } catch {}
+    // `file` tracks the DISK: the watcher's onDisk swaps in the fresh File so the
+    // bytes + the metadata snapshot below never go stale after the pick
+    let file = await handle.getFile();
+    const bytes = new Source(null, { complement: { fileHandle: handle, name: file.name } });
+    const readBytes = async (f) => { try { bytes.push(new Uint8Array(await f.arrayBuffer())); } catch {} };
+    await readBytes(file);
+    expose("bytes", bytes);
     // file: a metadata snapshot that's EDITABLE AT `.text` — writing the text field
     // forwards to the editable text stream (so File→JSONPath ".text"→Code is editable),
     // and it carries save() (so Cmd+S persists). Metadata fields stay read-only.
@@ -470,6 +483,9 @@ export function mountFileSource({ element, outlets, setOutlet }) {
     };
     offText = text.connect(refresh);
     refresh();
+    // watch the disk: the text reloads (unless dirty), and onDisk refreshes the
+    // bytes + File metadata unconditionally — they mirror the disk, not the edits
+    stopWatch = watchFileStream(text, { onDisk: (f) => { file = f; readBytes(f); refresh(); } });
     btn.textContent = "Change file…";
   };
 

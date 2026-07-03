@@ -1,3 +1,4 @@
+// unregistered 2026-07-02 pending the container-types rethink (see TODO)
 // A GRID layout for a folder — every doc as a LIVE embed tile in a responsive
 // grid. A third lens over the same folder docs (see LAYOUTS.md), and a layout
 // switcher so you can jump between canvas / list / grid. Surfaces the canvas

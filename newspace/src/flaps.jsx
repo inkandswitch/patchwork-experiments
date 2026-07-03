@@ -1,3 +1,8 @@
+// DORMANT 2026-07-02 — nothing registers a sketchy:flap and the canvas no
+// longer mounts the FlapDock (its edge-tab CSS is gone too). Flaps return as
+// "a named STICKY container window a user places" once the container + sticky
+// work matures (see TODO.md); the source stays on disk like grid-tool.jsx.
+//
 // FLAPS — Squeak-style named tabs docked to the screen edges (bottom/left/right).
 // A tab sticks out of its edge; a CLICK (or a pull on its own edge) opens the
 // flap as a drawer; DRAG the tab to another edge to re-dock it. Flap definitions

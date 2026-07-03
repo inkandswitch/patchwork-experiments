@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_PALETTE,
   normalizeBrushes,
+  entriesFromConfig,
   sameList,
   addBrush,
   removeBrush,
@@ -12,9 +13,10 @@ import {
   mountPalette,
   plugin,
 } from "./palette-node.js";
+import { normalizeEntries, entriesFromIds, entryToolIds, entriesArePlainTools, toolEntry } from "./model.js";
 import { TOOL_META, BRUSH_FALLBACK_PATH } from "./brush/ui/chrome.jsx";
 import { PART_DRAG_TYPE, encodePartId } from "./parts-bin.js";
-import { DEFAULT_LAYOUT } from "./brush/constants.js";
+import { DEFAULT_LAYOUT, DEFAULT_TOOL_ENTRIES } from "./brush/constants.js";
 
 // a fake context Source: value/connect/set/apply — the same stub shape the other
 // node tests use, plus `set` (the context Source's alias the toolbar path writes).
@@ -68,6 +70,42 @@ describe("palette pure helpers", () => {
     expect(sameList(["a", "b"], ["b", "a"])).toBe(false);
   });
 
+  it("entry helpers (model.js): normalize, one level of menu nesting, flat ids", () => {
+    expect(toolEntry("pen")).toEqual({ kind: "tool", id: "pen" });
+    expect(entriesFromIds(["pen", "", 3, "hand"])).toEqual([toolEntry("pen"), toolEntry("hand")]);
+    // bare strings read as tool ids; junk is dropped; nested menus are stripped
+    const rich = normalizeEntries([
+      "pen",
+      { kind: "divider" },
+      { kind: "menu", label: "shapes", items: ["line", { kind: "menu", label: "nope", items: ["box"] }, { kind: "tool", id: "box" }] },
+      { kind: "wat" }, null, 7,
+    ]);
+    expect(rich).toEqual([
+      toolEntry("pen"),
+      { kind: "divider" },
+      { kind: "menu", label: "shapes", items: [toolEntry("line"), toolEntry("box")] },
+    ]);
+    expect(entryToolIds(rich)).toEqual(["pen", "line", "box"]);
+    expect(entriesArePlainTools(rich)).toBe(false);
+    expect(entriesArePlainTools(entriesFromIds(["pen"]))).toBe(true);
+  });
+
+  it("entriesFromConfig: entries > brushes > default (back-compat forever)", () => {
+    expect(entriesFromConfig({ entries: ["pen", { kind: "divider" }] })).toEqual([toolEntry("pen"), { kind: "divider" }]);
+    expect(entriesFromConfig({ brushes: ["pen", "hand"] })).toEqual(entriesFromIds(["pen", "hand"]));
+    expect(entriesFromConfig({})).toEqual(entriesFromIds(DEFAULT_PALETTE));
+    // junk entries fall through to brushes
+    expect(entriesFromConfig({ entries: [null, 3], brushes: ["pen"] })).toEqual([toolEntry("pen")]);
+  });
+
+  it("the DEFAULT_TOOL_ENTRIES reproduce the old Toolbar's layout", () => {
+    // nav+draw · divider · shapes · the "more shapes" overflow with line/box
+    expect(entryToolIds(DEFAULT_TOOL_ENTRIES)).toEqual([...DEFAULT_LAYOUT.tools, "line", "box"]);
+    expect(DEFAULT_TOOL_ENTRIES.some((e) => e.kind === "divider")).toBe(true);
+    const menu = DEFAULT_TOOL_ENTRIES.find((e) => e.kind === "menu");
+    expect(menu.items).toEqual([toolEntry("line"), toolEntry("box")]);
+  });
+
   it("acceptDrop takes only bare tool ids — not stamps or namespaced parts", () => {
     expect(acceptDrop("pen")).toBe("pen");
     expect(acceptDrop("highlighter")).toBe("highlighter");
@@ -94,12 +132,15 @@ describe("palette pure helpers", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a BARE sketchy:window, listed, with an optional tool inlet", () => {
+  it("is a BARE sketchy:window with the optional tool + tools inlets", () => {
     expect(plugin.type).toBe("sketchy:window");
     expect(plugin.id).toBe("palette");
     expect(plugin.bare).toBe(true);
     expect(plugin.unlisted).toBeFalsy(); // appears in the + menu / parts bin
-    expect(plugin.inlets).toEqual([{ name: "tool", type: "json" }]);
+    expect(plugin.inlets).toEqual([
+      { name: "tool", type: "json" },
+      { name: "tools", type: "json" },
+    ]);
     expect(plugin.outlets).toEqual([]);
   });
   it("loads to mountPalette", async () => {
@@ -123,6 +164,69 @@ describe("mountPalette", () => {
     m.done();
   });
 
+  it("there is no ⚙ configurator on the palette itself any more (it's its own window)", () => {
+    const m = mount({});
+    expect(m.element.querySelector(".ns-palette-gear")).toBeFalsy();
+    expect(m.element.querySelector(".ns-palette-x")).toBeFalsy();
+    m.done();
+  });
+
+  it("renders ENTRIES from config.entries: dividers + an overflow menu with the old toolbar's visuals", () => {
+    const m = mount({ config: { entries: ["pen", { kind: "divider" }, { kind: "menu", label: "shapes", items: ["line", "box"] }] } });
+    expect(rowIds(m.element)).toEqual(["pen"]); // menu items render inside the popover, not the row
+    expect(m.element.querySelectorAll(".ns-palette-row .ns-sep").length).toBe(1); // the old .ns-sep rule
+    const menuBtn = m.element.querySelector(".ns-palette-menu-btn");
+    expect(menuBtn).toBeTruthy();
+    expect(menuBtn.title).toBe("shapes");
+    expect(document.querySelector(".ns-menu-grid")).toBeFalsy(); // closed
+    menuBtn.click();
+    // the popover is PORTAL'd out of the (clipped) bare window to the canvas root
+    // (document.body in this bare mount) — never inside the palette's own box
+    expect(m.element.querySelector(".ns-menu-grid")).toBeFalsy();
+    const grid = document.querySelector(".ns-menu.ns-menu-grid"); // the old Toolbar's overflow chrome
+    expect(grid).toBeTruthy();
+    expect(document.querySelector(".ns-menu-backdrop")).toBeTruthy(); // click-away closes
+    const line = grid.querySelector('button[data-tool="line"]');
+    expect(line).toBeTruthy();
+    line.click(); // arms the tool AND closes the menu
+    expect(m.tool.value).toBe("line");
+    expect(document.querySelector(".ns-menu-grid")).toBeFalsy();
+    expect(document.querySelector(".ns-menu-backdrop")).toBeFalsy();
+    // the overflow button lights while its tool is the armed one
+    expect(m.element.querySelector(".ns-palette-menu-btn").classList.contains("active")).toBe(true);
+    m.done();
+  });
+
+  it("the overflow popover closes on backdrop click, and cleanup removes a still-open one", () => {
+    const m = mount({ config: { entries: [{ kind: "menu", label: "shapes", items: ["line"] }] } });
+    m.element.querySelector(".ns-palette-menu-btn").click();
+    expect(document.querySelector(".ns-menu-grid")).toBeTruthy();
+    document.querySelector(".ns-menu-backdrop").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    expect(document.querySelector(".ns-menu-grid")).toBeFalsy();
+    // an open popover never outlives the palette
+    m.element.querySelector(".ns-palette-menu-btn").click();
+    expect(document.querySelector(".ns-menu-grid")).toBeTruthy();
+    m.cleanup();
+    expect(document.querySelector(".ns-menu-grid")).toBeFalsy();
+    expect(document.querySelector(".ns-menu-backdrop")).toBeFalsy();
+    m.element.remove();
+  });
+
+  it("a WIRED `tools` inlet DRIVES the palette (and follows updates); unwired falls back to config", () => {
+    const tools = stubSource(["pen", { kind: "divider" }, "eraser"]);
+    tools.wired = true;
+    const m = mount({ config: { brushes: ["select"] }, inlets: { tools } });
+    expect(rowIds(m.element)).toEqual(["pen", "eraser"]); // the wire wins over config.brushes
+    expect(m.element.querySelectorAll(".ns-sep").length).toBe(1);
+    tools.set([{ kind: "tool", id: "hand" }]); // the config node emits an edit
+    expect(rowIds(m.element)).toEqual(["hand"]);
+    // the wire drops (unwired proxy = own buffer): config comes back
+    tools.wired = false;
+    tools.set(undefined);
+    expect(rowIds(m.element)).toEqual(["select"]);
+    m.done();
+  });
+
   it("a click sets the tool through the context (context.tool.set)", () => {
     const m = mount({ config: { brushes: ["pen", "eraser"] } });
     btn(m.element, "eraser").click();
@@ -133,7 +237,7 @@ describe("mountPalette", () => {
   it("active state follows the context tool — live, both directions", () => {
     const m = mount({ config: { brushes: ["pen", "eraser"] }, tool: stubSource("pen") });
     expect(btn(m.element, "pen").classList.contains("active")).toBe(true);
-    m.tool.set("eraser"); // an external change (the toolbar, a keyboard shortcut)
+    m.tool.set("eraser"); // an external change (keyboard shortcut, another palette)
     expect(btn(m.element, "pen").classList.contains("active")).toBe(false);
     expect(btn(m.element, "eraser").classList.contains("active")).toBe(true);
     btn(m.element, "pen").click(); // and back through our own write
@@ -152,39 +256,6 @@ describe("mountPalette", () => {
     m.done();
   });
 
-  it("⚙ opens the census popover; toggling persists via setConfig (add + remove)", () => {
-    const m = mount({ config: { brushes: ["pen"] } });
-    expect(m.element.querySelector(".ns-palette-menu")).toBeFalsy();
-    m.element.querySelector(".ns-palette-gear").click();
-    const menu = m.element.querySelector(".ns-palette-menu");
-    expect(menu).toBeTruthy();
-    const checks = [...menu.querySelectorAll(".ns-palette-check")];
-    expect(checks.length).toBeGreaterThanOrEqual(Object.keys(TOOL_META).length);
-    const box = (id) => checks.find((c) => c.textContent.includes(toolLabel(id))).querySelector("input");
-    expect(box("pen").checked).toBe(true);
-    expect(box("eraser").checked).toBe(false);
-    box("eraser").click(); // add
-    expect(m.saved.at(-1)).toEqual({ brushes: ["pen", "eraser"] });
-    expect(rowIds(m.element)).toEqual(["pen", "eraser"]);
-    const box2 = [...m.element.querySelectorAll(".ns-palette-check")].find((c) => c.textContent.includes(toolLabel("pen"))).querySelector("input");
-    box2.click(); // remove
-    expect(m.saved.at(-1)).toEqual({ brushes: ["eraser"] });
-    expect(rowIds(m.element)).toEqual(["eraser"]);
-    m.done();
-  });
-
-  it("while the popover is open each button grows an × that removes it", () => {
-    const m = mount({ config: { brushes: ["pen", "eraser"] } });
-    expect(m.element.querySelector(".ns-palette-x")).toBeFalsy(); // not while just painting
-    m.element.querySelector(".ns-palette-gear").click();
-    const xs = [...m.element.querySelectorAll(".ns-palette-x")];
-    expect(xs.length).toBe(2);
-    xs[0].click();
-    expect(m.saved.at(-1)).toEqual({ brushes: ["eraser"] });
-    expect(rowIds(m.element)).toEqual(["eraser"]);
-    m.done();
-  });
-
   it("dropping a bare tool id appends (and dedupes); stamps/parts fall through", () => {
     const m = mount({ config: { brushes: ["pen"] } });
     const root = m.element.querySelector(".ns-palette");
@@ -195,17 +266,32 @@ describe("mountPalette", () => {
       return e;
     };
     expect(drop("eraser").defaultPrevented).toBe(true);
-    expect(m.saved.at(-1)).toEqual({ brushes: ["pen", "eraser"] });
+    // writes are ENTRIES-only: the legacy `config.brushes` (read in above) is a
+    // read-shim — it normalizes into entries and persists back as entries
+    expect(m.saved.at(-1)).toEqual({ entries: entriesFromIds(["pen", "eraser"]) });
     expect(rowIds(m.element)).toEqual(["pen", "eraser"]);
     const before = m.saved.length;
-    drop("pen"); // dedupe: no new write
-    expect(m.saved.length).toBe(before + 1); // setBrushes writes, but…
-    expect(m.saved.at(-1)).toEqual({ brushes: ["pen", "eraser"] }); // …the list is unchanged
+    drop("pen"); // dedupe: no new list
+    expect(m.saved.length).toBe(before + 1); // still a write, but…
+    expect(m.saved.at(-1)).toEqual({ entries: entriesFromIds(["pen", "eraser"]) }); // …the list is unchanged
     expect(rowIds(m.element)).toEqual(["pen", "eraser"]);
     // a stamp / a namespaced part is NOT taken — the event bubbles to the canvas
     expect(drop("mouse").defaultPrevented).toBe(false);
     expect(drop(encodePartId("window", "codemirror")).defaultPrevented).toBe(false);
     expect(rowIds(m.element)).toEqual(["pen", "eraser"]);
+    m.done();
+  });
+
+  it("a WIRED palette does not take drops (they bubble to the canvas)", () => {
+    const tools = stubSource(["pen"]);
+    tools.wired = true;
+    const m = mount({ config: { brushes: ["select"] }, inlets: { tools } });
+    const root = m.element.querySelector(".ns-palette");
+    const e = new Event("drop", { bubbles: true, cancelable: true });
+    e.dataTransfer = { types: [PART_DRAG_TYPE], getData: () => "eraser" };
+    root.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+    expect(m.saved.length).toBe(0);
     m.done();
   });
 
@@ -223,7 +309,13 @@ describe("mountPalette", () => {
     m.done();
   });
 
-  it("onConfig reconciles external edits (rebuild only when the list changed)", () => {
+  it("there is NO ⠿ grip / identity-drag protocol — saving a palette is alt-drag into the parts flap", () => {
+    const m = mount({ config: { entries: ["pen", { kind: "divider" }, "eraser"] } });
+    expect(m.element.querySelector(".ns-palette-grip")).toBeFalsy();
+    m.done();
+  });
+
+  it("onConfig reconciles external edits (rebuild only when the entries changed)", () => {
     const m = mount({ config: { brushes: ["pen"] } });
     const penBtn = btn(m.element, "pen");
     m.cfg({ brushes: ["pen"] }); // an echo of the same list — no rebuild

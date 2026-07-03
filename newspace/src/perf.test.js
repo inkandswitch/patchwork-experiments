@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render } from "solid-js/web";
 import { Repo } from "@automerge/automerge-repo";
-import { rafBatch, count, counters, frame, now, perFrame } from "./perf.js";
+import { rafBatch, count, counters, frame, now, perFrame, __resetFrameLoop } from "./perf.js";
 import { Canvas } from "./brush/canvas.jsx";
 
 // a hand-cranked rAF: callbacks queue up until step() runs them
@@ -113,6 +113,26 @@ describe("count / counters / frame / now", () => {
     raf.step();
     expect(frame()).toBe(n0 + 2);
   });
+
+  it("frame() restarts a STRANDED loop through the CURRENT global rAF (stall self-heal)", () => {
+    __resetFrameLoop(); // forget whatever loop an earlier test left behind
+    let t = 1000;
+    vi.stubGlobal("performance", { now: () => t }); // drive the stall clock
+    const raf1 = fakeRaf();
+    const n0 = frame(); // loop armed in raf1's queue
+    raf1.step();
+    expect(frame()).toBe(n0 + 1);
+    // strand the re-arm: a NEW fake rAF discards raf1's queue (what a test file
+    // mounting a canvas + fakeRaf + unstubAllGlobals does to the shared loop)
+    const raf2 = fakeRaf();
+    expect(raf2.size).toBe(0); // the old tick is stuck in the dead queue
+    t += 1000; // well past STALL_MS
+    const n1 = frame(); // detects the stall and re-arms on the CURRENT rAF
+    expect(raf2.size).toBe(1);
+    raf2.step();
+    expect(frame()).toBe(n1 + 1); // ticking again — perFrame caches expire once more
+    __resetFrameLoop(); // don't leak this test's loop into the next one
+  });
 });
 
 // Phase 3's viewport-rect cache: read once per frame, fresh next frame, and
@@ -138,6 +158,23 @@ describe("perFrame", () => {
     const cached = perFrame(read, () => 0);
     cached(); cached(); cached();
     expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it("a PAUSED counter (started, then frozen > 0 — hidden tab) unpins on visibilitychange", () => {
+    // rAF stops in hidden tabs while remote-change effects keep running: the
+    // frame counter freezes at some N > 0, so without the visibility epoch the
+    // cache would return the pre-hide value forever.
+    const read = vi.fn(() => ({}));
+    const cached = perFrame(read, () => 7); // the loop ticked, then paused
+    const a = cached();
+    expect(cached()).toBe(a); // frozen counter ⇒ pinned…
+    expect(read).toHaveBeenCalledTimes(1);
+    document.dispatchEvent(new Event("visibilitychange")); // …until visibility flips
+    const b = cached();
+    expect(read).toHaveBeenCalledTimes(2); // first read after the flip is FRESH
+    expect(b).not.toBe(a);
+    expect(cached()).toBe(b); // and it caches again within the new epoch
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -7,7 +7,8 @@ import { surfaceDoc } from "../../surface-doc.js";
 import { getType } from "@inkandswitch/patchwork-filesystem";
 import { isBoxType, rad, rot, itemBounds, arrowGeometry, linksNeedingItems, linkItemId, duplicateItemIds, ownsSpace, projectItemFromBox, findById } from "../../model.js";
 import { roughRectPath, seedFromId, freehandPath, shapePaths, strokeWorldPoints } from "../../draw.js";
-import { shapeRenderProps, colorVar, fontFamily, sortById, enableAtomicMove, anchorAxes } from "../constants.js";
+import { shapeRenderProps, colorVar, fontFamily, sortById, enableAtomicMove } from "../constants.js";
+import { isStuck } from "../../sticky.js";
 import { count as perfCount, rafBatch } from "../../perf.js";
 import { InlineEdit, TextEdit } from "./text-edit.jsx";
 import { VoiceItem } from "./voice-item.jsx";
@@ -87,14 +88,26 @@ export function Item(props) {
     const local = corners.map(([wx, wy]) => { const [rx, ry] = rot(wx - wcx, wy - wcy, r); return `${rx + a.w / 2}px ${ry + a.h / 2}px`; });
     return `polygon(${local.join(", ")})`;
   };
+  // MEMBERSHIP-DRIVEN VISIBILITY (root items; model.js itemVisibleForActive via
+  // ctx.itemHidden): hidden = display:none — the DOM node stays (embeds survive)
+  // and nothing display:none can be hit-tested or clicked. A parented mark
+  // follows its PARENT's visibility (it lives in the parent's space).
+  const hidden = () => !!(ctx.itemHidden && props.surface.id === "root" && ctx.itemHidden(parentBox() || it()));
+  // a MEMBER of the active layer whose home container is inert opts back into
+  // pointer events — membership means "appears AND is usable on this layer"
+  const memberActive = () => !!(ctx.memberOnActive && props.surface.id === "root" && ctx.memberOnActive(it()));
   const baseStyle = () => {
     const clip = dropClip() || parentClip();
-    // anchored widgets pin to a viewport CORNER via bottom/right (auto resize-reactive); the
-    // stored x/y is the offset from that corner. Everything else is plain top-left.
-    const { right, bottom } = anchorAxes(it().anchor);
-    const horiz = right ? { right: `${b().x}px` } : { left: `${b().x}px` };
-    const vert = bottom ? { bottom: `${b().y}px` } : { top: `${b().y}px` };
-    return { ...horiz, ...vert, width: `${b().w}px`, height: `${b().h}px`, transform: `rotate(${renderIt().rotation || 0}deg)`, "transform-origin": "center", "z-index": dropClip() ? 8000 : z() + 1, ...(clip ? { "clip-path": clip } : {}) };
+    const vis = hidden() ? { display: "none" } : memberActive() ? { "pointer-events": "auto" } : {};
+    // a STUCK window (sticky, or a legacy corner anchor read as sticky) positions
+    // from ctx.stickyPlace: the resolved screen spot converted into its HOME
+    // layer's coords, with a counter-scale so a camera-home window holds its
+    // screen size while docked. (Viewport resizes re-run it via vpTick.)
+    if (isStuck(it()) && ctx.stickyPlace && props.surface.id === "root") {
+      const st = ctx.stickyPlace(it());
+      return { left: `${st.x}px`, top: `${st.y}px`, width: `${b().w}px`, height: `${b().h}px`, transform: `scale(${st.k}) rotate(${renderIt().rotation || 0}deg)`, "transform-origin": "0 0", "z-index": z() + 1, ...vis, ...(clip ? { "clip-path": clip } : {}) };
+    }
+    return { left: `${b().x}px`, top: `${b().y}px`, width: `${b().w}px`, height: `${b().h}px`, transform: `rotate(${renderIt().rotation || 0}deg)`, "transform-origin": "center", "z-index": dropClip() ? 8000 : z() + 1, ...vis, ...(clip ? { "clip-path": clip } : {}) };
   };
   const down = (e) => ctx.onItemDown(it(), props.surface, e);
   const edit = () => { if (selectMode()) ctx.setEditingId(it().id); };
@@ -211,6 +224,24 @@ export function DocOrFrame(props) {
   const seed = createMemo(() => seedFromId(it().id));
   const outline = createMemo(() => roughRectPath(b().w, b().h, seed()));
 
+  // ── FLAP — a `flap: true` frame (a named sticky container). While STUCK it
+  // renders as a compact edge TAB (its name, vertical on left/right edges);
+  // clicking the tab opens the drawer — the ordinary sticky frame render —
+  // and clicking it again (or Escape / a canvas click, canvas.jsx) collapses.
+  // Open state is per-VIEWER (ctx.flapOpen — the top-layer doc). Root items
+  // only: sticky itself only applies at root (baseStyle).
+  const isFlap = () => isFrame() && !!it().flap;
+  const stuckFlap = () => isFlap() && !!it().sticky && props.surface.id === "root" && !!ctx.flapOpen;
+  const flapIsOpen = () => stuckFlap() && ctx.flapOpen(it().id);
+  const collapsed = () => stuckFlap() && !flapIsOpen();
+  const tabEdge = () => (it().sticky && it().sticky.edge) || "left";
+  const toggleFlap = () => ctx.setFlapOpen && ctx.setFlapOpen(it().id, !ctx.flapOpen(it().id));
+  const tabStyle = () => {
+    const t = ctx.flapTabPlace(it());
+    const hidden = ctx.itemHidden && props.surface.id === "root" && ctx.itemHidden(it());
+    return { left: `${t.x}px`, top: `${t.y}px`, width: `${t.w}px`, height: `${t.h}px`, transform: `scale(${t.k})`, "transform-origin": "0 0", "z-index": 500, ...(hidden ? { display: "none" } : {}) };
+  };
+
   const isWell = () => isFrame() && !!it().well;
   const isList = () => isFrame() && it().style === "list";
   // render box CONTENTS only ~2 levels deep; deeper boxes are just named (and
@@ -288,7 +319,7 @@ export function DocOrFrame(props) {
     // live in select mode OR while wiring (so you can grab a PORT inside an embed)
     return props.selectMode() || ctx.tool() === "wire" ? "auto" : "none";
   };
-  const openToolId = () => isFrame() ? (isList() ? "folder-viewer" : "newspace") : it().toolId || undefined;
+  const openToolId = () => isFrame() ? (isList() ? "folder-viewer" : "sketchy") : it().toolId || undefined; // "sketchy" is the registered tool id ("newspace" never was)
   // no stopPropagation on click (breaks Solid's document-level delegation) — the
   // button's own pointerdown already stops the grab; the click just dispatches.
   const open = (e) => {
@@ -308,7 +339,9 @@ export function DocOrFrame(props) {
   }
 
   return (
-    <div class="ns-doc" classList={{ "ns-frame": isFrame(), well: isFrame() && !!it().well, sel: ctx.isSelected(it().id), "ns-drop-into": isFrame() && ctx.dropTarget() === it().id }} {...(it().theme ? { theme: it().theme } : {})} data-item-id={it().id} style={props.baseStyle()} onPointerDown={grab}>
+    <>
+    <Show when={!collapsed()}>
+    <div class="ns-doc" classList={{ "ns-frame": isFrame(), "ns-flap": isFlap(), "ns-flap-open": flapIsOpen(), well: isFrame() && !!it().well, sel: ctx.isSelected(it().id), "ns-drop-into": isFrame() && ctx.dropTarget() === it().id }} {...(it().theme ? { theme: it().theme } : {})} data-item-id={it().id} style={props.baseStyle()} onPointerDown={grab}>
       <div class="ns-doc-title">
         <Show when={titleEditing()} fallback={
           <span class="ns-doc-name" onDblClick={(e) => { e.stopPropagation(); if (props.selectMode()) setTitleEditing(true); }}>{title()}</span>
@@ -381,6 +414,17 @@ export function DocOrFrame(props) {
       {/* the well shadow sits ABOVE the contents so the box looks sunken */}
       <Show when={isWell()}><div class="ns-well" /></Show>
     </div>
+    </Show>
+    {/* the flap's edge TAB — rendered whenever the flap is stuck: alone when
+        collapsed, peeking out from under the drawer's edge when open (clicking
+        it again collapses). pointerDOWN stopped (the house rule); the click
+        toggles per-viewer open state. */}
+    <Show when={stuckFlap()}>
+      <div class="ns-flap-tab-box" classList={{ open: flapIsOpen() }} data-item-id={it().id} style={tabStyle()}>
+        <button class={"ns-flap-tab ns-flap-tab-" + tabEdge()} title={flapIsOpen() ? `${title()} — close` : `${title()} — open`} onPointerDown={(e) => e.stopPropagation()} onClick={toggleFlap}>{title()}</button>
+      </div>
+    </Show>
+    </>
   );
 }
 

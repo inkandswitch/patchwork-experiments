@@ -6,9 +6,10 @@ import {
 } from "./model.js";
 
 describe("isBoxType", () => {
-  it("treats folders and newspaces as boxes, nothing else", () => {
+  it("treats folders and sketches (both datatype ids) as boxes, nothing else", () => {
     expect(isBoxType("folder")).toBe(true);
-    expect(isBoxType("newspace")).toBe(true);
+    expect(isBoxType("newspace")).toBe(true); // the legacy datatype id
+    expect(isBoxType("sketch")).toBe(true); // the CURRENT datatype id — a placed Sketch is a frame sub-space
     expect(isBoxType("essay")).toBe(false);
     expect(isBoxType("")).toBe(false);
     expect(isBoxType(undefined)).toBe(false);

@@ -27,6 +27,25 @@ describe("createCanvasContext — fallback-to-own", () => {
     expect(seen).toEqual(["select", "pen"]);
   });
 
+  it("ownership is per-write, not a one-way latch: a local set() RECLAIMS it (audit)", () => {
+    // there is NO provider-close signal in patchwork-providers, so when a parent
+    // canvas unmounts, "the provider went away" is undetectable — owned() used
+    // to latch false forever, freezing a nested canvas on the last provided
+    // value. Mitigation: the next LOCAL write takes the entry back.
+    const ctx = createCanvasContext(null, { fallbacks: { tool: "select" } });
+    expect(ctx.tool.owned()).toBe(true);
+    ctx.tool._accepted(); // what the subscribe callback does per provided push
+    ctx.tool.push("hand");
+    expect(ctx.tool.owned()).toBe(false);
+    ctx.tool.set("pen"); // the parent is gone; a local gesture writes
+    expect(ctx.tool.owned()).toBe(true); // reclaimed — no longer frozen
+    expect(ctx.tool.value).toBe("pen");
+    ctx.tool._accepted(); // a live provider pushing again re-marks it — per-write
+    ctx.tool.push("marker");
+    expect(ctx.tool.owned()).toBe(false);
+    expect(ctx.tool.value).toBe("marker");
+  });
+
   it("uses the default selectors (sketchy:*)", () => {
     expect(CONTEXT_SELECTORS).toMatchObject({
       camera: "sketchy:camera",

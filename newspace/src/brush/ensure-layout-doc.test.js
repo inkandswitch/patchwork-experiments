@@ -9,8 +9,11 @@ import {
   ensureLayout,
   ensureLayoutDoc,
   layoutDocUrl,
+  seedPartsFlap,
   SEED_IDS,
   MINIMAP_INLETS,
+  PALETTE_INLETS,
+  DEFAULT_TOOL_ENTRIES,
 } from "./constants.js";
 
 describe("layoutDocUrl (pure resolution)", () => {
@@ -40,10 +43,13 @@ describe("ensureLayoutDoc — canvas (the migrated legacy path)", () => {
     const fd = folder.doc();
     expect(fd["@layouts"].canvas).toBe(lh.url);
     expect(fd.sketch).toBe(lh.url); // back-compat: old clients follow .sketch
-    // seeded like before: items (overlay chrome), layout, layers
+    // seeded like before: items (overlay chrome), layout, layers. ns-parts (the
+    // PARTS FLAP) is the exception — it creates docs, so the ROOT canvas seeds
+    // it async (seedPartsFlap), never ensureLayout (boxes must not grow flaps).
     const ld = lh.doc();
     expect(Array.isArray(ld.items)).toBe(true);
-    for (const id of SEED_IDS) expect(ld.items.some((i) => i.id === id)).toBe(true);
+    for (const id of SEED_IDS.filter((x) => x !== "ns-parts")) expect(ld.items.some((i) => i.id === id)).toBe(true);
+    expect(ld.items.some((i) => i.id === "ns-parts")).toBe(false);
     expect(ld.layout.component).toBe("sketchy");
     expect(Array.isArray(ld.layers)).toBe(true);
   });
@@ -124,6 +130,149 @@ describe("ensureLayoutDoc — canvas (the migrated legacy path)", () => {
     const lh = await ensureLayoutDoc(repo, folder, "canvas");
     const mm = lh.doc().items.find((i) => i.id === "ns-minimap");
     expect(JSON.parse(JSON.stringify(mm.inlets))).toEqual(MINIMAP_INLETS);
+  });
+
+  it("seeds the TOOLBAR-PALETTE window: overlay home + canvas membership, sticky bottom-centre, the standard tools", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const pal = lh.doc().items.find((i) => i.id === "ns-toolbar-palette");
+    expect(pal).toBeTruthy();
+    expect(pal.kind).toBe("editor");
+    expect(pal.editorId).toBe("palette");
+    expect([...pal.layers]).toEqual(["overlay", "canvas"]); // the membership showcase: usable while drawing
+    expect(pal.layer).toBe("overlay"); // mirrored for old clients
+    expect(JSON.parse(JSON.stringify(pal.sticky))).toEqual({ edge: "bottom", t: 0.5 });
+    // entries are the model — the legacy `config.brushes` id list is a read-shim, never written
+    expect(pal.config.brushes).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(pal.config.entries)).map((e) => e.id)).toEqual(["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text"]);
+    // the WIRED PAIR: the palette's tools inlet is a real persisted wire to the
+    // seeded palette-config window (the MINIMAP_INLETS convention)
+    expect(JSON.parse(JSON.stringify(pal.inlets))).toEqual(PALETTE_INLETS);
+  });
+
+  it("seeds the palette-CONFIG window overlay-ONLY, carrying the old Toolbar's entry layout", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const cfg = lh.doc().items.find((i) => i.id === "ns-toolbar-config");
+    expect(cfg).toBeTruthy();
+    expect(cfg.editorId).toBe("palette-config");
+    expect([...cfg.layers]).toEqual(["overlay"]); // overlay ONLY
+    expect(JSON.parse(JSON.stringify(cfg.config.entries))).toEqual(DEFAULT_TOOL_ENTRIES);
+  });
+
+  it("seeds the PRESENCE window: overlay home + canvas membership (ambient), sticky bottom-right", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const pr = lh.doc().items.find((i) => i.id === "ns-presence");
+    expect(pr).toBeTruthy();
+    expect(pr.editorId).toBe("presence");
+    expect([...pr.layers]).toEqual(["overlay", "canvas"]); // presence matters while drawing
+    expect(JSON.parse(JSON.stringify(pr.sticky))).toEqual({ edge: "right", t: 0.9 });
+  });
+
+  it("UPGRADE wires an existing palette seed's tools inlet — but respects the null tombstone", async () => {
+    const repo = makeRepo();
+    const layout = repo.create({
+      "@patchwork": { type: "sketch-layout" },
+      items: [
+        { id: "ns-toolbar-palette", kind: "editor", editorId: "palette", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "bottom", t: 0.5 }, x: 0, y: 0, w: 356, h: 44, rotation: 0, inlets: {}, config: { brushes: ["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text"] } },
+      ],
+    });
+    const folder = repo.create({ title: "t", docs: [], sketch: layout.url });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const pal = lh.doc().items.find((i) => i.id === "ns-toolbar-palette");
+    expect(JSON.parse(JSON.stringify(pal.inlets.tools))).toEqual(PALETTE_INLETS.tools);
+    // an explicit unwire stays cut
+    const layout2 = repo.create({
+      "@patchwork": { type: "sketch-layout" },
+      items: [{ id: "ns-toolbar-palette", kind: "editor", editorId: "palette", layer: "overlay", x: 0, y: 0, w: 356, h: 44, rotation: 0, inlets: { tools: null }, config: { brushes: ["pen"] } }],
+    });
+    const folder2 = repo.create({ title: "t", docs: [], sketch: layout2.url });
+    const lh2 = await ensureLayoutDoc(repo, folder2, "canvas");
+    expect(lh2.doc().items.find((i) => i.id === "ns-toolbar-palette").inlets.tools).toBe(null);
+  });
+
+  it("UPGRADE preserves a CUSTOMIZED palette: the config window is seeded with ITS brushes as entries", async () => {
+    const repo = makeRepo();
+    const layout = repo.create({
+      "@patchwork": { type: "sketch-layout" },
+      items: [{ id: "ns-toolbar-palette", kind: "editor", editorId: "palette", layer: "overlay", x: 0, y: 0, w: 356, h: 44, rotation: 0, inlets: {}, config: { brushes: ["pen", "marker"] } }],
+    });
+    const folder = repo.create({ title: "t", docs: [], sketch: layout.url });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const cfg = lh.doc().items.find((i) => i.id === "ns-toolbar-config");
+    expect(JSON.parse(JSON.stringify(cfg.config.entries))).toEqual([
+      { kind: "tool", id: "pen" }, { kind: "tool", id: "marker" },
+    ]);
+  });
+
+  it("the palette seed is DISMISSABLE like the others (dismissedSeeds honoured)", async () => {
+    const repo = makeRepo();
+    const layout = repo.create({ "@patchwork": { type: "sketch-layout" }, items: [], dismissedSeeds: ["ns-toolbar-palette"] });
+    const folder = repo.create({ title: "t", docs: [], sketch: layout.url });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    expect(lh.doc().items.some((i) => i.id === "ns-toolbar-palette")).toBe(false);
+    expect(lh.doc().items.some((i) => i.id === "ns-zoom")).toBe(true); // others still seed
+  });
+
+  it("UPGRADE: an existing canvas doc gains the palette seed on re-open (idempotently)", async () => {
+    const repo = makeRepo();
+    const layout = repo.create({ "@patchwork": { type: "sketch-layout" }, items: [] });
+    const folder = repo.create({ title: "t", docs: [], sketch: layout.url });
+    await ensureLayoutDoc(repo, folder, "canvas");
+    await ensureLayoutDoc(repo, folder, "canvas"); // twice — no duplicates
+    const items = layout.doc().items;
+    expect(items.filter((i) => i.id === "ns-toolbar-palette").length).toBe(1);
+  });
+});
+
+describe("seedPartsFlap — the parts bin as a FLAP (a `flap: true` frame, seeded async from the root canvas)", () => {
+  it("seeds ns-parts as an overlay-only STUCK flap whose sub-space holds one parked parts window", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const flapFolder = await seedPartsFlap(repo, lh);
+    expect(flapFolder).toBeTruthy();
+    const flap = lh.doc().items.find((i) => i.id === "ns-parts");
+    expect(flap).toBeTruthy();
+    expect(flap.kind).toBe("frame");
+    expect(flap.flap).toBe(true);
+    expect(flap.url).toBe(flapFolder.url);
+    expect([...flap.layers]).toEqual(["overlay"]); // no canvas membership — it appears when arranging
+    expect(JSON.parse(JSON.stringify(flap.sticky))).toEqual({ edge: "left", t: 1 }); // stuck ⇒ an edge tab
+    // the flap's sub-space: named "parts", ONE item (the bin window), and every
+    // seed dismissed — re-opens never grow chrome inside the shelf
+    expect(flapFolder.doc().title).toBe("parts");
+    const sub = await repo.find(flapFolder.doc().sketch);
+    const subItems = sub.doc().items;
+    expect(subItems.length).toBe(1);
+    expect(subItems[0]).toMatchObject({ id: "ns-parts-window", kind: "editor", editorId: "parts" });
+    for (const id of SEED_IDS) expect([...sub.doc().dismissedSeeds]).toContain(id);
+    // opening the flap's folder through the ordinary frame path stays chrome-free
+    await ensureLayoutDoc(repo, flapFolder, "canvas");
+    expect(sub.doc().items.length).toBe(1);
+  });
+
+  it("is idempotent, respects dismissal, and never doubles an existing (old-style) ns-parts", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    await seedPartsFlap(repo, lh);
+    expect(await seedPartsFlap(repo, lh)).toBe(null); // second open: no new docs
+    expect(lh.doc().items.filter((i) => i.id === "ns-parts").length).toBe(1);
+    // dismissal sticks
+    const layout2 = repo.create({ "@patchwork": { type: "sketch-layout" }, items: [], dismissedSeeds: ["ns-parts"] });
+    expect(await seedPartsFlap(repo, layout2)).toBe(null);
+    expect(layout2.doc().items.some((i) => i.id === "ns-parts")).toBe(false);
+    // an OLD doc's bare parts window keeps what it has (migration-free)
+    const layout3 = repo.create({ "@patchwork": { type: "sketch-layout" }, items: [{ id: "ns-parts", kind: "editor", editorId: "parts", layer: "overlay", layers: ["overlay"], sticky: { edge: "left", t: 1 }, x: 0, y: 0, w: 248, h: 340, rotation: 0, inlets: {} }] });
+    expect(await seedPartsFlap(repo, layout3)).toBe(null);
+    const kept = layout3.doc().items.filter((i) => i.id === "ns-parts");
+    expect(kept.length).toBe(1);
+    expect(kept[0].kind).toBe("editor");
   });
 });
 

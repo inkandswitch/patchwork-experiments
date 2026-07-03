@@ -1,82 +1,43 @@
-// THE PARTS BIN — the flagship flap (see flaps.jsx): a browsable census of
-// everything placeable, straight from the registries — shapes + stamps (the
-// toolbar's drag-outs), datatypes (new docs), and the `sketchy:window` nodes +
-// `sketchy:lens` lenses, grouped exactly like the + add menu (sources · editors ·
-// lenses, via nodeRole). Raw callbacks + DOM — flap CONTENT is not canvas
+// THE PARTS BIN — a browsable census of everything placeable, straight from
+// the registries — shapes + stamps (the classic drag-outs), palette PRESETS,
+// datatypes (new docs), and the `sketchy:window` nodes + `sketchy:lens`
+// lenses, grouped exactly like the + add menu (sources · editors · lenses, via
+// nodeRole). It ships as a bare `sketchy:window` (mountPartsWindow / `plugin`)
+// seeded overlay-only — the bin appears exactly when you switch to the overlay
+// to arrange your space. Raw callbacks + DOM — window CONTENT is not canvas
 // shell, and only the canvas shell gets Solid (the opstream-processing rule).
 //
-// DRAG-OUT PROTOCOL: tiles extend the toolbar's existing `text/x-newspace-tool`
+// DRAG-OUT PROTOCOL: tiles extend the palette's existing `text/x-newspace-tool`
 // DnD type with a namespaced part id — `datatype:folder`, `window:codemirror`,
-// `lens:uppercase` — while tool/shape/stamp ids stay BARE (the toolbar's own
-// drags are unchanged). The canvas's dropToolAt decodes with decodePartId and
-// lands an instance at the drop point (createDocAt / placeNode / the existing
-// shape+stamp drops). A CLICK on a tile arms the place flow instead
-// (selectPlacing / placeEditor / placeLens / setTool).
+// `lens:uppercase`, `palette:full`/`palette:sketch`, `flap:flap` — while
+// tool/shape/stamp ids stay BARE (the palette's own drags are unchanged). The
+// canvas's dropToolAt decodes with decodePartId and lands an instance at the
+// drop point (createDocAt / placeNode / a preconfigured palette window /
+// createFlapAt / the existing shape+stamp drops). A CLICK on a tile arms the
+// place flow instead (selectPlacing / placeEditor / placeLens / placeFlap /
+// setTool).
+//
+// SAVING things INTO the bin: the bin ships parked inside the parts FLAP (a
+// `flap: true` frame — see canvas.jsx/constants.js), so "save a palette" is the
+// ordinary alt-drag copy gesture dropped into the flap: item containment does
+// the work. The old ⠿-grip palette-identity / config.customParts protocol is
+// gone (old docs may still carry a `customParts` field — never deleted, just no
+// longer read or written).
 //
 // NOT parts: BRUSHES. "Placing" a brush only ARMS it (dropToolAt falls through
 // to setTool for a bare brush id) — there's no instance to land on the canvas,
-// so brushes stay on the toolbar/shape-overflow, not in the bin.
-import { nodeRole } from "./editors.js";
-import { STAMPS, TOOL_META, SHAPE_DRAGGABLE } from "./brush/ui/chrome.jsx";
-
-// the toolbar's DnD type (canvas.jsx's TOOL_DRAG imports this — one protocol)
-export const PART_DRAG_TYPE = "text/x-newspace-tool";
-const NAMESPACED = new Set(["datatype", "window", "lens"]);
-
-// kind + id → the dataTransfer payload. Bare for tools/shapes/stamps (the
-// existing protocol), `kind:id` for the registry kinds the bin adds.
-export function encodePartId(kind, id) {
-  return NAMESPACED.has(kind) ? kind + ":" + id : id;
-}
-// payload → { kind, id }. A bare id is a tool/shape/stamp — `{ kind: "tool" }`.
-export function decodePartId(part) {
-  const i = typeof part === "string" ? part.indexOf(":") : -1;
-  if (i > 0) {
-    const kind = part.slice(0, i);
-    if (NAMESPACED.has(kind)) return { kind, id: part.slice(i + 1) };
-  }
-  return { kind: "tool", id: part };
-}
-
-// ── the census (pure: registries in → grouped tiles out) ────────────────────
-// Groups mirror the + add menu (REUSING its grouping: nodeRole splits sources
-// from editors, byName sorts) plus the toolbar's draggables (shapes, stamps).
-// Each tile: { part (the encoded drag payload), kind, id, name, mark, icon?,
-// stamp? (the multi-stroke drawing, for the tile's icon), path? (a TOOL_META
-// icon path) }.
-const byName = (a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || "");
-export function partsCensus({ datatypes = [], windows = [], lenses = [], stamps = {}, shapes = [] } = {}) {
-  const tile = (kind, d, mark) => ({ part: encodePartId(kind, d.id), kind, id: d.id, name: d.name || d.id, mark, icon: d.icon });
-  const groups = [];
-  if (shapes.length) groups.push({
-    id: "shapes", label: "shapes",
-    tiles: shapes.map((id) => ({ part: id, kind: "tool", id, name: id, mark: "▱", path: (TOOL_META[id] || [])[1] })),
-  });
-  const stampIds = Object.keys(stamps);
-  if (stampIds.length) groups.push({
-    id: "stamps", label: "stamps",
-    tiles: stampIds.map((id) => ({ part: id, kind: "stamp", id, name: id, mark: "✎", stamp: stamps[id] })),
-  });
-  if (datatypes.length) groups.push({ id: "docs", label: "new docs", tiles: [...datatypes].sort(byName).map((d) => tile("datatype", d, "＋")) });
-  const sources = windows.filter((w) => nodeRole(w) === "source").sort(byName);
-  const editors = windows.filter((w) => nodeRole(w) !== "source").sort(byName);
-  if (sources.length) groups.push({ id: "sources", label: "sources", tiles: sources.map((d) => tile("window", d, "●")) });
-  if (editors.length) groups.push({ id: "editors", label: "editors", tiles: editors.map((d) => tile("window", d, "⚡")) });
-  if (lenses.length) groups.push({ id: "lenses", label: "lenses", tiles: [...lenses].sort(byName).map((d) => tile("lens", d, "◇")) });
-  return groups;
-}
-
-// a CLICK on a tile arms the matching place flow (the cheap bonus): the same
-// host commands the + menu uses. Returns true when something was armed.
-export function armPart(t, host) {
-  if (!t || !host) return false;
-  const find = (list) => (list || []).find((x) => x.id === t.id);
-  if (t.kind === "datatype") { const d = find(host.datatypes && host.datatypes()); if (d && host.selectPlacing) { host.selectPlacing(d); return true; } return false; }
-  if (t.kind === "window") { const d = find(host.editors && host.editors()); if (d && host.placeEditor) { host.placeEditor(d); return true; } return false; }
-  if (t.kind === "lens") { const d = find(host.lenses && host.lenses()); if (d && host.placeLens) { host.placeLens(d); return true; } return false; }
-  if (t.kind === "tool" && host.setTool) { host.setTool(t.id); return true; } // a shape: arm its draw tool
-  return false; // stamps are drag-only (a stamp id isn't a tool)
-}
+// so brushes stay on the palette, not in the bin.
+//
+// THE DATA LIVES IN THE CATALOG (catalog.js) — the one census of placeable
+// things, shared with the + add menu and the place/arm flows. This module is
+// the bin's DOM mounts; the census names are re-exported for existing callers.
+import { STAMPS, SHAPE_DRAGGABLE } from "./brush/ui/chrome.jsx";
+import {
+  PART_DRAG_TYPE, FLAP_PART, PALETTE_PARTS, listPalettes,
+  encodePartId, decodePartId, partsCensus, armPart,
+  catalogDatatypes, catalogWindows, catalogLenses,
+} from "./catalog.js";
+export { PART_DRAG_TYPE, FLAP_PART, PALETTE_PARTS, listPalettes, encodePartId, decodePartId, partsCensus, armPart };
 
 // ── the flap mount (raw DOM) ─────────────────────────────────────────────────
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -116,7 +77,8 @@ function tileEl(t, host) {
   const b = el("button", "ns-part");
   b.draggable = true;
   b.dataset.part = t.part;
-  b.title = `${t.name} — drag to canvas${t.kind === "stamp" ? "" : " · click to place"}`;
+  const dragOnly = t.kind === "stamp" || t.kind === "palette"; // instances only land by drag
+  b.title = `${t.name} — drag to canvas${dragOnly ? "" : " · click to place"}`;
   b.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData(PART_DRAG_TYPE, t.part);
     e.dataTransfer.effectAllowed = "copy";
@@ -126,23 +88,68 @@ function tileEl(t, host) {
   return b;
 }
 
-// the `sketchy:flap` mount: `({ element, host }) => cleanup`. `host` is the
-// canvas chrome host (registry accessors + the place commands).
-export function mountPartsBin({ element, host }) {
-  const root = el("div", "ns-partsbin");
-  const groups = partsCensus({
-    datatypes: (host && host.datatypes && host.datatypes()) || [],
-    windows: (host && host.editors && host.editors()) || [],
-    lenses: (host && host.lenses && host.lenses()) || [],
-    stamps: STAMPS,
-    shapes: [...SHAPE_DRAGGABLE],
-  });
-  for (const g of groups) {
-    root.append(el("div", "ns-menu-sep", g.label));
-    const grid = el("div", "ns-parts-grid");
-    for (const t of g.tiles) grid.append(tileEl(t, host));
-    root.append(grid);
-  }
+// build the bin into `element` from a host's registry accessors; shared by the
+// legacy host mount (mountPartsBin, kept for direct embedding/tests) and the
+// sketchy:window mount below.
+function buildBin(element, host, cls) {
+  const root = el("div", cls);
+  const render = () => {
+    root.replaceChildren();
+    const groups = partsCensus({
+      datatypes: (host && host.datatypes && host.datatypes()) || [],
+      windows: (host && host.editors && host.editors()) || [],
+      lenses: (host && host.lenses && host.lenses()) || [],
+      stamps: STAMPS,
+      shapes: [...SHAPE_DRAGGABLE],
+      palettes: listPalettes(),
+      flap: true,
+    });
+    for (const g of groups) {
+      root.append(el("div", "ns-menu-sep", g.label));
+      const grid = el("div", "ns-parts-grid");
+      for (const t of g.tiles) grid.append(tileEl(t, host));
+      root.append(grid);
+    }
+  };
+  render();
   element.append(root);
-  return () => root.remove();
+  const cleanup = () => root.remove();
+  cleanup.root = root;
+  return cleanup;
 }
+
+// direct mount: `({ element, host }) => cleanup`, `host` = a chrome-host-shaped
+// bag (registry accessors + place commands).
+export function mountPartsBin({ element, host }) {
+  return buildBin(element, host, "ns-partsbin");
+}
+
+// the `sketchy:window` mount — the bin as a bare window item (shipped parked
+// inside the parts FLAP). A window mount doesn't receive the chrome host, so
+// the registries are read directly and the only click-arm that works is a
+// tool/shape (via the context tool Source); datatype/window/lens/palette/flap
+// tiles are drag-out (dropToolAt lands them all). Saving things into the bin is
+// item containment now: alt-drag a copy and drop it into the flap.
+export function mountPartsWindow({ element, context }) {
+  const host = {
+    datatypes: catalogDatatypes,
+    editors: catalogWindows,
+    lenses: catalogLenses,
+    setTool: (id) => { const t = context && context.tool; if (t && typeof t.set === "function") t.set(id); },
+  };
+  const stop = (e) => e.stopPropagation(); // pointerDOWN only (the house rule): keep marquee/draw off the bin body
+  element.addEventListener("pointerdown", stop);
+  const un = buildBin(element, host, "ns-partsbin ns-parts-window");
+  return () => { element.removeEventListener("pointerdown", stop); un(); };
+}
+
+export const plugin = {
+  type: "sketchy:window",
+  id: "parts",
+  name: "Parts",
+  icon: "Shapes",
+  bare: true, // an overlay widget: no node frame; chrome comes from the bare-chrome bar
+  inlets: [],
+  outlets: [],
+  async load() { return mountPartsWindow; },
+};

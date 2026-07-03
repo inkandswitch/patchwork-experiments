@@ -40,7 +40,21 @@ registerPlugins([
       return () => off();
     },
   },
+  // an INSTRUMENTED source: counts live connect()s on its outlet stream, so the
+  // leak pin below can assert every downstream subscription is released.
+  {
+    type: "sketchy:window", id: "ns7-leak-src", name: "NS7 leak src", inlets: [], outlets: [{ name: "value", type: "json" }],
+    load: async () => ({ element, setOutlet }) => {
+      element.textContent = "leak-src";
+      const s = new Source(1);
+      const c0 = s.connect.bind(s);
+      s.connect = (cb) => { leak.live++; const off = c0(cb); return () => { leak.live--; return off(); }; };
+      setOutlet("value", s);
+      return () => {};
+    },
+  },
 ]);
+const leak = { live: 0 };
 
 const mounted = [];
 async function mountCanvas(items = []) {
@@ -88,5 +102,23 @@ describe("nodeStreams Map + bump signal — register/unregister stays reactive",
     // (empty) buffer re-emits; a stale entry would keep delivering 7 here
     expect(got[got.length - 1]).toBe(undefined);
     expect(diamond(element)).toBeFalsy(); // no upstream → no wire, no bidi marker
+  });
+});
+
+describe("inlet proxies disconnect on unmount (leak pin)", () => {
+  it("adding + removing a wired sink N times leaves the upstream's listener count FLAT", async () => {
+    const { layout } = await mountCanvas([{ id: "lsrc", kind: "editor", editorId: "ns7-leak-src", x: 40, y: 40, w: 160, h: 90 }]);
+    await flush(40);
+    const base = leak.live; // the src alone (no wires yet)
+    for (let i = 0; i < 3; i++) {
+      layout.change((d) => { d.items.push({ id: "lsink" + i, kind: "editor", editorId: "ns7-sink", x: 420, y: 40, w: 160, h: 90, inlets: { in: { node: "lsrc", outlet: "value" } } }); });
+      await flush(40);
+      expect(leak.live).toBeGreaterThan(base); // wired: the sink's inlet proxy subscribed upstream
+      layout.change((d) => { const j = d.items.findIndex((x) => x.id === "lsink" + i); if (j >= 0) d.items.splice(j, 1); });
+      await flush(40);
+      // FLAT after unmount: the proxy backing was released (setBacking(null)) —
+      // before the fix each cycle stranded one live subscription on the source
+      expect(leak.live).toBe(base);
+    }
   });
 });

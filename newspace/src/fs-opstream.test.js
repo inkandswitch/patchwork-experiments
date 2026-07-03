@@ -128,6 +128,26 @@ describe("watchFileStream (reload unless dirtied)", () => {
     stop();
     vi.useRealTimers();
   });
+
+  it("a disk change that lands WHILE dirty is not consumed — a revert reloads it (audit)", async () => {
+    // lastModified used to advance BEFORE the dirty check, permanently
+    // swallowing any disk change that arrived during unsaved edits: reverting
+    // the buffer never reloaded. It must re-trigger once the stream is clean.
+    vi.useFakeTimers();
+    const fh = watchableHandle("a.txt", "v1", 1);
+    const s = await fileHandleOpstream(fh);
+    const stop = watchFileStream(s, { intervalMs: 100 });
+    s.apply(splice([], 0, 2, "EDITED")); // dirty
+    fh.set("v2", 2); // external change lands while dirty
+    await vi.advanceTimersByTimeAsync(120);
+    expect(s.value).toBe("EDITED"); // unsaved edits still win in the moment…
+    s.apply({ type: "snapshot", value: "v1" }); // …then the user reverts to the disk baseline
+    await vi.advanceTimersByTimeAsync(120);
+    expect(s.value).toBe("v2"); // the skipped change re-triggered (was frozen on "v1" forever)
+    expect(s.complement.diskText).toBe("v2"); // baseline consumed only on the actual reload
+    stop();
+    vi.useRealTimers();
+  });
 });
 
 describe("startFileSource (read-only File Source)", () => {

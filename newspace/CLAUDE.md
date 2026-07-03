@@ -47,6 +47,42 @@ host (it predates solid-js being host-provided), so the config augments it — i
 solid-js were bundled we'd get a second reactive runtime and every signal would
 break.
 
+## State homes
+
+Every piece of non-shared state has exactly one home, chosen by whose state it
+is — never by what's convenient at the call site:
+
+- **Device state** — belongs to this browser/machine, not to the person:
+  camera position (`sketchy:camera:<docUrl>`), the op-debug toggle
+  (`sketchy:debug`). Lives in **localStorage** (via `makePersisted`).
+- **Person state** — yours, follows you across devices: per-brush config
+  (`brushCfg`), chrome placement overrides (`chrome[part]`), floating
+  inspectors (`floats`), flap open/closed (`flaps[id].open`). Lives in the
+  **top-layer user doc** (`accountDoc.tools.sketchy.docs[folderUrl]`, written
+  through `changeTop`).
+- Shared state (items, layers, palette entries…) is the layout doc — not this
+  section's concern.
+
+Session-only UI state (an open menu, the properties panel's drag position) is
+plain signals: if losing it on reload is fine, don't persist it at all.
+
+## Undoability
+
+What ⌘Z touches, by provenance:
+
+- **User intent is undoable** — draw/move/resize/rotate/delete/reorder/paste,
+  entering text, wiring: every gesture lands in the canvas history
+  (`transact` / `beginTxn`…`endTxn`).
+- **Derived/measured state is not** — a text item's auto-measured w/h, view
+  persistence, reconcile/upgrade passes: written outside any txn (rafBatch
+  deferrals keep them out of gesture windows) so undo never fights a measurer.
+- **Per-viewer state never is** — camera, debug, everything in the top-layer
+  user doc (brush config, floats, flap open). Undo is about the shared
+  artifact, not your viewport.
+
+Open question (TODO.md): node `setConfig` edits (params, palette config) are
+user intent but currently bypass the history — should config edits join it?
+
 ## Comment policy
 
 - A comment answers **why**, once. If the *why* is non-obvious and stable, it's

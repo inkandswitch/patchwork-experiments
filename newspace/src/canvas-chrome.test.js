@@ -7,6 +7,7 @@ import { render } from "solid-js/web";
 import { Repo } from "@automerge/automerge-repo";
 import { registerPlugins } from "@inkandswitch/patchwork-plugins";
 import { Canvas } from "./brush/canvas.jsx";
+import { plugin as palettePlugin } from "./palette-node.js";
 
 const flush = (ms = 25) => new Promise((r) => setTimeout(r, ms));
 
@@ -35,50 +36,128 @@ afterEach(() => {
 });
 
 describe("canvas chrome reads the context", () => {
-  it("mounts the toolbar + presence layer + layout tray", async () => {
+  it("mounts the presence layer; the fixed toolbar + corner tray + views eyeball are gone", async () => {
     const { element } = await mountCanvas();
-    expect(element.querySelector(".ns-toolbar")).toBeTruthy();
     expect(element.querySelector(".ns-presence")).toBeTruthy();
-    expect(element.querySelector(".ns-layout-cust")).toBeTruthy();
+    // the toolbar is the seeded "ns-toolbar-palette" window item now — never fixed chrome
+    expect(element.querySelector(".ns-toolbar")).toBeFalsy();
+    // the corner tray (and its inspect eyeball) went with it
+    expect(element.querySelector(".ns-layout-cust")).toBeFalsy();
+    expect(element.querySelector(".ns-inspect-btn")).toBeFalsy();
+    // and the last fixed eyeball too: the presence BAR/controls are the seeded
+    // `presence` bare window (presence-node.js) — no fixed .ns-views button
+    expect(element.querySelectorAll(".ns-views").length).toBe(0);
   });
 
-  it("a toolbar click drives the context tool, which drives the chrome back", async () => {
-    const { element } = await mountCanvas();
-    const pen = element.querySelector('.ns-toolbar button[title^="Draw"]');
+  it("exposes writable presence controls on the context (the presence window's surface)", async () => {
+    let ctx = null;
+    await mountCanvas({ slots: { presence: (host) => { ctx = host.context; return document.createElement("div"); } } });
+    expect(ctx).toBeTruthy();
+    expect(typeof ctx.showViews?.connect).toBe("function");
+    expect(ctx.showViews.value).toBe(false);
+    ctx.showViews.apply({ type: "snapshot", value: true });
+    await flush(5);
+    expect(ctx.showViews.value).toBe(true);
+    expect(typeof ctx.following?.apply).toBe("function");
+    ctx.following.apply({ type: "snapshot", value: "automerge:someone" });
+    await flush(5);
+    expect(ctx.following.value).toBe("automerge:someone");
+    expect(typeof ctx.serviceUrl).toBe("function");
+  });
+
+  it("a PALETTE window click drives the context tool, which drives the chrome back", async () => {
+    registerPlugins([palettePlugin]);
+    const { element } = await mountCanvas({}, [
+      { id: "pal", kind: "editor", editorId: "palette", layer: "overlay", layers: ["overlay", "canvas"], x: 10, y: 10, w: 300, h: 44, inlets: {}, config: { brushes: ["select", "pen"] } },
+    ]);
+    await flush(40); // the palette node mounts async
+    const pen = element.querySelector('.ns-palette [data-tool="pen"]');
     expect(pen).toBeTruthy();
     expect(pen.classList.contains("active")).toBe(false);
-    // no selection + select tool ⇒ no properties panel yet
     expect(element.querySelector(".ns-props")).toBeFalsy();
     pen.click();
-    await flush(5);
+    await flush(10);
     // the active state comes back through the CONTEXT tool Source
     expect(pen.classList.contains("active")).toBe(true);
     // and the properties panel appears for the stroke mode (context-driven chrome)
     expect(element.querySelector(".ns-props")).toBeTruthy();
   });
 
-  it("opts.tools restricts the toolbar to the given subset", async () => {
-    const { element } = await mountCanvas({ tools: ["pen", "eraser"] });
-    expect(element.querySelector('.ns-toolbar button[title^="Draw"]')).toBeTruthy();
-    expect(element.querySelector('.ns-toolbar button[title^="Eraser"]')).toBeTruthy();
-    expect(element.querySelector('.ns-toolbar button[title^="Select"]')).toBeFalsy();
-    expect(element.querySelector('.ns-toolbar button[title^="Pan"]')).toBeFalsy();
+  it("the SEEDED WIRED PAIR: palette-config's tools outlet drives the palette's entries live", async () => {
+    const { plugin: paletteConfigPlugin } = await import("./palette-config-node.js");
+    registerPlugins([palettePlugin, paletteConfigPlugin]);
+    const { PALETTE_INLETS } = await import("./brush/constants.js");
+    const { element, layout } = await mountCanvas({}, [
+      // the seeded pair, as constants.js ships it (positions simplified)
+      { id: "ns-toolbar-config", kind: "editor", editorId: "palette-config", layer: "overlay", layers: ["overlay"], x: 0, y: 0, w: 236, h: 320, rotation: 0, inlets: {}, config: { entries: ["pen", { kind: "divider" }, { kind: "menu", label: "shapes", items: ["line"] }] } },
+      { id: "ns-toolbar-palette", kind: "editor", editorId: "palette", layer: "overlay", layers: ["overlay", "canvas"], x: 0, y: 400, w: 356, h: 44, rotation: 0, inlets: { ...PALETTE_INLETS }, config: { brushes: ["select"] } },
+    ]);
+    await flush(60); // both nodes mount async; the outlet registers, the proxy re-backs
+    // the WIRE won: entries (divider + menu) render, not config.brushes' plain "select"
+    const pal = element.querySelector(".ns-palette");
+    expect(pal).toBeTruthy();
+    expect(pal.querySelector('[data-tool="pen"]')).toBeTruthy();
+    expect(pal.querySelector('[data-tool="select"]')).toBeFalsy();
+    expect(pal.querySelectorAll(".ns-palette-row .ns-sep").length).toBe(1);
+    expect(pal.querySelector(".ns-palette-menu-btn")).toBeTruthy();
+    // an EDIT in the config window flows down the wire: remove the first row ("pen")
+    const cfgWin = element.querySelector(".ns-palcfg");
+    expect(cfgWin).toBeTruthy();
+    cfgWin.querySelector('.ns-palcfg-row button[title="remove"]').click();
+    await flush(20);
+    expect(pal.querySelector('[data-tool="pen"]')).toBeFalsy();
+    // …and it persisted on the config node's item
+    const cfgItem = layout.doc().items.find((x) => x.id === "ns-toolbar-config");
+    expect(JSON.parse(JSON.stringify(cfgItem.config.entries))[0]).toEqual({ kind: "divider" });
+  });
+
+  it("the seeded PRESENCE window mounts (user icon, frameless) and its toggle drives the canvas's showViews", async () => {
+    const { plugin: presencePlugin } = await import("./presence-node.js");
+    registerPlugins([presencePlugin]);
+    let ctx = null;
+    const { element } = await mountCanvas(
+      { slots: { presence: (host) => { ctx = host.context; return document.createElement("div"); } } },
+      [{ id: "ns-presence", kind: "editor", editorId: "presence", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "right", t: 0.9 }, x: 0, y: 0, w: 148, h: 34, rotation: 0, inlets: {} }],
+    );
+    await flush(60);
+    const bar = element.querySelector(".ns-presence-bar");
+    expect(bar).toBeTruthy();
+    expect(element.querySelector('[data-item-id="ns-presence"]').classList.contains("ns-bare")).toBe(true); // frameless
+    const btn = bar.querySelector(".ns-presence-btn");
+    expect(btn.title.length).toBeGreaterThan(0); // tooltip
+    btn.click();
+    // the flyout portals to the canvas root (it escapes the bare window's clipped body)
+    const items = [...element.querySelectorAll(".ns-root > .ns-presence-menu .ns-presence-item")];
+    expect(items.length).toBeGreaterThan(0);
+    items[0].click(); // "show everyone's views"
+    await flush(10);
+    expect(ctx.showViews.value).toBe(true); // wrote through the context Source
+  });
+
+  it("keyboard tool shortcuts work with NO toolbar/palette mounted at all", async () => {
+    const { element } = await mountCanvas();
+    expect(element.querySelector(".ns-toolbar")).toBeFalsy();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true }));
+    await flush(10);
+    // the pen arms → the properties panel shows the stroke mode
+    expect(element.querySelector(".ns-props")).toBeTruthy();
+    expect(element.querySelector(".ns-root").className).toContain("ns-cur-cross");
   });
 
   it("a SLOT replaces a chrome part and receives the host with `context`", async () => {
     let got = null;
     const { element } = await mountCanvas({
       slots: {
-        toolbar: (host) => {
+        presence: (host) => {
           got = host;
           const el = document.createElement("div");
-          el.className = "my-toolbar";
+          el.className = "my-presence";
           return el;
         },
       },
     });
-    expect(element.querySelector(".my-toolbar")).toBeTruthy();
-    expect(element.querySelector(".ns-toolbar")).toBeFalsy(); // replaced, not doubled
+    expect(element.querySelector(".my-presence")).toBeTruthy();
+    expect(element.querySelector(".ns-presence")).toBeFalsy(); // replaced, not doubled
     // the slot's host reads the SAME context the built-ins read…
     expect(got).toBeTruthy();
     expect(got.context).toBeTruthy();
@@ -91,34 +170,9 @@ describe("canvas chrome reads the context", () => {
     expect(got.context.tool.value).toBe("pen");
   });
 
-  it("chrome parts gate on opts (toolbar/properties/presence off)", async () => {
-    const { element } = await mountCanvas({ toolbar: false, presence: false });
-    expect(element.querySelector(".ns-toolbar")).toBeFalsy();
+  it("chrome parts gate on opts (presence off)", async () => {
+    const { element } = await mountCanvas({ presence: false });
     expect(element.querySelector(".ns-presence")).toBeFalsy();
-  });
-});
-
-describe("canvas-side layout switcher (the ⊞ tray)", () => {
-  it("opening the tray shows the shared switcher; picking a layout re-opens the folder", async () => {
-    // register a canvas + a list layout for folders (the registry is process-global,
-    // but this file runs isolated — mirrors index.jsx's real registrations)
-    registerPlugins([
-      { type: "sketchy:layout", id: "canvas", name: "Canvas", toolId: "sketchy", supportedDatatypes: ["folder"] },
-      { type: "sketchy:layout", id: "list", name: "List", toolId: "sketchy:list", supportedDatatypes: ["folder"] },
-    ]);
-    const { element, folder } = await mountCanvas();
-    const events = [];
-    element.addEventListener("patchwork:open-document", (e) => events.push(e.detail));
-    element.querySelector(".ns-layout-btn:not(.ns-inspect-btn)").click();
-    await flush(5);
-    const sw = element.querySelector(".ns-layout-sw");
-    expect(sw).toBeTruthy();
-    const btns = [...sw.querySelectorAll("button")];
-    expect(btns.map((b) => b.textContent)).toEqual(["Canvas", "List"]);
-    btns[0].click(); // already the canvas — no re-open
-    expect(events.length).toBe(0);
-    btns[1].click(); // switch to the list layout
-    expect(events).toEqual([{ url: folder.url, toolId: "sketchy:list" }]);
   });
 });
 
@@ -224,43 +278,5 @@ describe("port schema popover — shows the ACTUAL shape (describeSchema)", () =
     expect(info.textContent).toContain("accepts: { name: string, count?: number }");
     expect(info.textContent).not.toContain("(specific shape)");
     expect(info.textContent).toContain("required");
-  });
-});
-
-describe("inspect mode — context ports as top-edge inlets", () => {
-  it("the eye toggles the strip; ports are real (click with the wire tool → schema popover)", async () => {
-    const { element } = await mountCanvas();
-    expect(element.querySelector(".ns-ctx-inlets")).toBeFalsy();
-    const eye = element.querySelector(".ns-inspect-btn");
-    expect(eye).toBeTruthy();
-    eye.click();
-    await flush(5);
-    const strip = element.querySelector(".ns-ctx-inlets");
-    expect(strip).toBeTruthy();
-    const ports = [...strip.querySelectorAll("[data-sketchy-port]")];
-    expect(ports.map((p) => p.getAttribute("data-sketchy-port"))).toEqual([
-      "camera", "pointer", "tool", "brush", "selection",
-    ]);
-    // each renders a rough nub; the writable camera reads as bidi (a diamond nub —
-    // its fill is the rotated rect, not the circle)
-    expect(ports.every((p) => p.querySelector("svg.ns-nub path"))).toBe(true);
-    expect(ports[0].querySelector("svg.ns-nub rect.ns-nub-fill")).toBeTruthy(); // camera: bidi
-    expect(ports[1].querySelector("svg.ns-nub circle.ns-nub-fill")).toBeTruthy(); // pointer: one-way
-    // arm the wire tool and CLICK a port — the document-capture grab reads the
-    // data-sketchy-port ({kind:"context"}) and a click opens the schema popover
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "w", bubbles: true }));
-    await flush(5);
-    ports[0].dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, composed: true, button: 0 }));
-    window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true, button: 0 }));
-    await flush(5);
-    const info = element.querySelector(".ns-portinfo");
-    expect(info).toBeTruthy();
-    expect(info.textContent).toContain("context ▸ camera");
-    expect(info.textContent).toContain("writable"); // the camera stream is bidi
-    // toggling off removes the strip
-    element.querySelector(".ns-portinfo") && element.querySelector(".ns-chooser-backdrop").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
-    eye.click();
-    await flush(5);
-    expect(element.querySelector(".ns-ctx-inlets")).toBeFalsy();
   });
 });

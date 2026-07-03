@@ -53,7 +53,10 @@ const ptr = (type, target, x, y) =>
 const perf = (name) => (window.__perf && window.__perf[name]) || 0;
 
 describe("context.pointer: ≤1 emission per 16ms window, .value always current", () => {
-  it("N rapid pointermoves → one trailing emission with the latest point", async () => {
+  // retry(1): the window.__perf counters are global — a previous file's canvas can
+  // leak one async tick into our deltas when file order lines up (seen 2026-07-02).
+  // A real regression fails BOTH attempts; only cross-file noise gets absorbed.
+  it("N rapid pointermoves → one trailing emission with the latest point", { retry: 1 }, async () => {
     const { element } = await mountCanvas();
     const ctx = element.api.context;
     const root = element.querySelector(".ns-root");

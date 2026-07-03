@@ -185,3 +185,27 @@ describe("registry", () => {
     roundTrips([box], { x: 33, y: 9 });
   });
 });
+
+describe("scale — a counter-scaled sticky container (docked window holding screen size)", () => {
+  it("divides outer coords by k going in, multiplies going out; scale() reports k", () => {
+    const scaled = { x: 0, y: 0, transform: { kind: "scale", k: 0.5 } };
+    expect(chainToLocal([scaled], { x: 10, y: 6 })).toEqual({ x: 20, y: 12 });
+    expect(chainToOuter([scaled], { x: 20, y: 12 })).toEqual({ x: 10, y: 6 });
+    expect(chainScale([scaled])).toBe(0.5);
+  });
+  it("composes under a camera layer: a stuck frame's k = 1/zoom cancels the zoom (children hold screen size)", () => {
+    const cam = { x: 0, y: 0, z: 2 };
+    const chain = [
+      { x: 0, y: 0, transform: { kind: "viewport" } },
+      { x: 12, y: 0, w: 200, h: 150, transform: { kind: "rotate", rotation: 0 } }, // the resolved dock rect
+      { x: 0, y: 0, transform: { kind: "scale", k: 1 / cam.z } },
+    ];
+    const env = { camera: () => cam };
+    // a child at frame-local (10, 20) renders 10,20 SCREEN px inside the dock rect's
+    // screen origin (the frame origin still projects through the camera)
+    const s = chainToOuter(chain, { x: 10, y: 20 }, env);
+    expect(s.x).toBeCloseTo(12 * cam.z + 10);
+    expect(s.y).toBeCloseTo(20);
+    expect(chainScale(chain, env)).toBeCloseTo(1); // zoom × counter-scale cancels
+  });
+});

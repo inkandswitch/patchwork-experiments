@@ -1,3 +1,4 @@
+// unregistered 2026-07-02 pending the container-types rethink (see TODO)
 // A LIST layout for a folder — the second layout, demonstrating the thesis in
 // LAYOUTS.md: the folder's `docs` are the shared document; this lens renders them as
 // rows and DROPS the canvas's positional complement. Because that complement is

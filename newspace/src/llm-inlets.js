@@ -6,10 +6,17 @@ import { anySchema, stringSchema } from "./ops.js";
 
 export const VAR_RE = /\{\{\s*([a-zA-Z_]\w*)\s*\}\}/g;
 
+// the FIXED port names. A {{in}}/{{prompt}}/{{bang}} hole or an `@out out` line must
+// not mint a twin of a fixed port — ports are name-keyed in the wiring, so a duplicate
+// name collides. The fixed ports win; templates still FILL from them ({{in}} reads the
+// fixed `in` inlet), they just don't redeclare them.
+const RESERVED_INLETS = ["in", "prompt", "bang"];
+const RESERVED_OUTLETS = ["out", "think", "code"];
+
 export function promptVars(prompt) {
   const names = []; let m;
   const re = new RegExp(VAR_RE.source, "g");
-  while ((m = re.exec(prompt || ""))) if (!names.includes(m[1])) names.push(m[1]);
+  while ((m = re.exec(prompt || ""))) if (!names.includes(m[1]) && !RESERVED_INLETS.includes(m[1])) names.push(m[1]);
   return names;
 }
 
@@ -29,7 +36,7 @@ const OUTLET_RE = /^[ \t]*@out(?:let)?\s+([a-zA-Z_]\w*)/gm;
 export function promptOutlets(prompt) {
   const names = []; let m;
   const re = new RegExp(OUTLET_RE.source, "gm");
-  while ((m = re.exec(prompt || ""))) if (!names.includes(m[1])) names.push(m[1]);
+  while ((m = re.exec(prompt || ""))) if (!names.includes(m[1]) && !RESERVED_OUTLETS.includes(m[1])) names.push(m[1]);
   return names;
 }
 // `out` (the clean final result) + `think` (live tokens / reasoning, so `out` stays
@@ -143,6 +150,21 @@ export function parseOutletBlocks(text) {
     const key = s.name == null ? "out" : s.name;
     if (!body && s.name == null) continue;
     out[key] = out[key] ? out[key] + "\n" + body : body;
+  }
+  return out;
+}
+
+// Clamp parsed blocks to the DECLARED outlets (the fixed ports + the prompt's @out
+// names): the model may label a block with a name nobody declared, and pushing that
+// would mint a phantom live port. An undeclared block FOLDS INTO `out` — the same
+// rule as unmarked text before the first marker — so no content is lost and no
+// phantom port appears.
+export function clampOutletBlocks(blocks, names = []) {
+  const allowed = new Set([...RESERVED_OUTLETS, ...names]);
+  const out = {};
+  for (const [k, v] of Object.entries(blocks || {})) {
+    const key = allowed.has(k) ? k : "out";
+    out[key] = out[key] != null ? out[key] + "\n" + v : v;
   }
   return out;
 }

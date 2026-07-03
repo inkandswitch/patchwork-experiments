@@ -60,10 +60,22 @@ export const CONTEXT_SELECTORS = {
 };
 
 // A `Source` with a `.set()` (alias of push) and an `.owned()` flag.
+//
+// OWNERSHIP is per-write, not a one-way latch: a provider's value marks the
+// source not-owned (`_accepted`, on EVERY provided push), and a LOCAL `set()`
+// RECLAIMS ownership. Without the reclaim, a parent canvas unmounting left a
+// nested canvas frozen on the last provided value forever — the providers
+// package has no provider-close signal, so "the provider went away" is
+// undetectable directly; re-owning on local writes is the best local
+// mitigation (the next gesture on the orphaned canvas takes the value back).
+// RESIDUAL LIMITATION: between the parent unmounting and the first local
+// set(), the source still reports the stale provided value / owned()=false —
+// see the subscribe site below. TODO: adopt a provider-close signal if
+// patchwork-providers ever grows one, and drop this workaround.
 function contextSource(initial) {
   const src = new Source(initial);
-  src.set = (v) => src.push(v);
   let owned = true;
+  src.set = (v) => { owned = true; src.push(v); }; // a local write reclaims ownership
   src.owned = () => owned;
   src._accepted = () => { owned = false; };
   return src;
@@ -78,7 +90,11 @@ export function createCanvasContext(element, { fallbacks = {}, selectors = CONTE
     const source = contextSource(fallbacks[key]);
 
     if (element) {
-      // (1) accept an external provider's value, if any answers
+      // (1) accept an external provider's value, if any answers. NOTE: there is
+      // no provider-CLOSE signal in patchwork-providers, so we can't hear the
+      // provider go away — `_accepted` marks not-owned per push, and a local
+      // `set()` reclaims (see contextSource). Until that first local write, an
+      // orphaned nested canvas keeps showing the provider's last value.
       try {
         const off = subscribe(element, sel, (value) => {
           source._accepted();

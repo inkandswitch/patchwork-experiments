@@ -32,7 +32,7 @@ describe("ListTool (the list layout)", () => {
   it("surfaces the canvas complement — what the list isn't showing", async () => {
     const repo = makeRepo();
     globalThis.repo = repo;
-    // makeSurface wires folder.newspace → the layout doc (the canvas complement)
+    // makeSurface wires folder.sketch (+ @layouts.canvas) → the layout doc (the canvas complement)
     const { folder, layout } = makeSurface(repo, {
       docs: [{ url: "automerge:a", name: "Alpha", type: "essay" }],
       items: [

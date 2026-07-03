@@ -6,12 +6,17 @@
 // call tool use it). Perfect-negotiation handles glare; ICE candidates buffer until the
 // remote description lands; the owner heartbeats so refreshed/late peers reconnect.
 //
-//   const s = new ShareSession(folderHandle, myUrl)
+//   const s = new ShareSession(folderHandle, myUrl, identify?)
 //   s.shareValue(itemId, value)         // broadcast a value to all peers
 //   s.onValue(itemId, (value) => …)     // receive a value
 //   s.shareStream(itemId, stream)       // add a MediaStream's tracks + map them to itemId
 //   s.onStream(itemId, (stream) => …)   // receive the remote stream for an item (null when the owner unshares)
 //   s.unshare(itemId);  s.destroy()
+//
+// PEER IDENTITY IS NOT THE SESSION'S: the mesh is keyed by contactUrl (the same
+// key the presence heartbeat store uses) and holds only CONNECTION state. Who a
+// url IS (name/color/avatar) resolves through `identify` — the canvas passes a
+// lookup into its presence store, the one peer-identity source.
 import { log } from "./log.js";
 
 const RTC_CONFIG = { iceServers: [
@@ -30,9 +35,10 @@ export const sessionEvents = typeof EventTarget !== "undefined" ? new EventTarge
 const bump = () => { try { sessionEvents.dispatchEvent(new CustomEvent("change")); } catch {} };
 
 export class ShareSession {
-  constructor(handle, myUrl) {
+  constructor(handle, myUrl, identify) {
     this.handle = handle;
     this.myUrl = myUrl || ("anon-" + Math.random().toString(36).slice(2));
+    this.identify = identify || null; // contactUrl → { name, color, avatarUrl } | null (the presence store's lookup)
     sessionRegistry.add(this);
     this.peers = new Map();              // peerUrl -> { pc, dc, polite, makingOffer, pendingIce[], tracks: Map<trackId,track>, itemStreams: Map<item,MediaStream>, trackMap: Map<trackId,item> }
     this.shared = new Map();             // itemId -> { value? , stream? , trackIds?[] }
@@ -85,14 +91,18 @@ export class ShareSession {
     sessionRegistry.delete(this); bump();
   }
 
-  // a snapshot for the tray tool — who's connected, what's flowing
+  // a snapshot for the tray tool — who's connected, what's flowing. Identity
+  // (name/color) derives from the presence store via `identify`; the url tail
+  // stays as the identity-less fallback.
   state() {
+    const who = (url) => (this.identify ? this.identify(url) : null) || null;
     const peers = [];
     for (const [url, pr] of this.peers) {
       const recvItems = [...new Set([...pr.trackMap.values()])];
-      peers.push({ url, short: url.slice(-6), connection: pr.pc.connectionState, channel: pr.dc && pr.dc.readyState, receiving: recvItems });
+      const w = who(url);
+      peers.push({ url, short: url.slice(-6), name: (w && w.name) || null, color: (w && w.color) || null, connection: pr.pc.connectionState, channel: pr.dc && pr.dc.readyState, receiving: recvItems });
     }
-    return { myUrl: this.myUrl, peers, sharing: [...this.shared.keys()], listening: { values: [...this.valueCb.keys()], streams: [...this.streamCb.keys()] } };
+    return { myUrl: this.myUrl, me: who(this.myUrl), peers, sharing: [...this.shared.keys()], listening: { values: [...this.valueCb.keys()], streams: [...this.streamCb.keys()] } };
   }
 
   // ── internals ─────────────────────────────────────────────────────────────

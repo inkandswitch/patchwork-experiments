@@ -41,8 +41,10 @@ describe("rot", () => {
 describe("isBoxType", () => {
   it("rejects null and other managed-doc-ish strings", () => {
     expect(isBoxType(null)).toBe(false);
-    expect(isBoxType("sketch")).toBe(false);
     expect(isBoxType("doc")).toBe(false);
+  });
+  it("accepts 'sketch' — placing a Sketch makes a frame sub-space, not a flat embed", () => {
+    expect(isBoxType("sketch")).toBe(true);
   });
 });
 

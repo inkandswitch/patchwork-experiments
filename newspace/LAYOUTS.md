@@ -40,6 +40,46 @@ the only, hardcoded one) and to *split the per-layout complement* off the folder
 So a layout = `lens.get(folder, complement) → presentation`, and edits flow back via
 `lens.put`. The folder is the constant; the complement is what each lens adds.
 
+## Layers and membership
+
+A sketch's layer stack (layers.js) is an ordered list of coordinate SPACES. An
+item relates to that stack through **`layers: string[]`** (model.js
+`itemLayers`/`itemHomeLayer`):
+
+- **`layers[0]` is the HOME space.** It owns the item's coordinates and
+  transform — semantically what the old single `layer:` field meant. The home
+  decides which `.ns-layer` container renders the item: one DOM node, never
+  two.
+- **Every further entry is a pure MEMBERSHIP.** Memberships never move or
+  re-project anything — they drive VISIBILITY. An item shows iff its home
+  layer sits at or below the ACTIVE layer in the stack (lower layers keep
+  rendering, frosted, under the active one), or its memberships include the
+  active layer (model.js `itemVisibleForActive`). So an overlay-home widget is
+  hidden while the canvas tab is active unless it was given a canvas
+  membership (the Properties "appears on" row) — that's how the seeded
+  toolbar-palette stays usable while drawing. Hidden = `display:none` with the
+  DOM kept (live embeds survive; nothing hidden can be hit or clicked).
+- **Reading is back-compat and additive:** `layers` wins; else a legacy
+  `layer: "x"` reads as `["x"]`; else `["canvas"]`. Writers never delete the
+  legacy `layer` field. New items write `layers: [<active layer>]`, and mirror
+  `layer` to a non-base home (base was the untagged default) so old clients
+  keep placing the item in the right space. Membership edits (the Properties
+  "appears on" row) rewrite only `layers`.
+- **Future per-layer placement:** a `layers` entry can later grow into
+  `{ id, x, y }` without a model break — `itemLayers` already normalizes
+  object entries to their id.
+
+(A "modes" experiment — workshop/play visibility presets over these
+memberships — was removed 2026-07-02. Existing docs may still carry a
+`layout.modes` field; it is ignored and never deleted.)
+
+**Flaps** (2026-07-02): a `flap: true` FRAME is a named sticky container
+placeable on any layer — full frame containment (its own folder+layout
+sub-space, drops in/out, clipping), except that while STUCK it collapses to an
+edge TAB; clicking the tab opens it as a drawer, and open/closed is PER-VIEWER
+(the top-layer doc's `flaps[id].open`, not shared). The parts bin ships as the
+seeded "parts" flap (`ns-parts`), its window parked inside as a plain item.
+
 ## Layout-doc convergence
 
 The folder references its canvas complement by URL (`folder.sketch`; `.newspace`
@@ -97,20 +137,14 @@ Built / proven:
 - **opstreams with an explicit complement** that passes through lenses (the mechanism);
 - the **two-doc split** (folder = docs; `.sketch` = the canvas complement) — already
   the "folder + per-layout complement" shape;
-- the **`sketchy:layout` registry** (layouts.js + index.jsx): canvas, list, and grid
-  are registered descriptors, each pointing at the patchwork:tool that renders it —
-  layouts ARE pluggable now;
-- the **list + grid layouts** — keyed-reconcile rows/cells over the same folder, each
-  with a switcher (`layoutsFor` re-opens the folder through another lens) and each
-  **surfacing the canvas complement** (`complementSummary`/`complementBanner`:
-  "also a canvas layout … not shown here") — the honest-lens payoff, demonstrated.
+- the folder referencing **multiple** complement docs (`@layouts: { canvas: url, … }`,
+  `ensureLayoutDoc(repo, fh, key)` in brush/constants.js), migrated additively from
+  the single `sketch: url`.
 
-Still needed for the full vision:
-1. the folder referencing **multiple** complement docs, e.g. `@layouts: { canvas: url,
-   dock: url, list: url }`, instead of the single `sketch: url` — switching picks one
-   (generalise `ensureLayout` → `ensureLayoutDoc(repo, fh, key)`);
-2. a **layout switcher in the canvas chrome** (list and grid have one; the canvas
-   doesn't yet);
-3. the **dock / tiling** layouts themselves;
-4. dock (and the canvas) surfacing the other layouts' complements the way list/grid
-   already surface the canvas's.
+**Status 2026-07-02: the list, grid, and dock layouts (and the pad tool) are
+UNREGISTERED.** How container types, layouts, and chrome relate is being
+rethought — the concepts as shipped were wrong (see TODO.md). The list/grid/dock
+sources and the shared switcher stay on disk, dormant (list-tool.jsx,
+grid-tool.jsx, dock-tool.js, layout-switch.js), and the `sketchy:layout`
+registry still exists with the canvas as its one entry. This document's Q&A
+above describes the direction, not the current registrations.

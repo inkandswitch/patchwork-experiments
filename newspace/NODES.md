@@ -36,9 +36,38 @@ device-orientation, device-motion, pointer-lock, llm-magnifier, minimap, zoom, c
 image→data URL, uppercase, lowercase, length, keys, json-pretty, rle/unrle.
 Neighbouring registries (not nodes, same spirit): `sketchy:brush`
 (pen/marker/ink-pen/crayon/charcoal/highlighter + constraint + voice + the
-interaction brushes), `sketchy:layout` (canvas/list/grid — LAYOUTS.md),
-`sketchy:layer-transform` + `sketchy:layer-kind` (layers.js — a layer is a
-coordinate space), and `tags:["tray"]` tools (the share tray).
+interaction brushes), `sketchy:palette` (below), `sketchy:layout`
+(canvas/list/grid — LAYOUTS.md), `sketchy:layer-transform` +
+`sketchy:layer-kind` (layers.js — a layer is a coordinate space), and
+`tags:["tray"]` tools (the share tray).
+(2026-07-02 additions to `sketchy:window`: palette-config — the palette's
+configurator window, a source with a `tools` outlet — and presence, the
+bar/controls half of presence as a bare window.)
+
+## Palettes as plugins: `sketchy:palette`
+
+A palette is data — an array of ENTRIES (model.js):
+`{kind:"tool", id}` | `{kind:"divider"}` |
+`{kind:"menu", label, icon?, items:[entry…]}` (one level of nesting).
+Register one:
+
+```js
+{ type: "sketchy:palette", id, name, icon?, entries: [entry…] | () => [entry…] }
+```
+
+Registered palettes appear in the parts bin's **palettes** group; dragging one
+out instantiates a palette window with those entries (`entries` may be a
+function, evaluated at drop time — the built-in "full palette" censuses every
+registered brush that way; "full"/"sketch" are registrations of this type,
+registry/palettes.js). The palette WINDOW also takes entries live over its
+`tools` inlet — the seeded pair wires `ns-toolbar-config` (palette-config's
+`tools` outlet) → `ns-toolbar-palette`. Unwired, it falls back to
+`config.entries`, then the legacy `config.brushes` id list (back-compat
+forever). Saving a palette is the ordinary copy gesture now: alt-drag the
+palette window and drop the copy into the parts FLAP (`ns-parts`, a
+`flap: true` frame — LAYOUTS.md) — item containment does the work. (The old
+⠿-grip identity / `config.customParts` protocol is gone; the field is never
+deleted from old docs, just no longer read.)
 
 ## The umbrella type: `sketchy:window` (decided)
 

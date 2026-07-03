@@ -9,7 +9,7 @@
 import { Source, apply as applyOp } from "./opstreams.js";
 import { snapshot, isSnapshot, describeBinary, binarySafeReplacer } from "./ops.js";
 import { generate, popup } from "@chee/patchwork-llm";
-import { VAR_RE, promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks, outletConsumers, schemaSpec, schemaRule, validationPlan } from "./llm-inlets.js";
+import { VAR_RE, promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks, clampOutletBlocks, outletConsumers, schemaSpec, schemaRule, validationPlan } from "./llm-inlets.js";
 import { listEditors, inletDefsFor } from "./editors.js";
 export { promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks };
 
@@ -58,7 +58,7 @@ function coerceOut(text) {
   return text;
 }
 
-export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConfig, itemId, api, context }) {
+export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConfig, onConfig, itemId, api, context }) {
   let prompt = typeof config.prompt === "string" ? config.prompt : "";
   // REAL schema→schema: the Standard Schema of the inlet our `out` outlet FEEDS.
   // Scan the live board for consumers wired {node: itemId, outlet: "out"} and take
@@ -96,6 +96,7 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   const promptStream = inlets.prompt; // wired prompt overrides the UI field
 
   let reversePrompt = typeof config.reversePrompt === "string" ? config.reversePrompt : "";
+  let bidi = !!config.bidi; // LIVE: the always-installed out.apply gates on this, so toggling works without a remount
   let running = false, rerun = false; // rerun: a run requested mid-flight re-runs once with the latest inputs
 
   const root = document.createElement("div"); root.className = "ns-llm ns-source";
@@ -120,7 +121,7 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   autoLabel.append(autoCb, document.createTextNode("auto"));
   const bidiLabel = document.createElement("label"); bidiLabel.style.cssText = "font:10px ui-monospace,monospace;display:flex;gap:3px;align-items:center;cursor:pointer;";
   const bidiCb = document.createElement("input"); bidiCb.type = "checkbox"; bidiCb.checked = !!config.bidi;
-  bidiCb.onchange = () => { revTa.style.display = bidiCb.checked ? "" : "none"; if (setConfig) setConfig({ bidi: bidiCb.checked }); };
+  bidiCb.onchange = () => { bidi = bidiCb.checked; revTa.style.display = bidi ? "" : "none"; if (setConfig) setConfig({ bidi }); };
   bidiLabel.append(bidiCb, document.createTextNode("⇄ bidi"));
   // CODE mode: Run once → the model writes a function; that function runs live on the
   // input (so a fast source like a camera isn't fed to the LLM every frame).
@@ -149,12 +150,13 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   const currentPrompt = () => fillVars(promptWired() ? stringify(promptStream.value) : prompt);
 
   // BIDI write-back: when something edits `out`, reverse-generate (reverse prompt) and
-  // write the result to the input source — a real two-way lens. Always installed when
-  // bidi is on (inlets are reactive proxies); it no-ops until `in` is wired + writable.
-  if (config.bidi) {
+  // write the result to the input source — a real two-way lens. Always installed and
+  // gated on the LIVE bidi flag (not the mount-time config — mounts persist across the
+  // toggle); it no-ops until bidi is on AND `in` is wired + writable.
+  {
     let reversing = false;
     out.apply = async (op) => {
-      if (reversing || !inWired() || typeof inStream.apply !== "function") return;
+      if (!bidi || reversing || !inWired() || typeof inStream.apply !== "function") return;
       const edited = isSnapshot(op) ? op.value : applyOp(out.value, op);
       reversing = true; status.textContent = "reversing…";
       try {
@@ -228,7 +230,9 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
         };
         const raw = await genOnce("");
         if (names.length) {
-          const blocks = parseOutletBlocks(raw); // { out, think?, <named>… }
+          // clamped to the DECLARED outlets — a model-invented block name must not mint
+          // a phantom live port; it folds into `out` instead (see clampOutletBlocks)
+          const blocks = clampOutletBlocks(parseOutletBlocks(raw), names); // { out, think?, <named>… }
           for (const [k, v] of Object.entries(blocks)) outletFor(k).push(coerceOut(stripFences(v)));
           if (setConfig) setConfig({ last: blocks.out != null ? coerceOut(stripFences(blocks.out)) : null });
         } else if (!spec) {
@@ -276,6 +280,8 @@ export function mountLlm({ element, inlets = {}, setOutlet, config = {}, setConf
   for (const [k, s] of Object.entries(inlets)) { if (k === "in" || k === "prompt" || k === "bang") continue; if (s && s.connect) offs.push(s.connect(onInput)); }
   // a BANG on the trigger inlet runs it (skip the initial connect snapshot)
   if (inlets.bang && inlets.bang.connect) { let first = true; offs.push(inlets.bang.connect(() => { if (first) { first = false; return; } run(); })); }
+  // the bidi flag can flip in CONFIG from elsewhere (another viewer's checkbox) — track it live
+  if (onConfig) onConfig((c) => { const b = !!c.bidi; if (b === bidi) return; bidi = b; bidiCb.checked = b; revTa.style.display = b ? "" : "none"; });
 
   return () => { clearTimeout(debounce); offs.forEach((o) => o && o()); root.remove(); };
 }

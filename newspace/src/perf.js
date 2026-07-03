@@ -23,32 +23,80 @@ export function count(name, n = 1) {
 const raf = (cb) => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(cb) : setTimeout(() => cb(now()), 16));
 const caf = (id) => (typeof cancelAnimationFrame === "function" ? cancelAnimationFrame(id) : clearTimeout(id));
 
-// frame() — a counter bumped once per rAF. The loop starts lazily on the first
-// call, so merely importing perf.js costs nothing. Phase 3 keys its cached
-// viewport rect on this ("stable within a frame").
+// frame() — a counter bumped once per rAF. The loop still starts lazily on the
+// first call (importing perf.js costs one visibilitychange listener, below, and
+// nothing else). Phase 3 keys its cached viewport rect on this ("stable within
+// a frame").
+//
+// The loop SELF-HEALS: a test that stubs requestAnimationFrame (fakeRaf +
+// unstubAllGlobals) can strand the re-arm callback in a discarded fake queue,
+// which would pin frameN for the rest of the worker — turning every perFrame
+// cache into a forever-cache. So frame() restarts the loop — through the
+// CURRENT global rAF — when the last tick is older than STALL_MS and the
+// document isn't hidden (a hidden tab legitimately pauses rAF; perFrame stays
+// fresh there via the visibility epoch instead). A generation token makes a
+// superseded loop's tick a no-op, so there's never more than one live loop.
 let frameN = 0;
 let frameLoopStarted = false;
-export function frame() {
-  if (!frameLoopStarted) {
-    frameLoopStarted = true;
-    const tick = () => { frameN++; raf(tick); };
+let frameGen = 0;
+let lastTickAt = 0;
+const STALL_MS = 250; // a real rAF ticks ~16ms; anything this old is stranded/paused
+
+function startFrameLoop() {
+  frameLoopStarted = true;
+  lastTickAt = now();
+  const gen = ++frameGen;
+  const tick = () => {
+    if (gen !== frameGen) return; // superseded (restart/reset) — don't re-arm
+    frameN++;
+    lastTickAt = now();
     raf(tick);
-  }
+  };
+  raf(tick);
+}
+
+export function frame() {
+  if (!frameLoopStarted) startFrameLoop();
+  else if (
+    now() - lastTickAt > STALL_MS &&
+    !(typeof document !== "undefined" && document.visibilityState === "hidden")
+  ) startFrameLoop(); // stranded (or jank-stalled) — re-arm on the CURRENT rAF
   return frameN;
+}
+
+// test-only: forget the current loop (any still-queued tick becomes a no-op via
+// the generation token) so the next frame() call starts a fresh one immediately.
+export function __resetFrameLoop() {
+  frameGen++;
+  frameLoopStarted = false;
+  lastTickAt = 0;
+}
+
+// perFrame's visibility epoch: rAF pauses in hidden tabs, freezing frameN at
+// whatever it reached — while remote-change effects still run — so a
+// frame-keyed cache WOULD return the pre-hide value forever. Bumping an epoch
+// on visibilitychange makes the first read after a visibility flip fresh.
+let visEpoch = 0;
+if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+  document.addEventListener("visibilitychange", () => { visEpoch++; });
 }
 
 // perFrame(read, frameFn=frame) — memoize `read()` for the duration of one rAF
 // frame (Phase 3 keys the cached viewport rect on this: the rect is stable
-// within a frame). While the frame loop hasn't ticked (frameFn() still 0 —
+// within a frame). While the frame loop has NEVER ticked (frameFn() still 0 —
 // headless tests, or before the first rAF fires) every call falls through to a
-// fresh read, so a stalled counter can never pin a stale value.
+// fresh read. A loop that started and then PAUSED (frameN frozen > 0) is the
+// case that CAN pin a stale value, so the cache also keys on the visibility
+// epoch above (hidden tab) and frame() self-heals stranded loops (stubbed rAF).
 export function perFrame(read, frameFn = frame) {
   let at = -1;
+  let atEpoch = -1;
   let value;
   return () => {
     const f = frameFn();
-    if (f > 0 && f === at) return value;
+    if (f > 0 && f === at && visEpoch === atEpoch) return value;
     at = f;
+    atEpoch = visEpoch;
     value = read();
     return value;
   };

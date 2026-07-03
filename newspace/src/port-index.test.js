@@ -46,7 +46,10 @@ afterEach(() => {
 const scans = () => (window.__perf && window.__perf.portScan) || 0;
 
 describe("port index — url wires anchor to [data-automerge-path] ports", () => {
-  it("the wire appears when its port mounts, survives a pan without a rescan, and drops when the port unmounts", async () => {
+  // retry(1): the window.__perf counters are global — a previous file's canvas can
+  // leak one async tick into our deltas when file order lines up (seen 2026-07-02).
+  // A real regression fails BOTH attempts; only cross-file noise gets absorbed.
+  it("the wire appears when its port mounts, survives a pan without a rescan, and drops when the port unmounts", { retry: 1 }, async () => {
     const { element } = await mountCanvas([
       { id: "ed1", kind: "editor", editorId: "port-sink", x: 40, y: 40, w: 200, h: 100, inlets: { in: { url: "automerge:port-test", path: ["title"] } } },
     ]);
@@ -78,28 +81,18 @@ describe("port index — url wires anchor to [data-automerge-path] ports", () =>
   });
 });
 
-describe("ctx port index — inspect strip chips (data-sketchy-port)", () => {
-  it("a context wire re-anchors from the fallback chip position to the strip once inspect mounts it", async () => {
+describe("ctx port anchoring — the computed chip position (the inspect strip is gone)", () => {
+  it("a context wire anchors at the fixed left-edge chip position, no DOM lookup", async () => {
     const { element } = await mountCanvas([
       { id: "ed2", kind: "editor", editorId: "port-sink", x: 40, y: 40, w: 200, h: 100, inlets: { in: { context: "pointer" } } },
     ]);
     await flush(30);
     const wireG = () => element.querySelector(".ns-wires g");
     expect(wireG()).toBeTruthy();
-    // inspect off → the computed left-edge chip position (x=78 …), no DOM lookup
+    // the computed left-edge chip position (x=78 ...) — pure math (ctxPortPos)
     expect(wireG().getAttribute("transform")).toMatch(/^translate\(78 /);
-
-    // the eye mounts the strip; its chips land AFTER the geometry memo re-ran on
-    // inspect() — portsTick (bumped by the observer) re-anchors the wire to the
-    // real chip element (happy-dom rects are all zero → translate(0 0))
-    element.querySelector(".ns-inspect-btn").click();
-    await flush(30);
-    expect(element.querySelector('.ns-ctx-inlets [data-sketchy-port="pointer"]')).toBeTruthy();
-    expect(wireG().getAttribute("transform")).toBe("translate(0 0)");
-
-    // toggling off unmounts the strip → back to the computed chip position
-    element.querySelector(".ns-inspect-btn").click();
-    await flush(30);
-    expect(wireG().getAttribute("transform")).toMatch(/^translate\(78 /);
+    // the inspect strip + its tray eyeball were removed 2026-07-02
+    expect(element.querySelector(".ns-ctx-inlets")).toBeFalsy();
+    expect(element.querySelector(".ns-inspect-btn")).toBeFalsy();
   });
 });

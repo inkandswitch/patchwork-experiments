@@ -100,6 +100,18 @@ registerTransform("rotate", (box) => {
   };
 });
 
+// scale — a counter-scaled container: content is DRAWN at k× its stored coords (a
+// docked/sticky window on a camera layer renders at k = 1/zoom so it holds its
+// screen size). local = outer / k.
+registerTransform("scale", (box) => {
+  const k = (box && box.transform && box.transform.k) || 1;
+  return {
+    toLocal: (p) => ({ x: p.x / k, y: p.y / k }),
+    toOuter: (p) => ({ x: p.x * k, y: p.y * k }),
+    scale: () => k,
+  };
+});
+
 // reproject (a MAP) — the box's own transform is Leaflet's lat/lng projection. The live map
 // instance can't live in the doc, so a map box binds its instance here at mount (by item id);
 // the transform looks it up. Geo-local coords are { x: lng, y: lat }. Until the map has mounted

@@ -70,7 +70,10 @@ describe("cachedColorResolver (unit)", () => {
 const rect = (id, color, x = 0) => ({ id, kind: "shape", type: "rectangle", x, y: 10, w: 60, h: 40, color, fill: "none", strokeWidth: 2, seed: 7, rotation: 0 });
 
 describe("shape render memoization + colour cache (mounted)", () => {
-  it("N shapes sharing a colour → one resolution; rebuilds track shape/theme change, not flushes", async () => {
+  // retry(1): the window.__perf counters are global — a previous file's canvas can
+  // leak one async tick into our deltas when file order lines up (seen 2026-07-02).
+  // A real regression fails BOTH attempts; only cross-file noise gets absorbed.
+  it("N shapes sharing a colour → one resolution; rebuilds track shape/theme change, not flushes", { retry: 1 }, async () => {
     const resolved0 = counter("colorResolve");
     const built0 = counter("shapePaths");
     const { element, layout } = await mountCanvas({}, [rect("s1", "red", 0), rect("s2", "red", 100)]);
@@ -83,7 +86,7 @@ describe("shape render memoization + colour cache (mounted)", () => {
     // an unrelated reactive flush (tool change) rebuilds NOTHING
     const resolved1 = counter("colorResolve");
     const built1 = counter("shapePaths");
-    element.querySelector('.ns-toolbar button[title^="Draw"]').click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true })); // arm the pen (canvas-level shortcut — no toolbar DOM)
     await flush(5);
     expect(counter("colorResolve") - resolved1).toBe(0);
     expect(counter("shapePaths") - built1).toBe(0);

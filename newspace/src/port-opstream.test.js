@@ -89,7 +89,7 @@ describe("rebase across the port — stale consumer ops (rev/basedOn)", () => {
     expect(remote.value).toBe("abcd");
     expect(seen.every((o) => !("rev" in o))).toBe(true); // adapter-internal, stripped
     remote.apply(splice(4, 4, "e"));
-    expect(queue[0]).toEqual({ path: [], range: [4, 4], value: "e", basedOn: 2 });
+    expect(queue[0]).toEqual({ path: [], range: [4, 4], value: "e", basedOn: 2, seq: 1 }); // seq: the ack correlator (adapter-internal, stripped like basedOn)
   });
 
   it("THE RACE: a stale op is rebased over a concurrent splice at a lower index", () => {
@@ -171,5 +171,83 @@ describe("rebase across the port — stale consumer ops (rev/basedOn)", () => {
     source.apply(splice(0, 0, ">")); // the provider has moved on (rev 2)
     p2.onmessage({ data: { path: [], range: [0, 0], value: "z" } }); // a legacy client: no basedOn
     expect(source.value).toBe("z>abc"); // untransformed — exactly today's behavior
+  });
+});
+
+// ── the TWO-SIDED half: the consumer must also transform (audit findings) ─────
+// One-sided Jupiter diverged: the consumer applied incoming provider ops RAW
+// onto a mirror still carrying its own in-flight (unacked) ops, and never
+// learned the rebased fate of its own op. These pin the dual transform +
+// ack protocol end to end — BOTH ends must converge to the same value.
+
+describe("two-sided convergence — provider ops fold over the consumer's in-flight ops", () => {
+  it("THE AUDIT DIVERGENCE: consumer inserts at 0 while the provider deletes index 0", () => {
+    // one-sided: the raw incoming delete killed the consumer's optimistic X
+    // (consumer → ["a","b","c"]) while the provider kept it (["X","b","c"]) —
+    // permanent divergence, no ack, no snapshot. Now: the consumer rebases the
+    // delete PAST its in-flight insert; the provider transforms the insert.
+    const [a, b, flush] = latchedPortPair();
+    const source = new Opstream(["a", "b", "c"]);
+    const remote = portOpstream(a);
+    serveOpstreamOverPort(source, b);
+    remote.apply({ path: [], range: [0, 0], value: ["X"] }); // in flight (basedOn 1)
+    source.apply({ path: [], range: [0, 1], value: undefined }); // concurrent provider delete (rev 2)
+    expect(remote.value).toEqual(["X", "b", "c"]); // the delete landed at [1,2) — X survived
+    flush(); // the insert reaches the provider, transforms (position 0 still right)
+    expect(source.value).toEqual(["X", "b", "c"]);
+    expect(remote.value).toEqual(source.value); // CONVERGED
+
+    // …and the ack popped the in-flight op, so life continues cleanly after
+    source.apply({ path: [], range: [3, 3], value: ["d"] });
+    remote.apply({ path: [], range: [0, 1], value: undefined });
+    flush();
+    expect(source.value).toEqual(["b", "c", "d"]);
+    expect(remote.value).toEqual(source.value);
+  });
+
+  it("insert-insert at the SAME position: both ends agree the provider goes first", () => {
+    const [a, b, flush] = latchedPortPair();
+    const source = new Opstream(["m"]);
+    const remote = portOpstream(a);
+    serveOpstreamOverPort(source, b);
+    remote.apply({ path: [], range: [0, 0], value: ["C"] }); // consumer insert at 0, in flight
+    source.apply({ path: [], range: [0, 0], value: ["P"] }); // provider insert at 0, concurrent
+    // consumer side of the dual: the provider op is canonically FIRST — it keeps
+    // position 0 and the in-flight C is rewritten past it
+    expect(remote.value).toEqual(["P", "C", "m"]);
+    flush(); // provider transforms C to land AFTER its own P
+    expect(source.value).toEqual(["P", "C", "m"]);
+    expect(remote.value).toEqual(source.value);
+  });
+
+  it("a text-splice race that does NOT commute: same-point inserts converge provider-first", () => {
+    const [a, b, flush] = latchedPortPair();
+    const source = new Opstream("ab");
+    const remote = portOpstream(a);
+    serveOpstreamOverPort(source, b);
+    remote.apply(splice(1, 1, "X")); // consumer: "aXb", in flight
+    source.apply(splice(1, 1, "Y")); // provider: "aYb" — apply order matters here
+    expect(remote.value).toBe("aYXb"); // NOT "aXYb": the incoming Y holds its spot, X shifts
+    flush();
+    expect(source.value).toBe("aYXb");
+    expect(remote.value).toBe(source.value);
+  });
+});
+
+describe("error ops cross the port (uncounted, unmutating)", () => {
+  it("a provider pushError reaches consumer subscribers without touching the mirror or the revs", async () => {
+    const { Source } = await import("./opstreams.js");
+    const [p1, p2] = fakePortPair();
+    const src = new Source("v");
+    const remote = portOpstream(p1);
+    const seen = [];
+    remote.connect((op) => seen.push(op));
+    serveOpstreamOverPort(src, p2);
+    src.pushError(new Error("boom"));
+    expect(seen.at(-1)).toEqual({ type: "error", error: "boom" }); // delivered (it used to be dropped on the floor)
+    expect(remote.value).toBe("v"); // the last good value survives
+    src.push("w"); // an op-shaped message after the error — the rev counters stayed in step
+    expect(remote.value).toBe("w");
+    expect(seen.at(-1)).toEqual({ type: "snapshot", value: "w" });
   });
 });

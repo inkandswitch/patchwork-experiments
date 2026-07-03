@@ -637,24 +637,8 @@
   opacity: 0.5;
 }
 
-/* ---- toolbar (System 7 palette) ------------------------------------ */
-.ns-toolbar {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 5px 7px;
-  background: var(--ns-chrome);
-  border: 1px solid var(--ns-ink);
-  border-radius: 6px;
-  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo), 3px 4px 0 var(--ns-shadow);
-  z-index: 50;
-}
-.ns-bunny { display: inline-flex; align-items: center; color: var(--ns-ink); padding: 0 3px; cursor: grab; user-select: none; }
-.ns-bunny:active { cursor: grabbing; }
+/* ---- tool stickers (shared by the palette window; the fixed .ns-toolbar
+        container was removed 2026-07-02 — the toolbar is a seeded palette item) */
 .ns-tool { display: grid; place-items: center; width: 32px; height: 30px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ns-ink); cursor: pointer; }
 .ns-tool:hover { background: var(--ns-paper); border-color: var(--ns-chrome-lo); }
 .ns-tool.active { background: var(--ns-ink); color: var(--ns-chrome); border-color: var(--ns-ink); box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.18); }
@@ -926,62 +910,21 @@
 .ns-mm-face { position: absolute; transform: translate(-50%, -50%); pointer-events: none; }
 .ns-mm-face .ns-face { width: 16px; height: 16px; }
 
-.ns-views {
-  position: absolute;
-  bottom: 18px;
-  right: 84px;
-  z-index: 46;
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 28px;
-  border: 1px solid var(--ns-ink);
-  border-radius: 5px;
-  background: var(--ns-chrome);
-  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo);
-  color: var(--ns-ink);
-  cursor: pointer;
-}
-.ns-views.active { background: var(--ns-sky); color: #fff; }
-
 /* ---- zoom chip ----------------------------------------------------- */
 .ns-zoom { position: absolute; bottom: 18px; right: 16px; z-index: 40; box-sizing: border-box; width: 56px; height: 28px; display: grid; place-items: center; border: 1px solid var(--ns-ink); border-radius: 5px; background: var(--ns-chrome); box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo); color: var(--ns-ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; }
 .ns-zoom:hover { background: var(--ns-paper); }
 
-/* customize-this-layout control (sits left of the eye/views button) */
-.ns-layout-cust { position: absolute; bottom: 18px; right: 124px; z-index: 46; display: flex; gap: 6px; align-items: center; }
+/* (the corner layout tray + the inspect context-port strip were removed
+    2026-07-02; the fixed .ns-views eyeball followed — the presence BAR is the
+    seeded `presence` bare window now, .ns-presence-bar below) */
 
-/* INSPECT MODE — the canvas's own context ports as inlets along the top edge */
-.ns-ctx-inlets {
-  position: absolute;
-  top: 0; left: 50%;
-  transform: translateX(-50%);
-  z-index: 46;
-  display: flex;
-  gap: 10px;
-  padding: 4px 12px 6px;
-  border: 1.5px solid var(--ns-ink);
-  border-top: 0;
-  border-radius: 0 0 10px 10px;
-  background: var(--ns-chrome);
-  color: var(--ns-ink);
-  box-shadow: 2px 2px 0 var(--ns-shadow);
-}
-.ns-ctx-inlet { display: flex; align-items: center; gap: 5px; font: 600 10px ui-monospace, monospace; cursor: crosshair; }
-.ns-ctx-inlet svg.ns-nub { width: 16px; height: 16px; overflow: visible; pointer-events: none; }
-.ns-ctx-inlet .ns-nub-line { stroke: #000; }
-.ns-ctx-inlet .ns-nub-fill { fill: #fffdc7; }
-.ns-ctx-inlet:hover .ns-nub-fill { fill: #ff2284; }
-.ns-layout-btn { width: 30px; height: 30px; display: grid; place-items: center; border: 1.5px solid var(--ns-ink); border-radius: 7px; background: var(--ns-chrome); color: var(--ns-ink); cursor: pointer; box-shadow: 2px 2px 0 var(--ns-shadow); }
-.ns-layout-btn.active { background: var(--ns-sky); color: #fff; }
-.ns-layout-panel { position: absolute; right: 0; bottom: 38px; min-width: 134px; padding: 5px; border: 1.5px solid var(--ns-ink); border-radius: 8px; background: var(--ns-paper); box-shadow: 3px 3px 0 var(--ns-shadow); }
-.ns-layout-row { display: flex; gap: 6px; align-items: center; padding: 4px 6px; font: 11px ui-monospace, monospace; color: var(--ns-ink); cursor: pointer; text-transform: capitalize; }
-.ns-layout-row:hover { background: color-mix(in srgb, var(--ns-ink) 8%, transparent); border-radius: 4px; }
-/* the layout SWITCHER row inside the ⊞ tray (the shared layout-switch.js buttons) */
-.ns-layout-sw { display: flex; padding: 2px 4px 5px; color: var(--ns-ink); }
-.ns-layout-scope { display: flex; gap: 3px; padding: 2px; margin: 1px; border: 1.5px solid var(--ns-ink); border-radius: 6px; }
-.ns-layout-scope button { flex: 1; font: 600 9px ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 5px; border: 0; border-radius: 4px; background: transparent; color: var(--ns-ink); opacity: 0.55; cursor: pointer; }
-.ns-layout-scope button.active { background: var(--ns-ink); color: var(--ns-paper); opacity: 1; }
+/* STICKY dock hint — a soft glow on the viewport edge a dragged window is in
+   snap range of (canvas.jsx stickyHint) */
+.ns-sticky-hint { position: absolute; z-index: 90; pointer-events: none; background: var(--ns-sky, #5b8def); opacity: 0.4; border-radius: 3px; }
+.ns-sticky-hint-left { left: 2px; top: 2px; bottom: 2px; width: 5px; }
+.ns-sticky-hint-right { right: 2px; top: 2px; bottom: 2px; width: 5px; }
+.ns-sticky-hint-top { top: 2px; left: 2px; right: 2px; height: 5px; }
+.ns-sticky-hint-bottom { bottom: 2px; left: 2px; right: 2px; height: 5px; }
 
 /* media nodes: fill the box */
 .ns-camera, .ns-audiofile { display: flex; flex-direction: column; gap: 6px; padding: 8px; height: 100%; box-sizing: border-box; }
@@ -1028,6 +971,10 @@
   font: 600 12px var(--ns-font, system-ui); color: var(--ns-ink); background: transparent;
 }
 .ns-layer-tab.active { background: var(--ns-paper); box-shadow: inset 0 0 0 1.5px var(--ns-ink); }
+/* the Properties "appears on" row — layer membership checkboxes, home locked on */
+.ns-appears { display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+.ns-appears .ns-check { font-size: 11px; }
+.ns-appears-home { opacity: 0.75; }
 
 /* ── Bare layer tools — a widget with NO node frame (just body + ports) ────── */
 .ns-bare { position: absolute; box-sizing: border-box; background: none; }
@@ -1068,36 +1015,91 @@
 }
 .ns-layer:not(.ns-layer-active) .ns-canvas-source { visibility: hidden; }
 
-/* ---- the PALETTE (a bare window of brush stickers — palette-node.js) -------- */
+/* ---- the PALETTE (a bare window of brush stickers — palette-node.js) --------
+   FIT-CONTENT: the palette never wraps — width: max-content keeps the row one
+   line, and the mount measures itself and writes the item's w/h back (setSize),
+   so the box always matches the buttons. */
 .ns-palette {
-  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  position: relative; width: max-content; height: 100%; box-sizing: border-box;
   display: flex; align-items: center; gap: 3px; padding: 4px 5px;
   background: var(--ns-chrome); border: 1px solid var(--ns-ink); border-radius: 6px;
   box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow);
   color: var(--ns-ink);
 }
-.ns-palette-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow: hidden; }
-.ns-palette-slot { position: relative; display: inline-flex; }
-.ns-palette-gear { flex: none; font-size: 14px; }
-/* the remove badge each button grows while the ⚙ popover is open */
-.ns-palette-x {
-  position: absolute; top: -6px; right: -6px; z-index: 2;
-  width: 15px; height: 15px; padding: 0; display: grid; place-items: center;
-  border: 1px solid var(--ns-ink); border-radius: 50%;
-  background: var(--ns-paper); color: var(--ns-ink);
-  font: 700 10px/1 var(--ns-font, system-ui); cursor: pointer;
+.ns-palette-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
+/* the entry-driven overflow menus reuse the old Toolbar's chrome: .ns-sep rules
+   between groups + .ns-menu-grid — PORTAL'd to the canvas root (popover.js), so
+   the bare window's clipped body can't cut them off and they open away from
+   whichever edge the palette is docked to */
+.ns-menu-grid { min-width: 0; }
+.ns-menu-gap { grid-column: 1 / -1; height: 1px; margin: 2px 4px; background: var(--ns-chrome-lo); box-shadow: 0 1px 0 var(--ns-hi); }
+
+/* ---- the palette CONFIGURATOR (its own bare window — palette-config-node.js) */
+.ns-palcfg {
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  overflow-y: auto; overscroll-behavior: contain; padding: 6px;
+  background: var(--ns-paper); border: 1.5px solid var(--ns-ink); border-radius: 8px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow);
+  color: var(--ns-ink);
+}
+.ns-palcfg-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; font: 600 12px var(--ns-font, system-ui); }
+.ns-palcfg-row:hover { background: var(--ns-chrome); }
+.ns-palcfg-row svg { flex: none; }
+.ns-palcfg-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-palcfg-divider .ns-palcfg-name { opacity: 0.55; letter-spacing: 0.08em; }
+.ns-palcfg-ctl { display: inline-flex; gap: 2px; margin-left: auto; }
+.ns-palcfg-btn {
+  padding: 1px 5px; border: 1px solid var(--ns-ink); border-radius: 4px;
+  background: var(--ns-chrome); color: var(--ns-ink);
+  font: 700 10px/1.4 var(--ns-font, system-ui); cursor: pointer;
   box-shadow: 1px 1px 0 var(--ns-shadow);
 }
-.ns-palette-x:active { transform: translate(1px, 1px); box-shadow: none; } /* the sticker press */
-/* the ⚙ popover — the shared .ns-menu chrome, positioned under the palette */
-.ns-palette-menu { position: absolute; top: calc(100% + 6px); left: 0; }
-.ns-palette-check {
-  display: flex; align-items: center; gap: 7px; padding: 3px 8px;
-  border-radius: 4px; font: 600 12px var(--ns-font, system-ui); color: var(--ns-ink); cursor: pointer;
+.ns-palcfg-btn:active { transform: translate(1px, 1px); box-shadow: none; } /* the sticker press */
+.ns-palcfg-mark { flex: none; font-size: 11px; opacity: 0.7; }
+.ns-palcfg-label { flex: 1; min-width: 0; font-size: 12px; }
+.ns-palcfg-nest { margin: 0 0 4px 14px; padding-left: 6px; border-left: 1.5px dashed var(--ns-chrome-lo); }
+.ns-palcfg-add { position: relative; display: flex; gap: 4px; padding: 4px; }
+.ns-palcfg-picker { position: absolute; top: calc(100% + 4px); left: 4px; z-index: 61; }
+.ns-palcfg-pick { display: flex; align-items: center; gap: 7px; width: 100%; padding: 3px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--ns-ink); font: 600 12px var(--ns-font, system-ui); text-align: left; cursor: pointer; }
+.ns-palcfg-pick:hover { background: var(--ns-ink); color: var(--ns-chrome); }
+
+/* ---- the PRESENCE bar (a bare window — presence-node.js) --------------------
+   TRULY frameless at rest: just the face chips + the person button sitting on
+   the canvas — no card/box around them (the resting chrome read as "a box
+   around the presence button"). Selection still outlines via .ns-bare.sel. */
+.ns-presence-bar {
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+  color: var(--ns-ink);
 }
-.ns-palette-check:hover { background: var(--ns-paper); }
-.ns-palette-check svg { flex: none; }
-.ns-palette-check-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-presence-faces { display: flex; align-items: center; gap: 2px; overflow: hidden; }
+.ns-pface {
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--c, #888); background-size: cover; background-position: center;
+  border: 1.5px solid var(--ns-ink); color: #fff;
+  font: 700 9px/1 var(--ns-font, system-ui);
+}
+.ns-pface-btn { padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; }
+.ns-pface-btn.following .ns-pface { outline: 2px solid var(--ns-sky); outline-offset: 1px; }
+.ns-presence-btn {
+  display: grid; place-items: center; width: 26px; height: 24px; flex: none;
+  border: 1px solid var(--ns-ink); border-radius: 5px;
+  background: var(--ns-chrome); color: var(--ns-ink); cursor: pointer;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo);
+}
+.ns-presence-btn.active { background: var(--ns-sky); color: #fff; }
+/* the flyout opens UPWARD (the bar seeds sticky near the bottom-right) */
+.ns-presence-menu { position: absolute; bottom: calc(100% + 6px); right: 0; width: 188px; }
+.ns-presence-item {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 8px;
+  border: 1px solid transparent; border-radius: 4px; background: transparent;
+  color: var(--ns-ink); font: 600 12px var(--ns-font, system-ui); text-align: left; cursor: pointer;
+}
+.ns-presence-item:hover { background: var(--ns-paper); }
+.ns-presence-item.active { color: var(--ns-sky); }
+.ns-presence-tick { flex: none; font-size: 12px; }
+.ns-presence-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ns-presence-follow { flex: none; font-size: 10px; opacity: 0.7; }
 
 /* a geo PIN on a map — a labelled chip anchored at its lat/lng (Leaflet reprojects it) */
 .ns-map-pin-wrap { background: none !important; border: none !important; width: auto !important; height: auto !important; }
@@ -1115,54 +1117,37 @@
 .ns-map-pin-open { margin-top: 6px; width: 100%; padding: 3px 8px; border: 1.5px solid var(--ns-ink); border-radius: 6px; background: var(--ns-chrome); font: 600 11px var(--ns-font, system-ui); color: var(--ns-ink); cursor: pointer; box-shadow: 1px 1px 0 var(--ns-shadow); }
 .ns-map-pin-open:hover { background: var(--ns-paper); }
 
-/* ---- FLAPS (Squeak-style edge tabs + drawers — flaps.jsx) ------------------ */
-/* each edge gets one strip; tabs stick out of the edge, drawers open inward.
-   Sticker style: paper drawer, hard ink outline, offset shadow, mono tab words. */
-.ns-flaps { position: absolute; z-index: 48; display: flex; pointer-events: none; }
-.ns-flaps > .ns-flap { pointer-events: auto; }
-.ns-flaps-bottom { left: 16px; bottom: 0; flex-direction: row; align-items: flex-end; gap: 8px; max-width: calc(50% - 260px); }
-.ns-flaps-left  { left: 0; top: 96px; flex-direction: column; align-items: flex-start; gap: 8px; }
-.ns-flaps-right { right: 0; top: 96px; flex-direction: column; align-items: flex-end; gap: 8px; }
-
-.ns-flap { display: flex; }
-.ns-flaps-bottom .ns-flap { flex-direction: column; align-items: flex-start; }
-.ns-flaps-left   .ns-flap { flex-direction: row; align-items: flex-start; }
-.ns-flaps-right  .ns-flap { flex-direction: row-reverse; align-items: flex-start; }
-
+/* ---- FLAPS — a `flap: true` frame: a named sticky container ---------------- */
+/* an OPEN drawer (a stuck flap) reads as a panel slid out of its edge */
+.ns-doc.ns-flap-open { box-shadow: 3px 4px 0 var(--ns-shadow); }
+/* the edge TAB — the collapsed flap (and the open drawer's collapse handle).
+   The box is positioned/sized by the canvas (flapTabPlace); the button fills it. */
+.ns-flap-tab-box { position: absolute; }
 .ns-flap-tab {
-  padding: 4px 12px 3px;
-  border: 1.5px solid var(--ns-ink);
-  background: var(--ns-chrome);
-  color: var(--ns-ink);
-  font: 600 11px ui-monospace, monospace;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  user-select: none;
-  touch-action: none;
+  display: block; width: 100%; height: 100%; box-sizing: border-box;
+  padding: 3px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border: 1.5px solid var(--ns-ink); background: var(--ns-chrome); color: var(--ns-ink);
+  font: 700 11px var(--ns-font, system-ui); letter-spacing: 0.02em; cursor: pointer;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), 2px 2px 0 var(--ns-shadow);
 }
 .ns-flap-tab:hover { background: var(--ns-paper); }
-.ns-flap.open > .ns-flap-tab { background: var(--ns-ink); color: var(--ns-chrome); }
-.ns-flap.dragging > .ns-flap-tab { opacity: 0.6; cursor: grabbing; }
-/* the tab pokes out of its edge: rounded away from the edge, flush against it */
-.ns-flaps-bottom .ns-flap-tab { border-radius: 7px 7px 0 0; border-bottom: none; box-shadow: 3px 0 0 var(--ns-shadow); }
-.ns-flaps-left   .ns-flap-tab { border-radius: 0 7px 7px 0; border-left: none;  box-shadow: 0 3px 0 var(--ns-shadow); writing-mode: vertical-rl; padding: 12px 3px 12px 4px; }
-.ns-flaps-right  .ns-flap-tab { border-radius: 7px 0 0 7px; border-right: none; box-shadow: 0 3px 0 var(--ns-shadow); writing-mode: vertical-rl; padding: 12px 4px 12px 3px; }
+.ns-flap-tab-box.open .ns-flap-tab { background: var(--ns-paper); box-shadow: inset 1px 1px 0 var(--ns-hi); }
+/* the tab hugs its edge: rounded on the side facing the canvas only */
+.ns-flap-tab-left { border-left: none; border-radius: 0 7px 7px 0; writing-mode: vertical-rl; }
+.ns-flap-tab-right { border-right: none; border-radius: 7px 0 0 7px; writing-mode: vertical-rl; }
+.ns-flap-tab-top { border-top: none; border-radius: 0 0 7px 7px; }
+.ns-flap-tab-bottom { border-bottom: none; border-radius: 7px 7px 0 0; }
 
-.ns-flap-drawer {
-  box-sizing: border-box;
-  overflow: auto;
-  overscroll-behavior: contain;
-  background: var(--ns-paper);
-  border: 1.5px solid var(--ns-ink);
-  color: var(--ns-ink);
-  padding: 6px;
-}
-.ns-flaps-bottom .ns-flap-drawer { width: min(560px, 70vw); height: min(280px, 45vh); border-bottom: none; border-radius: 8px 8px 0 0; box-shadow: 3px -3px 0 var(--ns-shadow); }
-.ns-flaps-left   .ns-flap-drawer { width: min(300px, 40vw); height: min(440px, 60vh); border-left: none;  border-radius: 0 8px 8px 0; box-shadow: 3px 3px 0 var(--ns-shadow); }
-.ns-flaps-right  .ns-flap-drawer { width: min(300px, 40vw); height: min(440px, 60vh); border-right: none; border-radius: 8px 0 0 8px; box-shadow: -3px 3px 0 var(--ns-shadow); }
-
-/* ---- the PARTS BIN (the flagship flap — parts-bin.js) ---------------------- */
+/* ---- the PARTS BIN (a bare overlay window — parts-bin.js) ------------------ */
 .ns-partsbin { display: flex; flex-direction: column; }
+/* the bin as a bare window body: paper card, scrolls its census */
+.ns-parts-window {
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  overflow-y: auto; overscroll-behavior: contain; padding: 6px;
+  background: var(--ns-paper); border: 1.5px solid var(--ns-ink); border-radius: 8px;
+  box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow);
+  color: var(--ns-ink);
+}
 .ns-parts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 5px; padding: 2px 2px 8px; }
 .ns-part {
   display: flex; flex-direction: column; align-items: center; gap: 4px;

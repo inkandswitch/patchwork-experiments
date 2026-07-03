@@ -10,23 +10,22 @@ archive). Design rationale: [ARCHITECTURE.md](./ARCHITECTURE.md) · wiring:
       Details provisional until it settles.
 - [ ] **chrome reads the `context`** instead of ~15 props (the remaining
       brush-API tail; the tools themselves are already out of tool.jsx).
-- [ ] context ports rendered as top-edge INLETS (an inspect mode) — on nodes
-      and on the top-level sketchy.
-- [ ] chrome parts as SLOTS a wrapping tool can replace (not just toggle) — and
-      `opts.tools` (an explicit tool subset) in the Toolbar.
-- [ ] the rest of the chrome (palette/properties/eye/outlets) as movable
-      overlay-layer items (minimap + zoom already are).
-- [ ] register the parts flap in index.jsx; offer toolbar/params as flap
-      registrations (the container + slots exist — a thin wrapper that renders
-      Toolbar/Properties into a flap body).
-- [ ] folder references MULTIPLE complement docs (`@layouts:{canvas,dock,list}`)
-      not just `.sketch` — generalise `ensureLayout` →
-      `ensureLayoutDoc(repo, fh, key)` + migrate.
-- [ ] a clean layout switcher in the CANVAS chrome (NOT the old floating
-      buttons). list + grid already have one: `layoutsFor` re-opens the folder
-      through another lens.
-- [ ] dock / tiling layouts — and dock (and the canvas) surfacing the other
-      layouts' complements the way list/grid already surface the canvas's.
+- [ ] the rest of the chrome (properties) as movable overlay-layer items
+      (minimap, zoom, the toolbar-palette, the palette-config, the parts bin
+      and the presence bar already are; the views eyeball moved into the
+      presence window 2026-07-02).
+- [ ] delete the dormant flaps.jsx + flaps.test.js — the old REGISTRY-flap
+      design; superseded 2026-07-02 by flaps as `flap: true` FRAME items
+      (shipped: collapse-to-edge-tab when sticky, per-viewer open state on the
+      top-layer doc, the parts bin seeded as a "parts" flap, the flap tile in
+      the bin's census).
+- [ ] flap polish: route DRAWN marks into an open flap drawer (drops/containment
+      work on any layer via frameAtWorld's home-layer extension; the draw claim
+      — spatialBoxAtWorld — is still base-layer only, so pen strokes over an
+      overlay flap land on the overlay, not in the flap).
+- [ ] **container types vs layouts vs chrome — concepts to be redesigned**;
+      list/grid/dock unregistered pending (sources dormant on disk:
+      list-tool.jsx, grid-tool.jsx, dock-tool.js, layout-switch.js).
 - [ ] **ROUGH inlet/outlet nubs** — the wires are rough.js; the nubs are still
       CSS circles/diamonds.
 - [ ] port-error halo on the nub itself (erroring wires already draw red).
@@ -78,3 +77,10 @@ archive). Design rationale: [ARCHITECTURE.md](./ARCHITECTURE.md) · wiring:
 - [ ] browser re-test: the PROPERTIES panel — intact but contextual (shows on
       selection / a draw or brush tool; hidden while only wiring). Confirm it
       appears as expected.
+- [ ] OPEN QUESTION (undoability principle, CLAUDE.md): should config edits
+      join the undo history? A mounted node's own `setConfig` writes (params
+      typed into a window, the palette's drag-to-add entries) are user intent
+      but land as plain changes — no history entry — while the SAME params
+      edited through the properties popup (`setItemConfig`) ARE transacted.
+      Either both join the history or the popup's txn is the anomaly; needs
+      chee's call before touching it.

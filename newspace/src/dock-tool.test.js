@@ -175,7 +175,7 @@ describe("DockTool (the dock layout)", () => {
     await until(() => folder.doc()["@layouts"] && folder.doc()["@layouts"].dock);
     const dockUrl = folder.doc()["@layouts"].dock;
     expect(dockUrl).toBeTruthy();
-    expect(dockUrl).not.toBe(folder.doc().newspace); // NOT the canvas complement
+    expect(dockUrl).not.toBe(folder.doc().sketch); // NOT the canvas complement
     const dock = await repo.find(dockUrl);
     expect(rootPane(dock.doc().panes)).toBeTruthy();
     await until(() => element.textContent.includes("empty"));

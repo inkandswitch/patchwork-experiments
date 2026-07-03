@@ -1,3 +1,4 @@
+// unregistered 2026-07-02 pending the container-types rethink (see TODO)
 // A DOCK / TILING layout for a folder — recursive split panes, each pane a LIVE
 // <patchwork-view> of a folder doc (the same DocLink source as grid/list). The
 // fourth lens over the same folder (LAYOUTS.md): the pane tree persists in the

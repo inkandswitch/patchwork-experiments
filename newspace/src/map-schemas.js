@@ -164,8 +164,11 @@ export function makeMarkStreams({ marks = [], project, unproject, onChange, loca
   // a write from EITHER outlet: apply to geo, let the host reconcile, emit both
   const applyGeo = (o, agent) => {
     let next;
+    // unapplicable — resync the writer with the canonical state. Tagged `local` (like
+    // the pixel path): tagging with the WRITER's agent would make an agent-aware
+    // writer discard its own correction as an echo and stay wrong.
     try { next = isSnapshot(o) ? normalizeMarks(o.value) : normalizeMarks(applyOp(current, o)); }
-    catch { schedulePixels(local); shapes.push(current, agent); return; } // unapplicable — resync the writer
+    catch { schedulePixels(local); shapes.push(current, local); return; }
     if (sameMarks(next, current)) return; // idempotence backstop: value-equal writes must not re-emit
     const prev = current;
     current = next;

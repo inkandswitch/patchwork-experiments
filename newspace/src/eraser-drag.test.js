@@ -68,6 +68,9 @@ function stubHitTest(element, layout) {
     const items = layout.doc().items || [];
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
+      // a STICKY item's stored x/y are DORMANT (it renders viewport-docked — e.g.
+      // the seeded ns-parts flap): a browser would never hit it at those coords
+      if (it.sticky) continue;
       if (x < it.x || x > it.x + it.w || y < it.y || y > it.y + it.h) continue;
       const el = element.querySelector(`[data-item-id="${it.id}"] .ns-hit`) || element.querySelector(`[data-item-id="${it.id}"]`);
       if (el) stack.push(el);

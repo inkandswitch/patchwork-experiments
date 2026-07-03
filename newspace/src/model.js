@@ -116,8 +116,9 @@ export function surfaceWithinBox(box, surfaceId, itemsOf, depth = 3) {
   return items.some((c) => c && c.kind === "frame" && surfaceWithinBox(c, surfaceId, itemsOf, depth - 1));
 }
 
-// folders and newspaces both render as a "box" (a managed sub-doc)
-export const isBoxType = (t) => t === "newspace" || t === "folder";
+// folders and sketches (both datatype ids for this tool: "sketch" current,
+// "newspace" legacy) render as a "box" (a managed sub-doc / frame sub-space)
+export const isBoxType = (t) => t === "sketch" || t === "newspace" || t === "folder";
 
 // a frame defines a rotated coordinate space (origin = frame top-left, rotated
 // about its centre); local<->world is the transform in/out of that space.
@@ -162,6 +163,8 @@ export function cloneItem(o) {
   const c = { ...o };
   if (o.kind === "stroke" && Array.isArray(o.points)) c.points = o.points.map((p) => p.slice());
   if (o.kind === "sketch") { c.nodes = (o.nodes || []).map((n) => ({ ...n })); c.bars = (o.bars || []).map((b) => ({ ...b })); }
+  if (Array.isArray(o.layers)) c.layers = [...o.layers]; // fresh array — like points, a live list proxy can't be re-inserted
+  if (o.sticky) c.sticky = { ...o.sticky }; // fresh object — a live map proxy can't be re-inserted either
   delete c.parent;
   return c;
 }
@@ -218,6 +221,21 @@ export function itemLayers(it) {
 export const itemHomeLayer = (it) => itemLayers(it)[0];
 // visibility = ANY member layer visible (`layerVisible` is a per-layer predicate)
 export const itemVisibleOn = (it, layerVisible) => itemLayers(it).some((id) => layerVisible(id));
+
+// ACTIVE-LAYER VISIBILITY — membership drives what shows for the current tab.
+// `layerIds` is the stack in draw order (bottom → top); an item is visible iff
+//   (a) its HOME layer sits AT or BELOW the active layer (lower layers keep
+//       rendering under the active one — the frosted compositing), OR
+//   (b) its `layers` membership includes the active layer (the Properties
+//       "appears on" row is how an overlay widget earns a place on the canvas).
+// An unknown home/active layer never hides anything (additive, never throws).
+export function itemVisibleForActive(it, layerIds, activeLayerId) {
+  const ls = itemLayers(it);
+  const hi = layerIds.indexOf(ls[0]);
+  const ai = layerIds.indexOf(activeLayerId);
+  if (hi < 0 || ai < 0) return true;
+  return hi <= ai || ls.includes(activeLayerId);
+}
 
 // PERF.md Phase 2 — ONE pass over `items` builds the hot lookups: `indexById`
 // (id → doc index; doc index IS the z), `byHome` (per-HOME-layer render buckets,
@@ -404,3 +422,48 @@ export function shouldUnlinkDoc(items, url, deletingIds) {
   const del = deletingIds instanceof Set ? deletingIds : new Set(deletingIds);
   return !items.some((it) => (it.kind === "doc" || it.kind === "frame") && it.url === url && !del.has(it.id));
 }
+
+// ── PALETTE ENTRIES — the rich toolbar structure (palette-node / palette-config) ──
+// An entry is one of:
+//   { kind: "tool", id }                             — an armable tool/brush button
+//   { kind: "divider" }                              — the toolbar's vertical rule
+//   { kind: "menu", label, icon?, items: [entry…] }  — an overflow menu (ONE level:
+//                                                      menu items are tools/dividers;
+//                                                      nested menus are dropped)
+// Pure helpers, shared by the palette window (renders entries), the palette-config
+// window (edits + emits them), the parts bin presets, and the seeds in constants.js.
+export const toolEntry = (id) => ({ kind: "tool", id });
+export const entriesFromIds = (ids) => (Array.isArray(ids) ? ids : []).filter((x) => typeof x === "string" && x).map(toolEntry);
+
+// entries (or any junk) → a clean array of valid entries. Lenient on purpose: a
+// bare string reads as a tool id (so a plain id list IS a valid entries value).
+export function normalizeEntries(value, depth = 0) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const e of value) {
+    if (typeof e === "string" && e) { out.push(toolEntry(e)); continue; }
+    if (!e || typeof e !== "object") continue;
+    if (e.kind === "tool" && typeof e.id === "string" && e.id) out.push({ kind: "tool", id: e.id });
+    else if (e.kind === "divider") out.push({ kind: "divider" });
+    else if (e.kind === "menu" && depth === 0) {
+      const items = normalizeEntries(e.items, 1).filter((x) => x.kind !== "menu"); // one level of nesting is enough
+      const m = { kind: "menu", label: typeof e.label === "string" ? e.label : "menu", items };
+      if (typeof e.icon === "string" && e.icon) m.icon = e.icon;
+      out.push(m);
+    }
+  }
+  return out;
+}
+
+// the flat tool-id list an entries array arms (menus included) — dedupe/back-compat
+export function entryToolIds(entries) {
+  const ids = [];
+  for (const e of entries || []) {
+    if (e.kind === "tool") ids.push(e.id);
+    else if (e.kind === "menu") for (const i of e.items || []) if (i.kind === "tool") ids.push(i.id);
+  }
+  return ids;
+}
+// all entries are plain tools (no dividers/menus) — such a list persists as the
+// legacy `config.brushes` id array, so old clients keep reading it forever
+export const entriesArePlainTools = (entries) => (entries || []).every((e) => e && e.kind === "tool");

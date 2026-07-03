@@ -9,13 +9,12 @@
 // is a live, bidirectional opstream of each doc — read its value, apply ops to write back.
 // `docHandleFromOpstream` then dresses such an opstream as a DocHandle-like object so the
 // existing Canvas (which speaks `handle.doc()/.change()/.on("change")`) can run on it.
-import { serveOpstreamOverPort, portOpstream } from "./port-opstream.js";
+import { serveOpstreamOverPort, portOpstream, createPortConsumerSync } from "./port-opstream.js";
 import { applyAutomerge, patchesToOps } from "./opstreams.js";
 import { from as amFrom, change as amChange } from "@automerge/automerge";
 import { snapshot } from "./ops.js";
 
 const SUB = "patchwork:subscribe";
-const opShaped = (x) => !!x && typeof x === "object" && (x.type === "snapshot" || "range" in x || "path" in x);
 const toPlain = (v) => { try { return JSON.parse(JSON.stringify(v)); } catch { return {}; } };
 const clone = (v) => { try { return (typeof structuredClone === "function") ? structuredClone(v) : JSON.parse(JSON.stringify(v)); } catch { return Array.isArray(v) ? v.slice() : { ...v }; } };
 
@@ -106,6 +105,13 @@ export function provideSketchyEphemeral(element, handle) {
 export function automergeDocOverPort(port, url, ephemeralPort) {
   let doc = amFrom({});
   let plain = {};
+  // the consumer half of the port protocol (see port-opstream.js): the local
+  // replica is an optimistic mirror carrying our in-flight granular ops, so an
+  // incoming provider op must be FOLDED over them (the dual transform) before it
+  // lands — applying it raw onto a shifted replica splices the wrong elements,
+  // and our outgoing ops must ride with `basedOn` or the provider-side rebase
+  // never engages and a stale index op silently corrupts the PERSISTED doc.
+  const remote = createPortConsumerSync();
   const listeners = new Set(), eph = new Set();
   const sync = () => { plain = toPlain(doc); for (const cb of [...listeners]) try { cb({ handle, doc: plain }); } catch {} };
   // EPHEMERAL (presence) channel over its own port — gives the handle .broadcast/.on so the
@@ -115,10 +121,11 @@ export function automergeDocOverPort(port, url, ephemeralPort) {
     if (ephemeralPort.start) ephemeralPort.start();
   }
   port.onmessage = (e) => {
-    const op = e.data; if (!opShaped(op)) return;
+    const r = remote.receive(e.data);
     // a REMOTE op (the tool's doc changed) → apply to the local replica
-    if (op.type === "snapshot") doc = amFrom(op.value && typeof op.value === "object" ? op.value : {});
-    else { try { doc = amChange(doc, (d) => applyAutomerge(d, op.path || [], op.range, op.value)); } catch {} }
+    if (r.type === "snapshot") doc = amFrom(r.op.value && typeof r.op.value === "object" ? r.op.value : {});
+    else if (r.type === "op") { const op = r.op; try { doc = amChange(doc, (d) => applyAutomerge(d, op.path || [], op.range, op.value)); } catch {} }
+    else return; // ack / drop / error / ignore — nothing lands on the replica
     sync();
   };
   if (port.start) port.start();
@@ -129,8 +136,10 @@ export function automergeDocOverPort(port, url, ephemeralPort) {
       const patches = [];
       doc = amChange(doc, { patchCallback: (ps) => { for (const p of ps) patches.push(p); } }, fn);
       const ops = patchesToOps(patches, []);
-      if (ops === null) { try { port.postMessage(snapshot(toPlain(doc))); } catch {} }
-      else for (const op of ops) { try { port.postMessage(op); } catch {} } // GRANULAR — send only, no local echo
+      // GRANULAR — send only (no local echo), each op basedOn-tagged + tracked in
+      // flight via the shared consumer machinery, so races rebase instead of corrupt
+      if (ops === null) { try { port.postMessage(remote.send(snapshot(toPlain(doc)))); } catch {} }
+      else for (const op of ops) { try { port.postMessage(remote.send(op)); } catch {} }
       sync();
     },
     broadcast: (msg) => { if (ephemeralPort) try { ephemeralPort.postMessage(msg); } catch {} },

@@ -13,10 +13,16 @@ export function makeRepo() {
   return new Repo({});
 }
 
-// a folder doc + its layout doc (the two-doc model), seeded with items/docs
+// a folder doc + its layout doc (the two-doc model), seeded with items/docs.
+// Seeds the CURRENT production shape (what ensureLayoutDoc writes): the layout
+// is a "sketch-layout" and the folder references it via `.sketch` (mirrored in
+// `@layouts.canvas`). The LEGACY shape ("newspace-layout" + `folder.newspace`)
+// is pinned separately — gesture-coalesce.test.js mounts a legacy-shaped doc
+// and asserts the canvas still reads it — so harness consumers exercise the
+// current read path, not the back-compat one.
 export function makeSurface(repo, { items = [], docs = [], title = "test" } = {}) {
-  const layout = repo.create({ "@patchwork": { type: "newspace-layout" }, items });
-  const folder = repo.create({ title, docs, newspace: layout.url });
+  const layout = repo.create({ "@patchwork": { type: "sketch-layout" }, items });
+  const folder = repo.create({ title, docs, sketch: layout.url, "@layouts": { canvas: layout.url } });
   return { repo, folder, layout };
 }
 

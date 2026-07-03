@@ -47,7 +47,7 @@ async function mountCanvas(items) {
   const element = document.createElement("div");
   document.body.append(element);
   let host = null;
-  const opts = { slots: { toolbar: (h) => { host = h; return document.createElement("div"); } } };
+  const opts = { slots: { presence: (h) => { host = h; return document.createElement("div"); } } }; // any slotted part hands over the chrome host (the fixed toolbar is gone)
   const dispose = render(() => Canvas({ handle: folder, repo, element, opts }), element);
   const m = { repo, layout, folder, element, dispose };
   mounted.push(m);

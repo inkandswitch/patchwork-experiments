@@ -195,6 +195,19 @@ describe("echo & resync", () => {
     expect(emits.pixels.length).toBe(1); // the canonical view, so the writer reconverges
     expect(isSnapshot(emits.pixels[0].op)).toBe(true);
   });
+  it("an unapplicable GEO write changes nothing and resyncs the writer (tagged local, not the writer)", () => {
+    const view = { now: mercator(13) };
+    const { s, emits } = rig([stroke()], view);
+    // splicing into a NUMBER field (weight: 3) throws inside applyOp → the catch path
+    s.shapes.apply(splice([0, "weight"], 0, 0, [9]), "confused");
+    expect(s.value()[0]).toEqual(stroke()); // marks untouched
+    expect(emits.shapes.length).toBe(1); // the canonical state, so the writer reconverges
+    expect(isSnapshot(emits.shapes[0].op)).toBe(true);
+    // tagged with the MAP's agent — a writer that filters its own agent still receives it
+    expect(emits.shapes[0].agent).toBe("map:test");
+    expect(emits.pixels.length).toBe(1); // pixels resynced too
+    expect(emits.pixels[0].agent).toBe("map:test");
+  });
   it("a snapshot write through shapes replaces the marks (normalised)", () => {
     const view = { now: mercator(13) };
     const { s, emits } = rig([stroke()], view);

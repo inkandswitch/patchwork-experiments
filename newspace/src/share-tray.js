@@ -28,11 +28,12 @@ function ShareTrayTool(handle, element) {
     let html = "";
     for (const s of sessions) {
       const st = s.state();
-      html += `<h4>canvas mesh · me ${esc((st.myUrl || "").slice(-6))}</h4>`;
+      // names come from the presence store (session.identify); the url tail is the fallback
+      html += `<h4>canvas mesh · me ${esc((st.me && st.me.name) || (st.myUrl || "").slice(-6))}</h4>`;
       if (!st.peers.length) html += `<div class="empty">no peers yet…</div>`;
       for (const p of st.peers) {
         const recv = p.receiving.length ? ` <span class="tag">recv ${p.receiving.length}</span>` : "";
-        html += `<div class="peer"><span class="dot ${esc(p.connection)}"></span>${esc(p.short)} <span class="muted">${esc(p.connection)}${p.channel ? " · dc:" + esc(p.channel) : ""}</span>${recv}</div>`;
+        html += `<div class="peer"><span class="dot ${esc(p.connection)}"></span>${esc(p.name || p.short)} <span class="muted">${esc(p.connection)}${p.channel ? " · dc:" + esc(p.channel) : ""}</span>${recv}</div>`;
       }
       const sh = st.sharing.length, lv = st.listening.values.length, lstr = st.listening.streams.length;
       html += `<div class="muted" style="margin-top:4px">sharing ${sh} · listening ${lv} val / ${lstr} stream</div>`;

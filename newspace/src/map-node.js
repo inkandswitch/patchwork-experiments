@@ -71,7 +71,20 @@ export function mountMap({ element, config = {}, setConfig, setOutlet, context, 
   const accent = () => "var(--ns-pink, #e36588)";
   let markerData = Array.isArray(config.markers) ? [...config.markers] : [];
   const dropMarker = (lat, lng) => L.circleMarker([lat, lng], { radius: 6, color: accent(), weight: 2, fillColor: accent(), fillOpacity: 0.85 }).addTo(map);
-  for (const m of markerData) dropMarker(m.lat, m.lng);
+  // markers are kept as key → { layer, m } (like pins) so they RECONCILE from config
+  // (a peer's add/remove appears live) and the eraser can remove them
+  const markerLayers = new Map();
+  const markerKey = (m) => `${(+m.lat).toFixed(6)}:${(+m.lng).toFixed(6)}`;
+  const syncMarkers = (list) => {
+    const want = new Set();
+    for (const m of list || []) {
+      if (!m || m.lat == null) continue;
+      const k = markerKey(m); want.add(k);
+      if (!markerLayers.has(k)) markerLayers.set(k, { layer: dropMarker(m.lat, m.lng), m });
+    }
+    for (const [k, r] of [...markerLayers]) if (!want.has(k)) { try { map.removeLayer(r.layer); } catch {} markerLayers.delete(k); }
+  };
+  syncMarkers(markerData);
 
   // GEO MARKS — everything drawn on the map lives in ITS coordinate space (lat/lng) and
   // reprojects with pan/zoom. `marks` is the unified array ({kind:"stroke"|"shape"});
@@ -199,9 +212,19 @@ export function mountMap({ element, config = {}, setConfig, setOutlet, context, 
   // is the echo guard; the emit carries no setConfig (this CAME from config).
   if (typeof onConfig === "function") onConfig((c) => {
     if (Array.isArray(c && c.pins)) { pinData = [...c.pins]; syncPins(pinData); }
+    // markers reconcile like pins — a peer's dropped/erased marker appears/vanishes live
+    if (Array.isArray(c && c.markers) && JSON.stringify(c.markers) !== JSON.stringify(markerData)) {
+      markerData = [...c.markers]; syncMarkers(markerData);
+    }
     if (Array.isArray(c && c.marks) && !sameMarks(c.marks, marks)) {
       reconcileMarks(normalizeMarks(JSON.parse(JSON.stringify(c.marks))), marks);
       if (streams) streams.changed(marks);
+    }
+    // legacy bare strokes erased/added elsewhere reconcile too (full redraw — legacy only)
+    if (Array.isArray(c && c.strokes) && JSON.stringify(c.strokes) !== JSON.stringify(legacy)) {
+      for (const s of legacy) { const l = markLayers.get(s); if (l) { try { map.removeLayer(l); } catch {} } markLayers.delete(s); }
+      legacy = c.strokes.map((s) => [...s]);
+      for (const s of legacy) markLayers.set(s, drawPolyline(s));
     }
   });
 
@@ -223,7 +246,7 @@ export function mountMap({ element, config = {}, setConfig, setOutlet, context, 
   map.on("click", (e) => {
     if (isDraw()) return;
     markerData = [...markerData, { lat: e.latlng.lat, lng: e.latlng.lng }];
-    dropMarker(e.latlng.lat, e.latlng.lng);
+    syncMarkers(markerData); // through the reconciler so the layer is tracked (erasable)
     if (setConfig) setConfig({ markers: markerData });
   });
 
@@ -248,6 +271,17 @@ export function mountMap({ element, config = {}, setConfig, setOutlet, context, 
       markLayers.delete(m);
       if (m.kind) marks = marks.filter((x) => x !== m); else legacy = legacy.filter((x) => x !== m);
     }
+    // markers erase too (marks/legacy persist on pointerup via persistMarks; markers
+    // live in their own config field, persisted here on hit)
+    let erasedMarker = false;
+    for (const [k, r] of [...markerLayers]) {
+      if (map.latLngToContainerPoint([r.m.lat, r.m.lng]).distanceTo(p) >= 12) continue;
+      try { map.removeLayer(r.layer); } catch {}
+      markerLayers.delete(k);
+      markerData = markerData.filter((x) => markerKey(x) !== k);
+      erasedMarker = true;
+    }
+    if (erasedMarker && setConfig) setConfig({ markers: markerData });
   };
   const onDown = (e) => {
     if (!isDraw()) return;
@@ -301,8 +335,15 @@ export function mountMap({ element, config = {}, setConfig, setOutlet, context, 
   };
   root.addEventListener("pointerdown", onDown, true); // capture → beat Leaflet's own drag AND the body's stopPropagation
 
+  // each teardown step in its own try — a throw in one must not skip the rest
   return () => {
-    try { bindMapInstance(itemId, null); if (streams) streams.stop(); themeMo.disconnect(); if (offTool) offTool(); if (offBrush) offBrush(); ro.disconnect(); map.remove(); } catch {}
+    try { bindMapInstance(itemId, null); } catch {}
+    try { if (streams) streams.stop(); } catch {}
+    try { themeMo.disconnect(); } catch {}
+    try { if (offTool) offTool(); } catch {}
+    try { if (offBrush) offBrush(); } catch {}
+    try { ro.disconnect(); } catch {}
+    try { map.remove(); } catch {}
     root.remove();
   };
 }

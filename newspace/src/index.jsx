@@ -6,6 +6,7 @@ import { coreBrushPlugins, contributedBrushPlugins } from "./registry/brushes.js
 import { contributedNodePlugins } from "./registry/contributed-nodes.js";
 import { layoutPlugins, sketchyToolPlugins } from "./registry/layout-tools.js";
 import { mediaLensPlugins, wireLensPlugins } from "./registry/lenses.js";
+import { palettePlugins } from "./registry/palettes.js";
 import { log } from "./log.js";
 
 export const plugins = [
@@ -426,6 +427,7 @@ export const plugins = [
   ...wireLensPlugins,
   ...layoutPlugins,
   ...contributedNodePlugins,
+  ...palettePlugins, // sketchy:palette — palettes as plugins (parts bin presets)
   ...sketchyToolPlugins,
 ];
 

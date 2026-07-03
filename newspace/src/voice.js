@@ -45,12 +45,15 @@ function injectCSS() {
 }
 injectCSS();
 
-// the item this client just created and should open a mic stream for (claimed
-// once by the host's VoiceItem, so peers viewing the same item don't record)
-let pending = null;
+// the items this client just created and should open a mic stream for (each claimed
+// once by the host's VoiceItem, so peers viewing the same item don't record). A LIST
+// of card ids: a second click before the first card's renderer claims it must not
+// orphan the first card stuck `recording: true` — each claim finds its own id.
+const pending = [];
 export function claimVoice(itemId) {
-  if (pending !== itemId) return false;
-  pending = null;
+  const i = pending.indexOf(itemId);
+  if (i < 0) return false;
+  pending.splice(i, 1);
   return true;
 }
 
@@ -118,7 +121,7 @@ export const VoiceBrush = {
     up(ctx) {
       const id = ctx.uid();
       const x = ctx.start.x, y = ctx.start.y;
-      pending = id;
+      pending.push(id);
       ctx.change((items) => items.push({ id, kind: "voice", x: x - 140, y: y - 75, w: 280, h: 150, text: "", url: null, recording: true, rotation: 0 }));
     },
   },

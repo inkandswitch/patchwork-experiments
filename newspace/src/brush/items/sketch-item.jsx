@@ -2,7 +2,7 @@
 // to articulate (relax the rest); drop a node on another to merge them. Extracted
 // from tool.jsx; prop-driven (`it`, `ctx`, `b`, `surface`, `baseStyle`, `down`).
 import { createSignal, Show, For } from "solid-js";
-import { colorVar } from "../constants.js";
+import { colorVar, windowDrag } from "../constants.js";
 import { shapePaths, seedFromId } from "../../draw.js";
 import { relax, nodeCopies, barCopies, mergeNodes as mergeSketchNodes } from "../../sketch.js";
 
@@ -48,13 +48,13 @@ export function SketchItem(props) {
         for (let i = 0; i < s.nodes.length; i++) { s.nodes[i].x = nodes[i].x; s.nodes[i].y = nodes[i].y; }
       });
     };
-    const up = () => {
+    // windowDrag also settles on pointercancel (a cancelled pen/touch must not
+    // leave the drag listeners live); a cancelled drop never merges.
+    windowDrag(move, (cancelled) => {
       const tgt = mergeTarget();
       setMergeTarget(null);
-      if (tgt) mergeNodes(tgt, nodeId); // Crosscut-style: drop one point on another → they coincide
-      window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+      if (!cancelled && tgt) mergeNodes(tgt, nodeId); // Crosscut-style: drop one point on another → they coincide
+    });
   }
   // SNAP lives in sketch.js (pure, tested); we run it inside a doc change when a
   // node is dropped onto another. Pivots come from auto-welded crossings (the

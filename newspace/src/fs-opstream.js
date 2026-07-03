@@ -78,16 +78,26 @@ export async function fileHandleOpstream(fileHandle) {
 // Watch an editable file opstream: poll the handle and, when the file changes on
 // disk AND the stream isn't dirty, reload it. Returns a stop function. (The "if not
 // dirtied in the viewer" behaviour from the design — unsaved edits win.)
-export function watchFileStream(stream, { intervalMs = 1500 } = {}) {
+// `onDisk(file)` fires on EVERY disk change, before the dirty guard — for callers
+// tracking disk-truth sidecars (bytes / metadata) that must refresh even while the
+// text keeps unsaved edits.
+export function watchFileStream(stream, { intervalMs = 1500, onDisk } = {}) {
   const c = (stream && stream.complement) || {};
   const handle = c.fileHandle;
   if (!handle || typeof setInterval !== "function") return () => {};
+  let notified = c.lastModified; // what onDisk has already been told about (it fires once per disk change, even while dirty)
   const id = setInterval(async () => {
     let file;
     try { file = await handle.getFile(); } catch { return; }
     if (!diskChanged(c.lastModified, file)) return;
-    c.lastModified = file.lastModified;
+    if (onDisk && file.lastModified !== notified) { notified = file.lastModified; try { onDisk(file); } catch {} }
+    // dirty ⇒ SKIP but don't consume: lastModified only advances when the change
+    // is actually loaded — advancing it before this guard permanently swallowed
+    // a disk change that landed while the buffer was dirty (a revert never
+    // reloaded it). Left un-advanced, the skipped change re-triggers on the next
+    // poll once the stream is clean again (save() re-baselines both fields).
     if (isDirty(stream.value, c.diskText)) return; // unsaved edits → keep them
+    c.lastModified = file.lastModified;
     const text = await file.text();
     c.diskText = text;
     if (typeof stream.apply === "function") stream.apply(snapshot(text));

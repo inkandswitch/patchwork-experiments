@@ -367,6 +367,9 @@ commands, opstreams, layouts, surfaces — all reachable and invocable from the 
    LAYOUTS.md; dock/television still unbuilt) and NAMED LAYERS shipped as the layer
    stack (layers.js: `sketchy:layer-transform` + `sketchy:layer-kind` registries —
    a layer is a coordinate space; camera + frosted viewport overlay built in).
+   Items relate to the stack via `layers: []` — home space + visibility
+   memberships — and MODES (workshop/play visibility presets); see LAYOUTS.md
+   §Layers, membership, and modes.
    `command`/`keybinding`/`setting`/`event` not started (keydown + history are
    still hardcoded).
 5. **[in progress]** `element.api` shipped (api.js: `find` via the protocols.js

@@ -1,3 +1,4 @@
+// unregistered 2026-07-02 pending the container-types rethink (see TODO)
 // The ONE layout switcher shared by every non-canvas layout (list / grid / dock —
 // the canvas chrome has its own owner). It lists the registered `sketchy:layout`
 // descriptors and re-opens the SAME folder through another lens by dispatching

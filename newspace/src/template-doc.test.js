@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { parseTemplate, fillTemplate, templateInlets, parseSlotType } from "./template-doc.js";
 
 describe("parseSlotType", () => {
@@ -88,6 +88,72 @@ describe("stripUndefinedDeep", () => {
     expect(stripUndefinedDeep(null)).toBe(null);
     expect(stripUndefinedDeep(7)).toBe(7);
     expect(stripUndefinedDeep("s")).toBe("s");
+  });
+});
+
+import { mountTemplateDoc } from "./template-doc.js";
+
+describe("mountTemplateDoc — bind() generation guard + doc-stream lifecycle", () => {
+  afterEach(() => { delete window.repo; });
+
+  const deferred = () => { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
+  // enough handle for automergeOpstream + writeDoc: url/doc()/change/on/off (listener counts observable)
+  const fakeHandle = (url) => ({
+    url, _doc: {}, ons: 0, offs: 0,
+    doc() { return this._doc; },
+    change(fn) { fn(this._doc); },
+    on() { this.ons++; },
+    off() { this.offs++; },
+  });
+
+  it("a stale create2 resolving after a remote-url find neither swaps the outlet nor persists its loser url", async () => {
+    const createDef = deferred(), findDef = deferred();
+    const winner = fakeHandle("automerge:winner"), loser = fakeHandle("automerge:loser");
+    window.repo = { create2: () => createDef.promise, find: () => findDef.promise };
+
+    const element = document.createElement("div");
+    const outlets = {}; let docSwaps = 0;
+    const setOutlet = (name, s) => { outlets[name] = s; if (name === "doc") docSwaps++; };
+    const cfgs = [];
+    let onCfg;
+    const cleanup = mountTemplateDoc({ element, inlets: {}, setOutlet, config: {}, setConfig: (c) => cfgs.push(c), onConfig: (cb) => (onCfg = cb) });
+    expect(docSwaps).toBe(1); // the immediate placeholder
+
+    // mount started bind(null) → slow create2; a remote peer's winning url arrives
+    onCfg({ url: "automerge:winner" }); // → bind(winner) → fast find
+    findDef.resolve(winner);
+    await flush();
+    expect(docSwaps).toBe(2); // swapped to the WINNER's stream
+    expect(outlets.doc.complement.handle).toBe(winner);
+    const persisted = cfgs.filter((c) => "url" in c);
+    expect(persisted).toEqual([]); // a found url is never re-persisted
+
+    // …then the STALE create2 finally resolves — it must do nothing
+    createDef.resolve(loser);
+    await flush();
+    expect(docSwaps).toBe(2); // no third swap
+    expect(outlets.doc.complement.handle).toBe(winner);
+    expect(cfgs.filter((c) => "url" in c)).toEqual([]); // the loser url never overwrites the winner
+    expect(loser.ons).toBe(0); // no stream was ever built on the loser
+
+    cleanup();
+    expect(winner.offs).toBe(winner.ons); // teardown disconnects the doc stream's change listener
+  });
+
+  it("rebinding disconnects the PREVIOUS doc stream (no change-listener leak per rebind)", async () => {
+    const a = fakeHandle("automerge:aaa"), b = fakeHandle("automerge:bbb");
+    window.repo = { create2: async () => fakeHandle("automerge:fresh"), find: async (url) => (url === "automerge:aaa" ? a : b) };
+    const element = document.createElement("div");
+    let onCfg;
+    const cleanup = mountTemplateDoc({ element, inlets: {}, setOutlet() {}, config: { url: "automerge:aaa" }, setConfig() {}, onConfig: (cb) => (onCfg = cb) });
+    await flush();
+    expect(a.ons).toBe(1);
+    onCfg({ url: "automerge:bbb" }); // rebind
+    await flush();
+    expect(a.offs).toBe(1); // the old stream was disconnect()ed, not orphaned
+    expect(b.ons).toBe(1);
+    cleanup();
+    expect(b.offs).toBe(1); // and cleanup releases the current one
   });
 });
 
