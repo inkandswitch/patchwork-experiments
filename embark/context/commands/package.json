@@ -23,8 +23,6 @@
     "@embark/search": "workspace:*",
     "@embark/selection": "workspace:*",
     "@automerge/automerge-repo": "2.6.0-subduction.29",
-    "@codemirror/state": "^6.5.2",
-    "@codemirror/view": "^6.38.4",
     "@inkandswitch/patchwork-elements": "^0.2.0",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
     "maplibre-gl": "^5.24.0",

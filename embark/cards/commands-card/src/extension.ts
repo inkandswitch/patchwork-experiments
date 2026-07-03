@@ -21,8 +21,11 @@ import {
   subscribeContext,
   type ScopeHandle,
 } from "@embark/context";
-import { CommandQueries, CommandSuggestions } from "./channels";
-import type { Suggestion } from "./suggestion";
+import {
+  CommandQueries,
+  CommandSuggestions,
+  type Suggestion,
+} from "@embark/commands";
 import "./commands.css";
 
 // An in-progress `/command`: the document span being replaced (from the `/` to

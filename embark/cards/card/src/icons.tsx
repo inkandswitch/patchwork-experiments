@@ -85,6 +85,8 @@ function glyph(name: string): JSX.Element {
           <path d="M17 6.5C17 4.6 14.8 3.5 12 3.5S7 4.6 7 6.5 9.2 9.5 12 10s5 1.5 5 3.5-2.2 3-5 3-5-1.1-5-3" />
         </>
       );
+    case "slash":
+      return <path d="M17 5 7 19" />;
     case "sparkles":
       return (
         <>

@@ -92,10 +92,12 @@
 }
 
 /* The active face insets its middle in a light-gray box, setting the card's own
-   visualization / controls off from the surrounding title and description. The
-   inert back keeps just its title and description over blank space, so it isn't
+   visualization / controls off from the surrounding title and description — but
+   only when the card's module actually rendered something there (`:has(*)`), so
+   behavior-only cards keep blank space instead of an empty gray box. The inert
+   back keeps just its title and description over blank space, so it isn't
    boxed. */
-.embark-card--front .embark-card__middle {
+.embark-card--front .embark-card__middle:has(*) {
   padding: 10px;
   border-radius: 8px;
   background: #f5f5f4;

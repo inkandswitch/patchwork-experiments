@@ -1,3 +1,4 @@
+import type { Repo } from "@automerge/automerge-repo";
 import { Plugin } from "@inkandswitch/patchwork-plugins";
 import { plugins as partsBinPlugins } from "./parts-bin";
 import { plugins as deckPlugins } from "./deck";
@@ -56,3 +57,14 @@ export const plugins: Plugin<any>[] = [
   ...partsBinPlugins,
   ...deckPlugins,
 ];
+
+// Keep the context canvas alive even while the sidebar is closed: mount it
+// hidden on document.body as soon as this bundle loads, so its cards
+// (mentions, command providers, sticker sources, …) are always active. The
+// sidebar tool adopts this same live host when opened (see ContextCanvasTool).
+// window.repo is set by the bootloader before plugin modules load.
+if (typeof window !== "undefined") {
+  void import("./canvas").then(({ ensureContextCanvasHost }) =>
+    ensureContextCanvasHost((window as { repo?: Repo }).repo),
+  );
+}

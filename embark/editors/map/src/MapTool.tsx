@@ -159,8 +159,21 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // Resizing also changes the home box (center/zoom hold steady, so no moveend
   // fires) — re-persist it, debounced, but only while resting at home so an
   // active overlay never leaks its widened box into the persisted bounds.
+  //
+  // Skip the observer's first, setup-time callback (ResizeObserver always fires
+  // one on observe()), exactly as maplibre's own tracker does. With trackResize
+  // off we're the sole thing resizing the map, and redraw() aborts maplibre's
+  // pending initial render frame — so firing it here, before the style has ever
+  // painted, blanks the map in any embed whose size never changes again after
+  // mount (the parts-bin previews). The constructor already sized the map to
+  // the laid-out container, so skipping this first event costs nothing.
   let resizeSyncTimer: ReturnType<typeof setTimeout> | undefined;
+  let initialResizeSeen = false;
   const resizeObserver = new ResizeObserver(() => {
+    if (!initialResizeSeen) {
+      initialResizeSeen = true;
+      return;
+    }
     map.resize();
     map.redraw();
     if (overlayActive) return;

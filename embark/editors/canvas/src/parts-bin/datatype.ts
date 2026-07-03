@@ -157,6 +157,14 @@ const CARD_SEEDS: CardSeed[] = [
     accent: "#6366f1",
   },
   {
+    rootUrl: "automerge:asYz1WKN9GHigxdQPVVfr5h8MuW",
+    title: "Commands",
+    description:
+      "While on the canvas, turns on the / command menu for every editor here.",
+    icon: "slash",
+    accent: "#0891b2",
+  },
+  {
     rootUrl: "automerge:2Tjy4kfsDHyv7xLCZtuf8dHAWbDy",
     title: "Stickers",
     description:
@@ -204,7 +212,12 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
   return [
     ...cardItems,
     { id: crypto.randomUUID(), url: map.url, toolId: "map" },
-    { id: crypto.randomUUID(), url: note.url, toolId: "codemirror-base" },
+    // No pinned tool id: the note resolves its editor from its "markdown"
+    // datatype — the same fallback the canvas uses when the example is dropped,
+    // so the preview always matches the dragged-out embed. Pinning a stale id
+    // here (e.g. the legacy "codemirror-base") silently blanks the preview
+    // whenever that id isn't registered in the host.
+    { id: crypto.randomUUID(), url: note.url },
     { id: crypto.randomUUID(), url: deck.url, toolId: "deck" },
     {
       id: crypto.randomUUID(),

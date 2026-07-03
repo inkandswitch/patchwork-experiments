@@ -6,6 +6,7 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import { accept, type SubscribeEvent } from "@inkandswitch/patchwork-providers";
 import {
   For,
   Show,
@@ -107,26 +108,128 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) =>
 // localStorage key holding this browser's context-canvas url.
 const CONTEXT_CANVAS_URL_KEY = "embark:context-canvas-url";
 
-// The context canvas tool: the exact same canvas UI, mounted as a sidebar
-// context tool. Registered with the `context-tool` tag, it is handed the account
-// doc (which it ignores) and instead hosts a single per-browser context canvas
-// whose url is stashed in localStorage. Like the normal canvas it mounts onto
-// the body store; the only difference is where the handle comes from — a
-// find-or-create rather than a passed-in document — so it is resolved
-// asynchronously before mounting.
+// The context canvas tool: the sidebar face of the always-on context canvas.
+// Registered with the `context-tool` tag, it is handed the account doc (which
+// it ignores). The canvas itself lives in a persistent hidden host on
+// document.body (see ensureContextCanvasHost) so its cards stay active while
+// the sidebar is closed; opening the sidebar merely *adopts* that live host —
+// moves it into this tool's element and reveals it — and closing parks it back
+// on body, hidden. The canvas is never remounted across open/close.
 export const ContextCanvasTool: ToolRender = (_accountHandle, element) => {
-  let disposeCanvas: (() => void) | undefined;
+  let docked: ContextCanvasHost | undefined;
   let disposed = false;
-  void resolveContextCanvas(element.repo).then((handle) => {
+  void ensureContextCanvasHost(element.repo)?.then((host) => {
     if (disposed) return;
-    disposeCanvas = mountCanvas(handle, element);
+    docked = host;
+    host.dock(element);
   });
 
   return () => {
     disposed = true;
-    disposeCanvas?.();
+    docked?.park(element);
   };
 };
+
+// The persistent context-canvas host's controls: dock it into a sidebar
+// element (visible), or park it back on document.body (hidden but live).
+export type ContextCanvasHost = {
+  dock(target: HTMLElement): void;
+  park(from: HTMLElement): void;
+};
+
+// The host singleton, stashed on document.body under a registered symbol
+// (mirroring getBodyContextStore) so ModuleWatcher live-reloads — which
+// evaluate a fresh copy of this module — find the existing host instead of
+// mounting a second canvas. Returns undefined (without caching) when no repo
+// is available yet, so a later call can still succeed.
+const CANVAS_HOST_KEY = Symbol.for("embark.context-canvas-host.v1");
+
+export function ensureContextCanvasHost(
+  repo: Repo | undefined,
+): Promise<ContextCanvasHost> | undefined {
+  if (!repo) return undefined;
+  const slot = document.body as unknown as Record<
+    symbol,
+    Promise<ContextCanvasHost> | undefined
+  >;
+  return (slot[CANVAS_HOST_KEY] ??= createContextCanvasHost(repo));
+}
+
+// Build the persistent host: a div on document.body carrying the canvas,
+// mounted exactly once and never disposed — it lives for the tab. While
+// parked it keeps a fixed sidebar-like footprint but is invisible and inert
+// (visibility keeps layout live, so maps and other measuring embeds keep
+// working); docking swaps to fill-the-sidebar styles and moves the node.
+async function createContextCanvasHost(
+  repo: Repo,
+): Promise<ContextCanvasHost> {
+  const host = document.createElement("div") as unknown as ToolElement;
+  host.repo = repo;
+
+  // The context canvas always operates on the real documents: answer
+  // repo:handle-descriptor with the identity descriptor so a drafts overlay
+  // above the sidebar never forks the canvas's docs into a draft. The nearest
+  // answerer on the bubble path wins (accept stops propagation), and this host
+  // wraps the canvas wherever it is docked. (The descriptor shape matches
+  // OverlayRepo's DocHandleDescriptor: `{ url, cloneUrl? }`; identity means no
+  // cloneUrl.)
+  host.addEventListener("patchwork:subscribe", (event) => {
+    const sub = event as SubscribeEvent;
+    if (sub.detail.selector.type !== "repo:handle-descriptor") return;
+    const url = sub.detail.selector.url as AutomergeUrl | undefined;
+    if (!url) return;
+    accept<{ url: AutomergeUrl }>(sub, (respond) => respond({ url }));
+  });
+
+  applyParkedStyles(host);
+  document.body.appendChild(host);
+
+  const handle = await resolveContextCanvas(repo);
+  mountCanvas(handle, host);
+
+  return {
+    dock(target) {
+      host.style.position = "relative";
+      host.style.top = "";
+      host.style.left = "";
+      host.style.width = "100%";
+      host.style.height = "100%";
+      host.style.visibility = "visible";
+      moveInto(target, host);
+    },
+    park(from) {
+      // Only the element currently holding the host may park it — a new
+      // sidebar panel can dock before the old panel's dispose runs.
+      if (!from.contains(host)) return;
+      applyParkedStyles(host);
+      moveInto(document.body, host);
+    },
+  };
+}
+
+function applyParkedStyles(host: HTMLElement): void {
+  host.style.position = "fixed";
+  host.style.top = "0";
+  host.style.left = "0";
+  host.style.width = "320px";
+  host.style.height = "100vh";
+  host.style.visibility = "hidden";
+}
+
+// Reparent with the atomic-move API where available: moveBefore fires
+// connectedMoveCallback instead of disconnect/connect on the descendant
+// <patchwork-view>s, so the canvas's embeds (map instances, editors) survive
+// the move. Older browsers fall back to appendChild, which remounts them.
+function moveInto(parent: HTMLElement, node: HTMLElement): void {
+  const movable = parent as HTMLElement & {
+    moveBefore?: (node: Node, child: Node | null) => void;
+  };
+  if (typeof movable.moveBefore === "function") {
+    movable.moveBefore(node, null);
+  } else {
+    parent.appendChild(node);
+  }
+}
 
 // Find-or-create this browser's single context canvas. Its url lives in
 // localStorage — deliberately per-device, not synced through the account — so

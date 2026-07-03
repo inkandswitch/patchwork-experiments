@@ -104,6 +104,49 @@ importers:
         specifier: ^2.10.0
         version: 2.11.12(solid-js@1.9.13)(vite@8.0.16(@types/node@20.19.43))
 
+  cards/commands-card:
+    dependencies:
+      '@automerge/automerge-repo':
+        specifier: 2.6.0-subduction.29
+        version: 2.6.0-subduction.29
+      '@codemirror/state':
+        specifier: ^6.5.2
+        version: 6.7.0
+      '@codemirror/view':
+        specifier: ^6.38.4
+        version: 6.43.1
+      '@embark/codemirror-extensions-host':
+        specifier: workspace:*
+        version: link:../../context/codemirror-extensions-host
+      '@embark/commands':
+        specifier: workspace:*
+        version: link:../../context/commands
+      '@embark/context':
+        specifier: workspace:*
+        version: link:../../context/store
+      '@inkandswitch/patchwork-plugins':
+        specifier: ^0.0.11
+        version: 0.0.11(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@inkandswitch/patchwork-filesystem@0.0.8(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1))
+      solid-js:
+        specifier: ^1.9.11
+        version: 1.9.13
+    devDependencies:
+      '@inkandswitch/patchwork-bootloader':
+        specifier: ^0.2.5
+        version: 0.2.7(@automerge/automerge-repo-keyhive@0.3.0-alpha.sub.1c(ws@8.21.0))(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@automerge/vanillajs@2.6.0-subduction.29)(solid-js@1.9.13)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^8.0.16
+        version: 8.0.16(@types/node@20.19.43)
+      vite-plugin-css-injected-by-js:
+        specifier: ^3.5.2
+        version: 3.5.2(vite@8.0.16(@types/node@20.19.43))
+      vite-plugin-solid:
+        specifier: ^2.10.0
+        version: 2.11.12(solid-js@1.9.13)(vite@8.0.16(@types/node@20.19.43))
+
   cards/context-viewer:
     dependencies:
       '@automerge/automerge-repo':
@@ -790,12 +833,6 @@ importers:
       '@automerge/automerge-repo':
         specifier: 2.6.0-subduction.29
         version: 2.6.0-subduction.29
-      '@codemirror/state':
-        specifier: ^6.5.2
-        version: 6.7.0
-      '@codemirror/view':
-        specifier: ^6.38.4
-        version: 6.43.1
       '@embark/context':
         specifier: workspace:*
         version: link:../store
@@ -1100,6 +1137,9 @@ importers:
       '@inkandswitch/patchwork-plugins':
         specifier: ^0.0.11
         version: 0.0.11(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@inkandswitch/patchwork-filesystem@0.0.8(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1))
+      '@inkandswitch/patchwork-providers':
+        specifier: ^0.2.2
+        version: 0.2.2(@automerge/automerge-repo@2.6.0-subduction.29)
       solid-automerge:
         specifier: ^1.1.0
         version: 1.1.0(solid-js@1.9.13)

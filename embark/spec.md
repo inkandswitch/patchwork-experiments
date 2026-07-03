@@ -189,8 +189,19 @@ with no parts bin). Like every canvas it mounts straight onto the body store, so
 mentions, command providers, sticker sources, etc. placed on it apply
 **page-wide** — to every editor and canvas on the page, which all share that same
 store. It is registered `FRAMELESS` and is meant to live on a sidebar surface.
-The only thing that distinguishes it from a normal canvas is where its document
-comes from (a find-or-create rather than a passed-in doc).
+
+The canvas is **always on**: when the plugin bundle loads, it is mounted once
+into a hidden host on `document.body` (`visibility: hidden` keeps layout live so
+measuring embeds like maps keep working), so its cards stay active even while
+the sidebar is closed. Opening the sidebar does not remount anything — the
+sidebar tool *adopts* the live host, moving it into the sidebar with the atomic
+`Element.moveBefore()` API (descendant `<patchwork-view>`s get
+`connectedMoveCallback` instead of a teardown, so embeds survive) and revealing
+it; closing parks it back on body, hidden. The host also answers
+`repo:handle-descriptor` with the identity descriptor, so documents resolved
+inside the context canvas are never remapped onto draft clones — the global
+context always operates on the real documents, even when the sidebar renders
+beneath a drafts overlay.
 
 ## Solid wrappers (thin, on top)
 
