@@ -1,4 +1,4 @@
-// `sketchy:palette` — palettes as PLUGINS (documented in NODES.md):
+// `sketchy:palette` — palettes as PLUGINS (documented in README.md):
 //   { type: "sketchy:palette", id, name, icon?, entries: [entry…] | () => [entry…] }
 // A registered palette appears in the parts bin's "palettes" group; dragging it
 // out instantiates a palette window with those entries. `entries` may be a

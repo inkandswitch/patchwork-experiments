@@ -55,7 +55,7 @@ export function useLayerTransform(layer, env) {
 }
 
 // layer MEMBERSHIP lives in model.js (itemLayers/itemHomeLayer — the home space
-// owns coordinates, further entries are memberships; see LAYOUTS.md §Layers and
+// owns coordinates, further entries are memberships; see README.md §Layers and
 // membership). `itemLayer` stays as the HOME alias for the many space-math
 // callers: transforms/coords always go through the home.
 export { itemLayers, itemHomeLayer, itemHomeLayer as itemLayer } from "./model.js";

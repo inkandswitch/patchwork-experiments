@@ -42,7 +42,7 @@ export function Item(props) {
     return i;
   });
   const b = createMemo(() => ctx.itemBounds(renderIt()));
-  // PERF.md Phase 5: resolve colours + rough.js paths once per shape/theme change
+  // README.md Phase 5: resolve colours + rough.js paths once per shape/theme change
   // instead of per reactive flush. Deps: renderIt() (carries the spaceEpoch /
   // parent-projection tracking, so parented marks keep re-projecting on map
   // pan/zoom) + themeTick (canvas.jsx clears its colour cache on the same bump).
@@ -50,7 +50,7 @@ export function Item(props) {
     const i = renderIt();
     if (i.kind !== "shape") return [];
     ctx.themeTick();
-    perfCount("shapePaths"); // PERF.md Phase 5: an ACTUAL per-shape path rebuild
+    perfCount("shapePaths"); // README.md Phase 5: an ACTUAL per-shape path rebuild
     return shapePaths(shapeRenderProps(i, ctx.resolveColor));
   });
   // stacking comes from the item's position in its surface's array (not DOM order);
@@ -122,7 +122,7 @@ export function Item(props) {
   // any synchronous transact/gesture-txn window and creates no undo entry.
   // The measure tracks only text/font/fontSize/wrap — NOT w/h — so an undo
   // that restores a size can't re-trigger the measurer into fighting it.
-  // PERF.md Phase 10 (plan-2 §9).
+  // README.md Phase 10 (plan-2 §9).
   let staticEl;
   const persistSize = rafBatch();
   onCleanup(() => persistSize.flush());

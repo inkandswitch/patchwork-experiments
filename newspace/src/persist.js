@@ -1,5 +1,5 @@
 // One-time localStorage key migration for the `newspace:` → `sketchy:` prefix
-// rename (optimization-plan-3 Phase 2): new key absent + old present → copy
+// rename (README Phase 2): new key absent + old present → copy
 // across, delete the old. Best-effort — storage can throw (private mode,
 // quota); a failed migrate must never break the canvas.
 export function migrateStorageKey(oldKey, newKey, storage) {

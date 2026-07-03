@@ -4,7 +4,7 @@
 // join keeps them in step: every folder link gets one materialized doc/frame item, and
 // deleting the last shape for a url drops the link. It lives TOOL-SIDE so the component never
 // knows a folder (or an automerge doc) is behind its items — the component consumes the
-// `items` opstream this returns and nothing more (CONTAINERS.md §2, Ring 2).
+// `items` opstream this returns and nothing more (README.md §2, Ring 2).
 //
 // Two forms:
 //   • `docsLens(folderStream, sketchStream)` — the real OPSTREAM lens (what the tool serves as

@@ -1,4 +1,4 @@
-// perf.js — Phase 0 measurement scaffolding (PERF.md).
+// perf.js — Phase 0 measurement scaffolding (README.md).
 //
 // Counters live on `window.__perf` so they're inspectable from the console;
 // the overlay (toggled with the canvas's ` debug key) shows rolling frame
@@ -150,7 +150,7 @@ export function rafBatch(fn) {
 // startOverlay(el) — a rAF loop writing rolling avg/min/max frame time (last
 // ~120 frames) plus the __perf counters (total + rate/s since the previous
 // repaint) into `el` as text, ~4×/s. Returns a stop() cleanup. Spec'd in
-// PERF.md Phase 0; the canvas's ` debug toggle mounts it (canvas.jsx).
+// README.md Phase 0; the canvas's ` debug toggle mounts it (canvas.jsx).
 export function startOverlay(el) {
   let stopped = false;
   let last = 0;

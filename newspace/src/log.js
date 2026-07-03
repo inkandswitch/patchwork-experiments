@@ -1,4 +1,4 @@
-// The one logger, one tag (optimization-plan-3 Phase 2). warn/error always
+// The one logger, one tag (README Phase 2). warn/error always
 // ship; debug is diagnostics — visible in dev builds, silent in prod.
 const VERBOSE = import.meta.env?.DEV ?? false;
 export const log = {

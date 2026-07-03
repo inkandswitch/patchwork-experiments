@@ -237,7 +237,7 @@ export function itemVisibleForActive(it, layerIds, activeLayerId) {
   return hi <= ai || ls.includes(activeLayerId);
 }
 
-// PERF.md Phase 2 — ONE pass over `items` builds the hot lookups: `indexById`
+// README.md Phase 2 — ONE pass over `items` builds the hot lookups: `indexById`
 // (id → doc index; doc index IS the z), `byHome` (per-HOME-layer render buckets,
 // id-sorted so render order stays stable — live embeds must never be relocated;
 // an item renders in EXACTLY ONE home bucket, never twice) and `byLayer`

@@ -27,7 +27,7 @@ import { Source, isSnapshot } from "./opstreams.js";
 // `claims.draw` marker set by the claiming canvas via `claimDraws(context)`. No provide/
 // accept transport is needed: a box gets the claiming canvas's own context object directly,
 // and a NESTED canvas builds its OWN context (and claims for itself), which re-roots the
-// claim exactly as ARCHITECTURE.md §3a's fallback-to-own prescribes.
+// claim exactly as README.md §3a's fallback-to-own prescribes.
 export function claimDraws(context) { if (context) context.claims = { ...(context.claims || {}), draw: true }; }
 export const drawsClaimed = (context) => !!(context && context.claims && context.claims.draw);
 

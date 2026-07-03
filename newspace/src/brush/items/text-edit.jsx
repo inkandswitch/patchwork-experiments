@@ -50,7 +50,7 @@ export function InlineEdit(props) {
 // paste plain. The element sizes itself (point text grows both ways; a wrap box
 // keeps its width), which we mirror back into the item's w/h on COMMIT (blur):
 // typing writes only the text — a per-keystroke size write churned the doc for
-// a value the element already displays. PERF.md Phase 10 (plan-2 §9).
+// a value the element already displays. README.md Phase 10 (plan-2 §9).
 export function TextEdit(props) {
   let el;
   const save = () => props.surface.handle.change((d) => {

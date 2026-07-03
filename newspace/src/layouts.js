@@ -1,7 +1,7 @@
 // Layouts — a folder rendered through a lens. Each layout is a `sketchy:layout`
 // plugin pointing at the `patchwork:tool` that renders it; switching layout re-opens
 // the SAME folder through a different tool (the docs are shared; only the lens +
-// its complement differ — see LAYOUTS.md).
+// its complement differ — see README.md).
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
 
 // registered layout descriptors (defensive: no host registry ⇒ [])

@@ -10,7 +10,8 @@ export default defineConfig({
   resolve: { conditions: ["development", "browser"] },
   test: {
     environment: "happy-dom",
-    include: ["src/**/*.test.js"],
+    include: ["tests/**/*.test.js"],
+    setupFiles: ["tests/setup.js"],
     server: { deps: { inline: [/solid-js/, /solid-automerge/] } },
   },
 });

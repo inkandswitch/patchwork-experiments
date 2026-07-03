@@ -1,8 +1,7 @@
 import { NewspaceDatatype } from "../datatype.js";
 
 // list / grid / dock / pad were unregistered 2026-07-02 pending the
-// container-types rethink (see TODO.md) — the list/grid/dock source files stay
-// on disk, dormant.
+// container-types rethink; their dormant source files were removed.
 export const layoutPlugins = [
   {
     type: "sketchy:layout", id: "canvas", name: "Canvas", icon: "PenTool",

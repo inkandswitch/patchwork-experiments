@@ -4,7 +4,7 @@
 //
 // "Improve an API by making it do less": a handler is just `(url, opts) => opstream`.
 //
-// TODO (see TODO.md): a handler that also answers `@patchwork/handoff` would make
+// TODO (see README.md): a handler that also answers `@patchwork/handoff` would make
 // its urls importable (a fetchable resource via the bootloader's handoff channel),
 // bridging `find` and `import`.
 import { automergeOpstream } from "./opstreams.js";

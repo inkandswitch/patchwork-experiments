@@ -10,7 +10,7 @@
 // On collaboration: a source is local to the viewer who placed it (each reads
 // their OWN gamepad/mic). Sharing one source's stream to peers — or letting two
 // people drive the same logical controller — routes through presence, not here;
-// that's the "should this be owned, or shared?" question left open in NODES.md.
+// that's the "should this be owned, or shared?" question left open in README.md.
 import { Source } from "./opstreams.js";
 
 // a wall clock — pushes the epoch ms every tick

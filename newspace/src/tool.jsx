@@ -34,7 +34,7 @@ export function makeSketchyTool(opts = {}) {
 }
 
 // NewspaceTool — not registered under any tool id; the full-chrome composition, superseded
-// as `sketchy` by SketchyTool (commit 24d81514). Removal is tracked in TODO.md.
+// as `sketchy` by SketchyTool (commit 24d81514). Removal is tracked in README.md.
 export const NewspaceTool = makeSketchyTool();
 
 // SketchyTool — registered as `sketchy` (registry/layout-tools.js): the DEFAULT tool.

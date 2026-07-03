@@ -59,7 +59,7 @@ import {
   SEED_IDS, makeFlapSpace, seedPartsFlap, windowDrag,
 } from "./constants.js";
 
-// PERF.md Phase 4 — coalesce a high-frequency Source's PUSH side to a 16ms
+// README.md Phase 4 — coalesce a high-frequency Source's PUSH side to a 16ms
 // trailing edge (≤60 emissions/sec however fast the upstream writes). The lib's
 // coalesce() can't do this: a Source emits only snapshots, and coalesce forwards
 // snapshots immediately (pinned in its own tests). So the source's own `push` is
@@ -93,7 +93,7 @@ function coalesceSource(src, name, ms = 16) {
   return src;
 }
 
-// PERF.md Phase 5 — a Map-keyed memo over a colour resolver: `resolve` runs
+// README.md Phase 5 — a Map-keyed memo over a colour resolver: `resolve` runs
 // ONCE per distinct input string until `.clear()`. The canvas clears on theme
 // change (clear-before-tick, so themeTick subscribers re-resolving on the bump
 // see fresh colours). Exported for the color-cache pins.
@@ -117,7 +117,7 @@ export function Canvas(props) {
   const folderDoc = surfaceDoc(handle); // seam: real handle OR an opstream-backed adapter
   const [rootLayoutH, setRootLayoutH] = createSignal(null);
   // REACT to `folder.sketch` and switch to the converged layout-doc url when two peers
-  // raced to create it — see LAYOUTS.md §Layout-doc convergence.
+  // raced to create it — see README.md §Layout-doc convergence.
   // COMPONENT MODE: a patchwork:component can INJECT the layout handle (opts.layoutHandle,
   // an opstream-backed adapter); used verbatim, skipping the folder→ensureLayout derivation.
   if (opts.layoutHandle) setRootLayoutH(opts.layoutHandle);
@@ -375,7 +375,7 @@ export function Canvas(props) {
   const [editingId, setEditingId] = createSignal(null); // item being text-edited
 
   let viewportRef;
-  // PERF.md Phase 3 — the viewport rect is read ONCE per rAF frame: every
+  // README.md Phase 3 — the viewport rect is read ONCE per rAF frame: every
   // consumer below goes through this perFrame cache instead of its own
   // getBoundingClientRect (a layout flush each). When the frame loop isn't
   // ticking (headless tests) perFrame degrades to a fresh read. `gbcr` counts
@@ -398,7 +398,7 @@ export function Canvas(props) {
   // modules land ASYNC, and a plain Map is invisible to Solid — bump a version
   // signal when one resolves so isBrushTool / paramDefs / the properties panel
   // re-read it (selecting a brush before its module loads must show the params
-  // the moment they arrive, not on the next unrelated update). PERF.md Phase 10.
+  // the moment they arrive, not on the next unrelated update). README.md Phase 10.
   const [brushVer, setBrushVer] = createSignal(0);
   {
     const all = listRegistryBrushes();
@@ -440,7 +440,7 @@ export function Canvas(props) {
   const [activeId, setActiveId] = createSignal("root");
   const active = () => surfaceById(activeId());
   const rootItems = () => rootSurface().doc?.items || [];
-  // PERF.md Phase 2 — one per-tick index over the root items (id → doc index),
+  // README.md Phase 2 — one per-tick index over the root items (id → doc index),
   // shared by item.jsx (z/parent lookups via ctx.indexById) and the wire
   // geometry below (Phase 6), replacing per-read rootItems().find scans.
   const itemsIdx = createMemo(() => buildItemsIndex(rootItems(), itemLayers));
@@ -644,13 +644,13 @@ export function Canvas(props) {
 
   // resolve any colour (var() chains, color-mix(), light-dark()) to a concrete
   // value for rough.js, by letting the browser compute it on a probe element.
-  // PERF.md Phase 5: results go through a Map cache (one getComputedStyle per
+  // README.md Phase 5: results go through a Map cache (one getComputedStyle per
   // unique colour per theme — bumpTheme clears it). Non-resolvable inputs
   // ("none", pre-mount) bypass the cache so a value the probe never actually
   // computed can't be pinned stale.
   let _probe;
   const colorCache = cachedColorResolver((c) => {
-    perfCount("colorResolve"); // PERF.md Phase 5: an ACTUAL probe resolution (cache miss)
+    perfCount("colorResolve"); // README.md Phase 5: an ACTUAL probe resolution (cache miss)
     if (!_probe) { _probe = document.createElement("span"); _probe.style.cssText = "position:absolute;width:0;height:0;visibility:hidden;pointer-events:none"; viewportRef.appendChild(_probe); }
     _probe.style.color = "";
     _probe.style.color = c;
@@ -1508,7 +1508,7 @@ export function Canvas(props) {
     pushItem(frameAtWorld(world.x, world.y), makeEditorItem({ id: "ed-" + uid(), editorId: descriptor.id, x: world.x, y: world.y, w: descriptor.lens ? 220 : 320, h: descriptor.lens ? 96 : 240, inlets: {} }));
   }
 
-  // PERF.md Phase 1 — every gesture's doc writes coalesce through ONE rAF batch
+  // README.md Phase 1 — every gesture's doc writes coalesce through ONE rAF batch
   // (latest state wins): raw pointer events stay imperative, the handle.change
   // lands ≤1/frame. The batch is PER GESTURE (created in gestureListeners): a
   // shared batch let another gesture's closure evict this gesture's FINAL write.
@@ -2495,7 +2495,7 @@ export function Canvas(props) {
   // live outlet streams of placed NODES (e.g. a lens's derived output), keyed by
   // item id. An EditorItem registers its outlets on mount; a downstream inlet wired
   // `{node, outlet}` resolves through here. A plain Map — an O(1) read, no store
-  // proxy (PERF.md Phase 7). (Un)registration must still be REACTIVE: outlets land
+  // proxy (README.md Phase 7). (Un)registration must still be REACTIVE: outlets land
   // AFTER an async mount (no rootItems change fires then), and wireSpecs' bidi
   // flags, the wire-subscription effect, editor-item's inlet backings and the port
   // nubs all resolve through nodeStream — so a manual bump signal replaces the
@@ -2565,7 +2565,7 @@ export function Canvas(props) {
   // 2026-07-02 — context ports are placeable source NODES now; a context wire's
   // anchor is the fixed chip position in ctxPortPos below)
   const worldToScreen = (wx, wy) => chainToOuter([layerBoxOf(activeLayerId())], { x: wx, y: wy }, boxEnv); // active-layer world → screen, via the composer (one path)
-  // PERF.md Phase 3 — the PORT INDEX. Wire endpoints resolve through a lazy Map
+  // README.md Phase 3 — the PORT INDEX. Wire endpoints resolve through a lazy Map
   // (automerge `url|pathJSON` → element) instead of a querySelectorAll walk per
   // geometry recompute. ONE viewport-scoped MutationObserver — filtered to
   // port-bearing nodes/attributes, so pan/zoom style churn and the wires' own
@@ -2669,7 +2669,7 @@ export function Canvas(props) {
       const it = items.find((x) => x.id === id);
       if (!it) { shapeStreams.delete(id); continue; } // GC: shape deleted, drop its stream
       const props = shapeProps(it);
-      // per-key identity-first compare (PERF.md Phase 7) — an untouched `points`
+      // per-key identity-first compare (README.md Phase 7) — an untouched `points`
       // array keeps its projection identity, so no JSON walk of a big stroke here
       if (!shapePropsEqual(s.value, props)) s.push(props);
     }
@@ -2771,10 +2771,10 @@ export function Canvas(props) {
   });
   // a wire belongs to the layer of its downstream node; render only the active layer's wires
   // (each in that layer's space, via worldToScreen → activeToScreen). floats sit in the base.
-  // PERF.md Phase 6 — a MEMO, so the two JSX callsites (the <Show> gate + the
+  // README.md Phase 6 — a MEMO, so the two JSX callsites (the <Show> gate + the
   // <For>) share ONE computation per change instead of filtering twice per render.
   const visibleWires = createMemo(() => {
-    perfCount("visibleWires"); // PERF.md Phase 6: an ACTUAL wire-list recompute
+    perfCount("visibleWires"); // README.md Phase 6: an ACTUAL wire-list recompute
     const active = activeLayerId(), base = baseLayer()?.id;
     // a non-base layer (the overlay) is CHROME — its wires are plumbing (minimap ← canvas node,
     // etc.). Hide them unless you're actually wiring, so the overlay isn't a tangle of pink.
@@ -2835,7 +2835,7 @@ export function Canvas(props) {
   // DEBUG: ops are the heart of the system but the least visible thing. In debug mode (` key)
   // we capture the actual op JSON flowing on each wire and render it on the wire as it flows.
   const [debug, setDebug] = makePersisted(createSignal(false), { name: "sketchy:debug" });
-  // the PERF OVERLAY (perf.js startOverlay — PERF.md Phase 0): the same ` toggle
+  // the PERF OVERLAY (perf.js startOverlay — README.md Phase 0): the same ` toggle
   // also mounts the frame-time + __perf-counter readout (.ns-perf, style.css)
   // into the canvas root; toggle-off / unmount stops the loop and removes it.
   createEffect(() => {
@@ -3047,7 +3047,7 @@ export function Canvas(props) {
   // CHROME HOST — what every chrome part (and a wrapping tool's SLOT,
   // opts.slots[part](host)) receives. STATE is read from `host.context` — the same
   // camera/pointer/tool/brush/selection (+ peers/board/…) Sources the canvas itself
-  // runs on (ARCHITECTURE.md §3a: the component exposes state; it doesn't own chrome) —
+  // runs on (README.md §3a: the component exposes state; it doesn't own chrome) —
   // while the host adds only the narrow COMMAND/QUERY surface (setTool, doc
   // mutations, the param target). No mirrored state accessors: chrome derives its
   // signals from the context (opstreamToSignal), so a custom slot renderer reads
@@ -3105,7 +3105,7 @@ export function Canvas(props) {
 
   const ctx = {
     shareSession,
-    indexById, // the per-tick root-items index (PERF.md Phase 2) — item.jsx z/parent lookups
+    indexById, // the per-tick root-items index (README.md Phase 2) — item.jsx z/parent lookups
     tool, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
     spaceEpoch, // bumps when a spatial box's projection moves (map pan/zoom) → parented items re-project
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
@@ -3268,7 +3268,7 @@ export function Canvas(props) {
               // cached + pan-invariant (drawn relative to `from`, positioned by translate).
               const g = createMemo(() => geomFor(spec));
               const seed = seedFromId(spec.key); // per-row constant, computed once
-              // PERF.md Phase 6 — dx/dy as MEMOS (numbers, equality-cut) instead of
+              // README.md Phase 6 — dx/dy as MEMOS (numbers, equality-cut) instead of
               // accessors re-run at every read site: a pure pan moves from+to together
               // so dx/dy hold and only the <g> translate updates; the rough-link paths
               // memo below then rebuilds only when the span actually changes (and
@@ -3448,7 +3448,7 @@ export function Canvas(props) {
           window ("ns-toolbar-palette"): overlay-home with a canvas membership, so
           it's arrangeable on the overlay and usable while drawing. Keyboard tool
           shortcuts live in onKeyDown above, independent of any toolbar DOM.
-          (The flap-registry chrome went with it — see flaps.jsx + TODO.md.) */}
+          (The old flap-registry chrome went with it.) */}
 
       <Show when={showProps()}>
         {slot("properties") ? slot("properties")(chromeHost) : <Properties host={chromeHost} />}

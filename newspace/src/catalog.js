@@ -77,7 +77,7 @@ export const PALETTE_PARTS = [
   { id: "sketch", name: "sketching palette" },
 ];
 
-// registered palettes — the `sketchy:palette` PLUGIN type (documented in NODES.md):
+// registered palettes — the `sketchy:palette` PLUGIN type (documented in README.md):
 //   { type: "sketchy:palette", id, name, icon?, entries: [entry…] | () => [entry…] }
 // dragging one out of the bin instantiates a palette window with those entries.
 export function listPalettes() {

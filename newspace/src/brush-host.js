@@ -23,7 +23,7 @@ import { log } from "./log.js";
 
 // The registered brush plugins, deduped by id. Canonical registry: `sketchy:brush`.
 // The legacy `newspace:` lookup is a one-release deprecation fallback for external
-// registrants (optimization-plan-3 Phase 1) — delete it next release.
+// registrants (README Phase 1) — delete it next release.
 export function listRegistryBrushes() {
   const all = [], seen = new Set();
   const take = (name) => {

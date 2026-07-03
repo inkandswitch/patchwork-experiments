@@ -16,7 +16,7 @@
 // Arrays only for canvas content — order IS z/draw order, and list splices
 // reconcile cleanly through the solid document projection. Map-key deletion
 // also reconciles (pinned in history.test.js), so `delete o.group` etc. is
-// safe. Rationale: ARCHITECTURE.md §Document model.
+// safe. Rationale: README.md §Document model.
 
 export const NewspaceDatatype = {
   init(doc) {

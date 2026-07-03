@@ -71,7 +71,7 @@ export function shapeRenderProps(it, resolve) {
   return { ...it, color: resolve(colorVar(it.color)), fill: resolve(fillVar(it.fill)) };
 }
 
-// Equality for the shape-stream sync (canvas.jsx, PERF.md Phase 7). `shapeProps`
+// Equality for the shape-stream sync (canvas.jsx, README.md Phase 7). `shapeProps`
 // is a SHALLOW copy of the item, so a field the change didn't touch keeps its
 // projection identity — compare per key by identity first, and fall back to the
 // deep `valuesEqual` (a JSON walk) only for keys whose identity changed. A big
@@ -263,7 +263,7 @@ export const presenceSeedItem = () => ({ id: "ns-presence", kind: "editor", edit
 // seeds it async via seedPartsFlap above)
 export const defaultOverlayItems = () => [minimapSeedItem(), zoomSeedItem(), layersSeedItem(), paletteConfigSeedItem(), paletteSeedItem(), presenceSeedItem()];
 
-// ── MULTIPLE complement docs (LAYOUTS.md "still needed" #1) ─────────────────────
+// ── MULTIPLE complement docs (README.md "still needed" #1) ─────────────────────
 // A "space" doc (a folder/sketch) references ONE complement doc PER LAYOUT under the
 // `@layouts` map: `{ "@layouts": { canvas: url, dock: url, … } }` — the key is the
 // `sketchy:layout` descriptor id, so a registered layout finds its complement by its
@@ -283,7 +283,7 @@ export function layoutDocUrl(folderDoc, key = "canvas") {
   return legacy || mapped || undefined;
 }
 
-// Per-key SEED SPECS — the seed content each layout key ships, AS DATA (LAYOUTS.md:
+// Per-key SEED SPECS — the seed content each layout key ships, AS DATA (README.md:
 // a layout's complement carries that layout's defaults, not the canvas's). Each spec:
 //   init(folderHandle) → the initial doc for repo.create2 (first open through this lens)
 //   upgrade(layoutHandle) → the idempotent re-open pass (fill gaps, honour dismissedSeeds)
