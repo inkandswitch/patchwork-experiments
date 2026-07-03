@@ -5,7 +5,7 @@ import {
   type DatatypeDescription,
   type LoadedDatatype,
 } from "@inkandswitch/patchwork-plugins";
-import type { ThreepaneConfigDoc, TinyPatchworkConfigDoc, ToolRef } from "./types";
+import type { TinyPatchworkConfigDoc } from "./types";
 
 type SubdocField = "rootFolderUrl" | "moduleSettingsUrl" | "contactUrl";
 
@@ -78,74 +78,13 @@ async function ensureContact(
 }
 
 /**
- * Default context tools for an account that has never configured any (no
- * `contextToolIds` migrated from elsewhere, and no existing threepane config
- * doc). Mirrors threepane's `AccountDatatype.init` default, including the
- * upstream-stale `context-view` id, for parity: `useSlotTools` resolves it to
- * its raw id with no matching registry entry, so it simply renders nothing.
- */
-const DEFAULT_CONTEXT_TOOL_IDS = [
-  "comments-view",
-  "history-view",
-  "context-view",
-];
-
-/**
- * Ensure the shared frame-layout config doc (`tools["threepane"]`) exists and
- * has `tray`/`contextbar` lanes, migrating legacy `contextToolIds` into the
- * latter exactly like threepane's own `ensureThreepaneConfig` — so an account
- * switching between the tiling and threepane frames sees the same context
- * tools and system tray either way, and (shared) frame-configurator edits
- * apply regardless of which frame is active.
- *
- * Uses the `threepane:config` datatype directly (not `loadDatatypeWhenReady`,
- * which would wait forever) so that when threepane isn't installed we simply
- * skip — the tray/context bar just stay empty. Idempotent and
- * concurrency-safe.
- */
-async function ensureThreepaneConfig(
-  accountHandle: DocHandle<TinyPatchworkConfigDoc>,
-  repo: Repo,
-) {
-  const existing = accountHandle.doc()?.tools?.["threepane"];
-  if (existing) {
-    // Backfill lanes added by later builds of this config doc.
-    const configHandle = await repo.find<ThreepaneConfigDoc>(existing);
-    configHandle.change((doc) => {
-      if (!doc.tray) doc.tray = { tools: [] };
-      if (!doc.contextbar) doc.contextbar = { tabs: [] };
-    });
-    return;
-  }
-  const registry = getRegistry<DatatypeDescription>("patchwork:datatype");
-  const datatype = await registry.load("threepane:config");
-  if (!datatype) return; // threepane not installed → no tray/context config
-  if (accountHandle.doc()?.tools?.["threepane"]) return; // raced with another tab
-
-  const account = accountHandle.doc();
-  const accountDocUrl = accountHandle.url;
-  const contextTabs: ToolRef[] = (
-    account?.contextToolIds ?? DEFAULT_CONTEXT_TOOL_IDS
-  ).map((id) => [id, accountDocUrl]);
-
-  const configHandle = await createDocOfDatatype2<ThreepaneConfigDoc>(
-    datatype,
-    repo,
-  );
-  configHandle.change((doc) => {
-    if (!doc.contextbar) doc.contextbar = { tabs: [] };
-    doc.contextbar.tabs = contextTabs;
-  });
-
-  accountHandle.change((doc) => {
-    if (!doc.tools) doc.tools = {};
-    if (!doc.tools["threepane"]) doc.tools["threepane"] = configHandle.url;
-  });
-}
-
-/**
  * Lazily populate the subdoc URLs the tiling frame depends on. Idempotent:
  * fields already set (including those set concurrently by another tab) win.
+ *
+ * There's no shared config doc to create or migrate here anymore: context
+ * tools and the system tray are registry-driven (every `patchwork:component`
+ * tagged `"context-tool"` / `"system-tray"`), resolved directly by
+ * `useTaggedComponents` with no per-account state at all.
  */
 export async function ensureAccountSubdocs(
   accountHandle: DocHandle<TinyPatchworkConfigDoc>,
@@ -160,6 +99,5 @@ export async function ensureAccountSubdocs(
       "patchwork:module-settings",
     ),
     ensureContact(accountHandle, repo),
-    ensureThreepaneConfig(accountHandle, repo),
   ]);
 }

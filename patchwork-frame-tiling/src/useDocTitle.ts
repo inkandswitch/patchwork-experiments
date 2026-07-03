@@ -11,9 +11,8 @@ import {
 } from "@inkandswitch/patchwork-plugins";
 import { PluginRegistry } from "@inkandswitch/patchwork-plugins/dist/registry/registry";
 import { useEffect, useMemo, useState } from "react";
-import { slotId } from "./slots";
 import { resolvePreferredTool } from "./toolMemory";
-import type { ToolPreferences, ToolSlot } from "./types";
+import type { ToolPreferences } from "./types";
 
 /**
  * Resolve a human-readable title for a document by loading its datatype and
@@ -58,52 +57,40 @@ export type SlotTool = {
   id: string;
   name: string;
   icon?: string;
-  /** The configured slot itself, so callers can render/open it correctly. */
-  slot: ToolSlot;
 };
 
 /**
- * Resolve display metadata (name, icon) for a configured tool lane (tray /
- * contextbar), read from the shared frame config doc. A slot is either a
- * `[toolId, docId]` tuple (a `patchwork:tool`) or a bare component id (a
- * `patchwork:component`); labels come from whichever registry matches,
- * mirroring threepane's `ContextTabs`. Refreshes as plugins register — a
- * slot's name resolves the moment its plugin loads.
+ * Live, registry-driven list of every `patchwork:component` carrying `tag`
+ * (e.g. `"context-tool"` or `"system-tray"`), sorted by name. Replaces the old
+ * model of a configured array of ids read from a shared config doc: a
+ * component just declares its tag and shows up wherever that tag is
+ * rendered, with no curation step and nothing to migrate. Mirrors threepane's
+ * `useTaggedComponents` Solid hook.
+ *
+ * Reactive to the registry's `"changed"` event, so a late-registering or
+ * hot-reloaded plugin appears without a remount.
  */
-export function useSlotTools(slots: ToolSlot[] | undefined): SlotTool[] {
+export function useTaggedComponents(tag: string): SlotTool[] {
   const [registryVersion, setRegistryVersion] = useState(0);
 
   useEffect(() => {
-    const toolRegistry = getRegistry("patchwork:tool");
-    const componentRegistry = getRegistry("patchwork:component");
-    const bump = () => setRegistryVersion((v) => v + 1);
-    const offTool = toolRegistry.on("changed", bump);
-    const offComponent = componentRegistry.on("changed", bump);
-    return () => {
-      offTool();
-      offComponent();
-    };
+    const registry = getRegistry("patchwork:component");
+    return registry.on("changed", () => setRegistryVersion((v) => v + 1));
   }, []);
 
-  const slotsKey = (slots ?? []).map(slotId).join("\u0000");
-
   return useMemo(() => {
-    if (!slots || slots.length === 0) return [];
-    const toolRegistry = getRegistry<ToolDescription>("patchwork:tool");
-    const componentRegistry = getRegistry<ToolDescription>("patchwork:component");
-    return slots.map((slot) => {
-      const id = slotId(slot);
-      const description = toolRegistry.get(id) ?? componentRegistry.get(id);
-      return {
-        id,
-        name: description?.name ?? id,
-        icon: description?.icon,
-        slot,
-      };
-    });
-    // slotsKey + registryVersion drive recomputation as config or plugins change.
+    const registry = getRegistry<ToolDescription>("patchwork:component");
+    return (registry.all?.() ?? [])
+      .filter((description) => (description.tags ?? []).includes(tag))
+      .map((description) => ({
+        id: description.id,
+        name: description.name || description.id,
+        icon: description.icon,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    // registryVersion drives recomputation as plugins register/unregister.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slotsKey, registryVersion]);
+  }, [tag, registryVersion]);
 }
 
 export type SupportedTools = {

@@ -18,7 +18,8 @@ import {
   type Plugin,
 } from "@inkandswitch/patchwork-plugins";
 import { useEffect, useRef, useState } from "react";
-import type { PanelView, ToolSlot } from "./types";
+import type { PanelView } from "./types";
+import type { SlotTool } from "./useDocTitle";
 
 const HomeIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -245,28 +246,17 @@ const CreateNewMenu = ({
 };
 
 /**
- * The system tray: a row of configured `patchwork:component`s (tagged
- * `system-tray`) from the shared frame config's `tray` lane — the same
- * config the threepane frame uses. A bare slot is a component id; a
- * `[toolId, docId]` tuple renders that tool against its doc. Discriminate by
- * `Array.isArray` (an Automerge raw-string slot isn't a native `string`, so
- * `typeof` would misfire).
+ * The system tray: a row of every registered `patchwork:component` tagged
+ * `"system-tray"`, rendered as bare components (no document) — registry-driven,
+ * with nothing configured or shared with the threepane frame.
  */
-const Tray = ({ slots }: { slots: ToolSlot[] }) => {
-  if (slots.length === 0) return null;
+const Tray = ({ items }: { items: SlotTool[] }) => {
+  if (items.length === 0) return null;
   return (
     <div className="tile-topbar__tray">
-      {slots.map((slot, i) =>
-        Array.isArray(slot) ? (
-          <patchwork-view
-            key={`${i}:${String(slot[0])}`}
-            doc-url={String(slot[1])}
-            tool-id={String(slot[0])}
-          />
-        ) : (
-          <patchwork-view key={`${i}:${String(slot)}`} component={String(slot)} />
-        ),
-      )}
+      {items.map((item) => (
+        <patchwork-view key={item.id} component={item.id} />
+      ))}
     </div>
   );
 };
@@ -277,7 +267,7 @@ export const TopBar = ({
   moduleSettingsUrl,
   contactUrl,
   rootFolderHandle,
-  traySlots,
+  trayItems,
   onHome,
   onOpen,
 }: {
@@ -286,7 +276,7 @@ export const TopBar = ({
   moduleSettingsUrl?: AutomergeUrl;
   contactUrl?: AutomergeUrl;
   rootFolderHandle?: DocHandle<FolderDoc>;
-  traySlots: ToolSlot[];
+  trayItems: SlotTool[];
   onHome: () => void;
   onOpen: (view: PanelView) => void;
 }) => {
@@ -313,7 +303,7 @@ export const TopBar = ({
 
       <div className="tile-topbar__spacer" />
 
-      <Tray slots={traySlots} />
+      <Tray items={trayItems} />
 
       <div className="tile-topbar__group">
         <button

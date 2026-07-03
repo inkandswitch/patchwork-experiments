@@ -16,13 +16,10 @@ and resize freely.
   **Settings** (the `frame-configurator` tool, bound to the account doc), and an
   **avatar** showing the logged-in contact that opens the account picker when
   clicked.
-- The **system tray** mirrors the threepane frame: a row of `ToolSlot`s (bare
-  component IDs or `[toolId, docId]` tuples) read from the shared frame config
-  doc (`account.tools["threepane"].tray`). It's the same configuration the
-  threepane frame uses, edited via the gear's frame configurator, so the tray and
-  settings stay in sync across frames. The config doc is created lazily if absent
-  (skipped when the `threepane:config` datatype isn't installed, leaving the tray
-  empty).
+- The **system tray** is registry-driven: a row of every registered
+  `patchwork:component` tagged `"system-tray"`, rendered as bare components (no
+  document). There's nothing to configure — a component just declares the tag
+  and shows up here, in threepane's tray too.
 - On open, the account's **root folder** is shown as a narrow **navigator**
   beside a (wide) **empty content frame**, so the folder never spans the full
   width and there's always a slot ready for the first document.
@@ -53,21 +50,17 @@ and resize freely.
 - Each panel's titlebar has a **tool picker** (shown when a document supports
   more than one tool). Choosing a tool re-renders just that panel's document
   with the selected tool; the default tool is marked accordingly.
-- **Context tools** (comments, history, …) are configured the same way as the
-  tray: a row of `ToolSlot`s — bare component ids or `[toolId, docId]` tuples —
-  read from the shared frame config doc
-  (`account.tools["threepane"].contextbar.tabs`), edited via the gear's frame
-  configurator. They're opened **on demand as panels**, not pinned to a fixed
-  sidebar. A content panel's titlebar has a **context launcher** that spawns
-  the chosen slot in a new panel beside it: a tool-tuple slot renders against
-  the document its pair names, a bare component slot renders against no
-  document. Context tools describe the **selected document**: the
-  most-recently-focused *content* panel (context panels are excluded, so opening
-  Comments never makes Comments the subject). The selected panel shows an accent
-  rail along its header, and each context panel backed by a tool-tuple shows a
-  **subject chip** naming the document it describes — click it to reveal/focus
-  that panel. Because context tools are just tools, the tabbed `context-sidebar`
-  can also be added as a slot for a compact, tabbed experience.
+- **Context tools** (comments, history, …) are registry-driven too: every
+  registered `patchwork:component` tagged `"context-tool"` is available, with
+  nothing configured — the same set threepane's context sidebar shows. They're
+  opened **on demand as panels**, not pinned to a fixed sidebar. A content
+  panel's titlebar has a **context launcher** that spawns the chosen component
+  in a new panel beside it, rendered against no document. Context tools
+  describe the **selected document**: the most-recently-focused *content*
+  panel (context panels are excluded, so opening Comments never makes Comments
+  the subject). The selected panel shows an accent rail along its header, and
+  each context panel shows a **subject chip** naming the document it
+  describes — click it to reveal/focus that panel.
 - The frame mounts patchwork-base's **context providers** so tools get their
   shared context via bubbling `patchwork:subscribe` events (see Architecture):
   comments authoring/listing, focus, and the current contact all work, and the
@@ -113,11 +106,9 @@ and resize freely.
   placeholder instead of the live frame.
 - `ensureSubdocs.ts` — lazily creates the `rootFolderUrl`, `moduleSettingsUrl`,
   `contactUrl`, and `tilingLayoutUrl` subdocs so the frame works against a
-  fresh account document. Also ensures the shared `account.tools["threepane"]`
-  config doc exists (skipped if the `threepane:config` datatype isn't
-  installed), migrating any legacy `contextToolIds` into its `contextbar.tabs`
-  (falling back to a default set for a fresh account) and backfilling missing
-  `tray`/`contextbar` lanes on an older config doc.
+  fresh account document. Nothing to create for context tools or the tray —
+  `useTaggedComponents` (in `useDocTitle.ts`) resolves both directly from the
+  `patchwork:component` registry, with no shared config doc involved.
 - `FrameProviders.tsx` — the **context-provider** layer. Patchwork-base tools no
   longer read globals (`window.accountDocHandle`); they open streaming
   subscriptions by dispatching a bubbling `patchwork:subscribe` event carrying a
