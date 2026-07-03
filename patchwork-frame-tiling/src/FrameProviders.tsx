@@ -17,6 +17,8 @@ import {
  *   - account → `patchwork:contact` (the current user's contact doc)
  *   - comments → `patchwork:comments` (threads across all mounted docs)
  *   - focus → `patchwork:focus` (a shared selection/highlight doc)
+ *   - toolStorage → `patchwork:tool-storage` (a private per-tool doc, lazily
+ *     created; lets a tool persist account-scoped data without a `docUrl`)
  * Selection (`patchwork:selected-doc` / `patchwork:selected-view`) is answered
  * by our own {@link SelectionProvider} instead, so it tracks the active panel.
  */
@@ -24,6 +26,7 @@ const BASE_PROVIDER_IDS = {
   account: "patchwork-account-provider",
   comments: "patchwork-comments-provider",
   focus: "patchwork-focus-provider",
+  toolStorage: "patchwork-tool-storage-provider",
 } as const;
 
 const REQUIRED_PROVIDERS = Object.values(BASE_PROVIDER_IDS);
@@ -123,6 +126,7 @@ export const FrameProviders = ({
   children: ReactNode;
 }) => {
   const accountRef = useRef<HTMLElement>(null);
+  const toolStorageRef = useRef<HTMLElement>(null);
   const commentsRef = useRef<HTMLElement>(null);
   const focusRef = useRef<HTMLElement>(null);
   const mounted = useRef(new Set<string>());
@@ -131,6 +135,7 @@ export const FrameProviders = ({
   useEffect(() => {
     const elements = [
       accountRef.current,
+      toolStorageRef.current,
       commentsRef.current,
       focusRef.current,
     ].filter((el): el is HTMLElement => el != null);
@@ -158,30 +163,37 @@ export const FrameProviders = ({
   }, []);
 
   return (
-    <patchwork-view
-      component={BASE_PROVIDER_IDS.account}
-      doc-url={accountDocUrl}
-      ref={accountRef}
-      style={{ display: "contents" }}
-    >
       <patchwork-view
-        component={BASE_PROVIDER_IDS.comments}
-        ref={commentsRef}
+        component={BASE_PROVIDER_IDS.account}
+        doc-url={accountDocUrl}
+        ref={accountRef}
         style={{ display: "contents" }}
       >
         <patchwork-view
-          component={BASE_PROVIDER_IDS.focus}
-          ref={focusRef}
+          component={BASE_PROVIDER_IDS.toolStorage}
+          doc-url={accountDocUrl}
+          ref={toolStorageRef}
           style={{ display: "contents" }}
         >
-          <SelectionProvider
-            selectedDocUrl={selectedDocUrl}
-            selectedToolId={selectedToolId}
+          <patchwork-view
+            component={BASE_PROVIDER_IDS.comments}
+            ref={commentsRef}
+            style={{ display: "contents" }}
           >
-            {ready ? children : null}
-          </SelectionProvider>
+            <patchwork-view
+              component={BASE_PROVIDER_IDS.focus}
+              ref={focusRef}
+              style={{ display: "contents" }}
+            >
+              <SelectionProvider
+                selectedDocUrl={selectedDocUrl}
+                selectedToolId={selectedToolId}
+              >
+                {ready ? children : null}
+              </SelectionProvider>
+            </patchwork-view>
+          </patchwork-view>
         </patchwork-view>
       </patchwork-view>
-    </patchwork-view>
   );
 };

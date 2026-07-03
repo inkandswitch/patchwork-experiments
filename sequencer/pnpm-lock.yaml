@@ -14,6 +14,12 @@ importers:
       '@automerge/react':
         specifier: ^2.5.2-alpha.0
         version: 2.5.2-alpha.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@inkandswitch/patchwork-providers':
+        specifier: ^0.3.0
+        version: 0.3.0(@automerge/automerge-repo@2.5.2-alpha.0)
+      '@inkandswitch/patchwork-providers-react':
+        specifier: ^0.2.1
+        version: 0.2.3(@automerge/automerge-repo-react-hooks@2.5.2-alpha.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@automerge/automerge-repo@2.5.2-alpha.0)(react@18.3.1)
       '@jtfmumm/patchwork-standalone-frame':
         specifier: ^0.1.0
         version: 0.1.0(@automerge/automerge-repo-keyhive@0.1.0-alpha.17za)(@automerge/automerge-repo-network-websocket@2.5.3)(@automerge/automerge-repo-storage-indexeddb@2.5.2-alpha.0)(@automerge/automerge-repo@2.5.2-alpha.0)(solid-js@1.9.11)
@@ -375,6 +381,18 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@inkandswitch/patchwork-providers-react@0.2.3':
+    resolution: {integrity: sha512-npUiu9ABOo7Rt0Nn0IT8sYjpiNNLtWrSy2cGRqqPNZCILO/MNLPxeXNh7B9HSQRAnWwpni86uoFg6RQ4stdDlA==}
+    peerDependencies:
+      '@automerge/automerge-repo': '*'
+      '@automerge/automerge-repo-react-hooks': '*'
+      react: ^18.0.0
+
+  '@inkandswitch/patchwork-providers@0.3.0':
+    resolution: {integrity: sha512-CUxWbONfOiz5SCzOpX/7zDTMePWgq7e4778eBJpbjC5Et4lnyL2/UrOZ6YJ4HiCG7r7MbfM86GUi63bqjTeutg==}
+    peerDependencies:
+      '@automerge/automerge-repo': '*'
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1205,6 +1223,17 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.12':
     optional: true
+
+  '@inkandswitch/patchwork-providers-react@0.2.3(@automerge/automerge-repo-react-hooks@2.5.2-alpha.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@automerge/automerge-repo@2.5.2-alpha.0)(react@18.3.1)':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.2-alpha.0
+      '@automerge/automerge-repo-react-hooks': 2.5.2-alpha.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@inkandswitch/patchwork-providers': 0.3.0(@automerge/automerge-repo@2.5.2-alpha.0)
+      react: 18.3.1
+
+  '@inkandswitch/patchwork-providers@0.3.0(@automerge/automerge-repo@2.5.2-alpha.0)':
+    dependencies:
+      '@automerge/automerge-repo': 2.5.2-alpha.0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

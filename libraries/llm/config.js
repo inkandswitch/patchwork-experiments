@@ -1,10 +1,13 @@
 /**
- * Per-user LLM config. The account doc holds a namespaced `llm` field that is a
- * URL pointing at a separate "settings doc" (its body IS the config); a provider
- * owns that doc, so other tools can park their own settings the same way. The
- * account doc is private + synced across the user's devices, a good home for a
- * personal API key — reachable via `window.accountDocHandle`. See
- * `ensureSettingsDoc()` for resolution/creation + the inline→doc migration.
+ * Per-user LLM config, held in a private settings doc (its body IS the config)
+ * requested from the `patchwork:tool-storage` provider (see
+ * `patchwork-base/providers`) under the shared id `"llm"` — every LLM-touching
+ * tool resolves the same doc, the same way any other tool could park its own
+ * settings under a different id. The provider lazily creates the doc and
+ * scopes it to the current account, so this needs no `window.accountDocHandle`
+ * global: just a DOM node inside a mounted `<patchwork-view>` subtree (any
+ * element passed to `ensureSettingsDoc`/`subscribeConfig`/etc). See
+ * `ensureSettingsDoc()` for resolution/creation.
  *
  * @typedef {"local"|"openrouter"|"ollama"|"webllm"|"builtin"} ProviderId
  *
@@ -75,9 +78,12 @@
  * @typedef {import("@automerge/automerge-repo").DocHandle<any>} DocHandle
  */
 
-import {subscribe} from "@inkandswitch/patchwork-providers"
+import {subscribe, request} from "@inkandswitch/patchwork-providers"
 
-export const ACCOUNT_LLM_FIELD = "llm"
+// Shared id every LLM-touching tool requests its settings doc under (see
+// `patchwork:tool-storage`, patchwork-base/providers) — one config, not one
+// per calling tool.
+export const TOOL_STORAGE_ID = "llm"
 export const CONFIG_SELECTOR = {type: "patchwork:llm-config"}
 
 export const DEFAULTS = {
@@ -138,41 +144,31 @@ export const PROVIDER_CAPS = {
 	builtin:    { logprobs: false, attention: false, topP: false, topK: true,  minP: false, repetitionPenalty: false, frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: false },
 }
 
-/** The live account DocHandle, or null if unavailable. */
-export function accountHandle() {
-	return (typeof window !== "undefined" && window.accountDocHandle) || null
-}
-
 function repoRef() {
 	return (typeof window !== "undefined" && window.repo) || null
 }
 
 // --- settings doc -----------------------------------------------------------
-// `accountDoc.llm` is no longer the config itself — it's a URL pointing at a
-// separate "settings doc" whose body IS the config. This lets a provider own
-// the settings somewhere of its choosing (and lets other tools, e.g. rlm, park
-// their own). We accept either a bare URL string or `{config: url}` so there's
-// room for inline state next to the pointer later. The resolved handle is
-// cached so reads/writes stay synchronous after a one-time async bootstrap.
+// The config lives in its own doc (its body IS the config), requested from the
+// `patchwork:tool-storage` provider under `TOOL_STORAGE_ID`. That provider
+// owns the account-doc pointer and the lazy-create; this module just resolves
+// it and caches the handle so reads/writes stay synchronous afterwards.
+//
+// Resolving needs *some* DOM node inside a mounted `<patchwork-view>` subtree
+// (to dispatch the `patchwork:subscribe` request against) — most callers here
+// (client.js, tools.js, picker.js) have no element of their own. Rather than
+// fall back to a global, we remember the most recent element any caller *did*
+// supply (`lastElement`, warmed by whichever tool's UI mounted first — chat
+// view, loom, the picker, …) and let elementless callers piggyback on that
+// bootstrap. Until one has happened, resolution simply isn't ready yet — the
+// same as any other not-yet-loaded doc.
 
 /** @type {DocHandle|null} */
 let settingsHandle = null
 /** @type {Promise<DocHandle|null>|null} */
 let settingsReady = null // de-dupes concurrent ensureSettingsDoc() calls
-
-/** The pointer on the account doc → settings-doc URL (string), or null. */
-function accountSettingsUrl() {
-	const v = accountHandle()?.doc?.()?.[ACCOUNT_LLM_FIELD]
-	if (typeof v === "string") return v
-	if (v && typeof v === "object" && typeof v.config === "string") return v.config
-	return null
-}
-
-/** The legacy inline config object (pre-settings-doc), or null. */
-function legacyInline() {
-	const v = accountHandle()?.doc?.()?.[ACCOUNT_LLM_FIELD]
-	return v && typeof v === "object" && !Array.isArray(v) && !("config" in v) ? v : null
-}
+/** @type {HTMLElement|null} */
+let lastElement = null
 
 /** The cached settings DocHandle, or null until ensureSettingsDoc() resolves. */
 export function settingsDocHandle() {
@@ -180,32 +176,28 @@ export function settingsDocHandle() {
 }
 
 /**
- * Resolve (or lazily create) the settings doc and cache its handle. Idempotent
- * and concurrency-safe. If the account doc still holds a legacy inline config,
- * it seeds the new doc from it and rewrites the pointer to a URL.
+ * Resolve (or lazily create, via the `patchwork:tool-storage` provider) the
+ * settings doc and cache its handle. Idempotent and concurrency-safe. Pass an
+ * `element` the first time it's available (any node inside a mounted
+ * `<patchwork-view>`); later elementless calls reuse whichever element a
+ * caller most recently supplied.
+ * @param {HTMLElement|null} [element]
  * @returns {Promise<DocHandle|null>}
  */
-export function ensureSettingsDoc() {
+export function ensureSettingsDoc(element) {
+	if (element) lastElement = element
 	if (settingsHandle) return Promise.resolve(settingsHandle)
 	if (settingsReady) return settingsReady
+	const el = element ?? lastElement
+	const repo = repoRef()
+	if (!repo || !el) return Promise.resolve(null) // not bootstrapped yet; don't cache — a later call with an element can still resolve
 	settingsReady = (async () => {
-		const account = accountHandle()
-		const repo = repoRef()
-		if (!repo || !account) return null
-		const url = accountSettingsUrl()
-		if (url) {
-			settingsHandle = await repo.find(url)
-			return settingsHandle
+		const url = await request(el, {type: "patchwork:tool-storage", toolId: TOOL_STORAGE_ID})
+		if (!url) {
+			settingsReady = null
+			return null
 		}
-		// No pointer yet: seed from a legacy inline config if present, else empty.
-		const legacy = legacyInline()
-		const seed = legacy ? JSON.parse(JSON.stringify(legacy)) : {}
-		seed["@patchwork"] = {type: "llm:settings"}
-		const created = await repo.create2(seed)
-		settingsHandle = created
-		account.change((/** @type {any} */ d) => {
-			d[ACCOUNT_LLM_FIELD] = created.url
-		})
+		settingsHandle = await repo.find(url)
 		return settingsHandle
 	})()
 	return settingsReady
@@ -214,23 +206,23 @@ export function ensureSettingsDoc() {
 /**
  * Ensure the settings doc is resolved, then return the normalized config.
  * @param {Scope} [scope]
+ * @param {HTMLElement|null} [element]
  */
-export async function ensureConfig(scope) {
-	await ensureSettingsDoc()
+export async function ensureConfig(scope, element) {
+	await ensureSettingsDoc(element)
 	return scope ? readScopedConfig(scope) : readConfig()
 }
 
 /**
- * Read the normalized LLM config. Reads the cached settings doc; before that
- * resolves it falls back to a legacy inline config (if any) or defaults. Pass a
- * settings-doc snapshot to normalize that instead.
+ * Read the normalized LLM config. Reads the cached settings doc, or defaults
+ * if it hasn't resolved yet. Pass a settings-doc snapshot to normalize that
+ * instead.
  * @param {Record<string, any>} [snapshot]
  * @returns {LLMConfig}
  */
 export function readConfig(snapshot) {
 	if (snapshot !== undefined) return normalizeConfig(snapshot)
-	if (settingsHandle) return normalizeConfig(settingsHandle.doc() ?? {})
-	return normalizeConfig(legacyInline() ?? {})
+	return normalizeConfig(settingsHandle?.doc() ?? {})
 }
 
 /**
@@ -352,10 +344,9 @@ export function hasScopeOverride(raw, scope) {
 	return scope.docId ? !!(pt.perdoc && pt.perdoc[scope.docId]) : !!pt.config
 }
 
-// The raw settings-doc body (or a snapshot), used by scope read/write helpers.
+// The raw settings-doc body, used by scope read/write helpers.
 function rawSettings() {
-	if (settingsHandle) return settingsHandle.doc() ?? {}
-	return legacyInline() ?? {}
+	return settingsHandle?.doc() ?? {}
 }
 
 // Read a scope's effective config (normalized). Falls back through tool → default.
@@ -462,11 +453,13 @@ export function applyPrompts(input, cfg, extraSystem) {
  *
  * Resolution order: a `patchwork:llm-config` provider in `element`'s subtree
  * (request/provide — lets a future provider element scope config per tool/view)
- * wins; if no provider answers within `timeoutMs`, we fall back to the account
- * doc (and keep it live by listening for account-doc changes). If a provider
- * appears later, it takes over.
+ * wins; if no provider answers within `timeoutMs`, we fall back to this tool's
+ * `patchwork:tool-storage` settings doc (and keep it live by listening for
+ * changes to it). If a provider appears later, it takes over. Always pass a
+ * real `element` when you have one — it's also how the settings doc itself
+ * gets resolved (see `ensureSettingsDoc`), even for later callers that don't.
  *
- * @param {HTMLElement|null} element  a node inside a <patchwork-view> (null → account doc only)
+ * @param {HTMLElement|null} element  a node inside a <patchwork-view> (null → settings-doc fallback only, using whichever element a previous caller supplied)
  * @param {(config: import("./config.js").LLMConfig) => void} callback
  * @returns {() => void} unsubscribe
  */
@@ -481,8 +474,8 @@ export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
 	let cancelled = false
 	const startFallback = () => {
 		if (providerAnswered || cancelled) return
-		callback(readConfig()) // immediate sync value (legacy/defaults) so UI isn't blank
-		ensureSettingsDoc().then((handle) => {
+		callback(readConfig()) // immediate sync value (defaults) so UI isn't blank
+		ensureSettingsDoc(element).then((handle) => {
 			if (providerAnswered || cancelled || !handle) return
 			callback(readConfig()) // real config now that the settings doc resolved
 			const onChange = () => {
@@ -539,9 +532,8 @@ export function resolveConfig(element, opts) {
 }
 
 /**
- * Merge a partial config into the account doc under `llm`. Pass the account
- * DocHandle, or omit to use the global one. `undefined` values are skipped;
- * `null` is stored (e.g. an unknown context length).
+ * Merge a partial config into the settings doc. `undefined` values are
+ * skipped; `null` is stored (e.g. an unknown context length).
  * @param {Partial<LLMConfig> & Record<string, any>} next
  */
 export function writeConfig(next) {

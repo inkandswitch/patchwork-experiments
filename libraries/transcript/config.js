@@ -1,10 +1,13 @@
 /**
- * Per-user transcription (speech-to-text) config. Mirrors `@chee/patchwork-llm`:
- * the account doc holds a namespaced `transcript` field that is a URL pointing
- * at a separate "settings doc" whose body IS the config. The account doc is
- * private + synced across the user's devices — a good home for an API key —
- * reachable via `window.accountDocHandle`. See `ensureSettingsDoc()` for
- * resolution/creation + the inline→doc migration.
+ * Per-user transcription (speech-to-text) config, held in a private settings
+ * doc (its body IS the config) requested from the `patchwork:tool-storage`
+ * provider (see `patchwork-base/providers`) under the shared id `"transcript"`
+ * — mirrors `@chee/patchwork-llm`'s `"llm"` id. The provider lazily creates
+ * the doc and scopes it to the current account, so this needs no
+ * `window.accountDocHandle` global: just a DOM node inside a mounted
+ * `<patchwork-view>` subtree (any element passed to
+ * `ensureSettingsDoc`/`subscribeConfig`/etc). See `ensureSettingsDoc()` for
+ * resolution/creation.
  *
  * @typedef {"local"|"openai"} ProviderId
  *
@@ -27,9 +30,11 @@
  * @typedef {import("@automerge/automerge-repo").DocHandle<any>} DocHandle
  */
 
-import {subscribe} from "@inkandswitch/patchwork-providers"
+import {subscribe, request} from "@inkandswitch/patchwork-providers"
 
-export const ACCOUNT_TRANSCRIPT_FIELD = "transcript"
+// Shared id every transcription-touching tool requests its settings doc
+// under (see `patchwork:tool-storage`, patchwork-base/providers).
+export const TOOL_STORAGE_ID = "transcript"
 export const CONFIG_SELECTOR = {type: "patchwork:transcript-config"}
 
 export const DEFAULTS = {
@@ -46,41 +51,29 @@ export const DEFAULTS = {
 	},
 }
 
-/** The live account DocHandle, or null if unavailable. */
-export function accountHandle() {
-	return (typeof window !== "undefined" && window.accountDocHandle) || null
-}
-
 function repoRef() {
 	return (typeof window !== "undefined" && window.repo) || null
 }
 
 // --- settings doc -----------------------------------------------------------
-// `accountDoc.transcript` is a URL pointing at a separate "settings doc" whose
-// body IS the config. We accept either a bare URL string or `{config: url}` so
-// there's room for inline state next to the pointer later. The resolved handle
-// is cached so reads/writes stay synchronous after a one-time async bootstrap.
+// The config lives in its own doc (its body IS the config), requested from the
+// `patchwork:tool-storage` provider under `TOOL_STORAGE_ID`. That provider
+// owns the account-doc pointer and the lazy-create; this module just resolves
+// it and caches the handle so reads/writes stay synchronous afterwards.
+//
+// Resolving needs *some* DOM node inside a mounted `<patchwork-view>` subtree
+// (to dispatch the `patchwork:subscribe` request against). Rather than fall
+// back to a global, we remember the most recent element any caller *did*
+// supply (`lastElement`, warmed by whichever tool's UI mounted first) and let
+// elementless callers piggyback on that bootstrap. Until one has happened,
+// resolution simply isn't ready yet — the same as any other not-yet-loaded doc.
 
 /** @type {DocHandle|null} */
 let settingsHandle = null
 /** @type {Promise<DocHandle|null>|null} */
 let settingsReady = null // de-dupes concurrent ensureSettingsDoc() calls
-
-/** The pointer on the account doc → settings-doc URL (string), or null. */
-function accountSettingsUrl() {
-	const v = accountHandle()?.doc?.()?.[ACCOUNT_TRANSCRIPT_FIELD]
-	if (typeof v === "string") return v
-	if (v && typeof v === "object" && typeof v.config === "string") return v.config
-	return null
-}
-
-/** The legacy inline config object (pre-settings-doc), or null. */
-function legacyInline() {
-	const v = accountHandle()?.doc?.()?.[ACCOUNT_TRANSCRIPT_FIELD]
-	return v && typeof v === "object" && !Array.isArray(v) && !("config" in v)
-		? v
-		: null
-}
+/** @type {HTMLElement|null} */
+let lastElement = null
 
 /** The cached settings DocHandle, or null until ensureSettingsDoc() resolves. */
 export function settingsDocHandle() {
@@ -88,31 +81,28 @@ export function settingsDocHandle() {
 }
 
 /**
- * Resolve (or lazily create) the settings doc and cache its handle. Idempotent
- * and concurrency-safe. If the account doc still holds a legacy inline config,
- * it seeds the new doc from it and rewrites the pointer to a URL.
+ * Resolve (or lazily create, via the `patchwork:tool-storage` provider) the
+ * settings doc and cache its handle. Idempotent and concurrency-safe. Pass an
+ * `element` the first time it's available (any node inside a mounted
+ * `<patchwork-view>`); later elementless calls reuse whichever element a
+ * caller most recently supplied.
+ * @param {HTMLElement|null} [element]
  * @returns {Promise<DocHandle|null>}
  */
-export function ensureSettingsDoc() {
+export function ensureSettingsDoc(element) {
+	if (element) lastElement = element
 	if (settingsHandle) return Promise.resolve(settingsHandle)
 	if (settingsReady) return settingsReady
+	const el = element ?? lastElement
+	const repo = repoRef()
+	if (!repo || !el) return Promise.resolve(null) // not bootstrapped yet; don't cache — a later call with an element can still resolve
 	settingsReady = (async () => {
-		const account = accountHandle()
-		const repo = repoRef()
-		if (!repo || !account) return null
-		const url = accountSettingsUrl()
-		if (url) {
-			settingsHandle = await repo.find(url)
-			return settingsHandle
+		const url = await request(el, {type: "patchwork:tool-storage", toolId: TOOL_STORAGE_ID})
+		if (!url) {
+			settingsReady = null
+			return null
 		}
-		const legacy = legacyInline()
-		const seed = legacy ? JSON.parse(JSON.stringify(legacy)) : {}
-		seed["@patchwork"] = {type: "transcript:settings"}
-		const created = await repo.create2(seed)
-		settingsHandle = created
-		account.change((/** @type {any} */ d) => {
-			d[ACCOUNT_TRANSCRIPT_FIELD] = created.url
-		})
+		settingsHandle = await repo.find(url)
 		return settingsHandle
 	})()
 	return settingsReady
@@ -121,23 +111,22 @@ export function ensureSettingsDoc() {
 /**
  * Ensure the settings doc is resolved, then return the normalized config.
  * @param {Scope} [_scope]  accepted for parity with @chee/patchwork-llm (unused for now)
+ * @param {HTMLElement|null} [element]
  */
-export async function ensureConfig(_scope) {
-	await ensureSettingsDoc()
+export async function ensureConfig(_scope, element) {
+	await ensureSettingsDoc(element)
 	return readConfig()
 }
 
 /**
- * Read the normalized config. Reads the cached settings doc; before that
- * resolves it falls back to a legacy inline config (if any) or defaults. Pass a
- * settings-doc snapshot to normalize that instead.
+ * Read the normalized config. Reads the cached settings doc, or defaults if it
+ * hasn't resolved yet. Pass a settings-doc snapshot to normalize that instead.
  * @param {Record<string, any>} [snapshot]
  * @returns {TranscriptConfig}
  */
 export function readConfig(snapshot) {
 	if (snapshot !== undefined) return normalizeConfig(snapshot)
-	if (settingsHandle) return normalizeConfig(settingsHandle.doc() ?? {})
-	return normalizeConfig(legacyInline() ?? {})
+	return normalizeConfig(settingsHandle?.doc() ?? {})
 }
 
 /**
@@ -159,10 +148,13 @@ export function normalizeConfig(raw = {}) {
  * Resolution order: a `patchwork:transcript-config` provider in `element`'s
  * subtree (request/provide — lets a provider element scope config per
  * tool/view) wins; if no provider answers within `timeoutMs`, we fall back to
- * the account doc (and keep it live by listening for settings-doc changes). If
- * a provider appears later, it takes over.
+ * this tool's `patchwork:tool-storage` settings doc (and keep it live by
+ * listening for changes to it). If a provider appears later, it takes over.
+ * Always pass a real `element` when you have one — it's also how the settings
+ * doc itself gets resolved (see `ensureSettingsDoc`), even for later callers
+ * that don't.
  *
- * @param {HTMLElement|null} element  a node inside a <patchwork-view> (null → account doc only)
+ * @param {HTMLElement|null} element  a node inside a <patchwork-view> (null → settings-doc fallback only, using whichever element a previous caller supplied)
  * @param {(config: TranscriptConfig) => void} callback
  * @returns {() => void} unsubscribe
  */
@@ -178,7 +170,7 @@ export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
 	const startFallback = () => {
 		if (providerAnswered || cancelled) return
 		callback(readConfig()) // immediate sync value so UI isn't blank
-		ensureSettingsDoc().then((handle) => {
+		ensureSettingsDoc(element).then((handle) => {
 			if (providerAnswered || cancelled || !handle) return
 			callback(readConfig())
 			const onChange = () => {

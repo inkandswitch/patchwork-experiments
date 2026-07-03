@@ -1,17 +1,5 @@
 import { type AutomergeUrl } from "@automerge/automerge-repo";
 
-// Patchwork-next account/layout document
-export type TinyPatchworkLayoutDoc = {
-  contactUrl: AutomergeUrl;
-  rootFolderUrl: AutomergeUrl;
-  moduleSettingsUrl: AutomergeUrl;
-  frameToolId: string;
-  accountSidebarToolId: string;
-  contextSidebarToolId: string;
-  contextToolIds: string[];
-  documentToolbarToolIds: string[];
-};
-
 // Contact document types from patchwork-next
 export interface AnonymousContactDoc {
   type: "anonymous";
@@ -26,10 +14,3 @@ export interface RegisteredContactDoc {
 }
 
 export type ContactDoc = AnonymousContactDoc | RegisteredContactDoc;
-
-// Extend Window to include accountDocHandle
-declare global {
-  interface Window {
-    accountDocHandle?: { url: AutomergeUrl };
-  }
-}

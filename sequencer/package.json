@@ -16,6 +16,8 @@
     "@jtfmumm/patchwork-standalone-frame": "^0.1.0",
     "@automerge/automerge-repo": "^2.5.2-alpha.0",
     "@automerge/react": "^2.5.2-alpha.0",
+    "@inkandswitch/patchwork-providers": "^0.3.0",
+    "@inkandswitch/patchwork-providers-react": "^0.2.1",
     "solid-js": "^1.9.9",
     "@tailwindcss/forms": "^0.5.7",
     "animate.css": "^4.1.1",

@@ -39,7 +39,7 @@
   "author": "chee",
   "license": "MIT",
   "dependencies": {
-    "@inkandswitch/patchwork-providers": "^0.2.2"
+    "@inkandswitch/patchwork-providers": "^0.3.0"
   },
   "devDependencies": {
     "@automerge/automerge-repo": "^2.5.6",

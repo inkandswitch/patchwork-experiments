@@ -23,6 +23,8 @@
     "@inkandswitch/patchwork-elements": "^0.0.5",
     "@inkandswitch/patchwork-filesystem": "^0.0.3",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@inkandswitch/patchwork-providers": "^0.3.0",
+    "@inkandswitch/patchwork-providers-react": "^0.2.1",
     "@tiptap/core": "^3.12.1",
     "@tiptap/pm": "^3.12.1",
     "@tiptap/react": "^3.12.1",
