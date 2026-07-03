@@ -53,8 +53,8 @@ describe("pure helpers", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a BARE sketchy:window with a `tools` outlet and no inlets (a source)", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a BARE sketchy:surface with a `tools` outlet and no inlets (a source)", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("palette-config");
     expect(plugin.bare).toBe(true);
     expect(plugin.inlets).toEqual([]);

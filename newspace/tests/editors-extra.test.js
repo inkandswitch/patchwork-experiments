@@ -7,7 +7,7 @@ import {
   defaultInlets,
   inletDefsFor,
   outletDefsFor,
-} from "../src/editors.js";
+} from "../src/surfaces.js";
 
 async function makeDoc(repo, initial) {
   const handle = repo.create();

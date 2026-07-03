@@ -97,7 +97,7 @@ describe("pointerLockSource factory", () => {
 
 describe("plugin descriptor", () => {
   it("has the expected shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("pointer-lock");
     expect(plugin.name).toBe("Pointer lock");
     expect(plugin.icon).toBe("MousePointer2");

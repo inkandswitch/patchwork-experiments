@@ -62,7 +62,7 @@ export function batterySource() {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "battery",
   name: "Battery",
   icon: "BatteryCharging",

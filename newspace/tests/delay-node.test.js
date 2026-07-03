@@ -12,8 +12,8 @@ describe("clampMs", () => {
 });
 
 describe("delay plugin descriptor", () => {
-  it("is a sketchy:window with in→out and load() → mountDelay", async () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a sketchy:surface with in→out and load() → mountDelay", async () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("delay");
     expect(plugin.inlets.map((i) => i.name)).toEqual(["in"]);
     expect(plugin.outlets.map((o) => o.name)).toEqual(["out"]);

@@ -265,7 +265,7 @@ describe("properties popup — inline raw-value inlets + param-inlet-wins-when-w
     const { mountRawValue } = await import("../src/source-nodes.js");
     const { plugin: delayPlugin } = await import("../src/delay-node.js");
     registerPlugins([
-      { type: "sketchy:window", id: "value", name: "Raw value", inlets: [], outlets: [{ name: "value", type: "json" }], load: async () => mountRawValue },
+      { type: "sketchy:surface", id: "value", name: "Raw value", inlets: [], outlets: [{ name: "value", type: "json" }], load: async () => mountRawValue },
       delayPlugin,
     ]);
     // a raw value (number 5) feeding BOTH the delay's `in` inlet AND its `ms` PARAM
@@ -337,7 +337,7 @@ describe("port schema popover — shows the ACTUAL shape (describeSchema)", () =
   it("a structured inlet's popover renders its field structure, not a vague label", async () => {
     const { objectSchema, stringSchema, numberSchema } = await import("../src/ops.js");
     registerPlugins([{
-      type: "sketchy:window", id: "shapely", name: "Shapely",
+      type: "sketchy:surface", id: "shapely", name: "Shapely",
       inlets: [{ name: "in", type: "json", schema: objectSchema({ name: stringSchema(), count: numberSchema() }, ["count"]), required: true }],
       outlets: [],
       load: async () => ({ element }) => { element.textContent = "shapely"; return () => {}; },

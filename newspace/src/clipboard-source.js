@@ -53,7 +53,7 @@ export function clipboardSource() {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "clipboard",
   name: "Clipboard",
   icon: "Clipboard",

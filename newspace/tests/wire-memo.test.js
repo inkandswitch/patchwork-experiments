@@ -18,8 +18,8 @@ if (!document.elementsFromPoint) document.elementsFromPoint = () => [];
 if (!document.elementFromPoint) document.elementFromPoint = () => null;
 
 registerPlugins([
-  { type: "sketchy:window", id: "wm-src", name: "Wire src", inlets: [], outlets: [{ name: "value", type: "json" }], load: async () => ({ element }) => { element.textContent = "src"; return () => {}; } },
-  { type: "sketchy:window", id: "wm-sink", name: "Wire sink", inlets: [{ name: "in", type: "json" }], outlets: [], load: async () => ({ element }) => { element.textContent = "sink"; return () => {}; } },
+  { type: "sketchy:surface", id: "wm-src", name: "Wire src", inlets: [], outlets: [{ name: "value", type: "json" }], load: async () => ({ element }) => { element.textContent = "src"; return () => {}; } },
+  { type: "sketchy:surface", id: "wm-sink", name: "Wire sink", inlets: [{ name: "in", type: "json" }], outlets: [], load: async () => ({ element }) => { element.textContent = "sink"; return () => {}; } },
 ]);
 
 const mounted = [];

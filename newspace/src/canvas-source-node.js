@@ -19,7 +19,7 @@ export function mountCanvasSource({ element, context, setOutlet }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "canvas",
   name: "Canvas",
   icon: "SquareDashed",

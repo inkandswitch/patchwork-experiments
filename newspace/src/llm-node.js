@@ -10,7 +10,7 @@ import { Source, apply as applyOp } from "./opstreams.js";
 import { snapshot, isSnapshot, describeBinary, binarySafeReplacer } from "./ops.js";
 import { generate, popup } from "@chee/patchwork-llm";
 import { VAR_RE, promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks, clampOutletBlocks, outletConsumers, schemaSpec, schemaRule, validationPlan } from "./llm-inlets.js";
-import { listEditors, inletDefsFor } from "./editors.js";
+import { listEditors, inletDefsFor } from "./surfaces.js";
 export { promptVars, llmInlets, promptOutlets, llmOutlets, parseOutletBlocks };
 
 function stringify(v) {

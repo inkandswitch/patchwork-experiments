@@ -74,8 +74,8 @@ describe("applyMapper", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a sketchy:window with id map-list, icon List", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a sketchy:surface with id map-list, icon List", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("map-list");
     expect(plugin.name).toBe("Map list");
     expect(plugin.icon).toBe("List");

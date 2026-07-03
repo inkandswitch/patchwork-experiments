@@ -55,7 +55,7 @@ export function mountClamp({ element, inlets = {}, setOutlet, config = {}, setCo
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "clamp",
   name: "Clamp",
   icon: "Brackets",

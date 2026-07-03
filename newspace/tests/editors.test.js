@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getHeads, splice as amSplice } from "@automerge/automerge";
 import { makeRepo, flush } from "./test-harness.js";
 import { automergeOpstream } from "../src/opstreams.js";
-import { defaultInlets, mountEditor } from "../src/editors.js";
+import { defaultInlets, mountEditor } from "../src/surfaces.js";
 import { mountCodemirror } from "../src/codemirror/sketchy-editor.js";
 
 async function makeDoc(repo, initial) {
@@ -118,7 +118,7 @@ describe("mountEditor (the sketchy:editor mount path)", () => {
   });
 });
 
-import { nodeRole } from "../src/editors.js";
+import { nodeRole } from "../src/surfaces.js";
 
 describe("nodeRole (topology → role)", () => {
   it("no inlets + outlets ⇒ source", () => {
@@ -144,7 +144,7 @@ describe("nodeRole (topology → role)", () => {
   });
 });
 
-import { paramsAsInlets, effectiveInlets } from "../src/editors.js";
+import { paramsAsInlets, effectiveInlets } from "../src/surfaces.js";
 
 describe("params schema → inlets", () => {
   const desc = {
@@ -183,7 +183,7 @@ describe("params schema → inlets", () => {
   });
 });
 
-import { inletDefsFor, outletDefsFor } from "../src/editors.js";
+import { inletDefsFor, outletDefsFor } from "../src/surfaces.js";
 
 describe("outletDefsFor (static vs dynamic outlets)", () => {
   it("returns the descriptor's static outlets by default", () => {

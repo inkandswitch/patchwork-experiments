@@ -156,7 +156,7 @@ describe("mountBuffer", () => {
 
 describe("plugin descriptor", () => {
   it("has the expected shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("buffer");
     expect(plugin.name).toBe("Buffer");
     expect(plugin.icon).toBe("List");

@@ -1,7 +1,7 @@
 {
   "name": "sketchy",
   "title": "Sketchy",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "A themed spatial canvas for folders — drawing with perfect-freehand + rough.js, no tldraw",
   "type": "module",
   "exports": "./dist/index.js",

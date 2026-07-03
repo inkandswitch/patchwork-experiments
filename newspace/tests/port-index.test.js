@@ -17,7 +17,7 @@ if (!document.elementsFromPoint) document.elementsFromPoint = () => [];
 if (!document.elementFromPoint) document.elementFromPoint = () => null;
 
 registerPlugins([{
-  type: "sketchy:window", id: "port-sink", name: "Port sink",
+  type: "sketchy:surface", id: "port-sink", name: "Port sink",
   inlets: [{ name: "in", type: "json" }],
   outlets: [],
   load: async () => ({ element }) => { element.textContent = "sink"; return () => {}; },

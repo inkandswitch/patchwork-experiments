@@ -72,8 +72,8 @@ describe("inletResolutionGate — per-inlet generation tickets", () => {
 // every mount of a race editor pushes its inlet proxies here (cleared per test)
 const mountLog = [];
 registerPlugins([
-  { type: "sketchy:window", id: "race-ed", name: "Race", inlets: [{ name: "in", type: "json" }], outlets: [], load: async () => (args) => { mountLog.push(args.inlets); return () => {}; } },
-  { type: "sketchy:window", id: "race-ed-2", name: "Race 2", inlets: [{ name: "in", type: "json" }], outlets: [], load: async () => (args) => { mountLog.push(args.inlets); return () => {}; } },
+  { type: "sketchy:surface", id: "race-ed", name: "Race", inlets: [{ name: "in", type: "json" }], outlets: [], load: async () => (args) => { mountLog.push(args.inlets); return () => {}; } },
+  { type: "sketchy:surface", id: "race-ed-2", name: "Race 2", inlets: [{ name: "in", type: "json" }], outlets: [], load: async () => (args) => { mountLog.push(args.inlets); return () => {}; } },
 ]);
 
 const mounted = [];

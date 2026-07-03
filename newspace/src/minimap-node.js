@@ -79,7 +79,7 @@ export function mountMinimap({ element, inlets = {}, context, canvas }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "minimap",
   name: "Minimap",
   icon: "Map",

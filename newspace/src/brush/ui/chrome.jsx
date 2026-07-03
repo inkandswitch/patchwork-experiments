@@ -9,7 +9,7 @@ import { opstreamToSignal } from "../../opstreams.js";
 import { seedFromId, roughEllipsePath, roughRectPath } from "../../draw.js";
 import { rot } from "../../model.js";
 import { getSupportedToolsForType } from "@inkandswitch/patchwork-plugins";
-import { TOOL_META, SHAPE_DRAGGABLE, BRUSH_FALLBACK_PATH, STAMPS, STAMP_IDS, byName, splitWindowsByRole } from "../../catalog.js";
+import { TOOL_META, SHAPE_DRAGGABLE, BRUSH_FALLBACK_PATH, STAMPS, STAMP_IDS, byName, splitSurfacesByRole } from "../../catalog.js";
 import {
   colorVar, fillVar, fontFamily, PALETTE, SIZES, ARROW_SIZES, FILL_STYLES,
   FILL_PREVIEW, STROKE_STYLES, CORNERS, ROUGHNESS_LEVELS, FONT_OPTIONS, FILL_BG,
@@ -118,7 +118,7 @@ export function Toolbar(outer) {
   const docList = createMemo(() => props.datatypes().filter(match).sort(byName));
   // placeable nodes, split by role through the CATALOG's one grouping (the same
   // split the parts bin's census renders)
-  const split = createMemo(() => splitWindowsByRole(props.editors ? props.editors() : []));
+  const split = createMemo(() => splitSurfacesByRole(props.editors ? props.editors() : []));
   const sources = createMemo(() => split().sources.filter(match));
   const editors = createMemo(() => split().editors.filter(match));
   const lenses = createMemo(() => (props.lenses ? props.lenses() : []).filter(match));

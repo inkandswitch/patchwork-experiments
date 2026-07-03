@@ -281,7 +281,7 @@ describe("ensureLayoutDoc — canvas (the migrated legacy path)", () => {
 });
 
 describe("seedPartsFlap — the parts bin as a FLAP (a `flap: true` frame, seeded async from the root canvas)", () => {
-  it("seeds ns-parts as an overlay-only STUCK flap whose sub-space holds one parked parts window", async () => {
+  it("seeds ns-parts as a canvas-visible STUCK flap whose sub-space holds one parked parts window", async () => {
     const repo = makeRepo();
     const folder = repo.create({ title: "t", docs: [] });
     const lh = await ensureLayoutDoc(repo, folder, "canvas");
@@ -292,7 +292,7 @@ describe("seedPartsFlap — the parts bin as a FLAP (a `flap: true` frame, seede
     expect(flap.kind).toBe("frame");
     expect(flap.flap).toBe(true);
     expect(flap.url).toBe(flapFolder.url);
-    expect([...flap.layers]).toEqual(["overlay"]); // no canvas membership — it appears when arranging
+    expect([...flap.layers]).toEqual(["overlay", "canvas"]); // reachable from the drawing layer
     expect(JSON.parse(JSON.stringify(flap.sticky))).toEqual({ edge: "left", t: 1 }); // stuck ⇒ an edge tab
     // the flap's sub-space: named "parts", ONE item (the bin window), and every
     // seed dismissed — re-opens never grow chrome inside the shelf

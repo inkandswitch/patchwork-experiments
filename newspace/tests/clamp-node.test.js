@@ -75,8 +75,8 @@ describe("fmt", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a sketchy:window with id clamp", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a sketchy:surface with id clamp", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("clamp");
     expect(plugin.name).toBe("Clamp");
     expect(plugin.icon).toBe("Brackets");

@@ -148,8 +148,8 @@ describe("normalizeConfig", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a sketchy:window with the right id/icon/ports", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a sketchy:surface with the right id/icon/ports", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("range-map");
     expect(plugin.name).toBe("Range map");
     expect(plugin.icon).toBe("Ruler");

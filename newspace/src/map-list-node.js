@@ -1,4 +1,4 @@
-// Map list — a sketchy:window node that maps every element of an input array
+// Map list — a sketchy:surface node that maps every element of an input array
 // through a JS element-expression you write, emitting the mapped array.
 //
 //   inlet  in  : json   (an array)
@@ -38,7 +38,7 @@ export function applyMapper(arr, fn) {
   });
 }
 
-// ── mount (the sketchy:window render contract) ───────────────────────────────
+// ── mount (the sketchy:surface render contract) ───────────────────────────────
 
 export function mountMapList({ element, inlets = {}, setOutlet, config = {}, setConfig }) {
   const src = inlets.in;
@@ -76,7 +76,7 @@ export function mountMapList({ element, inlets = {}, setOutlet, config = {}, set
 // ── the single plugin descriptor ─────────────────────────────────────────────
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "map-list",
   name: "Map list",
   icon: "List",

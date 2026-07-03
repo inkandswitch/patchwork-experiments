@@ -53,7 +53,7 @@ export function mountSwitch({ element, inlets = {}, setOutlet }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "switch",
   name: "Switch",
   icon: "ToggleLeft",

@@ -47,7 +47,7 @@ export function motionSource() {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "device-motion",
   name: "Motion",
   icon: "Activity",

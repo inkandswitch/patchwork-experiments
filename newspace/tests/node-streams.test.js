@@ -23,7 +23,7 @@ const got = []; // every snapshot value the sink's inlet delivered, in order
 
 registerPlugins([
   {
-    type: "sketchy:window", id: "ns7-src", name: "NS7 src", inlets: [], outlets: [{ name: "value", type: "json" }],
+    type: "sketchy:surface", id: "ns7-src", name: "NS7 src", inlets: [], outlets: [{ name: "value", type: "json" }],
     load: async () => ({ element, setOutlet }) => {
       element.textContent = "src";
       const s = new Source(7);
@@ -33,7 +33,7 @@ registerPlugins([
     },
   },
   {
-    type: "sketchy:window", id: "ns7-sink", name: "NS7 sink", inlets: [{ name: "in", type: "json" }], outlets: [],
+    type: "sketchy:surface", id: "ns7-sink", name: "NS7 sink", inlets: [{ name: "in", type: "json" }], outlets: [],
     load: async () => ({ element, inlets }) => {
       element.textContent = "sink";
       const off = inlets.in.connect((op) => { if (op && op.type === "snapshot") got.push(op.value); });
@@ -43,7 +43,7 @@ registerPlugins([
   // an INSTRUMENTED source: counts live connect()s on its outlet stream, so the
   // leak pin below can assert every downstream subscription is released.
   {
-    type: "sketchy:window", id: "ns7-leak-src", name: "NS7 leak src", inlets: [], outlets: [{ name: "value", type: "json" }],
+    type: "sketchy:surface", id: "ns7-leak-src", name: "NS7 leak src", inlets: [], outlets: [{ name: "value", type: "json" }],
     load: async () => ({ element, setOutlet }) => {
       element.textContent = "leak-src";
       const s = new Source(1);

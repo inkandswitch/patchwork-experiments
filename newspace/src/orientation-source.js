@@ -45,7 +45,7 @@ export function orientationSource() {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "device-orientation",
   name: "Orientation",
   icon: "Compass",

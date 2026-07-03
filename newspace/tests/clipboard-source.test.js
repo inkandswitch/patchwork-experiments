@@ -18,7 +18,7 @@ describe("cleanText (pure)", () => {
 
 describe("plugin descriptor", () => {
   it("has the expected shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("clipboard");
     expect(plugin.name).toBe("Clipboard");
     expect(plugin.icon).toBe("Clipboard");

@@ -95,8 +95,8 @@ describe("makeThrottle (pure, injected clock + scheduler)", () => {
 });
 
 describe("throttle plugin descriptor", () => {
-  it("is a sketchy:window with in:json → out:json and load() → mountThrottle", async () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a sketchy:surface with in:json → out:json and load() → mountThrottle", async () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("throttle");
     expect(plugin.name).toBe("Throttle");
     expect(plugin.icon).toBe("Gauge");

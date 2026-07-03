@@ -34,7 +34,7 @@ export function mountDelay({ element, inlets = {}, setOutlet, config = {}, setCo
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "delay",
   name: "Delay",
   icon: "Hourglass",

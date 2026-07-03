@@ -54,7 +54,7 @@ describe("snapshotMotion", () => {
 
 describe("motion plugin descriptor", () => {
   it("has the expected shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("device-motion");
     expect(plugin.name).toBe("Motion");
     expect(plugin.icon).toBe("Activity");

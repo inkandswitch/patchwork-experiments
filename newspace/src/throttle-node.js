@@ -1,4 +1,4 @@
-// Throttle — a sketchy:window node that rate-limits its input. It emits the
+// Throttle — a sketchy:surface node that rate-limits its input. It emits the
 // LATEST value on `in` at most once per `ms` window, LEADING-EDGE:
 //
 //   • the first value arriving outside a window fires IMMEDIATELY (leading edge),
@@ -159,7 +159,7 @@ export function preview(v) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "throttle",
   name: "Throttle",
   icon: "Gauge",

@@ -1,4 +1,4 @@
-// Split / Join — a bidirectional sketchy:window node.
+// Split / Join — a bidirectional sketchy:surface node.
 //
 //   inlet  in  : text          a string
 //   outlet out : json (array)  the string split on a delimiter
@@ -84,7 +84,7 @@ export function mountSplitJoin({ element, inlets = {}, setOutlet, config = {}, s
 // ── the single plugin object ─────────────────────────────────────────────────
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "split-join",
   name: "Split / Join",
   icon: "Scissors",

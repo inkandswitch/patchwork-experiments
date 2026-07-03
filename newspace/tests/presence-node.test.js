@@ -36,8 +36,8 @@ function mount({ peers = [], inlets } = {}) {
 }
 
 describe("plugin descriptor", () => {
-  it("is a BARE (frameless) sketchy:window with an auto-wirable peers inlet", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a BARE (frameless) sketchy:surface with an auto-wirable peers inlet", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("presence");
     expect(plugin.bare).toBe(true);
     expect(plugin.inlets).toEqual([{ name: "peers", type: "json" }]);

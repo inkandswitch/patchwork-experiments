@@ -182,8 +182,8 @@ describe("describe (introspection)", () => {
   });
 
   it("describes a descriptor-shaped object (type + id, no connect)", () => {
-    const d = introspect({ type: "sketchy:window", id: "w", name: "W", inlets: [], outlets: [] });
-    expect(d).toMatchObject({ kind: "sketchy:window", id: "w", name: "W", inlets: [], outlets: [] });
+    const d = introspect({ type: "sketchy:surface", id: "w", name: "W", inlets: [], outlets: [] });
+    expect(d).toMatchObject({ kind: "sketchy:surface", id: "w", name: "W", inlets: [], outlets: [] });
   });
 
   it("describes a plain object as kind:object listing its keys", () => {

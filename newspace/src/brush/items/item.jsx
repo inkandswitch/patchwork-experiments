@@ -14,6 +14,7 @@ import { InlineEdit, TextEdit } from "./text-edit.jsx";
 import { VoiceItem } from "./voice-item.jsx";
 import { SketchItem } from "./sketch-item.jsx";
 import { EditorItem } from "./editor-item.jsx";
+import { ASIDE_ID } from "../constants.js";
 
 export function Item(props) {
   const it = () => props.it;
@@ -239,7 +240,8 @@ export function DocOrFrame(props) {
   const tabStyle = () => {
     const t = ctx.flapTabPlace(it());
     const hidden = ctx.itemHidden && props.surface.id === "root" && ctx.itemHidden(it());
-    return { left: `${t.x}px`, top: `${t.y}px`, width: `${t.w}px`, height: `${t.h}px`, transform: `scale(${t.k})`, "transform-origin": "0 0", "z-index": 500, ...(hidden ? { display: "none" } : {}) };
+    const activeMember = ctx.memberOnActive && props.surface.id === "root" && ctx.memberOnActive(it());
+    return { left: `${t.x}px`, top: `${t.y}px`, width: `${t.w}px`, height: `${t.h}px`, transform: `scale(${t.k})`, "transform-origin": "0 0", "z-index": 500, ...(activeMember ? { "pointer-events": "auto" } : {}), ...(hidden ? { display: "none" } : {}) };
   };
 
   const isWell = () => isFrame() && !!it().well;
@@ -252,7 +254,7 @@ export function DocOrFrame(props) {
 
   // a box loads + manages a SEPARATE space (folder doc + its layout doc) as a surface
   const [space, setSpace] = createSignal(null);
-  createEffect(() => { if (isFrame() && !tooDeep()) ctx.loadSpace(it().url).then((s) => s && setSpace(s)); });
+  createEffect(() => { if (isFrame() && it().url && !tooDeep()) ctx.loadSpace(it().url).then((s) => s && setSpace(s)); });
   const childSurface = createMemo(() => {
     const s = space();
     if (!s) return null;
@@ -298,8 +300,10 @@ export function DocOrFrame(props) {
   const title = createMemo(() => {
     const p = proj(), d = dt();
     if (p && d) { const gt = d.getTitle || d.module?.getTitle; if (gt) { try { const t = gt(p); if (t) return t; } catch {} } }
-    return p?.title || link()?.name || "Untitled";
+    return p?.title || it().title || it().name || link()?.name || "Untitled";
   });
+  const asideRows = () => (it().id === ASIDE_ID && ctx.asideItems ? ctx.asideItems() : []);
+  const rowTitle = (row) => row.title || row.name || props.surface.folderDoc?.docs.find((l) => l.url === row.url)?.name || (row.url ? row.url.replace(/^automerge:/, "").slice(0, 8) : row.kind || "item");
 
   let bodyRef;
   const grab = (e) => {
@@ -377,16 +381,32 @@ export function DocOrFrame(props) {
         }>
           <Show when={!tooDeep()} fallback={<div class="ns-box-stub">{title()}</div>}>
             <Show when={isList()} fallback={
-              <Show when={childSurface()}>
+            <Show when={childSurface()}>
                 {/* the child whose centre has left this box renders in the
                     unclipped escape layer below (so only IT shows escaping, not
                     every overflowing item) */}
                 <For each={sortById(childSurface().doc.items).filter((c) => c.id !== ctx.escapeId())}>{(child) => <Item it={child} surface={childSurface()} ctx={ctx} depth={(props.depth || 0) + 1} />}</For>
               </Show>
             }>
-              {/* list style: render the box's doc with the folder viewer */}
-              <Show when={ctx.embedsReady()} fallback={<div class="ns-doc-pending" />}>
-                <patchwork-view doc-url={it().url} tool-id="folder-viewer" style="display:block;width:100%;height:100%" />
+              <Show when={it().id === ASIDE_ID} fallback={
+                <>
+                  {/* list style: render the box's doc with the folder viewer */}
+                  <Show when={ctx.embedsReady()} fallback={<div class="ns-doc-pending" />}>
+                    <patchwork-view doc-url={it().url} tool-id="folder-viewer" style="display:block;width:100%;height:100%" />
+                  </Show>
+                </>
+              }>
+                <div class="ns-aside-list">
+                  <For each={asideRows()}>{(row) => (
+                    <div class="ns-aside-row" draggable="true" data-item-id={row.id}
+                      onDragStart={(e) => ctx.startAsideDrag && ctx.startAsideDrag(row.id, e)}
+                      onPointerDown={(e) => e.stopPropagation()}>
+                      <span class="ns-aside-kind">{row.kind === "frame" ? "□" : "doc"}</span>
+                      <span class="ns-aside-name">{rowTitle(row)}</span>
+                    </div>
+                  )}</For>
+                  <Show when={!asideRows().length}><div class="ns-aside-empty">empty</div></Show>
+                </div>
               </Show>
             </Show>
           </Show>
@@ -427,5 +447,3 @@ export function DocOrFrame(props) {
     </>
   );
 }
-
-

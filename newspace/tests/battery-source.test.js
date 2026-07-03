@@ -39,7 +39,7 @@ describe("batterySource factory (device absent under happy-dom)", () => {
 
 describe("plugin descriptor", () => {
   it("has the expected shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("battery");
     expect(plugin.name).toBe("Battery");
     expect(plugin.icon).toBe("BatteryCharging");

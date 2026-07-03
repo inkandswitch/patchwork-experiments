@@ -1,4 +1,4 @@
-// Round — a sketchy:window node that rounds an incoming number to N decimal places
+// Round — a sketchy:surface node that rounds an incoming number to N decimal places
 // using a chosen rounding mode.
 //
 //   in:number  ──▶  round  ──▶  out:number
@@ -69,7 +69,7 @@ export function mountRound({ element, inlets = {}, setOutlet, config = {}, setCo
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "round",
   name: "Round",
   icon: "Hash",

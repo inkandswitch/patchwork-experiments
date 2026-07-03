@@ -1,15 +1,6 @@
 import { NewspaceDatatype } from "../datatype.js";
 
-// list / grid / dock / pad were unregistered 2026-07-02 pending the
-// container-types rethink; their dormant source files were removed.
-export const layoutPlugins = [
-  {
-    type: "sketchy:layout", id: "canvas", name: "Canvas", icon: "PenTool",
-    toolId: "sketchy", supportedDatatypes: ["folder", "newspace", "sketch"],
-    async load() { return { toolId: "sketchy" }; },
-  },
-  // (the "parts" sketchy:flap registration was removed 2026-07-02 — the parts
-  // bin is now a bare sketchy:window seeded on the overlay; see parts-bin.js)
+export const coreToolPlugins = [
   {
     type: "patchwork:tool",
     id: "form",

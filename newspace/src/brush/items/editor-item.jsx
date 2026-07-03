@@ -5,7 +5,7 @@
 // its wiring, and either mount the editor or apply the lens. An editor/lens
 // exposes OUTLET ports (right edge) you can wire FROM into another node's inlet.
 import { createEffect, createMemo, createRoot, getOwner, runWithOwner, onCleanup, untrack, For, Show } from "solid-js";
-import { listEditors, mountEditor, inletDefsFor, outletDefsFor, paramsAsInlets } from "../../editors.js";
+import { listEditors, mountEditor, inletDefsFor, outletDefsFor, paramsAsInlets } from "../../surfaces.js";
 import { listLensDescriptors, applyLens } from "../../lenses.js";
 import { roughRectPath, roughEllipsePath, seedFromId } from "../../draw.js";
 import { PortNub } from "../ui/chrome.jsx";

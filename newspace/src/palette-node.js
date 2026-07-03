@@ -296,7 +296,7 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "palette",
   name: "Palette",
   icon: "Palette",

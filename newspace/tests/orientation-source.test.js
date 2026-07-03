@@ -18,7 +18,7 @@ describe("snapshotOrientation (pure)", () => {
 
 describe("plugin descriptor", () => {
   it("has the expected shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("device-orientation");
     expect(plugin.name).toBe("Orientation");
     expect(plugin.icon).toBe("Compass");

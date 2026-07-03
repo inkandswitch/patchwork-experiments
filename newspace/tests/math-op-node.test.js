@@ -83,8 +83,8 @@ describe("fmt", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a sketchy:window math node with number in/out", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a sketchy:surface math node with number in/out", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("math-op");
     expect(plugin.name).toBe("Math");
     expect(plugin.icon).toBe("Calculator");

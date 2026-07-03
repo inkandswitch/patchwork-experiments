@@ -4,13 +4,13 @@ import { llmInlets, llmOutlets } from "./llm-inlets.js"; // sync: {{var}} → in
 import { layerPlugins } from "./registry/layers.js";
 import { coreBrushPlugins, contributedBrushPlugins } from "./registry/brushes.js";
 import { contributedNodePlugins } from "./registry/contributed-nodes.js";
-import { layoutPlugins, sketchyToolPlugins } from "./registry/layout-tools.js";
+import { coreToolPlugins, sketchyToolPlugins } from "./registry/layout-tools.js";
 import { mediaLensPlugins, wireLensPlugins } from "./registry/lenses.js";
 import { palettePlugins } from "./registry/palettes.js";
 import { log } from "./log.js";
 
 const sourcePlugin = ({ id, name, icon, outlet, type = "json", schema, label, start, gated, stream }) => ({
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id, name, icon,
   inlets: [],
   outlets: [{ name: outlet, type, schema }],
@@ -22,7 +22,7 @@ const sourcePlugin = ({ id, name, icon, outlet, type = "json", schema, label, st
 });
 
 const contextSourcePlugin = ({ id, name, icon, out, schema }) => ({
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id, name, icon,
   inlets: [],
   outlets: [{ name: out, type: "json", schema }],
@@ -38,9 +38,9 @@ export const plugins = [
   ...contributedBrushPlugins,
   // sketchy:editor — a node with typed inlets/outlets carrying opstreams. inlets/
   // outlets are declared inline (readable without loading the editor); load()
-  // returns the heavy mount fn. See src/editors.js for the contract.
+  // returns the heavy mount fn. See src/surfaces.js for the contract.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "codemirror",
     name: "Text editor",
     icon: "FileCode",
@@ -56,7 +56,7 @@ export const plugins = [
   },
   // an HTML box: sets its innerHTML to whatever its `html` inlet carries (a sink).
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "html",
     name: "HTML",
     icon: "Code",
@@ -68,7 +68,7 @@ export const plugins = [
   // registered AFTER codemirror so text streams still prefer codemirror; non-text
   // (pointer/camera/selection/…) land here.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "inspector",
     name: "Inspector",
     icon: "Eye",
@@ -83,7 +83,7 @@ export const plugins = [
   // read-only File snapshot, WATCHED so it reflects on-disk changes. Compose with a
   // File→text / File→JSON lens. (To EDIT a file in place, use "Edit file" below.)
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "file",
     name: "File",
     icon: "FileInput",
@@ -109,7 +109,7 @@ export const plugins = [
   sourcePlugin({ id: "midi", name: "MIDI", icon: "Piano", outlet: "midi", schema: anySchema(), label: "midi", start: "midiSource", gated: true }),
   // CAMERA — live preview; provides `video` (a MediaStream) and `image` (frame data-URL)
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "camera",
     name: "Camera",
     icon: "Camera",
@@ -120,7 +120,7 @@ export const plugins = [
   },
   // IMAGE display — paints a wired frame (ImageData / ImageBitmap / url) to a canvas
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "image",
     name: "Image",
     icon: "Image",
@@ -133,7 +133,7 @@ export const plugins = [
   // "display float32 pixel data" node). Set w/h/channels for a bare array; ImageData
   // or {data,width,height} carry their own dims. Floats auto-normalise to 0..255.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "pixels",
     name: "Pixels",
     icon: "Grid2x2",
@@ -143,7 +143,7 @@ export const plugins = [
   },
   // VIDEO display — plays a wired MediaStream (or an image/video url)
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "video",
     name: "Video",
     icon: "Monitor",
@@ -155,7 +155,7 @@ export const plugins = [
   sourcePlugin({ id: "mic", name: "Microphone", icon: "Mic", outlet: "audio", type: "audio", schema: audioSchema(), label: "mic", start: "micSource", gated: true, stream: true }),
   // AUDIO FILE — play a music file; provides {time,…} + an analyser (for the Scope)
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "audio-file",
     name: "Audio file",
     icon: "Music",
@@ -165,7 +165,7 @@ export const plugins = [
   },
   // SPEAKER — play a wired audio source (mic, etc.) through the speakers
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "speaker",
     name: "Speaker",
     icon: "Volume2",
@@ -175,7 +175,7 @@ export const plugins = [
   },
   // SCOPE — draws the live Float32 waveform of a wired audio source
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "scope",
     name: "Scope",
     icon: "Activity",
@@ -188,7 +188,7 @@ export const plugins = [
   // BANG — a click-to-fire momentary trigger (PD/Max/Orca). Each fire is unique so it
   // always propagates. Wire it to a triggerable inlet (e.g. the LLM's `bang`).
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "bang",
     name: "Bang",
     icon: "Zap",
@@ -198,7 +198,7 @@ export const plugins = [
   },
   // TIMER — fires a bang on an interval (a metronome). Interval persisted.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "timer",
     name: "Timer",
     icon: "Timer",
@@ -208,7 +208,7 @@ export const plugins = [
   },
   // COUNTER — counts bangs (0,1,2,…). Wire a bang/timer into it.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "counter",
     name: "Counter",
     icon: "Plus",
@@ -218,7 +218,7 @@ export const plugins = [
   },
   // SAMPLE & HOLD — on a bang at `trigger`, emit the current `value`.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "sample",
     name: "Sample & hold",
     icon: "Crosshair",
@@ -233,7 +233,7 @@ export const plugins = [
   // (editable in the UI AND wireable via the optional `prompt` inlet). With no `in`
   // wired it generates from the prompt — so it doubles as a standalone generator.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "llm",
     name: "LLM",
     icon: "Sparkles",
@@ -249,7 +249,7 @@ export const plugins = [
   },
   // an LLM SOURCE: no input — generate from the (UI) prompt alone.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "llm-source",
     name: "LLM source",
     icon: "Sparkles",
@@ -262,7 +262,7 @@ export const plugins = [
   // a raw value source: type a literal (text/number/boolean/json) → emit it. The
   // universal constant you can feed into any inlet. Persisted in the doc.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "value",
     name: "Raw value",
     icon: "Pencil",
@@ -273,7 +273,7 @@ export const plugins = [
   // the automerge source: a URL → the doc as an opstream (pulls REAL Patchwork docs
   // into the wiring system). Wire `doc` into json-path / inspector / a patchwork-tool.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "automerge",
     name: "Automerge doc",
     icon: "Database",
@@ -285,7 +285,7 @@ export const plugins = [
   // hole becomes a DYNAMIC inlet (named by its path); the `doc` outlet is the template
   // filled from the wired streams. Builds an automerge-doc-shaped value out of opstreams.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "template",
     name: "Template doc",
     icon: "Braces",
@@ -297,7 +297,7 @@ export const plugins = [
   // an EMPTY tool: no doc until you wire one into `doc` (from an automerge source, or
   // a doc dragged from the sidebar). Renders a live <patchwork-view> for that doc.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "patchwork-tool",
     name: "Tool",
     icon: "AppWindow",
@@ -308,7 +308,7 @@ export const plugins = [
   // an EDIT-a-file editor: pick a local file and edit it in CodeMirror with Save,
   // now WATCHED (reloads from disk unless you have unsaved edits).
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "file-edit",
     name: "Edit file",
     icon: "FolderOpen",
@@ -320,7 +320,7 @@ export const plugins = [
   // a jq-ish JSON narrowing node — a LENS WITH UI (a text field for the path), so
   // it's a node, not a bare sketchy:lens. number/text/json in → narrowed value out.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "json-path",
     name: "JSON path",
     icon: "Filter",
@@ -331,7 +331,7 @@ export const plugins = [
   // JS — write a JavaScript transform: `(x)=>y` (one-way) or `{get,set}` (bidi).
   // Defaults to passthrough. The lens-with-UI you hand-write.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "js",
     name: "JS",
     icon: "Braces",
@@ -345,7 +345,7 @@ export const plugins = [
   // stream's complement across the boundary (capabilities as async stubs, drops listed).
   // New code tears the iframe down and boots a fresh realm.
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "sandbox",
     name: "Sandbox",
     icon: "Shield",
@@ -360,7 +360,7 @@ export const plugins = [
   // it writes the value into that field. A sink (no outlet). The target must be
   // editable (its opstream has `apply`).
   {
-    type: "sketchy:window",
+    type: "sketchy:surface",
     id: "json-set",
     name: "JSON set",
     icon: "FilePen",
@@ -372,7 +372,7 @@ export const plugins = [
     async load() { return (await import("./json-path.js")).mountJsonSet; },
   },
   ...wireLensPlugins,
-  ...layoutPlugins,
+  ...coreToolPlugins,
   ...contributedNodePlugins,
   ...palettePlugins, // sketchy:palette — palettes as plugins (parts bin presets)
   ...sketchyToolPlugins,

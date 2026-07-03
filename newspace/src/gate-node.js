@@ -73,7 +73,7 @@ function mountGate({ element, inlets = {}, setOutlet }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "gate",
   name: "Gate",
   icon: "DoorOpen",

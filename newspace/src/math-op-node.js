@@ -48,7 +48,7 @@ export function mountMathOp({ element, inlets = {}, setOutlet, config = {}, setC
 export const fmt = fmtValue;
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "math-op",
   name: "Math",
   icon: "Calculator",

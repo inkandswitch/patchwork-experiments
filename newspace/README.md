@@ -77,7 +77,7 @@ Registry shape:
 
 ```js
 {
-  type: "sketchy:window", // legacy name for mounted surface
+  type: "sketchy:surface",
   id, name, icon,
   inlets: [{ name, type, schema?, required? }],
   outlets: [{ name, type, schema? }],
@@ -209,4 +209,3 @@ Tests live outside production code under `tests/`. Production code stays under
 
 Comments explain why and name invariants; avoid stale narrative. Commit subjects
 are imperative, scoped, and concrete (`canvas: ...`, `nodes: ...`, `docs: ...`).
-

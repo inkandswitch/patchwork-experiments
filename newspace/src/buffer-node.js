@@ -87,7 +87,7 @@ export function mountBuffer({ element, inlets = {}, setOutlet, config = {}, setC
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "buffer",
   name: "Buffer",
   icon: "List",

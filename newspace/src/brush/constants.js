@@ -186,7 +186,8 @@ export const PALETTE_INLETS = { tools: { node: "ns-toolbar-config", outlet: "too
 // the stable ids of the seeded overlay chrome. Deleting one records it in the layout doc's
 // `dismissedSeeds` so ensureLayout does NOT re-seed it on the next open (the "delete like any
 // item" contract). Fresh sketches + never-dismissed ones still get seeded.
-export const SEED_IDS = ["ns-minimap", "ns-zoom", "ns-layers", "ns-toolbar-palette", "ns-toolbar-config", "ns-parts", "ns-presence"];
+export const ASIDE_ID = "ns-aside";
+export const SEED_IDS = ["ns-minimap", "ns-zoom", "ns-layers", "ns-toolbar-palette", "ns-toolbar-config", "ns-parts", ASIDE_ID, "ns-presence"];
 // the RETIRED seeded chips (the "canvas objects" chrome model) — removed on upgrade
 export const RETIRED_CTX_CHIP_IDS = ["ns-ctx-mm", "ns-ctx-zoom"];
 // overlay-home (`layers` home = overlay); `layer` stays mirrored for old clients.
@@ -216,8 +217,9 @@ export const paletteConfigSeedItem = (brushIds) => ({
 });
 // ── the PARTS FLAP — the bin as a named STICKY container (a `flap: true` frame) ──
 // The bin no longer seeds as a bare window: `ns-parts` is a FLAP — a frame whose
-// sub-space holds ONE parked item, the parts-bin window — overlay-only, stuck on
-// the left edge (so it collapses to an edge TAB until clicked). The flap is a
+// sub-space holds ONE parked item, the parts-bin window — overlay-home with
+// canvas membership, stuck on the left edge (so it collapses to an edge TAB
+// until clicked). The flap is a
 // plain frame (old clients render it as one); the bin window inside it is a
 // plain item — nothing about either is special, so anything else you alt-drag
 // into the flap parks there the same way (this replaces the customParts
@@ -225,7 +227,12 @@ export const paletteConfigSeedItem = (brushIds) => ({
 // runs ASYNC from the ROOT canvas (canvas.jsx), NOT from ensureLayout — every
 // box's loadSpace goes through ensureLayout and must not grow a flap + two docs.
 export const partsWindowSeedItem = () => ({ id: "ns-parts-window", kind: "editor", editorId: "parts", x: 8, y: 8, w: 232, h: 324, rotation: 0, inlets: {} });
-export const partsFlapItem = (url) => ({ id: "ns-parts", kind: "frame", flap: true, url, layer: "overlay", layers: ["overlay"], sticky: { edge: "left", t: 1 }, x: 24, y: 96, w: 248, h: 340, rotation: 0 });
+export const partsFlapItem = (url) => ({ id: "ns-parts", kind: "frame", flap: true, url, layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "left", t: 1 }, x: 24, y: 96, w: 248, h: 340, rotation: 0 });
+export const asideSeedItem = () => ({
+  id: ASIDE_ID, kind: "frame", flap: true, style: "list", title: "set aside",
+  layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "right", t: 0.35 },
+  x: 24, y: 120, w: 260, h: 360, rotation: 0,
+});
 // a flap's SUB-SPACE: a folder + canvas-layout pair like any frame's, except the
 // layout dismisses EVERY seed — a flap is a shelf, not a full sketch space, so
 // re-opens never grow chrome (minimap/palette/…) inside it.
@@ -261,13 +268,11 @@ export async function seedPartsFlap(repo, lh) {
 export const presenceSeedItem = () => ({ id: "ns-presence", kind: "editor", editorId: "presence", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "right", t: 0.9 }, x: 0, y: 0, w: 148, h: 34, rotation: 0, inlets: {} });
 // (ns-parts is NOT here: the parts flap needs docs created, so the root canvas
 // seeds it async via seedPartsFlap above)
-export const defaultOverlayItems = () => [minimapSeedItem(), zoomSeedItem(), layersSeedItem(), paletteConfigSeedItem(), paletteSeedItem(), presenceSeedItem()];
+export const defaultOverlayItems = () => [minimapSeedItem(), zoomSeedItem(), layersSeedItem(), paletteConfigSeedItem(), paletteSeedItem(), asideSeedItem(), presenceSeedItem()];
 
-// ── MULTIPLE complement docs (README.md "still needed" #1) ─────────────────────
-// A "space" doc (a folder/sketch) references ONE complement doc PER LAYOUT under the
-// `@layouts` map: `{ "@layouts": { canvas: url, dock: url, … } }` — the key is the
-// `sketchy:layout` descriptor id, so a registered layout finds its complement by its
-// own id. Each complement is created LAZILY on first open through that lens.
+// A folder/sketch references its canvas doc under `@layouts.canvas`, mirrored from
+// the legacy `.sketch`/`.newspace` field. The old multi-layout registry is gone,
+// but the map shape is kept for additive compatibility.
 //
 // Migration story (all ADDITIVE — nothing is ever deleted, no map-key deletion):
 // the legacy single-field reference (`.sketch`, formerly `.newspace`) IS the canvas
@@ -361,6 +366,7 @@ function upgradeCanvasLayoutDoc(lh) {
     seed("ns-toolbar-config", () => paletteConfigSeedItem(customized ? palBrushes : null));
     seed("ns-toolbar-palette", paletteSeedItem);
     // (ns-parts — the parts FLAP — seeds async from the root canvas: seedPartsFlap)
+    seed(ASIDE_ID, asideSeedItem);
     seed("ns-presence", presenceSeedItem);
     // upgrade earlier seeds' positioning (older versions shipped a top-left zoom)
     const mm = d.items.find((it) => it.id === "ns-minimap");

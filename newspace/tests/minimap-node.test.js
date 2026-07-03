@@ -23,8 +23,8 @@ describe("jumpCamera — minimap click → camera that centres (wx,wy)", () => {
 });
 
 describe("minimap plugin shape", () => {
-  it("is a BARE sketchy:window with canvas-fed inlets and no outlets", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a BARE sketchy:surface with canvas-fed inlets and no outlets", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("minimap");
     expect(plugin.bare).toBe(true);
     expect(plugin.inlets.map((i) => i.name)).toEqual(["rects", "bounds", "peers", "view", "camera"]);

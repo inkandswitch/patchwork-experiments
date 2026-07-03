@@ -24,7 +24,7 @@ function fakeStream(initial) {
 
 describe("plugin descriptor", () => {
   it("has the gate spec", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("gate");
     expect(plugin.name).toBe("Gate");
     expect(plugin.icon).toBe("DoorOpen");

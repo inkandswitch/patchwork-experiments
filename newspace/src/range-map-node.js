@@ -1,4 +1,4 @@
-// Range map — a sketchy:window node that remaps an incoming number linearly from
+// Range map — a sketchy:surface node that remaps an incoming number linearly from
 // one numeric range to another (a lerp / "map" box, excalidraw-of-numbers style).
 //
 //   in:number  ──▶  remap  ──▶  out:number
@@ -107,7 +107,7 @@ export function invert(y, opts = {}) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "range-map",
   name: "Range map",
   icon: "Ruler",

@@ -102,7 +102,7 @@ describe("modeFn / fmt", () => {
 
 describe("plugin descriptor", () => {
   it("has the right shape", () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("round");
     expect(plugin.name).toBe("Round");
     expect(plugin.icon).toBe("Hash");

@@ -31,8 +31,8 @@ function mount({ layers = stubSource(STACK), active = stubSource("canvas") } = {
 const tabs = (element) => [...element.querySelectorAll(".ns-layer-tab")];
 
 describe("plugin descriptor", () => {
-  it("is a BARE, FIT-CONTENT sketchy:window with no ports (state rides the context)", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a BARE, FIT-CONTENT sketchy:surface with no ports (state rides the context)", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("layers");
     expect(plugin.bare).toBe(true);
     expect(plugin.fit).toBe(true);

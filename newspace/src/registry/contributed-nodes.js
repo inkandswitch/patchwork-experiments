@@ -29,7 +29,7 @@ import { plugin as zoomPlugin } from "../zoom-node.js";
 import { plugin as canvasSourcePlugin } from "../canvas-source-node.js";
 
 const mapPlugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "map",
   name: "Map",
   icon: "Map",

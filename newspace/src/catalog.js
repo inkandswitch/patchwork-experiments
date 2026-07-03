@@ -1,12 +1,12 @@
 // THE CATALOG — the single census of "placeable things". The parts bin, the
 // toolbar's + add menu and the place/arm flows all consume THIS module (each
 // surface renders its own slice of the same data): the tool/stamp/shape tables,
-// the registry accessors (datatypes · windows · lenses · palettes), the part-id
+// the registry accessors (datatypes · surfaces · lenses · palettes), the part-id
 // drag protocol, and partsCensus (registries in → grouped tiles out).
 // Pure data + registry reads — no DOM (the mounts live in parts-bin.js and
 // brush/ui/chrome.jsx, which re-export these names for their existing callers).
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
-import { listEditors, nodeRole } from "./editors.js";
+import { listEditors, nodeRole } from "./surfaces.js";
 import { listLensDescriptors } from "./lenses.js";
 
 // ── tool metadata: id -> [label, icon path] ──────────────────────────────────
@@ -67,7 +67,7 @@ export const STAMP_IDS = new Set(["face", "pencil", "hand", "mouse"]);
 export function catalogDatatypes() {
   try { return getRegistry("patchwork:datatype").filter((d) => !d.unlisted); } catch { return []; }
 }
-export const catalogWindows = () => listEditors();
+export const catalogSurfaces = () => listEditors();
 export const catalogLenses = () => listLensDescriptors();
 
 // the built-in palette parts — kept as the FALLBACK when no `sketchy:palette`
@@ -79,7 +79,7 @@ export const PALETTE_PARTS = [
 
 // registered palettes — the `sketchy:palette` PLUGIN type (documented in README.md):
 //   { type: "sketchy:palette", id, name, icon?, entries: [entry…] | () => [entry…] }
-// dragging one out of the bin instantiates a palette window with those entries.
+// dragging one out of the bin instantiates a palette surface with those entries.
 export function listPalettes() {
   try {
     const r = getRegistry("sketchy:palette");
@@ -92,7 +92,7 @@ export function listPalettes() {
 // ── the part-id drag protocol ────────────────────────────────────────────────
 // the palette's DnD type (canvas.jsx's TOOL_DRAG imports this — one protocol)
 export const PART_DRAG_TYPE = "text/x-newspace-tool";
-const NAMESPACED = new Set(["datatype", "window", "lens", "palette", "flap"]);
+const NAMESPACED = new Set(["datatype", "surface", "lens", "palette", "flap"]);
 
 // the flap tile's payload — one kind, one id (a flap is a flap)
 export const FLAP_PART = "flap:flap";
@@ -114,22 +114,22 @@ export function decodePartId(part) {
 
 // ── the grouping (shared by the census AND the + add menu) ───────────────────
 export const byName = (a, b) => (a.name || a.id || "").localeCompare(b.name || b.id || "");
-// placeable window nodes, split by role: a SOURCE produces (no inlets),
+// placeable surfaces, split by role: a SOURCE produces (no inlets),
 // everything else is an editor/sink/transform you wire into
-export function splitWindowsByRole(windows) {
+export function splitSurfacesByRole(surfaces) {
   return {
-    sources: (windows || []).filter((w) => nodeRole(w) === "source").sort(byName),
-    editors: (windows || []).filter((w) => nodeRole(w) !== "source").sort(byName),
+    sources: (surfaces || []).filter((w) => nodeRole(w) === "source").sort(byName),
+    editors: (surfaces || []).filter((w) => nodeRole(w) !== "source").sort(byName),
   };
 }
 
 // ── the census (pure: registries in → grouped tiles out) ────────────────────
-// Groups mirror the + add menu (the SAME grouping: splitWindowsByRole, byName)
+// Groups mirror the + add menu (the SAME grouping: splitSurfacesByRole, byName)
 // plus the toolbar's draggables (shapes, stamps).
 // Each tile: { part (the encoded drag payload), kind, id, name, mark, icon?,
 // stamp? (the multi-stroke drawing, for the tile's icon), path? (a TOOL_META
 // icon path) }.
-export function partsCensus({ datatypes = [], windows = [], lenses = [], stamps = {}, shapes = [], palettes = [], flap = false } = {}) {
+export function partsCensus({ datatypes = [], surfaces = [], lenses = [], stamps = {}, shapes = [], palettes = [], flap = false } = {}) {
   const tile = (kind, d, mark) => ({ part: encodePartId(kind, d.id), kind, id: d.id, name: d.name || d.id, mark, icon: d.icon });
   const groups = [];
   if (palettes.length) groups.push({
@@ -152,9 +152,9 @@ export function partsCensus({ datatypes = [], windows = [], lenses = [], stamps 
     tiles: stampIds.map((id) => ({ part: id, kind: "stamp", id, name: id, mark: "✎", stamp: stamps[id] })),
   });
   if (datatypes.length) groups.push({ id: "docs", label: "new docs", tiles: [...datatypes].sort(byName).map((d) => tile("datatype", d, "＋")) });
-  const { sources, editors } = splitWindowsByRole(windows);
-  if (sources.length) groups.push({ id: "sources", label: "sources", tiles: sources.map((d) => tile("window", d, "●")) });
-  if (editors.length) groups.push({ id: "editors", label: "editors", tiles: editors.map((d) => tile("window", d, "⚡")) });
+  const { sources, editors } = splitSurfacesByRole(surfaces);
+  if (sources.length) groups.push({ id: "sources", label: "sources", tiles: sources.map((d) => tile("surface", d, "●")) });
+  if (editors.length) groups.push({ id: "editors", label: "editors", tiles: editors.map((d) => tile("surface", d, "⚡")) });
   if (lenses.length) groups.push({ id: "lenses", label: "lenses", tiles: [...lenses].sort(byName).map((d) => tile("lens", d, "◇")) });
   return groups;
 }
@@ -165,7 +165,7 @@ export function armPart(t, host) {
   if (!t || !host) return false;
   const find = (list) => (list || []).find((x) => x.id === t.id);
   if (t.kind === "datatype") { const d = find(host.datatypes && host.datatypes()); if (d && host.selectPlacing) { host.selectPlacing(d); return true; } return false; }
-  if (t.kind === "window") { const d = find(host.editors && host.editors()); if (d && host.placeEditor) { host.placeEditor(d); return true; } return false; }
+  if (t.kind === "surface") { const d = find(host.editors && host.editors()); if (d && host.placeEditor) { host.placeEditor(d); return true; } return false; }
   if (t.kind === "lens") { const d = find(host.lenses && host.lenses()); if (d && host.placeLens) { host.placeLens(d); return true; } return false; }
   if (t.kind === "flap") { if (host.placeFlap) { host.placeFlap(); return true; } return false; } // draw-a-flap (the place flow)
   if (t.kind === "tool" && host.setTool) { host.setTool(t.id); return true; } // a shape: arm its draw tool

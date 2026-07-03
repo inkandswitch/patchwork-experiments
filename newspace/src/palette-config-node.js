@@ -224,7 +224,7 @@ export function mountPaletteConfig({ element, config, setConfig, onConfig, setOu
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "palette-config",
   name: "Palette setup",
   icon: "SlidersHorizontal",

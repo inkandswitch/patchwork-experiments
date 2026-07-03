@@ -80,6 +80,18 @@ describe("a stuck flap collapses to an edge tab; the tab opens the drawer (per-v
     expect(element.querySelector('.ns-doc[data-item-id="fl1"]')).toBeFalsy();
   });
 
+  it("keeps an overlay-home flap tab clickable while visible on the canvas layer", async () => {
+    const repo = new Repo({});
+    const item = { ...(await stuckFlap(repo)), layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "right", t: 0.5 } };
+    const { element } = await mountCanvas(repo, [item]);
+    const tabBox = element.querySelector('.ns-flap-tab-box[data-item-id="fl1"]');
+    expect(tabBox).toBeTruthy();
+    expect(tabBox.getAttribute("style")).toContain("pointer-events: auto");
+    tabBox.querySelector(".ns-flap-tab").click();
+    await flush(30);
+    expect(element.querySelector('.ns-doc.ns-flap[data-item-id="fl1"]')).toBeTruthy();
+  });
+
   it("an UNSTUCK flap is a normal floating frame (no tab)", async () => {
     const repo = new Repo({});
     const folder = await makeFlapSpace(repo, "loose");
@@ -101,7 +113,7 @@ describe("the seeded PARTS flap", () => {
     expect(flap).toBeTruthy();
     expect(flap.kind).toBe("frame");
     expect(flap.flap).toBe(true);
-    expect([...flap.layers]).toEqual(["overlay"]); // overlay-only, like the old bin
+    expect([...flap.layers]).toEqual(["overlay", "canvas"]); // reachable while drawing on the canvas layer
     expect(JSON.parse(JSON.stringify(flap.sticky))).toEqual({ edge: "left", t: 1 });
     const flapFolder = await repo.find(flap.url);
     expect(flapFolder.doc().title).toBe("parts");

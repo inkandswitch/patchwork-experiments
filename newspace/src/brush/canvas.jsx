@@ -21,7 +21,7 @@ import { createCanvasContext, claimDraws, drawClaim, toolIsClaimable } from "../
 import { opstreamToSignal, Source, automergeOpstream, numberSchema, anySchema, apply as applyOp } from "../opstreams.js";
 import { mountInspector } from "../inspector-editor.js";
 import { readPort, portWiring, makeEditorItem, editorsForStream, firstMatchingInlet, firstMatchingInletForOutlet, streamType, descriptorsFeeding, outletFeedsInlet, usedContextOutlets as computeUsedContextOutlets, paramWireFor, rawValueInlets, formatShape, seedConfigFor } from "../wire.js";
-import { listEditors, nodeRole, inletDefsFor, outletDefsFor } from "../editors.js";
+import { listEditors, nodeRole, inletDefsFor, outletDefsFor } from "../surfaces.js";
 import { PART_DRAG_TYPE, decodePartId } from "../parts-bin.js";
 import { paletteEntriesById } from "../registry/palettes.js";
 import { stickyFromRect, resolveStickyScreen, stickyOf, isStuck } from "../sticky.js";
@@ -35,7 +35,7 @@ import { placeHandlers } from "../place-brush.js";
 import { describeBinary, isError, binarySafeReplacer, paramsSchema, isSnapshot, describeSchema } from "../ops.js";
 import { ShareSession, myContactUrl as sessionMyUrl } from "../share-session.js";
 import { listLensDescriptors } from "../lenses.js";
-import { catalogDatatypes, catalogWindows, catalogLenses } from "../catalog.js";
+import { catalogDatatypes, catalogSurfaces, catalogLenses } from "../catalog.js";
 import { viewRect, fitRect, centerCam, zoomAt, contentBounds } from "./camera.js";
 import { Item } from "./items/item.jsx";
 import { PresenceLayer } from "./ui/presence.jsx"; // Minimap is now a bare tool (minimap-node.js)
@@ -46,17 +46,17 @@ import {
 import {
   rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame, itemBox,
   ownsSpace, projectItemFromBox, annotateItemIntoBox, surfaceWithinBox, itemVisibleForActive,
-  itemBounds, cloneItem, itemPresent, arrowGeometry, worldAnchor,
+  itemBounds, cloneItem, itemPresent, arrowGeometry, worldAnchor, shouldUnlinkDoc,
   linkItemId, buildItemsIndex, findById,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
 } from "../model.js";
-import { createDocsLens } from "../docs-lens.js";
+import { docsLens } from "../docs-lens.js";
 import { count as perfCount, perFrame, rafBatch, startOverlay } from "../perf.js";
 import "../style.css";
 import {
   colorVar, SIZES, shapeRenderProps, shapePropsEqual, enableAtomicMove,
   SHAPE_TOOLS, clamp, rndSeed, uid, ensureLayout, colorFor, isTypingTarget,
-  SEED_IDS, makeFlapSpace, seedPartsFlap, windowDrag,
+  ASIDE_ID, SEED_IDS, makeFlapSpace, seedPartsFlap, windowDrag,
 } from "./constants.js";
 
 // README.md Phase 4 — coalesce a high-frequency Source's PUSH side to a 16ms
@@ -178,7 +178,7 @@ export function Canvas(props) {
   // survive; nothing display:none can be hit or clicked). Root items only —
   // frame children carry no layer tags and follow their frame's node.
   const layerIdList = () => layersList().map((l) => l.id);
-  const itemHidden = (it) => !itemVisibleForActive(it, layerIdList(), activeLayerId());
+  const itemHidden = (it) => it?.parent === ASIDE_ID || !itemVisibleForActive(it, layerIdList(), activeLayerId());
   // a MEMBER of the active layer that lives elsewhere opts back into pointer
   // events (its home container is inert while inactive) — membership means
   // "appears AND is usable on this layer" (the seeded palette while drawing).
@@ -273,7 +273,7 @@ export function Canvas(props) {
   // item's home-layer coords exactly like stickyPlace (counter-scaled on a
   // camera-home layer). Vertical edges swap the tab's axes (the name reads
   // top-to-bottom there — CSS writing-mode).
-  const FLAP_TAB = { long: 112, thick: 26 };
+  const FLAP_TAB = { long: 112, thick: 34 };
   const flapTabPlace = (it) => {
     vpTick();
     const edge = (it.sticky && it.sticky.edge) || "left";
@@ -494,10 +494,16 @@ export function Canvas(props) {
     let f = null;
     for (const it of rootItems()) {
       if (it.kind !== "frame" || it.id === exclude) continue;
-      if (itemHomeLayer(it) !== activeLayerId()) continue;
       if (flapCollapsed(it)) continue;
       const eff = effFrame(it);
-      if (pointInFrame(eff, wx, wy)) f = eff;
+      if (itemHomeLayer(it) === activeLayerId()) {
+        if (pointInFrame(eff, wx, wy)) f = eff;
+        continue;
+      }
+      if (it.id !== ASIDE_ID || !itemLayers(it).includes(activeLayerId())) continue;
+      const screen = chainToOuter([layerBoxOf(activeLayerId())], { x: wx, y: wy }, boxEnv);
+      const hp = chainToLocal([layerBoxOf(itemHomeLayer(it))], screen, boxEnv);
+      if (pointInFrame(eff, hp.x, hp.y)) f = eff;
     }
     return f;
   };
@@ -761,11 +767,23 @@ export function Canvas(props) {
     beginGesture(e);
   }
 
-  // the docs↔items join (materialize a shape per folder link, dedupe, unlink-on-delete +
-  // the just-deleted-url tombstone that keeps a delete from racing the add pass). Lifted into
-  // docs-lens.js (Ring 2 step 1); the effects below just trigger it.
-  const docsLens = createDocsLens();
-  onCleanup(() => docsLens.dispose());
+  // The docs↔items join runs as an opstream lens over the folder doc + layout doc.
+  // The component still owns gestures/deletes, but materialize/dedupe is one stream path.
+  const [docsJoin, setDocsJoin] = createSignal(null);
+  createEffect(() => {
+    const layout = rootLayoutH();
+    if (!layout) { setDocsJoin(null); return; }
+    const folderStream = automergeOpstream(handle);
+    const sketchStream = automergeOpstream(layout);
+    const lens = docsLens(folderStream, sketchStream);
+    setDocsJoin(lens);
+    onCleanup(() => {
+      lens.dispose();
+      folderStream.disconnect?.();
+      sketchStream.disconnect?.();
+      if (docsJoin() === lens) setDocsJoin(null);
+    });
+  });
 
   // find whichever surface actually holds an item id (root or any box)
   function surfaceOf(id) {
@@ -807,7 +825,10 @@ export function Canvas(props) {
       if (item.kind === "doc" || item.kind === "frame") {
         // unlink the doc only when this is the LAST shape for its url (alt-drag copies share a
         // url); the lens tombstones first so the add pass can't recreate it mid-delete.
-        docsLens.unlinkForDelete(surface.doc?.items || [], item.url, idSet, (fn) => surface.folderHandle.change(fn));
+        if (shouldUnlinkDoc(surface.doc?.items || [], item.url, idSet)) {
+          docsJoin()?.tombstone(item.url);
+          surface.folderHandle.change((d) => { const di = (d.docs || []).findIndex((l) => l.url === item.url); if (di >= 0) d.docs.splice(di, 1); });
+        }
       }
       queueMicrotask(() => surface.handle.change((d) => { const i = d.items.findIndex((x) => x.id === id); if (i >= 0) d.items.splice(i, 1); }));
     }
@@ -1184,7 +1205,7 @@ export function Canvas(props) {
       commit: (item) => { if (item) pushItem(g.targetFrame, item, { box: g.targetBox }); },
     };
   }
-  // the active surface's items as a REAL opstream (read + apply) — the "storeOpstream"
+  // the active surface's items as a REAL opstream (read + apply)
   // bridge. A brush can connect to it (live items) and apply ops (splice/set) to draw,
   // instead of the ergonomic commit/change sugar. Memoised per layout handle so there's
   // one change-listener, not one per access.
@@ -1822,6 +1843,7 @@ export function Canvas(props) {
     const [wx, wy] = localToWorld(effFrame(srcSurface.frame), b.x + b.w / 2, b.y + b.h / 2);
     const tf = frameAtWorld(wx, wy, id);
     if (!tf) return null;
+    if (tf.id === ASIDE_ID) return it.id === ASIDE_ID ? null : tf.id;
     if (it.kind === "frame" && tf.url === it.url) return null;
     if ((srcSurface.frame ? srcSurface.frame.id : "root") === tf.id) return null;
     return tf.id;
@@ -1834,6 +1856,16 @@ export function Canvas(props) {
     const b = itemBounds(it);
     const [wx, wy] = localToWorld(effFrame(srcSurface.frame), b.x + b.w / 2, b.y + b.h / 2);
     const targetFrame = frameAtWorld(wx, wy, id);
+    if (targetFrame?.id === ASIDE_ID) {
+      if (srcSurface.id !== "root" || id === ASIDE_ID) return;
+      srcSurface.handle.change((d) => {
+        const o = d.items.find((x) => x.id === id);
+        if (o) o.parent = ASIDE_ID;
+      });
+      setActiveId("root");
+      setSelected([]);
+      return;
+    }
     if (targetFrame && it.kind === "frame" && targetFrame.url === it.url) return; // a box can't go inside itself
     const srcId = srcSurface.frame ? srcSurface.frame.id : "root";
     const dstId = targetFrame ? targetFrame.id : "root";
@@ -1969,6 +2001,7 @@ export function Canvas(props) {
   // the parts bin (same DnD type, namespaced part ids; see parts-bin.js) —
   // centred on the drop point
   const TOOL_DRAG = PART_DRAG_TYPE;
+  const ASIDE_DRAG = "application/x-newspace-aside-item";
   // drop a multi-stroke stamp (cat face, pencil, mitten, mouse) centred on `p`,
   // scaled up, as freehand pencil strokes
   function dropStamp(id, p) {
@@ -1993,7 +2026,7 @@ export function Canvas(props) {
     // through the SAME machinery the + menu / node palette use.
     const part = decodePartId(id);
     if (part.kind === "datatype") { createDocAt(part.id, p.x - 180, p.y - 140, 360, 280); return; }
-    if (part.kind === "window" || part.kind === "lens") {
+    if (part.kind === "surface" || part.kind === "lens") {
       const d = (part.kind === "lens" ? listLensDescriptors() : listEditors()).find((x) => x.id === part.id);
       if (d) placeNode(d, p);
       return;
@@ -2021,8 +2054,30 @@ export function Canvas(props) {
 
   // dropEffect must be in the drag's effectAllowed (sideboard uses "copyMove"),
   // else the browser rejects the drop and the drop event never fires
-  function onDragOver(e) { const t = e.dataTransfer.types; if (!t.includes(TOOL_DRAG) && !hasDocDrag(e.dataTransfer) && !t.includes("application/sketchy-port") && !t.includes("text/plain")) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+  function onDragOver(e) {
+    const t = e.dataTransfer.types;
+    if (!t.includes(ASIDE_DRAG) && !t.includes(TOOL_DRAG) && !hasDocDrag(e.dataTransfer) && !t.includes("application/sketchy-port") && !t.includes("text/plain")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = t.includes(ASIDE_DRAG) ? "move" : "copy";
+  }
   async function onDrop(e) {
+    if (e.dataTransfer.types.includes(ASIDE_DRAG)) {
+      e.preventDefault();
+      const id = e.dataTransfer.getData(ASIDE_DRAG);
+      const p = toWorld(e.clientX, e.clientY);
+      const rh = rootLayoutH();
+      if (id && rh) transact(rh, "move", () => rh.change((d) => {
+        const o = (d.items || []).find((x) => x.id === id && x.parent === ASIDE_ID);
+        if (!o) return;
+        delete o.parent;
+        o.x = p.x; o.y = p.y;
+        if (o.kind !== "frame") o.rotation = o.rotation || 0;
+        o.layers = [activeLayerId()];
+        if (activeLayerId() !== baseLayer()?.id) o.layer = activeLayerId(); else delete o.layer;
+      }));
+      if (id) setSelected([id]);
+      return;
+    }
     // a PORT dragged from an embedded tool (HTML5 DnD crosses the iframe boundary
     // that pointer events can't) — e.g. a Form field grip → wire it. Try the custom
     // type, then text/plain (some hosts only forward known types across iframes).
@@ -2103,7 +2158,23 @@ export function Canvas(props) {
       }
       return;
     }
-    const fresh = dragged.filter((it) => !(layout.doc().items || []).some((x) => x.url === it.url));
+    const placedFromAside = new Set();
+    if (!frame) {
+      layout.change((d) => {
+        dragged.forEach((it, i) => {
+          const o = (d.items || []).find((x) => x.url === it.url && x.parent === ASIDE_ID);
+          if (!o) return;
+          const pos = at(i);
+          delete o.parent;
+          o.x = pos.x; o.y = pos.y;
+          if (o.kind !== "frame") o.rotation = o.rotation || 0;
+          o.layers = [activeLayerId()];
+          if (activeLayerId() !== baseLayer()?.id) o.layer = activeLayerId(); else delete o.layer;
+          placedFromAside.add(it.url);
+        });
+      });
+    }
+    const fresh = dragged.filter((it) => !placedFromAside.has(it.url) && !(layout.doc().items || []).some((x) => x.url === it.url));
     layout.change((d) => {
       fresh.forEach((it, i) => {
         if (d.items.some((x) => x.url === it.url)) return;
@@ -2306,24 +2377,6 @@ export function Canvas(props) {
     window.addEventListener("pointerdown", close, true);
     onCleanup(() => window.removeEventListener("pointerdown", close, true));
   });
-  // every folder link gets one doc/frame item in the layout doc (root surface). The join
-  // itself is docs-lens.js; the component injects placement (only it knows the camera),
-  // read lazily so a camera move doesn't churn when nothing's missing.
-  createEffect(() => {
-    const layout = rootLayoutH();
-    if (!layout) return;
-    docsLens.reconcile(folderDoc.docs || [], rootItems(), (fn) => layout.change(fn), () => {
-      const c = cam(), r = viewportRect();
-      return r ? { x: (r.width / 2 - c.x) / c.z, y: (r.height / 2 - c.y) / c.z } : { x: 0, y: 0 };
-    });
-  });
-
-  // collapse the doubled item two peers materialize for one new link (see docs-lens dedupe).
-  createEffect(() => {
-    const layout = rootLayoutH(); if (!layout) return;
-    docsLens.dedupe(rootItems(), (fn) => layout.change(fn));
-  });
-
   // ---- presence (cursors, faces, shared view) -------------------------
   const [selfP, setSelfP] = createSignal(null);
   const [peers, setPeers] = createSignal(new Map(), { equals: false });
@@ -3060,7 +3113,7 @@ export function Canvas(props) {
     get tools() { return rootLayoutDoc()?.layout?.tools ?? opts.tools; },
     setTool, datatypes, brushes,
     addOpen, setAddOpen, shapeMenuOpen, setShapeMenuOpen, extraShape, setExtraShape,
-    selectPlacing, editors: catalogWindows, lenses: catalogLenses,
+    selectPlacing, editors: catalogSurfaces, lenses: catalogLenses,
     addById: addDocById, placeEditor: placeUnwiredEditor, placeLens: placeUnwiredLens, placeFlap,
     // properties
     mode: propMode, params: paramTarget, get: getProp, set: setProp, pos: propsPos, setPos: setPropsPos,
@@ -3109,7 +3162,7 @@ export function Canvas(props) {
     tool, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
     spaceEpoch, // bumps when a spatial box's projection moves (map pan/zoom) → parented items re-project
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
-    editingId, setEditingId, tombstoned: (url) => docsLens.isTombstoned(url),
+    editingId, setEditingId, tombstoned: (url) => !!docsJoin()?.isTombstoned(url),
     deselect: () => setSelected([]),
     toWorld, select: (ids) => setSelected(ids),
     removeItem: (id) => removeItems(null, [id]),
@@ -3130,6 +3183,11 @@ export function Canvas(props) {
     itemHidden, memberOnActive, stickyPlace,
     // FLAPS — the collapsed-tab render + per-viewer open state (DocOrFrame)
     flapOpen, setFlapOpen, flapTabPlace,
+    asideItems: () => rootItems().filter((it) => it.parent === ASIDE_ID),
+    startAsideDrag: (id, e) => {
+      e.dataTransfer.setData(ASIDE_DRAG, id);
+      e.dataTransfer.effectAllowed = "move";
+    },
   };
 
   const handleBox = createMemo(() => {
@@ -3388,7 +3446,7 @@ export function Canvas(props) {
       {/* wire-tool double-click: a searchable palette to add a source/transform/sink.
           WORLD-anchored (worldToScreen) so it pans with the canvas once open. */}
       <Show when={nodeMenu()}>{(m) => (
-        <NodeAddMenu screen={() => worldToScreen(m().world.x, m().world.y)} items={[...catalogWindows(), ...catalogLenses()]} onPick={(d) => { placeNode(d, m().world); setNodeMenu(null); }} onClose={() => setNodeMenu(null)} />
+        <NodeAddMenu screen={() => worldToScreen(m().world.x, m().world.y)} items={[...catalogSurfaces(), ...catalogLenses()]} onPick={(d) => { placeNode(d, m().world); setNodeMenu(null); }} onClose={() => setNodeMenu(null)} />
       )}</Show>
 
       {/* click a port (no drag) → its FULL schema, world-anchored so it pans with you */}

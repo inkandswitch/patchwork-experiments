@@ -112,7 +112,7 @@ describe("palette pure helpers", () => {
     expect(acceptDrop("highlighter")).toBe("highlighter");
     expect(acceptDrop("mouse")).toBe(null); // a stamp drawing, not an armable tool
     expect(acceptDrop(encodePartId("datatype", "folder"))).toBe(null);
-    expect(acceptDrop(encodePartId("window", "codemirror"))).toBe(null);
+    expect(acceptDrop(encodePartId("surface", "codemirror"))).toBe(null);
     expect(acceptDrop(encodePartId("lens", "uppercase"))).toBe(null);
     expect(acceptDrop("")).toBe(null);
     expect(acceptDrop(null)).toBe(null);
@@ -133,8 +133,8 @@ describe("palette pure helpers", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a BARE sketchy:window with the optional tool + tools inlets", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a BARE sketchy:surface with the optional tool + tools inlets", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("palette");
     expect(plugin.bare).toBe(true);
     expect(plugin.unlisted).toBeFalsy(); // appears in the + menu / parts bin
@@ -324,7 +324,7 @@ describe("mountPalette", () => {
     expect(rowIds(m.element)).toEqual(["pen", "eraser"]);
     // a stamp / a namespaced part is NOT taken — the event bubbles to the canvas
     expect(drop("mouse").defaultPrevented).toBe(false);
-    expect(drop(encodePartId("window", "codemirror")).defaultPrevented).toBe(false);
+    expect(drop(encodePartId("surface", "codemirror")).defaultPrevented).toBe(false);
     expect(rowIds(m.element)).toEqual(["pen", "eraser"]);
     m.done();
   });

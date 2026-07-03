@@ -76,8 +76,8 @@ describe("split / join round-trip", () => {
 });
 
 describe("plugin descriptor", () => {
-  it("is a bidirectional sketchy:window with the right ports", () => {
-    expect(plugin.type).toBe("sketchy:window");
+  it("is a bidirectional sketchy:surface with the right ports", () => {
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("split-join");
     expect(plugin.name).toBe("Split / Join");
     expect(plugin.icon).toBe("Scissors");

@@ -203,7 +203,7 @@ describe("mountCombine — bidirectional out", () => {
 
 describe("plugin descriptor", () => {
   it("declares the combine node shape", async () => {
-    expect(plugin.type).toBe("sketchy:window");
+    expect(plugin.type).toBe("sketchy:surface");
     expect(plugin.id).toBe("combine");
     expect(plugin.name).toBe("Combine");
     expect(plugin.icon).toBe("Combine");

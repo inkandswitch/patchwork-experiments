@@ -108,7 +108,7 @@ describe("stickyOf — legacy corner anchors normalize to sticky (migrate-on-rea
 // ── mounted: drag a window to an edge → it sticks; drag it off → it unsticks ──
 
 registerPlugins([{
-  type: "sketchy:window", id: "value", name: "Raw value",
+  type: "sketchy:surface", id: "value", name: "Raw value",
   inlets: [], outlets: [{ name: "value", type: "json" }],
   load: async () => mountRawValue,
 }]);

@@ -1,14 +1,14 @@
 // THE PARTS BIN — a browsable census of everything placeable, straight from
 // the registries — shapes + stamps (the classic drag-outs), palette PRESETS,
-// datatypes (new docs), and the `sketchy:window` nodes + `sketchy:lens`
+// datatypes (new docs), and the `sketchy:surface` nodes + `sketchy:lens`
 // lenses, grouped exactly like the + add menu (sources · editors · lenses, via
-// nodeRole). It ships as a bare `sketchy:window` (mountPartsWindow / `plugin`)
+// nodeRole). It ships as a bare `sketchy:surface` (mountPartsWindow / `plugin`)
 // seeded overlay-only — the bin appears exactly when you switch to the overlay
 // to arrange your space. Raw callbacks + DOM — window CONTENT is not canvas
 // shell, and only the canvas shell gets Solid (the opstream-processing rule).
 //
 // DRAG-OUT PROTOCOL: tiles extend the palette's existing `text/x-newspace-tool`
-// DnD type with a namespaced part id — `datatype:folder`, `window:codemirror`,
+// DnD type with a namespaced part id — `datatype:folder`, `surface:codemirror`,
 // `lens:uppercase`, `palette:full`/`palette:sketch`, `flap:flap` — while
 // tool/shape/stamp ids stay BARE (the palette's own drags are unchanged). The
 // canvas's dropToolAt decodes with decodePartId and lands an instance at the
@@ -35,7 +35,7 @@ import { STAMPS, SHAPE_DRAGGABLE } from "./brush/ui/chrome.jsx";
 import {
   PART_DRAG_TYPE, FLAP_PART, PALETTE_PARTS, listPalettes,
   encodePartId, decodePartId, partsCensus, armPart,
-  catalogDatatypes, catalogWindows, catalogLenses,
+  catalogDatatypes, catalogSurfaces, catalogLenses,
 } from "./catalog.js";
 export { PART_DRAG_TYPE, FLAP_PART, PALETTE_PARTS, listPalettes, encodePartId, decodePartId, partsCensus, armPart };
 
@@ -90,14 +90,14 @@ function tileEl(t, host) {
 
 // build the bin into `element` from a host's registry accessors; shared by the
 // legacy host mount (mountPartsBin, kept for direct embedding/tests) and the
-// sketchy:window mount below.
+// sketchy:surface mount below.
 function buildBin(element, host, cls) {
   const root = el("div", cls);
   const render = () => {
     root.replaceChildren();
     const groups = partsCensus({
       datatypes: (host && host.datatypes && host.datatypes()) || [],
-      windows: (host && host.editors && host.editors()) || [],
+      surfaces: (host && host.editors && host.editors()) || [],
       lenses: (host && host.lenses && host.lenses()) || [],
       stamps: STAMPS,
       shapes: [...SHAPE_DRAGGABLE],
@@ -124,16 +124,16 @@ export function mountPartsBin({ element, host }) {
   return buildBin(element, host, "ns-partsbin");
 }
 
-// the `sketchy:window` mount — the bin as a bare window item (shipped parked
+// the `sketchy:surface` mount — the bin as a bare window item (shipped parked
 // inside the parts FLAP). A window mount doesn't receive the chrome host, so
 // the registries are read directly and the only click-arm that works is a
-// tool/shape (via the context tool Source); datatype/window/lens/palette/flap
+// tool/shape (via the context tool Source); datatype/surface/lens/palette/flap
 // tiles are drag-out (dropToolAt lands them all). Saving things into the bin is
 // item containment now: alt-drag a copy and drop it into the flap.
 export function mountPartsWindow({ element, context }) {
   const host = {
     datatypes: catalogDatatypes,
-    editors: catalogWindows,
+    editors: catalogSurfaces,
     lenses: catalogLenses,
     setTool: (id) => { const t = context && context.tool; if (t && typeof t.set === "function") t.set(id); },
   };
@@ -144,7 +144,7 @@ export function mountPartsWindow({ element, context }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "parts",
   name: "Parts",
   icon: "Shapes",

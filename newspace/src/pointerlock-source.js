@@ -54,7 +54,7 @@ export function pointerLockSource() {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "pointer-lock",
   name: "Pointer lock",
   icon: "MousePointer2",

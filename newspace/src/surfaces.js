@@ -1,7 +1,5 @@
-// sketchy:surface — the internal shape for any placeable node. Legacy registry
-// types still exist at the boundary:
-//   sketchy:window = mounted surface
-//   sketchy:lens   = headless transform surface
+// sketchy:surface — a mounted placeable surface. Headless transforms remain
+// `sketchy:lens`; both normalize to the same descriptor shape below.
 //
 // A role is derived from inlet/outlet topology. UI is optional.
 import { getRegistry } from "@inkandswitch/patchwork-plugins";
@@ -33,8 +31,8 @@ export function normalizeSurface(d) {
   return out;
 }
 
-export function listWindowSurfaces() {
-  return registryList("sketchy:window").map(normalizeSurface);
+export function listMountedSurfaces() {
+  return registryList("sketchy:surface").map(normalizeSurface);
 }
 
 export function listLensSurfaces() {
@@ -42,11 +40,11 @@ export function listLensSurfaces() {
 }
 
 export function listSurfaces() {
-  return [...listWindowSurfaces(), ...listLensSurfaces()];
+  return [...listMountedSurfaces(), ...listLensSurfaces()];
 }
 
 export function surfacesFor(type) {
-  return listWindowSurfaces().filter(
+  return listMountedSurfaces().filter(
     (e) =>
       !e.supportedDatatypes ||
       e.supportedDatatypes.includes("*") ||
@@ -114,3 +112,10 @@ export function outletDefsFor(descriptor, item) {
   return (descriptor && descriptor.outlets) || [];
 }
 
+// Compatibility names while stored items and some UI still say "editor".
+export const listEditors = listMountedSurfaces;
+export const editorsFor = surfacesFor;
+export const loadEditorMount = loadSurfaceMount;
+export const defaultInlets = defaultSurfaceInlets;
+export const mountEditor = mountSurface;
+export const nodeRole = surfaceRole;

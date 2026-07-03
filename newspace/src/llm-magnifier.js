@@ -88,7 +88,7 @@ export function mountLLMMagnifier({ element, api, setOutlet }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "llm-magnifier",
   name: "Magnifying glass",
   icon: "Search",

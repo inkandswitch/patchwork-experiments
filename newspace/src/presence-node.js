@@ -165,7 +165,7 @@ export function mountPresence({ element, inlets = {}, context }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "presence",
   name: "Presence",
   icon: "Users",

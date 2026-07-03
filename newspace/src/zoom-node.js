@@ -21,7 +21,7 @@ export function mountZoom({ element, inlets = {}, context }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "zoom",
   name: "Zoom",
   icon: "ZoomIn",

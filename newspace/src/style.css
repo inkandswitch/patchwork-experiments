@@ -1147,6 +1147,24 @@
 .ns-flap-tab-top { border-top: none; border-radius: 0 0 7px 7px; }
 .ns-flap-tab-bottom { border-bottom: none; border-radius: 7px 7px 0 0; }
 
+.ns-aside-list {
+  display: flex; flex-direction: column; gap: 5px;
+  height: 100%; box-sizing: border-box; padding: 6px;
+  overflow-y: auto; background: var(--ns-paper);
+}
+.ns-aside-row {
+  display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 6px;
+  min-height: 30px; padding: 4px 7px; box-sizing: border-box;
+  border: 1.5px solid var(--ns-ink); border-radius: 6px;
+  background: var(--ns-chrome); color: var(--ns-ink); cursor: grab;
+  box-shadow: 1.5px 1.5px 0 var(--ns-shadow);
+  font: 600 12px var(--ns-font, system-ui);
+}
+.ns-aside-row:active { cursor: grabbing; transform: translate(1.5px, 1.5px); box-shadow: none; }
+.ns-aside-kind { font: 700 11px ui-monospace, monospace; text-transform: uppercase; opacity: 0.75; }
+.ns-aside-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ns-aside-empty { padding: 10px 8px; color: color-mix(in oklch, var(--ns-ink), transparent 35%); font: 600 12px var(--ns-font, system-ui); }
+
 /* ---- the PARTS BIN (a bare overlay window — parts-bin.js) ------------------ */
 .ns-partsbin { display: flex; flex-direction: column; }
 /* the bin as a bare window body: paper card, scrolls its census */

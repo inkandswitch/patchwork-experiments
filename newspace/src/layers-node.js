@@ -78,7 +78,7 @@ export function mountLayers({ element, context, setSize }) {
 }
 
 export const plugin = {
-  type: "sketchy:window",
+  type: "sketchy:surface",
   id: "layers",
   name: "Layers",
   icon: "Layers",
