@@ -28,14 +28,10 @@ type ToolStorageDoc = { llmChatUrl?: AutomergeUrl };
 type FocusedDoc = { title?: string; "@patchwork"?: { type?: string } };
 
 /**
- * Context-sidebar variant of the LLM chat. Registered both as a legacy
- * `patchwork:tool` (`supportedDatatypes: ["account"]`, for frames still on
- * the old pattern) and a `patchwork:component` tagged `context-tool` (for
- * frames that resolve context tools from the registry directly) — see
- * `./index.ts`. Either way this ignores whatever handle it's given: its
- * persistent state lives in a private doc requested from the
- * `patchwork:tool-storage` provider, not on the account doc, so it works
- * identically with no `docUrl` at all.
+ * Context-sidebar variant of the LLM chat. Registered as a `patchwork:component`
+ * tagged `context-tool` (see `./index.ts`) — takes no `docUrl`, and ignores
+ * whatever handle it's given: its persistent state lives in a private doc
+ * requested from the `patchwork:tool-storage` provider, not on the account doc.
  *
  * There is a single persistent chat per account (its url is stored on the
  * tool's storage doc), so the conversation survives reloads and is the same
