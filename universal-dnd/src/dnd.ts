@@ -14,7 +14,21 @@ import type { ViewDecorator } from "./types.js";
 export interface PatchworkDndItem {
   url: string;
   name?: string;
+  /** Datatype id (`@patchwork.type`), if known. */
   type?: string;
+  /** Explicit tool preference — the tool this view was rendering. */
+  toolId?: string;
+}
+
+/** Build a Patchwork web link (`…/#doc=<id>`) for `text/uri-list`. */
+function webLinkFor(url: string): string | null {
+  const id = url.replace(/^automerge:/, "").split(/[?#/]/)[0];
+  if (!id) return null;
+  try {
+    return `${location.origin}/#doc=${id}`;
+  } catch {
+    return null;
+  }
 }
 
 export function setPatchworkDragData(
@@ -27,8 +41,14 @@ export function setPatchworkDragData(
     JSON.stringify({ source, items: [item] })
   );
   dt.setData("text/x-patchwork-urls", JSON.stringify([item.url]));
+  // A real link so the browser treats the drag as a link (Chrome split-view)
+  // and canvases that only read uri-list still accept it.
+  const link = webLinkFor(item.url);
+  if (link) dt.setData("text/uri-list", `${link}\r\n`);
   dt.setData("text/plain", item.url);
-  dt.effectAllowed = "copyMove";
+  // "all" advertises copy, move AND link — link is what lets Chrome offer
+  // split-view when dragging a doc out of the app (mirrors the sideboard).
+  dt.effectAllowed = "all";
 }
 
 // 6-dot grip, currentColor so it inherits the handle's text color.
@@ -57,6 +77,31 @@ export const dragHandleDecorator: ViewDecorator = ({
   // Only views that actually represent a document are draggable.
   if (!url) return;
 
+  // Best-effort: if this view's doc is a `file`, learn its mime type + name so
+  // dragstart can also expose a `DownloadURL` (drag straight to the desktop).
+  // Async lookup via the `window.repo` global — resolves well before a drag in
+  // practice; if it hasn't, we simply skip the OS-export format.
+  let fileMeta: { mime: string; name: string } | null = null;
+  const repo = (
+    window as unknown as { repo?: { find?: (u: string) => Promise<unknown> } }
+  ).repo;
+  if (repo?.find) {
+    void repo
+      .find(url)
+      .then((handle) => {
+        const doc = (handle as { doc?: () => Record<string, any> })?.doc?.();
+        if (doc?.["@patchwork"]?.type !== "file") return;
+        const base = String(doc.name || "file");
+        const ext = doc.extension ? `.${doc.extension}` : "";
+        const name = ext && !base.endsWith(ext) ? `${base}${ext}` : base;
+        fileMeta = {
+          mime: String(doc.mimeType || "application/octet-stream"),
+          name,
+        };
+      })
+      .catch(() => {});
+  }
+
   // A faint outline so the whole augmentable region reads as "grabbable".
   overlay.classList.add("pw-udnd-overlay");
 
@@ -75,8 +120,24 @@ export const dragHandleDecorator: ViewDecorator = ({
       url,
       name: readName(view),
       type: view.getAttribute("data-type") ?? undefined,
+      // Carry the tool this view is showing so targets that honor it (e.g. the
+      // markdown embed) can preserve it; targets that don't just ignore it.
+      toolId: toolId ?? undefined,
     };
     setPatchworkDragData(e.dataTransfer, item, toolId ?? "universal-dnd");
+    // If the doc is a file, let the OS accept this drag as a real file. Served
+    // as raw content by the patchwork service worker at `/<encoded url>/`.
+    if (fileMeta) {
+      try {
+        const swUrl = `${location.origin}/${encodeURIComponent(url)}/`;
+        e.dataTransfer.setData(
+          "DownloadURL",
+          `${fileMeta.mime}:${fileMeta.name}:${swUrl}`
+        );
+      } catch {
+        // location unavailable in exotic embeds — skip OS export.
+      }
+    }
     // Drag a ghost of the actual view so the gesture feels like moving it.
     try {
       e.dataTransfer.setDragImage(view, 12, 12);

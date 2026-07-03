@@ -347,6 +347,22 @@ function PandocContextEditor(props: {
       })
     );
     e.dataTransfer.setData("text/plain", url);
+    // Let the OS accept this drag straight to the desktop/Finder. The file doc
+    // is served as its raw content (with mime type) by the patchwork service
+    // worker at `/<encoded automerge url>/`. Chromium-only (`DownloadURL`), but
+    // a harmless no-op elsewhere.
+    try {
+      const swUrl = new URL(
+        `/${encodeURIComponent(url)}/`,
+        location.origin
+      ).href;
+      e.dataTransfer.setData(
+        "DownloadURL",
+        `${out.mime}:${out.filename}:${swUrl}`
+      );
+    } catch {
+      // location/URL construction can fail in exotic embeds — skip OS export.
+    }
     // The Patchwork sideboard/sidebar sets dropEffect="move" on dragover; a
     // source restricted to "copy" makes the browser reject the drop entirely
     // (the drop event never fires). Allow both so every drop target accepts it.
