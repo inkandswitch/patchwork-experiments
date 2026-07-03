@@ -4,7 +4,8 @@
 import { snapshot } from "./ops.js";
 
 export function mountZoom({ element, inlets = {}, context }) {
-  // the WIRED camera inlet (ns-ctx-zoom), falling back to the context Source if unwired
+  // the camera inlet (ambient canvas feed, or an explicit wire), falling back
+  // to the context Source if nothing backs it
   const cam = () => { const p = inlets.camera; if (p && p.wired) return p; return (context && context.camera) || p; };
   const btn = document.createElement("button");
   btn.className = "ns-zoom";

@@ -21,7 +21,7 @@ export const TOOL_META = {
   arrow: ["Arrow  (A)", "M4 18L17 6m0 0H9m8 0v8"],
   text: ["Text  (T)", "M5 6h12M11 6v11"],
   box: ["Box  (F)", "M8 3H3V8 M14 3H19V8 M14 19H19V14 M8 19H3V14"],
-  wire: ["Wire — pointer++  (W)", "M4 3l9 3.7-3.7 1.2-1.2 3.7z M12 11c2 2 3.2 3.2 4.2 4.6 M18.8 15.6a2 2 0 10.02 0z"],
+  wire: ["Wire  (W)", "M4 3l9 3.7-3.7 1.2-1.2 3.7z M12 11c2 2 3.2 3.2 4.2 4.6 M18.8 15.6a2 2 0 10.02 0z"],
   highlighter: ["Highlighter", "M5 15l7-7 4 4-7 7H5v-4z M14 6l3-3 3 3-3 3z M4 21h8"],
   constraint: ["Constraint line", "M5 18a1.6 1.6 0 100-.1z M17 6a1.6 1.6 0 100-.1z M6 17L16 7 M6 17h5"],
   voice: ["Voice note", "M12 4a2.5 2.5 0 012.5 2.5v4a2.5 2.5 0 01-5 0v-4A2.5 2.5 0 0112 4z M7 10a5 5 0 0010 0 M12 15v4 M9 19h6"],

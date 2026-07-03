@@ -11,6 +11,7 @@ import {
   toolLabel,
   paletteCensus,
   mountPalette,
+  CHEVRONS,
   plugin,
 } from "./palette-node.js";
 import { normalizeEntries, entriesFromIds, entryToolIds, entriesArePlainTools, toolEntry } from "./model.js";
@@ -195,6 +196,52 @@ describe("mountPalette", () => {
     // the overflow button lights while its tool is the armed one
     expect(m.element.querySelector(".ns-palette-menu-btn").classList.contains("active")).toBe(true);
     m.done();
+  });
+
+  it("the overflow trigger is CONNECTED when the popover opens: inside an .ns-root the menu portals to THAT root (a detached anchor landed it at the page's 0,0)", () => {
+    const root = document.createElement("div");
+    root.className = "ns-root";
+    document.body.append(root);
+    const element = document.createElement("div");
+    root.append(element);
+    const cleanup = mountPalette({
+      element, inlets: {}, config: { entries: [{ kind: "menu", label: "shapes", items: ["line"] }] },
+      context: { tool: stubSource("select") },
+    });
+    element.querySelector(".ns-palette-menu-btn").click();
+    const grid = root.querySelector(":scope > .ns-menu-grid"); // portal'd to the palette's OWN .ns-root
+    expect(grid).toBeTruthy();
+    expect(document.body.querySelector(":scope > .ns-menu-grid")).toBeFalsy(); // not the body fallback
+    cleanup();
+    root.remove();
+  });
+
+  it("goes VERTICAL when its item docks to a left/right edge (onSticky), and the overflow opens sideways away from it", () => {
+    const element = document.createElement("div");
+    document.body.append(element);
+    let stickyCb = null;
+    const cleanup = mountPalette({
+      element, inlets: {}, config: { entries: ["pen", { kind: "divider" }, { kind: "menu", label: "shapes", items: ["line"] }] },
+      context: { tool: stubSource("select") },
+      onSticky: (cb) => { stickyCb = cb; cb(null); }, // floating at mount
+    });
+    const pal = element.querySelector(".ns-palette");
+    expect(pal.classList.contains("ns-palette-vert")).toBe(false);
+    stickyCb({ edge: "left", t: 0.5 }); // docked left → a column, menus open RIGHT
+    expect(pal.classList.contains("ns-palette-vert")).toBe(true);
+    // the chevron points where the menu will open (right, away from the edge)
+    const glyph = () => element.querySelector(".ns-palette-menu-btn svg path").getAttribute("d");
+    expect(glyph()).toBe(CHEVRONS.right);
+    element.querySelector(".ns-palette-menu-btn").click();
+    expect(document.querySelector(".ns-menu-grid")).toBeTruthy(); // opens (portal'd)
+    document.querySelector(".ns-menu-backdrop").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    stickyCb({ edge: "right", t: 0.5 }); // docked right → menus open LEFT
+    expect(glyph()).toBe(CHEVRONS.left);
+    stickyCb({ edge: "bottom", t: 0.5 }); // bottom dock: a row again, vertical rule glyph
+    expect(pal.classList.contains("ns-palette-vert")).toBe(false);
+    expect([CHEVRONS.up, CHEVRONS.down]).toContain(glyph());
+    cleanup();
+    element.remove();
   });
 
   it("the overflow popover closes on backdrop click, and cleanup removes a still-open one", () => {

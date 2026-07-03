@@ -460,12 +460,15 @@ a. ~~Chrome seeds shared or personal?~~ ANSWERED (chee, 2026-07-03), and it
    - Axes, now orthogonal: datatype = shape + seeded content; container
      type = how a viewer lays content out; tool = the adapter wiring docs
      into the component and picking defaults.
-   - Sub-question to settle during design (not blocking): does the sketch
-     format itself include `docs[]` (every sketch is also a folder, as
-     historically) or is `docs[]` strictly the plain-folder contract that
-     the docs-lens joins in? Migration is additive either way: existing
-     docs that historically got `.sketch` complements keep being read
-     forever.
+   - Sub-question SETTLED (chee, 2026-07-03): **sketchy stops being a
+     folder for now** — the Sketch format does NOT include `docs[]`.
+     The one-codepath instinct ("always let docs[] be in the root so
+     other folder tools can load it") is real but it's a SYSTEM problem:
+     Patchwork should let a doc declare a LENS over itself to the
+     folder-shape, so any doc can present as a folder without carrying
+     the field. Parked as a host wishlist item. Folder viewing stays the
+     `.sketch` bridge + docs-lens. Existing sketch docs with `docs[]`
+     read forever (additive rule).
 b. ~~When a sketchy tool opens a bare sketchy doc directly (no folder), is
    `docs[]` simply empty/absent, or is folder-linking a required shape?~~
    ANSWERED by the docs-as-lens resolution above: no folder → the tool

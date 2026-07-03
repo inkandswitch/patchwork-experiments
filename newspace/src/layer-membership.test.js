@@ -17,6 +17,7 @@ import { itemLayer } from "./layers.js";
 import { Canvas } from "./brush/canvas.jsx";
 import { plugin as palettePlugin } from "./palette-node.js";
 import { plugin as minimapPlugin } from "./minimap-node.js";
+import { plugin as layersPlugin } from "./layers-node.js";
 
 describe("itemLayers — the back-compat read matrix", () => {
   it("`layers` wins over a legacy `layer` tag", () => {
@@ -96,8 +97,14 @@ const ITEMS = () => [
 
 const mounted = [];
 async function mountCanvas(items = ITEMS(), camera = null) {
+  // the layer switcher is the seeded `layers` BARE window now (layers-node.js) —
+  // register + seed it so `tab()` drives the same tabs users click
+  registerPlugins([layersPlugin]);
   const repo = new Repo({});
-  const layout = repo.create({ "@patchwork": { type: "sketch-layout" }, items });
+  const layout = repo.create({
+    "@patchwork": { type: "sketch-layout" },
+    items: [...items, { id: "ns-layers", kind: "editor", editorId: "layers", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "top", t: 0.9 }, x: 0, y: 0, w: 148, h: 30, rotation: 0, inlets: {} }],
+  });
   const folder = repo.create({ title: "test", docs: [], sketch: layout.url });
   if (camera) localStorage.setItem(`sketchy:camera:${folder.url}`, JSON.stringify(camera));
   const element = document.createElement("div");
@@ -105,7 +112,7 @@ async function mountCanvas(items = ITEMS(), camera = null) {
   const dispose = render(() => Canvas({ handle: folder, repo, element, opts: {} }), element);
   const m = { repo, layout, folder, element, dispose };
   mounted.push(m);
-  await flush();
+  await flush(50); // the layers window mounts async
   return m;
 }
 afterEach(() => {

@@ -10,6 +10,7 @@ import { listLensDescriptors, applyLens } from "../../lenses.js";
 import { roughRectPath, roughEllipsePath, seedFromId } from "../../draw.js";
 import { PortNub } from "../ui/chrome.jsx";
 import { jsonPathStream } from "../../json-path.js";
+import { stickyOf } from "../../sticky.js";
 import { snapshot, describeBinary, isError, fmtNum, previewReplacer, valuesEqual } from "../../ops.js";
 import { Opstream } from "../../opstreams.js";
 import { log } from "../../log.js";
@@ -301,6 +302,14 @@ export function EditorItem(props) {
     // owner writes it; receivers read it reactively.
     const shareDoc = (v) => { const h = props.surface && props.surface.handle; if (!h) return; h.change((dd) => { const o = (dd.items || []).find((x) => x.id === it().id); if (o) o.shared = (v === undefined ? null : v); }); };
     const onShared = (cb) => runWithOwner(fxOwner, () => createEffect(() => { cb(it().shared); }));
+    // the item's STICKY dock, READ-ONLY + reactive — a node that reorients when
+    // docked (the palette goes vertical on a left/right edge) subscribes here.
+    // Fires with { edge, t } (a legacy corner `anchor` normalized via stickyOf)
+    // or null while floating; same fxOwner lifecycle as onConfig/onShared.
+    const onSticky = (cb) => runWithOwner(fxOwner, () => createEffect(() => {
+      const s = stickyOf(it(), 0, 0); // reading edge/t below tracks the nested fields too
+      cb(s ? { edge: s.edge, t: s.t } : null);
+    }));
 
     // a LENS: transform its single inlet proxy → its outlet (reactive via the proxy)
     if (d.lens) {
@@ -316,7 +325,7 @@ export function EditorItem(props) {
       return;
     }
 
-    const c = await mountEditor(d, { element: host, itemId: it().id, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, setSize, broadcast, onBroadcast, onConfig, share, shareDoc, onShared, canvas: ctx.canvasOutlets ? ctx.canvasOutlets() : null, context: ctx.context });
+    const c = await mountEditor(d, { element: host, itemId: it().id, inlets: proxies, outlets, setOutlet, api: ctx.api, config, setConfig, setSize, broadcast, onBroadcast, onConfig, share, shareDoc, onShared, onSticky, canvas: ctx.canvasOutlets ? ctx.canvasOutlets() : null, context: ctx.context });
     if (mine !== token) { try { c(); } catch {} offParams(); releaseProxies(); return; }
     ctx.registerOutlets && ctx.registerOutlets(it().id, { ...outlets });
     cleanup = () => { try { c(); } catch {} offParams(); releaseProxies(); ctx.unregisterOutlets && ctx.unregisterOutlets(it().id); };

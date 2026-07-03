@@ -959,9 +959,11 @@
    below the glass. */
 .ns-frosted .ns-world { pointer-events: none; }
 
-/* the layer switcher — a little System-7 segmented pill, top-centre */
+/* the layer switcher — a little System-7 segmented pill. No longer fixed
+   chrome: it's the seeded `layers` BARE window (layers-node.js), so the pill
+   flows inside its item box and sizes itself (fit-content, setSize). */
 .ns-layers {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 45;
+  position: relative; width: max-content; height: max-content; box-sizing: border-box;
   display: flex; gap: 2px; padding: 3px; border-radius: 9px;
   background: var(--ns-chrome); border: 1.5px solid var(--ns-ink);
   box-shadow: 2px 2px 0 var(--ns-shadow);
@@ -1020,13 +1022,19 @@
    line, and the mount measures itself and writes the item's w/h back (setSize),
    so the box always matches the buttons. */
 .ns-palette {
-  position: relative; width: max-content; height: 100%; box-sizing: border-box;
+  /* max-content BOTH ways: the mount measures itself and writes the item's w/h
+     back (setSize), so fit-content works in either orientation */
+  position: relative; width: max-content; height: max-content; box-sizing: border-box;
   display: flex; align-items: center; gap: 3px; padding: 4px 5px;
   background: var(--ns-chrome); border: 1px solid var(--ns-ink); border-radius: 6px;
   box-shadow: inset 1px 1px 0 var(--ns-hi), 3px 4px 0 var(--ns-shadow);
   color: var(--ns-ink);
 }
 .ns-palette-row { display: flex; flex-wrap: nowrap; align-items: center; gap: 2px; }
+/* docked to a LEFT/RIGHT edge (item sticky, threaded in via onSticky) the
+   palette is a COLUMN: buttons stack and the divider rules turn horizontal */
+.ns-palette-vert .ns-palette-row { flex-direction: column; }
+.ns-palette-vert .ns-sep { width: 22px; height: 1px; margin: 3px 0; box-shadow: 0 1px 0 var(--ns-hi); }
 /* the entry-driven overflow menus reuse the old Toolbar's chrome: .ns-sep rules
    between groups + .ns-menu-grid — PORTAL'd to the canvas root (popover.js), so
    the bare window's clipped body can't cut them off and they open away from
@@ -1081,12 +1089,17 @@
 }
 .ns-pface-btn { padding: 0; border: 0; background: none; border-radius: 50%; cursor: pointer; }
 .ns-pface-btn.following .ns-pface { outline: 2px solid var(--ns-sky); outline-offset: 1px; }
+/* the person button EXPANDS to its window box (flex/stretch, not a fixed
+   26×24): resize the presence window and the button fills it, the icon
+   scaling with it (min sizes keep the resting seed exactly as before) */
 .ns-presence-btn {
-  display: grid; place-items: center; width: 26px; height: 24px; flex: none;
+  display: grid; place-items: center; flex: 1 1 auto; align-self: stretch;
+  min-width: 26px; min-height: 24px; height: 100%; box-sizing: border-box;
   border: 1px solid var(--ns-ink); border-radius: 5px;
   background: var(--ns-chrome); color: var(--ns-ink); cursor: pointer;
   box-shadow: inset 1px 1px 0 var(--ns-hi), inset -1px -1px 0 var(--ns-chrome-lo);
 }
+.ns-presence-btn svg { width: 60%; height: 60%; min-width: 16px; min-height: 16px; }
 .ns-presence-btn.active { background: var(--ns-sky); color: #fff; }
 /* the flyout opens UPWARD (the bar seeds sticky near the bottom-right) */
 .ns-presence-menu { position: absolute; bottom: calc(100% + 6px); right: 0; width: 188px; }

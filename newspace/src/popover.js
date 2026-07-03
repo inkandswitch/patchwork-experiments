@@ -13,19 +13,50 @@
 // anchor/size/viewport are rects in ROOT-LOCAL px. Prefer opening ABOVE the
 // anchor (the palette's traditional direction); flip BELOW when the top edge is
 // too close (a top-docked window); clamp horizontally within the viewport.
-export function placePopover(anchor, size, viewport, margin = 6) {
+// `prefer` = "left"/"right" opens SIDEWAYS instead (a vertical palette docked to
+// an edge opens away from it), flipping when the preferred side lacks room.
+// Returns { x, y, up, side } — `side` names the direction actually taken
+// ("up"/"down"/"left"/"right"), so a trigger glyph can match it.
+export function placePopover(anchor, size, viewport, margin = 6, prefer) {
+  if (prefer === "left" || prefer === "right") {
+    const rightX = anchor.x + anchor.w + margin;
+    const leftX = anchor.x - margin - size.w;
+    let side = prefer;
+    if (prefer === "right" && rightX + size.w + margin > viewport.w && leftX >= margin) side = "left";
+    if (prefer === "left" && leftX < margin && rightX + size.w + margin <= viewport.w) side = "right";
+    const x = Math.max(margin, Math.min(side === "right" ? rightX : leftX, viewport.w - size.w - margin));
+    const y = Math.max(margin, Math.min(anchor.y + anchor.h / 2 - size.h / 2, viewport.h - size.h - margin));
+    return { x, y, up: false, side };
+  }
   const up = anchor.y - margin - size.h >= 0;
   const y = up
     ? anchor.y - margin - size.h
     : Math.max(0, Math.min(anchor.y + anchor.h + margin, viewport.h - size.h - margin));
   const x = Math.max(margin, Math.min(anchor.x + anchor.w / 2 - size.w / 2, viewport.w - size.w - margin));
-  return { x, y, up };
+  return { x, y, up, side: up ? "up" : "down" };
+}
+
+// Which way WILL a popover from this anchor open, before its menu exists? The
+// closed trigger's glyph wants to point where the menu is going. `side` (a
+// docked palette knows its edge) short-circuits; otherwise the vertical rule is
+// placePopover's own, with `estimate` standing in for the unbuilt menu's height
+// (openPopover's onPlace corrects the glyph with the real placement on open).
+export function popoverDirection(anchorEl, { side, estimate = 170, margin = 6 } = {}) {
+  if (side === "left" || side === "right") return side;
+  const root = (anchorEl && anchorEl.closest && anchorEl.closest(".ns-root")) || (typeof document !== "undefined" ? document.body : null);
+  const rr = root && root.getBoundingClientRect ? root.getBoundingClientRect() : { top: 0 };
+  const ar = anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : { top: 0 };
+  return ar.top - rr.top - margin - estimate >= 0 ? "up" : "down";
 }
 
 // Portal `menu` next to `anchor`. Returns close() — removes the popover WITHOUT
 // firing onClose (the caller's programmatic dismiss). The backdrop's own
 // pointerdown closes AND fires onClose (the user clicked away).
-export function openPopover({ anchor, menu, onClose, margin = 6 }) {
+// The anchor must be CONNECTED when this runs: a detached anchor has no
+// .ns-root ancestor and a zero rect, which lands the menu at the page's
+// top-left corner (the palette bug — it opened the popover before appending
+// the trigger). `prefer`/`onPlace` thread through to placePopover.
+export function openPopover({ anchor, menu, onClose, margin = 6, prefer, onPlace }) {
   const root = (anchor.closest && anchor.closest(".ns-root")) || document.body;
   const backdrop = document.createElement("div");
   backdrop.className = "ns-menu-backdrop";
@@ -49,8 +80,10 @@ export function openPopover({ anchor, menu, onClose, margin = 6 }) {
     { w: menu.offsetWidth || 0, h: menu.offsetHeight || 0 },
     { w: rr.width || window.innerWidth || 0, h: rr.height || window.innerHeight || 0 },
     margin,
+    prefer,
   );
   menu.style.left = `${p.x}px`;
   menu.style.top = `${p.y}px`;
+  if (onPlace) onPlace(p); // the real placement — trigger glyphs match it
   return close;
 }

@@ -50,7 +50,7 @@ import {
   linkItemId, duplicateItemIds, buildItemsIndex, findById,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
 } from "../model.js";
-import { count as perfCount, perFrame, rafBatch } from "../perf.js";
+import { count as perfCount, perFrame, rafBatch, startOverlay } from "../perf.js";
 import "../style.css";
 import {
   colorVar, SIZES, shapeRenderProps, shapePropsEqual, enableAtomicMove,
@@ -156,7 +156,9 @@ export function Canvas(props) {
   // DATA in the layout doc; each layer's pan/zoom/pin/geo behaviour comes from a
   // registered transform plugin — the canvas only ever asks the registry.
   const layersList = () => { const l = rootLayoutDoc()?.layers; return Array.isArray(l) && l.length ? l : defaultLayers(); };
-  const [activeLayerId, setActiveLayerId] = createSignal("canvas");
+  // null = "the base (first) layer, whatever it's called" — no hardcoded layer id
+  const [activeLayerRaw, setActiveLayerId] = createSignal(null);
+  const activeLayerId = () => activeLayerRaw() || baseLayer()?.id;
   // switching layers clears the selection: you only ever edit the active layer, and a move
   // gesture computes deltas in ONE layer's space — a selection spanning layers would write
   // screen-px deltas into world-coord fields (jumps at non-100% zoom).
@@ -310,6 +312,17 @@ export function Canvas(props) {
   // magnifying glass reads what its bounds cover). A plain Source kept fresh by an effect
   // below — NOT provide/accept (it's local read-only state, not inherited chrome).
   context.board = new Source([]);
+  // the LAYER STACK + ACTIVE LAYER on the context — the layers bare window
+  // (layers-node.js, seeded as "ns-layers") reads the stack and switches tabs
+  // through these, the same raw connect/apply protocol presence uses for
+  // showViews/following. `layers` is read-only ({ id, name, kind } rows, bottom
+  // → top); `activeLayer` is writable — apply(snapshot(id)) switches, and the
+  // mirror effects below echo local switches straight back as plain pushes.
+  context.layers = new Source([]);
+  context.activeLayer = new Source(null);
+  context.activeLayer.apply = (op) => { const v = isSnapshot(op) ? op.value : null; if (typeof v === "string") switchLayer(v); };
+  createEffect(() => context.layers.push(layersList().map((l) => ({ id: l.id, name: l.name || (layerKind(l.kind) || {}).name || l.id, kind: l.kind }))));
+  createEffect(() => context.activeLayer.push(activeLayerId()));
   if (element && element.api) element.api.context = context;
   const tool = opstreamToSignal(context.tool); // reactive accessor over the Source
   const setTool = (v) => (opts.minimal && v !== "pen" ? null : context.tool.set(v)); // pencil-only locks the tool
@@ -2836,6 +2849,17 @@ export function Canvas(props) {
   // DEBUG: ops are the heart of the system but the least visible thing. In debug mode (` key)
   // we capture the actual op JSON flowing on each wire and render it on the wire as it flows.
   const [debug, setDebug] = makePersisted(createSignal(false), { name: "sketchy:debug" });
+  // the PERF OVERLAY (perf.js startOverlay — PERF.md Phase 0): the same ` toggle
+  // also mounts the frame-time + __perf-counter readout (.ns-perf, style.css)
+  // into the canvas root; toggle-off / unmount stops the loop and removes it.
+  createEffect(() => {
+    if (!debug() || !viewportRef) return;
+    const el = document.createElement("div");
+    el.className = "ns-perf";
+    viewportRef.append(el);
+    const stop = startOverlay(el);
+    onCleanup(() => { stop(); el.remove(); });
+  });
   const [wireOps, setWireOps] = createStore({});
   createEffect(() => {
     const specs = wireSpecs();
@@ -3349,24 +3373,10 @@ export function Canvas(props) {
         )}
       </For>
 
-      {/* LAYER SWITCHER — pick which coordinate space you're drawing/placing on.
-          The tabs choose where edits land AND what shows: layers at/below the
-          active one render (frosted beneath it); items from layers above appear
-          only via a membership on the active layer (itemVisibleForActive). */}
-      <Show when={layersList().length > 1}>
-        <div class="ns-layers" onPointerDown={(e) => e.stopPropagation()}>
-          {/* tabs listed TOPMOST space first (reverse of doc order — array order stays z-order);
-              the base canvas is still the default active layer */}
-          <For each={layersList().toReversed()}>
-            {(layer) => {
-              const k = () => layerKind(layer.kind) || {};
-              return (
-                <button class="ns-layer-tab" classList={{ active: activeLayerId() === layer.id }} onClick={() => switchLayer(layer.id)} title={layer.kind}>{layer.name || k().name || layer.id}</button>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
+      {/* the LAYER SWITCHER is no longer fixed chrome — it's the seeded `layers`
+          bare window ("ns-layers", layers-node.js): overlay-home with a canvas
+          membership (you need it everywhere to switch), movable + dismissable
+          like any seed. It reads/writes context.layers / context.activeLayer. */}
 
       {/* the canvas-level context inputs (camera/pointer/tool/brush/selection) are no
           longer bottom chips — they're placeable source NODES (each with the 👤 own ⟷
@@ -3416,9 +3426,12 @@ export function Canvas(props) {
         <div class="ns-debug-badge" onPointerDown={(e) => e.stopPropagation()} onClick={() => setDebug(false)} title="op debug on — click or ` to turn off">● ops</div>
       </Show>
 
-      {/* the wire being dragged (screen-space, like the segment handles) */}
+      {/* the wire being dragged (screen-space, like the segment handles). Stacked
+          like the persistent wires: while a frosting layer (the overlay) is
+          active it lifts above the frost (z24) — without this the draft drew at
+          z-auto UNDER the glass, reading as if it were on the base canvas layer. */}
       <Show when={wireDraft()}>{(w) => (
-        <svg class="ns-wire-overlay" style={{ position: "absolute", inset: "0", width: "100%", height: "100%", "pointer-events": "none", overflow: "visible" }}>
+        <svg class="ns-wire-overlay" style={{ position: "absolute", inset: "0", width: "100%", height: "100%", "pointer-events": "none", overflow: "visible", "z-index": frosting() ? "24" : "5" }}>
           <line x1={w().from.x} y1={w().from.y} x2={w().to.x} y2={w().to.y} stroke="var(--ns-ink, #ff2284)" stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round" />
           <circle cx={w().from.x} cy={w().from.y} r="4" fill="var(--ns-ink, #ff2284)" />
         </svg>

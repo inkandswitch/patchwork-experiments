@@ -11,7 +11,7 @@ import {
   layoutDocUrl,
   seedPartsFlap,
   SEED_IDS,
-  MINIMAP_INLETS,
+  RETIRED_CTX_CHIP_IDS,
   PALETTE_INLETS,
   DEFAULT_TOOL_ENTRIES,
 } from "./constants.js";
@@ -120,16 +120,67 @@ describe("ensureLayoutDoc — canvas (the migrated legacy path)", () => {
     expect(lh.doc().items.some((i) => i.id === "ns-zoom")).toBe(true); // others still seed
   });
 
-  it("upgrades a genuinely-unwired minimap seed to the canonical inlets", async () => {
+  it("new docs seed NO ns-ctx chips, and minimap/zoom seed UNWIRED (ambient canvas feed)", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const items = lh.doc().items;
+    for (const id of RETIRED_CTX_CHIP_IDS) expect(items.some((i) => i.id === id)).toBe(false);
+    expect(JSON.parse(JSON.stringify(items.find((i) => i.id === "ns-minimap").inlets))).toEqual({});
+    expect(JSON.parse(JSON.stringify(items.find((i) => i.id === "ns-zoom").inlets))).toEqual({});
+  });
+
+  it("UPGRADE removes the retired ns-ctx chips + DELETES (not nulls) their inlet wires, so the ambient feed resumes", async () => {
     const repo = makeRepo();
     const layout = repo.create({
       "@patchwork": { type: "sketch-layout" },
-      items: [{ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", anchor: "bottom-left", x: 1, y: 1, w: 10, h: 10, rotation: 0, inlets: {} }],
+      items: [
+        // an old doc: the seeded chips + the minimap/zoom wired to them
+        { id: "ns-ctx-mm", kind: "editor", editorId: "canvas", layer: "overlay", layers: ["overlay"], anchor: "bottom-left", x: 16, y: 162, w: 74, h: 22, rotation: 0, inlets: {} },
+        { id: "ns-ctx-zoom", kind: "editor", editorId: "canvas", layer: "overlay", layers: ["overlay"], anchor: "bottom-right", x: 16, y: 54, w: 74, h: 22, rotation: 0, inlets: {} },
+        { id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", anchor: "bottom-left", x: 1, y: 1, w: 10, h: 10, rotation: 0, inlets: { rects: { node: "ns-ctx-mm", outlet: "rects" }, bounds: { node: "ns-ctx-mm", outlet: "bounds" }, camera: { node: "ns-ctx-mm", outlet: "camera" } } },
+        { id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", anchor: "bottom-right", x: 1, y: 1, w: 10, h: 10, rotation: 0, inlets: { camera: { node: "ns-ctx-zoom", outlet: "camera" } } },
+        // a USER-placed Canvas node + a widget wired to it — untouched by the sweep
+        { id: "ed-user1", kind: "editor", editorId: "canvas", x: 0, y: 0, w: 74, h: 22, rotation: 0, inlets: {} },
+        { id: "ed-user2", kind: "editor", editorId: "zoom", x: 0, y: 0, w: 56, h: 28, rotation: 0, inlets: { camera: { node: "ed-user1", outlet: "camera" } } },
+      ],
     });
     const folder = repo.create({ title: "t", docs: [], sketch: layout.url });
     const lh = await ensureLayoutDoc(repo, folder, "canvas");
-    const mm = lh.doc().items.find((i) => i.id === "ns-minimap");
-    expect(JSON.parse(JSON.stringify(mm.inlets))).toEqual(MINIMAP_INLETS);
+    const items = lh.doc().items;
+    for (const id of RETIRED_CTX_CHIP_IDS) expect(items.some((i) => i.id === id)).toBe(false);
+    // the wires that pointed at the chips are gone — the KEYS deleted, not nulled
+    // (a null tombstone means "explicitly cut" and would suppress the ambient feed)
+    const mm = items.find((i) => i.id === "ns-minimap");
+    expect(JSON.parse(JSON.stringify(mm.inlets))).toEqual({});
+    expect("rects" in mm.inlets).toBe(false);
+    expect(JSON.parse(JSON.stringify(items.find((i) => i.id === "ns-zoom").inlets))).toEqual({});
+    // the user's own canvas node + its wire survive
+    expect(items.some((i) => i.id === "ed-user1")).toBe(true);
+    expect(JSON.parse(JSON.stringify(items.find((i) => i.id === "ed-user2").inlets.camera))).toEqual({ node: "ed-user1", outlet: "camera" });
+    // and the chips are recorded dismissed so an OLD client's upgrade won't re-seed them
+    for (const id of RETIRED_CTX_CHIP_IDS) expect([...lh.doc().dismissedSeeds]).toContain(id);
+    // idempotent: a second pass changes nothing
+    await ensureLayoutDoc(repo, folder, "canvas");
+    expect(lh.doc().items.filter((i) => RETIRED_CTX_CHIP_IDS.includes(i.id)).length).toBe(0);
+  });
+
+  it("seeds the LAYERS window: overlay home + canvas membership (visible everywhere), sticky top-right-ish", async () => {
+    const repo = makeRepo();
+    const folder = repo.create({ title: "t", docs: [] });
+    const lh = await ensureLayoutDoc(repo, folder, "canvas");
+    const ly = lh.doc().items.find((i) => i.id === "ns-layers");
+    expect(ly).toBeTruthy();
+    expect(ly.kind).toBe("editor");
+    expect(ly.editorId).toBe("layers");
+    expect([...ly.layers]).toEqual(["overlay", "canvas"]); // you need it on every layer to switch
+    expect(ly.layer).toBe("overlay"); // mirrored for old clients
+    expect(JSON.parse(JSON.stringify(ly.sticky))).toEqual({ edge: "top", t: 0.9 });
+    // dismissable like any seed
+    const layout2 = repo.create({ "@patchwork": { type: "sketch-layout" }, items: [], dismissedSeeds: ["ns-layers"] });
+    const folder2 = repo.create({ title: "t", docs: [], sketch: layout2.url });
+    const lh2 = await ensureLayoutDoc(repo, folder2, "canvas");
+    expect(lh2.doc().items.some((i) => i.id === "ns-layers")).toBe(false);
   });
 
   it("seeds the TOOLBAR-PALETTE window: overlay home + canvas membership, sticky bottom-centre, the standard tools", async () => {
@@ -147,7 +198,7 @@ describe("ensureLayoutDoc — canvas (the migrated legacy path)", () => {
     expect(pal.config.brushes).toBeUndefined();
     expect(JSON.parse(JSON.stringify(pal.config.entries)).map((e) => e.id)).toEqual(["select", "hand", "pen", "eraser", "wire", "rectangle", "ellipse", "arrow", "text"]);
     // the WIRED PAIR: the palette's tools inlet is a real persisted wire to the
-    // seeded palette-config window (the MINIMAP_INLETS convention)
+    // seeded palette-config window (the seeded-wire convention)
     expect(JSON.parse(JSON.stringify(pal.inlets))).toEqual(PALETTE_INLETS);
   });
 

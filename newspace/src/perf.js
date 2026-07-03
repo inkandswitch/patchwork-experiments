@@ -150,7 +150,7 @@ export function rafBatch(fn) {
 // startOverlay(el) — a rAF loop writing rolling avg/min/max frame time (last
 // ~120 frames) plus the __perf counters (total + rate/s since the previous
 // repaint) into `el` as text, ~4×/s. Returns a stop() cleanup. Spec'd in
-// PERF.md Phase 0 for the canvas's ` debug toggle; not wired up there yet.
+// PERF.md Phase 0; the canvas's ` debug toggle mounts it (canvas.jsx).
 export function startOverlay(el) {
   let stopped = false;
   let last = 0;

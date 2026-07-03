@@ -2,7 +2,7 @@
 // overflow, presence flyout). The invariant: the menu opens AWAY from the
 // viewport edge its anchor is docked to, and never leaves the viewport.
 import { describe, it, expect } from "vitest";
-import { placePopover, openPopover } from "./popover.js";
+import { placePopover, popoverDirection, openPopover } from "./popover.js";
 
 const VP = { w: 1000, h: 600 };
 
@@ -32,6 +32,45 @@ describe("placePopover (pure)", () => {
     expect(p.up).toBe(false);
     expect(p.y).toBeGreaterThanOrEqual(0);
   });
+
+  it("reports the direction taken as `side` (the trigger chevron matches it)", () => {
+    expect(placePopover({ x: 480, y: 560, w: 40, h: 30 }, { w: 120, h: 100 }, VP).side).toBe("up");
+    expect(placePopover({ x: 480, y: 12, w: 40, h: 30 }, { w: 120, h: 100 }, VP).side).toBe("down");
+  });
+
+  it("prefer 'right'/'left' opens SIDEWAYS, vertically centred on the anchor (a docked vertical palette)", () => {
+    const r = placePopover({ x: 20, y: 280, w: 32, h: 30 }, { w: 140, h: 100 }, VP, 6, "right");
+    expect(r.side).toBe("right");
+    expect(r.x).toBe(20 + 32 + 6); // just off the anchor's right edge
+    expect(r.y).toBe(280 + 15 - 50); // centred on the anchor
+    const l = placePopover({ x: 940, y: 280, w: 32, h: 30 }, { w: 140, h: 100 }, VP, 6, "left");
+    expect(l.side).toBe("left");
+    expect(l.x).toBe(940 - 6 - 140);
+  });
+
+  it("a sideways popover FLIPS when the preferred side lacks room, and clamps vertically", () => {
+    // anchor hugs the right edge: prefer right has no room → flips left
+    const p = placePopover({ x: 960, y: 10, w: 32, h: 30 }, { w: 140, h: 100 }, VP, 6, "right");
+    expect(p.side).toBe("left");
+    expect(p.x).toBe(960 - 6 - 140);
+    expect(p.y).toBe(6); // clamped off the top edge
+  });
+});
+
+describe("popoverDirection (the closed trigger's glyph)", () => {
+  it("an explicit side short-circuits (a docked palette knows its edge)", () => {
+    expect(popoverDirection(null, { side: "right" })).toBe("right");
+    expect(popoverDirection(null, { side: "left" })).toBe("left");
+  });
+  it("otherwise the vertical rule: room above the anchor ⇒ up, else down", () => {
+    const anchor = {
+      closest: () => ({ getBoundingClientRect: () => ({ top: 100 }) }),
+      getBoundingClientRect: () => ({ top: 500 }),
+    };
+    expect(popoverDirection(anchor)).toBe("up"); // 400px above ≥ the estimate
+    anchor.getBoundingClientRect = () => ({ top: 130 });
+    expect(popoverDirection(anchor)).toBe("down"); // 30px above < the estimate
+  });
 });
 
 describe("openPopover (DOM portal)", () => {
@@ -59,6 +98,31 @@ describe("openPopover (DOM portal)", () => {
     expect(closed).toBe(1);
     expect(root.querySelector(".ns-menu-backdrop")).toBeFalsy();
     close(); // idempotent-ish: already removed, must not throw
+    root.remove();
+  });
+
+  it("places ROOT-LOCALLY when .ns-root sits at a non-zero page offset (the real host has chrome above/left)", () => {
+    // happy-dom rects are all zero — stub the geometry the placement math reads
+    const root = document.createElement("div");
+    root.className = "ns-root";
+    root.getBoundingClientRect = () => ({ left: 300, top: 120, width: 1000, height: 600 });
+    const anchor = document.createElement("button");
+    // the anchor at page (780, 660) = root-local (480, 540)
+    anchor.getBoundingClientRect = () => ({ left: 780, top: 660, width: 40, height: 30 });
+    root.append(anchor);
+    document.body.append(root);
+    const menu = document.createElement("div");
+    Object.defineProperty(menu, "offsetWidth", { value: 120 });
+    Object.defineProperty(menu, "offsetHeight", { value: 100 });
+    let placed = null;
+    const close = openPopover({ anchor, menu, onPlace: (p) => { placed = p; } });
+    expect(menu.parentElement).toBe(root);
+    // root-local: y = 540 - 6 - 100 (opens up), x centred on the anchor — NOT the
+    // page-absolute coords (which would land it at the viewport's top-left corner)
+    expect(menu.style.top).toBe(`${540 - 6 - 100}px`);
+    expect(menu.style.left).toBe(`${480 + 20 - 60}px`);
+    expect(placed.side).toBe("up");
+    close();
     root.remove();
   });
 

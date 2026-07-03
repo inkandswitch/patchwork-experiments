@@ -174,25 +174,29 @@ export const DEFAULT_TOOL_ENTRIES = [
 // delete/add like any other), stable ids so migration stays idempotent. These carry the
 // legacy corner-`anchor` form (kept so old clients keep positioning them); readers
 // normalize it to sticky (sticky.js stickyOf) — the one docked-positioning system.
-// Each is WIRED to its own `canvas` context node (a placeable source that re-publishes the
-// canvas's live state as outlets): minimap ← ns-ctx-mm, zoom ← ns-ctx-zoom. Real, visible
-// wires — nodeStream(nodeId, outlet) resolves to the context Source. `camera` is read/WRITE.
-export const MINIMAP_INLETS = { rects: { node: "ns-ctx-mm", outlet: "rects" }, bounds: { node: "ns-ctx-mm", outlet: "bounds" }, peers: { node: "ns-ctx-mm", outlet: "peers" }, view: { node: "ns-ctx-mm", outlet: "view" }, camera: { node: "ns-ctx-mm", outlet: "camera" } };
-export const ZOOM_INLETS = { camera: { node: "ns-ctx-zoom", outlet: "camera" } };
+// The minimap/zoom seed UNWIRED: a bare tool's never-wired inlets auto-feed from the
+// ambient canvas context (editor-item.jsx's `auto` backing plan). The old seeded
+// "canvas" chips (ns-ctx-mm / ns-ctx-zoom) + their wires were the wrong model and
+// are REMOVED by the upgrade pass below; the canvas-source node stays registered
+// as a hand-placeable part.
 // the seeded palette is WIRED to the seeded palette-config window's `tools` outlet
-// (the same seeded-wire convention as MINIMAP_INLETS — a real, visible, persisted wire)
+// (a real, visible, persisted wire)
 export const PALETTE_INLETS = { tools: { node: "ns-toolbar-config", outlet: "tools" } };
 
 // the stable ids of the seeded overlay chrome. Deleting one records it in the layout doc's
 // `dismissedSeeds` so ensureLayout does NOT re-seed it on the next open (the "delete like any
 // item" contract). Fresh sketches + never-dismissed ones still get seeded.
-export const SEED_IDS = ["ns-ctx-mm", "ns-minimap", "ns-ctx-zoom", "ns-zoom", "ns-toolbar-palette", "ns-toolbar-config", "ns-parts", "ns-presence"];
+export const SEED_IDS = ["ns-minimap", "ns-zoom", "ns-layers", "ns-toolbar-palette", "ns-toolbar-config", "ns-parts", "ns-presence"];
+// the RETIRED seeded chips (the "canvas objects" chrome model) — removed on upgrade
+export const RETIRED_CTX_CHIP_IDS = ["ns-ctx-mm", "ns-ctx-zoom"];
 // overlay-home (`layers` home = overlay); `layer` stays mirrored for old clients.
-const canvasCtxItem = (id, anchor, x, y) => ({ id, kind: "editor", editorId: "canvas", layer: "overlay", layers: ["overlay"], anchor, x, y, w: 74, h: 22, rotation: 0, inlets: {} });
-export const minimapSeedItem = () => ({ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", layers: ["overlay"], anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136, rotation: 0, inlets: { ...MINIMAP_INLETS } });
-export const zoomSeedItem = () => ({ id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", layers: ["overlay"], anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28, rotation: 0, inlets: { ...ZOOM_INLETS } });
-export const ctxMmSeedItem = () => canvasCtxItem("ns-ctx-mm", "bottom-left", 16, 162);   // above the minimap
-export const ctxZoomSeedItem = () => canvasCtxItem("ns-ctx-zoom", "bottom-right", 16, 54); // above the zoom
+export const minimapSeedItem = () => ({ id: "ns-minimap", kind: "editor", editorId: "minimap", layer: "overlay", layers: ["overlay"], anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136, rotation: 0, inlets: {} });
+export const zoomSeedItem = () => ({ id: "ns-zoom", kind: "editor", editorId: "zoom", layer: "overlay", layers: ["overlay"], anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28, rotation: 0, inlets: {} });
+// the LAYER SWITCHER — a bare window like the palette: overlay HOME with a canvas
+// membership (it must be visible on EVERY layer, or you couldn't switch back),
+// sticky near the right end of the top edge, dismissable like any seed. It reads
+// the stack / writes the active tab through the canvas context (layers-node.js).
+export const layersSeedItem = () => ({ id: "ns-layers", kind: "editor", editorId: "layers", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "top", t: 0.9 }, x: 0, y: 0, w: 148, h: 30, rotation: 0, inlets: {} });
 // the TOOLBAR is a seeded palette bare-window — the membership showcase: overlay HOME
 // (arrange it on the overlay tab) with a CANVAS membership (usable while drawing).
 // Sticky-docked bottom-centre; the brushes are the standard DEFAULT_LAYOUT tool set.
@@ -229,7 +233,8 @@ export async function makeFlapSpace(repo, name = "flap", items = []) {
   const layout = await repo.create2({
     "@patchwork": { type: "sketch-layout" },
     items, layers: defaultLayers(), layout: { ...DEFAULT_LAYOUT },
-    dismissedSeeds: [...SEED_IDS],
+    // retired ids included: an OLD client opening the flap must not seed them either
+    dismissedSeeds: [...SEED_IDS, ...RETIRED_CTX_CHIP_IDS],
   });
   return repo.create2({ "@patchwork": { type: "folder" }, title: name, docs: [], sketch: layout.url, "@layouts": { canvas: layout.url } });
 }
@@ -256,7 +261,7 @@ export async function seedPartsFlap(repo, lh) {
 export const presenceSeedItem = () => ({ id: "ns-presence", kind: "editor", editorId: "presence", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "right", t: 0.9 }, x: 0, y: 0, w: 148, h: 34, rotation: 0, inlets: {} });
 // (ns-parts is NOT here: the parts flap needs docs created, so the root canvas
 // seeds it async via seedPartsFlap above)
-export const defaultOverlayItems = () => [ctxMmSeedItem(), minimapSeedItem(), ctxZoomSeedItem(), zoomSeedItem(), paletteConfigSeedItem(), paletteSeedItem(), presenceSeedItem()];
+export const defaultOverlayItems = () => [minimapSeedItem(), zoomSeedItem(), layersSeedItem(), paletteConfigSeedItem(), paletteSeedItem(), presenceSeedItem()];
 
 // ── MULTIPLE complement docs (LAYOUTS.md "still needed" #1) ─────────────────────
 // A "space" doc (a folder/sketch) references ONE complement doc PER LAYOUT under the
@@ -344,10 +349,9 @@ function upgradeCanvasLayoutDoc(lh) {
     // seed the overlay chrome — but NEVER re-seed something the user deleted (dismissedSeeds).
     const dismissed = d.dismissedSeeds || [];
     const seed = (id, make) => { if (!dismissed.includes(id) && !d.items.some((it) => it.id === id)) d.items.push(make()); };
-    seed("ns-ctx-mm", ctxMmSeedItem);
-    seed("ns-ctx-zoom", ctxZoomSeedItem);
     seed("ns-minimap", minimapSeedItem);
     seed("ns-zoom", zoomSeedItem);
+    seed("ns-layers", layersSeedItem);
     // the palette-config seed PRESERVES an existing palette's customized brush list:
     // if this doc's palette carries a non-default `config.brushes`, the config window
     // is seeded with matching entries (so the wire below can't clobber the custom set).
@@ -358,17 +362,26 @@ function upgradeCanvasLayoutDoc(lh) {
     seed("ns-toolbar-palette", paletteSeedItem);
     // (ns-parts — the parts FLAP — seeds async from the root canvas: seedPartsFlap)
     seed("ns-presence", presenceSeedItem);
-    // rewire/upgrade earlier seeds (older versions used {context} inlets or a top-left zoom).
+    // upgrade earlier seeds' positioning (older versions shipped a top-left zoom)
     const mm = d.items.find((it) => it.id === "ns-minimap");
-    if (mm) {
-      if (!mm.anchor) Object.assign(mm, { anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136 });
-      // null = an explicit unwire (tombstone) — only upgrade genuinely-missing/old-format wiring
-      if (!mm.inlets || (mm.inlets.rects !== null && !mm.inlets.rects?.node)) mm.inlets = { ...MINIMAP_INLETS };
-    }
+    if (mm && !mm.anchor) Object.assign(mm, { anchor: "bottom-left", x: 16, y: 16, w: 184, h: 136 });
     const zm = d.items.find((it) => it.id === "ns-zoom");
-    if (zm) {
-      if (!zm.anchor) Object.assign(zm, { anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28 });
-      if (!zm.inlets || (zm.inlets.camera !== null && !zm.inlets.camera?.node)) zm.inlets = { ...ZOOM_INLETS };
+    if (zm && !zm.anchor) Object.assign(zm, { anchor: "bottom-right", x: 16, y: 18, w: 56, h: 28 });
+    // REMOVE the retired seeded "canvas" chips (the wrong model): the minimap/zoom
+    // auto-feed from the ambient canvas context now. Only the EXACT seeded ids go —
+    // a user-placed Canvas node (its own ed-… id) and wires to it are untouched.
+    // Any inlet entry that pointed at a removed chip is DELETED, not nulled: null
+    // is the explicit-cut tombstone and would keep suppressing the ambient feed —
+    // deleting the key means the widget reads as never-wired and auto-feeds again.
+    for (let i = d.items.length - 1; i >= 0; i--) if (RETIRED_CTX_CHIP_IDS.includes(d.items[i].id)) d.items.splice(i, 1);
+    for (const it of d.items) {
+      if (!it.inlets) continue;
+      for (const k of Object.keys(it.inlets)) { const w = it.inlets[k]; if (w && w.node && RETIRED_CTX_CHIP_IDS.includes(w.node)) delete it.inlets[k]; }
+    }
+    // record the chips dismissed so an OLD client's upgrade pass doesn't re-seed them
+    if (RETIRED_CTX_CHIP_IDS.some((id) => !dismissed.includes(id))) {
+      if (!d.dismissedSeeds) d.dismissedSeeds = [];
+      for (const id of RETIRED_CTX_CHIP_IDS) if (!d.dismissedSeeds.includes(id)) d.dismissedSeeds.push(id);
     }
     // wire an EXISTING palette seed to the (just-seeded) config window — same
     // convention: only a genuinely never-wired inlet upgrades; a null tombstone

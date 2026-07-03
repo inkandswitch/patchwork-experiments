@@ -23,8 +23,8 @@ export function mountMinimap({ element, inlets = {}, context, canvas }) {
   root.append(dbg);
   element.append(root);
 
-  // rects/bounds/view come from the WIRED inlets (the ns-ctx-mm canvas node). camera prefers
-  // the wired inlet too, falling back to the context Source if the wire isn't connected.
+  // rects/bounds/view come from the inlets (the ambient canvas feed, or an explicit wire to
+  // a placed canvas node). camera prefers the inlet too, falling back to the context Source.
   const src = () => (inlets.rects && inlets.rects.wired ? "wire" : context ? "ctx" : "?");
   const camStream = () => { const p = inlets.camera; if (p && p.wired && typeof p.apply === "function") return p; return (context && context.camera) || p; };
 

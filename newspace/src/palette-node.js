@@ -26,7 +26,7 @@ import { normalizeEntries, entriesFromIds, entryToolIds } from "./model.js";
 import { TOOL_META, STAMP_IDS, BRUSH_FALLBACK_PATH } from "./brush/ui/chrome.jsx";
 import { DEFAULT_LAYOUT } from "./brush/constants.js";
 import { PART_DRAG_TYPE, decodePartId } from "./parts-bin.js";
-import { openPopover } from "./popover.js";
+import { openPopover, popoverDirection } from "./popover.js";
 
 // ── pure helpers ─────────────────────────────────────────────────────────────
 export const DEFAULT_PALETTE = [...DEFAULT_LAYOUT.tools];
@@ -89,7 +89,15 @@ export function paletteCensus(registry = []) {
 // ── the mount ────────────────────────────────────────────────────────────────
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-const CHEVRON_PATH = "M6 8l5 5 5-5"; // the old Toolbar's overflow ▾
+// the old Toolbar's overflow ▾, plus its three siblings — the trigger points in
+// the direction the popover is going to open (item-2 of the punch list)
+export const CHEVRONS = {
+  down: "M6 8l5 5 5-5",
+  up: "M6 14l5-5 5 5",
+  right: "M8 6l5 5-5 5",
+  left: "M14 6l-5 5 5 5",
+};
+const CHEVRON_PATH = CHEVRONS.down;
 
 function iconSvg(path) {
   const NS = "http://www.w3.org/2000/svg";
@@ -104,7 +112,7 @@ function iconSvg(path) {
   return svg;
 }
 
-export function mountPalette({ element, inlets = {}, config, setConfig, setSize, context, onConfig }) {
+export function mountPalette({ element, inlets = {}, config, setConfig, setSize, context, onConfig, onSticky }) {
   // the tool stream: a WIRED `tool` inlet wins (zoom's convention), else the context Source
   const toolStream = () => { const p = inlets.tool; if (p && p.wired) return p; return (context && context.tool) || p; };
   const armTool = (id) => {
@@ -125,6 +133,12 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
   };
   let entries = wiredEntries() || cfgEntries;
   let openMenu = -1; // index of the open overflow menu (one at a time)
+  // the item's sticky EDGE (onSticky, editor-item's read-only item capability):
+  // docked left/right the palette renders as a COLUMN (.ns-palette-vert) and its
+  // overflow menus open sideways, away from the docked edge.
+  let edge = null;
+  const vertical = () => edge === "left" || edge === "right";
+  const menuSide = () => (edge === "left" ? "right" : edge === "right" ? "left" : undefined);
 
   const root = el("div", "ns-palette");
   // pointerDOWN only (the house rule): keeps select/marquee/draw off the widget body
@@ -180,14 +194,20 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
     entries.forEach((entry, i) => {
       if (entry.kind === "divider") { row.append(el("span", "ns-sep")); return; }
       if (entry.kind === "menu") {
-        // the old Toolbar's overflow: a ▾ (or the menu's own icon) opening a grid popover
+        // the old Toolbar's overflow: a chevron (or the menu's own icon) opening a
+        // grid popover. The chevron POINTS where the popover will open — sideways
+        // for a left/right-docked palette, else up/down per placePopover's rule.
         const wrap = el("span", "ns-add-wrap");
         const b = el("button", "ns-tool ns-palette-menu-btn");
         b.title = entry.label || "more";
-        b.append(iconSvg(entry.icon || CHEVRON_PATH));
+        const setGlyph = (dir) => { if (!entry.icon) b.replaceChildren(iconSvg(CHEVRONS[dir] || CHEVRON_PATH)); };
+        b.append(iconSvg(entry.icon || CHEVRONS[popoverDirection(root, { side: menuSide() })] || CHEVRON_PATH));
         b.addEventListener("click", () => setOpenMenu(openMenu === i ? -1 : i));
         wrap.append(b);
         menuBtns.push({ btn: b, ids: entryToolIds([entry]), open: openMenu === i });
+        // append BEFORE opening: openPopover portals to the anchor's .ns-root and
+        // measures its rect — a detached anchor landed the menu at the page's 0,0
+        row.append(wrap);
         if (openMenu === i) {
           const menu = el("div", "ns-menu ns-menu-grid");
           menu.addEventListener("wheel", (e) => e.stopPropagation());
@@ -196,9 +216,8 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
             if (it.kind !== "tool") continue;
             menu.append(toolBtn(it.id));
           }
-          closeMenu = openPopover({ anchor: b, menu, onClose: () => { closeMenu = null; setOpenMenu(-1); } });
+          closeMenu = openPopover({ anchor: b, menu, prefer: menuSide(), onPlace: (p) => setGlyph(p.side), onClose: () => { closeMenu = null; setOpenMenu(-1); } });
         }
-        row.append(wrap);
         return;
       }
       row.append(toolBtn(entry.id)); // a tool
@@ -236,6 +255,17 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
 
   // external/remote config edits reconcile in (same entries ⇒ no rebuild)
   if (onConfig) onConfig((c) => { cfg = { ...(c || {}) }; cfgEntries = entriesFromConfig(c); refresh(); });
+
+  // the sticky-edge orientation: docked left/right ⇒ a column (dividers turn
+  // horizontal via .ns-palette-vert), and the row rebuild re-points the overflow
+  // chevrons + re-measures (fit-content works in both orientations).
+  if (onSticky) onSticky((s) => {
+    const e = s ? s.edge : null;
+    if (e === edge) return;
+    edge = e;
+    root.classList.toggle("ns-palette-vert", vertical());
+    renderRow();
+  });
 
   // live active state + wired-entries updates: raw connects on the stable proxies
   // (a proxy swaps backing internally, so one connect covers rewires)

@@ -134,6 +134,89 @@ describe("canvas chrome reads the context", () => {
     expect(ctx.showViews.value).toBe(true); // wrote through the context Source
   });
 
+  it("the layer switcher is NOT fixed chrome any more (no strip child of .ns-root; it's the seeded ns-layers window)", async () => {
+    const { element } = await mountCanvas();
+    expect(element.querySelector(".ns-root > .ns-layers")).toBeFalsy();
+  });
+
+  it("` toggles op-debug AND the perf overlay (perf.js startOverlay, finally mounted)", async () => {
+    const { element } = await mountCanvas();
+    expect(element.querySelector(".ns-perf")).toBeFalsy();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "`", bubbles: true }));
+    await flush(10);
+    expect(element.querySelector(".ns-debug-badge")).toBeTruthy(); // the ops badge, as before
+    expect(element.querySelector(".ns-root > .ns-perf")).toBeTruthy(); // the frame/counter readout, new
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "`", bubbles: true }));
+    await flush(10);
+    expect(element.querySelector(".ns-debug-badge")).toBeFalsy();
+    expect(element.querySelector(".ns-perf")).toBeFalsy(); // torn down with the toggle
+  });
+
+  it("the LIVE WIRE DRAFT stacks with the active layer: above the frost on the overlay (it drew under the glass, reading as the canvas layer)", async () => {
+    const { snapshot } = await import("./ops.js");
+    let ctx = null;
+    const { element } = await mountCanvas({ slots: { presence: (host) => { ctx = host.context; return document.createElement("div"); } } });
+    const root = element.querySelector(".ns-root");
+    const draftAt = () => element.querySelector(".ns-wire-overlay");
+    const drag = () => {
+      root.dispatchEvent(new CustomEvent("sketchy:wire-from", { detail: { clientX: 10, clientY: 10 }, bubbles: true, composed: true }));
+    };
+    // base layer active: the draft sits with the persistent wires (z 5)
+    drag();
+    expect(draftAt()).toBeTruthy();
+    expect(draftAt().style.zIndex).toBe("5");
+    root.dispatchEvent(new CustomEvent("sketchy:wire-drop", { detail: {}, bubbles: true, composed: true }));
+    expect(draftAt()).toBeFalsy();
+    // overlay active (frosting): the draft lifts above the frost like committed wires
+    ctx.activeLayer.apply(snapshot("overlay"));
+    await flush(10);
+    expect(root.classList.contains("ns-frosted")).toBe(true);
+    drag();
+    expect(draftAt().style.zIndex).toBe("24");
+    root.dispatchEvent(new CustomEvent("sketchy:wire-drop", { detail: {}, bubbles: true, composed: true }));
+  });
+
+  it("the context exposes layers (read) + activeLayer (write) — the layers window's surface", async () => {
+    const { snapshot } = await import("./ops.js");
+    let ctx = null;
+    const { element } = await mountCanvas({ slots: { presence: (host) => { ctx = host.context; return document.createElement("div"); } } });
+    expect(JSON.parse(JSON.stringify(ctx.layers.value))).toEqual([
+      { id: "canvas", name: "Canvas", kind: "canvas" },
+      { id: "overlay", name: "Overlay", kind: "overlay" },
+    ]);
+    expect(ctx.activeLayer.value).toBe("canvas"); // the base (first) layer — derived, not hardcoded
+    ctx.activeLayer.apply(snapshot("overlay"));
+    await flush(10);
+    expect(ctx.activeLayer.value).toBe("overlay");
+    expect(element.querySelector(".ns-root").classList.contains("ns-frosted")).toBe(true);
+  });
+
+  it("a palette docked to a LEFT edge mounts vertical (onSticky threads the item's sticky through the mount contract)", async () => {
+    registerPlugins([palettePlugin]);
+    const { element } = await mountCanvas({}, [
+      { id: "pal", kind: "editor", editorId: "palette", layer: "overlay", layers: ["overlay", "canvas"], sticky: { edge: "left", t: 0.5 }, x: 0, y: 0, w: 44, h: 300, inlets: {}, config: { brushes: ["select", "pen"] } },
+    ]);
+    await flush(40);
+    const pal = element.querySelector(".ns-palette");
+    expect(pal).toBeTruthy();
+    expect(pal.classList.contains("ns-palette-vert")).toBe(true);
+  });
+
+  it("an UNWIRED bare minimap auto-feeds from the AMBIENT canvas outlets (no seeded chips needed)", async () => {
+    const { plugin: minimapPlugin } = await import("./minimap-node.js");
+    registerPlugins([minimapPlugin]);
+    const { element } = await mountCanvas({}, [
+      { id: "mm", kind: "editor", editorId: "minimap", layer: "overlay", layers: ["overlay"], x: 10, y: 10, w: 180, h: 130, inlets: {} },
+      { id: "s1", kind: "shape", type: "rectangle", x: 40, y: 40, w: 60, h: 40, color: "line", strokeWidth: 2, rotation: 0 },
+    ]);
+    await flush(60);
+    const dbg = element.querySelector(".ns-mm-dbg");
+    expect(dbg).toBeTruthy();
+    // "wire" = the inlet proxies are BACKED (the ambient auto plan), and a
+    // non-zero rect count shows real canvas data arrived (items + seeded flap)
+    expect(dbg.textContent).toMatch(/^wire [1-9]\d*▢/);
+  });
+
   it("keyboard tool shortcuts work with NO toolbar/palette mounted at all", async () => {
     const { element } = await mountCanvas();
     expect(element.querySelector(".ns-toolbar")).toBeFalsy();
