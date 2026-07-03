@@ -30,6 +30,7 @@ import {
 import type { VecLike } from 'tldraw';
 import { DocHandle, type AutomergeUrl, type DocHandleChangePayload } from '@automerge/automerge-repo';
 import { useDocument, useLocalAwareness, useRemoteAwareness, RepoContext } from '@automerge/automerge-repo-react-hooks';
+import { useSubscribe } from '@inkandswitch/patchwork-providers-react';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useMemo, useState, useCallback, memo } from 'react';
 import { FolderDoc, DocLink } from '@inkandswitch/patchwork-filesystem';
@@ -159,23 +160,16 @@ interface ContactDoc {
   color?: string;
 }
 
-function useContactInfo() {
-  const [contactUrl, setContactUrl] = useState<AutomergeUrl | undefined>();
+function useContactInfo(element: ToolElement) {
+  // Resolved via the account provider's `patchwork:contact` selector (see
+  // patchwork-base/providers) instead of reaching into `window.accountDocHandle`.
+  const contactUrl = useSubscribe<AutomergeUrl | null>(
+    element,
+    { type: 'patchwork:contact' },
+    null,
+  );
 
-  useEffect(() => {
-    const accountDocHandle = (
-      window as any
-    ).accountDocHandle as DocHandle<{ contactUrl: AutomergeUrl }> | undefined;
-    if (!accountDocHandle) return;
-    accountDocHandle.whenReady().then(() => {
-      const doc = accountDocHandle.doc();
-      if (doc?.contactUrl) {
-        setContactUrl(doc.contactUrl);
-      }
-    });
-  }, []);
-
-  const [contactDoc] = useDocument<ContactDoc>(contactUrl);
+  const [contactDoc] = useDocument<ContactDoc>(contactUrl ?? undefined);
 
   return {
     userId: contactUrl ?? (window as any).repo?.peerId ?? 'anonymous',
@@ -187,8 +181,9 @@ function useContactInfo() {
 function usePresence(
   handle: DocHandle<SpaceDoc>,
   editorRef: React.MutableRefObject<Editor | null>,
+  element: ToolElement,
 ) {
-  const { userId, name, color } = useContactInfo();
+  const { userId, name, color } = useContactInfo(element);
 
   const [, updateLocalState] = useLocalAwareness({
     handle: handle as DocHandle<any>,
@@ -304,7 +299,7 @@ function SpaceCanvas({
   const isReconcilingRef = useRef(false);
 
   // ---- Presence (cursors, selections visible to other users) ----
-  usePresence(handle, editorRef);
+  usePresence(handle, editorRef, element);
 
   // ---- Tldraw mount callback (stable reference, never changes) ----
   const handleMountRef = useRef((editor: Editor) => {

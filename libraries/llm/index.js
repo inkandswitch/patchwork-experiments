@@ -39,11 +39,10 @@ export {
 	settingsDocHandle,
 	applyPrompts,
 	effectiveSystem,
-	accountHandle,
 	DEFAULTS,
 	PARAM_KEYS,
 	PROVIDER_CAPS,
-	ACCOUNT_LLM_FIELD,
+	TOOL_STORAGE_ID,
 	CONFIG_SELECTOR,
 	// catalogues / labels
 	LOCAL_MODELS,

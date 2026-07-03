@@ -1,4 +1,4 @@
-import type { Plugin } from "@inkandswitch/patchwork-plugins";
+import type { Plugin, ToolElement } from "@inkandswitch/patchwork-plugins";
 
 export const chatPlugins: Plugin<any>[] = [
   {
@@ -21,6 +21,9 @@ export const chatPlugins: Plugin<any>[] = [
       return LLMChatTool;
     },
   },
+  // Legacy registration for frames still on the old context-tool pattern
+  // (bound to the account doc). `LLMContextChatTool` ignores the handle it's
+  // given either way — see ./context-view.tsx.
   {
     type: "patchwork:tool",
     id: "llm-context-chat",
@@ -31,6 +34,20 @@ export const chatPlugins: Plugin<any>[] = [
     async load() {
       const { LLMContextChatTool } = await import("./context-view");
       return LLMContextChatTool;
+    },
+  },
+  // Same view, but as a `patchwork:component` that takes no document: the
+  // render function ignores its handle (it reads everything off `element`,
+  // via the `patchwork:tool-storage` provider), so we pass `null`.
+  {
+    type: "patchwork:component",
+    id: "llm-context-chat",
+    name: "LLM Chat",
+    icon: "MessageSquare",
+    tags: ["context-tool"],
+    async load() {
+      const { LLMContextChatTool } = await import("./context-view");
+      return (element: ToolElement) => LLMContextChatTool(null as never, element);
     },
   },
 ];

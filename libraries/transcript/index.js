@@ -9,13 +9,14 @@
  *   // transcribe the audio a recording/file doc points at, caching the result
  *   const text = await transcribeDoc(recordingUrl, { onResult: show })
  *
- * Provider/model/key live on the account doc (field `transcript`), resolvable
+ * Provider/model/key live in a private settings doc (requested from the
+ * `patchwork:tool-storage` provider under id `"transcript"`), resolvable
  * per-subtree via <patchwork-transcript-config-provider>. Mirrors the provider
  * pattern of @chee/patchwork-llm.
  */
 
 export {
-	// config (account doc + patchwork:transcript-config provider)
+	// config (patchwork:tool-storage + patchwork:transcript-config provider)
 	readConfig,
 	writeConfig,
 	normalizeConfig,
@@ -24,10 +25,9 @@ export {
 	ensureSettingsDoc,
 	ensureConfig,
 	settingsDocHandle,
-	accountHandle,
 	callConfig,
 	DEFAULTS,
-	ACCOUNT_TRANSCRIPT_FIELD,
+	TOOL_STORAGE_ID,
 	CONFIG_SELECTOR,
 	// catalogue / labels
 	LOCAL_MODELS,

@@ -20,7 +20,8 @@
   "keywords": [],
   "author": "Ink & Switch",
   "dependencies": {
-    "@inkandswitch/patchwork-bootloader": "^0.0.4"
+    "@inkandswitch/patchwork-bootloader": "^0.0.4",
+    "@inkandswitch/patchwork-providers": "^0.3.0"
   },
   "devDependencies": {
     "esbuild": "^0.23.1"

@@ -43,14 +43,26 @@ declare module "@chee/patchwork-llm" {
   export function readConfig(snapshot?: unknown): Record<string, unknown>;
   export function writeConfig(patch: Record<string, unknown>): Promise<void>;
 
+  // Resolve (or lazily create, via the shared "llm" `patchwork:tool-storage`
+  // doc) the settings doc, then return the normalized config. `element` should
+  // be a node inside a mounted <patchwork-view> — call this once on mount so
+  // later elementless resolutions elsewhere (e.g. inside `stream`/`generate`)
+  // can reuse the same settings doc.
+  export function ensureConfig(
+    scope?: { toolId: string; docId?: string },
+    element?: HTMLElement | null
+  ): Promise<Record<string, unknown>>;
+
   // Human label for a config, e.g. "Browser Qwen2.5" / "OpenRouter gpt-4o".
   export function describeConfig(
     cfg: Record<string, unknown>,
     opts?: { openrouterModels?: { id: string; name: string }[] }
   ): string;
 
-  // Subscribe to config changes. Returns an unsubscribe function. Pass null for
-  // the element to use the account-settings-doc fallback.
+  // Subscribe to config changes. Returns an unsubscribe function. Pass an
+  // element inside a mounted <patchwork-view> so the tool-storage-backed
+  // settings doc can resolve; null only works once some other caller has
+  // already supplied one.
   export function subscribeConfig(
     element: Element | null,
     callback: (cfg: Record<string, unknown>) => void,
