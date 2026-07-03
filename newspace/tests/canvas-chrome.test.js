@@ -28,6 +28,18 @@ async function mountCanvas(opts = {}, items = []) {
   await flush();
   return m;
 }
+function dropEvent(store, x = 120, y = 90) {
+  const ev = new Event("drop", { bubbles: true, cancelable: true });
+  ev.dataTransfer = {
+    types: Object.keys(store),
+    getData: (t) => store[t] || "",
+    setData: (t, v) => { store[t] = v; },
+    files: [],
+    dropEffect: "copy", effectAllowed: "copyMove",
+  };
+  ev.clientX = x; ev.clientY = y;
+  return ev;
+}
 afterEach(() => {
   for (const m of mounted.splice(0)) {
     try { m.dispose(); } catch {}
@@ -36,6 +48,39 @@ afterEach(() => {
 });
 
 describe("canvas chrome reads the context", () => {
+  it("accepts a sidebar doc drop whose patchwork-urls payload is a bare URL", async () => {
+    const { repo, element, layout, folder } = await mountCanvas();
+    const child = repo.create({ "@patchwork": { type: "file" }, name: "dropped.txt" });
+    element.querySelector(".ns-root").dispatchEvent(dropEvent({ "text/x-patchwork-urls": child.url }));
+    await flush(40);
+    const item = layout.doc().items.find((x) => x.url === child.url);
+    expect(item).toMatchObject({ kind: "doc", url: child.url });
+    expect(item.parent).toBeUndefined();
+    expect(folder.doc().docs.some((l) => l.url === child.url)).toBe(true);
+  });
+
+  it("parks externally-added folder docs in set-aside", async () => {
+    const { repo, layout, folder } = await mountCanvas();
+    const child = repo.create({ "@patchwork": { type: "file" }, name: "external.txt" });
+    folder.change((d) => { d.docs.push({ name: "external.txt", type: "file", url: child.url }); });
+    await flush(80);
+    expect(layout.doc().items.find((x) => x.url === child.url)).toMatchObject({ kind: "doc", parent: "ns-aside" });
+  });
+
+  it("unparks an existing set-aside doc when that sidebar doc is dropped on the canvas", async () => {
+    const { repo, element, layout, folder } = await mountCanvas();
+    const child = repo.create({ "@patchwork": { type: "file" }, name: "aside.txt" });
+    folder.change((d) => { d.docs.push({ name: "aside.txt", type: "file", url: child.url }); });
+    await flush(80);
+    expect(layout.doc().items.find((x) => x.url === child.url).parent).toBe("ns-aside");
+    element.querySelector(".ns-root").dispatchEvent(dropEvent({ "text/x-patchwork-dnd": JSON.stringify({ items: [{ name: "aside.txt", type: "file", url: child.url }] }) }, 160, 130));
+    await flush(40);
+    const item = layout.doc().items.find((x) => x.url === child.url);
+    expect(item.parent).toBeUndefined();
+    expect(item.x).toBe(160);
+    expect(item.y).toBe(130);
+  });
+
   it("mounts the presence layer; the fixed toolbar + corner tray + views eyeball are gone", async () => {
     const { element } = await mountCanvas();
     expect(element.querySelector(".ns-presence")).toBeTruthy();

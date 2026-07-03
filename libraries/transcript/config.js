@@ -154,11 +154,12 @@ export function normalizeConfig(raw = {}) {
  * doc itself gets resolved (see `ensureSettingsDoc`), even for later callers
  * that don't.
  *
- * @param {HTMLElement|null} element  a node inside a <patchwork-view> (null → settings-doc fallback only, using whichever element a previous caller supplied)
+ * @param {HTMLElement} element  a node inside a <patchwork-view>
  * @param {(config: TranscriptConfig) => void} callback
  * @returns {() => void} unsubscribe
  */
 export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
+	if (!element) throw new TypeError("subscribeConfig requires an element")
 	let providerAnswered = false
 	/** @type {(() => void)|null} */
 	let fallbackOff = null
@@ -181,18 +182,14 @@ export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
 		})
 	}
 
-	if (element) {
-		providerOff = subscribe(element, CONFIG_SELECTOR, (raw) => {
-			providerAnswered = true
-			clearTimeout(timer)
-			fallbackOff?.()
-			fallbackOff = null
-			callback(normalizeConfig(raw))
-		})
-		timer = setTimeout(startFallback, timeoutMs)
-	} else {
-		startFallback()
-	}
+	providerOff = subscribe(element, CONFIG_SELECTOR, (raw) => {
+		providerAnswered = true
+		clearTimeout(timer)
+		fallbackOff?.()
+		fallbackOff = null
+		callback(normalizeConfig(raw))
+	})
+	timer = setTimeout(startFallback, timeoutMs)
 
 	return () => {
 		cancelled = true
@@ -204,7 +201,7 @@ export function subscribeConfig(element, callback, {timeoutMs = 50} = {}) {
 
 /**
  * One-shot resolve of the active config (request + account-doc fallback).
- * @param {HTMLElement|null} element
+ * @param {HTMLElement} element
  * @param {{timeoutMs?: number}} [opts]
  * @returns {Promise<TranscriptConfig>}
  */

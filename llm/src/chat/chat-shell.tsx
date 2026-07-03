@@ -23,6 +23,8 @@ const VERSION = "0.14.1";
  */
 export function ChatShell(props: {
   repo: Repo;
+  /** Host element for provider-scoped LLM config resolution. */
+  element: HTMLElement;
   /** Resolves the LLM process doc URL backing this chat (may be undefined while loading). */
   processUrl: () => AutomergeUrl | undefined;
   /** Resolves the folder doc URL shown in the Documents tab. */
@@ -124,7 +126,7 @@ export function ChatShell(props: {
 
   // Live label of the currently-selected model (kept in sync with the config).
   const [modelLabel, setModelLabel] = createSignal("");
-  const unsubscribe = subscribeConfig(null, (cfg) => setModelLabel(describeConfig(cfg)));
+  const unsubscribe = subscribeConfig(props.element, (cfg) => setModelLabel(describeConfig(cfg)));
   onCleanup(unsubscribe);
 
   return (

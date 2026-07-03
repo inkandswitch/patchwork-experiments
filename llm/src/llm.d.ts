@@ -64,7 +64,7 @@ declare module "@chee/patchwork-llm" {
   // settings doc can resolve; null only works once some other caller has
   // already supplied one.
   export function subscribeConfig(
-    element: Element | null,
+    element: HTMLElement,
     callback: (cfg: Record<string, unknown>) => void,
     opts?: { timeoutMs?: number }
   ): () => void;

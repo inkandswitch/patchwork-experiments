@@ -1968,7 +1968,13 @@ export function Canvas(props) {
     const raw = dt.getData("text/x-patchwork-dnd");
     if (raw) { try { const p = JSON.parse(raw); if (Array.isArray(p?.items)) return p.items.filter((i) => i.url); } catch {} }
     const urls = dt.getData("text/x-patchwork-urls");
-    if (urls) { try { const u = JSON.parse(urls); if (Array.isArray(u)) return u.map((url) => ({ url })); } catch {} }
+    if (urls) {
+      try {
+        const u = JSON.parse(urls);
+        if (Array.isArray(u)) return u.map((x) => (typeof x === "string" ? { url: x } : x)).filter((i) => i?.url);
+      } catch {}
+      if (urls.trim().startsWith("automerge:")) return [{ url: urls.trim() }];
+    }
     const text = dt.getData("text/uri-list") || dt.getData("text/plain") || "";
     return text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean).map((s) => { if (s.startsWith("automerge:")) return { url: s }; const m = s.match(/#doc=([^&\s]+)/); return m ? { url: `automerge:${m[1]}` } : null; }).filter(Boolean);
   }
@@ -2158,33 +2164,30 @@ export function Canvas(props) {
       }
       return;
     }
-    const placedFromAside = new Set();
-    if (!frame) {
-      layout.change((d) => {
-        dragged.forEach((it, i) => {
-          const o = (d.items || []).find((x) => x.url === it.url && x.parent === ASIDE_ID);
-          if (!o) return;
-          const pos = at(i);
-          delete o.parent;
-          o.x = pos.x; o.y = pos.y;
-          if (o.kind !== "frame") o.rotation = o.rotation || 0;
-          o.layers = [activeLayerId()];
-          if (activeLayerId() !== baseLayer()?.id) o.layer = activeLayerId(); else delete o.layer;
-          placedFromAside.add(it.url);
-        });
-      });
-    }
-    const fresh = dragged.filter((it) => !placedFromAside.has(it.url) && !(layout.doc().items || []).some((x) => x.url === it.url));
+    const placed = [];
     layout.change((d) => {
-      fresh.forEach((it, i) => {
-        if (d.items.some((x) => x.url === it.url)) return;
+      if (!d.items) d.items = [];
+      dragged.forEach((it, i) => {
         const pos = at(i);
+        const existing = d.items.find((x) => x.url === it.url);
+        if (existing) {
+          if (!frame && existing.parent === ASIDE_ID) {
+            delete existing.parent;
+            existing.x = pos.x; existing.y = pos.y;
+            if (existing.kind !== "frame") existing.rotation = existing.rotation || 0;
+            existing.layers = [activeLayerId()];
+            if (activeLayerId() !== baseLayer()?.id) existing.layer = activeLayerId(); else delete existing.layer;
+          }
+          placed.push(it);
+          return;
+        }
         const base = { id: linkItemId(it.url), url: it.url, x: pos.x, y: pos.y, w: 360, h: 280 };
         if (isBoxType(it.type)) d.items.push({ ...base, kind: "frame" });
         else d.items.push({ ...base, kind: "doc", rotation: 0, toolId: "" });
+        placed.push(it);
       });
     });
-    folder.change((d) => { for (const it of fresh) if (!d.docs.some((l) => l.url === it.url)) d.docs.push({ name: it.name || "Document", type: it.type || "", url: it.url }); });
+    folder.change((d) => { if (!d.docs) d.docs = []; for (const it of placed) if (!d.docs.some((l) => l.url === it.url)) d.docs.push({ name: it.name || "Document", type: it.type || "", url: it.url }); });
   }
 
   // ── CUT / COPY / PASTE — the selection over the SYSTEM clipboard, as TEXT ──
