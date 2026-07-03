@@ -1,26 +1,52 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { For, Show, createMemo, createSignal, onCleanup, type JSX } from "solid-js";
-import { type ContextStore, type ScopeOwner } from "@embark/context";
-import { Stickers, type Sticker } from "@embark/stickers";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import {
-  EmbedToken,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+  type JSX,
+} from "solid-js";
+import { render } from "solid-js/web";
+import {
   belongsToDoc,
   splitDocUrl,
-  type DocTitles,
-  type HighlightController,
-} from "./tokens";
+  type ContextStore,
+  type ContextVisualizer,
+  type ScopeOwner,
+} from "@embark/context";
+import { EmbedToken, useDocTitles, useHighlight } from "@embark/selection/tokens";
+import { Stickers } from "./channels";
+import type { Sticker } from "./sticker";
+import "./visualizer.css";
 
-// The `stickers` channel drawn the way stickers appear in the document. Sources
-// publish into their own scope keyed by *target* document
+// Visualizer for the `stickers` channel, drawn the way stickers appear in the
+// document. "contributes" groups the focused embed's stickers by target (where
+// they landed); "uses" groups the stickers targeting the focused embed by owner
+// (who added them).
+export const stickersVisualizer: ContextVisualizer = (element, props) => {
+  const focus = props.focusDocUrl as AutomergeUrl;
+  return render(
+    () => (
+      <div class="embark-tokens-panel">
+        <StickersView
+          store={props.store}
+          repo={props.repo}
+          groupBy={props.mode === "contributes" ? "target" : "owner"}
+          authoredBy={props.mode === "contributes" ? focus : undefined}
+          targeting={props.mode === "uses" ? focus : undefined}
+        />
+      </div>
+    ),
+    element,
+  );
+};
+
+// Sources publish into their own scope keyed by *target* document
 // (`Record<targetDocUrl, Sticker[]>`), so each scope carries the source card as
 // its owner. We flatten every scope into `{ owner, target, sticker }` items and
-// group them: by `owner` (who added them) for the "Uses" view, or by `target`
-// (where they landed) for the "Contributes" view.
-//
-// The two filters keep each view focused: `authoredBy` (Contributes) keeps only
-// scopes owned by the focused embed; `targeting` (Uses) keeps only stickers
-// whose target is the focused embed's document — i.e. exactly the stickers
-// rendered inside it.
+// group them: by `owner` for the "uses" view, or by `target` for the
+// "contributes" view.
 type Item = { owner?: ScopeOwner; target: AutomergeUrl; sticker: Sticker };
 type Group = {
   key: string;
@@ -29,19 +55,20 @@ type Group = {
   items: Item[];
 };
 
-export function StickersView(props: {
+function StickersView(props: {
   store: ContextStore;
-  titles: DocTitles;
-  highlight: HighlightController;
+  repo: Repo;
   groupBy: "owner" | "target";
   // Contributes: keep only scopes owned by this document.
   authoredBy?: AutomergeUrl;
   // Uses: keep only stickers whose target is this document.
   targeting?: AutomergeUrl;
 }) {
-  // Scopes are pull-based, so recompute whenever the channel emits.
   const [tick, setTick] = createSignal(0);
   onCleanup(props.store.subscribe(Stickers, () => setTick((t) => t + 1)));
+
+  const titles = useDocTitles(props.repo);
+  const highlight = useHighlight(props.store);
 
   const groups = createMemo<Group[]>(() => {
     tick();
@@ -88,7 +115,7 @@ export function StickersView(props: {
                   }
                 >
                   {(target) => (
-                    <EmbedToken url={target()} highlight={props.highlight} />
+                    <EmbedToken url={target()} highlight={highlight} />
                   )}
                 </Show>
               </div>
@@ -110,8 +137,8 @@ export function StickersView(props: {
     const doc = owner?.docUrl as AutomergeUrl | undefined;
     if (doc) {
       const { docUrl } = splitDocUrl(doc);
-      props.titles.request(docUrl);
-      return props.titles.titleOf(docUrl);
+      titles.request(docUrl);
+      return titles.titleOf(docUrl);
     }
     return owner?.toolId ?? "unknown";
   }
@@ -142,9 +169,9 @@ function ownerKey(owner?: ScopeOwner): string {
 }
 
 // One sticker drawn as it appears in the document (mirroring the CodeMirror
-// widgets in @embark/stickers and TodoTool's stickerNode): `text` as a chip,
-// `tool` as an embedded view, `style` as a small swatch (it normally decorates
-// a text range, so standalone we show sample glyphs carrying its styles).
+// widgets in this package and TodoTool's stickerNode): `text` as a chip, `tool`
+// as an embedded view, `style` as a small swatch (it normally decorates a text
+// range, so standalone we show sample glyphs carrying its styles).
 function stickerChip(sticker: Sticker): JSX.Element {
   if (sticker.type === "text") {
     return (

@@ -73,6 +73,14 @@ export type ContextStore = {
   // changes (a reader subscribing or unsubscribing). Lets inspectors refresh
   // even when the reader attaches to an empty channel that emits no value.
   subscribeReaders(cb: () => void): () => void;
+  // Every channel this store knows about: the union of the local channel set and
+  // the parent chain, deduped by name. Lets a generic inspector enumerate what
+  // is present without a hardcoded list.
+  channels(): Channel<Record<string, unknown>>[];
+  // Notified (on a coalesced microtask) whenever a channel name is seen for the
+  // first time in this store, so an inspector mounted before a channel exists
+  // still picks it up when a scope or reader first touches it.
+  subscribeChannels(cb: () => void): () => void;
   // The store this one inherits reads from (its enclosing scope), or undefined
   // for a root store (the page-global body store, or an `isolated` context).
   // Reads merge the whole parent chain (nearest wins); writes never leave the
@@ -129,6 +137,19 @@ export function createContextStore(): ContextStore {
     });
   };
 
+  // Channel-set change notification, coalesced like the reader-registry one, so a
+  // burst of first-touches in one tick fires listeners at most once.
+  const channelSubscribers = new Set<() => void>();
+  let channelFlushScheduled = false;
+  const notifyChannels = () => {
+    if (channelFlushScheduled) return;
+    channelFlushScheduled = true;
+    queueMicrotask(() => {
+      channelFlushScheduled = false;
+      for (const cb of [...channelSubscribers]) cb();
+    });
+  };
+
   const stateFor = (channel: Channel<AnyRecord>): ChannelState => {
     let state = channels.get(channel.name);
     if (!state) {
@@ -141,6 +162,7 @@ export function createContextStore(): ContextStore {
         lastEmitted: null,
       };
       channels.set(channel.name, state);
+      notifyChannels();
     }
     return state;
   };
@@ -302,6 +324,23 @@ export function createContextStore(): ContextStore {
     };
   };
 
+  // Every channel across the parent chain, deduped by name (local wins — it is
+  // the same channel object anyway). `parent.channels()` recurses, so this walks
+  // the whole chain in one hop.
+  const channelList = (): Channel<AnyRecord>[] => {
+    const out = new Map<string, Channel<AnyRecord>>();
+    if (parent) for (const ch of parent.channels()) out.set(ch.name, ch);
+    for (const state of channels.values()) out.set(state.channel.name, state.channel);
+    return [...out.values()];
+  };
+
+  const subscribeChannels = (cb: () => void): (() => void) => {
+    channelSubscribers.add(cb);
+    return () => {
+      channelSubscribers.delete(cb);
+    };
+  };
+
   return {
     read,
     subscribe,
@@ -309,6 +348,8 @@ export function createContextStore(): ContextStore {
     scopes,
     readers,
     subscribeReaders,
+    channels: channelList,
+    subscribeChannels,
     get parent() {
       return parent;
     },

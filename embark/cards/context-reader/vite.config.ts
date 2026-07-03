@@ -3,17 +3,12 @@ import solidPlugin from "vite-plugin-solid";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 import external from "@inkandswitch/patchwork-bootloader/externals";
 
-// The host itself is a plain codemirror extension, but this package also ships a
-// Solid context visualizer (loaded lazily by the context viewer), so the build
-// runs the Solid + CSS-injection plugins. CodeMirror and Solid are externalized
-// (see the bootloader externals), so the host shares the runtime's single
-// codemirror/solid instances.
 export default defineConfig({
   base: "./",
   plugins: [solidPlugin(), cssInjectedByJsPlugin()],
   build: {
     lib: {
-      entry: { index: "src/index.ts" },
+      entry: { index: "src/index.ts", card: "src/card.tsx" },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,
     },

@@ -102,34 +102,75 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
     });
   });
 
+  // Both faces are rendered and stacked; flipping rotates the inner element a
+  // half-turn so the front turns away and the back comes into view (see
+  // card.css). Both faces carry the same title / middle / description skeleton,
+  // so the description keeps its place at the bottom across the flip — only the
+  // front's middle slot holds the live module, the back's stays blank.
   return (
     <div
-      class="embark-card"
-      classList={{ "embark-card--flipped": !active() }}
-      style={{ "--embark-card-accent": accent() }}
+      class="embark-card-flip"
+      classList={{ "embark-card-flip--flipped": !active() }}
     >
-      <span class="embark-card__pip embark-card__pip--tl">
-        <CardIcon name={icon()} />
-      </span>
-      <div class="embark-card__body">
-        <div class="embark-card__title">{title()}</div>
-        <div class="embark-card__middle" ref={slotEl} />
-        <p class="embark-card__desc">{description()}</p>
+      <div class="embark-card-flip__inner">
+        <div
+          class="embark-card embark-card--front"
+          style={{ "--embark-card-accent": accent() }}
+        >
+          <Pips icon={icon()} />
+          <div class="embark-card__body">
+            <div class="embark-card__title">{title()}</div>
+            <div class="embark-card__middle" ref={slotEl} />
+            <p class="embark-card__desc">{description()}</p>
+          </div>
+          <FlipButton active={active()} onFlip={toggleFlip} />
+        </div>
+        <div
+          class="embark-card embark-card--back"
+          style={{ "--embark-card-accent": accent() }}
+        >
+          <Pips icon={icon()} />
+          <div class="embark-card__body">
+            <div class="embark-card__title">{title()}</div>
+            <div class="embark-card__middle" />
+            <p class="embark-card__desc">{description()}</p>
+          </div>
+          <FlipButton active={active()} onFlip={toggleFlip} />
+        </div>
       </div>
-      <span class="embark-card__pip embark-card__pip--br">
-        <CardIcon name={icon()} />
-      </span>
-      <button
-        type="button"
-        class="embark-card__flip"
-        title={active() ? "Deactivate card" : "Activate card"}
-        aria-label={active() ? "Deactivate card" : "Activate card"}
-        on:pointerdown={(event) => event.stopPropagation()}
-        on:click={toggleFlip}
-      >
-        <FlipIcon />
-      </button>
     </div>
+  );
+}
+
+// The mirrored corner pips, drawn from the card's stored icon + accent. Shared
+// by both faces.
+function Pips(props: { icon: string }) {
+  return (
+    <>
+      <span class="embark-card__pip embark-card__pip--tl">
+        <CardIcon name={props.icon} />
+      </span>
+      <span class="embark-card__pip embark-card__pip--br">
+        <CardIcon name={props.icon} />
+      </span>
+    </>
+  );
+}
+
+// The flip affordance, present on both faces so the card can be turned over and
+// back. Its press is kept off the embed surface so it doesn't start a drag.
+function FlipButton(props: { active: boolean; onFlip: () => void }) {
+  return (
+    <button
+      type="button"
+      class="embark-card__flip"
+      title={props.active ? "Deactivate card" : "Activate card"}
+      aria-label={props.active ? "Deactivate card" : "Activate card"}
+      on:pointerdown={(event) => event.stopPropagation()}
+      on:click={props.onFlip}
+    >
+      <FlipIcon />
+    </button>
   );
 }
 

@@ -1,4 +1,4 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
@@ -24,14 +24,14 @@ function ContextViewer(props: { element: ToolElement }) {
   return (
     <div class="embark-context">
       <Show when={store()}>
-        {(ctx) => <ContextBody store={ctx()} element={props.element} />}
+        {(ctx) => <ContextBody store={ctx()} repo={props.element.repo} />}
       </Show>
     </div>
   );
 }
 
 // The body: the focused view for whatever embed is selected on the canvas.
-function ContextBody(props: { store: ContextStore; element: ToolElement }) {
+function ContextBody(props: { store: ContextStore; repo: Repo }) {
   const [selection, setSelection] = createSignal(props.store.read(Selection));
   onCleanup(props.store.subscribe(Selection, (next) => setSelection(() => next)));
   const selectedUrls = () => Object.keys(selection()) as AutomergeUrl[];
@@ -46,9 +46,7 @@ function ContextBody(props: { store: ContextStore; element: ToolElement }) {
       }
     >
       <For each={selectedUrls()}>
-        {(url) => (
-          <EmbedFocus store={props.store} element={props.element} docUrl={url} />
-        )}
+        {(url) => <EmbedFocus store={props.store} repo={props.repo} docUrl={url} />}
       </For>
     </Show>
   );
@@ -58,7 +56,7 @@ function ContextBody(props: { store: ContextStore; element: ToolElement }) {
 // shared context, and what it reads back out of it.
 function EmbedFocus(props: {
   store: ContextStore;
-  element: ToolElement;
+  repo: Repo;
   docUrl: AutomergeUrl;
 }) {
   return (
@@ -68,7 +66,7 @@ function EmbedFocus(props: {
         <div class="embark-focus__body">
           <ContributionsView
             store={props.store}
-            element={props.element}
+            repo={props.repo}
             focusDocUrl={props.docUrl}
           />
         </div>
@@ -79,7 +77,7 @@ function EmbedFocus(props: {
         <div class="embark-focus__body">
           <UsedView
             store={props.store}
-            element={props.element}
+            repo={props.repo}
             focusDocUrl={props.docUrl}
           />
         </div>

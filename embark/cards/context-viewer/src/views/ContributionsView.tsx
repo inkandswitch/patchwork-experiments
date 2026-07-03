@@ -1,112 +1,89 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { For, Match, Show, Switch, createMemo, createSignal, onCleanup } from "solid-js";
-import { type Channel, type ContextStore } from "@embark/context";
-import { Highlight } from "@embark/selection";
-import { SearchQueries, SearchResults } from "@embark/search";
-import { SchemaQueries } from "@embark/schema";
-import { CommandQueries, CommandSuggestions } from "@embark/commands";
-import { Stickers } from "@embark/stickers";
-import { CodemirrorExtensions } from "@embark/codemirror-extensions-host";
-import { belongsToDoc, useDocTitles, useHighlight } from "./tokens";
-import { ChannelValue } from "./ChannelValue";
-import { SearchResultsTable } from "./SearchResultsTable";
-import { StickersView } from "./StickersView";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  Show,
+} from "solid-js";
+import {
+  contributedSlice,
+  type Channel,
+  type ContextStore,
+} from "@embark/context";
+import { VisualizerHost } from "../VisualizerHost";
 
-// "Contributed by this embed": every channel a card can *write* to, showing —
-// per channel — the slice(s) authored by scopes the store attributed to the
-// focused embed's document (see resolveOwner in @embark/context). Read-only.
-const CONTRIBUTION_CHANNELS: Channel<Record<string, unknown>>[] = [
-  SchemaQueries,
-  SearchQueries,
-  SearchResults,
-  CommandQueries,
-  CommandSuggestions,
-  Stickers,
-  Highlight,
-  CodemirrorExtensions,
-];
-
-type Contribution = { channel: string; slice: Record<string, unknown> };
-
+// "Contributed by this embed": every channel the focused embed authored a slice
+// on. Channel-agnostic — it enumerates the store's live channels (no hardcoded
+// list) and keeps the ones with a non-empty contributed slice, deferring how
+// each is drawn to the channel's registered visualizer (or the default JSON
+// viewer). See @embark/context's `contributedSlice` for the owner attribution.
 export function ContributionsView(props: {
   store: ContextStore;
-  element: ToolElement;
+  repo: Repo;
   focusDocUrl: AutomergeUrl;
 }) {
-  // The scope snapshot is pull-based (`store.scopes`), so recompute whenever any
-  // contribution channel emits — enough to catch a scope appearing, changing, or
-  // being released.
-  const [tick, setTick] = createSignal(0);
-  for (const channel of CONTRIBUTION_CHANNELS) {
-    onCleanup(props.store.subscribe(channel, () => setTick((t) => t + 1)));
-  }
+  const channels = useChannels(props.store);
+  const writes = useChannelWrites(props.store, channels);
 
-  const titles = useDocTitles(props.element);
-  const highlight = useHighlight(props.store);
-
-  const contributions = createMemo<Contribution[]>(() => {
-    tick();
-    const out: Contribution[] = [];
-    for (const channel of CONTRIBUTION_CHANNELS) {
-      const merged: Record<string, unknown> = {};
-      for (const scope of props.store.scopes(channel)) {
-        const ownerDoc = scope.owner?.docUrl as AutomergeUrl | undefined;
-        if (!ownerDoc || !belongsToDoc(ownerDoc, props.focusDocUrl)) continue;
-        Object.assign(merged, scope.slice);
-      }
-      if (Object.keys(merged).length > 0) {
-        out.push({ channel: channel.name, slice: merged });
-      }
-    }
-    return out;
+  const shown = createMemo<Channel<Record<string, unknown>>[]>(() => {
+    writes();
+    return channels().filter(
+      (channel) =>
+        Object.keys(contributedSlice(props.store, channel, props.focusDocUrl))
+          .length > 0,
+    );
   });
 
   return (
     <Show
-      when={contributions().length > 0}
+      when={shown().length > 0}
       fallback={
         <div class="embark-focus__empty">
           This embed hasn't contributed anything.
         </div>
       }
     >
-      <For each={contributions()}>
-        {(entry) => (
+      <For each={shown()}>
+        {(channel) => (
           <div class="embark-context__channel">
-            <div class="embark-context__name">{entry.channel}</div>
-            <div class="embark-tokens-panel">
-              <Switch
-                fallback={
-                  <ChannelValue
-                    channel={entry.channel}
-                    value={entry.slice}
-                    highlight={highlight}
-                  />
-                }
-              >
-                <Match when={entry.channel === SearchResults.name}>
-                  <SearchResultsTable
-                    store={props.store}
-                    titles={titles}
-                    highlight={highlight}
-                    focusDocUrl={props.focusDocUrl}
-                  />
-                </Match>
-                <Match when={entry.channel === Stickers.name}>
-                  <StickersView
-                    store={props.store}
-                    titles={titles}
-                    highlight={highlight}
-                    groupBy="target"
-                    authoredBy={props.focusDocUrl}
-                  />
-                </Match>
-              </Switch>
-            </div>
+            <div class="embark-context__name">{channel.name}</div>
+            <VisualizerHost
+              store={props.store}
+              channel={channel}
+              mode="contributes"
+              focusDocUrl={props.focusDocUrl}
+              repo={props.repo}
+            />
           </div>
         )}
       </For>
     </Show>
   );
+}
+
+// The store's live channel set as a signal, refreshed whenever a channel first
+// appears.
+export function useChannels(store: ContextStore) {
+  const [channels, setChannels] = createSignal(store.channels());
+  onCleanup(store.subscribeChannels(() => setChannels(store.channels())));
+  return channels;
+}
+
+// A tick that bumps whenever any live channel emits. Re-subscribes to the whole
+// channel set when it changes so writes on newly-appeared channels count too.
+// Subscribes without an owner, so the viewer never registers itself as a reader.
+function useChannelWrites(
+  store: ContextStore,
+  channels: () => Channel<Record<string, unknown>>[],
+) {
+  const [tick, setTick] = createSignal(0);
+  createEffect(() => {
+    const unsubs = channels().map((channel) =>
+      store.subscribe(channel, () => setTick((t) => t + 1)),
+    );
+    onCleanup(() => unsubs.forEach((unsub) => unsub()));
+  });
+  return tick;
 }

@@ -1,114 +1,60 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { For, Match, Show, Switch, createMemo, createSignal, onCleanup } from "solid-js";
-import { type Channel, type ContextStore } from "@embark/context";
-import { Highlight, Selection } from "@embark/selection";
-import { SearchQueries, SearchResults } from "@embark/search";
-import { SchemaMatches, SchemaQueries } from "@embark/schema";
-import { CommandQueries, CommandSuggestions } from "@embark/commands";
-import { Stickers } from "@embark/stickers";
-import { CodemirrorExtensions } from "@embark/codemirror-extensions-host";
-import { splitDocUrl, useDocTitles, useHighlight } from "./tokens";
-import { ChannelValue } from "./ChannelValue";
-import { SearchResultsTable } from "./SearchResultsTable";
-import { StickersView } from "./StickersView";
+import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { splitDocUrl, type Channel, type ContextStore } from "@embark/context";
+import { VisualizerHost } from "../VisualizerHost";
+import { useChannels } from "./ContributionsView";
 
-// Every channel a card can *read* from. For the focused embed we show the ones
-// it currently subscribes to (see resolveOwner attribution on the read path in
-// @embark/context) together with the value it sees.
-const READABLE_CHANNELS: Channel<Record<string, unknown>>[] = [
-  Selection,
-  Highlight,
-  Stickers,
-  CodemirrorExtensions,
-  SearchQueries,
-  SearchResults,
-  CommandQueries,
-  CommandSuggestions,
-  SchemaQueries,
-  SchemaMatches,
-];
-
-// "Used by this embed": the channels the selected embed reads, each shown with
-// the current value it sees. Reader attribution is per-channel (the store can't
-// see which keys a reader consumes internally), so this answers "what does this
-// embed subscribe to, and what does it currently get".
+// "Used by this embed": the channels the focused embed subscribes to, each drawn
+// by its registered visualizer (or the default JSON viewer) showing the merged
+// value the embed reads. Channel-agnostic — it enumerates the store's live
+// channels and keeps the ones whose reader set includes the focused document.
+// Reader attribution is per-channel (the store can't see which keys a reader
+// consumes), so this answers "what does this embed subscribe to, and what does
+// it currently get".
 export function UsedView(props: {
   store: ContextStore;
-  element: ToolElement;
+  repo: Repo;
   focusDocUrl: AutomergeUrl;
 }) {
-  // Recompute when the reader registry changes (a reader mounting/unmounting,
-  // even against an empty channel) or when any readable channel's value emits.
+  const channels = useChannels(props.store);
+
+  // The reader set decides which channels show; recompute when a reader
+  // (un)subscribes or a channel first appears.
   const [tick, setTick] = createSignal(0);
-  const bump = () => setTick((t) => t + 1);
-  onCleanup(props.store.subscribeReaders(bump));
-  for (const channel of READABLE_CHANNELS) {
-    onCleanup(props.store.subscribe(channel, bump));
-  }
+  onCleanup(props.store.subscribeReaders(() => setTick((t) => t + 1)));
 
-  const titles = useDocTitles(props.element);
-  const highlight = useHighlight(props.store);
-
-  const used = createMemo(() => {
+  const shown = createMemo<Channel<Record<string, unknown>>[]>(() => {
     tick();
     const focusId = splitDocUrl(props.focusDocUrl).docId;
-    return READABLE_CHANNELS.filter((channel) =>
+    return channels().filter((channel) =>
       props.store.readers(channel).some((owner) => {
         const docUrl = owner.docUrl as AutomergeUrl | undefined;
-        return docUrl && splitDocUrl(docUrl).docId === focusId;
+        return docUrl != null && splitDocUrl(docUrl).docId === focusId;
       }),
     );
   });
 
   return (
     <Show
-      when={used().length > 0}
+      when={shown().length > 0}
       fallback={
         <div class="embark-focus__empty">This embed doesn't read anything.</div>
       }
     >
-      <For each={used()}>
+      <For each={shown()}>
         {(channel) => (
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
-            <div class="embark-tokens-panel">
-              <Switch
-                fallback={
-                  <ChannelValue
-                    channel={channel.name}
-                    value={valueFor(channel)}
-                    highlight={highlight}
-                  />
-                }
-              >
-                <Match when={channel.name === SearchResults.name}>
-                  <SearchResultsTable
-                    store={props.store}
-                    titles={titles}
-                    highlight={highlight}
-                  />
-                </Match>
-                <Match when={channel.name === Stickers.name}>
-                  <StickersView
-                    store={props.store}
-                    titles={titles}
-                    highlight={highlight}
-                    groupBy="owner"
-                    targeting={props.focusDocUrl}
-                  />
-                </Match>
-              </Switch>
-            </div>
+            <VisualizerHost
+              store={props.store}
+              channel={channel}
+              mode="uses"
+              focusDocUrl={props.focusDocUrl}
+              repo={props.repo}
+            />
           </div>
         )}
       </For>
     </Show>
   );
-
-  // The current merged value the embed reads on this channel.
-  function valueFor(channel: Channel<Record<string, unknown>>) {
-    tick();
-    return props.store.read(channel);
-  }
 }

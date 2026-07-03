@@ -21,4 +21,14 @@ export const plugins: Plugin<any>[] = [
       return slashCommands();
     },
   },
+  {
+    type: "embark:context-visualizer",
+    id: "commands-context-visualizer",
+    name: "Commands context visualizer",
+    channels: ["commands:queries", "commands:suggestions"],
+    async load() {
+      const { commandsVisualizer } = await import("./visualizer");
+      return commandsVisualizer;
+    },
+  },
 ];

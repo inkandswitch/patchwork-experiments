@@ -1,0 +1,75 @@
+/* The `stickers` channel, grouped by source (uses) or target (contributes),
+   with each sticker drawn the way it appears in the document. The .cm-sticker*
+   rules mirror this package's editor stylesheet, scoped under .embark-stickers
+   so the viewer looks right whether or not that (CodeMirror-injected) stylesheet
+   is present on the page. Injected when the stickers visualizer loads. */
+.embark-stickers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.embark-stickers__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-stickers__label {
+  display: flex;
+  font-size: 11px;
+  font-weight: 600;
+  color: #57534e;
+}
+
+.embark-stickers__card {
+  font-size: 11px;
+  font-weight: 600;
+  color: #57534e;
+}
+
+.embark-stickers .cm-sticker {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+}
+
+.embark-stickers .cm-sticker--text {
+  padding: 0 0.35em;
+  border-radius: 0.5em;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: #1f2937;
+  background: #e5e7eb;
+  white-space: nowrap;
+}
+
+.embark-stickers .cm-sticker--tool {
+  vertical-align: middle;
+}
+
+.embark-stickers .cm-sticker--tool patchwork-view {
+  display: inline-block;
+  width: 5.5em;
+  height: 1.6em;
+  vertical-align: middle;
+}
+
+.embark-stickers .cm-sticker--style {
+  padding: 0 0.35em;
+  border-radius: 0.35em;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
+.embark-stickers .cm-sticker--emphasized {
+  outline: 1.5px solid #f59e0b;
+  outline-offset: 1px;
+  border-radius: 0.4em;
+  background-color: #fef3c7;
+}
+
+.embark-stickers .cm-sticker--text.cm-sticker--emphasized {
+  color: #92400e;
+  font-weight: 600;
+}

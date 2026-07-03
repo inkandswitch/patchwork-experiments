@@ -5,7 +5,10 @@
   background-color: #fafaf9;
   background-image: radial-gradient(#e7e5e4 1px, transparent 1px);
   background-size: 22px 22px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 /* The canvas is focusable so it can receive Backspace/Delete for the selected
@@ -213,22 +216,27 @@
 
 /* While a move is carried outside the canvas the embed hides (parked at its
    origin) and the cursor-following pill below stands in for it; on release it
-   springs back, is deleted (claimed), or was copied by the target. */
+   either moves out (a target accepted it) or springs back (no taker). */
 .embark-embed--carried {
   visibility: hidden;
 }
 
 /* The stand-in for an embed carried outside the canvas: a small title pill
-   trailing the cursor. Fixed at body level so the canvas's overflow clipping
-   can't touch it; pointer-events: none keeps it out of drop hit-testing. */
+   centered under the cursor (the translate centers it on the cursor point set
+   by JS). Fixed at body level so the canvas's overflow clipping can't touch
+   it; pointer-events: none keeps it out of drop hit-testing. */
 .embark-embed__drag-pill {
   position: fixed;
   z-index: 2147483647;
+  transform: translate(-50%, -50%);
   padding: 6px 12px;
   border-radius: 999px;
   background: #6366f1;
   color: #ffffff;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
@@ -261,7 +269,10 @@
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 8px 24px rgba(0, 0, 0, 0.16);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 .embark-canvas__menu-item {

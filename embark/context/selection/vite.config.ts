@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [solidPlugin(), cssInjectedByJsPlugin()],
   build: {
     lib: {
-      entry: { index: "src/index.ts" },
+      entry: { index: "src/index.ts", tokens: "src/tokens.tsx" },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,
     },

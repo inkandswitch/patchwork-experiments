@@ -10,14 +10,22 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./dist/index.js"
+    },
+    "./tokens": {
+      "types": "./src/tokens.tsx",
+      "import": "./dist/tokens.js"
     }
   },
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
     "@embark/context": "workspace:*",
-    "@automerge/automerge-repo": "2.6.0-subduction.29"
+    "@automerge/automerge-repo": "2.6.0-subduction.29",
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "solid-js": "^1.9.11"
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.2.5",

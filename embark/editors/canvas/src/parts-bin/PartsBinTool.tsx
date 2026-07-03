@@ -1,6 +1,6 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, createEffect, createSignal, onCleanup } from "solid-js";
+import { For, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import {
@@ -15,8 +15,15 @@ import {
   type PatchworkContextElement,
 } from "@embark/context";
 import { getDocumentDragPayload, getDragSource, hasDocumentDrag } from "../dnd";
+import { FRAMELESS_TOOLS } from "../tool-traits";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
+
+// Cap how tall a preview can grow. Content taller than this is scaled down so
+// the whole thing stays visible as a thumbnail rather than being clipped. Kept
+// in sync with the `max-height` fallback in parts-bin.css (used until the
+// natural size is measured).
+const MAX_PREVIEW_HEIGHT = 200;
 
 // A palette of example documents. Each row shows an editable headline above a
 // non-interactive live preview; dragging that preview writes the standard
@@ -272,6 +279,40 @@ function PartsBinRow(props: {
   };
   const name = () => props.item.label || fallbackName();
 
+  // A frameless tool brings its own chrome (a card its playing-card surface),
+  // so the preview shows no wrapper border — only framed tools get one, the
+  // same rule the canvas uses. The tool id wins, falling back to the doc's
+  // datatype (which matches the tool id for these tools).
+  const frameless = () => {
+    const id = props.item.toolId ?? doc()?.["@patchwork"]?.type;
+    return id !== undefined && FRAMELESS_TOOLS.has(id);
+  };
+
+  // Scale the preview down to a capped height so tall content (e.g. a
+  // fixed-size card) reads as a whole thumbnail instead of being clipped. We
+  // measure the natural layout height (unaffected by the CSS transform) and,
+  // when it exceeds the cap, shrink by the fitting ratio; the wrapper collapses
+  // to the resulting height.
+  let naturalEl: HTMLDivElement | undefined;
+  const [scale, setScale] = createSignal(1);
+  const [previewHeight, setPreviewHeight] = createSignal<number | undefined>(
+    undefined,
+  );
+  onMount(() => {
+    const el = naturalEl;
+    if (!el) return;
+    const measure = () => {
+      const natural = el.offsetHeight;
+      if (natural <= 0) return;
+      setScale(Math.min(1, MAX_PREVIEW_HEIGHT / natural));
+      setPreviewHeight(Math.min(natural, MAX_PREVIEW_HEIGHT));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    onCleanup(() => observer.disconnect());
+  });
+
   const onDragStart = (event: DragEvent) => {
     if (!event.dataTransfer) return;
 
@@ -334,16 +375,28 @@ function PartsBinRow(props: {
       </div>
       <div
         class="embark-parts-bin__preview"
+        classList={{ "embark-parts-bin__preview--framed": !frameless() }}
         draggable={true}
         title="Drag onto the canvas to copy"
+        style={
+          previewHeight() !== undefined
+            ? { height: `${previewHeight()}px` }
+            : undefined
+        }
         on:pointerdown={(event) => event.stopPropagation()}
         on:dragstart={onDragStart}
       >
-        <patchwork-view
-          doc-url={props.item.url}
-          tool-id={props.item.toolId}
-          hide-controls=""
-        />
+        <div
+          class="embark-parts-bin__preview-natural"
+          ref={naturalEl}
+          style={{ transform: `scale(${scale()})` }}
+        >
+          <patchwork-view
+            doc-url={props.item.url}
+            tool-id={props.item.toolId}
+            hide-controls=""
+          />
+        </div>
       </div>
     </div>
   );

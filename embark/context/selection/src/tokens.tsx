@@ -2,16 +2,19 @@ import {
   isValidAutomergeUrl,
   parseAutomergeUrl,
   type AutomergeUrl,
+  type Repo,
 } from "@automerge/automerge-repo";
-import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { type ContextStore } from "@embark/context";
-import { Highlight } from "@embark/selection";
+import { createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
+import { splitDocUrl, type ContextStore } from "@embark/context";
+import { Highlight } from "./channels";
+import "./tokens.css";
 
-// Shared building blocks for the context viewer's domain-specific views. Every
-// channel that points at documents (selection, highlight, search results,
-// command suggestions) renders the same embed token and drives the same shared
-// `Highlight` channel on hover.
+// Shared building blocks for context visualizers. Any channel that points at
+// documents (selection, highlight, search results, command suggestions,
+// stickers) renders the same embed token and drives the same shared `Highlight`
+// channel on hover; string-keyed channels (queries, schema names, extension
+// keys) render as chips. These live in @embark/selection because the hover
+// interaction writes the `Highlight` channel this package owns.
 
 // Token labels are clipped to keep pills short (the full url is in `title`).
 const MAX_LABEL = 40;
@@ -19,8 +22,8 @@ const MAX_LABEL = 40;
 // An embed's real inline face. Renders the shared `token-view` tool — the same
 // one the mention extension uses — so a document draws whatever token-tagged
 // tool it registers (upgrading in place when the module loads), falling back to
-// a plain title pill. The wrapper keeps the shared hover→Highlight wiring so the
-// viewer's other panels still light up together. A custom `label` (e.g. a
+// a plain title pill. The wrapper keeps the shared hover->Highlight wiring so a
+// visualizer's other panels still light up together. A custom `label` (e.g. a
 // command suggestion) shows verbatim, skipping the embed face.
 export function EmbedToken(props: {
   url: AutomergeUrl;
@@ -57,6 +60,18 @@ export function EmbedToken(props: {
     >
       <span ref={host} />
     </span>
+  );
+}
+
+// A row of small monospace pills for string-keyed channel values (query text,
+// schema names, extension keys).
+export function Chips(props: { labels: string[] }) {
+  return (
+    <div class="embark-token-row">
+      <For each={props.labels}>
+        {(label) => <span class="embark-schema__token">{label}</span>}
+      </For>
+    </div>
   );
 }
 
@@ -102,7 +117,7 @@ export type DocTitles = {
   request: (url: AutomergeUrl) => void;
 };
 
-export function useDocTitles(element: ToolElement): DocTitles {
+export function useDocTitles(repo: Repo): DocTitles {
   const [titles, setTitles] = createSignal<Record<string, string>>({});
   const pending = new Set<string>();
 
@@ -111,7 +126,7 @@ export function useDocTitles(element: ToolElement): DocTitles {
     pending.add(docUrl);
     void (async () => {
       try {
-        const handle = await element.repo.find<DocLike>(docUrl);
+        const handle = await repo.find<DocLike>(docUrl);
         const title = docTitle(handle.doc());
         setTitles((prev) => ({ ...prev, [docUrl]: title ?? shortId(docUrl) }));
       } catch {
@@ -124,31 +139,6 @@ export function useDocTitles(element: ToolElement): DocTitles {
 
   const titleOf = (docUrl: AutomergeUrl) => titles()[docUrl] ?? shortId(docUrl);
   return { titleOf, request };
-}
-
-// Whether `url` (a document url or a match sub-url) belongs to the same document
-// as `focus`. Compares by document id, so a sub-url pointing inside the focused
-// document still counts. Used by the focused views to keep only rows that touch
-// the selected embed's document.
-export function belongsToDoc(url: AutomergeUrl, focus: AutomergeUrl): boolean {
-  return splitDocUrl(url).docId === splitDocUrl(focus).docId;
-}
-
-// Split a doc or match sub-url (`automerge:<id>/seg/seg`) into its owning
-// document url and id. Falls back to the raw url if it can't be parsed.
-export function splitDocUrl(url: AutomergeUrl): {
-  docUrl: AutomergeUrl;
-  docId: string;
-} {
-  try {
-    const { documentId } = parseAutomergeUrl(url);
-    return {
-      docUrl: `automerge:${documentId}` as AutomergeUrl,
-      docId: documentId,
-    };
-  } catch {
-    return { docUrl: url, docId: url };
-  }
 }
 
 type DocLike = {

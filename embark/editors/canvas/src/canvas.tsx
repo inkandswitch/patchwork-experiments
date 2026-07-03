@@ -41,6 +41,7 @@ import {
 } from "@embark/inspect";
 import { runSchemaResolver } from "@embark/schema";
 import { wasEmbedClaimed } from "./drop-claim";
+import { AUTOSIZE_TOOLS, FRAMELESS_TOOLS } from "./tool-traits";
 import "./styles.css";
 
 // One embedded item placed on the canvas. `x`/`y` are the top-left corner in
@@ -78,20 +79,6 @@ export type EmbarkCanvasDoc = {
   title: string;
   embeds: { [id: string]: EmbarkEmbed };
 };
-
-// Per-tool default framelessness: these tools bring their own chrome, so they
-// render without the canvas drag border / clipping and are dragged by grabbing
-// their surface. This is only the default — a per-embed `showFrame` overrides
-// it (see the right-click "Show frame" toggle). Keyed by tool id; an embed with
-// no explicit `toolId` falls back to its document's datatype, which for these
-// tools matches the tool id.
-const FRAMELESS_TOOLS = new Set<string>(["parts-bin", "context-canvas"]);
-
-// Auto-size tools report their own intrinsic size and change it as their state
-// changes (e.g. the deck, which grows when fanned and shrinks when folded).
-// Their embed omits the stored width/height and shrink-wraps the content
-// instead (see `.embark-embed--autosize`), so the card resizes dynamically.
-const AUTOSIZE_TOOLS = new Set<string>(["deck"]);
 
 const DEFAULT_WIDTH = 360;
 const DEFAULT_HEIGHT = 280;
@@ -612,7 +599,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.22</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.25</div>
     </div>
   );
 }
@@ -766,10 +753,9 @@ function EmbedView(props: {
 
     // Hand the document to the drop target. If it claimed the embed (e.g. the
     // deck moving the card in), delete it here; otherwise it took a copy (e.g.
-    // the parts bin, or a host target outside the canvas) and the original
-    // springs back to where the drag began. We can't read this off
-    // `dropEffect` — the bridge's DataTransfer ignores the effect setters — so
-    // targets mark the drop event itself (see drop-claim).
+    // the parts bin) and the original springs back to where the drag began. We
+    // can't read this off `dropEffect` — the bridge's DataTransfer ignores the
+    // effect setters — so targets mark the drop event itself (see drop-claim).
     const dropEvent = dispatchDragEvent(
       "drop",
       bridge.overEl,
@@ -778,6 +764,14 @@ function EmbedView(props: {
       bridge.data,
     );
     if (wasEmbedClaimed(dropEvent)) {
+      props.onDelete();
+      return;
+    }
+
+    // An accepted drop outside the canvas is a move, not a copy: the host
+    // target took the document (it doesn't know the claim convention), so the
+    // embed leaves the canvas rather than springing back.
+    if (wasCarried) {
       props.onDelete();
       return;
     }
@@ -822,8 +816,9 @@ function EmbedView(props: {
   };
 
   // The stand-in shown while carried outside the canvas: a small fixed-position
-  // pill with the embed's title, trailing the cursor. pointer-events: none, so
-  // it never occludes the drop target hit-testing underneath.
+  // pill with the embed's title, centered under the cursor (the CSS translate
+  // does the centering). pointer-events: none, so it never occludes the drop
+  // target hit-testing underneath.
   const positionPill = (clientX: number, clientY: number) => {
     if (!pillEl) {
       pillEl = document.createElement("div");
@@ -831,8 +826,8 @@ function EmbedView(props: {
       pillEl.textContent = embedName();
       document.body.appendChild(pillEl);
     }
-    pillEl.style.left = `${clientX + 14}px`;
-    pillEl.style.top = `${clientY + 12}px`;
+    pillEl.style.left = `${clientX}px`;
+    pillEl.style.top = `${clientY}px`;
   };
 
   const removePill = () => {
@@ -873,7 +868,9 @@ function EmbedView(props: {
   const updateDragOver = (clientX: number, clientY: number) => {
     if (!drag) return;
     const overEl = dropElementUnder(clientX, clientY);
-    const overScope = overEl ? (overEl.closest(".embark-embed") ?? overEl) : null;
+    const overScope = overEl
+      ? (overEl.closest(".embark-embed") ?? overEl)
+      : null;
     if (overScope !== drag.overScope) {
       if (drag.overEl) {
         dispatchDragEvent(

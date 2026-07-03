@@ -1,29 +1,55 @@
-/* The one card surface: a playing-card frame filling the embed, with the title
-   pinned to the top, a middle slot (blank, or the card's own visualization /
-   controls) that grows to fill, and the description pinned to the bottom — the
-   shared Title / middle / Description pattern. A small suit-like pip sits in
-   opposite corners, and a flip affordance appears on hover. */
-.embark-card {
-  position: relative;
-  display: flex;
-  height: 100%;
-  box-sizing: border-box;
-  padding: 16px;
-  border: 1px solid #e7e5e4;
-  border-radius: 12px;
-  background: linear-gradient(160deg, #ffffff 0%, #fafaf9 100%);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+/* A card is a fixed-size playing card that turns over in 3D to its inert back.
+   The fixed dimensions give it an intrinsic footprint, so the canvas embed
+   shrink-wraps it (see AUTOSIZE_TOOLS in canvas.tsx) the same way the deck sizes
+   itself. Both faces share one Title / middle / Description skeleton, so the
+   description keeps its place at the bottom when the card flips. */
+.embark-card-flip {
+  width: 224px;
+  height: 320px;
+  perspective: 1400px;
   font-family:
     system-ui,
     -apple-system,
     sans-serif;
   user-select: none;
-  overflow: hidden;
 }
 
-/* The deactivated back face: a muted, hatched surface with no middle content,
-   showing only the title and description. */
-.embark-card--flipped {
+/* The turning element: both faces are stacked here and rotate together. */
+.embark-card-flip__inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 520ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Flipping turns the inner a half-turn: the front rotates away and the back
+   (pre-rotated 180deg) comes into view. */
+.embark-card-flip--flipped .embark-card-flip__inner {
+  transform: rotateY(180deg);
+}
+
+/* A single face: the playing-card surface. Both faces fill the flip container
+   and hide their reverse, so only the face turned toward the viewer shows. */
+.embark-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  box-sizing: border-box;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #ffffff 0%, #fafaf9 100%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* The deactivated back: pre-rotated so it reads right once the inner turns, on
+   a muted, hatched surface. Its middle stays empty (the module never loads), so
+   it shows only the title and description. */
+.embark-card--back {
+  transform: rotateY(180deg);
   background: repeating-linear-gradient(
     45deg,
     #f5f5f4,
@@ -39,36 +65,45 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 20px 20px;
+  padding: 28px 20px;
   text-align: left;
 }
 
 .embark-card__title {
+  flex: 0 0 auto;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.01em;
   color: #1c1917;
 }
 
-.embark-card--flipped .embark-card__title {
+.embark-card--back .embark-card__title {
   color: #57534e;
 }
 
 /* The middle slot: blank space, or the card's own live content. Grows to push
-   the title to the top and the description to the bottom. */
+   the title to the top and the description to the bottom on both faces, so the
+   description doesn't jump when the card flips. */
 .embark-card__middle {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-/* No middle content on the back face. */
-.embark-card--flipped .embark-card__middle {
-  display: none;
+/* The active face insets its middle in a light-gray box, setting the card's own
+   visualization / controls off from the surrounding title and description. The
+   inert back keeps just its title and description over blank space, so it isn't
+   boxed. */
+.embark-card--front .embark-card__middle {
+  padding: 10px;
+  border-radius: 8px;
+  background: #f5f5f4;
+  border: 1px solid #ececeb;
 }
 
 .embark-card__desc {
+  flex: 0 0 auto;
   margin: 0;
   font-size: 13px;
   line-height: 1.4;
@@ -82,7 +117,7 @@
   color: var(--embark-card-accent, #16a34a);
 }
 
-.embark-card--flipped .embark-card__pip {
+.embark-card--back .embark-card__pip {
   color: #a8a29e;
 }
 

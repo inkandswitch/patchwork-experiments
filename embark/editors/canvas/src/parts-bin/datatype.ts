@@ -61,6 +61,26 @@ type CardSeed = {
 };
 
 const CARD_SEEDS: CardSeed[] = [
+  // Debug pair (see @embark/context-reader / @embark/context-writer): drop the
+  // Writer on the context sidebar and a Reader on a normal canvas (or vice
+  // versa) to observe, in the console and each card's face, which store each
+  // lands on and whether a write on one is visible to a read on the other.
+  {
+    rootUrl: "automerge:2X9ez2i9PUiiBWMCPzqqFc2xG1Af",
+    title: "Context Reader (debug)",
+    description:
+      "Logs the context store it lands on and every channel's merged value. Watch the console for [ctx-reader].",
+    icon: "at",
+    accent: "#2563eb",
+  },
+  {
+    rootUrl: "automerge:3ESd7vZNGbYghq6KyixNduTZmLGh",
+    title: "Context Writer (debug)",
+    description:
+      "Writes a heartbeat mark into the debug:context channel of its store. Watch the console for [ctx-writer].",
+    icon: "clock",
+    accent: "#dc2626",
+  },
   {
     rootUrl: "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp",
     title: "Place Finder",

@@ -1,18 +1,22 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { defineChannel } from "@embark/context";
+import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
-// Focus channels, promoted from per-tool local state to shared context so embeds
-// and decorators can read them without prop-drilling. `Selection` is the
-// canvas's selected embed; `Highlight` is auxiliary emphasis any view
-// contributes (hovered map pins, caret-touched mention tokens). Each value is a
-// record keyed by document url so it is always mergeable; readers render the
-// union across every scope.
-export const Selection = defineChannel<Record<AutomergeUrl, true>>({
-  name: "selection",
-  empty: {},
-});
+// The selection/highlight focus channels. Shared token UI (EmbedToken, chips,
+// hover->highlight wiring) ships from the `./tokens` subpath so packages that
+// only need the channel definitions don't pull in Solid or the token CSS.
+export * from "./channels";
 
-export const Highlight = defineChannel<Record<AutomergeUrl, true>>({
-  name: "highlight",
-  empty: {},
-});
+// Registers a context visualizer for the `selection` and `highlight` channels
+// (loaded lazily by the context viewer). See @embark/context's
+// `embark:context-visualizer` plugin type.
+export const plugins: Plugin<any>[] = [
+  {
+    type: "embark:context-visualizer",
+    id: "selection-context-visualizer",
+    name: "Selection context visualizer",
+    channels: ["selection", "highlight"],
+    async load() {
+      const { selectionVisualizer } = await import("./visualizer");
+      return selectionVisualizer;
+    },
+  },
+];

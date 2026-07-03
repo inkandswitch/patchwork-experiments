@@ -198,26 +198,42 @@
   color: #44403c;
 }
 
-/* The preview is its own card and the drag source: a non-interactive window
-   onto the live document that you grab to drag a copy onto the canvas. Its
-   height no longer affects the drag ghost (we set a title token as the drag
-   image instead). */
+/* The preview is the drag source: a non-interactive window onto the live
+   document that you grab to drag a copy onto the canvas. Its height is capped:
+   taller content is scaled down to a thumbnail (see MAX_PREVIEW_HEIGHT in
+   PartsBinTool, which sets the exact height once measured) so nothing is
+   clipped; this max-height is the fallback until then. Its own height no longer
+   affects the drag ghost (we set a title token as the drag image instead). */
 .embark-parts-bin__preview {
   position: relative;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
-  min-height: 140px;
-  max-height: 320px;
+  max-height: 200px;
   overflow: hidden;
   cursor: grab;
-  border: 1px solid #e7e5e4;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .embark-parts-bin__preview:active {
   cursor: grabbing;
+}
+
+/* The content at its natural size, shrunk to the capped height by the inline
+   transform. Pinned to the top and centered so the thumbnail sits directly
+   under its heading. */
+.embark-parts-bin__preview-natural {
+  transform-origin: top;
+}
+
+/* Frameless by default: tools bring their own chrome (a card its playing-card
+   surface, a deck its pile), so no wrapper border. Only framed (non-frameless)
+   tools get one — it wraps the content at natural size and scales down with
+   it — matching the framed/frameless split the canvas uses. */
+.embark-parts-bin__preview--framed .embark-parts-bin__preview-natural {
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
 }
 
 .embark-parts-bin__preview patchwork-view {

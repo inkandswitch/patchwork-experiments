@@ -19,13 +19,17 @@
   },
   "dependencies": {
     "@embark/context": "workspace:*",
+    "@embark/selection": "workspace:*",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.38.4",
-    "@inkandswitch/patchwork-plugins": "^0.0.11"
+    "@inkandswitch/patchwork-plugins": "^0.0.11",
+    "solid-js": "^1.9.11"
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.2.5",
     "typescript": "^5.8.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-solid": "^2.10.0"
   }
 }

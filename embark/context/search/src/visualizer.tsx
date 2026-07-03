@@ -1,44 +1,104 @@
 import {
   isValidAutomergeUrl,
   type AutomergeUrl,
+  type Repo,
 } from "@automerge/automerge-repo";
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import { type ContextStore, type ScopeOwner } from "@embark/context";
-import { SearchQueries, SearchResults } from "@embark/search";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { render } from "solid-js/web";
 import {
-  EmbedToken,
   belongsToDoc,
+  contributedSlice,
   splitDocUrl,
-  type DocTitles,
-  type HighlightController,
-} from "./tokens";
+  type ContextStore,
+  type ContextVisualizer,
+  type ScopeOwner,
+} from "@embark/context";
+import {
+  Chips,
+  EmbedToken,
+  useDocTitles,
+  useHighlight,
+} from "@embark/selection/tokens";
+import { SearchQueries, SearchResults } from "./channels";
+import "./visualizer.css";
 
-// The `search:results` channel as a `search → results` table. Results are
-// grouped by the card that produced them (each contributing scope carries its
-// owner, so provider cards stay distinct even after the store merges their
-// slices). Every active query gets a row — including queries no card answered,
-// which show "no results" — by unioning the live SearchQueries keys with the
-// queries present in the result scopes.
+// Visualizer for the search channels: `search:queries` as quoted chips, and
+// `search:results` as a `search -> results` table grouped by the card that
+// produced each result.
+export const searchVisualizer: ContextVisualizer = (element, props) => {
+  return render(() => {
+    if (props.channel === SearchResults.name) {
+      return (
+        <div class="embark-tokens-panel">
+          <ResultsTable
+            store={props.store}
+            repo={props.repo}
+            focusDocUrl={
+              props.mode === "contributes"
+                ? (props.focusDocUrl as AutomergeUrl)
+                : undefined
+            }
+          />
+        </div>
+      );
+    }
+    return (
+      <div class="embark-tokens-panel">
+        <QueryChips
+          store={props.store}
+          mode={props.mode}
+          focusDocUrl={props.focusDocUrl as AutomergeUrl}
+        />
+      </div>
+    );
+  }, element);
+};
+
+function QueryChips(props: {
+  store: ContextStore;
+  mode: "contributes" | "uses";
+  focusDocUrl: AutomergeUrl;
+}) {
+  const [tick, setTick] = createSignal(0);
+  onCleanup(props.store.subscribe(SearchQueries, () => setTick((t) => t + 1)));
+  const labels = createMemo(() => {
+    tick();
+    const value =
+      props.mode === "contributes"
+        ? contributedSlice(props.store, SearchQueries, props.focusDocUrl)
+        : props.store.read(SearchQueries);
+    return Object.keys(value).map((key) => JSON.stringify(key));
+  });
+  return <Chips labels={labels()} />;
+}
+
+// The `search:results` channel as a table. Results are grouped by the card that
+// produced them (each contributing scope carries its owner). Every active query
+// gets a row — including queries no card answered — by unioning the live
+// SearchQueries keys with the queries present in the result scopes.
 type Group = { owner?: ScopeOwner; urls: AutomergeUrl[] };
 type Row = { query: string; groups: Group[] };
 
-export function SearchResultsTable(props: {
+function ResultsTable(props: {
   store: ContextStore;
-  titles: DocTitles;
-  highlight: HighlightController;
-  // When set (the "Contributed" view), keep only groups from this document, so
+  repo: Repo;
+  // When set (the "contributes" view), keep only groups from this document, so
   // the table shows just what the focused card produced.
   focusDocUrl?: AutomergeUrl;
 }) {
-  // Scopes are pull-based, so recompute whenever either search channel emits.
   const [tick, setTick] = createSignal(0);
   const bump = () => setTick((t) => t + 1);
   onCleanup(props.store.subscribe(SearchResults, bump));
   onCleanup(props.store.subscribe(SearchQueries, bump));
 
+  const titles = useDocTitles(props.repo);
+  const highlight = useHighlight(props.store);
+
   const rows = createMemo<Row[]>(() => {
     tick();
-    const queries = new Set<string>(Object.keys(props.store.read(SearchQueries)));
+    const queries = new Set<string>(
+      Object.keys(props.store.read(SearchQueries)),
+    );
     const byQuery = new Map<string, Group[]>();
     for (const scope of props.store.scopes(SearchResults)) {
       const owner = scope.owner;
@@ -97,10 +157,7 @@ export function SearchResultsTable(props: {
                           <div class="embark-token-row">
                             <For each={group.urls}>
                               {(url) => (
-                                <EmbedToken
-                                  url={url}
-                                  highlight={props.highlight}
-                                />
+                                <EmbedToken url={url} highlight={highlight} />
                               )}
                             </For>
                           </div>
@@ -123,8 +180,8 @@ export function SearchResultsTable(props: {
     const doc = owner?.docUrl as AutomergeUrl | undefined;
     if (doc) {
       const { docUrl } = splitDocUrl(doc);
-      props.titles.request(docUrl);
-      return props.titles.titleOf(docUrl);
+      titles.request(docUrl);
+      return titles.titleOf(docUrl);
     }
     return owner?.toolId ?? "unknown";
   }

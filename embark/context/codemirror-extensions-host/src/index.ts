@@ -21,4 +21,14 @@ export const plugins: Plugin<any>[] = [
       return codemirrorExtensionsHost();
     },
   },
+  {
+    type: "embark:context-visualizer",
+    id: "codemirror-extensions-context-visualizer",
+    name: "CodeMirror extensions context visualizer",
+    channels: ["codemirror:extensions"],
+    async load() {
+      const { codemirrorExtensionsVisualizer } = await import("./visualizer");
+      return codemirrorExtensionsVisualizer;
+    },
+  },
 ];
