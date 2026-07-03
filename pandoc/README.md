@@ -31,6 +31,33 @@ via [pandoc](https://pandoc.org) compiled to WebAssembly
   downloaded or saved back into Patchwork as a file doc (the "Saved" chips
   are draggable into the sidebar).
 
+## Context sidebar
+
+The module also registers a **context-sidebar** variant (`pandoc-context`,
+tagged `context-tool`, bound to the account doc) that follows whatever document
+you currently have focused:
+
+- It subscribes to `patchwork:selected-doc` and turns the focused document into a
+  pandoc input automatically — file docs use their content directly; structured
+  docs (essays, notes, …) have their primary text field detected (`content`,
+  `text`, `body`, …), and anything else offers a field picker (or whole-doc JSON).
+- A single compact `From → To` row of dropdowns (source format auto-detected,
+  output remembered per source document on an account-linked settings doc).
+- It converts live (debounced) on focus and edit — no Convert button, no toggles.
+- Export is built into the preview toolbar: a draggable **Drag out** pill (drops a
+  fresh file doc into the sidebar/canvas) and a download button. The rendered
+  source view and binary card are draggable too.
+
+It reuses the same engine, conversion, and format code as the full tool; only the
+UI (`components/PandocContextTool.tsx`) and the focus resolver
+(`resolveFocused.ts`) are new. Styling follows the Patchwork theme system
+(`--editor-*` / `--studio-*` tokens via `context-styles.ts`).
+
+The shared conversion code also fills in a default `lang` (and, for HTML output,
+the `pagetitle` template variable) for standalone renders — unless the document
+already sets them — so both tools stop emitting pandoc's "No value for 'lang'"
+and missing-`<title>` warnings without injecting a visible title heading.
+
 The conversion core comes from the `pandoc-wasm` npm package; we alias
 straight to its internal `src/core.js` (see `vite.config.ts`) so we can
 supply the wasm binary ourselves instead of bundling it.

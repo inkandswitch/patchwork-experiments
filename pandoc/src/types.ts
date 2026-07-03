@@ -42,3 +42,31 @@ export type FileDocShape = {
 	mimeType?: string
 	content?: unknown
 }
+
+/** Per-source conversion settings, remembered across focus changes. */
+export type PandocSourceSettings = {
+	/** pandoc reader name override */
+	from?: string
+	/** pandoc writer name override */
+	to?: string
+	/** For non-file docs: path to the value inside the doc to use as content. */
+	path?: string[]
+	/** For non-file docs: convert the whole document as JSON. */
+	whole?: boolean
+}
+
+/**
+ * Account-linked settings doc for the Pandoc context sidebar. Remembers the
+ * output-format choice per source document so it follows you across focus.
+ */
+export type PandocContextDoc = {
+	"@patchwork"?: {type: string}
+	title?: string
+	/** keyed by source documentId */
+	sources: Record<string, PandocSourceSettings>
+}
+
+/** The bit of the account doc the context sidebar reads/writes. */
+export type AccountDocShape = {
+	pandocContextUrl?: AutomergeUrl
+}

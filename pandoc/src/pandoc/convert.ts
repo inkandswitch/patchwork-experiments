@@ -42,6 +42,74 @@ function baseName(name: string): string {
 	return i > 0 ? base.slice(0, i) : base
 }
 
+/** Best-effort UI language for the `lang` metadata default. */
+function defaultLang(): string {
+	try {
+		return (typeof navigator !== "undefined" && navigator.language) || "en"
+	} catch {
+		return "en"
+	}
+}
+
+/**
+ * Whether the main input already declares a document language, so we don't
+ * clobber it with the default. Covers HTML `lang=` and YAML/pandoc metadata
+ * `lang:` — enough to silence pandoc's "No value for 'lang'" warning without
+ * overriding an author's explicit choice.
+ */
+function hasExplicitLang(
+	input: LoadedInput | undefined,
+	from: string | null
+): boolean {
+	if (!input || typeof input.content !== "string") return false
+	const content = input.content
+	if (from && from.includes("html")) return /<html[^>]*\slang=/i.test(content)
+	return /^-{3,}[\s\S]*?^lang\s*:/m.test(content) || /^lang\s*:/m.test(content)
+}
+
+/** Whether the main input already declares a title (frontmatter / % / <title>). */
+function hasExplicitTitle(
+	input: LoadedInput | undefined,
+	from: string | null
+): boolean {
+	if (!input || typeof input.content !== "string") return false
+	const content = input.content
+	if (from && from.includes("html")) return /<title[\s>]/i.test(content)
+	return (
+		/^-{3,}[\s\S]*?^title\s*:/m.test(content) ||
+		/^title\s*:/m.test(content) ||
+		/^%\s+\S/.test(content)
+	)
+}
+
+/**
+ * Fill in default metadata for standalone output so pandoc doesn't emit
+ * `lang`/`title` warnings that would clutter the UI, without changing what the
+ * document actually shows:
+ *   - `lang` metadata: invisible, set for every standalone render.
+ *   - `pagetitle` *variable* (HTML family only): sets the head `<title>` and
+ *     silences the "nonempty <title>" warning. We deliberately do NOT set the
+ *     `title` metadata, which pandoc renders as a visible `<h1 class="title">`.
+ */
+function applyMetadataDefaults(
+	options: Record<string, unknown>,
+	main: LoadedInput | undefined,
+	from: string | null,
+	to: string
+): void {
+	const metadata = {...((options.metadata as Record<string, unknown>) ?? {})}
+	if (!metadata.lang && !hasExplicitLang(main, from)) metadata.lang = defaultLang()
+	options.metadata = metadata
+
+	if (htmlPreviewFormats.has(to) && main && !hasExplicitTitle(main, from)) {
+		const variables = {
+			...((options.variables as Record<string, unknown>) ?? {}),
+		}
+		if (!variables.pagetitle) variables.pagetitle = baseName(main.name)
+		options.variables = variables
+	}
+}
+
 export function resolveFromFormat(
 	req: Pick<ConversionRequest, "inputs" | "mainIndex" | "from">
 ): string | null {
@@ -93,6 +161,7 @@ export async function runConversion(
 			"input-files": [main.name],
 		}
 		if (from) options.from = from
+		applyMetadataDefaults(options, main, from, "typst")
 
 		const result = await engine.convert(options, null, files)
 		if (result.stderr && result.stderr.includes("ERROR")) {
@@ -119,7 +188,11 @@ export async function runConversion(
 		"input-files": [main.name],
 	}
 	if (from) options.from = from
-	if (req.standalone) options.standalone = true
+	if (req.standalone) {
+		options.standalone = true
+		// Missing `lang`/`title` otherwise surface as pandoc warnings.
+		applyMetadataDefaults(options, main, from, to)
+	}
 	// Inline images/css provided as resources so the HTML preview is self-contained
 	if (htmlPreviewFormats.has(to)) options["embed-resources"] = true
 

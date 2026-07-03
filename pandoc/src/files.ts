@@ -20,7 +20,7 @@ export function isTextMimeType(mimeType: string): boolean {
 	)
 }
 
-function asContent(value: unknown): string | Uint8Array | null {
+export function asContent(value: unknown): string | Uint8Array | null {
 	if (typeof value === "string") return value
 	if (value instanceof Uint8Array) return value
 	if (value != null && isImmutableString(value)) return value.toString()
@@ -32,7 +32,7 @@ export function isFileLikeDoc(doc: FileDocShape | undefined): boolean {
 	return doc != null && asContent(doc.content) !== null
 }
 
-function valueAtPath(doc: unknown, path: string[]): unknown {
+export function valueAtPath(doc: unknown, path: string[]): unknown {
 	let value: unknown = doc
 	for (const key of path) {
 		if (value == null || typeof value !== "object") return undefined

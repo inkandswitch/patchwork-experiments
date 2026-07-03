@@ -28,4 +28,19 @@ export const plugins = [
 			return PandocTool
 		},
 	},
+	{
+		// Context-sidebar variant: previews and converts whatever document is
+		// currently focused, and lets you pull the conversion out into Patchwork.
+		// Registered against the account doc (its handle) like other context tools.
+		type: "patchwork:tool",
+		id: "pandoc-context",
+		name: "Pandoc",
+		icon: "ArrowLeftRight",
+		tags: ["context-tool"],
+		supportedDatatypes: ["account"],
+		async load() {
+			const {PandocContextTool} = await import("./components/PandocContextTool")
+			return PandocContextTool
+		},
+	},
 ]

@@ -1,6 +1,6 @@
 {
   "name": "@patchwork/pandoc",
-  "version": "0.0.2",
+  "version": "0.0.7",
   "description": "Any-to-any document conversion for Patchwork.",
   "type": "module",
   "main": "src/index.ts",
