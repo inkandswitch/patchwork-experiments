@@ -1,11 +1,6 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { createMemo, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
-import {
-  contributedSlice,
-  type ContextStore,
-  type ContextVisualizer,
-} from "@embark/context";
+import { type ContextView, type ContextVisualizer } from "@embark/context";
 import { Chips } from "@embark/selection/tokens";
 import { SchemaQueries } from "./channels";
 
@@ -16,31 +11,19 @@ export const schemaVisualizer: ContextVisualizer = (element, props) => {
   return render(
     () => (
       <div class="embark-tokens-panel">
-        <SchemaQueryChips
-          store={props.store}
-          mode={props.mode}
-          focusDocUrl={props.focusDocUrl as AutomergeUrl}
-        />
+        <SchemaQueryChips context={props.context} />
       </div>
     ),
     element,
   );
 };
 
-function SchemaQueryChips(props: {
-  store: ContextStore;
-  mode: "contributes" | "uses";
-  focusDocUrl: AutomergeUrl;
-}) {
+function SchemaQueryChips(props: { context: ContextView }) {
   const [tick, setTick] = createSignal(0);
-  onCleanup(props.store.subscribe(SchemaQueries, () => setTick((t) => t + 1)));
+  onCleanup(props.context.subscribe(SchemaQueries, () => setTick((t) => t + 1)));
   const labels = createMemo(() => {
     tick();
-    const value =
-      props.mode === "contributes"
-        ? contributedSlice(props.store, SchemaQueries, props.focusDocUrl)
-        : props.store.read(SchemaQueries);
-    return Object.values(value).map((query) => {
+    return Object.values(props.context.read(SchemaQueries)).map((query) => {
       const name = (query as { name?: unknown })?.name;
       return typeof name === "string" && name.trim() ? name : "schema";
     });

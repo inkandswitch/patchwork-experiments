@@ -46,10 +46,8 @@ export function UsedView(props: {
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
             <VisualizerHost
-              store={props.store}
+              context={props.store}
               channel={channel}
-              mode="uses"
-              focusDocUrl={props.focusDocUrl}
               repo={props.repo}
             />
           </div>

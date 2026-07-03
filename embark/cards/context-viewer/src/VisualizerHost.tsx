@@ -1,11 +1,10 @@
-import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import type { Repo } from "@automerge/automerge-repo";
 import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import {
   contextVisualizers,
-  contributedSlice,
   type Channel,
-  type ContextStore,
+  type ContextView,
   type ContextVisualizer,
 } from "@embark/context";
 
@@ -15,11 +14,13 @@ import {
 // paints the default JSON viewer and upgrades in place when a matching
 // visualizer registers later (module bundles load asynchronously) — the same
 // register-then-upgrade pattern the `token-view` tool uses.
+//
+// The `context` is already scoped by the caller: the whole store for the
+// whole-context view, or a `filterChannel` lens for a focused embed. The
+// visualizer just draws whatever this context reports for its channel.
 export function VisualizerHost(props: {
-  store: ContextStore;
+  context: ContextView;
   channel: Channel<Record<string, unknown>>;
-  mode: "contributes" | "uses";
-  focusDocUrl: AutomergeUrl;
   repo: Repo;
 }) {
   let container!: HTMLDivElement;
@@ -31,10 +32,8 @@ export function VisualizerHost(props: {
     const mountVisualizer = (visualize: ContextVisualizer) => {
       cleanup?.();
       cleanup = visualize(container, {
-        store: props.store,
+        context: props.context,
         channel: props.channel.name,
-        mode: props.mode,
-        focusDocUrl: props.focusDocUrl,
         repo: props.repo,
       });
     };
@@ -81,22 +80,16 @@ export function VisualizerHost(props: {
 function mountDefault(
   container: HTMLElement,
   props: {
-    store: ContextStore;
+    context: ContextView;
     channel: Channel<Record<string, unknown>>;
-    mode: "contributes" | "uses";
-    focusDocUrl: AutomergeUrl;
   },
 ): () => void {
   return render(() => {
     const [tick, setTick] = createSignal(0);
-    onCleanup(props.store.subscribe(props.channel, () => setTick((t) => t + 1)));
+    onCleanup(props.context.subscribe(props.channel, () => setTick((t) => t + 1)));
     const text = createMemo(() => {
       tick();
-      const value =
-        props.mode === "contributes"
-          ? contributedSlice(props.store, props.channel, props.focusDocUrl)
-          : props.store.read(props.channel);
-      return safeJson(value);
+      return safeJson(props.context.read(props.channel));
     });
     return <pre class="embark-context__value">{text()}</pre>;
   }, container);

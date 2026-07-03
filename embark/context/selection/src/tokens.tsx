@@ -5,7 +5,7 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import { createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
-import { splitDocUrl, type ContextStore } from "@embark/context";
+import { splitDocUrl, type ContextView } from "@embark/context";
 import { Highlight } from "./channels";
 import "./tokens.css";
 
@@ -84,7 +84,11 @@ export type HighlightController = {
   clear: () => void;
 };
 
-export function useHighlight(store: ContextStore): HighlightController {
+// Takes a `ContextView` (not the full store): it only needs to read/subscribe
+// the shared `Highlight` channel and open a scope to write hovers into it — and
+// a filtered view passes `highlight` through to the real store unchanged, so
+// hover emphasis still lights up across every panel.
+export function useHighlight(store: ContextView): HighlightController {
   const [incoming, setIncoming] = createSignal(store.read(Highlight));
   onCleanup(store.subscribe(Highlight, (next) => setIncoming(() => next)));
 

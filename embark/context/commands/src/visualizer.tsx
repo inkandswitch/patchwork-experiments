@@ -1,18 +1,13 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
-import {
-  contributedSlice,
-  type ContextStore,
-  type ContextVisualizer,
-} from "@embark/context";
+import { type ContextView, type ContextVisualizer } from "@embark/context";
 import { Chips, EmbedToken, useHighlight } from "@embark/selection/tokens";
 import { CommandQueries, CommandSuggestions } from "./channels";
 import type { Suggestion } from "./suggestion";
 
 // Visualizer for the command channels: `commands:queries` as quoted chips, and
 // `commands:suggestions` as labeled tokens (the suggestion label over its
-// prototype card document).
+// prototype card document). The `context` is already scoped by the viewer.
 export const commandsVisualizer: ContextVisualizer = (element, props) => {
   return render(() => {
     const isSuggestions = props.channel === CommandSuggestions.name;
@@ -20,60 +15,36 @@ export const commandsVisualizer: ContextVisualizer = (element, props) => {
       <div class="embark-tokens-panel">
         <Show
           when={isSuggestions}
-          fallback={
-            <QueryChips
-              store={props.store}
-              mode={props.mode}
-              focusDocUrl={props.focusDocUrl as AutomergeUrl}
-            />
-          }
+          fallback={<QueryChips context={props.context} />}
         >
-          <SuggestionTokens
-            store={props.store}
-            mode={props.mode}
-            focusDocUrl={props.focusDocUrl as AutomergeUrl}
-          />
+          <SuggestionTokens context={props.context} />
         </Show>
       </div>
     );
   }, element);
 };
 
-function QueryChips(props: {
-  store: ContextStore;
-  mode: "contributes" | "uses";
-  focusDocUrl: AutomergeUrl;
-}) {
+function QueryChips(props: { context: ContextView }) {
   const [tick, setTick] = createSignal(0);
-  onCleanup(props.store.subscribe(CommandQueries, () => setTick((t) => t + 1)));
+  onCleanup(props.context.subscribe(CommandQueries, () => setTick((t) => t + 1)));
   const labels = createMemo(() => {
     tick();
-    const value =
-      props.mode === "contributes"
-        ? contributedSlice(props.store, CommandQueries, props.focusDocUrl)
-        : props.store.read(CommandQueries);
-    return Object.keys(value).map((key) => JSON.stringify(key));
+    return Object.keys(props.context.read(CommandQueries)).map((key) =>
+      JSON.stringify(key),
+    );
   });
   return <Chips labels={labels()} />;
 }
 
-function SuggestionTokens(props: {
-  store: ContextStore;
-  mode: "contributes" | "uses";
-  focusDocUrl: AutomergeUrl;
-}) {
+function SuggestionTokens(props: { context: ContextView }) {
   const [tick, setTick] = createSignal(0);
   onCleanup(
-    props.store.subscribe(CommandSuggestions, () => setTick((t) => t + 1)),
+    props.context.subscribe(CommandSuggestions, () => setTick((t) => t + 1)),
   );
-  const highlight = useHighlight(props.store);
+  const highlight = useHighlight(props.context);
   const suggestions = createMemo<Suggestion[]>(() => {
     tick();
-    const value =
-      props.mode === "contributes"
-        ? contributedSlice(props.store, CommandSuggestions, props.focusDocUrl)
-        : props.store.read(CommandSuggestions);
-    return flatten(value);
+    return flatten(props.context.read(CommandSuggestions));
   });
   return (
     <Show

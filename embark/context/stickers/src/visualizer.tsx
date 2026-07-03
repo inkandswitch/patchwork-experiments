@@ -1,41 +1,22 @@
-import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
-import {
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  Show,
-  type JSX,
-} from "solid-js";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
+import { createMemo, createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { render } from "solid-js/web";
-import {
-  belongsToDoc,
-  splitDocUrl,
-  type ContextStore,
-  type ContextVisualizer,
-  type ScopeOwner,
-} from "@embark/context";
-import { EmbedToken, useDocTitles, useHighlight } from "@embark/selection/tokens";
+import { type ContextView, type ContextVisualizer } from "@embark/context";
+import { EmbedToken, useHighlight } from "@embark/selection/tokens";
 import { Stickers } from "./channels";
 import type { Sticker } from "./sticker";
 import "./visualizer.css";
 
 // Visualizer for the `stickers` channel, drawn the way stickers appear in the
-// document. "contributes" groups the focused embed's stickers by target (where
-// they landed); "uses" groups the stickers targeting the focused embed by owner
-// (who added them).
+// document: grouped by the *target* document they landed on ("stickers on X").
+// The `context` is already scoped by the viewer — the whole canvas, or just the
+// inspected embed's contributed stickers — so this draws whatever scopes it
+// reports without knowing which.
 export const stickersVisualizer: ContextVisualizer = (element, props) => {
-  const focus = props.focusDocUrl as AutomergeUrl;
   return render(
     () => (
       <div class="embark-tokens-panel">
-        <StickersView
-          store={props.store}
-          repo={props.repo}
-          groupBy={props.mode === "contributes" ? "target" : "owner"}
-          authoredBy={props.mode === "contributes" ? focus : undefined}
-          targeting={props.mode === "uses" ? focus : undefined}
-        />
+        <StickersView context={props.context} />
       </div>
     ),
     element,
@@ -43,57 +24,31 @@ export const stickersVisualizer: ContextVisualizer = (element, props) => {
 };
 
 // Sources publish into their own scope keyed by *target* document
-// (`Record<targetDocUrl, Sticker[]>`), so each scope carries the source card as
-// its owner. We flatten every scope into `{ owner, target, sticker }` items and
-// group them: by `owner` for the "uses" view, or by `target` for the
-// "contributes" view.
-type Item = { owner?: ScopeOwner; target: AutomergeUrl; sticker: Sticker };
-type Group = {
-  key: string;
-  owner?: ScopeOwner;
-  target?: AutomergeUrl;
-  items: Item[];
-};
+// (`Record<targetDocUrl, Sticker[]>`). We flatten every scope's slice into
+// per-target sticker lists and group by target.
+type Group = { target: AutomergeUrl; stickers: Sticker[] };
 
-function StickersView(props: {
-  store: ContextStore;
-  repo: Repo;
-  groupBy: "owner" | "target";
-  // Contributes: keep only scopes owned by this document.
-  authoredBy?: AutomergeUrl;
-  // Uses: keep only stickers whose target is this document.
-  targeting?: AutomergeUrl;
-}) {
+function StickersView(props: { context: ContextView }) {
   const [tick, setTick] = createSignal(0);
-  onCleanup(props.store.subscribe(Stickers, () => setTick((t) => t + 1)));
+  onCleanup(props.context.subscribe(Stickers, () => setTick((t) => t + 1)));
 
-  const titles = useDocTitles(props.repo);
-  const highlight = useHighlight(props.store);
+  const highlight = useHighlight(props.context);
 
   const groups = createMemo<Group[]>(() => {
     tick();
-    const items: Item[] = [];
-    for (const scope of props.store.scopes(Stickers)) {
-      const owner = scope.owner;
-      const ownerDoc = owner?.docUrl as AutomergeUrl | undefined;
-      if (
-        props.authoredBy &&
-        (!ownerDoc || !belongsToDoc(ownerDoc, props.authoredBy))
-      ) {
-        continue;
-      }
+    const byTarget = new Map<AutomergeUrl, Sticker[]>();
+    for (const scope of props.context.scopes(Stickers)) {
       for (const [target, stickers] of Object.entries(scope.slice)) {
-        const targetUrl = target as AutomergeUrl;
-        if (props.targeting && !belongsToDoc(targetUrl, props.targeting)) {
-          continue;
-        }
         if (!Array.isArray(stickers)) continue;
-        for (const sticker of stickers as Sticker[]) {
-          items.push({ owner, target: targetUrl, sticker });
-        }
+        const list = byTarget.get(target as AutomergeUrl) ?? [];
+        list.push(...(stickers as Sticker[]));
+        byTarget.set(target as AutomergeUrl, list);
       }
     }
-    return groupItems(items, props.groupBy);
+    return [...byTarget.entries()].map(([target, stickers]) => ({
+      target,
+      stickers,
+    }));
   });
 
   return (
@@ -106,22 +61,11 @@ function StickersView(props: {
           {(group) => (
             <div class="embark-stickers__group">
               <div class="embark-stickers__label">
-                <Show
-                  when={props.groupBy === "target" ? group.target : undefined}
-                  fallback={
-                    <span class="embark-stickers__card">
-                      {cardLabel(group.owner)}
-                    </span>
-                  }
-                >
-                  {(target) => (
-                    <EmbedToken url={target()} highlight={highlight} />
-                  )}
-                </Show>
+                <EmbedToken url={group.target} highlight={highlight} />
               </div>
               <div class="embark-token-row">
-                <For each={group.items}>
-                  {(item) => stickerChip(item.sticker)}
+                <For each={group.stickers}>
+                  {(sticker) => stickerChip(sticker)}
                 </For>
               </div>
             </div>
@@ -130,42 +74,6 @@ function StickersView(props: {
       </div>
     </Show>
   );
-
-  // A human name for the source card: its document title (resolved lazily via
-  // the shared title cache), falling back to its tool id.
-  function cardLabel(owner?: ScopeOwner): string {
-    const doc = owner?.docUrl as AutomergeUrl | undefined;
-    if (doc) {
-      const { docUrl } = splitDocUrl(doc);
-      titles.request(docUrl);
-      return titles.titleOf(docUrl);
-    }
-    return owner?.toolId ?? "unknown";
-  }
-}
-
-// Bucket flattened items by their source owner or their target document.
-function groupItems(items: Item[], groupBy: "owner" | "target"): Group[] {
-  const byKey = new Map<string, Group>();
-  for (const item of items) {
-    const key = groupBy === "owner" ? ownerKey(item.owner) : String(item.target);
-    let group = byKey.get(key);
-    if (!group) {
-      group = {
-        key,
-        owner: groupBy === "owner" ? item.owner : undefined,
-        target: groupBy === "target" ? item.target : undefined,
-        items: [],
-      };
-      byKey.set(key, group);
-    }
-    group.items.push(item);
-  }
-  return [...byKey.values()];
-}
-
-function ownerKey(owner?: ScopeOwner): string {
-  return owner?.docUrl ?? owner?.embedId ?? owner?.toolId ?? "unknown";
 }
 
 // One sticker drawn as it appears in the document (mirroring the CodeMirror

@@ -73,23 +73,13 @@ export type ContextStore = {
   // changes (a reader subscribing or unsubscribing). Lets inspectors refresh
   // even when the reader attaches to an empty channel that emits no value.
   subscribeReaders(cb: () => void): () => void;
-  // Every channel this store knows about: the union of the local channel set and
-  // the parent chain, deduped by name. Lets a generic inspector enumerate what
-  // is present without a hardcoded list.
+  // Every channel this store knows about, deduped by name. Lets a generic
+  // inspector enumerate what is present without a hardcoded list.
   channels(): Channel<Record<string, unknown>>[];
   // Notified (on a coalesced microtask) whenever a channel name is seen for the
   // first time in this store, so an inspector mounted before a channel exists
   // still picks it up when a scope or reader first touches it.
   subscribeChannels(cb: () => void): () => void;
-  // The store this one inherits reads from (its enclosing scope), or undefined
-  // for a root store (the page-global body store, or an `isolated` context).
-  // Reads merge the whole parent chain (nearest wins); writes never leave the
-  // store they were made in.
-  readonly parent: ContextStore | undefined;
-  // Re-point this store's parent. Called by the host element as the DOM tree
-  // changes (connect/disconnect), rewiring live subscriptions and re-emitting any
-  // channel whose inherited value changed.
-  setParent(parent: ContextStore | undefined): void;
 };
 
 type AnyRecord = Record<string, unknown>;
@@ -108,9 +98,6 @@ type ChannelState = {
   subscribers: Set<Listener>;
   // subscriber listener -> the owner (embed/document) that reads through it.
   readers: Map<Listener, ScopeOwner | undefined>;
-  // Live subscription to the parent store's same channel, held only while this
-  // channel has local subscribers, so a parent-side change re-emits here.
-  parentUnsub: (() => void) | null;
   // What subscribers last saw, for emit-on-change.
   lastEmitted: AnyRecord | null;
 };
@@ -121,8 +108,6 @@ export function createContextStore(): ContextStore {
   const channels = new Map<string, ChannelState>();
   const dirty = new Set<ChannelState>();
   let flushScheduled = false;
-  // The enclosing store this one inherits reads from (see `setParent`).
-  let parent: ContextStore | undefined;
 
   // Reader-registry change notification, coalesced onto a microtask so a burst
   // of (un)subscriptions in one tick fires listeners at most once.
@@ -158,7 +143,6 @@ export function createContextStore(): ContextStore {
         slices: new Map(),
         subscribers: new Set(),
         readers: new Map(),
-        parentUnsub: null,
         lastEmitted: null,
       };
       channels.set(channel.name, state);
@@ -167,18 +151,11 @@ export function createContextStore(): ContextStore {
     return state;
   };
 
-  // The merged value seen by a reader: every live slice across the parent chain,
-  // outermost contributions first so the nearest store wins on scalar/object
-  // keys and arrays concatenate parent-before-local. `channel.empty` is returned
-  // only when no scope anywhere in the chain contributes.
+  // The merged value seen by a reader: every live slice in this store, in scope
+  // order so a later writer wins on scalar/object keys and arrays concatenate.
+  // `channel.empty` is returned only when no scope contributes.
   const readMerged = (channel: Channel<AnyRecord>): AnyRecord => {
-    const ancestors: ContextStore[] = [];
-    for (let p = parent; p; p = p.parent) ancestors.push(p);
-    ancestors.reverse();
     const slices: AnyRecord[] = [];
-    for (const ancestor of ancestors) {
-      for (const { slice } of ancestor.scopes(channel)) slices.push(slice);
-    }
     for (const scope of stateFor(channel).slices.values()) {
       slices.push(scope.slice);
     }
@@ -212,20 +189,6 @@ export function createContextStore(): ContextStore {
   const read = <T extends AnyRecord>(channel: Channel<T>): T =>
     readMerged(channel as Channel<AnyRecord>) as T;
 
-  // Hold a subscription to the parent's same channel while (and only while) this
-  // channel has local subscribers, so a parent-side change re-emits here. Kept
-  // idle otherwise to avoid registering phantom readers on the parent.
-  const ensureParentSubscription = (state: ChannelState) => {
-    if (state.parentUnsub || !parent || state.subscribers.size === 0) return;
-    state.parentUnsub = parent.subscribe(state.channel, () => invalidate(state));
-  };
-
-  const releaseParentSubscriptionIfIdle = (state: ChannelState) => {
-    if (state.subscribers.size > 0 || !state.parentUnsub) return;
-    state.parentUnsub();
-    state.parentUnsub = null;
-  };
-
   const subscribe = <T extends AnyRecord>(
     channel: Channel<T>,
     cb: (value: T) => void,
@@ -235,31 +198,12 @@ export function createContextStore(): ContextStore {
     const listener = cb as Listener;
     state.subscribers.add(listener);
     state.readers.set(listener, owner);
-    ensureParentSubscription(state);
     notifyReaders();
     return () => {
       state.subscribers.delete(listener);
       state.readers.delete(listener);
-      releaseParentSubscriptionIfIdle(state);
       notifyReaders();
     };
-  };
-
-  // Re-point the parent: drop every live parent subscription, rewire it to the
-  // new parent, and re-emit each still-subscribed channel (its inherited value
-  // may have appeared or vanished). Cheap because it runs only per host
-  // connect/disconnect, not per write.
-  const setParent = (next: ContextStore | undefined) => {
-    if (next === parent) return;
-    parent = next;
-    for (const state of channels.values()) {
-      if (state.parentUnsub) {
-        state.parentUnsub();
-        state.parentUnsub = null;
-      }
-      ensureParentSubscription(state);
-      if (state.subscribers.size > 0) invalidate(state);
-    }
   };
 
   const handle = <T extends AnyRecord>(
@@ -324,13 +268,11 @@ export function createContextStore(): ContextStore {
     };
   };
 
-  // Every channel across the parent chain, deduped by name (local wins — it is
-  // the same channel object anyway). `parent.channels()` recurses, so this walks
-  // the whole chain in one hop.
+  // Every channel this store knows about, deduped by name.
   const channelList = (): Channel<AnyRecord>[] => {
     const out = new Map<string, Channel<AnyRecord>>();
-    if (parent) for (const ch of parent.channels()) out.set(ch.name, ch);
-    for (const state of channels.values()) out.set(state.channel.name, state.channel);
+    for (const state of channels.values())
+      out.set(state.channel.name, state.channel);
     return [...out.values()];
   };
 
@@ -350,10 +292,6 @@ export function createContextStore(): ContextStore {
     subscribeReaders,
     channels: channelList,
     subscribeChannels,
-    get parent() {
-      return parent;
-    },
-    setParent,
   };
 }
 
@@ -361,8 +299,10 @@ export function createContextStore(): ContextStore {
 // top-level keys of every live slice. For a key set by more than one scope,
 // concatenate when both values are arrays, otherwise the last writer wins (the
 // nested object/scalar is taken whole). Array dedupe is out of scope. When no
-// scope contributes, the channel's resting `empty` value is returned.
-function mergeSlices(
+// scope contributes, the channel's resting `empty` value is returned. Exported
+// so a filtered `ContextView` (see ./view) merges a subset of scopes with the
+// exact same semantics the store uses.
+export function mergeSlices(
   empty: AnyRecord,
   slices: Iterable<AnyRecord>,
 ): AnyRecord {
@@ -444,9 +384,12 @@ export function getBodyContextStore(): ContextStore {
   return (host[BODY_STORE_KEY] ??= createContextStore());
 }
 
-// A dedicated custom element that owns one store and answers discovery requests
-// aimed at it from anywhere in its subtree (across sibling-embed and shadow
-// boundaries, because the request bubbles and is composed).
+// A dedicated custom element that owns one independent store and answers
+// discovery requests aimed at it from anywhere in its subtree (across
+// sibling-embed and shadow boundaries, because the request bubbles and is
+// composed). Its store is a self-contained root: the subtree neither reads from
+// nor writes to any enclosing store, so a context host is a hard boundary. Used
+// by the parts bin to keep its example cards inert.
 export class PatchworkContextElement extends HTMLElement {
   readonly store: ContextStore = createContextStore();
 
@@ -465,19 +408,6 @@ export class PatchworkContextElement extends HTMLElement {
     // (e.g. absolutely-positioned canvas embeds) resolve against the real
     // positioned ancestor.
     if (!this.style.display) this.style.display = "contents";
-    // An `isolated` context is a root: it keeps no parent, so its subtree
-    // neither reads from nor writes to the enclosing (e.g. body) store. Used by
-    // the parts bin to keep its example cards inert.
-    if (this.hasAttribute("isolated")) return;
-    // Otherwise inherit reads from the nearest enclosing store. Resolve from the
-    // parent node (not this element) so our own handler doesn't answer, falling
-    // back to the page-global body store when nothing encloses us.
-    this.store.setParent(findContextStore(this.parentNode ?? document.body));
-  }
-
-  disconnectedCallback() {
-    // Unwire on disconnect so a re-parented context re-resolves on reconnect.
-    this.store.setParent(undefined);
   }
 }
 

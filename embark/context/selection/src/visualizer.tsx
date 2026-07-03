@@ -2,49 +2,36 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import {
-  contributedSlice,
   type Channel,
-  type ContextStore,
+  type ContextView,
   type ContextVisualizer,
 } from "@embark/context";
 import { Highlight, Selection } from "./channels";
 import { EmbedToken, useHighlight } from "./tokens";
 
 // Visualizer for the `selection` and `highlight` channels: the referenced
-// documents drawn as their real embed faces. "contributes" shows the docs the
-// focused embed pointed at; "uses" shows the merged set it reads.
+// documents drawn as their real embed faces. The `context` is already scoped by
+// the viewer (whole canvas, or just the inspected embed's slice), so this simply
+// draws whatever documents the context reports for the channel.
 export const selectionVisualizer: ContextVisualizer = (element, props) => {
   const channel = props.channel === Highlight.name ? Highlight : Selection;
   return render(
-    () => (
-      <TokenChannel
-        store={props.store}
-        channel={channel}
-        mode={props.mode}
-        focusDocUrl={props.focusDocUrl as AutomergeUrl}
-      />
-    ),
+    () => <TokenChannel context={props.context} channel={channel} />,
     element,
   );
 };
 
 function TokenChannel(props: {
-  store: ContextStore;
+  context: ContextView;
   channel: Channel<Record<AutomergeUrl, true>>;
-  mode: "contributes" | "uses";
-  focusDocUrl: AutomergeUrl;
 }) {
   const [tick, setTick] = createSignal(0);
-  onCleanup(props.store.subscribe(props.channel, () => setTick((t) => t + 1)));
-  const highlight = useHighlight(props.store);
+  onCleanup(props.context.subscribe(props.channel, () => setTick((t) => t + 1)));
+  const highlight = useHighlight(props.context);
 
   const urls = createMemo(() => {
     tick();
-    const value =
-      props.mode === "contributes"
-        ? contributedSlice(props.store, props.channel, props.focusDocUrl)
-        : props.store.read(props.channel);
-    return Object.keys(value) as AutomergeUrl[];
+    return Object.keys(props.context.read(props.channel)) as AutomergeUrl[];
   });
 
   return (

@@ -9,6 +9,8 @@ import {
 } from "solid-js";
 import {
   contributedSlice,
+  filterChannel,
+  ownedBy,
   type Channel,
   type ContextStore,
 } from "@embark/context";
@@ -16,9 +18,10 @@ import { VisualizerHost } from "../VisualizerHost";
 
 // "Contributed by this embed": every channel the focused embed authored a slice
 // on. Channel-agnostic — it enumerates the store's live channels (no hardcoded
-// list) and keeps the ones with a non-empty contributed slice, deferring how
-// each is drawn to the channel's registered visualizer (or the default JSON
-// viewer). See @embark/context's `contributedSlice` for the owner attribution.
+// list) and keeps the ones with a non-empty contributed slice. Each kept
+// channel is handed a `filterChannel` lens restricting it to the focused embed's
+// contributions, so the visualizer draws only that slice without knowing it was
+// filtered.
 export function ContributionsView(props: {
   store: ContextStore;
   repo: Repo;
@@ -50,10 +53,12 @@ export function ContributionsView(props: {
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
             <VisualizerHost
-              store={props.store}
+              context={filterChannel(
+                props.store,
+                channel.name,
+                ownedBy(props.focusDocUrl),
+              )}
               channel={channel}
-              mode="contributes"
-              focusDocUrl={props.focusDocUrl}
               repo={props.repo}
             />
           </div>

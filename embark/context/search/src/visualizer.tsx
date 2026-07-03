@@ -6,10 +6,8 @@ import {
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import {
-  belongsToDoc,
-  contributedSlice,
   splitDocUrl,
-  type ContextStore,
+  type ContextView,
   type ContextVisualizer,
   type ScopeOwner,
 } from "@embark/context";
@@ -24,50 +22,34 @@ import "./visualizer.css";
 
 // Visualizer for the search channels: `search:queries` as quoted chips, and
 // `search:results` as a `search -> results` table grouped by the card that
-// produced each result.
+// produced each result. The `context` is already scoped by the viewer, so the
+// result scopes it reports are exactly the ones to show (the whole canvas, or
+// just the inspected embed's contributions).
 export const searchVisualizer: ContextVisualizer = (element, props) => {
   return render(() => {
     if (props.channel === SearchResults.name) {
       return (
         <div class="embark-tokens-panel">
-          <ResultsTable
-            store={props.store}
-            repo={props.repo}
-            focusDocUrl={
-              props.mode === "contributes"
-                ? (props.focusDocUrl as AutomergeUrl)
-                : undefined
-            }
-          />
+          <ResultsTable context={props.context} repo={props.repo} />
         </div>
       );
     }
     return (
       <div class="embark-tokens-panel">
-        <QueryChips
-          store={props.store}
-          mode={props.mode}
-          focusDocUrl={props.focusDocUrl as AutomergeUrl}
-        />
+        <QueryChips context={props.context} />
       </div>
     );
   }, element);
 };
 
-function QueryChips(props: {
-  store: ContextStore;
-  mode: "contributes" | "uses";
-  focusDocUrl: AutomergeUrl;
-}) {
+function QueryChips(props: { context: ContextView }) {
   const [tick, setTick] = createSignal(0);
-  onCleanup(props.store.subscribe(SearchQueries, () => setTick((t) => t + 1)));
+  onCleanup(props.context.subscribe(SearchQueries, () => setTick((t) => t + 1)));
   const labels = createMemo(() => {
     tick();
-    const value =
-      props.mode === "contributes"
-        ? contributedSlice(props.store, SearchQueries, props.focusDocUrl)
-        : props.store.read(SearchQueries);
-    return Object.keys(value).map((key) => JSON.stringify(key));
+    return Object.keys(props.context.read(SearchQueries)).map((key) =>
+      JSON.stringify(key),
+    );
   });
   return <Chips labels={labels()} />;
 }
@@ -75,37 +57,29 @@ function QueryChips(props: {
 // The `search:results` channel as a table. Results are grouped by the card that
 // produced them (each contributing scope carries its owner). Every active query
 // gets a row — including queries no card answered — by unioning the live
-// SearchQueries keys with the queries present in the result scopes.
+// SearchQueries keys with the queries present in the result scopes. `queries` is
+// read from the same context; since only `search:results` is ever filtered, the
+// live query set always comes through in full.
 type Group = { owner?: ScopeOwner; urls: AutomergeUrl[] };
 type Row = { query: string; groups: Group[] };
 
-function ResultsTable(props: {
-  store: ContextStore;
-  repo: Repo;
-  // When set (the "contributes" view), keep only groups from this document, so
-  // the table shows just what the focused card produced.
-  focusDocUrl?: AutomergeUrl;
-}) {
+function ResultsTable(props: { context: ContextView; repo: Repo }) {
   const [tick, setTick] = createSignal(0);
   const bump = () => setTick((t) => t + 1);
-  onCleanup(props.store.subscribe(SearchResults, bump));
-  onCleanup(props.store.subscribe(SearchQueries, bump));
+  onCleanup(props.context.subscribe(SearchResults, bump));
+  onCleanup(props.context.subscribe(SearchQueries, bump));
 
   const titles = useDocTitles(props.repo);
-  const highlight = useHighlight(props.store);
+  const highlight = useHighlight(props.context);
 
   const rows = createMemo<Row[]>(() => {
     tick();
     const queries = new Set<string>(
-      Object.keys(props.store.read(SearchQueries)),
+      Object.keys(props.context.read(SearchQueries)),
     );
     const byQuery = new Map<string, Group[]>();
-    for (const scope of props.store.scopes(SearchResults)) {
+    for (const scope of props.context.scopes(SearchResults)) {
       const owner = scope.owner;
-      const doc = owner?.docUrl as AutomergeUrl | undefined;
-      if (props.focusDocUrl && (!doc || !belongsToDoc(doc, props.focusDocUrl))) {
-        continue;
-      }
       for (const [query, value] of Object.entries(scope.slice)) {
         queries.add(query);
         const urls = (Array.isArray(value) ? value : []).filter(
