@@ -1477,6 +1477,9 @@ export const PatchworkFrame = ({
  *     frame follows on its root), or
  *   - an ancestor `<patchwork-view>` hosting a tool tagged `frame-tool` (so we
  *     also bail inside frames that don't set the marker).
+ * The walk starts above *our own* hosting `<patchwork-view>` (found via
+ * `closest`, not assumed to be `element` itself — see below), since that one
+ * always hosts a `frame-tool` (us) and isn't evidence of nesting.
  * Callers render a static placeholder instead, breaking the recursion.
  */
 function isMountedInsideFrame(element: HTMLElement | ShadowRoot): boolean {
@@ -1486,8 +1489,16 @@ function isMountedInsideFrame(element: HTMLElement | ShadowRoot): boolean {
     return !!registry.get(toolId)?.tags?.includes("frame-tool");
   };
 
-  let node: Node | null =
-    (element instanceof ShadowRoot ? element.host : element)?.parentNode ?? null;
+  const start = element instanceof ShadowRoot ? element.host : element;
+  // `element` is *our own* mount point. `<patchwork-view>` may host it
+  // directly, or (now that it wraps legacy-mode content in a child element)
+  // `element` may be a descendant of that host instead. Either way, the walk
+  // below must start *above* our own hosting `<patchwork-view>`, not at it —
+  // since we ourselves are a `frame-tool`, stopping there would make every
+  // mount trivially "detect" itself as nested inside a frame.
+  const ownHost = start.closest("patchwork-view") ?? start;
+
+  let node: Node | null = ownHost.parentNode ?? null;
   while (node) {
     if (node instanceof Element) {
       if (node.hasAttribute("data-patchwork-frame")) return true;
