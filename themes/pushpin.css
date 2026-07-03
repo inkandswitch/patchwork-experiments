@@ -1,0 +1,154 @@
+/* Pushpin — the old Ink & Switch pushpin palette: a cool pale blue-grey
+   board, deep navy ink, that signature slate-grey secondary, and a coral
+   accent. Set in IBM Plex Sans, pushpin's own typeface. */
+
+/* IBM Plex Sans & Mono are bundled alongside this theme and self-hosted —
+   the relative url() resolves against this CSS file's own automerge
+   service-worker URL, so they load from automerge with no external/CDN
+   request. Latin-1 subsets vendored from pushpin's @ibm/plex. */
+@font-face {
+	font-family: "IBM Plex Sans";
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+	src: local("IBM Plex Sans"), url("./fonts/ibmplexsans-regular.woff2") format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Sans";
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+	src: local("IBM Plex Sans Italic"), url("./fonts/ibmplexsans-italic.woff2") format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Sans";
+	font-weight: 500;
+	font-style: normal;
+	font-display: swap;
+	src: local("IBM Plex Sans Medium"), url("./fonts/ibmplexsans-medium.woff2") format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Sans";
+	font-weight: 600;
+	font-style: normal;
+	font-display: swap;
+	src: local("IBM Plex Sans SemiBold"), url("./fonts/ibmplexsans-semibold.woff2") format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Sans";
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+	src: local("IBM Plex Sans Bold"), url("./fonts/ibmplexsans-bold.woff2") format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Mono";
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+	src: local("IBM Plex Mono"), url("./fonts/ibmplexmono-regular.woff2") format("woff2");
+}
+@font-face {
+	font-family: "IBM Plex Mono";
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+	src: local("IBM Plex Mono Bold"), url("./fonts/ibmplexmono-bold.woff2") format("woff2");
+}
+
+[theme="pushpin"] {
+	color-scheme: light;
+	--studio-fill: #e9edf0;        /* colorInputGrey — the workspace ground */
+	--studio-line: #102542;        /* colorBlueBlack — deep navy ink */
+	--studio-primary: #102542;
+	--studio-secondary: #637389;   /* colorSecondaryGrey — the pushpin slate */
+	--studio-danger: #f87060;      /* colorDestructive — coral */
+	--studio-warning: #ffbb33;     /* colorWarning */
+	--studio-added: #33ab77;       /* colorOnline — green */
+	--studio-deleted: #f87060;
+	--studio-modified: #637389;
+	--studio-link: #3a66a3;
+	--studio-selection-fill: #d5dfe5;  /* colorPaleGrey */
+
+	/* pushpin's own typefaces, bundled above; system fallbacks after */
+	--studio-family-sans: "IBM Plex Sans", "Helvetica Neue", ui-sans-serif, system-ui, Arial, sans-serif;
+	--studio-family-code: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+	/* cards and pages sit bright white above the pale blue-grey board */
+	--text-editor-fill: #ffffff;
+
+	--syntax-comment: #97a3b3;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #637389;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #637389;
+	--syntax-invalid: #f87060;
+
+	--syntax-operator: #637389;
+	--syntax-punctuation: #637389;
+
+	--syntax-bool: #102542;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #102542;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #3a66a3;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #3a66a3;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #3a66a3;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #637389;
+
+	--syntax-function--variable-name: #102542;
+	--syntax-function--property-name: #102542;
+
+	--syntax-variable-name: #2b3a4f;
+	--syntax-definition--variable-name: #2b3a4f;
+
+	--syntax-string: #33ab77;
+	--syntax-fill-string: #daf3e688;
+	--syntax-style-string: italic;
+
+	--syntax-number: #a04b3d;
+	--syntax-integer: #a04b3d;
+	--syntax-float: #a04b3d;
+
+	--syntax-escape: #102542;
+	--syntax-regexp: #637389;
+	--syntax-special--string: #33ab77;
+
+	--syntax-tag-name: #3a66a3;
+	--syntax-angle-bracket: #637389;
+
+	--syntax-attribute-name: #637389;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #637389;
+
+	--syntax-strong: #102542;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #102542;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #102542;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #3a66a3;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #637389;
+	--syntax-style-quote: italic;
+	--syntax-list: #102542;
+
+	--syntax-inserted: #33ab77;
+	--syntax-deleted: #f87060;
+	--syntax-changed: #637389;
+}

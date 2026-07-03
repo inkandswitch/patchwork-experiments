@@ -68,4 +68,5 @@ export const plugins = [
 	themePlugin("palo-alto", "Palo Alto", "./palo-alto.css"),
 	themePlugin("classic-macos", "Classic macOS", "./classic-macos.css"),
 	themePlugin("twentyfour", "Twentyfour", "./twentyfour.css"),
+	themePlugin("pushpin", "Pushpin", "./pushpin.css"),
 ]
