@@ -249,7 +249,7 @@ Two guarantees the store bakes in (today each broker hand-rolls them):
   merged value structurally changes, preserving the "don't churn identical
   arrays" behavior the current `sameUrls` guards provide.
 - **Coalesced notifications.** Writes are batched on a microtask, so a
-  multi-key write (e.g. the resolver writing several schemas) emits once.
+  multi-key write (e.g. the matcher writing several schemas) emits once.
 
 Values must be JSON-serializable. Nothing depends on that yet, but it keeps the
 door open to backing the store with an automerge doc / network sync later
@@ -299,6 +299,13 @@ const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
 });
 const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
   name: "schema:matches",
+  empty: {},
+});
+
+// The documents in scope for schema matching, as a url-keyed set. Each writer
+// contributes its own slice; the merged value is the key union.
+const OpenDocuments = defineChannel<Record<AutomergeUrl, true>>({
+  name: "open-documents",
   empty: {},
 });
 ```
@@ -365,10 +372,23 @@ Identical to search; it's the same channel kind with a different payload
 writes its query and reads suggestions via `subscribeContext` /
 `getContextHandle` on `view.dom`.
 
-### Schema match → requests + responses in context, resolution is plain canvas code
+### Schema match → requests + responses in context, discovery + matching are cards
 
 Schema matching is **not its own concept**. The request (schema) and response
-(match urls) ride the context; resolution is a simple reducer the canvas runs.
+(match urls) ride the context, and the documents in scope ride the context too
+(the `OpenDocuments` channel) — the canvas takes no part in any of it. Two
+cards own the two halves:
+
+- **Open Documents card**: tracks the frame's currently selected document
+  (seeded from the `#doc=` hash, then updated by `patchwork:open-document`
+  events, which are `bubbles + composed` and therefore observable on
+  `document.body` from anywhere), walks its link closure (`linkedUrls`, which
+  skips the `@patchwork` metadata subtree), and publishes the whole set as its
+  slice of `OpenDocuments`.
+- **Schema Matcher card**: runs `runSchemaMatcher(store, repo)` — on any change
+  to `SchemaQueries`, the open-document set, or a watched document's contents,
+  it matches every query against every open document and writes
+  `store.handle(SchemaMatches).change(...)`.
 
 ```ts
 // consumer (sticker source-lib, map tool): publish schema, read matches
@@ -379,39 +399,37 @@ useContextHandle(element, SchemaQueries).change((s) => {
 const matches = readContext(element, SchemaMatches);
 const onMatches = () => apply(matches()[key] ?? []);
 
-// canvas: one ordinary reducer — nothing special
-function runSchemaResolver(store, element, repo) {
-  // discovery of mounted docs stays on the existing patchwork:mounted /
-  // patchwork:unmounted events (a canvas/DOM concern, including synthetic POI
-  // mounts); the context carries only requests + responses. On any change to
-  // SchemaQueries or the reachable doc set: recompute the closure over mounted
-  // docs (plus opaque-container hiding), match each SchemaQueries entry, and
-  // write store.handle(SchemaMatches).change(...).
-}
+// contributors that mint synthetic docs (POI, stickerable mirrors) put them
+// in scope through their own OpenDocuments slice — no DOM events involved
+const openDocs = useContextHandle(element, OpenDocuments);
+openDocs.change((s) => {
+  s[mintedUrl] = true;
+});
 ```
 
 Two consumers with the same schema share a key and a single result array —
-exactly what they want.
+exactly what they want. Because matching follows the *selected document*
+rather than canvas mounts, a converter card on the global context canvas
+annotates whatever editor is open in the frame; a doc placed on a canvas is
+matched when that canvas is the selected document (its embeds are linked from
+the canvas doc, so the closure reaches them).
 
 ## What deliberately stays outside the context
 
-- **Live document content.** The resolver and sticker sources `repo.find` and
+- **Live document content.** The matcher and sticker sources `repo.find` and
   listen to handles directly; the context carries only the request (schema /
-  query) and response (urls / stickers), never document bodies.
-- **Mounted-doc discovery.** Stays on the `patchwork:mounted` /
-  `patchwork:unmounted` events fired by `<patchwork-view>` (and the synthetic
-  ones the POI provider dispatches). The canvas already owns this, and it covers
-  nested views for free.
+  query), the response (urls / stickers), and the open-document url set —
+  never document bodies.
 
 ## Net effect on the canvas
 
-The canvas tool no longer hosts four bespoke brokers. Instead it:
-
-1. mounts its content straight onto the page-global body store (no
-   `<patchwork-context>` wrapper), so every canvas and the sidebar share one
-   context, and
-2. runs one plain `runSchemaResolver` that reads `SchemaQueries` + mounted docs
-   and writes `SchemaMatches`.
+The canvas tool no longer hosts four bespoke brokers — or anything else. It
+mounts its content straight onto the page-global body store (no
+`<patchwork-context>` wrapper), so every canvas and the sidebar share one
+context. Document discovery and schema matching, which the canvas used to own
+(a resolver fed by `patchwork:mounted` / `patchwork:unmounted` events), moved
+into the Open Documents and Schema Matcher cards, wired through the
+`OpenDocuments` channel.
 
 Everything else (search boxes, POI, sticker sources/renderers, command menus,
 the map) becomes an ordinary reader/writer of context channels. The MessagePort
@@ -430,8 +448,10 @@ mount refcounting all collapse into scoped slices + automatic GC.
   contributor is a component with an effect. No doc-minting.
 - **Vanilla first:** the core is vanilla JS + DOM (it must cross render trees
   and serve dynamically-loaded code); Solid bindings wrap it.
-- **Schema resolution:** requests/responses in context; resolution is a plain
-  piece of canvas code, not a distinct provider concept.
+- **Schema resolution:** requests/responses in context; the documents in scope
+  ride the `OpenDocuments` channel (fed by the Open Documents card from the
+  frame's selected doc + link closure) and matching is the Schema Matcher
+  card — the canvas plays no part.
 - **Selection:** promoted from a local canvas signal to a `Selection` channel
   (single-writer, trivial merge) so embeds/decorators can read it without
   prop-drilling.

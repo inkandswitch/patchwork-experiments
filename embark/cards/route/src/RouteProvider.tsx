@@ -161,10 +161,10 @@ export function RouteProvider(props: { element: ToolElement }) {
   };
 
   // One route-card per trip. The endpoints aren't duplicated — `from` and `to`
-  // link to the poi-cards the resolver located (their canonical names +
+  // link to the poi-cards the place search located (their canonical names +
   // coordinates), which the card's faces resolve live. `route` is the decoded
-  // polyline (an array of {lat, lon}); the canvas schema resolver surfaces it as
-  // a "geo line" so the map draws it. The datatype's registered tools paint the
+  // polyline (an array of {lat, lon}); the schema matcher surfaces it as a
+  // "geo line" so the map draws it. The datatype's registered tools paint the
   // board and token faces.
   const mintCard = (
     mode: Mode,

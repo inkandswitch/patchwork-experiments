@@ -16,11 +16,11 @@ import {
   type DocHandle,
   type Repo,
 } from "@automerge/automerge-repo";
-import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { z } from "zod";
 import { getContextHandle, subscribeContext } from "@embark/context";
 import {
+  OpenDocuments,
   SchemaMatches,
   SchemaQueries,
   schemaKey,
@@ -46,10 +46,6 @@ const TYPE_SCHEMA = z.toJSONSchema(
   z.object({ "@patchwork": z.object({ type: z.string() }) }),
 ) as unknown as JsonSchema;
 const TYPE_KEY = schemaKey(TYPE_SCHEMA);
-
-// The `toolId` we tag the synthetic mount/unmount events with, purely for
-// debuggability (the schema resolver keys on the url, not this).
-const MIRROR_TOOL = "stickerable-mirror";
 
 // The mirror document: a plain markdown doc whose `content` shadows a view's
 // visible text, so the text sticker sources (which scan `content`) pick it up.
@@ -128,7 +124,7 @@ function Stickerable(props: { element: ToolElement }) {
 }
 
 // Publish the `@patchwork.type` schema query and keep `setTypeByUrl` in sync with
-// the matches the canvas resolver reports, resolving each match's datatype.
+// the matches the schema matcher reports, resolving each match's datatype.
 function discoverTypes(
   element: ToolElement,
   repo: Repo,
@@ -182,6 +178,12 @@ type BridgeConfig = {
 function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => void } {
   const { element, repo } = config;
   const overlay = createOverlay();
+
+  // Our scoped slice of the `OpenDocuments` channel: the mirror docs we mint
+  // live in no `<patchwork-view>`, so publishing them here is their only signal
+  // to the schema matcher (mirroring the POI provider). Released on stop,
+  // dropping every mirror from the set.
+  const openDocs = getContextHandle(element, OpenDocuments);
 
   // One mirrored view. `extract` is rebuilt on every (re)scan so the offset map
   // always points at the view's current text nodes.
@@ -264,10 +266,11 @@ function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => voi
     const observer = new MutationObserver(() => scheduleResync(el));
     observer.observe(el, { childList: true, characterData: true, subtree: true });
     tracked.set(el, { el, url, mirror: handle.url, handle, extract, observer });
-    // Announce the mirror so the canvas schema resolver tracks it and the text
-    // sticker sources scan it (it lives in no `<patchwork-view>`, so this
-    // synthetic event is its only signal — mirroring the POI provider).
-    element.dispatchEvent(new MountedEvent({ url: handle.url, toolId: MIRROR_TOOL }));
+    // Announce the mirror so the schema matcher tracks it and the text sticker
+    // sources scan it.
+    openDocs.change((slice) => {
+      slice[handle.url] = true;
+    });
   };
 
   const removeView = (el: Element) => {
@@ -280,9 +283,9 @@ function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => voi
       clearTimeout(timer);
       resyncTimers.delete(el);
     }
-    element.dispatchEvent(
-      new UnmountedEvent({ url: entry.mirror, toolId: MIRROR_TOOL }),
-    );
+    openDocs.change((slice) => {
+      delete slice[entry.mirror];
+    });
     void Promise.resolve(entry.handle.delete()).catch(() => {});
     scheduleResolve();
   };
@@ -442,6 +445,7 @@ function runBridge(config: BridgeConfig): { refresh: () => void; stop: () => voi
       if (raf) cancelAnimationFrame(raf);
       if (reconcileTimer) clearTimeout(reconcileTimer);
       for (const el of [...tracked.keys()]) removeView(el);
+      openDocs.release();
       clearAnchors();
       overlay.remove();
     },

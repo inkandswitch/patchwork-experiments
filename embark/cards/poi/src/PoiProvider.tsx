@@ -1,10 +1,9 @@
 import { type AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
-import { MountedEvent, UnmountedEvent } from "@inkandswitch/patchwork-elements";
 import { createEffect, onCleanup } from "solid-js";
 import { readContext, useContextHandle } from "@embark/context";
 import { SearchQueries, SearchResults } from "@embark/search";
-import { SchemaMatches, SchemaQueries } from "@embark/schema";
+import { OpenDocuments, SchemaMatches, SchemaQueries } from "@embark/schema";
 import { LATLNG_KEY, LATLNG_QUERY } from "./latlng";
 import type { PoiCardDoc } from "./datatype";
 
@@ -186,26 +185,27 @@ export function PoiProvider(props: { element: ToolElement }) {
     }
   };
 
-  // Announce the cards minted for a query as mounted documents so the canvas
-  // schema-match resolver can discover and traverse them — they're never put in
-  // a `<patchwork-view>`, so these synthetic events are their only signal.
+  // Announce the cards minted for a query through the `OpenDocuments` channel
+  // so the schema matcher discovers them — they're never put in a
+  // `<patchwork-view>`, so this scoped slice is their only signal. The handle
+  // is released with the component, dropping every minted doc from the set.
+  const openDocs = useContextHandle(props.element, OpenDocuments);
+
   const mountCards = (query: string, urls: AutomergeUrl[]) => {
     unmountCards(query); // replace any previous generation for this query
     cardsByQuery.set(query, urls);
-    for (const url of urls) {
-      props.element.dispatchEvent(new MountedEvent({ url, toolId: "poi-card" }));
-    }
+    openDocs.change((slice) => {
+      for (const url of urls) slice[url] = true;
+    });
   };
 
   const unmountCards = (query: string) => {
     const urls = cardsByQuery.get(query);
     if (!urls) return;
     cardsByQuery.delete(query);
-    for (const url of urls) {
-      props.element.dispatchEvent(
-        new UnmountedEvent({ url, toolId: "poi-card" }),
-      );
-    }
+    openDocs.change((slice) => {
+      for (const url of urls) delete slice[url];
+    });
   };
 
   // The card face (title, description, corner pips) is drawn by the shared card

@@ -43,9 +43,10 @@ export const PartsBinTool: ToolRender = (handle, element) => {
   ) as PatchworkContextElement;
   element.appendChild(contextEl);
 
-  // Keep the previews' mount/unmount events from reaching the canvas: the
-  // schema resolver watches these, and the bin's examples shouldn't show up as
-  // matches.
+  // Keep the previews' mount/unmount events from escaping the bin: page-level
+  // listeners (the frame's routing, the stickerable card's rescans) shouldn't
+  // react to inert examples. (Schema matching no longer rides these events — it
+  // is fed by the `OpenDocuments` channel.)
   const stopMountEvent = (event: Event) => event.stopPropagation();
   element.addEventListener("patchwork:mounted", stopMountEvent);
   element.addEventListener("patchwork:unmounted", stopMountEvent);

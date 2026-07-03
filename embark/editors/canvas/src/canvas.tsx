@@ -25,11 +25,7 @@ import {
   hasDocumentDrag,
   type DocumentDragItem,
 } from "./dnd";
-import {
-  readContext,
-  useContextHandle,
-  getBodyContextStore,
-} from "@embark/context";
+import { readContext, useContextHandle } from "@embark/context";
 import { Highlight, Selection } from "@embark/selection";
 import {
   resolveInspectTarget,
@@ -37,7 +33,6 @@ import {
   type InspectDoc,
   type InspectTarget,
 } from "@embark/inspect";
-import { runSchemaResolver } from "@embark/schema";
 import { wasEmbedClaimed } from "./drop-claim";
 import { AUTOSIZE_TOOLS, FRAMELESS_TOOLS } from "./tool-traits";
 import "./styles.css";
@@ -257,11 +252,10 @@ async function resolveContextCanvas(
 }
 
 // Shared setup behind both tools: promote the host so absolutely-positioned
-// embeds have a positioned ancestor, start schema resolution against the
-// page-global body store (plain canvas code that reads requested schemas from
-// the context and writes match urls back; mount discovery rides the
-// `patchwork:mounted` / `patchwork:unmounted` events on `element`), and render
-// the canvas into `element`. Returns a disposer.
+// embeds have a positioned ancestor and render the canvas into `element`.
+// Returns a disposer. The canvas takes no part in schema matching — document
+// discovery and matching live in the Open Documents and Schema Matcher cards
+// (see @embark/schema), wired through the `OpenDocuments` channel.
 function mountCanvas(
   handle: DocHandle<EmbarkCanvasDoc>,
   element: ToolElement,
@@ -270,13 +264,7 @@ function mountCanvas(
     element.style.position = "relative";
   }
 
-  const disposeResolver = runSchemaResolver(
-    getBodyContextStore(),
-    element,
-    element.repo,
-  );
-
-  const disposeRender = render(
+  return render(
     () => (
       <RepoContext.Provider value={element.repo}>
         <EmbarkCanvas handle={handle} />
@@ -284,11 +272,6 @@ function mountCanvas(
     ),
     element,
   );
-
-  return () => {
-    disposeRender();
-    disposeResolver();
-  };
 }
 
 function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {

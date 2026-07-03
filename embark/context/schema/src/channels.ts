@@ -10,8 +10,8 @@ import type { JsonSchema } from "./schema";
 export type SchemaQuery = { name: string; schema: JsonSchema };
 
 // Request/response pair for schema matching: consumers publish a named JSON
-// Schema (keyed by `schemaKey`) into `SchemaQueries`, the canvas resolver
-// (./schema-resolver.ts) answers with match urls in `SchemaMatches`.
+// Schema (keyed by `schemaKey`) into `SchemaQueries`, the schema matcher
+// (./schema-matcher.ts) answers with match urls in `SchemaMatches`.
 export const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
   name: "schema:queries",
   empty: {},
@@ -19,6 +19,18 @@ export const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
 
 export const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
   name: "schema:matches",
+  empty: {},
+});
+
+// The documents currently in scope for schema matching, as a url-keyed set.
+// Each writer contributes its own scoped slice (`{ [url]: true }`) and the
+// merged value is the key union, so releasing a scope drops exactly its docs.
+// The Open Documents card publishes the frame's selected document plus its link
+// closure; cards that mint synthetic documents (the POI provider, stickerable
+// mirrors) add theirs. The schema matcher (./schema-matcher.ts) reads the
+// union — this channel replaces the old DOM `patchwork:mounted` discovery.
+export const OpenDocuments = defineChannel<Record<AutomergeUrl, true>>({
+  name: "open-documents",
   empty: {},
 });
 

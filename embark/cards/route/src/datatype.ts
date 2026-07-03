@@ -4,8 +4,8 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 // A computed trip between two places. The endpoints aren't duplicated — `from`
 // and `to` link to poi-cards (their canonical names + coordinates), which the
 // board and token faces resolve live. The decoded polyline stays on the card
-// (`route`): the canvas schema resolver surfaces it as a "geo line" so the map
-// draws the trip.
+// (`route`): the schema matcher surfaces it as a "geo line" so the map draws
+// the trip.
 export type RouteCardDoc = {
   "@patchwork": { type: "route-card"; title?: string };
   mode: string;

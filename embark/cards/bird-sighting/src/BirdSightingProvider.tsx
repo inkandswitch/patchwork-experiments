@@ -42,7 +42,7 @@ const DEBOUNCE_MS = 500;
 
 // The map documents to watch: any `{ "@patchwork": { type: "map" }, bounds }`.
 // Hand-written (rather than derived from zod) so the correlation key is stable
-// and the canvas resolver — which hydrates this back to zod — sees exactly the
+// and the schema matcher — which hydrates this back to zod — sees exactly the
 // shape the map-search skill established.
 const MAP_JSON_SCHEMA: JsonSchema = {
   type: "object",

@@ -62,6 +62,22 @@ type CardSeed = {
 
 const CARD_SEEDS: CardSeed[] = [
   {
+    rootUrl: "automerge:472iiEQWMcQp48hdNQAoDuvhS1cx",
+    title: "Open Documents",
+    description:
+      "Shares the document you have open (and docs it links to) so other cards can find them.",
+    icon: "file",
+    accent: "#64748b",
+  },
+  {
+    rootUrl: "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC",
+    title: "Schema Matcher",
+    description:
+      "Answers schema queries by matching them against the open documents.",
+    icon: "braces",
+    accent: "#7c3aed",
+  },
+  {
     rootUrl: "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp",
     title: "Place Finder",
     description:

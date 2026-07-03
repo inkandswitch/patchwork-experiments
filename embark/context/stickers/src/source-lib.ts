@@ -14,11 +14,11 @@ import { Stickers } from "./channels";
 import type { Sticker } from "./sticker";
 
 // Shared engine for sticker sources. A source watches every text-bearing
-// document reachable on the canvas (via the `SchemaQueries`/`SchemaMatches`
-// channels), scans each one's text, and publishes stickers into its own scoped
-// slice of the `Stickers` channel keyed by document url. The example sources
-// (color styler, unit converter, currency converter, timer) differ only in
-// their `scan` function.
+// document in the open-document set (via the `SchemaQueries`/`SchemaMatches`
+// channels, answered by the schema matcher card), scans each one's text, and
+// publishes stickers into its own scoped slice of the `Stickers` channel keyed
+// by document url. The example sources (color styler, unit converter, currency
+// converter, timer) differ only in their `scan` function.
 //
 // The contract a source implements is `scan(ctx)`: given a text field's content
 // (and helpers to address ranges and mint reusable docs), return the stickers it
@@ -107,9 +107,9 @@ export function runStickerSource(
   // manual registry-doc deletion).
   const stickersHandle = getContextHandle(element, Stickers);
 
-  // Discover text-bearing documents on the canvas; add/drop watched docs to
-  // match. Only root matches (a bare document url) are kept — nested matches
-  // point at subtrees no editor renders.
+  // Discover text-bearing documents in scope; add/drop watched docs to match.
+  // Only root matches (a bare document url) are kept — nested matches point at
+  // subtrees no editor renders.
   const onMatches = (urls: AutomergeUrl[]) => {
     const roots = urls.filter(isRootUrl);
     const wanted = new Set(roots);
@@ -205,8 +205,8 @@ export function runStickerSource(
     onCount(total);
   };
 
-  // Publish the text-field schema query and watch for matching documents on the
-  // canvas. Both ride the schema channels; the canvas resolver answers.
+  // Publish the text-field schema query and watch for matching documents. Both
+  // ride the schema channels; the schema matcher card answers.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
     slice[TEXT_KEY] = { name: "Text fields", schema: TEXT_SCHEMA };

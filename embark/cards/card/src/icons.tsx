@@ -87,6 +87,20 @@ function glyph(name: string): JSX.Element {
       );
     case "slash":
       return <path d="M17 5 7 19" />;
+    case "file":
+      return (
+        <>
+          <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z" />
+          <path d="M14 2v5h5" />
+        </>
+      );
+    case "braces":
+      return (
+        <>
+          <path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1" />
+          <path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
+        </>
+      );
     case "sparkles":
       return (
         <>
