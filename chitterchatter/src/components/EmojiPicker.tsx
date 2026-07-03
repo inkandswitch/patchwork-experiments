@@ -11,22 +11,27 @@ import {
 	FALLBACK_EMOJIS,
 	QUICK_EMOJIS,
 } from "../lib/emoji-data"
+import {resolvePlugins} from "../lib/registry"
+import {emojiPackPlugins, collectEmojis} from "../lib/emoji-packs"
 
 export function EmojiPicker(props: {
 	targetIdx: number | null
 	anchorEl: HTMLElement | null
 	onClose: () => void
 }) {
-	const {handle, doc} = useChat()
+	const {handle, doc, selector} = useChat()
 	const {myName, myEmoticons, setMyEmoticons, chatProfileHandle} = useIdentity()
 	const {peerEmoticons} = usePresence()
 	const [filter, setFilter] = createSignal("")
 
+	// The base grid aggregates the active chat:emojipack plugins (host packs can
+	// contribute); name search stays on the full dataset.
 	const emojis = createMemo(() => {
 		const q = filter().toLowerCase()
 		if (!q) {
 			if (EMOJI_LOADED()) {
-				return EMOJI_DATA().slice(0, 160).map((e) => e.emoji)
+				const packs = resolvePlugins("chat:emojipack", emojiPackPlugins, selector())
+				return collectEmojis(packs).slice(0, 160)
 			}
 			return FALLBACK_EMOJIS
 		}

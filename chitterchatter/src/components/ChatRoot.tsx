@@ -1,8 +1,11 @@
-import {createSignal, createEffect, Show, onMount, onCleanup} from "solid-js"
+import {createSignal, createMemo, createEffect, Show, onMount, onCleanup} from "solid-js"
 import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
 import {updateText, splice} from "@automerge/automerge"
 import {applyAutomerge} from "../lib/automerge-ops"
 import type {ChatDoc} from "../types"
+import type {FeatureSelector} from "../features"
+import {expandSelector, docSelector} from "../lib/plugin-catalog"
+import type {PluginSelector} from "../lib/registry"
 import {ChatProvider, useChat} from "../context/ChatContext"
 import {IdentityProvider, useIdentity} from "../context/IdentityContext"
 import {ThemeProvider} from "../context/ThemeContext"
@@ -14,6 +17,7 @@ import {InputArea} from "./InputArea"
 import {EmojiPicker} from "./EmojiPicker"
 import {EmoticonAddDialog} from "./EmoticonAddDialog"
 import {FontAddDialog} from "./FontAddDialog"
+import {PluginPanel} from "./PluginPanel"
 import {Sidebar} from "./Sidebar"
 import {Lightbox} from "./Lightbox"
 // @ts-ignore — plain-JS library, ships no type declarations
@@ -47,8 +51,27 @@ export function ChatRoot(props: {
 	// currently-selected doc the computer reads/writes.
 	mode?: "chat" | "context"
 	targetDocUrl?: () => AutomergeUrl | undefined
+	// Optional selector OVERRIDE (the embeddable component's `features=` attr).
+	// When absent, the active feature set is driven by the document's `plugins`
+	// array — the same source ChatProvider reads.
+	selector?: FeatureSelector
 }) {
 	let rootRef!: HTMLDivElement
+	// Active features resolved locally too (the Computer engine onMounts run
+	// outside the ChatProvider, so they can't read hasFeature from context). This
+	// mirrors ChatProvider: override wins, else the doc's `plugins` array, and it
+	// stays reactive so `/plugin` toggles UI live.
+	const [docSel, setDocSel] = createSignal<PluginSelector>(
+		docSelector(props.handle.doc() as any)
+	)
+	const onPluginsChange = () =>
+		setDocSel(() => docSelector(props.handle.doc() as any))
+	props.handle.on("change", onPluginsChange)
+	onCleanup(() => props.handle.off("change", onPluginsChange))
+	const activeFeatures = createMemo(() =>
+		expandSelector(props.selector ?? docSel())
+	)
+	const has = (id: string) => activeFeatures().has(id)
 
 	// Are we the streamlined doc-editing "context tool"?
 	const isContext = () => props.mode === "context"
@@ -66,6 +89,7 @@ export function ChatRoot(props: {
 	// Dialog state
 	const [showEmoticonDialog, setShowEmoticonDialog] = createSignal(false)
 	const [showFontDialog, setShowFontDialog] = createSignal(false)
+	const [showPluginPanel, setShowPluginPanel] = createSignal(false)
 
 	// Sidebar state
 	const [sidebarVisible, setSidebarVisible] = createSignal(false)
@@ -673,6 +697,7 @@ Never overwrite an entire long field with a key-assign (range:"content") just to
 	// (only if unset — a user who turns one ON stays ON) so the picker shows them
 	// unchecked, matching enabledComputerTools().
 	onMount(() => {
+		if (!has("computer")) return
 		try {
 			const tg = {...((llmReadConfig() as any)?.toolToggles || {})}
 			let changed = false
@@ -2822,6 +2847,7 @@ Never overwrite an entire long field with a key-assign (range:"content") just to
 
 	// Check if computer was previously active — ping to verify host is alive
 	onMount(() => {
+		if (!has("computer")) return // the minimal `chat` tool has no Computer
 		props.handle.on("ephemeral-message", handleComputerEphemeral)
 		props.handle.on("change", onDocChangeWatchdog)
 		watchMsgCount = (props.handle.doc() as any)?.messages?.length || 0
@@ -3041,6 +3067,35 @@ Never overwrite an entire long field with a key-assign (range:"content") just to
 		}
 	}
 
+	// `/plugin` — `ls` (or no arg) opens the panel; `load`/`unload <id>` mutate the
+	// document's `plugins` array directly.
+	function handlePluginCommand(arg: string) {
+		const parts = arg.trim().split(/\s+/).filter(Boolean)
+		const sub = (parts[0] || "").toLowerCase()
+		const id = parts[1]
+		if (sub === "load" || sub === "add" || sub === "enable") {
+			if (id) setPluginEnabled(id, true)
+			else setShowPluginPanel(true)
+			return
+		}
+		if (sub === "unload" || sub === "remove" || sub === "disable") {
+			if (id) setPluginEnabled(id, false)
+			else setShowPluginPanel(true)
+			return
+		}
+		// "ls" | "list" | empty | anything else → open the panel
+		setShowPluginPanel(true)
+	}
+
+	function setPluginEnabled(id: string, on: boolean) {
+		props.handle.change((d: any) => {
+			if (!Array.isArray(d.plugins)) d.plugins = []
+			const i = d.plugins.indexOf(id)
+			if (on && i < 0) d.plugins.push(id)
+			if (!on && i >= 0) d.plugins.splice(i, 1)
+		})
+	}
+
 	function pinDoc(url: AutomergeUrl, toolId?: string, name?: string) {
 		props.handle.change((d: any) => {
 			if (!d.docs) d.docs = []
@@ -3193,22 +3248,26 @@ Never overwrite an entire long field with a key-assign (range:"content") just to
 			<div class="chat-drop-overlay" classList={{show: showDropOverlay()}}>
 				Drop here
 			</div>
-			<ChatProvider handle={props.handle} element={props.element}>
+			<ChatProvider handle={props.handle} element={props.element} selector={props.selector}>
 				<IdentityProvider>
 					<ThemeProvider rootEl={rootRef}>
 						<PresenceProvider handle={props.handle}>
 							<div class="chat-main">
-								<PresenceBar
-									onToggleSidebar={toggleSidebar}
-									onCallCommand={handleCallCommand}
-									computerActive={computerActive()}
-								/>
+								<Show when={has("presence") || has("sidebar") || has("call")}>
+									<PresenceBar
+										onToggleSidebar={toggleSidebar}
+										onCallCommand={handleCallCommand}
+										computerActive={computerActive()}
+									/>
+								</Show>
 								<MessageList
 									replyToId={replyToId()}
 									onReply={setReplyToId}
 									onReact={openEmojiPicker}
 								/>
-								<TypingBar />
+								<Show when={has("typing")}>
+									<TypingBar />
+								</Show>
 								<Show when={computerAbort()}>
 									<div
 										class="chat-llm-status"
@@ -3245,13 +3304,14 @@ Never overwrite an entire long field with a key-assign (range:"content") just to
 									onCallCommand={handleCallCommand}
 									onModelCommand={() => void openModelPicker()}
 									onPinCommand={handlePinCommand}
+									onPluginCommand={handlePluginCommand}
 									pendingFiles={pendingFiles()}
 									setPendingFiles={setPendingFiles}
 									pendingEmbeds={pendingEmbeds()}
 									setPendingEmbeds={setPendingEmbeds}
 								/>
 							</div>
-							<Show when={!isContext()}>
+							<Show when={!isContext() && has("sidebar")}>
 								<Sidebar
 									visible={sidebarVisible()}
 									onVisibilityChange={setSidebarVisible}
@@ -3280,7 +3340,16 @@ Never overwrite an entire long field with a key-assign (range:"content") just to
 									<FontAddDialog onClose={() => setShowFontDialog(false)} />
 								</div>
 							</Show>
-							<NotificationManager handle={props.handle} />
+							<Show when={showPluginPanel()}>
+								<div
+									class="chat-dialog-overlay"
+									on:click={() => setShowPluginPanel(false)}>
+									<PluginPanel onClose={() => setShowPluginPanel(false)} />
+								</div>
+							</Show>
+							<Show when={has("notifications")}>
+								<NotificationManager handle={props.handle} />
+							</Show>
 							<Lightbox
 								src={lightboxSrc()}
 								type={lightboxType()}

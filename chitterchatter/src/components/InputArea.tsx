@@ -4,7 +4,8 @@ import {useIdentity} from "../context/IdentityContext"
 import {usePresence} from "../context/PresenceContext"
 import {generateId, formatDuration} from "../lib/helpers"
 import {createFileDoc, createRecordingDoc} from "../lib/file-helpers"
-import {parseSlashCommand} from "../lib/slash-commands"
+import {resolvePlugins} from "../lib/registry"
+import {slashPlugins, matchSlashCommand} from "../lib/slash-plugins"
 import {SVG_ICONS} from "../lib/svg-icons"
 import {cmPromise} from "../lib/codemirror-setup"
 import {SimpleGIFEncoder} from "../lib/gif-encoder"
@@ -26,6 +27,7 @@ export function InputArea(props: {
 	onCallCommand?: () => void
 	onModelCommand?: () => void
 	onPinCommand?: (arg: string) => void
+	onPluginCommand?: (arg: string) => void
 	pendingFiles: PendingFile[]
 	setPendingFiles: (fn: (prev: PendingFile[]) => PendingFile[]) => void
 	pendingEmbeds: PendingEmbed[]
@@ -36,8 +38,8 @@ export function InputArea(props: {
 	let gifVideoRef!: HTMLVideoElement
 	let recBarsRef!: HTMLDivElement
 	const [cmView, setCmView] = createSignal<any>(null)
-	const {handle, doc, repo} = useChat()
-	const {myName, myFont, myAvatarUrl, myEmoticons, myFonts, chatProfileHandle} = useIdentity()
+	const {handle, doc, repo, selector, hasFeature} = useChat()
+	const {myName, myContactUrl, myFont, myAvatarUrl, myEmoticons, myFonts, chatProfileHandle} = useIdentity()
 	const {broadcastPresence, peerFonts} = usePresence()
 
 	const pendingFiles = () => props.pendingFiles
@@ -317,6 +319,8 @@ export function InputArea(props: {
 		if (myFont()) msgData.font = myFont()
 		const av = myAvatarUrl()
 		if (av) msgData.avatarUrl = av
+		const cu = myContactUrl()
+		if (cu) msgData.contactUrl = cu
 
 		repo.create2(msgData).then((msgHandle: any) => {
 			handle.change((d: any) => {
@@ -484,39 +488,21 @@ export function InputArea(props: {
 		const text = getInputValue().trim()
 		if (!text && pendingFiles().length === 0 && pendingEmbeds().length === 0 && !gifModeEnabled()) return
 
-		// Slash commands that don't send messages
-		const lc = text.toLowerCase()
-		if (lc === "/addfont" || lc.startsWith("/addfont ")) {
+		// Slash commands, dispatched via the chat:slash registry (filtered by this
+		// tool's slashCommands feature). Side-effecting commands don't send a message.
+		const activeSlash = resolvePlugins("chat:slash", slashPlugins, selector())
+		const slashMatch = matchSlashCommand(text, activeSlash)
+		if (slashMatch?.plugin.sideEffect) {
 			setInputValue("")
-			props.onShowFontDialog?.()
-			return
-		}
-		if (lc === "/emoticon" || lc.startsWith("/emoticon ")) {
-			setInputValue("")
-			props.onShowEmoticonDialog?.()
-			return
-		}
-		if (lc === "/computer" || lc.startsWith("/computer ")) {
-			setInputValue("")
-			const sub = text.slice("/computer".length).trim().toLowerCase()
-			props.onComputerCommand?.(sub || "invite")
-			return
-		}
-		if (lc === "/call") {
-			setInputValue("")
-			props.onCallCommand?.()
-			return
-		}
-		if (lc === "/model" || lc === "/models" || lc === "/or" || lc === "/openrouter" || lc === "/ollama" ||
-			lc.startsWith("/openrouter ") || lc.startsWith("/or ") || lc.startsWith("/provider")) {
-			setInputValue("")
-			props.onModelCommand?.()
-			return
-		}
-		if (lc.startsWith("/pin ") || lc === "/pin") {
-			setInputValue("")
-			const arg = text.slice(5).trim()
-			props.onPinCommand?.(arg)
+			switch (slashMatch.plugin.sideEffect) {
+				case "font-dialog": props.onShowFontDialog?.(); break
+				case "emoticon-dialog": props.onShowEmoticonDialog?.(); break
+				case "computer": props.onComputerCommand?.(slashMatch.argText.trim().toLowerCase() || "invite"); break
+				case "call": props.onCallCommand?.(); break
+				case "model": props.onModelCommand?.(); break
+				case "pin": props.onPinCommand?.(slashMatch.argText.trim()); break
+				case "plugin": props.onPluginCommand?.(slashMatch.argText.trim()); break
+			}
 			return
 		}
 
@@ -550,7 +536,8 @@ export function InputArea(props: {
 			gifSelfieUrl = await captureGif()
 		}
 
-		const slashCmd = parseSlashCommand(text)
+		const slashCmd =
+			slashMatch?.plugin.transform?.(slashMatch.argText) ?? null
 		const sourceText = slashCmd ? slashCmd.text : text
 
 		// Extract patchwork doc links from text and strip them
@@ -577,6 +564,8 @@ export function InputArea(props: {
 		else if (myFont()) msgData.font = myFont()
 		const avatarUrl = myAvatarUrl()
 		if (avatarUrl) msgData.avatarUrl = avatarUrl
+		const contactUrl = myContactUrl()
+		if (contactUrl) msgData.contactUrl = contactUrl
 		if (props.replyToId) msgData.replyTo = props.replyToId
 		if (imageUrl) {
 			msgData.imageUrl = imageUrl
@@ -771,6 +760,7 @@ export function InputArea(props: {
 				style={{display: isRecording() ? "none" : undefined}}
 				on:paste={handlePaste}
 			>
+				<Show when={hasFeature("gifSelfie")}>
 				<button
 					class="chat-gif-toggle"
 					classList={{active: gifModeEnabled(), recording: gifCapturing()}}
@@ -792,6 +782,7 @@ export function InputArea(props: {
 						</svg>
 					</Show>
 				</button>
+				</Show>
 
 				<div
 				ref={inputWrapRef}
@@ -832,6 +823,7 @@ export function InputArea(props: {
 				}}
 			/>
 
+				<Show when={hasFeature("voice")}>
 				<button
 					class="chat-input-btn"
 					classList={{recording: isRecording()}}
@@ -839,6 +831,7 @@ export function InputArea(props: {
 					innerHTML={isRecording() ? SVG_ICONS.micStop : SVG_ICONS.mic}
 					on:click={toggleRecording}
 				/>
+				</Show>
 				<button
 					class="chat-input-btn"
 					title="Send"

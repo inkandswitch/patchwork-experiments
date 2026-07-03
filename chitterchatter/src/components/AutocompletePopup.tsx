@@ -1,8 +1,10 @@
 import {createSignal, createMemo, createEffect, For, Show} from "solid-js"
 import {useIdentity} from "../context/IdentityContext"
 import {usePresence} from "../context/PresenceContext"
+import {useChat} from "../context/ChatContext"
 import {EMOJI_ALIASES, EMOJI_DATA, EMOJI_LOADED} from "../lib/emoji-data"
-import {SLASH_COMMANDS} from "../lib/slash-commands"
+import {resolvePlugins} from "../lib/registry"
+import {slashPlugins} from "../lib/slash-plugins"
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 
 export interface AutocompleteItem {
@@ -123,6 +125,7 @@ export function AutocompletePopup(props: {
 }) {
 	const {myEmoticons} = useIdentity()
 	const {peerEmoticons, presenceMap} = usePresence()
+	const {selector} = useChat()
 	let listRef!: HTMLDivElement
 	const [activeIndex, setActiveIndex] = createSignal(0)
 
@@ -130,13 +133,15 @@ export function AutocompletePopup(props: {
 		const text = props.inputText
 		const pos = props.cursorPos
 
-		// Slash command autocomplete
+		// Slash command autocomplete (from the chat:slash registry, filtered by the
+		// tool's slashCommands feature — the minimal `chat` tool shows none).
 		if (text.startsWith("/") && !text.includes(" ")) {
 			const query = text.slice(1).toLowerCase()
-			const items: AutocompleteItem[] = SLASH_COMMANDS.filter(cmd => {
+			const activeSlash = resolvePlugins("chat:slash", slashPlugins, selector())
+			const items: AutocompleteItem[] = activeSlash.filter(cmd => {
 				const name = cmd.cmd.slice(1)
-				return name.startsWith(query) || (cmd.aliases || []).some(a => a.slice(1).startsWith(query))
-			}).map(cmd => ({
+				return name.startsWith(query) || (cmd.aliases || []).some((a: string) => a.slice(1).startsWith(query))
+			}).map((cmd: any) => ({
 				display: cmd.cmd + " ",
 				label: cmd.usage,
 				desc: cmd.desc,

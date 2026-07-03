@@ -1,24 +1,54 @@
-import {ChatDatatype} from "./datatype"
+import {featurePlugins} from "./features"
+import {parserExtensionPlugins} from "./lib/parser-extensions"
+import {slashPlugins} from "./lib/slash-plugins"
+import {messageActionPlugins} from "./lib/message-actions"
+import {emojiPackPlugins} from "./lib/emoji-packs"
 
 export const plugins = [
 	{
+		// The "Chitter" preset: seeds the full built-in plugin set into the doc.
 		type: "patchwork:datatype",
 		id: "chitterchatter",
-		name: "Chitter chatter",
+		name: "Chitter",
 		icon: "MessageCircle",
 		async load() {
-			return ChatDatatype
+			return (await import("./datatype")).ChitterDatatype
 		},
 	},
 	{
+		// The "Chat" preset: seeds an empty plugin list (core-only). Grows via
+		// `/plugin load`. `chat` is also the legacy datatype id — legacy docs have
+		// no `plugins` field and default to all features (see datatype/docSelector).
+		type: "patchwork:datatype",
+		id: "chat",
+		name: "Chat",
+		icon: "MessageSquare",
+		async load() {
+			return (await import("./datatype")).ChatDatatype
+		},
+	},
+	{
+		// The single chat tool. Which features are active is driven by the
+		// document's `plugins` array, not by the tool. Registered under `chat`;
+		// a `chitterchatter` alias below keeps existing pins/toolIds resolving.
 		type: "patchwork:tool",
-		id: "chitterchatter",
-		name: "Chitter chatter",
-		icon: "MessageCircle",
+		id: "chat",
+		name: "Chat",
+		icon: "MessageSquare",
 		supportedDatatypes: ["chitterchatter", "chat"],
 		async load() {
-			const {ChatTool} = await import("./tool")
-			return ChatTool
+			return (await import("./tool")).ChatTool
+		},
+	},
+	{
+		// Host-embeddable component (<patchwork-view component="chat">). Defaults to
+		// the minimal feature set; features="full" for everything.
+		type: "patchwork:component",
+		id: "chat",
+		name: "Chat",
+		icon: "MessageSquare",
+		async load() {
+			return (await import("./tool")).ChatComponent
 		},
 	},
 	{
@@ -35,4 +65,14 @@ export const plugins = [
 			return ChatContextComponent
 		},
 	},
+	// ── Host-registrable feature plugins ────────────────────────────────────────
+	// The four extensible seams, registered like newspace's sketchy:* plugins so
+	// other modules can contribute inline syntax, slash commands, hover actions and
+	// emoji packs. The tool also keeps these as built-in fallbacks (see lib/*),
+	// so it works even if the registry is empty.
+	...featurePlugins,
+	...parserExtensionPlugins,
+	...slashPlugins,
+	...messageActionPlugins,
+	...emojiPackPlugins,
 ]

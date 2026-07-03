@@ -19,6 +19,7 @@ function toggleCatEars(name: string) {
 
 export function Avatar(props: {
 	name: string
+	contactUrl?: AutomergeUrl
 	avatarUrl?: AutomergeUrl
 	gifSelfieUrl?: AutomergeUrl
 	isComputer?: boolean
@@ -33,6 +34,11 @@ export function Avatar(props: {
 	})
 
 	const isGif = () => !!props.gifSelfieUrl
+	// Live avatar from the contact doc (comments-view pattern) — used when we have a
+	// contactUrl and aren't showing a GIF selfie or the computer icon. Falls back to
+	// the stored avatarUrl / initials for older messages without a contactUrl.
+	const useContactView = () =>
+		!!props.contactUrl && !isGif() && !props.isComputer
 
 	return (
 		<div
@@ -49,14 +55,25 @@ export function Avatar(props: {
 			}}
 		>
 			<Show
-				when={imgUrl()}
+				when={useContactView()}
 				fallback={
-					<Show when={props.isComputer} fallback={(props.name || "?")[0].toUpperCase()}>
-						<img src={computerPngUrl} alt="Computer" />
+					<Show
+						when={imgUrl()}
+						fallback={
+							<Show when={props.isComputer} fallback={(props.name || "?")[0].toUpperCase()}>
+								<img src={computerPngUrl} alt="Computer" />
+							</Show>
+						}
+					>
+						<img src={imgUrl()!} alt={props.name} />
 					</Show>
 				}
 			>
-				<img src={imgUrl()!} alt={props.name} />
+				<patchwork-view
+					class="chat-avatar-view"
+					tool-id="contact-avatar"
+					doc-url={props.contactUrl}
+				/>
 			</Show>
 		</div>
 	)

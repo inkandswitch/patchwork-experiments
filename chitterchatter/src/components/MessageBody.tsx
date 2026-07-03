@@ -1,7 +1,9 @@
-import {Show, Index, For, Switch, Match, createMemo, createEffect, createSignal} from "solid-js"
+import {Show, Index, For, Switch, Match, createMemo, createEffect, createSignal, onCleanup} from "solid-js"
 import type {ChatMessage} from "../types"
 import {parseTextSegments, isEmojiOnly} from "../lib/format-text"
 import type {TextSegment} from "../lib/format-text"
+import {resolvePlugins} from "../lib/registry"
+import {parserExtensionPlugins, toInlineRule} from "../lib/parser-extensions"
 import {highlightCode} from "../lib/highlighter"
 import {ensureFontLoaded} from "../lib/blob-cache"
 import {resolveNamedColor} from "../lib/named-colors"
@@ -24,56 +26,55 @@ function ThinkBlock(props: {content: string}) {
 	)
 }
 
+function escapeHtml(str: string): string {
+	return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
+// Keep-last-good, coalesced, never-regress highlighting.
+//
+// The old design ran two fighting effects: one wrote textContent onto the
+// highlighted element (nuking shiki's spans → highlighting "disappeared"), and a
+// 200ms-debounced one swapped innerHTML wholesale, dropping to plain text in
+// between (→ flicker while streaming). Instead we hold the highlighted HTML in a
+// signal, coalesce re-highlights to one per animation frame, discard stale async
+// results by request-id, and NEVER swap back to plain once we have a highlight.
+// (shiki re-tokenizes the whole snippet per update — fine at chat-snippet size and
+//  now bounded to one call per frame.)
 function CodeBlock(props: {lang: string; code: string}) {
 	const {isLightBg} = useTheme()
-	let containerRef!: HTMLDivElement
-	let isHighlighted = false
-	let highlightTimer: number | undefined
-	let lastHighlightedCode = ""
+	const [html, setHtml] = createSignal<string | null>(null)
+	let reqId = 0
+	let frame: number | undefined
 
-	// Update code content — either update the text node or re-highlight
-	createEffect(() => {
-		const code = props.code.replace(/\n$/, "")
-		if (!containerRef) return
-
-		if (!isHighlighted) {
-			// Plain mode: just update the code element's text
-			const codeEl = containerRef.querySelector("code")
-			if (codeEl) codeEl.textContent = code
-		} else {
-			// Already highlighted: update the shiki code element's text
-			const shikiCode = containerRef.querySelector(".shiki code")
-			if (shikiCode) shikiCode.textContent = code
-		}
-	})
-
-	// Debounced highlighting
 	createEffect(() => {
 		const code = props.code.replace(/\n$/, "")
 		const lang = props.lang
 		const light = isLightBg()
-		if (!containerRef) return
+		// No language → leave the plain <pre> fallback in place, no shiki.
+		if (!lang) return
 
-		clearTimeout(highlightTimer)
-		highlightTimer = setTimeout(() => {
-			if (code === lastHighlightedCode) return
-			if (!lang) return
-			lastHighlightedCode = code
-			highlightCode(code, lang, light).then(html => {
-				if (!containerRef?.parentNode) return
-				// Only apply if code hasn't changed while highlighting
-				if (props.code.replace(/\n$/, "") !== code) return
-				containerRef.innerHTML = html
-				isHighlighted = true
+		if (frame !== undefined) cancelAnimationFrame(frame)
+		frame = requestAnimationFrame(() => {
+			frame = undefined
+			const id = ++reqId
+			highlightCode(code, lang, light).then(out => {
+				// A newer tick superseded this one — drop the stale result so we
+				// never regress to older/plainer output.
+				if (id !== reqId) return
+				setHtml(out)
 			})
-		}, 200) as unknown as number
+		})
 	})
 
-	return (
-		<div ref={containerRef} class="chat-code-block">
-			<pre><code>{props.code.replace(/\n$/, "")}</code></pre>
-		</div>
-	)
+	onCleanup(() => {
+		if (frame !== undefined) cancelAnimationFrame(frame)
+	})
+
+	// Plain, escaped fallback shown only until the first highlight lands.
+	const plain = () =>
+		"<pre><code>" + escapeHtml(props.code.replace(/\n$/, "")) + "</code></pre>"
+
+	return <div class="chat-code-block" innerHTML={html() ?? plain()} />
 }
 
 function InlineHtml(props: {html: string}) {
@@ -97,6 +98,17 @@ export function MessageBody(props: {
 	const {myFonts} = useIdentity()
 	const {peerFonts} = usePresence()
 	const {isLightBg} = useTheme()
+	const {selector, hasFeature} = useChat()
+
+	// Active inline delimiter rules from the chat:parser-extension registry,
+	// filtered by this tool's feature selector (core = *bold*/_italic_ only).
+	const inlineRules = createMemo(() =>
+		resolvePlugins(
+			"chat:parser-extension",
+			parserExtensionPlugins,
+			selector()
+		).map(toInlineRule)
+	)
 
 	const resolvedColor = createMemo(() => {
 		if (!props.msg.color) return undefined
@@ -111,7 +123,12 @@ export function MessageBody(props: {
 
 	const segments = createMemo(() => {
 		if (!props.msg.text) return []
-		return parseTextSegments(props.msg.text, props.emoticonBlobUrls)
+		return parseTextSegments(props.msg.text, {
+			emoticonBlobUrls: props.emoticonBlobUrls,
+			rules: inlineRules(),
+			allowEmoticons: hasFeature("emoticons"),
+			allowThink: hasFeature("computer"),
+		})
 	})
 
 	const emojiOnly = createMemo(() =>
@@ -166,7 +183,7 @@ export function MessageBody(props: {
 /** Clickable answer buttons for an ask_user question — sends the choice as a message. */
 function QuickReplies(props: {options: string[]}) {
 	const {handle, repo} = useChat()
-	const {myName} = useIdentity()
+	const {myName, myContactUrl} = useIdentity()
 	const [used, setUsed] = createSignal(false)
 
 	async function pick(opt: string) {
@@ -178,6 +195,8 @@ function QuickReplies(props: {options: string[]}) {
 			text: opt,
 			timestamp: Date.now(),
 		}
+		const cu = myContactUrl()
+		if (cu) msgData.contactUrl = cu
 		const mh = await repo.create2(msgData)
 		handle.change((d: any) => {
 			if (!d.messages) d.messages = []

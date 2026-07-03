@@ -39,8 +39,8 @@ importers:
         specifier: ^2.5.1
         version: 2.5.3(@automerge/automerge@3.2.4)(solid-js@1.9.11)
       '@chee/patchwork-llm':
-        specifier: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV
-        version: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV(@automerge/automerge-repo@2.5.3)
+        specifier: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3
+        version: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3@26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3(@automerge/automerge-repo@2.5.3)
       '@chee/patchwork-transcript':
         specifier: automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n
         version: automerge:2AdvAyQ85NfazBA4TtDyRYCqfvYb#RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n@RUCqgHPjqB8fwhZczav5rwJ9J7rBLj3rSfQ9ykaCkR3HrEN2n(@automerge/automerge-repo@2.5.3)
@@ -225,8 +225,8 @@ packages:
   '@chee/patchwork-bundles@0.0.1':
     resolution: {integrity: sha512-8bpY62m1uU5482nWez4hbhQnCFr0xQT+sR90tIXzWbzOioaD1S9fuPjJdLlDjYPtNxb9GEBcQb5u84BpltAWWQ==}
 
-  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV':
-    resolution: {automergeUrl: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV, type: custom:automerge}
+  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3@26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3':
+    resolution: {automergeUrl: automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3, type: custom:automerge}
     version: 0.1.1
     peerDependencies:
       '@automerge/automerge-repo': ^2.5.6
@@ -1144,7 +1144,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV@eZCZsHHNozEHijqpAVp91CVsEruykpwh7mvHkmC5bKQsJMHiV(@automerge/automerge-repo@2.5.3)':
+  '@chee/patchwork-llm@automerge:HaCFnBBADdADqJm4Bu5Sc4abQyE#26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3@26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3(@automerge/automerge-repo@2.5.3)':
     dependencies:
       '@automerge/automerge-repo': 2.5.3
       '@inkandswitch/patchwork-providers': 0.2.2(@automerge/automerge-repo@2.5.3)

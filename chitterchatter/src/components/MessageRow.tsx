@@ -1,4 +1,5 @@
 import {Show, Switch, Match, createMemo} from "solid-js"
+import {useDocument} from "@automerge/automerge-repo-solid-primitives"
 import type {ChatMessage} from "../types"
 import {Avatar} from "./Avatar"
 import {MessageBody} from "./MessageBody"
@@ -9,6 +10,7 @@ import {formatTime} from "../lib/helpers"
 import {automergeUrlToServiceWorkerUrl} from "@inkandswitch/patchwork-filesystem"
 import {resolveNamedColor} from "../lib/named-colors"
 import {useTheme} from "../context/ThemeContext"
+import {useChat} from "../context/ChatContext"
 
 export function MessageRow(props: {
 	msg: ChatMessage
@@ -22,10 +24,16 @@ export function MessageRow(props: {
 	onScrollToMsg?: (msgId: string) => void
 }) {
 	const {isLightBg} = useTheme()
+	const {repo, hasFeature} = useChat()
 	const resolvedColor = createMemo(() => {
 		if (!props.msg.color) return undefined
 		return resolveNamedColor(props.msg.color, isLightBg())
 	})
+
+	// Live name from the contact doc (comments-view pattern), falling back to the
+	// name snapshot stored on the message for older docs without a contactUrl.
+	const [contactDoc] = useDocument<any>(() => props.msg.contactUrl, {repo})
+	const displayName = () => contactDoc()?.name || props.msg.name
 
 	return (
 		<Switch>
@@ -39,7 +47,7 @@ export function MessageRow(props: {
 				>
 					<span class="chat-msg-action-name"
 						style={resolvedColor() ? {color: resolvedColor()} : undefined}
-					>{props.msg.name}</span>{" "}
+					>{displayName()}</span>{" "}
 					{props.msg.text}
 					<MessageHoverActions
 						msg={props.msg}
@@ -82,12 +90,14 @@ export function MessageRow(props: {
 					</Show>
 					<div>
 						<MessageBody msg={props.msg} emoticonBlobUrls={props.emoticonBlobUrls} />
-						<MessageReactions
-							msg={props.msg}
-							rawIdx={props.msg._rawIdx!}
-							onToggleReaction={props.onToggleReaction}
-							onAddReaction={props.onReact}
-						/>
+						<Show when={hasFeature("reactions")}>
+							<MessageReactions
+								msg={props.msg}
+								rawIdx={props.msg._rawIdx!}
+								onToggleReaction={props.onToggleReaction}
+								onAddReaction={props.onReact}
+							/>
+						</Show>
 					</div>
 					<MessageHoverActions
 						msg={props.msg}
@@ -111,7 +121,8 @@ export function MessageRow(props: {
 					<div class="chat-msg-group">
 						<div class="chat-avatar-col">
 							<Avatar
-								name={props.msg.name}
+								name={displayName()}
+								contactUrl={props.msg.contactUrl}
 								avatarUrl={props.msg.avatarUrl}
 								gifSelfieUrl={props.msg.gifSelfieUrl}
 								isComputer={!!props.msg.isComputer}
@@ -124,17 +135,19 @@ export function MessageRow(props: {
 									classList={{"chat-msg-name-computer": !!props.msg.isComputer}}
 									style={resolvedColor() ? {color: resolvedColor()} : undefined}
 								>
-									{props.msg.name}
+									{displayName()}
 								</span>
 								<span class="chat-msg-time">{formatTime(props.msg.timestamp)}</span>
 							</div>
 							<MessageBody msg={props.msg} emoticonBlobUrls={props.emoticonBlobUrls} />
-							<MessageReactions
-								msg={props.msg}
-								rawIdx={props.msg._rawIdx!}
-								onToggleReaction={props.onToggleReaction}
-								onAddReaction={props.onReact}
-							/>
+							<Show when={hasFeature("reactions")}>
+								<MessageReactions
+									msg={props.msg}
+									rawIdx={props.msg._rawIdx!}
+									onToggleReaction={props.onToggleReaction}
+									onAddReaction={props.onReact}
+								/>
+							</Show>
 						</div>
 						<MessageHoverActions
 							msg={props.msg}

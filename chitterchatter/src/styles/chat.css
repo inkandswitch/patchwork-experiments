@@ -119,6 +119,8 @@
       overflow:hidden; cursor:pointer; position:relative; user-select:none;
     }
     .chat-avatar img { width:100%; height:100%; object-fit:cover; }
+    .chat-avatar-view { display:block; width:100%; height:100%; }
+    .chat-avatar-view img { width:100%; height:100%; object-fit:cover; }
     .chat-avatar.gif-selfie { border-radius:4px; }
     .chat-avatar.gif-selfie img { border-radius:4px; }
     .chat-avatar.cat-ears::before {
@@ -1009,6 +1011,44 @@
     .chat-emoticon-dialog, .chat-font-dialog {
       background:var(--bg-dark); border:1px solid var(--border); border-radius:8px;
       min-width:300px; max-width:400px; box-shadow:0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    /* Plugin panel (/plugin) */
+    .chat-plugin-panel {
+      background:var(--bg-dark); border:1px solid var(--border); border-radius:8px;
+      min-width:300px; max-width:420px; max-height:70vh;
+      display:flex; flex-direction:column;
+      box-shadow:0 8px 32px rgba(0,0,0,0.4);
+    }
+    .chat-plugin-panel-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:10px 12px; border-bottom:1px solid var(--border);
+      font-size:14px; font-weight:600;
+    }
+    .chat-plugin-panel-close {
+      background:none; border:none; color:var(--text-muted); cursor:pointer;
+      font-size:18px; line-height:1;
+    }
+    .chat-plugin-panel-close:hover { color:var(--text-primary); }
+    .chat-plugin-panel-body {
+      padding:6px; overflow-y:auto; display:flex; flex-direction:column; gap:1px;
+    }
+    .chat-plugin-section {
+      font-size:11px; text-transform:uppercase; letter-spacing:0.04em;
+      color:var(--text-muted); padding:10px 6px 4px;
+    }
+    .chat-plugin-item {
+      display:flex; align-items:center; gap:8px; padding:5px 6px;
+      border-radius:4px; cursor:pointer; font-size:13px; color:var(--text-primary);
+    }
+    .chat-plugin-item:hover { background:var(--bg-hover); }
+    .chat-plugin-item input { cursor:pointer; }
+    .chat-plugin-item-locked, .chat-plugin-item-locked input { cursor:default; }
+    .chat-plugin-item-locked { opacity:0.55; }
+    .chat-plugin-item-locked:hover { background:none; }
+    .chat-plugin-id {
+      margin-left:auto; font-family:ui-monospace,monospace;
+      font-size:11px; color:var(--text-muted);
     }
     .chat-emoticon-dialog-header, .chat-font-dialog-header {
       display:flex; align-items:center; justify-content:space-between;

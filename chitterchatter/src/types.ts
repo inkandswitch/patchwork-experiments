@@ -5,6 +5,7 @@ export interface ChatMessage {
 	name: string
 	text: string
 	timestamp: number
+	contactUrl?: AutomergeUrl
 	font?: string
 	avatarUrl?: AutomergeUrl
 	replyTo?: string
@@ -65,6 +66,10 @@ export interface ChatDoc {
 	title: string
 	messages: (ChatMessage | ChatMessageRef)[]
 	docs: DocLink[]
+	// Explicit list of active full-tier plugin ids. Core-tier plugins are always
+	// on and are NOT listed here. Seeded by the datatype (empty for `chat`, the
+	// full built-in set for `chitterchatter`); mutated live via `/plugin`.
+	plugins?: string[]
 	emoticons?: Record<string, {url: AutomergeUrl; addedBy: string}>
 	fonts?: Record<string, {url: AutomergeUrl; addedBy: string}>
 	hasComputer?: boolean

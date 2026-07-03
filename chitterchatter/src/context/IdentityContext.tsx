@@ -2,17 +2,22 @@ import {
 	createContext,
 	useContext,
 	createSignal,
+	createEffect,
 	onMount,
 	onCleanup,
 	type ParentComponent,
 	type Accessor,
 } from "solid-js"
 import type {DocHandle, AutomergeUrl} from "@automerge/automerge-repo"
+import {isValidAutomergeUrl} from "@automerge/automerge-repo"
 import type {ChatProfileDoc} from "../types"
 import {getRepo} from "../lib/repo"
+import {useChat} from "./ChatContext"
+import {subscribe} from "../lib/selected-doc"
 
 interface IdentityContextValue {
 	myName: Accessor<string>
+	myContactUrl: Accessor<AutomergeUrl | null>
 	myFont: Accessor<string | null>
 	myAvatarUrl: Accessor<AutomergeUrl | null>
 	myColor: Accessor<string | null>
@@ -26,8 +31,24 @@ interface IdentityContextValue {
 
 const IdentityCtx = createContext<IdentityContextValue>()
 
+/** Normalise whatever the patchwork:contact provider posts (url string, array of
+ * urls, or {url}) down to a single valid AutomergeUrl. */
+function normalizeContactUrl(v: unknown): AutomergeUrl | null {
+	let candidate: unknown = v
+	if (Array.isArray(candidate)) candidate = candidate[0]
+	if (candidate && typeof candidate === "object" && "url" in (candidate as any)) {
+		candidate = (candidate as any).url
+	}
+	return typeof candidate === "string" && isValidAutomergeUrl(candidate)
+		? (candidate as AutomergeUrl)
+		: null
+}
+
 export const IdentityProvider: ParentComponent = (props) => {
+	const {element} = useChat()
+
 	const [myName, setMyName] = createSignal("Anonymous")
+	const [myContactUrl, setMyContactUrl] = createSignal<AutomergeUrl | null>(null)
 	const [myFont, setMyFont] = createSignal<string | null>(null)
 	const [myAvatarUrl, setMyAvatarUrl] = createSignal<AutomergeUrl | null>(null)
 	const [myColor, setMyColor] = createSignal<string | null>(null)
@@ -36,45 +57,55 @@ export const IdentityProvider: ParentComponent = (props) => {
 	const [myEmoticons, setMyEmoticons] = createSignal<Record<string, AutomergeUrl>>({})
 	const [myFonts, setMyFonts] = createSignal<Record<string, AutomergeUrl>>({})
 
-	onMount(async () => {
+	// The current user's contact comes from the host's `patchwork:contact` provider
+	// (the comments-view pattern) — reusing our vanilla provider-subscribe. If the
+	// host doesn't answer, we fall back to window.accountDocHandle.contactUrl below.
+	const providedContact = subscribe<unknown>(
+		element,
+		{type: "patchwork:contact"},
+		undefined
+	)
+
+	let appliedUrl: AutomergeUrl | null = null
+	let offContact: (() => void) | null = null
+	let offProfile: (() => void) | null = null
+
+	async function applyContact(contactUrl: AutomergeUrl) {
+		if (appliedUrl === contactUrl) return
+		appliedUrl = contactUrl
 		try {
 			const repo = getRepo()
 			if (!repo) return
 			const adh = (window as any).accountDocHandle
-			if (!adh) return
 
-			// Wait for account doc to be ready (may not be loaded from storage yet on reload)
-			const readyAdh = await repo.find(adh.url)
-			const ad = readyAdh.doc()
-			if (!ad?.contactUrl) return
-
-			const ch = await repo.find(ad.contactUrl)
+			setMyContactUrl(contactUrl)
+			const ch = await repo.find(contactUrl)
 			setContactHandle(ch)
-			const cd = ch.doc()
+			const cd = ch.doc() as any
 			if (!cd) return
 			if (cd.name) setMyName(cd.name)
+			if (cd.avatarUrl) setMyAvatarUrl(cd.avatarUrl)
+			if (cd.color) setMyColor(cd.color)
 
-			// Resolve chat profile doc
+			// Resolve the chat profile doc. Prefer the contact's own chatProfileUrl
+			// so identity no longer depends on the account doc; fall back to the
+			// account doc's, migrating the old contact.chat field if present.
 			let profileHandle: DocHandle<ChatProfileDoc>
-			if (ad.chatProfileUrl) {
-				profileHandle = await repo.find(ad.chatProfileUrl)
-			} else if (cd.chatProfileUrl) {
+			if (cd.chatProfileUrl) {
 				profileHandle = await repo.find(cd.chatProfileUrl)
-				adh.change((d: any) => {
+			} else if (adh?.doc?.()?.chatProfileUrl) {
+				profileHandle = await repo.find(adh.doc().chatProfileUrl)
+				ch.change((d: any) => {
 					d.chatProfileUrl = profileHandle.url
 				})
 			} else {
 				const initialProfile: any = {readPositions: {}}
 				if (cd.chat?.font) initialProfile.font = cd.chat.font
 				profileHandle = await repo.create2(initialProfile)
-				adh.change((d: any) => {
+				ch.change((d: any) => {
 					d.chatProfileUrl = profileHandle.url
+					if (d.chat) delete d.chat
 				})
-				if (cd.chat) {
-					ch.change((d: any) => {
-						delete d.chat
-					})
-				}
 			}
 			setChatProfileHandle(profileHandle)
 
@@ -83,12 +114,7 @@ export const IdentityProvider: ParentComponent = (props) => {
 			if (profile?.emoticons) setMyEmoticons({...profile.emoticons})
 			if (profile?.fonts) setMyFonts({...profile.fonts})
 
-			if (cd.avatarUrl) {
-				setMyAvatarUrl(cd.avatarUrl)
-			}
-			if (cd.color) setMyColor(cd.color)
-
-			// Subscribe to contact doc changes (name, avatar, etc.)
+			// Subscribe to contact doc changes (name, avatar, colour) — live.
 			const onContactChange = () => {
 				const updated = ch.doc() as any
 				if (!updated) return
@@ -99,8 +125,10 @@ export const IdentityProvider: ParentComponent = (props) => {
 				if (updated.color) setMyColor(updated.color)
 			}
 			ch.on("change", onContactChange)
+			offContact?.()
+			offContact = () => ch.off("change", onContactChange)
 
-			// Subscribe to profile doc changes (font, emoticons, fonts)
+			// Subscribe to profile doc changes (font, emoticons, fonts).
 			const onProfileChange = () => {
 				const updated = profileHandle.doc() as any
 				if (!updated) return
@@ -109,20 +137,49 @@ export const IdentityProvider: ParentComponent = (props) => {
 				if (updated.fonts) setMyFonts({...updated.fonts})
 			}
 			profileHandle.on("change", onProfileChange)
-
-			onCleanup(() => {
-				ch.off("change", onContactChange)
-				profileHandle.off("change", onProfileChange)
-			})
+			offProfile?.()
+			offProfile = () => profileHandle.off("change", onProfileChange)
 		} catch (e) {
-			console.warn("[Chat] resolve account:", e)
+			console.warn("[Chat] resolve contact:", e)
+			appliedUrl = null // allow a retry via the fallback path
 		}
+	}
+
+	// Provider path: apply whenever the host posts a contact url.
+	createEffect(() => {
+		const url = normalizeContactUrl(providedContact())
+		if (url) applyContact(url)
+	})
+
+	// Fallback path: if the provider hasn't answered shortly after mount, resolve
+	// via the account doc directly (the pre-existing behaviour).
+	onMount(() => {
+		setTimeout(async () => {
+			if (appliedUrl) return
+			try {
+				const repo = getRepo()
+				if (!repo) return
+				const adh = (window as any).accountDocHandle
+				if (!adh) return
+				const readyAdh = await repo.find(adh.url)
+				const ad = readyAdh.doc() as any
+				if (ad?.contactUrl && !appliedUrl) applyContact(ad.contactUrl)
+			} catch (e) {
+				console.warn("[Chat] resolve account:", e)
+			}
+		}, 400)
+	})
+
+	onCleanup(() => {
+		offContact?.()
+		offProfile?.()
 	})
 
 	return (
 		<IdentityCtx.Provider
 			value={{
 				myName,
+				myContactUrl,
 				myFont,
 				myAvatarUrl,
 				myColor,

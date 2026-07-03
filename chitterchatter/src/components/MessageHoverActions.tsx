@@ -1,6 +1,9 @@
-import {SVG_ICONS} from "../lib/svg-icons"
+import {For, Show} from "solid-js"
 import {formatTime} from "../lib/helpers"
 import type {ChatMessage} from "../types"
+import {useChat} from "../context/ChatContext"
+import {resolvePlugins} from "../lib/registry"
+import {messageActionPlugins} from "../lib/message-actions"
 
 export function MessageHoverActions(props: {
 	msg: ChatMessage
@@ -9,38 +12,38 @@ export function MessageHoverActions(props: {
 	onReact: (idx: number, anchorEl: HTMLElement) => void
 	onDelete: (idx: number) => void
 }) {
+	const {selector} = useChat()
+	// Active hover-bar actions from the chat:messageaction registry, filtered by
+	// the tool's messageActions feature (the minimal `chat` tool shows none).
+	const actions = () =>
+		resolvePlugins("chat:messageaction", messageActionPlugins, selector())
+			.filter((a: any) => !a.show || a.show(props.msg))
+
 	return (
 		<div class="chat-msg-actions">
-			{!props.msg._loading && (
-				<button
-					class="chat-msg-action-btn"
-					title="Reply"
-					innerHTML={SVG_ICONS.reply}
-					on:click={(e) => {
-						e.stopPropagation()
-						props.onReply(props.msg.id)
-					}}
-				/>
-			)}
-			<button
-				class="chat-msg-action-btn"
-				title="Add reaction"
-				innerHTML={SVG_ICONS.react}
-				on:click={(e) => {
-					e.stopPropagation()
-					props.onReact(props.rawIdx, e.currentTarget)
-				}}
-			/>
-			<button
-				class="chat-msg-action-btn"
-				title="Delete"
-				innerHTML={SVG_ICONS.trash}
-				on:click={(e) => {
-					e.stopPropagation()
-					props.onDelete(props.rawIdx)
-				}}
-			/>
-			<span class="chat-msg-inline-time">{formatTime(props.msg.timestamp)}</span>
+			<For each={actions()}>
+				{(action: any) => (
+					<button
+						class="chat-msg-action-btn"
+						title={action.name}
+						innerHTML={action.icon}
+						on:click={(e) => {
+							e.stopPropagation()
+							action.run({
+								msg: props.msg,
+								rawIdx: props.rawIdx,
+								anchorEl: e.currentTarget as HTMLElement,
+								onReply: props.onReply,
+								onReact: props.onReact,
+								onDelete: props.onDelete,
+							})
+						}}
+					/>
+				)}
+			</For>
+			<Show when={!props.msg._loading}>
+				<span class="chat-msg-inline-time">{formatTime(props.msg.timestamp)}</span>
+			</Show>
 		</div>
 	)
 }
