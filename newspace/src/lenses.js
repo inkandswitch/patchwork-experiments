@@ -27,6 +27,7 @@ import { getRegistry } from "@inkandswitch/patchwork-plugins";
 import { transform, apply as applyOp } from "./opstreams.js";
 import { snapshot, isSnapshot, valuesEqual, anySchema, set } from "./ops.js";
 import { toPretty, fromPretty } from "./json-pretty-lens.js";
+import { normalizeSurface } from "./surfaces.js";
 
 // ── SKIP: "don't write this source" ──────────────────────────────────────────
 // A backward write can DECLINE: an `unproject` (or a fan-in slot, see
@@ -57,15 +58,7 @@ export function listLenses() {
 // editor-shaped view of a lens descriptor (so EditorItem / the wire matcher can
 // treat lenses and editors uniformly: one required inlet, one outlet).
 export function lensDescriptor(d) {
-  if (!d) return d;
-  const inlet = d.inlet || { name: "in", type: "json" };
-  const outlet = d.outlet || { name: "out", type: "json" };
-  return {
-    ...d,
-    lens: true,
-    inlets: d.inlets || [{ ...inlet, required: inlet.required !== false }],
-    outlets: d.outlets || [outlet],
-  };
+  return d ? normalizeSurface({ ...d, lens: true }) : d;
 }
 
 // every lens, normalised to the editor-shaped descriptor

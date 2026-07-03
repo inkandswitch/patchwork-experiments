@@ -37,6 +37,16 @@ export const moveAt = (list, i, d) => {
   return next;
 };
 export const removeAt = (list, i) => list.filter((_, k) => k !== i);
+// move the item at `from` so it lands at insertion index `ins` (0..len, computed on
+// the ORIGINAL list — before removal); the drag-reorder counterpart of moveAt's ±1.
+export const moveTo = (list, from, ins) => {
+  if (from < 0 || from >= list.length) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  const dest = ins > from ? ins - 1 : ins; // removal shifts everything after `from` left one
+  next.splice(Math.max(0, Math.min(dest, next.length)), 0, item);
+  return next;
+};
 
 export const configEntries = (config) => {
   const e = normalizeEntries(config && config.entries);
@@ -51,6 +61,8 @@ export function mountPaletteConfig({ element, config, setConfig, onConfig, setOu
   if (setOutlet) setOutlet("tools", out);
 
   let picker = null; // { at: entries | a menu's items, done() } — the census popover target
+  let iconPicker = null; // index of the menu whose icon-picker is open (one at a time)
+  let drag = null; // { list, from } — the in-flight row reorder (same-list only)
 
   const root = el("div", "ns-palcfg");
   root.addEventListener("pointerdown", (e) => e.stopPropagation()); // pointerDOWN only (the house rule)
@@ -75,6 +87,44 @@ export function mountPaletteConfig({ element, config, setConfig, onConfig, setOu
       mk("×", "remove", () => write(removeAt(list, i))),
     );
     return c;
+  };
+
+  // ── drag-to-reorder ─────────────────────────────────────────────────────────
+  // a GRIP handle is the drag source (so the menu's label input stays selectable);
+  // the row is the drop target. Reorders stay WITHIN one list (`list` identity is
+  // stable between dragstart and drop — no commit runs in that window). `write`
+  // folds the reordered sublist back exactly like the ↑ ↓ buttons.
+  const clearOver = () => root.querySelectorAll(".ns-palcfg-over-top,.ns-palcfg-over-bot").forEach((n) => n.classList.remove("ns-palcfg-over-top", "ns-palcfg-over-bot"));
+  const dropsAfter = (row, e) => { const r = row.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+  const makeDraggable = (handle, row, list, i, write) => {
+    handle.draggable = true;
+    handle.addEventListener("dragstart", (e) => { drag = { list, from: i }; if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(i)); } catch {} } row.classList.add("ns-palcfg-drag"); });
+    handle.addEventListener("dragend", () => { drag = null; row.classList.remove("ns-palcfg-drag"); clearOver(); });
+    row.addEventListener("dragover", (e) => { if (!drag || drag.list !== list) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; clearOver(); row.classList.add(dropsAfter(row, e) ? "ns-palcfg-over-bot" : "ns-palcfg-over-top"); });
+    row.addEventListener("drop", (e) => { if (!drag || drag.list !== list) return; e.preventDefault(); const ins = i + (dropsAfter(row, e) ? 1 : 0); write(moveTo(list, drag.from, ins)); drag = null; clearOver(); });
+  };
+  const grip = () => { const g = el("span", "ns-palcfg-grip", "⠿"); g.title = "drag to reorder"; return g; };
+
+  // ── a menu's ICON — pick any census glyph (or the default chevron) ───────────
+  const setMenuIcon = (i, path) => commit(entries.map((e, k) => { if (k !== i) return e; const m = { ...e }; if (path) m.icon = path; else delete m.icon; return m; }));
+  const renderIconPicker = (i) => {
+    const wrap = el("div", "ns-menu ns-palcfg-iconpick");
+    const none = el("button", "ns-palcfg-pick");
+    none.append(el("span", "ns-palcfg-mark", "▾"), el("span", null, "default (chevron)"));
+    none.title = "no icon — show the overflow chevron";
+    none.addEventListener("click", () => { iconPicker = null; setMenuIcon(i, null); });
+    wrap.append(none);
+    const seen = new Set();
+    for (const t of paletteCensus(listRegistryBrushes())) {
+      if (!t.path || seen.has(t.path)) continue;
+      seen.add(t.path);
+      const b = el("button", "ns-palcfg-pick");
+      b.append(glyph(t.path), el("span", null, t.name));
+      b.title = `use ${t.name}'s icon`;
+      b.addEventListener("click", () => { iconPicker = null; setMenuIcon(i, t.path); });
+      wrap.append(b);
+    }
+    return wrap;
   };
 
   // the census picker — every armable tool/brush, click to append to `target`
@@ -112,7 +162,16 @@ export function mountPaletteConfig({ element, config, setConfig, onConfig, setOu
 
   const toolRow = (entry, list, i, write) => {
     const row = el("div", "ns-palcfg-row");
-    row.append(glyph(toolPath(entry.id)), el("span", "ns-palcfg-name", toolLabel(entry.id)), controls(list, i, write));
+    const g = grip();
+    row.append(g, glyph(toolPath(entry.id)), el("span", "ns-palcfg-name", toolLabel(entry.id)), controls(list, i, write));
+    makeDraggable(g, row, list, i, write);
+    return row;
+  };
+  const dividerRow = (list, i, write) => {
+    const row = el("div", "ns-palcfg-row ns-palcfg-divider");
+    const g = grip();
+    row.append(g, el("span", "ns-palcfg-name", "— divider —"), controls(list, i, write));
+    makeDraggable(g, row, list, i, write);
     return row;
   };
 
@@ -122,28 +181,28 @@ export function mountPaletteConfig({ element, config, setConfig, onConfig, setOu
     const writeTop = (next) => commit(next);
     entries.forEach((entry, i) => {
       if (entry.kind === "tool") { root.append(toolRow(entry, entries, i, writeTop)); return; }
-      if (entry.kind === "divider") {
-        const row = el("div", "ns-palcfg-row ns-palcfg-divider");
-        row.append(el("span", "ns-palcfg-name", "— divider —"), controls(entries, i, writeTop));
-        root.append(row);
-        return;
-      }
-      // a MENU: label input + its nested items (one level, tools/dividers only)
+      if (entry.kind === "divider") { root.append(dividerRow(entries, i, writeTop)); return; }
+      // a MENU: a grip, an ICON button (opens the census icon-picker), a label input
+      // and its nested items (one level, tools/dividers only)
       const head = el("div", "ns-palcfg-row ns-palcfg-menuhead");
+      const g = grip();
+      const iconBtn = el("button", "ns-palcfg-btn ns-palcfg-iconbtn");
+      iconBtn.title = "menu icon";
+      iconBtn.append(entry.icon ? glyph(entry.icon) : el("span", "ns-palcfg-mark", "▾"));
+      iconBtn.addEventListener("click", () => { iconPicker = iconPicker === i ? null : i; render(); });
       const lab = el("input", "ns-text ns-palcfg-label");
       lab.value = entry.label || "menu";
       lab.title = "the menu's name (its button tooltip)";
       lab.addEventListener("change", () => commit(entries.map((e, k) => (k === i ? { ...e, label: lab.value.trim() || "menu" } : e))));
-      head.append(el("span", "ns-palcfg-mark", "▾"), lab, controls(entries, i, writeTop));
+      head.append(g, iconBtn, lab, controls(entries, i, writeTop));
+      makeDraggable(g, head, entries, i, writeTop);
       root.append(head);
+      if (iconPicker === i) root.append(renderIconPicker(i));
       const nest = el("div", "ns-palcfg-nest");
       const writeItems = (items) => commit(entries.map((e, k) => (k === i ? { ...e, items } : e)));
       (entry.items || []).forEach((item, j) => {
-        if (item.kind === "divider") {
-          const row = el("div", "ns-palcfg-row ns-palcfg-divider");
-          row.append(el("span", "ns-palcfg-name", "— divider —"), controls(entry.items, j, writeItems));
-          nest.append(row);
-        } else if (item.kind === "tool") nest.append(toolRow(item, entry.items, j, writeItems));
+        if (item.kind === "divider") nest.append(dividerRow(entry.items, j, writeItems));
+        else if (item.kind === "tool") nest.append(toolRow(item, entry.items, j, writeItems));
       });
       nest.append(addBar(entry.items || [], writeItems, false));
       root.append(nest);

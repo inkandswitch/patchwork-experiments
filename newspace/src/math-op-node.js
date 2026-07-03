@@ -1,8 +1,8 @@
 // A Math node: takes a number on `in`, applies a chosen unary op, emits on `out`.
 // The op is picked from a <select> and persisted in config.op. Pure math lives in
 // `mathOp` / `OPS` so it can be unit-tested with no DOM.
-import { Source } from "./opstreams.js";
 import { numberSchema } from "./ops.js";
+import { mountTransformSurface, fmtValue } from "./transform-surface.js";
 
 // the menu of unary operations — each a pure (number) -> number.
 export const OPS = [
@@ -32,60 +32,20 @@ export function mathOp(name, x) {
 
 // the mount: a <select> over OPS + a readout, recomputing `out` from `in` & the op.
 export function mountMathOp({ element, inlets = {}, setOutlet, config = {}, setConfig }) {
-  const src = inlets.in;
-  const out = new Source(undefined);
-  if (setOutlet) setOutlet("out", out);
-
   let op = typeof config.op === "string" ? config.op : DEFAULT_OP;
   if (!OPS.some((o) => o.name === op)) op = DEFAULT_OP;
-
-  const root = document.createElement("div");
-  root.className = "ns-mathop ns-source";
-
-  const select = document.createElement("select");
-  select.className = "ns-mathop-select ns-text";
-  for (const o of OPS) {
-    const opt = document.createElement("option");
-    opt.value = o.name;
-    opt.textContent = o.label;
-    if (o.name === op) opt.selected = true;
-    select.append(opt);
-  }
-
-  const readout = document.createElement("div");
-  readout.className = "ns-mathop-readout ns-source-status";
-
-  root.append(select, readout);
-  element.append(root);
-
-  const recompute = () => {
-    const x = src ? src.value : undefined;
-    const y = mathOp(op, x);
-    out.push(y);
-    readout.textContent = `${op}(${fmt(x)}) = ${fmt(y)}`;
-  };
-
-  select.onchange = () => {
-    op = select.value;
-    if (setConfig) setConfig({ op });
-    recompute();
-  };
-
-  const off = src && src.connect ? src.connect(recompute) : null;
-  recompute();
-
-  return () => {
-    if (off) off();
-    root.remove();
-  };
+  return mountTransformSurface({
+    className: "ns-mathop",
+    schema: numberSchema(),
+    normalize: (c = {}) => ({ op: OPS.some((o) => o.name === c.op) ? c.op : DEFAULT_OP }),
+    fields: [{ key: "op", type: "select", options: OPS }],
+    compute: (x, cfg) => mathOp(cfg.op, x),
+    status: (x, y, cfg) => `${cfg.op}(${fmt(x)}) = ${fmt(y)}`,
+  }, { element, inlets, setOutlet, config: { op }, setConfig });
 }
 
 // small display helper (kept pure & exported for testability).
-export function fmt(v) {
-  if (v === undefined) return "∅";
-  if (typeof v === "number" && Number.isNaN(v)) return "NaN";
-  return String(v);
-}
+export const fmt = fmtValue;
 
 export const plugin = {
   type: "sketchy:window",

@@ -104,6 +104,26 @@ describe("claimed draw over a spatial box → a parented, box-local item", () =>
     expect(stroke.parent).toBeUndefined();
     expect(stroke.points[0][0]).toBeCloseTo(500);
   });
+
+  it("a freshly drawn canvas stroke is VISIBLE — rendered in .ns-world, not display:none", async () => {
+    const { element, layout } = await mountCanvas({}, []);
+    const root = element.querySelector(".ns-root");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "p", bubbles: true }));
+    await flush(5);
+    ptr("pointerdown", root, 500, 500);
+    ptr("pointermove", window, 520, 510);
+    ptr("pointerup", window, 520, 510);
+    await flush(15);
+    const stroke = layout.doc().items.find((x) => x.kind === "stroke");
+    expect(stroke).toBeTruthy();
+    // its HOME is the base canvas layer (draw commits to the active layer, default canvas)
+    expect(stroke.layers ? stroke.layers[0] : (stroke.layer || "canvas")).toBe("canvas");
+    const mark = element.querySelector(`[data-item-id="${stroke.id}"]`);
+    expect(mark).toBeTruthy();
+    expect(mark.closest(".ns-world")).toBeTruthy(); // in the base coordinate space
+    expect(mark.style.display).not.toBe("none"); // and actually shown
+    expect(element.querySelector(".ns-frost")).toBeFalsy(); // canvas tab: no frost pane over it
+  });
 });
 
 describe("keystrokes inside an embed / editable content never reach the canvas history", () => {

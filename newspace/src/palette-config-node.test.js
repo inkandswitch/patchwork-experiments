@@ -4,7 +4,7 @@
 // `tools` inlet — the seeded ns-toolbar-config → ns-toolbar-palette pair).
 import { describe, it, expect } from "vitest";
 import {
-  mountPaletteConfig, plugin, moveAt, removeAt, configEntries,
+  mountPaletteConfig, plugin, moveAt, moveTo, removeAt, configEntries,
 } from "./palette-config-node.js";
 import { toolEntry } from "./model.js";
 import { DEFAULT_TOOL_ENTRIES } from "./brush/constants.js";
@@ -33,6 +33,15 @@ describe("pure helpers", () => {
     expect(moveAt(["a", "b", "c"], 2, 1)).toEqual(["a", "b", "c"]); // clamped
     expect(moveAt(["a", "b", "c"], 0, -1)).toEqual(["a", "b", "c"]); // clamped
     expect(removeAt(["a", "b", "c"], 1)).toEqual(["a", "c"]);
+  });
+  it("moveTo relocates an item to an insertion index (drag-reorder), both directions", () => {
+    // ins is computed on the ORIGINAL list (before removal)
+    expect(moveTo(["a", "b", "c", "d"], 0, 3)).toEqual(["b", "c", "a", "d"]); // move down
+    expect(moveTo(["a", "b", "c", "d"], 3, 1)).toEqual(["a", "d", "b", "c"]); // move up
+    expect(moveTo(["a", "b", "c"], 1, 1)).toEqual(["a", "b", "c"]); // dropped onto itself
+    expect(moveTo(["a", "b", "c"], 1, 2)).toEqual(["a", "b", "c"]); // no-op (removal shift)
+    expect(moveTo(["a", "b", "c"], 0, 3)).toEqual(["b", "c", "a"]); // to the very end
+    expect(moveTo(["a", "b"], 5, 0)).toEqual(["a", "b"]); // out-of-range from
   });
   it("configEntries: config.entries else the DEFAULT (old Toolbar layout), always a fresh copy", () => {
     expect(configEntries({ entries: ["pen"] })).toEqual([toolEntry("pen")]);

@@ -9,6 +9,29 @@ import { mediaLensPlugins, wireLensPlugins } from "./registry/lenses.js";
 import { palettePlugins } from "./registry/palettes.js";
 import { log } from "./log.js";
 
+const sourcePlugin = ({ id, name, icon, outlet, type = "json", schema, label, start, gated, stream }) => ({
+  type: "sketchy:window",
+  id, name, icon,
+  inlets: [],
+  outlets: [{ name: outlet, type, schema }],
+  async load() {
+    const { makeSourceMount } = await import("./source-nodes.js");
+    const sources = await import("./sources.js");
+    return makeSourceMount({ start: () => sources[start](), outlet, label: label || name.toLowerCase(), gated, stream });
+  },
+});
+
+const contextSourcePlugin = ({ id, name, icon, out, schema }) => ({
+  type: "sketchy:window",
+  id, name, icon,
+  inlets: [],
+  outlets: [{ name: out, type: "json", schema }],
+  async load() {
+    const { makeSourceMount, contextStart } = await import("./source-nodes.js");
+    return makeSourceMount({ start: contextStart(out), outlet: out, label: name.toLowerCase() });
+  },
+});
+
 export const plugins = [
   ...layerPlugins,
   ...coreBrushPlugins,
@@ -72,19 +95,7 @@ export const plugins = [
     ],
     async load() { return (await import("./source-nodes.js")).mountFileSource; },
   },
-  {
-    type: "sketchy:window",
-    id: "clock",
-    name: "Clock",
-    icon: "Clock",
-    inlets: [],
-    outlets: [{ name: "time", type: "number", schema: numberSchema() }], // provides: epoch ms
-    async load() {
-      const { makeSourceMount } = await import("./source-nodes.js");
-      const { clockSource } = await import("./sources.js");
-      return makeSourceMount({ start: () => clockSource(), outlet: "time", label: "clock" });
-    },
-  },
+  sourcePlugin({ id: "clock", name: "Clock", icon: "Clock", outlet: "time", type: "number", schema: numberSchema(), label: "clock", start: "clockSource" }),
   // the canvas CONTEXT as placeable source nodes (replacing the old bottom chips):
   // camera (viewport), pointer, tool, brush, selection — each switchable 👤 own ⟷ 📡 mine.
   ...[
@@ -92,50 +103,10 @@ export const plugins = [
     { id: "ctx-pointer", name: "Pointer position", icon: "MousePointer", out: "pointer", schema: pointSchema() },
     { id: "ctx-brush", name: "Active brush", icon: "Brush", out: "brush", schema: anySchema() }, // brush config + the current tool
     { id: "ctx-selection", name: "Selection", icon: "BoxSelect", out: "selection", schema: anySchema() }, // array of ids
-  ].map((c) => ({
-    type: "sketchy:window", id: c.id, name: c.name, icon: c.icon, inlets: [],
-    outlets: [{ name: c.out, type: "json", schema: c.schema }],
-    async load() { const { makeSourceMount, contextStart } = await import("./source-nodes.js"); return makeSourceMount({ start: contextStart(c.out), outlet: c.out, label: c.name.toLowerCase() }); },
-  })),
-  {
-    type: "sketchy:window",
-    id: "gamepad",
-    name: "Gamepad",
-    icon: "Gamepad2",
-    inlets: [],
-    outlets: [{ name: "gamepad", type: "json", schema: anySchema() }],
-    async load() {
-      const { makeSourceMount } = await import("./source-nodes.js");
-      const { gamepadSource } = await import("./sources.js");
-      return makeSourceMount({ start: () => gamepadSource(), outlet: "gamepad", label: "gamepad" });
-    },
-  },
-  {
-    type: "sketchy:window",
-    id: "geolocation",
-    name: "Geolocation",
-    icon: "MapPin",
-    inlets: [],
-    outlets: [{ name: "position", type: "json", schema: anySchema() }],
-    async load() {
-      const { makeSourceMount } = await import("./source-nodes.js");
-      const { geolocationSource } = await import("./sources.js");
-      return makeSourceMount({ start: () => geolocationSource(), outlet: "position", label: "location", gated: true });
-    },
-  },
-  {
-    type: "sketchy:window",
-    id: "midi",
-    name: "MIDI",
-    icon: "Piano",
-    inlets: [],
-    outlets: [{ name: "midi", type: "json", schema: anySchema() }],
-    async load() {
-      const { makeSourceMount } = await import("./source-nodes.js");
-      const { midiSource } = await import("./sources.js");
-      return makeSourceMount({ start: () => midiSource(), outlet: "midi", label: "midi", gated: true });
-    },
-  },
+  ].map(contextSourcePlugin),
+  sourcePlugin({ id: "gamepad", name: "Gamepad", icon: "Gamepad2", outlet: "gamepad", schema: anySchema(), label: "gamepad", start: "gamepadSource" }),
+  sourcePlugin({ id: "geolocation", name: "Geolocation", icon: "MapPin", outlet: "position", schema: anySchema(), label: "location", start: "geolocationSource", gated: true }),
+  sourcePlugin({ id: "midi", name: "MIDI", icon: "Piano", outlet: "midi", schema: anySchema(), label: "midi", start: "midiSource", gated: true }),
   // CAMERA — live preview; provides `video` (a MediaStream) and `image` (frame data-URL)
   {
     type: "sketchy:window",
@@ -181,19 +152,7 @@ export const plugins = [
     async load() { return (await import("./media-nodes.js")).mountVideo; },
   },
   // MIC — Web Audio input: live {rms,peak} levels + an AnalyserNode (in complement)
-  {
-    type: "sketchy:window",
-    id: "mic",
-    name: "Microphone",
-    icon: "Mic",
-    inlets: [],
-    outlets: [{ name: "audio", type: "audio", schema: audioSchema() }],
-    async load() {
-      const { makeSourceMount } = await import("./source-nodes.js");
-      const { micSource } = await import("./sources.js");
-      return makeSourceMount({ start: () => micSource(), outlet: "audio", label: "mic", gated: true, stream: true });
-    },
-  },
+  sourcePlugin({ id: "mic", name: "Microphone", icon: "Mic", outlet: "audio", type: "audio", schema: audioSchema(), label: "mic", start: "micSource", gated: true, stream: true }),
   // AUDIO FILE — play a music file; provides {time,…} + an analyser (for the Scope)
   {
     type: "sketchy:window",
@@ -225,19 +184,7 @@ export const plugins = [
     async load() { return (await import("./media-nodes.js")).mountScope; },
   },
   // RAF — a bang every animation frame (~60fps), for smooth visual loops
-  {
-    type: "sketchy:window",
-    id: "raf",
-    name: "RAF (60fps)",
-    icon: "Activity",
-    inlets: [],
-    outlets: [{ name: "bang", type: "bang" }],
-    async load() {
-      const { makeSourceMount } = await import("./source-nodes.js");
-      const { rafSource } = await import("./sources.js");
-      return makeSourceMount({ start: () => rafSource(), outlet: "bang", label: "raf" });
-    },
-  },
+  sourcePlugin({ id: "raf", name: "RAF (60fps)", icon: "Activity", outlet: "bang", type: "bang", label: "raf", start: "rafSource" }),
   // BANG — a click-to-fire momentary trigger (PD/Max/Orca). Each fire is unique so it
   // always propagates. Wire it to a triggerable inlet (e.g. the LLM's `bang`).
   {

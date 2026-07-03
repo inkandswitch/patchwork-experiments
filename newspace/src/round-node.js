@@ -9,8 +9,8 @@
 //   mode      "round" | "floor" | "ceil"     (config.mode, default "round")
 //
 // The pure transform lives in `roundTo` so it can be unit-tested with no DOM.
-import { Source } from "./opstreams.js";
 import { numberSchema } from "./ops.js";
+import { mountTransformSurface, fmtValue } from "./transform-surface.js";
 
 export const MODES = [
   { name: "round", label: "round", fn: Math.round },
@@ -51,79 +51,21 @@ export function normalizeConfig(config = {}) {
 }
 
 // small display helper (pure & exported for testability).
-export function fmt(v) {
-  if (v === undefined) return "∅";
-  if (typeof v === "number" && Number.isNaN(v)) return "NaN";
-  return String(v);
-}
+export const fmt = fmtValue;
 
 // the mount: a number field + a mode <select>, recomputing `out` from `in`.
 export function mountRound({ element, inlets = {}, setOutlet, config = {}, setConfig }) {
-  const src = inlets.in;
-  const out = new Source(undefined, { schema: numberSchema() });
-  if (setOutlet) setOutlet("out", out);
-
-  let cfg = normalizeConfig(config);
-
-  const root = document.createElement("div");
-  root.className = "ns-round ns-source";
-
-  const decWrap = document.createElement("label");
-  decWrap.className = "ns-round-field";
-  const decLabel = document.createElement("span");
-  decLabel.className = "ns-round-label";
-  decLabel.textContent = "decimals";
-  const decInput = document.createElement("input");
-  decInput.type = "number";
-  decInput.min = "0";
-  decInput.step = "1";
-  decInput.className = "ns-text ns-round-input";
-  decInput.value = String(cfg.decimals);
-  decWrap.append(decLabel, decInput);
-
-  const select = document.createElement("select");
-  select.className = "ns-round-select ns-text";
-  for (const m of MODES) {
-    const opt = document.createElement("option");
-    opt.value = m.name;
-    opt.textContent = m.label;
-    if (m.name === cfg.mode) opt.selected = true;
-    select.append(opt);
-  }
-
-  const readout = document.createElement("div");
-  readout.className = "ns-round-readout ns-source-status";
-
-  root.append(decWrap, select, readout);
-  element.append(root);
-
-  const recompute = () => {
-    const x = src ? src.value : undefined;
-    const y = roundTo(x, cfg.decimals, cfg.mode);
-    out.push(y);
-    readout.textContent = `${cfg.mode}(${fmt(x)}, ${cfg.decimals}) = ${fmt(y)}`;
-  };
-
-  const persist = () => { if (setConfig) setConfig({ ...cfg }); };
-
-  decInput.oninput = () => {
-    cfg = normalizeConfig({ ...cfg, decimals: decInput.value });
-    persist();
-    recompute();
-  };
-  select.onchange = () => {
-    cfg = normalizeConfig({ ...cfg, mode: select.value });
-    persist();
-    recompute();
-  };
-
-  const off = src && src.connect ? src.connect(recompute) : null;
-  recompute();
-
-  return () => {
-    if (off) off();
-    root.remove();
-  };
+  return mountTransformSurface({
+    className: "ns-round",
+    schema: numberSchema(),
+    normalize: normalizeConfig,
+    fields: [
+      { key: "decimals", label: "decimals", type: "number", min: 0, step: 1 },
+      { key: "mode", label: "mode", type: "select", options: MODES },
+    ],
+    compute: (x, cfg) => roundTo(x, cfg.decimals, cfg.mode),
+    status: (x, y, cfg) => `${cfg.mode}(${fmt(x)}, ${cfg.decimals}) = ${fmt(y)}`,
+  }, { element, inlets, setOutlet, config, setConfig });
 }
 
 export const plugin = {

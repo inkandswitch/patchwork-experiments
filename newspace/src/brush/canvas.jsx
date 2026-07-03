@@ -46,10 +46,11 @@ import {
 import {
   rad, rot, isBoxType, localToWorld, worldToLocal, pointInFrame, itemBox,
   ownsSpace, projectItemFromBox, annotateItemIntoBox, surfaceWithinBox, itemVisibleForActive,
-  itemBounds, cloneItem, linksNeedingItems, itemPresent, shouldUnlinkDoc, arrowGeometry, worldAnchor,
-  linkItemId, duplicateItemIds, buildItemsIndex, findById,
+  itemBounds, cloneItem, itemPresent, arrowGeometry, worldAnchor,
+  linkItemId, buildItemsIndex, findById,
   applyReorder, expandGroups as expandGroupsIn, groupBounds, clickSelection, itemsInRect, portPoint,
 } from "../model.js";
+import { createDocsLens } from "../docs-lens.js";
 import { count as perfCount, perFrame, rafBatch, startOverlay } from "../perf.js";
 import "../style.css";
 import {
@@ -760,10 +761,11 @@ export function Canvas(props) {
     beginGesture(e);
   }
 
-  // a just-deleted doc url; the docs→items reconcile refuses to recreate it for
-  // a moment, so deletion can't lose a race with the reconcile (timing-proof)
-  const tombstones = new Set();
-  function tombstone(url) { if (!url) return; tombstones.add(url); setTimeout(() => tombstones.delete(url), 1500); }
+  // the docs↔items join (materialize a shape per folder link, dedupe, unlink-on-delete +
+  // the just-deleted-url tombstone that keeps a delete from racing the add pass). Lifted into
+  // docs-lens.js (Ring 2 step 1); the effects below just trigger it.
+  const docsLens = createDocsLens();
+  onCleanup(() => docsLens.dispose());
 
   // find whichever surface actually holds an item id (root or any box)
   function surfaceOf(id) {
@@ -803,12 +805,9 @@ export function Canvas(props) {
       if (!item) continue;
       captured.push({ handle: surface.handle, item: JSON.parse(JSON.stringify(item)) }); // plain clone (item is a Solid store proxy)
       if (item.kind === "doc" || item.kind === "frame") {
-        // only unlink the doc when this is the LAST shape pointing at its url —
-        // copies (alt-drag) can share a url, so others may still reference it
-        if (shouldUnlinkDoc(surface.doc?.items || [], item.url, idSet)) {
-          tombstone(item.url);
-          surface.folderHandle.change((d) => { const di = d.docs.findIndex((l) => l.url === item.url); if (di >= 0) d.docs.splice(di, 1); });
-        }
+        // unlink the doc only when this is the LAST shape for its url (alt-drag copies share a
+        // url); the lens tombstones first so the add pass can't recreate it mid-delete.
+        docsLens.unlinkForDelete(surface.doc?.items || [], item.url, idSet, (fn) => surface.folderHandle.change(fn));
       }
       queueMicrotask(() => surface.handle.change((d) => { const i = d.items.findIndex((x) => x.id === id); if (i >= 0) d.items.splice(i, 1); }));
     }
@@ -2307,35 +2306,22 @@ export function Canvas(props) {
     window.addEventListener("pointerdown", close, true);
     onCleanup(() => window.removeEventListener("pointerdown", close, true));
   });
-  // every folder link gets one doc/frame item in the layout doc (root surface)
+  // every folder link gets one doc/frame item in the layout doc (root surface). The join
+  // itself is docs-lens.js; the component injects placement (only it knows the camera),
+  // read lazily so a camera move doesn't churn when nothing's missing.
   createEffect(() => {
     const layout = rootLayoutH();
     if (!layout) return;
-    const items = rootItems();
-    const missing = linksNeedingItems(folderDoc.docs || [], items, (u) => tombstones.has(u));
-    if (!missing.length) return;
-    const c = cam();
-    const r = viewportRect();
-    const bx = r ? (r.width / 2 - c.x) / c.z : 0, by = r ? (r.height / 2 - c.y) / c.z : 0;
-    layout.change((d) => {
-      let i = 0;
-      for (const l of missing) {
-        if (d.items.some((it) => it.url === l.url)) continue;
-        const id = linkItemId(l.url); // deterministic → two peers create the same id, not two
-        if (isBoxType(l.type)) d.items.push({ id, kind: "frame", url: l.url, x: bx + i * 28, y: by + i * 28, w: 360, h: 280 });
-        else d.items.push({ id, kind: "doc", url: l.url, x: bx + i * 28, y: by + i * 28, w: 360, h: 280, rotation: 0, toolId: "" });
-        i++;
-      }
+    docsLens.reconcile(folderDoc.docs || [], rootItems(), (fn) => layout.change(fn), () => {
+      const c = cam(), r = viewportRect();
+      return r ? { x: (r.width / 2 - c.x) / c.z, y: (r.height / 2 - c.y) / c.z } : { x: 0, y: 0 };
     });
   });
 
-  // de-dup the root layout: two peers reconciling the same new link both push a
-  // (now identically-id'd) item — collapse them to one. By ID, so intentional
-  // alt-drag copies (same url, unique id) survive.
+  // collapse the doubled item two peers materialize for one new link (see docs-lens dedupe).
   createEffect(() => {
     const layout = rootLayoutH(); if (!layout) return;
-    const dup = duplicateItemIds(rootItems());
-    if (dup.length) layout.change((d) => { for (let k = dup.length - 1; k >= 0; k--) d.items.splice(dup[k], 1); });
+    docsLens.dedupe(rootItems(), (fn) => layout.change(fn));
   });
 
   // ---- presence (cursors, faces, shared view) -------------------------
@@ -3123,7 +3109,7 @@ export function Canvas(props) {
     tool, themeTick, resolveColor, onItemDown, isSelected, linkFor, itemBounds,
     spaceEpoch, // bumps when a spatial box's projection moves (map pan/zoom) → parented items re-project
     serviceUrl: automergeUrlToServiceWorkerUrl, loadSpace, loadDoc, loadDatatype, registerSurface, unregisterSurface,
-    editingId, setEditingId, tombstoned: (url) => tombstones.has(url),
+    editingId, setEditingId, tombstoned: (url) => docsLens.isTombstoned(url),
     deselect: () => setSelected([]),
     toWorld, select: (ids) => setSelected(ids),
     removeItem: (id) => removeItems(null, [id]),

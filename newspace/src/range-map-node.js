@@ -16,8 +16,8 @@
 // A ZERO-WIDTH input range (inMin === inMax) has no slope to divide by; we treat
 // it as "collapse to the start of the out range" (t = 0) rather than dividing by
 // zero and emitting NaN/Infinity.
-import { Source, apply as applyOp } from "./opstreams.js";
-import { snapshot, isSnapshot, numberSchema } from "./ops.js";
+import { numberSchema } from "./ops.js";
+import { mountTransformSurface } from "./transform-surface.js";
 
 export const DEFAULTS = { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: false };
 
@@ -79,87 +79,15 @@ export const FIELDS = [
 ];
 
 export function mountRangeMap({ element, inlets = {}, setOutlet, config = {}, setConfig }) {
-  const src = inlets.in;
-  const out = new Source(undefined, { schema: numberSchema() });
-  if (setOutlet) setOutlet("out", out);
-
-  let cfg = normalizeConfig(config);
-
-  const root = document.createElement("div");
-  root.className = "ns-range-map ns-source";
-
-  const grid = document.createElement("div");
-  grid.className = "ns-range-map-grid";
-
-  const inputs = {};
-  for (const { key, label } of FIELDS) {
-    const wrap = document.createElement("label");
-    wrap.className = "ns-range-map-field";
-    const span = document.createElement("span");
-    span.className = "ns-range-map-label";
-    span.textContent = label;
-    const input = document.createElement("input");
-    input.type = "number";
-    input.className = "ns-text ns-range-map-input";
-    input.value = String(cfg[key]);
-    inputs[key] = input;
-    wrap.append(span, input);
-    grid.append(wrap);
-  }
-
-  const clampWrap = document.createElement("label");
-  clampWrap.className = "ns-range-map-clamp";
-  const clampBox = document.createElement("input");
-  clampBox.type = "checkbox";
-  clampBox.checked = cfg.clamp;
-  const clampLabel = document.createElement("span");
-  clampLabel.textContent = "clamp";
-  clampWrap.append(clampBox, clampLabel);
-
-  const status = document.createElement("div");
-  status.className = "ns-source-status";
-
-  root.append(grid, clampWrap, status);
-  element.append(root);
-
-  const recompute = () => {
-    const x = src ? src.value : undefined;
-    const y = remap(x, cfg);
-    out.push(y);
-    status.textContent = `${num(x, 0)} → ${y}`;
-  };
-
-  const persist = () => { if (setConfig) setConfig({ ...cfg }); };
-
-  for (const { key } of FIELDS) {
-    inputs[key].oninput = () => {
-      cfg = { ...cfg, [key]: num(inputs[key].value, cfg[key]) };
-      persist();
-      recompute();
-    };
-  }
-  clampBox.oninput = () => {
-    cfg = { ...cfg, clamp: !!clampBox.checked };
-    persist();
-    recompute();
-  };
-
-  // bidirectional: if downstream writes `out` and the source is editable, invert
-  // the mapping to figure out what `in` would produce that `out`, and write it
-  // back. (A zero-width out range isn't invertible → leave the source alone.)
-  if (src && typeof src.apply === "function") {
-    out.apply = (op) => {
-      const cur = out.value;
-      const next = isSnapshot(op) ? op.value : applyOp(cur, op);
-      const back = invert(next, cfg);
-      if (back !== undefined) src.apply(snapshot(back));
-    };
-  }
-
-  const off = src && src.connect ? src.connect(recompute) : null;
-  recompute();
-
-  return () => { if (off) off(); root.remove(); };
+  return mountTransformSurface({
+    className: "ns-range-map",
+    schema: numberSchema(),
+    normalize: normalizeConfig,
+    fields: [...FIELDS, { key: "clamp", label: "clamp", type: "checkbox" }],
+    compute: remap,
+    invert,
+    status: (x, y) => `${num(x, 0)} → ${y}`,
+  }, { element, inlets, setOutlet, config, setConfig });
 }
 
 // Inverse mapping (used for write-back): given a desired `y` in the out range,

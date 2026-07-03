@@ -3,8 +3,8 @@
 // default 1). If min > max the bounds are swapped before clamping. Non-finite
 // input yields NaN. The pure transform lives in `clampTo` so it can be
 // unit-tested with no DOM.
-import { Source } from "./opstreams.js";
 import { numberSchema } from "./ops.js";
+import { mountTransformSurface, fmtValue } from "./transform-surface.js";
 
 export const DEFAULTS = { min: 0, max: 1 };
 
@@ -33,11 +33,7 @@ export function normalizeConfig(config = {}) {
 }
 
 // small display helper (kept pure & exported for testability).
-export function fmt(v) {
-  if (v === undefined) return "∅";
-  if (typeof v === "number" && Number.isNaN(v)) return "NaN";
-  return String(v);
-}
+export const fmt = fmtValue;
 
 // The two editable number fields, in display order.
 export const FIELDS = [
@@ -48,61 +44,14 @@ export const FIELDS = [
 // the mount: two <input type=number> fields + a readout, recomputing `out` from
 // `in` and the bounds on input or field change.
 export function mountClamp({ element, inlets = {}, setOutlet, config = {}, setConfig }) {
-  const src = inlets.in;
-  const out = new Source(undefined, { schema: numberSchema() });
-  if (setOutlet) setOutlet("out", out);
-
-  let cfg = normalizeConfig(config);
-
-  const root = document.createElement("div");
-  root.className = "ns-clamp ns-source";
-
-  const grid = document.createElement("div");
-  grid.className = "ns-clamp-grid";
-
-  const inputs = {};
-  for (const { key, label } of FIELDS) {
-    const wrap = document.createElement("label");
-    wrap.className = "ns-clamp-field";
-    const span = document.createElement("span");
-    span.className = "ns-clamp-label";
-    span.textContent = label;
-    const input = document.createElement("input");
-    input.type = "number";
-    input.className = "ns-text ns-clamp-input";
-    input.value = String(cfg[key]);
-    inputs[key] = input;
-    wrap.append(span, input);
-    grid.append(wrap);
-  }
-
-  const status = document.createElement("div");
-  status.className = "ns-source-status";
-
-  root.append(grid, status);
-  element.append(root);
-
-  const recompute = () => {
-    const x = src ? src.value : undefined;
-    const y = clampTo(num(x, NaN), cfg.min, cfg.max);
-    out.push(y);
-    status.textContent = `clamp(${fmt(x)}, ${cfg.min}, ${cfg.max}) = ${fmt(y)}`;
-  };
-
-  const persist = () => { if (setConfig) setConfig({ ...cfg }); };
-
-  for (const { key } of FIELDS) {
-    inputs[key].oninput = () => {
-      cfg = { ...cfg, [key]: num(inputs[key].value, cfg[key]) };
-      persist();
-      recompute();
-    };
-  }
-
-  const off = src && src.connect ? src.connect(recompute) : null;
-  recompute();
-
-  return () => { if (off) off(); root.remove(); };
+  return mountTransformSurface({
+    className: "ns-clamp",
+    schema: numberSchema(),
+    normalize: normalizeConfig,
+    fields: FIELDS,
+    compute: (x, cfg) => clampTo(num(x, NaN), cfg.min, cfg.max),
+    status: (x, y, cfg) => `clamp(${fmt(x)}, ${cfg.min}, ${cfg.max}) = ${fmt(y)}`,
+  }, { element, inlets, setOutlet, config, setConfig });
 }
 
 export const plugin = {

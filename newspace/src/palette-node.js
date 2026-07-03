@@ -156,7 +156,11 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
   const measure = () => {
     if (!setSize || !root.isConnected) return;
     const w = root.offsetWidth, h = root.offsetHeight;
-    if (w > 24 && h > 12) setSize(Math.ceil(w), Math.ceil(h)); // headless/pre-layout reads (0) never write
+    // +1 slack: offsetWidth is the INTEGER-rounded border-box, so the true content can
+    // be up to ~0.5px wider — sizing the clipping box to the rounded value shaved the
+    // right/bottom border off until a later re-measure. The extra pixel is a transparent
+    // margin on a fit-content bare widget (invisible), and never clips.
+    if (w > 24 && h > 12) setSize(Math.ceil(w) + 1, Math.ceil(h) + 1); // headless/pre-layout reads (0) never write
   };
   const queueSize = () => persistSize.schedule(measure);
   const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(queueSize) : null;
@@ -166,17 +170,22 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
   // change just toggles classes) ─────────────────────────────────────────────
   const btns = new Map(); // tool id -> its button
   const menuBtns = []; // [{ btn, ids }] — an overflow button lights when it holds the tool
+  // per-menu MEMORY (viewer-local, session-only): the last tool armed from each menu,
+  // rendered as a shortcut button just LEFT of the menu button. Keyed by the menu's
+  // tool-id set so it survives palette reorders (menus carry no stable id).
+  const lastUsed = new Map();
+  const menuKeyOf = (entry) => entryToolIds([entry]).join("|") || (entry.label || "");
   const updateActive = () => {
     const cur = toolStream()?.value;
     for (const [id, b] of btns) b.classList.toggle("active", id === cur);
     for (const m of menuBtns) m.btn.classList.toggle("active", m.open || m.ids.includes(cur));
   };
-  const toolBtn = (id) => {
+  const toolBtn = (id, onArm) => {
     const b = el("button", "ns-tool");
     b.dataset.tool = id;
     b.title = (TOOL_META[id] || [])[0] || id;
     b.append(iconSvg(toolPath(id)));
-    b.addEventListener("click", () => { armTool(id); if (openMenu >= 0) setOpenMenu(-1); });
+    b.addEventListener("click", () => { armTool(id); if (onArm) onArm(); if (openMenu >= 0) setOpenMenu(-1); });
     btns.set(id, b);
     return b;
   };
@@ -194,6 +203,13 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
     entries.forEach((entry, i) => {
       if (entry.kind === "divider") { row.append(el("span", "ns-sep")); return; }
       if (entry.kind === "menu") {
+        // a shortcut to the LAST tool armed from this menu, sitting just left of it —
+        // only if it's still one of the menu's items (the menu may have been edited)
+        const key = menuKeyOf(entry);
+        const lu = lastUsed.get(key);
+        if (lu && (entry.items || []).some((it) => it.kind === "tool" && it.id === lu)) {
+          row.append(toolBtn(lu, () => lastUsed.set(key, lu)));
+        }
         // the old Toolbar's overflow: a chevron (or the menu's own icon) opening a
         // grid popover. The chevron POINTS where the popover will open — sideways
         // for a left/right-docked palette, else up/down per placePopover's rule.
@@ -214,7 +230,7 @@ export function mountPalette({ element, inlets = {}, config, setConfig, setSize,
           for (const it of entry.items || []) {
             if (it.kind === "divider") { menu.append(el("span", "ns-menu-gap")); continue; }
             if (it.kind !== "tool") continue;
-            menu.append(toolBtn(it.id));
+            menu.append(toolBtn(it.id, () => lastUsed.set(key, it.id))); // remember → shows left of the menu
           }
           closeMenu = openPopover({ anchor: b, menu, prefer: menuSide(), onPlace: (p) => setGlyph(p.side), onClose: () => { closeMenu = null; setOpenMenu(-1); } });
         }
