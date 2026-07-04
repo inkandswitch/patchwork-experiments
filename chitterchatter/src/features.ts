@@ -1,5 +1,4 @@
 import type {PluginSelector} from "./lib/registry"
-import {resolvePlugins} from "./lib/registry"
 
 // Features are NOT a hardcoded struct on the component. Each big feature is a
 // `chat:feature` plugin declaration (host-registrable, like the other four types);
@@ -37,11 +36,3 @@ export const featurePlugins: FeaturePlugin[] = [
 	{type: "chat:feature", id: "call", name: "Voice/video call", tier: "full"},
 	{type: "chat:feature", id: "notifications", name: "Notifications", tier: "full"},
 ]
-
-// Resolve a tool's selector into the set of active feature ids (registry merged
-// with the built-in declarations, then filtered by the selector).
-export function resolveFeatureSet(selector: FeatureSelector): Set<string> {
-	return new Set(
-		resolvePlugins("chat:feature", featurePlugins, selector).map((p) => p.id)
-	)
-}
