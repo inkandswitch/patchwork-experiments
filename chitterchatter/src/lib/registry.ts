@@ -17,12 +17,16 @@ export function listPlugins(type: string): any[] {
 }
 
 // Merge built-in plugins with host-registered ones of the same type, deduped by
-// id (a host entry with a matching id overrides the built-in). Registry order is
-// preserved after the built-ins.
+// id. Built-ins WIN on id conflict: the registry stores serializable plugin
+// *descriptions* (behaviour deferred behind `load()`, exposed under `.module`
+// only after loading), whereas the tool consumes behaviour inline off its own
+// built-ins (`.transform` / `.run` / `.getEmojis`). Letting a same-id description
+// override the built-in would drop that inline behaviour. Registry-only ids
+// (third-party contributions) are still surfaced, listed first.
 export function mergePlugins(type: string, builtins: any[]): any[] {
 	const byId = new Map<string, any>()
-	for (const p of builtins) if (p && p.id) byId.set(p.id, p)
 	for (const p of listPlugins(type)) if (p && p.id) byId.set(p.id, p)
+	for (const p of builtins) if (p && p.id) byId.set(p.id, p)
 	return [...byId.values()]
 }
 

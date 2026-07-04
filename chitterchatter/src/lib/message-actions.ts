@@ -42,3 +42,12 @@ export const messageActionPlugins: MessageActionPlugin[] = [
 		run: (ctx) => ctx.onDelete(ctx.rawIdx),
 	},
 ]
+
+// Serializable registry descriptions: metadata (incl. the SVG `icon` string) +
+// an async `load()` carrying the function-valued fields (`show`, `run`). Plugin
+// entries are cloned worker → main with `load` excluded, so function fields must
+// live behind load(). The tool renders from the inline `messageActionPlugins`.
+export const messageActionDescriptions = messageActionPlugins.map((p) => {
+	const {show, run, ...meta} = p
+	return {...meta, async load() { return {show, run} }}
+})

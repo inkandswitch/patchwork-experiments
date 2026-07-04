@@ -124,6 +124,16 @@ export const slashPlugins: SlashPlugin[] = [
 	},
 ]
 
+// Serializable registry descriptions: metadata only + an async `load()` that
+// yields the "fancy code" (the `transform` fn). The host clones plugin entries
+// (worker → main) but excludes `load`, so any function-valued field MUST live
+// behind load() — a top-level `transform` fn throws DataCloneError. The tool
+// itself uses the inline `slashPlugins` above (main thread, never cloned).
+export const slashPluginDescriptions = slashPlugins.map((p) => {
+	const {transform, ...meta} = p
+	return {...meta, async load() { return {transform} }}
+})
+
 /** Match input text against the active slash plugins. Returns the matched plugin
  * plus the argument text (everything after the command word), or null. */
 export function matchSlashCommand(

@@ -28,6 +28,15 @@ export const emojiPackPlugins: EmojiPackPlugin[] = [
 	},
 ]
 
+// Serializable registry descriptions: metadata + an async `load()` carrying the
+// `getEmojis` fn. Plugin entries are cloned worker → main with `load` excluded,
+// so the function field must live behind load(). The tool reads emoji from the
+// inline `emojiPackPlugins` on the main thread.
+export const emojiPackDescriptions = emojiPackPlugins.map((p) => {
+	const {getEmojis, ...meta} = p
+	return {...meta, async load() { return {getEmojis} }}
+})
+
 /** Flatten the active packs' emoji into one de-duplicated list. */
 export function collectEmojis(packs: EmojiPackPlugin[]): string[] {
 	const seen = new Set<string>()

@@ -1,8 +1,8 @@
 import {featurePlugins} from "./features"
 import {parserExtensionPlugins} from "./lib/parser-extensions"
-import {slashPlugins} from "./lib/slash-plugins"
-import {messageActionPlugins} from "./lib/message-actions"
-import {emojiPackPlugins} from "./lib/emoji-packs"
+import {slashPluginDescriptions} from "./lib/slash-plugins"
+import {messageActionDescriptions} from "./lib/message-actions"
+import {emojiPackDescriptions} from "./lib/emoji-packs"
 
 export const plugins = [
 	{
@@ -70,9 +70,15 @@ export const plugins = [
 	// other modules can contribute inline syntax, slash commands, hover actions and
 	// emoji packs. The tool also keeps these as built-in fallbacks (see lib/*),
 	// so it works even if the registry is empty.
+	//
+	// These MUST be serializable: the host reads `plugins` in a worker and clones
+	// each entry to the main thread (excluding `load`). `feature`/`parser-extension`
+	// entries are pure data (RegExp is cloneable) and spread raw; `slash`,
+	// `messageaction` and `emojipack` carry function fields, so they're registered
+	// as descriptions with the fancy code behind `async load()`.
 	...featurePlugins,
 	...parserExtensionPlugins,
-	...slashPlugins,
-	...messageActionPlugins,
-	...emojiPackPlugins,
+	...slashPluginDescriptions,
+	...messageActionDescriptions,
+	...emojiPackDescriptions,
 ]
