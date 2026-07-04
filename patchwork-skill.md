@@ -124,6 +124,46 @@ export const plugins = [
 - A package can register **many** plugins (a datatype + its tool, or several datatypes). See
   `file/src/index.ts` (file + new-file) and `bento/main.js` (datatype + tool).
 
+### ⚠ The entry module runs in a worker — every plugin field must be serializable
+
+Patchwork loads the module that exports `plugins` **inside a Web Worker**, reads the array,
+and **`structuredClone`s each plugin entry to the main thread**. Two hard consequences:
+
+1. **No functions as top-level plugin fields (except `load`).** The host clones every field of
+   a plugin *except* `load` (which it strips and reconstructs on the main side). Any other
+   function-valued field throws `DataCloneError: (…) => … could not be cloned` and the whole
+   module fails to import. So a plugin entry may only carry **JSON-ish metadata** at the top
+   level (`type`, `id`, `name`, `icon`, `tier`, strings, numbers, arrays, plain objects, and
+   `RegExp`/`Date`/`Map`/`Set` — all clone-safe). **All "fancy code" — every function, and any
+   behaviour object — must live behind `async load()`**, which returns it (the registry exposes
+   the loaded result under the plugin's `.module`). This is exactly why the `patchwork:tool`
+   render function and the datatype object go behind `load()`, and it applies equally to any
+   **custom-typed** plugins you register (e.g. `chat:slash`, `chat:messageaction`,
+   `sketchy:*`). If you have an array of behaviour-bearing descriptors, register them as
+   metadata-only descriptions and defer the code:
+
+   ```js
+   // WRONG — `transform` is a top-level function → DataCloneError in the worker
+   { type: "chat:slash", id: "me", cmd: "/me", transform: (arg) => ({ text: arg }) }
+
+   // RIGHT — metadata only at the top level; the fn is returned by load()
+   { type: "chat:slash", id: "me", cmd: "/me",
+     async load() { return { transform: (arg) => ({ text: arg }) } } }
+   ```
+
+   (A tool can still keep the inline-function version in a *separate* module it imports on the
+   main thread for its own use — that copy is never cloned. Only what goes into the exported
+   `plugins` array crosses the worker boundary.)
+
+2. **No bare external imports in the entry module's static graph.** The worker has **no
+   importmap**, so a top-level `import … from "@inkandswitch/patchwork-plugins"` (or any other
+   importmap-provided / bootloader-external specifier) fails with *"Failed to resolve module
+   specifier"* — even transitively, and even if the imported binding is unused (marked-external
+   modules can't be tree-shaken, so bundlers keep a bare side-effect `import`). Keep such
+   imports **inside `load()`** (dynamic `import()`), which runs on the main thread where the
+   importmap exists. If a data-only helper module (e.g. your plugin metadata) accidentally pulls
+   in an external via one stray import, split that import out so the entry graph stays clean.
+
 ## 3. The datatype contract
 
 A datatype object describes a document type and how to title it:
@@ -665,6 +705,11 @@ tools.)
 - **`repo.find`/`repo.create2` return Promises** that resolve to ready handles — no
   `whenReady()`.
 - **Pin id === tool id.** Mismatched ids mean the pin won't resolve to the tool.
+- **The `plugins` entry module runs in a worker and each entry is `structuredClone`d.** So a
+  plugin may carry only serializable metadata at the top level — **all functions/behaviour go
+  behind `async load()`** (the host strips `load` before cloning; any other top-level function
+  throws `DataCloneError`). And **no bare external imports in that module's static graph** (the
+  worker has no importmap) — keep them inside `load()`'s dynamic `import()`. See §2.
 - **Always return a cleanup function** from the render function and actually tear down
   (listeners, roots, intervals, rAF, AudioContext, workers).
 - **New tools: vanilla JS, no TypeScript.** No `.ts`/`.tsx`, no type annotations, no
