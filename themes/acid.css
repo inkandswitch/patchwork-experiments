@@ -1,0 +1,92 @@
+/* Acid — eye-searing lime and acid green on a faint chartreuse-white glow */
+[theme="acid"] {
+	color-scheme: light;
+	--studio-fill: #fbffee;
+	--studio-line: #142000;
+	--studio-primary: #56e000; /* acid lime */
+	--studio-secondary: #00e0c6; /* acid teal */
+	--studio-danger: #ff1f4b;
+	--studio-warning: #eaff00;
+	--studio-added: #56e000;
+	--studio-deleted: #ff1f4b;
+	--studio-modified: #d400ff;
+	--studio-link: #00b6a2;
+	--studio-selection-fill: #d8ff5c;
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #9db06f;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8ca060;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #d400ff;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: #00b6a2;
+	--syntax-punctuation: #7a8a55;
+
+	--syntax-bool: #d400ff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #d400ff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #2fa600;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #d400ff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #d400ff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00b6a2;
+
+	--syntax-function--variable-name: #00b6a2;
+	--syntax-function--property-name: #00b6a2;
+
+	--syntax-definition--variable-name: #2fa600;
+
+	--syntax-string: #7a9c00; /* olive-lime ink */
+	--syntax-fill-string: #d8ff5c22;
+
+	--syntax-number: #d400ff;
+	--syntax-integer: #d400ff;
+	--syntax-float: #d400ff;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #7a9c00;
+	--syntax-special--string: #7a9c00;
+
+	--syntax-tag-name: #2fa600;
+	--syntax-angle-bracket: #7a8a55;
+
+	--syntax-attribute-name: #b400d6;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #d400ff;
+
+	--syntax-strong: #142000;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #2fa600;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #2fa600;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9db06f;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #e6f5c8;
+}

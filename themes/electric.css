@@ -1,0 +1,92 @@
+/* Electric — electric blue and neon lemon crackling on cold white */
+[theme="electric"] {
+	color-scheme: light;
+	--studio-fill: #f7fbff;
+	--studio-line: #001028;
+	--studio-primary: #0066ff; /* electric blue */
+	--studio-secondary: #00e0ff; /* charged cyan */
+	--studio-danger: #ff1744;
+	--studio-warning: #f2ff00; /* neon lemon */
+	--studio-added: #00e676;
+	--studio-deleted: #ff1744;
+	--studio-modified: #d500f9;
+	--studio-link: #0066ff;
+	--studio-selection-fill: #c8e4ff;
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #8aa0b8;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #7a90a8;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #d500f9;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: #00b8d4;
+	--syntax-punctuation: #6a7f96;
+
+	--syntax-bool: #d500f9;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #d500f9;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #d500f9;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #d500f9;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00b8d4;
+
+	--syntax-function--variable-name: #00b8d4;
+	--syntax-function--property-name: #00b8d4;
+
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #009e5c;
+	--syntax-fill-string: #00e0ff12;
+
+	--syntax-number: #ff8f00;
+	--syntax-integer: #ff8f00;
+	--syntax-float: #ff8f00;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #009e5c;
+	--syntax-special--string: #009e5c;
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-angle-bracket: #6a7f96;
+
+	--syntax-attribute-name: #ff8f00;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #d500f9;
+
+	--syntax-strong: #001028;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: var(--studio-primary);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #8aa0b8;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #e0ecf8;
+}

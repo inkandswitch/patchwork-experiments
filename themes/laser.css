@@ -1,0 +1,92 @@
+/* Laser — clean white cut by magenta and cyan laser beams */
+[theme="laser"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #0a0a12;
+	--studio-primary: #ff00c8; /* magenta laser */
+	--studio-secondary: #00e5ff; /* cyan laser */
+	--studio-danger: #ff0040;
+	--studio-warning: #ffb300;
+	--studio-added: #00e676;
+	--studio-deleted: #ff0040;
+	--studio-modified: #7c00ff;
+	--studio-link: #00b8d4;
+	--studio-selection-fill: #ffcbf1;
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #a0a0b0;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #9090a0;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #7c00ff;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: #00b8d4;
+	--syntax-punctuation: #7a7a8a;
+
+	--syntax-bool: #7c00ff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #7c00ff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #7c00ff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #7c00ff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00b8d4;
+
+	--syntax-function--variable-name: #009fc4;
+	--syntax-function--property-name: #009fc4;
+
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #00a86b;
+	--syntax-fill-string: #00e5ff12;
+
+	--syntax-number: #7c00ff;
+	--syntax-integer: #7c00ff;
+	--syntax-float: #7c00ff;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #00a86b;
+	--syntax-special--string: #00a86b;
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-angle-bracket: #7a7a8a;
+
+	--syntax-attribute-name: #d100a5;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #7c00ff;
+
+	--syntax-strong: #0a0a12;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: var(--studio-primary);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #a0a0b0;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #eeeef2;
+}

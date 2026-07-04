@@ -1,0 +1,93 @@
+/* Highlighter — bare white paper streaked with fluorescent marker: hot pink, chartreuse, cyan, orange */
+[theme="highlighter"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #101010;
+	--studio-primary: #ff007a; /* hot pink marker */
+	--studio-secondary: #00c2ff; /* cyan marker */
+	--studio-danger: #ff2200;
+	--studio-warning: #ffd400;
+	--studio-added: #66e000;
+	--studio-deleted: #ff2200;
+	--studio-modified: #b400ff;
+	--studio-link: #00c2ff;
+	--studio-selection-fill: #d9ff00; /* chartreuse highlighter swipe */
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-selection-fill: #d9ff0066;
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #9a9a9a;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8a8a8a;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #b400ff;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: #00c2ff;
+	--syntax-punctuation: #707070;
+
+	--syntax-bool: #ff6a00;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ff6a00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #b400ff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #b400ff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00c2ff;
+
+	--syntax-function--variable-name: #00a2e0;
+	--syntax-function--property-name: #00a2e0;
+
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #3fb800; /* chartreuse ink */
+	--syntax-fill-string: #d9ff0022;
+
+	--syntax-number: #ff6a00;
+	--syntax-integer: #ff6a00;
+	--syntax-float: #ff6a00;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #3fb800;
+	--syntax-special--string: #3fb800;
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-angle-bracket: #707070;
+
+	--syntax-attribute-name: #ff6a00;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #b400ff;
+
+	--syntax-strong: #101010;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: var(--studio-primary);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9a9a9a;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #eaeaea;
+}
