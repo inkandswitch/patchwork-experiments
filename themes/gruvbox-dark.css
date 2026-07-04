@@ -13,6 +13,11 @@
 	--studio-link: #83a598;
 	--studio-selection-fill: #3c3836;
 
+	/* Warm invert: accent ink is gruvbox bg0 (#282828), keeping accent chips in the
+	   retro-warm register instead of the auto pure black. */
+	--studio-primary-line: #282828;
+	--studio-danger-line: #282828;
+
 	/* line numbers in gruvbox grey */
 	--text-editor-gutter-line: #928374;
 

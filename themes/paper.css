@@ -13,6 +13,14 @@
 	--studio-link: #3d5a66;
 	--studio-selection-fill: #e6e0cf;
 
+	/* Accent invert: ink on an accent surface (comment button, badges) is the warm
+	   paper itself rather than the auto neutral white — the restrained, inked-on-
+	   paper feel this theme is going for. */
+	--studio-primary-line: var(--studio-fill);
+	--studio-secondary-line: var(--studio-fill);
+	--studio-danger-line: var(--studio-fill);
+	--studio-warning-line: var(--studio-fill);
+
 	/* a clean system serif keeps the print-reading feel without web fonts */
 	--studio-family-sans: Georgia, "Iowan Old Style", "Times New Roman", serif;
 

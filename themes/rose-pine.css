@@ -13,6 +13,11 @@
 	--studio-link: #c4a7e7;
 	--studio-selection-fill: #2a283e;
 
+	/* Muted invert: accent ink is rosé pine's deep base (Surface), so accent
+	   surfaces stay soft and on-palette rather than snapping to stark black. */
+	--studio-primary-line: #26233a;
+	--studio-danger-line: #26233a;
+
 	/* cursor in rose; line numbers in muted */
 	--text-editor-cursor-fill: #ebbcba;
 	--text-editor-gutter-line: #6e6a86;

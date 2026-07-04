@@ -14,6 +14,12 @@
 	--studio-link: #009966;
 	--studio-selection-fill: #cdf5e3;
 
+	/* App chrome (sideboard, toolbars) is painted in the official Feeling of
+	   Computing green — the site's signature --green: hsl(160 100% 40%), same as
+	   --studio-primary. Chrome ink stays the deep green-black --studio-line
+	   (#021810 on #00cc88 ≈ 8.8:1). */
+	--studio-chrome-fill: var(--studio-primary);
+
 	--text-editor-cursor-fill: var(--studio-primary);
 	--text-editor-gutter-line: var(--text-editor-line-offset-40);
 

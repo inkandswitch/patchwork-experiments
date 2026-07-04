@@ -13,6 +13,11 @@
 	--studio-link: #36f9f6;
 	--studio-selection-fill: #342a5e;
 
+	/* Neon signage: ink on an accent surface is the deep synth background, so the
+	   coral/red accents read as lit signage instead of the auto flat black. */
+	--studio-primary-line: #1a1527;
+	--studio-danger-line: #1a1527;
+
 	--text-editor-cursor-fill: var(--studio-primary);
 	--text-editor-active-line-fill: #ffffff06;
 	--text-editor-active-line-fill--gutter: #241b2f;
