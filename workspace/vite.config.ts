@@ -16,7 +16,7 @@ function findDirectoryUrl(snapshot: typeof workspaceSnapshot, dirPath: string): 
 
 export default defineConfig({
   base: './',
-  plugins: [topLevelAwait(), wasm(), solid(), tailwindcss(), cssInjectedByJsPlugin()],
+  plugins: [topLevelAwait(), wasm(), solid(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   define: {
     __SPEC_AGENT_FOLDER_URL__: JSON.stringify(
@@ -28,6 +28,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     rollupOptions: {
       external,
       input: './src/index.ts',

@@ -8,7 +8,7 @@ import skillsSnapshot from '../formal-sketch-skills/.pushwork/snapshot.json';
 
 export default defineConfig({
   base: './',
-  plugins: [solidPlugin(), cssInjectedByJsPlugin()],
+  plugins: [solidPlugin(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
     alias: {
@@ -24,6 +24,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     rollupOptions: {
       external,
       input: './src/index.ts',

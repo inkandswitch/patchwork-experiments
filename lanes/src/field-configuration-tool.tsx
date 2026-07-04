@@ -2,6 +2,7 @@ import { RepoContext, useDocHandle, useDocument, useRepo } from "@automerge/auto
 import type { AnyDocumentId, AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
+import "./index.css";
 import { FieldConfigurationEditor } from "./components/FieldConfigurationTool";
 
 export const FieldConfigurationToolRender: ToolRender = (handle, element) => {

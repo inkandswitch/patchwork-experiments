@@ -7,9 +7,11 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
-  plugins: [topLevelAwait(), wasm(), react(), cssInjectedByJsPlugin()],
+  plugins: [topLevelAwait(), wasm(), react(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   build: {
+
+    cssCodeSplit: true,
     rollupOptions: {
       external,
       input: "./src/index.ts",

@@ -3,6 +3,7 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { ComponentType } from "react";
 import { createRoot } from "react-dom/client";
+import "./index.css";
 
 export type ToolComponentProps = {
   docUrl: AutomergeUrl;

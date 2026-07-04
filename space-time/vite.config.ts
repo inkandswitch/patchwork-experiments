@@ -11,7 +11,7 @@ const external = patchworkExternals.filter(
 
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss(), cssInjectedByJsPlugin()],
+  plugins: [react(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
     alias: {
@@ -23,6 +23,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     minify: false,
     rollupOptions: {
       external,

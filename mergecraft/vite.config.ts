@@ -13,10 +13,12 @@ export default defineConfig({
     wasm(),
     react(),
     tailwindcss(),
-    cssInjectedByJsPlugin(),
+    cssInjectedByJsPlugin({ relativeCSSInjection: true }),
   ],
 
   build: {
+
+    cssCodeSplit: true,
     rollupOptions: {
       external,
       input: "./src/index.ts",

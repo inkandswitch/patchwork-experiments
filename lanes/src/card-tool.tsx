@@ -1,6 +1,7 @@
 import { RepoContext } from "@automerge/automerge-repo-react-hooks";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
+import "./index.css";
 import { CardEditor, CompactCardEditor } from "./components/CardTool";
 
 export const CardTool: ToolRender = (handle, element) => {

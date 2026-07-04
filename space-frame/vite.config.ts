@@ -5,9 +5,11 @@ import externals from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
-  plugins: [tailwindcss(), cssInjectedByJsPlugin()],
+  plugins: [tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   build: {
+
+    cssCodeSplit: true,
     emptyOutDir: true,
     minify: false,
     sourcemap: true,

@@ -5,6 +5,7 @@ import {
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
+import "./index.css";
 import { setAutomergeString } from "./automerge-fields";
 import { GameDetail } from "./components";
 import type { BoardGameDoc } from "./datatype";

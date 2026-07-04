@@ -1,5 +1,4 @@
 import type { Datatype, Plugin, Tool } from "@inkandswitch/patchwork-plugins";
-import "./index.css";
 
 export const plugins: Plugin<any>[] = [
   {

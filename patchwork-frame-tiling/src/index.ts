@@ -1,4 +1,4 @@
-import { Plugin } from "@inkandswitch/patchwork-plugins";
+import type { Plugin } from "@inkandswitch/patchwork-plugins";
 
 export const plugins: Plugin<any>[] = [
   {

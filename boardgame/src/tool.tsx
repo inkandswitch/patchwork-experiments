@@ -8,6 +8,7 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { createRoot } from "react-dom/client";
 import { useMemo, useRef, useState } from "react";
+import "./index.css";
 import {
   enrichGamesFromBgg,
   gamesNeedingEnrichment,
