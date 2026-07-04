@@ -1,9 +1,13 @@
-import {EMOJI_DATA} from "./emoji-data"
+// NOTE: import only the plain catalog here, never emoji-data.ts — this module is
+// pulled into index.ts's (worker) static graph, and emoji-data.ts imports solid-js
+// and fires a network fetch at load. The catalog is filled by emoji-data at runtime.
+import {emojiCatalog} from "./emoji-catalog"
 
 // Built-in `chat:emojipack` plugins — named sets of emoji for the reaction picker.
-// The default "unicode" pack wraps the bundled emoji dataset (lazy-loaded via
-// EMOJI_DATA). A host module can register more packs; a tool aggregates the active
-// ones. Custom per-user emoticons are runtime (chat profile), not a pack.
+// The default "unicode" pack wraps the bundled emoji dataset (filled at runtime by
+// emoji-data.ts into the plain `emojiCatalog`). A host module can register more
+// packs; a tool aggregates the active ones. Custom per-user emoticons are runtime
+// (chat profile), not a pack.
 
 export interface EmojiPackPlugin {
 	type: "chat:emojipack"
@@ -20,7 +24,7 @@ export const emojiPackPlugins: EmojiPackPlugin[] = [
 		id: "unicode",
 		name: "Emoji",
 		tier: "core",
-		getEmojis: () => EMOJI_DATA().map((e) => e.emoji),
+		getEmojis: () => emojiCatalog.map((e) => e.emoji),
 	},
 ]
 

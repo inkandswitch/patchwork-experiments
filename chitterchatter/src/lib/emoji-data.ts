@@ -1,10 +1,8 @@
 import {createSignal} from "solid-js"
+import {setEmojiCatalog} from "./emoji-catalog"
+import type {EmojiEntry} from "./emoji-catalog"
 
-export interface EmojiEntry {
-	emoji: string
-	name: string
-	group: string
-}
+export type {EmojiEntry}
 
 const [emojiData, setEmojiData] = createSignal<EmojiEntry[]>([])
 const [emojiLoaded, setEmojiLoaded] = createSignal(false)
@@ -15,11 +13,15 @@ export { emojiData as EMOJI_DATA, emojiLoaded as EMOJI_LOADED }
 import("https://esm.sh/unicode-emoji-json@0.6.0")
 	.then((mod: any) => {
 		const data = mod.default
-		setEmojiData(Object.entries(data).map(([emoji, info]: [string, any]) => ({
+		const entries: EmojiEntry[] = Object.entries(data).map(([emoji, info]: [string, any]) => ({
 			emoji,
 			name: info.name || "",
 			group: info.group || "",
-		})))
+		}))
+		// Populate the plain catalog BEFORE flipping the loaded signal, so anything
+		// re-computing off EMOJI_LOADED() sees a filled emojiCatalog.
+		setEmojiCatalog(entries)
+		setEmojiData(entries)
 		setEmojiLoaded(true)
 	})
 	.catch(e => console.warn("[Chat] emoji load failed, using fallback:", e))
