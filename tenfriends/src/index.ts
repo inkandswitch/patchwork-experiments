@@ -1,5 +1,4 @@
 import {TenfriendDatatype} from "./datatype"
-import {TenfriendTool} from "./tool"
 
 export const plugins = [
 	{
@@ -18,6 +17,7 @@ export const plugins = [
 		icon: "Users",
 		supportedDatatypes: ["tenfriend"],
 		async load() {
+			const {TenfriendTool} = await import("./tool")
 			return TenfriendTool
 		},
 	},

@@ -1,5 +1,8 @@
-import { useDocument, AutomergeUrl } from "@automerge/react/slim";
+import { useDocument, AutomergeUrl, RepoContext } from "@automerge/react/slim";
+import { Repo } from "@automerge/automerge-repo";
+import ReactDOM from "react-dom/client";
 import { useState } from "react";
+import "./style.css";
 import { useSubscribe } from "@inkandswitch/patchwork-providers-react";
 import { SequencerDoc, Toggle } from "./datatype";
 import { Player } from "./components/Player";
@@ -366,3 +369,21 @@ export const Sequencer = ({ docUrl, element }: SequencerProps) => {
     </div>
   );
 };
+
+// Kept here (rather than main.tsx) so the entry point never statically
+// imports react-dom/@automerge/react — those shouldn't load until a
+// sequencer document is actually opened.
+export function renderSequencer(
+  handle: { url: AutomergeUrl },
+  element: HTMLElement & { repo: Repo }
+) {
+  console.log("[Sequencer] Startup with handle.url:", handle.url);
+  const root = ReactDOM.createRoot(element);
+
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <Sequencer docUrl={handle.url} element={element} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

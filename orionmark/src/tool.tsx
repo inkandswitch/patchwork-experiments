@@ -1,8 +1,11 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import {
+  RepoContext,
   useDocument,
   useDocHandle,
 } from "@automerge/automerge-repo-react-hooks";
+import { createRoot } from "react-dom/client";
 import { completionKeymap } from "@codemirror/autocomplete";
 import {
   defaultKeymap,
@@ -84,4 +87,17 @@ export function MarkdownTool({ docUrl }: { docUrl: AutomergeUrl }) {
       )}
     </div>
   );
+}
+
+// Kept here (rather than main.tsx) so the entry point never statically
+// imports react-dom/automerge-repo-react-hooks — the host may not have a
+// document open for this tool at all, so React shouldn't load until it does.
+export function renderMarkdownTool(handle: DocHandle<unknown>, element: ToolElement) {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <MarkdownTool docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
 }
