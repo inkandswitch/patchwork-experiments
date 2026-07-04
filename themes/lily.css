@@ -1,0 +1,170 @@
+/* Lily — a mynt-fresh, blue-crayola-chromed bouquet on pale cherry white.
+   Declares the full source palette so every bloom is reachable, then maps
+   the studio + syntax tokens across as much of it as will fit. */
+[theme="lily"] {
+	color-scheme: light;
+
+	/* ---- the palette ---- */
+	--dark-blue: oklch(43% .24 263.74);
+	--dark-blue-dark: oklch(from var(--dark-blue) calc(l * .8) c h);
+	--dark-blue-light: oklch(from var(--dark-blue) calc(l * 1.2) c h);
+	--orla-blue: oklch(57% .23 262.55);
+	--orla-blue-dark: oklch(from var(--orla-blue) calc(l * .8) c h);
+	--orla-blue-light: oklch(from var(--orla-blue) calc(l * 1.2) c h);
+	--cherries-fill: oklch(95% .02 5.09);
+	--cherries-line: oklch(56% .2 10.02);
+	--purple-heart: oklch(38% .17 324.56);
+	--purple-heart-dark: oklch(from var(--purple-heart) calc(l * .8) c h);
+	--purple-heart-light: oklch(from var(--purple-heart) calc(l * 1.2) c h);
+	--pizzazz: oklch(67% .29 340.37);
+	--pizzazz-dark: oklch(from var(--pizzazz) calc(l * .8) c h);
+	--pizzazz-light: oklch(from var(--pizzazz) calc(l * 1.2) c h);
+	--desaturated-purple: oklch(40% .09 311.2);
+	--desaturated-purple-dark: oklch(from var(--desaturated-purple) calc(l * .8) c h);
+	--desaturated-purple-light: oklch(from var(--desaturated-purple) calc(l * 1.2) c h);
+	--russian-violet: oklch(25% .09 295.24);
+	--russian-violet-dark: oklch(from var(--russian-violet) calc(l * .8) c h);
+	--russian-violet-light: oklch(from var(--russian-violet) calc(l * 1.2) c h);
+	--melon: oklch(83% .08 27.4);
+	--melon-dark: oklch(from var(--melon) calc(l * .8) c h);
+	--melon-light: oklch(from var(--melon) calc(l * 1.2) c h);
+	--flax: lch(89.6% 52.46 98.6);
+	--flax-dark: oklch(from var(--flax) calc(l * .8) c h);
+	--flax-light: oklch(from var(--flax) calc(l * 1.2) c h);
+	--jonquil: lch(84.94% 85.77 88.57);
+	--jonquil-dark: oklch(from var(--jonquil) calc(l * .8) c h);
+	--jonquil-light: oklch(from var(--jonquil) calc(l * 1.2) c h);
+	--viridian: lch(47.01% 29.78 155.67);
+	--viridian-dark: oklch(from var(--viridian) calc(l * .8) c h);
+	--viridian-light: oklch(from var(--viridian) calc(l * 1.2) c h);
+	--chili: lch(48.22% 92.51 39.7);
+	--chili-dark: oklch(from var(--chili) calc(l * .8) c h);
+	--chili-light: oklch(from var(--chili) calc(l * 1.2) c h);
+	--ombe: lch(35.59% 54.06 13.65);
+	--ombe-dark: oklch(from var(--ombe) calc(l * .8) c h);
+	--ombe-light: oklch(from var(--ombe) calc(l * 1.2) c h);
+	--sky: oklch(79% .14 226.17);
+	--sky-dark: oklch(from var(--sky) calc(l * .8) c h);
+	--sky-light: oklch(from var(--sky) calc(l * 1.2) c h);
+	--terracotta: oklch(74% .16 22.65);
+	--terracotta-dark: oklch(from var(--terracotta) calc(l * .8) c h);
+	--terracotta-light: oklch(from var(--terracotta) calc(l * 1.2) c h);
+	--red: oklch(65% 1.2402 19.02);
+	--red-dark: oklch(from var(--red) calc(l * .8) c h);
+	--red-light: oklch(from var(--red) calc(l * 1.2) c h);
+	--mynt: oklch(88% .17 167.51);
+	--mynt-dark: oklch(from var(--mynt) calc(l * .8) c h);
+	--mynt-light: oklch(from var(--mynt) calc(l * 1.2) c h);
+	--sunglow: oklch(86% .16 87.44);
+	--sunglow-dark: oklch(from var(--sunglow) calc(l * .8) c h);
+	--sunglow-light: oklch(from var(--sunglow) calc(l * 1.2) c h);
+	--blue-crayola: oklch(52% .2689 263.27);
+	--blue-crayola-dark: oklch(from var(--blue-crayola) calc(l * .8) c h);
+	--blue-crayola-light: oklch(from var(--blue-crayola) calc(l * 1.2) c h);
+	--mosque: oklch(77% .2143 148.08);
+	--mosque-dark: oklch(from var(--mosque) calc(l * .8) c h);
+	--mosque-light: oklch(from var(--mosque) calc(l * 1.2) c h);
+	--carribean-current: oklch(47% .07 196.43);
+	--carribean-current-dark: oklch(from var(--carribean-current) calc(l * .8) c h);
+	--carribean-current-light: oklch(from var(--carribean-current) calc(l * 1.2) c h);
+	--brown: #5e3023;
+	--brown-dark: oklch(from var(--brown) calc(l * .8) c h);
+	--brown-light: oklch(from var(--brown) calc(l * 1.2) c h);
+
+	/* ---- studio chrome ---- */
+	--studio-fill: var(--cherries-fill);        /* pale cherry white */
+	--studio-line: var(--russian-violet);       /* soft violet-black ink */
+	--studio-primary: var(--mynt);              /* mynt, as requested */
+	--studio-secondary: var(--pizzazz);
+	--studio-danger: var(--chili);
+	--studio-warning: var(--sunglow);
+	--studio-added: var(--mosque);
+	--studio-deleted: var(--chili);
+	--studio-modified: var(--pizzazz);
+	--studio-link: var(--blue-crayola);
+	--studio-selection-fill: var(--flax-light);
+	/* blow the chrome blue-crayola */
+	--studio-offset-tint: var(--blue-crayola);
+
+	/* mynt is bright & pale, so a filled mynt surface wants dark ink on it */
+	--studio-primary-line: var(--russian-violet);
+
+	--text-editor-cursor-fill: var(--blue-crayola);
+	--text-editor-selection-fill: color-mix(in oklch, var(--flax) 45%, transparent);
+	--text-editor-gutter-line: var(--desaturated-purple-light);
+
+	/* ---- syntax ---- */
+	--syntax-comment: var(--desaturated-purple-light);
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: var(--desaturated-purple);
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: var(--purple-heart);
+	--syntax-invalid: var(--red);
+
+	--syntax-operator: var(--viridian);
+	--syntax-punctuation: var(--carribean-current);
+
+	--syntax-bool: var(--chili);
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: var(--chili);
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--blue-crayola);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: var(--dark-blue);
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: var(--dark-blue);
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: var(--viridian);
+
+	--syntax-function--variable-name: var(--orla-blue);
+	--syntax-function--property-name: var(--orla-blue);
+
+	--syntax-definition--variable-name: var(--purple-heart);
+
+	--syntax-string: var(--viridian);
+	--syntax-fill-string: color-mix(in oklch, var(--mynt) 18%, transparent);
+
+	--syntax-number: var(--ombe);
+	--syntax-integer: var(--ombe);
+	--syntax-float: var(--ombe);
+
+	--syntax-escape: var(--terracotta-dark);
+	--syntax-regexp: var(--viridian);
+	--syntax-special--string: var(--mosque-dark);
+
+	--syntax-tag-name: var(--cherries-line);
+	--syntax-angle-bracket: var(--carribean-current);
+
+	--syntax-attribute-name: var(--mosque-dark);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--purple-heart);
+
+	--syntax-strong: var(--russian-violet);
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: var(--pizzazz-dark);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--purple-heart);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--blue-crayola);
+	--syntax-style-link: underline;
+
+	--syntax-quote: var(--desaturated-purple-light);
+	--syntax-list: var(--cherries-line);
+
+	--syntax-inserted: var(--mosque);
+	--syntax-deleted: var(--chili);
+	--syntax-changed: var(--pizzazz);
+
+	--syntax-content-separator: var(--melon-light);
+}

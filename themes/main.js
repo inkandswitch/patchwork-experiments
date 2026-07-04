@@ -88,4 +88,5 @@ export const plugins = [
 	themePlugin("electric", "Electric", "./electric.css"),
 	themePlugin("ultraviolet", "Ultraviolet", "./ultraviolet.css"),
 	themePlugin("tangerine-dream", "Tangerine Dream", "./tangerine-dream.css"),
+	themePlugin("lily", "Lily", "./lily.css"),
 ]
