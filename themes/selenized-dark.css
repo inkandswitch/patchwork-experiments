@@ -1,0 +1,92 @@
+/* Selenized Dark — Jan Warchoł's easy-on-the-eyes scheme, deep teal base */
+[theme="selenized-dark"] {
+	color-scheme: dark;
+	--studio-fill: #103c48; /* bg_0 */
+	--studio-line: #cad8d9; /* fg_1 */
+	--studio-primary: #4695f7; /* blue */
+	--studio-secondary: #af88eb; /* violet */
+	--studio-danger: #fa5750; /* red */
+	--studio-warning: #dbb32d; /* yellow */
+	--studio-added: #75b938; /* green */
+	--studio-deleted: #fa5750;
+	--studio-modified: #4695f7;
+	--studio-link: #4695f7;
+	--studio-selection-fill: #2d5b69; /* bg_2 */
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #184956; /* bg_1 */
+	--text-editor-gutter-line: #72898f; /* dim_0 */
+	--text-editor-gutter-border: #2d5b69;
+
+	--syntax-comment: #72898f; /* dim_0 */
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #72898f;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #72898f;
+	--syntax-invalid: #fa5750;
+
+	--syntax-operator: #41c7b9; /* cyan */
+	--syntax-punctuation: #adbcbc; /* fg_0 */
+
+	--syntax-bool: #ed8649; /* orange */
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ed8649;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #f275be; /* magenta */
+
+	--syntax-type-name: #dbb32d; /* yellow */
+	--syntax-class-name: #dbb32d;
+
+	--syntax-type-operator: #41c7b9;
+
+	--syntax-function--variable-name: #4695f7; /* blue */
+	--syntax-function--property-name: #4695f7;
+
+	--syntax-variable-name: #adbcbc;
+	--syntax-definition--variable-name: #adbcbc;
+
+	--syntax-string: #75b938; /* green */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #af88eb; /* violet */
+	--syntax-integer: #af88eb;
+	--syntax-float: #af88eb;
+
+	--syntax-escape: #ed8649;
+	--syntax-regexp: #41c7b9;
+	--syntax-special--string: #75b938;
+
+	--syntax-tag-name: #f275be;
+	--syntax-angle-bracket: #adbcbc;
+
+	--syntax-attribute-name: #dbb32d;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #dbb32d;
+
+	--syntax-strong: #cad8d9;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #cad8d9;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #4695f7;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #4695f7;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #72898f;
+	--syntax-style-quote: italic;
+	--syntax-list: #cad8d9;
+
+	--syntax-inserted: #75b938;
+	--syntax-deleted: #fa5750;
+	--syntax-changed: #4695f7;
+
+	--syntax-content-separator: #2d5b69;
+}

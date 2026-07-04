@@ -1,0 +1,98 @@
+/* Vesper — Rauno Freiberg's minimal dark theme: near-black, peach and mint */
+[theme="vesper"] {
+	color-scheme: dark;
+	--studio-fill: #101010;
+	--studio-line: #ffffff;
+	--studio-primary: #ffc799; /* peach */
+	--studio-secondary: #99ffe4; /* mint */
+	--studio-danger: #ff8080; /* red */
+	--studio-warning: #ffc799;
+	--studio-added: #99ffe4;
+	--studio-deleted: #ff8080;
+	--studio-modified: #ffc799;
+	--studio-link: #ffc799;
+	--studio-selection-fill: #2a2a2a;
+
+	/* Ink on the peach accent surface reads as the near-black bg, keeping the
+	   two-color minimalism Vesper is known for */
+	--studio-primary-line: var(--studio-fill);
+	--studio-secondary-line: var(--studio-fill);
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #161616;
+	--text-editor-gutter-line: #65656a;
+	--text-editor-gutter-border: #232323;
+
+	--syntax-comment: #8b8b8b;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8b8b8b;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #a0a0a0;
+	--syntax-invalid: #ff8080;
+
+	--syntax-operator: #a0a0a0;
+	--syntax-punctuation: #a0a0a0;
+
+	--syntax-bool: #99ffe4;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #99ffe4;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #a0a0a0;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #ffc799;
+	--syntax-class-name: #ffc799;
+
+	--syntax-type-operator: #a0a0a0;
+
+	--syntax-function--variable-name: #ffc799; /* peach */
+	--syntax-function--property-name: #ffc799;
+
+	--syntax-variable-name: #ffffff;
+	--syntax-definition--variable-name: #ffffff;
+
+	--syntax-string: #99ffe4; /* mint */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #ffc799;
+	--syntax-integer: #ffc799;
+	--syntax-float: #ffc799;
+
+	--syntax-escape: #ff8080;
+	--syntax-regexp: #99ffe4;
+	--syntax-special--string: #99ffe4;
+
+	--syntax-tag-name: #a0a0a0;
+	--syntax-angle-bracket: #a0a0a0;
+
+	--syntax-attribute-name: #ffc799;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ffc799;
+
+	--syntax-strong: #ffffff;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ffffff;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ffc799;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #ffc799;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #8b8b8b;
+	--syntax-style-quote: italic;
+	--syntax-list: #ffffff;
+
+	--syntax-inserted: #99ffe4;
+	--syntax-deleted: #ff8080;
+	--syntax-changed: #ffc799;
+
+	--syntax-content-separator: #232323;
+}

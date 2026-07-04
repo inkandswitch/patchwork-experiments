@@ -1,0 +1,92 @@
+/* Flexoki Light — Steph Ango's inky, warm-paper scheme (stephango.com/flexoki) */
+[theme="flexoki-light"] {
+	color-scheme: light;
+	--studio-fill: #fffcf0; /* paper */
+	--studio-line: #100f0f; /* black */
+	--studio-primary: #205ea6; /* blue-600 */
+	--studio-secondary: #5e409d; /* purple-600 */
+	--studio-danger: #af3029; /* red-600 */
+	--studio-warning: #ad8301; /* yellow-600 */
+	--studio-added: #66800b; /* green-600 */
+	--studio-deleted: #af3029;
+	--studio-modified: #205ea6;
+	--studio-link: #205ea6;
+	--studio-selection-fill: #dad8ce; /* base-150 */
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #f2f0e5; /* base-50 */
+	--text-editor-gutter-line: #6f6e69; /* base-600 */
+	--text-editor-gutter-border: #e6e4d9; /* base-100 */
+
+	--syntax-comment: #878580; /* base-500 */
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #878580;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #6f6e69;
+	--syntax-invalid: #af3029;
+
+	--syntax-operator: #575653; /* base-700 */
+	--syntax-punctuation: #575653;
+
+	--syntax-bool: #5e409d;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #5e409d;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #66800b; /* green */
+
+	--syntax-type-name: #ad8301; /* yellow */
+	--syntax-class-name: #ad8301;
+
+	--syntax-type-operator: #66800b;
+
+	--syntax-function--variable-name: #bc5215; /* orange */
+	--syntax-function--property-name: #bc5215;
+
+	--syntax-variable-name: #205ea6; /* blue */
+	--syntax-definition--variable-name: #205ea6;
+
+	--syntax-string: #24837b; /* cyan */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #5e409d; /* purple */
+	--syntax-integer: #5e409d;
+	--syntax-float: #5e409d;
+
+	--syntax-escape: #a02f6f; /* magenta */
+	--syntax-regexp: #a02f6f;
+	--syntax-special--string: #24837b;
+
+	--syntax-tag-name: #66800b;
+	--syntax-angle-bracket: #575653;
+
+	--syntax-attribute-name: #205ea6;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ad8301;
+
+	--syntax-strong: #100f0f;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #100f0f;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #bc5215;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #205ea6;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #878580;
+	--syntax-style-quote: italic;
+	--syntax-list: #100f0f;
+
+	--syntax-inserted: #66800b;
+	--syntax-deleted: #af3029;
+	--syntax-changed: #205ea6;
+
+	--syntax-content-separator: #e6e4d9;
+}

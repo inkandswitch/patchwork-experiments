@@ -1,0 +1,92 @@
+/* Iceberg Dark — cocopon's cool bluish scheme on deep slate */
+[theme="iceberg-dark"] {
+	color-scheme: dark;
+	--studio-fill: #161821;
+	--studio-line: #c6c8d1;
+	--studio-primary: #84a0c6; /* blue */
+	--studio-secondary: #a093c7; /* purple */
+	--studio-danger: #e27878; /* red */
+	--studio-warning: #e2a478; /* orange */
+	--studio-added: #b4be82; /* green */
+	--studio-deleted: #e27878;
+	--studio-modified: #84a0c6;
+	--studio-link: #84a0c6;
+	--studio-selection-fill: #272c42;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #1e2132;
+	--text-editor-gutter-line: #6b7089;
+	--text-editor-gutter-border: #242940;
+
+	--syntax-comment: #6b7089;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #6b7089;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #6b7089;
+	--syntax-invalid: #e27878;
+
+	--syntax-operator: #c6c8d1;
+	--syntax-punctuation: #c6c8d1;
+
+	--syntax-bool: #e2a478; /* orange */
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #e2a478;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #84a0c6; /* blue */
+
+	--syntax-type-name: #a093c7; /* purple */
+	--syntax-class-name: #a093c7;
+
+	--syntax-type-operator: #89b8c2;
+
+	--syntax-function--variable-name: #89b8c2; /* cyan */
+	--syntax-function--property-name: #89b8c2;
+
+	--syntax-variable-name: #c6c8d1;
+	--syntax-definition--variable-name: #c6c8d1;
+
+	--syntax-string: #b4be82; /* green */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #e2a478; /* orange */
+	--syntax-integer: #e2a478;
+	--syntax-float: #e2a478;
+
+	--syntax-escape: #e27878;
+	--syntax-regexp: #89b8c2;
+	--syntax-special--string: #b4be82;
+
+	--syntax-tag-name: #84a0c6;
+	--syntax-angle-bracket: #c6c8d1;
+
+	--syntax-attribute-name: #a093c7;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #a093c7;
+
+	--syntax-strong: #c6c8d1;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #c6c8d1;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #84a0c6;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #84a0c6;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6b7089;
+	--syntax-style-quote: italic;
+	--syntax-list: #c6c8d1;
+
+	--syntax-inserted: #b4be82;
+	--syntax-deleted: #e27878;
+	--syntax-changed: #84a0c6;
+
+	--syntax-content-separator: #242940;
+}
