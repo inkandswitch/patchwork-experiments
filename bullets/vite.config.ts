@@ -13,7 +13,7 @@ export default defineConfig({
   // version, so this assertion reconciles the two structurally identical types.
   plugins: [solid(), cssInjectedByJsPlugin()] as PluginOption[],
   build: {
-    sourcemap: "inline",
+    sourcemap: true,
     target: "esnext",
     rollupOptions: {
       external: [
