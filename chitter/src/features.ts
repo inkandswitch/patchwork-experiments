@@ -7,14 +7,6 @@
 
 export const featureDescriptions = [
 	{
-		// Metadata only — the call button lives in the base presence bar (gated by
-		// hasFeature) and drives the base's handleCallCommand; there's no slot UI.
-		type: "chat:feature",
-		id: "call",
-		name: "Voice/video call",
-		tier: "full",
-	},
-	{
 		type: "chat:feature",
 		id: "notifications",
 		name: "Notifications",

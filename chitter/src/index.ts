@@ -6,7 +6,7 @@
 // The base `chat` tool renders these datatypes (its supportedDatatypes lists
 // "chitter"); this bundle contributes no tool/component of its own.
 import {slashPluginDescriptions} from "./slash-plugins"
-import {parserExtensionPlugins} from "./parser-extensions"
+import {syntaxPlugins} from "./syntax"
 import {messageActionDescriptions} from "./message-actions"
 import {featureDescriptions} from "./features"
 
@@ -36,7 +36,7 @@ export const plugins = [
 	// notifications/call, each with its Solid components behind `async load()` —
 	// are added as those components are moved over.)
 	...slashPluginDescriptions,
-	...parserExtensionPlugins,
+	...syntaxPlugins,
 	...messageActionDescriptions,
 	...featureDescriptions,
 ]
