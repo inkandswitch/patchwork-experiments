@@ -91,4 +91,6 @@ export const plugins = [
 	themePlugin("lily", "Lily", "./lily.css"),
 	themePlugin("turbo", "Turbo", "./turbo.css"),
 	themePlugin("swooshiee", "Swooshiee", "./swooshiee.css"),
+	themePlugin("swooshienites", "Swooshienites", "./swooshienites.css"),
+	themePlugin("swooshyyy", "swooshyyy", "./swooshyyy.css"),
 ]
