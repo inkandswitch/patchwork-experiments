@@ -4,9 +4,10 @@ description: >-
   Build, scaffold, or modify a Patchwork tool, datatype, or action in this repo.
   Use whenever creating a new tool from scratch, porting something into Patchwork,
   adding a datatype/tool/action plugin, wiring an automerge document model, or
-  setting up the build/sync (vite + pushwork). House style: write tools in plain
-  vanilla JavaScript with NO TypeScript; if a reactive framework is truly needed,
-  use Solid (never React). Covers the plugin registration shape, the
+  setting up the build/sync (vite + pushwork). House style: default to small, simple
+  tools — plain vanilla JavaScript with no build step — but TypeScript, npm
+  dependencies, and a bundled build are all fine (pushwork handles them). If a
+  reactive framework is needed, use Solid (never React). Covers the plugin registration shape, the
   (handle, element) => cleanup render contract, the datatype lifecycle, bundleless
   vs bundled builds, multiplayer/ephemeral messaging, the importmap, and the common
   gotchas (undefined assignment, Solid click delegation, light-DOM CSS).
@@ -27,37 +28,39 @@ Namespace your CSS class names and inject styles with the JS bundle (see Build).
 These are the defaults for **new** tools in this repo. Follow them unless the user says
 otherwise.
 
-- **Write plain vanilla JavaScript. No TypeScript.** No `.ts`/`.tsx`, no type annotations, no
-  `tsconfig`. Document shapes with a JSDoc `@typedef` comment if you want a schema note (see
-  `tic-tac-toe.js`) — that's all the typing a tool needs.
-- **Default to no framework and no build step.** A single hand-written `.js` file that
-  re-renders the DOM on `handle.on("change", …)` is the preferred shape (see §4). It's the
-  simplest thing that works and it syncs with just `pushwork sync`.
-- **If — and only if — you genuinely need fine-grained reactivity, use Solid. Never React.**
-  Solid is already in the importmap and you can use it **without JSX or a build** via
-  `solid-js/html` tagged templates, so you stay in plain JS. Reach for it when the UI has
-  enough independent live-updating pieces that hand-diffing the DOM gets painful.
-- **React is legacy here.** Several existing tools use React + TS; do not start new tools that
-  way, and when editing a React tool, match its existing style rather than rewriting it.
+- **Default to small and simple: plain vanilla JavaScript, no build step.** A single
+  hand-written `.js` file that re-renders the DOM on `handle.on("change", …)` is the preferred
+  shape (see §4) — it's the simplest thing that works and it syncs with just `pushwork sync`.
+  Document shapes with a JSDoc `@typedef` comment if you want a schema note (see `tic-tac-toe.js`).
+- **TypeScript, npm dependencies, and a bundled build are fine when you want them.** pushwork
+  builds and syncs `.ts`/`.tsx` + vite tools like anything else — no need to avoid them. The
+  bundleless default is about keeping small tools small, not a ban on TypeScript or dependencies;
+  reach for a bundle when the tool has a multi-file source tree, JSX, or npm deps.
+- **If you need fine-grained reactivity, use Solid — never React.** Solid is in the importmap
+  either way: use `solid-js` with JSX (via a vite bundle) or `solid-js/html` tagged templates to
+  stay bundleless. Reach for it when the UI has enough independent live-updating pieces that
+  hand-diffing the DOM gets painful.
+- **React is legacy here.** Several existing tools use React; do not start new tools that way, and
+  when editing a React tool, match its existing style rather than rewriting it.
 
-Rule of thumb: **vanilla JS first → Solid (via `solid-js/html`) if you need reactivity →
-React only when modifying a tool that already uses it.**
+Rule of thumb: **vanilla JS first → Solid if you need reactivity → React only when modifying a
+tool that already uses it.**
 
 ## 1. Pick a flavor
 
-| | Bundleless (single `.js`) — **default** | Bundled (vite) — only if needed |
+| | Bundleless (single `.js`) — **default** | Bundled (vite) |
 |---|---|---|
-| Use when | almost always: vanilla JS, Web Components, or Solid via `solid-js/html` | you need JSX, or many source files, or you're editing an existing React tool |
+| Use when | small tools: vanilla JS, Web Components, or Solid via `solid-js/html` | Solid with JSX, TypeScript, npm deps, or a multi-file source tree |
 | Source | one hand-written `.js` (e.g. `walkies.js`, `catclock.js`, `tic-tac-toe.js`) | `src/` compiled to `dist/index.js` |
 | Imports | bare specifiers via Patchwork's **importmap**; assets via `import.meta.url` | same, but bundled; deps marked external |
 | Build | none — `pushwork sync` directly | `pnpm build` then `pushwork sync` |
 | `package.json main` | the `.js` file | `./dist/index.js` |
 
-Both flavors export the **same** `plugins` array. **Strongly prefer bundleless** — there's
-nothing to build, no TypeScript, no toolchain, and the importmap already covers automerge,
-solid-js, codemirror, and the patchwork packages. You can write a fully reactive Solid tool
-bundleless using `solid-js/html` (§4), so most tools never need vite at all. Reach for the
-bundled flavor only when JSX or a multi-file source tree genuinely earns its keep.
+Both flavors export the **same** `plugins` array. **Prefer bundleless for small tools** — there's
+nothing to build, and the importmap already covers automerge, solid-js, codemirror, and the
+patchwork packages. You can write a fully reactive Solid tool bundleless using `solid-js/html`
+(§4), so small tools never need vite. Reach for the bundled flavor (Solid+JSX, TypeScript, npm
+deps, or a multi-file source tree) whenever you want it — pushwork builds and syncs it fine.
 
 ## 2. Plugin registration — `export const plugins`
 
@@ -222,10 +225,11 @@ function Tool(handle, element) {
 }
 ```
 
-**Solid (when you need reactivity) — use `solid-js/html`, no JSX, no build.** Tagged-template
-markup keeps you in plain vanilla JS while getting fine-grained updates. Wrap the doc in a
-signal you push to from the `change` event; write dynamic expressions as functions so they
-stay reactive. `render()` returns a disposer — return it from cleanup:
+**Solid (when you need reactivity).** Use `solid-js` with JSX if you're bundling, or `solid-js/html`
+tagged templates to stay bundleless — both give the same fine-grained updates. The bundleless
+`solid-js/html` version is shown here: wrap the doc in a signal you push to from the `change`
+event; write dynamic expressions as functions so they stay reactive. `render()` returns a disposer
+— return it from cleanup:
 
 ```js
 import { render } from "solid-js/web"
@@ -434,8 +438,10 @@ The theme exposes two families of surface variables:
 Rule of thumb: if you're building a tool, derive fill/line/typography from `--editor-*`. Reach
 for `--studio-*` only when you're styling the studio frame itself.
 
-Accent colours (`--studio-primary` etc.), spacing, radius, shadow, and transition tokens have
-**no `--editor-*` equivalent** — use the `--studio-*` versions everywhere.
+Accent colours (`--studio-primary` etc.), spacing, radius, shadow, and transition tokens are
+**studio-global** — the accent itself has no `--editor-*` equivalent, so use `--studio-*`
+everywhere. The one exception is the accent `-text` variant (accent used *as ink on a
+surface*), which does fan out per surface — see the accent section below.
 
 ### CSS variables
 
@@ -447,9 +453,26 @@ Use these variables (with fallbacks) instead of hardcoded values:
 - `var(--editor-line-offset-10)` through `-50` — muted text (mix of line + fill)
 - `var(--editor-selection-fill)` / `var(--editor-selection-line)`, `var(--editor-cursor-fill)`
 
-**Accent colors (studio-only — no editor equivalent):**
+**Accent colors:**
 - `var(--studio-primary, #35f7ca)`, `--studio-secondary`, `--studio-danger`, `--studio-warning`
 - `var(--studio-added)`, `--studio-deleted`, `--studio-modified`, `--studio-link`
+
+Each of `primary`/`secondary`/`danger`/`warning` also ships as a **Bulma-style contrast pair**
+plus a text variant — pick by how you're using the accent:
+
+- **`--studio-{accent}-fill`** — the accent used as a *surface* (a button/pill/badge
+  background). Same value as the bare `--studio-{accent}`, but says "I'm a surface".
+- **`--studio-{accent}-line`** — the *invert*: ink (text/icons) placed **on** that fill, e.g.
+  the label inside a primary button. Legible on the accent regardless of light/dark theme.
+- **`--studio-{accent}-fill-offset-10..50`** — a hover/border ramp for the fill (like
+  `--studio-chrome-fill-offset-*`). `-10` == the fill itself; the first visible step is `-20`.
+- **`--studio-{accent}-text`** — the accent used **as ink on the ambient background** (a
+  primary-coloured heading/link on the normal page). This is the one that fans out per surface:
+  use **`--editor-{accent}-text`** on the editor surface and **`--text-editor-{accent}-text`**
+  in a text editor, since legibility depends on which background the text sits on.
+
+Rule of thumb: painting a surface the accent → `-fill` (+ `-line` for text on it, `-fill-offset-*`
+for its hover). Writing text *in* the accent on a normal background → `-text` (surface-matched).
 
 **Typography (derive from `--editor-*` in tools):**
 - `var(--editor-family-sans, system-ui, sans-serif)` — UI text
@@ -640,17 +663,17 @@ layer — they stay unlayered so they reliably override everything.
 
 ## 12. Build & sync
 
-**Bundleless (default):** no build, no TypeScript, no toolchain. From the tool dir:
+**Bundleless (default for small tools):** no build step or toolchain. From the tool dir:
 `pushwork sync`. `package.json` is minimal:
 
 ```json
 { "type": "module", "main": "tic-tac-toe.js" }
 ```
 
-**Bundled (only when you truly need JSX or a multi-file tree):** mark Patchwork deps external
-via the bootloader, output a single ES entry, and inject CSS into the JS (because there's no
-shadow DOM, styles must ship with the bundle). Keep the config and source in **plain JS** —
-`vite.config.js`, a `.jsx`/`.js` entry, no `tsconfig`:
+**Bundled (when you want Solid+JSX, TypeScript, npm deps, or a multi-file tree):** mark Patchwork
+deps external via the bootloader, output a single ES entry, and inject CSS into the JS (because
+there's no shadow DOM, styles must ship with the bundle). A `.jsx`/`.js` or `.tsx`/`.ts` entry
+both work — vite compiles them:
 
 ```js
 // vite.config.js (Solid)
@@ -675,8 +698,8 @@ export default defineConfig({
 ```
 
 The essentials are `format: es`, `external` from the bootloader, and CSS-in-JS. (Some existing
-tools use `vite-plugin-react` and `.tsx` — that's the legacy path; don't replicate it for new
-tools.)
+tools use `vite-plugin-react` — that's the legacy React path; don't reach for React in new tools,
+though a Solid or TypeScript bundle is fine.)
 
 `package.json`: `"main": "./dist/index.js"`, scripts `"build": "vite build"` and
 `"push": "pnpm build && pushwork sync"`. After ANY change to a bundled tool:
@@ -712,11 +735,11 @@ tools.)
   worker has no importmap) — keep them inside `load()`'s dynamic `import()`. See §2.
 - **Always return a cleanup function** from the render function and actually tear down
   (listeners, roots, intervals, rAF, AudioContext, workers).
-- **New tools: vanilla JS, no TypeScript.** No `.ts`/`.tsx`, no type annotations, no
-  `tsconfig` — use a JSDoc `@typedef` for the doc shape if you want a note. If you need
-  reactivity, use **Solid via `solid-js/html`** (no JSX/build); never React. Existing tools may
-  be React/Solid/Svelte/TS — match the existing tool's style when editing one, but don't start
-  new tools that way.
+- **New tools: default to vanilla JS and bundleless for simplicity.** TypeScript, npm deps, and a
+  vite bundle are all fine when you want them — pushwork builds them. If you need reactivity, use
+  **Solid** (`solid-js` with JSX, or `solid-js/html` to stay bundleless); never React. Existing
+  tools may be React/Solid/Svelte/TS — match the existing tool's style when editing one, and don't
+  start new tools with React.
 
 ## 14. Minimal complete example (bundleless)
 
@@ -760,12 +783,12 @@ Then from the tool's directory: `pushwork sync`. Done.
 **Copy these patterns (vanilla JS, bundleless — the house style):**
 - **Bundleless / vanilla:** `tic-tac-toe`, `catclock`, `walkies`, `sparkles`, `webtile`
 - **Web Components + audio/wasm:** `bento`, `call`, `sound`
-- **Headless actions:** `actions` (note: this one is TS — the shape is what matters)
+- **Headless actions:** `actions` (written in TypeScript)
 
-**Reach for Solid only if you need reactivity:** `cache-browser`, `file`, `chat`, `paper`
-(these use JSX + a bundle; for a new tool prefer `solid-js/html` bundleless instead).
+**Reach for Solid if you need reactivity:** `cache-browser`, `file`, `chat`, `paper` (these use
+JSX + a bundle; `solid-js/html` is the bundleless alternative for small tools).
 
-**Legacy — reference for behavior, NOT for style (React/TS, don't copy the approach):**
+**Legacy React — reference for behavior, NOT for style (don't copy the React approach):**
 `datagrid`, `boardgame`, `datalog`, `doc-copy-history`.
 
 - **CodeMirror extension:** `codemirror-latex`, `file`
