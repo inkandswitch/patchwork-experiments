@@ -1,92 +1,94 @@
-/* Laser — clean white cut by magenta and cyan laser beams */
+/* Laser — a solid MAGENTA #F0F field lanced by cyan, yellow and white */
 [theme="laser"] {
 	color-scheme: light;
-	--studio-fill: #ffffff;
-	--studio-line: #0a0a12;
-	--studio-primary: #ff00c8; /* magenta laser */
-	--studio-secondary: #00e5ff; /* cyan laser */
-	--studio-danger: #ff0040;
-	--studio-warning: #ffb300;
-	--studio-added: #00e676;
-	--studio-deleted: #ff0040;
-	--studio-modified: #7c00ff;
-	--studio-link: #00b8d4;
-	--studio-selection-fill: #ffcbf1;
+	--studio-fill: #ff00ff;
+	--studio-line: #000000;
+	--studio-primary: #00ffff;
+	--studio-secondary: #ffff00;
+	--studio-danger: #ff0000;
+	--studio-warning: #ffff00;
+	--studio-added: #00ff00;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ffff00;
+	--studio-link: #00ffff;
+	--studio-selection-fill: #00ffff;
+	--studio-chrome-fill: #ff00ff;
 	--studio-offset-tint: var(--studio-primary);
 
-	--text-editor-cursor-fill: var(--studio-primary);
-	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+	--text-editor-cursor-fill: #00ffff;
+	--text-editor-selection-fill: #00ffff44;
+	--text-editor-gutter-line: #7a007a;
 
-	--syntax-comment: #a0a0b0;
+	--syntax-comment: #7a007a;
 	--syntax-style-comment: italic;
 
-	--syntax-doc-comment: #9090a0;
+	--syntax-doc-comment: #7a007a;
 	--syntax-style-doc-comment: italic;
 
-	--syntax-meta: #7c00ff;
-	--syntax-invalid: var(--studio-danger);
+	--syntax-meta: #00ffff;
+	--syntax-invalid: #ff0000;
 
-	--syntax-operator: #00b8d4;
-	--syntax-punctuation: #7a7a8a;
+	--syntax-operator: #00ffff;
+	--syntax-punctuation: #7a007a;
 
-	--syntax-bool: #7c00ff;
+	--syntax-bool: #00ffff;
 	--syntax-weight-bool: bold;
 
-	--syntax-atom: #7c00ff;
+	--syntax-atom: #00ffff;
 	--syntax-weight-atom: bold;
 
-	--syntax-keyword: var(--studio-primary);
+	--syntax-keyword: #ffff00;
 	--syntax-weight-keyword: bold;
 
-	--syntax-type-name: #7c00ff;
+	--syntax-type-name: #ffffff;
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #7c00ff;
+	--syntax-class-name: #ffffff;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #00b8d4;
+	--syntax-type-operator: #00ffff;
 
-	--syntax-function--variable-name: #009fc4;
-	--syntax-function--property-name: #009fc4;
+	--syntax-function--variable-name: #ffff00;
+	--syntax-function--property-name: #ffff00;
 
-	--syntax-definition--variable-name: var(--studio-primary);
+	--syntax-definition--variable-name: #00ffff;
 
-	--syntax-string: #00a86b;
-	--syntax-fill-string: #00e5ff12;
+	--syntax-string: #00ff00;
+	--syntax-fill-string: transparent;
 
-	--syntax-number: #7c00ff;
-	--syntax-integer: #7c00ff;
-	--syntax-float: #7c00ff;
+	--syntax-number: #00ffff;
+	--syntax-integer: #00ffff;
+	--syntax-float: #00ffff;
 
-	--syntax-escape: var(--studio-danger);
-	--syntax-regexp: #00a86b;
-	--syntax-special--string: #00a86b;
+	--syntax-escape: #ff0000;
+	--syntax-regexp: #00ff00;
+	--syntax-special--string: #00ff00;
 
-	--syntax-tag-name: var(--studio-primary);
-	--syntax-angle-bracket: #7a7a8a;
+	--syntax-tag-name: #ffff00;
+	--syntax-angle-bracket: #7a007a;
 
-	--syntax-attribute-name: #d100a5;
+	--syntax-attribute-name: #00ffff;
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #7c00ff;
+	--syntax-namespace: #ffff00;
 
-	--syntax-strong: #0a0a12;
+	--syntax-strong: #ffffff;
 	--syntax-weight-strong: bold;
 
-	--syntax-emphasis: var(--studio-primary);
+	--syntax-emphasis: #00ffff;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: #ffff00;
 	--syntax-weight-heading: bold;
 
-	--syntax-link: var(--studio-link);
+	--syntax-link: #00ffff;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #a0a0b0;
+	--syntax-quote: #7a007a;
 
-	--syntax-inserted: var(--studio-added);
-	--syntax-deleted: var(--studio-deleted);
-	--syntax-changed: var(--studio-modified);
+	--syntax-inserted: #00ff00;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ffff00;
 
-	--syntax-content-separator: #eeeef2;
+	--syntax-content-separator: #cc00cc;
 }

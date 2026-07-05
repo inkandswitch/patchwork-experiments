@@ -83,12 +83,13 @@
 	--studio-modified: var(--pizzazz);
 	--studio-link: var(--blue-crayola);
 	--studio-selection-fill: var(--flax-light);
-	/* blow the chrome blue-crayola */
-	--studio-offset-tint: var(--blue-crayola);
+	/* chrome is sky */
+	--studio-chrome-fill: var(--sky);
 
 	/* mynt is bright & pale, so a filled mynt surface wants dark ink on it */
 	--studio-primary-line: var(--russian-violet);
 
+	--text-editor-fill: var(--white); /* white editor page */
 	--text-editor-cursor-fill: var(--blue-crayola);
 	--text-editor-selection-fill: color-mix(in oklch, var(--flax) 45%, transparent);
 	--text-editor-gutter-line: var(--desaturated-purple-light);

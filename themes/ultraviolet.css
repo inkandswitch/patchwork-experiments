@@ -1,92 +1,94 @@
-/* Ultraviolet — blacklight purple and neon violet blazing off pale lilac-white */
+/* Ultraviolet — a pure BLUE #00F blacklight field glowing magenta, cyan, lime and yellow */
 [theme="ultraviolet"] {
-	color-scheme: light;
-	--studio-fill: #fbf6ff;
-	--studio-line: #1a0033;
-	--studio-primary: #b400ff; /* uv violet */
-	--studio-secondary: #ff00e5; /* neon magenta */
-	--studio-danger: #ff0059;
-	--studio-warning: #ffc400;
-	--studio-added: #00e08a;
-	--studio-deleted: #ff0059;
-	--studio-modified: #7000ff;
-	--studio-link: #9000e0;
-	--studio-selection-fill: #ecc6ff;
+	color-scheme: dark;
+	--studio-fill: #0000ff;
+	--studio-line: #ffffff;
+	--studio-primary: #ff00ff;
+	--studio-secondary: #00ffff;
+	--studio-danger: #ff0000;
+	--studio-warning: #ffff00;
+	--studio-added: #00ff00;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ff00ff;
+	--studio-link: #00ffff;
+	--studio-selection-fill: #ff00ff;
+	--studio-chrome-fill: #0000ff;
 	--studio-offset-tint: var(--studio-primary);
 
-	--text-editor-cursor-fill: var(--studio-primary);
-	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+	--text-editor-cursor-fill: #ff00ff;
+	--text-editor-selection-fill: #ff00ff55;
+	--text-editor-gutter-line: #8888ff;
 
-	--syntax-comment: #a488bf;
+	--syntax-comment: #8888ff;
 	--syntax-style-comment: italic;
 
-	--syntax-doc-comment: #9478b0;
+	--syntax-doc-comment: #8888ff;
 	--syntax-style-doc-comment: italic;
 
-	--syntax-meta: #ff00e5;
-	--syntax-invalid: var(--studio-danger);
+	--syntax-meta: #ff00ff;
+	--syntax-invalid: #ff0000;
 
-	--syntax-operator: #ff00e5;
-	--syntax-punctuation: #8a6fa5;
+	--syntax-operator: #00ffff;
+	--syntax-punctuation: #9999ff;
 
-	--syntax-bool: #ff00e5;
+	--syntax-bool: #ffff00;
 	--syntax-weight-bool: bold;
 
-	--syntax-atom: #ff00e5;
+	--syntax-atom: #ffff00;
 	--syntax-weight-atom: bold;
 
-	--syntax-keyword: var(--studio-primary);
+	--syntax-keyword: #ff00ff;
 	--syntax-weight-keyword: bold;
 
-	--syntax-type-name: #ff00e5;
+	--syntax-type-name: #00ffff;
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #ff00e5;
+	--syntax-class-name: #00ffff;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #ff00e5;
+	--syntax-type-operator: #00ffff;
 
-	--syntax-function--variable-name: #d100b8;
-	--syntax-function--property-name: #d100b8;
+	--syntax-function--variable-name: #ffff00;
+	--syntax-function--property-name: #ffff00;
 
-	--syntax-definition--variable-name: var(--studio-primary);
+	--syntax-definition--variable-name: #ff00ff;
 
-	--syntax-string: #00a86b;
-	--syntax-fill-string: #ff00e50f;
+	--syntax-string: #00ff00;
+	--syntax-fill-string: transparent;
 
-	--syntax-number: #ff6a00;
-	--syntax-integer: #ff6a00;
-	--syntax-float: #ff6a00;
+	--syntax-number: #ffff00;
+	--syntax-integer: #ffff00;
+	--syntax-float: #ffff00;
 
-	--syntax-escape: var(--studio-danger);
-	--syntax-regexp: #00a86b;
-	--syntax-special--string: #00a86b;
+	--syntax-escape: #ff00ff;
+	--syntax-regexp: #00ff00;
+	--syntax-special--string: #00ff00;
 
-	--syntax-tag-name: var(--studio-primary);
-	--syntax-angle-bracket: #8a6fa5;
+	--syntax-tag-name: #ff00ff;
+	--syntax-angle-bracket: #9999ff;
 
-	--syntax-attribute-name: #ff6a00;
+	--syntax-attribute-name: #00ffff;
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #ff00e5;
+	--syntax-namespace: #ff00ff;
 
-	--syntax-strong: #1a0033;
+	--syntax-strong: #ffffff;
 	--syntax-weight-strong: bold;
 
-	--syntax-emphasis: var(--studio-primary);
+	--syntax-emphasis: #00ffff;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: #ffff00;
 	--syntax-weight-heading: bold;
 
-	--syntax-link: var(--studio-link);
+	--syntax-link: #00ffff;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #a488bf;
+	--syntax-quote: #8888ff;
 
-	--syntax-inserted: var(--studio-added);
-	--syntax-deleted: var(--studio-deleted);
-	--syntax-changed: var(--studio-modified);
+	--syntax-inserted: #00ff00;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ff00ff;
 
-	--syntax-content-separator: #efe0fc;
+	--syntax-content-separator: #3333ff;
 }

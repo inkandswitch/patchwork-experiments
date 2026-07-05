@@ -83,10 +83,12 @@ export const plugins = [
 	themePlugin("vesper", "Vesper", "./vesper.css"),
 	themePlugin("oxocarbon", "Oxocarbon", "./oxocarbon.css"),
 	themePlugin("highlighter", "Highlighter", "./highlighter.css"),
+	themePlugin("limon", "Limón", "./limon.css"),
 	themePlugin("acid", "Acid", "./acid.css"),
 	themePlugin("laser", "Laser", "./laser.css"),
 	themePlugin("electric", "Electric", "./electric.css"),
 	themePlugin("ultraviolet", "Ultraviolet", "./ultraviolet.css"),
-	themePlugin("tangerine-dream", "Tangerine Dream", "./tangerine-dream.css"),
 	themePlugin("lily", "Lily", "./lily.css"),
+	themePlugin("turbo", "Turbo", "./turbo.css"),
+	themePlugin("swooshiee", "Swooshiee", "./swooshiee.css"),
 ]

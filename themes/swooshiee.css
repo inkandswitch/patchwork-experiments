@@ -1,0 +1,158 @@
+/* Swooshiee — the whole palette cycles through every hue, forever, smoothly.
+
+   The trick: a plain `--var: red` can't be animated — CSS treats unregistered
+   custom properties as discrete, so keyframes just snap between values. But a
+   property *registered* with `@property` and a typed `syntax` becomes
+   interpolatable, so we can animate it like any real property. Here we spin a
+   single shared `--swoosh` hue-angle from 0→360 on a loop, and derive every
+   studio + syntax token from it with oklch(). Every frame recomputes the lot,
+   so the entire theme swooshes around the colour wheel together — a moving
+   rainbow that stays internally harmonious because all the tokens keep their
+   relative hue offsets. */
+
+@property --swoosh {
+	syntax: "<number>";
+	inherits: true;
+	initial-value: 0;
+}
+
+@keyframes swooshiee-cycle {
+	from { --swoosh: 0; }
+	to   { --swoosh: 360; }
+}
+
+[theme="swooshiee"] {
+	color-scheme: dark;
+
+	/* the one knob everything hangs off — a full rotation every 18s, linear
+	   so the speed is constant, infinite so it never stops. */
+	animation: swooshiee-cycle 18s linear infinite;
+
+	/* helper: a colour at a fixed lightness/chroma, offset from the swoosh */
+	/* (inlined per-token below since custom props can't take arguments) */
+
+	/* ---- the rotating palette ---- */
+	/* accents: vivid, evenly spaced around the wheel, all riding the swoosh */
+	--sw-0:  oklch(72% .19 calc(var(--swoosh) +   0));
+	--sw-30: oklch(72% .19 calc(var(--swoosh) +  30));
+	--sw-60: oklch(72% .19 calc(var(--swoosh) +  60));
+	--sw-90: oklch(72% .19 calc(var(--swoosh) +  90));
+	--sw-120: oklch(72% .19 calc(var(--swoosh) + 120));
+	--sw-150: oklch(72% .19 calc(var(--swoosh) + 150));
+	--sw-180: oklch(72% .19 calc(var(--swoosh) + 180));
+	--sw-210: oklch(72% .19 calc(var(--swoosh) + 210));
+	--sw-240: oklch(72% .19 calc(var(--swoosh) + 240));
+	--sw-270: oklch(72% .19 calc(var(--swoosh) + 270));
+	--sw-300: oklch(72% .19 calc(var(--swoosh) + 300));
+	--sw-330: oklch(72% .19 calc(var(--swoosh) + 330));
+
+	/* backdrop: very dark with a faint hue-tint that drifts along too */
+	--sw-bg:      oklch(17% .04 calc(var(--swoosh) + 200));
+	--sw-bg-lift: oklch(23% .05 calc(var(--swoosh) + 200));
+	--sw-editor:  oklch(14% .035 calc(var(--swoosh) + 200));
+	/* ink: near-white, whisper of the leading hue so even the text swooshes */
+	--sw-ink:     oklch(93% .03 calc(var(--swoosh) +  20));
+	--sw-ink-dim: oklch(68% .04 calc(var(--swoosh) +  20));
+
+	/* ---- studio chrome ---- */
+	--studio-fill: var(--sw-bg);
+	--studio-line: var(--sw-ink);
+	--studio-primary: var(--sw-0);
+	--studio-secondary: var(--sw-180);
+	--studio-danger: var(--sw-30);
+	--studio-warning: var(--sw-90);
+	--studio-added: var(--sw-150);
+	--studio-deleted: var(--sw-30);
+	--studio-modified: var(--sw-240);
+	--studio-link: var(--sw-210);
+	--studio-selection-fill: color-mix(in oklch, var(--sw-0) 30%, transparent);
+	--studio-chrome-fill: var(--sw-bg-lift);
+	--studio-primary-line: var(--sw-bg);
+
+	--text-editor-fill: var(--sw-editor);
+	--text-editor-cursor-fill: var(--sw-0);
+	--text-editor-selection-fill: color-mix(in oklch, var(--sw-240) 30%, transparent);
+	--text-editor-gutter-line: var(--sw-ink-dim);
+
+	/* ---- syntax: spread across the wheel so the code is a moving rainbow ---- */
+	--syntax-comment: var(--sw-ink-dim);
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: var(--sw-ink-dim);
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: var(--sw-300);
+	--syntax-invalid: var(--sw-30);
+
+	--syntax-operator: var(--sw-180);
+	--syntax-punctuation: var(--sw-ink-dim);
+
+	--syntax-bool: var(--sw-30);
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: var(--sw-30);
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--sw-330);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: var(--sw-210);
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: var(--sw-210);
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: var(--sw-180);
+
+	--syntax-function--variable-name: var(--sw-240);
+	--syntax-function--property-name: var(--sw-240);
+
+	--syntax-definition--variable-name: var(--sw-270);
+
+	--syntax-string: var(--sw-150);
+	--syntax-fill-string: color-mix(in oklch, var(--sw-150) 12%, transparent);
+
+	--syntax-number: var(--sw-60);
+	--syntax-integer: var(--sw-60);
+	--syntax-float: var(--sw-60);
+
+	--syntax-escape: var(--sw-90);
+	--syntax-regexp: var(--sw-120);
+	--syntax-special--string: var(--sw-150);
+
+	--syntax-tag-name: var(--sw-330);
+	--syntax-angle-bracket: var(--sw-ink-dim);
+
+	--syntax-attribute-name: var(--sw-90);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--sw-300);
+
+	--syntax-strong: var(--sw-0);
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: var(--sw-120);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--sw-0);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--sw-210);
+	--syntax-style-link: underline;
+
+	--syntax-quote: var(--sw-ink-dim);
+	--syntax-list: var(--sw-300);
+
+	--syntax-inserted: var(--sw-150);
+	--syntax-deleted: var(--sw-30);
+	--syntax-changed: var(--sw-240);
+
+	--syntax-content-separator: var(--sw-bg-lift);
+}
+
+/* be kind to folks who'd rather things hold still */
+@media (prefers-reduced-motion: reduce) {
+	[theme="swooshiee"] {
+		animation: none;
+	}
+}

@@ -1,92 +1,94 @@
-/* Electric — electric blue and neon lemon crackling on cold white */
+/* Electric — a raw CYAN #0FF field arced through with blue, magenta and red */
 [theme="electric"] {
 	color-scheme: light;
-	--studio-fill: #f7fbff;
-	--studio-line: #001028;
-	--studio-primary: #0066ff; /* electric blue */
-	--studio-secondary: #00e0ff; /* charged cyan */
-	--studio-danger: #ff1744;
-	--studio-warning: #f2ff00; /* neon lemon */
-	--studio-added: #00e676;
-	--studio-deleted: #ff1744;
-	--studio-modified: #d500f9;
-	--studio-link: #0066ff;
-	--studio-selection-fill: #c8e4ff;
+	--studio-fill: #00ffff;
+	--studio-line: #000000;
+	--studio-primary: #0000ff;
+	--studio-secondary: #ff00ff;
+	--studio-danger: #ff0000;
+	--studio-warning: #ff6a00;
+	--studio-added: #008000;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ff00ff;
+	--studio-link: #0000ff;
+	--studio-selection-fill: #ff00ff;
+	--studio-chrome-fill: #00ffff;
 	--studio-offset-tint: var(--studio-primary);
 
-	--text-editor-cursor-fill: var(--studio-primary);
-	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+	--text-editor-cursor-fill: #0000ff;
+	--text-editor-selection-fill: #ff00ff44;
+	--text-editor-gutter-line: #008080;
 
-	--syntax-comment: #8aa0b8;
+	--syntax-comment: #008080;
 	--syntax-style-comment: italic;
 
-	--syntax-doc-comment: #7a90a8;
+	--syntax-doc-comment: #008080;
 	--syntax-style-doc-comment: italic;
 
-	--syntax-meta: #d500f9;
-	--syntax-invalid: var(--studio-danger);
+	--syntax-meta: #ff00ff;
+	--syntax-invalid: #ff0000;
 
-	--syntax-operator: #00b8d4;
-	--syntax-punctuation: #6a7f96;
+	--syntax-operator: #ff0000;
+	--syntax-punctuation: #008080;
 
-	--syntax-bool: #d500f9;
+	--syntax-bool: #ff0000;
 	--syntax-weight-bool: bold;
 
-	--syntax-atom: #d500f9;
+	--syntax-atom: #ff0000;
 	--syntax-weight-atom: bold;
 
-	--syntax-keyword: var(--studio-primary);
+	--syntax-keyword: #0000ff;
 	--syntax-weight-keyword: bold;
 
-	--syntax-type-name: #d500f9;
+	--syntax-type-name: #0000ff;
 	--syntax-weight-type-name: bold;
 
-	--syntax-class-name: #d500f9;
+	--syntax-class-name: #0000ff;
 	--syntax-weight-class-name: bold;
 
-	--syntax-type-operator: #00b8d4;
+	--syntax-type-operator: #ff0000;
 
-	--syntax-function--variable-name: #00b8d4;
-	--syntax-function--property-name: #00b8d4;
+	--syntax-function--variable-name: #ff00ff;
+	--syntax-function--property-name: #ff00ff;
 
-	--syntax-definition--variable-name: var(--studio-primary);
+	--syntax-definition--variable-name: #0000ff;
 
-	--syntax-string: #009e5c;
-	--syntax-fill-string: #00e0ff12;
+	--syntax-string: #008000;
+	--syntax-fill-string: transparent;
 
-	--syntax-number: #ff8f00;
-	--syntax-integer: #ff8f00;
-	--syntax-float: #ff8f00;
+	--syntax-number: #ff0000;
+	--syntax-integer: #ff0000;
+	--syntax-float: #ff0000;
 
-	--syntax-escape: var(--studio-danger);
-	--syntax-regexp: #009e5c;
-	--syntax-special--string: #009e5c;
+	--syntax-escape: #ff0000;
+	--syntax-regexp: #008000;
+	--syntax-special--string: #008000;
 
-	--syntax-tag-name: var(--studio-primary);
-	--syntax-angle-bracket: #6a7f96;
+	--syntax-tag-name: #ff00ff;
+	--syntax-angle-bracket: #008080;
 
-	--syntax-attribute-name: #ff8f00;
+	--syntax-attribute-name: #0000ff;
 	--syntax-style-attribute-name: italic;
 
-	--syntax-namespace: #d500f9;
+	--syntax-namespace: #ff00ff;
 
-	--syntax-strong: #001028;
+	--syntax-strong: #000000;
 	--syntax-weight-strong: bold;
 
-	--syntax-emphasis: var(--studio-primary);
+	--syntax-emphasis: #ff00ff;
 	--syntax-style-emphasis: italic;
 
-	--syntax-heading: var(--studio-primary);
+	--syntax-heading: #0000ff;
 	--syntax-weight-heading: bold;
 
-	--syntax-link: var(--studio-link);
+	--syntax-link: #0000ff;
 	--syntax-style-link: underline;
 
-	--syntax-quote: #8aa0b8;
+	--syntax-quote: #008080;
 
-	--syntax-inserted: var(--studio-added);
-	--syntax-deleted: var(--studio-deleted);
-	--syntax-changed: var(--studio-modified);
+	--syntax-inserted: #008000;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ff00ff;
 
-	--syntax-content-separator: #e0ecf8;
+	--syntax-content-separator: #00cccc;
 }
