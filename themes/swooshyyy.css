@@ -32,8 +32,8 @@
 [theme="swooshyyy"] {
 	color-scheme: light;
 
-	/* one lap through all four every 16s, constant speed, forever */
-	animation: swooshyyy 16s linear infinite;
+	/* one lap through all four every 100s, constant speed, forever */
+	animation: swooshyyy 100s linear infinite;
 
 	/* the live colour, rebuilt each frame from the animated channels */
 	--swoosh: oklch(calc(var(--sw-l) * 1%) var(--sw-c) var(--sw-h));
