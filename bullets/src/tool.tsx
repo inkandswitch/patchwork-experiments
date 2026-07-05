@@ -3,6 +3,7 @@ import type { Patch } from "@automerge/automerge";
 import type { DocHandle } from "@automerge/automerge-repo";
 import { makeDocumentProjection } from "@automerge/automerge-repo-solid-primitives";
 import { createSignal, createMemo, For, Show, onMount, onCleanup, untrack } from "solid-js";
+import { render } from "solid-js/web";
 import type { BulletsDoc } from "./datatype.ts";
 import {
   findParentId,
@@ -46,6 +47,14 @@ function hasStructuralChange(patches: Patch[]): boolean {
 
 declare const __BULLETS_VERSION__: string;
 const BULLETS_VERSION = __BULLETS_VERSION__;
+
+/** The `(handle, element) => cleanup` render contract Patchwork calls. */
+export function mount(handle: DocHandle<BulletsDoc>, element: HTMLElement) {
+  return render(
+    () => <BulletsTool handle={handle} element={element} />,
+    element,
+  );
+}
 
 export function BulletsTool(props: {
   handle: DocHandle<BulletsDoc>;

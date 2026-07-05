@@ -1,8 +1,7 @@
-import { render } from "solid-js/web";
-import type { DocHandle } from "@automerge/automerge-repo";
-import { datatype } from "./datatype.ts";
-import type { BulletsDoc } from "./datatype.ts";
-
+// The entry module is loaded in a worker with no importmap, so nothing heavy
+// (and no bare external like solid-js, no JSX that the compiler turns into a
+// top-level solid-js/web import) may live in its static graph — every import
+// stays behind an async load().
 export const plugins = [
   {
     type: "patchwork:datatype" as const,
@@ -10,7 +9,7 @@ export const plugins = [
     name: "Bullets",
     icon: "List",
     async load() {
-      return datatype;
+      return (await import("./datatype.ts")).datatype;
     },
   },
   {
@@ -19,13 +18,7 @@ export const plugins = [
     name: "Bullets",
     supportedDataTypes: ["bullets"],
     async load() {
-      const { BulletsTool } = await import("./tool.tsx");
-      return (handle: DocHandle<BulletsDoc>, element: HTMLElement) => {
-        return render(
-          () => <BulletsTool handle={handle} element={element} />,
-          element
-        );
-      };
+      return (await import("./tool.tsx")).mount;
     },
   },
 ];

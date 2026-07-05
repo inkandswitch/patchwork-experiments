@@ -11,9 +11,8 @@ export default defineConfig({
   // The plugins return a Plugin type from vite-plugin-solid's peer-resolved copy
   // of vite, which pnpm keys separately from the root vite. They are the same
   // version, so this assertion reconciles the two structurally identical types.
-  plugins: [solid(), cssInjectedByJsPlugin({ relativeCSSInjection: true })] as PluginOption[],
+  plugins: [solid(), cssInjectedByJsPlugin()] as PluginOption[],
   build: {
-    cssCodeSplit: true,
     sourcemap: "inline",
     target: "esnext",
     rollupOptions: {
