@@ -46,7 +46,7 @@
 	/* editor page stays near-white with just a whisper of the drifting hue */
 	--sw-editor:  oklch(97.5% .015 var(--sw-h));
 	/* ink: dark, tinted by the moving hue so even the text swooshes */
-	--sw-ink:     oklch(27% .05 var(--sw-h));
+	--sw-ink:     oklch(29% .05 var(--sw-h));
 	--sw-ink-dim: oklch(50% .06 var(--sw-h));
 
 	/* accents: mid-dark + saturated so they read on the pale ground, fanned
@@ -61,7 +61,7 @@
 	--sw-a7:  oklch(52% .19 calc(var(--sw-h) -  80));
 
 	/* ---- studio chrome ---- */
-	--studio-fill: var(--sw-bg);
+	--studio-fill: var(--sw-editor);
 	--studio-line: var(--sw-ink);
 	--studio-primary: var(--sw-a0);
 	--studio-secondary: var(--sw-a4);
@@ -72,8 +72,9 @@
 	--studio-modified: var(--sw-a5);
 	--studio-link: var(--sw-a2);
 	--studio-selection-fill: color-mix(in oklch, var(--sw-a0) 22%, transparent);
-	--studio-chrome-fill: var(--sw-bg-lift);
-	--studio-primary-line: oklch(98% .01 var(--sw-h));
+	--studio-chrome-fill: var(--sw-bg);
+	--studio-primary-line: oklch(97% .01 var(--sw-h));
+        --document-list-widget-fill: var(--sw-editor);
 
 	--text-editor-fill: var(--sw-editor);
 	--text-editor-cursor-fill: var(--sw-a0);

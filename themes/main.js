@@ -90,7 +90,6 @@ export const plugins = [
 	themePlugin("ultraviolet", "Ultraviolet", "./ultraviolet.css"),
 	themePlugin("lily", "Lily", "./lily.css"),
 	themePlugin("turbo", "Turbo", "./turbo.css"),
-	themePlugin("swooshiee", "Swooshiee", "./swooshiee.css"),
-	themePlugin("swooshienites", "Swooshienites", "./swooshienites.css"),
+	themePlugin("swooshienites", "Swooshnites", "./swooshienites.css"),
 	themePlugin("swooshyyy", "swooshyyy", "./swooshyyy.css"),
 ]
