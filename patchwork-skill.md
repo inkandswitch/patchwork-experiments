@@ -5,8 +5,8 @@ description: >-
   Use whenever creating a new tool from scratch, porting something into Patchwork,
   adding a datatype/tool/action plugin, wiring an automerge document model, or
   setting up the build/sync (vite + pushwork). House style: default to small, simple
-  tools — plain vanilla JavaScript with no build step — but TypeScript, npm
-  dependencies, and a bundled build are all fine (pushwork handles them). If a
+  tools written in plain vanilla JavaScript, but TypeScript, npm dependencies, and a
+  bundled build are all fine (pushwork handles them). If a
   reactive framework is needed, use Solid (never React). Covers the plugin registration shape, the
   (handle, element) => cleanup render contract, the datatype lifecycle, bundleless
   vs bundled builds, multiplayer/ephemeral messaging, the importmap, and the common
@@ -28,18 +28,15 @@ Namespace your CSS class names and inject styles with the JS bundle (see Build).
 These are the defaults for **new** tools in this repo. Follow them unless the user says
 otherwise.
 
-- **Default to small and simple: plain vanilla JavaScript, no build step.** A single
-  hand-written `.js` file that re-renders the DOM on `handle.on("change", …)` is the preferred
-  shape (see §4) — it's the simplest thing that works and it syncs with just `pushwork sync`.
+- **Default to small and simple: plain vanilla JavaScript.** A file that re-renders the DOM on
+  `handle.on("change", …)` is the preferred shape (see §4) — it's the simplest thing that works.
   Document shapes with a JSDoc `@typedef` comment if you want a schema note (see `tic-tac-toe.js`).
 - **TypeScript, npm dependencies, and a bundled build are fine when you want them.** pushwork
-  builds and syncs `.ts`/`.tsx` + vite tools like anything else — no need to avoid them. The
-  bundleless default is about keeping small tools small, not a ban on TypeScript or dependencies;
-  reach for a bundle when the tool has a multi-file source tree, JSX, or npm deps.
-- **If you need fine-grained reactivity, use Solid — never React.** Solid is in the importmap
-  either way: use `solid-js` with JSX (via a vite bundle) or `solid-js/html` tagged templates to
-  stay bundleless. Reach for it when the UI has enough independent live-updating pieces that
-  hand-diffing the DOM gets painful.
+  builds and syncs `.ts`/`.tsx` + vite tools like anything else — no need to avoid them. Reach for
+  a bundle when the tool has a multi-file source tree, JSX, or npm deps.
+- **If you need fine-grained reactivity, use Solid — never React.** Solid is in the importmap:
+  use `solid-js` with JSX (via a vite bundle) or `solid-js/html` tagged templates. Reach for it
+  when the UI has enough independent live-updating pieces that hand-diffing the DOM gets painful.
 - **React is legacy here.** Several existing tools use React; do not start new tools that way, and
   when editing a React tool, match its existing style rather than rewriting it.
 
@@ -48,7 +45,7 @@ tool that already uses it.**
 
 ## 1. Pick a flavor
 
-| | Bundleless (single `.js`) — **default** | Bundled (vite) |
+| | Bundleless (single `.js`) | Bundled (vite) |
 |---|---|---|
 | Use when | small tools: vanilla JS, Web Components, or Solid via `solid-js/html` | Solid with JSX, TypeScript, npm deps, or a multi-file source tree |
 | Source | one hand-written `.js` (e.g. `walkies.js`, `catclock.js`, `tic-tac-toe.js`) | `src/` compiled to `dist/index.js` |
@@ -56,11 +53,11 @@ tool that already uses it.**
 | Build | none — `pushwork sync` directly | `pnpm build` then `pushwork sync` |
 | `package.json main` | the `.js` file | `./dist/index.js` |
 
-Both flavors export the **same** `plugins` array. **Prefer bundleless for small tools** — there's
-nothing to build, and the importmap already covers automerge, solid-js, codemirror, and the
-patchwork packages. You can write a fully reactive Solid tool bundleless using `solid-js/html`
-(§4), so small tools never need vite. Reach for the bundled flavor (Solid+JSX, TypeScript, npm
-deps, or a multi-file source tree) whenever you want it — pushwork builds and syncs it fine.
+Both flavors export the **same** `plugins` array. The importmap already covers automerge,
+solid-js, codemirror, and the patchwork packages, so a bundleless tool has nothing to build. You
+can write a fully reactive Solid tool bundleless using `solid-js/html` (§4). Reach for the bundled
+flavor (Solid+JSX, TypeScript, npm deps, or a multi-file source tree) whenever you want it —
+pushwork builds and syncs it fine.
 
 ## 2. Plugin registration — `export const plugins`
 
@@ -200,8 +197,7 @@ export const TicTacToeDatatype = {
 A tool's `load()` resolves to a **render function**. It receives the document `DocHandle` and
 the host `element`, mounts UI into `element`, and **returns a cleanup function**.
 
-**Vanilla / Web Components — the default.** Re-render on every change. This is the right
-shape for the large majority of tools:
+**Vanilla / Web Components.** Re-render on every change:
 
 ```js
 function Tool(handle, element) {
@@ -226,7 +222,7 @@ function Tool(handle, element) {
 ```
 
 **Solid (when you need reactivity).** Use `solid-js` with JSX if you're bundling, or `solid-js/html`
-tagged templates to stay bundleless — both give the same fine-grained updates. The bundleless
+tagged templates without a build step — both give the same fine-grained updates. The
 `solid-js/html` version is shown here: wrap the doc in a signal you push to from the `change`
 event; write dynamic expressions as functions so they stay reactive. `render()` returns a disposer
 — return it from cleanup:
@@ -663,7 +659,7 @@ layer — they stay unlayered so they reliably override everything.
 
 ## 12. Build & sync
 
-**Bundleless (default for small tools):** no build step or toolchain. From the tool dir:
+**Bundleless:** no build step or toolchain. From the tool dir:
 `pushwork sync`. `package.json` is minimal:
 
 ```json
@@ -735,11 +731,10 @@ though a Solid or TypeScript bundle is fine.)
   worker has no importmap) — keep them inside `load()`'s dynamic `import()`. See §2.
 - **Always return a cleanup function** from the render function and actually tear down
   (listeners, roots, intervals, rAF, AudioContext, workers).
-- **New tools: default to vanilla JS and bundleless for simplicity.** TypeScript, npm deps, and a
-  vite bundle are all fine when you want them — pushwork builds them. If you need reactivity, use
-  **Solid** (`solid-js` with JSX, or `solid-js/html` to stay bundleless); never React. Existing
-  tools may be React/Solid/Svelte/TS — match the existing tool's style when editing one, and don't
-  start new tools with React.
+- **New tools: default to vanilla JS for simplicity.** TypeScript, npm deps, and a vite bundle
+  are all fine when you want them — pushwork builds them. If you need reactivity, use **Solid**
+  (`solid-js` with JSX, or `solid-js/html`); never React. Existing tools may be React/Solid/Svelte/TS
+  — match the existing tool's style when editing one, and don't start new tools with React.
 
 ## 14. Minimal complete example (bundleless)
 
@@ -780,13 +775,13 @@ Then from the tool's directory: `pushwork sync`. Done.
 
 ## 15. Reference tools in this repo
 
-**Copy these patterns (vanilla JS, bundleless — the house style):**
+**Copy these patterns (vanilla JS — the house style):**
 - **Bundleless / vanilla:** `tic-tac-toe`, `catclock`, `walkies`, `sparkles`, `webtile`
 - **Web Components + audio/wasm:** `bento`, `call`, `sound`
 - **Headless actions:** `actions` (written in TypeScript)
 
 **Reach for Solid if you need reactivity:** `cache-browser`, `file`, `chat`, `paper` (these use
-JSX + a bundle; `solid-js/html` is the bundleless alternative for small tools).
+JSX + a bundle; `solid-js/html` is a bundleless alternative).
 
 **Legacy React — reference for behavior, NOT for style (don't copy the React approach):**
 `datagrid`, `boardgame`, `datalog`, `doc-copy-history`.
