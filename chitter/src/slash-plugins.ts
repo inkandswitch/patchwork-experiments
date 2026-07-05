@@ -89,14 +89,9 @@ export const slashPlugins: SlashPlugin[] = [
 		sideEffect: "emoticon-dialog",
 	},
 	{
-		type: "chat:slash", id: "call", name: "Call", cmd: "/call", tier: "full",
-		usage: "/call", desc: "Start a voice/video call in this chat",
-		sideEffect: "call",
-	},
-	{
 		type: "chat:slash", id: "pin", name: "Pin", cmd: "/pin", tier: "full",
-		usage: "/pin <url|transcript>",
-		desc: 'Pin a document to the sidebar (automerge URL, tiny patchwork URL, or "transcript")',
+		usage: "/pin <url>",
+		desc: "Pin a document to the sidebar (automerge URL or tiny patchwork URL)",
 		sideEffect: "pin",
 	},
 ]

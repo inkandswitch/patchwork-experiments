@@ -33,8 +33,8 @@ export const plugins = [
 	},
 	// Seam plugins: slash commands, inline-formatting rules, and hover actions.
 	// (Feature-slot descriptions — reactions/sidebar/voice/gif/emoticons/
-	// notifications/call, each with its Solid components behind `async load()` —
-	// are added as those components are moved over.)
+	// notifications, each with its Solid components behind `async load()`. The
+	// call feature lives in the separate `call` bundle, not here.)
 	...slashPluginDescriptions,
 	...syntaxPlugins,
 	...messageActionDescriptions,

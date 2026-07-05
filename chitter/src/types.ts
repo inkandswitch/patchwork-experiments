@@ -73,7 +73,6 @@ export interface ChatDoc {
 	emoticons?: Record<string, {url: AutomergeUrl; addedBy: string}>
 	fonts?: Record<string, {url: AutomergeUrl; addedBy: string}>
 	hasComputer?: boolean
-	callUrl?: AutomergeUrl
 }
 
 export interface ChatProfileDoc {

@@ -48,7 +48,7 @@ if (pushworking) {
 
 /** @type {import("esbuild").BuildOptions} */
 export default {
-  entryPoints: ["src/call.js", "src/call-session.js", "src/call-titlebar.js", "src/telephone.js", "src/teleprint.js"],
+  entryPoints: ["src/call.js", "src/chat-call.js", "src/call-session.js", "src/call-titlebar.js", "src/telephone.js", "src/teleprint.js"],
   outdir: "dist",
   bundle: true,
   platform: "browser",
