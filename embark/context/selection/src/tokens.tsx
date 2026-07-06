@@ -4,17 +4,17 @@ import {
   type AutomergeUrl,
   type Repo,
 } from "@automerge/automerge-repo";
-import { createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { splitDocUrl, type ContextView } from "@embark/context";
 import { Highlight } from "./channels";
 import "./tokens.css";
 
-// Shared building blocks for context visualizers. Any channel that points at
+// Shared building blocks for context views. Any channel that points at
 // documents (selection, highlight, search results, command suggestions,
 // stickers) renders the same embed token and drives the same shared `Highlight`
-// channel on hover; string-keyed channels (queries, schema names, extension
-// keys) render as chips. These live in @embark/selection because the hover
-// interaction writes the `Highlight` channel this package owns.
+// channel on hover; string-keyed channels render as chips. These live in
+// @embark/selection because the hover interaction writes the `Highlight`
+// channel this package owns.
 
 // Token labels are clipped to keep pills short (the full url is in `title`).
 const MAX_LABEL = 40;
@@ -60,18 +60,6 @@ export function EmbedToken(props: {
     >
       <span ref={host} />
     </span>
-  );
-}
-
-// A row of small monospace pills for string-keyed channel values (query text,
-// schema names, extension keys).
-export function Chips(props: { labels: string[] }) {
-  return (
-    <div class="embark-token-row">
-      <For each={props.labels}>
-        {(label) => <span class="embark-schema__token">{label}</span>}
-      </For>
-    </div>
   );
 }
 

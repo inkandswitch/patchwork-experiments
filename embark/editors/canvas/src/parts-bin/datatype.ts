@@ -190,16 +190,22 @@ const CARD_SEEDS: CardSeed[] = [
   },
 ];
 
-// The starter set: every card (one uniform `card` document each), plus a map, a
-// demo markdown note, an empty deck, and the context viewer (still its own
-// tool). `repo.create` doesn't run a datatype's `init`, so each child doc's
-// initial value is set inline here.
+// The starter set: every card (one uniform `card` document each), plus a
+// blank placeholder card, a map, a demo markdown note, an empty deck, and the
+// context viewer (still its own tool). `repo.create` doesn't run a datatype's
+// `init`, so each child doc's initial value is set inline here.
 export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const cardItems: PartsBinItem[] = CARD_SEEDS.map((seed) => ({
     id: crypto.randomUUID(),
     url: mintCard(repo, seed).url,
     toolId: "card",
   }));
+
+  cardItems.push({
+    id: crypto.randomUUID(),
+    url: mintPlaceholderCard(repo).url,
+    toolId: "card",
+  });
 
   const map = repo.create({
     "@patchwork": { type: "map" },
@@ -256,5 +262,66 @@ function mintCard(repo: Repo, seed: CardSeed) {
     icon: seed.icon,
     accent: seed.accent,
     ...(seed.state as Partial<CardDoc>),
+  });
+}
+
+// The starting spec of a blank card: instructions for turning it into a real
+// one via the inspector's regenerate loop.
+const PLACEHOLDER_SPEC = `# Blank Card
+
+This card has no behavior yet.
+
+Describe what it should do here, then right-click the card on the canvas,
+choose Inspect, and press "Regenerate code" under this spec.
+`;
+
+// The no-op behavior module the blank card ships with: it only labels the
+// middle slot so the card reads as intentionally empty.
+const PLACEHOLDER_MODULE = `// A placeholder behavior. Regenerate this module from the card's spec.
+export default (handle, element) => {
+  const note = document.createElement("div");
+  note.textContent = "No behavior yet";
+  note.style.cssText =
+    "color: #a8a29e; font-size: 12px; text-align: center; padding: 12px 8px;";
+  element.appendChild(note);
+  return () => note.remove();
+};
+`;
+
+// A blank placeholder card, minted entirely client-side: its package is a
+// plain folder doc holding a `spec.md` and a bundleless `card.js` — no build
+// step, no published module. Editing the spec and regenerating (see
+// @embark/inspect) is how it becomes a real card.
+function mintPlaceholderCard(repo: Repo) {
+  const spec = repo.create({
+    "@patchwork": { type: "file" },
+    name: "spec.md",
+    extension: "md",
+    mimeType: "text/markdown",
+    content: PLACEHOLDER_SPEC,
+  });
+  const module = repo.create({
+    "@patchwork": { type: "file" },
+    name: "card.js",
+    extension: "js",
+    mimeType: "text/javascript",
+    content: PLACEHOLDER_MODULE,
+  });
+  const pkg = repo.create({
+    "@patchwork": { type: "folder" },
+    title: "Blank Card",
+    docs: [
+      { name: "spec.md", type: "file", url: spec.url },
+      { name: "card.js", type: "file", url: module.url },
+    ],
+  });
+
+  return repo.create<CardDoc>({
+    "@patchwork": { type: "card", title: "Blank Card" },
+    src: `/${encodeURIComponent(pkg.url)}/card.js`,
+    description:
+      "A card without any behavior. Inspect it and edit the spec to make it do something.",
+    icon: "card",
+    accent: "#a8a29e",
   });
 }

@@ -16,12 +16,37 @@ export type Channel<T extends Record<string, unknown>> = {
   name: string;
   // The resting value a reader sees when no scope contributes.
   empty: T;
+  // Semantic marker for set channels (see `defineSetChannel`): values are
+  // `true` sentinels and only the keys matter. The store ignores this — merge
+  // stays the plain record key-union — but a generic inspector renders set
+  // channels as a row of key views and never draws the values.
+  set?: true;
+  // Runtime tags for the channel's key and value types, so a generic inspector
+  // can pick a registered view (see ./views) without knowing the channel. Tags
+  // share one flat namespace regardless of key/value position ("doc-url",
+  // "sticker", …). `key` omitted -> keys draw as plain string chips; `value`
+  // names the *element* type for array values and omitted -> values draw as
+  // JSON.
+  key?: string;
+  value?: string;
 };
 
 export function defineChannel<T extends Record<string, unknown>>(
   def: Channel<T>,
 ): Channel<T> {
   return def;
+}
+
+// Sugar for set channels: a set of keys stored as `Record<K, true>` so it
+// merges exactly like every other channel (and stays plain JSON). The returned
+// channel is an ordinary `Channel<Record<K, true>>` — writers keep doing
+// `slice[k] = true` / `delete slice[k]` — but carries `set: true` so
+// inspectors know the values are sentinels.
+export function defineSetChannel<K extends string>(def: {
+  name: string;
+  key?: string;
+}): Channel<Record<K, true>> {
+  return { ...def, empty: {} as Record<K, true>, set: true };
 }
 
 // A writer's handle to one scope's slice of a channel. `change` mutates only

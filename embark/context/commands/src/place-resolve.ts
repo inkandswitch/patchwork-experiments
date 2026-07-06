@@ -9,7 +9,6 @@ import {
   SchemaQueries,
   schemaKey,
   type JsonSchema,
-  type SchemaQuery,
 } from "@embark/schema";
 import { SearchQueries, SearchResults } from "@embark/search";
 import type { ContextStore } from "@embark/context";
@@ -24,10 +23,6 @@ const LATLNG_JSON_SCHEMA = z.toJSONSchema(
   z.object({ lat: z.number(), lon: z.number() }),
 ) as unknown as JsonSchema;
 const LATLNG_KEY = schemaKey(LATLNG_JSON_SCHEMA);
-const LATLNG_QUERY: SchemaQuery = {
-  name: "Geo positions",
-  schema: LATLNG_JSON_SCHEMA,
-};
 
 // Shared place resolution for the command cards (weather, route). It answers
 // "where is the place the user typed?" the same way the map asks "where are the
@@ -70,7 +65,7 @@ export function createPlaceResolver(
   const schemaQueries = store.handle(SchemaQueries);
   const searchQueries = store.handle(SearchQueries);
   schemaQueries.change((slice) => {
-    slice[LATLNG_KEY] = LATLNG_QUERY;
+    slice[LATLNG_KEY] = true;
   });
 
   const resolveLatLon = async (place: string): Promise<Located | null> => {

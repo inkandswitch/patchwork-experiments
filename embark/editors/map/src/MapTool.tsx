@@ -11,12 +11,7 @@ import { render } from "solid-js/web";
 import { getContextHandle, subscribeContext } from "@embark/context";
 import { Highlight, Selection } from "@embark/selection";
 import { SchemaMatches, SchemaQueries } from "@embark/schema";
-import {
-  LATLNG_KEY,
-  LATLNG_QUERY,
-  LATLNG_LINE_KEY,
-  LATLNG_LINE_QUERY,
-} from "./latlng";
+import { LATLNG_KEY, LATLNG_LINE_KEY } from "./latlng";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -757,8 +752,8 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // points become markers, lines become polylines.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
-    slice[LATLNG_KEY] = LATLNG_QUERY;
-    slice[LATLNG_LINE_KEY] = LATLNG_LINE_QUERY;
+    slice[LATLNG_KEY] = true;
+    slice[LATLNG_LINE_KEY] = true;
   });
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
     lastPointMatches = all[LATLNG_KEY] ?? [];

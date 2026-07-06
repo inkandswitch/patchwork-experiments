@@ -1,4 +1,4 @@
-import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import {
   createEffect,
   createMemo,
@@ -14,17 +14,16 @@ import {
   type Channel,
   type ContextStore,
 } from "@embark/context";
-import { VisualizerHost } from "../VisualizerHost";
+import { ChannelView } from "../ChannelView";
 
 // "Contributed by this embed": every channel the focused embed authored a slice
 // on. Channel-agnostic — it enumerates the store's live channels (no hardcoded
 // list) and keeps the ones with a non-empty contributed slice. Each kept
 // channel is handed a `filterChannel` lens restricting it to the focused embed's
-// contributions, so the visualizer draws only that slice without knowing it was
-// filtered.
+// contributions, so the channel view draws only that slice without knowing it
+// was filtered.
 export function ContributionsView(props: {
   store: ContextStore;
-  repo: Repo;
   focusDocUrl: AutomergeUrl;
 }) {
   const channels = useChannels(props.store);
@@ -52,14 +51,13 @@ export function ContributionsView(props: {
         {(channel) => (
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
-            <VisualizerHost
+            <ChannelView
               context={filterChannel(
                 props.store,
                 channel.name,
                 ownedBy(props.focusDocUrl),
               )}
               channel={channel}
-              repo={props.repo}
             />
           </div>
         )}

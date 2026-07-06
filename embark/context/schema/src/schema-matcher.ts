@@ -1,18 +1,14 @@
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import type { z } from "zod";
 import { jsonSchemaToZod, type JsonSchema } from "./schema";
-import {
-  OpenDocuments,
-  SchemaMatches,
-  SchemaQueries,
-  type SchemaQuery,
-} from "./channels";
+import { OpenDocuments, SchemaMatches, SchemaQueries } from "./channels";
 import type { ContextStore } from "@embark/context";
 
 // Answers "where does this schema occur?" over the open-document set. Reads the
-// requested schemas from the `SchemaQueries` channel, matches them against
-// every document listed in the `OpenDocuments` channel, and writes match urls
-// into `SchemaMatches` keyed by the same correlation key (`schemaKey`).
+// requested schemas from the `SchemaQueries` channel — a set whose members are
+// the canonical schema JSON itself (`schemaKey`), parsed back with JSON.parse —
+// matches them against every document listed in the `OpenDocuments` channel,
+// and writes match urls into `SchemaMatches` keyed by the same string.
 //
 // Discovery is entirely channel-driven: whoever wants a document matched
 // publishes its url into `OpenDocuments` (the Open Documents card contributes
@@ -41,9 +37,9 @@ export function runSchemaMatcher(store: ContextStore, repo: Repo): () => void {
   // The matcher is the single writer of the SchemaMatches channel.
   const matchesHandle = store.handle(SchemaMatches);
 
-  // The requested schemas, keyed by schemaKey, plus a cache of their compiled
-  // zod equivalents so we hydrate each JSON Schema only once.
-  let queries: Record<string, SchemaQuery> = store.read(SchemaQueries);
+  // The requested schemas (each key is the canonical schema JSON), plus a
+  // cache of their compiled zod equivalents so we hydrate each one only once.
+  let queries: Record<string, true> = store.read(SchemaQueries);
   const compiled = new Map<string, z.ZodType>();
 
   const unsubscribeQueries = store.subscribe(SchemaQueries, (next) => {
@@ -104,10 +100,12 @@ export function runSchemaMatcher(store: ContextStore, repo: Repo): () => void {
   // doc edit doesn't churn readers.
   const reevaluateAll = () => {
     const result: Record<string, AutomergeUrl[]> = {};
-    for (const [key, query] of Object.entries(queries)) {
+    for (const key of Object.keys(queries)) {
       let schema = compiled.get(key);
       if (!schema) {
-        schema = jsonSchemaToZod(querySchema(query));
+        const parsed = parseQueryKey(key);
+        if (parsed === undefined) continue; // not a valid schema key; skip
+        schema = jsonSchemaToZod(parsed);
         compiled.set(key, schema);
       }
       const matches: AutomergeUrl[] = [];
@@ -139,21 +137,15 @@ export function runSchemaMatcher(store: ContextStore, repo: Repo): () => void {
   };
 }
 
-// The schema to match from a query value. New consumers publish a
-// `{ name, schema }` query; older generated cards may still write a bare JSON
-// Schema, so unwrap `.schema` only when present and otherwise treat the value
-// as the schema itself. (JSON Schema's own keyword is `$schema`, never bare
-// `schema`, so this discrimination is safe.)
-function querySchema(query: SchemaQuery | JsonSchema): JsonSchema {
-  if (
-    query !== null &&
-    typeof query === "object" &&
-    !Array.isArray(query) &&
-    "schema" in query
-  ) {
-    return (query as SchemaQuery).schema;
+// A set member back to its schema: the key is `schemaKey(schema)` — canonical
+// JSON — so parsing recovers it exactly. A key that doesn't parse (a rogue
+// writer) yields no matches rather than throwing mid-pass.
+function parseQueryKey(key: string): JsonSchema | undefined {
+  try {
+    return JSON.parse(key) as JsonSchema;
+  } catch {
+    return undefined;
   }
-  return query as JsonSchema;
 }
 
 // Depth-first walk: test every node against the schema and record the native

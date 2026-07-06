@@ -34,6 +34,7 @@ import {
   type InspectTarget,
 } from "@embark/inspect";
 import { wasEmbedClaimed } from "./drop-claim";
+import { deepCloneDoc } from "./deep-clone";
 import { AUTOSIZE_TOOLS, FRAMELESS_TOOLS } from "./tool-traits";
 import "./styles.css";
 
@@ -331,10 +332,20 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     setSelectedId(null);
   };
 
-  // Cmd/Ctrl+D: duplicate the selected embed. The copy references the same
-  // document as the original — there is no deep copy — and is dropped slightly
+  // Cmd/Ctrl+D: duplicate the selected embed as a deep clone. The copy gets
+  // its own document, and every document that document references (recursively
+  // — a card's behavior package, its files) is cloned and re-pointed too, so
+  // the duplicate is fully independent of the original. Dropped slightly
   // down-and-right.
-  const duplicateEmbed = (id: string) => {
+  const duplicateEmbed = async (id: string) => {
+    const source = doc()?.embeds[id];
+    if (!source) return;
+
+    const clonedUrl =
+      source.docUrl !== undefined
+        ? await deepCloneDoc(repo, source.docUrl)
+        : undefined;
+
     const newId = crypto.randomUUID();
     props.handle.change((canvas) => {
       const src = canvas.embeds[id];
@@ -349,7 +360,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         height: src.height,
         z: highestZ(canvas.embeds) + 1,
       };
-      if (src.docUrl !== undefined) copy.docUrl = src.docUrl;
+      if (clonedUrl !== undefined) copy.docUrl = clonedUrl;
       if (src.toolId !== undefined) copy.toolId = src.toolId;
       if (src.locked !== undefined) copy.locked = src.locked;
       if (src.showFrame !== undefined) copy.showFrame = src.showFrame;
@@ -544,13 +555,13 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         const id = selectedId();
         if (!id) return;
 
-        // Cmd/Ctrl+D duplicates the selected embed (deep copy).
+        // Cmd/Ctrl+D duplicates the selected embed (deep clone).
         if (
           (event.metaKey || event.ctrlKey) &&
           event.key.toLowerCase() === "d"
         ) {
           event.preventDefault();
-          duplicateEmbed(id);
+          void duplicateEmbed(id);
           return;
         }
 

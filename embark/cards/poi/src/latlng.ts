@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { schemaKey, type JsonSchema, type SchemaQuery } from "@embark/schema";
+import { schemaKey, type JsonSchema } from "@embark/schema";
 
 // A `{ lat, lon }` pair — this card's notion of "a place". Packages now define
 // their own schemas and correlate purely by structural identity: the map, the
@@ -11,8 +11,3 @@ export const LATLNG_JSON_SCHEMA = z.toJSONSchema(
 ) as unknown as JsonSchema;
 
 export const LATLNG_KEY = schemaKey(LATLNG_JSON_SCHEMA);
-
-export const LATLNG_QUERY: SchemaQuery = {
-  name: "Geo positions",
-  schema: LATLNG_JSON_SCHEMA,
-};

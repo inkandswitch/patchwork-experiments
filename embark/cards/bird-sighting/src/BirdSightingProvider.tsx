@@ -17,7 +17,6 @@ import {
   jsonSchemaToZod,
   schemaKey,
   type JsonSchema,
-  type SchemaQuery,
 } from "@embark/schema";
 import type { BirdCardDoc, BirdKind, BirdPeriod } from "./datatype";
 import {
@@ -66,7 +65,6 @@ const MAP_JSON_SCHEMA: JsonSchema = {
   required: ["@patchwork", "bounds"],
 };
 const MAP_KEY = schemaKey(MAP_JSON_SCHEMA);
-const MAP_QUERY: SchemaQuery = { name: "Maps", schema: MAP_JSON_SCHEMA };
 
 type MapDocLike = { bounds?: MapBounds };
 
@@ -105,7 +103,7 @@ export function BirdSighting(props: {
   // document urls, usually one).
   const schemaQueries = useContextHandle(props.element, SchemaQueries);
   schemaQueries.change((slice) => {
-    slice[MAP_KEY] = MAP_QUERY;
+    slice[MAP_KEY] = true;
   });
   const schemaMatches = readContext(props.element, SchemaMatches);
   const mapUrls = createMemo(() => schemaMatches()[MAP_KEY] ?? []);
@@ -139,12 +137,14 @@ export function BirdSighting(props: {
     lat: 0,
     lon: 0,
   };
-  const matchingKeys = (queries: Record<string, SchemaQuery>): string[] => {
+  const matchingKeys = (queries: Record<string, true>): string[] => {
     const keys: string[] = [];
-    for (const [key, query] of Object.entries(queries)) {
+    for (const key of Object.keys(queries)) {
       let schema = compiled.get(key);
       if (!schema) {
-        schema = jsonSchemaToZod(querySchema(query));
+        const parsed = parseSchemaKey(key);
+        if (parsed === undefined) continue;
+        schema = jsonSchemaToZod(parsed);
         compiled.set(key, schema);
       }
       if (schema.safeParse(probe).success) keys.push(key);
@@ -352,19 +352,15 @@ export function BirdSighting(props: {
   );
 }
 
-// The schema to match from a published query. Consumers publish `{ name, schema
-// }`, but a bare JSON Schema is unwrapped defensively too (JSON Schema's own
-// keyword is `$schema`, never bare `schema`, so this discrimination is safe).
-function querySchema(query: SchemaQuery | JsonSchema): JsonSchema {
-  if (
-    query !== null &&
-    typeof query === "object" &&
-    !Array.isArray(query) &&
-    "schema" in query
-  ) {
-    return (query as SchemaQuery).schema;
+// A published query key back to its schema: keys are `schemaKey(schema)` —
+// canonical JSON — so parsing recovers the schema exactly. An unparseable key
+// (a rogue writer) simply matches nothing.
+function parseSchemaKey(key: string): JsonSchema | undefined {
+  try {
+    return JSON.parse(key) as JsonSchema;
+  } catch {
+    return undefined;
   }
-  return query as JsonSchema;
 }
 
 function statusText(status: Status): string {

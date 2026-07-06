@@ -7,4 +7,6 @@ import type { Sticker } from "./sticker";
 export const Stickers = defineChannel<Record<AutomergeUrl, Sticker[]>>({
   name: "stickers",
   empty: {},
+  key: "doc-url",
+  value: "sticker",
 });

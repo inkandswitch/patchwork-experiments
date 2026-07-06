@@ -1,9 +1,9 @@
-/* A scrollable column of channel cards: a monospace channel name over its
-   visualization (or pretty-printed merged JSON value). The per-channel bodies
-   are painted by registered context visualizers (or the default JSON viewer);
-   their styling ships with those packages. This stylesheet is only the shell:
-   the scroll column, the channel cards, the focus sections, and the JSON
-   fallback. */
+/* A scrollable column of channel cards: a monospace channel name over the
+   generic channel body (entries drawn by per-type context views, plus the
+   "added by" / "read by" provenance rows). Individual key/value faces are
+   painted by registered `embark:context-view`s whose styling ships with their
+   packages; this stylesheet is the shell plus the built-in chip/JSON
+   fallbacks. */
 .embark-context {
   display: flex;
   flex-direction: column;
@@ -123,9 +123,60 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.embark-context__value {
-  margin: 0;
+/* --- Generic channel body -------------------------------------------------- */
+/* Entries (key -> values, or a bare key row for set channels), then the
+   provenance rows. */
+.embark-context__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   padding: 8px;
+}
+
+.embark-context__nothing {
+  font-size: 11px;
+  font-style: italic;
+  color: #a8a29e;
+}
+
+.embark-context__entries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.embark-context__entry {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.embark-context__entry-key {
+  flex: 0 0 auto;
+  max-width: 40%;
+}
+
+.embark-context__entry-values {
+  min-width: 0;
+}
+
+.embark-context__slot {
+  display: contents;
+}
+
+/* Built-in fallback faces: a monospace chip for keys, safe JSON for values. */
+.embark-context__chip {
+  padding: 2px 8px;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #57534e;
+  background: #faf9f8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.embark-context__json {
   font-size: 11px;
   line-height: 1.4;
   color: #44403c;
@@ -134,9 +185,22 @@
   word-break: break-word;
 }
 
-.embark-context__value--empty {
+/* Provenance rows: who added data to the channel, who reads it. */
+.embark-context__owners {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #f0eeec;
+}
+
+.embark-context__owners-label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: #a8a29e;
-  font-style: italic;
 }
 
 .embark-context__empty {

@@ -7,26 +7,25 @@ import {
 } from "./context";
 import { belongsToDoc } from "./attribution";
 
-// The read/interact surface a context visualizer needs: the merged value of a
-// channel, its per-scope contributions, change notifications, and a handle for
-// the ambient hover->highlight interaction. A plain `ContextStore` satisfies
-// this structurally (it has these plus the reader/channel-enumeration methods),
-// so whole-context mode hands the store itself to a visualizer; a focused view
-// hands a `filterChannel` lens instead. Because both share this interface, a
-// visualizer can't tell whether it is drawing the whole canvas or one embed's
+// The read/interact surface a context inspector needs: the merged value of a
+// channel, its per-scope contributions, its readers, change notifications, and
+// a handle for the ambient hover->highlight interaction. A plain `ContextStore`
+// satisfies this structurally (it has these plus channel enumeration), so
+// whole-context mode hands the store itself to the inspector; a focused view
+// hands a `filterChannel` lens instead. Because both share this interface, an
+// inspector can't tell whether it is drawing the whole canvas or one embed's
 // slice — the viewer decides by choosing which one to pass.
 export type ContextView = Pick<
   ContextStore,
-  "read" | "scopes" | "subscribe" | "handle"
+  "read" | "scopes" | "subscribe" | "handle" | "readers" | "subscribeReaders"
 >;
 
 // A lens over a store that narrows a single channel to the scopes whose owner
 // matches `keepOwner`, leaving every other channel untouched. Only the
-// visualized channel is filtered; ambient reads a visualizer makes on other
-// channels (the shared `highlight`, a results table cross-reading its
-// `search:queries`) pass straight through to the full store. Writes (`handle`)
-// and subscriptions also delegate unchanged — filtering is purely a read-time
-// projection of one channel's contributions.
+// inspected channel is filtered; ambient reads an inspector makes on other
+// channels (the shared `highlight`, say) pass straight through to the full
+// store. Writes (`handle`) and subscriptions also delegate unchanged —
+// filtering is purely a read-time projection of one channel's contributions.
 export function filterChannel(
   store: ContextStore,
   channelName: string,
@@ -54,6 +53,8 @@ export function filterChannel(
       return store.subscribe(channel, cb, owner);
     },
     handle: store.handle,
+    readers: store.readers,
+    subscribeReaders: store.subscribeReaders,
   };
 }
 

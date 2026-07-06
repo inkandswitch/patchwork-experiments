@@ -133,7 +133,7 @@ function discoverTypes(
 ): void {
   const queries = getContextHandle(element, SchemaQueries);
   queries?.change((slice) => {
-    slice[TYPE_KEY] = { name: "Patchwork documents", schema: TYPE_SCHEMA };
+    slice[TYPE_KEY] = true;
   });
 
   const unsubscribe = subscribeContext(element, SchemaMatches, (all) => {

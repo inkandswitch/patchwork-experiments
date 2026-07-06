@@ -1,25 +1,23 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { defineChannel } from "@embark/context";
+import { defineChannel, defineSetChannel } from "@embark/context";
 import type { JsonSchema } from "./schema";
 
-// A published schema query: the schema to match plus a short human-readable
-// name for it (so views like the context viewer can label "where does this
-// occur?" sections). Keyed by `schemaKey` (derived from the schema alone), so
-// two consumers with the same schema share a key, matches, and — last writer
-// wins — a name.
-export type SchemaQuery = { name: string; schema: JsonSchema };
-
-// Request/response pair for schema matching: consumers publish a named JSON
-// Schema (keyed by `schemaKey`) into `SchemaQueries`, the schema matcher
-// (./schema-matcher.ts) answers with match urls in `SchemaMatches`.
-export const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
+// Request/response pair for schema matching: consumers publish JSON Schemas
+// into `SchemaQueries`, the schema matcher (./schema-matcher.ts) answers with
+// match urls in `SchemaMatches`. A query *is* its serialized schema: the set
+// member / match key is `schemaKey(schema)` — canonical JSON, so
+// `JSON.parse(key)` recovers the schema exactly — and two consumers with the
+// same schema share one key and one result array.
+export const SchemaQueries = defineSetChannel<string>({
   name: "schema:queries",
-  empty: {},
+  key: "json-schema",
 });
 
 export const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
   name: "schema:matches",
   empty: {},
+  key: "json-schema",
+  value: "doc-url",
 });
 
 // The documents currently in scope for schema matching, as a url-keyed set.
@@ -29,9 +27,9 @@ export const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
 // closure; cards that mint synthetic documents (the POI provider, stickerable
 // mirrors) add theirs. The schema matcher (./schema-matcher.ts) reads the
 // union — this channel replaces the old DOM `patchwork:mounted` discovery.
-export const OpenDocuments = defineChannel<Record<AutomergeUrl, true>>({
+export const OpenDocuments = defineSetChannel<AutomergeUrl>({
   name: "open-documents",
-  empty: {},
+  key: "doc-url",
 });
 
 // A stable, canonical stringification of a JSON Schema, used as the correlation

@@ -8,7 +8,6 @@ import {
   SchemaQueries,
   schemaKey,
   type JsonSchema,
-  type SchemaQuery,
 } from "@embark/schema";
 
 // A JSON Schema that matches only document *roots*: `@patchwork.type` (a string)
@@ -29,7 +28,6 @@ const ROOT_SCHEMA: JsonSchema = {
 };
 
 const ROOT_KEY = schemaKey(ROOT_SCHEMA);
-const ROOT_QUERY: SchemaQuery = { name: "Documents", schema: ROOT_SCHEMA };
 
 // A contributor that answers the canvas search channel with documents already
 // on the canvas. It reads the active queries and the set of reachable
@@ -48,7 +46,7 @@ export function DocFinderProvider(props: { element: ToolElement }) {
   // schema and reading its matches. Each match url is a bare document url.
   const schemaQueries = useContextHandle(props.element, SchemaQueries);
   schemaQueries.change((slice) => {
-    slice[ROOT_KEY] = ROOT_QUERY;
+    slice[ROOT_KEY] = true;
   });
   const schemaMatches = readContext(props.element, SchemaMatches);
   const candidates = createMemo(() => schemaMatches()[ROOT_KEY] ?? []);

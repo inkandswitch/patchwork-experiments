@@ -4,7 +4,7 @@ import { createEffect, onCleanup } from "solid-js";
 import { readContext, useContextHandle } from "@embark/context";
 import { SearchQueries, SearchResults } from "@embark/search";
 import { OpenDocuments, SchemaMatches, SchemaQueries } from "@embark/schema";
-import { LATLNG_KEY, LATLNG_QUERY } from "./latlng";
+import { LATLNG_KEY } from "./latlng";
 import type { PoiCardDoc } from "./datatype";
 
 // A single OpenStreetMap place, flattened from a Nominatim result. Minted into a
@@ -101,7 +101,7 @@ export function PoiProvider(props: { element: ToolElement }) {
 
   const schemaQueries = useContextHandle(props.element, SchemaQueries);
   schemaQueries.change((slice) => {
-    slice[LATLNG_KEY] = LATLNG_QUERY;
+    slice[LATLNG_KEY] = true;
   });
   const schemaMatches = readContext(props.element, SchemaMatches);
   createEffect(() => {

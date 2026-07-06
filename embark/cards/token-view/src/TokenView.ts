@@ -95,8 +95,7 @@ function paintFallback(
   const fixedLabel = element.getAttribute("fallback-label");
 
   const render = () => {
-    element.textContent =
-      fixedLabel || docTitle(handle.doc()) || shortId(handle.url);
+    element.textContent = fixedLabel || docTitle(handle) || shortId(handle.url);
   };
   render();
 
@@ -125,18 +124,19 @@ function docType(doc: unknown): string | undefined {
 // A best-effort display title for a document: its patchwork title, a card's
 // name, its own title, or its content. Empty string becomes undefined so the
 // caller can fall back to a short id.
-function docTitle(doc: unknown): string | undefined {
-  const record = (doc ?? {}) as {
-    "@patchwork"?: { title?: unknown };
-    title?: unknown;
-    name?: unknown;
-    content?: unknown;
-  };
+function docTitle(handle: DocHandle<unknown>): string | undefined {
+  const record = (
+    handle as DocHandle<{
+      "@patchwork"?: { title?: unknown };
+      title?: unknown;
+      name?: unknown;
+    }>
+  ).doc();
   const candidates = [
     record["@patchwork"]?.title,
     record.name,
     record.title,
-    record.content,
+    handle.url,
   ];
   for (const value of candidates) {
     if (typeof value === "string" && value.trim()) return clip(value.trim());

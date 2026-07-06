@@ -209,7 +209,7 @@ export function runStickerSource(
   // ride the schema channels; the schema matcher card answers.
   const schemaQueries = getContextHandle(element, SchemaQueries);
   schemaQueries?.change((slice) => {
-    slice[TEXT_KEY] = { name: "Text fields", schema: TEXT_SCHEMA };
+    slice[TEXT_KEY] = true;
   });
   const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
     onMatches(all[TEXT_KEY] ?? []);

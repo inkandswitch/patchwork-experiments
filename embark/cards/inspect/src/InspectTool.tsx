@@ -19,6 +19,7 @@ import "@inkandswitch/patchwork-elements";
 import type { DocLink } from "./folder";
 import type { InspectDoc } from "./resolve-target";
 import { SourceBrowser } from "./SourceBrowser";
+import { RegeneratePanel } from "./RegeneratePanel";
 import "./inspect.css";
 
 // The host-registered tool that shows any document as plain data; used by the
@@ -150,6 +151,14 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
                       doc-url={url()}
                       tool-id={SPEC_TOOL_ID}
                     />
+                  )}
+                </Show>
+                {/* When the embed is a card, the spec doubles as its source of
+                    truth: edit it above, then regenerate the behavior module
+                    to match. The panel renders nothing for non-card docs. */}
+                <Show when={documentUrl()}>
+                  {(url) => (
+                    <RegeneratePanel packageUrl={pkg()} documentUrl={url()} />
                   )}
                 </Show>
               </Match>

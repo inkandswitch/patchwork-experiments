@@ -14,4 +14,5 @@ import { defineChannel } from "@embark/context";
 export const CodemirrorExtensions = defineChannel<Record<string, unknown>>({
   name: "codemirror:extensions",
   empty: {},
+  value: "codemirror-extension",
 });

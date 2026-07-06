@@ -1,19 +1,17 @@
-import type { AutomergeUrl, Repo } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { splitDocUrl, type Channel, type ContextStore } from "@embark/context";
-import { VisualizerHost } from "../VisualizerHost";
+import { ChannelView } from "../ChannelView";
 import { useChannels } from "./ContributionsView";
 
-// "Used by this embed": the channels the focused embed subscribes to, each drawn
-// by its registered visualizer (or the default JSON viewer) showing the merged
-// value the embed reads. Channel-agnostic — it enumerates the store's live
-// channels and keeps the ones whose reader set includes the focused document.
-// Reader attribution is per-channel (the store can't see which keys a reader
-// consumes), so this answers "what does this embed subscribe to, and what does
-// it currently get".
+// "Used by this embed": the channels the focused embed subscribes to, each
+// drawn by the generic ChannelView showing the merged value the embed reads.
+// Channel-agnostic — it enumerates the store's live channels and keeps the
+// ones whose reader set includes the focused document. Reader attribution is
+// per-channel (the store can't see which keys a reader consumes), so this
+// answers "what does this embed subscribe to, and what does it currently get".
 export function UsedView(props: {
   store: ContextStore;
-  repo: Repo;
   focusDocUrl: AutomergeUrl;
 }) {
   const channels = useChannels(props.store);
@@ -45,11 +43,7 @@ export function UsedView(props: {
         {(channel) => (
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
-            <VisualizerHost
-              context={props.store}
-              channel={channel}
-              repo={props.repo}
-            />
+            <ChannelView context={props.store} channel={channel} />
           </div>
         )}
       </For>

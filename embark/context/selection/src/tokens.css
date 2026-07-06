@@ -1,29 +1,5 @@
-/* Shared token + chip styling for context visualizers. Injected (via
-   vite-plugin-css-injected-by-js) when a visualizer that renders tokens/chips
-   loads. */
-
-/* Small monospace pills for string-keyed channels (query text, schema names,
-   extension keys). */
-.embark-schema__token {
-  padding: 4px 10px;
-  border: 1px solid #cbd2da;
-  border-radius: 8px;
-  font-size: 11px;
-  color: #6b7280;
-  background: #f7f8fa;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: nowrap;
-  transition:
-    border-color 0.12s ease,
-    color 0.12s ease,
-    background-color 0.12s ease;
-}
-
-.embark-schema__token:hover {
-  border-color: #1d4ed8;
-  color: #1d4ed8;
-  background: #eef4ff;
-}
+/* Shared token styling for context views. Injected (via
+   vite-plugin-css-injected-by-js) when a module that renders tokens loads. */
 
 /* --- Document tokens (selection / highlight / search / commands) ---------- */
 /* Each document renders its real embed face (see EmbedToken, via the shared
@@ -31,25 +7,10 @@
    Highlight channel on hover and lights up while its document is highlighted by
    anyone. */
 
-/* The padded body wrapper a visualizer puts its content in, inside the shell's
-   channel card. */
-.embark-tokens-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px;
-}
-
 .embark-token-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.embark-token-row__empty {
-  font-size: 11px;
-  font-style: italic;
-  color: #a8a29e;
 }
 
 .embark-token {

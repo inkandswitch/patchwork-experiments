@@ -1,26 +1,13 @@
-import type { Plugin } from "@inkandswitch/patchwork-plugins";
-import { plugins as timerPlugins } from "./timer";
-
 // The sticker renderer codemirror extension is no longer registered globally (it
 // used to load into every markdown editor). It now ships as a factory the
 // Stickers card publishes into the canvas `CodemirrorExtensions` channel while
 // present (see @embark/stickers-card and @embark/codemirror-extensions-host).
-// This package still registers the timer widget a `tool` sticker embeds, a
-// context visualizer for the `stickers` channel, and exports the renderer
-// factory for the card.
-export const plugins: Plugin<any>[] = [
-  ...timerPlugins,
-  {
-    type: "embark:context-visualizer",
-    id: "stickers-context-visualizer",
-    name: "Stickers context visualizer",
-    channels: ["stickers"],
-    async load() {
-      const { stickersVisualizer } = await import("./visualizer");
-      return stickersVisualizer;
-    },
-  },
-];
+// This package still registers the timer widget a `tool` sticker embeds, the
+// `sticker` context view for the context viewer, and exports the renderer
+// factory for the card. The plugin descriptors live in ./plugins — the
+// worker-safe entry Patchwork's module loader imports via the `patchwork`
+// export condition.
+export { plugins } from "./plugins";
 
 export { stickerRenderer } from "./renderer";
 

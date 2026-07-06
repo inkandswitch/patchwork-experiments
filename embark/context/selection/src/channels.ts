@@ -1,18 +1,17 @@
 import type { AutomergeUrl } from "@automerge/automerge-repo";
-import { defineChannel } from "@embark/context";
+import { defineSetChannel } from "@embark/context";
 
 // Focus channels, promoted from per-tool local state to shared context so embeds
 // and decorators can read them without prop-drilling. `Selection` is the
 // canvas's selected embed; `Highlight` is auxiliary emphasis any view
-// contributes (hovered map pins, caret-touched mention tokens). Each value is a
-// record keyed by document url so it is always mergeable; readers render the
-// union across every scope.
-export const Selection = defineChannel<Record<AutomergeUrl, true>>({
+// contributes (hovered map pins, caret-touched mention tokens). Each is a set
+// of document urls; readers render the union across every scope.
+export const Selection = defineSetChannel<AutomergeUrl>({
   name: "selection",
-  empty: {},
+  key: "doc-url",
 });
 
-export const Highlight = defineChannel<Record<AutomergeUrl, true>>({
+export const Highlight = defineSetChannel<AutomergeUrl>({
   name: "highlight",
-  empty: {},
+  key: "doc-url",
 });

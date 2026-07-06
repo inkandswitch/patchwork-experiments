@@ -15,6 +15,7 @@ import {
   type PatchworkContextElement,
 } from "@embark/context";
 import { getDocumentDragPayload, getDragSource, hasDocumentDrag } from "../dnd";
+import { rewriteClonedReferences } from "../deep-clone";
 import { FRAMELESS_TOOLS } from "../tool-traits";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 import "./parts-bin.css";
@@ -321,8 +322,19 @@ function PartsBinRow(props: {
     event.dataTransfer.effectAllowed = "copy";
     // Drop an independent copy so the example in the bin stays pristine. The
     // canvas decides framed vs. frameless from the dropped doc's tool, so the
-    // payload only needs to carry the url.
-    const url = props.repo.clone(handle).url;
+    // payload only needs to carry the url. The root is cloned synchronously
+    // (dragstart must write its payload before any await); the documents it
+    // references (a card's behavior package, its spec and module files) are
+    // then deep-cloned and re-pointed in the background, so the dragged-out
+    // copy is fully independent — editing its spec never touches the bin's
+    // example. The rewrite settles long before a drop resolves the references.
+    const clone = props.repo.clone(handle);
+    const url = clone.url;
+    void rewriteClonedReferences(
+      props.repo,
+      clone,
+      new Map([[handle.url, url]]),
+    );
     // Carry the recorded footprint so the canvas recreates this example at the
     // size it was captured at (the canvas falls back to its default when unset).
     const item: {

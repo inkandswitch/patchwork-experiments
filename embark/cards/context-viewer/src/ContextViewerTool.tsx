@@ -1,4 +1,4 @@
-import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import {
   createEffect,
@@ -19,7 +19,7 @@ import {
 import { Selection } from "@embark/selection";
 import { EmbedToken, useHighlight } from "@embark/selection/tokens";
 import type { ContextViewerDoc } from "./datatype";
-import { VisualizerHost } from "./VisualizerHost";
+import { ChannelView } from "./ChannelView";
 import { ContributionsView, useChannels } from "./views/ContributionsView";
 import { UsedView } from "./views/UsedView";
 import "./context-viewer.css";
@@ -59,7 +59,6 @@ function ContextViewer(props: {
         {(ctx) => (
           <ContextBody
             store={ctx()}
-            repo={props.element.repo}
             handle={props.handle}
             inspectedDocUrl={doc()?.inspectedDocUrl}
           />
@@ -71,7 +70,6 @@ function ContextViewer(props: {
 
 function ContextBody(props: {
   store: ContextStore;
-  repo: Repo;
   handle: DocHandle<ContextViewerDoc>;
   inspectedDocUrl: AutomergeUrl | undefined;
 }) {
@@ -142,21 +140,18 @@ function ContextBody(props: {
 
       <Show
         when={props.inspectedDocUrl}
-        fallback={<AllContextView store={props.store} repo={props.repo} />}
+        fallback={<AllContextView store={props.store} />}
       >
-        {(url) => (
-          <EmbedFocus store={props.store} repo={props.repo} docUrl={url()} />
-        )}
+        {(url) => <EmbedFocus store={props.store} docUrl={url()} />}
       </Show>
     </>
   );
 }
 
 // The default view: every live channel merged across the whole canvas, each
-// drawn by its registered visualizer (or the default JSON viewer). Enumerates
-// the store's channels (no hardcoded list) and hands each the store itself as an
-// unfiltered context.
-function AllContextView(props: { store: ContextStore; repo: Repo }) {
+// drawn by the generic ChannelView. Enumerates the store's channels (no
+// hardcoded list) and hands each the store itself as an unfiltered context.
+function AllContextView(props: { store: ContextStore }) {
   const channels = useChannels(props.store);
   return (
     <Show
@@ -167,10 +162,9 @@ function AllContextView(props: { store: ContextStore; repo: Repo }) {
         {(channel) => (
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
-            <VisualizerHost
+            <ChannelView
               context={props.store}
               channel={channel as Channel<Record<string, unknown>>}
-              repo={props.repo}
             />
           </div>
         )}
@@ -181,32 +175,20 @@ function AllContextView(props: { store: ContextStore; repo: Repo }) {
 
 // The focused view for one inspected embed: what it contributed to the shared
 // context, and what it reads back out of it.
-function EmbedFocus(props: {
-  store: ContextStore;
-  repo: Repo;
-  docUrl: AutomergeUrl;
-}) {
+function EmbedFocus(props: { store: ContextStore; docUrl: AutomergeUrl }) {
   return (
     <div class="embark-focus">
       <div class="embark-focus__section">
         <div class="embark-focus__heading">Contributes</div>
         <div class="embark-focus__body">
-          <ContributionsView
-            store={props.store}
-            repo={props.repo}
-            focusDocUrl={props.docUrl}
-          />
+          <ContributionsView store={props.store} focusDocUrl={props.docUrl} />
         </div>
       </div>
 
       <div class="embark-focus__section">
         <div class="embark-focus__heading">Uses</div>
         <div class="embark-focus__body">
-          <UsedView
-            store={props.store}
-            repo={props.repo}
-            focusDocUrl={props.docUrl}
-          />
+          <UsedView store={props.store} focusDocUrl={props.docUrl} />
         </div>
       </div>
     </div>

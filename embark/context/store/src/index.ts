@@ -8,4 +8,4 @@ export * from "./context";
 export * from "./context-solid";
 export * from "./attribution";
 export * from "./view";
-export * from "./visualizer";
+export * from "./views";

@@ -9,6 +9,7 @@
   "exports": {
     ".": {
       "types": "./src/index.ts",
+      "patchwork": "./dist/plugins.js",
       "import": "./dist/index.js"
     },
     "./tokens": {
