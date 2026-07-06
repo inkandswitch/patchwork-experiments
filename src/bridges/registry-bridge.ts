@@ -28,6 +28,12 @@ import {
  *  - strip non-cloneable fields (`load`, `module`) and deep-copy the rest so it
  *    survives `postMessage`.
  *
+ * Note: a package's `automerge:` dependencies are NOT resolved here. Doing so
+ * would block iframe boot (this runs for every plugin on the boot critical path,
+ * once per document switch) on a `package.json` fetch per plugin. Instead the
+ * resource bridge registers a package's deps lazily, the first time one of its
+ * modules is served — see `ensurePackageDependencies` in resource-bridge.ts.
+ *
  * Returns `undefined` (and logs) if the plugin can't be cloned. Shared by the
  * initial collection (`getRegistries`) and the live update watcher
  * (`watchRegistries`) so both produce entries identically.

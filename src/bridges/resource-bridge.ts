@@ -20,7 +20,12 @@ import { log } from "../log.js";
 import {
   type PackagesUrlMapper,
   containsAutomergeUrl,
+  isPlatformModuleUrl,
+  packageRootFromUrl,
+  registerPackageDependencies,
   resolveUrl,
+  rewriteAutomergeDepsInSource,
+  sourceHasAutomergeUrl,
 } from "./url-mapping.js";
 
 export interface ResourceBridgeOptions {
@@ -99,13 +104,50 @@ async function handleFetchRpc(
 export function startResourceBridge(options: ResourceBridgeOptions): () => void {
   const { port, mapper } = options;
 
+  // A package's automerge deps are registered lazily, the first time one of its
+  // modules is served — NOT at plugin registration (that would fetch every
+  // plugin's package.json on the iframe-boot critical path, on every document
+  // switch). Keyed by package root so it runs once per package, and the promise
+  // is cached so concurrent chunk fetches from the same package share one read.
+  const depsByPackageRoot = new Map<string, Promise<void>>();
+  function ensurePackageDependencies(moduleUrl: string): Promise<void> {
+    const root = packageRootFromUrl(moduleUrl);
+    if (!root) return Promise.resolve();
+    let pending = depsByPackageRoot.get(root);
+    if (!pending) {
+      pending = registerPackageDependencies(root, mapper);
+      depsByPackageRoot.set(root, pending);
+    }
+    return pending;
+  }
+
   const onMessage = async (event: MessageEvent) => {
     const msg = event.data;
     if (!msg) return;
 
     if (msg.type === "fetch-package") {
       await handleFetchRpc(msg, "fetch-package", port, mapper, async (response, fetchUrl, id) => {
-        const source = await response.text();
+        let source = await response.text();
+
+        // Rewrite automerge dependency URLs baked into the source (by
+        // @chee/patchwork-bundles) to opaque pkg: URLs *before* the source
+        // crosses into the iframe, so the document IDs never leak. Only automerge
+        // URLs already registered in the mapper — declared as deps by the serving
+        // package — are rewritten; anything else is left for the
+        // containsAutomergeUrl filter to block.
+        //
+        // Gate the work to registry tool modules that actually carry a dep
+        // literal: skip shared platform/import-map runtime (host-origin, non-pkg:)
+        // and any source with no `automerge:` at all. This avoids a package.json
+        // fetch per shared module — the bulk of document-switch latency — since
+        // platform code carries no rewritable automerge deps.
+        if (sourceHasAutomergeUrl(source) && !isPlatformModuleUrl(msg.url)) {
+          // Register this package's declared automerge deps (once, cached) before
+          // rewriting, so the mapper knows which literals are legitimate deps.
+          await ensurePackageDependencies(response.url || fetchUrl);
+          source = rewriteAutomergeDepsInSource(source, mapper);
+        }
+
         // Convert the resolved URL back to a pkg: URL (hiding automerge IDs).
         // If it IS a pkg: URL, prefix with host origin so es-module-shims can
         // resolve relative imports (code-split chunks) against it — bare `pkg:`

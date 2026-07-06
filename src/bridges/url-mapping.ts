@@ -102,6 +102,32 @@ export class PackagesUrlMapper {
   }
 
   /**
+   * Register an automerge base ID under a package name (reusing an existing
+   * mapping if present) and return the opaque `pkg:` segment for it, carrying
+   * any heads as a `%23<heads>` version suffix.
+   */
+  #pkgSegmentFor(base: string, heads: string, name?: string): string {
+    let pkg = this.#automergeToPackage.get(base);
+    if (!pkg) {
+      pkg = name ? this.#sanitizeName(name) : `unknown-${this.#counter++}`;
+      this.#automergeToPackage.set(base, pkg);
+      this.#packageToAutomerge.set(pkg, base);
+    }
+    return heads ? `pkg:${pkg}%23${heads}` : `pkg:${pkg}`;
+  }
+
+  /**
+   * Has this automerge base ID been registered as a package (via `toPackageUrl`
+   * / `toPackageFolderUrl`)? Used by the source rewrite as an allowlist: only
+   * automerge URLs a registered package declared as a dependency are rewritten
+   * to `pkg:`; anything else (a doc ID a tool fabricated) is left raw so the
+   * `containsAutomergeUrl` filter blocks it.
+   */
+  hasAutomergeUrl(base: string): boolean {
+    return this.#automergeToPackage.has(base);
+  }
+
+  /**
    * Replace the automerge URL segment in a full URL with a package name.
    * If the segment hasn't been seen before, registers a new mapping.
    * Returns the URL unchanged if no automerge segment is found.
@@ -111,18 +137,27 @@ export class PackagesUrlMapper {
     const [match] = findAutomergeSegments(url);
     if (!match) return url;
     const { segment, base, heads } = match;
-
-    // Use the existing mapping for this automerge ID, or register a new one.
-    let pkg = this.#automergeToPackage.get(base);
-    if (!pkg) {
-      pkg = name ? this.#sanitizeName(name) : `unknown-${this.#counter++}`;
-      this.#automergeToPackage.set(base, pkg);
-      this.#packageToAutomerge.set(pkg, base);
-    }
-
-    // Preserve any heads as a version suffix on the pkg: URL.
-    const pkgSegment = heads ? `pkg:${pkg}%23${heads}` : `pkg:${pkg}`;
+    const pkgSegment = this.#pkgSegmentFor(base, heads, name);
     return url.replace(`/${segment}/`, `/${pkgSegment}/`);
+  }
+
+  /**
+   * Map a bare automerge folder URL (as it appears verbatim in tool source,
+   * e.g. `automerge:HaCFn…#26oUrk…`) to its opaque bare `pkg:` folder URL
+   * (`pkg:@chee--patchwork-llm%2326oUrk…`), registering the mapping if new.
+   *
+   * Unlike `toPackageUrl`, the input is not a path with the ID sitting between
+   * slashes — it is the raw automerge string a `getImportableUrlFromAutomergeUrl`
+   * call is about to resolve. Returning a bare `pkg:` URL lets that runtime call
+   * append its subpath and origin-prefix it as usual; the resulting request
+   * (`<origin>/pkg%3A…/subpath`, colon URL-encoded) round-trips back through
+   * `toAutomergeUrl`, which decodes the segment before matching. Returns null if
+   * `folderUrl` isn't a valid automerge URL.
+   */
+  toPackageFolderUrl(folderUrl: string, name?: string): string | null {
+    const { base, heads } = stripHeads(folderUrl);
+    if (!isValidAutomergeUrl(base)) return null;
+    return this.#pkgSegmentFor(base, heads, name);
   }
 
   /**
@@ -189,6 +224,82 @@ export function containsAutomergeUrl(url: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Source rewriting
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches an `automerge:` URL embedded in served source text. The base ID is
+ * `[A-Za-z0-9]+` and an optional `#<heads>` version suffix is `[A-Za-z0-9]+`;
+ * this is the same alphabet `isValidAutomergeUrl` accepts, and it stops at the
+ * closing quote/paren so it never swallows trailing source. Each match is
+ * validated with `isValidAutomergeUrl` before use, so an over-match is harmless.
+ */
+const AUTOMERGE_URL_IN_SOURCE = /automerge:[A-Za-z0-9]+(?:#[A-Za-z0-9]+)?/g;
+
+/**
+ * Cheap check: does this module source contain any `automerge:` URL literal at
+ * all? Used to skip the (network-bound) dependency resolution + rewrite for the
+ * overwhelming majority of served modules — shared runtime packages and tool
+ * chunks with no baked automerge deps — so only the few modules that actually
+ * carry a dep literal pay for a `package.json` read.
+ */
+export function sourceHasAutomergeUrl(source: string): boolean {
+  return source.includes("automerge:");
+}
+
+/**
+ * Is this served-module request for shared platform / import-map runtime code
+ * (`@automerge/*`, `solid-js`, `@codemirror/*`, `@inkandswitch/*`, and their
+ * chunks) rather than registry-loaded tool code?
+ *
+ * es-module-shims applies the import map before the fetch hook, so those modules
+ * arrive as plain host-origin URLs (`<origin>/packages/*`, `<origin>/assets/*`)
+ * that are never `pkg:`. Registry tools arrive either non-host-origin (statically
+ * hosted, e.g. netlify) or as `pkg:` URLs (automerge-hosted, mapped by
+ * `resolveUrl`). Platform code carries no rewritable automerge deps, so the
+ * resource bridge skips dependency resolution for it — avoiding a `package.json`
+ * fetch per shared module, which dominated document-switch latency.
+ */
+export function isPlatformModuleUrl(url: string): boolean {
+  const origin = window.location.origin;
+  return url.startsWith(origin + "/") && !url.startsWith(origin + "/pkg:");
+}
+
+/**
+ * Rewrite `automerge:` dependency URLs embedded in a served module's source to
+ * their opaque `pkg:` folder URLs, before the source crosses into the iframe.
+ *
+ * Tools built with `@chee/patchwork-bundles` bake a dep's automerge URL into the
+ * source as a literal handed to `getImportableUrlFromAutomergeUrl(...)`, which
+ * resolves it to a fetchable URL at runtime. Left alone, that literal both leaks
+ * a document ID into untrusted code and produces a request the
+ * `containsAutomergeUrl` filter (correctly) blocks. Replacing the literal with a
+ * bare `pkg:` URL removes the ID and lets the runtime call resolve to a `pkg:`
+ * request that `resolveUrl` maps back (see `toPackageFolderUrl`).
+ *
+ * The **mapper is the allowlist**: a literal is rewritten only if its automerge
+ * base is already registered (i.e. some registered package declared it as a
+ * dependency — see `registerPackageDependencies`, called at plugin registration,
+ * which necessarily runs before any of that package's code is served). An
+ * automerge URL a tool hand-writes for some other document is not a registered
+ * dependency, so it is left untouched and its request is blocked like any other
+ * smuggled ID. This keying (rather than locating the serving package's automerge
+ * folder from the served URL) is what makes the rewrite work for statically
+ * hosted tools too, whose served URLs carry no automerge segment.
+ */
+export function rewriteAutomergeDepsInSource(
+  source: string,
+  mapper: PackagesUrlMapper
+): string {
+  return source.replace(AUTOMERGE_URL_IN_SOURCE, (match) => {
+    const { base } = stripHeads(match);
+    if (!mapper.hasAutomergeUrl(base)) return match;
+    const pkgUrl = mapper.toPackageFolderUrl(match);
+    return pkgUrl ?? match;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // URL resolution
 // ---------------------------------------------------------------------------
 
@@ -237,6 +348,111 @@ export async function resolvePackageEntryUrl(
   };
 }
 
+/** Bundler output directory names an entry point commonly sits under. */
+const BUNDLE_OUTPUT_DIRS = new Set(["dist", "build", "out", "lib"]);
+
+/**
+ * Derive the package-root directory URL for a served module URL, using the
+ * publish convention: bundled tools serve their code under `<pkgroot>/dist/…`
+ * (possibly nested, e.g. `dist/assets/chunk.js`) alongside
+ * `<pkgroot>/package.json`. So the root is the parent of the nearest ancestor
+ * directory named like a bundler output dir (`dist`/`build`/…); if there is no
+ * such ancestor, it's the module's own directory. Returned as a normalized
+ * absolute URL string (ends in "/"), suitable both as a per-package cache key
+ * (stable across all of a package's chunks) and as the base to fetch
+ * `package.json` from. Returns null if the URL can't be parsed.
+ */
+export function packageRootFromUrl(moduleUrl: string): string | null {
+  let base: URL;
+  try {
+    base = new URL(moduleUrl, window.location.origin);
+  } catch {
+    return null;
+  }
+  const segments = base.pathname.split("/").filter(Boolean);
+  // Drop the filename; look for the nearest bundler-output dir among the path
+  // dirs and treat its parent as the package root.
+  const dirs = segments.slice(0, -1);
+  for (let i = dirs.length - 1; i >= 0; i--) {
+    if (BUNDLE_OUTPUT_DIRS.has(dirs[i])) {
+      const rootPath = dirs.slice(0, i).join("/");
+      return new URL(`/${rootPath}${rootPath ? "/" : ""}`, base.origin).href;
+    }
+  }
+  // No bundler dir in the path — the module's own directory is the root.
+  return new URL(".", base).href;
+}
+
+/**
+ * Fetch a package's `package.json` (given the resolved URL of one of its
+ * modules) and register every `automerge:`-valued dependency in the mapper, so
+ * the source rewrite can later replace those literals with `pkg:` URLs (see
+ * `rewriteAutomergeDepsInSource`).
+ *
+ * Tools built with `@chee/patchwork-bundles` (e.g. `patchwork-base/chat`) name
+ * their patchwork-package deps by automerge URL:
+ *
+ *   "dependencies": { "@chee/patchwork-llm": "automerge:HaCFn…#26oUrk…" }
+ *
+ * The plugin bakes each such URL into the built source as a literal; registering
+ * the dep lets the rewrite recognize it as legitimate and remap it, for both
+ * automerge- and statically-hosted tools. Called lazily by the resource bridge
+ * the first time one of a package's modules is served (NOT at plugin
+ * registration — that would fetch every plugin's package.json on the iframe-boot
+ * critical path). Never throws; a package with no reachable `package.json` or no
+ * automerge deps simply registers nothing.
+ */
+export async function registerPackageDependencies(
+  moduleUrl: string,
+  mapper: PackagesUrlMapper
+): Promise<void> {
+  const pkgJson = await fetchPackageJsonFromEntry(moduleUrl);
+  if (!pkgJson) return;
+
+  for (const [name, version] of Object.entries(pkgJson.dependencies ?? {})) {
+    const { base } = stripHeads(version);
+    if (isValidAutomergeUrl(base)) {
+      // Registers the base→pkg name mapping (heads irrelevant to registration).
+      mapper.toPackageFolderUrl(version, name);
+    }
+  }
+}
+
+/**
+ * Fetch and parse the `package.json` for a package given the resolved URL of one
+ * of its modules. Tries the convention-derived package root first
+ * (`packageRootFromUrl`), then the module's own directory as the sole fallback,
+ * so a package that isn't laid out as expected costs 1–2 probes rather than a
+ * walk-up storm of 404s. Returns undefined if none is found or on any error.
+ */
+async function fetchPackageJsonFromEntry(
+  entryUrl: string
+): Promise<{ dependencies?: Record<string, string> } | undefined> {
+  let base: URL;
+  try {
+    base = new URL(entryUrl, window.location.origin);
+  } catch {
+    return undefined;
+  }
+
+  const candidateRoots: string[] = [];
+  const root = packageRootFromUrl(entryUrl);
+  if (root) candidateRoots.push(root);
+  const ownDir = new URL(".", base).href; // fallback for unexpected layouts
+  if (!candidateRoots.includes(ownDir)) candidateRoots.push(ownDir);
+
+  for (const root of candidateRoots) {
+    const candidate = new URL("package.json", root).href;
+    try {
+      const response = await fetch(candidate);
+      if (response.ok) return await response.json();
+    } catch {
+      // ignore and try the next candidate
+    }
+  }
+  return undefined;
+}
+
 /**
  * Resolve a URL for fetching:
  *  - host-origin-prefixed pkg: URLs → strip prefix, then convert via mapper
@@ -248,6 +464,13 @@ export async function resolvePackageEntryUrl(
  * (e.g., `https://host/pkg:@scope--name/dist/assets/chunk.js`) because the
  * resolved module URL returned to es-module-shims is host-origin-prefixed to
  * enable relative URL resolution against pkg: paths.
+ *
+ * A dependency rewritten by `toPackageFolderUrl` arrives in a URL-encoded form
+ * instead: the tool source holds a bare `pkg:` folder URL, which its
+ * `getImportableUrlFromAutomergeUrl(...)` call percent-encodes into the request
+ * path (`<origin>/pkg%3A…%2523heads/subpath`). We recognize that shape by
+ * decoding the first path segment before matching, so the same `pkg:` mapping
+ * resolves it.
  */
 export async function resolveUrl(
   url: string,
@@ -259,6 +482,25 @@ export async function resolveUrl(
   let lookupUrl = url;
   if (url.startsWith(origin + "/pkg:")) {
     lookupUrl = url.slice(origin.length + 1);
+  } else if (url.startsWith(origin + "/")) {
+    // A `toPackageFolderUrl` dependency: its first path segment is a
+    // percent-encoded `pkg:` URL (the runtime resolver encoded it). Decode just
+    // that segment; if it reveals a `pkg:` URL, use it as the lookup so the
+    // mapper matches. Leaves genuine automerge-segment requests untouched (they
+    // decode to `automerge:…`, not `pkg:`, and are handled by the filter/branch
+    // below).
+    const rest = url.slice(origin.length + 1);
+    const slashIdx = rest.indexOf("/");
+    const firstSegment = slashIdx < 0 ? rest : rest.slice(0, slashIdx);
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(firstSegment);
+    } catch {
+      decoded = firstSegment;
+    }
+    if (decoded.startsWith("pkg:")) {
+      lookupUrl = slashIdx < 0 ? decoded : decoded + rest.slice(slashIdx);
+    }
   }
 
   const realUrl = mapper.toAutomergeUrl(lookupUrl);
