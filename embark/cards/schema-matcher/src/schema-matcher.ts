@@ -1,14 +1,23 @@
 import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import type { z } from "zod";
-import { jsonSchemaToZod, type JsonSchema } from "./schema";
-import { OpenDocuments, SchemaMatches, SchemaQueries } from "./channels";
-import type { ContextStore } from "@embark/context";
+import type { ContextStore, ScopeOwner } from "@embark/context";
+import {
+  jsonSchemaToZod,
+  OpenDocuments,
+  SchemaMatches,
+  SchemaQueries,
+  type JsonSchema,
+} from "@embark/schema";
 
 // Answers "where does this schema occur?" over the open-document set. Reads the
 // requested schemas from the `SchemaQueries` channel — a set whose members are
 // the canonical schema JSON itself (`schemaKey`), parsed back with JSON.parse —
 // matches them against every document listed in the `OpenDocuments` channel,
 // and writes match urls into `SchemaMatches` keyed by the same string.
+//
+// This engine is private to the Schema Matcher card (see ./card): the shared
+// vocabulary — the channels, `schemaKey`, the JSON-Schema→zod hydrator — lives
+// in @embark/schema, but only this card runs the matching itself.
 //
 // Discovery is entirely channel-driven: whoever wants a document matched
 // publishes its url into `OpenDocuments` (the Open Documents card contributes
@@ -31,21 +40,34 @@ const REEVAL_DEBOUNCE_MS = 50;
 // briefly absent; a doc that never loads simply contributes no matches.
 type WatchedDoc = { handle?: DocHandle<unknown> };
 
-export function runSchemaMatcher(store: ContextStore, repo: Repo): () => void {
+// `owner` tags the matcher's write scope and read subscriptions with the card
+// that runs it, so the context viewer can attribute `schema:matches` to this
+// card and list it as a reader of `schema:queries` / `open-documents`. The
+// matcher genuinely consumes both channels whole, so no key interest is
+// declared.
+export function runSchemaMatcher(
+  store: ContextStore,
+  repo: Repo,
+  owner?: ScopeOwner,
+): () => void {
   const watched = new Map<AutomergeUrl, WatchedDoc>();
 
   // The matcher is the single writer of the SchemaMatches channel.
-  const matchesHandle = store.handle(SchemaMatches);
+  const matchesHandle = store.handle(SchemaMatches, owner);
 
   // The requested schemas (each key is the canonical schema JSON), plus a
   // cache of their compiled zod equivalents so we hydrate each one only once.
   let queries: Record<string, true> = store.read(SchemaQueries);
   const compiled = new Map<string, z.ZodType>();
 
-  const unsubscribeQueries = store.subscribe(SchemaQueries, (next) => {
-    queries = next;
-    scheduleReevaluate();
-  });
+  const unsubscribeQueries = store.subscribe(
+    SchemaQueries,
+    (next) => {
+      queries = next;
+      scheduleReevaluate();
+    },
+    { owner },
+  );
 
   let scheduled = false;
   const scheduleReevaluate = () => {
@@ -72,6 +94,7 @@ export function runSchemaMatcher(store: ContextStore, repo: Repo): () => void {
   const unsubscribeOpenDocuments = store.subscribe(
     OpenDocuments,
     onOpenDocuments,
+    { owner },
   );
   onOpenDocuments(store.read(OpenDocuments));
 

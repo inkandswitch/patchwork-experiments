@@ -27,9 +27,10 @@ export const plugins: Plugin<any>[] = [
   {
     // The context sidebar entry. The frame's context sidebar renders every
     // `patchwork:component` tagged `context-tool` (like drafts and comments)
-    // as a bare component with no document; this one hosts a single
+    // as a bare component with no document; this one renders a single
     // per-browser context canvas whose url lives in localStorage (see
-    // ContextCanvasComponent).
+    // ContextCanvasComponent). The canvas — and the cards on it — only run
+    // while the sidebar is open.
     type: "patchwork:component",
     id: "context-canvas",
     tags: ["context-tool"],
@@ -38,21 +39,6 @@ export const plugins: Plugin<any>[] = [
     async load() {
       const { ContextCanvasComponent } = await import("./canvas");
       return ContextCanvasComponent;
-    },
-  },
-  {
-    // The always-on keeper: the frame's system tray stays mounted even while
-    // the sidebar is collapsed, so this component reliably keeps the hidden
-    // context-canvas host (and the cards on it) alive. It renders nothing;
-    // the sidebar entry above docks the same host when its tab is open.
-    type: "patchwork:component",
-    id: "context-canvas-keeper",
-    tags: ["system-tray"],
-    name: "Context canvas",
-    icon: "Globe",
-    async load() {
-      const { ContextCanvasKeeper } = await import("./canvas");
-      return ContextCanvasKeeper;
     },
   },
   {

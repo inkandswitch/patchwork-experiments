@@ -8,9 +8,9 @@ import type { PartsBinDoc, PartsBinItem } from "./types";
 const DEFAULT_CENTER: [number, number] = [13.388, 52.517];
 const DEFAULT_ZOOM = 9.5;
 
-// A sample note exercising every sticker source at once: imperial quantities
-// (unit converter), a foreign amount (currency converter), a timer token, and a
-// running schedule of times + durations (schedule card).
+// A sample note exercising the sticker sources at once: imperial quantities
+// (unit converter), a timer token, and a running schedule of times + durations
+// (schedule card).
 const DEMO_MARKDOWN = `# Trip notes
 
 The route is about 5 miles along the ridge trail.
@@ -132,14 +132,6 @@ const CARD_SEEDS: CardSeed[] = [
       "Scans text and annotates metric quantities with their imperial equivalents.",
     icon: "ruler",
     accent: "#0d9488",
-  },
-  {
-    rootUrl: "automerge:27NZacXx1DQVusdWaNS9US9t5spB",
-    title: "Currency Converter",
-    description:
-      "Annotates foreign amounts with their converted value at today's rate.",
-    icon: "dollar",
-    accent: "#059669",
   },
   {
     rootUrl: "automerge:3wGbMYtuZ7EtBvDsbuwRBcP6v7P2",

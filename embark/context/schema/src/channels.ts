@@ -3,8 +3,9 @@ import { defineChannel, defineSetChannel } from "@embark/context";
 import type { JsonSchema } from "./schema";
 
 // Request/response pair for schema matching: consumers publish JSON Schemas
-// into `SchemaQueries`, the schema matcher (./schema-matcher.ts) answers with
-// match urls in `SchemaMatches`. A query *is* its serialized schema: the set
+// into `SchemaQueries`, the Schema Matcher card (@embark/schema-matcher)
+// answers with match urls in `SchemaMatches`. A query *is* its serialized
+// schema: the set
 // member / match key is `schemaKey(schema)` — canonical JSON, so
 // `JSON.parse(key)` recovers the schema exactly — and two consumers with the
 // same schema share one key and one result array.
@@ -25,8 +26,8 @@ export const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
 // merged value is the key union, so releasing a scope drops exactly its docs.
 // The Open Documents card publishes the frame's selected document plus its link
 // closure; cards that mint synthetic documents (the POI provider, stickerable
-// mirrors) add theirs. The schema matcher (./schema-matcher.ts) reads the
-// union — this channel replaces the old DOM `patchwork:mounted` discovery.
+// mirrors) add theirs. The Schema Matcher card (@embark/schema-matcher) reads
+// the union — this channel replaces the old DOM `patchwork:mounted` discovery.
 export const OpenDocuments = defineSetChannel<AutomergeUrl>({
   name: "open-documents",
   key: "doc-url",
