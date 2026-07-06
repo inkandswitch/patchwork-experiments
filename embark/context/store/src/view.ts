@@ -3,6 +3,7 @@ import {
   mergeSlices,
   type Channel,
   type ContextStore,
+  type ReadInterest,
   type ScopeOwner,
 } from "./context";
 import { belongsToDoc } from "./attribution";
@@ -48,9 +49,9 @@ export function filterChannel(
     subscribe<T extends Record<string, unknown>>(
       channel: Channel<T>,
       cb: (value: T) => void,
-      owner?: ScopeOwner,
+      interest?: ReadInterest,
     ): () => void {
-      return store.subscribe(channel, cb, owner);
+      return store.subscribe(channel, cb, interest);
     },
     handle: store.handle,
     readers: store.readers,

@@ -49,10 +49,15 @@ export function useItemStickers(
   };
 
   onMount(() => {
-    const unsubscribe = subscribeContext(element, Stickers, (all) => {
-      stickers = all[docUrl] ?? [];
-      void resolve();
-    });
+    const unsubscribe = subscribeContext(
+      element,
+      Stickers,
+      (all) => {
+        stickers = all[docUrl] ?? [];
+        void resolve();
+      },
+      [docUrl],
+    );
     onCleanup(unsubscribe);
   });
 

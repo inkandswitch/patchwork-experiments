@@ -105,7 +105,9 @@ export function BirdSighting(props: {
   schemaQueries.change((slice) => {
     slice[MAP_KEY] = true;
   });
-  const schemaMatches = readContext(props.element, SchemaMatches);
+  const schemaMatches = readContext(props.element, SchemaMatches, () => [
+    MAP_KEY,
+  ]);
   const mapUrls = createMemo(() => schemaMatches()[MAP_KEY] ?? []);
 
   // The map we currently track and its "change" listener (fires on pan/zoom/

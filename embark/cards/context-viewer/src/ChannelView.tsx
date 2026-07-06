@@ -9,6 +9,7 @@ import {
   type Accessor,
 } from "solid-js";
 import {
+  belongsToDoc,
   contextViews,
   splitDocUrl,
   type Channel,
@@ -22,47 +23,77 @@ import {
   type HighlightController,
 } from "@embark/selection/tokens";
 
-// The one generic face for any channel. There is no per-channel visualization
-// code: the channel's merged value is drawn entry by entry, each key and value
-// element rendered by whatever `embark:context-view` is registered for the
-// channel's declared `key`/`value` type tag (built-in chip/JSON fallbacks
-// otherwise). Set channels (`channel.set`) draw as a single row of key views —
-// their values are `true` sentinels and never rendered. Below the entries, two
-// generic provenance rows: who added data (scope owners) and who reads it
-// (subscribed readers).
+// The one generic face for any channel, with per-entry provenance. Each key of
+// the merged value becomes a block:
 //
-// The `context` is already scoped by the caller: the whole store for the
-// whole-context view, or a `filterChannel` lens for a focused embed.
+//   [key view]  read by [tokens…]
+//     [adder token]  [value element views…]
+//     [adder token]  [value element views…]
+//
+// Keys and value elements are drawn by whatever `embark:context-view` is
+// registered for the channel's declared `key`/`value` type tag (built-in
+// chip/JSON fallbacks otherwise). "Read by" lists the readers whose declared
+// interest covers the key (readers with no declaration read the whole channel
+// and appear on every key). Contributions are grouped by the scope that added
+// them — raw per-scope slices, not the merged value, so colliding writes both
+// show. Set channels (`channel.set`) carry no values, so their groups collapse
+// to an "added by" owner row under each key.
+//
+// With `focus` set, entries are filtered to keys that document added or reads;
+// the caller has already decided the channel itself is relevant.
 export function ChannelView(props: {
   context: ContextView;
   channel: Channel<Record<string, unknown>>;
+  focus?: AutomergeUrl;
 }) {
   const [tick, setTick] = createSignal(0);
   onCleanup(props.context.subscribe(props.channel, () => setTick((t) => t + 1)));
+  const [readerTick, setReaderTick] = createSignal(0);
+  onCleanup(props.context.subscribeReaders(() => setReaderTick((t) => t + 1)));
 
   const merged = createMemo(() => {
     tick();
     return props.context.read(props.channel);
   });
-  const keys = createMemo(() => Object.keys(merged()));
+
+  // Per-key provenance, derived from the un-merged scopes: which owners added
+  // a key, and each owner's raw contribution to it.
+  const scopes = createMemo(() => {
+    tick();
+    return props.context.scopes(props.channel);
+  });
+  const contributionsFor = (key: string): Contribution[] =>
+    scopes()
+      .filter((scope) => key in scope.slice)
+      .map((scope) => ({
+        owner: scope.owner,
+        elements: toElements(scope.slice[key]),
+      }));
+  const readersFor = (key: string): ScopeOwner[] => {
+    readerTick();
+    return props.context.readers(props.channel, key);
+  };
+
+  const keys = createMemo(() => {
+    const all = Object.keys(merged());
+    const focus = props.focus;
+    if (!focus) return all;
+    // Focused mode: keep keys the focused document added or reads.
+    return all.filter(
+      (key) =>
+        contributionsFor(key).some((c) => ownerIsDoc(c.owner, focus)) ||
+        readersFor(key).some((owner) => ownerIsDoc(owner, focus)),
+    );
+  });
 
   const keyView = useContextView(() => props.channel.key);
   const valueView = useContextView(() => props.channel.value);
 
   const highlight = useHighlight(props.context);
 
-  // Who contributed: the owners of the live scopes (recomputed on writes; a
-  // scope appearing or releasing re-merges, so the tick covers it). Who reads:
-  // the store's reader registry, which has its own change feed.
-  const addedBy = createMemo(() => {
-    tick();
-    return dedupeOwners(
-      props.context.scopes(props.channel).map((scope) => scope.owner),
-    );
-  });
-  const [readerTick, setReaderTick] = createSignal(0);
-  onCleanup(props.context.subscribeReaders(() => setReaderTick((t) => t + 1)));
-  const readBy = createMemo(() => {
+  // Channel-wide readers, shown only when there are no entries to hang the
+  // per-key rows off (a reader subscribed to an empty channel stays visible).
+  const channelReaders = createMemo(() => {
     readerTick();
     return props.context.readers(props.channel);
   });
@@ -71,75 +102,104 @@ export function ChannelView(props: {
     <div class="embark-context__body">
       <Show
         when={keys().length > 0}
-        fallback={<div class="embark-context__nothing">nothing</div>}
+        fallback={
+          <>
+            <div class="embark-context__nothing">nothing</div>
+            <Show when={channelReaders().length > 0}>
+              <div class="embark-context__readby">
+                <span class="embark-context__label">read by</span>
+                <OwnerTokens owners={channelReaders()} highlight={highlight} />
+              </div>
+            </Show>
+          </>
+        }
       >
-        <Show
-          when={!props.channel.set}
-          fallback={
-            <div class="embark-token-row">
-              <For each={keys()}>
-                {(key) => (
-                  <ViewSlot
-                    view={keyView()}
-                    fallback={defaultKeyView}
-                    value={key}
-                  />
-                )}
-              </For>
-            </div>
-          }
-        >
-          <div class="embark-context__entries">
-            <For each={keys()}>
-              {(key) => {
-                // Merge rebuilds the record (and concatenated arrays) on every
-                // emit, so compare by content: unchanged entries keep their
-                // value identity and their mounted views don't churn.
-                const value = createMemo(() => merged()[key], undefined, {
-                  equals: sameValue,
-                });
-                const elements = createMemo(() => {
-                  const v = value();
-                  return Array.isArray(v) ? v : [v];
-                });
-                return (
-                  <div class="embark-context__entry">
-                    <div class="embark-context__entry-key">
-                      <ViewSlot
-                        view={keyView()}
-                        fallback={defaultKeyView}
-                        value={key}
-                      />
-                    </div>
-                    <div class="embark-context__entry-values embark-token-row">
-                      <For each={elements()}>
-                        {(element) => (
-                          <ViewSlot
-                            view={valueView()}
-                            fallback={defaultValueView}
-                            value={element}
-                          />
-                        )}
-                      </For>
-                    </div>
+        <div class="embark-context__entries">
+          <For each={keys()}>
+            {(key) => {
+              // Content-compared memos so a re-merge that leaves this entry
+              // untouched doesn't re-mount its views.
+              const groups = createMemo(() => contributionsFor(key), undefined, {
+                equals: sameValue,
+              });
+              const readBy = createMemo(() => readersFor(key));
+              return (
+                <div class="embark-context__entry">
+                  <div class="embark-context__entry-head">
+                    <ViewSlot
+                      view={keyView()}
+                      fallback={defaultKeyView}
+                      value={key}
+                    />
+                    <Show when={readBy().length > 0}>
+                      <span class="embark-context__readby">
+                        <span class="embark-context__label">read by</span>
+                        <OwnerTokens owners={readBy()} highlight={highlight} />
+                      </span>
+                    </Show>
                   </div>
-                );
-              }}
-            </For>
-          </div>
-        </Show>
+                  <Show
+                    when={!props.channel.set}
+                    fallback={
+                      <div class="embark-context__group">
+                        <span class="embark-context__label">added by</span>
+                        <OwnerTokens
+                          owners={dedupeOwners(groups().map((g) => g.owner))}
+                          highlight={highlight}
+                        />
+                      </div>
+                    }
+                  >
+                    <For each={groups()}>
+                      {(group) => (
+                        <div class="embark-context__group">
+                          <span class="embark-context__group-owner">
+                            <OwnerToken
+                              owner={group.owner}
+                              highlight={highlight}
+                            />
+                          </span>
+                          <div class="embark-context__group-values embark-token-row">
+                            <For each={group.elements}>
+                              {(element) => (
+                                <ViewSlot
+                                  view={valueView()}
+                                  fallback={defaultValueView}
+                                  value={element}
+                                />
+                              )}
+                            </For>
+                          </div>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
+        </div>
       </Show>
-
-      <OwnerRow label="added by" owners={addedBy()} highlight={highlight} />
-      <OwnerRow label="read by" owners={readBy()} highlight={highlight} />
     </div>
   );
 }
 
+// One scope's contribution to one key: who added it and the value elements
+// they contributed (arrays are spread; scalars/objects are one element).
+type Contribution = { owner?: ScopeOwner; elements: unknown[] };
+
+function toElements(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+function ownerIsDoc(owner: ScopeOwner | undefined, focus: AutomergeUrl): boolean {
+  const docUrl = owner?.docUrl as AutomergeUrl | undefined;
+  return docUrl != null && belongsToDoc(docUrl, focus);
+}
+
 // The view registered for a type tag, as a signal: undefined while no matching
 // plugin exists (callers fall back to a built-in), upgrading in place when a
-// module registers later (bundles load asynchronously) — the same
-// register-then-upgrade pattern the old VisualizerHost used.
+// module registers later (bundles load asynchronously).
 function useContextView(
   tag: () => string | undefined,
 ): Accessor<ContextViewMount | undefined> {
@@ -186,9 +246,9 @@ function useContextView(
   return mount;
 }
 
-// Content equality for entry values, so re-merged but unchanged entries don't
-// re-mount their views. Falls back to reference equality for values that don't
-// serialize (live objects).
+// Content equality (via safe serialization), so re-derived but unchanged
+// structures don't re-mount their views. Falls back to reference equality for
+// values that don't serialize (live objects).
 function sameValue(a: unknown, b: unknown): boolean {
   return a === b || safeJson(a) === safeJson(b);
 }
@@ -229,41 +289,46 @@ const defaultValueView: ContextViewMount = (element, value) => {
   return () => code.remove();
 };
 
-// One provenance row: a label plus the owners drawn as their embed tokens
-// (falling back to a plain tool-id chip for unattributed-by-document owners).
-function OwnerRow(props: {
-  label: string;
-  owners: ScopeOwner[];
+// A row of owner faces: embed tokens for document-attributed owners, a plain
+// chip otherwise.
+function OwnerTokens(props: {
+  owners: Array<ScopeOwner | undefined>;
   highlight: HighlightController;
 }) {
   return (
-    <Show when={props.owners.length > 0}>
-      <div class="embark-context__owners">
-        <span class="embark-context__owners-label">{props.label}</span>
-        <div class="embark-token-row">
-          <For each={props.owners}>
-            {(owner) =>
-              owner.docUrl ? (
-                <EmbedToken
-                  url={owner.docUrl as AutomergeUrl}
-                  highlight={props.highlight}
-                />
-              ) : (
-                <span class="embark-context__chip">
-                  {owner.toolId ?? owner.embedId}
-                </span>
-              )
-            }
-          </For>
-        </div>
-      </div>
+    <span class="embark-token-row">
+      <For each={props.owners}>
+        {(owner) => <OwnerToken owner={owner} highlight={props.highlight} />}
+      </For>
+    </span>
+  );
+}
+
+function OwnerToken(props: {
+  owner: ScopeOwner | undefined;
+  highlight: HighlightController;
+}) {
+  return (
+    <Show
+      when={props.owner?.docUrl}
+      fallback={
+        <span class="embark-context__chip">
+          {props.owner?.toolId ?? props.owner?.embedId ?? "unknown"}
+        </span>
+      }
+    >
+      {(docUrl) => (
+        <EmbedToken
+          url={docUrl() as AutomergeUrl}
+          highlight={props.highlight}
+        />
+      )}
     </Show>
   );
 }
 
-// Owners of the live scopes, deduped the same way the store dedupes readers:
-// by document, else embed, else tool. Unattributed scopes are dropped (there
-// is nothing to draw).
+// Owners deduped by document, else embed, else tool. Unattributed owners are
+// dropped (there is nothing to draw).
 function dedupeOwners(owners: Array<ScopeOwner | undefined>): ScopeOwner[] {
   const seen = new Set<string>();
   const out: ScopeOwner[] = [];

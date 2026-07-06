@@ -70,7 +70,7 @@ export type EmbarkCanvasDoc = {
   // surface, a per-browser singleton that starts empty). Both mount straight
   // onto the page-global body store, so every card — wherever it sits — reads
   // and writes the same shared context (see EmbarkCanvasTool vs
-  // ContextCanvasTool).
+  // ContextCanvasComponent).
   "@patchwork": { type: "embark-canvas" | "context-canvas" };
   title: string;
   embeds: { [id: string]: EmbarkEmbed };
@@ -104,17 +104,23 @@ export const EmbarkCanvasTool: ToolRender = (handle, element) =>
 // localStorage key holding this browser's context-canvas url.
 const CONTEXT_CANVAS_URL_KEY = "embark:context-canvas-url";
 
-// The context canvas tool: the sidebar face of the always-on context canvas.
-// Registered with the `context-tool` tag, it is handed the account doc (which
-// it ignores). The canvas itself lives in a persistent hidden host on
-// document.body (see ensureContextCanvasHost) so its cards stay active while
-// the sidebar is closed; opening the sidebar merely *adopts* that live host —
-// moves it into this tool's element and reveals it — and closing parks it back
-// on body, hidden. The canvas is never remounted across open/close.
-export const ContextCanvasTool: ToolRender = (_accountHandle, element) => {
+// The context canvas component: the sidebar face of the always-on context
+// canvas. Registered as a `patchwork:component` tagged `context-tool` — the
+// frame's context sidebar enumerates that registry and renders entries as bare
+// components with no document (`(element, repo) => cleanup`). The canvas
+// itself lives in a persistent hidden host on document.body (see
+// ensureContextCanvasHost) so its cards stay active while the sidebar is
+// closed; opening the sidebar merely *adopts* that live host — moves it into
+// this component's element and reveals it — and closing parks it back on
+// body, hidden. The canvas is never remounted across open/close.
+export const ContextCanvasComponent = (
+  element: HTMLElement,
+  repo?: Repo,
+): (() => void) => {
+  const elementRepo = (element as Partial<ToolElement>).repo;
   let docked: ContextCanvasHost | undefined;
   let disposed = false;
-  void ensureContextCanvasHost(element.repo)?.then((host) => {
+  void ensureContextCanvasHost(elementRepo ?? repo)?.then((host) => {
     if (disposed) return;
     docked = host;
     host.dock(element);
@@ -124,6 +130,23 @@ export const ContextCanvasTool: ToolRender = (_accountHandle, element) => {
     disposed = true;
     docked?.park(element);
   };
+};
+
+// Always-on anchor for the context canvas, registered as a `system-tray`
+// component: the frame's tray stays mounted even while the sidebar is
+// collapsed, so this reliably summons the persistent hidden host. (Module-load
+// side effects can't do this anymore — the package entry is only imported in
+// the discovery worker, where `window` is undefined, or lazily on first plugin
+// load.) Renders nothing; the host lives hidden on document.body until the
+// sidebar's ContextCanvasComponent docks it.
+export const ContextCanvasKeeper = (
+  element: HTMLElement,
+  repo?: Repo,
+): (() => void) => {
+  const elementRepo = (element as Partial<ToolElement>).repo;
+  void ensureContextCanvasHost(elementRepo ?? repo);
+  // The host lives for the tab; nothing to tear down.
+  return () => {};
 };
 
 // The persistent context-canvas host's controls: dock it into a sidebar

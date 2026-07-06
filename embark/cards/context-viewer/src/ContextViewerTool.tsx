@@ -2,6 +2,7 @@ import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   onCleanup,
@@ -11,17 +12,17 @@ import {
 import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import {
+  belongsToDoc,
   findContextStore,
   splitDocUrl,
   type Channel,
   type ContextStore,
+  type ScopeOwner,
 } from "@embark/context";
 import { Selection } from "@embark/selection";
 import { EmbedToken, useHighlight } from "@embark/selection/tokens";
 import type { ContextViewerDoc } from "./datatype";
 import { ChannelView } from "./ChannelView";
-import { ContributionsView, useChannels } from "./views/ContributionsView";
-import { UsedView } from "./views/UsedView";
 import "./context-viewer.css";
 
 // Tool entry point: a live view of the canvas's shared context. By default it
@@ -138,33 +139,58 @@ function ContextBody(props: {
         </Show>
       </div>
 
-      <Show
-        when={props.inspectedDocUrl}
-        fallback={<AllContextView store={props.store} />}
-      >
-        {(url) => <EmbedFocus store={props.store} docUrl={url()} />}
-      </Show>
+      <AllContextView store={props.store} focus={props.inspectedDocUrl} />
     </>
   );
 }
 
-// The default view: every live channel merged across the whole canvas, each
-// drawn by the generic ChannelView. Enumerates the store's channels (no
-// hardcoded list) and hands each the store itself as an unfiltered context.
-function AllContextView(props: { store: ContextStore }) {
+// The channel list: every live channel merged across the whole canvas, each
+// drawn by the generic ChannelView (no hardcoded roster — the store enumerates
+// them). With `focus` set, the list narrows to channels the focused document is
+// involved in — it owns a scope or reads the channel — and each ChannelView
+// further narrows its entries to the keys that document added or reads.
+function AllContextView(props: { store: ContextStore; focus?: AutomergeUrl }) {
   const channels = useChannels(props.store);
+  const writes = useChannelWrites(props.store, channels);
+  const [readerTick, setReaderTick] = createSignal(0);
+  onCleanup(props.store.subscribeReaders(() => setReaderTick((t) => t + 1)));
+
+  const involved = (
+    channel: Channel<Record<string, unknown>>,
+    focus: AutomergeUrl,
+  ): boolean =>
+    props.store
+      .scopes(channel)
+      .some((scope) => ownerIsDoc(scope.owner, focus)) ||
+    props.store.readers(channel).some((owner) => ownerIsDoc(owner, focus));
+
+  const shown = createMemo(() => {
+    writes();
+    readerTick();
+    const focus = props.focus;
+    if (!focus) return channels();
+    return channels().filter((channel) => involved(channel, focus));
+  });
+
   return (
     <Show
-      when={channels().length > 0}
-      fallback={<div class="embark-context__empty">No context on this canvas yet.</div>}
+      when={shown().length > 0}
+      fallback={
+        <div class="embark-context__empty">
+          {props.focus
+            ? "This embed doesn't read or write any context."
+            : "No context on this canvas yet."}
+        </div>
+      }
     >
-      <For each={channels()}>
+      <For each={shown()}>
         {(channel) => (
           <div class="embark-context__channel">
             <div class="embark-context__name">{channel.name}</div>
             <ChannelView
               context={props.store}
               channel={channel as Channel<Record<string, unknown>>}
+              focus={props.focus}
             />
           </div>
         )}
@@ -173,26 +199,34 @@ function AllContextView(props: { store: ContextStore }) {
   );
 }
 
-// The focused view for one inspected embed: what it contributed to the shared
-// context, and what it reads back out of it.
-function EmbedFocus(props: { store: ContextStore; docUrl: AutomergeUrl }) {
-  return (
-    <div class="embark-focus">
-      <div class="embark-focus__section">
-        <div class="embark-focus__heading">Contributes</div>
-        <div class="embark-focus__body">
-          <ContributionsView store={props.store} focusDocUrl={props.docUrl} />
-        </div>
-      </div>
+function ownerIsDoc(owner: ScopeOwner | undefined, focus: AutomergeUrl): boolean {
+  const docUrl = owner?.docUrl as AutomergeUrl | undefined;
+  return docUrl != null && belongsToDoc(docUrl, focus);
+}
 
-      <div class="embark-focus__section">
-        <div class="embark-focus__heading">Uses</div>
-        <div class="embark-focus__body">
-          <UsedView store={props.store} focusDocUrl={props.docUrl} />
-        </div>
-      </div>
-    </div>
-  );
+// The store's live channel set as a signal, refreshed whenever a channel first
+// appears.
+function useChannels(store: ContextStore) {
+  const [channels, setChannels] = createSignal(store.channels());
+  onCleanup(store.subscribeChannels(() => setChannels(store.channels())));
+  return channels;
+}
+
+// A tick that bumps whenever any live channel emits. Re-subscribes to the whole
+// channel set when it changes so writes on newly-appeared channels count too.
+// Subscribes without an owner, so the viewer never registers itself as a reader.
+function useChannelWrites(
+  store: ContextStore,
+  channels: () => Channel<Record<string, unknown>>[],
+) {
+  const [tick, setTick] = createSignal(0);
+  createEffect(() => {
+    const unsubs = channels().map((channel) =>
+      store.subscribe(channel, () => setTick((t) => t + 1)),
+    );
+    onCleanup(() => unsubs.forEach((unsub) => unsub()));
+  });
+  return tick;
 }
 
 // A crosshair, echoing the "target/inspect" affordance.

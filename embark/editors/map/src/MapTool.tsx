@@ -755,12 +755,17 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     slice[LATLNG_KEY] = true;
     slice[LATLNG_LINE_KEY] = true;
   });
-  const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
-    lastPointMatches = all[LATLNG_KEY] ?? [];
-    const lineMatches = all[LATLNG_LINE_KEY] ?? [];
-    void rebuildGeometries(lineMatches);
-    onMatches(lastPointMatches);
-  });
+  const unsubscribeMatches = subscribeContext(
+    element,
+    SchemaMatches,
+    (all) => {
+      lastPointMatches = all[LATLNG_KEY] ?? [];
+      const lineMatches = all[LATLNG_LINE_KEY] ?? [];
+      void rebuildGeometries(lineMatches);
+      onMatches(lastPointMatches);
+    },
+    [LATLNG_KEY, LATLNG_LINE_KEY],
+  );
 
   // Mount the Google-Maps-style search overlay. It draws its own ephemeral pins
   // and routes straight onto this map, and while it owns the camera it suppresses

@@ -71,10 +71,15 @@ const stickerController = ViewPlugin.fromClass(
     constructor(private readonly view: EditorView) {
       const url = documentUrl(view);
       if (!url) return;
-      this.unsubscribe = subscribeContext(view.dom, Stickers, (all) => {
-        this.stickers = all[url] ?? [];
-        void this.resolve();
-      });
+      this.unsubscribe = subscribeContext(
+        view.dom,
+        Stickers,
+        (all) => {
+          this.stickers = all[url] ?? [];
+          void this.resolve();
+        },
+        [url],
+      );
     }
 
     private async resolve() {

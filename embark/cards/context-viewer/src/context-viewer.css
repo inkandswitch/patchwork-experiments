@@ -124,8 +124,8 @@
 }
 
 /* --- Generic channel body -------------------------------------------------- */
-/* Entries (key -> values, or a bare key row for set channels), then the
-   provenance rows. */
+/* One block per entry key: the key's view with an inline "read by" section,
+   then the contributions grouped by who added them (indented). */
 .embark-context__body {
   display: flex;
   flex-direction: column;
@@ -142,22 +142,52 @@
 .embark-context__entries {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .embark-context__entry {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-context__entry-head {
+  display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.embark-context__entry-key {
-  flex: 0 0 auto;
-  max-width: 40%;
+.embark-context__readby {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
-.embark-context__entry-values {
+/* One adder's contribution: their token, then the value elements they added.
+   Indented under the key; set channels show a single "added by" group. */
+.embark-context__group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 14px;
+}
+
+.embark-context__group-owner {
+  flex: 0 0 auto;
+}
+
+.embark-context__group-values {
   min-width: 0;
+}
+
+.embark-context__label {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a8a29e;
 }
 
 .embark-context__slot {
@@ -185,68 +215,8 @@
   word-break: break-word;
 }
 
-/* Provenance rows: who added data to the channel, who reads it. */
-.embark-context__owners {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding-top: 6px;
-  border-top: 1px dashed #f0eeec;
-}
-
-.embark-context__owners-label {
-  flex: 0 0 auto;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #a8a29e;
-}
-
 .embark-context__empty {
   padding: 16px;
   color: #a8a29e;
   font-size: 12px;
-}
-
-/* --- Focused embed view -------------------------------------------------- */
-/* The default layout: two labeled sections (contributed / used) for the
-   currently-selected embed. */
-.embark-focus {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.embark-focus__section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.embark-focus__heading {
-  padding: 2px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #78716c;
-}
-
-.embark-focus__body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.embark-focus__empty {
-  padding: 8px;
-  color: #a8a29e;
-  font-size: 12px;
-  font-style: italic;
-}
-
-/* When any channel card rendered into a focus body, drop its "nothing" note. */
-.embark-focus__body:has(.embark-context__channel) > .embark-focus__empty {
-  display: none;
 }

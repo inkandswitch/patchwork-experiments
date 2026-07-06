@@ -136,29 +136,34 @@ function discoverTypes(
     slice[TYPE_KEY] = true;
   });
 
-  const unsubscribe = subscribeContext(element, SchemaMatches, (all) => {
-    const urls = (all[TYPE_KEY] ?? []).filter(isRootUrl);
-    const present = new Set(urls);
-    setTypeByUrl((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const url of Object.keys(next)) {
-        if (!present.has(url as AutomergeUrl)) {
-          delete next[url];
-          changed = true;
+  const unsubscribe = subscribeContext(
+    element,
+    SchemaMatches,
+    (all) => {
+      const urls = (all[TYPE_KEY] ?? []).filter(isRootUrl);
+      const present = new Set(urls);
+      setTypeByUrl((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const url of Object.keys(next)) {
+          if (!present.has(url as AutomergeUrl)) {
+            delete next[url];
+            changed = true;
+          }
         }
+        return changed ? next : prev;
+      });
+      for (const url of urls) {
+        void Promise.resolve(repo.find<unknown>(url))
+          .then((handle) => {
+            const type = docType(handle.doc());
+            if (type) setTypeByUrl((prev) => ({ ...prev, [url]: type }));
+          })
+          .catch(() => {});
       }
-      return changed ? next : prev;
-    });
-    for (const url of urls) {
-      void Promise.resolve(repo.find<unknown>(url))
-        .then((handle) => {
-          const type = docType(handle.doc());
-          if (type) setTypeByUrl((prev) => ({ ...prev, [url]: type }));
-        })
-        .catch(() => {});
-    }
-  });
+    },
+    [TYPE_KEY],
+  );
 
   registerCleanup(() => {
     unsubscribe();

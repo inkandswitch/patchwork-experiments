@@ -1,4 +1,10 @@
-import { createSignal, onCleanup, onMount, type Accessor } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+  type Accessor,
+} from "solid-js";
 import {
   findContextStore,
   resolveOwner,
@@ -18,23 +24,31 @@ function resolveElement(source: ElementSource): HTMLElement | undefined {
 
 // Reactive read of a channel's merged value. Seeds with the channel's resting
 // value, resolves the store on mount (so the element is connected and discovery
-// can bubble to the host), then pushes every emission into the signal.
+// can bubble to the host), then pushes every emission into the signal. `keys`
+// (optional, reactive) declares which keys this reader consumes, for per-entry
+// attribution in the context viewer; when it changes the subscription is
+// swapped gaplessly (subscribe never emits an initial value, and the signal
+// keeps the last emission across the swap).
 export function readContext<T extends Record<string, unknown>>(
   source: ElementSource,
   channel: Channel<T>,
+  keys?: Accessor<string[] | undefined>,
 ): Accessor<T> {
   const [value, setValue] = createSignal<T>(channel.empty);
   onMount(() => {
     const element = resolveElement(source);
     if (!element) return;
     const store = findContextStore(element);
+    const owner = resolveOwner(element);
     setValue(() => store.read(channel));
-    const unsubscribe = store.subscribe(
-      channel,
-      (next) => setValue(() => next),
-      resolveOwner(element),
-    );
-    onCleanup(unsubscribe);
+    createEffect(() => {
+      const unsubscribe = store.subscribe(
+        channel,
+        (next) => setValue(() => next),
+        { owner, keys: keys?.() },
+      );
+      onCleanup(unsubscribe);
+    });
   });
   return value;
 }

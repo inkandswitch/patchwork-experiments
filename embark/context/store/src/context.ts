@@ -67,17 +67,27 @@ export type ScopeOwner = {
   toolId?: string;
 };
 
+// Who reads through a subscription and — optionally — which keys they actually
+// consume. `keys` omitted means "the whole channel" (e.g. the schema matcher
+// really does read every query); declared keys let an inspector answer "who
+// reads *this* entry". Purely informational: subscribers always receive the
+// whole merged record, and granularity is only as honest as the declaration.
+export type ReadInterest = {
+  owner?: ScopeOwner;
+  keys?: string[];
+};
+
 export type ContextStore = {
   // The current merged value across every live scope.
   read<T extends Record<string, unknown>>(channel: Channel<T>): T;
   // Notified (on a coalesced microtask) only when the merged value structurally
-  // changes. Does not emit an initial value — seed with `read`. `owner`
-  // (optional) tags the read with the embed/document that consumes it, so the
-  // context viewer can show what an embed uses.
+  // changes. Does not emit an initial value — seed with `read`. `interest`
+  // (optional) tags the read with the embed/document that consumes it (and the
+  // keys it consumes), so the context viewer can show what an embed uses.
   subscribe<T extends Record<string, unknown>>(
     channel: Channel<T>,
     cb: (value: T) => void,
-    owner?: ScopeOwner,
+    interest?: ReadInterest,
   ): () => void;
   // A fresh scope to write into. Each call is an independent contribution.
   // `owner` (optional) tags the scope with the embed/document that created it.
@@ -92,8 +102,14 @@ export type ContextStore = {
     channel: Channel<T>,
   ): Array<{ owner?: ScopeOwner; slice: T }>;
   // The distinct owners currently subscribed to a channel (deduped by docUrl) —
-  // for inspection (the context viewer shows what an embed reads).
-  readers<T extends Record<string, unknown>>(channel: Channel<T>): ScopeOwner[];
+  // for inspection (the context viewer shows what an embed reads). With `key`,
+  // only readers whose declared interest covers that key: readers that declared
+  // keys must include it; readers with no declaration read the whole channel
+  // and count for every key.
+  readers<T extends Record<string, unknown>>(
+    channel: Channel<T>,
+    key?: string,
+  ): ScopeOwner[];
   // Notified (on a coalesced microtask) whenever any channel's set of readers
   // changes (a reader subscribing or unsubscribing). Lets inspectors refresh
   // even when the reader attaches to an empty channel that emits no value.
@@ -121,8 +137,8 @@ type ChannelState = {
   // scope id -> that scope's owner + slice.
   slices: Map<number, Scope>;
   subscribers: Set<Listener>;
-  // subscriber listener -> the owner (embed/document) that reads through it.
-  readers: Map<Listener, ScopeOwner | undefined>;
+  // subscriber listener -> who reads through it (and which keys, if declared).
+  readers: Map<Listener, ReadInterest | undefined>;
   // What subscribers last saw, for emit-on-change.
   lastEmitted: AnyRecord | null;
 };
@@ -217,12 +233,12 @@ export function createContextStore(): ContextStore {
   const subscribe = <T extends AnyRecord>(
     channel: Channel<T>,
     cb: (value: T) => void,
-    owner?: ScopeOwner,
+    interest?: ReadInterest,
   ): (() => void) => {
     const state = stateFor(channel as Channel<AnyRecord>);
     const listener = cb as Listener;
     state.subscribers.add(listener);
-    state.readers.set(listener, owner);
+    state.readers.set(listener, interest);
     notifyReaders();
     return () => {
       state.subscribers.delete(listener);
@@ -272,15 +288,24 @@ export function createContextStore(): ContextStore {
     return out;
   };
 
-  const readers = <T extends AnyRecord>(channel: Channel<T>): ScopeOwner[] => {
+  const readers = <T extends AnyRecord>(
+    channel: Channel<T>,
+    key?: string,
+  ): ScopeOwner[] => {
     const state = stateFor(channel as Channel<AnyRecord>);
     const seen = new Set<string>();
     const out: ScopeOwner[] = [];
-    for (const owner of state.readers.values()) {
+    for (const interest of state.readers.values()) {
+      const owner = interest?.owner;
       if (!owner) continue;
-      const key = owner.docUrl ?? owner.embedId;
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
+      // A declared-keys reader only counts for its keys; an undeclared reader
+      // reads the whole channel and counts for every key.
+      if (key !== undefined && interest.keys && !interest.keys.includes(key)) {
+        continue;
+      }
+      const dedupeKey = owner.docUrl ?? owner.embedId;
+      if (!dedupeKey || seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       out.push(owner);
     }
     return out;
@@ -459,11 +484,14 @@ export function findContextStore(node: Node): ContextStore {
 // Node-relative subscribe: resolve the store from `node`, deliver the current
 // value once (asynchronously, to avoid re-entrancy in CodeMirror/Solid setup),
 // then notify on every change. Always resolves a store (the enclosing context,
-// or the page-global body store).
+// or the page-global body store). `keys` (optional) declares which keys this
+// reader consumes, for per-entry attribution in the context viewer; omit it
+// when the reader consumes the whole channel.
 export function subscribeContext<T extends Record<string, unknown>>(
   node: Node,
   channel: Channel<T>,
   cb: (value: T) => void,
+  keys?: string[],
 ): () => void {
   const store = findContextStore(node);
   let delivered = false;
@@ -471,7 +499,10 @@ export function subscribeContext<T extends Record<string, unknown>>(
     delivered = true;
     cb(value);
   };
-  const unsubscribe = store.subscribe(channel, wrapped, resolveOwner(node));
+  const unsubscribe = store.subscribe(channel, wrapped, {
+    owner: resolveOwner(node),
+    keys,
+  });
   queueMicrotask(() => {
     if (!delivered) wrapped(store.read(channel));
   });

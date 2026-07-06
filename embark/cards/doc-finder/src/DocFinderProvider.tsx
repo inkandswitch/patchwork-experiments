@@ -48,7 +48,9 @@ export function DocFinderProvider(props: { element: ToolElement }) {
   schemaQueries.change((slice) => {
     slice[ROOT_KEY] = true;
   });
-  const schemaMatches = readContext(props.element, SchemaMatches);
+  const schemaMatches = readContext(props.element, SchemaMatches, () => [
+    ROOT_KEY,
+  ]);
   const candidates = createMemo(() => schemaMatches()[ROOT_KEY] ?? []);
 
   // A lazily-populated cache of resolved display titles, keyed by doc url. A

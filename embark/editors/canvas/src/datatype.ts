@@ -19,7 +19,8 @@ export const EmbarkCanvasDatatype: DatatypeImplementation<EmbarkCanvasDoc> = {
 };
 
 // The context canvas: the same canvas shape and UI, but a distinct datatype so
-// its tool (ContextCanvasTool) can host it as a per-browser sidebar singleton.
+// its sidebar face (ContextCanvasComponent) can host it as a per-browser
+// singleton.
 // Like every canvas its cards land on the page-global body store and apply
 // everywhere. Starts empty (no parts bin): it is a surface for context-providing
 // cards, not a document workspace.

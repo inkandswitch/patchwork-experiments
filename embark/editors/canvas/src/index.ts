@@ -1,4 +1,3 @@
-import type { Repo } from "@automerge/automerge-repo";
 import { Plugin } from "@inkandswitch/patchwork-plugins";
 import { plugins as partsBinPlugins } from "./parts-bin";
 import { plugins as deckPlugins } from "./deck";
@@ -26,19 +25,34 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
-    // A context sidebar tool (the `context-tool` tag surfaces it in the frame's
-    // context sidebar / configurator, like drafts and comments). It is handed
-    // the account doc — which it ignores — and instead hosts a single per-browser
-    // context canvas whose url lives in localStorage (see ContextCanvasTool).
-    type: "patchwork:tool",
+    // The context sidebar entry. The frame's context sidebar renders every
+    // `patchwork:component` tagged `context-tool` (like drafts and comments)
+    // as a bare component with no document; this one hosts a single
+    // per-browser context canvas whose url lives in localStorage (see
+    // ContextCanvasComponent).
+    type: "patchwork:component",
     id: "context-canvas",
     tags: ["context-tool"],
     name: "Context",
     icon: "Globe",
-    supportedDatatypes: ["account"],
     async load() {
-      const { ContextCanvasTool } = await import("./canvas");
-      return ContextCanvasTool;
+      const { ContextCanvasComponent } = await import("./canvas");
+      return ContextCanvasComponent;
+    },
+  },
+  {
+    // The always-on keeper: the frame's system tray stays mounted even while
+    // the sidebar is collapsed, so this component reliably keeps the hidden
+    // context-canvas host (and the cards on it) alive. It renders nothing;
+    // the sidebar entry above docks the same host when its tab is open.
+    type: "patchwork:component",
+    id: "context-canvas-keeper",
+    tags: ["system-tray"],
+    name: "Context canvas",
+    icon: "Globe",
+    async load() {
+      const { ContextCanvasKeeper } = await import("./canvas");
+      return ContextCanvasKeeper;
     },
   },
   {
@@ -57,14 +71,3 @@ export const plugins: Plugin<any>[] = [
   ...partsBinPlugins,
   ...deckPlugins,
 ];
-
-// Keep the context canvas alive even while the sidebar is closed: mount it
-// hidden on document.body as soon as this bundle loads, so its cards
-// (mentions, command providers, sticker sources, …) are always active. The
-// sidebar tool adopts this same live host when opened (see ContextCanvasTool).
-// window.repo is set by the bootloader before plugin modules load.
-if (typeof window !== "undefined") {
-  void import("./canvas").then(({ ensureContextCanvasHost }) =>
-    ensureContextCanvasHost((window as { repo?: Repo }).repo),
-  );
-}

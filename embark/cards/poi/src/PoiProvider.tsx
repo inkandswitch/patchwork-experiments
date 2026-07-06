@@ -103,7 +103,9 @@ export function PoiProvider(props: { element: ToolElement }) {
   schemaQueries.change((slice) => {
     slice[LATLNG_KEY] = true;
   });
-  const schemaMatches = readContext(props.element, SchemaMatches);
+  const schemaMatches = readContext(props.element, SchemaMatches, () => [
+    LATLNG_KEY,
+  ]);
   createEffect(() => {
     void reconcilePlaces(schemaMatches()[LATLNG_KEY] ?? []);
   });

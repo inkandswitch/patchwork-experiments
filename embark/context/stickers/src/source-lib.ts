@@ -211,9 +211,14 @@ export function runStickerSource(
   schemaQueries?.change((slice) => {
     slice[TEXT_KEY] = true;
   });
-  const unsubscribeMatches = subscribeContext(element, SchemaMatches, (all) => {
-    onMatches(all[TEXT_KEY] ?? []);
-  });
+  const unsubscribeMatches = subscribeContext(
+    element,
+    SchemaMatches,
+    (all) => {
+      onMatches(all[TEXT_KEY] ?? []);
+    },
+    [TEXT_KEY],
+  );
 
   const stop = () => {
     unsubscribeMatches();
