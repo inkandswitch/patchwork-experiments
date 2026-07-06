@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@inkandswitch/patchwork-providers':
-        specifier: ^0.2.1
-        version: 0.2.2(@automerge/automerge-repo@2.5.6)
+        specifier: ^0.3.0
+        version: 0.3.0(@automerge/automerge-repo@2.5.6)
     devDependencies:
       '@automerge/automerge-repo':
         specifier: ^2.5.6
@@ -57,8 +57,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@inkandswitch/patchwork-providers@0.2.2':
-    resolution: {integrity: sha512-Yh/21N+1gBbtZmf2MRqmkK9y0PGS7LIHHq7fgzVS07IfDtELS36fhasODtHCUQ7+LDKTdNNlw9CkFLHSMlZY8Q==}
+  '@inkandswitch/patchwork-providers@0.3.0':
+    resolution: {integrity: sha512-CUxWbONfOiz5SCzOpX/7zDTMePWgq7e4778eBJpbjC5Et4lnyL2/UrOZ6YJ4HiCG7r7MbfM86GUi63bqjTeutg==}
     peerDependencies:
       '@automerge/automerge-repo': '*'
 
@@ -156,7 +156,7 @@ snapshots:
   '@cbor-extract/cbor-extract-win32-x64@2.2.2':
     optional: true
 
-  '@inkandswitch/patchwork-providers@0.2.2(@automerge/automerge-repo@2.5.6)':
+  '@inkandswitch/patchwork-providers@0.3.0(@automerge/automerge-repo@2.5.6)':
     dependencies:
       '@automerge/automerge-repo': 2.5.6
 

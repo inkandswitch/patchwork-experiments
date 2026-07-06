@@ -197,7 +197,7 @@ export function ensureSettingsDoc(element) {
 			settingsReady = null
 			return null
 		}
-		settingsHandle = await repo.find(url)
+		settingsHandle = await repo.find(/** @type {any} */ (url))
 		return settingsHandle
 	})()
 	return settingsReady
