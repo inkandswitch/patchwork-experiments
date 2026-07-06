@@ -3,13 +3,13 @@
 	color-scheme: light;
 	--studio-fill: #fffcf0; /* paper */
 	--studio-line: #100f0f; /* black */
-	--studio-primary: #205ea6; /* blue-600 */
+	--studio-primary: #24837b; /* cyan-600 */
 	--studio-secondary: #5e409d; /* purple-600 */
 	--studio-danger: #af3029; /* red-600 */
 	--studio-warning: #ad8301; /* yellow-600 */
 	--studio-added: #66800b; /* green-600 */
 	--studio-deleted: #af3029;
-	--studio-modified: #205ea6;
+	--studio-modified: #24837b;
 	--studio-link: #24837b; /* cyan-600 */
 	--studio-selection-fill: #e6e4d9; /* base-100 */
 	--studio-chrome-fill: #f2f0e5; /* base-50 / bg-2 */
