@@ -6,7 +6,9 @@ import { createWorkspace } from "../workspace";
 import type { LLMProcessDoc, Message, ContentBlock, Workspace } from "../types";
 
 const API_URL = "https://openrouter.ai/api/v1";
-const API_KEY = "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";
+// Inlined at build time from .env (VITE_OPENROUTER_API_KEY) — the key never
+// lives in source, but note it does end up in the published dist bundle.
+const API_KEY: string | undefined = import.meta.env.VITE_OPENROUTER_API_KEY;
 const MAX_ITERATIONS = 20;
 
 type ApiMessage = {
@@ -15,6 +17,11 @@ type ApiMessage = {
 };
 
 export async function runLLMProcess(repo: Repo, handle: DocHandle<LLMProcessDoc>, signal?: AbortSignal): Promise<void> {
+  if (!API_KEY) {
+    throw new Error(
+      "No API key baked into this build — set VITE_OPENROUTER_API_KEY in llm/.env and rebuild.",
+    );
+  }
   const doc = await handle.doc();
   if (!doc) throw new Error("Process document not found");
 

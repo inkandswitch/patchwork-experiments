@@ -14,7 +14,9 @@ import type { CardDocLike, ContentBlock, Message } from "./types";
 // panel) and the eval scope is the files-as-text API over the card's package
 // instead of a general workspace.
 const API_URL = "https://openrouter.ai/api/v1";
-const API_KEY = "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";
+// Inlined at build time from .env (VITE_OPENROUTER_API_KEY) — the key never
+// lives in source, but note it does end up in the published dist bundle.
+const API_KEY: string | undefined = import.meta.env.VITE_OPENROUTER_API_KEY;
 const MODEL = "anthropic/claude-sonnet-4.6";
 const MAX_ITERATIONS = 20;
 
@@ -39,6 +41,14 @@ export async function runCardGeneration(options: {
   onUpdate: (messages: Message[]) => void;
 }): Promise<RunResult> {
   const { repo, packageUrl, cardHandle, signal, onUpdate } = options;
+
+  if (!API_KEY) {
+    return {
+      sourceWasSet: false,
+      error:
+        "No API key baked into this build — set VITE_OPENROUTER_API_KEY in embark/cards/inspect/.env and rebuild.",
+    };
+  }
 
   const files = createFilesApi(repo, packageUrl);
   const { card, sourceWasSet } = createCardApi(cardHandle, packageUrl);

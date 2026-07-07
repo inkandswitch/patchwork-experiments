@@ -235,6 +235,10 @@ export function createContextStore(): ContextStore {
     cb: (value: T) => void,
     interest?: ReadInterest,
   ): (() => void) => {
+    traceContext("subscribe", channel.name, {
+      owner: interest?.owner,
+      keys: interest?.keys,
+    });
     const state = stateFor(channel as Channel<AnyRecord>);
     const listener = cb as Listener;
     state.subscribers.add(listener);
@@ -251,6 +255,7 @@ export function createContextStore(): ContextStore {
     channel: Channel<T>,
     owner?: ScopeOwner,
   ): ScopeHandle<T> => {
+    traceContext("handle", channel.name, { owner });
     const state = stateFor(channel as Channel<AnyRecord>);
     const id = nextScopeId++;
     let released = false;
@@ -526,7 +531,10 @@ export function getContextHandle<T extends Record<string, unknown>>(
 // itself), so that contribution is simply left unattributed.
 export function resolveOwner(node: Node): ScopeOwner | undefined {
   const el = node instanceof Element ? node : node.parentElement;
-  if (!el) return undefined;
+  if (!el) {
+    traceOwnerFailure(node, "node is not an element and has no parentElement");
+    return undefined;
+  }
   const view = el.closest("patchwork-view");
   const embed = el.closest("[data-embed-id]");
   const owner: ScopeOwner = {
@@ -534,5 +542,65 @@ export function resolveOwner(node: Node): ScopeOwner | undefined {
     embedId: embed?.getAttribute("data-embed-id") ?? undefined,
     toolId: view?.getAttribute("tool-id") ?? undefined,
   };
-  return owner.docUrl || owner.embedId ? owner : undefined;
+  if (owner.docUrl || owner.embedId) return owner;
+  traceOwnerFailure(
+    node,
+    !view && !embed
+      ? el.isConnected
+        ? "no <patchwork-view> or [data-embed-id] ancestor"
+        : "element is not connected to the document (detached tree has no embed ancestor)"
+      : "ancestor found but it carries no doc-url / data-embed-id attribute",
+    { view, embed },
+  );
+  return undefined;
+}
+
+// --- Debug tracing -------------------------------------------------------------
+//
+// Opt-in provenance tracing for hunting unattributed context traffic: run
+// `localStorage.setItem("embark:trace-context", "1")` in the console and
+// reload. Every `subscribe`/`handle` then logs its channel and owner, and any
+// unattributed acquisition (or failed `resolveOwner` walk) logs a collapsed
+// stack trace so the caller that skipped attribution can be identified. Note
+// some unattributed traffic is deliberate (the context viewer inspects without
+// registering as a reader) — the stack tells them apart.
+
+function traceEnabled(): boolean {
+  try {
+    return localStorage.getItem("embark:trace-context") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function traceContext(
+  op: "subscribe" | "handle",
+  channel: string,
+  detail: { owner?: ScopeOwner; keys?: string[] },
+): void {
+  if (!traceEnabled()) return;
+  const label = `[context] ${op} ${channel}`;
+  if (detail.owner) {
+    console.log(label, detail.keys ? detail : detail.owner);
+    return;
+  }
+  console.groupCollapsed(`${label} — UNATTRIBUTED (no owner)`);
+  console.trace("acquired here");
+  console.groupEnd();
+}
+
+function traceOwnerFailure(
+  node: Node,
+  reason: string,
+  found?: { view: Element | null; embed: Element | null },
+): void {
+  if (!traceEnabled()) return;
+  console.groupCollapsed(`[context] resolveOwner failed: ${reason}`);
+  console.log({
+    node,
+    connected: node.isConnected,
+    ...(found ?? {}),
+  });
+  console.trace("resolved here");
+  console.groupEnd();
 }

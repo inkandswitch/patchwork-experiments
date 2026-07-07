@@ -192,8 +192,13 @@ export function runStickerSource(
     }
 
     entry.count = stickers.length;
+    // Only documents that actually carry stickers get an entry: writing an
+    // empty array would still create a key in the merged channel, cluttering
+    // the context viewer with every text-bearing doc this source merely
+    // scanned (e.g. card docs matched through their `description`).
     stickersHandle.change((slice) => {
-      slice[url] = stickers;
+      if (stickers.length === 0) delete slice[url];
+      else slice[url] = stickers;
     });
     emitCount();
   };
