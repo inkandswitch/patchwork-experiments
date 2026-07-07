@@ -738,37 +738,102 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     insertItems(payload, dropX, dropY);
   };
 
+  // Temporary debug logging for the clipboard flows: shows whether Cmd+C/X/V
+  // reach the canvas at all and why a handler bails. Strip once copy/cut/paste
+  // are confirmed working across browsers.
+  const debugClipboard = (message: string, detail?: Record<string, unknown>) => {
+    console.log(`[embark-canvas clipboard] ${message}`, detail ?? "");
+  };
+  const describeTarget = (target: EventTarget | null): string => {
+    if (!(target instanceof Element)) return String(target);
+    const cls = target.getAttribute("class");
+    return `<${target.tagName.toLowerCase()}${cls ? ` class="${cls}"` : ""}>`;
+  };
+
   // Clipboard copy/cut/paste of cards. The handlers sit on the canvas root,
-  // which holds focus after selecting an embed (see selectEmbed); clipboard
-  // events fire at the focused element, so the target === currentTarget guard
-  // (same as keydown) keeps shortcuts inside an embedded tool untouched.
+  // which holds focus after selecting an embed (see selectEmbed). The guard is
+  // on document.activeElement, NOT the event's target: Chrome dispatches
+  // clipboard events at the element holding the selection caret — even a
+  // collapsed caret left behind by an earlier click somewhere else — rather
+  // than the focused element, so the target is unreliable. Focus inside an
+  // embedded tool (an editor, an input) means the tool owns the shortcut and
+  // the canvas leaves the event alone.
   //
   // Copy writes the same payload a drag carries (see writeDocumentDragPayload):
   // the rich flavors give full-fidelity paste anywhere in the same browser,
   // and the plain-text automerge url survives into other browsers and apps.
   // Returns the copied embed's id so cut can delete it.
+  const canvasRootFocused = (event: ClipboardEvent): boolean =>
+    document.activeElement === event.currentTarget;
+
   const copySelectedEmbed = (event: ClipboardEvent): string | null => {
-    if (event.target !== event.currentTarget) return null;
+    const selection = window.getSelection();
+    debugClipboard(`${event.type} event fired`, {
+      target: describeTarget(event.target),
+      activeElement: describeTarget(document.activeElement),
+      canvasRootFocused: canvasRootFocused(event),
+      selectedId: selectedId(),
+      hasClipboardData: Boolean(event.clipboardData),
+      selectionCollapsed: selection ? selection.isCollapsed : null,
+    });
+    if (!canvasRootFocused(event)) {
+      debugClipboard(`${event.type}: bail — focus is not on the canvas root`);
+      return null;
+    }
     const id = selectedId();
     const embed = id ? doc()?.embeds[id] : undefined;
-    if (!id || !embed || !event.clipboardData) return null;
+    if (!id || !embed || !event.clipboardData) {
+      debugClipboard(
+        `${event.type}: bail — no selected embed or no clipboardData`,
+        { selectedId: id, embedFound: Boolean(embed) },
+      );
+      return null;
+    }
     // A live text selection (e.g. dragged out inside a frameless embed) still
     // means "copy that text" — don't hijack it for the card.
-    const selection = window.getSelection();
-    if (selection && !selection.isCollapsed) return null;
+    if (selection && !selection.isCollapsed) {
+      debugClipboard(`${event.type}: bail — live text selection wins`, {
+        selectionText: selection.toString().slice(0, 80),
+      });
+      return null;
+    }
     event.preventDefault();
     writeDocumentDragPayload(event.clipboardData, "canvas", [
       embedDragItem(embed),
     ]);
+    debugClipboard(`${event.type}: wrote card payload`, {
+      embedId: id,
+      url: embed.docUrl,
+    });
     return id;
   };
 
   const pasteDocuments = (event: ClipboardEvent) => {
-    if (event.target !== event.currentTarget) return;
+    debugClipboard("paste event fired", {
+      target: describeTarget(event.target),
+      activeElement: describeTarget(document.activeElement),
+      canvasRootFocused: canvasRootFocused(event),
+      types: event.clipboardData ? [...event.clipboardData.types] : null,
+    });
+    if (!canvasRootFocused(event)) {
+      debugClipboard("paste: bail — focus is not on the canvas root");
+      return;
+    }
     const payload = getDocumentDragPayload(event.clipboardData);
-    if (!payload) return;
+    if (!payload) {
+      debugClipboard("paste: bail — no document payload in the clipboard", {
+        plainText:
+          event.clipboardData?.getData("text/plain").slice(0, 120) ?? "",
+      });
+      return;
+    }
     event.preventDefault();
     const point = pastePoint();
+    debugClipboard("paste: inserting embeds", {
+      items: payload.length,
+      x: point.x,
+      y: point.y,
+    });
     const lastId = insertItems(payload, point.x, point.y);
     if (lastId) selectEmbed(lastId);
   };
@@ -815,6 +880,20 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       classList={{ "embark-canvas--drag-over": isDraggingOver() }}
       tabindex={0}
       on:keydown={(event) => {
+        // Debug: a clipboard shortcut seen here but no matching copy/cut/paste
+        // event log after it means the browser never initiated the clipboard
+        // action (e.g. no-selection quirk) — the keystroke itself arrived fine.
+        if (
+          (event.metaKey || event.ctrlKey) &&
+          ["c", "x", "v"].includes(event.key.toLowerCase())
+        ) {
+          debugClipboard(`keydown Cmd/Ctrl+${event.key.toUpperCase()}`, {
+            target: describeTarget(event.target),
+            targetIsCanvasRoot: event.target === event.currentTarget,
+            activeElement: describeTarget(document.activeElement),
+            selectedId: selectedId(),
+          });
+        }
         // Ignore keys bubbling out of an embedded document; only act when the
         // canvas root itself holds focus (target === currentTarget). Selecting
         // an embed focuses the root, so the shortcuts work right after a click.
@@ -864,12 +943,22 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
         setIsDraggingOver(true);
       }}
-      on:dragleave={(event) => {
+      // The drag-over highlight is cleared in the capture phase: embed roots
+      // stop drag events from bubbling to the canvas, so when a drag ends while
+      // hovering an embed — Escape, a refused drop, or a drop a tool like the
+      // deck accepts — the terminal dragleave/drop fires inside the embed and
+      // the bubble-phase handler would never see it, leaving the highlight
+      // painted. Capture runs before any stopPropagation.
+      oncapture:dragleave={(event) => {
+        // A relatedTarget still inside the canvas means the drag merely moved
+        // between elements; only leaving the canvas (or the drag ending, where
+        // relatedTarget is null) clears the state.
         const next = event.relatedTarget as Node | null;
         if (!next || !(event.currentTarget as HTMLElement).contains(next)) {
           setIsDraggingOver(false);
         }
       }}
+      oncapture:drop={() => setIsDraggingOver(false)}
       on:drop={dropDocuments}
     >
       <For each={embeds()}>
@@ -943,7 +1032,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.27</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.29</div>
     </div>
   );
 }
