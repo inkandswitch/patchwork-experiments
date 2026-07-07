@@ -15,7 +15,7 @@
  * real, valid IDs (hand-written strings fail `isValidAutomergeUrl`).
  */
 
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import {
   generateAutomergeUrl,
   type AutomergeUrl,
@@ -26,7 +26,8 @@ import {
 import {
   PackagesUrlMapper,
   resolvePackageRequest,
-  rewriteAutomergeDepsInSource,
+  rewriteServedSource,
+  splitFirstSegment,
 } from "./registry-bridge.js";
 import { classify } from "./resource-bridge.js";
 
@@ -51,55 +52,59 @@ beforeAll(() => {
   HEADS = "26oUrk4Jj3kBUbJjGEr1SuQLskBBxxihaWGWL4g7jTPvwM9TM3";
 });
 
-describe("PackagesUrlMapper.encodePath", () => {
-  it("replaces an automerge path segment with a sanitized marker segment", () => {
+describe("splitFirstSegment", () => {
+  it("returns the decoded first segment and the raw rest", () => {
+    expect(splitFirstSegment(`${HOST}/registry--@scope--x/dist/index.js`)).toEqual(
+      { first: "registry--@scope--x", rest: "dist/index.js" }
+    );
+  });
+
+  it("decodes the first segment (percent-encoding)", () => {
+    expect(
+      splitFirstSegment(`${HOST}/registry--%40scope--x%2523h/dist/a.js`).first
+    ).toBe("registry--@scope--x%23h");
+  });
+
+  it("normalizes `..` before splitting (traversal-safe)", () => {
+    // /assets/../<id>/x → /<id>/x, so `first` is the escaped segment, not `assets`.
+    expect(
+      splitFirstSegment(`${HOST}/assets/../${encodeURIComponent(AM_A)}/x.js`).first
+    ).toBe(AM_A);
+  });
+
+  it("handles a single-segment path (no rest)", () => {
+    expect(splitFirstSegment(`${HOST}/packages`)).toEqual({
+      first: "packages",
+      rest: "",
+    });
+  });
+});
+
+describe("PackagesUrlMapper.encodeSegment (automerge → marker)", () => {
+  it("maps a bare automerge URL to a sanitized bare marker segment", () => {
     const mapper = new PackagesUrlMapper();
-    const url = `${HOST}/${encodeURIComponent(AM_A)}/dist/index.js`;
-    const out = mapper.encodePath(url, "@patchwork/folder");
-    expect(out).toBe(`${HOST}/registry--@patchwork--folder/dist/index.js`);
+    expect(mapper.encodeSegment(AM_A, "@patchwork/folder")).toBe(
+      "registry--@patchwork--folder"
+    );
   });
 
   it("reuses the same marker name for a repeated automerge base", () => {
     const mapper = new PackagesUrlMapper();
-    const a = mapper.encodePath(
-      `${HOST}/${encodeURIComponent(AM_A)}/dist/index.js`,
-      "@scope/x"
-    );
-    const b = mapper.encodePath(
-      `${HOST}/${encodeURIComponent(AM_A)}/dist/other.js`,
-      "@scope/x"
-    );
-    expect(a).toContain("registry--@scope--x/");
-    expect(b).toContain("registry--@scope--x/");
-  });
-
-  it("leaves a URL with no automerge segment unchanged", () => {
-    const mapper = new PackagesUrlMapper();
-    const plain = "https://netlify.example/tool/dist/index.js";
-    expect(mapper.encodePath(plain, "@scope/x")).toBe(plain);
-  });
-
-  it("falls back to an unknown-N name when none is provided", () => {
-    const mapper = new PackagesUrlMapper();
-    const out = mapper.encodePath(
-      `${HOST}/${encodeURIComponent(AM_A)}/dist/index.js`
-    );
-    expect(out).toMatch(/\/registry--unknown-\d+\/dist\/index\.js$/);
-  });
-});
-
-describe("PackagesUrlMapper.encodeSegment", () => {
-  it("maps a bare automerge URL to a bare marker segment", () => {
-    const mapper = new PackagesUrlMapper();
-    expect(mapper.encodeSegment(AM_A, "@scope/x")).toBe(
-      "registry--@scope--x"
-    );
+    const a = mapper.encodeSegment(AM_A, "@scope/x");
+    const b = mapper.encodeSegment(AM_A, "@scope/x");
+    expect(a).toBe("registry--@scope--x");
+    expect(b).toBe("registry--@scope--x");
   });
 
   it("carries a heads suffix as a %23-encoded version", () => {
     const mapper = new PackagesUrlMapper();
     const out = mapper.encodeSegment(`${AM_A}#${HEADS}`, "@scope/x");
     expect(out).toBe(`registry--@scope--x%23${HEADS}`);
+  });
+
+  it("falls back to an unknown-N name when none is provided", () => {
+    const mapper = new PackagesUrlMapper();
+    expect(mapper.encodeSegment(AM_A)).toMatch(/^registry--unknown-\d+$/);
   });
 
   it("returns null for a non-automerge input", () => {
@@ -120,10 +125,7 @@ describe("PackagesUrlMapper.isRegisteredDependency", () => {
 describe("PackagesUrlMapper.resolveMarker (reverse mapping)", () => {
   it("restores the URL-encoded automerge segment for a registered marker", () => {
     const mapper = new PackagesUrlMapper();
-    mapper.encodePath(
-      `${HOST}/${encodeURIComponent(AM_A)}/dist/index.js`,
-      "@scope/x"
-    );
+    mapper.encodeSegment(AM_A, "@scope/x");
     const back = mapper.resolveMarker("registry--@scope--x/dist/index.js");
     expect(back).toBe(`${encodeURIComponent(AM_A)}/dist/index.js`);
   });
@@ -136,6 +138,17 @@ describe("PackagesUrlMapper.resolveMarker (reverse mapping)", () => {
     );
     expect(back).toBe(
       `${encodeURIComponent(`${AM_A}#${HEADS}`)}/dist/index.js`
+    );
+  });
+
+  it("restores heads and a deep subpath together (keyed rebuild)", () => {
+    const mapper = new PackagesUrlMapper();
+    mapper.encodeSegment(`${AM_A}#${HEADS}`, "@scope/x");
+    const back = mapper.resolveMarker(
+      `registry--@scope--x%23${HEADS}/dist/assets/deep/chunk.js`
+    );
+    expect(back).toBe(
+      `${encodeURIComponent(`${AM_A}#${HEADS}`)}/dist/assets/deep/chunk.js`
     );
   });
 
@@ -185,46 +198,12 @@ describe("PackagesUrlMapper external (statically-hosted) mapping", () => {
     expect(classify(out)).toBe("registry");
   });
 
-  it("encodeServed re-maps a served external URL (entry + chunk) back to a marker", () => {
-    // Registration establishes the external root (parent of dist/).
-    const mapper = new PackagesUrlMapper();
-    mapper.encodeExternal(EXT_ENTRY, "my-tool");
-
-    // The entry, as served (response.url), re-maps to an origin-prefixed marker
-    // — so es-module-shims resolves the module's relative chunk imports against
-    // the marker, not netlify.
-    expect(mapper.encodeServed(EXT_ENTRY)).toBe(
-      `${HOST}/registry--my-tool/dist/index.js`
-    );
-    // A code-split chunk under the same external root re-maps too (same root
-    // covers dist/… , so the chunk's netlify location never crosses).
-    const servedChunk = "https://netlify.example/tool/dist/assets/chunk.js";
-    const remapped = mapper.encodeServed(servedChunk);
-    expect(remapped).toBe(`${HOST}/registry--my-tool/dist/assets/chunk.js`);
-    expect(remapped).not.toContain("netlify.example");
-
-    // And that re-mapped chunk marker round-trips back to the netlify chunk.
-    expect(mapper.resolveMarker("registry--my-tool/dist/assets/chunk.js")).toBe(
-      servedChunk
-    );
-  });
-
-  it("encodeServed passes through a URL under no registered external root", () => {
-    // Not an automerge URL and not under any external root → returned unchanged
-    // (a platform asset falls into this pass-through case).
-    const mapper = new PackagesUrlMapper();
-    mapper.encodeExternal(EXT_ENTRY, "my-tool");
-    const other = "https://other.example/x/dist/index.js";
-    expect(mapper.encodeServed(other)).toBe(other);
-  });
-
   it("shares ONE marker across a multi-plugin external package (keyed by package name)", () => {
     // A single external package exporting multiple plugins registers each plugin's
     // entry — the SAME package name + root — via encodeExternal. All must collapse
-    // to one marker (one download/cache entry), and the shared root must be
-    // registered once so the serve-path re-map is deterministic. This is the
-    // regression: keying by plugin id (distinct per plugin) produced N markers for
-    // one package and made encodeServed's first-match non-deterministic.
+    // to one marker (one download/cache entry), and a chunk request under that
+    // marker must round-trip back to the shared external root. This is the
+    // regression that keying by plugin id (distinct per plugin) produced.
     const mapper = new PackagesUrlMapper();
     const entryA = "https://netlify.example/threepane/dist/index.js";
     const entryB = "https://netlify.example/threepane/dist/other.js";
@@ -236,11 +215,12 @@ describe("PackagesUrlMapper external (statically-hosted) mapping", () => {
     expect(markerA).toBe(`${HOST}/registry--threepane/dist/index.js`);
     expect(markerB).toBe(`${HOST}/registry--threepane/dist/other.js`);
 
-    // Serve-path re-map is deterministic: any served URL under the shared root
-    // yields the one package marker (not an insertion-order-dependent alias).
+    // A code-split chunk request under the shared marker resolves back to the one
+    // external root (proving a single registration serves all the package's
+    // modules, not a per-plugin alias).
     expect(
-      mapper.encodeServed("https://netlify.example/threepane/dist/assets/c.js")
-    ).toBe(`${HOST}/registry--threepane/dist/assets/c.js`);
+      mapper.resolveMarker("registry--threepane/dist/assets/c.js")
+    ).toBe("https://netlify.example/threepane/dist/assets/c.js");
   });
 });
 
@@ -277,10 +257,7 @@ describe("smuggling rejection (allowlist replaces the raw-automerge scan)", () =
 describe("resolvePackageRequest", () => {
   it("resolves a host-origin-prefixed marker chunk back to the real automerge path", async () => {
     const mapper = new PackagesUrlMapper();
-    mapper.encodePath(
-      `${HOST}/${encodeURIComponent(AM_A)}/dist/index.js`,
-      "@scope/x"
-    );
+    mapper.encodeSegment(AM_A, "@scope/x");
     const chunk = `${HOST}/registry--@scope--x/dist/assets/chunk.js`;
     const out = await resolvePackageRequest(chunk, mapper);
     expect(out).toBe(`${encodeURIComponent(AM_A)}/dist/assets/chunk.js`);
@@ -298,7 +275,7 @@ describe("resolvePackageRequest", () => {
     // resolver leaves it untouched. In production such a request never reaches
     // here — `classify` blocks it as a raw automerge ID first. (Entry-point
     // resolution of a bare automerge URL is a registration-time concern handled
-    // by `resolvePackageEntryUrl`, not request resolution.)
+    // by `mapper.resolvePackage`, not request resolution.)
     expect(await resolvePackageRequest(AM_A, mapper)).toBe(AM_A);
   });
 });
@@ -306,12 +283,17 @@ describe("resolvePackageRequest", () => {
 describe("dependency round-trip (rewrite → runtime-encode → resolve)", () => {
   it("a rewritten bare marker dep round-trips back to the real automerge path", async () => {
     const mapper = new PackagesUrlMapper();
-    // Registration: a package declared AM_B#HEADS as a dependency.
+    // Registration: the consuming package (marker `registry--consumer`) declared
+    // AM_B#HEADS as a dependency, so its dep marker is registered and the package
+    // is recorded as needing source rewriting.
     mapper.encodeSegment(`${AM_B}#${HEADS}`, "@chee/patchwork-llm");
+    mapper.markPackageHasDeps(mapper.markerNameFor("consumer"));
 
-    // Serve-time: the source literal is rewritten to a bare marker segment.
+    // Serve-time: a consumer module (requested under its `registry--consumer`
+    // marker) has its baked dep literal rewritten to a bare marker segment.
     const source = `const dep = getImportableUrlFromAutomergeUrl("${AM_B}#${HEADS}")`;
-    const rewritten = rewriteAutomergeDepsInSource(source, mapper);
+    const consumerReq = `${HOST}/registry--consumer/dist/index.js`;
+    const rewritten = rewriteServedSource(source, consumerReq, mapper);
     const bareMarker = `registry--@chee--patchwork-llm%23${HEADS}`;
     expect(rewritten).toContain(bareMarker);
 
@@ -336,11 +318,25 @@ describe("dependency round-trip (rewrite → runtime-encode → resolve)", () =>
     );
   });
 
+  it("skips the rewrite for a package not recorded as having automerge deps", () => {
+    const mapper = new PackagesUrlMapper();
+    // A registered dep exists globally, but THIS package (`registry--other`) was
+    // never marked as declaring automerge deps → its served source is untouched,
+    // with no source scan.
+    mapper.encodeSegment(`${AM_B}#${HEADS}`, "@chee/patchwork-llm");
+    const source = `const dep = getImportableUrlFromAutomergeUrl("${AM_B}#${HEADS}")`;
+    const otherReq = `${HOST}/registry--other/dist/index.js`;
+    expect(rewriteServedSource(source, otherReq, mapper)).toBe(source);
+  });
+
   it("leaves an unregistered automerge literal untouched (so the allowlist blocks it)", () => {
     const mapper = new PackagesUrlMapper();
-    // AM_A was never registered as a dependency.
+    // The consuming package needs rewriting, but AM_A was never registered as a
+    // dependency — so its literal is left raw even during a rewrite.
+    mapper.markPackageHasDeps(mapper.markerNameFor("consumer"));
     const source = `const x = "${AM_A}"`;
-    expect(rewriteAutomergeDepsInSource(source, mapper)).toBe(source);
+    const consumerReq = `${HOST}/registry--consumer/dist/index.js`;
+    expect(rewriteServedSource(source, consumerReq, mapper)).toBe(source);
     // And such a raw literal, if requested, is blocked by the allowlist (its
     // request is a raw automerge path, neither a marker nor a platform prefix).
     expect(classify(`${HOST}/${encodeURIComponent(AM_A)}/x.js`)).toBe(
@@ -430,5 +426,124 @@ describe("classify (allowlist)", () => {
     // a legit single-segment marker never has → blocked.
     const seg = `registry--@x%2F..%2F${encodeURIComponent(AM_A)}`;
     expect(classify(`${HOST}/${seg}/x.js`)).toBe("blocked");
+  });
+});
+
+describe("PackagesUrlMapper.resolvePackage (one package.json read per package)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    // Re-stub the window/document the codec needs (unstub cleared them).
+    vi.stubGlobal("window", { location: { origin: HOST } });
+    vi.stubGlobal("document", { baseURI: HOST + "/" });
+  });
+
+  // Build a fetch stub returning the given package.json body for any request,
+  // counting calls so we can assert one-read-per-package.
+  function stubFetchReturning(pkgJson: unknown) {
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      json: async () => pkgJson,
+    }));
+    vi.stubGlobal("fetch", fetchSpy);
+    return fetchSpy;
+  }
+
+  it("reads package.json once per package across repeated resolve calls (automerge)", async () => {
+    const fetchSpy = stubFetchReturning({
+      name: "@scope/tool",
+      exports: "./dist/index.js",
+    });
+    const mapper = new PackagesUrlMapper();
+
+    // Two plugins of one package resolve the same importUrl (as boot does for a
+    // multi-plugin package) — the memo must collapse to a single fetch.
+    const a = await mapper.resolvePackage(AM_A);
+    const b = await mapper.resolvePackage(AM_A);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(a?.packageName).toBe("@scope/tool");
+    expect(a).toEqual(b);
+    expect(a?.hasAutomergeDeps).toBe(false);
+  });
+
+  it("registers automerge deps from the same read and reports hasAutomergeDeps", async () => {
+    stubFetchReturning({
+      name: "@scope/tool",
+      exports: "./dist/index.js",
+      dependencies: {
+        "@chee/patchwork-llm": `${AM_B}#${HEADS}`,
+        "solid-js": "^1.9.0",
+      },
+    });
+    const mapper = new PackagesUrlMapper();
+    const resolved = await mapper.resolvePackage(AM_A);
+
+    expect(resolved?.hasAutomergeDeps).toBe(true);
+    // The automerge dep was registered → its marker round-trips back.
+    expect(
+      mapper.resolveMarker(
+        `registry--@chee--patchwork-llm%23${HEADS}/dist/index.js`
+      )
+    ).toBe(`${encodeURIComponent(`${AM_B}#${HEADS}`)}/dist/index.js`);
+  });
+
+  it("external: reads package.json for name + deps (best-effort)", async () => {
+    stubFetchReturning({ name: "my-tool" });
+    const mapper = new PackagesUrlMapper();
+    const resolved = await mapper.resolvePackage(
+      "https://netlify.example/my-tool/dist/index.js"
+    );
+    expect(resolved?.entryUrl).toBe(
+      "https://netlify.example/my-tool/dist/index.js"
+    );
+    expect(resolved?.packageName).toBe("my-tool");
+    expect(resolved?.hasAutomergeDeps).toBe(false);
+  });
+
+  it("absent package.json (automerge) → undefined (registration falls back)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 404, statusText: "Not Found" }))
+    );
+    const mapper = new PackagesUrlMapper();
+    expect(await mapper.resolvePackage(AM_A)).toBeUndefined();
+  });
+
+  // Byte-identical importUrl guard: rebuild the registration marker URL exactly as
+  // `processRegistryPlugin` does from `resolvePackage`, and assert the produced
+  // string — so the resolve+encode split can't drift from the marker format.
+  it("automerge: marker importUrl is <origin>/registry--<name>/<subpath>", async () => {
+    stubFetchReturning({ name: "@scope/tool", exports: "./dist/index.js" });
+    const mapper = new PackagesUrlMapper();
+    const resolved = await mapper.resolvePackage(AM_A);
+    expect(resolved?.hosting).toBe("automerge");
+    if (resolved?.hosting !== "automerge") throw new Error("unreachable");
+
+    const name = resolved.packageName ?? "fallback-id";
+    const marker = mapper.encodeSegment(resolved.automergeUrl, name);
+    const importUrl = `${HOST}/${marker}/${resolved.subpath}`;
+    expect(importUrl).toBe(`${HOST}/registry--@scope--tool/dist/index.js`);
+    // And it round-trips: the iframe's request for that marker resolves back to
+    // the real automerge path.
+    expect(await resolvePackageRequest(importUrl, mapper)).toBe(
+      `${encodeURIComponent(AM_A)}/dist/index.js`
+    );
+  });
+
+  it("external: marker importUrl hides the netlify origin", async () => {
+    stubFetchReturning({ name: "my-tool" });
+    const mapper = new PackagesUrlMapper();
+    const resolved = await mapper.resolvePackage(
+      "https://netlify.example/my-tool/dist/index.js"
+    );
+    expect(resolved?.hosting).toBe("external");
+    if (resolved?.hosting !== "external") throw new Error("unreachable");
+
+    const importUrl = mapper.encodeExternal(
+      resolved.entryUrl,
+      resolved.packageName ?? "fallback-id"
+    );
+    expect(importUrl).toBe(`${HOST}/registry--my-tool/dist/index.js`);
+    expect(importUrl).not.toContain("netlify.example");
   });
 });

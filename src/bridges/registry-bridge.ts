@@ -11,11 +11,13 @@
  *
  * This module runs at two phases:
  *  - **boot / registration** — `getRegistries` / `watchRegistries` produce
- *    serializable `RegistryEntry`s with `importUrl` mapped to a marker.
- *  - **first serve** — `resolvePackageRequest` maps a marker request back to a
- *    fetchable URL; `registerPackageDependencies` + `rewriteAutomergeDepsInSource`
- *    hide a tool's baked automerge dependency URLs behind markers in served
- *    source.
+ *    serializable `RegistryEntry`s with `importUrl` mapped to a marker. A single
+ *    `mapper.resolvePackage` per package (memoized) reads its `package.json` once
+ *    to resolve the entry + name AND register its baked automerge dependencies.
+ *  - **serve** — `resolvePackageRequest` maps a marker request back to a fetchable
+ *    URL; `rewriteServedSource` hides a tool's baked automerge dependency URLs
+ *    behind markers in served source, but only for packages that declared such
+ *    deps at registration (a per-package check, no per-module source scan).
  */
 
 import {
@@ -34,19 +36,42 @@ import { log } from "../log.js";
  * The opaque marker prefix for registry (plugin) tool code. A mapped package's
  * URL segment is `registry--<sanitized-name>` (one path segment). Chosen as a
  * single segment with no internal `/` so it survives `encodeURIComponent` (in the
- * baked-dependency request form) as one segment — see `#pkgSegmentFor`.
+ * baked-dependency request form) as one segment — see `#markerSegmentFor`.
  */
 export const REGISTRY_MARKER_PREFIX = "registry--";
 
+/**
+ * The result of resolving a package's `importUrl` (once, at registration),
+ * discriminated by how the package is hosted so the caller can mint its marker
+ * without re-scanning a URL:
+ *  - **automerge** — the bare `automergeUrl` (the location to hide) plus the
+ *    entry point's `subpath` beneath the package folder (e.g. `dist/index.js`).
+ *  - **external** — the already-resolved `entryUrl` (a plain HTTP(S) URL).
+ *
+ * Both carry the package `name` (best-effort, for the marker) and whether the
+ * `package.json` declared any `automerge:` dependencies (the serve path uses this
+ * to decide whether to rewrite the package's served source).
+ */
+type ResolvedPackage = { packageName?: string; hasAutomergeDeps: boolean } & (
+  | { hosting: "automerge"; automergeUrl: string; subpath: string }
+  | { hosting: "external"; entryUrl: string }
+);
+
+/** The subset of a tool package's `package.json` this module reads. */
+interface PackageJson {
+  name?: string;
+  dependencies?: Record<string, string>;
+}
+
 // ---------------------------------------------------------------------------
-// Automerge URL segment scanning (shared helpers)
+// URL helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Split a path segment into its automerge base and trailing heads (version)
- * suffix. Automerge URLs may be pinned to specific heads as
- * `automerge:<id>#<heads>`; `isValidAutomergeUrl` only recognizes the base, so
- * callers strip the heads before validating and restore them afterwards.
+ * Split an automerge URL into its base and trailing heads (version) suffix.
+ * Automerge URLs may be pinned to specific heads as `automerge:<id>#<heads>`;
+ * `isValidAutomergeUrl` only recognizes the base, so callers strip the heads
+ * before validating and restore them afterwards.
  */
 function stripHeads(segment: string): { base: string; heads: string } {
   const hashIdx = segment.indexOf("#");
@@ -56,37 +81,63 @@ function stripHeads(segment: string): { base: string; heads: string } {
 }
 
 /**
- * Scan a URL's path for segments that decode to a valid automerge URL. Returns
- * one entry per matching segment, preserving the raw segment (for string
- * replacement) alongside its decoded base/heads.
- *
- * Falls back to a raw "/"-split when the input isn't URL-parseable, so bare
- * `automerge:...` strings are still scanned.
+ * Split a marker name-part (`<name>` or `<name><suffix><heads>`) into its package
+ * key and heads. The heads suffix arrives as `#` in the chunk/entry form but as
+ * `%23` in the double-encoded baked-dependency form (both after one decode by
+ * `splitFirstSegment`); a sanitized package name contains neither `#` nor `%`, so
+ * splitting on whichever appears first recovers the key unambiguously. Returns
+ * `heads` without its marker (empty if unpinned).
  */
-function findAutomergeSegments(
-  url: string
-): Array<{ segment: string; base: string; heads: string }> {
-  let segments: string[];
-  try {
-    segments = new URL(url, window.location.origin).pathname
-      .split("/")
-      .filter(Boolean);
-  } catch {
-    segments = url.split("/").filter(Boolean);
+function splitMarkerHeads(namepart: string): { pkg: string; heads: string } {
+  // Find the heads marker: `#` (chunk/entry form) or `%23` (baked-dep form),
+  // whichever occurs first.
+  const hashIdx = namepart.indexOf("#");
+  const pctIdx = namepart.indexOf("%23");
+  let idx = -1;
+  let markerLen = 0;
+  if (hashIdx >= 0 && (pctIdx < 0 || hashIdx < pctIdx)) {
+    idx = hashIdx;
+    markerLen = 1;
+  } else if (pctIdx >= 0) {
+    idx = pctIdx;
+    markerLen = 3;
   }
+  return idx < 0
+    ? { pkg: namepart, heads: "" }
+    : { pkg: namepart.slice(0, idx), heads: namepart.slice(idx + markerLen) };
+}
 
-  const matches: Array<{ segment: string; base: string; heads: string }> = [];
-  for (const segment of segments) {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(segment);
-    } catch {
-      decoded = segment;
-    }
-    const { base, heads } = stripHeads(decoded);
-    if (isValidAutomergeUrl(base)) matches.push({ segment, base, heads });
+/**
+ * Split a URL into its decoded first path segment and the raw remaining path
+ * (everything after that segment's slash, still percent-encoded). Resolves the
+ * URL against the host origin and normalizes it with the WHATWG `URL` parser
+ * FIRST — so `..`/`.` are collapsed before inspection and a traversal like
+ * `<origin>/assets/../automerge:<id>/x` presents `automerge:<id>` as `first`
+ * (never a sanctioned prefix), rather than sneaking past a raw prefix check.
+ *
+ * The one place both bridges read "what package/prefix is this request for":
+ * `classify` (platform/registry/blocked), `markerNameFromUrl`, and
+ * `resolvePackageRequest` all build on it. Returns `{ first: "", rest: "" }` if
+ * the URL can't be parsed.
+ */
+export function splitFirstSegment(url: string): { first: string; rest: string } {
+  let pathname: string;
+  try {
+    pathname = new URL(url, window.location.origin).pathname;
+  } catch {
+    return { first: "", rest: "" };
   }
-  return matches;
+  const trimmed = pathname.replace(/^\/+/, "");
+  const slashIdx = trimmed.indexOf("/");
+  const rawFirst = slashIdx < 0 ? trimmed : trimmed.slice(0, slashIdx);
+  const rest = slashIdx < 0 ? "" : trimmed.slice(slashIdx + 1);
+  let first: string;
+  try {
+    first = decodeURIComponent(rawFirst);
+  } catch {
+    first = rawFirst;
+  }
+  return { first, rest };
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +168,18 @@ export class PackagesUrlMapper {
   // never crosses into the iframe. The root ends in "/"; a request's subpath
   // after the marker is appended to it on the way back out (see `resolveMarker`).
   #packageToExternalRoot = new Map<string, string>();
+  // importUrl → in-flight/settled promise of that package's one-time resolution:
+  // read package.json once, resolve entry + name, and register its automerge
+  // deps. Keyed by importUrl (shared across all a package's plugins) so the read
+  // happens once per package, not once per plugin, across boot and live updates.
+  #packageResolution = new Map<
+    string,
+    Promise<ResolvedPackage | undefined>
+  >();
+  // Marker names (`registry--<name>`) of packages that DECLARED automerge deps in
+  // their package.json. The serve path rewrites baked dep literals only for these
+  // packages; every other package's modules are served without a source scan.
+  #packagesWithAutomergeDeps = new Set<string>();
 
   /**
    * Sanitize a package name for use as a URL path segment.
@@ -124,6 +187,124 @@ export class PackagesUrlMapper {
    */
   #sanitizeName(name: string): string {
     return name.replace(/\//g, "--");
+  }
+
+  /**
+   * Resolve a package's `importUrl` — ONCE per package — reading its
+   * `package.json` a single time to (a) find the entry point + name and (b) scan
+   * its `dependencies` for `automerge:` URLs, registering each as a dep→marker
+   * mapping (`encodeSegment`) and reporting whether any were found. Memoized by
+   * `importUrl` (shared across a package's plugins), so N plugins of one package
+   * cost one fetch, across both boot (`getRegistries`) and live (`watchRegistries`)
+   * registration.
+   *
+   * Two hosting kinds (the importUrl says which):
+   *  - **automerge** (`automerge:…`) — read the folder's `package.json` (via the
+   *    service-worker-resolvable host-origin path) and resolve its export to the
+   *    entry point. Returns undefined if the package.json or export is unreachable.
+   *  - **external** (plain HTTP(S)) — the importUrl is already the resolved entry;
+   *    read `package.json` at the convention-derived package root for the name +
+   *    deps (best-effort — a missing one just yields no name / no deps).
+   *
+   * The caller mints the package's own marker from the returned entry+name and, if
+   * `hasAutomergeDeps`, records that marker via `markPackageHasDeps`.
+   */
+  resolvePackage(importUrl: string): Promise<ResolvedPackage | undefined> {
+    let pending = this.#packageResolution.get(importUrl);
+    if (!pending) {
+      pending = this.#resolvePackageUncached(importUrl);
+      this.#packageResolution.set(importUrl, pending);
+    }
+    return pending;
+  }
+
+  async #resolvePackageUncached(
+    importUrl: string
+  ): Promise<ResolvedPackage | undefined> {
+    // External: importUrl is already the entry point; read package.json at the
+    // package root (best-effort) for name + deps.
+    if (!isValidAutomergeUrl(importUrl)) {
+      const root = packageRootFromUrl(importUrl);
+      const pkgJson = root ? await fetchPackageJson(root) : undefined;
+      const hasAutomergeDeps = this.#registerAutomergeDeps(pkgJson);
+      return {
+        hosting: "external",
+        entryUrl: importUrl,
+        packageName: pkgJson?.name,
+        hasAutomergeDeps,
+      };
+    }
+
+    // Automerge: read the folder's package.json and resolve its export to the
+    // entry point. Return the bare automerge URL + entry subpath (the part after
+    // the folder), so the caller mints the marker from the bare URL directly —
+    // never embedding it in a URL just to scan it back out.
+    const folderPath = getImportableUrlFromAutomergeUrl(importUrl as AutomergeUrl);
+    const base = new URL(folderPath, window.location.origin);
+    const pkgJson = await fetchPackageJson(base.href);
+    if (!pkgJson) return undefined;
+
+    const entryPoint = resolvePackageExport(pkgJson);
+    if (!entryPoint) return undefined;
+
+    // base.href ends in "/<encoded-automerge>/"; the entry resolved against it,
+    // minus that prefix, is the subpath (e.g. "dist/index.js") — resolves "./".
+    const subpath = new URL(entryPoint, base).href.slice(base.href.length);
+    const hasAutomergeDeps = this.#registerAutomergeDeps(pkgJson);
+    return {
+      hosting: "automerge",
+      automergeUrl: importUrl,
+      subpath,
+      packageName: pkgJson.name,
+      hasAutomergeDeps,
+    };
+  }
+
+  /**
+   * Register every `automerge:`-valued dependency in `pkgJson` as a dep→marker
+   * mapping (so the source rewrite can later replace those literals), and return
+   * whether any were found. See `rewriteAutomergeDepsInSource`.
+   */
+  #registerAutomergeDeps(pkgJson: PackageJson | undefined): boolean {
+    let found = false;
+    for (const [name, version] of Object.entries(pkgJson?.dependencies ?? {})) {
+      const { base } = stripHeads(version);
+      if (isValidAutomergeUrl(base)) {
+        // Registers the dep base→marker mapping, named after the dep (heads
+        // irrelevant to registration).
+        this.encodeSegment(version, name);
+        found = true;
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Record that the package with marker name `markerName` declared automerge
+   * deps, so the serve path rewrites its baked dep literals. Called by the
+   * registration flow once the package's own marker is minted.
+   */
+  markPackageHasDeps(markerName: string): void {
+    this.#packagesWithAutomergeDeps.add(markerName);
+  }
+
+  /**
+   * Does the package identified by `markerName` (`registry--<name>`) need its
+   * served source rewritten? True only if it declared automerge deps at
+   * registration. The serve path extracts the marker name from the request URL
+   * and consults this — replacing the old per-module source text scan.
+   */
+  packageNeedsRewrite(markerName: string): boolean {
+    return this.#packagesWithAutomergeDeps.has(markerName);
+  }
+
+  /**
+   * The marker name (`registry--<sanitized-name>`) a package is mapped under,
+   * given its package name. The stable per-package key the iframe requests all of
+   * the package's modules under; used to record/look up `packageNeedsRewrite`.
+   */
+  markerNameFor(name: string): string {
+    return `${REGISTRY_MARKER_PREFIX}${this.#sanitizeName(name)}`;
   }
 
   /**
@@ -153,44 +334,30 @@ export class PackagesUrlMapper {
 
   /**
    * Has this automerge base ID been registered as a package dependency (via
-   * `encodePath` / `encodeSegment`)? Used by the source rewrite as an allowlist:
-   * only automerge URLs a registered package declared as a dependency are
-   * rewritten to a marker; anything else (a doc ID a tool fabricated) is left raw,
-   * so its request stays a raw automerge path that `classify` blocks.
+   * `encodeSegment`)? Used by the source rewrite as an allowlist: only automerge
+   * URLs a registered package declared as a dependency are rewritten to a marker;
+   * anything else (a doc ID a tool fabricated) is left raw, so its request stays a
+   * raw automerge path that `classify` blocks.
    */
   isRegisteredDependency(base: string): boolean {
     return this.#automergeToPackage.has(base);
   }
 
   /**
-   * ENCODE (automerge, full URL). Replace the automerge URL segment in a full URL
-   * with the opaque marker segment, registering a new mapping if the segment
-   * hasn't been seen. Returns the URL unchanged if no automerge segment is found.
-   * Idempotent — used both at registration and (via `encodeServed`) at serve time.
-   */
-  encodePath(url: string, name?: string): string {
-    // Replace the first automerge segment found; leave non-automerge URLs as-is.
-    const [match] = findAutomergeSegments(url);
-    if (!match) return url;
-    const { segment, base, heads } = match;
-    const markerSegment = this.#markerSegmentFor(base, heads, name);
-    return url.replace(`/${segment}/`, `/${markerSegment}/`);
-  }
-
-  /**
-   * ENCODE (automerge, bare string). Map a bare automerge folder URL (as it
-   * appears verbatim in tool source, e.g. `automerge:HaCFn…#26oUrk…`) to its
-   * opaque bare marker segment (`registry--@chee--patchwork-llm%2326oUrk…`),
-   * registering the mapping if new.
+   * ENCODE (automerge → marker). Map a bare automerge URL (e.g.
+   * `automerge:HaCFn…#26oUrk…`) to its opaque bare marker segment
+   * (`registry--@chee--patchwork-llm%2326oUrk…`), registering the mapping if new.
+   * The single automerge-encoding primitive — used for package entries (the
+   * caller appends the entry subpath and origin-prefixes it) and for baked
+   * `package.json` dependency URLs alike.
    *
-   * Unlike `encodePath`, the input is not a path with the ID sitting between
-   * slashes — it is the raw automerge string a `getImportableUrlFromAutomergeUrl`
-   * call is about to resolve. Returning a bare marker segment lets that runtime
-   * call append its subpath and origin-prefix it as usual; the resulting request
-   * (`<origin>/<encoded-marker>/subpath`) round-trips back through `resolveMarker`,
-   * which decodes the first segment before matching. Because the marker is one
-   * segment with no internal `/`, `encodeURIComponent` keeps it one segment.
-   * Returns null if `folderUrl` isn't a valid automerge URL.
+   * The input is the raw automerge string; a returned bare marker segment lets
+   * a `getImportableUrlFromAutomergeUrl` call (or the caller) append a subpath and
+   * origin-prefix it; the resulting request (`<origin>/<encoded-marker>/subpath`)
+   * round-trips back through `resolveMarker`, which decodes the first segment
+   * before matching. Because the marker is one segment with no internal `/`,
+   * `encodeURIComponent` keeps it one segment. Returns null if `folderUrl` isn't a
+   * valid automerge URL.
    */
   encodeSegment(folderUrl: string, name?: string): string | null {
     const { base, heads } = stripHeads(folderUrl);
@@ -231,173 +398,52 @@ export class PackagesUrlMapper {
   }
 
   /**
-   * Shared skeleton for the two reverse (marker → real location) lookups. Scans
-   * `map` for a registered package whose `registry--<pkg>` marker appears as a
-   * segment in `url`; on the first hit, delegates the actual string assembly to
-   * `rebuild`, passing the mapped value, the raw segment suffix between the name
-   * and the next `/` (carries a `%23<heads>` for automerge, empty for external),
-   * and the subpath after that `/`. Returns null if no registered marker matches.
-   */
-  #reverseLookup(
-    url: string,
-    map: Map<string, string>,
-    rebuild: (
-      value: string,
-      suffix: string,
-      subpath: string,
-      markerSegment: string
-    ) => string
-  ): string | null {
-    for (const [pkg, value] of map) {
-      const markerPrefix = `${REGISTRY_MARKER_PREFIX}${pkg}`;
-      const idx = url.indexOf(markerPrefix);
-      if (idx < 0) continue;
-
-      const afterMarker = idx + markerPrefix.length;
-      const slashIdx = url.indexOf("/", afterMarker);
-      if (slashIdx < 0) continue;
-
-      const suffix = url.slice(afterMarker, slashIdx);
-      const subpath = url.slice(slashIdx + 1);
-      const markerSegment = url.slice(idx, slashIdx + 1);
-      return rebuild(value, suffix, subpath, markerSegment);
-    }
-    return null;
-  }
-
-  /**
    * RESOLVE (marker → real location). The single reverse entry point: turn an
    * inbound `registry--<name>` marker request into the real fetchable location —
    * an automerge path (SW-resolvable) or an external URL (fetched directly).
    * Returns null if the URL carries no known marker.
    *
-   * The caller (`resolvePackageRequest`) hands a URL in which the marker appears
-   * literally as `registry--<name>` (chunk form) or `registry--<name>%23<heads>`
-   * (heads-pinned); the baked-dependency form's `%40`/`%23` percent-encoding has
-   * already been decoded there. Automerge is tried before external (a package is
-   * one or the other; the order just fixes precedence).
+   * The marker is always the request's FIRST path segment
+   * (`registry--<name>` or `registry--<name>#<heads>`), so we parse that segment
+   * and look the package up by its exact name — no scan over registered packages.
+   * `splitFirstSegment` has already decoded the baked-dependency form's
+   * `%40`/`%23` percent-encoding (so a heads `%23` reads back as `#` here). A
+   * package is in exactly one map; automerge is checked first only for precedence.
    */
   resolveMarker(url: string): string | null {
-    // Automerge: swap the marker segment for the URL-encoded real automerge URL,
-    // restoring heads from a `%23<heads>` suffix on the marker segment.
-    const automerge = this.#reverseLookup(
-      url,
-      this.#packageToAutomerge,
-      (automergeUrl, suffix, _subpath, markerSegment) => {
-        const heads = suffix.startsWith("%23") ? decodeURIComponent(suffix) : "";
-        const fullAutomerge = heads ? `${automergeUrl}${heads}` : automergeUrl;
-        return url.replace(
-          markerSegment,
-          `${encodeURIComponent(fullAutomerge)}/`
-        );
-      }
+    const { first, rest } = splitFirstSegment(url);
+    if (!first.startsWith(REGISTRY_MARKER_PREFIX)) return null;
+
+    // Split `registry--<name>[<heads-suffix>]` → package key + heads. Strip the
+    // LEADING prefix (sanitized names themselves contain `--`), then split the
+    // heads suffix. The suffix marker is `#` in the chunk/entry form but `%23` in
+    // the double-encoded baked-dependency form (both arrive here after one decode
+    // by `splitFirstSegment`); a sanitized package name contains neither, so
+    // splitting on whichever appears first is unambiguous.
+    const { pkg, heads } = splitMarkerHeads(
+      first.slice(REGISTRY_MARKER_PREFIX.length)
     );
-    if (automerge) return automerge;
 
-    // External: swap the marker segment for the registered external root (ends in
-    // "/"), appending the subpath. Fetched directly, never via the SW.
-    return this.#reverseLookup(
-      url,
-      this.#packageToExternalRoot,
-      (root, _suffix, subpath) => `${root}${subpath}`
-    );
-  }
-
-  /**
-   * ENCODE (serve time, either hosting). Given a just-fetched module URL, return
-   * the origin-prefixed `registry--` marker URL to hand es-module-shims, so esms
-   * resolves the module's relative chunk imports against the marker rather than
-   * the real location. The single serve-time forward entry point — the resource
-   * bridge calls only this, staying package-agnostic.
-   *
-   *  - **automerge** — `encodePath` swaps the automerge segment for a marker. If
-   *    it returns a *bare* marker segment (no surrounding path), origin-prefix it
-   *    so it is a valid hierarchical URL; if it rewrote in place, it is already an
-   *    absolute URL, so pass through.
-   *  - **external** — `encodePath` leaves the URL unchanged (no automerge
-   *    segment); swap the registered external-root prefix for an origin-prefixed
-   *    marker (`#encodeExternalServed`). The entry and all its code-split chunks
-   *    live under the same root, so chunks map too.
-   *  - **neither** (e.g. a host-origin platform asset) — pass through unchanged.
-   */
-  encodeServed(servedUrl: string): string {
-    const encoded = this.encodePath(servedUrl);
-    if (encoded.startsWith(REGISTRY_MARKER_PREFIX)) {
-      return `${window.location.origin}/${encoded}`;
+    // Automerge: real automerge URL (+ restored heads), URL-encoded as the first
+    // path segment, then the subpath — the SW-resolvable form.
+    const automergeUrl = this.#packageToAutomerge.get(pkg);
+    if (automergeUrl !== undefined) {
+      const full = heads ? `${automergeUrl}#${heads}` : automergeUrl;
+      return `${encodeURIComponent(full)}/${rest}`;
     }
-    if (encoded !== servedUrl) return encoded;
-    return this.#encodeExternalServed(servedUrl) ?? servedUrl;
-  }
 
-  /**
-   * Serve-path forward map for external tools: swap a served external URL's
-   * registered package-root prefix for its `<origin>/registry--<name>/` marker
-   * URL, preserving the subpath. Returns null if `url` isn't under any registered
-   * external root. The external half of `encodeServed`.
-   */
-  #encodeExternalServed(url: string): string | null {
-    const origin = window.location.origin;
-    for (const [pkg, root] of this.#packageToExternalRoot) {
-      if (!url.startsWith(root)) continue;
-      const subpath = url.slice(root.length);
-      return `${origin}/${REGISTRY_MARKER_PREFIX}${pkg}/${subpath}`;
-    }
+    // External: the registered root (ends in "/") + the subpath. Fetched directly.
+    const root = this.#packageToExternalRoot.get(pkg);
+    if (root !== undefined) return `${root}${rest}`;
+
     return null;
   }
+
 }
 
 // ---------------------------------------------------------------------------
 // Package entry resolution
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve a plugin's importUrl to its package entry point URL and package name.
- * Both paths return `packageName` (best-effort) so the caller can key the
- * package's opaque marker on it — one marker per package, shared across all the
- * package's plugins.
- *
- * Plugin source can be stored in two places, and the importUrl says which:
- *  - **Automerge URL** (`automerge:...`) — the package lives in a folder doc in
- *    the host repo. We resolve it the same way the host does: read the folder's
- *    `package.json` (via the service-worker-resolvable host-origin path) and
- *    resolve its export to the entry point. These get mapped to opaque markers by
- *    the caller so the automerge ID never reaches the iframe.
- *  - **Plain HTTP(S) URL** — the package is statically deployed elsewhere (e.g.
- *    a Netlify bundle listed in a static module manifest). The importUrl is
- *    already the resolved entry point (mirroring how `ModuleWatcher` does a
- *    bare `import(importName)` for non-automerge modules), so the entry passes
- *    through unchanged — but we still read the package's `package.json` (at the
- *    convention-derived root) for its `name`, so the caller (`encodeExternal`)
- *    can hide its location behind a per-package marker. Best-effort: a missing
- *    root or package.json just yields no name (the caller falls back).
- */
-export async function resolvePackageEntryUrl(
-  importUrl: string
-): Promise<{ entryUrl: string; packageName?: string } | undefined> {
-  // Non-automerge importUrls are already-resolved entry points hosted wherever
-  // they live; the entry passes through, but read package.json for the name.
-  if (!isValidAutomergeUrl(importUrl)) {
-    const root = packageRootFromUrl(importUrl);
-    const pkgJson = root ? await fetchPackageJson(root) : undefined;
-    return { entryUrl: importUrl, packageName: pkgJson?.name };
-  }
-
-  const folderPath = getImportableUrlFromAutomergeUrl(importUrl as AutomergeUrl);
-  const base = new URL(folderPath, window.location.origin);
-  const packageJsonUrl = new URL("package.json", base).href;
-
-  const response = await fetch(packageJsonUrl);
-  if (!response.ok) return undefined;
-
-  const pkgJson = await response.json();
-  const entryPoint = resolvePackageExport(pkgJson);
-  if (!entryPoint) return undefined;
-
-  return {
-    entryUrl: new URL(entryPoint, base).href,
-    packageName: pkgJson.name,
-  };
-}
 
 /** Bundler output directory names an entry point commonly sits under. */
 const BUNDLE_OUTPUT_DIRS = new Set(["dist", "build", "out", "lib"]);
@@ -413,7 +459,7 @@ const BUNDLE_OUTPUT_DIRS = new Set(["dist", "build", "out", "lib"]);
  * (stable across all of a package's chunks) and as the base to fetch
  * `package.json` from. Returns null if the URL can't be parsed.
  */
-export function packageRootFromUrl(moduleUrl: string): string | null {
+function packageRootFromUrl(moduleUrl: string): string | null {
   let base: URL;
   try {
     base = new URL(moduleUrl, window.location.origin);
@@ -435,47 +481,8 @@ export function packageRootFromUrl(moduleUrl: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// Dependency registration + source rewriting
+// Source rewriting
 // ---------------------------------------------------------------------------
-
-/**
- * Fetch a package's `package.json` (given its already-derived package-root URL)
- * and register every `automerge:`-valued dependency in the mapper, so the source
- * rewrite can later replace those literals with markers (see
- * `rewriteAutomergeDepsInSource`).
- *
- * Tools built with `@chee/patchwork-bundles` (e.g. `patchwork-base/chat`) name
- * their patchwork-package deps by automerge URL:
- *
- *   "dependencies": { "@chee/patchwork-llm": "automerge:HaCFn…#26oUrk…" }
- *
- * The plugin bakes each such URL into the built source as a literal; registering
- * the dep lets the rewrite recognize it as legitimate and remap it, for both
- * automerge- and statically-hosted tools. Called lazily by the resource bridge
- * the first time one of a package's modules is served (NOT at plugin
- * registration — that would fetch every plugin's package.json on the iframe-boot
- * critical path). Never throws; a package with no reachable `package.json` or no
- * automerge deps simply registers nothing.
- *
- * `packageRoot` is the value the caller already computed with `packageRootFromUrl`
- * (the resource bridge keys its per-package cache on it), so this does not
- * recompute it — it fetches `package.json` from that root directly.
- */
-export async function registerPackageDependencies(
-  packageRoot: string,
-  mapper: PackagesUrlMapper
-): Promise<void> {
-  const pkgJson = await fetchPackageJson(packageRoot);
-  if (!pkgJson) return;
-
-  for (const [name, version] of Object.entries(pkgJson.dependencies ?? {})) {
-    const { base } = stripHeads(version);
-    if (isValidAutomergeUrl(base)) {
-      // Registers the base→pkg name mapping (heads irrelevant to registration).
-      mapper.encodeSegment(version, name);
-    }
-  }
-}
 
 /**
  * Fetch and parse `package.json` from an already-derived package-root URL.
@@ -483,9 +490,7 @@ export async function registerPackageDependencies(
  */
 async function fetchPackageJson(
   packageRoot: string
-): Promise<
-  { name?: string; dependencies?: Record<string, string> } | undefined
-> {
+): Promise<PackageJson | undefined> {
   let candidate: string;
   try {
     candidate = new URL("package.json", packageRoot).href;
@@ -511,13 +516,26 @@ async function fetchPackageJson(
 const AUTOMERGE_URL_IN_SOURCE = /automerge:[A-Za-z0-9]+(?:#[A-Za-z0-9]+)?/g;
 
 /**
- * Cheap check: does this module source contain any `automerge:` URL literal at
- * all? Used to skip the (network-bound) dependency resolution + rewrite for the
- * overwhelming majority of served modules, so only the few modules that actually
- * carry a dep literal pay for a `package.json` read.
+ * Prepare a served registry module's source for the iframe: if the package that
+ * owns this request declared automerge deps at registration, rewrite the baked
+ * `automerge:` dep literals to `registry--` markers; otherwise return the source
+ * untouched. The single serve-time source entry point the resource bridge calls
+ * (it stays package-agnostic apart from its `classify` gate).
+ *
+ * `requestUrl` is the iframe's `registry--<name>/…` request (already classified
+ * `registry`); its marker name identifies the owning package. Only packages
+ * recorded via `markPackageHasDeps` (i.e. that declared automerge deps) are
+ * rewritten — so the overwhelming majority of served modules (no automerge deps)
+ * skip the source scan entirely.
  */
-export function sourceHasAutomergeUrl(source: string): boolean {
-  return source.includes("automerge:");
+export function rewriteServedSource(
+  source: string,
+  requestUrl: string,
+  mapper: PackagesUrlMapper
+): string {
+  const markerName = markerNameFromUrl(requestUrl);
+  if (!markerName || !mapper.packageNeedsRewrite(markerName)) return source;
+  return rewriteAutomergeDepsInSource(source, mapper);
 }
 
 /**
@@ -535,15 +553,12 @@ export function sourceHasAutomergeUrl(source: string): boolean {
  *
  * The **mapper is the allowlist**: a literal is rewritten only if its automerge
  * base is already registered (i.e. some registered package declared it as a
- * dependency — see `registerPackageDependencies`, called at plugin registration,
- * which necessarily runs before any of that package's code is served). An
- * automerge URL a tool hand-writes for some other document is not a registered
- * dependency, so it is left untouched and its request is blocked like any other
- * smuggled ID. This keying (rather than locating the serving package's automerge
- * folder from the served URL) is what makes the rewrite work for statically
- * hosted tools too, whose served URLs carry no automerge segment.
+ * dependency at registration, which necessarily runs before any of that
+ * package's code is served). An automerge URL a tool hand-writes for some other
+ * document is not a registered dependency, so it is left untouched and its
+ * request is blocked like any other smuggled ID.
  */
-export function rewriteAutomergeDepsInSource(
+function rewriteAutomergeDepsInSource(
   source: string,
   mapper: PackagesUrlMapper
 ): string {
@@ -555,59 +570,42 @@ export function rewriteAutomergeDepsInSource(
   });
 }
 
+/**
+ * Extract the `registry--<name>` marker name (decoded first path segment) from a
+ * request URL, or null if it has none. Identifies the package that owns a served
+ * module.
+ */
+function markerNameFromUrl(url: string): string | null {
+  const { first } = splitFirstSegment(url);
+  return first.startsWith(REGISTRY_MARKER_PREFIX) ? first : null;
+}
+
 // ---------------------------------------------------------------------------
 // Request resolution (the interface the resource bridge calls)
 // ---------------------------------------------------------------------------
 
 /**
  * Resolve an inbound `registry` request (a `registry--` marker URL) to a
- * concrete fetchable URL. This is the read side of the mapper — the single
+ * concrete fetchable URL. The read side of the mapper — the single
  * package-resolution entry point the resource bridge calls after `classify` has
  * admitted the request.
  *
  * A `registry--` marker reaches the host in two shapes, both with the marker as
- * the first path segment — so decoding that one segment handles both:
+ * the first path segment (which `resolveMarker` parses uniformly):
  *  - **chunk / entry form** — `<origin>/registry--@scope--name/dist/chunk.js`.
- *    The resolved module URL returned to es-module-shims is host-origin-prefixed
- *    so relative chunk imports resolve against it; the marker segment is literal.
- *  - **baked-dependency form** — the tool source holds a bare marker segment,
- *    which its `getImportableUrlFromAutomergeUrl(...)` call percent-encodes into
- *    the request path (`<origin>/registry--%40scope--name%2523heads/subpath`).
- *    The marker has no internal `/`, so it stays one segment; decoding it yields
- *    the same `registry--…` lookup.
+ *  - **baked-dependency form** — `getImportableUrlFromAutomergeUrl` percent-encodes
+ *    the bare marker into the path (`<origin>/registry--%40scope--name%2523h/sub`);
+ *    the marker has no internal `/`, so it stays one segment.
  *
- * Resolves to either the real automerge path (automerge-hosted, SW-resolvable) or
- * the real external URL (statically-hosted, fetched directly). A non-marker URL
- * (a platform asset admitted by `classify`) is returned unchanged.
+ * Resolves to the real automerge path (SW-resolvable) or external URL (fetched
+ * directly). A non-marker URL (a platform asset admitted by `classify`) is
+ * returned unchanged.
  */
-export async function resolvePackageRequest(
+export function resolvePackageRequest(
   url: string,
   mapper: PackagesUrlMapper
-): Promise<string> {
-  const origin = window.location.origin;
-  let lookupUrl = url;
-
-  if (url.startsWith(origin + "/")) {
-    // Decode the first path segment. For both marker shapes this reveals the
-    // literal `registry--…` marker; substituting the decoded segment back gives a
-    // URL the mapper matches.
-    const rest = url.slice(origin.length + 1);
-    const slashIdx = rest.indexOf("/");
-    const firstSegment = slashIdx < 0 ? rest : rest.slice(0, slashIdx);
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(firstSegment);
-    } catch {
-      decoded = firstSegment;
-    }
-    if (decoded.startsWith(REGISTRY_MARKER_PREFIX)) {
-      lookupUrl = slashIdx < 0 ? decoded : decoded + rest.slice(slashIdx);
-    }
-  }
-
-  // Marker → real location (automerge path, SW-resolvable; or external URL,
-  // fetched directly). A non-marker URL (a platform asset) resolves to null.
-  return mapper.resolveMarker(lookupUrl) ?? url;
+): string {
+  return mapper.resolveMarker(url) ?? url;
 }
 
 // ---------------------------------------------------------------------------
@@ -617,19 +615,20 @@ export async function resolvePackageRequest(
 /**
  * Convert a host registry plugin into a serializable `RegistryEntry` for the
  * iframe:
- *  - resolve its `importUrl` to a package entry point, then map that entry to a
- *    `registry--` marker URL so the real location (automerge ID or external URL)
- *    never leaks: automerge entries via `encodePath`, statically-hosted entries
- *    via `encodeExternal` (both keyed by the package name, so a package's plugins
+ *  - resolve its `importUrl` (via `mapper.resolvePackage`), then map that package
+ *    to a `registry--` marker URL so the real location (automerge ID or external
+ *    URL) never leaks: automerge packages via `encodeSegment` (marker built from
+ *    the bare automerge URL + entry subpath), statically-hosted via
+ *    `encodeExternal` (both keyed by the package name, so a package's plugins
  *    share one marker);
  *  - strip non-cloneable fields (`load`, `module`) and deep-copy the rest so it
  *    survives `postMessage`.
  *
- * Note: a package's `automerge:` dependencies are NOT resolved here. Doing so
- * would block iframe boot (this runs for every plugin on the boot critical path,
- * once per document switch) on a `package.json` fetch per plugin. Instead the
- * resource bridge registers a package's deps lazily, the first time one of its
- * modules is served (see `registerPackageDependencies`).
+ * A package's `automerge:` dependencies are resolved here too, from the same
+ * `package.json` read (see `mapper.resolvePackage`), memoized once per package —
+ * so an N-plugin package costs one fetch, not N, and the serve path needs no
+ * further package.json read. Packages that declared automerge deps are recorded
+ * (by marker name) so only their served modules get source-rewritten.
  *
  * Returns `undefined` (and logs) if the plugin can't be cloned. Shared by the
  * initial collection (`getRegistries`) and the live update watcher
@@ -641,7 +640,9 @@ async function processRegistryPlugin(
 ): Promise<RegistryEntry | undefined> {
   let importUrl = plugin.importUrl as string | undefined;
   if (importUrl) {
-    const resolved = await resolvePackageEntryUrl(importUrl);
+    // One package.json read per package (memoized by importUrl): resolves the
+    // entry + name and registers the package's automerge deps in one pass.
+    const resolved = await mapper.resolvePackage(importUrl);
     if (!resolved) {
       importUrl = undefined;
     } else {
@@ -649,16 +650,24 @@ async function processRegistryPlugin(
       // package's plugins share one marker), falling back to the plugin id only
       // when the package.json had no name.
       const name = resolved.packageName ?? plugin.id;
-      // Automerge-hosted entries carry an automerge segment `encodePath` maps to a
-      // `registry--` marker. Statically-hosted (external) entries have no such
-      // segment — `encodePath` returns them unchanged — so map them explicitly to
-      // a marker too, so an external tool's location is hidden behind the boundary
-      // like any other.
-      const mapped = mapper.encodePath(resolved.entryUrl, name);
-      importUrl =
-        mapped === resolved.entryUrl
-          ? mapper.encodeExternal(resolved.entryUrl, name)
-          : mapped;
+      if (resolved.hosting === "automerge") {
+        // Mint the marker from the bare automerge URL, then origin-prefix it and
+        // append the entry subpath: `<origin>/registry--<name>/<subpath>`.
+        const marker = mapper.encodeSegment(resolved.automergeUrl, name);
+        importUrl = marker
+          ? `${window.location.origin}/${marker}/${resolved.subpath}`
+          : undefined;
+      } else {
+        // Statically-hosted: map the external entry URL to a marker so the tool's
+        // location is hidden behind the boundary like any other.
+        importUrl = mapper.encodeExternal(resolved.entryUrl, name);
+      }
+      // Record the package's own marker name so the serve path rewrites its
+      // baked dep literals. Uses the same name the marker was minted from, so it
+      // matches the marker the iframe requests its modules under.
+      if (resolved.hasAutomergeDeps) {
+        mapper.markPackageHasDeps(mapper.markerNameFor(name));
+      }
     }
   }
 
