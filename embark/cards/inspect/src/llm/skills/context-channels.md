@@ -74,17 +74,16 @@ Set channels (value is `{ [key]: true }`; the merged value is the key union):
   slice on mouseenter, clear it on mouseleave.
 - `open-documents`: `{ [docUrl]: true }` — the documents currently in scope.
   Add docs you mint so other cards can discover them (see minting-documents).
-- `schema:queries`: `{ [schemaKey]: true }` — the KEY is the canonical JSON of
-  a JSON Schema (see finding-documents). Do NOT write `{ name, schema }`
-  objects as values; the value is just `true`.
 
 Request/response pairs (write requests as a set, answers as a record):
 
 - `search:queries`: `{ [query]: true }` / `search:results`: `{ [query]: docUrl[] }`
 - `commands:queries`: `{ [query]: true }` / `commands:suggestions`:
   `{ [query]: { label, url }[] }` — for the `/` command menu
-- `schema:queries` / `schema:matches`: `{ [schemaKey]: docUrl[] }` — "which
-  open docs match this JSON Schema?"
+- `schema:matches`: `{ [schemaKey]: docUrl[] }` — "which open docs match this
+  JSON Schema?" No request channel: subscribe with `keys: [schemaKey]` (the
+  key is the canonical JSON of the schema) and the matcher answers under that
+  key. See finding-documents.
 
 Other channels:
 

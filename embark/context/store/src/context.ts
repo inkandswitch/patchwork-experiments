@@ -68,10 +68,14 @@ export type ScopeOwner = {
 };
 
 // Who reads through a subscription and — optionally — which keys they actually
-// consume. `keys` omitted means "the whole channel" (e.g. the schema matcher
-// really does read every query); declared keys let an inspector answer "who
-// reads *this* entry". Purely informational: subscribers always receive the
-// whole merged record, and granularity is only as honest as the declaration.
+// consume. `keys` omitted means "the whole channel" — a passive observer (an
+// inspector, say) that watches whatever happens to be there. Declared keys do
+// two jobs: they let an inspector answer "who reads *this* entry", and they
+// are visible demand — a responder may treat a declared key as a request to
+// answer (the schema matcher reads `interests()` on `schema:matches` and
+// treats each declared key as a schema to match; see @embark/schema). Merging
+// is unaffected: subscribers always receive the whole merged record, and
+// granularity is only as honest as the declaration.
 // The owner is mandatory — anonymous reads are not representable; inspectors
 // that don't want to appear in "read by" rows filter themselves out at render
 // time instead (see `excludeOwner` in ./view).
@@ -115,6 +119,14 @@ export type ContextStore = {
     channel: Channel<T>,
     key?: string,
   ): ScopeOwner[];
+  // A snapshot of every live read interest on a channel, one per subscription
+  // (no dedupe) — the read-side peer of `scopes`. This is how responders see
+  // demand: the schema matcher unions the declared keys over
+  // `interests(SchemaMatches)` to learn which schemas to match. Refresh on
+  // `subscribeReaders`.
+  interests<T extends Record<string, unknown>>(
+    channel: Channel<T>,
+  ): ReadInterest[];
   // Notified (on a coalesced microtask) whenever any channel's set of readers
   // changes (a reader subscribing or unsubscribing). Lets inspectors refresh
   // even when the reader attaches to an empty channel that emits no value.
@@ -320,6 +332,12 @@ export function createContextStore(): ContextStore {
     return out;
   };
 
+  const interests = <T extends AnyRecord>(
+    channel: Channel<T>,
+  ): ReadInterest[] => {
+    return [...stateFor(channel as Channel<AnyRecord>).readers.values()];
+  };
+
   const subscribeReaders = (cb: () => void): (() => void) => {
     readerSubscribers.add(cb);
     return () => {
@@ -348,6 +366,7 @@ export function createContextStore(): ContextStore {
     handle,
     scopes,
     readers,
+    interests,
     subscribeReaders,
     channels: channelList,
     subscribeChannels,

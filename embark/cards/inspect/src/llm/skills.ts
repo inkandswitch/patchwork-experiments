@@ -64,7 +64,7 @@ const SKILLS: Skill[] = [
   {
     name: "finding-documents",
     description:
-      "Discovering documents on the canvas by shape: schema:queries / schema:matches, the schemaKey canonicalization, the supported JSON Schema subset, watching matched docs for changes.",
+      "Discovering documents on the canvas by shape: subscribing to schema:matches with declared key interest, the schemaKey canonicalization, the supported JSON Schema subset, watching matched docs for changes.",
     content: findingDocuments,
   },
   {

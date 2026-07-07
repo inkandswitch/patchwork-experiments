@@ -2,18 +2,16 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { defineChannel, defineSetChannel } from "@embark/context";
 import type { JsonSchema } from "./schema";
 
-// Request/response pair for schema matching: consumers publish JSON Schemas
-// into `SchemaQueries`, the Schema Matcher card (@embark/schema-matcher)
-// answers with match urls in `SchemaMatches`. A query *is* its serialized
-// schema: the set
-// member / match key is `schemaKey(schema)` — canonical JSON, so
-// `JSON.parse(key)` recovers the schema exactly — and two consumers with the
-// same schema share one key and one result array.
-export const SchemaQueries = defineSetChannel<string>({
-  name: "schema:queries",
-  key: "json-schema",
-});
-
+// Schema matching rides a single channel: reading *is* asking. A consumer
+// subscribes to `SchemaMatches` with a declared key interest — each key is
+// `schemaKey(schema)`, the canonical schema JSON, so `JSON.parse(key)`
+// recovers the schema exactly — and the Schema Matcher card
+// (@embark/schema-matcher) watches the channel's reader registry
+// (`store.interests(SchemaMatches)`) and answers with match urls under the
+// same key. Two consumers with the same schema share one key and one result
+// array; when a key's last reader unsubscribes, its entry drops out. Readers
+// that declare no keys (inspectors) are passive observers and create no
+// queries.
 export const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
   name: "schema:matches",
   empty: {},

@@ -7,13 +7,13 @@ import {
   createMemo,
   createSignal,
   onCleanup,
+  onMount,
 } from "solid-js";
 import { useDocument } from "solid-automerge";
-import { readContext, useContextHandle } from "@embark/context";
+import { findContextStore, readContext, useContextHandle } from "@embark/context";
 import { Highlight } from "@embark/selection";
 import {
   SchemaMatches,
-  SchemaQueries,
   jsonSchemaToZod,
   schemaKey,
   type JsonSchema,
@@ -99,12 +99,9 @@ export function BirdSighting(props: {
   type Row = Sighting & { url: AutomergeUrl };
   const [rows, setRows] = createSignal<Row[]>([]);
 
-  // Publish the map schema query and read its matches back (a live set of map
-  // document urls, usually one).
-  const schemaQueries = useContextHandle(props.element, SchemaQueries);
-  schemaQueries.change((slice) => {
-    slice[MAP_KEY] = true;
-  });
+  // Read the map schema's matches (a live set of map document urls, usually
+  // one). The declared key interest is itself the query the schema matcher
+  // answers.
   const schemaMatches = readContext(props.element, SchemaMatches, () => [
     MAP_KEY,
   ]);
@@ -121,17 +118,40 @@ export function BirdSighting(props: {
   let generation = 0;
 
   // Offer our minted bird-cards to the canvas by writing them straight into
-  // SchemaMatches — under whichever *published* schema they satisfy — rather
+  // SchemaMatches — under whichever *queried* schema they satisfy — rather
   // than announcing them as mounted docs for the resolver to rediscover. Each
   // bird-card carries top-level { lat, lon }, so it satisfies the map's geo
   // query; the map reads the union of every SchemaMatches slice, so ours merges
   // in and its pins appear alongside everything else. Compiled schemas are
   // cached by key (schemas are stable per key).
   const matchesOut = useContextHandle(props.element, SchemaMatches);
-  const publishedQueries = readContext(props.element, SchemaQueries);
+
+  // The demand we answer: the union of keys SchemaMatches readers declare —
+  // the same reader registry the schema matcher watches; a query is a declared
+  // read interest, not a channel entry. Our own MAP_KEY interest shows up here
+  // too, harmlessly (the bird-card probe never satisfies the map schema).
+  const [queriedKeys, setQueriedKeys] = createSignal<string[]>([], {
+    equals: (a, b) => a.length === b.length && a.every((key, i) => key === b[i]),
+  });
+  onMount(() => {
+    const store = findContextStore(props.element);
+    const readKeys = (): string[] => {
+      const keys = new Set<string>();
+      for (const interest of store.interests(SchemaMatches)) {
+        for (const key of interest.keys ?? []) keys.add(key);
+      }
+      return [...keys].sort();
+    };
+    setQueriedKeys(readKeys());
+    const unsubscribe = store.subscribeReaders(() =>
+      setQueriedKeys(readKeys()),
+    );
+    onCleanup(unsubscribe);
+  });
+
   const compiled = new Map<string, ReturnType<typeof jsonSchemaToZod>>();
   // A representative bird-card (they all share this shape), tested against each
-  // published schema so we don't have to inspect every minted card.
+  // queried schema so we don't have to inspect every minted card.
   const probe = {
     "@patchwork": { type: "bird-card" },
     name: "",
@@ -139,9 +159,9 @@ export function BirdSighting(props: {
     lat: 0,
     lon: 0,
   };
-  const matchingKeys = (queries: Record<string, true>): string[] => {
+  const matchingKeys = (queried: string[]): string[] => {
     const keys: string[] = [];
-    for (const key of Object.keys(queries)) {
+    for (const key of queried) {
       let schema = compiled.get(key);
       if (!schema) {
         const parsed = parseSchemaKey(key);
@@ -232,12 +252,12 @@ export function BirdSighting(props: {
       d.period = next;
     });
 
-  // (Re)publish our matches whenever the found cards or the set of published
+  // (Re)publish our matches whenever the found cards or the set of queried
   // schemas change: clear our whole slice, then list our card urls under every
   // schema they satisfy.
   createEffect(() => {
     const urls = rows().map((r) => r.url);
-    const keys = matchingKeys(publishedQueries());
+    const keys = matchingKeys(queriedKeys());
     matchesOut.change((slice) => {
       for (const key of Object.keys(slice)) delete slice[key];
       if (urls.length === 0) return;
@@ -281,7 +301,6 @@ export function BirdSighting(props: {
   onCleanup(() => {
     if (timer) clearTimeout(timer);
     if (mapHandle && mapChange) mapHandle.off("change", mapChange);
-    schemaQueries.release();
     matchesOut.release();
     highlight.release();
   });

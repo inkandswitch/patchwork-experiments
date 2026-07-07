@@ -1,7 +1,14 @@
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl, DocHandle, Repo } from "@automerge/automerge-repo";
 import { For, Index, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { useDocHandle, useDocument, useRepo } from "solid-automerge";
-import { runCardGeneration } from "./llm/run";
+import {
+  formatTranscript,
+  modulePathOf,
+  readOptional,
+  runCardGeneration,
+} from "./llm/run";
+import { createFilesApi } from "./llm/files";
+import { contextSnapshot } from "./context-snapshot";
 import type { CardDocLike, ContentBlock, Message } from "./llm/types";
 
 // The regeneration footer under the Spec tab: a button that runs the LLM loop
@@ -54,6 +61,32 @@ export function RegeneratePanel(props: {
   const stop = () => abort?.abort();
   onCleanup(() => abort?.abort());
 
+  // One-click debugging export: the card doc, spec, current module source,
+  // this session's LLM transcript, and a live context-store snapshot as a
+  // single pasteable markdown blob.
+  const [copied, setCopied] = createSignal(false);
+  let rootEl: HTMLDivElement | undefined;
+  const copyContext = async () => {
+    const handle = cardHandle();
+    if (!handle) return;
+    try {
+      const text = await buildDebugContext(
+        repo,
+        props.packageUrl,
+        handle,
+        messages(),
+        rootEl ?? document.body,
+      );
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      setNotice(
+        `Copy failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
   // Only the assistant's side of the exchange is worth showing — the seeded
   // user message repeats the spec and module source visible right above.
   const blocks = () =>
@@ -73,7 +106,7 @@ export function RegeneratePanel(props: {
 
   return (
     <Show when={isCard()}>
-      <div class="embark-inspect-regen">
+      <div class="embark-inspect-regen" ref={rootEl}>
         <div class="embark-inspect-regen__bar">
           <button
             type="button"
@@ -84,8 +117,19 @@ export function RegeneratePanel(props: {
           >
             {running() ? "Stop" : "Regenerate code"}
           </button>
+          <button
+            type="button"
+            class="embark-inspect-regen__button"
+            on:pointerdown={(event) => event.stopPropagation()}
+            on:click={() => void copyContext()}
+          >
+            Copy context
+          </button>
           <Show when={running()}>
             <span class="embark-inspect-regen__status">Generating…</span>
+          </Show>
+          <Show when={copied()}>
+            <span class="embark-inspect-regen__status">Copied.</span>
           </Show>
         </div>
 
@@ -103,6 +147,43 @@ export function RegeneratePanel(props: {
       </div>
     </Show>
   );
+}
+
+// Everything someone debugging a broken card needs, as one markdown document:
+// which inspector build produced it, the card document as it stands, the spec,
+// the module the card is currently pointed at, the LLM exchange from this
+// session's regeneration run (if any), and a live snapshot of the shared
+// context store (merged values, writers, readers per channel).
+async function buildDebugContext(
+  repo: Repo,
+  packageUrl: AutomergeUrl,
+  cardHandle: DocHandle<CardDocLike>,
+  messages: Message[],
+  snapshotFrom: Element,
+): Promise<string> {
+  const files = createFilesApi(repo, packageUrl);
+
+  const spec = await readOptional(files, "spec.md");
+  const modulePath = modulePathOf(cardHandle, packageUrl);
+  const source = modulePath ? await readOptional(files, modulePath) : null;
+  const transcript =
+    messages.length > 0
+      ? formatTranscript(messages)
+      : "(no regeneration run in this session)";
+
+  return [
+    "# Card debug context",
+    [
+      `- inspector build: ${__BUILD_TIME__}`,
+      `- card url: ${cardHandle.url}`,
+      `- package url: ${packageUrl}`,
+    ].join("\n"),
+    `## Card document\n\n\`\`\`json\n${JSON.stringify(cardHandle.doc(), null, 2)}\n\`\`\``,
+    `## spec.md\n\n${spec ?? "(missing)"}`,
+    `## Current module (${modulePath ?? "src does not point into this package"})\n\n\`\`\`js\n${source ?? "(no readable module source)"}\n\`\`\``,
+    `## LLM run log\n\n${transcript}`,
+    `## Context store snapshot\n\n${contextSnapshot(snapshotFrom)}`,
+  ].join("\n\n");
 }
 
 function LogBlock(props: { block: ContentBlock }) {

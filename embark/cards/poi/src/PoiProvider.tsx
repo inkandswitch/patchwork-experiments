@@ -3,7 +3,7 @@ import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { createEffect, onCleanup } from "solid-js";
 import { readContext, useContextHandle } from "@embark/context";
 import { SearchQueries, SearchResults } from "@embark/search";
-import { OpenDocuments, SchemaMatches, SchemaQueries } from "@embark/schema";
+import { OpenDocuments, SchemaMatches } from "@embark/schema";
 import { LATLNG_KEY } from "./latlng";
 import type { PoiCardDoc } from "./datatype";
 
@@ -47,10 +47,11 @@ export function PoiProvider(props: { element: ToolElement }) {
   const searchQueries = readContext(props.element, SearchQueries);
   const results = useContextHandle(props.element, SearchResults);
 
-  // Find places already in the canvas the same way the map does: publish the
-  // {lat, lon} schema query and read its matches. Each match url resolves
-  // straight to the matched `{lat, lon}` subtree. We keep their coordinates so
-  // the search can be biased toward the region the canvas is already about.
+  // Find places already in the canvas the same way the map does: read the
+  // {lat, lon} key of SchemaMatches (the declared interest is the query). Each
+  // match url resolves straight to the matched `{lat, lon}` subtree. We keep
+  // their coordinates so the search can be biased toward the region the canvas
+  // is already about.
   const placeCoords = new Map<string, [number, number]>();
   let matchEpoch = 0;
 
@@ -99,10 +100,8 @@ export function PoiProvider(props: { element: ToolElement }) {
     ].join(",");
   };
 
-  const schemaQueries = useContextHandle(props.element, SchemaQueries);
-  schemaQueries.change((slice) => {
-    slice[LATLNG_KEY] = true;
-  });
+  // The declared key interest is the {lat, lon} query the schema matcher
+  // answers; no separate query channel.
   const schemaMatches = readContext(props.element, SchemaMatches, () => [
     LATLNG_KEY,
   ]);

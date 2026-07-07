@@ -4,12 +4,7 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import { z } from "zod";
-import {
-  SchemaMatches,
-  SchemaQueries,
-  schemaKey,
-  type JsonSchema,
-} from "@embark/schema";
+import { SchemaMatches, schemaKey, type JsonSchema } from "@embark/schema";
 import { SearchQueries, SearchResults } from "@embark/search";
 import type { ContextStore, ScopeOwner } from "@embark/context";
 import { fuzzyMatch } from "./fuzzy";
@@ -17,8 +12,8 @@ import { fuzzyMatch } from "./fuzzy";
 // A `{ lat, lon }` pair — the shared notion of "a place". Packages now define
 // their own schemas and correlate purely by structural identity: the map, the
 // POI card, and this resolver all build the schema from the *same* zod
-// expression, so `schemaKey` gives them one shared `SchemaQueries`/`SchemaMatches`
-// slot without a central registry.
+// expression, so `schemaKey` gives them one shared `SchemaMatches` slot
+// without a central registry.
 const LATLNG_JSON_SCHEMA = z.toJSONSchema(
   z.object({ lat: z.number(), lon: z.number() }),
 ) as unknown as JsonSchema;
@@ -50,29 +45,37 @@ export type PlaceResolver = {
   // Up to `count` distinct places already on the canvas, for the eager command
   // samples shown before the user has typed anything.
   resolveSamples(count: number): Promise<Located[]>;
-  // Drop the scoped channel slices this resolver owns.
+  // Drop the subscription and scoped channel slice this resolver owns.
   release(): void;
 };
 
-// Build a resolver bound to one canvas context. It owns scoped slices of the
-// SchemaQueries channel (asking where {lat, lon} pairs live, exactly like the
-// map) and the SearchQueries channel (the search fallback), reading the answers
-// back from SchemaMatches / SearchResults. `owner` attributes those slices and
-// reads to the card running the resolver.
+// Build a resolver bound to one canvas context. It asks where {lat, lon}
+// pairs live the same way the map does — by holding a `SchemaMatches`
+// subscription whose declared key interest *is* the query (a bare `read()`
+// registers no interest, so the matcher would never answer a mere poll) — and
+// owns a scoped slice of the SearchQueries channel (the search fallback),
+// reading the answers back from SearchResults. `owner` attributes those
+// slices and reads to the card running the resolver.
 export function createPlaceResolver(
   store: ContextStore,
   repo: Repo,
   owner: ScopeOwner,
 ): PlaceResolver {
-  const schemaQueries = store.handle(SchemaQueries, owner);
   const searchQueries = store.handle(SearchQueries, owner);
-  schemaQueries.change((slice) => {
-    slice[LATLNG_KEY] = true;
-  });
+
+  // The live {lat, lon} matches, cached for the resolve calls below. The
+  // subscription is held for the resolver's lifetime so the query stays alive.
+  let latLonMatches: AutomergeUrl[] = store.read(SchemaMatches)[LATLNG_KEY] ?? [];
+  const unsubscribeMatches = store.subscribe(
+    SchemaMatches,
+    (all) => {
+      latLonMatches = all[LATLNG_KEY] ?? [];
+    },
+    { owner, keys: [LATLNG_KEY] },
+  );
 
   const resolveLatLon = async (place: string): Promise<Located | null> => {
-    const matches = store.read(SchemaMatches)[LATLNG_KEY] ?? [];
-    for (const match of matches) {
+    for (const match of latLonMatches) {
       const found = await locatedFromMatch(match);
       if (found && fuzzyMatch(found.place, place)) return found;
     }
@@ -82,7 +85,7 @@ export function createPlaceResolver(
   // The first `count` distinct (by coordinate) places already on the canvas
   // with a usable name — used to showcase a command before any input.
   const resolveSamples = async (count: number): Promise<Located[]> => {
-    const matches = store.read(SchemaMatches)[LATLNG_KEY] ?? [];
+    const matches = latLonMatches;
     const out: Located[] = [];
     const seen = new Set<string>();
     for (const match of matches) {
@@ -165,7 +168,7 @@ export function createPlaceResolver(
     resolveLatLon,
     resolveSamples,
     release() {
-      schemaQueries.release();
+      unsubscribeMatches();
       searchQueries.release();
     },
   };

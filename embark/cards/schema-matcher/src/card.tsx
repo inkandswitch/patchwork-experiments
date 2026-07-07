@@ -6,10 +6,11 @@ import { runSchemaMatcher } from "./schema-matcher";
 
 // Schema Matcher card behavior, loaded by the shared card shell as this
 // package's `card.js`. While the card sits face-up on a canvas it runs the
-// matcher engine (./schema-matcher) against that canvas's context store:
-// schemas published into `SchemaQueries` are matched over the documents in the
-// `OpenDocuments` channel (fed by the Open Documents card and by cards minting
-// synthetic docs), and match urls are answered into `SchemaMatches`. Flipping
+// matcher engine (./schema-matcher) against that canvas's context store: the
+// schemas that `SchemaMatches` readers declare interest in are matched over
+// the documents in the `OpenDocuments` channel (fed by the Open Documents card
+// and by cards minting synthetic docs), and match urls are answered into
+// `SchemaMatches` under the same keys. Flipping
 // or removing the card releases the matches slice and stops answering. It
 // renders nothing into the middle slot — the face is drawn by the shell.
 const card: ToolRender = (_handle, element) =>

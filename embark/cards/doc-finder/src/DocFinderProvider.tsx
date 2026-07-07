@@ -3,12 +3,7 @@ import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { readContext, useContextHandle } from "@embark/context";
 import { SearchQueries, SearchResults } from "@embark/search";
-import {
-  SchemaMatches,
-  SchemaQueries,
-  schemaKey,
-  type JsonSchema,
-} from "@embark/schema";
+import { SchemaMatches, schemaKey, type JsonSchema } from "@embark/schema";
 
 // A JSON Schema that matches only document *roots*: `@patchwork.type` (a string)
 // lives at the top of every patchwork document and nowhere else, so the schema
@@ -42,12 +37,9 @@ export function DocFinderProvider(props: { element: ToolElement }) {
   const searchQueries = readContext(props.element, SearchQueries);
   const results = useContextHandle(props.element, SearchResults);
 
-  // Ask the canvas "which documents are reachable here?" by publishing the root
-  // schema and reading its matches. Each match url is a bare document url.
-  const schemaQueries = useContextHandle(props.element, SchemaQueries);
-  schemaQueries.change((slice) => {
-    slice[ROOT_KEY] = true;
-  });
+  // Ask the canvas "which documents are reachable here?" by reading the root
+  // schema's key of SchemaMatches — the declared interest is the query the
+  // schema matcher answers. Each match url is a bare document url.
   const schemaMatches = readContext(props.element, SchemaMatches, () => [
     ROOT_KEY,
   ]);

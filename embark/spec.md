@@ -301,14 +301,10 @@ const CommandSuggestions = defineChannel<Record<string, Suggestion[]>>({
   empty: {},
 });
 
-// A query carries a short human name alongside the schema (so views like the
-// context viewer can label each "where does this occur?" section). Keyed by
-// `schemaKey`, derived from the schema alone.
-type SchemaQuery = { name: string; schema: JsonSchema };
-const SchemaQueries = defineChannel<Record<string, SchemaQuery>>({
-  name: "schema:queries",
-  empty: {},
-});
+// Schema matching rides a single channel: a consumer subscribes with a
+// declared key interest (each key is `schemaKey(schema)`, the canonical
+// schema JSON) and the matcher answers under the same key. Reading *is*
+// asking — there is no separate query channel.
 const SchemaMatches = defineChannel<Record<string, AutomergeUrl[]>>({
   name: "schema:matches",
   empty: {},
@@ -384,12 +380,13 @@ Identical to search; it's the same channel kind with a different payload
 writes its query and reads suggestions via `subscribeContext` /
 `getContextHandle` on `view.dom`.
 
-### Schema match → requests + responses in context, discovery + matching are cards
+### Schema match → reading is asking, discovery + matching are cards
 
-Schema matching is **not its own concept**. The request (schema) and response
-(match urls) ride the context, and the documents in scope ride the context too
-(the `OpenDocuments` channel) — the canvas takes no part in any of it. Two
-cards own the two halves:
+Schema matching is **not its own concept**. The request is a declared read
+interest on the `SchemaMatches` channel (the keys a subscriber says it
+consumes), the response (match urls) rides the channel itself, and the
+documents in scope ride the context too (the `OpenDocuments` channel) — the
+canvas takes no part in any of it. Two cards own the two halves:
 
 - **Open Documents card**: tracks the frame's currently selected document
   (seeded from the `#doc=` hash, then updated by `patchwork:open-document`
@@ -397,18 +394,18 @@ cards own the two halves:
   `document.body` from anywhere), walks its link closure (`linkedUrls`, which
   skips the `@patchwork` metadata subtree), and publishes the whole set as its
   slice of `OpenDocuments`.
-- **Schema Matcher card**: runs `runSchemaMatcher(store, repo, owner)` — on any
-  change to `SchemaQueries`, the open-document set, or a watched document's
-  contents, it matches every query against every open document and writes
-  `store.handle(SchemaMatches, owner).change(...)`.
+- **Schema Matcher card**: runs `runSchemaMatcher(store, repo, owner)` — the
+  queries are the declared read interests on `SchemaMatches` itself
+  (`store.interests(SchemaMatches)`, refreshed via `subscribeReaders`); on any
+  change to that demand, the open-document set, or a watched document's
+  contents, it matches every requested schema against every open document and
+  writes `store.handle(SchemaMatches, owner).change(...)`.
 
 ```ts
-// consumer (sticker source-lib, map tool): publish schema, read matches
+// consumer (sticker source-lib, map tool): the declared key interest IS the
+// query — subscribing with `keys: [key]` is what makes the matcher answer
 const key = schemaKey(MARKDOWN_SCHEMA); // stable stringified hash
-useContextHandle(element, SchemaQueries).change((s) => {
-  s[key] = { name: "Markdown documents", schema: MARKDOWN_SCHEMA };
-});
-const matches = readContext(element, SchemaMatches);
+const matches = readContext(element, SchemaMatches, () => [key]);
 const onMatches = () => apply(matches()[key] ?? []);
 
 // contributors that mint synthetic docs (POI, stickerable mirrors) put them

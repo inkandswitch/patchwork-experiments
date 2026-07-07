@@ -5,15 +5,18 @@ import {
   jsonSchemaToZod,
   OpenDocuments,
   SchemaMatches,
-  SchemaQueries,
   type JsonSchema,
 } from "@embark/schema";
 
-// Answers "where does this schema occur?" over the open-document set. Reads the
-// requested schemas from the `SchemaQueries` channel — a set whose members are
-// the canonical schema JSON itself (`schemaKey`), parsed back with JSON.parse —
-// matches them against every document listed in the `OpenDocuments` channel,
-// and writes match urls into `SchemaMatches` keyed by the same string.
+// Answers "where does this schema occur?" over the open-document set. The
+// queries are the *declared read interests* on the `SchemaMatches` channel
+// itself: a consumer subscribes with `keys: [schemaKey(schema)]` — each key is
+// the canonical schema JSON, parsed back with JSON.parse — and the matcher
+// unions those keys over `store.interests(SchemaMatches)`, matches each schema
+// against every document listed in the `OpenDocuments` channel, and writes
+// match urls into `SchemaMatches` under the same key. Reading *is* asking;
+// there is no separate query channel. (Readers that declare no keys — the
+// context viewer, say — are passive observers and create no queries.)
 //
 // This engine is private to the Schema Matcher card (see ./card): the shared
 // vocabulary — the channels, `schemaKey`, the JSON-Schema→zod hydrator — lives
@@ -42,9 +45,8 @@ type WatchedDoc = { handle?: DocHandle<unknown> };
 
 // `owner` tags the matcher's write scope and read subscriptions with the card
 // that runs it, so the context viewer can attribute `schema:matches` to this
-// card and list it as a reader of `schema:queries` / `open-documents`. The
-// matcher genuinely consumes both channels whole, so no key interest is
-// declared.
+// card and list it as a reader of `open-documents` (which it genuinely
+// consumes whole, so no key interest is declared).
 export function runSchemaMatcher(
   store: ContextStore,
   repo: Repo,
@@ -55,19 +57,20 @@ export function runSchemaMatcher(
   // The matcher is the single writer of the SchemaMatches channel.
   const matchesHandle = store.handle(SchemaMatches, owner);
 
-  // The requested schemas (each key is the canonical schema JSON), plus a
-  // cache of their compiled zod equivalents so we hydrate each one only once.
-  let queries: Record<string, true> = store.read(SchemaQueries);
+  // The requested schemas — the union of keys declared by SchemaMatches
+  // readers (each key is the canonical schema JSON) — plus a cache of their
+  // compiled zod equivalents so we hydrate each one only once.
+  let queryKeys = readQueryKeys(store);
   const compiled = new Map<string, z.ZodType>();
 
-  const unsubscribeQueries = store.subscribe(
-    SchemaQueries,
-    (next) => {
-      queries = next;
-      scheduleReevaluate();
-    },
-    { owner },
-  );
+  // The reader registry is store-wide and churns on any (un)subscription, so
+  // re-derive the key union and reevaluate only when it actually changed.
+  const unsubscribeReaders = store.subscribeReaders(() => {
+    const next = readQueryKeys(store);
+    if (sameKeys(next, queryKeys)) return;
+    queryKeys = next;
+    scheduleReevaluate();
+  });
 
   let scheduled = false;
   const scheduleReevaluate = () => {
@@ -119,11 +122,13 @@ export function runSchemaMatcher(
   };
 
   // Recompute every requested schema's matches over the watched docs and write
-  // the whole map. The store suppresses identical emissions, so an unrelated
-  // doc edit doesn't churn readers.
+  // the whole map. A queried key always gets an entry (an empty array when
+  // nothing matches) so the request stays visible; keys whose last reader left
+  // drop out via the clear-and-assign. The store suppresses identical
+  // emissions, so an unrelated doc edit doesn't churn readers.
   const reevaluateAll = () => {
     const result: Record<string, AutomergeUrl[]> = {};
-    for (const key of Object.keys(queries)) {
+    for (const key of queryKeys) {
       let schema = compiled.get(key);
       if (!schema) {
         const parsed = parseQueryKey(key);
@@ -141,7 +146,7 @@ export function runSchemaMatcher(
       result[key] = matches;
     }
     for (const key of [...compiled.keys()]) {
-      if (!(key in queries)) compiled.delete(key);
+      if (!queryKeys.has(key)) compiled.delete(key);
     }
     matchesHandle.change((slice) => {
       for (const key of Object.keys(slice)) delete slice[key];
@@ -152,12 +157,28 @@ export function runSchemaMatcher(
   scheduleReevaluate();
 
   return () => {
-    unsubscribeQueries();
+    unsubscribeReaders();
     unsubscribeOpenDocuments();
     for (const url of [...watched.keys()]) unwatch(url);
     compiled.clear();
     matchesHandle.release();
   };
+}
+
+// The current demand: the union of keys declared by SchemaMatches readers.
+// Interests without keys are passive whole-channel observers, not queries.
+function readQueryKeys(store: ContextStore): Set<string> {
+  const keys = new Set<string>();
+  for (const interest of store.interests(SchemaMatches)) {
+    for (const key of interest.keys ?? []) keys.add(key);
+  }
+  return keys;
+}
+
+function sameKeys(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) if (!b.has(key)) return false;
+  return true;
 }
 
 // A set member back to its schema: the key is `schemaKey(schema)` — canonical

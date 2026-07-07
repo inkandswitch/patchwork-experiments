@@ -33,7 +33,6 @@ Uses `findContextStore` / `ownerOf` from context-channels and
 import { cursor, parseAutomergeUrl } from "@automerge/automerge-repo";
 
 const Stickers = { name: "stickers", empty: {} };
-const SchemaQueries = { name: "schema:queries", empty: {} };
 const SchemaMatches = { name: "schema:matches", empty: {} };
 
 // Documents carrying prose in any of these root-level string fields qualify.
@@ -54,8 +53,6 @@ export default (handle, element) => {
   const owner = ownerOf(element);
 
   const stickersOut = store.handle(Stickers, owner);
-  const queriesOut = store.handle(SchemaQueries, owner);
-  queriesOut.change((slice) => { slice[TEXT_KEY] = true; });
 
   const docs = new Map(); // url -> { handle?, onChange?, timer?, resources: Map }
 
@@ -135,13 +132,17 @@ export default (handle, element) => {
     });
   };
 
-  const unsubscribe = store.subscribe(SchemaMatches, onMatches, { owner });
+  // The declared key interest IS the query: the schema matcher answers every
+  // key that schema:matches readers declare (see finding-documents).
+  const unsubscribe = store.subscribe(SchemaMatches, onMatches, {
+    owner,
+    keys: [TEXT_KEY],
+  });
   onMatches(); // no initial emit — seed once
 
   return () => {
     unsubscribe();
     for (const url of [...docs.keys()]) drop(url);
-    queriesOut.release();
     stickersOut.release(); // dropping the slice removes every published sticker
   };
 };

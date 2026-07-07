@@ -10,7 +10,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { render } from "solid-js/web";
 import { getContextHandle, subscribeContext } from "@embark/context";
 import { Highlight, Selection } from "@embark/selection";
-import { SchemaMatches, SchemaQueries } from "@embark/schema";
+import { SchemaMatches } from "@embark/schema";
 import { LATLNG_KEY, LATLNG_LINE_KEY } from "./latlng";
 import {
   DEFAULT_CENTER,
@@ -748,13 +748,9 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     scheduleApply();
   };
 
-  // Publish the geo schema queries (positions, lines) and consume their matches:
-  // points become markers, lines become polylines.
-  const schemaQueries = getContextHandle(element, SchemaQueries);
-  schemaQueries?.change((slice) => {
-    slice[LATLNG_KEY] = true;
-    slice[LATLNG_LINE_KEY] = true;
-  });
+  // Consume the geo schema matches (positions, lines): points become markers,
+  // lines become polylines. The declared key interests are the queries the
+  // schema matcher answers.
   const unsubscribeMatches = subscribeContext(
     element,
     SchemaMatches,
@@ -790,7 +786,6 @@ export const MapTool: ToolRender = (rawHandle, element) => {
     disposeSearch();
     searchHost.remove();
     unsubscribeMatches();
-    schemaQueries?.release();
     unsubscribeSelection();
     unsubscribeHighlight();
     highlightHandle?.release();

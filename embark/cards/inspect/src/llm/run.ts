@@ -151,7 +151,7 @@ export async function runCardGeneration(options: {
 // The current module's package-relative path, recovered from the card's `src`
 // (`/automerge%3A<pkg>/dist/card.js` → `dist/card.js`) — but only when the
 // module actually lives in this package.
-function modulePathOf(
+export function modulePathOf(
   cardHandle: DocHandle<CardDocLike>,
   packageUrl: AutomergeUrl,
 ): string | null {
@@ -164,12 +164,29 @@ function modulePathOf(
   return path || null;
 }
 
-async function readOptional(files: Files, path: string): Promise<string | null> {
+export async function readOptional(
+  files: Files,
+  path: string,
+): Promise<string | null> {
   try {
     return await files.read(path);
   } catch {
     return null;
   }
+}
+
+// A plain-text rendering of a run's messages — both roles, script blocks with
+// their outputs inline — for the copy-context clipboard export.
+export function formatTranscript(messages: Message[]): string {
+  return messages
+    .map((msg) => {
+      const body =
+        typeof msg.content === "string"
+          ? msg.content
+          : serializeParts(msg.content);
+      return `### ${msg.role}\n\n${body.trim()}`;
+    })
+    .join("\n\n");
 }
 
 // --- message serialization (unchanged from the llm tool) ----------------------

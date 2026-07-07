@@ -8,14 +8,15 @@ import {
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { z } from "zod";
 import { getContextHandle, subscribeContext } from "@embark/context";
-import { SchemaMatches, SchemaQueries, schemaKey } from "@embark/schema";
+import { SchemaMatches, schemaKey } from "@embark/schema";
 import type { JsonSchema } from "@embark/schema";
 import { Stickers } from "./channels";
 import type { Sticker } from "./sticker";
 
 // Shared engine for sticker sources. A source watches every text-bearing
-// document in the open-document set (via the `SchemaQueries`/`SchemaMatches`
-// channels, answered by the schema matcher card), scans each one's text, and
+// document in the open-document set (via the `SchemaMatches` channel: the
+// declared key interest is the query, answered by the schema matcher card),
+// scans each one's text, and
 // publishes stickers into its own scoped slice of the `Stickers` channel keyed
 // by document url. The example sources (color styler, unit converter, currency
 // converter, timer) differ only in their `scan` function.
@@ -210,12 +211,9 @@ export function runStickerSource(
     onCount(total);
   };
 
-  // Publish the text-field schema query and watch for matching documents. Both
-  // ride the schema channels; the schema matcher card answers.
-  const schemaQueries = getContextHandle(element, SchemaQueries);
-  schemaQueries?.change((slice) => {
-    slice[TEXT_KEY] = true;
-  });
+  // Watch for text-bearing documents. The declared key interest *is* the
+  // query: the schema matcher card sees it on the SchemaMatches reader
+  // registry and answers under the same key.
   const unsubscribeMatches = subscribeContext(
     element,
     SchemaMatches,
@@ -227,7 +225,6 @@ export function runStickerSource(
 
   const stop = () => {
     unsubscribeMatches();
-    schemaQueries?.release();
     // Releasing the slice drops every sticker we published; here we only need
     // to reclaim minted resource docs (no per-key sticker writes needed).
     for (const url of [...docs.keys()]) dropDoc(url, false);

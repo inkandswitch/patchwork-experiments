@@ -105,6 +105,7 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
     >
       {(pkg) => (
         <div class="embark-inspect">
+          <div class="embark-inspect__build">build {__BUILD_TIME__}</div>
           <Show when={availableTabs().length > 1}>
             <div class="embark-inspect__tabs">
               <For each={availableTabs()}>

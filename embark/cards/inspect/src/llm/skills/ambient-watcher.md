@@ -14,9 +14,6 @@ export default (handle, element) => {
   const store = findContextStore(element);
   const owner = ownerOf(element);
 
-  const queriesOut = store.handle(SchemaQueries, owner);
-  queriesOut.change((slice) => { slice[MAP_KEY] = true; });
-
   let trackedUrl;
   let trackedHandle;
   let onDocChange;
@@ -61,13 +58,17 @@ export default (handle, element) => {
     applyResults(results); // mint docs, update the middle slot, ...
   };
 
-  const unsubscribe = store.subscribe(SchemaMatches, onMatches, { owner });
+  // The declared key interest IS the query the schema matcher answers; keep
+  // the subscription alive as long as you want matches (finding-documents).
+  const unsubscribe = store.subscribe(SchemaMatches, onMatches, {
+    owner,
+    keys: [MAP_KEY],
+  });
   onMatches(); // no initial emit — seed once
 
   return () => {
     unsubscribe();
     untrack();
-    queriesOut.release();
     // release any other handles applyResults used
   };
 };

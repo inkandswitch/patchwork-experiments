@@ -22,7 +22,6 @@ import { getContextHandle, subscribeContext } from "@embark/context";
 import {
   OpenDocuments,
   SchemaMatches,
-  SchemaQueries,
   schemaKey,
   type JsonSchema,
 } from "@embark/schema";
@@ -123,19 +122,15 @@ function Stickerable(props: { element: ToolElement }) {
   );
 }
 
-// Publish the `@patchwork.type` schema query and keep `setTypeByUrl` in sync with
-// the matches the schema matcher reports, resolving each match's datatype.
+// Keep `setTypeByUrl` in sync with the `@patchwork.type` matches the schema
+// matcher reports, resolving each match's datatype. The declared key interest
+// on SchemaMatches is itself the query the matcher answers.
 function discoverTypes(
   element: ToolElement,
   repo: Repo,
   setTypeByUrl: (update: (prev: Record<string, string>) => Record<string, string>) => void,
   registerCleanup: (fn: () => void) => void,
 ): void {
-  const queries = getContextHandle(element, SchemaQueries);
-  queries?.change((slice) => {
-    slice[TYPE_KEY] = true;
-  });
-
   const unsubscribe = subscribeContext(
     element,
     SchemaMatches,
@@ -167,7 +162,6 @@ function discoverTypes(
 
   registerCleanup(() => {
     unsubscribe();
-    queries?.release();
   });
 }
 

@@ -5,6 +5,13 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
+  // Baked-in build stamp, rendered by the inspector so you can tell at a
+  // glance whether the running bundle is the one you just synced.
+  define: {
+    __BUILD_TIME__: JSON.stringify(
+      new Date().toLocaleString("sv-SE").slice(0, 16),
+    ),
+  },
   plugins: [
     solidPlugin(),
     // Inject the CSS into every entry — with multiple entries and no filter

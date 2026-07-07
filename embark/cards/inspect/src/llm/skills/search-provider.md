@@ -80,7 +80,9 @@ const rebuild = () => {
   });
 };
 
-// subscribe rebuild to BOTH SearchQueries and SchemaMatches; seed once.
+// subscribe rebuild to BOTH SearchQueries and SchemaMatches; seed once. The
+// SchemaMatches subscription must declare `keys: [ROOT_KEY]` — that interest
+// is the query the schema matcher answers (see finding-documents).
 ```
 
 Only surface intentionally-titled documents (skip empty titles), and skip

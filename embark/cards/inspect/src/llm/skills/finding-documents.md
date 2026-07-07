@@ -1,19 +1,20 @@
 # Finding documents on the canvas (schema queries)
 
 To discover documents by shape — "every doc with a `{lat, lon}`", "every text
-document", "the map" — publish a JSON Schema into `schema:queries` and read
-the matching urls from `schema:matches`. The Schema Matcher card answers by
-testing every document in the `open-documents` set (both cards are normally
-on the canvas; your card just speaks the channels).
+document", "the map" — subscribe to `schema:matches` declaring the schema's
+key as your read interest. Reading is asking: the Schema Matcher card watches
+who reads which keys of `schema:matches`, matches each requested schema over
+every document in the `open-documents` set, and answers under the same key
+(both cards are normally on the canvas; your card just speaks the channel).
 
 Uses `findContextStore` / `ownerOf` from the context-channels skill.
 
 ## The key IS the schema
 
-`schema:queries` is a set channel whose keys are the schema itself,
-canonically stringified (sorted object keys). The matcher parses the key back
-with `JSON.parse`, and two consumers with the same schema share one key and
-one result array. Always build keys with this helper:
+A `schema:matches` key is the schema itself, canonically stringified (sorted
+object keys). The matcher parses the key back with `JSON.parse`, and two
+consumers with the same schema share one key and one result array. Always
+build keys with this helper:
 
 ```js
 function schemaKey(schema) {
@@ -29,12 +30,11 @@ function stableStringify(value) {
 }
 ```
 
-## Publish, read, watch
+## Subscribe with keys, watch
 
 ```js
 import { parseAutomergeUrl } from "@automerge/automerge-repo";
 
-const SchemaQueries = { name: "schema:queries", empty: {} };
 const SchemaMatches = { name: "schema:matches", empty: {} };
 
 const MAP_SCHEMA = {
@@ -58,17 +58,20 @@ const MAP_SCHEMA = {
 };
 const MAP_KEY = schemaKey(MAP_SCHEMA);
 
-const queriesOut = store.handle(SchemaQueries, owner);
-queriesOut.change((slice) => { slice[MAP_KEY] = true; }); // value is just `true`
-
 const onMatches = () => {
   const urls = store.read(SchemaMatches)[MAP_KEY] ?? [];
   // ... reconcile against the urls you're already tracking ...
 };
-const unsub = store.subscribe(SchemaMatches, onMatches, { owner });
+// `keys` is the query: the matcher answers every key readers declare. Keep
+// the subscription alive as long as you want answers — a bare read() creates
+// no demand, and when your last subscription ends the key drops out.
+const unsub = store.subscribe(SchemaMatches, onMatches, {
+  owner,
+  keys: [MAP_KEY],
+});
 onMatches(); // no initial emit — seed once
 
-// cleanup: unsub(); queriesOut.release();
+// cleanup: unsub();
 ```
 
 To react to a matched document's *content* (not just its existence), resolve
