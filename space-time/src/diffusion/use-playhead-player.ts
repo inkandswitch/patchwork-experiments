@@ -317,35 +317,40 @@ export function usePlayheadPlayer(
       setPlayerState({ status: 'loading' });
     }
 
-    void resolveAllClipTiming(doc, loaderRef.current).then((timing) => {
+    // Run the entire build (source loading + composition mutation) inside the
+    // composition task queue so it is strictly serialized with play/seek/pause.
+    // If this ran outside the queue, `composition.clear()/add()/update()` would
+    // race with a concurrent `composition.play()` (e.g. from pressing Space
+    // right after drawing a playhead), producing a black, silent monitor whose
+    // playhead still advances until the rebuild happens to finish.
+    enqueueCompositionTask(async () => {
       if (generation !== syncGenerationRef.current) return;
-      timingRef.current = timing;
 
-      const structureKey = playheadCompositionStructureKey(doc, playhead, timing);
-      const canUpdateInPlace =
-        isResync &&
-        !isPlayheadCompositionEmpty(doc, playhead, timing) &&
-        structureKey === structureKeyRef.current;
-
-      if (!canUpdateInPlace) {
-        setPlayerState({ status: 'loading' });
-      }
-
-      const sync = canUpdateInPlace
-        ? updatePlayheadCompositionTiming(
-            composition,
-            doc,
-            playhead,
-            loaderRef.current,
-            timing,
-            clipPreviewRef.current ?? undefined,
-          )
-        : syncPlayheadComposition(composition, doc, playhead, loaderRef.current, timing);
-
-      enqueueCompositionTask(async () => {
+      try {
+        const timing = await resolveAllClipTiming(doc, loaderRef.current);
         if (generation !== syncGenerationRef.current) return;
+        timingRef.current = timing;
 
-        const { empty, duration } = await sync;
+        const structureKey = playheadCompositionStructureKey(doc, playhead, timing);
+        const canUpdateInPlace =
+          isResync &&
+          !isPlayheadCompositionEmpty(doc, playhead, timing) &&
+          structureKey === structureKeyRef.current;
+
+        if (!canUpdateInPlace) {
+          setPlayerState({ status: 'loading' });
+        }
+
+        const { empty, duration } = canUpdateInPlace
+          ? await updatePlayheadCompositionTiming(
+              composition,
+              doc,
+              playhead,
+              loaderRef.current,
+              timing,
+              clipPreviewRef.current ?? undefined,
+            )
+          : await syncPlayheadComposition(composition, doc, playhead, loaderRef.current, timing);
 
         if (generation !== syncGenerationRef.current) return;
 
@@ -376,12 +381,12 @@ export function usePlayheadPlayer(
             playingRef.current = false;
           }
         }
-      });
-    }).catch((error: unknown) => {
-      if (generation !== syncGenerationRef.current) return;
-      compositionSyncingRef.current = false;
-      const message = error instanceof Error ? error.message : String(error);
-      setPlayerState({ status: 'error', message });
+      } catch (error) {
+        if (generation !== syncGenerationRef.current) return;
+        compositionSyncingRef.current = false;
+        const message = error instanceof Error ? error.message : String(error);
+        setPlayerState({ status: 'error', message });
+      }
     });
   }, [doc, docSyncKey, playhead?.id, playhead?.x, playhead?.y, playhead?.height, enqueueCompositionTask, runCompositionSeek, sweepActiveRef]);
 

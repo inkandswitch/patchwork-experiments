@@ -34,7 +34,7 @@ export type SourceLoader = {
   load(source: Source, sourceId: string): Promise<LoadedSource>;
 };
 
-const sourceCache = new Map<string, LoadedSource>();
+const sourceCache = new Map<string, Promise<LoadedSource>>();
 const recordingBlobCache = new Map<string, Blob>();
 
 function sourceCacheKey(sourceId: string, url: string): string {
@@ -83,14 +83,19 @@ async function loadSource(source: Source): Promise<LoadedSource> {
   }
 }
 
-async function getOrLoadSource(sourceDef: Source, sourceId: string): Promise<LoadedSource> {
+function getOrLoadSource(sourceDef: Source, sourceId: string): Promise<LoadedSource> {
   const key = sourceCacheKey(sourceId, sourceDef.url);
   const cached = sourceCache.get(key);
   if (cached) return cached;
 
-  const loaded = await loadSource(sourceDef);
-  sourceCache.set(key, loaded);
-  return loaded;
+  // Cache the in-flight promise (not just the resolved value) so concurrent
+  // callers share a single demux/decode instead of each loading the same source.
+  const loading = loadSource(sourceDef);
+  sourceCache.set(key, loading);
+  loading.catch(() => {
+    if (sourceCache.get(key) === loading) sourceCache.delete(key);
+  });
+  return loading;
 }
 
 export function createSourceLoader(): SourceLoader {
@@ -235,11 +240,17 @@ export async function syncPlayheadComposition(
     return { empty: true, duration: 0 };
   }
 
-  const prepared: PreparedPlayheadClip[] = [];
-  for (const clip of touchable) {
-    const item = await preparePlayheadClip(doc, playhead, clip, loader, timing, overrides);
-    if (item) prepared.push(item);
-  }
+  const prepareStart = performance.now();
+  const preparedResults = await Promise.all(
+    touchable.map((clip) => preparePlayheadClip(doc, playhead, clip, loader, timing, overrides)),
+  );
+  const prepared = preparedResults.filter(
+    (item): item is PreparedPlayheadClip => item !== null,
+  );
+  console.debug('[space-time] prepared clips', {
+    count: prepared.length,
+    ms: Math.round(performance.now() - prepareStart),
+  });
 
   if (prepared.length === 0) {
     composition.clear();
@@ -247,6 +258,7 @@ export async function syncPlayheadComposition(
     return { empty: true, duration: 0 };
   }
 
+  const assembleStart = performance.now();
   composition.clear();
   for (let trackIndex = 0; trackIndex < prepared.length; trackIndex++) {
     const layer = await composition.add(new core.Layer({ mode: 'DEFAULT' }), trackIndex);
@@ -254,6 +266,10 @@ export async function syncPlayheadComposition(
   }
 
   await composition.update();
+  console.debug('[space-time] composition assembled', {
+    ms: Math.round(performance.now() - assembleStart),
+    duration: composition.duration,
+  });
   return { empty: false, duration: composition.duration };
 }
 
@@ -341,11 +357,16 @@ export async function resolveAllClipTiming(
   loader: SourceLoader,
 ): Promise<Map<string, ClipTimingInfo>> {
   const timing = new Map<string, ClipTimingInfo>();
+  const start = performance.now();
   await Promise.all(
     doc.clips.map(async (clip) => {
       timing.set(clip.id, await resolveClipTiming(clip, doc, loader));
     }),
   );
+  console.debug('[space-time] resolveAllClipTiming', {
+    clips: doc.clips.length,
+    ms: Math.round(performance.now() - start),
+  });
   return timing;
 }
 
