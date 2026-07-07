@@ -11,6 +11,8 @@ import {
   safeCompositionUpdate,
   syncPlayheadComposition,
   updatePlayheadCompositionTiming,
+  updateClipEdgePreviewComposition,
+  type ClipEdgePreview,
   type ClipTimingInfo,
   type ClipTimingOverride,
 } from './sync-composition';
@@ -101,6 +103,11 @@ export function usePlayheadPlayer(
   const onPlaybackEndRef = useRef(onPlaybackEnd);
   onPlaybackEndRef.current = onPlaybackEnd;
   const clipPreviewRef = useRef<ReadonlyMap<string, ClipTimingOverride> | null>(null);
+  const clipPreviewEdgeRef = useRef<'in' | 'out' | undefined>(undefined);
+  const clipEdgePreviewActiveRef = useRef(false);
+  const clipEdgePreviewPendingRef = useRef(false);
+  const clipEdgePreviewDrainScheduledRef = useRef(false);
+  const clipEdgePreviewRafRef = useRef<number | null>(null);
   const clipPreviewTimerRef = useRef<number | null>(null);
   const clipPreviewGenerationRef = useRef(0);
   const compositionQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -286,8 +293,81 @@ export function usePlayheadPlayer(
       if (clipPreviewTimerRef.current !== null) {
         window.clearTimeout(clipPreviewTimerRef.current);
       }
+      if (clipEdgePreviewRafRef.current !== null) {
+        cancelAnimationFrame(clipEdgePreviewRafRef.current);
+      }
     };
   }, [scrubbingActiveRef, stopScrubSyncLoop]);
+
+  const scheduleClipEdgePreviewDrain = useCallback(() => {
+    clipEdgePreviewPendingRef.current = true;
+    if (clipEdgePreviewRafRef.current !== null) return;
+
+    clipEdgePreviewRafRef.current = requestAnimationFrame(() => {
+      clipEdgePreviewRafRef.current = null;
+      if (!clipEdgePreviewPendingRef.current) return;
+      if (clipEdgePreviewDrainScheduledRef.current) return;
+
+      clipEdgePreviewPendingRef.current = false;
+      clipEdgePreviewDrainScheduledRef.current = true;
+
+      enqueueCompositionTask(async () => {
+        clipEdgePreviewDrainScheduledRef.current = false;
+
+        const overrides = clipPreviewRef.current;
+        const edge = clipPreviewEdgeRef.current;
+        if (!overrides || edge === undefined) return;
+
+        const clipId = [...overrides.keys()][0];
+        const override = clipId ? overrides.get(clipId) : undefined;
+        if (!clipId || !override) return;
+
+        const preview: ClipEdgePreview = {
+          clipId,
+          edge,
+          x: override.x,
+          duration: override.duration,
+          sourceInTime: override.sourceInTime,
+        };
+
+        const composition = compositionRef.current;
+        if (!composition) return;
+
+        const generation = ++clipPreviewGenerationRef.current;
+
+        try {
+          playingRef.current = false;
+          clipEdgePreviewActiveRef.current = true;
+          structureKeyRef.current = null;
+
+          const { empty, duration } = await updateClipEdgePreviewComposition(
+            composition,
+            docRef.current,
+            loaderRef.current,
+            timingRef.current,
+            preview,
+          );
+          if (generation !== clipPreviewGenerationRef.current) return;
+
+          const mountEl = mountRef.current;
+          if (mountEl) layoutPlayer(mountEl, composition);
+
+          if (empty) return;
+
+          if (playerStateRef.current.status !== 'ready') {
+            setPlayerState({ status: 'ready', duration });
+          }
+        } catch (error) {
+          if (generation !== clipPreviewGenerationRef.current) return;
+          console.warn('[space-time] clip edge preview failed', error);
+        }
+
+        if (clipEdgePreviewPendingRef.current) {
+          scheduleClipEdgePreviewDrain();
+        }
+      });
+    });
+  }, [enqueueCompositionTask]);
 
   const docSyncKey = JSON.stringify({
     clips: doc.clips,
@@ -296,6 +376,8 @@ export function usePlayheadPlayer(
   });
 
   useLayoutEffect(() => {
+    if (clipEdgePreviewActiveRef.current) return;
+
     if (!playhead) {
       compositionSyncingRef.current = false;
       setPlayerState({ status: 'idle' });
@@ -391,6 +473,8 @@ export function usePlayheadPlayer(
   }, [doc, docSyncKey, playhead?.id, playhead?.x, playhead?.y, playhead?.height, enqueueCompositionTask, runCompositionSeek, sweepActiveRef]);
 
   useLayoutEffect(() => {
+    if (clipEdgePreviewActiveRef.current) return;
+
     const composition = compositionRef.current;
     if (
       !composition ||
@@ -453,14 +537,22 @@ export function usePlayheadPlayer(
   };
 
   const previewClipTiming = (
-    preview: ({ clipId: string; previewX?: number } & ClipTimingOverride) | null,
+    preview: ({ clipId: string; previewEdge?: 'in' | 'out' } & ClipTimingOverride) | null,
   ) => {
     if (preview === null) {
       clipPreviewRef.current = null;
+      clipPreviewEdgeRef.current = undefined;
+      clipEdgePreviewPendingRef.current = false;
+      if (clipEdgePreviewRafRef.current !== null) {
+        cancelAnimationFrame(clipEdgePreviewRafRef.current);
+        clipEdgePreviewRafRef.current = null;
+      }
       if (clipPreviewTimerRef.current !== null) {
         window.clearTimeout(clipPreviewTimerRef.current);
         clipPreviewTimerRef.current = null;
       }
+      clipEdgePreviewActiveRef.current = false;
+      structureKeyRef.current = null;
       return;
     }
 
@@ -475,6 +567,19 @@ export function usePlayheadPlayer(
       ],
     ]);
 
+    if (preview.previewEdge !== undefined) {
+      clipPreviewEdgeRef.current = preview.previewEdge;
+      clipEdgePreviewActiveRef.current = true;
+      structureKeyRef.current = null;
+      if (clipPreviewTimerRef.current !== null) {
+        window.clearTimeout(clipPreviewTimerRef.current);
+        clipPreviewTimerRef.current = null;
+      }
+      scheduleClipEdgePreviewDrain();
+      return;
+    }
+
+    clipPreviewEdgeRef.current = undefined;
     if (clipPreviewTimerRef.current !== null) return;
     clipPreviewTimerRef.current = window.setTimeout(() => {
       clipPreviewTimerRef.current = null;
@@ -495,9 +600,7 @@ export function usePlayheadPlayer(
           overrides,
         );
         if (generation !== clipPreviewGenerationRef.current) return;
-        const seekTime =
-          preview.previewX !== undefined ? xToTime(preview.previewX) : composition.currentTime;
-        await runCompositionSeek(seekTime);
+        await runCompositionSeek(composition.currentTime);
       });
     }, 80);
   };

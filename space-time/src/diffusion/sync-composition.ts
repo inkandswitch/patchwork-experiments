@@ -378,6 +378,128 @@ export function isPlayheadCompositionEmpty(
   return isDocEmpty(doc) || touchableClipsForPlayhead(doc, playhead, timing).length === 0;
 }
 
+export type ClipEdgePreview = ClipTimingOverride & {
+  clipId: string;
+  edge: 'in' | 'out';
+};
+
+export function clipEdgePreviewSeekTime(
+  preview: Pick<ClipEdgePreview, 'edge' | 'sourceInTime' | 'duration'>,
+  clip?: Clip,
+): number {
+  const sourceStart =
+    preview.sourceInTime !== undefined && preview.sourceInTime !== null
+      ? preview.sourceInTime
+      : (clip?.sourceInTime ?? 0);
+  if (preview.edge === 'in') return sourceStart;
+  return sourceStart + preview.duration;
+}
+
+function isClipEdgePreviewComposition(composition: core.Composition, clipId: string): boolean {
+  const clips = composition.clips;
+  if (clips.length !== 1) return false;
+  return clips[0]?.data['clipEdgePreview'] === clipId;
+}
+
+async function renderCompositionAtTime(
+  composition: core.Composition,
+  time: number,
+): Promise<void> {
+  const duration = composition.duration;
+  if (!Number.isFinite(duration) || duration <= 0) return;
+
+  const seekTime = Math.max(0, Math.min(time, duration));
+  try {
+    if (composition.playing) {
+      await composition.pause();
+    }
+  } catch (error) {
+    console.warn('[space-time] composition pause before edge preview seek failed', error);
+  }
+
+  composition.renderer.playbackOffset = seekTime;
+  await safeCompositionUpdate(composition);
+}
+
+/** Build a stable single-clip composition spanning the full source (once per drag). */
+async function ensureClipEdgePreviewComposition(
+  composition: core.Composition,
+  doc: SpaceTimeDoc,
+  loader: SourceLoader,
+  preview: ClipEdgePreview,
+): Promise<{ empty: boolean; duration: number }> {
+  if (isClipEdgePreviewComposition(composition, preview.clipId)) {
+    return { empty: false, duration: composition.duration };
+  }
+
+  const clip = doc.clips.find((item) => item.id === preview.clipId);
+  if (!clip) {
+    composition.clear();
+    await safeCompositionUpdate(composition);
+    return { empty: true, duration: 0 };
+  }
+
+  const sourceDef = doc.sources[clip.sourceId];
+  if (!sourceDef) {
+    composition.clear();
+    await safeCompositionUpdate(composition);
+    return { empty: true, duration: 0 };
+  }
+
+  try {
+    if (composition.playing) await composition.pause();
+  } catch (error) {
+    console.warn('[space-time] composition pause before clip edge preview failed', error);
+  }
+
+  const source = await loader.load(sourceDef, clip.sourceId);
+  const length = sourceLength(source, sourceDef.type);
+  const fullSourceClip: Clip = {
+    ...clip,
+    x: 0,
+    sourceInTime: 0,
+    duration: length ?? preview.duration,
+  };
+  const playDuration = resolveClipPlayDuration(fullSourceClip, length);
+
+  const dscClip = await createDscClip(source, sourceDef.type);
+  applyClipTiming(dscClip, fullSourceClip, sourceDef.type, playDuration);
+  dscClip.data = {
+    clipId: clip.id,
+    sourceId: clip.sourceId,
+    clipEdgePreview: clip.id,
+  };
+
+  composition.clear();
+  const layer = await composition.add(new core.Layer({ mode: 'DEFAULT' }), 0);
+  await layer.add(dscClip);
+  await safeCompositionUpdate(composition);
+  return { empty: false, duration: composition.duration };
+}
+
+/** Monitor preview for in/out trim: single full-source clip, seek-only updates while dragging. */
+export async function updateClipEdgePreviewComposition(
+  composition: core.Composition,
+  doc: SpaceTimeDoc,
+  loader: SourceLoader,
+  _timing: Map<string, ClipTimingInfo>,
+  preview: ClipEdgePreview,
+): Promise<{ empty: boolean; duration: number; seekTime: number }> {
+  const built = await ensureClipEdgePreviewComposition(composition, doc, loader, preview);
+  if (built.empty) {
+    return { empty: true, duration: 0, seekTime: 0 };
+  }
+
+  const clip = doc.clips.find((item) => item.id === preview.clipId);
+  const seekTime = clipEdgePreviewSeekTime(preview, clip);
+  try {
+    await renderCompositionAtTime(composition, seekTime);
+  } catch (error) {
+    console.warn('[space-time] clip edge preview seek failed', error);
+  }
+  return { empty: false, duration: composition.duration, seekTime };
+}
+
 export async function loadSourceDuration(
   doc: SpaceTimeDoc,
   sourceId: string,

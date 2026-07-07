@@ -266,7 +266,7 @@ type CanvasProps = {
   onPlayheadCurrentXChange: (id: string, x: number) => void;
   selectedClipId: string | null;
   onSelectedClipChange: (id: string | null) => void;
-  onClipPreview?: (preview: ({ clipId: string; previewX?: number } & ClipTimingOverride) | null) => void;
+  onClipPreview?: (preview: ({ clipId: string; previewEdge?: 'in' | 'out' } & ClipTimingOverride) | null) => void;
   onFocusEditor?: () => void;
   onPlayheadScrub?: (playheadId: string, x: number) => void;
   onScrubbingChange?: (scrubbing: boolean) => void;
@@ -1061,13 +1061,13 @@ export function Canvas({
     onClipPreview?.(null);
   };
 
-  const scheduleClipPreview = (preview: ClipDragPreview, previewX?: number) => {
+  const scheduleClipPreview = (preview: ClipDragPreview, previewEdge?: 'in' | 'out') => {
     onClipPreview?.({
       clipId: preview.clipId,
       x: preview.x,
       duration: preview.duration,
       sourceInTime: preview.sourceInTime,
-      previewX,
+      previewEdge,
     });
   };
 
@@ -1303,9 +1303,10 @@ export function Canvas({
           x: clip.x,
           y: clip.y,
           duration: playDuration,
+          sourceInTime: clip.sourceInTime ?? 0,
           label: clipDisplayName(doc, clip),
         };
-        scheduleClipPreview(clipDragPreviewRef.current);
+        scheduleClipPreview(clipDragPreviewRef.current, 'out');
       } else {
         dragRef.current = {
           kind: 'trim-left',
@@ -1324,7 +1325,7 @@ export function Canvas({
           sourceInTime: clip.sourceInTime ?? 0,
           label: clipDisplayName(doc, clip),
         };
-        scheduleClipPreview(clipDragPreviewRef.current);
+        scheduleClipPreview(clipDragPreviewRef.current, 'in');
       }
       onSelectedClipChange(target.clipId);
       return;
@@ -1505,10 +1506,11 @@ export function Canvas({
         x: drag.originalX,
         y: clip.y,
         duration,
+        sourceInTime: clip.sourceInTime ?? 0,
         label: clipDisplayName(doc, clip),
       };
       schedulePaint();
-      scheduleClipPreview(clipDragPreviewRef.current);
+      scheduleClipPreview(clipDragPreviewRef.current, 'out');
     } else if (drag.kind === 'trim-left') {
       const clip = findClip(doc, drag.clipId);
       if (!clip) return;
@@ -1531,7 +1533,7 @@ export function Canvas({
         label: clipDisplayName(doc, clip),
       };
       schedulePaint();
-      scheduleClipPreview(clipDragPreviewRef.current);
+      scheduleClipPreview(clipDragPreviewRef.current, 'in');
     }
   };
 

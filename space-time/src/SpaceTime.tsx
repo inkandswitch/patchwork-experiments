@@ -28,7 +28,6 @@ import {
   maxEndXForPlayhead,
 } from './canvas/layout';
 import { CLIP_HEIGHT, loadCamera, MIN_CLIP_DURATION, PIXELS_PER_SECOND } from './canvas/constants';
-import { isPlayheadCompositionEmpty } from './diffusion/sync-composition';
 import { resolveAllClipTiming } from './diffusion/sync-composition';
 import { usePatchworkIdentity } from './presence/use-identity';
 import { usePlayheadPresence } from './presence/use-playhead-presence';
@@ -516,9 +515,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     setAdding(false);
   };
 
-  const monitorEmpty =
-    !activePlayhead || isPlayheadCompositionEmpty(doc, activePlayhead, timingRef.current);
-
   return (
     <div
       ref={rootRef}
@@ -583,7 +579,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           mountRef={mountRef}
           loading={playerState.status === 'loading'}
           error={playerState.status === 'error' ? playerState.message : null}
-          empty={monitorEmpty && playerState.status !== 'loading'}
         />
       </div>
     </div>
