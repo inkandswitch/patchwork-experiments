@@ -13,6 +13,8 @@ import { installLinkInterception } from "../iframe/link-interception.js";
 import { createRpcClient } from "../iframe/rpc.js";
 import { createProvidersBridge } from "../iframe/providers-bridge.js";
 import { setupEsModuleShims } from "../iframe/es-module-shims.js";
+import { installWorkerShim } from "../iframe/worker-shim.js";
+import { workerBootstrap } from "../iframe/worker-bootstrap.js";
 import { createRegistry } from "../iframe/registry.js";
 import { createRootComponentData } from "../iframe/root-component-data.js";
 
@@ -106,6 +108,8 @@ export function generateIframeSrcdoc(appearance?: IframeAppearance): string {
       createRpcClient: ${createRpcClient.toString()},
       createProvidersBridge: ${createProvidersBridge.toString()},
       setupEsModuleShims: ${setupEsModuleShims.toString()},
+      installWorkerShim: ${installWorkerShim.toString()},
+      workerBootstrapSource: ${JSON.stringify(workerBootstrap.toString())},
       createRegistry: ${createRegistry.toString()},
       createRootComponentData: ${createRootComponentData.toString()},
     });

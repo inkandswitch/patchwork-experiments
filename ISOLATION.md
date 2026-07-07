@@ -126,7 +126,7 @@ Which parts of the UI end up inside the boundary is a choice of the frame config
 
 With this design, Keyhive provides three main guarantees. _(These describe the Keyhive-enabled design, which is **not yet implemented** — see [Keyhive integration (future)](#keyhive-integration-future). For the posture as it stands today, see [Security without Keyhive](#security-without-keyhive).)_
 
-- Tools will not be able to exfiltrate document **access**: because access is cryptographically key-gated and no keys cross the boundary, a tool cannot delegate the capability to read a document to anyone else. (It can still exfiltrate document *data* it was given, and still access/edit allowlisted documents while running in Patchwork.)
+- Tools will not be able to exfiltrate document **access**: because access is cryptographically key-gated and no keys cross the boundary, a tool cannot delegate the capability to read a document to anyone else. (It can still exfiltrate document _data_ it was given, and still access/edit allowlisted documents while running in Patchwork.)
 - Keyhive protects a small and critical set of documents (account doc, module settings, plugin source code) from ever being accessed by the tool.
 - If the isolation identity behaves badly, access can be revoked without the user losing their entire device identity. However, we don't currently have anything in place to trace the source of bad edits to particular tools effectively.
 
@@ -140,12 +140,12 @@ Each component described below should be evaluated in terms of whether it leaks 
 
 The Keyhive pieces above are **not yet implemented** (see [Keyhive integration (future)](#keyhive-integration-future)). Today the intermediary is a plain repo enforcing the allowlist/denylist in JavaScript, syncing under the user's full device identity, with no encryption in the boundary.
 
-**The in-scope guarantee still holds.** Preventing *unauthorized data access* depends only on controlling which document IDs the tool can learn — and the mechanisms that do this (the opaque-origin sandbox, the allowlist/denylist gate, the `registry--` marker scheme + the `classify` request allowlist, the providers value filter, the no-auto-allowlist prompt) are all pure browser/JavaScript and need nothing from Keyhive. A tool still cannot reach documents the user didn't give it.
+**The in-scope guarantee still holds.** Preventing _unauthorized data access_ depends only on controlling which document IDs the tool can learn — and the mechanisms that do this (the opaque-origin sandbox, the allowlist/denylist gate, the `registry--` marker scheme + the `classify` request allowlist, the providers value filter, the no-auto-allowlist prompt) are all pure browser/JavaScript and need nothing from Keyhive. A tool still cannot reach documents the user didn't give it.
 
-**But protection is weaker, because nothing is encrypted — an ID *is* access.** Two consequences:
+**But protection is weaker, because nothing is encrypted — an ID _is_ access.** Two consequences:
 
-- For documents the user *did* authorize (out of scope either way): with Keyhive a tool could exfiltrate the data but not *access* (access is key-gated and non-delegable); without Keyhive it can exfiltrate both, since leaking the URL is enough to grant access.
-- There is no cryptographic backstop for the in-scope boundary: any sandbox escape, `access()` bug, or denylist gap that leaks an ID *is* a grant of access, with no second line of defense, no attenuated identity (a bypass reaches everything the device can read, including the protected set), no revocation, and no signed/attributed edits.
+- For documents the user _did_ authorize (out of scope either way): with Keyhive a tool could exfiltrate the data but not _access_ (access is key-gated and non-delegable); without Keyhive it can exfiltrate both, since leaking the URL is enough to grant access.
+- There is no cryptographic backstop for the in-scope boundary: any sandbox escape, `access()` bug, or denylist gap that leaks an ID _is_ a grant of access, with no second line of defense, no attenuated identity (a bypass reaches everything the device can read, including the protected set), no revocation, and no signed/attributed edits.
 
 In short, without Keyhive the design is **policy enforcement over which IDs leak, not a cryptographic access guarantee** — adequate against a buggy or moderately adversarial tool, but the depth Keyhive adds (encrypted protected set, attenuated identity, non-delegable access, revocation) is absent.
 
@@ -265,6 +265,22 @@ This serves two purposes:
 The marker is a **single path segment** — the literal prefix `registry--` fused to the sanitized package name — not a URL scheme and not a `registry/<name>` two-segment path. Single-segment is required because a baked-dependency URL is percent-encoded by the runtime resolver into one path segment; a marker with no internal `/` survives that encoding as one segment, so both code-split chunk requests and baked-dependency requests present the marker as the first path segment and resolve uniformly. Heads hashes (pinning to specific document versions) are preserved as a URL-encoded suffix on the marker segment (e.g., `registry--@patchwork--folder%23headsHash`).
 
 Resolved module URLs returned to the iframe are prefixed with the host origin (e.g., `https://host/registry--@scope--name/dist/index.js`) so that relative imports in code-split packages resolve correctly.
+
+### Tool-spawned Web Workers
+
+Some tools construct a Web Worker (e.g. a model-inference worker). The opaque-origin sandbox makes this impossible by default: a worker script can't be loaded cross-origin from the `null`-origin iframe, and even a same-origin blob worker has none of the iframe's module-loading machinery (its imports resolve to host-origin URLs it can't fetch). The iframe-side **Worker shim** (`boot/iframe/worker-shim.ts`) re-enables workers _inside_ the boundary without granting them any new authority.
+
+The shim patches `self.Worker`. For a module worker whose script is a host-origin URL (a `registry--` marker) — or a `blob:` worker a tool built itself by fetching the script text — it:
+
+1. Fetches the worker's entry source via the **existing module RPC** (`fetch-package`); for a `blob:` script it reads the blob text back (same-origin to the iframe).
+2. Builds a **same-origin blob** that prepends the es-module-shims source and a bootstrap (`boot/iframe/worker-bootstrap.ts`), and constructs the real worker from that blob as a **classic worker** (a `blob:` URL inherits the iframe's origin, so construction is allowed; classic — not `{type:"module"}` — because the blob has no top-level `import`/`export` and a classic worker's top-level script is exempt from the "module worker can't follow a cross-origin redirect" restriction).
+3. Hands the worker a dedicated `MessagePort`. Inside the worker, the bootstrap installs es-module-shims with a `source` hook: host-origin (`registry--`) module requests are relayed **over that port back to the iframe**, which forwards them to the same `fetch-package`/`fetch-resource` RPC handlers; genuinely external modules (e.g. a CDN lib the worker imports) are fetched directly in the worker (a worker `fetch` follows redirects and returns the final text, which es-module-shims blob-imports — sidestepping the module-worker redirect restriction).
+
+**Why this preserves the boundary.** The worker inherits the iframe's opaque `null` origin (no host DOM, cookies, storage, or keyhive). It is handed **no host RPC port and no Automerge sync port** — it can talk only to the iframe, and only to request modules/resources. Those requests pass through the identical `classify` allowlist and `registry--` marker resolution the iframe uses, so a worker can load nothing the iframe couldn't, and the host still sees only the iframe as its RPC peer — no new host-facing surface. The relay forwards **only** `fetch-package`/`fetch-resource`; every other message type is ignored (no document sync, providers, or navigation reach the worker). The worker's own application messages travel on the standard `Worker.postMessage`/`onmessage` channel, separate from the relay `MessagePort` and never inspected (the bootstrap buffers app messages that arrive before the real worker installs its handler, then replays them).
+
+Non-module workers, and module workers whose script is a genuine non-host, non-blob cross-origin URL, fall through to the native `Worker` constructor unchanged.
+
+Note (current scope): nested workers (a worker that itself spawns a worker) are not yet re-shimmed inside the worker; the target tools spawn their workers from the iframe context, not from within a worker. This is a straightforward extension (re-install the shim in the bootstrap) if a tool needs it.
 
 ### Package registry in iframe
 
