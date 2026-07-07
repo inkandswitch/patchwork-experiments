@@ -738,18 +738,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     insertItems(payload, dropX, dropY);
   };
 
-  // Temporary debug logging for the clipboard flows: shows whether Cmd+C/X/V
-  // reach the canvas at all and why a handler bails. Strip once copy/cut/paste
-  // are confirmed working across browsers.
-  const debugClipboard = (message: string, detail?: Record<string, unknown>) => {
-    console.log(`[embark-canvas clipboard] ${message}`, detail ?? "");
-  };
-  const describeTarget = (target: EventTarget | null): string => {
-    if (!(target instanceof Element)) return String(target);
-    const cls = target.getAttribute("class");
-    return `<${target.tagName.toLowerCase()}${cls ? ` class="${cls}"` : ""}>`;
-  };
-
   // Clipboard copy/cut/paste of cards. The handlers sit on the canvas root,
   // which holds focus after selecting an embed (see selectEmbed). The guard is
   // on document.activeElement, NOT the event's target: Chrome dispatches
@@ -767,73 +755,27 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
     document.activeElement === event.currentTarget;
 
   const copySelectedEmbed = (event: ClipboardEvent): string | null => {
-    const selection = window.getSelection();
-    debugClipboard(`${event.type} event fired`, {
-      target: describeTarget(event.target),
-      activeElement: describeTarget(document.activeElement),
-      canvasRootFocused: canvasRootFocused(event),
-      selectedId: selectedId(),
-      hasClipboardData: Boolean(event.clipboardData),
-      selectionCollapsed: selection ? selection.isCollapsed : null,
-    });
-    if (!canvasRootFocused(event)) {
-      debugClipboard(`${event.type}: bail — focus is not on the canvas root`);
-      return null;
-    }
+    if (!canvasRootFocused(event)) return null;
     const id = selectedId();
     const embed = id ? doc()?.embeds[id] : undefined;
-    if (!id || !embed || !event.clipboardData) {
-      debugClipboard(
-        `${event.type}: bail — no selected embed or no clipboardData`,
-        { selectedId: id, embedFound: Boolean(embed) },
-      );
-      return null;
-    }
+    if (!id || !embed || !event.clipboardData) return null;
     // A live text selection (e.g. dragged out inside a frameless embed) still
     // means "copy that text" — don't hijack it for the card.
-    if (selection && !selection.isCollapsed) {
-      debugClipboard(`${event.type}: bail — live text selection wins`, {
-        selectionText: selection.toString().slice(0, 80),
-      });
-      return null;
-    }
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return null;
     event.preventDefault();
     writeDocumentDragPayload(event.clipboardData, "canvas", [
       embedDragItem(embed),
     ]);
-    debugClipboard(`${event.type}: wrote card payload`, {
-      embedId: id,
-      url: embed.docUrl,
-    });
     return id;
   };
 
   const pasteDocuments = (event: ClipboardEvent) => {
-    debugClipboard("paste event fired", {
-      target: describeTarget(event.target),
-      activeElement: describeTarget(document.activeElement),
-      canvasRootFocused: canvasRootFocused(event),
-      types: event.clipboardData ? [...event.clipboardData.types] : null,
-    });
-    if (!canvasRootFocused(event)) {
-      debugClipboard("paste: bail — focus is not on the canvas root");
-      return;
-    }
+    if (!canvasRootFocused(event)) return;
     const payload = getDocumentDragPayload(event.clipboardData);
-    if (!payload) {
-      debugClipboard("paste: bail — no document payload in the clipboard", {
-        plainText:
-          event.clipboardData?.getData("text/plain").slice(0, 120) ?? "",
-      });
-      return;
-    }
+    if (!payload) return;
     event.preventDefault();
     const point = pastePoint();
-    debugClipboard("paste: inserting embeds", {
-      items: payload.length,
-      x: point.x,
-      y: point.y,
-    });
     const lastId = insertItems(payload, point.x, point.y);
     if (lastId) selectEmbed(lastId);
   };
@@ -880,20 +822,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       classList={{ "embark-canvas--drag-over": isDraggingOver() }}
       tabindex={0}
       on:keydown={(event) => {
-        // Debug: a clipboard shortcut seen here but no matching copy/cut/paste
-        // event log after it means the browser never initiated the clipboard
-        // action (e.g. no-selection quirk) — the keystroke itself arrived fine.
-        if (
-          (event.metaKey || event.ctrlKey) &&
-          ["c", "x", "v"].includes(event.key.toLowerCase())
-        ) {
-          debugClipboard(`keydown Cmd/Ctrl+${event.key.toUpperCase()}`, {
-            target: describeTarget(event.target),
-            targetIsCanvasRoot: event.target === event.currentTarget,
-            activeElement: describeTarget(document.activeElement),
-            selectedId: selectedId(),
-          });
-        }
         // Ignore keys bubbling out of an embedded document; only act when the
         // canvas root itself holds focus (target === currentTarget). Selecting
         // an embed focuses the root, so the shortcuts work right after a click.
@@ -1032,7 +960,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.29</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.30</div>
     </div>
   );
 }
