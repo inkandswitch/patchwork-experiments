@@ -13,8 +13,8 @@ export const plugins: Plugin<any>[] = [
   } as Datatype,
   {
     type: "patchwork:tool",
-    id: "boardgame-collection",
-    name: "Board Game Collection",
+    id: "game-collection",
+    name: "Game Collection",
     icon: "Dices",
     supportedDatatypes: ["folder"],
     async load() {
