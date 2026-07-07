@@ -23,8 +23,11 @@ import {
   isValidAutomergeUrl,
   parseAutomergeUrl,
   type AutomergeUrl,
+  type DocHandle,
   type Repo,
 } from "@automerge/automerge-repo";
+import type { ToolElement } from "@inkandswitch/patchwork-plugins";
+import { TokenView } from "@embark/token-view/TokenView";
 import {
   getContextHandle,
   subscribeContext,
@@ -43,9 +46,9 @@ const MENTION_RE = /\{(automerge:[^}\n]+)\}/g;
 
 // One result the broker surfaced for the active query: the document it points
 // at (`automerge:…`, used verbatim as the link target), a resolved title (the
-// fallback face + accessibility label), and its `@patchwork` datatype so the
-// menu can flag which results came from the Place Finder.
-type Result = { url: AutomergeUrl; title: string; type?: string };
+// fallback face + accessibility label), and the resolved handle so the menu
+// can paint the result's real inline token face.
+type Result = { url: AutomergeUrl; title: string; handle?: DocHandle<unknown> };
 
 // An in-progress `@mention`: the document span being replaced, the query the
 // user typed after the `@`, and the results/highlight currently shown.
@@ -351,24 +354,29 @@ function renderMenu(
     return [];
   }
   const teardowns: Array<() => void> = [];
+  const repo = repoFromEditor(view);
   active.results.forEach((result, i) => {
     const row = document.createElement("div");
     row.className = "cm-mention-row";
     if (i === active.index) row.classList.add("cm-mention-row--active");
-    // Flag results contributed by the Place Finder so they stand out from
-    // plain document mentions.
-    if (result.type === "poi-card") row.classList.add("cm-mention-row--poi");
 
-    // Preview the result with its real inline token via the shared token-view.
-    // `fallback-label` seeds the resolved title so the row isn't empty while the
-    // face resolves, and is the label token-view shows if the datatype has no
-    // token tool.
-    const content = document.createElement("patchwork-view");
+    // Preview the result with its real inline token by calling the shared
+    // TokenView render directly with the already-resolved handle. (A
+    // <patchwork-view> won't do here: the tooltip is parented to document.body,
+    // outside the repo-provider tree, so it can never resolve its repo and
+    // would only ever show plain text.) `fallback-label` is what TokenView
+    // shows if the datatype has no token tool. pointer-events are off so the
+    // row owns the click.
+    const content = document.createElement("span");
     content.className = "cm-mention-row__content";
-    content.setAttribute("tool-id", "token-view");
-    content.setAttribute("doc-url", result.url);
-    content.setAttribute("fallback-label", result.title);
-    content.textContent = result.title;
+    content.style.pointerEvents = "none";
+    if (result.handle && repo) {
+      content.setAttribute("fallback-label", result.title);
+      const host = Object.assign(content, { repo }) as ToolElement;
+      teardowns.push(TokenView(result.handle, host));
+    } else {
+      content.textContent = result.title;
+    }
     row.appendChild(content);
     teardowns.push(() => content.remove());
 
@@ -391,8 +399,8 @@ function repoFromEditor(view: EditorView): Repo | undefined {
   return host?.repo;
 }
 
-// Resolves a result document to a displayable title and its datatype. Neither
-// is guaranteed in cache, so this awaits the handle; the row shows a short url
+// Resolves a result document to a displayable title and its handle. Neither is
+// guaranteed in cache, so this awaits the handle; the row shows a short url
 // fallback if it can't be resolved.
 async function resolveResult(
   url: AutomergeUrl,
@@ -401,19 +409,10 @@ async function resolveResult(
   if (!repo) return { url, title: shortUrl(url) };
   try {
     const handle = await Promise.resolve(repo.find(url));
-    const doc = handle.doc();
-    return { url, title: docTitle(doc, url), type: patchworkType(doc) };
+    return { url, title: docTitle(handle.doc(), url), handle };
   } catch {
     return { url, title: shortUrl(url) };
   }
-}
-
-// The `@patchwork` datatype a document declares, if any — used to flag results
-// by their source (e.g. `poi-card` for Place Finder places).
-function patchworkType(doc: unknown): string | undefined {
-  if (doc === null || typeof doc !== "object") return undefined;
-  const meta = (doc as { "@patchwork"?: { type?: unknown } })["@patchwork"];
-  return meta && typeof meta.type === "string" ? meta.type : undefined;
 }
 
 // A display title for a document, preferring the patchwork display title

@@ -1,6 +1,6 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createSignal, onCleanup } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
@@ -16,18 +16,25 @@ import type { DeckCard, DeckDoc } from "./types";
 import "./deck.css";
 
 // Card geometry. Mirrored in deck.css (`.embark-deck__card` / `__cover`); keep
-// them in sync. PAD keeps fanned/tilted cards clear of the frame's clip edge.
-const CARD_W = 124;
-const CARD_H = 168;
+// them in sync. The slot matches the playing card's 0.7 aspect ratio so a held
+// card fills it edge to edge. PAD keeps fanned/tilted cards clear of the
+// frame's clip edge.
+const CARD_W = 154;
+const CARD_H = 220;
 const PAD = 14;
+// Cap on how wide a held card lays out before being scaled into its slot.
+// Fixed-size content (a card's playing-card surface) shrink-wraps below this;
+// fluid content that would stretch forever stops at the canvas's default embed
+// width, so its thumbnail matches what dealing it out would show.
+const NATURAL_MAX_W = 360;
 // Folded: each card peeks `PILE_STEP` past the one above, capped at `PILE_MAX`
 // so a big deck still folds into a compact pile.
 const PILE_STEP = 3;
 const PILE_MAX = 6;
 // Fanned: ideal gap between successive card left edges, but never so wide the
 // spread exceeds `FAN_MAX_W` — beyond that the cards crowd closer instead.
-const FAN_STEP = 104;
-const FAN_MAX_W = 660;
+const FAN_STEP = 130;
+const FAN_MAX_W = 820;
 const FAN_TILT = 3;
 
 // Tool entry point. Unlike the parts bin, the deck does NOT host its own
@@ -293,6 +300,11 @@ type NamedDoc = {
 // A single card in the pile: a non-interactive live thumbnail that is the drag
 // source. Dragging it onto the canvas (or another drop target) deals it out —
 // `dragend` removes it from the deck once the drop is accepted.
+//
+// The slot renders no chrome of its own (no border/background/shadow — the
+// content brings whatever surface it has). Like a parts-bin preview, the
+// content lays out at its natural footprint and is scaled down by a CSS
+// transform to fit the slot.
 function DeckCardView(props: {
   repo: Repo;
   card: DeckCard;
@@ -301,6 +313,40 @@ function DeckCardView(props: {
   onDealt: () => void;
 }) {
   const [doc] = useDocument<NamedDoc>(() => props.card.url);
+
+  // Natural footprint: the wrapper shrink-wraps the content (so a playing
+  // card's fixed 224×320 surface lays out at exactly that, not stretched into
+  // some recorded embed width — autosize embeds carry a stale footprint), and
+  // both dimensions are measured live so the scale tracks the real layout.
+  let naturalEl: HTMLDivElement | undefined;
+  const [naturalSize, setNaturalSize] = createSignal<{
+    width: number;
+    height: number;
+  }>();
+  onMount(() => {
+    const el = naturalEl;
+    if (!el) return;
+    const measure = () => {
+      if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+        setNaturalSize({ width: el.offsetWidth, height: el.offsetHeight });
+      }
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    onCleanup(() => observer.disconnect());
+  });
+
+  // Shrink to fit the slot in both dimensions, never enlarging small content.
+  // Until the first measurement lands, estimate from the recorded footprint
+  // (else the width cap) so the first paint is already scaled down rather than
+  // flashing full-size.
+  const scale = () => {
+    const size = naturalSize();
+    const width = size?.width ?? props.card.width ?? NATURAL_MAX_W;
+    const height = size?.height ?? props.card.height;
+    return Math.min(1, CARD_W / width, height ? CARD_H / height : 1);
+  };
   const name = () => {
     const value = doc();
     return (
@@ -354,11 +400,17 @@ function DeckCardView(props: {
       on:dragstart={onDragStart}
       on:dragend={onDragEnd}
     >
-      <patchwork-view
-        doc-url={props.card.url}
-        tool-id={props.card.toolId}
-        hide-controls=""
-      />
+      <div
+        class="embark-deck__card-natural"
+        ref={naturalEl}
+        style={{ transform: `scale(${scale()})` }}
+      >
+        <patchwork-view
+          doc-url={props.card.url}
+          tool-id={props.card.toolId}
+          hide-controls=""
+        />
+      </div>
     </div>
   );
 }

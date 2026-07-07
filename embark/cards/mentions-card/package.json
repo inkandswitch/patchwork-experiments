@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@embark/context": "workspace:*",
+    "@embark/token-view": "workspace:*",
     "@embark/selection": "workspace:*",
     "@embark/search": "workspace:*",
     "@embark/codemirror-extensions-host": "workspace:*",

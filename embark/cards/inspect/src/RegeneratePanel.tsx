@@ -48,9 +48,9 @@ export function RegeneratePanel(props: {
         setNotice(`Generation failed: ${result.error}`);
       } else if (abort.signal.aborted) {
         setNotice("Stopped.");
-      } else if (!result.sourceWasSet) {
+      } else if (!result.moduleChanged) {
         setNotice(
-          "The run finished without repointing the card at a new module — the behavior may not have reloaded.",
+          "The run finished without touching the card's module — the behavior was not changed.",
         );
       }
     } finally {

@@ -42,7 +42,13 @@ type DirectoryDoc = {
   [path: string]: unknown;
 };
 
-export function createFilesApi(repo: Repo, packageUrl: AutomergeUrl): Files {
+export function createFilesApi(
+  repo: Repo,
+  packageUrl: AutomergeUrl,
+  // Reports every path a script wrote or edited, so the runner can tell
+  // whether the card's module file was actually touched.
+  onWrite?: (path: string) => void,
+): Files {
   return {
     async list() {
       return listPaths(repo, packageUrl, "");
@@ -62,6 +68,7 @@ export function createFilesApi(repo: Repo, packageUrl: AutomergeUrl): Files {
         await createFile(repo, packageUrl, path, text);
       }
       await bumpPackage(repo, packageUrl);
+      onWrite?.(normalizePath(path));
     },
 
     async edit(path, oldText, newText) {
@@ -83,15 +90,16 @@ export function createFilesApi(repo: Repo, packageUrl: AutomergeUrl): Files {
 
       writeContent(handle, current.replace(oldText, newText));
       await bumpPackage(repo, packageUrl);
+      onWrite?.(normalizePath(path));
     },
   };
 }
 
 // The API for the one non-file edit a regeneration needs: pointing the card
 // document's `src` at a package file. Wrapping it here keeps url-encoding and
-// the card doc shape out of the LLM's hands. `sourceWasSet` lets the runner
-// warn when a run rewrote files but never repointed the card (the module
-// would not reload — dynamic imports are cached by URL).
+// the card doc shape out of the LLM's hands. `sourceWasSet` feeds the runner's
+// did-anything-change check alongside the file-write log (overwriting the
+// current module in place hot-reloads without a setSource).
 export type Card = {
   setSource(path: string): void;
 };

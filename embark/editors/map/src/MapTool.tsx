@@ -157,15 +157,16 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   // the channel and tears everything down with us.
   const uninstallExtensions = installMapExtensionsHost(element, map);
 
-  // Mount the Google-Maps-style search overlay. It draws its own ephemeral
-  // pins and routes straight onto this map. Its camera moves are programmatic
+  // Mount the Google-Maps-style search overlay. It draws its own pins and
+  // routes straight onto this map, and persists the current selection (place /
+  // route) in the doc via the handle. Its camera moves are programmatic
   // (no `originalEvent`), so they are never persisted — and the geo-zoom
   // extension, if present, adopts them as the view to return to.
   const searchHost = document.createElement("div");
   searchHost.className = "embark-map-search-host";
   container.appendChild(searchHost);
   const disposeSearch = render(
-    () => <SearchPanel map={map} onCameraControl={() => {}} />,
+    () => <SearchPanel map={map} handle={handle} onCameraControl={() => {}} />,
     searchHost,
   );
 

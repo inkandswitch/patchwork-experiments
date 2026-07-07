@@ -1,5 +1,7 @@
+import type { DocHandle } from "@automerge/automerge-repo";
 import maplibregl from "maplibre-gl";
 import { createSignal, createEffect, For, onCleanup, Show } from "solid-js";
+import type { MapDoc, PersistedPlace, PersistedRoute } from "./datatype";
 import {
   fetchRoute,
   formatDuration,
@@ -43,13 +45,16 @@ const SMALL_PIN_SVG = `<svg width="16" height="21" viewBox="0 0 26 34" xmlns="ht
 const ORIGIN_DOT_SVG = `<svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><circle cx="9" cy="9" r="6" fill="#5f6368" stroke="#fff" stroke-width="2.5"/></svg>`;
 
 // A Google-Maps-style search overlay for the map. The default "search" view
-// geocodes free text and drops ephemeral pins; the directions button switches to
-// a "directions" view that resolves two endpoints and draws a route. Nothing is
-// persisted — results live only on the map and clear on a new search.
+// geocodes free text and drops pins; the directions button switches to a
+// "directions" view that resolves two endpoints and draws a route. Results and
+// autocomplete are ephemeral, but the *selection* — the clicked place and the
+// routed trip — is mirrored into the map doc (`selectedDestination` /
+// `selectedRoute`), so it survives reloads and syncs to peers.
 // `onCameraControl(true)` is raised whenever the panel drives the camera, so the
 // host can pause its own automatic framing while search results are on screen.
 export function SearchPanel(props: {
   map: maplibregl.Map;
+  handle: DocHandle<MapDoc>;
   onCameraControl: (active: boolean) => void;
 }) {
   const map = props.map;
@@ -89,15 +94,85 @@ export function SearchPanel(props: {
   // identical trip.
   let lastRouteKey = "";
 
+  // --- Doc persistence state --------------------------------------------------
+  // The doc mirrors the current selection (`selectedDestination` /
+  // `selectedRoute`). `applyingDoc` suppresses writes while doc state is being
+  // applied back into the signals, so an incoming change never echoes out as
+  // another write. The `applied*` keys identify the selection currently
+  // reflected in the UI, so our own writes are skipped when they come back
+  // through the `change` event (see applyDoc at the bottom).
+  let applyingDoc = false;
+  let appliedDestKey = "";
+  let appliedRouteKey = "";
+
+  const placeKey = (p: { lat: number; lon: number }) => `${p.lat},${p.lon}`;
+  const routeKey = (r: {
+    mode: string;
+    from: { lat: number; lon: number };
+    to: { lat: number; lon: number };
+  }) => `${r.mode}|${placeKey(r.from)}|${placeKey(r.to)}`;
+
+  // Automerge forbids `undefined`, so the optional `type` is added
+  // conditionally on write and fields are removed with `delete`.
+  const placeToDoc = (place: Place): PersistedPlace => {
+    const persisted: PersistedPlace = {
+      name: place.name,
+      lat: place.lat,
+      lon: place.lon,
+    };
+    if (place.type) persisted.type = place.type;
+    return persisted;
+  };
+
+  // Mirror the selected place into the doc (undefined deletes it).
+  const persistDestination = (place?: Place) => {
+    if (applyingDoc) return;
+    appliedDestKey = place ? placeKey(place) : "";
+    if (!place && !props.handle.doc()?.selectedDestination) return;
+    props.handle.change((doc) => {
+      if (place) doc.selectedDestination = placeToDoc(place);
+      else delete doc.selectedDestination;
+    });
+  };
+
+  // Mirror the routed trip into the doc (undefined deletes it). The full
+  // geometry is stored so peers and reloads draw the line without re-fetching.
+  const persistRoute = (trip?: { result: Route; from: Place; to: Place }) => {
+    if (applyingDoc) return;
+    appliedRouteKey = trip
+      ? routeKey({ mode: mode(), from: trip.from, to: trip.to })
+      : "";
+    if (!trip && !props.handle.doc()?.selectedRoute) return;
+    props.handle.change((doc) => {
+      if (trip) {
+        doc.selectedRoute = {
+          mode: mode(),
+          from: placeToDoc(trip.from),
+          to: placeToDoc(trip.to),
+          coords: trip.result.coords.map((c) => ({ lat: c.lat, lon: c.lon })),
+          distanceKm: trip.result.distanceKm,
+          durationS: trip.result.durationS,
+        };
+      } else {
+        delete doc.selectedRoute;
+      }
+    });
+  };
+
   // Debounce the places search and clear everything when the box is emptied.
+  // The clear only fires once a search has actually happened: the effect's
+  // mount-time run (empty box) must not wipe a destination just hydrated from
+  // the doc.
+  let placesSearched = false;
   let placesTimer: ReturnType<typeof setTimeout> | undefined;
   createEffect(() => {
     const q = placesQuery().trim();
     if (placesTimer) clearTimeout(placesTimer);
     if (!q) {
-      clearPlaces();
+      if (placesSearched) clearPlaces();
       return;
     }
+    placesSearched = true;
     placesTimer = setTimeout(() => void runPlaces(q), PLACES_DEBOUNCE_MS);
   });
 
@@ -133,6 +208,7 @@ export function SearchPanel(props: {
       const results = await geocode(q, { limit: 8, viewbox: currentViewbox() });
       if (placesQuery().trim() !== q) return;
       setSelectedPlace(undefined);
+      persistDestination(undefined);
       setPlaceResults(results);
       renderPlaceMarkers(results);
       fitToPlaces(results);
@@ -157,10 +233,11 @@ export function SearchPanel(props: {
     }
   };
 
-  // Remember which place is selected (for the directions destination) and frame
-  // it. Used by both the result rows and the map pins.
+  // Remember which place is selected (for the directions destination), persist
+  // it in the doc, and frame it. Used by both the result rows and the map pins.
   const selectPlace = (place: Place) => {
     setSelectedPlace(place);
+    persistDestination(place);
     focusPlace(place);
   };
 
@@ -191,6 +268,7 @@ export function SearchPanel(props: {
     setPlaceResults([]);
     setPlacesError("");
     setSelectedPlace(undefined);
+    persistDestination(undefined);
     clearPlaceMarkers();
     props.onCameraControl(false);
   };
@@ -289,6 +367,7 @@ export function SearchPanel(props: {
       setToPlace(resolvedTo);
       setRoute(result);
       setRouteEnds({ from: resolvedFrom, to: resolvedTo });
+      persistRoute({ result, from: resolvedFrom, to: resolvedTo });
       drawRoute(result, resolvedFrom, resolvedTo);
     } catch {
       clearRoute();
@@ -357,6 +436,7 @@ export function SearchPanel(props: {
     setRoute(null);
     setRouteEnds(undefined);
     setRouteError("");
+    persistRoute(undefined);
     clearRouteGraphics();
     props.onCameraControl(false);
   };

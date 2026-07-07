@@ -22,21 +22,19 @@
   z-index: 99999;
 }
 
-/* A held card: a small card-shaped thumbnail, moved by transform so the
-   pile/fan choreography animates. Size mirrors CARD_W / CARD_H in DeckTool. */
+/* A held card: a slot in the pile/fan, moved by transform so the choreography
+   animates. Size mirrors CARD_W / CARD_H in DeckTool. The slot itself draws no
+   chrome — the content brings its own surface (a card its playing-card face) —
+   it just centers the scaled-down thumbnail. */
 .embark-deck__card {
   position: absolute;
   top: 0;
   left: 0;
-  width: 124px;
-  height: 168px;
-  background: #ffffff;
-  border: 1px solid #e7e5e4;
-  border-radius: 10px;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.12),
-    0 6px 14px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  width: 154px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: grab;
   transform-origin: bottom center;
   transition: transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
@@ -46,12 +44,30 @@
   cursor: grabbing;
 }
 
+/* The content at its natural size, shrunk into the slot by the inline
+   transform (same trick as the parts-bin previews). It shrink-wraps the
+   content — a playing card lays out at its own fixed footprint — with a width
+   cap so fluid content stops at the canvas's default embed width (mirrors
+   NATURAL_MAX_W in DeckTool). Scaling about the center keeps the visual
+   centered in the flex-centered slot even though the transform doesn't affect
+   layout. */
+.embark-deck__card-natural {
+  flex: none;
+  width: max-content;
+  max-width: 360px;
+  transform-origin: center;
+}
+
 /* The thumbnail is a live but non-interactive window onto the card's document;
-   clicks/drags fall through to the grabbable wrapper. */
-.embark-deck__card patchwork-view {
+   clicks/drags fall through to the grabbable wrapper. It sizes to the
+   document's own footprint, with floors so embeds that report no intrinsic
+   size still show up. */
+.embark-deck__card-natural patchwork-view {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  min-width: 140px;
+  min-height: 140px;
   pointer-events: none;
 }
 
@@ -61,8 +77,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 124px;
-  height: 168px;
+  width: 154px;
+  height: 220px;
   border-radius: 10px;
   background: linear-gradient(160deg, #6366f1, #4f46e5);
   color: #ffffff;

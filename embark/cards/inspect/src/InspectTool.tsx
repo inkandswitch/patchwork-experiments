@@ -36,8 +36,8 @@ type Tab = "doc" | "spec" | "source";
 
 // Tool entry point: a tabbed inspector over the embed its backing doc (minted at
 // inspect time) points to. The tabs adapt to what the embed actually has:
-//   - doc: the inspected document (only for tool embeds), shown with the raw tool
 //   - spec: the package's `spec.md`, shown with the markdown spec editor
+//   - doc: the inspected document (only for tool embeds), shown with the raw tool
 //   - source: the package folder, shown as a file browser
 // A tab bar only appears when there's more than one; a component with no spec is
 // just its source.
@@ -74,11 +74,12 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
   });
 
   // Only the tabs that have something to show. Order is the open priority:
-  // document first (tool embeds), then spec, then the always-present source.
+  // spec first (it's the thing to read and edit), then the document, then the
+  // always-present source.
   const availableTabs = createMemo<Tab[]>(() => {
     const tabs: Tab[] = [];
-    if (documentUrl()) tabs.push("doc");
     if (specUrl()) tabs.push("spec");
+    if (documentUrl()) tabs.push("doc");
     tabs.push("source");
     return tabs;
   });

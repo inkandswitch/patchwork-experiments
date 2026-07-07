@@ -17,6 +17,48 @@ export type DocumentDragItem = {
   height?: number;
 };
 
+// The slice of a canvas embed a payload is built from (structural, so this
+// module doesn't depend on the canvas module).
+export type DraggableEmbed = {
+  docUrl?: AutomergeUrl;
+  toolId?: string;
+  width: number;
+  height: number;
+};
+
+// The payload item describing one embed. Shared by the canvas move bridge and
+// clipboard copy so every consumer carries the same shape.
+export function embedDragItem(embed: DraggableEmbed): DocumentDragItem {
+  const item: DocumentDragItem = {
+    width: embed.width,
+    height: embed.height,
+  };
+  if (embed.docUrl) item.url = embed.docUrl;
+  if (embed.toolId !== undefined) item.toolId = embed.toolId;
+  return item;
+}
+
+// Write a document payload into a DataTransfer — a drag's dataTransfer or a
+// clipboard event's clipboardData (both are DataTransfers), so drop and paste
+// targets read one format (see getDocumentDragPayload). Alongside the rich
+// Patchwork flavors, `text/plain` carries the bare automerge urls: custom
+// flavors don't survive the OS clipboard into other browsers and apps, plain
+// text does — and it parses back on the way in.
+export function writeDocumentDragPayload(
+  data: DataTransfer,
+  source: string,
+  items: DocumentDragItem[]
+): void {
+  data.setData("text/x-patchwork-dnd", JSON.stringify({ source, items }));
+  const urls = items
+    .map((item) => item.url)
+    .filter((url): url is AutomergeUrl => url != null);
+  if (urls.length > 0) {
+    data.setData("text/x-patchwork-urls", JSON.stringify(urls));
+    data.setData("text/plain", urls.join("\n"));
+  }
+}
+
 // True when a drag item resolves to something droppable: a valid automerge
 // document url.
 function isDroppableItem(item: DocumentDragItem): boolean {

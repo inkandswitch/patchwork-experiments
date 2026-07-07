@@ -6,12 +6,14 @@
 // Tools that bring their own chrome: on the canvas they render without the drag
 // border / clipping and are dragged by grabbing their surface (a per-embed
 // `showFrame` still overrides this), and in the parts bin their preview shows
-// without a wrapper border. Cards carry their own playing-card surface, so they
-// belong here — dropping one out of the bin lands a frameless embed.
+// without a wrapper border. Cards carry their own playing-card surface, and the
+// deck its pile, so they belong here — dropping one out of the bin lands a
+// frameless embed.
 export const FRAMELESS_TOOLS = new Set<string>([
   "parts-bin",
   "context-canvas",
   "card",
+  "deck",
 ]);
 
 // Tools that report their own intrinsic size and change it as their state

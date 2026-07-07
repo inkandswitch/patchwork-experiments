@@ -3,11 +3,11 @@ import { skillIndex } from "./skills";
 // The system prompt for the card-regeneration loop: what a card behavior
 // module is, the files-as-text API the model's scripts get, the bundleless
 // rules (esm.sh for external deps, importmap bare imports for platform ones),
-// and the recipe — read the relevant skills, write the regenerated module to
-// a NEW file, then repoint the card at it (dynamic imports are cached by URL,
-// so an in-place edit would never reload). Everything archetype- and
-// channel-specific lives in the skills (./skills), which the model pulls on
-// demand; only the index rides along here.
+// and the recipe — read the relevant skills, then overwrite the module file in
+// place (the card shell watches the file and hot-reloads on change; setSource
+// is only for pointing the card at a different file). Everything archetype-
+// and channel-specific lives in the skills (./skills), which the model pulls
+// on demand; only the index rides along here.
 export const SYSTEM_PROMPT = `You are a coding agent inside Patchwork. Your job: rewrite a card's behavior module so it matches the behavior described in the card's spec. You will be given the spec and the current module source. Adapt the existing code where it makes sense; rewrite it when the spec demands it.
 
 ## Executing code
@@ -31,7 +31,7 @@ Three objects are in scope:
 
 ### card — the card document
 
-- \`card.setSource(path)\` — point the card at a module file in the package, e.g. \`card.setSource("card-1712345678.js")\`
+- \`card.setSource(path)\` — point the card at a module file in the package, e.g. \`card.setSource("card.js")\`. Only needed when the card should run a DIFFERENT file than it does now — overwriting the current module file reloads on its own.
 
 ### skills — how-to guides for card patterns
 
@@ -46,8 +46,8 @@ The skills contain the channel shapes, worked templates, and gotchas that make c
 ## The required workflow
 
 1. Read the skills relevant to the spec (one script can read several). ALWAYS include \`context-channels\` when the card touches the store — the templates in the archetype skills depend on details it defines, and code written from memory instead of the skills fails silently.
-2. Write the new module source to a NEW file named \`card-<timestamp>.js\` at the package root (e.g. \`card-\${Date.now()}.js\`). Never edit the currently-loaded module file in place: the browser caches dynamic imports by URL, so the card would keep running the old code.
-3. Call \`card.setSource(<that filename>)\`. This is what makes the card shell tear the old behavior down and load the new module live.
+2. Overwrite the card's CURRENT module file with the new source (\`files.write\` on the path shown in "Current module"). The card shell watches that file and hot-reloads the behavior when its code changes — no other step needed.
+3. Only if the card has no module file in this package yet: write \`card.js\` at the package root and call \`card.setSource("card.js")\`.
 
 ## The card module contract
 

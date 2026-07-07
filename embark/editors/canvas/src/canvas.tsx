@@ -21,8 +21,10 @@ import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import { OpenDocumentEvent } from "@inkandswitch/patchwork-elements";
 import {
+  embedDragItem,
   getDocumentDragPayload,
   hasDocumentDrag,
+  writeDocumentDragPayload,
   type DocumentDragItem,
 } from "./dnd";
 import {
@@ -688,28 +690,26 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
     );
 
-  const dropDocuments = (event: DragEvent) => {
-    setIsDraggingOver(false);
-    const payload = getDocumentDragPayload(event.dataTransfer);
-    if (!payload) return;
-    event.preventDefault();
-
-    const rect = canvasEl()?.getBoundingClientRect();
-    const dropX = rect ? event.clientX - rect.left : event.clientX;
-    const dropY = rect ? event.clientY - rect.top : event.clientY;
-
-    // Dropped items become embeds that reference the dragged document directly
-    // — there is no deep copy.
+  // Insert dropped or pasted items as embeds cascading down-and-right from
+  // (x, y) in canvas coordinates. Items become embeds that reference the
+  // carried document directly — there is no deep copy. Returns the id of the
+  // last embed created, so paste can select it.
+  const insertItems = (
+    items: DocumentDragItem[],
+    x: number,
+    y: number,
+  ): string | null => {
+    let lastId: string | null = null;
     props.handle.change((canvas) => {
       let z = highestZ(canvas.embeds);
-      payload.forEach((item, index) => {
+      items.forEach((item, index) => {
         const id = crypto.randomUUID();
         const cascade = index * DROP_CASCADE;
         const embed: EmbarkEmbed = {
           id,
-          // Top-left corner sits at the drop point (not centered on it).
-          x: dropX + cascade,
-          y: dropY + cascade,
+          // Top-left corner sits at the insert point (not centered on it).
+          x: x + cascade,
+          y: y + cascade,
           // A parts-bin example may carry the size it was captured at.
           width: item.width ?? DEFAULT_WIDTH,
           height: item.height ?? DEFAULT_HEIGHT,
@@ -720,8 +720,92 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         if (item.url) embed.docUrl = item.url;
         if (item.toolId !== undefined) embed.toolId = item.toolId;
         canvas.embeds[id] = embed;
+        lastId = id;
       });
     });
+    return lastId;
+  };
+
+  const dropDocuments = (event: DragEvent) => {
+    setIsDraggingOver(false);
+    const payload = getDocumentDragPayload(event.dataTransfer);
+    if (!payload) return;
+    event.preventDefault();
+
+    const rect = canvasEl()?.getBoundingClientRect();
+    const dropX = rect ? event.clientX - rect.left : event.clientX;
+    const dropY = rect ? event.clientY - rect.top : event.clientY;
+    insertItems(payload, dropX, dropY);
+  };
+
+  // Clipboard copy/cut/paste of cards. The handlers sit on the canvas root,
+  // which holds focus after selecting an embed (see selectEmbed); clipboard
+  // events fire at the focused element, so the target === currentTarget guard
+  // (same as keydown) keeps shortcuts inside an embedded tool untouched.
+  //
+  // Copy writes the same payload a drag carries (see writeDocumentDragPayload):
+  // the rich flavors give full-fidelity paste anywhere in the same browser,
+  // and the plain-text automerge url survives into other browsers and apps.
+  // Returns the copied embed's id so cut can delete it.
+  const copySelectedEmbed = (event: ClipboardEvent): string | null => {
+    if (event.target !== event.currentTarget) return null;
+    const id = selectedId();
+    const embed = id ? doc()?.embeds[id] : undefined;
+    if (!id || !embed || !event.clipboardData) return null;
+    // A live text selection (e.g. dragged out inside a frameless embed) still
+    // means "copy that text" — don't hijack it for the card.
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) return null;
+    event.preventDefault();
+    writeDocumentDragPayload(event.clipboardData, "canvas", [
+      embedDragItem(embed),
+    ]);
+    return id;
+  };
+
+  const pasteDocuments = (event: ClipboardEvent) => {
+    if (event.target !== event.currentTarget) return;
+    const payload = getDocumentDragPayload(event.clipboardData);
+    if (!payload) return;
+    event.preventDefault();
+    const point = pastePoint();
+    const lastId = insertItems(payload, point.x, point.y);
+    if (lastId) selectEmbed(lastId);
+  };
+
+  // Where a paste lands: the pointer's last known position over the canvas
+  // (pastes appear under the cursor, drop-like), falling back to roughly the
+  // canvas center when the pointer isn't over it. Repeated pastes at the same
+  // spot cascade down-and-right so they don't stack exactly. The pointer is
+  // tracked in client coordinates (converted here, so canvas scroll/movement
+  // in between doesn't skew the point) and forgotten when it leaves.
+  let lastPointer: { clientX: number; clientY: number } | null = null;
+  let repeatedPaste: { x: number; y: number; count: number } | null = null;
+  const pastePoint = (): { x: number; y: number } => {
+    const rect = canvasEl()?.getBoundingClientRect();
+    const base =
+      lastPointer && rect
+        ? {
+            x: lastPointer.clientX - rect.left,
+            y: lastPointer.clientY - rect.top,
+          }
+        : rect
+          ? {
+              x: Math.max(0, rect.width / 2 - DEFAULT_WIDTH / 2),
+              y: Math.max(0, rect.height / 2 - DEFAULT_HEIGHT / 2),
+            }
+          : { x: 0, y: 0 };
+    if (
+      repeatedPaste &&
+      base.x === repeatedPaste.x &&
+      base.y === repeatedPaste.y
+    ) {
+      repeatedPaste.count += 1;
+    } else {
+      repeatedPaste = { ...base, count: 0 };
+    }
+    const offset = repeatedPaste.count * DROP_CASCADE;
+    return { x: base.x + offset, y: base.y + offset };
   };
 
   return (
@@ -760,6 +844,20 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         // reaches the canvas root is on empty space — clear the selection.
         if (event.target === event.currentTarget) setSelectedId(null);
       }}
+      on:pointermove={(event) => {
+        // Remember where the pointer last was over the canvas, so a paste
+        // lands under the cursor.
+        lastPointer = { clientX: event.clientX, clientY: event.clientY };
+      }}
+      on:pointerleave={() => {
+        lastPointer = null;
+      }}
+      on:copy={copySelectedEmbed}
+      on:cut={(event) => {
+        const id = copySelectedEmbed(event);
+        if (id) deleteEmbed(id);
+      }}
+      on:paste={pasteDocuments}
       on:dragover={(event) => {
         if (!hasDocumentDrag(event.dataTransfer)) return;
         event.preventDefault();
@@ -1086,22 +1184,7 @@ function EmbedView(props: {
   // canvas embeds with no special-casing.
   const buildDragData = (): DataTransfer => {
     const data = new DataTransfer();
-    const item: DocumentDragItem = {
-      width: props.embed.width,
-      height: props.embed.height,
-      ...(props.embed.toolId !== undefined && { toolId: props.embed.toolId }),
-    };
-    if (props.embed.docUrl) item.url = props.embed.docUrl;
-    data.setData(
-      "text/x-patchwork-dnd",
-      JSON.stringify({ source: "canvas", items: [item] }),
-    );
-    if (props.embed.docUrl) {
-      data.setData(
-        "text/x-patchwork-urls",
-        JSON.stringify([props.embed.docUrl]),
-      );
-    }
+    writeDocumentDragPayload(data, "canvas", [embedDragItem(props.embed)]);
     data.effectAllowed = "copyMove";
     return data;
   };

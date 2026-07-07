@@ -27,10 +27,11 @@ type ApiMessage = {
 };
 
 export type RunResult = {
-  // Whether the run repointed the card at a new module (card.setSource). When
-  // false, any file edits won't reload — dynamic imports are cached by URL —
-  // so the UI should warn.
-  sourceWasSet: boolean;
+  // Whether the run changed what the card runs — overwrote the module file
+  // the card points at (the shell hot-reloads it) or repointed the card via
+  // card.setSource. When false the behavior can't have changed, so the UI
+  // should warn.
+  moduleChanged: boolean;
   error?: string;
 };
 
@@ -45,13 +46,16 @@ export async function runCardGeneration(options: {
 
   if (!API_KEY) {
     return {
-      sourceWasSet: false,
+      moduleChanged: false,
       error:
         "No API key baked into this build — set VITE_OPENROUTER_API_KEY in embark/cards/inspect/.env and rebuild.",
     };
   }
 
-  const files = createFilesApi(repo, packageUrl);
+  const writtenPaths = new Set<string>();
+  const files = createFilesApi(repo, packageUrl, (path) =>
+    writtenPaths.add(path),
+  );
   const { card, sourceWasSet } = createCardApi(cardHandle, packageUrl);
   const skills = createSkillsApi();
   const capturedConsole = createCapturedConsole();
@@ -143,7 +147,12 @@ export async function runCardGeneration(options: {
   }
 
   publish();
-  const result: RunResult = { sourceWasSet: sourceWasSet() };
+  // Re-read the module path — setSource may have repointed the card mid-run.
+  const finalModulePath = modulePathOf(cardHandle, packageUrl);
+  const moduleChanged =
+    sourceWasSet() ||
+    (finalModulePath !== null && writtenPaths.has(finalModulePath));
+  const result: RunResult = { moduleChanged };
   if (runError !== undefined) result.error = runError;
   return result;
 }
