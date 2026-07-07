@@ -8,7 +8,8 @@ just your cleanup running.
 
 The main case is publishing a CodeMirror extension into
 `codemirror:extensions`, which the host installs into every editor on the
-canvas:
+canvas (`findContextStore` / `ownerOf` are the system-prompt boilerplate —
+copy it verbatim):
 
 ```js
 import { keymap } from "@codemirror/view"; // codemirror is in the importmap

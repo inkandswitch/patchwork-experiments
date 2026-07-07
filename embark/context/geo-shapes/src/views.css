@@ -1,0 +1,10 @@
+/* The `geo-shape` context view's chip. Injected when the view loads. */
+.embark-geo-shape-face {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: #57534e;
+  background: #f5f5f4;
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}

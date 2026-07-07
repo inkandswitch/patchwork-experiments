@@ -172,6 +172,38 @@ const CARD_SEEDS: CardSeed[] = [
     icon: "pointer",
     accent: "#ea580c",
   },
+  {
+    rootUrl: "automerge:7tDif9cz12ZQXv55Yo73io1UUw4",
+    title: "Geo Shapes",
+    description:
+      "While on the canvas, draws the markers and lines other cards publish on every map here.",
+    icon: "shapes",
+    accent: "#3b82f6",
+  },
+  {
+    rootUrl: "automerge:25PPbHiDGuNmsTGSvCgiPnas8iqD",
+    title: "Geo Markers",
+    description:
+      "Finds places in the open documents and publishes a map marker for each.",
+    icon: "pin",
+    accent: "#2563eb",
+  },
+  {
+    rootUrl: "automerge:FBLNJtT5p4RcTEFErfZTNjswqNP",
+    title: "Geo Lines",
+    description:
+      "Finds routes in the open documents and publishes a map line for each.",
+    icon: "route",
+    accent: "#0284c7",
+  },
+  {
+    rootUrl: "automerge:3daZBaqA2YR5nEhTmRQoYz6coLhV",
+    title: "Geo Zoom",
+    description:
+      "Zooms maps in on highlighted shapes, and back out when the highlight clears.",
+    icon: "zoom",
+    accent: "#059669",
+  },
 ];
 
 // The starter set: every card (one uniform `card` document each), plus a

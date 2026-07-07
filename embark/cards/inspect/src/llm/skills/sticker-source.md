@@ -26,11 +26,42 @@ to the same characters as the text is edited.
 
 ## The engine template
 
-Uses `findContextStore` / `ownerOf` from context-channels and
-`schemaKey`/`stableStringify` from finding-documents.
+Complete and self-contained — copy it as-is and only write `scan`. The
+`findContextStore` / `ownerOf` boilerplate is the one from the system prompt;
+do not substitute your own version (a wrong one fails silently).
 
 ```js
 import { cursor, parseAutomergeUrl } from "@automerge/automerge-repo";
+
+function findContextStore(el) {
+  const request = new CustomEvent("patchwork:context-request", {
+    bubbles: true, composed: true, detail: {},
+  });
+  el.dispatchEvent(request);
+  return request.detail.store
+    ?? document.body[Symbol.for("patchwork.context-store.v1")];
+}
+
+function ownerOf(element) {
+  const view = element.closest("patchwork-view");
+  return {
+    docUrl: view?.getAttribute("doc-url") ?? undefined,
+    embedId: element.closest("[data-embed-id]")?.getAttribute("data-embed-id") ?? undefined,
+    toolId: view?.getAttribute("tool-id") ?? undefined,
+  };
+}
+
+function schemaKey(schema) {
+  return stableStringify(schema);
+}
+
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value).sort()
+    .map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`)
+    .join(",")}}`;
+}
 
 const Stickers = { name: "stickers", empty: {} };
 const SchemaMatches = { name: "schema:matches", empty: {} };

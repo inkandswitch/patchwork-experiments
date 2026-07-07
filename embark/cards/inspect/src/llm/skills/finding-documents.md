@@ -7,7 +7,8 @@ who reads which keys of `schema:matches`, matches each requested schema over
 every document in the `open-documents` set, and answers under the same key
 (both cards are normally on the canvas; your card just speaks the channel).
 
-Uses `findContextStore` / `ownerOf` from the context-channels skill.
+Uses `findContextStore` / `ownerOf` — copy the boilerplate from the system
+prompt verbatim, never invent your own (a wrong version fails silently).
 
 ## The key IS the schema
 

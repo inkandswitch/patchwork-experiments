@@ -34,6 +34,7 @@ A minted doc that is never mounted in a view is invisible to the rest of the
 canvas until you announce it in the `open-documents` channel:
 
 ```js
+// store / ownerOf: the system-prompt boilerplate, copied verbatim.
 const OpenDocuments = { name: "open-documents", empty: {} };
 const openDocs = store.handle(OpenDocuments, ownerOf(element));
 openDocs.change((slice) => { for (const url of urls) slice[url] = true; });

@@ -7,7 +7,8 @@ they stop. Your job is to keep your answer slice consistent with the active
 set. Every provider repeats the same reconciliation loop; use this template
 rather than inventing your own.
 
-Uses `findContextStore` / `ownerOf` from the context-channels skill.
+Uses `findContextStore` / `ownerOf` — copy the boilerplate from the system
+prompt verbatim, never invent your own (a wrong version fails silently).
 
 ```js
 const DEBOUNCE_MS = 350;

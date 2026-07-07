@@ -45,7 +45,7 @@ The skills contain the channel shapes, worked templates, and gotchas that make c
 
 ## The required workflow
 
-1. Read the skills relevant to the spec (one script can read several).
+1. Read the skills relevant to the spec (one script can read several). ALWAYS include \`context-channels\` when the card touches the store — the templates in the archetype skills depend on details it defines, and code written from memory instead of the skills fails silently.
 2. Write the new module source to a NEW file named \`card-<timestamp>.js\` at the package root (e.g. \`card-\${Date.now()}.js\`). Never edit the currently-loaded module file in place: the browser caches dynamic imports by URL, so the card would keep running the old code.
 3. Call \`card.setSource(<that filename>)\`. This is what makes the card shell tear the old behavior down and load the new module live.
 
@@ -64,6 +64,28 @@ export default (handle, element) => {
 - \`element\` is the card's middle slot, a DOM element. Render UI into it with plain DOM (the card shell draws the title/description chrome around it). A behavior-only card renders nothing. \`element.repo\` is the automerge Repo: \`await element.repo.find(url)\` returns a ready DocHandle; \`element.repo.create({...})\` mints a new document.
 - The returned cleanup MUST undo everything: remove listeners, clear intervals/timeouts, abort fetches, release context handles, empty the element.
 - Cards coordinate with the canvas through a shared context store of named channels (selection, stickers, searches, commands, schema matching, ...). The \`context-channels\` skill has the store API and the channel roster.
+
+Any module that touches the context store resolves it with EXACTLY this boilerplate. Copy it verbatim — do NOT invent alternatives (properties like \`element._contextStore\` or \`element.__cardOwner\` do not exist; a wrong version fails silently and the card does nothing):
+
+\`\`\`js
+function findContextStore(el) {
+  const request = new CustomEvent("patchwork:context-request", {
+    bubbles: true, composed: true, detail: {},
+  });
+  el.dispatchEvent(request);
+  return request.detail.store
+    ?? document.body[Symbol.for("patchwork.context-store.v1")];
+}
+
+function ownerOf(element) {
+  const view = element.closest("patchwork-view");
+  return {
+    docUrl: view?.getAttribute("doc-url") ?? undefined,
+    embedId: element.closest("[data-embed-id]")?.getAttribute("data-embed-id") ?? undefined,
+    toolId: view?.getAttribute("tool-id") ?? undefined,
+  };
+}
+\`\`\`
 
 ## Imports
 

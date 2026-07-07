@@ -103,6 +103,22 @@ function glyph(name: string): JSX.Element {
           <path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1" />
         </>
       );
+    case "shapes":
+      return (
+        <>
+          <path d="M8.3 10 12.6 3l4.3 7Z" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <circle cx="17.5" cy="17.5" r="3.5" />
+        </>
+      );
+    case "zoom":
+      return (
+        <>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+          <path d="M11 8v6M8 11h6" />
+        </>
+      );
     case "sparkles":
       return (
         <>

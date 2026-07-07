@@ -8,6 +8,9 @@ of any open map" is the canonical example.
 The shape: schema-match the document kind you care about (finding-documents),
 adopt a match, listen to its handle, debounce, then do your work.
 
+`findContextStore` / `ownerOf` below are the system-prompt boilerplate — copy
+it verbatim, never invent your own (a wrong version fails silently).
+
 ```js
 export default (handle, element) => {
   const repo = element.repo;
