@@ -96,13 +96,25 @@ type ScopeHandle<T> = {
   release(): void; // drop this scope's slice, re-merge, notify
 };
 
+// Who a read or write belongs to: the embed/document the caller lives in.
+// Mandatory on both `subscribe` and `handle` — anonymous context traffic is
+// not representable. The node-relative helpers resolve it structurally
+// (`requireOwner`, which throws if the walk finds no embed); inspectors that
+// shouldn't display their own traffic filter themselves out at render time
+// (see `excludeOwner`) instead of hiding.
+type ScopeOwner = { docUrl?: string; embedId?: string; toolId?: string };
+
 type ContextStore = {
   read<T extends JSONObject>(channel: Channel<T>): T; // merge of this store's live scopes
   subscribe<T extends JSONObject>(
     channel: Channel<T>,
     cb: (value: T) => void,
+    interest: { owner: ScopeOwner; keys?: string[] },
   ): () => void;
-  handle<T extends JSONObject>(channel: Channel<T>): ScopeHandle<T>; // writes stay in this store
+  handle<T extends JSONObject>(
+    channel: Channel<T>,
+    owner: ScopeOwner,
+  ): ScopeHandle<T>; // writes stay in this store
 };
 ```
 
@@ -385,10 +397,10 @@ cards own the two halves:
   `document.body` from anywhere), walks its link closure (`linkedUrls`, which
   skips the `@patchwork` metadata subtree), and publishes the whole set as its
   slice of `OpenDocuments`.
-- **Schema Matcher card**: runs `runSchemaMatcher(store, repo)` — on any change
-  to `SchemaQueries`, the open-document set, or a watched document's contents,
-  it matches every query against every open document and writes
-  `store.handle(SchemaMatches).change(...)`.
+- **Schema Matcher card**: runs `runSchemaMatcher(store, repo, owner)` — on any
+  change to `SchemaQueries`, the open-document set, or a watched document's
+  contents, it matches every query against every open document and writes
+  `store.handle(SchemaMatches, owner).change(...)`.
 
 ```ts
 // consumer (sticker source-lib, map tool): publish schema, read matches

@@ -7,7 +7,7 @@ import {
 } from "solid-js";
 import {
   findContextStore,
-  resolveOwner,
+  requireOwner,
   type Channel,
   type ScopeHandle,
 } from "./context";
@@ -39,7 +39,7 @@ export function readContext<T extends Record<string, unknown>>(
     const element = resolveElement(source);
     if (!element) return;
     const store = findContextStore(element);
-    const owner = resolveOwner(element);
+    const owner = requireOwner(element);
     setValue(() => store.read(channel));
     createEffect(() => {
       const unsubscribe = store.subscribe(
@@ -69,7 +69,7 @@ export function useContextHandle<T extends Record<string, unknown>>(
     const element = resolveElement(source);
     if (!element || released) return;
     const store = findContextStore(element);
-    real = store.handle(channel, resolveOwner(element));
+    real = store.handle(channel, requireOwner(element));
     for (const mutate of buffered) real.change(mutate);
     buffered.length = 0;
   });

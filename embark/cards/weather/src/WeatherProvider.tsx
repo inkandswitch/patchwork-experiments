@@ -3,6 +3,7 @@ import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import {
   findContextStore,
+  requireOwner,
   type ContextStore,
   type ScopeHandle,
 } from "@embark/context";
@@ -58,12 +59,13 @@ export function WeatherProvider(props: { element: ToolElement }) {
 
   onMount(() => {
     store = findContextStore(props.element);
+    const owner = requireOwner(props.element);
     // Shared place resolution (canvas {lat, lon} matches first, then search).
-    resolver = createPlaceResolver(store, repo);
-    suggestions = store.handle(CommandSuggestions);
+    resolver = createPlaceResolver(store, repo, owner);
+    suggestions = store.handle(CommandSuggestions, owner);
     // Re-answer whenever the active commands change. `subscribe` doesn't fire an
     // initial call, so seed once.
-    unsubscribeQueries = store.subscribe(CommandQueries, onQueries);
+    unsubscribeQueries = store.subscribe(CommandQueries, onQueries, { owner });
     onQueries();
   });
 

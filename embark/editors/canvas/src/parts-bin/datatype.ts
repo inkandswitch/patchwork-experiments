@@ -8,22 +8,6 @@ import type { PartsBinDoc, PartsBinItem } from "./types";
 const DEFAULT_CENTER: [number, number] = [13.388, 52.517];
 const DEFAULT_ZOOM = 9.5;
 
-// A sample note exercising the sticker sources at once: imperial quantities
-// (unit converter), a timer token, and a running schedule of times + durations
-// (schedule card).
-const DEMO_MARKDOWN = `# Trip notes
-
-The route is about 5 miles along the ridge trail.
-Take a break partway: @timer 5m
-
-Bring 10 lb of gear; the permit costs €20.
-
-Morning plan:
-- start at 8:00
-- pack the car for 30 minutes
-- drive to the trailhead for 1 hour
-`;
-
 export const PartsBinDatatype: DatatypeImplementation<PartsBinDoc> = {
   init(doc, repo) {
     doc["@patchwork"] = { type: "parts-bin" };
@@ -180,12 +164,20 @@ const CARD_SEEDS: CardSeed[] = [
     icon: "sparkles",
     accent: "#db2777",
   },
+  {
+    rootUrl: "automerge:uMCUHr7SvWiwF1YtmZsWhnUhWY2",
+    title: "Pointer",
+    description:
+      "Shares where the pointer is and which embed it's over; the context viewer follows it to preview embeds.",
+    icon: "pointer",
+    accent: "#ea580c",
+  },
 ];
 
 // The starter set: every card (one uniform `card` document each), plus a
-// blank placeholder card, a map, a demo markdown note, an empty deck, and the
-// context viewer (still its own tool). `repo.create` doesn't run a datatype's
-// `init`, so each child doc's initial value is set inline here.
+// blank placeholder card, a map, an empty markdown note, an empty deck, and
+// the context viewer (still its own tool). `repo.create` doesn't run a
+// datatype's `init`, so each child doc's initial value is set inline here.
 export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const cardItems: PartsBinItem[] = CARD_SEEDS.map((seed) => ({
     id: crypto.randomUUID(),
@@ -199,14 +191,17 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     toolId: "card",
   });
 
+  // The map and note carry an explicit `@patchwork.title`: their names can't
+  // come from content (the note is deliberately empty, and a map has no text),
+  // and without one the bin token would fall back to the raw datatype id.
   const map = repo.create({
-    "@patchwork": { type: "map" },
+    "@patchwork": { type: "map", title: "Map" },
     center: [...DEFAULT_CENTER],
     zoom: DEFAULT_ZOOM,
   });
   const note = repo.create({
-    "@patchwork": { type: "markdown" },
-    content: DEMO_MARKDOWN,
+    "@patchwork": { type: "markdown", title: "Note" },
+    content: "",
   });
   // A fresh, empty deck. Dragging the example out clones it, so each canvas
   // starts its own pile; cards are added by dragging embeds into it.

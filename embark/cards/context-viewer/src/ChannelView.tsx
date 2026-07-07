@@ -19,7 +19,6 @@ import {
 } from "@embark/context";
 import {
   EmbedToken,
-  useHighlight,
   type HighlightController,
 } from "@embark/selection/tokens";
 
@@ -41,13 +40,24 @@ import {
 //
 // With `focus` set, entries are filtered to keys that document added or reads;
 // the caller has already decided the channel itself is relevant.
+//
+// `self` attributes this view's own change subscription (the inspector reads
+// as itself and filters itself out through the lens it is handed as
+// `context`); `highlight` is the viewer-wide hover controller, shared so all
+// token rows light up together.
 export function ChannelView(props: {
   context: ContextView;
   channel: Channel<Record<string, unknown>>;
+  self: ScopeOwner;
+  highlight: HighlightController;
   focus?: AutomergeUrl;
 }) {
   const [tick, setTick] = createSignal(0);
-  onCleanup(props.context.subscribe(props.channel, () => setTick((t) => t + 1)));
+  onCleanup(
+    props.context.subscribe(props.channel, () => setTick((t) => t + 1), {
+      owner: props.self,
+    }),
+  );
   const [readerTick, setReaderTick] = createSignal(0);
   onCleanup(props.context.subscribeReaders(() => setReaderTick((t) => t + 1)));
 
@@ -89,8 +99,6 @@ export function ChannelView(props: {
   const keyView = useContextView(() => props.channel.key);
   const valueView = useContextView(() => props.channel.value);
 
-  const highlight = useHighlight(props.context);
-
   // Channel-wide readers, shown only when there are no entries to hang the
   // per-key rows off (a reader subscribed to an empty channel stays visible).
   const channelReaders = createMemo(() => {
@@ -108,7 +116,10 @@ export function ChannelView(props: {
             <Show when={channelReaders().length > 0}>
               <div class="embark-context__readby">
                 <span class="embark-context__label">read by</span>
-                <OwnerTokens owners={channelReaders()} highlight={highlight} />
+                <OwnerTokens
+                  owners={channelReaders()}
+                  highlight={props.highlight}
+                />
               </div>
             </Show>
           </>
@@ -134,7 +145,10 @@ export function ChannelView(props: {
                     <Show when={readBy().length > 0}>
                       <span class="embark-context__readby">
                         <span class="embark-context__label">read by</span>
-                        <OwnerTokens owners={readBy()} highlight={highlight} />
+                        <OwnerTokens
+                          owners={readBy()}
+                          highlight={props.highlight}
+                        />
                       </span>
                     </Show>
                   </div>
@@ -145,7 +159,7 @@ export function ChannelView(props: {
                         <span class="embark-context__label">added by</span>
                         <OwnerTokens
                           owners={dedupeOwners(groups().map((g) => g.owner))}
-                          highlight={highlight}
+                          highlight={props.highlight}
                         />
                       </div>
                     }
@@ -156,7 +170,7 @@ export function ChannelView(props: {
                           <span class="embark-context__group-owner">
                             <OwnerToken
                               owner={group.owner}
-                              highlight={highlight}
+                              highlight={props.highlight}
                             />
                           </span>
                           <div class="embark-context__group-values embark-token-row">

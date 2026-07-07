@@ -48,7 +48,7 @@ type WatchedDoc = { handle?: DocHandle<unknown> };
 export function runSchemaMatcher(
   store: ContextStore,
   repo: Repo,
-  owner?: ScopeOwner,
+  owner: ScopeOwner,
 ): () => void {
   const watched = new Map<AutomergeUrl, WatchedDoc>();
 

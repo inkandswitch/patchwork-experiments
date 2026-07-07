@@ -1,7 +1,7 @@
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
-import { findContextStore, resolveOwner } from "@embark/context";
+import { findContextStore, requireOwner } from "@embark/context";
 import { runSchemaMatcher } from "./schema-matcher";
 
 // Schema Matcher card behavior, loaded by the shared card shell as this
@@ -24,7 +24,7 @@ function SchemaMatcherCard(props: { element: ToolElement }) {
     const stop = runSchemaMatcher(
       findContextStore(props.element),
       props.element.repo,
-      resolveOwner(props.element),
+      requireOwner(props.element),
     );
     onCleanup(stop);
   });

@@ -49,13 +49,57 @@ export function filterChannel(
     subscribe<T extends Record<string, unknown>>(
       channel: Channel<T>,
       cb: (value: T) => void,
-      interest?: ReadInterest,
+      interest: ReadInterest,
     ): () => void {
       return store.subscribe(channel, cb, interest);
     },
     handle: store.handle,
     readers: store.readers,
     subscribeReaders: store.subscribeReaders,
+  };
+}
+
+// A lens for inspectors: hides `self`'s own traffic across every channel — the
+// scopes it wrote and its reader registrations — so an inspector never renders
+// what it creates itself, without knowing *what* that is, only *who* it is.
+// Writes and subscriptions delegate unchanged: the inspector participates in
+// the store like any other embed (attributed reads and writes) and filters
+// itself out purely at render time. Channel enumeration passes through too, so
+// the lens can stand in for the store in whole-context mode.
+export function excludeOwner(
+  store: ContextStore,
+  self: ScopeOwner,
+): ContextView & Pick<ContextStore, "channels" | "subscribeChannels"> {
+  const isSelf = (owner: ScopeOwner): boolean =>
+    (self.docUrl != null &&
+      owner.docUrl != null &&
+      belongsToDoc(
+        owner.docUrl as AutomergeUrl,
+        self.docUrl as AutomergeUrl,
+      )) ||
+    (self.embedId != null && owner.embedId === self.embedId);
+  return {
+    read<T extends Record<string, unknown>>(channel: Channel<T>): T {
+      const slices = store
+        .scopes(channel)
+        .filter((scope) => !isSelf(scope.owner))
+        .map((scope) => scope.slice);
+      return mergeSlices(channel.empty, slices) as T;
+    },
+    scopes<T extends Record<string, unknown>>(channel: Channel<T>) {
+      return store.scopes(channel).filter((scope) => !isSelf(scope.owner));
+    },
+    readers<T extends Record<string, unknown>>(
+      channel: Channel<T>,
+      key?: string,
+    ): ScopeOwner[] {
+      return store.readers(channel, key).filter((owner) => !isSelf(owner));
+    },
+    subscribe: store.subscribe,
+    handle: store.handle,
+    subscribeReaders: store.subscribeReaders,
+    channels: store.channels,
+    subscribeChannels: store.subscribeChannels,
   };
 }
 

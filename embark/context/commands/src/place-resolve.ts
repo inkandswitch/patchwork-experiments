@@ -11,7 +11,7 @@ import {
   type JsonSchema,
 } from "@embark/schema";
 import { SearchQueries, SearchResults } from "@embark/search";
-import type { ContextStore } from "@embark/context";
+import type { ContextStore, ScopeOwner } from "@embark/context";
 import { fuzzyMatch } from "./fuzzy";
 
 // A `{ lat, lon }` pair — the shared notion of "a place". Packages now define
@@ -57,13 +57,15 @@ export type PlaceResolver = {
 // Build a resolver bound to one canvas context. It owns scoped slices of the
 // SchemaQueries channel (asking where {lat, lon} pairs live, exactly like the
 // map) and the SearchQueries channel (the search fallback), reading the answers
-// back from SchemaMatches / SearchResults.
+// back from SchemaMatches / SearchResults. `owner` attributes those slices and
+// reads to the card running the resolver.
 export function createPlaceResolver(
   store: ContextStore,
   repo: Repo,
+  owner: ScopeOwner,
 ): PlaceResolver {
-  const schemaQueries = store.handle(SchemaQueries);
-  const searchQueries = store.handle(SearchQueries);
+  const schemaQueries = store.handle(SchemaQueries, owner);
+  const searchQueries = store.handle(SearchQueries, owner);
   schemaQueries.change((slice) => {
     slice[LATLNG_KEY] = true;
   });
@@ -133,7 +135,7 @@ export function createPlaceResolver(
       slice[place] = true;
     });
     try {
-      const urls = await waitForResults(store, place, SEARCH_TIMEOUT_MS);
+      const urls = await waitForResults(store, place, SEARCH_TIMEOUT_MS, owner);
       for (const url of urls) {
         try {
           const card = (
@@ -174,6 +176,7 @@ function waitForResults(
   store: ContextStore,
   place: string,
   timeoutMs: number,
+  owner: ScopeOwner,
 ): Promise<AutomergeUrl[]> {
   const current = store.read(SearchResults)[place];
   if (current && current.length) return Promise.resolve(current);
@@ -186,10 +189,14 @@ function waitForResults(
       unsubscribe();
       resolve(urls);
     };
-    const unsubscribe = store.subscribe(SearchResults, (all) => {
-      const urls = all[place];
-      if (urls && urls.length) finish(urls);
-    });
+    const unsubscribe = store.subscribe(
+      SearchResults,
+      (all) => {
+        const urls = all[place];
+        if (urls && urls.length) finish(urls);
+      },
+      { owner, keys: [place] },
+    );
     const timer = setTimeout(() => finish([]), timeoutMs);
   });
 }

@@ -57,8 +57,8 @@ export type ScopeHandle<T extends Record<string, unknown>> = {
   release(): void;
 };
 
-// An optional descriptor of who owns a scope: the embed/document a writer lives
-// in. Captured structurally at handle-acquisition time (see `resolveOwner`), so
+// A descriptor of who owns a scope: the embed/document a writer lives in.
+// Captured structurally at handle-acquisition time (see `requireOwner`), so
 // inspectors (the context viewer) can attribute a contribution back to the
 // embed that made it. Purely informational — it never affects merging.
 export type ScopeOwner = {
@@ -72,8 +72,11 @@ export type ScopeOwner = {
 // really does read every query); declared keys let an inspector answer "who
 // reads *this* entry". Purely informational: subscribers always receive the
 // whole merged record, and granularity is only as honest as the declaration.
+// The owner is mandatory — anonymous reads are not representable; inspectors
+// that don't want to appear in "read by" rows filter themselves out at render
+// time instead (see `excludeOwner` in ./view).
 export type ReadInterest = {
-  owner?: ScopeOwner;
+  owner: ScopeOwner;
   keys?: string[];
 };
 
@@ -82,25 +85,27 @@ export type ContextStore = {
   read<T extends Record<string, unknown>>(channel: Channel<T>): T;
   // Notified (on a coalesced microtask) only when the merged value structurally
   // changes. Does not emit an initial value — seed with `read`. `interest`
-  // (optional) tags the read with the embed/document that consumes it (and the
-  // keys it consumes), so the context viewer can show what an embed uses.
+  // tags the read with the embed/document that consumes it (and the keys it
+  // consumes), so the context viewer can show what an embed uses. It is
+  // mandatory: every read is attributed.
   subscribe<T extends Record<string, unknown>>(
     channel: Channel<T>,
     cb: (value: T) => void,
-    interest?: ReadInterest,
+    interest: ReadInterest,
   ): () => void;
   // A fresh scope to write into. Each call is an independent contribution.
-  // `owner` (optional) tags the scope with the embed/document that created it.
+  // `owner` tags the scope with the embed/document that created it. It is
+  // mandatory: every write is attributed.
   handle<T extends Record<string, unknown>>(
     channel: Channel<T>,
-    owner?: ScopeOwner,
+    owner: ScopeOwner,
   ): ScopeHandle<T>;
   // A snapshot of every live, non-empty scope slice for a channel, each with its
   // owner — for inspection (the context viewer groups these by owner). This is a
   // read-only peek at the un-merged per-scope contributions.
   scopes<T extends Record<string, unknown>>(
     channel: Channel<T>,
-  ): Array<{ owner?: ScopeOwner; slice: T }>;
+  ): Array<{ owner: ScopeOwner; slice: T }>;
   // The distinct owners currently subscribed to a channel (deduped by docUrl) —
   // for inspection (the context viewer shows what an embed reads). With `key`,
   // only readers whose declared interest covers that key: readers that declared
@@ -125,8 +130,8 @@ export type ContextStore = {
 
 type AnyRecord = Record<string, unknown>;
 
-// One scope's contribution: its owner (if any) plus its slice.
-type Scope = { owner?: ScopeOwner; slice: AnyRecord };
+// One scope's contribution: its owner plus its slice.
+type Scope = { owner: ScopeOwner; slice: AnyRecord };
 
 type Listener = (value: AnyRecord) => void;
 
@@ -138,7 +143,7 @@ type ChannelState = {
   slices: Map<number, Scope>;
   subscribers: Set<Listener>;
   // subscriber listener -> who reads through it (and which keys, if declared).
-  readers: Map<Listener, ReadInterest | undefined>;
+  readers: Map<Listener, ReadInterest>;
   // What subscribers last saw, for emit-on-change.
   lastEmitted: AnyRecord | null;
 };
@@ -233,11 +238,11 @@ export function createContextStore(): ContextStore {
   const subscribe = <T extends AnyRecord>(
     channel: Channel<T>,
     cb: (value: T) => void,
-    interest?: ReadInterest,
+    interest: ReadInterest,
   ): (() => void) => {
     traceContext("subscribe", channel.name, {
-      owner: interest?.owner,
-      keys: interest?.keys,
+      owner: interest.owner,
+      keys: interest.keys,
     });
     const state = stateFor(channel as Channel<AnyRecord>);
     const listener = cb as Listener;
@@ -253,7 +258,7 @@ export function createContextStore(): ContextStore {
 
   const handle = <T extends AnyRecord>(
     channel: Channel<T>,
-    owner?: ScopeOwner,
+    owner: ScopeOwner,
   ): ScopeHandle<T> => {
     traceContext("handle", channel.name, { owner });
     const state = stateFor(channel as Channel<AnyRecord>);
@@ -283,9 +288,9 @@ export function createContextStore(): ContextStore {
 
   const scopes = <T extends AnyRecord>(
     channel: Channel<T>,
-  ): Array<{ owner?: ScopeOwner; slice: T }> => {
+  ): Array<{ owner: ScopeOwner; slice: T }> => {
     const state = stateFor(channel as Channel<AnyRecord>);
-    const out: Array<{ owner?: ScopeOwner; slice: T }> = [];
+    const out: Array<{ owner: ScopeOwner; slice: T }> = [];
     for (const scope of state.slices.values()) {
       if (Object.keys(scope.slice).length === 0) continue;
       out.push({ owner: scope.owner, slice: scope.slice as T });
@@ -301,14 +306,13 @@ export function createContextStore(): ContextStore {
     const seen = new Set<string>();
     const out: ScopeOwner[] = [];
     for (const interest of state.readers.values()) {
-      const owner = interest?.owner;
-      if (!owner) continue;
+      const owner = interest.owner;
       // A declared-keys reader only counts for its keys; an undeclared reader
       // reads the whole channel and counts for every key.
       if (key !== undefined && interest.keys && !interest.keys.includes(key)) {
         continue;
       }
-      const dedupeKey = owner.docUrl ?? owner.embedId;
+      const dedupeKey = owner.docUrl ?? owner.embedId ?? owner.toolId;
       if (!dedupeKey || seen.has(dedupeKey)) continue;
       seen.add(dedupeKey);
       out.push(owner);
@@ -505,7 +509,7 @@ export function subscribeContext<T extends Record<string, unknown>>(
     cb(value);
   };
   const unsubscribe = store.subscribe(channel, wrapped, {
-    owner: resolveOwner(node),
+    owner: requireOwner(node),
     keys,
   });
   queueMicrotask(() => {
@@ -521,19 +525,20 @@ export function getContextHandle<T extends Record<string, unknown>>(
   node: Node,
   channel: Channel<T>,
 ): ScopeHandle<T> {
-  return findContextStore(node).handle(channel, resolveOwner(node));
+  return findContextStore(node).handle(channel, requireOwner(node));
 }
 
-// Walk up from a writer's `node` to the embed/document it lives in so the store
-// can attribute the scope to that embed. Reads the nearest enclosing
+// Walk up from `node` to the embed/document it lives in so the store can
+// attribute a scope or subscription to that embed. Reads the nearest enclosing
 // `<patchwork-view doc-url tool-id>` and `[data-embed-id]` (both light DOM).
-// Returns `undefined` outside any embed (e.g. a writer on the canvas root
-// itself), so that contribution is simply left unattributed.
-export function resolveOwner(node: Node): ScopeOwner | undefined {
+// Every read and write must be attributed, so a failed walk throws: a caller
+// that genuinely lives outside any embed must construct an explicit owner
+// (e.g. `{ toolId: "canvas" }`) and use the store API directly — anonymity is
+// not representable.
+export function requireOwner(node: Node): ScopeOwner {
   const el = node instanceof Element ? node : node.parentElement;
   if (!el) {
-    traceOwnerFailure(node, "node is not an element and has no parentElement");
-    return undefined;
+    throw ownerError(node, "node is not an element and has no parentElement");
   }
   const view = el.closest("patchwork-view");
   const embed = el.closest("[data-embed-id]");
@@ -543,27 +548,30 @@ export function resolveOwner(node: Node): ScopeOwner | undefined {
     toolId: view?.getAttribute("tool-id") ?? undefined,
   };
   if (owner.docUrl || owner.embedId) return owner;
-  traceOwnerFailure(
+  throw ownerError(
     node,
     !view && !embed
       ? el.isConnected
         ? "no <patchwork-view> or [data-embed-id] ancestor"
         : "element is not connected to the document (detached tree has no embed ancestor)"
       : "ancestor found but it carries no doc-url / data-embed-id attribute",
-    { view, embed },
   );
-  return undefined;
+}
+
+function ownerError(node: Node, reason: string): Error {
+  const name = node instanceof Element ? node.tagName.toLowerCase() : node.nodeName;
+  return new Error(
+    `[context] cannot attribute context access from <${name}>: ${reason}`,
+  );
 }
 
 // --- Debug tracing -------------------------------------------------------------
 //
-// Opt-in provenance tracing for hunting unattributed context traffic: run
+// Opt-in provenance tracing of context traffic: run
 // `localStorage.setItem("embark:trace-context", "1")` in the console and
-// reload. Every `subscribe`/`handle` then logs its channel and owner, and any
-// unattributed acquisition (or failed `resolveOwner` walk) logs a collapsed
-// stack trace so the caller that skipped attribution can be identified. Note
-// some unattributed traffic is deliberate (the context viewer inspects without
-// registering as a reader) — the stack tells them apart.
+// reload. Every `subscribe`/`handle` then logs its channel and owner.
+// (Unattributed traffic no longer exists — `handle`/`subscribe` require an
+// owner, and a failed `requireOwner` walk throws.)
 
 function traceEnabled(): boolean {
   try {
@@ -576,31 +584,9 @@ function traceEnabled(): boolean {
 function traceContext(
   op: "subscribe" | "handle",
   channel: string,
-  detail: { owner?: ScopeOwner; keys?: string[] },
+  detail: { owner: ScopeOwner; keys?: string[] },
 ): void {
   if (!traceEnabled()) return;
   const label = `[context] ${op} ${channel}`;
-  if (detail.owner) {
-    console.log(label, detail.keys ? detail : detail.owner);
-    return;
-  }
-  console.groupCollapsed(`${label} — UNATTRIBUTED (no owner)`);
-  console.trace("acquired here");
-  console.groupEnd();
-}
-
-function traceOwnerFailure(
-  node: Node,
-  reason: string,
-  found?: { view: Element | null; embed: Element | null },
-): void {
-  if (!traceEnabled()) return;
-  console.groupCollapsed(`[context] resolveOwner failed: ${reason}`);
-  console.log({
-    node,
-    connected: node.isConnected,
-    ...(found ?? {}),
-  });
-  console.trace("resolved here");
-  console.groupEnd();
+  console.log(label, detail.keys ? detail : detail.owner);
 }

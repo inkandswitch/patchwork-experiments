@@ -3,6 +3,7 @@ import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { onCleanup, onMount } from "solid-js";
 import {
   findContextStore,
+  requireOwner,
   type ContextStore,
   type ScopeHandle,
 } from "@embark/context";
@@ -64,9 +65,10 @@ export function RouteProvider(props: { element: ToolElement }) {
 
   onMount(() => {
     store = findContextStore(props.element);
-    resolver = createPlaceResolver(store, repo);
-    suggestions = store.handle(CommandSuggestions);
-    unsubscribeQueries = store.subscribe(CommandQueries, onQueries);
+    const owner = requireOwner(props.element);
+    resolver = createPlaceResolver(store, repo, owner);
+    suggestions = store.handle(CommandSuggestions, owner);
+    unsubscribeQueries = store.subscribe(CommandQueries, onQueries, { owner });
     onQueries();
   });
 

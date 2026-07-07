@@ -10,7 +10,12 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 // single codemirror/solid instances.
 export default defineConfig({
   base: "./",
-  plugins: [solidPlugin(), cssInjectedByJsPlugin()],
+  plugins: [
+    solidPlugin(),
+    // Inject the CSS into every entry — with multiple entries and no filter
+    // the plugin puts it only in plugins.js, which never runs in the page.
+    cssInjectedByJsPlugin({ jsAssetsFilterFunction: (chunk) => chunk.isEntry }),
+  ],
   build: {
     lib: {
       entry: { index: "src/index.ts", plugins: "src/plugins.ts" },

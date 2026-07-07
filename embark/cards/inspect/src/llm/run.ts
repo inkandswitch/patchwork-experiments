@@ -5,6 +5,7 @@ import type {
 } from "@automerge/automerge-repo";
 import { parseScriptBlocks } from "./parser";
 import { createCardApi, createFilesApi, type Card, type Files } from "./files";
+import { createSkillsApi, type Skills } from "./skills";
 import { SYSTEM_PROMPT, buildTaskMessage } from "./prompt";
 import type { CardDocLike, ContentBlock, Message } from "./types";
 
@@ -52,6 +53,7 @@ export async function runCardGeneration(options: {
 
   const files = createFilesApi(repo, packageUrl);
   const { card, sourceWasSet } = createCardApi(cardHandle, packageUrl);
+  const skills = createSkillsApi();
   const capturedConsole = createCapturedConsole();
 
   const messages: Message[] = [];
@@ -116,6 +118,7 @@ export async function runCardGeneration(options: {
               block.code,
               files,
               card,
+              skills,
               capturedConsole,
             );
 
@@ -245,6 +248,7 @@ async function evalScript(
   code: string,
   files: Files,
   card: Card,
+  skills: Skills,
   capturedConsole: ReturnType<typeof createCapturedConsole>,
 ): Promise<{ output?: string; error?: string }> {
   capturedConsole.flush();
@@ -253,13 +257,14 @@ async function evalScript(
     const fn = new Function(
       "files",
       "card",
+      "skills",
       "console",
       `return (async () => {
         ${code}
       })();`,
     );
 
-    const returnValue = await fn(files, card, capturedConsole);
+    const returnValue = await fn(files, card, skills, capturedConsole);
     const consoleOutput = capturedConsole.flush();
     const parts: string[] = [];
     if (consoleOutput) parts.push(consoleOutput);

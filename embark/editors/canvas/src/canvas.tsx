@@ -25,7 +25,12 @@ import {
   hasDocumentDrag,
   type DocumentDragItem,
 } from "./dnd";
-import { readContext, useContextHandle } from "@embark/context";
+import {
+  findContextStore,
+  requireOwner,
+  type ScopeHandle,
+  type ScopeOwner,
+} from "@embark/context";
 import { Highlight, Selection } from "@embark/selection";
 import {
   resolveInspectTarget,
@@ -107,10 +112,11 @@ const CONTEXT_CANVAS_URL_KEY = "embark:context-canvas-url";
 // The context canvas component: the sidebar face of this browser's context
 // canvas. Registered as a `patchwork:component` tagged `context-tool` — the
 // frame's context sidebar enumerates that registry and renders entries as bare
-// components with no document (`(element, repo) => cleanup`). The canvas
-// mounts directly into the sidebar and is torn down when it closes; its url
-// lives in localStorage so the same canvas reopens every time (see
-// resolveContextCanvas).
+// components with no document (`(element, repo) => cleanup`). It doesn't own
+// the canvas: it takes a lease on the shared always-on host (see
+// retainContextCanvas) and docks it here while the tab is open; on close the
+// host parks back on document.body — still running, as long as another lease
+// (the toolbar keeper) is live.
 export const ContextCanvasComponent = (
   element: HTMLElement,
   repo?: Repo,
@@ -118,17 +124,173 @@ export const ContextCanvasComponent = (
   const resolvedRepo = (element as Partial<ToolElement>).repo ?? repo;
   if (!resolvedRepo) return () => {};
 
-  const host = document.createElement("div") as unknown as ToolElement;
-  host.repo = resolvedRepo;
-  host.style.width = "100%";
-  host.style.height = "100%";
+  const lease = retainContextCanvas(resolvedRepo);
+  lease.dock(element);
 
-  // The context canvas always operates on the real documents: answer
-  // repo:handle-descriptor with the identity descriptor so a drafts overlay
-  // above the sidebar never forks the canvas's docs into a draft. The nearest
-  // answerer on the bubble path wins (accept stops propagation). (The
-  // descriptor shape matches OverlayRepo's DocHandleDescriptor:
-  // `{ url, cloneUrl? }`; identity means no cloneUrl.)
+  return () => {
+    lease.park();
+    lease.release();
+  };
+};
+
+// The always-on keeper, registered as a `titlebar-tool` so it can be added to
+// the frame's toolbar lane. It renders nothing and ignores the document it is
+// handed (the toolbar points it at whatever doc is open) — its only job is to
+// hold a lease on the context canvas host so the cards keep running while the
+// sidebar is closed. The toolbar remounts on every document switch (the frame
+// keys that whole subtree on the selected doc), which the lease's grace
+// period bridges so the canvas never cycles.
+export const ContextCanvasKeeperTool: ToolRender = (_handle, element) => {
+  const lease = element.repo ? retainContextCanvas(element.repo) : undefined;
+  return () => lease?.release();
+};
+
+// ---------------------------------------------------------------------------
+// The always-on context canvas host. One hidden, body-parked element carrying
+// the mounted canvas, shared by every retainer through refcounted *leases* —
+// the sidebar tab docks it to become visible, the toolbar keeper just holds
+// it alive. There is deliberately no page-lifetime singleton: when the last
+// lease lapses (plus a short grace period) everything is disposed, and a
+// later retain starts fresh.
+// ---------------------------------------------------------------------------
+
+// How long the host survives with no live leases. Long enough to bridge a
+// document switch (the frame disposes the toolbar/sidebar subtree, loads
+// modules async, remounts — the keeper's release and re-retain straddle that
+// gap), short enough that removing the keeper stops the cards promptly.
+const LEASE_GRACE_MS = 3000;
+
+export type ContextCanvasLease = {
+  // Move the host into `target` and make it visible.
+  dock(target: HTMLElement): void;
+  // Return the host to its hidden parking spot on document.body. Only the
+  // lease whose dock target still holds the host may park it — a new sidebar
+  // panel can dock before the old panel's cleanup runs.
+  park(): void;
+  release(): void;
+};
+
+type CanvasHostState = {
+  host: ToolElement;
+  // Set once the canvas doc resolves; used to remount after a fallback move.
+  handle: DocHandle<EmbarkCanvasDoc> | undefined;
+  // Disposer of the current canvas mount (undefined while resolving).
+  dispose: (() => void) | undefined;
+  retainCount: number;
+  graceTimer: ReturnType<typeof setTimeout> | undefined;
+  torndown: boolean;
+};
+
+let canvasHostState: CanvasHostState | null = null;
+
+export function retainContextCanvas(repo: Repo): ContextCanvasLease {
+  if (!canvasHostState) canvasHostState = createCanvasHostState(repo);
+  const state = canvasHostState;
+  state.retainCount += 1;
+  if (state.graceTimer !== undefined) {
+    clearTimeout(state.graceTimer);
+    state.graceTimer = undefined;
+  }
+
+  let released = false;
+  let dockTarget: HTMLElement | null = null;
+  let cancelPendingDock: (() => void) | undefined;
+
+  return {
+    dock(target) {
+      if (released || state.torndown) return;
+      dockTarget = target;
+      cancelPendingDock?.();
+      // The element a component mounts into may not be in the document yet
+      // (patchwork-view's attribute-driven mounts run off a microtask, before
+      // insertion), and moveBefore requires both ends connected — defer the
+      // move (and the visible styles) until the target lands.
+      cancelPendingDock = whenConnected(target, () => {
+        cancelPendingDock = undefined;
+        if (released || state.torndown || dockTarget !== target) return;
+        applyDockedStyles(state.host);
+        moveHost(state, target);
+      });
+    },
+    park() {
+      cancelPendingDock?.();
+      cancelPendingDock = undefined;
+      if (state.torndown || !dockTarget) return;
+      const holding = dockTarget.contains(state.host);
+      dockTarget = null;
+      // Another lease may have docked the host away before this cleanup ran
+      // (tab switches), or the deferred dock never landed — nothing to park.
+      if (!holding) return;
+      applyParkedStyles(state.host);
+      moveHost(state, document.body);
+    },
+    release() {
+      if (released) return;
+      released = true;
+      if (state.torndown) return;
+      state.retainCount -= 1;
+      if (state.retainCount > 0) return;
+      state.graceTimer = setTimeout(
+        () => teardownCanvasHost(state),
+        LEASE_GRACE_MS,
+      );
+    },
+  };
+}
+
+// Build the host, park it hidden on body, and mount the canvas into it (async
+// — the doc has to resolve first). A failed mount tears the host down instead
+// of being cached (the old symbol-keyed singleton cached its rejected promise
+// forever and died silently until reload): existing leases go inert and the
+// next retain starts over.
+function createCanvasHostState(repo: Repo): CanvasHostState {
+  const host = createCanvasHostElement(repo);
+  applyParkedStyles(host);
+  document.body.appendChild(host);
+
+  const state: CanvasHostState = {
+    host,
+    handle: undefined,
+    dispose: undefined,
+    retainCount: 0,
+    graceTimer: undefined,
+    torndown: false,
+  };
+
+  void resolveContextCanvas(repo).then(
+    (handle) => {
+      if (state.torndown) return;
+      state.handle = handle;
+      state.dispose = mountCanvas(handle, state.host);
+    },
+    (error: unknown) => {
+      console.error("[embark] context canvas failed to load", error);
+      teardownCanvasHost(state);
+    },
+  );
+
+  return state;
+}
+
+function teardownCanvasHost(state: CanvasHostState): void {
+  if (state.torndown) return;
+  state.torndown = true;
+  if (state.graceTimer !== undefined) clearTimeout(state.graceTimer);
+  state.dispose?.();
+  state.dispose = undefined;
+  state.host.remove();
+  if (canvasHostState === state) canvasHostState = null;
+}
+
+// The host element: carries the repo for mountCanvas and always answers
+// repo:handle-descriptor with the identity descriptor, so a drafts overlay
+// above wherever it is docked never forks the canvas's docs into a draft. The
+// nearest answerer on the bubble path wins (accept stops propagation). (The
+// descriptor shape matches OverlayRepo's DocHandleDescriptor:
+// `{ url, cloneUrl? }`; identity means no cloneUrl.)
+function createCanvasHostElement(repo: Repo): ToolElement {
+  const host = document.createElement("div") as unknown as ToolElement;
+  host.repo = repo;
   host.addEventListener("patchwork:subscribe", (event) => {
     const sub = event as SubscribeEvent;
     if (sub.detail.selector.type !== "repo:handle-descriptor") return;
@@ -136,22 +298,84 @@ export const ContextCanvasComponent = (
     if (!url) return;
     accept<{ url: AutomergeUrl }>(sub, (respond) => respond({ url }));
   });
+  return host;
+}
 
-  element.appendChild(host);
+// Parked: out of sight but *laid out* — visibility (not display:none) keeps
+// measuring embeds (maps, ResizeObservers) alive while hidden, with a
+// sidebar-like footprint so their layout stays sane.
+function applyParkedStyles(host: HTMLElement): void {
+  host.style.position = "fixed";
+  host.style.top = "0";
+  host.style.left = "0";
+  host.style.width = "360px";
+  host.style.height = "100vh";
+  host.style.visibility = "hidden";
+  host.style.pointerEvents = "none";
+}
 
-  let dispose: (() => void) | undefined;
-  let disposed = false;
-  void resolveContextCanvas(resolvedRepo).then((handle) => {
-    if (disposed) return;
-    dispose = mountCanvas(handle, host);
-  });
+// Docked: fill the sidebar element it was moved into.
+function applyDockedStyles(host: HTMLElement): void {
+  host.style.position = "relative";
+  host.style.top = "";
+  host.style.left = "";
+  host.style.width = "100%";
+  host.style.height = "100%";
+  host.style.visibility = "visible";
+  host.style.pointerEvents = "";
+}
 
-  return () => {
-    disposed = true;
-    dispose?.();
-    host.remove();
+// Reparent the host. `moveBefore` (where supported) is an atomic,
+// state-preserving move: descendant <patchwork-view>s get their
+// connectedMoveCallback instead of disconnect/connect, so the mounted canvas
+// — editors, maps, running card modules — survives intact. It only works
+// connected-to-connected, so a host stranded in an already-removed sidebar
+// subtree (park runs after the frame tore the panel's DOM out) takes the
+// fallback: a *deliberate* remount — dispose the mount, move the empty host,
+// mount fresh. Never appendChild a live tree — <patchwork-view>'s
+// disconnectedCallback teardown is async and would race the immediate
+// reconnect.
+function moveHost(state: CanvasHostState, parent: HTMLElement): void {
+  const movable = parent as HTMLElement & {
+    moveBefore?: (node: Node, child: Node | null) => void;
   };
-};
+  if (
+    typeof movable.moveBefore === "function" &&
+    parent.isConnected &&
+    state.host.isConnected
+  ) {
+    try {
+      movable.moveBefore(state.host, null);
+      return;
+    } catch {
+      // Hierarchy edge case moveBefore won't do — fall through to remount.
+    }
+  }
+  state.dispose?.();
+  state.dispose = undefined;
+  parent.appendChild(state.host);
+  if (state.handle) state.dispose = mountCanvas(state.handle, state.host);
+}
+
+// Run `fn` once `el` is in the document, now or as soon as it lands (polled
+// per frame — insertion normally follows within one). Returns a canceller;
+// gives up quietly after ~10s so an abandoned mount can't poll forever.
+function whenConnected(el: HTMLElement, fn: () => void): () => void {
+  if (el.isConnected) {
+    fn();
+    return () => {};
+  }
+  const deadline = Date.now() + 10_000;
+  let frame = requestAnimationFrame(function check() {
+    if (el.isConnected) {
+      fn();
+      return;
+    }
+    if (Date.now() > deadline) return;
+    frame = requestAnimationFrame(check);
+  });
+  return () => cancelAnimationFrame(frame);
+}
 
 // Find-or-create this browser's single context canvas. Its url lives in
 // localStorage — deliberately per-device, not synced through the account — so
@@ -210,14 +434,36 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   // than in the shared document.
   const [selectedId, setSelectedId] = createSignal<string | null>(null);
 
+  // Who the canvas root's own context traffic below belongs to. Resolved
+  // structurally where possible (a document canvas sits inside a
+  // `<patchwork-view doc-url=…>`, so the walk finds it); the context canvas
+  // has no embed ancestor — docked it lives in a bare component view, parked
+  // it hangs off document.body — so it falls back to an explicit owner naming
+  // the canvas document itself (anonymous traffic throws by contract).
+  const contextOwner = (element: Element): ScopeOwner => {
+    try {
+      return requireOwner(element);
+    } catch {
+      return { docUrl: props.handle.url, toolId: "canvas" };
+    }
+  };
+
   // Promote the selected embed's document into the shared `Selection` channel
   // so decorators (the editor's mention highlight, the map's pins) can read it
   // without prop-drilling. Single writer, so the slice is just the one url.
-  const selectionHandle = useContextHandle(() => canvasEl(), Selection);
+  // Acquired on mount (store discovery needs a connected element) — created
+  // before the effect below, so it's live by the effect's first run.
+  let selectionScope: ScopeHandle<typeof Selection.empty> | undefined;
+  onMount(() => {
+    const el = canvasEl();
+    if (!el) return;
+    selectionScope = findContextStore(el).handle(Selection, contextOwner(el));
+  });
+  onCleanup(() => selectionScope?.release());
   createEffect(() => {
     const id = selectedId();
     const url = id ? doc()?.embeds[id]?.docUrl : undefined;
-    selectionHandle.change((slice) => {
+    selectionScope?.change((slice) => {
       const entries = slice as Record<string, true>;
       for (const key of Object.keys(entries)) delete entries[key];
       if (url) entries[url] = true;
@@ -227,7 +473,18 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   // Read the shared `Highlight` channel so an embed whose document is being
   // emphasized elsewhere (a hovered mention, a map pin, a context-viewer token)
   // glows. Highlight keys can be sub-document urls, so compare by document id.
-  const highlight = readContext(() => canvasEl(), Highlight);
+  const [highlight, setHighlight] = createSignal(Highlight.empty);
+  onMount(() => {
+    const el = canvasEl();
+    if (!el) return;
+    const store = findContextStore(el);
+    setHighlight(() => store.read(Highlight));
+    onCleanup(
+      store.subscribe(Highlight, (next) => setHighlight(() => next), {
+        owner: contextOwner(el),
+      }),
+    );
+  });
   const highlightedDocIds = createMemo(() => {
     const ids = new Set<string>();
     for (const url of Object.keys(highlight())) {
@@ -588,7 +845,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
           </div>
         )}
       </Show>
-      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.25</div>
+      <div style={{ position: "absolute", bottom: 0, right: 0 }}>v0.0.27</div>
     </div>
   );
 }

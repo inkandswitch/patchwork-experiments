@@ -155,6 +155,9 @@ importers:
       '@embark/context':
         specifier: workspace:*
         version: link:../../context/store
+      '@embark/pointer':
+        specifier: workspace:*
+        version: link:../pointer
       '@embark/selection':
         specifier: workspace:*
         version: link:../../context/selection
@@ -511,6 +514,28 @@ importers:
       vite-plugin-solid:
         specifier: ^2.10.0
         version: 2.11.12(solid-js@1.9.13)(vite@8.0.16(@types/node@20.19.43))
+
+  cards/pointer:
+    dependencies:
+      '@automerge/automerge-repo':
+        specifier: 2.6.0-subduction.29
+        version: 2.6.0-subduction.29
+      '@embark/context':
+        specifier: workspace:*
+        version: link:../../context/store
+      '@inkandswitch/patchwork-plugins':
+        specifier: ^0.0.11
+        version: 0.0.11(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@inkandswitch/patchwork-filesystem@0.0.8(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1))
+    devDependencies:
+      '@inkandswitch/patchwork-bootloader':
+        specifier: ^0.2.5
+        version: 0.2.7(@automerge/automerge-repo-keyhive@0.3.0-alpha.sub.1c(ws@8.21.0))(@automerge/automerge-repo@2.6.0-subduction.29)(@automerge/automerge@3.3.0-fragments.1)(@automerge/vanillajs@2.6.0-subduction.29)(solid-js@1.9.13)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^8.0.16
+        version: 8.0.16(@types/node@20.19.43)
 
   cards/route:
     dependencies:
