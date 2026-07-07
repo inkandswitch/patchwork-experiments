@@ -70,7 +70,7 @@ Which parts of the UI end up inside the boundary is a choice of the frame config
 │  │ └──────────────────────────┘   │  │  │  │ Module Loader                │  │
 │  │                                │  │  │  │ (es-module-shims source hook)│  │
 │  │ Signs "signable" commits       │  │  │  │ - all imports via RPC        │  │
-│  │ with isolation identity        │  │  │  │ - sees pkg: URLs only        │  │
+│  │ with isolation identity        │  │  │  │ - sees registry-- markers    │  │
 │  └───────────────┬────────────────┘  │  │  └──────────────────────────────┘  │
 │                  │                   │  │                                    │
 │  ┌───────────────┴───────────────┐   │  │  ┌──────────────────────────────┐  │
@@ -81,12 +81,12 @@ Which parts of the UI end up inside the boundary is a choice of the frame config
 │                                      │  │                                    │
 │  ┌────────────────────────────────┐  │  │  ┌──────────────────────────────┐  │
 │  │ Resource Bridge (RPC)          │  │  │  │ Package Registry             │  │
-│  │ - fetch-package: pkg: → real   │  │  │  │ - pre-populated (pkg: URLs)  │  │
-│  │   automerge URL, return src    │  │  │  │ - lazy-loads implementations │  │
+│  │ - fetch-package: marker → real │  │  │  │ - pre-populated (markers)    │  │
+│  │   location, return src         │  │  │  │ - lazy-loads implementations │  │
 │  │ - fetch-resource: resolve &    │  │  │  │ - push updates from host     │  │
 │  │   return host-origin assets    │  │  │  └──────────────────────────────┘  │
-│  │ - PackagesUrlMapper (pkg: ↔    │  │  │                                    │
-│  │   automerge bidirectional)     │  │  │                                    │
+│  │ - PackagesUrlMapper (marker ↔  │  │  │                                    │
+│  │   location bidirectional)      │  │  │                                    │
 │  ├────────────────────────────────┤  │  │                                    │
 │  │ Providers Bridge               │  │  │                                    │
 │  │ - host-side allowlist:         │  │  │                                    │
@@ -140,7 +140,7 @@ Each component described below should be evaluated in terms of whether it leaks 
 
 The Keyhive pieces above are **not yet implemented** (see [Keyhive integration (future)](#keyhive-integration-future)). Today the intermediary is a plain repo enforcing the allowlist/denylist in JavaScript, syncing under the user's full device identity, with no encryption in the boundary.
 
-**The in-scope guarantee still holds.** Preventing *unauthorized data access* depends only on controlling which document IDs the tool can learn — and the mechanisms that do this (the opaque-origin sandbox, the allowlist/denylist gate, the `pkg:` scheme + `containsAutomergeUrl` filter, the providers value filter, the no-auto-allowlist prompt) are all pure browser/JavaScript and need nothing from Keyhive. A tool still cannot reach documents the user didn't give it.
+**The in-scope guarantee still holds.** Preventing *unauthorized data access* depends only on controlling which document IDs the tool can learn — and the mechanisms that do this (the opaque-origin sandbox, the allowlist/denylist gate, the `registry--` marker scheme + the `classify` request allowlist, the providers value filter, the no-auto-allowlist prompt) are all pure browser/JavaScript and need nothing from Keyhive. A tool still cannot reach documents the user didn't give it.
 
 **But protection is weaker, because nothing is encrypted — an ID *is* access.** Two consequences:
 
@@ -192,7 +192,7 @@ Access is enforced via `shareConfig.access()` on the intermediary repo's network
 
 We consider all _code_ from the patchwork plugin registries to be authorized by default, but access to all plugin _documents_ to be unauthorized. In other words:
 
-- **Code is freely available.** Tool source code is loaded into the iframe via the host-mediated module loader and `pkg:` URL scheme (see below). Any plugin registered in the host's registries can be imported. This is necessary for many tools to function — they need to load their own code and the code of plugins they use inside.
+- **Code is freely available.** Tool source code is loaded into the iframe via the host-mediated module loader and `registry--` marker scheme (see below). Any plugin registered in the host's registries can be imported. This is necessary for many tools to function — they need to load their own code and the code of plugins they use inside.
 - **Documents are restricted by default.** A tool only receives documents that have been explicitly allowlisted. The tool cannot discover or access arbitrary documents just because it knows (or guesses) their URLs.
 
 This asymmetry reflects the threat model: code is published by tool authors and is the same for all users, so exposing it to other tools reveals no user data. Documents contain user data and must be individually authorized.
@@ -236,7 +236,7 @@ Keyhive adds cryptographic identity and access control to the system. Three aspe
 
 The iframe's opaque origin prevents it from making same-origin requests to the host — the browser blocks these by default. However, tools need to load JavaScript modules and static resources (CSS, images, etc.) to function. To make this possible, the isolation system introduces two proxy channels that selectively bridge the gap:
 
-1. **Module imports** (`fetch-package` RPC) — every ES module import goes through the `es-module-shims` source hook, which sends the URL to the host. The host resolves `pkg:` URLs back to real automerge paths via the `PackagesUrlMapper`, resolves bare automerge URLs to package entry points, and passes through other URLs. The source text and resolved URL are returned to the iframe.
+1. **Module imports** (`fetch-package` RPC) — every ES module import goes through the `es-module-shims` source hook, which sends the URL to the host. The host resolves `registry--` marker URLs (see below) back to their real location — an automerge path or an external URL — via the `PackagesUrlMapper`, passes platform (import-map) URLs through, and blocks everything else. The source text and resolved URL are returned to the iframe.
 
 2. **Resource fetches** (`fetch-resource` RPC) — the iframe installs a `fetch()` override that intercepts all requests to host-origin URLs and forwards them to the host via RPC. The host resolves the URL and returns the response body and content type. Non-host-origin fetches pass through to the browser's native `fetch`.
 
@@ -245,28 +245,30 @@ Additionally, host-origin `<link>` elements are intercepted **synchronously at i
 - **`rel="stylesheet"`** — a `<style>` element is substituted in the link's place and its content fetched through the proxy; the `<link>` itself never enters the DOM, so no native request is made. The original link → substituted `<style>` is tracked in a `WeakMap` (with patched `removeChild`/`Element.remove`) so a later link removal (e.g. theme deregistration) also removes the `<style>`.
 - **`rel="modulepreload"`** — flipped to `rel="modulepreload-shim"`. The browser ignores the unknown rel (no native fetch), while es-module-shims honors it and preloads the chunk through its source hook (and thus the `fetch-package` RPC). The chunk also loads via the dynamic `import()` (which es-module-shims rewrites to `importShim` in shim mode); the shim preload just warms its cache in parallel.
 
-Both substitutions route the actual fetch through the `fetch()` override → `fetch-resource` RPC, so the host-side automerge filter still applies — a stylesheet href containing a raw automerge URL is rejected like any other (it will fail to load rather than CORS-error).
+Both substitutions route the actual fetch through the `fetch()` override → `fetch-resource` RPC, so the host-side allowlist still applies — a stylesheet href that isn't a platform asset or a `registry--` marker (e.g. one carrying a raw automerge URL) is blocked like any other request (it will fail to load rather than CORS-error).
 
-**Security consideration:** These proxies re-open a channel that the opaque origin otherwise closes. Bundled non-automerge assets (host-origin JS, CSS, images, etc.) are not sensitive — they are the same for all users and do not contain user data, so serving them freely is fine. However, requests that resolve to automerge document URLs are sensitive: a tool could construct URLs that reach the service worker and load arbitrary automerge documents as source text. The host-side proxy filters these out: both `fetch-package` and `fetch-resource` reject any incoming request whose URL contains a raw AutomergeUrl (`containsAutomergeUrl`), _before_ resolution. Legitimate iframe URLs only ever use the opaque `pkg:` scheme, so a raw AutomergeUrl can only come from a tool attempting to bypass the sync allowlist. The only automerge-backed fetches that proceed are those the `PackagesUrlMapper` itself produces by translating a known `pkg:` URL — i.e. documents the isolation boundary registered in the `pkg:` registry.
+**Security consideration:** These proxies re-open a channel that the opaque origin otherwise closes. Bundled non-automerge assets (host-origin JS, CSS, images, etc.) are not sensitive — they are the same for all users and do not contain user data, so serving them freely is fine. However, requests that resolve to automerge document URLs are sensitive: a tool could construct URLs that reach the service worker and load arbitrary automerge documents as source text. The host-side proxy is an **allowlist**: both `fetch-package` and `fetch-resource` classify every incoming request _before_ resolution and serve only two kinds — `platform` (import-map runtime code, under the fixed `/packages/` and `/assets/` path prefixes) and `registry` (tool code behind an opaque `registry--` marker; see below). Everything else — a raw automerge URL, a path-traversal escape, any unsanctioned host-origin path — is blocked. The only automerge-backed fetches that proceed are those the `PackagesUrlMapper` itself produces by translating a known `registry--` marker back to its real location — i.e. packages the isolation boundary registered.
 
-### `pkg:` URL scheme
+The classifier matches prefixes on the **normalized** URL pathname (`new URL(url).pathname`, which resolves `..`/`.` segments before inspection), so a traversal like `<origin>/assets/../<encoded-automerge-id>/x` — which normalizes to a raw automerge path — is blocked rather than mistaken for a platform asset. The fixed `/packages/` and `/assets/` prefixes are safe because the service worker only treats a request as a document handoff when its whole decoded pathname parses as an absolute URL, which requires the encoded automerge URL to be the **first** path segment; anything under `/packages/`, `/assets/`, or `registry--…` has a non-scheme first segment and can never resolve to a document.
 
-Tool code inside the iframe never sees real automerge document IDs for plugin source code. Instead, plugin import URLs are rewritten to use an opaque `pkg:` scheme before being sent to the iframe. For example, a plugin's automerge URL like `automerge:3Dz.../dist/index.js` becomes `pkg:@patchwork--codemirror-base/dist/index.js`.
+### `registry--` marker URLs
 
-The `PackagesUrlMapper` maintains a bidirectional mapping between automerge URL segments and package names. When the iframe requests a `pkg:` URL via the module loader, the host converts it back to the real automerge URL, fetches the source, and returns it.
+Tool code inside the iframe never sees the real location of plugin source code — neither automerge document IDs nor external (e.g. netlify) URLs. Instead, plugin import URLs are mapped to an opaque `registry--<name>` marker before being sent to the iframe. For example, a plugin's automerge URL like `automerge:3Dz.../dist/index.js` becomes `registry--@patchwork--codemirror-base/dist/index.js`, and a statically-hosted `https://tools.example/codemirror/dist/index.js` becomes `registry--codemirror/dist/index.js`. **The location of tool code never crosses the boundary.**
+
+The `PackagesUrlMapper` maintains a bidirectional mapping between real locations and marker names. When the iframe requests a `registry--` marker URL via the module loader, the host converts it back to the real location — an automerge path (fetched via the service worker) or an external URL (fetched directly) — fetches the source, and returns it.
 
 This serves two purposes:
 
-1. **Prevents document ID leakage.** Automerge URLs are valid document identifiers — if a tool learned them, it could attempt to request those documents via `repo.find()` on the Automerge sync channel, bypassing the fetch proxy entirely. The `pkg:` scheme hides these IDs so that tools cannot learn plugin document IDs in the first place.
-2. **Provides hierarchical URLs.** Package-style URLs (`pkg:@scope--name/path`) support relative import resolution, which bare automerge URLs do not.
+1. **Prevents location leakage.** Automerge URLs are valid document identifiers — if a tool learned them, it could attempt to request those documents via `repo.find()` on the Automerge sync channel, bypassing the fetch proxy entirely. External URLs would likewise reveal where tool code lives. The marker hides both so that tools cannot learn a package's real location in the first place.
+2. **Provides hierarchical URLs.** Marker URLs (`registry--<name>/path`) support relative import resolution, which bare automerge URLs do not.
 
-Heads hashes (used for pinning to specific document versions) are preserved by encoding them as a URL-encoded fragment in the package URL (e.g., `pkg:@patchwork--folder%23headsHash`).
+The marker is a **single path segment** — the literal prefix `registry--` fused to the sanitized package name — not a URL scheme and not a `registry/<name>` two-segment path. Single-segment is required because a baked-dependency URL is percent-encoded by the runtime resolver into one path segment; a marker with no internal `/` survives that encoding as one segment, so both code-split chunk requests and baked-dependency requests present the marker as the first path segment and resolve uniformly. Heads hashes (pinning to specific document versions) are preserved as a URL-encoded suffix on the marker segment (e.g., `registry--@patchwork--folder%23headsHash`).
 
-Resolved module URLs returned to the iframe are prefixed with the host origin (e.g., `https://host/pkg:@scope--name/dist/index.js`) so that relative imports in code-split packages resolve correctly. The host-side RPC handler strips the prefix when receiving chunk requests.
+Resolved module URLs returned to the iframe are prefixed with the host origin (e.g., `https://host/registry--@scope--name/dist/index.js`) so that relative imports in code-split packages resolve correctly.
 
 ### Package registry in iframe
 
-At boot, the host pre-populates the iframe's plugin registries with metadata for all available plugins (with import URLs already rewritten to `pkg:` URLs). Plugins are registered as lazy-loading entries — their implementations are only fetched (via the module loader) when actually used. The host watches registries for new registrations and pushes updates to the iframe with mapped URLs.
+At boot, the host pre-populates the iframe's plugin registries with metadata for all available plugins (with import URLs already mapped to `registry--` marker URLs). Plugins are registered as lazy-loading entries — their implementations are only fetched (via the module loader) when actually used. The host watches registries for new registrations and pushes updates to the iframe with mapped URLs.
 
 **Why this is needed:** Tools use plugin registries to discover and load other tools (e.g., to render embedded content). Without pre-population, the iframe would need direct access to the host's registries. Lazy-loading ensures only the plugins a tool actually uses are loaded into the iframe.
 

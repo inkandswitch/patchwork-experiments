@@ -11,9 +11,9 @@
 /**
  * A plugin registry entry, stripped of non-cloneable fields (functions, loaded
  * implementations) so it can be sent to the iframe via postMessage. `importUrl`
- * has been rewritten to an opaque `pkg:` URL before transfer (see
- * PackagesUrlMapper). The index signature carries through any other
- * serializable plugin metadata.
+ * has been mapped to an opaque `registry--<name>` marker URL before transfer (see
+ * PackagesUrlMapper), so the tool code's real location never crosses the boundary.
+ * The index signature carries through any other serializable plugin metadata.
  */
 export interface RegistryEntry {
   type: string;

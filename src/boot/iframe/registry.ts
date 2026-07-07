@@ -47,15 +47,21 @@ export function createRegistry(log: IframeLog): Registry {
   let importShim: ImportShim;
   let patchworkPlugins: PatchworkPlugins;
 
-  // Register one entry as a lazy-loading plugin. importUrls are pkg: URLs
-  // (converted by the host before boot); the implementation is fetched via
-  // importShim only when the plugin is actually used.
+  // Register one entry as a lazy-loading plugin. importUrls are `registry--`
+  // marker URLs (mapped by the host before boot); the implementation is fetched
+  // via importShim only when the plugin is actually used.
   function registerEntry(entry: RegistryEntry) {
     const plugin = {
       ...entry,
       load: entry.importUrl
         ? async () => {
             const mod = await importShim(entry.importUrl!);
+            // A module that exports a `plugins` array (the common case) must
+            // contain an entry matching this registration's id+type — that entry's
+            // own load() is the implementation. If none matches, the module does
+            // not provide what this entry claims; fail loudly rather than returning
+            // the module namespace object (a non-function), which would surface far
+            // downstream as an opaque "module is not a function" mount error.
             if (Array.isArray(mod.plugins)) {
               const match = mod.plugins.find(
                 (p: any) => p.id === entry.id && p.type === entry.type
@@ -63,7 +69,16 @@ export function createRegistry(log: IframeLog): Registry {
               if (match && typeof match.load === "function") {
                 return match.load();
               }
+              const available = mod.plugins
+                .map((p: any) => `${p.type}:${p.id}`)
+                .join(", ");
+              throw new Error(
+                `plugin ${entry.type}:${entry.id} not found in module ${entry.importUrl} ` +
+                  `(exports: ${available || "none"})`
+              );
             }
+            // No `plugins` array — a plain module whose default/namespace export is
+            // the implementation.
             return mod.default || mod;
           }
         : undefined,

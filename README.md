@@ -113,8 +113,8 @@ Consumers (e.g. threepane) then reach it only by the id string
 
 The full threat model and architecture live in [`ISOLATION.md`](./ISOLATION.md)
 (vendored from patchwork-next core alongside the source). The security
-mechanisms — the sandboxed iframe, allowlist/denylist intermediary repo, `pkg:`
-scheme, providers bridge — are identical here.
+mechanisms — the sandboxed iframe, allowlist/denylist intermediary repo,
+`registry--` marker scheme, providers bridge — are identical here.
 
 > **Note:** `ISOLATION.md` has **not** been updated for the custom-element →
 > component migration. It still describes the core `<patchwork-isolation>`
