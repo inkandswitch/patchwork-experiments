@@ -366,12 +366,32 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     [changeDoc],
   );
 
+  // The editor consumes global keyboard shortcuts only while it actually holds
+  // focus, so typing elsewhere in Patchwork (e.g. comment boxes, embedded
+  // tools) is never intercepted. `getRootNode()` keeps this correct whether the
+  // tool is mounted in the light DOM or inside a shadow root.
+  const hasCanvasFocus = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return false;
+    const scope = root.getRootNode() as Document | ShadowRoot;
+    return scope.activeElement === root;
+  }, []);
+
+  useEffect(() => {
+    // Grab focus on load so shortcuts work immediately, but don't steal it from
+    // something already focused (e.g. when embedded inside another tool).
+    const active = document.activeElement;
+    if (!active || active === document.body) {
+      rootRef.current?.focus({ preventScroll: true });
+    }
+  }, []);
+
   useEffect(() => {
     const isTextInput = (target: EventTarget | null) =>
       target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTextInput(event.target)) return;
+      if (isTextInput(event.target) || !hasCanvasFocus()) return;
 
       if (event.key === '.') {
         if (event.repeat || recordKeyHeldRef.current || isRecordingRef.current) return;
@@ -407,7 +427,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [activePlayhead, commitRecording, playheadCurrentX, startRecording, stopRecording]);
+  }, [activePlayhead, commitRecording, playheadCurrentX, startRecording, stopRecording, hasCanvasFocus]);
 
   const onScrubbingChange = useCallback(
     (scrubbing: boolean) => {
@@ -600,6 +620,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           loopingPlayheadIds={loopingPlayheads}
           followPlayback={isSweeping && activePlayheadId !== null}
           onDropMedia={handleDropMedia}
+          isFocused={hasCanvasFocus}
         />
 
         <Monitor

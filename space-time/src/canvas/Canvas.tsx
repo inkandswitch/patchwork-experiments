@@ -386,6 +386,8 @@ type CanvasProps = {
   loopingPlayheadIds?: ReadonlySet<string>;
   followPlayback?: boolean;
   onDropMedia?: (payload: DroppedMedia, pageX: number, pageY: number) => void;
+  /** Whether the editor holds keyboard focus; global shortcuts are gated on it. */
+  isFocused?: () => boolean;
 };
 
 export type DroppedDocItem = {
@@ -458,6 +460,7 @@ export function Canvas({
   loopingPlayheadIds = new Set(),
   followPlayback = false,
   onDropMedia,
+  isFocused,
 }: CanvasProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -518,6 +521,8 @@ export function Canvas({
   const dKeyHeldRef = useRef(false);
   const keysHeldRef = useRef(new Set<string>());
   const pointerOnCanvasRef = useRef(false);
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
   const lastPointerClientRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const commitSplitLineRef = useRef<(drag: Extract<DragState, { kind: 'split-line' }>) => void>(
     () => {},
@@ -1576,6 +1581,10 @@ export function Canvas({
       target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 
     const onKeyDown = (event: KeyboardEvent) => {
+      // Only claim keyboard shortcuts while the editor holds focus, so keys
+      // typed elsewhere in Patchwork (comments, embedded tools) pass through.
+      const focused = isFocusedRef.current;
+      if (focused && !focused()) return;
       keysHeldRef.current.add(event.code);
       if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = true;
       if (event.key === 'w' || event.key === 'W') {
