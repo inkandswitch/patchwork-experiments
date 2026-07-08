@@ -13,10 +13,16 @@ import {
 // The document inspect mints and renders: it carries nothing but the package
 // that paints the inspected embed and, for a tool (not a component), the
 // document that embed shows. Inspect points a `<patchwork-view>` at each.
+//
+// `inspectedDocUrl` mirrors `documentUrl` (kept in sync by the inspect tool)
+// so the inspect doc duck-types as a context-viewer doc: the Context tab pins
+// the `context-viewer` tool directly at this document, and that tool reads its
+// focus from `inspectedDocUrl`.
 export type InspectDoc = {
   "@patchwork": { type: "inspect" };
   packageUrl: AutomergeUrl;
   documentUrl?: AutomergeUrl;
+  inspectedDocUrl?: AutomergeUrl;
 };
 
 // What `resolveInspectTarget` recovers from the embed being inspected.

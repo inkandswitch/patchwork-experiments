@@ -21,9 +21,7 @@
 }
 
 /* --- Toolbar ------------------------------------------------------------- */
-/* A sticky header: the target button plus either the current focus (the
-   inspected embed's token + a clear button) or a hint for the whole-context /
-   armed states. */
+/* A sticky header shown only in focused mode: the inspected document's token. */
 .embark-context__toolbar {
   position: sticky;
   top: -8px;
@@ -37,67 +35,11 @@
   border-bottom: 1px solid #f0eeec;
 }
 
-.embark-context__target {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid #e7e5e4;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #57534e;
-  cursor: pointer;
-}
-
-.embark-context__target:hover {
-  background: #faf9f8;
-  color: #1c1917;
-}
-
-.embark-context__target--armed {
-  border-color: #2563eb;
-  color: #2563eb;
-  background: #eff6ff;
-}
-
-.embark-context__hint {
-  font-size: 12px;
-  color: #a8a29e;
-}
-
-.embark-context__target--armed + .embark-context__hint {
-  color: #2563eb;
-}
-
 .embark-context__target-doc {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-}
-
-.embark-context__clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: #a8a29e;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.embark-context__clear:hover {
-  background: #f5f5f4;
-  color: #1c1917;
 }
 
 /* --- Channel sections ------------------------------------------------------ */

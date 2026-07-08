@@ -214,9 +214,6 @@ importers:
       '@embark/context':
         specifier: workspace:*
         version: link:../../context/store
-      '@embark/pointer':
-        specifier: link:../../../cards/legacy/pointer
-        version: link:../../../cards/legacy/pointer
       '@embark/selection':
         specifier: link:../../../cards/selection
         version: link:../../../cards/selection

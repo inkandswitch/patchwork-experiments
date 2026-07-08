@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@embark/context": "workspace:*",
-    "@embark/pointer": "link:../../../cards/legacy/pointer",
     "@embark/selection": "link:../../../cards/selection",
     "@automerge/automerge-repo": "2.6.0-subduction.29",
     "@inkandswitch/patchwork-plugins": "^0.0.11",

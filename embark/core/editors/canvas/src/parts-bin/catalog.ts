@@ -164,9 +164,9 @@ const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
 ];
 
 // The standard set: every card, a blank placeholder card, a map, an empty
-// markdown note, the pre-made decks, an empty deck, and the context viewer
-// (still its own tool). `repo.create` doesn't run a datatype's `init`, so each
-// factory sets the document's initial value inline.
+// markdown note, the pre-made decks, and an empty deck. `repo.create` doesn't
+// run a datatype's `init`, so each factory sets the document's initial value
+// inline.
 export const DEFAULT_BIN: BinEntry[] = [
   ...CARD_SEEDS.map(
     (seed): BinEntry => ({
@@ -222,17 +222,6 @@ export const DEFAULT_BIN: BinEntry[] = [
         title: "Deck",
         fanned: false,
         cards: [],
-      }),
-  },
-  {
-    // The context viewer: an anchor doc that, once on the canvas, shows a live,
-    // read-only view of the selected embed's slice of the shared context (see
-    // @embark/context-viewer). It stays its own tool rather than a card.
-    label: "Context Viewer",
-    toolId: "context-viewer",
-    create: (repo) =>
-      repo.create({
-        "@patchwork": { type: "context-viewer" },
       }),
   },
 ];

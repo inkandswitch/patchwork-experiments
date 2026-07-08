@@ -8,24 +8,20 @@ import {
   onCleanup,
   onMount,
   Show,
-  type Accessor,
 } from "solid-js";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import {
   belongsToDoc,
+  debugStoreId,
   excludeOwner,
   findContextStore,
-  readContext,
   requireOwner,
-  splitDocUrl,
   type Channel,
   type ContextStore,
   type ContextView,
   type ScopeOwner,
 } from "@embark/context";
-import { Pointer, type PointerState } from "@embark/pointer/channels";
-import { Selection } from "@embark/selection/channels";
 import {
   EmbedToken,
   useHighlight,
@@ -36,9 +32,10 @@ import { ChannelView } from "./ChannelView";
 import "./context-viewer.css";
 
 // Tool entry point: a live view of the canvas's shared context. By default it
-// shows the whole context (every channel merged across the canvas); a target
-// button lets you inspect one embed, filtering the view to what that embed
-// contributes and uses. The inspected embed is persisted on the tool's own doc.
+// shows the whole context (every channel merged across the canvas); with
+// `inspectedDocUrl` set on its doc (by the inspect tool, whose Context tab
+// pins this viewer — there is no in-viewer picking), the view narrows to what
+// that document contributes and uses.
 export const ContextViewerTool: ToolRender = (handle, element) => {
   return render(
     () => (
@@ -81,16 +78,14 @@ function ContextViewer(props: {
   onMount(() => {
     const raw = findContextStore(props.element);
     const self = requireOwner(props.element);
+    console.log(
+      `[context-debug] context viewer resolved ${debugStoreId(raw)}, channels currently known:`,
+      raw.channels().map((c) => c.name),
+    );
     setCtx({ view: excludeOwner(raw, self), raw, self });
   });
 
   const [doc] = useDocument<ContextViewerDoc>(() => props.handle.url);
-
-  // Follow the shared pointer (published by the Pointer card, when one is on
-  // the canvas): while target mode is armed, hovering an embed previews it
-  // below. Rests at the empty value when no pointer card is active, so the
-  // viewer behaves exactly as before.
-  const pointer = readContext(props.element, Pointer);
 
   return (
     <div class="embark-context">
@@ -98,9 +93,7 @@ function ContextViewer(props: {
         {(resolved) => (
           <ContextBody
             ctx={resolved()}
-            handle={props.handle}
             inspectedDocUrl={doc()?.inspectedDocUrl}
-            pointer={pointer}
           />
         )}
       </Show>
@@ -110,129 +103,34 @@ function ContextViewer(props: {
 
 function ContextBody(props: {
   ctx: InspectorContext;
-  handle: DocHandle<ContextViewerDoc>;
   inspectedDocUrl: AutomergeUrl | undefined;
-  pointer: Accessor<PointerState>;
 }) {
-  const [armed, setArmed] = createSignal(false);
   // The hover->Highlight interaction runs against the raw store: its writes
   // are attributed to the viewer (and therefore hidden from the viewer's own
   // channel rows by the lens), but its reads must see them so hovering one
   // token still lights up its siblings inside the viewer.
   const highlight = useHighlight(props.ctx.raw, props.ctx.self);
 
-  // While armed, capture the next embed selected on the canvas as the inspect
-  // target. The store never emits an initial value on subscribe, so this fires
-  // on the *next* selection — i.e. the click after arming. Clicking the target
-  // button may select the viewer card itself first, so ignore our own doc.
-  const ownDocId = splitDocUrl(props.handle.url).docId;
-  createEffect(() => {
-    if (!armed()) return;
-    onCleanup(
-      props.ctx.view.subscribe(
-        Selection,
-        (selection) => {
-          const picked = (Object.keys(selection) as AutomergeUrl[]).find(
-            (url) => splitDocUrl(url).docId !== ownDocId,
-          );
-          if (!picked) return;
-          props.handle.change((d) => {
-            d.inspectedDocUrl = picked;
-          });
-          setArmed(false);
-        },
-        { owner: props.ctx.self },
-      ),
-    );
-  });
-
-  // Hover preview via the Pointer card, only while target mode is armed:
-  // the shared pointer reporting an embed under it focuses the viewer on that
-  // embed — falling back to the committed target (or the whole context) the
-  // moment the pointer leaves. The viewer's own doc is ignored so pointing at
-  // the inspector doesn't inspect the inspector. Disarmed, the pointer is
-  // ignored entirely and the viewer sits on its committed target.
-  const preview = createMemo(() => {
-    if (!armed()) return undefined;
-    const url = props.pointer().docUrl;
-    if (!url || splitDocUrl(url).docId === ownDocId) return undefined;
-    return url;
-  });
-  const focus = () => preview() ?? props.inspectedDocUrl;
-
-  // The viewer highlights the previewed embed itself (the Pointer card only
-  // reports — it doesn't interpret). Because `preview` is armed-gated, the
-  // outline appears only in target mode and clears on disarm or when the
-  // pointer leaves the embed.
-  createEffect(() => {
-    const url = preview();
-    if (url) highlight.hover([url]);
-    else highlight.clear();
-  });
-
-  // Press-to-commit: while armed, the rising edge of `pressed` over an embed
-  // adopts it as the persisted inspect target and disarms — the same
-  // arm-pick-disarm cycle as the Selection path above, driven by the Pointer
-  // card instead of a click.
-  let wasPressed = false;
-  createEffect(() => {
-    const pressed = props.pointer().pressed === true;
-    const rising = pressed && !wasPressed;
-    wasPressed = pressed;
-    const url = preview();
-    if (!rising || !url) return;
-    if (url !== props.inspectedDocUrl) {
-      props.handle.change((d) => {
-        d.inspectedDocUrl = url;
-      });
-    }
-    setArmed(false);
-  });
-
-  const clear = () =>
-    props.handle.change((d) => {
-      delete d.inspectedDocUrl;
-    });
-
   return (
     <>
-      <div class="embark-context__toolbar">
-        <button
-          type="button"
-          class="embark-context__target"
-          classList={{ "embark-context__target--armed": armed() }}
-          title={armed() ? "Cancel" : "Inspect an embed"}
-          onClick={() => setArmed((a) => !a)}
-        >
-          <TargetIcon />
-        </button>
-        <Show
-          when={focus()}
-          fallback={
-            <span class="embark-context__hint">
-              {armed() ? "Click an embed to inspect" : "Whole context"}
-            </span>
-          }
-        >
-          {(url) => (
+      {/* Focused mode gets a header naming the inspected document (hovering
+          the token highlights it on the canvas); whole-context mode has no
+          toolbar at all. */}
+      <Show when={props.inspectedDocUrl}>
+        {(url) => (
+          <div class="embark-context__toolbar">
             <div class="embark-context__target-doc">
               <EmbedToken url={url()} highlight={highlight} />
-              <Show when={props.inspectedDocUrl}>
-                <button
-                  type="button"
-                  class="embark-context__clear"
-                  title="Show whole context"
-                  onClick={clear}
-                >
-                  ×
-                </button>
-              </Show>
             </div>
-          )}
-        </Show>
-      </div>
+          </div>
+        )}
+      </Show>
 
-      <AllContextView ctx={props.ctx} highlight={highlight} focus={focus()} />
+      <AllContextView
+        ctx={props.ctx}
+        highlight={highlight}
+        focus={props.inspectedDocUrl}
+      />
     </>
   );
 }
@@ -336,23 +234,3 @@ function useChannelWrites(
   return tick;
 }
 
-// A crosshair, echoing the "target/inspect" affordance.
-function TargetIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.5"
-      aria-hidden="true"
-    >
-      <circle cx="8" cy="8" r="4.5" />
-      <line x1="8" y1="0.5" x2="8" y2="3" />
-      <line x1="8" y1="13" x2="8" y2="15.5" />
-      <line x1="0.5" y1="8" x2="3" y2="8" />
-      <line x1="13" y1="8" x2="15.5" y2="8" />
-    </svg>
-  );
-}

@@ -32,12 +32,20 @@ const RAW_TOOL_ID = "raw";
 // markdown face. Pinned by id since it declares no datatypes.
 const SPEC_TOOL_ID = "inspect-spec";
 
-type Tab = "doc" | "spec" | "source";
+// The shared-context viewer (@embark/context-viewer). The Context tab pins it
+// at the inspect doc itself, which duck-types as a context-viewer doc: the
+// viewer reads its focus from `inspectedDocUrl`, which this tool mirrors from
+// `documentUrl`. Pinning by id skips the datatype check (same as SPEC_TOOL_ID).
+const CONTEXT_TOOL_ID = "context-viewer";
+
+type Tab = "doc" | "context" | "spec" | "source";
 
 // Tool entry point: a tabbed inspector over the embed its backing doc (minted at
 // inspect time) points to. The tabs adapt to what the embed actually has:
 //   - spec: the package's `spec.md`, shown with the markdown spec editor
 //   - doc: the inspected document (only for tool embeds), shown with the raw tool
+//   - context: the shared context filtered to the inspected document, shown
+//     with the context viewer in its focused mode
 //   - source: the package folder, shown as a file browser
 // A tab bar only appears when there's more than one; a component with no spec is
 // just its source.
@@ -73,13 +81,26 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
     return asDocUrl(dir["spec.md"]);
   });
 
+  // Keep `inspectedDocUrl` mirroring `documentUrl` so the Context tab's pinned
+  // context viewer (which reads its focus from `inspectedDocUrl`) follows the
+  // inspected document. Done here rather than at mint time so inspect docs
+  // minted before the field existed self-heal.
+  createEffect(() => {
+    const url = documentUrl();
+    if (url && doc()?.inspectedDocUrl !== url) {
+      props.handle.change((d) => {
+        d.inspectedDocUrl = url;
+      });
+    }
+  });
+
   // Only the tabs that have something to show. Order is the open priority:
-  // spec first (it's the thing to read and edit), then the document, then the
-  // always-present source.
+  // spec first (it's the thing to read and edit), then the document, its
+  // context, then the always-present source.
   const availableTabs = createMemo<Tab[]>(() => {
     const tabs: Tab[] = [];
     if (specUrl()) tabs.push("spec");
-    if (documentUrl()) tabs.push("doc");
+    if (documentUrl()) tabs.push("doc", "context");
     tabs.push("source");
     return tabs;
   });
@@ -140,6 +161,17 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
                 </Show>
               </Match>
 
+              <Match when={tab() === "context"}>
+                {/* The context viewer, pointed at this very inspect doc (which
+                    carries `inspectedDocUrl`), renders the shared context
+                    filtered to the inspected document. */}
+                <patchwork-view
+                  class="embark-inspect__view"
+                  doc-url={props.handle.url}
+                  tool-id={CONTEXT_TOOL_ID}
+                />
+              </Match>
+
               <Match when={tab() === "spec"}>
                 <Show
                   when={specUrl()}
@@ -178,6 +210,7 @@ function Inspect(props: { handle: DocHandle<InspectDoc> }) {
 
 const TAB_LABELS: Record<Tab, string> = {
   doc: "Doc",
+  context: "Context",
   spec: "Spec",
   source: "Source",
 };
