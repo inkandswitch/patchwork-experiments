@@ -1,0 +1,309 @@
+/* The Cards sidebar: tab rail | active stack | divider (chevron) | parts bin.
+   The root fills whatever surface it's docked into (the frame's context
+   sidebar, or the hidden body parking spot). */
+.embark-cards {
+  --cards-bin-width: 280px;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #fafaf9;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  overflow: hidden;
+}
+
+/* The vertical tab rail on the outer left edge, file-folder style: labels
+   read top-to-bottom, the active tab joins the pane beside it. */
+.embark-cards__rail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 14px 0 0;
+  background: #f0efee;
+  border-right: 1px solid #e0deda;
+}
+
+.embark-cards__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 6px;
+  border: none;
+  border-right: 2px solid transparent;
+  background: transparent;
+  color: #78716c;
+  cursor: pointer;
+  user-select: none;
+}
+
+.embark-cards__tab:hover {
+  color: #44403c;
+}
+
+.embark-cards__tab--active {
+  background: #fafaf9;
+  border-right-color: #6366f1;
+  color: #1c1917;
+}
+
+.embark-cards__tab-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* The middle column: both panes stay mounted, only the active one shows. */
+.embark-cards__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.embark-cards__pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  min-height: 0;
+}
+
+.embark-cards__pane--active {
+  display: block;
+}
+
+/* Drop affordance while a document hovers a stack pane. */
+.embark-cards__pane--drag-over::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  pointer-events: none;
+  border: 2px dashed #6366f1;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.embark-cards__hint {
+  padding: 24px 16px;
+  color: #a8a29e;
+  font-size: 13px;
+  text-align: center;
+  user-select: none;
+}
+
+/* The stack list: a flex column whose visual order is driven by each row's
+   `order` style (set from the entry's index in the document array), so
+   reorders never move DOM nodes — and never remount the live views. */
+.embark-cards__list {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+}
+
+.embark-cards__row {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.embark-cards__row--dragging {
+  opacity: 0.75;
+}
+
+/* Row header: grip, title, remove — the grip is the reorder handle. */
+.embark-cards__row-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.embark-cards__row-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: #b6b2ad;
+  cursor: grab;
+  touch-action: none;
+}
+
+.embark-cards__row-grip:active {
+  cursor: grabbing;
+}
+
+.embark-cards__row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: #44403c;
+  user-select: none;
+}
+
+.embark-cards__row-delete {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8a29e;
+  cursor: pointer;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.embark-cards__row:hover .embark-cards__row-delete,
+.embark-cards__row-delete:focus-visible {
+  opacity: 1;
+}
+
+.embark-cards__row-delete:hover {
+  background: #e7e5e4;
+  color: #44403c;
+}
+
+/* The live view. Framed rows get canvas-like chrome; frameless tools (cards,
+   decks) bring their own. Auto-size rows shrink-wrap the content, everything
+   else uses the fixed height set inline. */
+.embark-cards__row-body {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.embark-cards__row-body--framed {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.embark-cards__row-body--autosize {
+  overflow: visible;
+}
+
+.embark-cards__row-body patchwork-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.embark-cards__row-body--autosize patchwork-view {
+  height: auto;
+}
+
+/* The divider between the stacks and the bin, carrying the collapse toggle. */
+.embark-cards__divider {
+  flex: 0 0 auto;
+  position: relative;
+  width: 1px;
+  background: #e0deda;
+}
+
+.embark-cards__bin-toggle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid #d6d3d1;
+  border-radius: 6px;
+  background: #f5f5f4;
+  color: #78716c;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.embark-cards__bin-toggle:hover {
+  background: #eeedec;
+  color: #44403c;
+}
+
+.embark-cards__chevron {
+  transition: transform 200ms ease;
+}
+
+/* Points left ("pull the bin out") while collapsed, right while open. */
+.embark-cards__chevron--open {
+  transform: rotate(180deg);
+}
+
+/* The parts bin column: fixed width while open, collapsed to nothing (the
+   divider chevron stays reachable). Kept mounted either way so the inert
+   previews hold their state. */
+.embark-cards__bin {
+  flex: 0 0 0px;
+  width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #f5f5f4;
+  transition: flex-basis 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.embark-cards--bin-open .embark-cards__bin {
+  flex-basis: var(--cards-bin-width);
+  width: auto;
+}
+
+.embark-cards__bin--drag-over {
+  outline: 2px dashed #6366f1;
+  outline-offset: -2px;
+}
+
+.embark-cards__bin-title {
+  flex: 0 0 auto;
+  padding: 12px 14px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #57534e;
+  user-select: none;
+}
+
+/* The shared bin list brings its own padding/background (parts-bin.css);
+   let it fill and scroll within the column. */
+.embark-cards__bin .embark-parts-bin__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: transparent;
+}
+
+/* The <patchwork-context> boundary is display:contents, so make the bin
+   column itself the flex context for the list. */
+.embark-cards__bin patchwork-context {
+  display: contents;
+}

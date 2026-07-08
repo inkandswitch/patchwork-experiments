@@ -11,7 +11,6 @@
 // frameless embed.
 export const FRAMELESS_TOOLS = new Set<string>([
   "parts-bin",
-  "context-canvas",
   "card",
   "deck",
 ]);

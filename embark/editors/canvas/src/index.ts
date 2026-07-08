@@ -25,51 +25,52 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
-    // The context sidebar entry. The frame's context sidebar renders every
+    // The Cards sidebar entry. The frame's context sidebar renders every
     // `patchwork:component` tagged `context-tool` (like drafts and comments)
-    // as a bare component with no document; this one docks a single
-    // per-browser context canvas whose url lives in localStorage (see
-    // ContextCanvasComponent). The canvas itself is shared with the toolbar
-    // keeper below through a lease, so it keeps running while the sidebar is
+    // as a bare component with no document; this one docks the always-on
+    // Cards host: the Global / Current Doc card stacks plus the parts bin
+    // (see CardsSidebarComponent). The host is shared with the toolbar keeper
+    // below through a lease, so the cards keep running while the sidebar is
     // closed as long as the keeper holds it.
     type: "patchwork:component",
-    id: "context-canvas",
+    id: "cards",
     tags: ["context-tool"],
-    name: "Context",
-    icon: "Globe",
+    name: "Cards",
+    icon: "Layers",
     async load() {
-      const { ContextCanvasComponent } = await import("./canvas");
-      return ContextCanvasComponent;
+      const { CardsSidebarComponent } = await import("./card-stack/host");
+      return CardsSidebarComponent;
     },
   },
   {
     // The always-on keeper: add it to the frame's toolbar lane (via the frame
-    // configurator) and it holds a lease on the context canvas host, keeping
-    // the cards running while the sidebar is closed. Renders nothing and
-    // ignores the doc it's pointed at.
+    // configurator) and it holds a lease on the Cards host, keeping the cards
+    // running while the sidebar is closed. Renders nothing and ignores the
+    // doc it's pointed at.
     type: "patchwork:tool",
-    id: "context-canvas-keeper",
+    id: "cards-keeper",
     tags: ["titlebar-tool"],
-    name: "Context canvas",
-    icon: "Globe",
+    name: "Cards",
+    icon: "Layers",
     supportedDatatypes: "*",
     unlisted: true,
     async load() {
-      const { ContextCanvasKeeperTool } = await import("./canvas");
-      return ContextCanvasKeeperTool;
+      const { CardsKeeperTool } = await import("./card-stack/host");
+      return CardsKeeperTool;
     },
   },
   {
     type: "patchwork:datatype",
-    id: "context-canvas",
-    name: "Context",
-    icon: "Globe",
-    // Created programmatically by the context tool, never from the "new document"
-    // menu, so keep it out of the datatype picker.
+    id: "card-stack",
+    name: "Card Stack",
+    icon: "Layers",
+    // Created programmatically by the Cards sidebar (the global singleton and
+    // the per-document stacks), never from the "new document" menu, so keep
+    // it out of the datatype picker.
     unlisted: true,
     async load() {
-      const { ContextCanvasDatatype } = await import("./datatype");
-      return ContextCanvasDatatype;
+      const { CardStackDatatype } = await import("./card-stack/datatype");
+      return CardStackDatatype;
     },
   },
   ...partsBinPlugins,
