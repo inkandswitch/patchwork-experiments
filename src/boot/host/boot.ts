@@ -42,7 +42,9 @@ import {
   handleAccessRequest,
   requestBridgedUrlAccess,
   getDenylist,
+  allowlistUrlUnlessSensitive,
   startHostNavigationBridge,
+  startHostDragDropBridge,
   startHostProvidersBridge,
   resolveBridgedProviders,
   makeBridgedValueFilter,
@@ -167,6 +169,16 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
       startResourceBridge({ port: hostRpcPort, mapper }),
       startHostNavigationBridge(hostRpcPort, host, (url) =>
         allowlist.hasUrl(url)
+      ),
+      // Drag-and-drop INTO the iframe (host → iframe). Unlike navigation, this
+      // discloses document URLs to untrusted tool code, so each dragged URL is
+      // gated: denylist-checked, then allowlisted (silently — the drag is the
+      // user's authorization). Denylisted URLs are withheld. The iframe element
+      // is fetched lazily; it exists by the time any drop can occur.
+      startHostDragDropBridge(
+        hostRpcPort,
+        () => iframe,
+        (url) => allowlistUrlUnlessSensitive(repo, url, allowlist, denylist)
       ),
       startHostProvidersBridge(
         hostRpcPort,

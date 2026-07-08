@@ -23,9 +23,11 @@ export {
   buildAllowlist,
   handleAccessRequest,
   requestBridgedUrlAccess,
+  allowlistUrlUnlessSensitive,
   getDenylist,
 } from "./access-control.js";
 export { startHostNavigationBridge } from "./navigation-bridge.js";
+export { startHostDragDropBridge } from "./drag-drop-bridge.js";
 export {
   startHostProvidersBridge,
   resolveBridgedProviders,

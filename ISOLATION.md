@@ -313,6 +313,25 @@ DOM events do not cross iframe boundaries, so provider subscriptions (`patchwork
 
 **Value filter:** Before relaying values to the iframe, the bridge checks them for automerge URLs. For `patchwork:selected-doc`, non-allowlisted URLs are silently dropped (avoids spurious prompts during navigation when the iframe is about to be torn down and recreated). For other types, unknown URLs trigger a refresh of the allowlist and a user prompt via `window.confirm()` if still unknown.
 
+### Drag-and-drop bridge
+
+Users drag documents out of the sidebar and drop them into an open document (e.g. a markdown file) to embed a reference. When the target document runs inside the isolation boundary, native drag-and-drop can't deliver the drop: the iframe is cross-origin (opaque origin), so when a host-initiated drag moves over it the browser routes the drag events *into the iframe's document* but fires `drop` with an **empty** `DataTransfer` — the custom patchwork drag types are blocked cross-origin (Chromium #251718, FilePond #218). The tool's own drop handler inside the iframe therefore never sees the payload, and the host's listeners on the `<iframe>` element don't fire over the content region either.
+
+The drag-and-drop bridge relays the drop across the boundary, analogous to the navigation and providers bridges — but in the **host → iframe** direction, which changes the security question. Navigation is a tool *asking* the host to open a document it already knows; a drop is the host *disclosing* document URLs into untrusted tool code. Since **a key invariant is controlling which automerge URLs the isolated context can learn**, disclosure here is deliberately scoped.
+
+**Mechanism (host-owned overlay).** While a patchwork document drag is active over the host page, the host raises a transparent overlay element on top of the iframe. Because the overlay is plain host DOM, the host receives `dragover`/`drop` with the full (same-origin) `DataTransfer`. The overlay exists **only** while a drag is in progress (raised on the host document's `dragenter`, torn down on drop or when the drag leaves), so it never interferes with normal pointer input. The host does not depend on the drag source signalling it — any patchwork document drag entering the host document raises the overlay, keeping the platform decoupled from the sidebar.
+
+On drop, the host parses the dragged documents, gates them, and posts only the surviving set into the iframe over the RPC port (`{ type: "drop", formats, x, y }`, with iframe-local coordinates). Inside the iframe, the drop consumer reconstructs a `DataTransfer` and re-dispatches a synthetic `dragover`+`drop` at the drop point via `elementFromPoint`, so the tool's **unmodified** drop handler consumes it. This is tool-agnostic: the bridge forwards the standard patchwork drag MIME convention, not anything specific to one tool.
+
+**Disclosure control (why this is safe):**
+
+- **Only the patchwork document-drag MIME types are read** (`text/x-patchwork-dnd`, `text/x-patchwork-urls`, `text/uri-list`, `text/plain`); arbitrary drag data is never forwarded.
+- **Every dragged URL is gated before it crosses**, via the shared `allowlistUrlUnlessSensitive` (the same denylist-then-allowlist step used by the content scan). A URL that resolves to a sensitive document (account doc, module settings, tool source) is **denylisted and withheld** — it never reaches the iframe, even as text. The forwarded payload is *rebuilt from the surviving set*, not passed through, so a withheld URL leaves no residue.
+- **Surviving URLs are allowlisted silently, without a prompt.** The drag is the user's own deliberate gesture directed at this specific tool — the same authorization signal as opening a document — so the referenced docs are made syncable and the embed renders without a redundant access prompt.
+- **Always a copy, never a move.** The host-side move-vs-link identity check (`isSameDragOriginView`) is reference equality within one realm and cannot span the boundary; a cross-realm drop is inherently cross-view, which is correctly an add-link. Embedding a reference is the right semantic anyway.
+
+**Out of scope (v1):** OS file drops (Finder → an isolated document). Files *can* cross into the iframe, but importing one means creating a new document in the iframe repo and allowlisting it — a separate path from disclosing existing document URLs. The existing in-iframe file-import handler is unaffected for the non-isolated case; a bridged OS-file path is a straightforward follow-up.
+
 ### Unsafe modal
 
 System tools (account picker, frame configurator, module settings manager) need full access to the host repo and sensitive documents (account doc, module settings) that are denylisted from the iframe. These tools open in a host-side lightbox modal via the `patchwork-unsafe-modal` component, which intercepts `patchwork:open-unsafe-modal` events bubbling up from descendants.

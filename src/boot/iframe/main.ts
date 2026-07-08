@@ -34,6 +34,7 @@ import type {
   createRootComponentData,
   RootComponentData,
 } from "./root-component-data.js";
+import type { createDragDrop, DragDrop } from "./drag-drop.js";
 
 // ---------------------------------------------------------------------------
 // Type declarations for runtime globals available inside the iframe.
@@ -84,6 +85,7 @@ interface BootDeps {
   workerBootstrapSource: string;
   createRegistry: typeof createRegistry;
   createRootComponentData: typeof createRootComponentData;
+  createDragDrop: typeof createDragDrop;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +104,7 @@ export async function boot(deps: BootDeps) {
     workerBootstrapSource,
     createRegistry,
     createRootComponentData,
+    createDragDrop,
   } = deps;
   // Minimal debug-compatible logger. The real `debug` package isn't available
   // until modules load, but we need logging during bootstrap.
@@ -151,6 +154,7 @@ export async function boot(deps: BootDeps) {
   let providers: ProvidersBridge;
   let registry: Registry;
   let rootComponentData: RootComponentData;
+  let dragDrop: DragDrop;
 
   // Route an inbound RPC message to whichever consumer owns it.
   function handleRpcMessage(event: MessageEvent) {
@@ -158,6 +162,7 @@ export async function boot(deps: BootDeps) {
     if (providers.handle(event)) return;
     if (registry.handle(event)) return;
     if (rootComponentData.handle(event)) return;
+    if (dragDrop.handle(event)) return;
   }
 
   // 3. Wait for the init ("boot") message from the host.
@@ -179,6 +184,7 @@ export async function boot(deps: BootDeps) {
   providers = createProvidersBridge(rpcPort, log);
   registry = createRegistry(log);
   rootComponentData = createRootComponentData(log);
+  dragDrop = createDragDrop(log);
   rpcPort.addEventListener("message", handleRpcMessage);
   rpcPort.start();
 

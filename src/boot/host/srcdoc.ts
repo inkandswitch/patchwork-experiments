@@ -17,6 +17,7 @@ import { installWorkerShim } from "../iframe/worker-shim.js";
 import { workerBootstrap } from "../iframe/worker-bootstrap.js";
 import { createRegistry } from "../iframe/registry.js";
 import { createRootComponentData } from "../iframe/root-component-data.js";
+import { createDragDrop } from "../iframe/drag-drop.js";
 
 /**
  * The host's current resolved appearance, used to paint the iframe's first
@@ -112,6 +113,7 @@ export function generateIframeSrcdoc(appearance?: IframeAppearance): string {
       workerBootstrapSource: ${JSON.stringify(workerBootstrap.toString())},
       createRegistry: ${createRegistry.toString()},
       createRootComponentData: ${createRootComponentData.toString()},
+      createDragDrop: ${createDragDrop.toString()},
     });
   </script>
 </body>
