@@ -12,7 +12,10 @@ import {
   addAudioSource,
   DEFAULT_IMAGE_DURATION,
   newClip,
+  newId,
 } from './helpers';
+import { createMediaFile, sourceFromFileDoc, type CreatedMediaFile } from './files/create-media-file';
+import type { DroppedMedia } from './canvas/Canvas';
 import { addClipToDoc } from './canvas/clips';
 import { deleteClip } from './canvas/clips';
 import { deleteScribble } from './canvas/scribbles';
@@ -527,6 +530,64 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     setAdding(false);
   };
 
+  const addMediaSource = useCallback(
+    async (media: CreatedMediaFile, pageX: number, pageY: number) => {
+      const sourceId = newId();
+      const sourceDef = {
+        type: media.type,
+        url: media.url,
+        name: media.name,
+        mimeType: media.mimeType,
+      };
+      changeDoc((d) => {
+        d.sources[sourceId] = { ...sourceDef };
+      });
+
+      let duration: number | null = DEFAULT_IMAGE_DURATION;
+      if (media.type === 'video' || media.type === 'audio') {
+        try {
+          const loaded = await loaderRef.current.load(sourceDef, sourceId);
+          if ('duration' in loaded && typeof loaded.duration === 'number') {
+            duration = loaded.duration;
+          }
+        } catch (loadError) {
+          console.warn('[space-time] dropped media preload failed', loadError);
+        }
+      }
+
+      addClipToDoc(changeDoc, sourceId, pageX, pageY - CLIP_HEIGHT / 2, duration);
+    },
+    [changeDoc],
+  );
+
+  const handleDropMedia = useCallback(
+    async (payload: DroppedMedia, pageX: number, pageY: number) => {
+      let offset = 0;
+      const place = async (media: CreatedMediaFile | null) => {
+        if (!media) return;
+        await addMediaSource(media, pageX + offset, pageY + offset);
+        offset += 20;
+      };
+
+      for (const file of payload.files) {
+        try {
+          await place(await createMediaFile(file));
+        } catch (error) {
+          console.error('[space-time] failed to add dropped file', error);
+        }
+      }
+
+      for (const url of payload.docUrls) {
+        try {
+          await place(await sourceFromFileDoc(url));
+        } catch (error) {
+          console.error('[space-time] failed to add dropped document', error);
+        }
+      }
+    },
+    [addMediaSource],
+  );
+
   return (
     <div
       ref={rootRef}
@@ -589,6 +650,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           recordingPreview={recordingPreview}
           loopingPlayheadIds={loopingPlayheads}
           followPlayback={isSweeping && activePlayheadId !== null}
+          onDropMedia={handleDropMedia}
         />
 
         <Monitor

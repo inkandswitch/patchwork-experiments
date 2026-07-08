@@ -41,6 +41,8 @@ import {
   computeCanvasLayout,
   hitTestCanvas,
   pointInPlayheadPath,
+  pointInPolygon,
+  pointInRect,
   segmentCrossesClip,
   type ClipDragPreview,
   type PlayheadMovePreview,
@@ -350,6 +352,7 @@ const KEYBOARD_PLAYHEAD_MOVE_POINTER_ID = -2;
 const KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID = -3;
 const KEYBOARD_CLIP_DUPLICATE_POINTER_ID = -4;
 const KEYBOARD_SCRIBBLE_POINTER_ID = -5;
+const KEYBOARD_CLIP_MOVE_POINTER_ID = -6;
 
 function isDuplicateKey(event: KeyboardEvent): boolean {
   return event.code === 'KeyD' || event.key === 'd' || event.key === 'D';
@@ -381,7 +384,27 @@ type CanvasProps = {
   recordingPreview?: RecordingPreview | null;
   loopingPlayheadIds?: ReadonlySet<string>;
   followPlayback?: boolean;
+  onDropMedia?: (payload: DroppedMedia, pageX: number, pageY: number) => void;
 };
+
+export type DroppedMedia = {
+  files: File[];
+  docUrls: string[];
+};
+
+const PATCHWORK_URLS_MIME = 'text/x-patchwork-urls';
+
+/** Extract automerge URLs from a Patchwork sidebar drag payload. */
+function parsePatchworkUrls(dt: DataTransfer): string[] {
+  const raw = dt.getData(PATCHWORK_URLS_MIME);
+  if (!raw) return [];
+  try {
+    const urls = JSON.parse(raw);
+    return Array.isArray(urls) ? urls.filter((u): u is string => typeof u === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 export function Canvas({
   docUrl,
@@ -405,6 +428,7 @@ export function Canvas({
   recordingPreview = null,
   loopingPlayheadIds = new Set(),
   followPlayback = false,
+  onDropMedia,
 }: CanvasProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -451,6 +475,7 @@ export function Canvas({
   const [editingPostItId, setEditingPostItId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
   const [postItEditingDraft, setPostItEditingDraft] = useState('');
+  const [isFileDropTarget, setIsFileDropTarget] = useState(false);
   const [, bump] = useState(0);
   const editingClipIdRef = useRef<string | null>(null);
   const editingPostItIdRef = useRef<string | null>(null);
@@ -476,6 +501,7 @@ export function Canvas({
   const cancelPlayheadMoveRef = useRef<() => void>(() => {});
   const commitScribbleMoveDragRef = useRef<() => void>(() => {});
   const commitPostItMoveDragRef = useRef<() => void>(() => {});
+  const commitClipMoveDragRef = useRef<() => void>(() => {});
   const beginDuplicateAtRef = useRef<(x: number, y: number) => void>(() => {});
   const commitPlayheadDuplicateRef = useRef<() => void>(() => {});
   const cancelPlayheadDuplicateRef = useRef<() => void>(() => {});
@@ -1195,27 +1221,107 @@ export function Canvas({
     schedulePaint();
   };
 
+  const beginClipMove = (x: number, y: number, clipId: string) => {
+    if (dragRef.current) return;
+    const clip = findClip(doc, clipId);
+    if (!clip) return;
+
+    onSelectedClipChange(clipId);
+    onSelectedScribbleChange(null);
+    onSelectedPostItChange(null);
+    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+    dragRef.current = {
+      kind: 'move',
+      clipId,
+      pointerId: KEYBOARD_CLIP_MOVE_POINTER_ID,
+      startPageX: x,
+      startPageY: y,
+      originalX: clip.x,
+      originalY: clip.y,
+      originalDuration: playDuration,
+    };
+    clipDragPreviewRef.current = {
+      clipId,
+      x: clip.x,
+      y: clip.y,
+      duration: playDuration,
+      label: clipDisplayName(doc, clip),
+    };
+    scheduleClipPreview(clipDragPreviewRef.current);
+    schedulePaint();
+  };
+
+  const commitClipMoveDrag = () => {
+    const preview = clipDragPreviewRef.current;
+    const drag = dragRef.current;
+    if (drag?.kind !== 'move' || !preview) {
+      clipDragPreviewRef.current = null;
+      if (drag?.kind === 'move') dragRef.current = null;
+      clearClipPreview();
+      schedulePaint();
+      return;
+    }
+    clearClipPreview();
+    changeDoc((d) => {
+      commitClipMove(d, drag.clipId, preview.x, preview.y);
+    });
+    onSelectedClipChange(drag.clipId);
+    clipDragPreviewRef.current = null;
+    dragRef.current = null;
+    schedulePaint();
+  };
+
+  /** Topmost clip whose rect (incl. handles) contains the point, or null. */
+  const clipAtPoint = (
+    layout: NonNullable<ReturnType<typeof buildLayout>>,
+    x: number,
+    y: number,
+  ) => {
+    for (const clip of [...layout.clips].reverse()) {
+      if (pointInRect(x, y, { x: clip.x, y: clip.y, width: clip.width, height: clip.height })) {
+        return clip;
+      }
+    }
+    return null;
+  };
+
   const beginMoveAt = (x: number, y: number) => {
     if (dragRef.current) return;
     const layout = layoutRef.current ?? buildLayout();
     if (!layout) return;
     layoutRef.current = layout;
 
-    const target = hitTestCanvas(layout, x, y);
-    if (target.kind === 'scribble') {
-      beginScribbleMove(x, y, target.scribbleId);
+    // Post-its sit on top of clips visually, so they win under the pointer.
+    for (const postIt of [...layout.postIts].reverse()) {
+      if (pointInRect(x, y, { x: postIt.x, y: postIt.y, width: postIt.width, height: postIt.height })) {
+        beginPostItMove(x, y, postIt.postItId);
+        return;
+      }
+    }
+
+    // A clip under the pointer moves on its own, even inside a playhead band.
+    // (This is what lets you grab short clips without hitting the handles.)
+    const clip = clipAtPoint(layout, x, y);
+    if (clip) {
+      beginClipMove(x, y, clip.clipId);
       return;
     }
-    if (target.kind === 'post-it') {
-      beginPostItMove(x, y, target.postItId);
-      return;
+
+    for (const scribble of [...layout.scribbles].reverse()) {
+      if (pointInPolygon(x, y, scribble.outline)) {
+        beginScribbleMove(x, y, scribble.scribbleId);
+        return;
+      }
     }
+
+    // Empty area within the active playhead band: move the whole sequence.
     beginPlayheadMove(x, y);
   };
 
   beginMoveAtRef.current = beginMoveAt;
   commitScribbleMoveDragRef.current = commitScribbleMoveDrag;
   commitPostItMoveDragRef.current = commitPostItMoveDrag;
+  commitClipMoveDragRef.current = commitClipMoveDrag;
 
   const updatePlayheadDuplicateDrag = (x: number, y: number) => {
     const drag = dragRef.current;
@@ -1527,6 +1633,11 @@ export function Canvas({
           commitScribbleMoveDragRef.current();
         } else if (dragRef.current?.kind === 'post-it-move') {
           commitPostItMoveDragRef.current();
+        } else if (
+          dragRef.current?.kind === 'move' &&
+          dragRef.current.pointerId === KEYBOARD_CLIP_MOVE_POINTER_ID
+        ) {
+          commitClipMoveDragRef.current();
         }
       }
       if (isDuplicateKey(event)) {
@@ -1563,6 +1674,11 @@ export function Canvas({
         commitScribbleMoveDragRef.current();
       } else if (dragRef.current?.kind === 'post-it-move') {
         commitPostItMoveDragRef.current();
+      } else if (
+        dragRef.current?.kind === 'move' &&
+        dragRef.current.pointerId === KEYBOARD_CLIP_MOVE_POINTER_ID
+      ) {
+        commitClipMoveDragRef.current();
       }
       if (dragRef.current?.kind === 'clip-duplicate') {
         commitClipDuplicateRef.current();
@@ -1853,6 +1969,7 @@ export function Canvas({
       drag.pointerId !== KEYBOARD_PLAYHEAD_MOVE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_CLIP_DUPLICATE_POINTER_ID &&
+      drag.pointerId !== KEYBOARD_CLIP_MOVE_POINTER_ID &&
       event.pointerId !== drag.pointerId
     ) {
       return;
@@ -1985,6 +2102,13 @@ export function Canvas({
       }
       updateClipDuplicateDrag(x, y);
       return;
+    }
+
+    if (drag.kind === 'move' && drag.pointerId === KEYBOARD_CLIP_MOVE_POINTER_ID) {
+      if (!mKeyHeldRef.current || !keysHeldRef.current.has('KeyM')) {
+        commitClipMoveDrag();
+        return;
+      }
     }
 
     const deltaX = x - (drag.kind === 'move' ? drag.startPageX : drag.startPageX);
@@ -2201,9 +2325,55 @@ export function Canvas({
       })()
     : null;
 
+  const dragContainsMedia = (event: React.DragEvent) => {
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    return types.includes('Files') || types.includes(PATCHWORK_URLS_MIME);
+  };
+
+  const onDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!onDropMedia || !dragContainsMedia(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    if (!isFileDropTarget) setIsFileDropTarget(true);
+  };
+
+  const onDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setIsFileDropTarget(false);
+  };
+
+  const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    setIsFileDropTarget(false);
+    if (!onDropMedia || !dragContainsMedia(event)) return;
+    event.preventDefault();
+
+    const canvas = canvasRef.current;
+    const rect = canvas?.getBoundingClientRect();
+    const screenX = event.clientX - (rect?.left ?? 0);
+    const screenY = event.clientY - (rect?.top ?? 0);
+    const { x, y } = screenToPage(screenX, screenY, cameraRef.current);
+
+    const files = Array.from(event.dataTransfer.files);
+    const docUrls = parsePatchworkUrls(event.dataTransfer);
+    if (files.length === 0 && docUrls.length === 0) return;
+
+    onDropMedia({ files, docUrls }, x, y);
+  };
+
   return (
-    <div ref={rootRef} className="st-canvas-root relative min-h-0 min-w-0 flex-1 overflow-hidden">
+    <div
+      ref={rootRef}
+      className="st-canvas-root relative min-h-0 min-w-0 flex-1 overflow-hidden"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <canvas ref={rulerRef} className="st-ruler block w-full" />
+      {isFileDropTarget && (
+        <div className="st-file-drop-overlay pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <span className="st-file-drop-label">Drop images, videos, or audio</span>
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         className="st-canvas block w-full cursor-crosshair"

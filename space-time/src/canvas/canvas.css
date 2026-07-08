@@ -32,3 +32,18 @@
 .st-canvas {
   touch-action: none;
 }
+
+.st-file-drop-overlay {
+  background: color-mix(in oklch, var(--st-clip-selected-stroke) 12%, transparent);
+  border: 2px dashed var(--st-clip-selected-stroke);
+  border-radius: 6px;
+}
+
+.st-file-drop-label {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--st-clip-selected-stroke);
+  color: oklch(98% 0 0);
+  font-size: 13px;
+  font-weight: 600;
+}
