@@ -1771,8 +1771,45 @@ export function Canvas({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
+  // Ctrl-click on the active playhead's extent: pan horizontally and zoom so
+  // the extent is centered and fills 90% of the canvas width. Vertical pan is
+  // left untouched (the user asked for left/right panning only).
+  const fitActivePlayheadExtent = (pageX: number, pageY: number): boolean => {
+    if (!activePlayheadId) return false;
+    const layout = buildLayout();
+    if (!layout) return false;
+    const ph = layout.playheads.find((p) => p.playheadId === activePlayheadId);
+    if (!ph || !pointInPlayheadPath(layout, pageX, pageY, ph)) return false;
+
+    const left = ph.x;
+    const right = ph.maxEndX;
+    const extent = right - left;
+    const root = rootRef.current;
+    const w = root?.clientWidth ?? 0;
+    if (extent <= 0 || w <= 0) return false;
+
+    const targetZ = Math.max(0.1, Math.min(4, (0.9 * w) / extent));
+    const center = (left + right) / 2;
+    cameraRef.current = {
+      ...cameraRef.current,
+      z: targetZ,
+      x: w / (2 * targetZ) - center,
+    };
+    saveCamera(docUrl, cameraRef.current);
+    schedulePaint();
+    return true;
+  };
+
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     onFocusEditor?.();
+
+    if (event.ctrlKey) {
+      const point = pagePoint(event);
+      if (fitActivePlayheadExtent(point.x, point.y)) {
+        event.preventDefault();
+        return;
+      }
+    }
 
     if (event.button === 1) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -1822,7 +1859,10 @@ export function Canvas({
       if (!ph) return;
 
       event.currentTarget.setPointerCapture(event.pointerId);
-      const scrubX = clampScrubX(ph, snapPlayheadScrubX(target.playheadId, x));
+      const scrubX = clampScrubX(
+        ph,
+        event.shiftKey ? x : snapPlayheadScrubX(target.playheadId, x),
+      );
       onScrubbingChange?.(true);
       onPlayheadScrub?.(target.playheadId, scrubX);
       dragRef.current = {
@@ -1972,6 +2012,8 @@ export function Canvas({
     layoutRef.current = layout;
 
     const { x, y } = pagePoint(event);
+    // Holding shift disables snapping, for pixel-perfect freedom.
+    const noSnap = event.shiftKey;
     let drag = dragRef.current;
 
     if (!drag && wKeyHeldRef.current && pointerOnCanvasRef.current) {
@@ -2033,7 +2075,7 @@ export function Canvas({
       if (ph) {
         onPlayheadScrub?.(
           drag.playheadId,
-          clampScrubX(ph, snapPlayheadScrubX(drag.playheadId, x)),
+          clampScrubX(ph, noSnap ? x : snapPlayheadScrubX(drag.playheadId, x)),
         );
         schedulePaint();
       }
@@ -2159,7 +2201,7 @@ export function Canvas({
       const clip = findClip(doc, drag.clipId);
       if (!clip) return;
       let clipX = drag.originalX + deltaX;
-      const snap = clipSnapTargets(drag.clipId);
+      const snap = noSnap ? null : clipSnapTargets(drag.clipId);
       if (snap) {
         clipX = snapClipMoveX(clipX, drag.originalDuration, snap.targets, snap.threshold);
       }
@@ -2176,7 +2218,7 @@ export function Canvas({
       const clip = findClip(doc, drag.clipId);
       if (!clip) return;
       let rightEdge = drag.originalX + drag.originalDuration * PIXELS_PER_SECOND + deltaX;
-      const snap = clipSnapTargets(drag.clipId);
+      const snap = noSnap ? null : clipSnapTargets(drag.clipId);
       if (snap) {
         rightEdge = snapPageXToTargets(rightEdge, snap.targets, snap.threshold);
       }
@@ -2198,7 +2240,7 @@ export function Canvas({
       const clip = findClip(doc, drag.clipId);
       if (!clip) return;
       let leftEdge = drag.originalX + deltaX;
-      const snap = clipSnapTargets(drag.clipId);
+      const snap = noSnap ? null : clipSnapTargets(drag.clipId);
       if (snap) {
         leftEdge = snapPageXToTargets(leftEdge, snap.targets, snap.threshold);
       }
@@ -2425,6 +2467,7 @@ export function Canvas({
         onPointerEnter={onPointerEnter}
         onPointerLeave={onPointerLeave}
         onDoubleClick={onDoubleClick}
+        onContextMenu={(e) => e.preventDefault()}
       />
       {editingScreen && (
         <ClipNameEditor
