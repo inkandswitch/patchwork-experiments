@@ -24,6 +24,13 @@ type PlayerState =
   | { status: 'ready'; duration: number }
   | { status: 'error'; message: string };
 
+// How long (ms) the scrub position must stay put before we re-trigger the audio
+// window. This is also the effective length of the looped slice you hear while
+// holding the mouse still.
+const SCRUB_LOOP_WINDOW_MS = 500;
+// Page-space movement (px) below which the scrub position counts as "held".
+const SCRUB_MOVE_EPSILON_PX = 0.75;
+
 function layoutPlayer(mountEl: HTMLDivElement, composition: core.Composition): void {
   const container = mountEl.parentElement ?? mountEl;
   const { clientWidth, clientHeight } = container;
@@ -116,6 +123,10 @@ export function usePlayheadPlayer(
   const scrubPlaybackActiveRef = useRef(false);
   const scrubRafRef = useRef<number | null>(null);
   const compositionSyncingRef = useRef(false);
+  const scrubLastXRef = useRef(0);
+  const scrubHoldStartMsRef = useRef(0);
+  const scrubRetriggeringRef = useRef(false);
+  const retriggerScrubWindowRef = useRef<((time: number) => void) | null>(null);
 
   const stopScrubSyncLoop = useCallback(() => {
     if (scrubRafRef.current !== null) {
@@ -126,6 +137,8 @@ export function usePlayheadPlayer(
 
   const startScrubSyncLoop = useCallback(() => {
     stopScrubSyncLoop();
+    scrubLastXRef.current = currentXRef.current;
+    scrubHoldStartMsRef.current = performance.now();
     const tick = () => {
       scrubRafRef.current = null;
       if (!scrubbingActiveRef?.current || !scrubPlaybackActiveRef.current) return;
@@ -133,9 +146,28 @@ export function usePlayheadPlayer(
       if (
         composition &&
         !compositionSyncingRef.current &&
+        !scrubRetriggeringRef.current &&
         playerStateRef.current.status === 'ready'
       ) {
-        setPlaybackPosition(composition, xToTime(currentXRef.current));
+        const curX = currentXRef.current;
+        const now = performance.now();
+        const moved = Math.abs(curX - scrubLastXRef.current) > SCRUB_MOVE_EPSILON_PX;
+        scrubLastXRef.current = curX;
+
+        if (moved) {
+          // Following the mouse: pin smoothly and keep resetting the hold timer
+          // so a re-trigger only happens once the position actually settles.
+          scrubHoldStartMsRef.current = now;
+          setPlaybackPosition(composition, xToTime(curX));
+        } else if (now - scrubHoldStartMsRef.current >= SCRUB_LOOP_WINDOW_MS) {
+          // Held still long enough that the audio decoder has streamed past the
+          // window. Re-trigger so the same slice of sound loops in place instead
+          // of drifting to the right (the video is already pinned).
+          scrubHoldStartMsRef.current = now;
+          retriggerScrubWindowRef.current?.(xToTime(curX));
+        } else {
+          setPlaybackPosition(composition, xToTime(curX));
+        }
       }
       scrubRafRef.current = requestAnimationFrame(tick);
     };
@@ -149,6 +181,39 @@ export function usePlayheadPlayer(
         console.warn('[space-time] composition task failed', error);
       });
   }, []);
+
+  // Restart the scrub playback window at `time`. Pausing flushes the audio
+  // decoders and cancels the buffers they had already scheduled ahead; replaying
+  // re-primes the window from `time`. Without this, holding the scrub position
+  // still lets audio-time creep forward because the decoder keeps streaming the
+  // next buffer every frame and never rewinds on its own.
+  const retriggerScrubWindow = useCallback(
+    (time: number) => {
+      if (scrubRetriggeringRef.current) return;
+      scrubRetriggeringRef.current = true;
+      enqueueCompositionTask(async () => {
+        try {
+          const composition = compositionRef.current;
+          if (
+            !composition ||
+            scrubbingActiveRef?.current !== true ||
+            !scrubPlaybackActiveRef.current
+          ) {
+            return;
+          }
+          const seekTime = clampSeekTime(composition, time);
+          await composition.pause();
+          await composition.play(seekTime);
+        } catch (error) {
+          console.warn('[space-time] scrub loop retrigger failed', error);
+        } finally {
+          scrubRetriggeringRef.current = false;
+        }
+      });
+    },
+    [enqueueCompositionTask, scrubbingActiveRef],
+  );
+  retriggerScrubWindowRef.current = retriggerScrubWindow;
 
   const runCompositionSeek = useCallback(async (time: number, options?: { force?: boolean }) => {
     const composition = compositionRef.current;
