@@ -4,6 +4,23 @@ export type SpaceTimeDoc = {
   sources: Record<string, Source>;
   clips: Clip[];
   playheads: Playhead[];
+  scribbles?: Scribble[];
+  postIts?: PostIt[];
+};
+
+export type Scribble = {
+  id: string;
+  /** Closed polygon outline in page space from perfectfreehand. */
+  outline: number[][];
+};
+
+export type PostIt = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
 };
 
 export type Source = {

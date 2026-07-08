@@ -16,6 +16,11 @@
   --st-playhead-band: oklch(65% 0.15 25);
   --st-playhead-band-active: oklch(55% 0.2 25);
   --st-danger: oklch(55% 0.2 25);
+  --st-scribble: oklch(35% 0.02 260);
+  --st-scribble-selected: oklch(55% 0.14 280);
+  --st-post-it-fill: oklch(92% 0.12 95);
+  --st-post-it-stroke: oklch(82% 0.1 95);
+  --st-post-it-selected-stroke: oklch(55% 0.14 280);
   background: var(--st-bg);
 }
 

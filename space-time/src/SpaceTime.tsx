@@ -15,6 +15,8 @@ import {
 } from './helpers';
 import { addClipToDoc } from './canvas/clips';
 import { deleteClip } from './canvas/clips';
+import { deleteScribble } from './canvas/scribbles';
+import { deletePostIt } from './canvas/post-its';
 import {
   deletePlayhead,
   playheadHasClipsInExtent,
@@ -58,6 +60,8 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   const [activePlayheadId, setActivePlayheadId] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+  const [selectedScribbleId, setSelectedScribbleId] = useState<string | null>(null);
+  const [selectedPostItId, setSelectedPostItId] = useState<string | null>(null);
   const [playheadCurrentX, setPlayheadCurrentX] = useState<Map<string, number>>(new Map());
   const [isSweeping, setIsSweeping] = useState(false);
   const [playingPlayheadId, setPlayingPlayheadId] = useState<string | null>(null);
@@ -461,9 +465,17 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     }
 
     if (event.key === 'Delete' || event.key === 'Backspace') {
-      if (event.target instanceof HTMLInputElement) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
       event.preventDefault();
-      if (selectedClipId) {
+      if (selectedScribbleId) {
+        changeDoc((d) => deleteScribble(d, selectedScribbleId));
+        setSelectedScribbleId(null);
+      } else if (selectedPostItId) {
+        changeDoc((d) => deletePostIt(d, selectedPostItId));
+        setSelectedPostItId(null);
+      } else if (selectedClipId) {
         changeDoc((d) => deleteClip(d, selectedClipId));
         setSelectedClipId(null);
       } else if (activePlayheadId) {
@@ -565,6 +577,10 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           onPlayheadCurrentXChange={setCurrentXForPlayhead}
           selectedClipId={selectedClipId}
           onSelectedClipChange={setSelectedClipId}
+          selectedScribbleId={selectedScribbleId}
+          onSelectedScribbleChange={setSelectedScribbleId}
+          selectedPostItId={selectedPostItId}
+          onSelectedPostItChange={setSelectedPostItId}
           onClipPreview={previewClipTiming}
           onFocusEditor={() => rootRef.current?.focus({ preventScroll: true })}
           onPlayheadScrub={onPlayheadScrub}

@@ -1,4 +1,5 @@
-import type { Clip, SpaceTimeDoc, Source } from './types';
+import type { Clip, PostIt, Scribble, SpaceTimeDoc, Source } from './types';
+import { POST_IT_HEIGHT, POST_IT_WIDTH } from './canvas/constants';
 
 export const DEFAULT_IMAGE_DURATION = 5;
 
@@ -18,6 +19,29 @@ export function newClip(
 
 export function newPlayhead(x: number, y: number, height: number) {
   return { id: newId(), x, y, height };
+}
+
+export function newScribble(outline: number[][]): Scribble {
+  return { id: newId(), outline };
+}
+
+export function newPostIt(x: number, y: number): PostIt {
+  return {
+    id: newId(),
+    x,
+    y,
+    width: POST_IT_WIDTH,
+    height: POST_IT_HEIGHT,
+    text: '',
+  };
+}
+
+export function findScribble(doc: SpaceTimeDoc, scribbleId: string): Scribble | undefined {
+  return doc.scribbles?.find((scribble) => scribble.id === scribbleId);
+}
+
+export function findPostIt(doc: SpaceTimeDoc, postItId: string): PostIt | undefined {
+  return doc.postIts?.find((postIt) => postIt.id === postItId);
 }
 
 export function isDocEmpty(doc: SpaceTimeDoc): boolean {

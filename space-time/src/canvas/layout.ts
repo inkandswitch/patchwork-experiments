@@ -1,7 +1,7 @@
 import type { GhostPlayhead } from '../presence/types';
 import type { RecordingPreview } from '../audio/use-audio-recorder';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
-import type { Clip, Playhead, SpaceTimeDoc } from '../types';
+import type { Clip, Playhead, PostIt, Scribble, SpaceTimeDoc } from '../types';
 import { clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import { clipWidth } from '../clip-timing';
 import { clipsInPlayheadExtent, maxEndXForPlayhead } from './playhead-extent';
@@ -44,6 +44,15 @@ export type RecordingPreviewLayout = RecordingPreview & {
   height: number;
 };
 
+export type PostItLayout = PostIt & {
+  postItId: string;
+};
+
+export type ScribbleLayout = Scribble & {
+  scribbleId: string;
+  bounds: { x: number; y: number; width: number; height: number };
+};
+
 export type CanvasLayout = {
   width: number;
   height: number;
@@ -52,6 +61,8 @@ export type CanvasLayout = {
   playheads: PlayheadLayout[];
   ghostPlayheads: GhostPlayheadLayout[];
   recordingPreview: RecordingPreviewLayout | null;
+  postIts: PostItLayout[];
+  scribbles: ScribbleLayout[];
 };
 
 export type ClipDragPreview = {
@@ -68,6 +79,9 @@ export type HitTarget =
   | { kind: 'clip-left-handle'; clipId: string }
   | { kind: 'clip-right-handle'; clipId: string }
   | { kind: 'playhead'; playheadId: string }
+  | { kind: 'post-it'; postItId: string }
+  | { kind: 'post-it-resize'; postItId: string }
+  | { kind: 'scribble'; scribbleId: string }
   | { kind: 'none' };
 
 export function computeClipLayout(
@@ -150,6 +164,15 @@ export function computeCanvasLayout(
           height: CLIP_HEIGHT,
         }
       : null,
+    postIts: (doc.postIts ?? []).map((postIt) => ({
+      ...postIt,
+      postItId: postIt.id,
+    })),
+    scribbles: (doc.scribbles ?? []).map((scribble) => ({
+      ...scribble,
+      scribbleId: scribble.id,
+      bounds: boundsForOutline(scribble.outline),
+    })),
   };
 }
 
@@ -258,12 +281,90 @@ export function applyPlayheadDuplicatePreview(
   };
 }
 
+export function applyPostItResizePreview(
+  layout: CanvasLayout,
+  preview: { postItId: string; width: number; height: number },
+): CanvasLayout {
+  return {
+    ...layout,
+    postIts: layout.postIts.map((postIt) =>
+      postIt.postItId === preview.postItId
+        ? { ...postIt, width: preview.width, height: preview.height }
+        : postIt,
+    ),
+  };
+}
+
+export function applyPostItMovePreview(
+  layout: CanvasLayout,
+  preview: { postItId: string; x: number; y: number },
+): CanvasLayout {
+  return {
+    ...layout,
+    postIts: layout.postIts.map((postIt) =>
+      postIt.postItId === preview.postItId ? { ...postIt, x: preview.x, y: preview.y } : postIt,
+    ),
+  };
+}
+
+export function applyScribbleMovePreview(
+  layout: CanvasLayout,
+  preview: { scribbleId: string; outline: number[][] },
+): CanvasLayout {
+  return {
+    ...layout,
+    scribbles: layout.scribbles.map((scribble) =>
+      scribble.scribbleId === preview.scribbleId
+        ? {
+            ...scribble,
+            outline: preview.outline,
+            bounds: boundsForOutline(preview.outline),
+          }
+        : scribble,
+    ),
+  };
+}
+
 export function pointInRect(
   x: number,
   y: number,
   rect: { x: number; y: number; width: number; height: number },
 ): boolean {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+function boundsForOutline(outline: number[][]): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  if (outline.length === 0) return { x: 0, y: 0, width: 0, height: 0 };
+  let minX = outline[0]![0]!;
+  let minY = outline[0]![1]!;
+  let maxX = minX;
+  let maxY = minY;
+  for (const [px, py] of outline) {
+    minX = Math.min(minX, px);
+    minY = Math.min(minY, py);
+    maxX = Math.max(maxX, px);
+    maxY = Math.max(maxY, py);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+export function pointInPolygon(x: number, y: number, polygon: number[][]): boolean {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i]![0]!;
+    const yi = polygon[i]![1]!;
+    const xj = polygon[j]![0]!;
+    const yj = polygon[j]![1]!;
+    const intersects = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
 }
 
 export function pointInPlayheadPath(
@@ -284,6 +385,34 @@ export function hitTestCanvas(
   pageY: number,
 ): HitTarget {
   const handleHit = Math.max(HANDLE_WIDTH, MIN_HANDLE_HIT_SCREEN_PX / layout.camera.z);
+
+  for (const ph of [...layout.playheads].reverse()) {
+    if (pointInPlayheadPath(layout, pageX, pageY, ph)) {
+      return { kind: 'playhead', playheadId: ph.playheadId };
+    }
+  }
+
+  for (const postIt of [...layout.postIts].reverse()) {
+    const resizeHandle = {
+      x: postIt.x + postIt.width - handleHit,
+      y: postIt.y + postIt.height - handleHit,
+      width: handleHit,
+      height: handleHit,
+    };
+    if (pointInRect(pageX, pageY, resizeHandle)) {
+      return { kind: 'post-it-resize', postItId: postIt.postItId };
+    }
+    if (
+      pointInRect(pageX, pageY, {
+        x: postIt.x,
+        y: postIt.y,
+        width: postIt.width,
+        height: postIt.height,
+      })
+    ) {
+      return { kind: 'post-it', postItId: postIt.postItId };
+    }
+  }
 
   for (const clip of [...layout.clips].reverse()) {
     const rightHandle = {
@@ -316,9 +445,9 @@ export function hitTestCanvas(
     }
   }
 
-  for (const ph of [...layout.playheads].reverse()) {
-    if (pointInPlayheadPath(layout, pageX, pageY, ph)) {
-      return { kind: 'playhead', playheadId: ph.playheadId };
+  for (const scribble of [...layout.scribbles].reverse()) {
+    if (pointInPolygon(pageX, pageY, scribble.outline)) {
+      return { kind: 'scribble', scribbleId: scribble.scribbleId };
     }
   }
 

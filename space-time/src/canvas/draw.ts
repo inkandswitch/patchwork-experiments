@@ -3,6 +3,10 @@ import {
   CLIP_HEIGHT,
   HANDLE_WIDTH,
   PIXELS_PER_SECOND,
+  POST_IT_FONT_FAMILY,
+  POST_IT_FONT_SIZE,
+  POST_IT_LINE_HEIGHT,
+  POST_IT_PADDING,
   formatRulerTime,
   type Camera,
 } from './constants';
@@ -224,6 +228,131 @@ function drawRecordingPreview(
   ctx.restore();
 }
 
+function fillOutlinePath(ctx: CanvasRenderingContext2D, outline: number[][]): void {
+  if (outline.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(outline[0]![0]!, outline[0]![1]!);
+  for (let i = 1; i < outline.length; i++) {
+    ctx.lineTo(outline[i]![0]!, outline[i]![1]!);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawScribble(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  outline: number[][],
+  selected: boolean,
+): void {
+  if (outline.length < 2) return;
+  ctx.save();
+  fillOutlinePath(ctx, outline);
+  ctx.fillStyle = selected ? theme.scribbleSelected : theme.scribble;
+  ctx.fill();
+  if (selected) {
+    ctx.strokeStyle = theme.scribbleSelected;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+const POST_IT_FONT = `${POST_IT_FONT_SIZE}px ${POST_IT_FONT_FAMILY}`;
+const POST_IT_RESIZE_HANDLE = 6;
+
+function drawPostItResizeHandle(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  postIt: CanvasLayout['postIts'][number],
+): void {
+  const x = postIt.x + postIt.width;
+  const y = postIt.y + postIt.height;
+  const size = POST_IT_RESIZE_HANDLE;
+  ctx.strokeStyle = theme.postItSelectedStroke;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - size, y - 1);
+  ctx.lineTo(x - 1, y - 1);
+  ctx.lineTo(x - 1, y - size);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - size * 0.6, y - 1);
+  ctx.lineTo(x - 1, y - 1);
+  ctx.lineTo(x - 1, y - size * 0.6);
+  ctx.stroke();
+}
+
+function wrapTextLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string[] {
+  if (!text.trim()) return [];
+  const paragraphs = text.split('\n');
+  const lines: string[] = [];
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lines.push('');
+      continue;
+    }
+    let current = words[0]!;
+    for (let i = 1; i < words.length; i++) {
+      const next = `${current} ${words[i]}`;
+      if (ctx.measureText(next).width <= maxWidth) {
+        current = next;
+      } else {
+        lines.push(current);
+        current = words[i]!;
+      }
+    }
+    lines.push(current);
+  }
+  return lines;
+}
+
+function drawPostIt(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  postIt: CanvasLayout['postIts'][number],
+  selected: boolean,
+  editing: boolean,
+): void {
+  const radius = 2;
+  ctx.save();
+  roundRect(ctx, postIt.x, postIt.y, postIt.width, postIt.height, radius);
+  ctx.fillStyle = theme.postItFill;
+  ctx.fill();
+  ctx.strokeStyle = selected ? theme.postItSelectedStroke : theme.postItStroke;
+  ctx.lineWidth = selected ? 2 : 1;
+  ctx.stroke();
+
+  if (!editing && postIt.text.trim()) {
+    ctx.beginPath();
+    roundRect(ctx, postIt.x, postIt.y, postIt.width, postIt.height, radius);
+    ctx.clip();
+    ctx.font = POST_IT_FONT;
+    ctx.fillStyle = theme.text;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    const maxWidth = postIt.width - POST_IT_PADDING * 2;
+    const lines = wrapTextLines(ctx, postIt.text, maxWidth);
+    const maxLines = Math.floor((postIt.height - POST_IT_PADDING * 2) / POST_IT_LINE_HEIGHT);
+    for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
+      ctx.fillText(
+        lines[i]!,
+        postIt.x + POST_IT_PADDING,
+        postIt.y + POST_IT_PADDING + i * POST_IT_LINE_HEIGHT,
+      );
+    }
+  }
+  if (selected) {
+    drawPostItResizeHandle(ctx, theme, postIt);
+  }
+  ctx.restore();
+}
+
 function drawVerticalDragPreview(
   ctx: CanvasRenderingContext2D,
   theme: CanvasTheme,
@@ -251,6 +380,10 @@ export function drawCanvas(
   verticalDragPreview?: { x: number; y0: number; y1: number; valid: boolean } | null,
   dpr = 1,
   editingClipId: string | null = null,
+  selectedScribbleId: string | null = null,
+  selectedPostItId: string | null = null,
+  editingPostItId: string | null = null,
+  scribblePreview?: number[][] | null,
 ): void {
   const { width, height, camera } = layout;
 
@@ -261,6 +394,19 @@ export function drawCanvas(
   applyCameraTransform(ctx, camera, dpr);
   drawGrid(ctx, theme, layout);
 
+  for (const scribble of layout.scribbles) {
+    drawScribble(
+      ctx,
+      theme,
+      scribble.outline,
+      scribble.scribbleId === selectedScribbleId,
+    );
+  }
+
+  if (scribblePreview && scribblePreview.length >= 2) {
+    drawScribble(ctx, theme, scribblePreview, false);
+  }
+
   for (const clip of layout.clips) {
     drawClip(
       ctx,
@@ -269,6 +415,16 @@ export function drawCanvas(
       clip.clipId === selectedClipId,
       clip.clipId === hoveredClipId,
       clip.clipId === editingClipId,
+    );
+  }
+
+  for (const postIt of layout.postIts) {
+    drawPostIt(
+      ctx,
+      theme,
+      postIt,
+      postIt.postItId === selectedPostItId,
+      postIt.postItId === editingPostItId,
     );
   }
 

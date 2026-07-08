@@ -9,6 +9,14 @@ export const MIN_CLIP_DURATION = 0.25;
 export const MIN_PLAYHEAD_HEIGHT = 20;
 export const MIN_VERTICAL_DRAG_PX = 12;
 export const DEFAULT_IMAGE_DURATION = 5;
+export const POST_IT_WIDTH = 160;
+export const POST_IT_HEIGHT = 120;
+export const MIN_POST_IT_WIDTH = 80;
+export const MIN_POST_IT_HEIGHT = 60;
+export const POST_IT_FONT_SIZE = 12;
+export const POST_IT_PADDING = 8;
+export const POST_IT_LINE_HEIGHT = 16;
+export const POST_IT_FONT_FAMILY = 'ui-sans-serif, system-ui, sans-serif';
 /** Horizontal margin kept around the playhead line during playback follow-pan. */
 export const PLAYBACK_FOLLOW_MARGIN_SCREEN_PX = 120;
 
@@ -38,6 +46,11 @@ export type CanvasTheme = {
   playheadBand: string;
   playheadBandActive: string;
   danger: string;
+  scribble: string;
+  scribbleSelected: string;
+  postItFill: string;
+  postItStroke: string;
+  postItSelectedStroke: string;
 };
 
 const THEME_VARS: Array<[keyof CanvasTheme, string]> = [
@@ -58,6 +71,11 @@ const THEME_VARS: Array<[keyof CanvasTheme, string]> = [
   ['playheadBand', '--st-playhead-band'],
   ['playheadBandActive', '--st-playhead-band-active'],
   ['danger', '--st-danger'],
+  ['scribble', '--st-scribble'],
+  ['scribbleSelected', '--st-scribble-selected'],
+  ['postItFill', '--st-post-it-fill'],
+  ['postItStroke', '--st-post-it-stroke'],
+  ['postItSelectedStroke', '--st-post-it-selected-stroke'],
 ];
 
 export function readCanvasTheme(root: HTMLElement): CanvasTheme {

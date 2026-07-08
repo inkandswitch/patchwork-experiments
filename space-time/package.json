@@ -15,6 +15,7 @@
     "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.20",
     "@diffusionstudio/core": "^4.0.3",
     "@inkandswitch/patchwork-plugins": "0.0.4",
+    "perfect-freehand": "^1.2.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

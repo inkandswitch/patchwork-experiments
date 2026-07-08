@@ -14,12 +14,7 @@ import type { ClipTimingOverride } from '../diffusion/sync-composition';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createSourceLoader, clipsInPlayheadExtent } from '../diffusion/sync-composition';
 import { resolveClipPlayDuration, maxClipPlayDuration, xToTime } from '../clip-timing';
-import {
-  clipDisplayName,
-  DEFAULT_IMAGE_DURATION,
-  findClip,
-  newId,
-} from '../helpers';
+import { findClip, findPostIt, findScribble, newId, clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import {
   commitClipMove,
   commitClipMoves,
@@ -34,10 +29,15 @@ import {
   createPlayhead,
   deletePlayhead,
 } from './playheads';
+import { addPostIt, commitPostItPosition, commitPostItSize, updatePostItText } from './post-its';
+import { addScribble, buildScribbleOutline, commitScribbleMove, translateOutline } from './scribbles';
 import {
   applyClipDragPreview,
   applyPlayheadDuplicatePreview,
   applyPlayheadMovePreview,
+  applyPostItMovePreview,
+  applyPostItResizePreview,
+  applyScribbleMovePreview,
   computeCanvasLayout,
   hitTestCanvas,
   pointInPlayheadPath,
@@ -52,8 +52,14 @@ import {
   HANDLE_WIDTH,
   MIN_CLIP_DURATION,
   MIN_PLAYHEAD_HEIGHT,
+  MIN_POST_IT_HEIGHT,
+  MIN_POST_IT_WIDTH,
   MIN_VERTICAL_DRAG_PX,
   PIXELS_PER_SECOND,
+  POST_IT_FONT_FAMILY,
+  POST_IT_FONT_SIZE,
+  POST_IT_LINE_HEIGHT,
+  POST_IT_PADDING,
   readCanvasTheme,
   saveCamera,
   screenToPage,
@@ -74,6 +80,71 @@ import './canvas.css';
 
 const RULER_HEIGHT = 24;
 const CLIP_LABEL_PADDING_X = 10;
+
+function PostItEditor({
+  left,
+  top,
+  width,
+  height,
+  zoom,
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+}: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  zoom: number;
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fontSize = POST_IT_FONT_SIZE * zoom;
+  const padding = POST_IT_PADDING * zoom;
+  const lineHeight = POST_IT_LINE_HEIGHT * zoom;
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.focus();
+    textarea.select();
+  }, []);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      className="absolute z-10 resize-none border-0 bg-[var(--st-post-it-fill)] text-[var(--st-text)] outline-none ring-2 ring-primary"
+      style={{
+        left,
+        top,
+        width,
+        height,
+        padding,
+        fontSize,
+        lineHeight: `${lineHeight}px`,
+        fontFamily: POST_IT_FONT_FAMILY,
+        boxSizing: 'border-box',
+      }}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={onCommit}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    />
+  );
+}
 
 function ClipNameEditor({
   left,
@@ -184,6 +255,11 @@ type DragState =
       originalSourceInTime: number;
     }
   | {
+      kind: 'scribble-draw';
+      pointerId: number;
+      points: number[][];
+    }
+  | {
       kind: 'playhead-draw';
       pointerId: number;
       x: number;
@@ -203,6 +279,32 @@ type DragState =
       y0: number;
       y1: number;
       crossesClip: boolean;
+    }
+  | {
+      kind: 'scribble-move';
+      pointerId: number;
+      scribbleId: string;
+      startPageX: number;
+      startPageY: number;
+      originalOutline: number[][];
+    }
+  | {
+      kind: 'post-it-resize';
+      postItId: string;
+      pointerId: number;
+      startPageX: number;
+      startPageY: number;
+      originalWidth: number;
+      originalHeight: number;
+    }
+  | {
+      kind: 'post-it-move';
+      pointerId: number;
+      postItId: string;
+      startPageX: number;
+      startPageY: number;
+      originalX: number;
+      originalY: number;
     }
   | {
       kind: 'playhead-move';
@@ -247,6 +349,7 @@ const KEYBOARD_SPLIT_POINTER_ID = -1;
 const KEYBOARD_PLAYHEAD_MOVE_POINTER_ID = -2;
 const KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID = -3;
 const KEYBOARD_CLIP_DUPLICATE_POINTER_ID = -4;
+const KEYBOARD_SCRIBBLE_POINTER_ID = -5;
 
 function isDuplicateKey(event: KeyboardEvent): boolean {
   return event.code === 'KeyD' || event.key === 'd' || event.key === 'D';
@@ -266,6 +369,10 @@ type CanvasProps = {
   onPlayheadCurrentXChange: (id: string, x: number) => void;
   selectedClipId: string | null;
   onSelectedClipChange: (id: string | null) => void;
+  selectedScribbleId: string | null;
+  onSelectedScribbleChange: (id: string | null) => void;
+  selectedPostItId: string | null;
+  onSelectedPostItChange: (id: string | null) => void;
   onClipPreview?: (preview: ({ clipId: string; previewEdge?: 'in' | 'out' } & ClipTimingOverride) | null) => void;
   onFocusEditor?: () => void;
   onPlayheadScrub?: (playheadId: string, x: number) => void;
@@ -286,6 +393,10 @@ export function Canvas({
   onPlayheadCurrentXChange,
   selectedClipId,
   onSelectedClipChange,
+  selectedScribbleId,
+  onSelectedScribbleChange,
+  selectedPostItId,
+  onSelectedPostItChange,
   onClipPreview,
   onFocusEditor,
   onPlayheadScrub,
@@ -310,6 +421,11 @@ export function Canvas({
     clips: ClipDragPreview[];
     playhead: PlayheadMovePreview;
   } | null>(null);
+  const scribbleMovePreviewRef = useRef<{ scribbleId: string; outline: number[][] } | null>(null);
+  const postItMovePreviewRef = useRef<{ postItId: string; x: number; y: number } | null>(null);
+  const postItResizePreviewRef = useRef<{ postItId: string; width: number; height: number } | null>(
+    null,
+  );
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
   const loaderRef = useRef(createSourceLoader());
   const layoutRef = useRef<ReturnType<typeof computeCanvasLayout> | null>(null);
@@ -320,22 +436,29 @@ export function Canvas({
     playheadCurrentX,
     selectedClipId,
     hoveredClipId: null as string | null,
+    selectedScribbleId,
+    selectedPostItId,
     ghostPlayheads,
     recordingPreview,
     loopingPlayheadIds,
     followPlayback,
     verticalDragPreview: null as { x: number; y0: number; y1: number; valid: boolean } | null,
+    scribblePreview: null as number[][] | null,
   });
 
   const [hoveredClipId, setHoveredClipId] = useState<string | null>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
+  const [editingPostItId, setEditingPostItId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState('');
+  const [postItEditingDraft, setPostItEditingDraft] = useState('');
   const [, bump] = useState(0);
   const editingClipIdRef = useRef<string | null>(null);
+  const editingPostItIdRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
   const ghostSmoothRef = useRef(new Map<string, GhostSmoothState>());
   const ghostAdvanceTimeRef = useRef<number | null>(null);
   const pKeyHeldRef = useRef(false);
+  const wKeyHeldRef = useRef(false);
   const sKeyHeldRef = useRef(false);
   const mKeyHeldRef = useRef(false);
   const dKeyHeldRef = useRef(false);
@@ -346,21 +469,32 @@ export function Canvas({
     () => {},
   );
   const beginSplitLineRef = useRef<(x: number, y: number, pointerId: number) => void>(() => {});
+  const beginScribbleDrawRef = useRef<(x: number, y: number) => void>(() => {});
+  const beginMoveAtRef = useRef<(x: number, y: number) => void>(() => {});
   const beginPlayheadMoveRef = useRef<(x: number, y: number) => void>(() => {});
   const commitPlayheadMoveRef = useRef<() => void>(() => {});
   const cancelPlayheadMoveRef = useRef<() => void>(() => {});
+  const commitScribbleMoveDragRef = useRef<() => void>(() => {});
+  const commitPostItMoveDragRef = useRef<() => void>(() => {});
   const beginDuplicateAtRef = useRef<(x: number, y: number) => void>(() => {});
   const commitPlayheadDuplicateRef = useRef<() => void>(() => {});
   const cancelPlayheadDuplicateRef = useRef<() => void>(() => {});
   const commitClipDuplicateRef = useRef<() => void>(() => {});
   const cancelClipDuplicateRef = useRef<() => void>(() => {});
+  const addPostItAtRef = useRef<(x: number, y: number) => void>(() => {});
+  const commitScribbleDrawRef = useRef<(drag: Extract<DragState, { kind: 'scribble-draw' }>) => void>(
+    () => {},
+  );
 
   editingClipIdRef.current = editingClipId;
+  editingPostItIdRef.current = editingPostItId;
 
   const startEditingClip = (clipId: string) => {
     const clip = findClip(doc, clipId);
     if (!clip) return;
     onSelectedClipChange(clipId);
+    onSelectedScribbleChange(null);
+    onSelectedPostItChange(null);
     setEditingClipId(clipId);
     setEditingDraft(clipDisplayName(doc, clip));
   };
@@ -384,6 +518,35 @@ export function Canvas({
 
   const cancelEditingClipName = () => {
     setEditingClipId(null);
+  };
+
+  const startEditingPostIt = (postItId: string) => {
+    const postIt = findPostIt(doc, postItId);
+    if (!postIt) return;
+    onSelectedPostItChange(postItId);
+    onSelectedClipChange(null);
+    onSelectedScribbleChange(null);
+    setEditingPostItId(postItId);
+    setPostItEditingDraft(postIt.text);
+  };
+
+  const commitEditingPostIt = () => {
+    if (!editingPostItId) return;
+    const postItId = editingPostItId;
+    const text = postItEditingDraft;
+    setEditingPostItId(null);
+    changeDoc((d) => {
+      updatePostItText(d, postItId, text);
+    });
+  };
+
+  const cancelEditingPostIt = () => {
+    setEditingPostItId(null);
+  };
+
+  const clearAnnotationSelection = () => {
+    onSelectedScribbleChange(null);
+    onSelectedPostItChange(null);
   };
 
   const resolveClipPlayDurationForUi = useCallback(
@@ -604,6 +767,19 @@ export function Canvas({
       layoutRef.current = layout;
     }
 
+    if (scribbleMovePreviewRef.current) {
+      layoutRef.current = applyScribbleMovePreview(layoutRef.current, scribbleMovePreviewRef.current);
+    }
+    if (postItMovePreviewRef.current) {
+      layoutRef.current = applyPostItMovePreview(layoutRef.current, postItMovePreviewRef.current);
+    }
+    if (postItResizePreviewRef.current) {
+      layoutRef.current = applyPostItResizePreview(
+        layoutRef.current,
+        postItResizePreviewRef.current,
+      );
+    }
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -616,6 +792,10 @@ export function Canvas({
       deps.verticalDragPreview,
       dpr,
       editingClipIdRef.current,
+      deps.selectedScribbleId,
+      deps.selectedPostItId,
+      editingPostItIdRef.current,
+      deps.scribblePreview,
     );
 
     const ruler = rulerRef.current;
@@ -631,6 +811,43 @@ export function Canvas({
     }
   };
 
+  const commitScribbleDraw = (drag: Extract<DragState, { kind: 'scribble-draw' }>) => {
+    paintDepsRef.current.scribblePreview = null;
+    const outline = buildScribbleOutline(drag.points);
+    let newId: string | null = null;
+    if (outline) {
+      changeDoc((d) => {
+        newId = addScribble(d, outline);
+      });
+    }
+    if (newId) {
+      onSelectedScribbleChange(newId);
+      onSelectedClipChange(null);
+      onSelectedPostItChange(null);
+    }
+    if (dragRef.current?.kind === 'scribble-draw') {
+      dragRef.current = null;
+    }
+    schedulePaint();
+  };
+
+  commitScribbleDrawRef.current = commitScribbleDraw;
+
+  const addPostItAt = (x: number, y: number) => {
+    let newId: string | null = null;
+    changeDoc((d) => {
+      newId = addPostIt(d, x, y);
+    });
+    if (newId) {
+      onSelectedPostItChange(newId);
+      onSelectedClipChange(null);
+      onSelectedScribbleChange(null);
+    }
+    schedulePaint();
+  };
+
+  addPostItAtRef.current = addPostItAt;
+
   useEffect(() => {
     syncGhostSmoothStates(ghostPlayheads, ghostSmoothRef.current);
     ghostAdvanceTimeRef.current = null;
@@ -645,14 +862,17 @@ export function Canvas({
       playheadCurrentX,
       selectedClipId,
       hoveredClipId,
+      selectedScribbleId,
+      selectedPostItId,
       ghostPlayheads,
       recordingPreview,
       loopingPlayheadIds,
       followPlayback,
       verticalDragPreview: paintDepsRef.current.verticalDragPreview,
+      scribblePreview: paintDepsRef.current.scribblePreview,
     };
     schedulePaint();
-  }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, hoveredClipId, ghostPlayheads, recordingPreview, loopingPlayheadIds, followPlayback, editingClipId]);
+  }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, selectedScribbleId, selectedPostItId, hoveredClipId, ghostPlayheads, recordingPreview, loopingPlayheadIds, followPlayback, editingClipId, editingPostItId]);
 
   useEffect(() => {
     if (!editingClipId) return;
@@ -660,6 +880,13 @@ export function Canvas({
       setEditingClipId(null);
     }
   }, [doc, editingClipId]);
+
+  useEffect(() => {
+    if (!editingPostItId) return;
+    if (!findPostIt(doc, editingPostItId)) {
+      setEditingPostItId(null);
+    }
+  }, [doc, editingPostItId]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -854,6 +1081,141 @@ export function Canvas({
   beginPlayheadMoveRef.current = beginPlayheadMove;
   commitPlayheadMoveRef.current = commitPlayheadMove;
   cancelPlayheadMoveRef.current = cancelPlayheadMove;
+
+  const beginScribbleDraw = (x: number, y: number) => {
+    if (dragRef.current) return;
+    onSelectedClipChange(null);
+    clearAnnotationSelection();
+    dragRef.current = {
+      kind: 'scribble-draw',
+      pointerId: KEYBOARD_SCRIBBLE_POINTER_ID,
+      points: [[x, y, 0.5]],
+    };
+    paintDepsRef.current.scribblePreview = buildScribbleOutline(dragRef.current.points);
+    schedulePaint();
+  };
+
+  beginScribbleDrawRef.current = beginScribbleDraw;
+
+  const updateScribbleMoveDrag = (x: number, y: number) => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'scribble-move') return;
+    const deltaX = x - drag.startPageX;
+    const deltaY = y - drag.startPageY;
+    scribbleMovePreviewRef.current = {
+      scribbleId: drag.scribbleId,
+      outline: translateOutline(drag.originalOutline, deltaX, deltaY),
+    };
+    schedulePaint();
+  };
+
+  const beginScribbleMove = (x: number, y: number, scribbleId: string) => {
+    if (dragRef.current) return;
+    const scribble = findScribble(doc, scribbleId);
+    if (!scribble) return;
+
+    onSelectedScribbleChange(scribbleId);
+    onSelectedClipChange(null);
+    onSelectedPostItChange(null);
+    dragRef.current = {
+      kind: 'scribble-move',
+      pointerId: KEYBOARD_PLAYHEAD_MOVE_POINTER_ID,
+      scribbleId,
+      startPageX: x,
+      startPageY: y,
+      originalOutline: scribble.outline.map(([px, py]) => [px, py]),
+    };
+    updateScribbleMoveDrag(x, y);
+  };
+
+  const commitScribbleMoveDrag = () => {
+    const preview = scribbleMovePreviewRef.current;
+    const drag = dragRef.current;
+    if (drag?.kind !== 'scribble-move' || !preview) {
+      scribbleMovePreviewRef.current = null;
+      if (drag?.kind === 'scribble-move') dragRef.current = null;
+      schedulePaint();
+      return;
+    }
+    changeDoc((d) => {
+      commitScribbleMove(d, preview.scribbleId, preview.outline);
+    });
+    scribbleMovePreviewRef.current = null;
+    dragRef.current = null;
+    schedulePaint();
+  };
+
+  const updatePostItMoveDrag = (x: number, y: number) => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'post-it-move') return;
+    const deltaX = x - drag.startPageX;
+    const deltaY = y - drag.startPageY;
+    postItMovePreviewRef.current = {
+      postItId: drag.postItId,
+      x: drag.originalX + deltaX,
+      y: drag.originalY + deltaY,
+    };
+    schedulePaint();
+  };
+
+  const beginPostItMove = (x: number, y: number, postItId: string) => {
+    if (dragRef.current) return;
+    const postIt = findPostIt(doc, postItId);
+    if (!postIt) return;
+
+    onSelectedPostItChange(postItId);
+    onSelectedClipChange(null);
+    onSelectedScribbleChange(null);
+    dragRef.current = {
+      kind: 'post-it-move',
+      pointerId: KEYBOARD_PLAYHEAD_MOVE_POINTER_ID,
+      postItId,
+      startPageX: x,
+      startPageY: y,
+      originalX: postIt.x,
+      originalY: postIt.y,
+    };
+    updatePostItMoveDrag(x, y);
+  };
+
+  const commitPostItMoveDrag = () => {
+    const preview = postItMovePreviewRef.current;
+    const drag = dragRef.current;
+    if (drag?.kind !== 'post-it-move' || !preview) {
+      postItMovePreviewRef.current = null;
+      if (drag?.kind === 'post-it-move') dragRef.current = null;
+      schedulePaint();
+      return;
+    }
+    changeDoc((d) => {
+      commitPostItPosition(d, preview.postItId, preview.x, preview.y);
+    });
+    postItMovePreviewRef.current = null;
+    dragRef.current = null;
+    schedulePaint();
+  };
+
+  const beginMoveAt = (x: number, y: number) => {
+    if (dragRef.current) return;
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return;
+    layoutRef.current = layout;
+
+    const target = hitTestCanvas(layout, x, y);
+    if (target.kind === 'scribble') {
+      beginScribbleMove(x, y, target.scribbleId);
+      return;
+    }
+    if (target.kind === 'post-it') {
+      beginPostItMove(x, y, target.postItId);
+      return;
+    }
+    beginPlayheadMove(x, y);
+  };
+
+  beginMoveAtRef.current = beginMoveAt;
+  commitScribbleMoveDragRef.current = commitScribbleMoveDrag;
+  commitPostItMoveDragRef.current = commitPostItMoveDrag;
 
   const updatePlayheadDuplicateDrag = (x: number, y: number) => {
     const drag = dragRef.current;
@@ -1078,6 +1440,36 @@ export function Canvas({
     const onKeyDown = (event: KeyboardEvent) => {
       keysHeldRef.current.add(event.code);
       if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = true;
+      if (event.key === 'w' || event.key === 'W') {
+        if (event.repeat || isTextInput(event.target)) return;
+        wKeyHeldRef.current = true;
+        if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
+        const { x, y } = pagePointFromClient(
+          lastPointerClientRef.current.clientX,
+          lastPointerClientRef.current.clientY,
+        );
+        beginScribbleDrawRef.current(x, y);
+      }
+      if (event.key === 'n' || event.key === 'N') {
+        if (event.repeat || isTextInput(event.target)) return;
+        event.preventDefault();
+        let x: number;
+        let y: number;
+        if (pointerOnCanvasRef.current && lastPointerClientRef.current) {
+          ({ x, y } = pagePointFromClient(
+            lastPointerClientRef.current.clientX,
+            lastPointerClientRef.current.clientY,
+          ));
+        } else {
+          const root = rootRef.current;
+          const canvas = canvasRef.current;
+          if (!root || !canvas) return;
+          const w = root.clientWidth;
+          const h = root.clientHeight - 24;
+          ({ x, y } = screenToPage(w / 2, h / 2, cameraRef.current));
+        }
+        addPostItAtRef.current(x, y);
+      }
       if (event.key === 's' || event.key === 'S') {
         if (event.repeat || isTextInput(event.target)) return;
         sKeyHeldRef.current = true;
@@ -1096,7 +1488,7 @@ export function Canvas({
           lastPointerClientRef.current.clientX,
           lastPointerClientRef.current.clientY,
         );
-        beginPlayheadMoveRef.current(x, y);
+        beginMoveAtRef.current(x, y);
       }
       if (isDuplicateKey(event)) {
         if (event.repeat || isTextInput(event.target)) return;
@@ -1113,6 +1505,13 @@ export function Canvas({
     const onKeyUp = (event: KeyboardEvent) => {
       keysHeldRef.current.delete(event.code);
       if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = false;
+      if (event.key === 'w' || event.key === 'W') {
+        wKeyHeldRef.current = false;
+        const drag = dragRef.current;
+        if (drag?.kind === 'scribble-draw') {
+          commitScribbleDrawRef.current(drag);
+        }
+      }
       if (event.key === 's' || event.key === 'S') {
         sKeyHeldRef.current = false;
         const drag = dragRef.current;
@@ -1124,6 +1523,10 @@ export function Canvas({
         mKeyHeldRef.current = false;
         if (dragRef.current?.kind === 'playhead-move') {
           commitPlayheadMoveRef.current();
+        } else if (dragRef.current?.kind === 'scribble-move') {
+          commitScribbleMoveDragRef.current();
+        } else if (dragRef.current?.kind === 'post-it-move') {
+          commitPostItMoveDragRef.current();
         }
       }
       if (isDuplicateKey(event)) {
@@ -1138,10 +1541,14 @@ export function Canvas({
     };
     const onBlur = () => {
       pKeyHeldRef.current = false;
+      wKeyHeldRef.current = false;
       sKeyHeldRef.current = false;
       mKeyHeldRef.current = false;
       dKeyHeldRef.current = false;
       keysHeldRef.current.clear();
+      if (dragRef.current?.kind === 'scribble-draw') {
+        commitScribbleDrawRef.current(dragRef.current);
+      }
       if (
         dragRef.current?.kind === 'split-line' &&
         dragRef.current.pointerId === KEYBOARD_SPLIT_POINTER_ID
@@ -1152,6 +1559,10 @@ export function Canvas({
       }
       if (dragRef.current?.kind === 'playhead-move') {
         commitPlayheadMoveRef.current();
+      } else if (dragRef.current?.kind === 'scribble-move') {
+        commitScribbleMoveDragRef.current();
+      } else if (dragRef.current?.kind === 'post-it-move') {
+        commitPostItMoveDragRef.current();
       }
       if (dragRef.current?.kind === 'clip-duplicate') {
         commitClipDuplicateRef.current();
@@ -1220,7 +1631,7 @@ export function Canvas({
 
     if (event.button !== 0) return;
 
-    if (mKeyHeldRef.current || dKeyHeldRef.current) return;
+    if (mKeyHeldRef.current || dKeyHeldRef.current || wKeyHeldRef.current) return;
 
     const layout = buildLayout();
     if (!layout) return;
@@ -1244,6 +1655,7 @@ export function Canvas({
 
     if (target.kind === 'playhead') {
       onSelectedClipChange(null);
+      clearAnnotationSelection();
       if (target.playheadId !== activePlayheadId) {
         onActivePlayheadChange(target.playheadId);
         return;
@@ -1261,6 +1673,48 @@ export function Canvas({
         playheadId: target.playheadId,
         pointerId: event.pointerId,
       };
+      return;
+    }
+
+    if (target.kind === 'post-it') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      onSelectedPostItChange(target.postItId);
+      onSelectedClipChange(null);
+      onSelectedScribbleChange(null);
+      return;
+    }
+
+    if (target.kind === 'post-it-resize') {
+      const postIt = findPostIt(doc, target.postItId);
+      if (!postIt) return;
+
+      event.currentTarget.setPointerCapture(event.pointerId);
+      onSelectedPostItChange(target.postItId);
+      onSelectedClipChange(null);
+      onSelectedScribbleChange(null);
+      dragRef.current = {
+        kind: 'post-it-resize',
+        postItId: target.postItId,
+        pointerId: event.pointerId,
+        startPageX: x,
+        startPageY: y,
+        originalWidth: postIt.width,
+        originalHeight: postIt.height,
+      };
+      postItResizePreviewRef.current = {
+        postItId: target.postItId,
+        width: postIt.width,
+        height: postIt.height,
+      };
+      schedulePaint();
+      return;
+    }
+
+    if (target.kind === 'scribble') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      onSelectedScribbleChange(target.scribbleId);
+      onSelectedClipChange(null);
+      onSelectedPostItChange(null);
       return;
     }
 
@@ -1328,10 +1782,13 @@ export function Canvas({
         scheduleClipPreview(clipDragPreviewRef.current, 'in');
       }
       onSelectedClipChange(target.clipId);
+      onSelectedScribbleChange(null);
+      onSelectedPostItChange(null);
       return;
     }
 
     onSelectedClipChange(null);
+    clearAnnotationSelection();
 
     if (pKeyHeldRef.current) {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -1360,13 +1817,18 @@ export function Canvas({
     const { x, y } = pagePoint(event);
     let drag = dragRef.current;
 
+    if (!drag && wKeyHeldRef.current && pointerOnCanvasRef.current) {
+      beginScribbleDraw(x, y);
+      drag = dragRef.current;
+    }
+
     if (!drag && sKeyHeldRef.current) {
       beginSplitLine(x, y, KEYBOARD_SPLIT_POINTER_ID);
       drag = dragRef.current;
     }
 
     if (!drag && mKeyHeldRef.current) {
-      beginPlayheadMove(x, y);
+      beginMoveAt(x, y);
       drag = dragRef.current;
     }
 
@@ -1378,11 +1840,16 @@ export function Canvas({
     if (!drag) {
       const target = hitTestCanvas(layout, x, y);
       setHoveredClipId(target.kind === 'clip-body' ? target.clipId : null);
+      if (canvasRef.current) {
+        canvasRef.current.style.cursor =
+          target.kind === 'post-it-resize' ? 'nwse-resize' : '';
+      }
       return;
     }
 
     if (
       drag.pointerId !== KEYBOARD_SPLIT_POINTER_ID &&
+      drag.pointerId !== KEYBOARD_SCRIBBLE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_PLAYHEAD_MOVE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_CLIP_DUPLICATE_POINTER_ID &&
@@ -1442,12 +1909,63 @@ export function Canvas({
       return;
     }
 
+    if (drag.kind === 'scribble-draw') {
+      if (!wKeyHeldRef.current && !keysHeldRef.current.has('KeyW')) {
+        commitScribbleDraw(drag);
+        return;
+      }
+      const last = drag.points[drag.points.length - 1];
+      if (last && Math.hypot(x - last[0]!, y - last[1]!) < 2 / layout.camera.z) {
+        return;
+      }
+      drag.points.push([x, y, 0.5]);
+      paintDepsRef.current.scribblePreview = buildScribbleOutline(drag.points);
+      schedulePaint();
+      return;
+    }
+
     if (drag.kind === 'playhead-move') {
       if (!mKeyHeldRef.current || !keysHeldRef.current.has('KeyM')) {
         commitPlayheadMove();
         return;
       }
       updatePlayheadMoveDrag(x, y);
+      return;
+    }
+
+    if (drag.kind === 'scribble-move') {
+      if (!mKeyHeldRef.current || !keysHeldRef.current.has('KeyM')) {
+        commitScribbleMoveDrag();
+        return;
+      }
+      updateScribbleMoveDrag(x, y);
+      return;
+    }
+
+    if (drag.kind === 'post-it-move') {
+      if (!mKeyHeldRef.current || !keysHeldRef.current.has('KeyM')) {
+        commitPostItMoveDrag();
+        return;
+      }
+      updatePostItMoveDrag(x, y);
+      return;
+    }
+
+    if (drag.kind === 'post-it-resize') {
+      const width = Math.max(
+        MIN_POST_IT_WIDTH,
+        drag.originalWidth + (x - drag.startPageX),
+      );
+      const height = Math.max(
+        MIN_POST_IT_HEIGHT,
+        drag.originalHeight + (y - drag.startPageY),
+      );
+      postItResizePreviewRef.current = {
+        postItId: drag.postItId,
+        width,
+        height,
+      };
+      schedulePaint();
       return;
     }
 
@@ -1559,6 +2077,14 @@ export function Canvas({
       commitSplitLine(drag);
     } else if (drag.kind === 'scrub-playhead') {
       onScrubbingChange?.(false);
+    } else if (drag.kind === 'post-it-resize') {
+      const preview = postItResizePreviewRef.current;
+      if (preview) {
+        changeDoc((d) => {
+          commitPostItSize(d, preview.postItId, preview.width, preview.height);
+        });
+      }
+      postItResizePreviewRef.current = null;
     } else if (drag.kind === 'move' && preview) {
       clearClipPreview();
       changeDoc((d) => {
@@ -1593,11 +2119,18 @@ export function Canvas({
 
   const onPointerLeave = () => {
     pointerOnCanvasRef.current = false;
+    if (canvasRef.current) {
+      canvasRef.current.style.cursor = '';
+    }
   };
 
   const onPointerEnter = (event: React.PointerEvent<HTMLCanvasElement>) => {
     pointerOnCanvasRef.current = true;
     lastPointerClientRef.current = { clientX: event.clientX, clientY: event.clientY };
+    if (wKeyHeldRef.current && !dragRef.current) {
+      const { x, y } = pagePoint(event);
+      beginScribbleDraw(x, y);
+    }
   };
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1611,6 +2144,10 @@ export function Canvas({
     const screenY = event.clientY - rect.top;
     const { x, y } = screenToPage(screenX, screenY, cameraRef.current);
     const target = hitTestCanvas(layout, x, y);
+    if (target.kind === 'post-it') {
+      startEditingPostIt(target.postItId);
+      return;
+    }
     if (target.kind !== 'clip-body') return;
 
     startEditingClip(target.clipId);
@@ -1640,6 +2177,30 @@ export function Canvas({
       })()
     : null;
 
+  const editingPostItLayout =
+    editingPostItId && layoutRef.current
+      ? layoutRef.current.postIts.find((postIt) => postIt.postItId === editingPostItId)
+      : null;
+
+  const editingPostItScreen = editingPostItLayout
+    ? (() => {
+        const camera = cameraRef.current;
+        const topLeft = pageToScreen(editingPostItLayout.x, editingPostItLayout.y, camera);
+        const bottomRight = pageToScreen(
+          editingPostItLayout.x + editingPostItLayout.width,
+          editingPostItLayout.y + editingPostItLayout.height,
+          camera,
+        );
+        return {
+          left: topLeft.x,
+          top: topLeft.y + RULER_HEIGHT,
+          width: Math.max(40, bottomRight.x - topLeft.x),
+          height: Math.max(24, bottomRight.y - topLeft.y),
+          zoom: camera.z,
+        };
+      })()
+    : null;
+
   return (
     <div ref={rootRef} className="st-canvas-root relative min-h-0 min-w-0 flex-1 overflow-hidden">
       <canvas ref={rulerRef} className="st-ruler block w-full" />
@@ -1664,6 +2225,19 @@ export function Canvas({
           onChange={setEditingDraft}
           onCommit={commitEditingClipName}
           onCancel={cancelEditingClipName}
+        />
+      )}
+      {editingPostItScreen && (
+        <PostItEditor
+          left={editingPostItScreen.left}
+          top={editingPostItScreen.top}
+          width={editingPostItScreen.width}
+          height={editingPostItScreen.height}
+          zoom={editingPostItScreen.zoom}
+          value={postItEditingDraft}
+          onChange={setPostItEditingDraft}
+          onCommit={commitEditingPostIt}
+          onCancel={cancelEditingPostIt}
         />
       )}
     </div>
