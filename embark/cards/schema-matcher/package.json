@@ -3,26 +3,19 @@
   "type": "module",
   "version": "0.0.1",
   "private": true,
-  "main": "./dist/index.js",
-  "exports": "./dist/index.js",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./channels": "./channels.js",
+    "./doc-links": "./doc-links.js",
+    "./match": "./match.js",
+    "./card": "./card.js"
+  },
   "scripts": {
-    "build": "vite build",
     "sync": "pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "dependencies": {
-    "@embark/context": "workspace:*",
-    "@embark/schema": "workspace:*",
-    "@automerge/automerge-repo": "2.6.0-subduction.29",
-    "@inkandswitch/patchwork-plugins": "^0.0.11",
-    "solid-js": "^1.9.11",
-    "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@inkandswitch/patchwork-bootloader": "^0.2.5",
-    "typescript": "^5.8.3",
-    "vite": "^8.0.16",
-    "vite-plugin-css-injected-by-js": "^3.5.2",
-    "vite-plugin-solid": "^2.10.0"
+    "@embark/core": "automerge:2YxstDCjGbfeAqud8w38yuBYBncY"
   }
 }

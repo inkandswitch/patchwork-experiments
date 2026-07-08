@@ -11,5 +11,5 @@ menu goes away again.
 - suggestions come from provider cards (weather, routes, …) answering the
   command channels in [commands](../../context/commands)
 - does nothing off-canvas (no context to publish into)
-- relies on the [codemirror extensions host](../../context/codemirror-extensions-host)
+- relies on the codemirror extensions host (shipped in @embark/core)
   to install what it publishes

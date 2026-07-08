@@ -11,5 +11,5 @@ they disappear.
 - shape *sources* (geo-markers, geo-lines, or any other card writing the
   `geo:shapes` channel) still publish independently; this card only controls
   whether shapes get drawn
-- relies on the [map extensions host](../../context/map-extensions-host) to
+- relies on the map extensions host (shipped in @embark/core) to
   install what it publishes

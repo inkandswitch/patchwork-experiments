@@ -10,5 +10,5 @@ and they stop.
 - does nothing off-canvas (no context to publish into)
 - sticker *sources* (unit/currency/timer/schedule) still publish their stickers
   independently; this card only controls whether they get drawn
-- relies on the [codemirror extensions host](../codemirror-extensions-host) to
+- relies on the codemirror extensions host (shipped in @embark/core) to
   install what it publishes

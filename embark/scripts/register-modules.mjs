@@ -1,7 +1,8 @@
 // Self-contained module-settings registrar for the embark workspace.
 //
-// Reads every pushed feature package's pushwork rootUrl
-// ({editors,context,cards}/*/.pushwork/config.json) and writes them into a module-settings
+// Reads every pushed feature package's pushwork rootUrl (core/.pushwork and
+// cards/*/.pushwork/config.json; cards/legacy is skipped as it holds parked,
+// unconverted cards) and writes them into a module-settings
 // Automerge doc over the Subduction sync server, deduping. No external CLI
 // (pw-modules) required; it uses the same automerge-repo + subduction stack
 // pushwork itself uses.
@@ -30,15 +31,27 @@ import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-// Packages live in three buckets under embark/; scan them all.
-const bucketDirs = ["editors", "context", "cards"].map((b) =>
-  path.join(here, "..", b),
-);
+// Pushwork packages are the per-card packages under cards/ plus the single
+// core package (which holds every editor and context host as one module).
+// cards/legacy has no .pushwork at its top level, so it falls out naturally.
+const bucketDirs = [path.join(here, "..", "cards")];
+const standalonePackages = [path.join(here, "..", "core")];
 const configPath = path.join(here, "..", "module-settings.json");
 const AUTOMERGE_URL_RE = /^automerge:[1-9A-HJ-NP-Za-km-z]+$/;
 
 function readPackageUrls() {
   const urls = [];
+  for (const pkgDir of standalonePackages) {
+    try {
+      const cfg = path.join(pkgDir, ".pushwork", "config.json");
+      const rootUrl = JSON.parse(readFileSync(cfg, "utf8")).rootUrl;
+      if (rootUrl && AUTOMERGE_URL_RE.test(rootUrl)) {
+        urls.push({ name: path.basename(pkgDir), url: rootUrl });
+      }
+    } catch {
+      // not pushed yet
+    }
+  }
   for (const bucketDir of bucketDirs) {
     let entries;
     try {
@@ -186,7 +199,7 @@ async function sync(settingsUrl, removeUrls) {
   const packages = readPackageUrls();
   if (packages.length === 0) {
     throw new Error(
-      "No published packages found ({editors,context,cards}/*/.pushwork/config.json). Run `pnpm -r sync` first.",
+      "No published packages found (core/.pushwork, cards/*/.pushwork/config.json). Sync core and the cards first.",
     );
   }
 
