@@ -41,10 +41,10 @@ import { log } from "../log.js";
  * allow us to loosen this requirement and give tool authors more freedom
  * over which providers are bridged.
  */
-export const ALLOWED_PROVIDERS = new Set([
+export const ALLOWED_PROVIDERS = [
   "patchwork:contact",
   "patchwork:selected-doc",
-]);
+];
 
 /**
  * Resolve the set of provider types to bridge for one isolation instance: the
@@ -59,12 +59,12 @@ export function resolveBridgedProviders(element: HTMLElement): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
   const bridged: string[] = [];
-  for (const type of requested) {
-    if (ALLOWED_PROVIDERS.has(type)) {
-      bridged.push(type);
+  for (const provider of requested) {
+    if (ALLOWED_PROVIDERS.includes(provider)) {
+      bridged.push(provider);
     } else {
       console.warn(
-        `[patchwork-isolation] shared-providers: "${type}" is not in ALLOWED_PROVIDERS. ` +
+        `[patchwork-isolation] shared-providers: "${provider}" is not in ALLOWED_PROVIDERS. ` +
           `New provider types need independent security analysis before being added.`
       );
     }
