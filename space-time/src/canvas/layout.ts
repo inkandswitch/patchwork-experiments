@@ -386,12 +386,6 @@ export function hitTestCanvas(
 ): HitTarget {
   const handleHit = Math.max(HANDLE_WIDTH, MIN_HANDLE_HIT_SCREEN_PX / layout.camera.z);
 
-  for (const ph of [...layout.playheads].reverse()) {
-    if (pointInPlayheadPath(layout, pageX, pageY, ph)) {
-      return { kind: 'playhead', playheadId: ph.playheadId };
-    }
-  }
-
   for (const postIt of [...layout.postIts].reverse()) {
     const resizeHandle = {
       x: postIt.x + postIt.width - handleHit,
@@ -448,6 +442,15 @@ export function hitTestCanvas(
   for (const scribble of [...layout.scribbles].reverse()) {
     if (pointInPolygon(pageX, pageY, scribble.outline)) {
       return { kind: 'scribble', scribbleId: scribble.scribbleId };
+    }
+  }
+
+  // The playhead's clickable "path" band spans the full width of the clips in
+  // its extent, so it is tested last: any clip/post-it/scribble under the
+  // pointer takes precedence, and only empty band area moves the playhead.
+  for (const ph of [...layout.playheads].reverse()) {
+    if (pointInPlayheadPath(layout, pageX, pageY, ph)) {
+      return { kind: 'playhead', playheadId: ph.playheadId };
     }
   }
 
