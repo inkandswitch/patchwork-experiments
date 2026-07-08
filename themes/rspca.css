@@ -1,0 +1,54 @@
+/* RSPCA — the charity's "For Every Kind" rebrand: vivid grass green on clean
+   white, warm forest ink, amber and a red injury/bird-flu alert accent */
+[theme="rspca"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #14261a;
+	--studio-primary: #00a651;
+	--studio-secondary: #2196c9;
+	--studio-danger: #e63329;
+	--studio-warning: #f5a623;
+	--studio-added: #00a651;
+	--studio-deleted: #e63329;
+	--studio-modified: #f5a623;
+	--studio-link: #0a8f4d;
+	--studio-selection-fill: #cdeed9;
+	/* keep the derived ramp pale green rather than the sky-blue secondary */
+	--studio-offset-tint: var(--studio-primary);
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-secondary);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-secondary);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-secondary);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-secondary);
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: #d97b00;
+	--syntax-function--property-name: #d97b00;
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #0a8f4d;
+	--syntax-number: #d97b00;
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #d97b00;
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #d97b00;
+	--syntax-meta: var(--studio-secondary);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

@@ -92,4 +92,5 @@ export const plugins = [
 	themePlugin("turbo", "Turbo", "./turbo.css"),
 	themePlugin("swooshienites", "Swooshnites", "./swooshienites.css"),
 	themePlugin("swooshyyy", "swooshyyy", "./swooshyyy.css"),
+	themePlugin("rspca", "RSPCA", "./rspca.css"),
 ]
