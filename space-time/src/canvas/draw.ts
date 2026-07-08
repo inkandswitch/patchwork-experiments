@@ -7,7 +7,6 @@ import {
   POST_IT_FONT_SIZE,
   POST_IT_LINE_HEIGHT,
   POST_IT_PADDING,
-  formatRulerTime,
   type Camera,
 } from './constants';
 import type { CanvasLayout } from './layout';
@@ -58,6 +57,21 @@ function applyCameraTransform(
   ctx.setTransform(z, 0, 0, z, camera.x * z, camera.y * z);
 }
 
+/** Page-space x that reads as time 0:00 — the active playhead's start, if any. */
+function timeOriginX(layout: CanvasLayout): number {
+  const active = layout.playheads.find((ph) => ph.active);
+  return active ? active.x : 0;
+}
+
+/** Format a time in seconds, allowing negatives (e.g. "-1:05"). */
+function formatSignedRulerTime(seconds: number): string {
+  const sign = seconds < 0 ? '-' : '';
+  const whole = Math.floor(Math.abs(seconds));
+  const mins = Math.floor(whole / 60);
+  const secs = whole % 60;
+  return `${sign}${mins}:${String(secs).padStart(2, '0')}`;
+}
+
 function drawGrid(ctx: CanvasRenderingContext2D, theme: CanvasTheme, layout: CanvasLayout): void {
   const { camera, width, height } = layout;
   const pageLeft = -camera.x;
@@ -65,14 +79,15 @@ function drawGrid(ctx: CanvasRenderingContext2D, theme: CanvasTheme, layout: Can
   const pageRight = pageLeft + width / camera.z;
   const pageBottom = pageTop + height / camera.z;
 
-  const startSecond = Math.floor(pageLeft / PIXELS_PER_SECOND);
-  const endSecond = Math.ceil(pageRight / PIXELS_PER_SECOND);
+  const originX = timeOriginX(layout);
+  const startSecond = Math.floor((pageLeft - originX) / PIXELS_PER_SECOND);
+  const endSecond = Math.ceil((pageRight - originX) / PIXELS_PER_SECOND);
 
   ctx.strokeStyle = theme.grid;
   ctx.lineWidth = 1 / camera.z;
 
   for (let second = startSecond; second <= endSecond; second++) {
-    const x = second * PIXELS_PER_SECOND;
+    const x = originX + second * PIXELS_PER_SECOND;
     const major = second % 5 === 0;
     ctx.strokeStyle = major ? theme.gridMajor : theme.grid;
     ctx.beginPath();
@@ -472,15 +487,16 @@ export function drawTimeRuler(
 
   const pageLeft = -camera.x;
   const pageRight = pageLeft + width / camera.z;
-  const startSecond = Math.floor(pageLeft / PIXELS_PER_SECOND);
-  const endSecond = Math.ceil(pageRight / PIXELS_PER_SECOND);
+  const originX = timeOriginX(layout);
+  const startSecond = Math.floor((pageLeft - originX) / PIXELS_PER_SECOND);
+  const endSecond = Math.ceil((pageRight - originX) / PIXELS_PER_SECOND);
 
   ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
   for (let second = startSecond; second <= endSecond; second++) {
-    const pageX = second * PIXELS_PER_SECOND;
+    const pageX = originX + second * PIXELS_PER_SECOND;
     const screenX = (pageX + camera.x) * camera.z;
     const major = second % 5 === 0;
     ctx.strokeStyle = major ? theme.gridMajor : theme.grid;
@@ -491,7 +507,7 @@ export function drawTimeRuler(
 
     if (major) {
       ctx.fillStyle = theme.textMuted;
-      ctx.fillText(formatRulerTime(second), screenX, 10);
+      ctx.fillText(formatSignedRulerTime(second), screenX, 10);
     }
   }
 }
