@@ -3,6 +3,7 @@
     "target": "ESNEXT",
     "module": "ESNEXT",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "allowJs": true,

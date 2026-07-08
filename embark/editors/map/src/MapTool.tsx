@@ -4,6 +4,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { render } from "solid-js/web";
 import { installMapExtensionsHost } from "@embark/map-extensions-host";
+import { version } from "../package.json";
 import {
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -165,6 +166,13 @@ export const MapTool: ToolRender = (rawHandle, element) => {
   const searchHost = document.createElement("div");
   searchHost.className = "embark-map-search-host";
   container.appendChild(searchHost);
+
+  // The bundled package version, visible so a deployed sync can be verified at
+  // a glance (bump package.json's version before syncing).
+  const versionBadge = document.createElement("div");
+  versionBadge.className = "embark-map-version";
+  versionBadge.textContent = `v${version}`;
+  container.appendChild(versionBadge);
   const disposeSearch = render(
     () => <SearchPanel map={map} handle={handle} onCameraControl={() => {}} />,
     searchHost,

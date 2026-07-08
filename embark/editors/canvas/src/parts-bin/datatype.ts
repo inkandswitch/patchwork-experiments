@@ -1,6 +1,7 @@
 import type { Repo } from "@automerge/automerge-repo";
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type { CardDoc } from "@embark/card";
+import type { DeckCard, DeckDoc } from "../deck/types";
 import type { PartsBinDoc, PartsBinItem } from "./types";
 
 // Berlin, matching @embark/map's defaults, inlined so the parts bin seeds a
@@ -206,10 +207,34 @@ const CARD_SEEDS: CardSeed[] = [
   },
 ];
 
+// Pre-made piles: themed sets of cards, each minted as its own deck document.
+// Every card in a deck is a fresh `card` document (via the same CARD_SEEDS
+// rows, matched by title), so a deck's cards are independent of the loose
+// examples in the bin.
+const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
+  {
+    title: "Core",
+    cardTitles: ["Pointer", "Open Documents", "Schema Matcher"],
+  },
+  {
+    title: "Maps",
+    cardTitles: ["Geo Shapes", "Geo Markers", "Geo Lines", "Geo Zoom"],
+  },
+  {
+    title: "Embark",
+    cardTitles: ["Place Finder", "Weather", "Routes", "Schedule"],
+  },
+  {
+    title: "Markdown",
+    cardTitles: ["Mentions", "Stickers", "Commands"],
+  },
+];
+
 // The starter set: every card (one uniform `card` document each), plus a
-// blank placeholder card, a map, an empty markdown note, an empty deck, and
-// the context viewer (still its own tool). `repo.create` doesn't run a
-// datatype's `init`, so each child doc's initial value is set inline here.
+// blank placeholder card, the pre-made decks, a map, an empty markdown note,
+// an empty deck, and the context viewer (still its own tool). `repo.create`
+// doesn't run a datatype's `init`, so each child doc's initial value is set
+// inline here.
 export function seedExampleItems(repo: Repo): PartsBinItem[] {
   const cardItems: PartsBinItem[] = CARD_SEEDS.map((seed) => ({
     id: crypto.randomUUID(),
@@ -235,6 +260,14 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     "@patchwork": { type: "markdown", title: "Note" },
     content: "",
   });
+  // The pre-made decks. Dragging one out deep-clones the deck *and* its cards
+  // (the drag-out rewrite follows the card references), so each canvas gets an
+  // independent pile.
+  const deckItems: PartsBinItem[] = DECK_SEEDS.map((seed) => ({
+    id: crypto.randomUUID(),
+    url: mintDeck(repo, seed).url,
+    toolId: "deck",
+  }));
   // A fresh, empty deck. Dragging the example out clones it, so each canvas
   // starts its own pile; cards are added by dragging embeds into it.
   const deck = repo.create({
@@ -259,6 +292,7 @@ export function seedExampleItems(repo: Repo): PartsBinItem[] {
     // here (e.g. the legacy "codemirror-base") silently blanks the preview
     // whenever that id isn't registered in the host.
     { id: crypto.randomUUID(), url: note.url },
+    ...deckItems,
     { id: crypto.randomUUID(), url: deck.url, toolId: "deck" },
     {
       id: crypto.randomUUID(),
@@ -281,6 +315,31 @@ function mintCard(repo: Repo, seed: CardSeed) {
     icon: seed.icon,
     accent: seed.accent,
     ...(seed.state as Partial<CardDoc>),
+  });
+}
+
+// A pre-made deck: a folded pile of freshly minted cards, one per named
+// CARD_SEEDS row. A missing title is a programming error in DECK_SEEDS, so it
+// throws rather than silently dealing a thinner deck.
+function mintDeck(
+  repo: Repo,
+  seed: { title: string; cardTitles: string[] },
+) {
+  const cards: DeckCard[] = seed.cardTitles.map((cardTitle) => {
+    const cardSeed = CARD_SEEDS.find((entry) => entry.title === cardTitle);
+    if (!cardSeed) throw new Error(`Unknown card seed: ${cardTitle}`);
+    return {
+      id: crypto.randomUUID(),
+      url: mintCard(repo, cardSeed).url,
+      toolId: "card",
+    };
+  });
+
+  return repo.create<DeckDoc>({
+    "@patchwork": { type: "deck" },
+    title: seed.title,
+    fanned: false,
+    cards,
   });
 }
 

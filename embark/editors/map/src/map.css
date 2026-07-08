@@ -14,6 +14,18 @@
    @embark/map-extensions-host); their styles ship with the extension bundles
    (e.g. @embark/geo-shapes' renderer.css). */
 
+/* The bundled package version, for verifying a deployed sync at a glance. */
+.embark-map-version {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  z-index: 5;
+  pointer-events: none;
+  font: 11px/1 system-ui, sans-serif;
+  color: rgba(32, 33, 36, 0.65);
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.8);
+}
+
 /* --- Search overlay ------------------------------------------------------- */
 
 /* A full-bleed host so the panel can be absolutely placed; it never intercepts

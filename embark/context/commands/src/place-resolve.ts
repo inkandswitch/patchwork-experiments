@@ -42,6 +42,9 @@ export type PlaceResolver = {
   // Locate a typed place: among the canvas's {lat, lon} pairs first (matched by
   // name), then via a one-off search. Null when nothing matches.
   resolveLatLon(place: string): Promise<Located | null>;
+  // Canvas-only fuzzy lookup — no search fallback. Cheap enough to probe with
+  // speculative fragments (e.g. candidate segmentations of a typed query).
+  matchOnCanvas(place: string): Promise<Located | null>;
   // Up to `count` distinct places already on the canvas, for the eager command
   // samples shown before the user has typed anything.
   resolveSamples(count: number): Promise<Located[]>;
@@ -75,11 +78,15 @@ export function createPlaceResolver(
   );
 
   const resolveLatLon = async (place: string): Promise<Located | null> => {
+    return (await matchOnCanvas(place)) ?? resolveViaSearch(place);
+  };
+
+  const matchOnCanvas = async (place: string): Promise<Located | null> => {
     for (const match of latLonMatches) {
       const found = await locatedFromMatch(match);
       if (found && fuzzyMatch(found.place, place)) return found;
     }
-    return resolveViaSearch(place);
+    return null;
   };
 
   // The first `count` distinct (by coordinate) places already on the canvas
@@ -166,6 +173,7 @@ export function createPlaceResolver(
 
   return {
     resolveLatLon,
+    matchOnCanvas,
     resolveSamples,
     release() {
       unsubscribeMatches();

@@ -1,14 +1,15 @@
 import { defineConfig } from "vite";
-import solidPlugin from "vite-plugin-solid";
-import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
 import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
-  plugins: [solidPlugin(), cssInjectedByJsPlugin()],
   build: {
     lib: {
-      entry: { index: "src/index.ts", card: "src/card.tsx" },
+      entry: {
+        index: "src/index.ts",
+        card: "src/card.ts",
+        plugins: "src/plugins.ts",
+      },
       formats: ["es"],
       fileName: (_format, entryName) => `${entryName}.js`,
     },

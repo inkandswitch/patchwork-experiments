@@ -97,11 +97,19 @@ export function RegeneratePanel(props: {
         : msg.content;
     });
 
-  // Keep the newest output in view as it streams.
+  // Keep the newest output in view as it streams, but only while the log is
+  // already at its tail — scrolling up pauses the follow so earlier output
+  // stays readable mid-run, and scrolling back to the bottom resumes it.
   let logEl: HTMLDivElement | undefined;
+  let followTail = true;
+  const onLogScroll = () => {
+    if (!logEl) return;
+    followTail =
+      logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 24;
+  };
   createEffect(() => {
     blocks();
-    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    if (logEl && followTail) logEl.scrollTop = logEl.scrollHeight;
   });
 
   return (
@@ -138,7 +146,12 @@ export function RegeneratePanel(props: {
         </Show>
 
         <Show when={blocks().length > 0}>
-          <div class="embark-inspect-regen__log" ref={logEl}>
+          <div
+            class="embark-inspect-regen__log"
+            ref={logEl}
+            on:scroll={onLogScroll}
+            on:pointerdown={(event) => event.stopPropagation()}
+          >
             <Index each={blocks()}>
               {(block) => <LogBlock block={block()} />}
             </Index>

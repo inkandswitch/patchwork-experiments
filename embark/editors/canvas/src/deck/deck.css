@@ -44,6 +44,15 @@
   cursor: grabbing;
 }
 
+/* Highlight for a held card whose document is emphasized elsewhere (the shared
+   Highlight channel — a hovered mention, a map pin, a context-viewer token).
+   Mirrors the canvas's frameless-embed highlight: a blue drop-shadow that hugs
+   the content's own silhouette; two stacked shadows approximate an even glow. */
+.embark-deck__card--highlighted {
+  filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.75))
+    drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
+}
+
 /* The content at its natural size, shrunk into the slot by the inline
    transform (same trick as the parts-bin previews). It shrink-wraps the
    content — a playing card lays out at its own fixed footprint — with a width

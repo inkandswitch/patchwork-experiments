@@ -239,12 +239,13 @@ function ContextBody(props: {
 
 // The channel list: every live channel merged across the whole canvas, each
 // drawn by the generic ChannelView (no hardcoded roster — the store enumerates
-// them). Everything renders through the self-excluding lens, and channels left
-// with no visible scopes and no visible readers are dropped entirely — a
-// channel that exists only because the viewer touched it never shows. With
-// `focus` set, the list narrows further to channels the focused document is
-// involved in — it owns a scope or reads the channel — and each ChannelView
-// narrows its entries to the keys that document added or reads.
+// them) as a headline over a sectioned table. Everything renders through the
+// self-excluding lens, and channels left with no visible scopes and no visible
+// readers are dropped entirely — a channel that exists only because the viewer
+// touched it never shows. With `focus` set, the list narrows further to
+// channels the focused document is involved in — it owns a scope or reads the
+// channel — and each ChannelView narrows its entries to the keys that document
+// added or reads.
 function AllContextView(props: {
   ctx: InspectorContext;
   highlight: HighlightController;
@@ -290,16 +291,13 @@ function AllContextView(props: {
     >
       <For each={shown()}>
         {(channel) => (
-          <div class="embark-context__channel">
-            <div class="embark-context__name">{channel.name}</div>
-            <ChannelView
-              context={view()}
-              self={props.ctx.self}
-              highlight={props.highlight}
-              channel={channel as Channel<Record<string, unknown>>}
-              focus={props.focus}
-            />
-          </div>
+          <ChannelView
+            context={view()}
+            self={props.ctx.self}
+            highlight={props.highlight}
+            channel={channel as Channel<Record<string, unknown>>}
+            focus={props.focus}
+          />
         )}
       </For>
     </Show>

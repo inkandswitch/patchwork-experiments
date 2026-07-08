@@ -37,10 +37,12 @@ type LatLon = { lat: number; lon: number };
 type RouteResult = { coords: LatLon[]; distanceKm: number; durationS: number };
 
 // A contributor that answers the canvas command channel with `/Drive`, `/Walk`,
-// and `/Transit` commands. For each it resolves the two places (`<from> to
-// <to>`) to coordinates — reusing the shared place resolver, so it biases toward
-// places already on the canvas just like weather — fetches a route from the
-// configured router, mints a route-card whose `route` is the decoded polyline
+// and `/Transit` commands. For each it resolves two places to coordinates —
+// the explicit `<from> to <to>` form, or a separator-less `<from> <to>` /
+// lone `<from>` fuzzy-matched against places already on the canvas (reusing
+// the shared place resolver, so it biases toward canvas places just like
+// weather) — fetches a route from the configured router, mints a route-card
+// whose `route` is the decoded polyline
 // (which the map then draws as a line), and offers it as a suggestion. The
 // card's face is drawn by the shared card shell, so it renders nothing into the
 // middle slot; all of its working state lives in the shared canvas context.
@@ -87,7 +89,7 @@ export function RouteProvider(props: { element: ToolElement }) {
     const active = new Set(Object.keys(store.read(CommandQueries)));
 
     for (const query of active) {
-      if (!parseRoute(query) && !isRouteDiscovery(query)) continue;
+      if (!parseCommand(query) && !isRouteDiscovery(query)) continue;
       if (handled.has(query) || inFlight.has(query) || timers.has(query)) {
         continue;
       }
@@ -114,28 +116,17 @@ export function RouteProvider(props: { element: ToolElement }) {
   };
 
   // Resolve a routing query end to end: places -> coordinates -> route
-  // -> card -> suggestion. A typed query routes `<from>` to `<to>`; a discovery
-  // query (`/`, `/Dri`) instead showcases a drive between two places already on
-  // the canvas. Bails out (leaving the query unanswered) if a place can't be
-  // located, the route fails, or the query is dropped mid-way.
+  // -> card -> suggestion. Bails out (leaving the query unanswered) if the
+  // places can't be located, the route fails, or the query is dropped mid-way.
+  // Whatever shape the query takes, at most one route is fetched per query, so
+  // typing never fans out into a batch of routing requests.
   const resolve = async (query: string) => {
     if (disposed || !resolver) return;
     inFlight.add(query);
     try {
-      const parsed = parseRoute(query);
-      let mode: Mode;
-      let from: Located | null;
-      let to: Located | null;
-      if (parsed) {
-        mode = parsed.mode;
-        from = await resolver.resolveLatLon(parsed.from);
-        to = from ? await resolver.resolveLatLon(parsed.to) : null;
-      } else {
-        mode = COMMANDS[0]; // discovery → a sample Drive
-        const samples = await resolver.resolveSamples(2);
-        [from, to] = [samples[0] ?? null, samples[1] ?? null];
-      }
-      if (disposed || !from || !to) return;
+      const endpoints = await resolveEndpoints(query);
+      if (disposed || !endpoints) return;
+      const { mode, from, to } = endpoints;
       if (!(query in store.read(CommandQueries))) return; // dropped while resolving
 
       const key = `${mode.costing}|${coordKey(from)}|${coordKey(to)}`;
@@ -160,6 +151,71 @@ export function RouteProvider(props: { element: ToolElement }) {
     } finally {
       inFlight.delete(query);
     }
+  };
+
+  // Turn a query into a mode and two located endpoints, or null when they
+  // can't be found. Tries, in order: the explicit `<from> to <to>` form, a
+  // separator-less `<from> <to>` segmented against the canvas's places, a lone
+  // origin paired with one other canvas place, and — for a bare command
+  // (discovery) — a sample trip between two canvas places.
+  const resolveEndpoints = async (
+    query: string,
+  ): Promise<{ mode: Mode; from: Located; to: Located } | null> => {
+    if (!resolver) return null;
+    const parsed = parseCommand(query);
+    if (!parsed) {
+      const samples = await resolver.resolveSamples(2);
+      if (!samples[0] || !samples[1]) return null;
+      return { mode: COMMANDS[0], from: samples[0], to: samples[1] };
+    }
+    const { mode, args } = parsed;
+    const explicit = splitOnTo(args);
+    if (explicit) {
+      const from = await resolver.resolveLatLon(explicit.from);
+      const to = from ? await resolver.resolveLatLon(explicit.to) : null;
+      return from && to ? { mode, from, to } : null;
+    }
+    const inferred = await inferEndpoints(args);
+    if (inferred) return { mode, ...inferred };
+    return originWithSampleDestination(mode, args);
+  };
+
+  // Segment a separator-less "<from> <to>" by trying every token split
+  // (longest origin first) and keeping the first where both halves fuzzy-match
+  // places already on the canvas at distinct coordinates. Canvas-only matching
+  // — speculative fragments must not fire one-off searches. Segments under 2
+  // chars are skipped so a lone letter doesn't substring-match half the canvas.
+  const inferEndpoints = async (
+    args: string,
+  ): Promise<{ from: Located; to: Located } | null> => {
+    if (!resolver) return null;
+    const tokens = args.split(/\s+/).filter(Boolean);
+    for (let split = tokens.length - 1; split >= 1; split--) {
+      const fromText = tokens.slice(0, split).join(" ");
+      const toText = tokens.slice(split).join(" ");
+      if (fromText.length < 2 || toText.length < 2) continue;
+      const from = await resolver.matchOnCanvas(fromText);
+      if (!from) continue;
+      const to = await resolver.matchOnCanvas(toText);
+      if (to && coordKey(to) !== coordKey(from)) return { from, to };
+    }
+    return null;
+  };
+
+  // A lone place ("/drive 71A"): use it as the origin and pair it with the
+  // first other place on the canvas, so the menu offers one plausible route
+  // before a destination has been typed.
+  const originWithSampleDestination = async (
+    mode: Mode,
+    args: string,
+  ): Promise<{ mode: Mode; from: Located; to: Located } | null> => {
+    if (!resolver) return null;
+    const from = await resolver.matchOnCanvas(args);
+    if (!from) return null;
+    const to = (await resolver.resolveSamples(5)).find(
+      (sample) => coordKey(sample) !== coordKey(from),
+    );
+    return to ? { mode, from, to } : null;
   };
 
   // One route-card per trip. The endpoints aren't duplicated — `from` and `to`
@@ -194,29 +250,35 @@ export function RouteProvider(props: { element: ToolElement }) {
   return null;
 }
 
-// Parse a `/`-command query into its mode and the two places. The first token
-// must be a prefix of one command name (>= 3 chars, to avoid hijacking unrelated
-// commands); the rest is `<from> to <to>`, split on the word "to" so multi-word
-// place names work. Null when it isn't a routing command or a place is missing.
-function parseRoute(
-  query: string,
-): { mode: Mode; from: string; to: string } | null {
+// Parse a `/`-command query into its mode and raw arguments. The first token
+// must be a prefix of one command name (>= 3 chars, to avoid hijacking
+// unrelated commands); `args` is everything after it, in whatever shape the
+// user typed (`<from> to <to>`, or just place names). Null when it isn't a
+// routing command or no arguments were typed yet (that's discovery's job).
+function parseCommand(query: string): { mode: Mode; args: string } | null {
   const trimmed = query.trim();
   if (!trimmed) return null;
   const space = trimmed.search(/\s/);
   if (space === -1) return null; // command only, no args → discovery
   const command = trimmed.slice(0, space).toLowerCase();
-  const rest = trimmed.slice(space + 1).trim();
+  const args = trimmed.slice(space + 1).trim();
   const mode = COMMANDS.find(
     (c) => command.length >= 3 && c.name.startsWith(command),
   );
-  if (!mode || !rest) return null;
-  const parts = rest.split(/\s+to\s+/i);
-  if (parts.length < 2) return null; // need both a from and a to
+  if (!mode || !args) return null;
+  return { mode, args };
+}
+
+// Split "<from> to <to>" on the word "to" (the explicit separator), so
+// multi-word place names work. Null when the args carry no separator — the
+// caller then falls back to fuzzy segmentation against the canvas's places.
+function splitOnTo(args: string): { from: string; to: string } | null {
+  const parts = args.split(/\s+to\s+/i);
+  if (parts.length < 2) return null;
   const from = parts[0].trim();
   const to = parts.slice(1).join(" to ").trim();
   if (!from || !to) return null;
-  return { mode, from, to };
+  return { from, to };
 }
 
 // Whether a `/` query should surface the eager route sample: the bare command

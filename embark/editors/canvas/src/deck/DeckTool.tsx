@@ -1,10 +1,29 @@
-import type { DocHandle, Repo } from "@automerge/automerge-repo";
-import type { ToolRender } from "@inkandswitch/patchwork-plugins";
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  isValidAutomergeUrl,
+  parseAutomergeUrl,
+  type AutomergeUrl,
+  type DocHandle,
+  type Repo,
+} from "@automerge/automerge-repo";
+import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
+import {
+  For,
+  Show,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
+import {
+  findContextStore,
+  requireOwner,
+  type ScopeOwner,
+} from "@embark/context";
+import { Highlight } from "@embark/selection";
 import {
   getDocumentDragPayload,
   getDragSource,
@@ -48,7 +67,7 @@ export const DeckTool: ToolRender = (handle, element) => {
   const dispose = render(
     () => (
       <RepoContext.Provider value={element.repo}>
-        <Deck handle={handle as DocHandle<DeckDoc>} />
+        <Deck handle={handle as DocHandle<DeckDoc>} host={element} />
       </RepoContext.Provider>
     ),
     element,
@@ -59,7 +78,7 @@ export const DeckTool: ToolRender = (handle, element) => {
   };
 };
 
-function Deck(props: { handle: DocHandle<DeckDoc> }) {
+function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
   const repo = useRepo();
   // Drive the view from a full snapshot reconciled on every change (matching the
   // parts bin): solid-automerge's fine-grained projection can transiently
@@ -78,16 +97,48 @@ function Deck(props: { handle: DocHandle<DeckDoc> }) {
   const [dragOver, setDragOver] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
 
+  // Attribution for the context subscription: resolved structurally where
+  // possible (the deck sits inside a `<patchwork-view doc-url=…>`), falling
+  // back to naming the deck document itself (anonymous traffic throws by
+  // contract). Same convention as the canvas.
+  const contextOwner = (element: Element): ScopeOwner => {
+    try {
+      return requireOwner(element);
+    } catch {
+      return { docUrl: props.handle.url, toolId: "deck" };
+    }
+  };
+
+  // Read the shared `Highlight` channel — the same one the canvas embeds
+  // glow from — so a held card whose document is being emphasized elsewhere
+  // (a hovered mention, a map pin, a context-viewer token) lights up in the
+  // pile. Highlight keys can be sub-document urls, so compare by document id.
+  const [highlight, setHighlight] = createSignal(Highlight.empty);
+  onMount(() => {
+    const store = findContextStore(props.host);
+    setHighlight(() => store.read(Highlight));
+    onCleanup(
+      store.subscribe(Highlight, (next) => setHighlight(() => next), {
+        owner: contextOwner(props.host),
+      }),
+    );
+  });
+  const highlightedDocIds = createMemo(() => {
+    const ids = new Set<string>();
+    for (const url of Object.keys(highlight())) {
+      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
+    }
+    return ids;
+  });
+
   const toggleFan = () =>
     props.handle.change((d) => {
       d.fanned = !d.fanned;
     });
 
-  // --- Accept a card dropped in. Set the drop effect to "move" so the canvas,
-  // reading it back off the shared DataTransfer, deletes the source embed — the
-  // card moves into the deck rather than being copied. (Sources that only allow
-  // "copy", e.g. a parts-bin example, fall back to a copy.) We ignore the deck's
-  // own card drags so dragging a card out and back is inert.
+  // --- Accept a card dropped in, preferring a move (the card moves into the
+  // deck rather than being copied). We ignore the deck's own card drags so
+  // dragging a card out and back is inert.
   const acceptsDrop = (dataTransfer: DataTransfer | null) =>
     hasDocumentDrag(dataTransfer) && getDragSource(dataTransfer) !== "deck";
 
@@ -101,11 +152,18 @@ function Deck(props: { handle: DocHandle<DeckDoc> }) {
       return;
     }
     event.preventDefault();
-    // Always claim the card as a move so the canvas, reading this back off the
-    // shared DataTransfer, deletes the source embed. (Setting it from
-    // `effectAllowed` was unreliable: a reused synthetic DataTransfer can read
-    // back as "none", which fell through to a copy.)
-    if (dataTransfer) dataTransfer.dropEffect = "move";
+    // Advertise an effect the source permits. A copy-only native drag (a
+    // parts-bin example) must see "copy" — per the DnD spec a final dropEffect
+    // outside effectAllowed cancels the whole drop, there is no fallback. Every
+    // other source gets "move". Synthetic bridge drags don't care either way:
+    // their script-created DataTransfer ignores the effect setters (its
+    // effectAllowed reads "none", landing in the "move" arm), and the move-in
+    // claim rides markEmbedClaimed, not dropEffect (see drop-claim).
+    if (dataTransfer) {
+      const allowed = dataTransfer.effectAllowed;
+      dataTransfer.dropEffect =
+        allowed === "copy" || allowed === "copyLink" ? "copy" : "move";
+    }
     setDragOver(true);
   };
 
@@ -225,6 +283,9 @@ function Deck(props: { handle: DocHandle<DeckDoc> }) {
             card={card}
             transform={cardTransform(index())}
             z={index() + 1}
+            highlighted={
+              card.url ? highlightedDocIds().has(docIdOf(card.url)) : false
+            }
             onDealt={() => removeCard(card.id)}
           />
         )}
@@ -310,6 +371,7 @@ function DeckCardView(props: {
   card: DeckCard;
   transform: string;
   z: number;
+  highlighted: boolean;
   onDealt: () => void;
 }) {
   const [doc] = useDocument<NamedDoc>(() => props.card.url);
@@ -392,6 +454,7 @@ function DeckCardView(props: {
   return (
     <div
       class="embark-deck__card"
+      classList={{ "embark-deck__card--highlighted": props.highlighted }}
       draggable={true}
       style={{ transform: props.transform, "z-index": props.z }}
       title="Drag onto the canvas to deal this card out"
@@ -413,6 +476,14 @@ function DeckCardView(props: {
       </div>
     </div>
   );
+}
+
+// The document id of a card's url, used to match against the (possibly
+// sub-document) urls in the Highlight channel. Falls back to the raw url when
+// it can't be parsed so a malformed url simply never matches. Mirrors the
+// canvas's helper.
+function docIdOf(url: AutomergeUrl): string {
+  return isValidAutomergeUrl(url) ? parseAutomergeUrl(url).documentId : url;
 }
 
 // Use a small title token as the drag image instead of the browser's snapshot of

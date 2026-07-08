@@ -399,13 +399,9 @@ export function SearchPanel(props: {
     maybeRoute();
   };
 
+  // Draw the route and frame it — the user-initiated routing path.
   const drawRoute = (result: Route, fromPlace: Place, toPlace: Place) => {
-    setRouteLine(result.coords.map((c) => [c.lon, c.lat]));
-    clearEndpointMarkers();
-    endpointMarkers = [
-      originMarker(fromPlace),
-      destinationMarker(toPlace),
-    ];
+    renderRouteGraphics(result, fromPlace, toPlace);
     const bounds = new maplibregl.LngLatBounds(
       [result.coords[0].lon, result.coords[0].lat],
       [result.coords[0].lon, result.coords[0].lat],
@@ -413,6 +409,18 @@ export function SearchPanel(props: {
     for (const c of result.coords) bounds.extend([c.lon, c.lat]);
     map.fitBounds(bounds, { padding: 90, maxZoom: 15 });
     props.onCameraControl(true);
+  };
+
+  // Just the line + endpoint markers, no camera movement. Also used when
+  // applying a doc-persisted route, where the map's own persisted viewport
+  // stays authoritative.
+  const renderRouteGraphics = (result: Route, fromPlace: Place, toPlace: Place) => {
+    setRouteLine(result.coords.map((c) => [c.lon, c.lat]));
+    clearEndpointMarkers();
+    endpointMarkers = [
+      originMarker(fromPlace),
+      destinationMarker(toPlace),
+    ];
   };
 
   const originMarker = (place: Place): maplibregl.Marker =>
@@ -526,6 +534,79 @@ export function SearchPanel(props: {
     const b = map.getBounds();
     return [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()].join(",");
   };
+
+  // --- Doc -> UI --------------------------------------------------------------
+
+  // Apply a selection persisted by a previous session or written by a peer:
+  // fill the signals and draw the graphics, but never move the camera (the
+  // map's own persisted viewport stays authoritative) and never write back
+  // (writes are suppressed via `applyingDoc` for the duration).
+  const applyDoc = () => {
+    const doc = props.handle.doc();
+    if (!doc) return;
+    applyingDoc = true;
+    try {
+      applyDocRoute(doc.selectedRoute);
+      applyDocDestination(doc.selectedDestination);
+    } finally {
+      applyingDoc = false;
+    }
+  };
+
+  const applyDocRoute = (persisted: PersistedRoute | undefined) => {
+    if (!persisted) {
+      // Cleared remotely while we're showing a route: leave directions.
+      if (appliedRouteKey) {
+        appliedRouteKey = "";
+        if (view() === "directions") closeDirections();
+      }
+      return;
+    }
+    const key = routeKey(persisted);
+    if (key === appliedRouteKey) return;
+    appliedRouteKey = key;
+    const fromEnd: Place = { ...persisted.from };
+    const toEnd: Place = { ...persisted.to };
+    const result: Route = {
+      coords: persisted.coords.map((c) => ({ lat: c.lat, lon: c.lon })),
+      distanceKm: persisted.distanceKm,
+      durationS: persisted.durationS,
+    };
+    setView("directions");
+    setFrom(fromEnd.name);
+    setFromPlace(fromEnd);
+    setTo(toEnd.name);
+    setToPlace(toEnd);
+    setMode(persisted.mode);
+    setRoute(result);
+    setRouteEnds({ from: fromEnd, to: toEnd });
+    // Seed the fetch-dedupe key so enter/mode-change on the restored trip
+    // don't re-route identically.
+    lastRouteKey = `${persisted.mode}|${fromEnd.name.toLowerCase()}|${toEnd.name.toLowerCase()}`;
+    renderRouteGraphics(result, fromEnd, toEnd);
+  };
+
+  const applyDocDestination = (persisted: PersistedPlace | undefined) => {
+    if (!persisted) {
+      // Cleared remotely while we're showing a selection: drop it.
+      if (appliedDestKey) {
+        appliedDestKey = "";
+        setSelectedPlace(undefined);
+        clearPlaceMarkers();
+      }
+      return;
+    }
+    const key = placeKey(persisted);
+    if (key === appliedDestKey) return;
+    appliedDestKey = key;
+    const place: Place = { ...persisted };
+    setSelectedPlace(place);
+    renderPlaceMarkers([place]);
+  };
+
+  applyDoc();
+  props.handle.on("change", applyDoc);
+  onCleanup(() => props.handle.off("change", applyDoc));
 
   return (
     <div

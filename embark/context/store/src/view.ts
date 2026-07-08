@@ -9,16 +9,24 @@ import {
 import { belongsToDoc } from "./attribution";
 
 // The read/interact surface a context inspector needs: the merged value of a
-// channel, its per-scope contributions, its readers, change notifications, and
-// a handle for the ambient hover->highlight interaction. A plain `ContextStore`
-// satisfies this structurally (it has these plus channel enumeration), so
-// whole-context mode hands the store itself to the inspector; a focused view
-// hands a `filterChannel` lens instead. Because both share this interface, an
+// channel, its per-scope contributions, its readers (deduped owners plus the
+// raw per-subscription interests, so an inspector can tell whole-channel
+// readers from key-declared ones), change notifications, and a handle for the
+// ambient hover->highlight interaction. A plain `ContextStore` satisfies this
+// structurally (it has these plus channel enumeration), so whole-context mode
+// hands the store itself to the inspector; a focused view hands a
+// `filterChannel` lens instead. Because both share this interface, an
 // inspector can't tell whether it is drawing the whole canvas or one embed's
 // slice — the viewer decides by choosing which one to pass.
 export type ContextView = Pick<
   ContextStore,
-  "read" | "scopes" | "subscribe" | "handle" | "readers" | "subscribeReaders"
+  | "read"
+  | "scopes"
+  | "subscribe"
+  | "handle"
+  | "readers"
+  | "interests"
+  | "subscribeReaders"
 >;
 
 // A lens over a store that narrows a single channel to the scopes whose owner
@@ -55,6 +63,7 @@ export function filterChannel(
     },
     handle: store.handle,
     readers: store.readers,
+    interests: store.interests,
     subscribeReaders: store.subscribeReaders,
   };
 }
@@ -94,6 +103,11 @@ export function excludeOwner(
       key?: string,
     ): ScopeOwner[] {
       return store.readers(channel, key).filter((owner) => !isSelf(owner));
+    },
+    interests<T extends Record<string, unknown>>(
+      channel: Channel<T>,
+    ): ReadInterest[] {
+      return store.interests(channel).filter((i) => !isSelf(i.owner));
     },
     subscribe: store.subscribe,
     handle: store.handle,
