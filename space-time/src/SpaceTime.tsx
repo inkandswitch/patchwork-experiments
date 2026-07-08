@@ -8,7 +8,6 @@ import { Canvas } from './canvas/Canvas';
 import { Monitor } from './monitor/Monitor';
 import { usePlayheadPlayer } from './diffusion/use-playhead-player';
 import {
-  addSourceFromUrl,
   addAudioSource,
   DEFAULT_IMAGE_DURATION,
   newClip,
@@ -33,7 +32,7 @@ import {
   clipStartBeforePlayhead,
   maxEndXForPlayhead,
 } from './canvas/layout';
-import { CLIP_HEIGHT, loadCamera, MIN_CLIP_DURATION, PIXELS_PER_SECOND } from './canvas/constants';
+import { CLIP_HEIGHT, MIN_CLIP_DURATION, PIXELS_PER_SECOND } from './canvas/constants';
 import { resolveAllClipTiming } from './diffusion/sync-composition';
 import { usePatchworkIdentity } from './presence/use-identity';
 import { usePlayheadPresence } from './presence/use-playhead-presence';
@@ -220,9 +219,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     setActivePlayheadId(id);
   }, [stopSweep]);
 
-  const [clipUrl, setClipUrl] = useState('');
-  const [addError, setAddError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
   const loaderRef = useRef(createSourceLoader());
 
   useEffect(() => {
@@ -490,47 +486,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     }
   };
 
-  const handleAddClip = async () => {
-    const trimmed = clipUrl.trim();
-    if (!trimmed) return;
-
-    setAdding(true);
-    setAddError(null);
-
-    let sourceId: string | null = null;
-    let sourceDef: SpaceTimeDoc['sources'][string] | undefined;
-    changeDoc((d) => {
-      sourceId = addSourceFromUrl(d, trimmed);
-      if (sourceId) sourceDef = d.sources[sourceId];
-    });
-
-    if (!sourceId || !sourceDef) {
-      setAddError('Unsupported URL — use a direct image or video link');
-      setAdding(false);
-      return;
-    }
-
-    const camera = loadCamera(docUrl);
-    const centerX = (-camera.x + 300) / camera.z;
-    const centerY = (-camera.y + 200) / camera.z;
-
-    let duration: number | null = DEFAULT_IMAGE_DURATION;
-    if (sourceDef.type === 'video') {
-      try {
-        const loaded = await loaderRef.current.load(sourceDef, sourceId);
-        if ('duration' in loaded && typeof loaded.duration === 'number') {
-          duration = loaded.duration;
-        }
-      } catch {
-        duration = DEFAULT_IMAGE_DURATION;
-      }
-    }
-
-    addClipToDoc(changeDoc, sourceId, centerX, centerY, duration);
-    setClipUrl('');
-    setAdding(false);
-  };
-
   const addMediaSource = useCallback(
     async (media: CreatedMediaFile, pageX: number, pageY: number) => {
       const sourceId = newId();
@@ -612,33 +567,14 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       }}
       onKeyDown={onKeyDown}
     >
-      <div className="flex shrink-0 items-center gap-2 border-b border-base-300 px-3 py-2">
-        <input
-          type="url"
-          className="input input-sm input-bordered min-w-0 flex-1"
-          placeholder="Image or video URL…"
-          value={clipUrl}
-          onChange={(e) => setClipUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void handleAddClip();
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn-sm btn-primary"
-          disabled={adding || !clipUrl.trim()}
-          onClick={() => void handleAddClip()}
-        >
-          {adding ? 'Adding…' : 'Add clip'}
-        </button>
-        {addError && <span className="text-xs text-error">{addError}</span>}
-        {activePlayhead && playerState.status === 'ready' && (
+      {activePlayhead && playerState.status === 'ready' && (
+        <div className="flex shrink-0 items-center border-b border-base-300 px-3 py-2">
           <span className="ml-auto text-xs text-base-content/60">
             {formatTime(currentX / PIXELS_PER_SECOND)}
             {isRecording ? ' · Recording…' : ' · Hold . to record'}
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="relative flex min-h-0 flex-1">
         <Canvas

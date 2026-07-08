@@ -20,6 +20,8 @@ export type Embed = {
   y: number;
   width: number;
   height: number;
+  /** Zoom applied to the embedded content (independent of canvas zoom). */
+  contentScale?: number;
 };
 
 export type Scribble = {

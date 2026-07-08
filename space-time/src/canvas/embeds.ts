@@ -5,6 +5,8 @@ export const DEFAULT_EMBED_WIDTH = 420;
 export const DEFAULT_EMBED_HEIGHT = 320;
 export const MIN_EMBED_WIDTH = 160;
 export const MIN_EMBED_HEIGHT = 120;
+export const MIN_EMBED_CONTENT_SCALE = 0.25;
+export const MAX_EMBED_CONTENT_SCALE = 4;
 
 export function newEmbed(docUrl: string, x: number, y: number, toolId?: string): Embed {
   return {
@@ -46,6 +48,15 @@ export function commitEmbedResize(
   if (!embed) return;
   embed.width = Math.max(MIN_EMBED_WIDTH, width);
   embed.height = Math.max(MIN_EMBED_HEIGHT, height);
+}
+
+export function commitEmbedContentScale(doc: SpaceTimeDoc, embedId: string, scale: number): void {
+  const embed = findEmbed(doc, embedId);
+  if (!embed) return;
+  embed.contentScale = Math.min(
+    MAX_EMBED_CONTENT_SCALE,
+    Math.max(MIN_EMBED_CONTENT_SCALE, scale),
+  );
 }
 
 export function deleteEmbed(doc: SpaceTimeDoc, embedId: string): void {
