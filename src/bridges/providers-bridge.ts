@@ -44,6 +44,10 @@ import { log } from "../log.js";
 export const ALLOWED_PROVIDERS = [
   "patchwork:contact",
   "patchwork:selected-doc",
+  // The active theme id (a plain string). Carries no automerge URLs or user
+  // identity, so it is safe to relay into the iframe; lets isolated tools
+  // (e.g. the titlebar theme tool) mirror the host's active theme.
+  "patchwork:current-theme",
 ];
 
 /**
