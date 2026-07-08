@@ -10,6 +10,7 @@ export const SpaceTimeDatatype: DatatypeImplementation<SpaceTimeDoc> = {
     doc.playheads = [];
     doc.scribbles = [];
     doc.postIts = [];
+    doc.embeds = [];
   },
   getTitle(doc: SpaceTimeDoc) {
     return doc.title;

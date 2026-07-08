@@ -17,6 +17,7 @@ import {
 import { createMediaFile, sourceFromFileDoc, type CreatedMediaFile } from './files/create-media-file';
 import type { DroppedMedia } from './canvas/Canvas';
 import { addClipToDoc } from './canvas/clips';
+import { addEmbed } from './canvas/embeds';
 import { deleteClip } from './canvas/clips';
 import { deleteScribble } from './canvas/scribbles';
 import { deletePostIt } from './canvas/post-its';
@@ -563,29 +564,41 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const handleDropMedia = useCallback(
     async (payload: DroppedMedia, pageX: number, pageY: number) => {
       let offset = 0;
-      const place = async (media: CreatedMediaFile | null) => {
-        if (!media) return;
-        await addMediaSource(media, pageX + offset, pageY + offset);
+      const nextOffset = () => {
+        const o = offset;
         offset += 20;
+        return o;
       };
 
       for (const file of payload.files) {
         try {
-          await place(await createMediaFile(file));
+          const media = await createMediaFile(file);
+          if (media) {
+            const o = nextOffset();
+            await addMediaSource(media, pageX + o, pageY + o);
+          }
         } catch (error) {
           console.error('[space-time] failed to add dropped file', error);
         }
       }
 
-      for (const url of payload.docUrls) {
+      for (const item of payload.docItems) {
         try {
-          await place(await sourceFromFileDoc(url));
+          // Media file documents become timeline clips; everything else
+          // (including non-media files) becomes a movable embed window.
+          const media = await sourceFromFileDoc(item.url);
+          const o = nextOffset();
+          if (media) {
+            await addMediaSource(media, pageX + o, pageY + o);
+          } else {
+            changeDoc((d) => addEmbed(d, item.url, pageX + o, pageY + o, item.toolId));
+          }
         } catch (error) {
           console.error('[space-time] failed to add dropped document', error);
         }
       }
     },
-    [addMediaSource],
+    [addMediaSource, changeDoc],
   );
 
   return (

@@ -6,6 +6,20 @@ export type SpaceTimeDoc = {
   playheads: Playhead[];
   scribbles?: Scribble[];
   postIts?: PostIt[];
+  embeds?: Embed[];
+};
+
+/** An embedded Patchwork document rendered as a movable/resizable window. */
+export type Embed = {
+  id: string;
+  /** automerge: URL of the embedded document. */
+  docUrl: string;
+  /** Optional tool id; when absent the document's default tool is used. */
+  toolId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 export type Scribble = {

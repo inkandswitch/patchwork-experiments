@@ -48,6 +48,7 @@ import {
   type PlayheadMovePreview,
 } from './layout';
 import { drawCanvas, drawTimeRuler } from './draw';
+import { EmbedWindows } from './EmbedWindows';
 import {
   loadCamera,
   panCameraToKeepPageXVisible,
@@ -387,20 +388,48 @@ type CanvasProps = {
   onDropMedia?: (payload: DroppedMedia, pageX: number, pageY: number) => void;
 };
 
+export type DroppedDocItem = {
+  url: string;
+  name?: string;
+  toolId?: string;
+};
+
 export type DroppedMedia = {
   files: File[];
-  docUrls: string[];
+  docItems: DroppedDocItem[];
 };
 
 const PATCHWORK_URLS_MIME = 'text/x-patchwork-urls';
+const PATCHWORK_DND_MIME = 'text/x-patchwork-dnd';
 
-/** Extract automerge URLs from a Patchwork sidebar drag payload. */
-function parsePatchworkUrls(dt: DataTransfer): string[] {
+/** Extract dragged Patchwork documents (url + optional name/tool) from a drag payload. */
+function parsePatchworkItems(dt: DataTransfer): DroppedDocItem[] {
+  const structured = dt.getData(PATCHWORK_DND_MIME);
+  if (structured) {
+    try {
+      const parsed = JSON.parse(structured) as {
+        items?: Array<{ url?: unknown; name?: unknown; toolId?: unknown }>;
+      };
+      const items = (parsed.items ?? [])
+        .filter((it) => typeof it?.url === 'string')
+        .map((it) => ({
+          url: it.url as string,
+          name: typeof it.name === 'string' ? it.name : undefined,
+          toolId: typeof it.toolId === 'string' ? it.toolId : undefined,
+        }));
+      if (items.length > 0) return items;
+    } catch {
+      /* fall through to url list */
+    }
+  }
+
   const raw = dt.getData(PATCHWORK_URLS_MIME);
   if (!raw) return [];
   try {
     const urls = JSON.parse(raw);
-    return Array.isArray(urls) ? urls.filter((u): u is string => typeof u === 'string') : [];
+    return Array.isArray(urls)
+      ? urls.filter((u): u is string => typeof u === 'string').map((url) => ({ url }))
+      : [];
   } catch {
     return [];
   }
@@ -722,7 +751,10 @@ export function Canvas({
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
       paint();
-      if (editingClipIdRef.current) bump((n) => n + 1);
+      // Embed windows are DOM overlays positioned from the (imperative) camera,
+      // so re-render them whenever we repaint (e.g. during pan/zoom/playback).
+      const hasEmbeds = (paintDepsRef.current.doc.embeds?.length ?? 0) > 0;
+      if (editingClipIdRef.current || hasEmbeds) bump((n) => n + 1);
     });
   };
 
@@ -2354,10 +2386,10 @@ export function Canvas({
     const { x, y } = screenToPage(screenX, screenY, cameraRef.current);
 
     const files = Array.from(event.dataTransfer.files);
-    const docUrls = parsePatchworkUrls(event.dataTransfer);
-    if (files.length === 0 && docUrls.length === 0) return;
+    const docItems = parsePatchworkItems(event.dataTransfer);
+    if (files.length === 0 && docItems.length === 0) return;
 
-    onDropMedia({ files, docUrls }, x, y);
+    onDropMedia({ files, docItems }, x, y);
   };
 
   return (
@@ -2371,7 +2403,7 @@ export function Canvas({
       <canvas ref={rulerRef} className="st-ruler block w-full" />
       {isFileDropTarget && (
         <div className="st-file-drop-overlay pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <span className="st-file-drop-label">Drop images, videos, or audio</span>
+          <span className="st-file-drop-label">Drop media or documents</span>
         </div>
       )}
       <canvas
@@ -2410,6 +2442,13 @@ export function Canvas({
           onCancel={cancelEditingPostIt}
         />
       )}
+      <EmbedWindows
+        embeds={doc.embeds ?? []}
+        camera={cameraRef.current}
+        rulerHeight={RULER_HEIGHT}
+        changeDoc={changeDoc}
+        onInteract={onFocusEditor}
+      />
     </div>
   );
 }
