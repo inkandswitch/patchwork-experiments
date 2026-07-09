@@ -741,7 +741,16 @@ const CSS = `
 .cm-mention {
   display: inline-flex;
   align-items: center;
-  vertical-align: baseline;
+  /* Center the chip on the text rather than aligning by baseline: an
+     inline-flex box with a non-baseline-aligned item synthesizes its baseline
+     at its bottom edge, which hangs the whole chip above the line and inflates
+     the line box (a ~25px chip turned a 24px line into ~32px). "middle" keeps
+     the chip within the line so a token no longer grows the row. */
+  vertical-align: middle;
+  /* Don't let the chip stretch the line: cap it to the line box and let the
+     face center within it. 1.5em matches the editor's 24px line at 16px. */
+  max-height: 1.5em;
+  line-height: 1;
   max-width: 100%;
   border-radius: 999px;
   cursor: pointer;
