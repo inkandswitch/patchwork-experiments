@@ -1,4 +1,4 @@
-/* The Cards sidebar: active stack | divider (chevron) | parts bin | tab rail.
+/* The Cards sidebar: active stack | tab rail | divider (chevron) | parts bin.
    The root fills whatever surface it's docked into (the frame's context
    sidebar, or the hidden body parking spot). */
 .embark-cards {
@@ -16,8 +16,9 @@
   overflow: hidden;
 }
 
-/* The vertical tab rail on the outer right edge, file-folder style: labels
-   read top-to-bottom, the active tab joins the pane beside it. */
+/* The vertical tab rail between the active stack and the parts bin,
+   file-folder style: labels read top-to-bottom, the active tab joins the
+   stack pane on its left. */
 .embark-cards__rail {
   flex: 0 0 auto;
   display: flex;

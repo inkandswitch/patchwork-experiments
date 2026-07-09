@@ -13,9 +13,9 @@ import type { CardStackDoc, WithCardStack } from "./types";
 import "./cards-sidebar.css";
 
 // The Cards sidebar, laid out per the sketch: the active tab's card stack on
-// the left, the parts bin as a fixed column that collapses behind a chevron
-// on the divider, and a vertical tab rail (Global / Current Doc) on the outer
-// right edge.
+// the left, a vertical tab rail (Global / Current Doc) beside it, and the
+// parts bin as a fixed column on the outer right edge that collapses behind a
+// chevron on the divider.
 //
 // Both stacks stay mounted whichever tab is showing (the inactive pane is
 // hidden, not unmounted), and the whole sidebar keeps running while parked on
@@ -96,20 +96,20 @@ export function CardsSidebar(props: {
         />
       </div>
 
-      <BinColumn entries={DEFAULT_BIN} />
-
       <div class="embark-cards__rail">
-        <TabButton
-          label="Global"
-          active={tab() === "global"}
-          onSelect={() => setTab("global")}
-        />
         <TabButton
           label="Current Doc"
           active={tab() === "current"}
           onSelect={() => setTab("current")}
         />
+        <TabButton
+          label="Global"
+          active={tab() === "global"}
+          onSelect={() => setTab("global")}
+        />
       </div>
+
+      <BinColumn entries={DEFAULT_BIN} />
     </div>
   );
 }
@@ -146,11 +146,11 @@ const TAB_STORAGE_KEY = "embark:cards:tab";
 
 function readStoredTab(): TabId {
   try {
-    return localStorage.getItem(TAB_STORAGE_KEY) === "current"
-      ? "current"
-      : "global";
+    return localStorage.getItem(TAB_STORAGE_KEY) === "global"
+      ? "global"
+      : "current";
   } catch {
-    return "global";
+    return "current";
   }
 }
 
