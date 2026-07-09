@@ -14,7 +14,7 @@
 // Plain-JS bundleless module: bare imports are importmap-provided; channel
 // definitions (`SchemaMatches` from the schema matcher, `Highlight` from the
 // selection card), the structural schema matcher, and the context-store client
-// are imported with plain relative paths (all cards share one package).
+// are imported by their packages' automerge urls.
 
 import {
   For,
@@ -28,10 +28,24 @@ import { render } from "solid-js/web";
 import html from "solid-js/html";
 import { fetchSightings, lookupImage, speciesUrl } from "./ebird.js";
 
-import { findContextStore, subscribeContext, getContextHandle } from "../platform.js";
-import { SchemaMatches, schemaKey } from "../schema-matcher/channels.js";
-import { jsonSchemaMatches } from "../schema-matcher/match.js";
-import { Highlight } from "../selection/channels.js";
+import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
+
+const CORE_PACKAGE_URL = "automerge:2YxstDCjGbfeAqud8w38yuBYBncY";
+const SCHEMA_MATCHER_PACKAGE_URL = "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC";
+const SELECTION_PACKAGE_URL = "automerge:3FqZv79rgfNX5nKn9kkpWGCSQUjW";
+
+const { findContextStore, subscribeContext, getContextHandle } = await import(
+  getImportableUrlFromAutomergeUrl(CORE_PACKAGE_URL, "client.js")
+);
+const { SchemaMatches, schemaKey } = await import(
+  getImportableUrlFromAutomergeUrl(SCHEMA_MATCHER_PACKAGE_URL, "channels.js")
+);
+const { jsonSchemaMatches } = await import(
+  getImportableUrlFromAutomergeUrl(SCHEMA_MATCHER_PACKAGE_URL, "match.js")
+);
+const { Highlight } = await import(
+  getImportableUrlFromAutomergeUrl(SELECTION_PACKAGE_URL, "channels.js")
+);
 
 // The datatype/board/token tools that live and die with this card. Their
 // implementations load lazily from sibling modules.

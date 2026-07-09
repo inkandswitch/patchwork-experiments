@@ -138,6 +138,15 @@ const CARD_SEEDS: CardSeed[] = [
     icon: "zoom",
     accent: "#059669",
   },
+  {
+    rootUrl: "automerge:2nay83Kjg393HEaXwerXpHMnDDWw",
+    title: "Bird Sightings",
+    description:
+      "Watches a map and asks eBird what's been seen there, minting a pin per species.",
+    icon: "bird",
+    accent: "#16a34a",
+    state: { kind: "all", period: "week" },
+  },
 ];
 
 // Pre-made piles: themed sets of cards, each minted as its own deck document.
