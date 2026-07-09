@@ -1,13 +1,45 @@
-/* The deck is an auto-sizing embed: its root reports an explicit width/height
-   (set inline from the layout) and the canvas frame shrink-wraps it, so folding
-   and fanning grow/shrink the card on the canvas. Width/height transition here;
-   the frame follows because it tracks this content's size. */
+/* The deck is an auto-sizing embed. Folded, its root carries an explicit
+   width/height (set inline from the pile layout) and the frame shrink-wraps
+   it. Fanned, the root becomes a wrapping flex row that takes whatever width
+   its container offers — clamped by max-width where nothing constrains it —
+   so container resizes re-wrap the cards natively, with no measuring code.
+   The fold/unfold choreography is FLIP-animated from DeckTool; the panel fade
+   below is the only transition living here. */
 .embark-deck {
   position: relative;
   font-family: system-ui, -apple-system, sans-serif;
-  transition:
-    width 240ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    height 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  border-radius: 12px;
+  background: transparent;
+  transition: background-color 240ms ease;
+}
+
+/* Fanned: the cover leads, held cards follow, wrapping into rows. The light
+   panel groups the cover with its dealt-out cards; it rides the base
+   background-color transition, so it fades in on unfold and back out on fold,
+   keeping the folded pile chromeless. */
+.embark-deck--fanned {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  box-sizing: border-box;
+  max-width: 820px;
+  background: #f5f5f4;
+}
+
+/* Fanned, the cover and cards leave the pile's absolute positioning and
+   become rigid flex items: fixed 154x220 slots that wrap rather than
+   squeeze. */
+.embark-deck--fanned .embark-deck__cover,
+.embark-deck--fanned .embark-deck__card {
+  position: static;
+  flex: none;
+}
+
+/* The cover renders after the cards in the DOM (pile stacking is by z-index,
+   not order), so pull it to the front of the fanned row. */
+.embark-deck--fanned .embark-deck__cover {
+  order: -1;
 }
 
 /* Drop affordance while a card hovers the deck. */
@@ -22,10 +54,12 @@
   z-index: 99999;
 }
 
-/* A held card: a slot in the pile/fan, moved by transform so the choreography
-   animates. Size mirrors CARD_W / CARD_H in DeckTool. The slot itself draws no
-   chrome — the content brings its own surface (a card its playing-card face) —
-   it just centers the scaled-down thumbnail. */
+/* A held card: a slot in the pile (absolute + inline transform) or the fan
+   (a flex item, see the fanned override above). Size mirrors CARD_W / CARD_H
+   in DeckTool. No transform transition here — the fold/unfold glide is a FLIP
+   pass in DeckTool, which sets its own inline transition while releasing. The
+   slot itself draws no chrome — the content brings its own surface (a card
+   its playing-card face) — it just centers the scaled-down thumbnail. */
 .embark-deck__card {
   position: absolute;
   top: 0;
@@ -36,8 +70,6 @@
   align-items: center;
   justify-content: center;
   cursor: grab;
-  transform-origin: bottom center;
-  transition: transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .embark-deck__card:active {
@@ -87,7 +119,6 @@
     0 10px 22px rgba(0, 0, 0, 0.18);
   cursor: pointer;
   user-select: none;
-  transition: transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
 .embark-deck__cover-inner {

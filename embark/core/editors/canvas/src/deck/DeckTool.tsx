@@ -17,8 +17,8 @@ import "./deck.css";
 
 // Card geometry. Mirrored in deck.css (`.embark-deck__card` / `__cover`); keep
 // them in sync. The slot matches the playing card's 0.7 aspect ratio so a held
-// card fills it edge to edge. PAD keeps fanned/tilted cards clear of the
-// frame's clip edge.
+// card fills it edge to edge. PAD keeps the folded pile clear of the frame's
+// clip edge and mirrors the fanned panel's CSS padding.
 const CARD_W = 154;
 const CARD_H = 220;
 const PAD = 14;
@@ -28,14 +28,14 @@ const PAD = 14;
 // width, so its thumbnail matches what dealing it out would show.
 const NATURAL_MAX_W = 360;
 // Folded: each card peeks `PILE_STEP` past the one above, capped at `PILE_MAX`
-// so a big deck still folds into a compact pile.
+// so a big deck still folds into a compact pile. The fanned layout is pure
+// CSS — a wrapping flex row; see `.embark-deck--fanned` in deck.css.
 const PILE_STEP = 3;
 const PILE_MAX = 6;
-// Fanned: ideal gap between successive card left edges, but never so wide the
-// spread exceeds `FAN_MAX_W` — beyond that the cards crowd closer instead.
-const FAN_STEP = 130;
-const FAN_MAX_W = 820;
-const FAN_TILT = 3;
+// The fold/unfold choreography: a FLIP pass around each doc-driven re-render
+// (see `flip` below) glides every slot between the two layouts.
+const FLIP_TRANSITION = "transform 240ms cubic-bezier(0.2, 0.7, 0.2, 1)";
+const FLIP_TIMEOUT_MS = 300;
 
 // Tool entry point. Unlike the parts bin, the deck does NOT host its own
 // context: the cards are live participants, not inert examples. We render the
@@ -61,13 +61,29 @@ export const DeckTool: ToolRender = (handle, element) => {
 
 function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
   const repo = useRepo();
+  let rootEl: HTMLDivElement | undefined;
+
   // Drive the view from a full snapshot reconciled on every change (matching the
   // parts bin): solid-automerge's fine-grained projection can transiently
   // duplicate a freshly pushed array item, so reconciling the whole doc keyed by
   // `id` keeps the card count correct while preserving unchanged thumbnails.
+  // Every change — local or remote — funnels through here, so wrapping the
+  // reconcile in a FLIP pass animates fold/unfold and dealt/added cards no
+  // matter which client drove the change. `:scope >` keeps a deck thumbnail
+  // rendered *inside* one of our cards from contributing its own slots.
   const [doc, setDoc] = createStore<DeckDoc>(props.handle.doc());
+  const collectSlots = () =>
+    rootEl
+      ? [
+          ...rootEl.querySelectorAll<HTMLElement>(
+            ":scope > .embark-deck__cover, :scope > .embark-deck__card",
+          ),
+        ]
+      : [];
   const syncFromHandle = () =>
-    setDoc(reconcile(props.handle.doc(), { key: "id" }));
+    flip(collectSlots, () =>
+      setDoc(reconcile(props.handle.doc(), { key: "id" })),
+    );
   props.handle.on("change", syncFromHandle);
   onCleanup(() => props.handle.off("change", syncFromHandle));
 
@@ -155,49 +171,37 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
     setEditing(false);
   };
 
-  // The deck's footprint follows its layout, and the embed auto-sizes to it (see
-  // AUTOSIZE_TOOLS in canvas.tsx), so folding/fanning grows and shrinks the card
-  // on the canvas. Folded: one card plus the peeking pile. Fanned: the cover at
-  // the left with the held cards spread to its right.
-  const fanStep = () => {
-    const n = count();
-    if (n < 1) return 0;
-    return Math.min(FAN_STEP, (FAN_MAX_W - CARD_W) / n);
-  };
-
-  const size = () => {
-    const n = count();
-    if (fanned()) {
-      return { width: PAD * 2 + CARD_W + fanStep() * n, height: PAD * 2 + CARD_H + 10 };
-    }
-    const peek = Math.min(n, PILE_MAX) * PILE_STEP;
+  // Folded, the root reports the pile's explicit footprint and the embed
+  // auto-sizes to it (see AUTOSIZE_TOOLS in canvas.tsx). Fanned, no inline
+  // size is set: the flex layout in deck.css lays cover and cards out as a
+  // wrapping row against whatever width the container provides, so the embed
+  // tracks that instead.
+  const foldedSize = () => {
+    const peek = Math.min(count(), PILE_MAX) * PILE_STEP;
     return { width: PAD * 2 + CARD_W + peek, height: PAD * 2 + CARD_H + peek };
   };
 
-  const cardTransform = (index: number) => {
-    if (fanned()) {
-      const x = PAD + (index + 1) * fanStep();
-      const mid = (count() - 1) / 2;
-      const tilt =
-        count() > 1 ? ((index - mid) / Math.max(mid, 1)) * FAN_TILT : 0;
-      return `translate(${x}px, ${PAD}px) rotate(${tilt}deg)`;
-    }
+  const pileTransform = (index: number) => {
     const offset = Math.min(index + 1, PILE_MAX) * PILE_STEP;
     return `translate(${PAD + offset}px, ${PAD + offset}px)`;
   };
 
-  // Folded, the cover sits on top of the pile; fanned, it drops beneath the
-  // spread so the held cards read over it.
-  const coverZ = () => (fanned() ? 0 : count() + 5);
-
   return (
     <div
+      ref={rootEl}
       class="embark-deck"
       classList={{
         "embark-deck--fanned": fanned(),
         "embark-deck--drag-over": dragOver(),
       }}
-      style={{ width: `${size().width}px`, height: `${size().height}px` }}
+      style={
+        fanned()
+          ? undefined
+          : {
+              width: `${foldedSize().width}px`,
+              height: `${foldedSize().height}px`,
+            }
+      }
       on:dragover={onDragOver}
       on:dragleave={onDragLeave}
       on:drop={onDrop}
@@ -207,16 +211,25 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
           <DeckCardView
             repo={repo}
             card={card}
-            transform={cardTransform(index())}
-            z={index() + 1}
+            transform={fanned() ? undefined : pileTransform(index())}
+            z={fanned() ? undefined : index() + 1}
             onDealt={() => removeCard(card.id)}
           />
         )}
       </For>
 
+      {/* Folded, the cover sits on top of the pile (cards are z 1..n); fanned
+          it's a flex item pulled to the front of the row by CSS order. */}
       <div
         class="embark-deck__cover"
-        style={{ transform: `translate(${PAD}px, ${PAD}px)`, "z-index": coverZ() }}
+        style={
+          fanned()
+            ? undefined
+            : {
+                transform: `translate(${PAD}px, ${PAD}px)`,
+                "z-index": count() + 5,
+              }
+        }
         title="Click to fan / gather"
         // The press deliberately bubbles to the embed surface: on a frameless
         // deck that's what lets the cover drag the deck around. A stationary
@@ -292,8 +305,10 @@ type NamedDoc = {
 function DeckCardView(props: {
   repo: Repo;
   card: DeckCard;
-  transform: string;
-  z: number;
+  // Inline pile placement, set only while the deck is folded; fanned, the
+  // slot is a plain flex item and both stay unset.
+  transform?: string;
+  z?: number;
   onDealt: () => void;
 }) {
   const [doc] = useDocument<NamedDoc>(() => props.card.url);
@@ -398,6 +413,72 @@ function DeckCardView(props: {
     </div>
   );
 }
+
+// First/Last/Invert/Play around a synchronous DOM update: measure the slots,
+// apply the update (Solid renders synchronously, so the new layout is
+// measurable right away), then glide every surviving slot from its old spot
+// to its new one with a transform transition. Deltas are measured in screen
+// space and mapped back through any ancestor scaling (e.g. a scaled-down
+// thumbnail of this deck) before being applied as local translates. Slots
+// with no old rect (freshly added) simply appear in place; removed slots
+// vanish.
+function flip(collect: () => HTMLElement[], update: () => void): void {
+  const before = new Map<HTMLElement, DOMRect>();
+  for (const el of collect()) before.set(el, el.getBoundingClientRect());
+
+  update();
+
+  const moved: { el: HTMLElement; target: string }[] = [];
+  for (const el of collect()) {
+    const old = before.get(el);
+    if (!old) continue;
+    const now = el.getBoundingClientRect();
+    const scale = el.offsetWidth > 0 ? now.width / el.offsetWidth : 1;
+    const dx = (old.left - now.left) / scale;
+    const dy = (old.top - now.top) / scale;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    // A slot still mid-glide keeps its visual position (the old rect measured
+    // the interpolated transform); disarm that pass's cleanup so it can't
+    // clip the new glide.
+    activeFlips.get(el)?.();
+    // Compose ahead of the slot's target transform (the folded pile
+    // translate, or none when fanned), then release to the target alone.
+    const target = el.style.transform;
+    el.style.transition = "none";
+    el.style.transform = `translate(${dx}px, ${dy}px)${target ? ` ${target}` : ""}`;
+    moved.push({ el, target });
+  }
+  const probe = moved[0];
+  if (!probe) return;
+
+  // One reflow so the inverted positions take hold, then release everything.
+  void probe.el.offsetWidth;
+  for (const { el, target } of moved) {
+    el.style.transition = FLIP_TRANSITION;
+    el.style.transform = target;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (event?: TransitionEvent) => {
+      if (event && (event.target !== el || event.propertyName !== "transform"))
+        return;
+      el.style.transition = "";
+      disarm();
+    };
+    const disarm = () => {
+      el.removeEventListener("transitionend", finish);
+      clearTimeout(timer);
+      activeFlips.delete(el);
+    };
+    // transitionend can be swallowed (hidden tab, interrupted glide); a timer
+    // backstops the cleanup.
+    timer = setTimeout(finish, FLIP_TIMEOUT_MS);
+    el.addEventListener("transitionend", finish);
+    activeFlips.set(el, disarm);
+  }
+}
+
+// Cleanup cancellers for slots currently mid-glide, so an interrupting FLIP
+// pass can disarm the previous pass's listeners before starting its own.
+const activeFlips = new WeakMap<HTMLElement, () => void>();
 
 // Use a small title token as the drag image instead of the browser's snapshot of
 // the live thumbnail. The token must be in the document when captured, then
