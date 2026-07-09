@@ -75,6 +75,14 @@ const CARD_SEEDS: CardSeed[] = [
     accent: "#3b82f6",
   },
   {
+    rootUrl: "automerge:3FqZv79rgfNX5nKn9kkpWGCSQUjW",
+    title: "Selection",
+    description:
+      "Tracks the selected and highlighted documents and renders document links as tokens.",
+    icon: "selection",
+    accent: "#0d9488",
+  },
+  {
     rootUrl: "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC",
     title: "Schema Matcher",
     description:
@@ -180,7 +188,13 @@ const CARD_SEEDS: CardSeed[] = [
 const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
   {
     title: "Core",
-    cardTitles: ["Open Documents", "Schema Matcher", "Pointer", "Highlight"],
+    cardTitles: [
+      "Open Documents",
+      "Schema Matcher",
+      "Pointer",
+      "Highlight",
+      "Selection",
+    ],
   },
   {
     title: "Maps",

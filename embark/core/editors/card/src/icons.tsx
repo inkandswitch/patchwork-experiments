@@ -89,6 +89,15 @@ function glyph(name: string): JSX.Element {
       return <path d="M17 5 7 19" />;
     case "pointer":
       return <path d="M4 3l7.5 18 2.6-7.9L22 10.5z" />;
+    case "selection":
+      return (
+        <>
+          <path d="M4 8V5a1 1 0 0 1 1-1h3" />
+          <path d="M16 4h3a1 1 0 0 1 1 1v3" />
+          <path d="M20 16v3a1 1 0 0 1-1 1h-3" />
+          <path d="M8 20H5a1 1 0 0 1-1-1v-3" />
+        </>
+      );
     case "file":
       return (
         <>
