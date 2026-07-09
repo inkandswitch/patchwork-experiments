@@ -7,5 +7,9 @@
   "exports": {
     ".": "./index.js",
     "./card": "./card.js"
+  },
+  "scripts": {
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   }
 }

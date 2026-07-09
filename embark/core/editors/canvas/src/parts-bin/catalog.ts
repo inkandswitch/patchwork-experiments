@@ -273,7 +273,7 @@ export const DEFAULT_BIN: BinEntry[] = [
   },
 ];
 
-// The @embark/page-url package (patchwork-tools/embark/cards/legacy/page-url),
+// The @embark/page-url package (patchwork-tools/embark/cards/page-url),
 // published with pushwork; the minted card's src points at its root card.js.
 const PAGE_URL_CARD_PACKAGE = "automerge:eXE2Kjh1YkQEkYS6aAMoAAfYZXn";
 
