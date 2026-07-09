@@ -89,7 +89,8 @@ const SURFACE_DRAG_THRESHOLD = 4;
 const DROP_CASCADE = 28;
 // How far a Cmd+D duplicate is nudged down-and-right from its original.
 const DUPLICATE_OFFSET = 24;
-// An inspect embed opens just to the right of the card it inspects.
+// An inspect embed opens beside the card it inspects — to its right when that
+// fits within the canvas, otherwise to its left.
 const INSPECT_GAP = 24;
 const INSPECT_WIDTH = 360;
 const INSPECT_MIN_HEIGHT = 280;
@@ -298,21 +299,21 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   // urls, and drop a fresh embed beside it that renders that inspect doc.
   const inspectEmbed = async (id: string) => {
     setMenu(null);
-    const source = doc()?.embeds[id];
+    const embed = doc()?.embeds[id];
     const root = canvasEl()?.querySelector<HTMLElement>(
       `[data-embed-id="${id}"]`,
     );
-    if (!source || !root) return;
+    if (!embed || !root) return;
 
     const target = await resolveInspectTarget(root, repo);
     if (!target) return;
 
-    spawnInspector(source, target);
+    spawnInspector(inspectSourceRect(embed, root), target);
   };
 
-  // Mint an inspect doc for `target` and drop a fresh inspect embed just to the
-  // right of `source`. Shared by the right-click Inspect action and by opening a
-  // folder link from inside an existing inspector.
+  // Mint an inspect doc for `target` and drop a fresh inspect embed beside
+  // `source`. Shared by the right-click Inspect action and by opening a folder
+  // link from inside an existing inspector.
   const spawnInspector = (source: Rect, target: InspectTarget) => {
     const inspectDoc = repo.create<InspectDoc>({
       "@patchwork": { type: "inspect" },
@@ -325,7 +326,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       canvas.embeds[newId] = {
         id: newId,
         docUrl: inspectDoc.url,
-        x: source.x + source.width + INSPECT_GAP,
+        x: inspectorX(source),
         y: source.y,
         width: INSPECT_WIDTH,
         height: Math.max(source.height, INSPECT_MIN_HEIGHT),
@@ -333,6 +334,36 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
         toolId: "inspect",
       };
     });
+  };
+
+  // The anchor rect an inspector is placed against. Position comes from the
+  // stored embed, but for autosize embeds (cards, decks) the stored width/height
+  // aren't applied — they shrink-wrap their content — so measure the rendered
+  // element instead. Canvas space is unscaled, so the measured pixels line up
+  // with stored coordinates.
+  const inspectSourceRect = (embed: EmbarkEmbed, root: HTMLElement): Rect => {
+    if (!root.classList.contains("embark-embed--autosize")) {
+      return { x: embed.x, y: embed.y, width: embed.width, height: embed.height };
+    }
+    const measured = root.getBoundingClientRect();
+    return {
+      x: embed.x,
+      y: embed.y,
+      width: measured.width,
+      height: measured.height,
+    };
+  };
+
+  // Where the inspector's left edge lands: to the right of the source when it
+  // fits within the canvas, otherwise tucked to its left. Falls back to the
+  // right when neither side fully fits (overflowing the right edge is easier to
+  // reach than the left).
+  const inspectorX = (source: Rect): number => {
+    const rightX = source.x + source.width + INSPECT_GAP;
+    const canvasWidth = canvasEl()?.getBoundingClientRect().width ?? 0;
+    if (rightX + INSPECT_WIDTH <= canvasWidth) return rightX;
+    const leftX = source.x - INSPECT_GAP - INSPECT_WIDTH;
+    return leftX >= 0 ? leftX : rightX;
   };
 
   // Open-document events bubble out of an inspector's spec/source views (links
