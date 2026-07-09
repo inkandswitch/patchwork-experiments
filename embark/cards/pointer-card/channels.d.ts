@@ -15,8 +15,6 @@ export type PointerState = {
   x?: number;
   y?: number;
   docUrl?: string;
-  embedId?: string;
-  pressed?: boolean;
 };
 
 export declare const Pointer: Channel<PointerState>;

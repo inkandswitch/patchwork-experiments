@@ -62,25 +62,6 @@
     0 8px 20px rgba(0, 0, 0, 0.14);
 }
 
-/* Highlighted embed: its document is being emphasized from elsewhere (a hovered
-   mention, a map pin, a context-viewer token). A soft blue glow rings the embed;
-   the transition (on .embark-embed) fades it in/out as the highlight changes. */
-.embark-embed--highlighted {
-  box-shadow:
-    0 0 0 2px rgba(59, 130, 246, 0.6),
-    0 0 16px 2px rgba(59, 130, 246, 0.45);
-}
-
-/* Selection still wins over highlight, but keep the blue ring on top of the
-   selection lift so a selected embed can also show it's highlighted. */
-.embark-embed--selected.embark-embed--highlighted {
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.08),
-    0 8px 20px rgba(0, 0, 0, 0.14),
-    0 0 0 2px rgba(59, 130, 246, 0.6),
-    0 0 16px 2px rgba(59, 130, 246, 0.45);
-}
-
 /* Frameless embed: the embedded tool supplies its own chrome, so drop the
    border, background, clipping and rounded corners. It is dragged by grabbing
    its surface (see canvas.tsx); interactive regions opt out via
@@ -107,22 +88,6 @@
 .embark-embed--frameless.embark-embed--selected {
   box-shadow: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.16));
-}
-
-/* Highlight for a frameless embed: a blue drop-shadow that hugs the content's
-   own shape rather than boxing its transparent bounds. Two stacked shadows
-   approximate an even glow around the silhouette. */
-.embark-embed--frameless.embark-embed--highlighted {
-  box-shadow: none;
-  filter: drop-shadow(0 0 3px rgba(59, 130, 246, 0.75))
-    drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
-}
-
-.embark-embed--frameless.embark-embed--selected.embark-embed--highlighted {
-  box-shadow: none;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.16))
-    drop-shadow(0 0 3px rgba(59, 130, 246, 0.75))
-    drop-shadow(0 0 8px rgba(59, 130, 246, 0.5));
 }
 
 /* Auto-size embed: the tool reports its own intrinsic size and changes it as

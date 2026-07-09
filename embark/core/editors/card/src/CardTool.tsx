@@ -47,22 +47,15 @@ const pluginRefs = new Map<string, number>();
 
 function acquirePlugins(moduleSrc: string, plugins: LoadablePlugin[]): void {
   pluginRefs.set(moduleSrc, (pluginRefs.get(moduleSrc) ?? 0) + 1);
-  console.log(
-    `[card-debug] acquirePlugins ${moduleSrc}: refs=${pluginRefs.get(moduleSrc)}, registering [${plugins
-      .map((p) => `${p.type}:${p.id}`)
-      .join(", ")}]`,
-  );
   registerPlugins(plugins, moduleSrc);
 }
 
 function releasePlugins(moduleSrc: string): void {
   const next = (pluginRefs.get(moduleSrc) ?? 1) - 1;
   if (next > 0) {
-    console.log(`[card-debug] releasePlugins ${moduleSrc}: refs=${next}, keeping`);
     pluginRefs.set(moduleSrc, next);
     return;
   }
-  console.log(`[card-debug] releasePlugins ${moduleSrc}: refs=0, unregistering`);
   pluginRefs.delete(moduleSrc);
   unregisterPlugins(moduleSrc);
 }
@@ -119,7 +112,6 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
     // Stops the running behavior only — plugin registrations outlive it.
     const teardown = () => {
       if (typeof cleanup === "function") {
-        console.log(`[card-debug] ${props.handle.url}: behavior stopped`);
         try {
           cleanup();
         } catch {
@@ -138,16 +130,7 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
       const mine = ++token;
       teardown();
       host?.replaceChildren();
-      console.log(
-        `[card-debug] ${props.handle.url} ("${title()}") load effect: active=${isActive} epoch=${epoch} src=${moduleSrc || "<none>"}`,
-      );
-      if (!isActive || !moduleSrc || !host) {
-        console.log(
-          `[card-debug] ${props.handle.url} ("${title()}") not loading: ` +
-            (!isActive ? "flipped face-down" : !moduleSrc ? "no src" : "no slot element"),
-        );
-        return;
-      }
+      if (!isActive || !moduleSrc || !host) return;
       // The embed contract: the module reaches the repo and (via DOM discovery)
       // the shared context through its host element.
       (host as unknown as { repo: Repo }).repo = props.host.repo;
@@ -172,17 +155,7 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
           );
           return;
         }
-        if (mine !== token) {
-          console.log(
-            `[card-debug] ${cardUrl}: import of ${importUrl} finished but a newer load superseded it, discarding`,
-          );
-          return;
-        }
-        console.log(
-          `[card-debug] ${cardUrl}: imported ${importUrl} — default=${typeof mod.default}, plugins=${
-            Array.isArray(mod.plugins) ? mod.plugins.length : "none"
-          }`,
-        );
+        if (mine !== token) return;
         if (typeof mod.default !== "function") {
           console.warn(
             `[card] ${cardUrl}: module ${importUrl} has no default export function (got ${typeof mod.default})`,
@@ -194,9 +167,6 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
             // Same module loading again (a flip cycle or a hot reload):
             // refresh the entries in place — register() replaces by id, so
             // the fresh load() closures take over — without another refcount.
-            console.log(
-              `[card-debug] ${cardUrl}: re-registering plugins in place for ${moduleSrc}`,
-            );
             registerPlugins(mod.plugins, moduleSrc);
           } else {
             if (acquiredPluginsFor) releasePlugins(acquiredPluginsFor);
@@ -214,7 +184,6 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
             return;
           }
           cleanup = dispose ?? undefined;
-          console.log(`[card-debug] ${cardUrl}: behavior started`);
         } catch (err) {
           console.warn(
             `[card] ${cardUrl}: module ${importUrl} threw while starting`,
@@ -225,7 +194,6 @@ function Card(props: { handle: DocHandle<CardDoc>; host: ToolElement }) {
     });
 
     onCleanup(() => {
-      console.log(`[card-debug] ${props.handle.url} ("${title()}") unmounting`);
       token++;
       teardown();
       if (acquiredPluginsFor) {

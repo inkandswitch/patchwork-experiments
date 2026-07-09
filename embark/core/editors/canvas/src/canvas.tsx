@@ -1,6 +1,5 @@
 import {
   isValidAutomergeUrl,
-  parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
 } from "@automerge/automerge-repo";
@@ -9,7 +8,6 @@ import {
   For,
   Show,
   createEffect,
-  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -33,7 +31,7 @@ import {
   type ScopeHandle,
   type ScopeOwner,
 } from "@embark/context";
-import { Highlight, Selection } from "@embark/selection/channels";
+import { Selection } from "@embark/selection/channels";
 import {
   resolveInspectTarget,
   isFolderDoc,
@@ -170,29 +168,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
       for (const key of Object.keys(entries)) delete entries[key];
       if (url) entries[url] = true;
     });
-  });
-
-  // Read the shared `Highlight` channel so an embed whose document is being
-  // emphasized elsewhere (a hovered mention, a map pin, a context-viewer token)
-  // glows. Highlight keys can be sub-document urls, so compare by document id.
-  const [highlight, setHighlight] = createSignal(Highlight.empty);
-  onMount(() => {
-    const el = canvasEl();
-    if (!el) return;
-    const store = findContextStore(el);
-    setHighlight(() => store.read(Highlight));
-    onCleanup(
-      store.subscribe(Highlight, (next) => setHighlight(() => next), {
-        owner: contextOwner(el),
-      }),
-    );
-  });
-  const highlightedDocIds = createMemo(() => {
-    const ids = new Set<string>();
-    for (const url of Object.keys(highlight())) {
-      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
-    }
-    return ids;
   });
 
   // Selecting focuses the canvas root so it — not an embedded document —
@@ -660,11 +635,6 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
             embed={embed}
             handle={props.handle}
             selected={selectedId() === embed.id}
-            highlighted={
-              embed.docUrl
-                ? highlightedDocIds().has(docIdOf(embed.docUrl))
-                : false
-            }
             onSelect={() => selectEmbed(embed.id)}
             onDelete={() => deleteEmbed(embed.id)}
             onContextMenu={(clientX, clientY, toolId) =>
@@ -737,7 +707,6 @@ function EmbedView(props: {
   embed: EmbarkEmbed;
   handle: DocHandle<EmbarkCanvasDoc>;
   selected: boolean;
-  highlighted: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onContextMenu: (
@@ -1168,7 +1137,6 @@ function EmbedView(props: {
       data-embed-id={props.embed.id}
       classList={{
         "embark-embed--selected": props.selected,
-        "embark-embed--highlighted": props.highlighted,
         "embark-embed--frameless": frameless(),
         "embark-embed--locked": locked(),
         "embark-embed--autosize": autosize(),
@@ -1462,13 +1430,6 @@ function describeElement(target: EventTarget | null): string {
     : "";
   const embedId = target.closest?.("[data-embed-id]")?.getAttribute("data-embed-id");
   return `${tag}${cls}${embedId ? ` (in embed ${embedId})` : ""}`;
-}
-
-// The document id of an embed's url, used to match against the (possibly
-// sub-document) urls in the Highlight channel. Falls back to the raw url when it
-// can't be parsed so a malformed url simply never matches.
-function docIdOf(url: AutomergeUrl): string {
-  return isValidAutomergeUrl(url) ? parseAutomergeUrl(url).documentId : url;
 }
 
 // Largest z across all embeds (0 when empty), used to place fresh/raised

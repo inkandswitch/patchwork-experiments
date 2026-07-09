@@ -475,31 +475,8 @@ export function getBodyContextStore(): ContextStore {
   >;
   if (!host[BODY_STORE_KEY]) {
     host[BODY_STORE_KEY] = createContextStore();
-    console.log(
-      `[context-debug] created page-global body store ${debugStoreId(host[BODY_STORE_KEY])}`,
-    );
   }
   return host[BODY_STORE_KEY];
-}
-
-// --- debug identification ------------------------------------------------------
-
-// A lazily-assigned, page-unique id stamped on each store object so debug logs
-// can tell stores apart (the body store vs a <patchwork-context> host's store).
-// Registered symbols plus a globalThis counter keep the ids consistent and
-// non-colliding across bundle copies of this module (and the plain-JS client).
-const STORE_DEBUG_ID = Symbol.for("patchwork.context-store.debug-id");
-const STORE_DEBUG_COUNTER = Symbol.for("patchwork.context-store.debug-counter");
-
-export function debugStoreId(store: unknown): string {
-  if (!store || typeof store !== "object") return "<no store>";
-  const carrier = store as Record<symbol, string | undefined>;
-  if (!carrier[STORE_DEBUG_ID]) {
-    const counters = globalThis as unknown as Record<symbol, number>;
-    counters[STORE_DEBUG_COUNTER] = (counters[STORE_DEBUG_COUNTER] ?? 0) + 1;
-    carrier[STORE_DEBUG_ID] = `store#${counters[STORE_DEBUG_COUNTER]}`;
-  }
-  return carrier[STORE_DEBUG_ID];
 }
 
 // A dedicated custom element that owns one independent store and answers
@@ -559,11 +536,6 @@ export function findContextStore(node: Node): ContextStore {
     }),
   );
   const store = detail.store ?? getBodyContextStore();
-  console.log(
-    `[context-debug] findContextStore(ts) from <${
-      node instanceof Element ? node.tagName.toLowerCase() : node.nodeName
-    }>: ${detail.store ? "host-answered" : "body fallback"} -> ${debugStoreId(store)}`,
-  );
   return store;
 }
 

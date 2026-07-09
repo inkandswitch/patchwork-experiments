@@ -1,29 +1,10 @@
-import {
-  isValidAutomergeUrl,
-  parseAutomergeUrl,
-  type AutomergeUrl,
-  type DocHandle,
-  type Repo,
-} from "@automerge/automerge-repo";
+import { type DocHandle, type Repo } from "@automerge/automerge-repo";
 import type { ToolElement, ToolRender } from "@inkandswitch/patchwork-plugins";
-import {
-  For,
-  Show,
-  createMemo,
-  createSignal,
-  onCleanup,
-  onMount,
-} from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import { RepoContext, useDocument, useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
-import {
-  findContextStore,
-  requireOwner,
-  type ScopeOwner,
-} from "@embark/context";
-import { Highlight } from "@embark/selection/channels";
 import {
   getDocumentDragPayload,
   getDragSource,
@@ -97,40 +78,6 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
   const [dragOver, setDragOver] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
 
-  // Attribution for the context subscription: resolved structurally where
-  // possible (the deck sits inside a `<patchwork-view doc-url=…>`), falling
-  // back to naming the deck document itself (anonymous traffic throws by
-  // contract). Same convention as the canvas.
-  const contextOwner = (element: Element): ScopeOwner => {
-    try {
-      return requireOwner(element);
-    } catch {
-      return { docUrl: props.handle.url, toolId: "deck" };
-    }
-  };
-
-  // Read the shared `Highlight` channel — the same one the canvas embeds
-  // glow from — so a held card whose document is being emphasized elsewhere
-  // (a hovered mention, a map pin, a context-viewer token) lights up in the
-  // pile. Highlight keys can be sub-document urls, so compare by document id.
-  const [highlight, setHighlight] = createSignal(Highlight.empty);
-  onMount(() => {
-    const store = findContextStore(props.host);
-    setHighlight(() => store.read(Highlight));
-    onCleanup(
-      store.subscribe(Highlight, (next) => setHighlight(() => next), {
-        owner: contextOwner(props.host),
-      }),
-    );
-  });
-  const highlightedDocIds = createMemo(() => {
-    const ids = new Set<string>();
-    for (const url of Object.keys(highlight())) {
-      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
-    }
-    return ids;
-  });
-
   const toggleFan = () =>
     props.handle.change((d) => {
       d.fanned = !d.fanned;
@@ -144,13 +91,7 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
 
   const onDragOver = (event: DragEvent) => {
     const dataTransfer = event.dataTransfer;
-    if (!acceptsDrop(dataTransfer)) {
-      console.debug("[deck] dragover ignored", {
-        source: getDragSource(dataTransfer),
-        types: dataTransfer ? Array.from(dataTransfer.types) : null,
-      });
-      return;
-    }
+    if (!acceptsDrop(dataTransfer)) return;
     event.preventDefault();
     // Advertise an effect the source permits. A copy-only native drag (a
     // parts-bin example) must see "copy" — per the DnD spec a final dropEffect
@@ -171,22 +112,12 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
 
   const onDrop = (event: DragEvent) => {
     const dataTransfer = event.dataTransfer;
-    if (!acceptsDrop(dataTransfer)) {
-      console.debug("[deck] drop ignored", {
-        source: getDragSource(dataTransfer),
-        types: dataTransfer ? Array.from(dataTransfer.types) : null,
-      });
-      return;
-    }
+    if (!acceptsDrop(dataTransfer)) return;
     event.preventDefault();
     setDragOver(false);
     // Read the payload synchronously, before any await — a real drop clears the
     // DataTransfer once the handler yields.
     const payload = getDocumentDragPayload(dataTransfer);
-    console.debug("[deck] drop", {
-      source: getDragSource(dataTransfer),
-      payloadCount: payload?.length ?? 0,
-    });
     if (!payload) return;
     let added = false;
     props.handle.change((d) => {
@@ -208,11 +139,6 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
     // in). `dropEffect` can't carry this on the synthetic bridge — see
     // drop-claim — so mark the event directly.
     if (added) markEmbedClaimed(event);
-    console.debug(
-      "[deck] cards after drop:",
-      props.handle.doc().cards.length,
-      added ? "— claimed; canvas should delete the source embed" : "— nothing added",
-    );
   };
 
   const removeCard = (id: string) =>
@@ -283,9 +209,6 @@ function Deck(props: { handle: DocHandle<DeckDoc>; host: ToolElement }) {
             card={card}
             transform={cardTransform(index())}
             z={index() + 1}
-            highlighted={
-              card.url ? highlightedDocIds().has(docIdOf(card.url)) : false
-            }
             onDealt={() => removeCard(card.id)}
           />
         )}
@@ -371,7 +294,6 @@ function DeckCardView(props: {
   card: DeckCard;
   transform: string;
   z: number;
-  highlighted: boolean;
   onDealt: () => void;
 }) {
   const [doc] = useDocument<NamedDoc>(() => props.card.url);
@@ -454,7 +376,6 @@ function DeckCardView(props: {
   return (
     <div
       class="embark-deck__card"
-      classList={{ "embark-deck__card--highlighted": props.highlighted }}
       draggable={true}
       style={{ transform: props.transform, "z-index": props.z }}
       title="Drag onto the canvas to deal this card out"
@@ -476,14 +397,6 @@ function DeckCardView(props: {
       </div>
     </div>
   );
-}
-
-// The document id of a card's url, used to match against the (possibly
-// sub-document) urls in the Highlight channel. Falls back to the raw url when
-// it can't be parsed so a malformed url simply never matches. Mirrors the
-// canvas's helper.
-function docIdOf(url: AutomergeUrl): string {
-  return isValidAutomergeUrl(url) ? parseAutomergeUrl(url).documentId : url;
 }
 
 // Use a small title token as the drag image instead of the browser's snapshot of

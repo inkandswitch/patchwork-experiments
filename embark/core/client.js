@@ -10,21 +10,6 @@
 const CONTEXT_REQUEST = "patchwork:context-request";
 const BODY_STORE_KEY = Symbol.for("patchwork.context-store.v1");
 
-// Debug identification, shared with the TS store module via registered
-// symbols: the same store object gets the same id no matter which copy of the
-// code stamps it, so logs from bundled editors and bundleless cards line up.
-const STORE_DEBUG_ID = Symbol.for("patchwork.context-store.debug-id");
-const STORE_DEBUG_COUNTER = Symbol.for("patchwork.context-store.debug-counter");
-
-function debugStoreId(store) {
-  if (!store || typeof store !== "object") return "<no store>";
-  if (!store[STORE_DEBUG_ID]) {
-    globalThis[STORE_DEBUG_COUNTER] = (globalThis[STORE_DEBUG_COUNTER] ?? 0) + 1;
-    store[STORE_DEBUG_ID] = `store#${globalThis[STORE_DEBUG_COUNTER]}`;
-  }
-  return store[STORE_DEBUG_ID];
-}
-
 function debugNodeName(node) {
   return node instanceof Element ? node.tagName.toLowerCase() : node?.nodeName;
 }
@@ -58,10 +43,6 @@ export function findContextStore(node) {
   // the code asks first creates it, and every other copy reuses it.
   const store = (request.detail.store ??
     (document.body[BODY_STORE_KEY] ??= createBodyStore()));
-  console.log(
-    `[context-debug] findContextStore(client.js) from <${debugNodeName(node)}>: ` +
-      `${request.detail.store ? "host-answered" : "body fallback"} -> ${debugStoreId(store)}`,
-  );
   return store;
 }
 
@@ -77,10 +58,6 @@ export function findContextStore(node) {
  */
 export function subscribeContext(node, channel, cb, keys) {
   const store = findContextStore(node);
-  console.log(
-    `[context-debug] subscribeContext "${channel.name}" on ${debugStoreId(store)}`,
-    { owner: requireOwner(node), keys },
-  );
   let delivered = false;
   const wrapped = (value) => {
     delivered = true;
@@ -106,10 +83,6 @@ export function subscribeContext(node, channel, cb, keys) {
 export function getContextHandle(node, channel) {
   const store = findContextStore(node);
   const owner = requireOwner(node);
-  console.log(
-    `[context-debug] getContextHandle "${channel.name}" on ${debugStoreId(store)}`,
-    { owner },
-  );
   return store.handle(channel, owner);
 }
 

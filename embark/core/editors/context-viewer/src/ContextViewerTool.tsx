@@ -13,7 +13,6 @@ import { render } from "solid-js/web";
 import { RepoContext, useDocument } from "solid-automerge";
 import {
   belongsToDoc,
-  debugStoreId,
   excludeOwner,
   findContextStore,
   requireOwner,
@@ -78,10 +77,6 @@ function ContextViewer(props: {
   onMount(() => {
     const raw = findContextStore(props.element);
     const self = requireOwner(props.element);
-    console.log(
-      `[context-debug] context viewer resolved ${debugStoreId(raw)}, channels currently known:`,
-      raw.channels().map((c) => c.name),
-    );
     setCtx({ view: excludeOwner(raw, self), raw, self });
   });
 
