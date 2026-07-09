@@ -52,6 +52,7 @@ import { EmbedWindows } from './EmbedWindows';
 import {
   loadCamera,
   panCameraToKeepPageXVisible,
+  CLIP_HEIGHT,
   HANDLE_WIDTH,
   MIN_CLIP_DURATION,
   MIN_PLAYHEAD_HEIGHT,
@@ -515,6 +516,7 @@ export function Canvas({
   const editingClipIdRef = useRef<string | null>(null);
   const editingPostItIdRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
+  const cameraAnimRafRef = useRef<number | null>(null);
   const ghostSmoothRef = useRef(new Map<string, GhostSmoothState>());
   const ghostAdvanceTimeRef = useRef<number | null>(null);
   const pKeyHeldRef = useRef(false);
@@ -982,6 +984,15 @@ export function Canvas({
       .catch(() => {});
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (cameraAnimRafRef.current !== null) {
+        cancelAnimationFrame(cameraAnimRafRef.current);
+        cameraAnimRafRef.current = null;
+      }
     };
   }, []);
 
@@ -1772,6 +1783,12 @@ export function Canvas({
       if (!canvas) return;
       event.preventDefault();
 
+      // A manual pan/zoom should interrupt any in-flight "frame it" animation.
+      if (cameraAnimRafRef.current !== null) {
+        cancelAnimationFrame(cameraAnimRafRef.current);
+        cameraAnimRafRef.current = null;
+      }
+
       const rect = canvas.getBoundingClientRect();
       const screenX = event.clientX - rect.left;
       const screenY = event.clientY - rect.top;
@@ -1797,9 +1814,56 @@ export function Canvas({
     return () => canvas.removeEventListener('wheel', handleWheel);
   }, [handleWheel]);
 
-  // Ctrl-click on the active playhead's extent: pan horizontally and zoom so
-  // the extent is centered and fills 90% of the canvas width. Vertical pan is
-  // left untouched (the user asked for left/right panning only).
+  const cancelCameraAnimation = () => {
+    if (cameraAnimRafRef.current !== null) {
+      cancelAnimationFrame(cameraAnimRafRef.current);
+      cameraAnimRafRef.current = null;
+    }
+  };
+
+  // Ease the camera through a sequence of segments so a "frame it" jump doesn't
+  // teleport. Each segment supplies its own eased interpolator `at(k)` (k in
+  // 0..1), so a beat can be a straight pan or a pivot-locked zoom. Zero-duration
+  // segments are skipped. Painted directly every frame to avoid the coalescing
+  // schedulePaint path.
+  const animateCameraThrough = (
+    segments: Array<{ durationMs: number; at: (k: number) => Camera }>,
+  ) => {
+    cancelCameraAnimation();
+    const active = segments.filter((s) => s.durationMs > 0);
+    if (active.length === 0) return;
+    // smootherstep (quintic): zero velocity AND zero acceleration at both ends,
+    // so beats join with no jerk (acceleration stays continuous through the
+    // pan→zoom handoff) — no whiplash.
+    const ease = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+    let index = 0;
+    let start = performance.now();
+    const step = (now: number) => {
+      const seg = active[index]!;
+      const t = Math.min(1, (now - start) / seg.durationMs);
+      cameraRef.current = seg.at(ease(t));
+      paint();
+      // Embed windows are DOM overlays positioned from the (imperative) camera;
+      // re-render them each frame so they track the animated pan/zoom.
+      const hasEmbeds = (paintDepsRef.current.doc.embeds?.length ?? 0) > 0;
+      if (editingClipIdRef.current || hasEmbeds) bump((n) => n + 1);
+      if (t < 1) {
+        cameraAnimRafRef.current = requestAnimationFrame(step);
+      } else if (index < active.length - 1) {
+        index += 1;
+        start = now;
+        cameraAnimRafRef.current = requestAnimationFrame(step);
+      } else {
+        cameraAnimRafRef.current = null;
+        saveCamera(docUrl, cameraRef.current);
+      }
+    };
+    cameraAnimRafRef.current = requestAnimationFrame(step);
+  };
+
+  // Ctrl-click on the active playhead's extent: pan and zoom so the extent is
+  // centered and fills 90% of the canvas width. Because zooming also changes the
+  // vertical scale, we pan vertically too so the extent stays framed.
   const fitActivePlayheadExtent = (pageX: number, pageY: number): boolean => {
     if (!activePlayheadId) return false;
     const layout = buildLayout();
@@ -1812,17 +1876,75 @@ export function Canvas({
     const extent = right - left;
     const root = rootRef.current;
     const w = root?.clientWidth ?? 0;
-    if (extent <= 0 || w <= 0) return false;
+    const h = root?.clientHeight ?? 0;
+    if (extent <= 0 || w <= 0 || h <= 0) return false;
+
+    // Vertical bounds of the framed content: the playhead band plus any clips
+    // reachable within its extent.
+    let top = ph.y;
+    let bottom = ph.y + ph.height;
+    const playhead = doc.playheads.find((p) => p.id === activePlayheadId);
+    if (playhead) {
+      for (const clip of clipsInPlayheadExtent(doc, playhead, timingRef.current)) {
+        top = Math.min(top, clip.y);
+        bottom = Math.max(bottom, clip.y + CLIP_HEIGHT);
+      }
+    }
 
     const targetZ = Math.max(0.1, Math.min(4, (0.9 * w) / extent));
-    const center = (left + right) / 2;
-    cameraRef.current = {
-      ...cameraRef.current,
-      z: targetZ,
-      x: w / (2 * targetZ) - center,
+    const centerX = (left + right) / 2;
+    const centerY = (top + bottom) / 2;
+    const from = { ...cameraRef.current };
+    const z0 = from.z;
+
+    // The zoom pivots on the extent's center placed at the viewport center. With
+    // the pivot at the vertical center, zooming keeps the extent symmetrically
+    // framed, so it stays fully visible (with equal top/bottom margin) as long
+    // as it fits at all.
+    const pivotScreenX = w / 2;
+    const pivotScreenY = h / 2;
+
+    // Beat 1: pan (at the current zoom) so the extent's center reaches that
+    // pivot. camPan is exactly where the pivot-locked zoom below starts (k=0),
+    // so the two beats join seamlessly.
+    const camPan: Camera = {
+      z: z0,
+      x: pivotScreenX / z0 - centerX,
+      y: pivotScreenY / z0 - centerY,
     };
-    saveCamera(docUrl, cameraRef.current);
-    schedulePaint();
+
+    // Beat 2: zoom to the target as if the mouse were held at the extent's
+    // center — i.e. keep that page point pinned to (pivotScreenX, pivotScreenY)
+    // for the whole zoom rather than letting it drift. x/y are derived from the
+    // current (log-interpolated) z each frame.
+    const logZ0 = Math.log(z0);
+    const logTarget = Math.log(targetZ);
+
+    // Scale each beat's duration to how far it travels so short hops feel snappy
+    // and long sweeps get room to breathe.
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const panScreenDist = Math.hypot((camPan.x - from.x) * z0, (camPan.y - from.y) * z0);
+    const panMs = panScreenDist < 1 ? 0 : clamp(panScreenDist * 0.9, 320, 950);
+    const zoomRatioMagnitude = Math.abs(logTarget - logZ0);
+    const zoomMs = zoomRatioMagnitude < 0.02 ? 0 : clamp(zoomRatioMagnitude * 700, 320, 850);
+
+    animateCameraThrough([
+      {
+        durationMs: panMs,
+        at: (k) => ({
+          z: z0,
+          x: from.x + (camPan.x - from.x) * k,
+          y: from.y + (camPan.y - from.y) * k,
+        }),
+      },
+      {
+        durationMs: zoomMs,
+        at: (k) => {
+          const z = Math.exp(logZ0 + (logTarget - logZ0) * k);
+          return { z, x: pivotScreenX / z - centerX, y: pivotScreenY / z - centerY };
+        },
+      },
+    ]);
     return true;
   };
 
@@ -1838,6 +1960,7 @@ export function Canvas({
     }
 
     if (event.button === 1) {
+      cancelCameraAnimation();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = {
         kind: 'pan',
