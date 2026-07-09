@@ -53,6 +53,26 @@
   color: #1c1917;
 }
 
+/* A hidden tab whose stack holds a highlighted card: tint it and run a soft
+   pulse so page-driven highlight (a hovered token, a map pin) is noticeable
+   without stealing the active tab's accent. */
+.embark-cards__tab--highlighted:not(.embark-cards__tab--active) {
+  background: rgba(59, 130, 246, 0.12);
+  border-left-color: rgba(59, 130, 246, 0.9);
+  color: #1c1917;
+  animation: embark-cards-tab-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes embark-cards-tab-pulse {
+  0%,
+  100% {
+    background: rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    background: rgba(59, 130, 246, 0.22);
+  }
+}
+
 .embark-cards__tab-label {
   writing-mode: vertical-rl;
   text-orientation: mixed;

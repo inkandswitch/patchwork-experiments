@@ -1,11 +1,23 @@
 import {
   isValidAutomergeUrl,
+  parseAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
+  type Repo,
 } from "@automerge/automerge-repo";
-import { createEffect, createSignal, type Accessor } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  onMount,
+  type Accessor,
+} from "solid-js";
 import { useDocHandle, useDocument, useRepo } from "solid-automerge";
+import { findContextStore } from "@embark/context";
+import { Highlight } from "@embark/selection/channels";
 import type { DocumentDragItem } from "../dnd";
+import type { DeckDoc } from "../deck/types";
 import { DEFAULT_BIN } from "../parts-bin/catalog";
 import { BinColumn } from "./BinColumn";
 import { StackPane, appendEntries } from "./StackPane";
@@ -32,6 +44,56 @@ export function CardsSidebar(props: {
   // Which tab shows: per-browser chrome state, persisted to localStorage.
   const [tab, setTab] = createSignal<TabId>(readStoredTab());
   createEffect(() => writeStoredTab(tab()));
+
+  // Light the Global tab when it's hidden but one of its cards is highlighted,
+  // so highlight coming from the page (a hovered token, a map pin) is visible
+  // even with the Global stack tucked behind the Current Doc tab. The sidebar
+  // has no embed ancestor, so resolve the page-global store the live cards
+  // write to from the mounted root and attribute the read to the sidebar.
+  let rootEl: HTMLDivElement | undefined;
+  const [highlight, setHighlight] = createSignal<Record<string, true>>(
+    Highlight.empty,
+  );
+  onMount(() => {
+    const el = rootEl;
+    if (!el) return;
+    const store = findContextStore(el);
+    setHighlight(() => store.read(Highlight));
+    onCleanup(
+      store.subscribe(Highlight, (next) => setHighlight(() => next), {
+        owner: { toolId: "cards-sidebar" },
+      }),
+    );
+  });
+
+  // Highlight keys can be sub-document urls, so compare by document id.
+  const highlightedDocIds = createMemo(() => {
+    const ids = new Set<string>();
+    for (const url of Object.keys(highlight())) {
+      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
+    }
+    return ids;
+  });
+
+  // Whether any card in the Global stack points at a highlighted document —
+  // either directly, or held one level down inside a deck in the stack.
+  const [globalDoc] = useDocument<CardStackDoc>(() => props.globalStack.url);
+  const globalCardUrls = createMemo(() =>
+    (globalDoc()?.cards ?? [])
+      .map((card) => card.url)
+      .filter((url): url is AutomergeUrl => isValidAutomergeUrl(url)),
+  );
+  const deckCardDocIds = createDeckCardDocIds(repo, globalCardUrls);
+  const globalHighlighted = createMemo(() => {
+    const ids = highlightedDocIds();
+    if (ids.size === 0) return false;
+    for (const url of globalCardUrls()) {
+      if (ids.has(parseAutomergeUrl(url).documentId)) return true;
+    }
+    const inDecks = deckCardDocIds();
+    for (const id of ids) if (inDecks.has(id)) return true;
+    return false;
+  });
 
   // The current document's stack, resolved through its metadata link. The
   // handle for the selected doc itself is kept warm so a first drop can mint
@@ -75,7 +137,7 @@ export function CardsSidebar(props: {
   };
 
   return (
-    <div class="embark-cards">
+    <div class="embark-cards" ref={rootEl}>
       <div class="embark-cards__main">
         <StackPane
           active={tab() === "global"}
@@ -105,6 +167,7 @@ export function CardsSidebar(props: {
         <TabButton
           label="Global"
           active={tab() === "global"}
+          highlighted={globalHighlighted() && tab() !== "global"}
           onSelect={() => setTab("global")}
         />
       </div>
@@ -112,6 +175,71 @@ export function CardsSidebar(props: {
       <BinColumn entries={DEFAULT_BIN} />
     </div>
   );
+}
+
+// Doc ids of the cards held *inside* any deck sitting in the given stack.
+// One level only — decks don't nest — kept live as those decks load and
+// change. Every stack card is watched (not just decks): a card's type is only
+// knowable once its doc loads, and staying subscribed means a freshly dropped
+// deck lights up without re-seeding.
+function createDeckCardDocIds(
+  repo: Repo,
+  cardUrls: Accessor<AutomergeUrl[]>,
+): Accessor<Set<string>> {
+  type Entry = { handle?: DocHandle<DeckDoc>; onChange?: () => void };
+  const watched = new Map<AutomergeUrl, Entry>();
+  const [ids, setIds] = createSignal<Set<string>>(new Set());
+
+  const recompute = () => {
+    const next = new Set<string>();
+    for (const entry of watched.values()) {
+      const doc = entry.handle?.doc();
+      if (doc?.["@patchwork"]?.type !== "deck") continue;
+      for (const card of doc.cards ?? []) {
+        if (card.url && isValidAutomergeUrl(card.url)) {
+          next.add(parseAutomergeUrl(card.url).documentId);
+        }
+      }
+    }
+    setIds(next);
+  };
+
+  createEffect(() => {
+    const wanted = new Set(cardUrls());
+    for (const [url, entry] of watched) {
+      if (wanted.has(url)) continue;
+      if (entry.handle && entry.onChange) {
+        entry.handle.off("change", entry.onChange);
+      }
+      watched.delete(url);
+    }
+    for (const url of wanted) {
+      if (watched.has(url)) continue;
+      const entry: Entry = {};
+      watched.set(url, entry);
+      void Promise.resolve(repo.find<DeckDoc>(url))
+        .then((handle) => {
+          if (watched.get(url) !== entry) return; // dropped while loading
+          entry.handle = handle;
+          entry.onChange = recompute;
+          handle.on("change", entry.onChange);
+          recompute();
+        })
+        .catch(() => {});
+    }
+    recompute();
+  });
+
+  onCleanup(() => {
+    for (const entry of watched.values()) {
+      if (entry.handle && entry.onChange) {
+        entry.handle.off("change", entry.onChange);
+      }
+    }
+    watched.clear();
+  });
+
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,13 +251,18 @@ type TabId = "global" | "current";
 function TabButton(props: {
   label: string;
   active: boolean;
+  // Draw attention to an unselected tab (e.g. a highlighted card lives inside).
+  highlighted?: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
       type="button"
       class="embark-cards__tab"
-      classList={{ "embark-cards__tab--active": props.active }}
+      classList={{
+        "embark-cards__tab--active": props.active,
+        "embark-cards__tab--highlighted": props.highlighted === true,
+      }}
       aria-selected={props.active}
       on:click={() => props.onSelect()}
     >
