@@ -619,6 +619,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           mountRef={mountRef}
           loading={playerState.status === 'loading'}
           error={playerState.status === 'error' ? playerState.message : null}
+          docUrl={docUrl}
         />
       </div>
     </div>
