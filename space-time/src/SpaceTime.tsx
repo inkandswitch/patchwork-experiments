@@ -196,7 +196,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
 
   const beginSweep = useCallback(
     (playheadId: string, startX: number) => {
-      console.debug('[space-time] beginSweep', { playheadId, startX });
       setCurrentXForPlayhead(playheadId, startX);
       setPlayingPlayheadId(playheadId);
       sweepActiveRef.current = true;
@@ -278,13 +277,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     }
 
     const maxEnd = maxEndXForPlayhead(doc, timingRef.current, playhead);
-    console.debug('[space-time] togglePlayPause', {
-      playheadId: playhead.id,
-      playheadX: playhead.x,
-      currentX: playheadCurrentX.get(playhead.id),
-      maxEnd,
-      autoSelected,
-    });
     if (maxEnd <= playhead.x + 1) return;
 
     const startX = playheadCurrentX.get(playhead.id) ?? playhead.x;

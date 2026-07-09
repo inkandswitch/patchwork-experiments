@@ -105,7 +105,6 @@ export function usePlayheadPlayer(
   const currentXRef = useRef(currentX);
   currentXRef.current = currentX;
   const playingRef = useRef(false);
-  const timeLogCountRef = useRef(0);
   const onPlaybackXRef = useRef(onPlaybackX);
   onPlaybackXRef.current = onPlaybackX;
   const onPlaybackEndRef = useRef(onPlaybackEnd);
@@ -349,14 +348,6 @@ export function usePlayheadPlayer(
       if (scrubbingActiveRef?.current && scrubPlaybackActiveRef.current) return;
 
       const x = timeToX(composition.currentTime + timeOriginRef.current);
-      if (timeLogCountRef.current < 5) {
-        console.debug('[space-time] playback:time', {
-          currentTime: composition.currentTime,
-          x,
-          playing: composition.playing,
-        });
-        timeLogCountRef.current += 1;
-      }
       onPlaybackXRef.current?.(x);
     };
     composition.on('playback:time', onTime);
@@ -584,7 +575,6 @@ export function usePlayheadPlayer(
     const composition = compositionRef.current;
     if (!composition) return;
     playingRef.current = true;
-    timeLogCountRef.current = 0;
     try {
       await new Promise<void>((resolve, reject) => {
         enqueueCompositionTask(async () => {
@@ -594,11 +584,6 @@ export function usePlayheadPlayer(
             if (startTime !== undefined) {
               await runCompositionSeek(startTime);
             }
-            console.debug('[space-time] play', {
-              startTime,
-              currentTimeBeforePlay: composition.currentTime,
-              duration: composition.duration,
-            });
             await composition.play(startTime);
             resolve();
           } catch (error) {

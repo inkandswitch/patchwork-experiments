@@ -244,7 +244,6 @@ export async function syncPlayheadComposition(
   }
 
   const timeOrigin = xToTime(playheadOriginX(doc, playhead, timing));
-  const prepareStart = performance.now();
   const preparedResults = await Promise.all(
     touchable.map((clip) =>
       preparePlayheadClip(doc, playhead, clip, loader, timing, timeOrigin, overrides),
@@ -253,10 +252,6 @@ export async function syncPlayheadComposition(
   const prepared = preparedResults.filter(
     (item): item is PreparedPlayheadClip => item !== null,
   );
-  console.debug('[space-time] prepared clips', {
-    count: prepared.length,
-    ms: Math.round(performance.now() - prepareStart),
-  });
 
   if (prepared.length === 0) {
     composition.clear();
@@ -264,7 +259,6 @@ export async function syncPlayheadComposition(
     return { empty: true, duration: 0 };
   }
 
-  const assembleStart = performance.now();
   composition.clear();
   for (let trackIndex = 0; trackIndex < prepared.length; trackIndex++) {
     const layer = await composition.add(new core.Layer({ mode: 'DEFAULT' }), trackIndex);
@@ -272,10 +266,6 @@ export async function syncPlayheadComposition(
   }
 
   await composition.update();
-  console.debug('[space-time] composition assembled', {
-    ms: Math.round(performance.now() - assembleStart),
-    duration: composition.duration,
-  });
   return { empty: false, duration: composition.duration };
 }
 
@@ -364,16 +354,11 @@ export async function resolveAllClipTiming(
   loader: SourceLoader,
 ): Promise<Map<string, ClipTimingInfo>> {
   const timing = new Map<string, ClipTimingInfo>();
-  const start = performance.now();
   await Promise.all(
     doc.clips.map(async (clip) => {
       timing.set(clip.id, await resolveClipTiming(clip, doc, loader));
     }),
   );
-  console.debug('[space-time] resolveAllClipTiming', {
-    clips: doc.clips.length,
-    ms: Math.round(performance.now() - start),
-  });
   return timing;
 }
 
