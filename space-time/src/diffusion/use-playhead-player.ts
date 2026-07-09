@@ -572,7 +572,17 @@ export function usePlayheadPlayer(
         setPlayerState({ status: 'error', message });
       }
     });
-  }, [doc, docSyncKey, playhead?.id, playhead?.x, playhead?.y, playhead?.height, enqueueCompositionTask, runCompositionSeek, sweepActiveRef]);
+    // NOTE: `doc` is intentionally omitted from the deps. Its reference changes
+    // on every edit (including moving a post-it, embed window, or scribble),
+    // none of which affect what the active playhead renders. Re-syncing the
+    // composition for those unrelated edits mid-playback desyncs the monitor and
+    // freezes the playhead while audio keeps going. `docSyncKey` (clips +
+    // sources + playheads) captures everything the composition actually depends
+    // on, so we re-sync only when one of those changes. The effect closure still
+    // sees the current `doc` because any composition-relevant change also updates
+    // `docSyncKey`, re-running the effect on the render with the fresh `doc`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docSyncKey, playhead?.id, playhead?.x, playhead?.y, playhead?.height, enqueueCompositionTask, runCompositionSeek, sweepActiveRef]);
 
   useLayoutEffect(() => {
     if (clipEdgePreviewActiveRef.current) return;
