@@ -292,7 +292,7 @@ function EmbarkCanvas(props: { handle: DocHandle<EmbarkCanvasDoc> }) {
   const spawnInspector = (source: Rect, target: InspectTarget) => {
     const inspectDoc = repo.create<InspectDoc>({
       "@patchwork": { type: "inspect" },
-      packageUrl: target.packageUrl,
+      ...(target.packageUrl ? { packageUrl: target.packageUrl } : {}),
       ...(target.documentUrl ? { documentUrl: target.documentUrl } : {}),
     });
 

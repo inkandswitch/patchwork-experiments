@@ -1,4 +1,4 @@
-/* The Cards sidebar: active stack | tab rail | divider (chevron) | parts bin.
+/* The Cards sidebar: tab rail | active stack | divider (chevron) | parts bin.
    The root fills whatever surface it's docked into (the frame's context
    sidebar, or the hidden body parking spot). */
 .embark-cards {
@@ -16,9 +16,8 @@
   overflow: hidden;
 }
 
-/* The vertical tab rail between the active stack and the parts bin,
-   file-folder style: labels read top-to-bottom, the active tab joins the
-   stack pane on its left. */
+/* The vertical tab rail on the sidebar's left edge, file-folder style: labels
+   read top-to-bottom, the active tab joins the stack pane on its right. */
 .embark-cards__rail {
   flex: 0 0 auto;
   display: flex;
@@ -27,7 +26,11 @@
   gap: 6px;
   padding: 14px 0 0;
   background: #f0efee;
-  border-left: 1px solid #e0deda;
+  /* 20px dead zone: the frame's resize handle hugs this edge, and a click on
+     it collapses the whole sidebar — keep the tabs well clear of it so a
+     mis-aimed tab click lands on inert rail instead. */
+  border-left: 20px solid #f0efee;
+  border-right: 1px solid #e0deda;
 }
 
 .embark-cards__tab {
@@ -36,7 +39,7 @@
   justify-content: center;
   padding: 14px 6px;
   border: none;
-  border-left: 2px solid transparent;
+  border-right: 2px solid transparent;
   background: transparent;
   color: #78716c;
   cursor: pointer;
@@ -49,7 +52,7 @@
 
 .embark-cards__tab--active {
   background: #fafaf9;
-  border-left-color: #6366f1;
+  border-right-color: #6366f1;
   color: #1c1917;
 }
 
@@ -58,7 +61,7 @@
    without stealing the active tab's accent. */
 .embark-cards__tab--highlighted:not(.embark-cards__tab--active) {
   background: rgba(59, 130, 246, 0.12);
-  border-left-color: rgba(59, 130, 246, 0.9);
+  border-right-color: rgba(59, 130, 246, 0.9);
   color: #1c1917;
   animation: embark-cards-tab-pulse 1.6s ease-in-out infinite;
 }
@@ -82,6 +85,12 @@
   white-space: nowrap;
 }
 
+/* Pushes the Inspector tab to the rail's bottom, visually separating the two
+   sections (the card stacks above, the inspector below). */
+.embark-cards__rail-separator {
+  flex: 1 1 auto;
+}
+
 /* The middle column: both panes stay mounted, only the active one shows. */
 .embark-cards__main {
   flex: 1 1 auto;
@@ -99,6 +108,14 @@
 
 .embark-cards__pane--active {
   display: block;
+}
+
+/* The Inspector pane: one full-height inspect view (mounted only while its
+   tab is showing — see CardsSidebar). */
+.embark-cards__inspector-view {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* Drop affordance while a document hovers a stack pane. */

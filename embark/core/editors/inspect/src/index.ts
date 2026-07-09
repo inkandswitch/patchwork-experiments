@@ -1,5 +1,6 @@
 export {
   resolveInspectTarget,
+  resolveFromView,
   isFolderDoc,
   type InspectTarget,
   type InspectDoc,

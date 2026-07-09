@@ -13,6 +13,8 @@ import {
 // The document inspect mints and renders: it carries nothing but the package
 // that paints the inspected embed and, for a tool (not a component), the
 // document that embed shows. Inspect points a `<patchwork-view>` at each.
+// With no target set (the sidebar's standing inspector before a pick) both
+// urls are absent and the tool shows the whole shared context instead.
 //
 // `inspectedDocUrl` mirrors `documentUrl` (kept in sync by the inspect tool)
 // so the inspect doc duck-types as a context-viewer doc: the Context tab pins
@@ -20,14 +22,17 @@ import {
 // focus from `inspectedDocUrl`.
 export type InspectDoc = {
   "@patchwork": { type: "inspect" };
-  packageUrl: AutomergeUrl;
+  packageUrl?: AutomergeUrl;
   documentUrl?: AutomergeUrl;
   inspectedDocUrl?: AutomergeUrl;
 };
 
-// What `resolveInspectTarget` recovers from the embed being inspected.
+// What `resolveInspectTarget` recovers from the embed being inspected. The
+// package is absent when the view's tool isn't inspectable (an HTTP-bundle
+// tool has no folder doc) — the document alone still gives the Doc and
+// Context tabs something to show.
 export type InspectTarget = {
-  packageUrl: AutomergeUrl;
+  packageUrl?: AutomergeUrl;
   documentUrl?: AutomergeUrl;
 };
 
@@ -59,7 +64,9 @@ export async function resolveInspectTarget(
 // A tool embed: the package is the plugin's `importUrl`, the document is the
 // view's `doc-url`. The tool id is read from the element when pinned, otherwise
 // recovered the way the view itself resolves its fallback (see `fallbackToolId`).
-async function resolveFromView(
+// Exported for the inspect tool's target picker, which resolves the view under
+// the shared pointer directly.
+export async function resolveFromView(
   view: Element,
   repo: Repo,
 ): Promise<InspectTarget | null> {
@@ -78,24 +85,29 @@ async function resolveFromView(
   const toolId =
     view.getAttribute("tool-id") ??
     (documentUrl ? await fallbackToolId(repo, documentUrl) : undefined);
-  if (!toolId) return null;
+  if (!toolId) return docOnly(documentUrl);
 
   const importUrl = getRegistry("patchwork:tool").get(toolId)?.importUrl;
   // Only `automerge:` packages (pushwork folder docs) can be inspected; a tool
   // served from an HTTP bundle (e.g. the wildcard "raw" tool) has no folder doc
-  // to render, so there is nothing to show.
+  // to render — fall back to the document alone (Doc + Context tabs).
   if (!importUrl || !isValidAutomergeUrl(importUrl)) {
     if (importUrl) {
       console.warn(
         `[inspect] tool "${toolId}" is served from a non-automerge bundle (${importUrl}); cannot inspect its package`,
       );
     }
-    return null;
+    return docOnly(documentUrl);
   }
 
   return documentUrl
     ? { packageUrl: importUrl, documentUrl }
     : { packageUrl: importUrl };
+}
+
+// A target with no inspectable package: just the document, or nothing at all.
+function docOnly(documentUrl: AutomergeUrl | undefined): InspectTarget | null {
+  return documentUrl ? { documentUrl } : null;
 }
 
 // The tool a view falls back to for a document with no pinned tool-id. Mirrors

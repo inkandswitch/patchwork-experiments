@@ -6,6 +6,7 @@ import {
   type Repo,
 } from "@automerge/automerge-repo";
 import {
+  Show,
   createEffect,
   createMemo,
   createSignal,
@@ -16,6 +17,7 @@ import {
 import { useDocHandle, useDocument, useRepo } from "solid-automerge";
 import { findContextStore } from "@embark/context";
 import { Highlight } from "@embark/selection/channels";
+import type { InspectDoc } from "@embark/inspect";
 import type { DocumentDragItem } from "../dnd";
 import type { DeckDoc } from "../deck/types";
 import { DEFAULT_BIN } from "../parts-bin/catalog";
@@ -24,17 +26,19 @@ import { StackPane, appendEntries } from "./StackPane";
 import type { CardStackDoc, WithCardStack } from "./types";
 import "./cards-sidebar.css";
 
-// The Cards sidebar, laid out per the sketch: the active tab's card stack on
-// the left, a vertical tab rail (Global / Current Doc) beside it, and the
-// parts bin as a fixed column on the outer right edge that collapses behind a
-// chevron on the divider.
+// The Cards sidebar, laid out per the sketch: the active tab's pane on the
+// left, a vertical tab rail (Current Doc / Global / Inspector) beside it, and
+// the parts bin as a fixed column on the outer right edge that collapses
+// behind a chevron on the divider.
 //
 // Both stacks stay mounted whichever tab is showing (the inactive pane is
 // hidden, not unmounted), and the whole sidebar keeps running while parked on
 // document.body (see host.tsx) — so cards keep doing their page-wide work
-// with the sidebar closed. The pane and bin internals are shared with the
-// full-frame card-stack tool (see CardStackTool), which renders one stack
-// with no tabs.
+// with the sidebar closed. The Inspector pane is the exception: nothing in it
+// does page-wide work, so it mounts only while its tab shows (keeping the
+// context viewer from registering as a phantom reader on every channel while
+// invisible). The pane and bin internals are shared with the full-frame
+// card-stack tool (see CardStackTool), which renders one stack with no tabs.
 export function CardsSidebar(props: {
   globalStack: DocHandle<CardStackDoc>;
   selectedDoc: Accessor<AutomergeUrl | undefined>;
@@ -136,8 +140,38 @@ export function CardsSidebar(props: {
     appendEntries(stack, items);
   };
 
+  // The Inspector pane's backing doc: a per-browser singleton inspect doc
+  // (same localStorage pattern as the global stack — see host.tsx), resolved
+  // lazily on the tab's first open. It persists the picked target across
+  // opens; with no target the inspect tool shows the whole shared context.
+  const [inspectorDocUrl, setInspectorDocUrl] = createSignal<AutomergeUrl>();
+  createEffect(() => {
+    if (tab() !== "inspector" || inspectorDocUrl() !== undefined) return;
+    void resolveInspectorDoc(repo).then(setInspectorDocUrl);
+  });
+
   return (
     <div class="embark-cards" ref={rootEl}>
+      <div class="embark-cards__rail">
+        <TabButton
+          label="Current Doc"
+          active={tab() === "current"}
+          onSelect={() => setTab("current")}
+        />
+        <TabButton
+          label="Global"
+          active={tab() === "global"}
+          highlighted={globalHighlighted() && tab() !== "global"}
+          onSelect={() => setTab("global")}
+        />
+        <div class="embark-cards__rail-separator" />
+        <TabButton
+          label="Inspector"
+          active={tab() === "inspector"}
+          onSelect={() => setTab("inspector")}
+        />
+      </div>
+
       <div class="embark-cards__main">
         <StackPane
           active={tab() === "global"}
@@ -156,25 +190,48 @@ export function CardsSidebar(props: {
           droppable={props.selectedDoc() !== undefined}
           onDropItems={dropOnCurrent}
         />
-      </div>
-
-      <div class="embark-cards__rail">
-        <TabButton
-          label="Current Doc"
-          active={tab() === "current"}
-          onSelect={() => setTab("current")}
-        />
-        <TabButton
-          label="Global"
-          active={tab() === "global"}
-          highlighted={globalHighlighted() && tab() !== "global"}
-          onSelect={() => setTab("global")}
-        />
+        <Show when={tab() === "inspector"}>
+          <div class="embark-cards__pane embark-cards__pane--active embark-cards__inspector">
+            <Show when={inspectorDocUrl()}>
+              {(url) => (
+                <patchwork-view
+                  class="embark-cards__inspector-view"
+                  doc-url={url()}
+                  tool-id="inspect"
+                />
+              )}
+            </Show>
+          </div>
+        </Show>
       </div>
 
       <BinColumn entries={DEFAULT_BIN} />
     </div>
   );
+}
+
+// localStorage key holding this browser's singleton sidebar inspector doc.
+// Deliberately per-device, not synced through the account (like the global
+// card stack), so the same inspector reopens across sessions.
+const INSPECTOR_DOC_KEY = "embark:sidebar-inspector-doc";
+
+// Find-or-create the singleton inspector doc. A stored url that can't be
+// resolved in this repo (e.g. a different device or account) is treated as
+// absent and a fresh doc is minted.
+async function resolveInspectorDoc(repo: Repo): Promise<AutomergeUrl> {
+  const stored = localStorage.getItem(INSPECTOR_DOC_KEY);
+  if (stored && isValidAutomergeUrl(stored)) {
+    try {
+      return (await repo.find<InspectDoc>(stored)).url;
+    } catch {
+      // Fall through and mint a new one.
+    }
+  }
+  const created = repo.create<InspectDoc>({
+    "@patchwork": { type: "inspect" },
+  });
+  localStorage.setItem(INSPECTOR_DOC_KEY, created.url);
+  return created.url;
 }
 
 // Doc ids of the cards held *inside* any deck sitting in the given stack.
@@ -246,7 +303,7 @@ function createDeckCardDocIds(
 // Tabs
 // ---------------------------------------------------------------------------
 
-type TabId = "global" | "current";
+type TabId = "global" | "current" | "inspector";
 
 function TabButton(props: {
   label: string;
@@ -279,9 +336,8 @@ const TAB_STORAGE_KEY = "embark:cards:tab";
 
 function readStoredTab(): TabId {
   try {
-    return localStorage.getItem(TAB_STORAGE_KEY) === "global"
-      ? "global"
-      : "current";
+    const stored = localStorage.getItem(TAB_STORAGE_KEY);
+    return stored === "global" || stored === "inspector" ? stored : "current";
   } catch {
     return "current";
   }

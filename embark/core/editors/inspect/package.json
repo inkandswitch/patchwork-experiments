@@ -17,6 +17,8 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@embark/context": "workspace:*",
+    "@embark/selection": "link:../../../cards/selection",
     "@automerge/automerge-codemirror": "^0.2.0",
     "@automerge/automerge-repo": "2.6.0-subduction.29",
     "@codemirror/state": "^6.5.2",
