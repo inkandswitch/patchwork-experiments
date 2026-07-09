@@ -11,9 +11,119 @@ import {
   type Camera,
 } from './constants';
 import type { CanvasLayout } from './layout';
+import type { SourceThumbnails } from './clip-thumbnails';
 
 const CLIP_LABEL_FONT = '11px ui-sans-serif, system-ui, sans-serif';
 const CLIP_LABEL_PADDING_X = 10;
+
+/** Draw `image` into the dest rect using object-fit: cover (centered crop). */
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  image: CanvasImageSource,
+  iw: number,
+  ih: number,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number,
+): void {
+  if (iw <= 0 || ih <= 0 || dw <= 0 || dh <= 0) return;
+  const scale = Math.max(dw / iw, dh / ih);
+  const sw = dw / scale;
+  const sh = dh / scale;
+  const sx = (iw - sw) / 2;
+  const sy = (ih - sh) / 2;
+  ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+}
+
+function frameForClipFraction(
+  thumbs: SourceThumbnails,
+  clip: CanvasLayout['clips'][number],
+  fraction: number,
+): SourceThumbnails['frames'][number] | null {
+  const frames = thumbs.frames;
+  if (frames.length === 0) return null;
+  if (thumbs.type === 'image' || thumbs.duration <= 0) return frames[0]!;
+  const sourceTime = Math.max(
+    0,
+    Math.min(thumbs.duration, (clip.sourceInTime ?? 0) + fraction * clip.duration),
+  );
+  // Nearest sampled frame to the mapped source time.
+  let best = frames[0]!;
+  let bestDelta = Math.abs(best.time - sourceTime);
+  for (let i = 1; i < frames.length; i++) {
+    const delta = Math.abs(frames[i]!.time - sourceTime);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = frames[i]!;
+    }
+  }
+  return best;
+}
+
+/** Draw an audio clip's waveform across its box, mapped to the clip's window. */
+function drawClipWaveform(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  clip: CanvasLayout['clips'][number],
+  thumbs: SourceThumbnails,
+): void {
+  const peaks = thumbs.peaks;
+  const duration = thumbs.duration;
+  if (peaks.length === 0 || duration <= 0) return;
+
+  const midY = clip.y + clip.height / 2;
+  const maxBarHeight = clip.height * 0.82;
+  const barStep = 3; // page px per bar (scales with zoom, like the filmstrip)
+  const barWidth = 1.6;
+  const bars = Math.max(1, Math.floor(clip.width / barStep));
+  const inTime = clip.sourceInTime ?? 0;
+
+  ctx.fillStyle = theme.waveform;
+  ctx.globalAlpha = 0.9;
+  for (let i = 0; i < bars; i++) {
+    // Time span of the source covered by this bar; take its loudest peak so
+    // transients survive downsampling.
+    const t0 = inTime + (i / bars) * clip.duration;
+    const t1 = inTime + ((i + 1) / bars) * clip.duration;
+    let b0 = Math.floor((t0 / duration) * peaks.length);
+    let b1 = Math.ceil((t1 / duration) * peaks.length);
+    b0 = Math.max(0, Math.min(peaks.length - 1, b0));
+    b1 = Math.max(b0 + 1, Math.min(peaks.length, b1));
+    let peak = 0;
+    for (let b = b0; b < b1; b++) if (peaks[b]! > peak) peak = peaks[b]!;
+    const h = Math.max(1, peak * maxBarHeight);
+    ctx.fillRect(clip.x + i * barStep + (barStep - barWidth) / 2, midY - h / 2, barWidth, h);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Tile the source's sampled frames across the clip box (iMovie filmstrip). */
+function drawClipFilmstrip(
+  ctx: CanvasRenderingContext2D,
+  clip: CanvasLayout['clips'][number],
+  thumbs: SourceThumbnails,
+): void {
+  const aspect = thumbs.aspect > 0 ? thumbs.aspect : 16 / 9;
+  const tileW = Math.max(6, clip.height * aspect);
+  const tiles = Math.max(1, Math.round(clip.width / tileW));
+  const step = clip.width / tiles;
+  for (let i = 0; i < tiles; i++) {
+    const frame = frameForClipFraction(thumbs, clip, (i + 0.5) / tiles);
+    if (!frame) continue;
+    drawImageCover(
+      ctx,
+      frame.image,
+      frame.image.width,
+      frame.image.height,
+      clip.x + i * step,
+      clip.y,
+      // Overlap by a hair to avoid seams from sub-pixel rounding.
+      step + 0.5,
+      clip.height,
+    );
+  }
+}
 
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -115,6 +225,7 @@ function drawClip(
   selected: boolean,
   hovered: boolean,
   editing: boolean,
+  thumbnails?: Map<string, SourceThumbnails>,
 ): void {
   const radius = 4;
   const fill = selected ? theme.clipSelectedFill : hovered ? theme.clipFillHover : theme.clipFill;
@@ -123,15 +234,37 @@ function drawClip(
   roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
   ctx.fillStyle = fill;
   ctx.fill();
+
+  const thumbs = thumbnails?.get(clip.sourceId);
+  const hasFrames = !!thumbs && thumbs.type !== 'audio' && thumbs.frames.length > 0;
+  const hasWaveform = !!thumbs && thumbs.type === 'audio' && thumbs.peaks.length > 0;
+  const hasContent = hasFrames || hasWaveform;
+
+  // Filmstrip fills the box (cover); waveform is drawn over the solid fill.
+  // Both are clipped to the rounded rect. Sources still decoding fall back to
+  // the plain fill above.
+  if (hasContent) {
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
+    ctx.clip();
+    if (hasFrames) drawClipFilmstrip(ctx, clip, thumbs!);
+    else drawClipWaveform(ctx, theme, clip, thumbs!);
+    ctx.restore();
+  }
+
   ctx.strokeStyle = stroke;
   ctx.lineWidth = 1;
+  roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
   ctx.stroke();
 
   ctx.fillStyle = theme.handleFill;
+  ctx.globalAlpha = hasFrames ? 0.85 : 1;
   roundRect(ctx, clip.x, clip.y, HANDLE_WIDTH, clip.height, radius);
   ctx.fill();
   roundRect(ctx, clip.x + clip.width - HANDLE_WIDTH, clip.y, HANDLE_WIDTH, clip.height, radius);
   ctx.fill();
+  ctx.globalAlpha = 1;
 
   ctx.save();
   ctx.beginPath();
@@ -139,13 +272,27 @@ function drawClip(
   ctx.clip();
 
   if (!editing) {
+    const labelX = clip.x + CLIP_LABEL_PADDING_X + HANDLE_WIDTH;
+    const labelY = clip.y + clip.height / 2;
     const maxLabelWidth = clip.width - CLIP_LABEL_PADDING_X * 2 - HANDLE_WIDTH * 2;
     ctx.font = CLIP_LABEL_FONT;
-    ctx.fillStyle = theme.text;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     const label = truncateLabel(ctx, clip.label, maxLabelWidth);
-    ctx.fillText(label, clip.x + CLIP_LABEL_PADDING_X + HANDLE_WIDTH, clip.y + clip.height / 2);
+    if (hasContent) {
+      // Subtitle treatment: a dark outline (stroke) under white fill stays
+      // legible over any frames/waveform, regardless of their brightness.
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(label, labelX, labelY);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.98)';
+      ctx.fillText(label, labelX, labelY);
+    } else {
+      ctx.fillStyle = theme.text;
+      ctx.fillText(label, labelX, labelY);
+    }
   }
   ctx.restore();
 }
@@ -443,6 +590,7 @@ export function drawCanvas(
   selectedPostItId: string | null = null,
   editingPostItId: string | null = null,
   scribblePreview?: number[][] | null,
+  thumbnails?: Map<string, SourceThumbnails>,
 ): void {
   const { width, height, camera } = layout;
 
@@ -474,6 +622,7 @@ export function drawCanvas(
       clip.clipId === selectedClipId,
       clip.clipId === hoveredClipId,
       clip.clipId === editingClipId,
+      thumbnails,
     );
   }
 

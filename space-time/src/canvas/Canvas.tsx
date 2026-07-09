@@ -13,6 +13,7 @@ import type { ClipTimingOverride } from '../diffusion/sync-composition';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createSourceLoader, clipsInPlayheadExtent } from '../diffusion/sync-composition';
+import { createThumbnailStore } from './clip-thumbnails';
 import { resolveClipPlayDuration, maxClipPlayDuration, xToTime } from '../clip-timing';
 import { findClip, findPostIt, findScribble, newId, clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import {
@@ -488,6 +489,13 @@ export function Canvas({
   );
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
   const loaderRef = useRef(createSourceLoader());
+  // Indirection so the thumbnail store (created below) can trigger repaints
+  // even though `schedulePaint` is defined further down.
+  const schedulePaintRef = useRef<() => void>(() => {});
+  const thumbnailStoreRef = useRef<ReturnType<typeof createThumbnailStore> | null>(null);
+  if (!thumbnailStoreRef.current) {
+    thumbnailStoreRef.current = createThumbnailStore(() => schedulePaintRef.current());
+  }
   const layoutRef = useRef<ReturnType<typeof computeCanvasLayout> | null>(null);
   const paintDepsRef = useRef({
     doc,
@@ -767,6 +775,7 @@ export function Canvas({
       if (editingClipIdRef.current || hasEmbeds) bump((n) => n + 1);
     });
   };
+  schedulePaintRef.current = schedulePaint;
 
   const paint = () => {
     const canvas = canvasRef.current;
@@ -864,6 +873,7 @@ export function Canvas({
       deps.selectedPostItId,
       editingPostItIdRef.current,
       deps.scribblePreview,
+      thumbnailStoreRef.current?.map,
     );
 
     const ruler = rulerRef.current;
@@ -963,6 +973,13 @@ export function Canvas({
     ro.observe(root);
     return () => ro.disconnect();
   }, []);
+
+  // Decode/refresh filmstrip thumbnails whenever the clips or sources change.
+  useEffect(() => {
+    thumbnailStoreRef.current?.ensure(doc);
+  }, [doc]);
+
+  useEffect(() => () => thumbnailStoreRef.current?.dispose(), []);
 
   // Post-its render with a handwriting font on the canvas. Pull it in once and
   // repaint when it's ready, otherwise the first paint uses the fallback font.

@@ -49,6 +49,7 @@ export type CanvasTheme = {
   danger: string;
   scribble: string;
   scribbleSelected: string;
+  waveform: string;
   postItFill: string;
   postItSelectedFill: string;
   postItStroke: string;
@@ -75,6 +76,7 @@ const THEME_VARS: Array<[keyof CanvasTheme, string]> = [
   ['danger', '--st-danger'],
   ['scribble', '--st-scribble'],
   ['scribbleSelected', '--st-scribble-selected'],
+  ['waveform', '--st-waveform'],
   ['postItFill', '--st-post-it-fill'],
   ['postItSelectedFill', '--st-post-it-selected-fill'],
   ['postItStroke', '--st-post-it-stroke'],

@@ -1,7 +1,7 @@
 import type { GhostPlayhead } from '../presence/types';
 import type { RecordingPreview } from '../audio/use-audio-recorder';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
-import type { Clip, Playhead, PostIt, Scribble, SpaceTimeDoc } from '../types';
+import type { Clip, Playhead, PostIt, Scribble, Source, SpaceTimeDoc } from '../types';
 import { clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import { clipWidth } from '../clip-timing';
 import { clipsInPlayheadExtent, maxEndXForPlayhead } from './playhead-extent';
@@ -22,6 +22,10 @@ export type ClipLayout = {
   height: number;
   label: string;
   duration: number;
+  sourceId: string;
+  sourceType: Source['type'];
+  /** Offset (seconds) into the source where this clip begins; null = start. */
+  sourceInTime: number | null;
 };
 
 export type PlayheadLayout = {
@@ -99,6 +103,9 @@ export function computeClipLayout(
     height: CLIP_HEIGHT,
     label: clipDisplayName(doc, clip),
     duration,
+    sourceId: clip.sourceId,
+    sourceType: doc.sources[clip.sourceId]?.type ?? 'video',
+    sourceInTime: clip.sourceInTime,
   };
 }
 
@@ -180,6 +187,7 @@ export function applyClipDragPreview(
   layout: CanvasLayout,
   preview: ClipDragPreview,
 ): CanvasLayout {
+  const original = layout.clips.find((clip) => clip.clipId === preview.clipId);
   const clips = layout.clips.filter((clip) => clip.clipId !== preview.clipId);
   clips.push({
     clipId: preview.clipId,
@@ -189,6 +197,9 @@ export function applyClipDragPreview(
     height: CLIP_HEIGHT,
     label: preview.label,
     duration: preview.duration,
+    sourceId: original?.sourceId ?? '',
+    sourceType: original?.sourceType ?? 'video',
+    sourceInTime: preview.sourceInTime ?? original?.sourceInTime ?? null,
   });
   clips.sort((a, b) => a.y - b.y);
   return {
