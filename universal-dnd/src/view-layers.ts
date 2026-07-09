@@ -22,10 +22,14 @@ interface DecoratedView {
   observer: MutationObserver;
   /** Inline style we set and must restore on teardown. */
   prevPosition: string;
+  /** Hover listeners we attached to the view and must remove on teardown. */
+  onEnter: () => void;
+  onLeave: () => void;
 }
 
 const ROOT_CLASS = "pw-udnd-layers-root";
 const LAYER_CLASS = "pw-udnd-layer";
+const HOVER_CLASS = "pw-udnd-hover";
 
 /**
  * Manages per-view overlay "layers".
@@ -89,13 +93,30 @@ export function createViewLayers(
     });
     observer.observe(view, { childList: true });
 
-    decorated.set(view, { root, cleanups, observer, prevPosition });
+    // The dashed outline is the always-on indicator; the controls only reveal
+    // while the pointer is over the view. Track that on the view (the controls
+    // live inside it, so moving onto them doesn't count as leaving).
+    const onEnter = () => root.classList.add(HOVER_CLASS);
+    const onLeave = () => root.classList.remove(HOVER_CLASS);
+    view.addEventListener("mouseenter", onEnter);
+    view.addEventListener("mouseleave", onLeave);
+
+    decorated.set(view, {
+      root,
+      cleanups,
+      observer,
+      prevPosition,
+      onEnter,
+      onLeave,
+    });
   }
 
   function undecorateView(view: HTMLElement) {
     const entry = decorated.get(view);
     if (!entry) return;
     entry.observer.disconnect();
+    view.removeEventListener("mouseenter", entry.onEnter);
+    view.removeEventListener("mouseleave", entry.onLeave);
     for (const cleanup of entry.cleanups) {
       try {
         cleanup();

@@ -1,7 +1,7 @@
 {
-  "name": "@patchwork/mergecraft-distribution",
+  "name": "@patchwork/mergecraft-spreadsheet",
   "version": "0.0.2",
-  "description": "Bireactive lens sidebar for Mergecraft: drag block-distribution curves and a fill slider that write back to the world",
+  "description": "Editable spreadsheet view of a Mergecraft world: one row per block, live two-way bound to the doc",
   "type": "module",
   "exports": "./dist/index.js",
   "scripts": {

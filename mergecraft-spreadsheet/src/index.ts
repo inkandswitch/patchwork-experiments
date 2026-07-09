@@ -4,13 +4,13 @@ export const plugins: Plugin<any>[] = [
   // Doc view: openable as a view on a Mergecraft world (gets its handle).
   {
     type: "patchwork:component",
-    id: "mergecraft-distribution",
-    name: "Block Distribution",
-    icon: "ChartSpline",
+    id: "mergecraft-spreadsheet",
+    name: "Block Sheet",
+    icon: "Table2",
     supportedDatatypes: ["mergecraft"],
     async load() {
-      const { DistributionTool } = await import("./tool");
-      return DistributionTool;
+      const { SpreadsheetTool } = await import("./tool");
+      return SpreadsheetTool;
     },
   },
   // Context-sidebar variant: shows up automatically wherever `context-tool`
@@ -20,13 +20,13 @@ export const plugins: Plugin<any>[] = [
   // whichever Mergecraft world is in front.
   {
     type: "patchwork:component",
-    id: "mergecraft-distribution-context",
-    name: "Block Distribution",
-    icon: "ChartSpline",
+    id: "mergecraft-spreadsheet-context",
+    name: "Block Sheet",
+    icon: "Table2",
     tags: ["context-tool"],
     async load() {
-      const { DistributionTool } = await import("./tool");
-      return (element: ToolElement) => DistributionTool(null as never, element);
+      const { SpreadsheetTool } = await import("./tool");
+      return (element: ToolElement) => SpreadsheetTool(null as never, element);
     },
   },
 ];

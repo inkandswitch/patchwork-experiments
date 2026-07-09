@@ -51,8 +51,58 @@ export function setPatchworkDragData(
   dt.effectAllowed = "all";
 }
 
-// 6-dot grip, currentColor so it inherits the handle's text color.
+/**
+ * Copy variant of {@link setPatchworkDragData}: writes the *same* payload
+ * shapes to the clipboard so a paste behaves like a drop. Chrome's async
+ * clipboard rejects arbitrary MIME types, so we advertise the structured
+ * payloads via `web `-prefixed custom formats and keep the universal
+ * `text/plain` (raw url) + `text/uri-list` (web link) fallbacks. Degrades to
+ * `writeText(url)` wherever `ClipboardItem` isn't available.
+ */
+export async function writePatchworkClipboard(
+  item: PatchworkDndItem,
+  source: string
+): Promise<void> {
+  const url = item.url;
+  const link = webLinkFor(item.url);
+  try {
+    const CI = (window as unknown as { ClipboardItem?: typeof ClipboardItem })
+      .ClipboardItem;
+    if (navigator.clipboard?.write && CI) {
+      const record: Record<string, Blob> = {
+        "text/plain": new Blob([url], { type: "text/plain" }),
+      };
+      // Custom formats must be `web `-prefixed for the async clipboard API.
+      record["web text/x-patchwork-dnd"] = new Blob(
+        [JSON.stringify({ source, items: [item] })],
+        { type: "web text/x-patchwork-dnd" }
+      );
+      record["web text/x-patchwork-urls"] = new Blob(
+        [JSON.stringify([url])],
+        { type: "web text/x-patchwork-urls" }
+      );
+      if (link) {
+        record["text/uri-list"] = new Blob([`${link}\r\n`], {
+          type: "text/uri-list",
+        });
+      }
+      await navigator.clipboard.write([new CI(record)]);
+      return;
+    }
+  } catch {
+    // Fall through to the plain-text fallback below.
+  }
+  await navigator.clipboard?.writeText?.(url);
+}
+
+// 6-dot grip, currentColor so it inherits the button's text color.
 const GRIP_SVG = /* html */ `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.3"/><circle cx="10" cy="4" r="1.3"/><circle cx="6" cy="8" r="1.3"/><circle cx="10" cy="8" r="1.3"/><circle cx="6" cy="12" r="1.3"/><circle cx="10" cy="12" r="1.3"/></svg>`;
+
+// Two offset rounded rectangles — the classic "copy" glyph, currentColor.
+const COPY_SVG = /* html */ `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="5.25" y="5.25" width="7.5" height="7.5" rx="1.6"/><path d="M10.5 3.25H4.6A1.35 1.35 0 0 0 3.25 4.6v5.9"/></svg>`;
+
+// Checkmark shown briefly after a successful copy.
+const CHECK_SVG = /* html */ `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-6.5"/></svg>`;
 
 /** Best-effort human label for the dragged view, for the structured payload. */
 function readName(view: HTMLElement): string | undefined {
@@ -102,29 +152,39 @@ export const dragHandleDecorator: ViewDecorator = ({
       .catch(() => {});
   }
 
-  // A faint outline so the whole augmentable region reads as "grabbable".
+  // A dashed outline marks the augmentable region ("here's a tool"); the
+  // controls themselves only surface on hover (see styles.ts).
   overlay.classList.add("pw-udnd-overlay");
 
+  // Build the shared payload once — both the drag handle and the copy button
+  // describe the exact same document reference.
+  const buildItem = (): PatchworkDndItem => ({
+    url,
+    name: readName(view),
+    type: view.getAttribute("data-type") ?? undefined,
+    // Carry the tool this view is showing so targets that honor it (e.g. the
+    // markdown embed) can preserve it; targets that don't just ignore it.
+    toolId: toolId ?? undefined,
+  });
+  const source = toolId ?? "universal-dnd";
+
+  // A single corner cluster hosts every per-view control.
+  const corner = document.createElement("div");
+  corner.className = "pw-udnd-corner";
+
+  // --- Drag handle -----------------------------------------------------------
   const handle = document.createElement("div");
-  handle.className = "pw-udnd-handle";
+  handle.className = "pw-udnd-btn pw-udnd-btn--drag";
   handle.setAttribute("draggable", "true");
   handle.setAttribute("role", "button");
   handle.setAttribute("aria-label", "Drag this view");
   handle.title = readName(view) ?? url;
   handle.innerHTML = GRIP_SVG;
-  overlay.appendChild(handle);
+  corner.appendChild(handle);
 
   const onDragStart = (e: DragEvent) => {
     if (!e.dataTransfer) return;
-    const item: PatchworkDndItem = {
-      url,
-      name: readName(view),
-      type: view.getAttribute("data-type") ?? undefined,
-      // Carry the tool this view is showing so targets that honor it (e.g. the
-      // markdown embed) can preserve it; targets that don't just ignore it.
-      toolId: toolId ?? undefined,
-    };
-    setPatchworkDragData(e.dataTransfer, item, toolId ?? "universal-dnd");
+    setPatchworkDragData(e.dataTransfer, buildItem(), source);
     // If the doc is a file, let the OS accept this drag as a real file. Served
     // as raw content by the patchwork service worker at `/<encoded url>/`.
     if (fileMeta) {
@@ -144,16 +204,47 @@ export const dragHandleDecorator: ViewDecorator = ({
     } catch {
       // setDragImage can throw on detached/odd nodes — ignore, use default.
     }
-    handle.classList.add("pw-udnd-handle--dragging");
+    handle.classList.add("pw-udnd-btn--dragging");
   };
-  const onDragEnd = () => handle.classList.remove("pw-udnd-handle--dragging");
+  const onDragEnd = () => handle.classList.remove("pw-udnd-btn--dragging");
 
   handle.addEventListener("dragstart", onDragStart);
   handle.addEventListener("dragend", onDragEnd);
 
+  // --- Copy button -----------------------------------------------------------
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "pw-udnd-btn pw-udnd-btn--copy";
+  copy.setAttribute("aria-label", "Copy reference to this view");
+  copy.title = "Copy reference";
+  copy.innerHTML = COPY_SVG;
+  corner.appendChild(copy);
+
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  const onCopy = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void writePatchworkClipboard(buildItem(), source)
+      .then(() => {
+        copy.classList.add("pw-udnd-btn--copied");
+        copy.innerHTML = CHECK_SVG;
+        clearTimeout(copiedTimer);
+        copiedTimer = setTimeout(() => {
+          copy.classList.remove("pw-udnd-btn--copied");
+          copy.innerHTML = COPY_SVG;
+        }, 1100);
+      })
+      .catch((err) => console.error("[universal-dnd] copy failed", err));
+  };
+  copy.addEventListener("click", onCopy);
+
+  overlay.appendChild(corner);
+
   return () => {
+    clearTimeout(copiedTimer);
     handle.removeEventListener("dragstart", onDragStart);
     handle.removeEventListener("dragend", onDragEnd);
-    handle.remove();
+    copy.removeEventListener("click", onCopy);
+    corner.remove();
   };
 };

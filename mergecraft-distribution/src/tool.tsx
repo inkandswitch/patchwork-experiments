@@ -37,14 +37,14 @@ const cubesEqual = (a: Cube[], b: Cube[]): boolean => {
  *  disposer that tears down the store bridge, the SVG widgets, every effect, and
  *  removes the mounted DOM — so the whole thing can be cleanly rebuilt when we
  *  rebind to a different doc (the JSX `mount` disposer only stops effects). */
-function startSession(handle: DocHandle<Doc>, host: HTMLElement): () => void {
+function startSession(handle: DocHandle<Doc> | null, host: HTMLElement): () => void {
   const root = document.createElement("div");
   host.appendChild(root);
   const removeRoot = () => root.remove();
 
   let doc: Doc | undefined;
   try {
-    doc = handle.doc();
+    doc = handle ? handle.doc() : undefined;
   } catch {
     doc = undefined;
   }
@@ -53,7 +53,9 @@ function startSession(handle: DocHandle<Doc>, host: HTMLElement): () => void {
     const disposeUI = mount(
       () => (
         <div style="font:13px/1.5 ui-sans-serif,system-ui,sans-serif;color:inherit;opacity:0.7;padding:14px;">
-          This document isn't a Mergecraft world (no <code>cubes</code> array).
+          {handle
+            ? "This document isn't a Mergecraft world (no cubes array)."
+            : "Select a Mergecraft world to shape its blocks."}
         </div>
       ),
       root,
@@ -65,7 +67,7 @@ function startSession(handle: DocHandle<Doc>, host: HTMLElement): () => void {
   }
 
   // Deep store over the doc; writing `cubes.value` commits via keyed reconcile.
-  const bridge = connectStore<Doc>(handle, { by: byCoord });
+  const bridge = connectStore<Doc>(handle!, { by: byCoord });
   const cubes = bridge.store.cubes;
   const readCubes = (): Cube[] => (cubes.peek() ?? []) as Cube[];
 
@@ -214,13 +216,13 @@ export const DistributionTool: ToolRender = (handle, element) => {
   let session: (() => void) | null = null;
   let boundUrl: string | undefined;
 
-  const bindTo = (h: DocHandle<Doc>): void => {
-    boundUrl = h.url;
+  const bindTo = (h: DocHandle<Doc> | null): void => {
+    boundUrl = h?.url;
     session?.();
     session = startSession(h, host);
   };
 
-  bindTo(handle as DocHandle<Doc>);
+  bindTo((handle as DocHandle<Doc>) ?? null);
 
   // Follow the user's focus: the host's SelectedDocProvider answers
   // `patchwork:selected-view` with the primary view, so a sidebar instance
