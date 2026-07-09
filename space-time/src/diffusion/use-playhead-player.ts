@@ -336,6 +336,26 @@ export function usePlayheadPlayer(
       scrubbingActiveRef,
     ],
   );
+  // Diffusion's video decoder races its own async `seekTo` against the
+  // `reset()` it runs when a clip leaves the visible window (e.g. scrubbing
+  // left across a clip's left edge): the seek awaits a decode, `reset()` nulls
+  // `currentFrame`, then the seek dereferences it and throws
+  // `Cannot read properties of null (reading 'timestamp')`. It bubbles out of
+  // the renderer's own animation loop, so we can't catch it at a call site.
+  // The next frame simply re-seeks, so swallow just this rejection.
+  useLayoutEffect(() => {
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason as { message?: unknown; stack?: unknown } | undefined;
+      const message = typeof reason?.message === 'string' ? reason.message : '';
+      const stack = typeof reason?.stack === 'string' ? reason.stack : '';
+      if (stack.includes('seekTo') && message.includes("reading 'timestamp'")) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => window.removeEventListener('unhandledrejection', onUnhandledRejection);
+  }, []);
+
   useLayoutEffect(() => {
     const mountEl = mountRef.current;
     if (!mountEl) return;
