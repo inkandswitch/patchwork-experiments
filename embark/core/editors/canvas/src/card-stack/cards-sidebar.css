@@ -1,4 +1,4 @@
-/* The Cards sidebar: tab rail | active stack | divider (chevron) | parts bin.
+/* The Cards sidebar: active stack | divider (chevron) | parts bin | tab rail.
    The root fills whatever surface it's docked into (the frame's context
    sidebar, or the hidden body parking spot). */
 .embark-cards {
@@ -16,7 +16,7 @@
   overflow: hidden;
 }
 
-/* The vertical tab rail on the outer left edge, file-folder style: labels
+/* The vertical tab rail on the outer right edge, file-folder style: labels
    read top-to-bottom, the active tab joins the pane beside it. */
 .embark-cards__rail {
   flex: 0 0 auto;
@@ -26,7 +26,7 @@
   gap: 6px;
   padding: 14px 0 0;
   background: #f0efee;
-  border-right: 1px solid #e0deda;
+  border-left: 1px solid #e0deda;
 }
 
 .embark-cards__tab {
@@ -35,7 +35,7 @@
   justify-content: center;
   padding: 14px 6px;
   border: none;
-  border-right: 2px solid transparent;
+  border-left: 2px solid transparent;
   background: transparent;
   color: #78716c;
   cursor: pointer;
@@ -48,14 +48,13 @@
 
 .embark-cards__tab--active {
   background: #fafaf9;
-  border-right-color: #6366f1;
+  border-left-color: #6366f1;
   color: #1c1917;
 }
 
 .embark-cards__tab-label {
   writing-mode: vertical-rl;
   text-orientation: mixed;
-  transform: rotate(180deg);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -112,66 +111,42 @@
   padding: 12px;
 }
 
+/* Suppress text selection across the list while a reorder drag is live. */
+.embark-cards__list--reordering {
+  user-select: none;
+}
+
 .embark-cards__row {
+  position: relative;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .embark-cards__row--dragging {
   opacity: 0.75;
-}
-
-/* Row header: grip, title, remove — the grip is the reorder handle. */
-.embark-cards__row-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 2px;
-}
-
-.embark-cards__row-grip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  color: #b6b2ad;
-  cursor: grab;
-  touch-action: none;
-}
-
-.embark-cards__row-grip:active {
   cursor: grabbing;
 }
 
-.embark-cards__row-name {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  color: #44403c;
-  user-select: none;
-}
-
+/* Remove floats over the card's top-right corner, revealed on hover. */
 .embark-cards__row-delete {
-  flex: 0 0 auto;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
   color: #a8a29e;
   cursor: pointer;
   line-height: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   opacity: 0;
   transition: opacity 120ms ease;
 }

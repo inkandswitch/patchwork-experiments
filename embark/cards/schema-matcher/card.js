@@ -59,6 +59,7 @@ export const plugins = [
 ];
 
 export default function card(_handle, element) {
+  console.log("[schema-matcher] behavior starting", { connected: element.isConnected });
   // Discovery runs from the card's element in the canvas subtree, so the
   // store resolves to the canvas's context (or the page-global body store)
   // and the owner to this card's embed — that's what lets the context viewer
@@ -94,6 +95,7 @@ function runSchemaMatcher(store, repo, owner) {
   const unsubscribeReaders = store.subscribeReaders(() => {
     const next = readQueryKeys(store);
     if (sameKeys(next, queryKeys)) return;
+    console.log(`[schema-matcher] query keys changed: ${next.size} schema(s) requested`);
     queryKeys = next;
     scheduleReevaluate();
   });
@@ -112,6 +114,10 @@ function runSchemaMatcher(store, repo, owner) {
   // drop ones no writer contributes anymore.
   const onOpenDocuments = (all) => {
     const wanted = new Set(Object.keys(all));
+    console.log(
+      `[schema-matcher] open-documents set: ${wanted.size} doc(s)`,
+      [...wanted],
+    );
     for (const url of wanted) if (!watched.has(url)) watch(url);
     for (const url of [...watched.keys()]) {
       if (!wanted.has(url)) unwatch(url);
@@ -173,6 +179,12 @@ function runSchemaMatcher(store, repo, owner) {
     for (const key of [...parsed.keys()]) {
       if (!queryKeys.has(key)) parsed.delete(key);
     }
+    console.log(
+      `[schema-matcher] reevaluated ${queryKeys.size} schema(s) over ${watched.size} doc(s):`,
+      Object.fromEntries(
+        Object.entries(result).map(([key, urls]) => [key, `${urls.length} match(es)`]),
+      ),
+    );
     matchesHandle.change((slice) => {
       for (const key of Object.keys(slice)) delete slice[key];
       Object.assign(slice, result);
@@ -182,6 +194,7 @@ function runSchemaMatcher(store, repo, owner) {
   scheduleReevaluate();
 
   return () => {
+    console.log("[schema-matcher] behavior stopping, releasing matches slice");
     unsubscribeReaders();
     unsubscribeOpenDocuments();
     for (const url of [...watched.keys()]) unwatch(url);

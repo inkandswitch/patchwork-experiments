@@ -38,6 +38,7 @@ const { linkedUrls } = await import(
 const RECOMPUTE_DEBOUNCE_MS = 100;
 
 export default function card(_handle, element) {
+  console.log("[open-documents] behavior starting", { connected: element.isConnected });
   const repo = element.repo;
   const openDocs = getContextHandle(element, OpenDocuments);
   // One entry per document in the closure, watched for changes (its links can
@@ -57,6 +58,7 @@ export default function card(_handle, element) {
 
   const setSelected = (url) => {
     if (url === selected) return;
+    console.log(`[open-documents] selected doc: ${url ?? "<none>"}`);
     selected = url;
     scheduleRecompute();
   };
@@ -109,6 +111,10 @@ export default function card(_handle, element) {
     for (const url of [...watched.keys()]) {
       if (!reached.has(url)) dropWatched(url);
     }
+    console.log(
+      `[open-documents] publishing ${reached.size} doc(s) into open-documents:`,
+      [...reached],
+    );
     openDocs.change((slice) => {
       for (const key of Object.keys(slice)) delete slice[key];
       for (const url of reached) slice[url] = true;
@@ -123,9 +129,11 @@ export default function card(_handle, element) {
 
   document.body.addEventListener("patchwork:open-document", onOpenDocument);
   window.addEventListener("hashchange", onHashChange);
+  console.log(`[open-documents] initial hash selection: ${selectedFromHash() ?? "<none>"}`);
   setSelected(selectedFromHash());
 
   return () => {
+    console.log("[open-documents] behavior stopping, releasing slice");
     stopped = true;
     document.body.removeEventListener("patchwork:open-document", onOpenDocument);
     window.removeEventListener("hashchange", onHashChange);

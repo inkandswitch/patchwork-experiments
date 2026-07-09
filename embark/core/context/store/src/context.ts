@@ -473,7 +473,33 @@ export function getBodyContextStore(): ContextStore {
     symbol,
     ContextStore | undefined
   >;
-  return (host[BODY_STORE_KEY] ??= createContextStore());
+  if (!host[BODY_STORE_KEY]) {
+    host[BODY_STORE_KEY] = createContextStore();
+    console.log(
+      `[context-debug] created page-global body store ${debugStoreId(host[BODY_STORE_KEY])}`,
+    );
+  }
+  return host[BODY_STORE_KEY];
+}
+
+// --- debug identification ------------------------------------------------------
+
+// A lazily-assigned, page-unique id stamped on each store object so debug logs
+// can tell stores apart (the body store vs a <patchwork-context> host's store).
+// Registered symbols plus a globalThis counter keep the ids consistent and
+// non-colliding across bundle copies of this module (and the plain-JS client).
+const STORE_DEBUG_ID = Symbol.for("patchwork.context-store.debug-id");
+const STORE_DEBUG_COUNTER = Symbol.for("patchwork.context-store.debug-counter");
+
+export function debugStoreId(store: unknown): string {
+  if (!store || typeof store !== "object") return "<no store>";
+  const carrier = store as Record<symbol, string | undefined>;
+  if (!carrier[STORE_DEBUG_ID]) {
+    const counters = globalThis as unknown as Record<symbol, number>;
+    counters[STORE_DEBUG_COUNTER] = (counters[STORE_DEBUG_COUNTER] ?? 0) + 1;
+    carrier[STORE_DEBUG_ID] = `store#${counters[STORE_DEBUG_COUNTER]}`;
+  }
+  return carrier[STORE_DEBUG_ID];
 }
 
 // A dedicated custom element that owns one independent store and answers
@@ -511,7 +537,19 @@ export function registerContextElement(): void {
 // One-shot synchronous lookup: dispatch a request from `node`, and return
 // whatever a host wrote into the event detail — or the page-global body store
 // when nothing answered, so there is always a store to read from and write to.
+//
+// Discovery from a detached node can't reach any `<patchwork-context>` host,
+// so it would silently land on the body store even when the node belongs
+// inside an isolation boundary. That's a broken invariant (callers resolve
+// stores from mounted elements), so it throws instead of guessing.
 export function findContextStore(node: Node): ContextStore {
+  if (!node.isConnected) {
+    throw new Error(
+      `[context] findContextStore called on a detached <${
+        node instanceof Element ? node.tagName.toLowerCase() : node.nodeName
+      }>: discovery cannot reach any <patchwork-context> host; resolve the store after the element is mounted`,
+    );
+  }
   const detail: ContextRequestDetail = {};
   node.dispatchEvent(
     new CustomEvent<ContextRequestDetail>(CONTEXT_REQUEST, {
@@ -520,7 +558,13 @@ export function findContextStore(node: Node): ContextStore {
       composed: true,
     }),
   );
-  return detail.store ?? getBodyContextStore();
+  const store = detail.store ?? getBodyContextStore();
+  console.log(
+    `[context-debug] findContextStore(ts) from <${
+      node instanceof Element ? node.tagName.toLowerCase() : node.nodeName
+    }>: ${detail.store ? "host-answered" : "body fallback"} -> ${debugStoreId(store)}`,
+  );
+  return store;
 }
 
 // Node-relative subscribe: resolve the store from `node`, deliver the current

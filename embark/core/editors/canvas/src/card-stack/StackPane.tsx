@@ -107,8 +107,20 @@ export function appendEntries(
 // The ordered, reorderable list
 // ---------------------------------------------------------------------------
 
-// A live reorder gesture: which entry is being dragged, by which pointer.
-type Reorder = { entryId: string; pointerId: number };
+// A live reorder gesture: which entry, by which pointer, where it started,
+// and whether the drag threshold has been crossed yet.
+type Reorder = {
+  entryId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+};
+
+// How far the pointer must travel before a press on a card becomes a reorder
+// drag; below this everything passes through to the live card as a normal
+// interaction.
+const DRAG_THRESHOLD_PX = 5;
 
 function CardStackList(props: {
   handle: DocHandle<CardStackDoc>;
@@ -135,7 +147,10 @@ function CardStackList(props: {
   const orderOf = (id: string) =>
     entries().findIndex((entry) => entry.id === id);
 
-  // Reordering: a pointer-capture drag on the row's grip. On every move the
+  // Reordering: a threshold-gated pointer drag on the row itself. The press
+  // does nothing at first — no capture, no preventDefault — so clicks and
+  // typing land in the live card as usual. Once the pointer travels past the
+  // threshold the row captures it and the drag begins: on every move the
   // desired index is how many *other* rows' midpoints sit above the pointer;
   // when it differs from the entry's current index the document array is
   // respliced live (the re-inserted entry is copied to a plain object —
@@ -147,16 +162,32 @@ function CardStackList(props: {
 
   const beginReorder = (entryId: string) => (event: PointerEvent) => {
     if (event.button !== 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    reorder = { entryId, pointerId: event.pointerId };
-    setDraggingId(entryId);
+    reorder = {
+      entryId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
   };
 
   const moveReorder = (event: PointerEvent) => {
     const state = reorder;
     if (!state || state.pointerId !== event.pointerId || !listEl) return;
+    // A press that ended outside the list leaves stale state behind (we get
+    // no pointerup); a buttonless move is the tell to drop it.
+    if ((event.buttons & 1) === 0) {
+      reorder = null;
+      return;
+    }
+    if (!state.active) {
+      const dx = event.clientX - state.startX;
+      const dy = event.clientY - state.startY;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      state.active = true;
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      setDraggingId(state.entryId);
+    }
     const rows = [
       ...listEl.querySelectorAll<HTMLElement>("[data-entry-id]"),
     ].filter((row) => row.dataset.entryId !== state.entryId);
@@ -178,9 +209,9 @@ function CardStackList(props: {
 
   const endReorder = (event: PointerEvent) => {
     if (!reorder || reorder.pointerId !== event.pointerId) return;
-    const grip = event.currentTarget as HTMLElement;
-    if (grip.hasPointerCapture(event.pointerId)) {
-      grip.releasePointerCapture(event.pointerId);
+    const row = event.currentTarget as HTMLElement;
+    if (row.hasPointerCapture(event.pointerId)) {
+      row.releasePointerCapture(event.pointerId);
     }
     reorder = null;
     setDraggingId(null);
@@ -194,16 +225,20 @@ function CardStackList(props: {
   };
 
   return (
-    <div class="embark-cards__list" ref={listEl}>
+    <div
+      class="embark-cards__list"
+      classList={{ "embark-cards__list--reordering": draggingId() !== null }}
+      ref={listEl}
+    >
       <For each={sorted()}>
         {(entry) => (
           <CardStackRow
             entry={entry}
             order={orderOf(entry.id)}
             dragging={draggingId() === entry.id}
-            onGripDown={beginReorder(entry.id)}
-            onGripMove={moveReorder}
-            onGripUp={endReorder}
+            onRowDown={beginReorder(entry.id)}
+            onRowMove={moveReorder}
+            onRowUp={endReorder}
             onRemove={() => removeEntry(entry.id)}
           />
         )}
@@ -215,34 +250,22 @@ function CardStackList(props: {
   );
 }
 
-// A document whose name we want to show on the row header. Patchwork keeps
-// the display title under `@patchwork.title`; some datatypes mirror it at the
-// root, and we fall back to the type or a generic label.
-type NamedDoc = {
-  "@patchwork"?: { title?: string; type?: string };
-  title?: string;
+// The slice of the underlying doc a row still reads: its datatype, as the
+// fallback for picking presentation traits when the entry pins no tool.
+type TypedDoc = {
+  "@patchwork"?: { type?: string };
 };
 
 function CardStackRow(props: {
   entry: CardStackDoc["cards"][number];
   order: number;
   dragging: boolean;
-  onGripDown: (event: PointerEvent) => void;
-  onGripMove: (event: PointerEvent) => void;
-  onGripUp: (event: PointerEvent) => void;
+  onRowDown: (event: PointerEvent) => void;
+  onRowMove: (event: PointerEvent) => void;
+  onRowUp: (event: PointerEvent) => void;
   onRemove: () => void;
 }) {
-  const [rowDoc] = useDocument<NamedDoc>(() => props.entry.url);
-
-  const name = () => {
-    const value = rowDoc();
-    return (
-      value?.["@patchwork"]?.title ||
-      value?.title ||
-      value?.["@patchwork"]?.type ||
-      "Untitled"
-    );
-  };
+  const [rowDoc] = useDocument<TypedDoc>(() => props.entry.url);
 
   // Presentation traits derive from the rendering tool, same as the canvas:
   // the pinned tool id wins, falling back to the doc's datatype. Auto-size
@@ -264,30 +287,21 @@ function CardStackRow(props: {
       data-entry-id={props.entry.id}
       classList={{ "embark-cards__row--dragging": props.dragging }}
       style={{ order: String(props.order) }}
+      on:pointerdown={props.onRowDown}
+      on:pointermove={props.onRowMove}
+      on:pointerup={props.onRowUp}
+      on:pointercancel={props.onRowUp}
     >
-      <div class="embark-cards__row-head">
-        <span
-          class="embark-cards__row-grip"
-          title="Drag to reorder"
-          on:pointerdown={props.onGripDown}
-          on:pointermove={props.onGripMove}
-          on:pointerup={props.onGripUp}
-          on:pointercancel={props.onGripUp}
-        >
-          <GripIcon />
-        </span>
-        <span class="embark-cards__row-name">{name()}</span>
-        <button
-          type="button"
-          class="embark-cards__row-delete"
-          title="Remove card"
-          aria-label="Remove card"
-          on:pointerdown={(event) => event.stopPropagation()}
-          on:click={() => props.onRemove()}
-        >
-          <CloseIcon />
-        </button>
-      </div>
+      <button
+        type="button"
+        class="embark-cards__row-delete"
+        title="Remove card"
+        aria-label="Remove card"
+        on:pointerdown={(event) => event.stopPropagation()}
+        on:click={() => props.onRemove()}
+      >
+        <CloseIcon />
+      </button>
       <div
         class="embark-cards__row-body"
         classList={{
@@ -309,31 +323,7 @@ function CardStackRow(props: {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Glyphs (inherit the parent's text color)
-// ---------------------------------------------------------------------------
-
-// Six-dot grip for the reorder handle.
-function GripIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <circle cx="9" cy="5" r="1.4" />
-      <circle cx="15" cy="5" r="1.4" />
-      <circle cx="9" cy="12" r="1.4" />
-      <circle cx="15" cy="12" r="1.4" />
-      <circle cx="9" cy="19" r="1.4" />
-      <circle cx="15" cy="19" r="1.4" />
-    </svg>
-  );
-}
-
-// Thin "x" for the remove button.
+// Thin "x" for the remove button (inherits the parent's text color).
 function CloseIcon() {
   return (
     <svg

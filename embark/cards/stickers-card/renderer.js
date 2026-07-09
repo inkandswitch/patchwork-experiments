@@ -9,7 +9,8 @@
 //
 // Built as a vanilla CodeMirror extension (no Solid) so the Stickers card can
 // publish it into the canvas `codemirror:extensions` channel, mirroring the
-// mention extension. It recovers handles from the global `window.repo`.
+// mention extension. It recovers handles from the repo stamped on the
+// enclosing `<patchwork-view>`.
 //
 // Plain-JS bundleless module: bare imports are importmap-provided; sibling
 // cards and the core platform are imported by their automerge urls.
@@ -60,6 +61,11 @@ const stickerItemsField = StateField.define({
 // stickers. Sticker content edits arrive as fresh channel emissions (the
 // values are inline, so there are no separate sticker documents to watch);
 // target repositioning rides the editor's own `docChanged`.
+//
+// Setup is one-shot: the renderer is only ever installed by the extensions
+// host into a connected editor, so the enclosing `<patchwork-view>` (with its
+// document url and repo) must be discoverable right now — a failure is a
+// broken invariant, not a timing issue, and throws.
 const stickerController = ViewPlugin.fromClass(
   class {
     constructor(view) {
@@ -67,7 +73,7 @@ const stickerController = ViewPlugin.fromClass(
       this.stickers = [];
       this.generation = 0;
       const url = documentUrl(view);
-      if (!url) return;
+      this.repo = repoFromEditor(view);
       this.unsubscribe = subscribeContext(
         view.dom,
         Stickers,
@@ -80,8 +86,7 @@ const stickerController = ViewPlugin.fromClass(
     }
 
     async resolve() {
-      const repo = window.repo;
-      if (!repo) return;
+      const repo = this.repo;
       const generation = ++this.generation;
       const resolved = [];
       for (const sticker of this.stickers) {
@@ -180,8 +185,29 @@ function clamp(value, max) {
 // carries `doc-url` in legacy mode, `url` in component mode).
 function documentUrl(view) {
   const host = view.dom.closest("patchwork-view");
-  const raw = host?.getAttribute("doc-url") ?? host?.getAttribute("url");
-  return raw && isValidAutomergeUrl(raw) ? raw : undefined;
+  if (!host) {
+    throw new Error(
+      "[stickers] sticker renderer installed in an editor with no enclosing <patchwork-view>",
+    );
+  }
+  const raw = host.getAttribute("doc-url") ?? host.getAttribute("url");
+  if (!raw || !isValidAutomergeUrl(raw)) {
+    throw new Error(
+      `[stickers] enclosing <patchwork-view> carries no valid doc-url/url attribute (got ${JSON.stringify(raw)})`,
+    );
+  }
+  return raw;
+}
+
+// The repo stamped on the enclosing `<patchwork-view>` that hosts this editor.
+function repoFromEditor(view) {
+  const repo = view.dom.closest("patchwork-view")?.repo;
+  if (!repo) {
+    throw new Error(
+      "[stickers] enclosing <patchwork-view> has no repo stamped on it",
+    );
+  }
+  return repo;
 }
 
 class TextStickerWidget extends WidgetType {

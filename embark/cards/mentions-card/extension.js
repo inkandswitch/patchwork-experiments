@@ -10,7 +10,7 @@
 // "token-view") instead of a direct class import, so this module carries no
 // dependency on the token-view package.
 
-import { Compartment, Prec, StateEffect, StateField } from "@codemirror/state";
+import { Prec, StateEffect, StateField } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -71,52 +71,18 @@ const MENTION_RE = /\{(automerge:[^}\n]+)\}/g;
 
 // Entry point. The token renderer and focus wiring are always installed (they
 // only act on tokens already in the document, rendering each as a live-title
-// pill or a custom inline face). The `@mention` search menu, by contrast,
-// stays dormant until a search broker is discovered: the empty compartment
-// plus a probe fill it in once a provider answers. Until then (possibly
-// forever) typing `@` does nothing special.
+// pill or a custom inline face). The `@mention` search menu is installed
+// alongside them: this whole extension only ever reaches an editor via the
+// extensions host, which installs into a connected editor — so context
+// discovery works on first try (and throws if it can't, a broken invariant).
+// Whether anything answers a search is decided by the channel contents, not
+// by gating here.
 export function mentionSearch() {
   injectStyles();
-  return [mentionTokens(), focusHighlight(), activation.of([]), brokerProbe];
+  return [mentionTokens(), focusHighlight(), ...mentionFeature()];
 }
 
-const activation = new Compartment();
-
-// Activates once the editor's DOM is in the document. This whole extension is
-// only installed in an editor when a Mentions card publishes it into that
-// editor's `CodemirrorExtensions` channel, so the on/off gating already happened
-// upstream; here we just wait for the DOM to connect (a synchronous one-shot
-// retried on updates) before activating, deferring the dispatch to a microtask
-// so it never runs mid-update.
-const brokerProbe = ViewPlugin.fromClass(
-  class {
-    constructor(view) {
-      this.activated = false;
-      this.destroyed = false;
-      this.schedule(view);
-    }
-
-    update(update) {
-      this.schedule(update.view);
-    }
-
-    schedule(view) {
-      if (this.activated || this.destroyed) return;
-      if (!view.dom.isConnected) return;
-      this.activated = true;
-      queueMicrotask(() => {
-        if (this.destroyed) return;
-        view.dispatch({ effects: activation.reconfigure(mentionFeature()) });
-      });
-    }
-
-    destroy() {
-      this.destroyed = true;
-    }
-  },
-);
-
-// The actual behaviour, installed only after a broker is found.
+// The search-menu behaviour.
 function mentionFeature() {
   return [
     menuState,
@@ -259,9 +225,11 @@ const searchController = ViewPlugin.fromClass(
     }
 
     // A single-key slice: the active (trimmed) query, or nothing when closed.
+    // Only ever called after `sync()` acquired the handle (a non-null query
+    // implies an earlier active pass), so the handle is never missing here.
     publishQuery(query) {
       const trimmed = query?.trim();
-      this.queries?.change((slice) => {
+      this.queries.change((slice) => {
         for (const key of Object.keys(slice)) delete slice[key];
         if (trimmed) slice[trimmed] = true;
       });
@@ -380,11 +348,13 @@ function renderMenu(dom, view, active) {
     // is parented to document.body, outside the repo-provider tree, so it can
     // never resolve its repo and would only ever show plain text.)
     // `fallback-label` is what the token view shows if the datatype has no
-    // token tool. pointer-events are off so the row owns the click.
+    // token tool. pointer-events are off so the row owns the click. The plain
+    // text fallback covers async availability only: the token-view module or
+    // the result's handle may not have resolved yet.
     const content = document.createElement("span");
     content.className = "cm-mention-row__content";
     content.style.pointerEvents = "none";
-    if (tokenViewRender && result.handle && repo) {
+    if (tokenViewRender && result.handle) {
       content.setAttribute("fallback-label", result.title);
       const host = Object.assign(content, { repo });
       teardowns.push(tokenViewRender(result.handle, host));
@@ -405,16 +375,22 @@ function renderMenu(dom, view, active) {
 }
 
 // The repo stamped on the enclosing `<patchwork-view>` that hosts this editor.
+// The extension is only ever installed into an editor mounted by a
+// patchwork-view, so a missing host/repo is a broken invariant.
 function repoFromEditor(view) {
-  const host = view.dom.closest("patchwork-view");
-  return host?.repo;
+  const repo = view.dom.closest("patchwork-view")?.repo;
+  if (!repo) {
+    throw new Error(
+      "[mentions] editor has no enclosing <patchwork-view> with a repo",
+    );
+  }
+  return repo;
 }
 
 // Resolves a result document to a displayable title and its handle. Neither is
 // guaranteed in cache, so this awaits the handle; the row shows a short url
 // fallback if it can't be resolved.
 async function resolveResult(url, repo) {
-  if (!repo) return { url, title: shortUrl(url) };
   try {
     const handle = await Promise.resolve(repo.find(url));
     return { url, title: docTitle(handle.doc(), url), handle };
@@ -730,8 +706,8 @@ function focusedMentionUrls(state) {
 
 // The target of the result currently highlighted in the autocomplete menu, if
 // the menu is open with results. Used to preview that document's emphasis
-// before the user commits the mention. Undefined when the menu feature isn't
-// installed (no broker yet) or there's nothing to preview.
+// before the user commits the mention. Undefined when there's nothing to
+// preview.
 function activeResultUrl(state) {
   const active = state.field(menuState, false)?.active;
   if (!active || active.results.length === 0) return undefined;

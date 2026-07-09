@@ -40,7 +40,11 @@ export const CardsSidebarComponent = (
   repo?: Repo,
 ): (() => void) => {
   const resolvedRepo = (element as Partial<ToolElement>).repo ?? repo;
-  if (!resolvedRepo) return () => {};
+  if (!resolvedRepo) {
+    throw new Error(
+      "[cards] CardsSidebarComponent mounted with no repo (neither stamped on the element nor passed in); the sidebar cannot run",
+    );
+  }
 
   const lease = retainCardsHost(resolvedRepo);
   lease.dock(element);
@@ -59,8 +63,13 @@ export const CardsSidebarComponent = (
 // that whole subtree on the selected doc), which the lease's grace period
 // bridges so the host never cycles.
 export const CardsKeeperTool: ToolRender = (_handle, element) => {
-  const lease = element.repo ? retainCardsHost(element.repo) : undefined;
-  return () => lease?.release();
+  if (!element.repo) {
+    throw new Error(
+      "[cards] CardsKeeperTool mounted with no repo stamped on its element; the cards host cannot be retained",
+    );
+  }
+  const lease = retainCardsHost(element.repo);
+  return () => lease.release();
 };
 
 // How long the host survives with no live leases. Long enough to bridge a

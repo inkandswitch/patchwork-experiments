@@ -8,9 +8,8 @@
 // Plain-JS bundleless module: bare imports are importmap-provided; sibling
 // cards and the core platform are imported by their automerge urls.
 
-import { Compartment, Prec, StateEffect, StateField } from "@codemirror/state";
+import { Prec, StateEffect, StateField } from "@codemirror/state";
 import {
-  EditorView,
   ViewPlugin,
   keymap,
   showTooltip,
@@ -34,53 +33,17 @@ const { getContextHandle, subscribeContext } = await import(
 //   (or null) plus the trigger key the user last dismissed with Escape, so the
 //   menu stays shut until they edit the command into something new.
 
-// Entry point. The feature stays dormant until a commands broker is
-// discovered: the empty compartment plus a probe fill it in once a provider
-// answers. Until then (e.g. a markdown editor opened outside a canvas) typing
-// `/` does nothing special.
+// Entry point. This extension only ever reaches an editor via the extensions
+// host, which installs into a connected editor — so context discovery works
+// on first try (and throws if it can't, a broken invariant). Suggestions only
+// appear when a contributor fills the `CommandSuggestions` channel of the
+// resolved store, so the feature stays quiet where nothing answers.
 export function slashCommands() {
   injectStyles();
-  return [activation.of([]), brokerProbe];
+  return commandsFeature();
 }
 
-const activation = new Compartment();
-
-// Activates once the editor's DOM is in the document, so context reads/writes
-// resolve to the right store (the nearest `<patchwork-context>`, or the
-// page-global body store). Discovery is a synchronous one-shot retried on
-// updates until the editor is connected; the activation dispatch is deferred to
-// a microtask so it never runs mid-update. Suggestions only appear when a
-// contributor fills the `CommandSuggestions` channel of the resolved store, so
-// the feature stays quiet where nothing answers.
-const brokerProbe = ViewPlugin.fromClass(
-  class {
-    constructor(view) {
-      this.activated = false;
-      this.destroyed = false;
-      this.schedule(view);
-    }
-
-    update(update) {
-      this.schedule(update.view);
-    }
-
-    schedule(view) {
-      if (this.activated || this.destroyed) return;
-      if (!view.dom.isConnected) return;
-      this.activated = true;
-      queueMicrotask(() => {
-        if (this.destroyed) return;
-        view.dispatch({ effects: activation.reconfigure(commandsFeature()) });
-      });
-    }
-
-    destroy() {
-      this.destroyed = true;
-    }
-  },
-);
-
-// The actual behaviour, installed only after a broker is found.
+// The slash-menu behaviour.
 function commandsFeature() {
   return [
     menuState,
@@ -224,9 +187,11 @@ const suggestionController = ViewPlugin.fromClass(
     }
 
     // A single-key slice. Unlike search, the empty query is meaningful (typing
-    // `/` alone should surface every command), so it is published too.
+    // `/` alone should surface every command), so it is published too. Only
+    // ever called after `sync()` acquired the handle (a non-null query implies
+    // an earlier active pass), so the handle is never missing here.
     publishQuery(query) {
-      this.queries?.change((slice) => {
+      this.queries.change((slice) => {
         for (const key of Object.keys(slice)) delete slice[key];
         if (query !== null) slice[query.trim()] = true;
       });

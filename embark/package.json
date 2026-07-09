@@ -5,8 +5,8 @@
   "private": true,
   "scripts": {
     "build": "pnpm -r build",
-    "sync": "pnpm -r build && cd core && pushwork sync",
-    "sync:cards": "node scripts/sync-cards.mjs",
+    "sync": "pnpm -r build && node scripts/sync-packages.mjs",
+    "sync:packages": "node scripts/sync-packages.mjs",
     "register": "node scripts/register-modules.mjs"
   },
   "devDependencies": {

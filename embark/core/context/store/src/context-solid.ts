@@ -18,8 +18,17 @@ import {
 
 export type ElementSource = HTMLElement | (() => HTMLElement | undefined);
 
-function resolveElement(source: ElementSource): HTMLElement | undefined {
-  return typeof source === "function" ? source() : source;
+// Resolve the element source at mount time. By then the element must exist —
+// a missing one would leave reads at `empty` and swallow writes forever, so it
+// throws instead.
+function resolveElement(source: ElementSource, caller: string): HTMLElement {
+  const element = typeof source === "function" ? source() : source;
+  if (!element) {
+    throw new Error(
+      `[context] ${caller}: element source resolved to nothing at mount; context discovery cannot run`,
+    );
+  }
+  return element;
 }
 
 // Reactive read of a channel's merged value. Seeds with the channel's resting
@@ -36,8 +45,7 @@ export function readContext<T extends Record<string, unknown>>(
 ): Accessor<T> {
   const [value, setValue] = createSignal<T>(channel.empty);
   onMount(() => {
-    const element = resolveElement(source);
-    if (!element) return;
+    const element = resolveElement(source, "readContext");
     const store = findContextStore(element);
     const owner = requireOwner(element);
     setValue(() => store.read(channel));
@@ -66,8 +74,8 @@ export function useContextHandle<T extends Record<string, unknown>>(
   const buffered: Array<(slice: T) => void> = [];
 
   onMount(() => {
-    const element = resolveElement(source);
-    if (!element || released) return;
+    if (released) return;
+    const element = resolveElement(source, "useContextHandle");
     const store = findContextStore(element);
     real = store.handle(channel, requireOwner(element));
     for (const mutate of buffered) real.change(mutate);
