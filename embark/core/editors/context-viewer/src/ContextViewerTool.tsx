@@ -165,10 +165,11 @@ function AllContextView(props: {
   const shown = createMemo(() => {
     writes();
     readerTick();
-    const visible = channels().filter(hasContent);
     const focus = props.focus;
-    if (!focus) return visible;
-    return visible.filter((channel) => involved(channel, focus));
+    const visible = channels()
+      .filter(hasContent)
+      .filter((channel) => !focus || involved(channel, focus));
+    return visible.sort((a, b) => a.name.localeCompare(b.name));
   });
 
   return (
