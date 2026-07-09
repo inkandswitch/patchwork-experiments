@@ -147,6 +147,14 @@ const CARD_SEEDS: CardSeed[] = [
     accent: "#2563eb",
   },
   {
+    rootUrl: "automerge:FBLNJtT5p4RcTEFErfZTNjswqNP",
+    title: "Geo Lines",
+    description:
+      "Finds routes in the open documents and publishes a map line for each.",
+    icon: "route",
+    accent: "#0284c7",
+  },
+  {
     rootUrl: "automerge:3daZBaqA2YR5nEhTmRQoYz6coLhV",
     title: "Geo Zoom",
     description:
@@ -176,7 +184,7 @@ const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
   },
   {
     title: "Maps",
-    cardTitles: ["Geo Shapes", "Geo Markers", "Geo Zoom"],
+    cardTitles: ["Geo Shapes", "Geo Markers", "Geo Lines", "Geo Zoom"],
   },
   {
     title: "Embark",

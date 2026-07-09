@@ -11,13 +11,26 @@
 // line's interior vertices — is the geo-shapes renderer's job).
 //
 // Plain-JS bundleless module: bare imports are importmap-provided; channel
-// definitions and the context-store client are imported with plain relative paths (all cards share one package).
+// definitions and the context-store client are imported by their packages'
+// automerge urls.
 
 import { parseAutomergeUrl } from "@automerge/automerge-repo";
 
-import { getContextHandle, subscribeContext } from "../platform.js";
-import { SchemaMatches, schemaKey } from "../schema-matcher/channels.js";
-import { GeoShapes } from "../geo-shapes-card/channels.js";
+import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
+
+const CORE_PACKAGE_URL = "automerge:2YxstDCjGbfeAqud8w38yuBYBncY";
+const SCHEMA_MATCHER_PACKAGE_URL = "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC";
+const GEO_SHAPES_PACKAGE_URL = "automerge:7tDif9cz12ZQXv55Yo73io1UUw4";
+
+const { getContextHandle, subscribeContext } = await import(
+  getImportableUrlFromAutomergeUrl(CORE_PACKAGE_URL, "client.js")
+);
+const { SchemaMatches, schemaKey } = await import(
+  getImportableUrlFromAutomergeUrl(SCHEMA_MATCHER_PACKAGE_URL, "channels.js")
+);
+const { GeoShapes } = await import(
+  getImportableUrlFromAutomergeUrl(GEO_SHAPES_PACKAGE_URL, "channels.js")
+);
 
 // An ordered list of `{ lat, lon }` places — a path / route. Packages define
 // their own schemas and correlate purely by structural identity: this card and
