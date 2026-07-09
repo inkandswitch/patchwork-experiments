@@ -6,9 +6,10 @@ import {
   clipSequenceTime,
   clipToDiffusionTiming,
   resolveClipPlayDuration,
+  xToTime,
 } from '../clip-timing';
 import { isDocEmpty, resolveSourceMimeType, resolveSourceUrl } from '../helpers';
-import { clipsInPlayheadExtent } from '../canvas/playhead-extent';
+import { clipsInPlayheadExtent, playheadOriginX } from '../canvas/playhead-extent';
 
 type LoadedSource = core.BaseSource;
 
@@ -119,15 +120,16 @@ function applyClipTiming(
   clip: Clip,
   sourceType: Source['type'],
   playDuration: number,
+  timeOrigin = 0,
 ): void {
   if (sourceType === 'image') {
-    dscClip.delay = clipSequenceTime(clip);
+    dscClip.delay = clipSequenceTime(clip) - timeOrigin;
     dscClip.duration = playDuration;
     return;
   }
 
   const { delay, range } = clipToDiffusionTiming(clip, playDuration);
-  dscClip.delay = delay;
+  dscClip.delay = delay - timeOrigin;
   if (sourceType === 'video') {
     (dscClip as core.VideoClip).range = range;
   } else {
@@ -204,6 +206,7 @@ async function preparePlayheadClip(
   clip: Clip,
   loader: SourceLoader,
   timing: Map<string, ClipTimingInfo>,
+  timeOrigin: number,
   overrides?: ReadonlyMap<string, ClipTimingOverride>,
 ): Promise<PreparedPlayheadClip | null> {
   const timingClip = effectiveClip(clip, overrides?.get(clip.id));
@@ -214,7 +217,7 @@ async function preparePlayheadClip(
   const length = sourceLength(source, sourceDef.type);
   const playDuration = resolveClipPlayDuration(timingClip, length);
   const dscClip = await createDscClip(source, sourceDef.type);
-  applyClipTiming(dscClip, timingClip, sourceDef.type, playDuration);
+  applyClipTiming(dscClip, timingClip, sourceDef.type, playDuration, timeOrigin);
   dscClip.data = { clipId: timingClip.id, sourceId: timingClip.sourceId, playheadId: playhead.id };
   return { dscClip };
 }
@@ -240,9 +243,12 @@ export async function syncPlayheadComposition(
     return { empty: true, duration: 0 };
   }
 
+  const timeOrigin = xToTime(playheadOriginX(doc, playhead, timing));
   const prepareStart = performance.now();
   const preparedResults = await Promise.all(
-    touchable.map((clip) => preparePlayheadClip(doc, playhead, clip, loader, timing, overrides)),
+    touchable.map((clip) =>
+      preparePlayheadClip(doc, playhead, clip, loader, timing, timeOrigin, overrides),
+    ),
   );
   const prepared = preparedResults.filter(
     (item): item is PreparedPlayheadClip => item !== null,
@@ -308,6 +314,7 @@ export async function updatePlayheadCompositionTiming(
     if (typeof clipId === 'string') byClipId.set(clipId, dscClip);
   }
 
+  const timeOrigin = xToTime(playheadOriginX(doc, playhead, timing));
   for (const clip of touchable) {
     const dscClip = byClipId.get(clip.id);
     const sourceDef = doc.sources[clip.sourceId];
@@ -317,7 +324,7 @@ export async function updatePlayheadCompositionTiming(
     const source = await loader.load(sourceDef, timingClip.sourceId);
     const length = sourceLength(source, sourceDef.type);
     const playDuration = resolveClipPlayDuration(timingClip, length);
-    applyClipTiming(dscClip, timingClip, sourceDef.type, playDuration);
+    applyClipTiming(dscClip, timingClip, sourceDef.type, playDuration, timeOrigin);
   }
 
   await composition.update();

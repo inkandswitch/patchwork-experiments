@@ -78,3 +78,20 @@ export function maxEndXForPlayhead(
 ): number {
   return computeConnectedPlayheadExtent(doc, playhead, timing).maxEndX;
 }
+
+/**
+ * Canvas x that maps to composition time 0 for this playhead. Diffusion cannot
+ * represent negative times, so a playhead panned into negative canvas space (or
+ * with clips reaching slightly left of it) needs its composition shifted to
+ * start at 0. This is the leftmost of the playhead and any clip in its extent.
+ */
+export function playheadOriginX(
+  doc: SpaceTimeDoc,
+  playhead: Playhead,
+  timing: ClipTimingLookup,
+): number {
+  const { clips } = computeConnectedPlayheadExtent(doc, playhead, timing);
+  let originX = playhead.x;
+  for (const clip of clips) originX = Math.min(originX, clip.x);
+  return originX;
+}

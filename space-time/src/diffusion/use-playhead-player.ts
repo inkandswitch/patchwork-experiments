@@ -2,6 +2,7 @@ import * as core from '@diffusionstudio/core';
 
 import type { Playhead, SpaceTimeDoc } from '../types';
 import { xToTime, timeToX } from '../clip-timing';
+import { playheadOriginX } from '../canvas/playhead-extent';
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -125,8 +126,19 @@ export function usePlayheadPlayer(
   const compositionSyncingRef = useRef(false);
   const scrubLastXRef = useRef(0);
   const scrubHoldStartMsRef = useRef(0);
+  // Canvas-x/composition-time offset for the active playhead. Composition time 0
+  // corresponds to canvas x = `timeToX(timeOriginRef.current)`; see
+  // `playheadOriginX`. Keeps playback working when a playhead sits at negative
+  // canvas coordinates (where absolute times would collapse to an empty clip).
+  const timeOriginRef = useRef(0);
   const scrubRetriggeringRef = useRef(false);
   const retriggerScrubWindowRef = useRef<((time: number) => void) | null>(null);
+  // `composition.pause()` emits `playback:end`, so pauses we issue ourselves
+  // (scrub loop re-triggers, endScrub, pause) would otherwise be mistaken for
+  // playback reaching the end and would stop an unrelated sweep. This counter
+  // marks a pause as intentional so the `playback:end` handler can ignore it;
+  // real ends still flow through untouched.
+  const manualPauseDepthRef = useRef(0);
 
   const stopScrubSyncLoop = useCallback(() => {
     if (scrubRafRef.current !== null) {
@@ -154,19 +166,20 @@ export function usePlayheadPlayer(
         const moved = Math.abs(curX - scrubLastXRef.current) > SCRUB_MOVE_EPSILON_PX;
         scrubLastXRef.current = curX;
 
+        const compTime = xToTime(curX) - timeOriginRef.current;
         if (moved) {
           // Following the mouse: pin smoothly and keep resetting the hold timer
           // so a re-trigger only happens once the position actually settles.
           scrubHoldStartMsRef.current = now;
-          setPlaybackPosition(composition, xToTime(curX));
+          setPlaybackPosition(composition, compTime);
         } else if (now - scrubHoldStartMsRef.current >= SCRUB_LOOP_WINDOW_MS) {
           // Held still long enough that the audio decoder has streamed past the
           // window. Re-trigger so the same slice of sound loops in place instead
           // of drifting to the right (the video is already pinned).
           scrubHoldStartMsRef.current = now;
-          retriggerScrubWindowRef.current?.(xToTime(curX));
+          retriggerScrubWindowRef.current?.(compTime);
         } else {
-          setPlaybackPosition(composition, xToTime(curX));
+          setPlaybackPosition(composition, compTime);
         }
       }
       scrubRafRef.current = requestAnimationFrame(tick);
@@ -182,12 +195,23 @@ export function usePlayheadPlayer(
       });
   }, []);
 
+  // Pause without letting the resulting `playback:end` event reach the app-level
+  // handler (see `manualPauseDepthRef`).
+  const pauseCompositionSilently = useCallback(async (composition: core.Composition) => {
+    manualPauseDepthRef.current += 1;
+    try {
+      await composition.pause();
+    } finally {
+      manualPauseDepthRef.current -= 1;
+    }
+  }, []);
+
   // Restart the scrub playback window at `time`. Pausing flushes the audio
   // decoders and cancels the buffers they had already scheduled ahead; replaying
   // re-primes the window from `time`. Without this, holding the scrub position
   // still lets audio-time creep forward because the decoder keeps streaming the
   // next buffer every frame and never rewinds on its own.
-  const retriggerScrubWindow = useCallback(
+    const retriggerScrubWindow = useCallback(
     (time: number) => {
       if (scrubRetriggeringRef.current) return;
       scrubRetriggeringRef.current = true;
@@ -202,7 +226,7 @@ export function usePlayheadPlayer(
             return;
           }
           const seekTime = clampSeekTime(composition, time);
-          await composition.pause();
+          await pauseCompositionSilently(composition);
           await composition.play(seekTime);
         } catch (error) {
           console.warn('[space-time] scrub loop retrigger failed', error);
@@ -211,7 +235,7 @@ export function usePlayheadPlayer(
         }
       });
     },
-    [enqueueCompositionTask, scrubbingActiveRef],
+    [enqueueCompositionTask, pauseCompositionSilently, scrubbingActiveRef],
   );
   retriggerScrubWindowRef.current = retriggerScrubWindow;
 
@@ -324,7 +348,7 @@ export function usePlayheadPlayer(
     const onTime = () => {
       if (scrubbingActiveRef?.current && scrubPlaybackActiveRef.current) return;
 
-      const x = timeToX(composition.currentTime);
+      const x = timeToX(composition.currentTime + timeOriginRef.current);
       if (timeLogCountRef.current < 5) {
         console.debug('[space-time] playback:time', {
           currentTime: composition.currentTime,
@@ -338,6 +362,7 @@ export function usePlayheadPlayer(
     composition.on('playback:time', onTime);
 
     const onEnd = () => {
+      if (manualPauseDepthRef.current > 0) return;
       onPlaybackEndRef.current?.();
     };
     composition.on('playback:end', onEnd);
@@ -477,6 +502,7 @@ export function usePlayheadPlayer(
         const timing = await resolveAllClipTiming(doc, loaderRef.current);
         if (generation !== syncGenerationRef.current) return;
         timingRef.current = timing;
+        timeOriginRef.current = xToTime(playheadOriginX(doc, playhead, timing));
 
         const structureKey = playheadCompositionStructureKey(doc, playhead, timing);
         const canUpdateInPlace =
@@ -514,7 +540,7 @@ export function usePlayheadPlayer(
 
         const targetTime = canUpdateInPlace && Number.isFinite(previousTime)
           ? Math.max(0, Math.min(previousTime, duration))
-          : clampSeekTime(composition, xToTime(currentXRef.current));
+          : clampSeekTime(composition, xToTime(currentXRef.current) - timeOriginRef.current);
         await positionPausedComposition(composition, targetTime);
         if (generation !== syncGenerationRef.current) return;
         compositionSyncingRef.current = false;
@@ -551,7 +577,7 @@ export function usePlayheadPlayer(
     if (sweepActiveRef?.current) return;
     const scrubbing = scrubbingActiveRef?.current === true;
     if (!scrubbing && (playingRef.current || composition.playing)) return;
-    scheduleCompositionSeek(xToTime(currentX));
+    scheduleCompositionSeek(xToTime(currentX) - timeOriginRef.current);
   }, [currentX, sweepActiveRef, scrubbingActiveRef, scheduleCompositionSeek]);
 
   const play = async (startX?: number) => {
@@ -563,7 +589,8 @@ export function usePlayheadPlayer(
       await new Promise<void>((resolve, reject) => {
         enqueueCompositionTask(async () => {
           try {
-            const startTime = startX !== undefined ? xToTime(startX) : undefined;
+            const startTime =
+              startX !== undefined ? xToTime(startX) - timeOriginRef.current : undefined;
             if (startTime !== undefined) {
               await runCompositionSeek(startTime);
             }
@@ -591,14 +618,14 @@ export function usePlayheadPlayer(
     playingRef.current = false;
     await new Promise<void>((resolve) => {
       enqueueCompositionTask(async () => {
-        await composition.pause();
+        await pauseCompositionSilently(composition);
         resolve();
       });
     });
   };
 
   const seek = async (x: number) => {
-    scheduleCompositionSeek(xToTime(x));
+    scheduleCompositionSeek(xToTime(x) - timeOriginRef.current);
   };
 
   const previewClipTiming = (
@@ -673,7 +700,7 @@ export function usePlayheadPlayer(
   const loopToDuringPlayback = useCallback((x: number) => {
     const composition = compositionRef.current;
     if (!composition) return;
-    const seekTime = clampSeekTime(composition, xToTime(x));
+    const seekTime = clampSeekTime(composition, xToTime(x) - timeOriginRef.current);
     enqueueCompositionTask(async () => {
       if (composition.playing) {
         setPlaybackPosition(composition, seekTime);
@@ -695,10 +722,10 @@ export function usePlayheadPlayer(
     stopScrubSyncLoop();
     const composition = compositionRef.current;
     if (!composition) return;
-    const finalTime = xToTime(currentXRef.current);
+    const finalTime = xToTime(currentXRef.current) - timeOriginRef.current;
     await new Promise<void>((resolve) => {
       enqueueCompositionTask(async () => {
-        await composition.pause();
+        await pauseCompositionSilently(composition);
         await runCompositionSeek(finalTime);
         resolve();
       });
