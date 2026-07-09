@@ -5,6 +5,7 @@ import {
   PIXELS_PER_SECOND,
   POST_IT_FONT_FAMILY,
   POST_IT_FONT_SIZE,
+  POST_IT_FONT_WEIGHT,
   POST_IT_LINE_HEIGHT,
   POST_IT_PADDING,
   type Camera,
@@ -273,8 +274,33 @@ function drawScribble(
   ctx.restore();
 }
 
-const POST_IT_FONT = `${POST_IT_FONT_SIZE}px ${POST_IT_FONT_FAMILY}`;
+const POST_IT_FONT = `${POST_IT_FONT_WEIGHT} ${POST_IT_FONT_SIZE}px ${POST_IT_FONT_FAMILY}`;
 const POST_IT_RESIZE_HANDLE = 6;
+
+/**
+ * A softly bowed sheet outline, à la Keynote's "curvy paper" effect: each edge
+ * curves outward a touch so the note reads as a real, slightly buckled piece of
+ * paper rather than a flat rectangle.
+ */
+function paperPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const bowX = Math.min(Math.max(width * 0.015, 1.5), 4);
+  const bowY = Math.min(Math.max(height * 0.02, 1.5), 4);
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.quadraticCurveTo(cx, y + bowY, x + width, y);
+  ctx.quadraticCurveTo(x + width - bowX, cy, x + width, y + height);
+  ctx.quadraticCurveTo(cx, y + height - bowY, x, y + height);
+  ctx.quadraticCurveTo(x + bowX, cy, x, y);
+  ctx.closePath();
+}
 
 function drawPostItResizeHandle(
   ctx: CanvasRenderingContext2D,
@@ -334,33 +360,51 @@ function drawPostIt(
   selected: boolean,
   editing: boolean,
 ): void {
-  const radius = 2;
+  const { x, y, width, height } = postIt;
   ctx.save();
-  roundRect(ctx, postIt.x, postIt.y, postIt.width, postIt.height, radius);
-  ctx.fillStyle = theme.postItFill;
+
+  // Lifted-paper drop shadow (drawn with the fill so it hugs the bowed edges).
+  ctx.save();
+  ctx.shadowColor = 'rgba(30, 27, 15, 0.28)';
+  ctx.shadowBlur = 9;
+  ctx.shadowOffsetX = 1;
+  ctx.shadowOffsetY = 4;
+  paperPath(ctx, x, y, width, height);
+  ctx.fillStyle = selected ? theme.postItSelectedFill : theme.postItFill;
   ctx.fill();
-  ctx.strokeStyle = selected ? theme.postItSelectedStroke : theme.postItStroke;
-  ctx.lineWidth = selected ? 2 : 1;
+  ctx.restore();
+
+  // Paper shading: a highlight near the top fading to a faint darkening at the
+  // bottom, so the sheet looks like it catches the light.
+  paperPath(ctx, x, y, width, height);
+  const shade = ctx.createLinearGradient(x, y, x, y + height);
+  shade.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+  shade.addColorStop(0.45, 'rgba(255, 255, 255, 0.04)');
+  shade.addColorStop(1, 'rgba(0, 0, 0, 0.07)');
+  ctx.fillStyle = shade;
+  ctx.fill();
+
+  // Hairline edge for definition; selection is conveyed by the fill colour, not
+  // a heavy border.
+  ctx.strokeStyle = theme.postItStroke;
+  ctx.lineWidth = 1;
   ctx.stroke();
 
   if (!editing && postIt.text.trim()) {
-    ctx.beginPath();
-    roundRect(ctx, postIt.x, postIt.y, postIt.width, postIt.height, radius);
+    ctx.save();
+    paperPath(ctx, x, y, width, height);
     ctx.clip();
     ctx.font = POST_IT_FONT;
     ctx.fillStyle = theme.text;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    const maxWidth = postIt.width - POST_IT_PADDING * 2;
+    const maxWidth = width - POST_IT_PADDING * 2;
     const lines = wrapTextLines(ctx, postIt.text, maxWidth);
-    const maxLines = Math.floor((postIt.height - POST_IT_PADDING * 2) / POST_IT_LINE_HEIGHT);
+    const maxLines = Math.floor((height - POST_IT_PADDING * 2) / POST_IT_LINE_HEIGHT);
     for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
-      ctx.fillText(
-        lines[i]!,
-        postIt.x + POST_IT_PADDING,
-        postIt.y + POST_IT_PADDING + i * POST_IT_LINE_HEIGHT,
-      );
+      ctx.fillText(lines[i]!, x + POST_IT_PADDING, y + POST_IT_PADDING + i * POST_IT_LINE_HEIGHT);
     }
+    ctx.restore();
   }
   if (selected) {
     drawPostItResizeHandle(ctx, theme, postIt);

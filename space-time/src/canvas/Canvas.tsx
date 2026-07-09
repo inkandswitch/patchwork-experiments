@@ -120,7 +120,7 @@ function PostItEditor({
   return (
     <textarea
       ref={textareaRef}
-      className="absolute z-10 resize-none border-0 bg-[var(--st-post-it-fill)] text-[var(--st-text)] outline-none ring-2 ring-primary"
+      className="st-post-it-editor absolute z-10 resize-none border-0 bg-[var(--st-post-it-selected-fill)] text-[var(--st-text)] outline-none"
       style={{
         left,
         top,
@@ -130,7 +130,10 @@ function PostItEditor({
         fontSize,
         lineHeight: `${lineHeight}px`,
         fontFamily: POST_IT_FONT_FAMILY,
+        fontWeight: 600,
         boxSizing: 'border-box',
+        borderRadius: 3 * zoom,
+        boxShadow: `${1 * zoom}px ${4 * zoom}px ${9 * zoom}px rgba(30, 27, 15, 0.28)`,
       }}
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -957,6 +960,29 @@ export function Canvas({
     const ro = new ResizeObserver(() => schedulePaint());
     ro.observe(root);
     return () => ro.disconnect();
+  }, []);
+
+  // Post-its render with a handwriting font on the canvas. Pull it in once and
+  // repaint when it's ready, otherwise the first paint uses the fallback font.
+  useEffect(() => {
+    const linkId = 'st-handwriting-font';
+    if (!document.getElementById(linkId)) {
+      const link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&display=swap';
+      document.head.appendChild(link);
+    }
+    if (!document.fonts?.load) return;
+    let cancelled = false;
+    Promise.all([document.fonts.load('400 20px "Caveat"'), document.fonts.load('600 20px "Caveat"')])
+      .then(() => {
+        if (!cancelled) schedulePaint();
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {

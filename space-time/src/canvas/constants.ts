@@ -13,10 +13,11 @@ export const POST_IT_WIDTH = 160;
 export const POST_IT_HEIGHT = 120;
 export const MIN_POST_IT_WIDTH = 80;
 export const MIN_POST_IT_HEIGHT = 60;
-export const POST_IT_FONT_SIZE = 12;
-export const POST_IT_PADDING = 8;
-export const POST_IT_LINE_HEIGHT = 16;
-export const POST_IT_FONT_FAMILY = 'ui-sans-serif, system-ui, sans-serif';
+export const POST_IT_FONT_SIZE = 20;
+export const POST_IT_PADDING = 12;
+export const POST_IT_LINE_HEIGHT = 24;
+export const POST_IT_FONT_FAMILY = '"Caveat", "Comic Sans MS", ui-rounded, cursive';
+export const POST_IT_FONT_WEIGHT = 600;
 /** Horizontal margin kept around the playhead line during playback follow-pan. */
 export const PLAYBACK_FOLLOW_MARGIN_SCREEN_PX = 120;
 
@@ -49,6 +50,7 @@ export type CanvasTheme = {
   scribble: string;
   scribbleSelected: string;
   postItFill: string;
+  postItSelectedFill: string;
   postItStroke: string;
   postItSelectedStroke: string;
 };
@@ -74,6 +76,7 @@ const THEME_VARS: Array<[keyof CanvasTheme, string]> = [
   ['scribble', '--st-scribble'],
   ['scribbleSelected', '--st-scribble-selected'],
   ['postItFill', '--st-post-it-fill'],
+  ['postItSelectedFill', '--st-post-it-selected-fill'],
   ['postItStroke', '--st-post-it-stroke'],
   ['postItSelectedStroke', '--st-post-it-selected-stroke'],
 ];
