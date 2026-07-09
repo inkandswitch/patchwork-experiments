@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "daisyui";
 
 .lighterpack {
   /* Custom styles for lighterpack can go here */

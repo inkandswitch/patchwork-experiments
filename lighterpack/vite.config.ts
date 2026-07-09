@@ -13,7 +13,10 @@ export default defineConfig({
     wasm(),
     react(),
     tailwindcss(),
-    cssInjectedByJsPlugin({ relativeCSSInjection: true }),
+    cssInjectedByJsPlugin({
+      relativeCSSInjection: true,
+      suppressUnusedCssWarning: true,
+    }),
   ],
 
   build: {

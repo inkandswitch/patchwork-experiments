@@ -16,6 +16,12 @@ export function Button({
 export const Input = React.forwardRef<
   HTMLInputElement,
   React.InputHTMLAttributes<HTMLInputElement>
->(function Input(props, ref) {
-  return <input ref={ref} {...props} />;
+>(function Input({ className = "", ...props }, ref) {
+  return (
+    <input
+      ref={ref}
+      className={`border border-base-300 bg-base-100 text-base-content ${className}`}
+      {...props}
+    />
+  );
 });
