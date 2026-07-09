@@ -1794,7 +1794,14 @@ export function Canvas({
       const screenY = event.clientY - rect.top;
 
       if (event.ctrlKey || event.metaKey) {
-        const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
+        // Scale the zoom by how much was actually scrolled rather than a fixed
+        // step per event. A Magic Mouse/trackpad pinch fires many small-delta
+        // events, so a constant 10% jump per event feels violent; an
+        // exponential factor keyed to the delta gives smooth, continuous zoom.
+        // (exp keeps zoom-in and zoom-out symmetric.) Normalize line-mode
+        // deltas to pixels, and clamp per-event so one big tick can't lurch.
+        const deltaPx = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+        const zoomFactor = Math.min(1.15, Math.max(0.87, Math.exp(-deltaPx * 0.01)));
         zoomCameraAtScreenPoint(cameraRef.current, screenX, screenY, zoomFactor);
       } else {
         cameraRef.current.x -= event.deltaX / cameraRef.current.z;
