@@ -4,7 +4,7 @@ import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import type { Clip, Playhead, PostIt, Scribble, Source, SpaceTimeDoc } from '../types';
 import { clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import { clipWidth } from '../clip-timing';
-import { clipsInPlayheadExtent, maxEndXForPlayhead } from './playhead-extent';
+import { clipsInPlayheadExtent, extentBoxRightEdge, maxEndXForPlayhead } from './playhead-extent';
 import {
   CLIP_HEIGHT,
   HANDLE_WIDTH,
@@ -222,11 +222,26 @@ export function applyClipDragPreview(
     sourceInTime: preview.sourceInTime ?? original?.sourceInTime ?? null,
   });
   clips.sort((a, b) => a.y - b.y);
-  return {
+  return recomputePlayheadExtents({
     ...layout,
     clips,
     ghostPlayheads: layout.ghostPlayheads,
     recordingPreview: layout.recordingPreview,
+  });
+}
+
+/** Refresh every playhead's extent box from the layout's current clip rects. */
+function recomputePlayheadExtents(layout: CanvasLayout): CanvasLayout {
+  return {
+    ...layout,
+    playheads: layout.playheads.map((ph) => ({
+      ...ph,
+      maxEndX: extentBoxRightEdge(
+        ph,
+        layout.clips,
+        layout.playheads.filter((other) => other.playheadId !== ph.playheadId),
+      ),
+    })),
   };
 }
 
@@ -251,20 +266,19 @@ export function applyPlayheadMovePreview(
   playheadPreview: PlayheadMovePreview,
 ): CanvasLayout {
   const withClips = applyClipDragPreviews(layout, clipPreviews);
-  let maxEndX = playheadPreview.x;
-  for (const clip of withClips.clips) {
-    if (
-      !rangesOverlap(
-        clip.y,
-        clip.y + clip.height,
-        playheadPreview.y,
-        playheadPreview.y + playheadPreview.height,
-      )
-    ) {
-      continue;
-    }
-    maxEndX = Math.max(maxEndX, clip.x + clip.width);
-  }
+  // Only the clips moving with this playhead define its box. Using every
+  // vertically-overlapping clip (including a neighbour's) would let the box
+  // stretch to the next playhead once the gap shrinks below 5s mid-drag.
+  const maxEndX = extentBoxRightEdge(
+    playheadPreview,
+    clipPreviews.map((preview) => ({
+      x: preview.x,
+      y: preview.y,
+      width: Math.max(12, preview.duration * PIXELS_PER_SECOND),
+      height: CLIP_HEIGHT,
+    })),
+    withClips.playheads.filter((ph) => ph.playheadId !== playheadPreview.playheadId),
+  );
 
   return {
     ...withClips,
