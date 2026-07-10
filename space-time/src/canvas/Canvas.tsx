@@ -3460,6 +3460,14 @@ export function Canvas({
   const onPointerEnter = (event: React.PointerEvent<HTMLCanvasElement>) => {
     pointerOnCanvasRef.current = true;
     lastPointerClientRef.current = { clientX: event.clientX, clientY: event.clientY };
+    // Reclaim shortcuts when the pointer returns to the canvas (e.g. after the
+    // Patchwork sidebar), but don't yank focus out of an active text field.
+    const active = document.activeElement;
+    const typing =
+      active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement ||
+      (active instanceof HTMLElement && active.isContentEditable);
+    if (!typing) onFocusEditor?.();
     if (wKeyHeldRef.current && !dragRef.current) {
       const { x, y } = pagePoint(event);
       beginScribbleDraw(x, y);
@@ -3567,6 +3575,9 @@ export function Canvas({
     if (files.length === 0 && docItems.length === 0) return;
 
     onDropMedia({ files, docItems }, x, y);
+    // Sidebar drags leave keyboard focus on the source; reclaim it so P/W/M/…
+    // work immediately without an extra click.
+    onFocusEditor?.();
   };
 
   return (
