@@ -575,6 +575,16 @@ function isPlayheadMoveKey(event: KeyboardEvent): boolean {
   return event.code === 'KeyM' || event.key === 'm' || event.key === 'M';
 }
 
+/** Shift alone — not part of Cmd/Ctrl/Alt chords (browser shortcuts, etc.). */
+function shiftAloneForLasso(event: {
+  shiftKey: boolean;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+}): boolean {
+  return event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey;
+}
+
 type CanvasProps = {
   docUrl: AutomergeUrl;
   doc: SpaceTimeDoc;
@@ -597,6 +607,12 @@ type CanvasProps = {
   } & ClipTimingOverride) | null) => void;
   /** Scrub the live playhead mix to a page-x (marker drag); null to release. */
   onMonitorScrub?: (pageX: number | null) => void;
+  /**
+   * Scrub a specific clip at page-x (marker / Control-hover). Uses the playhead
+   * mix when the clip is in extent, otherwise a solo composition with the same
+   * clock. Pass null clipId to release.
+   */
+  onClipScrub?: (clipId: string | null, pageX: number | null) => void;
   onFocusEditor?: () => void;
   onPlayheadScrub?: (playheadId: string, x: number) => void;
   onScrubbingChange?: (scrubbing: boolean) => void;
@@ -672,6 +688,7 @@ export function Canvas({
   onSelectedPostItChange,
   onClipPreview,
   onMonitorScrub,
+  onClipScrub,
   onFocusEditor,
   onPlayheadScrub,
   onScrubbingChange,
@@ -801,7 +818,10 @@ export function Canvas({
   const sKeyHeldRef = useRef(false);
   const mKeyHeldRef = useRef(false);
   const dKeyHeldRef = useRef(false);
-  const altKeyHeldRef = useRef(false);
+  const shiftKeyHeldRef = useRef(false);
+  const ctrlKeyHeldRef = useRef(false);
+  /** True while Control+hover is driving monitor/clip preview scrub. */
+  const ctrlHoverScrubActiveRef = useRef(false);
   const keysHeldRef = useRef(new Set<string>());
   const pointerOnCanvasRef = useRef(false);
   const isFocusedRef = useRef(isFocused);
@@ -814,6 +834,7 @@ export function Canvas({
   const beginScribbleDrawRef = useRef<(x: number, y: number) => void>(() => {});
   const beginLassoDrawRef = useRef<(x: number, y: number) => void>(() => {});
   const finishLassoDrawRef = useRef<() => void>(() => {});
+  const cancelLassoDrawRef = useRef<() => void>(() => {});
   const beginMoveAtRef = useRef<(x: number, y: number) => void>(() => {});
   const beginSelectionMoveRef = useRef<(x: number, y: number, pointerId: number) => void>(
     () => {},
@@ -1814,6 +1835,14 @@ export function Canvas({
     schedulePaint();
   };
 
+  /** Abort an in-progress lasso without committing (e.g. Shift was part of a chord). */
+  const cancelLassoDraw = () => {
+    if (dragRef.current?.kind !== 'lasso-draw') return;
+    dragRef.current = null;
+    lassoPathRef.current = null;
+    schedulePaint();
+  };
+
   const beginSelectionMove = (x: number, y: number, pointerId: number) => {
     if (dragRef.current) return;
     const sel = canvasSelectionRef.current;
@@ -2017,6 +2046,7 @@ export function Canvas({
   deleteCanvasSelectionRef.current = deleteCanvasSelection;
   beginLassoDrawRef.current = beginLassoDraw;
   finishLassoDrawRef.current = finishLassoDraw;
+  cancelLassoDrawRef.current = cancelLassoDraw;
   beginSelectionMoveRef.current = beginSelectionMove;
   commitSelectionMoveDragRef.current = commitSelectionMoveDrag;
 
@@ -2180,47 +2210,90 @@ export function Canvas({
     if (!clip) return;
     const pageX = markerPageX(clip.x, sourceSkip(clip), sourceTime);
 
-    // Prefer scrubbing the live playhead mix at the marker's page-x — same
-    // composition and clock as pressing play there. Fall back to a full-source
-    // override only when the clip isn't in the active playhead's extent.
-    const playhead = activePlayheadId
-      ? doc.playheads.find((ph) => ph.id === activePlayheadId)
-      : undefined;
-    const inActiveExtent =
-      !!playhead &&
-      clipsInPlayheadExtent(doc, playhead, timingRef.current).some((c) => c.id === clipId);
-
-    if (inActiveExtent && onMonitorScrub) {
-      if (!markerMonitorScrubRef.current) {
-        onClipPreview?.(null);
-      }
-      markerMonitorScrubRef.current = true;
-      onScrubbingChange?.(true);
-      onMonitorScrub(pageX);
-      return;
+    // Always use the playhead/solo monitor scrub pipeline — same clock as
+    // pressing play at this page-x. Never the trim edge-preview path (that
+    // historically drifted for audio).
+    onClipPreview?.(null);
+    markerMonitorScrubRef.current = true;
+    onScrubbingChange?.(true);
+    if (onClipScrub) {
+      onClipScrub(clipId, pageX);
+    } else {
+      onMonitorScrub?.(pageX);
     }
-
-    markerMonitorScrubRef.current = false;
-    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
-    onClipPreview?.({
-      clipId,
-      x: clip.x,
-      duration: playDuration,
-      sourceInTime: 0,
-      previewEdge: 'in',
-      scrubAudio: true,
-      scrubSourceTime: sourceTime,
-    });
   };
 
   const endMarkerMonitorPreview = () => {
     if (markerMonitorScrubRef.current) {
       markerMonitorScrubRef.current = false;
-      onMonitorScrub?.(null);
+      // End scrub (pause) before releasing clip-scrub so the playhead rebuild
+      // doesn't see composition.playing from the scrub session.
       onScrubbingChange?.(false);
+      if (onClipScrub) {
+        onClipScrub(null, null);
+      } else {
+        onMonitorScrub?.(null);
+      }
     }
     onClipPreview?.(null);
   };
+
+  const endCtrlHoverScrub = () => {
+    if (!ctrlHoverScrubActiveRef.current) return;
+    ctrlHoverScrubActiveRef.current = false;
+    endMarkerMonitorPreview();
+  };
+
+  /** Hold Control and move over a video/audio clip to scrub it under the cursor. */
+  const updateCtrlHoverScrub = (x: number, y: number) => {
+    if (
+      !ctrlKeyHeldRef.current ||
+      dragRef.current ||
+      mKeyHeldRef.current ||
+      dKeyHeldRef.current ||
+      sKeyHeldRef.current ||
+      wKeyHeldRef.current ||
+      shiftKeyHeldRef.current
+    ) {
+      endCtrlHoverScrub();
+      return;
+    }
+
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return;
+    layoutRef.current = layout;
+
+    const target = hitTestCanvas(layout, x, y);
+    const clipId =
+      target.kind === 'clip-body' ||
+      target.kind === 'clip-left-handle' ||
+      target.kind === 'clip-right-handle' ||
+      target.kind === 'clip-marker'
+        ? target.clipId
+        : null;
+    // Not over a scrubbable clip — keep the last scrub position. Ending here
+    // would call endScrub() and seek back to the playhead (wrong audio), which
+    // is what made Control-hover disagree with marker scrub.
+    if (!clipId) return;
+
+    const clip = findClip(doc, clipId);
+    if (!clip) return;
+    const source = doc.sources[clip.sourceId];
+    if (!source || (source.type !== 'video' && source.type !== 'audio')) return;
+
+    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+    const sourceTime = clampMarkerSourceTime(
+      clip,
+      (x - clip.x) / PIXELS_PER_SECOND + sourceSkip(clip),
+      playDuration,
+    );
+    ctrlHoverScrubActiveRef.current = true;
+    previewMarkerFrame(clipId, sourceTime);
+  };
+  const updateCtrlHoverScrubRef = useRef(updateCtrlHoverScrub);
+  updateCtrlHoverScrubRef.current = updateCtrlHoverScrub;
+  const endCtrlHoverScrubRef = useRef(endCtrlHoverScrub);
+  endCtrlHoverScrubRef.current = endCtrlHoverScrub;
 
   const updateMarkerMoveDrag = (x: number) => {
     const drag = dragRef.current;
@@ -2579,7 +2652,7 @@ export function Canvas({
       if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = true;
       if (event.key === 'w' || event.key === 'W') {
         if (event.repeat || isTextInput(event.target)) return;
-        if (event.altKey || altKeyHeldRef.current) return;
+        if (event.shiftKey || shiftKeyHeldRef.current) return;
         wKeyHeldRef.current = true;
         if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
         const { x, y } = pagePointFromClient(
@@ -2588,16 +2661,32 @@ export function Canvas({
         );
         beginScribbleDrawRef.current(x, y);
       }
-      if (event.key === 'Alt') {
+      if (event.key === 'Shift') {
         if (event.repeat || isTextInput(event.target)) return;
-        altKeyHeldRef.current = true;
-        event.preventDefault();
+        // Never claim Shift when it's part of a browser chord (Cmd+Shift+C, etc.).
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        shiftKeyHeldRef.current = true;
+        // Start the lasso on pointer move, not keydown — so a Shift tap or
+        // Shift-then-Cmd chord doesn't clear selection / steal the modifier.
+      }
+      // If Shift was pressed first in a chord, drop lasso intent as soon as
+      // another modifier arrives.
+      if (
+        (event.key === 'Meta' || event.key === 'Control' || event.key === 'Alt') &&
+        (shiftKeyHeldRef.current || dragRef.current?.kind === 'lasso-draw')
+      ) {
+        shiftKeyHeldRef.current = false;
+        cancelLassoDrawRef.current();
+      }
+      if (event.key === 'Control') {
+        if (event.repeat || isTextInput(event.target)) return;
+        ctrlKeyHeldRef.current = true;
         if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
         const { x, y } = pagePointFromClient(
           lastPointerClientRef.current.clientX,
           lastPointerClientRef.current.clientY,
         );
-        beginLassoDrawRef.current(x, y);
+        updateCtrlHoverScrubRef.current(x, y);
       }
       if (event.key === 'n' || event.key === 'N') {
         if (event.repeat || isTextInput(event.target)) return;
@@ -2631,7 +2720,7 @@ export function Canvas({
       }
       if (event.key === 'm' || event.key === 'M') {
         if (event.repeat || isTextInput(event.target)) return;
-        if (event.altKey || altKeyHeldRef.current) return;
+        if (event.shiftKey || shiftKeyHeldRef.current) return;
         mKeyHeldRef.current = true;
         if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
         const { x, y } = pagePointFromClient(
@@ -2698,11 +2787,15 @@ export function Canvas({
           commitScribbleDrawRef.current(drag);
         }
       }
-      if (event.key === 'Alt') {
-        altKeyHeldRef.current = false;
+      if (event.key === 'Shift') {
+        shiftKeyHeldRef.current = false;
         if (dragRef.current?.kind === 'lasso-draw') {
           finishLassoDrawRef.current();
         }
+      }
+      if (event.key === 'Control') {
+        ctrlKeyHeldRef.current = false;
+        endCtrlHoverScrubRef.current();
       }
       if (event.key === 's' || event.key === 'S') {
         sKeyHeldRef.current = false;
@@ -2744,13 +2837,15 @@ export function Canvas({
       sKeyHeldRef.current = false;
       mKeyHeldRef.current = false;
       dKeyHeldRef.current = false;
-      altKeyHeldRef.current = false;
+      shiftKeyHeldRef.current = false;
+      ctrlKeyHeldRef.current = false;
       keysHeldRef.current.clear();
+      endCtrlHoverScrubRef.current();
       if (dragRef.current?.kind === 'scribble-draw') {
         commitScribbleDrawRef.current(dragRef.current);
       }
       if (dragRef.current?.kind === 'lasso-draw') {
-        finishLassoDrawRef.current();
+        cancelLassoDrawRef.current();
       }
       if (
         dragRef.current?.kind === 'split-line' &&
@@ -2983,6 +3078,25 @@ export function Canvas({
         onFocusEditor?.();
         return;
       }
+      // While Control-scrubbing a media clip, don't start a select/drag.
+      const layout = layoutRef.current ?? buildLayout();
+      if (layout) {
+        const target = hitTestCanvas(layout, point.x, point.y);
+        if (
+          target.kind === 'clip-body' ||
+          target.kind === 'clip-left-handle' ||
+          target.kind === 'clip-right-handle' ||
+          target.kind === 'clip-marker'
+        ) {
+          const clip = findClip(doc, target.clipId);
+          const source = clip ? doc.sources[clip.sourceId] : undefined;
+          if (source && (source.type === 'video' || source.type === 'audio')) {
+            event.preventDefault();
+            onFocusEditor?.();
+            return;
+          }
+        }
+      }
     }
 
     if (event.button === 1) {
@@ -3005,7 +3119,7 @@ export function Canvas({
       mKeyHeldRef.current ||
       dKeyHeldRef.current ||
       wKeyHeldRef.current ||
-      altKeyHeldRef.current
+      shiftAloneForLasso(event)
     ) {
       return;
     }
@@ -3284,16 +3398,20 @@ export function Canvas({
     layoutRef.current = layout;
 
     const { x, y } = pagePoint(event);
-    // Holding shift disables snapping, for pixel-perfect freedom.
-    const noSnap = event.shiftKey;
     let drag = dragRef.current;
+    // Holding Shift during an existing non-lasso drag disables snapping.
+    // Shift alone with no drag starts a selection lasso on move.
+    const noSnap = event.shiftKey && drag?.kind !== 'lasso-draw';
+
+    // Keep ref in sync with the live modifier state (and ignore Shift in chords).
+    shiftKeyHeldRef.current = shiftAloneForLasso(event);
 
     if (!drag && wKeyHeldRef.current && pointerOnCanvasRef.current) {
       beginScribbleDraw(x, y);
       drag = dragRef.current;
     }
 
-    if (!drag && altKeyHeldRef.current && pointerOnCanvasRef.current) {
+    if (!drag && shiftKeyHeldRef.current && pointerOnCanvasRef.current) {
       beginLassoDraw(x, y);
       drag = dragRef.current;
     }
@@ -3314,24 +3432,30 @@ export function Canvas({
     }
 
     if (!drag) {
+      ctrlKeyHeldRef.current = event.ctrlKey;
       const target = hitTestCanvas(layout, x, y);
       setHoveredClipId(target.kind === 'clip-body' ? target.clipId : null);
       hoveredMarkerRef.current =
         target.kind === 'clip-marker'
           ? { clipId: target.clipId, sourceTime: target.sourceTime }
           : null;
+      updateCtrlHoverScrub(x, y);
       if (canvasRef.current) {
         canvasRef.current.style.cursor =
-          target.kind === 'post-it-resize' || target.kind === 'inline-image-resize'
-            ? 'nwse-resize'
-            : target.kind === 'clip-marker'
-              ? 'ew-resize'
-              : target.kind === 'inline-image'
-                ? 'move'
-                : '';
+          ctrlHoverScrubActiveRef.current
+            ? 'ew-resize'
+            : target.kind === 'post-it-resize' || target.kind === 'inline-image-resize'
+              ? 'nwse-resize'
+              : target.kind === 'clip-marker'
+                ? 'ew-resize'
+                : target.kind === 'inline-image'
+                  ? 'move'
+                  : '';
       }
       return;
     }
+
+    endCtrlHoverScrub();
 
     if (
       drag.pointerId !== KEYBOARD_SPLIT_POINTER_ID &&
@@ -3414,7 +3538,7 @@ export function Canvas({
     }
 
     if (drag.kind === 'lasso-draw') {
-      if (!altKeyHeldRef.current) {
+      if (!shiftKeyHeldRef.current) {
         finishLassoDraw();
         return;
       }
@@ -3720,6 +3844,7 @@ export function Canvas({
     pointerOnCanvasRef.current = false;
     hoveredMarkerRef.current = null;
     setHoveredClipId(null);
+    endCtrlHoverScrub();
     if (canvasRef.current) {
       canvasRef.current.style.cursor = '';
     }

@@ -6,6 +6,7 @@ import {
   clipSequenceTime,
   clipToDiffusionTiming,
   resolveClipPlayDuration,
+  sourceSkip,
   xToTime,
 } from '../clip-timing';
 import { isDocEmpty, resolveSourceMimeType, resolveSourceUrl } from '../helpers';
@@ -374,18 +375,22 @@ export type ClipEdgePreview = ClipTimingOverride & {
   clipId: string;
   edge: 'in' | 'out';
   /**
-   * Absolute source time to show/hear (marker drag). On the full-source edge
-   * preview composition (delay 0, range from 0), this is the composition seek time.
+   * Absolute source time to show/hear (marker / Control-hover scrub).
+   * For audio scrub the solo composition uses the clip's real in-point with
+   * timeOrigin at the clip's left edge, so the seek time is
+   * `scrubSourceTime - sourceSkip(clip)` — same clock as playhead scrub.
    */
   scrubSourceTime?: number;
 };
 
+/** Composition seek time for an edge-preview / solo-scrub composition. */
 export function clipEdgePreviewSeekTime(
   preview: Pick<ClipEdgePreview, 'edge' | 'sourceInTime' | 'duration' | 'scrubSourceTime'>,
   clip?: Clip,
 ): number {
   if (preview.scrubSourceTime !== undefined) {
-    return preview.scrubSourceTime;
+    const skip = clip ? sourceSkip(clip) : (preview.sourceInTime ?? 0);
+    return Math.max(0, preview.scrubSourceTime - skip);
   }
   const sourceStart =
     preview.sourceInTime !== undefined && preview.sourceInTime !== null
@@ -395,10 +400,17 @@ export function clipEdgePreviewSeekTime(
   return sourceStart + preview.duration;
 }
 
-function isClipEdgePreviewComposition(composition: core.Composition, clipId: string): boolean {
+function isClipEdgePreviewComposition(
+  composition: core.Composition,
+  clipId: string,
+  soloScrub: boolean,
+): boolean {
   const clips = composition.clips;
   if (clips.length !== 1) return false;
-  return clips[0]?.data['clipEdgePreview'] === clipId;
+  const data = clips[0]?.data;
+  if (data?.['clipEdgePreview'] !== clipId) return false;
+  const isSolo = data['clipSoloScrub'] === true;
+  return soloScrub ? isSolo : !isSolo;
 }
 
 async function renderCompositionAtTime(
@@ -421,29 +433,35 @@ async function renderCompositionAtTime(
   await safeCompositionUpdate(composition);
 }
 
-/** Build a stable single-clip composition spanning the full source (once per drag). */
+/** Build a stable single-clip composition for trim preview or solo scrub.
+ *  - Trim (default): full source from 0 so in/out edges outside the trimmed
+ *    window are visible.
+ *  - Audio scrub: real clip timing with timeOrigin at the clip's left edge —
+ *    same source↔composition mapping as the playhead mix. */
 async function ensureClipEdgePreviewComposition(
   composition: core.Composition,
   doc: SpaceTimeDoc,
   loader: SourceLoader,
   preview: ClipEdgePreview,
-): Promise<{ empty: boolean; duration: number }> {
-  if (isClipEdgePreviewComposition(composition, preview.clipId)) {
-    return { empty: false, duration: composition.duration };
+  options?: { audioScrub?: boolean },
+): Promise<{ empty: boolean; duration: number; rebuilt: boolean }> {
+  const soloScrub = options?.audioScrub === true;
+  if (isClipEdgePreviewComposition(composition, preview.clipId, soloScrub)) {
+    return { empty: false, duration: composition.duration, rebuilt: false };
   }
 
   const clip = doc.clips.find((item) => item.id === preview.clipId);
   if (!clip) {
     composition.clear();
     await safeCompositionUpdate(composition);
-    return { empty: true, duration: 0 };
+    return { empty: true, duration: 0, rebuilt: true };
   }
 
   const sourceDef = doc.sources[clip.sourceId];
   if (!sourceDef) {
     composition.clear();
     await safeCompositionUpdate(composition);
-    return { empty: true, duration: 0 };
+    return { empty: true, duration: 0, rebuilt: true };
   }
 
   try {
@@ -454,31 +472,109 @@ async function ensureClipEdgePreviewComposition(
 
   const source = await loader.load(sourceDef, clip.sourceId);
   const length = sourceLength(source, sourceDef.type);
-  const fullSourceClip: Clip = {
-    ...clip,
-    x: 0,
-    sourceInTime: 0,
-    duration: length ?? preview.duration,
-  };
-  const playDuration = resolveClipPlayDuration(fullSourceClip, length);
+
+  let timingClip: Clip;
+  let timeOrigin: number;
+  let playDuration: number;
+  if (soloScrub) {
+    // Match playhead audio: keep sourceInTime, origin at clip left edge.
+    timingClip = clip;
+    timeOrigin = clipSequenceTime(clip);
+    playDuration = resolveClipPlayDuration(clip, length);
+  } else {
+    timingClip = {
+      ...clip,
+      x: 0,
+      sourceInTime: 0,
+      duration: length ?? preview.duration,
+    };
+    timeOrigin = 0;
+    playDuration = resolveClipPlayDuration(timingClip, length);
+  }
 
   const dscClip = await createDscClip(source, sourceDef.type);
-  applyClipTiming(dscClip, fullSourceClip, sourceDef.type, playDuration);
+  applyClipTiming(dscClip, timingClip, sourceDef.type, playDuration, timeOrigin);
   dscClip.data = {
     clipId: clip.id,
     sourceId: clip.sourceId,
     clipEdgePreview: clip.id,
+    ...(soloScrub ? { clipSoloScrub: true } : {}),
   };
 
   composition.clear();
   const layer = await composition.add(new core.Layer({ mode: 'DEFAULT' }), 0);
   await layer.add(dscClip);
   await safeCompositionUpdate(composition);
-  return { empty: false, duration: composition.duration };
+  return { empty: false, duration: composition.duration, rebuilt: true };
 }
 
-/** Monitor preview for in/out trim and marker scrub: single full-source clip.
- *  Pass `audioScrub: true` to skip the paused seek so the caller can play/scrub. */
+/**
+ * Build a one-clip composition with the same source↔composition mapping as the
+ * playhead mix (timeOrigin at the clip's left edge). Used when scrubbing a clip
+ * that isn't in the active playhead extent — same clock as onMonitorScrub.
+ */
+export async function syncSoloClipScrubComposition(
+  composition: core.Composition,
+  doc: SpaceTimeDoc,
+  loader: SourceLoader,
+  clipId: string,
+): Promise<{ empty: boolean; duration: number; timeOrigin: number }> {
+  const clip = doc.clips.find((item) => item.id === clipId);
+  if (!clip) {
+    composition.clear();
+    await safeCompositionUpdate(composition);
+    return { empty: true, duration: 0, timeOrigin: 0 };
+  }
+
+  const sourceDef = doc.sources[clip.sourceId];
+  if (!sourceDef) {
+    composition.clear();
+    await safeCompositionUpdate(composition);
+    return { empty: true, duration: 0, timeOrigin: 0 };
+  }
+
+  // Already solo-scrubbing this clip — keep it.
+  if (
+    composition.clips.length === 1 &&
+    composition.clips[0]?.data?.['clipSoloScrub'] === true &&
+    composition.clips[0]?.data?.['clipId'] === clipId
+  ) {
+    return {
+      empty: false,
+      duration: composition.duration,
+      timeOrigin: clipSequenceTime(clip),
+    };
+  }
+
+  try {
+    if (composition.playing) await composition.pause();
+  } catch (error) {
+    console.warn('[space-time] composition pause before solo scrub failed', error);
+  }
+
+  const source = await loader.load(sourceDef, clip.sourceId);
+  const length = sourceLength(source, sourceDef.type);
+  const playDuration = resolveClipPlayDuration(clip, length);
+  const timeOrigin = clipSequenceTime(clip);
+
+  const dscClip = await createDscClip(source, sourceDef.type);
+  applyClipTiming(dscClip, clip, sourceDef.type, playDuration, timeOrigin);
+  dscClip.data = {
+    clipId: clip.id,
+    sourceId: clip.sourceId,
+    clipSoloScrub: true,
+  };
+
+  composition.clear();
+  const layer = await composition.add(new core.Layer({ mode: 'DEFAULT' }), 0);
+  await layer.add(dscClip);
+  await safeCompositionUpdate(composition);
+  return { empty: false, duration: composition.duration, timeOrigin };
+}
+
+/** Monitor preview for in/out trim and marker scrub: single clip.
+ *  Pass `audioScrub: true` to build a playhead-faithful solo and skip the
+ *  paused seek so the caller can play/scrub. */
 export async function updateClipEdgePreviewComposition(
   composition: core.Composition,
   doc: SpaceTimeDoc,
@@ -486,23 +582,39 @@ export async function updateClipEdgePreviewComposition(
   _timing: Map<string, ClipTimingInfo>,
   preview: ClipEdgePreview,
   options?: { audioScrub?: boolean },
-): Promise<{ empty: boolean; duration: number; seekTime: number }> {
-  const built = await ensureClipEdgePreviewComposition(composition, doc, loader, preview);
+): Promise<{ empty: boolean; duration: number; seekTime: number; rebuilt: boolean }> {
+  const built = await ensureClipEdgePreviewComposition(
+    composition,
+    doc,
+    loader,
+    preview,
+    options,
+  );
   if (built.empty) {
-    return { empty: true, duration: 0, seekTime: 0 };
+    return { empty: true, duration: 0, seekTime: 0, rebuilt: built.rebuilt };
   }
 
   const clip = doc.clips.find((item) => item.id === preview.clipId);
   const seekTime = clipEdgePreviewSeekTime(preview, clip);
   if (options?.audioScrub) {
-    return { empty: false, duration: composition.duration, seekTime };
+    return {
+      empty: false,
+      duration: composition.duration,
+      seekTime,
+      rebuilt: built.rebuilt,
+    };
   }
   try {
     await renderCompositionAtTime(composition, seekTime);
   } catch (error) {
     console.warn('[space-time] clip edge preview seek failed', error);
   }
-  return { empty: false, duration: composition.duration, seekTime };
+  return {
+    empty: false,
+    duration: composition.duration,
+    seekTime,
+    rebuilt: built.rebuilt,
+  };
 }
 
 export async function loadSourceDuration(

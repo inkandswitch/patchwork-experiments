@@ -1,7 +1,7 @@
 import * as core from '@diffusionstudio/core';
 
 import type { Playhead, SpaceTimeDoc } from '../types';
-import { xToTime, timeToX } from '../clip-timing';
+import { xToTime, timeToX, sourceSkip, clipSequenceTime } from '../clip-timing';
 import { playheadOriginX } from '../canvas/playhead-extent';
 
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
@@ -11,8 +11,10 @@ import {
   resolveAllClipTiming,
   safeCompositionUpdate,
   syncPlayheadComposition,
+  syncSoloClipScrubComposition,
   updatePlayheadCompositionTiming,
   updateClipEdgePreviewComposition,
+  clipsInPlayheadExtent,
   type ClipEdgePreview,
   type ClipTimingInfo,
   type ClipTimingOverride,
@@ -109,6 +111,9 @@ export function usePlayheadPlayer(
   currentXRef.current = currentX;
   /** When set, monitor scrub follows this page-x instead of the playhead (marker drag). */
   const monitorScrubPageXRef = useRef<number | null>(null);
+  /** Clip id while the composition is a solo scrub (clip not in active playhead mix). */
+  const soloScrubClipIdRef = useRef<string | null>(null);
+  const soloScrubEnsureGenRef = useRef(0);
   const playingRef = useRef(false);
   const onPlaybackXRef = useRef(onPlaybackX);
   onPlaybackXRef.current = onPlaybackX;
@@ -160,7 +165,9 @@ export function usePlayheadPlayer(
 
   const startScrubSyncLoop = useCallback(() => {
     stopScrubSyncLoop();
-    scrubLastXRef.current = currentXRef.current;
+    // Prefer the monitor scrub page-x so the first tick doesn't treat the jump
+    // from the playhead line as "movement" against the wrong anchor.
+    scrubLastXRef.current = monitorScrubPageXRef.current ?? currentXRef.current;
     scrubHoldStartMsRef.current = performance.now();
     const tick = () => {
       scrubRafRef.current = null;
@@ -525,7 +532,12 @@ export function usePlayheadPlayer(
           clipEdgePreviewActiveRef.current = true;
           structureKeyRef.current = null;
 
-          const { empty, duration, seekTime: builtSeekTime } = await updateClipEdgePreviewComposition(
+          const {
+            empty,
+            duration,
+            seekTime: builtSeekTime,
+            rebuilt,
+          } = await updateClipEdgePreviewComposition(
             composition,
             docRef.current,
             loaderRef.current,
@@ -545,13 +557,20 @@ export function usePlayheadPlayer(
           }
 
           if (audioScrub) {
-            // Prefer the latest pointer-driven seek time (may have advanced
-            // while this drain task was queued).
+            // Prefer the latest pointer-driven absolute source time (may have
+            // advanced while this drain task was queued), converted to the
+            // solo-scrub composition clock (origin at clip left edge).
+            const absoluteSource = clipEdgePreviewScrubSourceTimeRef.current;
+            const scrubClip = docRef.current.clips.find((c) => c.id === clipId);
             const seekTime =
-              clipEdgePreviewScrubSourceTimeRef.current ?? builtSeekTime;
+              absoluteSource !== null && scrubClip
+                ? Math.max(0, absoluteSource - sourceSkip(scrubClip))
+                : builtSeekTime;
             clipEdgePreviewScrubTimeRef.current = seekTime;
             const t = clampSeekTime(composition, seekTime);
-            if (!clipEdgePreviewScrubPlaybackRef.current) {
+            // Restart playback after a composition rebuild (e.g. hover moved
+            // to a different clip); otherwise only pin if already playing.
+            if (rebuilt || !clipEdgePreviewScrubPlaybackRef.current) {
               setPlaybackPosition(composition, t);
               await safeCompositionUpdate(composition);
               try {
@@ -562,9 +581,8 @@ export function usePlayheadPlayer(
                 console.warn('[space-time] marker scrub playback failed', error);
               }
             }
-            // While already scrubbing, previewClipTiming pins playbackOffset
-            // synchronously — don't enqueue more composition work here or
-            // audio lags behind the marker.
+            // While already scrubbing the same solo clip, previewClipTiming
+            // pins playbackOffset synchronously — don't enqueue more work.
           }
         } catch (error) {
           if (generation !== clipPreviewGenerationRef.current) return;
@@ -586,6 +604,7 @@ export function usePlayheadPlayer(
 
   useLayoutEffect(() => {
     if (clipEdgePreviewActiveRef.current) return;
+    if (soloScrubClipIdRef.current !== null) return;
 
     if (!playhead) {
       compositionSyncingRef.current = false;
@@ -599,8 +618,11 @@ export function usePlayheadPlayer(
     const generation = ++syncGenerationRef.current;
     const isResync = playerStateRef.current.status === 'ready';
     const previousTime = composition.currentTime;
+    // Resume only for intentional playback / sweep — not scrub. Solo/monitor
+    // scrub calls composition.play() with playingRef left false; treating
+    // composition.playing as resume would start the timeline after Control-up.
     const resumePlayback =
-      playingRef.current || sweepActiveRef?.current === true || composition.playing;
+      playingRef.current || sweepActiveRef?.current === true;
     compositionSyncingRef.current = true;
     pendingSeekTimeRef.current = null;
 
@@ -736,6 +758,100 @@ export function usePlayheadPlayer(
     scheduleCompositionSeek(xToTime(pageX) - timeOriginRef.current);
   };
 
+  /**
+   * Scrub a specific clip at page-x using the same pipeline as playhead/marker
+   * scrub. If the clip is in the active playhead mix, scrubs that mix; otherwise
+   * builds a one-clip solo with the same timing clock and scrubs that.
+   */
+  const scrubClipToPageX = (clipId: string | null, pageX: number | null) => {
+    if (clipId === null || pageX === null) {
+      monitorScrubPageXRef.current = null;
+      // Solo teardown + playhead rebuild happen in endScrub (via onScrubbingChange
+      // false) so we pause before sync and don't resume scrub as timeline play.
+      return;
+    }
+
+    const clip = docRef.current.clips.find((c) => c.id === clipId);
+    if (!clip) return;
+
+    const playhead = playheadRef.current;
+    const inExtent =
+      !!playhead &&
+      clipsInPlayheadExtent(docRef.current, playhead, timingRef.current).some(
+        (c) => c.id === clipId,
+      );
+
+    // Clear trim/edge-preview override so we own the composition.
+    if (clipEdgePreviewActiveRef.current) {
+      clipPreviewRef.current = null;
+      clipPreviewEdgeRef.current = undefined;
+      clipEdgePreviewScrubAudioRef.current = false;
+      clipEdgePreviewScrubSourceTimeRef.current = null;
+      clipEdgePreviewActiveRef.current = false;
+      stopEdgePreviewScrubLoop();
+      clipEdgePreviewScrubPlaybackRef.current = false;
+    }
+
+    if (inExtent) {
+      if (soloScrubClipIdRef.current !== null) {
+        // Leave solo mode and restore the playhead mix, then scrub once rebuilt.
+        soloScrubClipIdRef.current = null;
+        soloScrubEnsureGenRef.current += 1;
+        structureKeyRef.current = null;
+        monitorScrubPageXRef.current = pageX;
+        setPlayheadSyncEpoch((n) => n + 1);
+        return;
+      }
+      scrubMonitorToPageX(pageX);
+      return;
+    }
+
+    // Out of extent: solo composition with timeOrigin at clip left edge, then
+    // the same scheduleCompositionSeek clock as marker/playhead scrub.
+    monitorScrubPageXRef.current = pageX;
+    const composition = compositionRef.current;
+    if (!composition) return;
+
+    if (soloScrubClipIdRef.current === clipId) {
+      // Solo already up — seek immediately with the solo time origin.
+      timeOriginRef.current = clipSequenceTime(clip);
+      scheduleCompositionSeek(xToTime(pageX) - timeOriginRef.current);
+      return;
+    }
+
+    soloScrubClipIdRef.current = clipId;
+    const ensureGen = ++soloScrubEnsureGenRef.current;
+    structureKeyRef.current = null;
+    enqueueCompositionTask(async () => {
+      if (ensureGen !== soloScrubEnsureGenRef.current) return;
+      if (soloScrubClipIdRef.current !== clipId) return;
+      try {
+        playingRef.current = false;
+        const { empty, duration, timeOrigin } = await syncSoloClipScrubComposition(
+          composition,
+          docRef.current,
+          loaderRef.current,
+          clipId,
+        );
+        if (ensureGen !== soloScrubEnsureGenRef.current) return;
+        if (soloScrubClipIdRef.current !== clipId) return;
+        if (empty) return;
+
+        timeOriginRef.current = timeOrigin;
+        const mountEl = mountRef.current;
+        if (mountEl) layoutPlayer(mountEl, composition);
+        if (playerStateRef.current.status !== 'ready') {
+          setPlayerState({ status: 'ready', duration });
+        }
+
+        const scrubX = monitorScrubPageXRef.current ?? pageX;
+        scheduleCompositionSeek(xToTime(scrubX) - timeOriginRef.current);
+      } catch (error) {
+        console.warn('[space-time] solo clip scrub failed', error);
+      }
+    });
+  };
+
   const play = async (startX?: number) => {
     const composition = compositionRef.current;
     if (!composition) return;
@@ -839,15 +955,23 @@ export function usePlayheadPlayer(
       clipEdgePreviewScrubAudioRef.current = preview.scrubAudio === true;
       if (preview.scrubAudio === true && preview.scrubSourceTime !== undefined) {
         clipEdgePreviewScrubSourceTimeRef.current = preview.scrubSourceTime;
-        // Full-source preview: composition time === source time. Update
-        // synchronously so the scrub loop doesn't lag behind the pointer
-        // (the async drain only builds/starts playback).
-        clipEdgePreviewScrubTimeRef.current = preview.scrubSourceTime;
+        // Solo-scrub composition: timeOrigin at clip left edge, so composition
+        // time is sourceTime - sourceSkip — same mapping as playhead scrub.
+        const scrubClip = docRef.current.clips.find((c) => c.id === preview.clipId);
+        const compTime = scrubClip
+          ? Math.max(0, preview.scrubSourceTime - sourceSkip(scrubClip))
+          : preview.scrubSourceTime;
+        clipEdgePreviewScrubTimeRef.current = compTime;
         clipEdgePreviewScrubHoldStartMsRef.current = performance.now();
         if (clipEdgePreviewScrubPlaybackRef.current) {
           const composition = compositionRef.current;
-          if (composition) {
-            setPlaybackPosition(composition, preview.scrubSourceTime);
+          // Only pin when the solo composition for this clip is already up —
+          // otherwise we'd seek the playhead mix (or another clip's solo) with
+          // the wrong clock.
+          const activePreviewId = composition?.clips[0]?.data?.['clipEdgePreview'];
+          const isSolo = composition?.clips[0]?.data?.['clipSoloScrub'] === true;
+          if (composition && isSolo && activePreviewId === preview.clipId) {
+            setPlaybackPosition(composition, compTime);
             void safeCompositionUpdate(composition);
           }
         }
@@ -916,13 +1040,28 @@ export function usePlayheadPlayer(
     scrubPlaybackActiveRef.current = false;
     monitorScrubPageXRef.current = null;
     stopScrubSyncLoop();
+    const wasSolo = soloScrubClipIdRef.current !== null;
+    if (wasSolo) {
+      soloScrubClipIdRef.current = null;
+      soloScrubEnsureGenRef.current += 1;
+      structureKeyRef.current = null;
+    }
     const composition = compositionRef.current;
-    if (!composition) return;
+    if (!composition) {
+      if (wasSolo) setPlayheadSyncEpoch((n) => n + 1);
+      return;
+    }
     const finalTime = xToTime(currentXRef.current) - timeOriginRef.current;
     await new Promise<void>((resolve) => {
       enqueueCompositionTask(async () => {
+        // Pause scrub audio first. Rebuilding while composition.playing is still
+        // true used to resume the playhead mix after Control-up on a solo scrub.
         await pauseCompositionSilently(composition);
-        await runCompositionSeek(finalTime);
+        if (wasSolo) {
+          setPlayheadSyncEpoch((n) => n + 1);
+        } else {
+          await runCompositionSeek(finalTime);
+        }
         resolve();
       });
     });
@@ -937,6 +1076,7 @@ export function usePlayheadPlayer(
     endScrub,
     previewClipTiming,
     scrubMonitorToPageX,
+    scrubClipToPageX,
     loopToDuringPlayback,
     loader: loaderRef.current,
   };

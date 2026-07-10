@@ -179,7 +179,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     loopActivePlayhead(playhead);
   }, [stopSweep, loopActivePlayhead]);
 
-  const { mountRef, playerState, play, pause, endScrub, previewClipTiming, scrubMonitorToPageX, loopToDuringPlayback } =
+  const { mountRef, playerState, play, pause, endScrub, previewClipTiming, scrubMonitorToPageX, scrubClipToPageX, loopToDuringPlayback } =
     usePlayheadPlayer(
     doc,
     activePlayhead,
@@ -630,6 +630,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           onSelectedPostItChange={setSelectedPostItId}
           onClipPreview={previewClipTiming}
           onMonitorScrub={scrubMonitorToPageX}
+          onClipScrub={scrubClipToPageX}
           onFocusEditor={() => rootRef.current?.focus({ preventScroll: true })}
           onPlayheadScrub={onPlayheadScrub}
           onScrubbingChange={onScrubbingChange}
