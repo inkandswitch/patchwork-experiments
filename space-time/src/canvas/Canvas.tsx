@@ -921,6 +921,15 @@ export function Canvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // While dragging the active playhead, freeze the grid/ruler origin at its
+    // pre-move position so the "graph paper" doesn't scroll mid-drag; it snaps
+    // to the new origin once the move is committed.
+    const activeDrag = dragRef.current;
+    const timeOriginOverride =
+      activeDrag?.kind === 'playhead-move' && activeDrag.playheadId === deps.activePlayheadId
+        ? activeDrag.originalPlayheadX
+        : null;
+
     drawCanvas(
       ctx,
       theme,
@@ -937,13 +946,14 @@ export function Canvas({
       thumbnailStoreRef.current?.map,
       imageElementStoreRef.current?.imageMap,
       selectedInlineImageIdRef.current,
+      timeOriginOverride,
     );
 
     const ruler = rulerRef.current;
     if (ruler) {
       const rctx = ruler.getContext('2d');
       if (rctx) {
-        drawTimeRuler(rctx, theme, layoutRef.current, dpr);
+        drawTimeRuler(rctx, theme, layoutRef.current, dpr, timeOriginOverride);
       }
     }
 

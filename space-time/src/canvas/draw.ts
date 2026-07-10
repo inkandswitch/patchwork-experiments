@@ -168,8 +168,13 @@ function applyCameraTransform(
   ctx.setTransform(z, 0, 0, z, camera.x * z, camera.y * z);
 }
 
-/** Page-space x that reads as time 0:00 — the active playhead's start, if any. */
-function timeOriginX(layout: CanvasLayout): number {
+/**
+ * Page-space x that reads as time 0:00 — the active playhead's start, if any.
+ * `override` freezes the origin (e.g. while dragging the active playhead, so
+ * the grid/ruler don't scroll until the move is committed).
+ */
+function timeOriginX(layout: CanvasLayout, override?: number | null): number {
+  if (override != null) return override;
   const active = layout.playheads.find((ph) => ph.active);
   return active ? active.x : 0;
 }
@@ -183,14 +188,19 @@ function formatSignedRulerTime(seconds: number): string {
   return `${sign}${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, theme: CanvasTheme, layout: CanvasLayout): void {
+function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  layout: CanvasLayout,
+  timeOriginOverride?: number | null,
+): void {
   const { camera, width, height } = layout;
   const pageLeft = -camera.x;
   const pageTop = -camera.y;
   const pageRight = pageLeft + width / camera.z;
   const pageBottom = pageTop + height / camera.z;
 
-  const originX = timeOriginX(layout);
+  const originX = timeOriginX(layout, timeOriginOverride);
   const startSecond = Math.floor((pageLeft - originX) / PIXELS_PER_SECOND);
   const endSecond = Math.ceil((pageRight - originX) / PIXELS_PER_SECOND);
 
@@ -665,6 +675,7 @@ export function drawCanvas(
   thumbnails?: Map<string, SourceThumbnails>,
   imageElements?: Map<string, HTMLImageElement>,
   selectedInlineImageId: string | null = null,
+  timeOriginOverride: number | null = null,
 ): void {
   const { width, height, camera } = layout;
 
@@ -673,7 +684,7 @@ export function drawCanvas(
   ctx.fillRect(0, 0, width, height);
 
   applyCameraTransform(ctx, camera, dpr);
-  drawGrid(ctx, theme, layout);
+  drawGrid(ctx, theme, layout, timeOriginOverride);
 
   // Inline images are background decoration, drawn beneath everything else.
   for (const image of layout.inlineImages) {
@@ -755,6 +766,7 @@ export function drawTimeRuler(
   theme: CanvasTheme,
   layout: CanvasLayout,
   dpr = 1,
+  timeOriginOverride: number | null = null,
 ): void {
   const { camera, width } = layout;
   const rulerHeight = 24;
@@ -770,7 +782,7 @@ export function drawTimeRuler(
 
   const pageLeft = -camera.x;
   const pageRight = pageLeft + width / camera.z;
-  const originX = timeOriginX(layout);
+  const originX = timeOriginX(layout, timeOriginOverride);
   const startSecond = Math.floor((pageLeft - originX) / PIXELS_PER_SECOND);
   const endSecond = Math.ceil((pageRight - originX) / PIXELS_PER_SECOND);
 
