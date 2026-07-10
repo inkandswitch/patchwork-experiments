@@ -963,14 +963,17 @@ export function Canvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // While dragging the active playhead, freeze the grid/ruler origin at its
-    // pre-move position so the "graph paper" doesn't scroll mid-drag; it snaps
-    // to the new origin once the move is committed.
+    // While dragging the active playhead (move or duplicate), freeze the
+    // grid/ruler origin at its pre-drag position so the "graph paper" doesn't
+    // scroll mid-drag; it snaps once the action is committed.
     const activeDrag = dragRef.current;
     const timeOriginOverride =
       activeDrag?.kind === 'playhead-move' && activeDrag.playheadId === deps.activePlayheadId
         ? activeDrag.originalPlayheadX
-        : null;
+        : activeDrag?.kind === 'playhead-duplicate' &&
+            activeDrag.sourcePlayheadId === deps.activePlayheadId
+          ? activeDrag.originalPlayheadX
+          : null;
 
     drawCanvas(
       ctx,
