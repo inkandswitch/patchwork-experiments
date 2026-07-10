@@ -43,7 +43,7 @@ import {
 import { addPostIt, commitPostItPosition, commitPostItSize, deletePostIt, updatePostItText } from './post-its';
 import { addScribble, buildScribbleOutline, commitScribbleMove, deleteScribble, translateOutline } from './scribbles';
 import {
-  applyClipDragPreview,
+  applyClipDragPreviews,
   applyInlineImageMovePreview,
   applyInlineImageResizePreview,
   applyMarkerMovePreview,
@@ -73,6 +73,16 @@ import {
   selectionIsEmpty,
   type CanvasSelection,
 } from './selection-lasso';
+import {
+  clampLeftPartnerDelta,
+  clampRightPartnerDelta,
+  findLeftRollPartners,
+  findRightRollPartners,
+  leftPartnerPreview,
+  rightPartnerPreview,
+  type RollLeftPartner,
+  type RollRightPartner,
+} from './roll-edit';
 import {
   loadCamera,
   panCameraToKeepPageXVisible,
@@ -290,6 +300,7 @@ type DragState =
       originalX: number;
       originalDuration: number;
       maxDuration: number;
+      rollPartners: RollRightPartner[];
     }
   | {
       kind: 'trim-left';
@@ -299,6 +310,7 @@ type DragState =
       originalX: number;
       originalDuration: number;
       originalSourceInTime: number;
+      rollPartners: RollLeftPartner[];
     }
   | {
       kind: 'scribble-draw';
@@ -576,6 +588,7 @@ export function Canvas({
   const cameraRef = useRef<Camera>(loadCamera(docUrl));
   const dragRef = useRef<DragState | null>(null);
   const clipDragPreviewRef = useRef<ClipDragPreview | null>(null);
+  const rollPartnerPreviewsRef = useRef<ClipDragPreview[]>([]);
   const playheadMovePreviewRef = useRef<{
     clips: ClipDragPreview[];
     playhead: PlayheadMovePreview;
@@ -997,7 +1010,8 @@ export function Canvas({
     );
 
     if (clipDragPreviewRef.current) {
-      layoutRef.current = applyClipDragPreview(layout, clipDragPreviewRef.current);
+      const previews = [clipDragPreviewRef.current, ...rollPartnerPreviewsRef.current];
+      layoutRef.current = applyClipDragPreviews(layout, previews);
     } else if (selectionMovePreviewRef.current) {
       layoutRef.current = applySelectionMovePreview(layout, selectionMovePreviewRef.current);
     } else if (playheadDuplicatePreviewRef.current) {
@@ -2973,7 +2987,14 @@ export function Canvas({
           originalX: clip.x,
           originalDuration: playDuration,
           maxDuration,
+          rollPartners: findRightRollPartners(
+            doc,
+            timingRef.current,
+            target.clipId,
+            activePlayheadId,
+          ),
         };
+        rollPartnerPreviewsRef.current = [];
         clipDragPreviewRef.current = {
           clipId: target.clipId,
           x: clip.x,
@@ -2992,7 +3013,14 @@ export function Canvas({
           originalX: clip.x,
           originalDuration: playDuration,
           originalSourceInTime: clip.sourceInTime ?? 0,
+          rollPartners: findLeftRollPartners(
+            doc,
+            timingRef.current,
+            target.clipId,
+            activePlayheadId,
+          ),
         };
+        rollPartnerPreviewsRef.current = [];
         clipDragPreviewRef.current = {
           clipId: target.clipId,
           x: clip.x,
@@ -3328,6 +3356,7 @@ export function Canvas({
         drag.maxDuration,
         Math.max(minDur, (rightEdge - drag.originalX) / PIXELS_PER_SECOND),
       );
+      const deltaT = duration - drag.originalDuration;
       clipDragPreviewRef.current = {
         clipId: drag.clipId,
         x: drag.originalX,
@@ -3336,6 +3365,13 @@ export function Canvas({
         sourceInTime: clip.sourceInTime ?? 0,
         label: clipDisplayName(doc, clip),
       };
+      rollPartnerPreviewsRef.current = drag.rollPartners.map((partner) => {
+        const partnerClip = findClip(doc, partner.clipId);
+        const follow = partnerClip
+          ? clampRightPartnerDelta(partner, partnerClip, deltaT)
+          : 0;
+        return rightPartnerPreview(partner, follow);
+      });
       schedulePaint();
       scheduleClipPreview(clipDragPreviewRef.current, 'out');
     } else if (drag.kind === 'trim-left') {
@@ -3361,6 +3397,13 @@ export function Canvas({
         sourceInTime: drag.originalSourceInTime + clampedDelta,
         label: clipDisplayName(doc, clip),
       };
+      rollPartnerPreviewsRef.current = drag.rollPartners.map((partner) => {
+        const partnerClip = findClip(doc, partner.clipId);
+        const follow = partnerClip
+          ? clampLeftPartnerDelta(partner, partnerClip, clampedDelta)
+          : 0;
+        return leftPartnerPreview(partner, follow);
+      });
       schedulePaint();
       scheduleClipPreview(clipDragPreviewRef.current, 'in');
     }
@@ -3424,11 +3467,16 @@ export function Canvas({
       onSelectedClipChange(drag.clipId);
     } else if (drag.kind === 'resize' && preview) {
       clearClipPreview();
+      const partners = rollPartnerPreviewsRef.current;
       changeDoc((d) => {
         commitClipResize(d, drag.clipId, preview.duration);
+        for (const p of partners) {
+          commitClipTrimLeft(d, p.clipId, p.x, p.sourceInTime ?? 0, p.duration);
+        }
       });
     } else if (drag.kind === 'trim-left' && preview) {
       clearClipPreview();
+      const partners = rollPartnerPreviewsRef.current;
       changeDoc((d) => {
         commitClipTrimLeft(
           d,
@@ -3437,10 +3485,14 @@ export function Canvas({
           preview.sourceInTime ?? 0,
           preview.duration,
         );
+        for (const p of partners) {
+          commitClipResize(d, p.clipId, p.duration);
+        }
       });
     }
 
     clipDragPreviewRef.current = null;
+    rollPartnerPreviewsRef.current = [];
     dragRef.current = null;
     bump((n) => n + 1);
     if (drag.pointerId !== KEYBOARD_SPLIT_POINTER_ID) {
