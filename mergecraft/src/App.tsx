@@ -16,11 +16,15 @@ const keyboardMap = [
   { name: "jump", keys: ["Space"] },
 ];
 
-function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
-  const store = createXRStore();
+// Module-level singleton — the button (rendered by `App`, outside the
+// Canvas) and the `<XR>` session (rendered inside `Scene`) must share the
+// exact same store instance, or `store.enterVR()` targets a session no one
+// is listening to.
+const store = createXRStore();
 
+function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
   return (
-    <Canvas shadows camera={{ fov: 75 }}>
+    <Canvas id="mergecraft-canvas" shadows camera={{ fov: 75 }}>
       <XR store={store}>
         <Sky sunPosition={[100, 20, 100]} />
         <ambientLight intensity={1.5} />
@@ -30,15 +34,15 @@ function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
           <Player />
           <Cubes docUrl={docUrl} />
         </Physics>
-        <PointerLockControls />
+        {/* Restrict click-to-lock to the canvas itself, so clicking elsewhere on
+            the page (e.g. other Patchwork tools) doesn't steal mouse input. */}
+        <PointerLockControls selector="#mergecraft-canvas" />
       </XR>
     </Canvas>
   );
 }
 
 export default function App({ docUrl }: { docUrl: AutomergeUrl }) {
-  const store = createXRStore();
-
   return (
     <>
       {/* Fixed crosshair at screen centre — marks where the raycast targets. */}
@@ -63,17 +67,16 @@ export default function App({ docUrl }: { docUrl: AutomergeUrl }) {
           position: "absolute",
           zIndex: 10000,
           background: "black",
-          borderRadius: "0.5rem",
+          borderRadius: "0.375rem",
           border: "none",
           fontWeight: "bold",
           color: "white",
-          padding: "1rem 2rem",
+          padding: "0.375rem 0.75rem",
           cursor: "pointer",
-          fontSize: "1.5rem",
-          bottom: "1rem",
-          left: "50%",
+          fontSize: "0.8rem",
+          bottom: "0.5rem",
+          right: "0.5rem",
           boxShadow: "0px 0px 20px rgba(0,0,0,1)",
-          transform: "translate(-50%, 0)",
         }}
         onClick={() => store.enterVR()}
       >
