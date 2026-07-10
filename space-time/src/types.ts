@@ -7,6 +7,19 @@ export type SpaceTimeDoc = {
   scribbles?: Scribble[];
   postIts?: PostIt[];
   embeds?: Embed[];
+  /** Free-floating images placed on the canvas (moodboard decoration). */
+  images?: InlineImage[];
+};
+
+/** An image source shown inline on the canvas (not on the timeline). */
+export type InlineImage = {
+  id: string;
+  /** References an image entry in `sources`. */
+  sourceId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 /** An embedded Patchwork document rendered as a movable/resizable window. */

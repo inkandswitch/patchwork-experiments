@@ -52,6 +52,15 @@ export type PostItLayout = PostIt & {
   postItId: string;
 };
 
+export type InlineImageLayout = {
+  imageId: string;
+  sourceId: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type ScribbleLayout = Scribble & {
   scribbleId: string;
   bounds: { x: number; y: number; width: number; height: number };
@@ -67,6 +76,7 @@ export type CanvasLayout = {
   recordingPreview: RecordingPreviewLayout | null;
   postIts: PostItLayout[];
   scribbles: ScribbleLayout[];
+  inlineImages: InlineImageLayout[];
 };
 
 export type ClipDragPreview = {
@@ -86,6 +96,8 @@ export type HitTarget =
   | { kind: 'post-it'; postItId: string }
   | { kind: 'post-it-resize'; postItId: string }
   | { kind: 'scribble'; scribbleId: string }
+  | { kind: 'inline-image'; imageId: string }
+  | { kind: 'inline-image-resize'; imageId: string }
   | { kind: 'none' };
 
 export function computeClipLayout(
@@ -179,6 +191,14 @@ export function computeCanvasLayout(
       ...scribble,
       scribbleId: scribble.id,
       bounds: boundsForOutline(scribble.outline),
+    })),
+    inlineImages: (doc.images ?? []).map((image) => ({
+      imageId: image.id,
+      sourceId: image.sourceId,
+      x: image.x,
+      y: image.y,
+      width: image.width,
+      height: image.height,
     })),
   };
 }
@@ -318,6 +338,32 @@ export function applyPostItMovePreview(
   };
 }
 
+export function applyInlineImageMovePreview(
+  layout: CanvasLayout,
+  preview: { imageId: string; x: number; y: number },
+): CanvasLayout {
+  return {
+    ...layout,
+    inlineImages: layout.inlineImages.map((img) =>
+      img.imageId === preview.imageId ? { ...img, x: preview.x, y: preview.y } : img,
+    ),
+  };
+}
+
+export function applyInlineImageResizePreview(
+  layout: CanvasLayout,
+  preview: { imageId: string; width: number; height: number },
+): CanvasLayout {
+  return {
+    ...layout,
+    inlineImages: layout.inlineImages.map((img) =>
+      img.imageId === preview.imageId
+        ? { ...img, width: preview.width, height: preview.height }
+        : img,
+    ),
+  };
+}
+
 export function applyScribbleMovePreview(
   layout: CanvasLayout,
   preview: { scribbleId: string; outline: number[][] },
@@ -453,6 +499,30 @@ export function hitTestCanvas(
   for (const scribble of [...layout.scribbles].reverse()) {
     if (pointInPolygon(pageX, pageY, scribble.outline)) {
       return { kind: 'scribble', scribbleId: scribble.scribbleId };
+    }
+  }
+
+  // Inline images sit behind clips visually, but stay grabbable over a
+  // playhead band, so they're tested after clips/notes and before playheads.
+  for (const image of [...layout.inlineImages].reverse()) {
+    const resizeHandle = {
+      x: image.x + image.width - handleHit,
+      y: image.y + image.height - handleHit,
+      width: handleHit,
+      height: handleHit,
+    };
+    if (pointInRect(pageX, pageY, resizeHandle)) {
+      return { kind: 'inline-image-resize', imageId: image.imageId };
+    }
+    if (
+      pointInRect(pageX, pageY, {
+        x: image.x,
+        y: image.y,
+        width: image.width,
+        height: image.height,
+      })
+    ) {
+      return { kind: 'inline-image', imageId: image.imageId };
     }
   }
 

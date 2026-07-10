@@ -297,18 +297,31 @@ function drawClip(
   ctx.restore();
 }
 
+/**
+ * The extent band spanning the playhead's clips. Drawn beneath the clips (so
+ * the frames stay legible) and always visible: the active playhead's band is
+ * the darker accent colour, inactive playheads are lighter and recede.
+ */
+function drawPlayheadExtent(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  ph: CanvasLayout['playheads'][number],
+): void {
+  const width = ph.maxEndX - ph.x;
+  if (width <= 0) return;
+  ctx.save();
+  ctx.fillStyle = ph.active ? theme.playheadBandActive : theme.playheadBand;
+  ctx.globalAlpha = ph.active ? 0.08 : 0.035;
+  ctx.fillRect(ph.x, ph.y, width, ph.height);
+  ctx.restore();
+}
+
 function drawPlayhead(
   ctx: CanvasRenderingContext2D,
   theme: CanvasTheme,
   ph: CanvasLayout['playheads'][number],
 ): void {
   ctx.save();
-
-  if (ph.active || ph.currentX !== ph.x) {
-    ctx.fillStyle = ph.active ? theme.playheadBandActive : theme.playheadBand;
-    ctx.globalAlpha = 0.08;
-    ctx.fillRect(ph.x, ph.y, ph.maxEndX - ph.x, ph.height);
-  }
 
   ctx.fillStyle = ph.active ? theme.playheadBandActive : theme.playheadBand;
   ctx.globalAlpha = 0.15;
@@ -559,6 +572,65 @@ function drawPostIt(
   ctx.restore();
 }
 
+const INLINE_IMAGE_RADIUS = 6;
+const INLINE_IMAGE_RESIZE_HANDLE = 12;
+
+function drawInlineImage(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  image: CanvasLayout['inlineImages'][number],
+  imageEl: HTMLImageElement | undefined,
+  selected: boolean,
+): void {
+  const { x, y, width, height } = image;
+  ctx.save();
+
+  // Soft drop shadow so the picture reads as a physical print on the board.
+  ctx.save();
+  ctx.shadowColor = 'rgba(20, 20, 30, 0.32)';
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 4;
+  roundRect(ctx, x, y, width, height, INLINE_IMAGE_RADIUS);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundRect(ctx, x, y, width, height, INLINE_IMAGE_RADIUS);
+  ctx.clip();
+  if (imageEl && imageEl.naturalWidth > 0) {
+    drawImageCover(ctx, imageEl, imageEl.naturalWidth, imageEl.naturalHeight, x, y, width, height);
+  } else {
+    // Still decoding: a neutral placeholder keeps the box visible.
+    ctx.fillStyle = theme.clipFill;
+    ctx.fillRect(x, y, width, height);
+  }
+  ctx.restore();
+
+  roundRect(ctx, x, y, width, height, INLINE_IMAGE_RADIUS);
+  ctx.strokeStyle = selected ? theme.clipSelectedStroke : 'rgba(0, 0, 0, 0.18)';
+  ctx.lineWidth = selected ? 2 : 1;
+  ctx.stroke();
+
+  if (selected) {
+    const hx = x + width;
+    const hy = y + height;
+    const s = INLINE_IMAGE_RESIZE_HANDLE;
+    ctx.fillStyle = theme.clipSelectedStroke;
+    roundRect(ctx, hx - s, hy - s, s, s, 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(hx - s * 0.62, hy - 3);
+    ctx.lineTo(hx - 3, hy - 3);
+    ctx.lineTo(hx - 3, hy - s * 0.62);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawVerticalDragPreview(
   ctx: CanvasRenderingContext2D,
   theme: CanvasTheme,
@@ -591,6 +663,8 @@ export function drawCanvas(
   editingPostItId: string | null = null,
   scribblePreview?: number[][] | null,
   thumbnails?: Map<string, SourceThumbnails>,
+  imageElements?: Map<string, HTMLImageElement>,
+  selectedInlineImageId: string | null = null,
 ): void {
   const { width, height, camera } = layout;
 
@@ -600,6 +674,17 @@ export function drawCanvas(
 
   applyCameraTransform(ctx, camera, dpr);
   drawGrid(ctx, theme, layout);
+
+  // Inline images are background decoration, drawn beneath everything else.
+  for (const image of layout.inlineImages) {
+    drawInlineImage(
+      ctx,
+      theme,
+      image,
+      imageElements?.get(image.sourceId),
+      image.imageId === selectedInlineImageId,
+    );
+  }
 
   for (const scribble of layout.scribbles) {
     drawScribble(
@@ -612,6 +697,11 @@ export function drawCanvas(
 
   if (scribblePreview && scribblePreview.length >= 2) {
     drawScribble(ctx, theme, scribblePreview, false);
+  }
+
+  // Extent bands sit beneath the clips they contain.
+  for (const ph of layout.playheads) {
+    drawPlayheadExtent(ctx, theme, ph);
   }
 
   for (const clip of layout.clips) {

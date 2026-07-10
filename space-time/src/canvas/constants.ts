@@ -13,6 +13,11 @@ export const POST_IT_WIDTH = 160;
 export const POST_IT_HEIGHT = 120;
 export const MIN_POST_IT_WIDTH = 80;
 export const MIN_POST_IT_HEIGHT = 60;
+
+/** Default width (page px) for an image converted from a clip to inline. */
+export const DEFAULT_INLINE_IMAGE_WIDTH = 240;
+/** Smallest edge length (page px) an inline image can be resized to. */
+export const MIN_INLINE_IMAGE_SIZE = 40;
 export const POST_IT_FONT_SIZE = 20;
 export const POST_IT_PADDING = 12;
 export const POST_IT_LINE_HEIGHT = 24;

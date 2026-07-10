@@ -260,6 +260,26 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     });
   }, [doc.playheads, activePlayheadId, onActivePlayheadChange]);
 
+  // Deleting a clip can shrink a playhead's extent. If the playhead's position
+  // now falls outside that smaller extent, pull it back to the extent's right
+  // edge so it never sits beyond its own clips.
+  useEffect(() => {
+    setPlayheadCurrentX((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const ph of doc.playheads) {
+        const cur = next.get(ph.id);
+        if (cur === undefined) continue;
+        const maxEnd = maxEndXForPlayhead(doc, timingRef.current, ph);
+        if (cur > maxEnd) {
+          next.set(ph.id, maxEnd);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [doc.clips, doc.playheads, doc]);
+
   const togglePlayPause = useCallback(() => {
     let playhead = activePlayhead;
     let autoSelected = false;

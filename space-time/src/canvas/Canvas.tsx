@@ -14,14 +14,24 @@ import type { ClipTimingOverride } from '../diffusion/sync-composition';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createSourceLoader, clipsInPlayheadExtent } from '../diffusion/sync-composition';
 import { createThumbnailStore } from './clip-thumbnails';
+import { createImageElementStore } from './image-elements';
+import {
+  addInlineImage,
+  commitInlineImagePosition,
+  commitInlineImageSize,
+  deleteInlineImage,
+  findInlineImage,
+} from './inline-images';
 import { resolveClipPlayDuration, maxClipPlayDuration, xToTime } from '../clip-timing';
 import { findClip, findPostIt, findScribble, newId, clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
 import {
+  addClipToDoc,
   commitClipMove,
   commitClipMoves,
   commitClipDuplicate as writeClipDuplicate,
   commitClipResize,
   commitClipTrimLeft,
+  deleteClip,
   splitClipAtX,
 } from './clips';
 import {
@@ -34,6 +44,8 @@ import { addPostIt, commitPostItPosition, commitPostItSize, updatePostItText } f
 import { addScribble, buildScribbleOutline, commitScribbleMove, translateOutline } from './scribbles';
 import {
   applyClipDragPreview,
+  applyInlineImageMovePreview,
+  applyInlineImageResizePreview,
   applyPlayheadDuplicatePreview,
   applyPlayheadMovePreview,
   applyPostItMovePreview,
@@ -54,7 +66,9 @@ import {
   loadCamera,
   panCameraToKeepPageXVisible,
   CLIP_HEIGHT,
+  DEFAULT_INLINE_IMAGE_WIDTH,
   HANDLE_WIDTH,
+  MIN_INLINE_IMAGE_SIZE,
   MIN_CLIP_DURATION,
   MIN_PLAYHEAD_HEIGHT,
   MIN_POST_IT_HEIGHT,
@@ -315,6 +329,25 @@ type DragState =
       originalY: number;
     }
   | {
+      kind: 'inline-image-move';
+      pointerId: number;
+      imageId: string;
+      startPageX: number;
+      startPageY: number;
+      originalX: number;
+      originalY: number;
+    }
+  | {
+      kind: 'inline-image-resize';
+      pointerId: number;
+      imageId: string;
+      startPageX: number;
+      startPageY: number;
+      originalWidth: number;
+      originalHeight: number;
+      aspect: number;
+    }
+  | {
       kind: 'playhead-move';
       pointerId: number;
       playheadId: string;
@@ -487,6 +520,13 @@ export function Canvas({
   const postItResizePreviewRef = useRef<{ postItId: string; width: number; height: number } | null>(
     null,
   );
+  const inlineImageMovePreviewRef = useRef<{ imageId: string; x: number; y: number } | null>(null);
+  const inlineImageResizePreviewRef = useRef<{
+    imageId: string;
+    width: number;
+    height: number;
+  } | null>(null);
+  const selectedInlineImageIdRef = useRef<string | null>(null);
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
   const loaderRef = useRef(createSourceLoader());
   // Indirection so the thumbnail store (created below) can trigger repaints
@@ -495,6 +535,10 @@ export function Canvas({
   const thumbnailStoreRef = useRef<ReturnType<typeof createThumbnailStore> | null>(null);
   if (!thumbnailStoreRef.current) {
     thumbnailStoreRef.current = createThumbnailStore(() => schedulePaintRef.current());
+  }
+  const imageElementStoreRef = useRef<ReturnType<typeof createImageElementStore> | null>(null);
+  if (!imageElementStoreRef.current) {
+    imageElementStoreRef.current = createImageElementStore(() => schedulePaintRef.current());
   }
   const layoutRef = useRef<ReturnType<typeof computeCanvasLayout> | null>(null);
   const paintDepsRef = useRef({
@@ -517,6 +561,8 @@ export function Canvas({
   const [hoveredClipId, setHoveredClipId] = useState<string | null>(null);
   const [editingClipId, setEditingClipId] = useState<string | null>(null);
   const [editingPostItId, setEditingPostItId] = useState<string | null>(null);
+  const [selectedInlineImageId, setSelectedInlineImageId] = useState<string | null>(null);
+  selectedInlineImageIdRef.current = selectedInlineImageId;
   const [editingDraft, setEditingDraft] = useState('');
   const [postItEditingDraft, setPostItEditingDraft] = useState('');
   const [isFileDropTarget, setIsFileDropTarget] = useState(false);
@@ -555,6 +601,8 @@ export function Canvas({
   const commitClipDuplicateRef = useRef<() => void>(() => {});
   const cancelClipDuplicateRef = useRef<() => void>(() => {});
   const addPostItAtRef = useRef<(x: number, y: number) => void>(() => {});
+  const toggleFormatAtRef = useRef<(x: number, y: number) => void>(() => {});
+  const deleteSelectedInlineImageRef = useRef<() => boolean>(() => false);
   const commitScribbleDrawRef = useRef<(drag: Extract<DragState, { kind: 'scribble-draw' }>) => void>(
     () => {},
   );
@@ -620,6 +668,7 @@ export function Canvas({
   const clearAnnotationSelection = () => {
     onSelectedScribbleChange(null);
     onSelectedPostItChange(null);
+    setSelectedInlineImageId(null);
   };
 
   const resolveClipPlayDurationForUi = useCallback(
@@ -856,6 +905,18 @@ export function Canvas({
         postItResizePreviewRef.current,
       );
     }
+    if (inlineImageMovePreviewRef.current) {
+      layoutRef.current = applyInlineImageMovePreview(
+        layoutRef.current,
+        inlineImageMovePreviewRef.current,
+      );
+    }
+    if (inlineImageResizePreviewRef.current) {
+      layoutRef.current = applyInlineImageResizePreview(
+        layoutRef.current,
+        inlineImageResizePreviewRef.current,
+      );
+    }
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -874,6 +935,8 @@ export function Canvas({
       editingPostItIdRef.current,
       deps.scribblePreview,
       thumbnailStoreRef.current?.map,
+      imageElementStoreRef.current?.imageMap,
+      selectedInlineImageIdRef.current,
     );
 
     const ruler = rulerRef.current;
@@ -926,6 +989,66 @@ export function Canvas({
 
   addPostItAtRef.current = addPostItAt;
 
+  /**
+   * Toggle the item under the pointer between a timeline clip and an inline
+   * canvas image (moodboard decoration). Only image sources support this today.
+   */
+  const toggleFormatAt = (x: number, y: number) => {
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return;
+    layoutRef.current = layout;
+    const target = hitTestCanvas(layout, x, y);
+
+    if (
+      target.kind === 'clip-body' ||
+      target.kind === 'clip-left-handle' ||
+      target.kind === 'clip-right-handle'
+    ) {
+      const clip = findClip(doc, target.clipId);
+      if (!clip) return;
+      const source = doc.sources[clip.sourceId];
+      if (source?.type !== 'image') return; // other media toggles come later
+      const aspect = thumbnailStoreRef.current?.map.get(clip.sourceId)?.aspect ?? 1;
+      const width = DEFAULT_INLINE_IMAGE_WIDTH;
+      const height = width / (aspect > 0 ? aspect : 1);
+      let newImageId = '';
+      changeDoc((d) => {
+        newImageId = addInlineImage(d, clip.sourceId, clip.x, clip.y, width, height);
+        deleteClip(d, clip.id);
+      });
+      onSelectedClipChange(null);
+      clearAnnotationSelection();
+      if (newImageId) setSelectedInlineImageId(newImageId);
+      schedulePaint();
+      return;
+    }
+
+    if (target.kind === 'inline-image' || target.kind === 'inline-image-resize') {
+      const image = findInlineImage(doc, target.imageId);
+      if (!image) return;
+      changeDoc((d) => {
+        deleteInlineImage(d, target.imageId);
+      });
+      const newClipId = addClipToDoc(changeDoc, image.sourceId, image.x, image.y, DEFAULT_IMAGE_DURATION);
+      setSelectedInlineImageId(null);
+      if (newClipId) onSelectedClipChange(newClipId);
+      schedulePaint();
+    }
+  };
+  toggleFormatAtRef.current = toggleFormatAt;
+
+  const deleteSelectedInlineImage = () => {
+    const imageId = selectedInlineImageIdRef.current;
+    if (!imageId) return false;
+    changeDoc((d) => {
+      deleteInlineImage(d, imageId);
+    });
+    setSelectedInlineImageId(null);
+    schedulePaint();
+    return true;
+  };
+  deleteSelectedInlineImageRef.current = deleteSelectedInlineImage;
+
   useEffect(() => {
     syncGhostSmoothStates(ghostPlayheads, ghostSmoothRef.current);
     ghostAdvanceTimeRef.current = null;
@@ -950,7 +1073,7 @@ export function Canvas({
       scribblePreview: paintDepsRef.current.scribblePreview,
     };
     schedulePaint();
-  }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, selectedScribbleId, selectedPostItId, hoveredClipId, ghostPlayheads, recordingPreview, loopingPlayheadIds, followPlayback, editingClipId, editingPostItId]);
+  }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, selectedScribbleId, selectedPostItId, selectedInlineImageId, hoveredClipId, ghostPlayheads, recordingPreview, loopingPlayheadIds, followPlayback, editingClipId, editingPostItId]);
 
   useEffect(() => {
     if (!editingClipId) return;
@@ -977,9 +1100,16 @@ export function Canvas({
   // Decode/refresh filmstrip thumbnails whenever the clips or sources change.
   useEffect(() => {
     thumbnailStoreRef.current?.ensure(doc);
+    imageElementStoreRef.current?.ensure(doc);
   }, [doc]);
 
-  useEffect(() => () => thumbnailStoreRef.current?.dispose(), []);
+  useEffect(
+    () => () => {
+      thumbnailStoreRef.current?.dispose();
+      imageElementStoreRef.current?.dispose();
+    },
+    [],
+  );
 
   // Post-its render with a handwriting font on the canvas. Pull it in once and
   // repaint when it's ready, otherwise the first paint uses the fallback font.
@@ -1702,6 +1832,22 @@ export function Canvas({
         );
         beginDuplicateAtRef.current(x, y);
       }
+      if (event.key === 't' || event.key === 'T') {
+        if (event.repeat || isTextInput(event.target)) return;
+        if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
+        event.preventDefault();
+        const { x, y } = pagePointFromClient(
+          lastPointerClientRef.current.clientX,
+          lastPointerClientRef.current.clientY,
+        );
+        toggleFormatAtRef.current(x, y);
+      }
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        if (isTextInput(event.target)) return;
+        if (deleteSelectedInlineImageRef.current()) {
+          event.preventDefault();
+        }
+      }
     };
     const onKeyUp = (event: KeyboardEvent) => {
       keysHeldRef.current.delete(event.code);
@@ -2051,6 +2197,7 @@ export function Canvas({
       onSelectedPostItChange(target.postItId);
       onSelectedClipChange(null);
       onSelectedScribbleChange(null);
+      setSelectedInlineImageId(null);
       return;
     }
 
@@ -2062,6 +2209,7 @@ export function Canvas({
       onSelectedPostItChange(target.postItId);
       onSelectedClipChange(null);
       onSelectedScribbleChange(null);
+      setSelectedInlineImageId(null);
       dragRef.current = {
         kind: 'post-it-resize',
         postItId: target.postItId,
@@ -2085,6 +2233,51 @@ export function Canvas({
       onSelectedScribbleChange(target.scribbleId);
       onSelectedClipChange(null);
       onSelectedPostItChange(null);
+      setSelectedInlineImageId(null);
+      return;
+    }
+
+    if (target.kind === 'inline-image' || target.kind === 'inline-image-resize') {
+      const image = findInlineImage(doc, target.imageId);
+      if (!image) return;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setSelectedInlineImageId(target.imageId);
+      onSelectedClipChange(null);
+      onSelectedScribbleChange(null);
+      onSelectedPostItChange(null);
+      if (target.kind === 'inline-image-resize') {
+        dragRef.current = {
+          kind: 'inline-image-resize',
+          imageId: target.imageId,
+          pointerId: event.pointerId,
+          startPageX: x,
+          startPageY: y,
+          originalWidth: image.width,
+          originalHeight: image.height,
+          aspect: image.height > 0 ? image.width / image.height : 1,
+        };
+        inlineImageResizePreviewRef.current = {
+          imageId: target.imageId,
+          width: image.width,
+          height: image.height,
+        };
+      } else {
+        dragRef.current = {
+          kind: 'inline-image-move',
+          imageId: target.imageId,
+          pointerId: event.pointerId,
+          startPageX: x,
+          startPageY: y,
+          originalX: image.x,
+          originalY: image.y,
+        };
+        inlineImageMovePreviewRef.current = {
+          imageId: target.imageId,
+          x: image.x,
+          y: image.y,
+        };
+      }
+      schedulePaint();
       return;
     }
 
@@ -2154,6 +2347,7 @@ export function Canvas({
       onSelectedClipChange(target.clipId);
       onSelectedScribbleChange(null);
       onSelectedPostItChange(null);
+      setSelectedInlineImageId(null);
       return;
     }
 
@@ -2214,7 +2408,11 @@ export function Canvas({
       setHoveredClipId(target.kind === 'clip-body' ? target.clipId : null);
       if (canvasRef.current) {
         canvasRef.current.style.cursor =
-          target.kind === 'post-it-resize' ? 'nwse-resize' : '';
+          target.kind === 'post-it-resize' || target.kind === 'inline-image-resize'
+            ? 'nwse-resize'
+            : target.kind === 'inline-image'
+              ? 'move'
+              : '';
       }
       return;
     }
@@ -2342,6 +2540,31 @@ export function Canvas({
       return;
     }
 
+    if (drag.kind === 'inline-image-move') {
+      inlineImageMovePreviewRef.current = {
+        imageId: drag.imageId,
+        x: drag.originalX + (x - drag.startPageX),
+        y: drag.originalY + (y - drag.startPageY),
+      };
+      schedulePaint();
+      return;
+    }
+
+    if (drag.kind === 'inline-image-resize') {
+      // Locked aspect ratio: drive by whichever axis was dragged further.
+      const byWidth = drag.originalWidth + (x - drag.startPageX);
+      const byHeight = (drag.originalHeight + (y - drag.startPageY)) * drag.aspect;
+      let width = Math.max(MIN_INLINE_IMAGE_SIZE, Math.max(byWidth, byHeight));
+      let height = width / drag.aspect;
+      if (height < MIN_INLINE_IMAGE_SIZE) {
+        height = MIN_INLINE_IMAGE_SIZE;
+        width = height * drag.aspect;
+      }
+      inlineImageResizePreviewRef.current = { imageId: drag.imageId, width, height };
+      schedulePaint();
+      return;
+    }
+
     if (drag.kind === 'playhead-duplicate') {
       if (!dKeyHeldRef.current || !keysHeldRef.current.has('KeyD')) {
         commitPlayheadDuplicate();
@@ -2465,6 +2688,22 @@ export function Canvas({
         });
       }
       postItResizePreviewRef.current = null;
+    } else if (drag.kind === 'inline-image-move') {
+      const movePreview = inlineImageMovePreviewRef.current;
+      if (movePreview) {
+        changeDoc((d) => {
+          commitInlineImagePosition(d, movePreview.imageId, movePreview.x, movePreview.y);
+        });
+      }
+      inlineImageMovePreviewRef.current = null;
+    } else if (drag.kind === 'inline-image-resize') {
+      const resizePreview = inlineImageResizePreviewRef.current;
+      if (resizePreview) {
+        changeDoc((d) => {
+          commitInlineImageSize(d, resizePreview.imageId, resizePreview.width, resizePreview.height);
+        });
+      }
+      inlineImageResizePreviewRef.current = null;
     } else if (drag.kind === 'move' && preview) {
       clearClipPreview();
       changeDoc((d) => {
