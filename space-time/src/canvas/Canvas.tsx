@@ -790,6 +790,8 @@ export function Canvas({
     width: number;
     height: number;
   } | null>(null);
+  /** Once the editing note has appeared in `doc`, a later absence means delete. */
+  const editingPostItSeenInDocRef = useRef<string | null>(null);
   const rafRef = useRef<number | null>(null);
   const cameraAnimRafRef = useRef<number | null>(null);
   const ghostSmoothRef = useRef(new Map<string, GhostSmoothState>());
@@ -874,6 +876,14 @@ export function Canvas({
     setEditingClipId(null);
   };
 
+  const stopEditingPostIt = () => {
+    editingPostItIdRef.current = null;
+    editingPostItSeenInDocRef.current = null;
+    pendingPostItEditRef.current = null;
+    setEditingPostItId(null);
+    setPostItCaretClient(null);
+  };
+
   const startEditingPostIt = (
     postItId: string,
     caret?: { clientX: number; clientY: number } | null,
@@ -905,8 +915,10 @@ export function Canvas({
         width: postIt.width,
         height: postIt.height,
       };
+      editingPostItSeenInDocRef.current = postItId;
     } else if (geometry) {
       pendingPostItEditRef.current = { id: postItId, ...geometry };
+      editingPostItSeenInDocRef.current = null;
     }
     editingPostItIdRef.current = postItId;
     setEditingPostItId(postItId);
@@ -916,11 +928,8 @@ export function Canvas({
     // Use the ref so Escape→blur doesn't double-commit from a stale closure.
     const postItId = editingPostItIdRef.current;
     if (!postItId) return;
-    editingPostItIdRef.current = null;
     const text = postItEditingDraft;
-    setEditingPostItId(null);
-    setPostItCaretClient(null);
-    pendingPostItEditRef.current = null;
+    stopEditingPostIt();
     changeDoc((d) => {
       updatePostItText(d, postItId, text);
     });
@@ -1440,10 +1449,18 @@ export function Canvas({
 
   useEffect(() => {
     if (!editingPostItId) return;
-    if (!findPostIt(doc, editingPostItId) && pendingPostItEditRef.current?.id !== editingPostItId) {
-      setEditingPostItId(null);
-      setPostItCaretClient(null);
-      pendingPostItEditRef.current = null;
+    if (findPostIt(doc, editingPostItId)) {
+      editingPostItSeenInDocRef.current = editingPostItId;
+      return;
+    }
+    // Missing from the doc: keep the editor only for the brief create race
+    // (pending geometry, never yet observed in doc). Otherwise it was deleted
+    // and the pending fallback would leave a ghost textarea on screen.
+    if (
+      editingPostItSeenInDocRef.current === editingPostItId ||
+      pendingPostItEditRef.current?.id !== editingPostItId
+    ) {
+      stopEditingPostIt();
     }
   }, [doc, editingPostItId]);
 
@@ -1945,6 +1962,9 @@ export function Canvas({
       onActivePlayheadChange(null);
     }
     if (sel.clipIds.includes(selectedClipId ?? '')) onSelectedClipChange(null);
+    if (editingPostItIdRef.current && sel.postItIds.includes(editingPostItIdRef.current)) {
+      stopEditingPostIt();
+    }
     clearAnnotationSelection();
     clearCanvasSelection();
     schedulePaint();
@@ -3725,9 +3745,15 @@ export function Canvas({
       })()
     : null;
 
+  const editingPostItFromDoc = editingPostItId ? findPostIt(doc, editingPostItId) : null;
+  // Pending geometry is only for the create race (note not in doc yet). Never use
+  // it after the note has been observed in doc — that path was leaving a ghost
+  // editor after delete.
   const editingPostIt =
-    (editingPostItId ? findPostIt(doc, editingPostItId) : null) ??
-    (editingPostItId && pendingPostItEditRef.current?.id === editingPostItId
+    editingPostItFromDoc ??
+    (editingPostItId &&
+    pendingPostItEditRef.current?.id === editingPostItId &&
+    editingPostItSeenInDocRef.current !== editingPostItId
       ? pendingPostItEditRef.current
       : null);
 
