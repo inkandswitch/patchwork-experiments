@@ -3,8 +3,7 @@ import { For, createSignal, onCleanup, onMount } from "solid-js";
 import { useRepo } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import { registerContextElement } from "@embark/context";
-import { rewriteClonedReferences } from "../deep-clone";
-import { FRAMELESS_TOOLS } from "../tool-traits";
+import { FRAMELESS_TOOLS, rewriteClonedReferences } from "@embark/dnd";
 import type { BinEntry } from "./catalog";
 import "./parts-bin.css";
 

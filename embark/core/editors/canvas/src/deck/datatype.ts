@@ -1,5 +1,5 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import type { DeckDoc } from "./types";
+import type { DeckDoc } from "@embark/dnd";
 
 export const DeckDatatype: DatatypeImplementation<DeckDoc> = {
   init(doc) {

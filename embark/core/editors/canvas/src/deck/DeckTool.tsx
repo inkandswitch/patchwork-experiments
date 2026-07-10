@@ -9,10 +9,12 @@ import {
   getDocumentDragPayload,
   getDragSource,
   hasDocumentDrag,
+  type DeckCard,
+  type DeckDoc,
   type DocumentDragItem,
-} from "../dnd";
+} from "@embark/dnd";
 import { markEmbedClaimed } from "../drop-claim";
-import type { DeckCard, DeckDoc } from "./types";
+import { pressLandsOnInteractiveOrText } from "../surface-press";
 import "./deck.css";
 
 // Card geometry. Mirrored in deck.css (`.embark-deck__card` / `__cover`); keep
@@ -294,9 +296,13 @@ type NamedDoc = {
   title?: string;
 };
 
-// A single card in the pile: a non-interactive live thumbnail that is the drag
-// source. Dragging it onto the canvas (or another drop target) deals it out —
-// `dragend` removes it from the deck once the drop is accepted.
+// A single card in the pile: a live, hit-testable view that is also the drag
+// source. Dragging its dead space onto the canvas (or another drop target)
+// deals it out — `dragend` removes it from the deck once the drop is accepted.
+// A press on the content's interactive elements or selectable text passes
+// through instead (the same surface-press heuristic frameless embeds use), so
+// buttons click, inputs focus, and text selects — and hit-test-based readers
+// (the inspector's picker, the Pointer card) resolve the card's own view.
 //
 // The slot renders no chrome of its own (no border/background/shadow — the
 // content brings whatever surface it has). Like a parts-bin preview, the
@@ -388,13 +394,30 @@ function DeckCardView(props: {
     }
   };
 
+  // Gate the deal-drag per press. The browser samples `draggable` at
+  // drag-initiation time, so flipping it here is reliable. No preventDefault
+  // in either branch: upstream it would kill the native HTML5 drag the deal
+  // depends on (see the parts bin), and `draggable=false` on a text press is
+  // what re-enables native selection there.
+  const onSlotPointerDown = (event: PointerEvent) => {
+    const slot = event.currentTarget as HTMLElement;
+    if (pressLandsOnInteractiveOrText(event)) {
+      // The press belongs to the live content: focus, click, select.
+      slot.draggable = false;
+      return;
+    }
+    slot.draggable = true;
+    // Keep the enclosing embed's surface-move out of the gesture, as before.
+    event.stopPropagation();
+  };
+
   return (
     <div
       class="embark-deck__card"
       draggable={true}
       style={{ transform: props.transform, "z-index": props.z }}
       title="Drag onto the canvas to deal this card out"
-      on:pointerdown={(event) => event.stopPropagation()}
+      on:pointerdown={onSlotPointerDown}
       on:click={(event) => event.stopPropagation()}
       on:dragstart={onDragStart}
       on:dragend={onDragEnd}

@@ -1,7 +1,9 @@
-// Per-tool rendering traits, shared by the canvas frame and the parts-bin
-// previews so both agree on how a given tool wants to be presented. Keyed by
-// tool id; a consumer with no explicit tool id falls back to the document's
-// datatype, which for these tools matches the tool id.
+// Per-tool rendering traits, shared by the canvas frame, the parts-bin
+// previews, and the card-stack rows so all agree on how a given tool wants to
+// be presented. Keyed by tool id; a consumer with no explicit tool id falls
+// back to the document's datatype, which for these tools matches the tool id.
+// Not strictly dnd, but it lives in this package because it's a handful of
+// dep-free lines every drag surface must agree on.
 
 // Tools that bring their own chrome: on the canvas they render without the drag
 // border / clipping and are dragged by grabbing their surface (a per-embed

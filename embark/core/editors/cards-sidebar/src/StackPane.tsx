@@ -10,11 +10,12 @@ import { createStore, reconcile } from "solid-js/store";
 import { useDocument } from "solid-automerge";
 import "@inkandswitch/patchwork-elements";
 import {
+  AUTOSIZE_TOOLS,
+  FRAMELESS_TOOLS,
   getDocumentDragPayload,
   hasDocumentDrag,
   type DocumentDragItem,
-} from "../dnd";
-import { AUTOSIZE_TOOLS, FRAMELESS_TOOLS } from "../tool-traits";
+} from "@embark/dnd";
 import type { CardStackDoc } from "./types";
 import "./cards-sidebar.css";
 

@@ -13,6 +13,7 @@
 // running canvas.
 
 import { plugins as canvas } from "./editors/canvas/dist/index.js";
+import { plugins as cardsSidebar } from "./editors/cards-sidebar/dist/index.js";
 import { plugins as card } from "./editors/card/dist/index.js";
 import { plugins as contextViewer } from "./editors/context-viewer/dist/index.js";
 import { plugins as inspect } from "./editors/inspect/dist/plugins.js";
@@ -25,6 +26,7 @@ import { plugins as mapHost } from "./context/map-extensions-host/dist/plugins.j
 
 export const plugins = [
   ...canvas,
+  ...cardsSidebar,
   ...card,
   ...contextViewer,
   ...inspect,

@@ -12,7 +12,13 @@ import {
   isValidAutomergeUrl,
   parseAutomergeUrl,
 } from "@automerge/automerge-repo";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  createMemo,
+  createRenderEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import html from "solid-js/html";
 import { Highlight } from "./channels.js";
 
@@ -42,7 +48,9 @@ const MAX_LABEL = 40;
  */
 export function EmbedToken(props) {
   injectStyles();
-  const { docUrl, docId } = splitDocUrl(props.url);
+  // Reactive to props.url: a consumer may retarget a mounted token (e.g. the
+  // inspector's toolbar token following the armed hover preview).
+  const ids = createMemo(() => splitDocUrl(props.url));
   const host = document.createElement("span");
 
   onMount(() => {
@@ -53,7 +61,9 @@ export function EmbedToken(props) {
     }
     const face = document.createElement("patchwork-view");
     face.setAttribute("tool-id", "token-view");
-    face.setAttribute("doc-url", props.url);
+    // patchwork-view observes doc-url and re-mounts its face on change, so
+    // the token swaps in place as the url moves between documents.
+    createRenderEffect(() => face.setAttribute("doc-url", props.url));
     host.appendChild(face);
     onCleanup(() => face.remove());
   });
@@ -63,10 +73,10 @@ export function EmbedToken(props) {
     classList=${() => ({
       "embark-embed-token--highlighted": props.highlight
         .highlightedDocIds()
-        .has(docId),
+        .has(ids().docId),
     })}
-    title=${props.url}
-    on:mouseenter=${() => props.highlight.hover([docUrl])}
+    title=${() => props.url}
+    on:mouseenter=${() => props.highlight.hover([ids().docUrl])}
     on:mouseleave=${() => props.highlight.clear()}
     >${host}</span
   >`;

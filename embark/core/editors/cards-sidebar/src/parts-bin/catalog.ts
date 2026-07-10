@@ -1,6 +1,6 @@
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import type { CardDoc } from "@embark/card";
-import type { DeckCard, DeckDoc } from "../deck/types";
+import type { DeckCard, DeckDoc } from "@embark/dnd";
 
 // The parts bin is code-defined: this module *is* the bin. Each entry is
 // display data plus a factory that mints the document backing its preview, so

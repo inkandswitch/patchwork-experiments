@@ -4,6 +4,10 @@ import type { AutomergeUrl } from "@automerge/automerge-repo";
 // the parts bin (which hands out *clones* and keeps its examples pristine), a
 // deck holds cards *by reference* and moves them: dragging a card in removes it
 // from the canvas, dragging one out deals it back onto the canvas.
+//
+// The schema lives in this shared package because a DeckCard is a persisted
+// DocumentDragItem (url/toolId/width/height plus an id) and both the deck tool
+// (canvas package) and the cards sidebar read it.
 export type DeckDoc = {
   "@patchwork": { type: "deck" };
   // Shown on the covering card; editable by double-clicking it.

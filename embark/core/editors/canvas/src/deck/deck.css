@@ -90,17 +90,17 @@
   transform-origin: center;
 }
 
-/* The thumbnail is a live but non-interactive window onto the card's document;
-   clicks/drags fall through to the grabbable wrapper. It sizes to the
-   document's own footprint, with floors so embeds that report no intrinsic
-   size still show up. */
+/* The thumbnail is a live, hit-testable window onto the card's document —
+   presses on its interactive elements and text reach the content, while dead
+   space starts the deal-drag (gated per press in DeckCardView). It sizes to
+   the document's own footprint, with floors so embeds that report no
+   intrinsic size still show up. */
 .embark-deck__card-natural patchwork-view {
   display: block;
   width: auto;
   height: auto;
   min-width: 140px;
   min-height: 140px;
-  pointer-events: none;
 }
 
 /* The covering card: the deck's face, carrying the title. Same footprint as a

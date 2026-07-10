@@ -9,6 +9,7 @@
 packages:
   - "core/editors/*"
   - "core/context/*"
+  - "core/dnd"
 
 onlyBuiltDependencies:
   - cbor-extract

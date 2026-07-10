@@ -314,19 +314,19 @@ function InspectBody(props: {
         </Show>
       </div>
 
-      <Show when={availableTabs().length > 1}>
-        <div class="embark-inspect__tabs">
-          <For each={availableTabs()}>
-            {(name) => (
-              <TabButton
-                label={TAB_LABELS[name]}
-                active={tab() === name}
-                onSelect={() => select(name)}
-              />
-            )}
-          </For>
-        </div>
-      </Show>
+      {/* Always shown, even when it's just the lone Context tab with no
+          target — so the no-target state reads like the targeted one. */}
+      <div class="embark-inspect__tabs">
+        <For each={availableTabs()}>
+          {(name) => (
+            <TabButton
+              label={TAB_LABELS[name]}
+              active={tab() === name}
+              onSelect={() => select(name)}
+            />
+          )}
+        </For>
+      </div>
 
       <div class="embark-inspect__body">
         <Switch>

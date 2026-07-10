@@ -18,26 +18,28 @@ import { useDocHandle, useDocument, useRepo } from "solid-automerge";
 import { findContextStore } from "@embark/context";
 import { Highlight } from "@embark/selection/channels";
 import type { InspectDoc } from "@embark/inspect";
-import type { DocumentDragItem } from "../dnd";
-import type { DeckDoc } from "../deck/types";
-import { DEFAULT_BIN } from "../parts-bin/catalog";
-import { BinColumn } from "./BinColumn";
+import type { DeckDoc, DocumentDragItem } from "@embark/dnd";
+import { DEFAULT_BIN } from "./parts-bin/catalog";
+import { PartsBinList } from "./parts-bin/PartsBinList";
+import { FlapGroup, FlapPane } from "./FlapGroup";
+import { TabButton } from "./TabButton";
 import { StackPane, appendEntries } from "./StackPane";
 import type { CardStackDoc, WithCardStack } from "./types";
 import "./cards-sidebar.css";
 
-// The Cards sidebar, laid out per the sketch: the active tab's pane on the
-// left, a vertical tab rail (Current Doc / Global / Inspector) beside it, and
-// the parts bin as a fixed column on the outer right edge that collapses
-// behind a chevron on the divider.
+// The Cards sidebar: a vertical tab rail (Current Doc / Global) on the left
+// edge, the active tab's pane beside it as a sheet of paper, and a second
+// tabbed sheet on the right edge — the flap group holding the parts bin and
+// the Inspector (see FlapGroup). The group expands and folds as one unit,
+// squeezing the stack pane when open; its tabs pick which content shows.
 //
 // Both stacks stay mounted whichever tab is showing (the inactive pane is
 // hidden, not unmounted), and the whole sidebar keeps running while parked on
 // document.body (see host.tsx) — so cards keep doing their page-wide work
-// with the sidebar closed. The Inspector pane is the exception: nothing in it
-// does page-wide work, so it mounts only while its tab shows (keeping the
-// context viewer from registering as a phantom reader on every channel while
-// invisible). The pane and bin internals are shared with the full-frame
+// with the sidebar closed. The Inspector is the exception: nothing in it
+// does page-wide work, so it mounts only while its tab is showing (keeping
+// the context viewer from registering as a phantom reader on every channel
+// while invisible). The pane and bin internals are shared with the full-frame
 // card-stack tool (see CardStackTool), which renders one stack with no tabs.
 export function CardsSidebar(props: {
   globalStack: DocHandle<CardStackDoc>;
@@ -140,18 +142,35 @@ export function CardsSidebar(props: {
     appendEntries(stack, items);
   };
 
-  // The Inspector pane's backing doc: a per-browser singleton inspect doc
-  // (same localStorage pattern as the global stack — see host.tsx), resolved
-  // lazily on the tab's first open. It persists the picked target across
-  // opens; with no target the inspect tool shows the whole shared context.
+  // The flap group's chrome state, persisted like the stack tab: which of its
+  // tabs is selected, and whether the group is expanded. Clicking the active
+  // tab folds the group; clicking any tab while folded opens it and selects.
+  const [flapTab, setFlapTab] = createSignal<FlapTabId>(readStoredFlapTab());
+  const [flapOpen, setFlapOpen] = createSignal(readStoredFlapOpen());
+  createEffect(() => writeStoredFlapTab(flapTab()));
+  createEffect(() => writeStoredFlapOpen(flapOpen()));
+  const clickFlapTab = (id: FlapTabId) => {
+    if (flapOpen() && flapTab() === id) {
+      setFlapOpen(false);
+    } else {
+      setFlapTab(id);
+      setFlapOpen(true);
+    }
+  };
+  const inspectorVisible = () => flapOpen() && flapTab() === "inspector";
+
+  // The Inspector's backing doc: a per-browser singleton inspect doc (same
+  // localStorage pattern as the global stack — see host.tsx), resolved lazily
+  // when its tab first shows. It persists the picked target across opens;
+  // with no target the inspect tool shows the whole shared context.
   const [inspectorDocUrl, setInspectorDocUrl] = createSignal<AutomergeUrl>();
   createEffect(() => {
-    if (tab() !== "inspector" || inspectorDocUrl() !== undefined) return;
+    if (!inspectorVisible() || inspectorDocUrl() !== undefined) return;
     void resolveInspectorDoc(repo).then(setInspectorDocUrl);
   });
 
   return (
-    <div class="embark-cards" ref={rootEl}>
+    <div class="embark-cards embark-cards--sidebar" ref={rootEl}>
       <div class="embark-cards__rail">
         <TabButton
           label="Current Doc"
@@ -163,12 +182,6 @@ export function CardsSidebar(props: {
           active={tab() === "global"}
           highlighted={globalHighlighted() && tab() !== "global"}
           onSelect={() => setTab("global")}
-        />
-        <div class="embark-cards__rail-separator" />
-        <TabButton
-          label="Inspector"
-          active={tab() === "inspector"}
-          onSelect={() => setTab("inspector")}
         />
       </div>
 
@@ -190,8 +203,23 @@ export function CardsSidebar(props: {
           droppable={props.selectedDoc() !== undefined}
           onDropItems={dropOnCurrent}
         />
-        <Show when={tab() === "inspector"}>
-          <div class="embark-cards__pane embark-cards__pane--active embark-cards__inspector">
+      </div>
+
+      <FlapGroup
+        tabs={FLAP_TABS}
+        selected={flapTab()}
+        open={flapOpen()}
+        onTabClick={clickFlapTab}
+      >
+        <FlapPane active={flapTab() === "bin"}>
+          <div class="embark-cards__flap-title">Parts bin</div>
+          <PartsBinList entries={DEFAULT_BIN} />
+        </FlapPane>
+        <FlapPane active={flapTab() === "inspector"}>
+          {/* Nothing in the Inspector does page-wide work, so it mounts only
+              while visible — keeping the context viewer from registering as a
+              phantom reader on every channel while hidden. */}
+          <Show when={inspectorVisible()}>
             <Show when={inspectorDocUrl()}>
               {(url) => (
                 <patchwork-view
@@ -201,11 +229,9 @@ export function CardsSidebar(props: {
                 />
               )}
             </Show>
-          </div>
-        </Show>
-      </div>
-
-      <BinColumn entries={DEFAULT_BIN} />
+          </Show>
+        </FlapPane>
+      </FlapGroup>
     </div>
   );
 }
@@ -300,44 +326,20 @@ function createDeckCardDocIds(
 }
 
 // ---------------------------------------------------------------------------
-// Tabs
-// ---------------------------------------------------------------------------
-
-type TabId = "global" | "current" | "inspector";
-
-function TabButton(props: {
-  label: string;
-  active: boolean;
-  // Draw attention to an unselected tab (e.g. a highlighted card lives inside).
-  highlighted?: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      class="embark-cards__tab"
-      classList={{
-        "embark-cards__tab--active": props.active,
-        "embark-cards__tab--highlighted": props.highlighted === true,
-      }}
-      aria-selected={props.active}
-      on:click={() => props.onSelect()}
-    >
-      <span class="embark-cards__tab-label">{props.label}</span>
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Persisted chrome state
 // ---------------------------------------------------------------------------
 
+type TabId = "global" | "current";
+
 const TAB_STORAGE_KEY = "embark:cards:tab";
 
+// A previously stored "inspector" (from when the Inspector was a tab) falls
+// back to "current".
 function readStoredTab(): TabId {
   try {
-    const stored = localStorage.getItem(TAB_STORAGE_KEY);
-    return stored === "global" || stored === "inspector" ? stored : "current";
+    return localStorage.getItem(TAB_STORAGE_KEY) === "global"
+      ? "global"
+      : "current";
   } catch {
     return "current";
   }
@@ -346,6 +348,51 @@ function readStoredTab(): TabId {
 function writeStoredTab(tab: TabId): void {
   try {
     localStorage.setItem(TAB_STORAGE_KEY, tab);
+  } catch {
+    // Ignore: storage can be unavailable (private mode / disabled).
+  }
+}
+
+// The flap group's tabs on the sidebar's right edge.
+type FlapTabId = "bin" | "inspector";
+
+const FLAP_TABS: readonly { id: FlapTabId; label: string }[] = [
+  { id: "bin", label: "Parts bin" },
+  { id: "inspector", label: "Inspector" },
+];
+
+const FLAP_TAB_STORAGE_KEY = "embark:cards:flap-tab";
+const FLAP_OPEN_STORAGE_KEY = "embark:cards:flap-open";
+
+function readStoredFlapTab(): FlapTabId {
+  try {
+    return localStorage.getItem(FLAP_TAB_STORAGE_KEY) === "inspector"
+      ? "inspector"
+      : "bin";
+  } catch {
+    return "bin";
+  }
+}
+
+function writeStoredFlapTab(tab: FlapTabId): void {
+  try {
+    localStorage.setItem(FLAP_TAB_STORAGE_KEY, tab);
+  } catch {
+    // Ignore: storage can be unavailable (private mode / disabled).
+  }
+}
+
+function readStoredFlapOpen(): boolean {
+  try {
+    return localStorage.getItem(FLAP_OPEN_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredFlapOpen(open: boolean): void {
+  try {
+    localStorage.setItem(FLAP_OPEN_STORAGE_KEY, String(open));
   } catch {
     // Ignore: storage can be unavailable (private mode / disabled).
   }
