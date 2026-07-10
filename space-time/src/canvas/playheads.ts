@@ -1,20 +1,11 @@
 import type { SpaceTimeDoc, Playhead } from '../types';
 import { findClip, findPlayhead, newClip, newPlayhead } from '../helpers';
-import { CLIP_HEIGHT, MIN_PLAYHEAD_HEIGHT, rangesOverlap } from './constants';
+import { MIN_PLAYHEAD_HEIGHT } from './constants';
+import { clipsInPlayheadExtent } from './playhead-extent';
 
-export function verticalBandTouchesAnyClip(
-  doc: SpaceTimeDoc,
-  y: number,
-  height: number,
-): boolean {
-  for (const clip of doc.clips) {
-    if (rangesOverlap(clip.y, clip.y + CLIP_HEIGHT, y, y + height)) return true;
-  }
-  return false;
-}
-
+/** True when the playhead's connected extent contains at least one clip. */
 export function playheadHasClipsInExtent(doc: SpaceTimeDoc, playhead: Playhead): boolean {
-  return verticalBandTouchesAnyClip(doc, playhead.y, playhead.height);
+  return clipsInPlayheadExtent(doc, playhead, new Map()).length > 0;
 }
 
 export function removePlayheadsWithoutClips(doc: SpaceTimeDoc): void {
@@ -34,9 +25,11 @@ export function createPlayhead(
   const y = Math.min(y0, y1);
   const height = Math.abs(y1 - y0);
   if (height < MIN_PLAYHEAD_HEIGHT) return null;
-  if (!verticalBandTouchesAnyClip(doc, y, height)) return null;
 
   const playhead = newPlayhead(x, y, height);
+  // Reject playheads whose extent would be empty (no connected clips).
+  if (!playheadHasClipsInExtent(doc, playhead)) return null;
+
   doc.playheads.push(playhead);
   return playhead.id;
 }
@@ -87,6 +80,7 @@ export function commitPlayheadDuplicate(
     const clip = newClip(source.sourceId, clipX, clipY, source.sourceInTime, source.duration);
     clip.id = clipId;
     if (source.name) clip.name = source.name;
+    if (source.markers && source.markers.length > 0) clip.markers = [...source.markers];
     doc.clips.push(clip);
   }
 }

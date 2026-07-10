@@ -70,6 +70,11 @@ export type Clip = {
   y: number;
   sourceInTime: number | null;
   duration: number | null;
+  /**
+   * Marker times in seconds into the source (FCP-style). Always kept within the
+   * clip's visible [sourceIn, sourceIn+duration] window — trimming cannot hide them.
+   */
+  markers?: number[];
 };
 
 export type Playhead = {

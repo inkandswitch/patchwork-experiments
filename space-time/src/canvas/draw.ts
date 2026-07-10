@@ -241,6 +241,20 @@ function drawClip(
   const fill = selected ? theme.clipSelectedFill : hovered ? theme.clipFillHover : theme.clipFill;
   const stroke = selected ? theme.clipSelectedStroke : theme.clipStroke;
 
+  if (selected) {
+    // Soft outer glow so selection reads clearly over filmstrips/waveforms.
+    ctx.save();
+    roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
+    ctx.shadowColor = theme.clipSelectedStroke;
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.fillStyle = theme.clipSelectedStroke;
+    ctx.globalAlpha = 0.55;
+    ctx.fill();
+    ctx.restore();
+  }
+
   roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
   ctx.fillStyle = fill;
   ctx.fill();
@@ -264,7 +278,7 @@ function drawClip(
   }
 
   ctx.strokeStyle = stroke;
-  ctx.lineWidth = 1;
+  ctx.lineWidth = selected ? 2 : 1;
   roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
   ctx.stroke();
 
@@ -303,6 +317,50 @@ function drawClip(
       ctx.fillStyle = theme.text;
       ctx.fillText(label, labelX, labelY);
     }
+  }
+  ctx.restore();
+
+  // FCP-style blue chevrons sit on top of the clip (after the label clip so they
+  // aren't masked), pointing down from the top edge.
+  if (clip.markerXs.length > 0) {
+    drawClipMarkers(ctx, theme, clip);
+  }
+}
+
+/** Small downward-pointing triangle, à la Final Cut Pro clip markers. */
+function drawClipMarkers(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  clip: CanvasLayout['clips'][number],
+): void {
+  const halfW = 5;
+  const height = 8;
+  ctx.save();
+  for (const mx of clip.markerXs) {
+    const x = Math.max(clip.x + 1, Math.min(clip.x + clip.width - 1, mx));
+    // Dark silhouette underneath for contrast on busy filmstrips/waveforms.
+    ctx.beginPath();
+    ctx.moveTo(x - halfW - 0.5, clip.y);
+    ctx.lineTo(x + halfW + 0.5, clip.y);
+    ctx.lineTo(x, clip.y + height + 1.5);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+    ctx.fill();
+
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.beginPath();
+    ctx.moveTo(x - halfW, clip.y);
+    ctx.lineTo(x + halfW, clip.y);
+    ctx.lineTo(x, clip.y + height);
+    ctx.closePath();
+    ctx.fillStyle = theme.marker;
+    ctx.fill();
   }
   ctx.restore();
 }

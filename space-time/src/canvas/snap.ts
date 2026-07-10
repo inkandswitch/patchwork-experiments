@@ -1,8 +1,9 @@
 import type { Clip, Playhead, SpaceTimeDoc } from '../types';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import { clipsInPlayheadExtent } from '../diffusion/sync-composition';
-import { clipWidth, resolveClipPlayDuration } from '../clip-timing';
+import { clipWidth, resolveClipPlayDuration, sourceSkip } from '../clip-timing';
 import { PIXELS_PER_SECOND, type Camera, SNAP_THRESHOLD_SCREEN_PX } from './constants';
+import { clipMarkers, visibleMarkerOffsetsFromLeft, visibleMarkerPageXs } from './clip-markers';
 
 export function snapThresholdPage(camera: Camera): number {
   return SNAP_THRESHOLD_SCREEN_PX / camera.z;
@@ -25,29 +26,29 @@ export function snapPageXToTargets(
   return bestX;
 }
 
-/** Nudge clip left edge so a start/end edge snaps to a target x without changing duration. */
+/**
+ * Nudge clip left edge so a start/end edge — or any extra offset from the left
+ * (e.g. markers) — snaps to a target x without changing duration.
+ */
 export function snapClipMoveX(
   x: number,
   durationSeconds: number,
   targets: readonly number[],
   threshold: number,
+  extraOffsetsFromLeft: readonly number[] = [],
 ): number {
   const width = durationSeconds * PIXELS_PER_SECOND;
-  const leftEdge = x;
-  const rightEdge = x + width;
+  const offsets = [0, width, ...extraOffsetsFromLeft];
   let bestX = x;
   let bestDist = threshold + 1;
 
   for (const target of targets) {
-    const leftDist = Math.abs(leftEdge - target);
-    if (leftDist <= threshold && leftDist < bestDist) {
-      bestDist = leftDist;
-      bestX = target;
-    }
-    const rightDist = Math.abs(rightEdge - target);
-    if (rightDist <= threshold && rightDist < bestDist) {
-      bestDist = rightDist;
-      bestX = target - width;
+    for (const offset of offsets) {
+      const dist = Math.abs(x + offset - target);
+      if (dist <= threshold && dist < bestDist) {
+        bestDist = dist;
+        bestX = target - offset;
+      }
     }
   }
   return bestX;
@@ -69,7 +70,7 @@ function clipPlayDuration(clip: Clip, timing: Map<string, ClipTimingInfo>): numb
   return resolveClipPlayDuration(clip, timing.get(clip.id)?.sourceLength);
 }
 
-/** Start/end x of clips in the playhead extent, for edge snapping while dragging. */
+/** Start/end/marker x of clips in the playhead extent, for edge snapping while dragging. */
 export function clipEdgeSnapTargetsX(
   doc: SpaceTimeDoc,
   timing: Map<string, ClipTimingInfo>,
@@ -82,6 +83,9 @@ export function clipEdgeSnapTargetsX(
     const duration = clipPlayDuration(clip, timing);
     edges.push(clip.x);
     edges.push(clip.x + clipWidth(clip, duration));
+    edges.push(
+      ...visibleMarkerPageXs(clipMarkers(clip), clip.x, sourceSkip(clip), duration),
+    );
   }
   return uniquePageEdges(edges);
 }
@@ -105,4 +109,13 @@ export function playheadScrubSnapTargetsX(
   playhead: Playhead,
 ): number[] {
   return clipEdgeSnapTargetsX(doc, timing, playhead);
+}
+
+/** Marker offsets from left for the clip being moved (so markers snap too). */
+export function clipMarkerSnapOffsets(
+  clip: Clip,
+  timing: Map<string, ClipTimingInfo>,
+): number[] {
+  const duration = clipPlayDuration(clip, timing);
+  return visibleMarkerOffsetsFromLeft(clipMarkers(clip), sourceSkip(clip), duration);
 }

@@ -181,6 +181,7 @@ export function copyClip(clip: Clip): Clip {
     y: clip.y,
     sourceInTime: clip.sourceInTime,
     duration: clip.duration,
+    ...(clip.markers && clip.markers.length > 0 ? { markers: [...clip.markers] } : {}),
   };
 }
 

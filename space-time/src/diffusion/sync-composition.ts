@@ -373,12 +373,20 @@ export function isPlayheadCompositionEmpty(
 export type ClipEdgePreview = ClipTimingOverride & {
   clipId: string;
   edge: 'in' | 'out';
+  /**
+   * Absolute source time to show/hear (marker drag). On the full-source edge
+   * preview composition (delay 0, range from 0), this is the composition seek time.
+   */
+  scrubSourceTime?: number;
 };
 
 export function clipEdgePreviewSeekTime(
-  preview: Pick<ClipEdgePreview, 'edge' | 'sourceInTime' | 'duration'>,
+  preview: Pick<ClipEdgePreview, 'edge' | 'sourceInTime' | 'duration' | 'scrubSourceTime'>,
   clip?: Clip,
 ): number {
+  if (preview.scrubSourceTime !== undefined) {
+    return preview.scrubSourceTime;
+  }
   const sourceStart =
     preview.sourceInTime !== undefined && preview.sourceInTime !== null
       ? preview.sourceInTime
@@ -469,13 +477,15 @@ async function ensureClipEdgePreviewComposition(
   return { empty: false, duration: composition.duration };
 }
 
-/** Monitor preview for in/out trim: single full-source clip, seek-only updates while dragging. */
+/** Monitor preview for in/out trim and marker scrub: single full-source clip.
+ *  Pass `audioScrub: true` to skip the paused seek so the caller can play/scrub. */
 export async function updateClipEdgePreviewComposition(
   composition: core.Composition,
   doc: SpaceTimeDoc,
   loader: SourceLoader,
   _timing: Map<string, ClipTimingInfo>,
   preview: ClipEdgePreview,
+  options?: { audioScrub?: boolean },
 ): Promise<{ empty: boolean; duration: number; seekTime: number }> {
   const built = await ensureClipEdgePreviewComposition(composition, doc, loader, preview);
   if (built.empty) {
@@ -484,6 +494,9 @@ export async function updateClipEdgePreviewComposition(
 
   const clip = doc.clips.find((item) => item.id === preview.clipId);
   const seekTime = clipEdgePreviewSeekTime(preview, clip);
+  if (options?.audioScrub) {
+    return { empty: false, duration: composition.duration, seekTime };
+  }
   try {
     await renderCompositionAtTime(composition, seekTime);
   } catch (error) {

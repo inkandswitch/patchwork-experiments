@@ -47,6 +47,7 @@ export type CanvasTheme = {
   clipSelectedFill: string;
   clipSelectedStroke: string;
   handleFill: string;
+  marker: string;
   playhead: string;
   playheadActive: string;
   playheadBand: string;
@@ -74,6 +75,7 @@ const THEME_VARS: Array<[keyof CanvasTheme, string]> = [
   ['clipSelectedFill', '--st-clip-selected-fill'],
   ['clipSelectedStroke', '--st-clip-selected-stroke'],
   ['handleFill', '--st-handle-fill'],
+  ['marker', '--st-marker'],
   ['playhead', '--st-playhead'],
   ['playheadActive', '--st-playhead-active'],
   ['playheadBand', '--st-playhead-band'],

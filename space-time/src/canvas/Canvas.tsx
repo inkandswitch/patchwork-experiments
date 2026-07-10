@@ -46,6 +46,7 @@ import {
   applyClipDragPreview,
   applyInlineImageMovePreview,
   applyInlineImageResizePreview,
+  applyMarkerMovePreview,
   applyPlayheadDuplicatePreview,
   applyPlayheadMovePreview,
   applyPostItMovePreview,
@@ -92,7 +93,20 @@ import {
   snapClipMoveX,
   snapPageXToTargets,
   snapThresholdPage,
+  clipMarkerSnapOffsets,
 } from './snap';
+import {
+  MARKER_TOGGLE_EPS_PX,
+  addClipMarkerAtSourceTime,
+  clampMarkerSourceTime,
+  markerPageX,
+  maxSourceInKeepingMarkers,
+  minDurationKeepingMarkers,
+  nearestMarkerIndexAtPageX,
+  removeClipMarkerAtIndex,
+  setClipMarkerSourceTime,
+} from './clip-markers';
+import { sourceSkip } from '../clip-timing';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
 
 import './canvas.css';
@@ -348,6 +362,12 @@ type DragState =
       aspect: number;
     }
   | {
+      kind: 'marker-move';
+      pointerId: number;
+      clipId: string;
+      originalSourceTime: number;
+    }
+  | {
       kind: 'playhead-move';
       pointerId: number;
       playheadId: string;
@@ -415,7 +435,14 @@ type CanvasProps = {
   onSelectedScribbleChange: (id: string | null) => void;
   selectedPostItId: string | null;
   onSelectedPostItChange: (id: string | null) => void;
-  onClipPreview?: (preview: ({ clipId: string; previewEdge?: 'in' | 'out' } & ClipTimingOverride) | null) => void;
+  onClipPreview?: (preview: ({
+    clipId: string;
+    previewEdge?: 'in' | 'out';
+    scrubAudio?: boolean;
+    scrubSourceTime?: number;
+  } & ClipTimingOverride) | null) => void;
+  /** Scrub the live playhead mix to a page-x (marker drag); null to release. */
+  onMonitorScrub?: (pageX: number | null) => void;
   onFocusEditor?: () => void;
   onPlayheadScrub?: (playheadId: string, x: number) => void;
   onScrubbingChange?: (scrubbing: boolean) => void;
@@ -490,6 +517,7 @@ export function Canvas({
   selectedPostItId,
   onSelectedPostItChange,
   onClipPreview,
+  onMonitorScrub,
   onFocusEditor,
   onPlayheadScrub,
   onScrubbingChange,
@@ -526,6 +554,13 @@ export function Canvas({
     width: number;
     height: number;
   } | null>(null);
+  const markerMovePreviewRef = useRef<{
+    clipId: string;
+    originalSourceTime: number;
+    sourceTime: number;
+  } | null>(null);
+  /** True while marker drag is scrubbing the live playhead mix (not edge preview). */
+  const markerMonitorScrubRef = useRef(false);
   const selectedInlineImageIdRef = useRef<string | null>(null);
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
   const loaderRef = useRef(createSourceLoader());
@@ -594,6 +629,7 @@ export function Canvas({
   const cancelPlayheadMoveRef = useRef<() => void>(() => {});
   const commitScribbleMoveDragRef = useRef<() => void>(() => {});
   const commitPostItMoveDragRef = useRef<() => void>(() => {});
+  const commitMarkerMoveDragRef = useRef<() => void>(() => {});
   const commitClipMoveDragRef = useRef<() => void>(() => {});
   const beginDuplicateAtRef = useRef<(x: number, y: number) => void>(() => {});
   const commitPlayheadDuplicateRef = useRef<() => void>(() => {});
@@ -602,7 +638,10 @@ export function Canvas({
   const cancelClipDuplicateRef = useRef<() => void>(() => {});
   const addPostItAtRef = useRef<(x: number, y: number) => void>(() => {});
   const toggleFormatAtRef = useRef<(x: number, y: number) => void>(() => {});
+  const addMarkerAtPointerRef = useRef<() => void>(() => {});
+  const deleteHoveredMarkerRef = useRef<() => boolean>(() => false);
   const deleteSelectedInlineImageRef = useRef<() => boolean>(() => false);
+  const hoveredMarkerRef = useRef<{ clipId: string; sourceTime: number } | null>(null);
   const commitScribbleDrawRef = useRef<(drag: Extract<DragState, { kind: 'scribble-draw' }>) => void>(
     () => {},
   );
@@ -917,6 +956,9 @@ export function Canvas({
         inlineImageResizePreviewRef.current,
       );
     }
+    if (markerMovePreviewRef.current) {
+      layoutRef.current = applyMarkerMovePreview(layoutRef.current, markerMovePreviewRef.current);
+    }
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -1046,6 +1088,57 @@ export function Canvas({
     }
   };
   toggleFormatAtRef.current = toggleFormatAt;
+
+  const addMarkerAtPointer = () => {
+    if (!pointerOnCanvasRef.current || !lastPointerClientRef.current) return;
+    const { x, y } = pagePointFromClient(
+      lastPointerClientRef.current.clientX,
+      lastPointerClientRef.current.clientY,
+    );
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return;
+    layoutRef.current = layout;
+
+    const clipLayout = clipAtPoint(layout, x, y);
+    if (!clipLayout) return;
+    const clip = findClip(doc, clipLayout.clipId);
+    if (!clip) return;
+
+    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+    const sourceTime = (x - clip.x) / PIXELS_PER_SECOND + sourceSkip(clip);
+    const tolerancePx = Math.max(MARKER_TOGGLE_EPS_PX, snapThresholdPage(cameraRef.current));
+
+    changeDoc((d) => {
+      const c = findClip(d, clip.id);
+      if (!c) return;
+      addClipMarkerAtSourceTime(c, sourceTime, playDuration, tolerancePx);
+    });
+    onSelectedClipChange(clip.id);
+    schedulePaint();
+  };
+  addMarkerAtPointerRef.current = addMarkerAtPointer;
+
+  const deleteHoveredMarker = () => {
+    const hovered = hoveredMarkerRef.current;
+    if (!hovered) return false;
+    let removed = false;
+    changeDoc((d) => {
+      const clip = findClip(d, hovered.clipId);
+      if (!clip) return;
+      const index = nearestMarkerIndexAtPageX(
+        clip,
+        markerPageX(clip.x, sourceSkip(clip), hovered.sourceTime),
+        MARKER_TOGGLE_EPS_PX,
+      );
+      if (index < 0) return;
+      removed = removeClipMarkerAtIndex(clip, index);
+    });
+    if (!removed) return false;
+    hoveredMarkerRef.current = null;
+    schedulePaint();
+    return true;
+  };
+  deleteHoveredMarkerRef.current = deleteHoveredMarker;
 
   const deleteSelectedInlineImage = () => {
     const imageId = selectedInlineImageIdRef.current;
@@ -1516,6 +1609,124 @@ export function Canvas({
     return null;
   };
 
+  const previewMarkerFrame = (clipId: string, sourceTime: number) => {
+    const clip = findClip(doc, clipId);
+    if (!clip) return;
+    const pageX = markerPageX(clip.x, sourceSkip(clip), sourceTime);
+
+    // Prefer scrubbing the live playhead mix at the marker's page-x — same
+    // composition and clock as pressing play there. Fall back to a full-source
+    // override only when the clip isn't in the active playhead's extent.
+    const playhead = activePlayheadId
+      ? doc.playheads.find((ph) => ph.id === activePlayheadId)
+      : undefined;
+    const inActiveExtent =
+      !!playhead &&
+      clipsInPlayheadExtent(doc, playhead, timingRef.current).some((c) => c.id === clipId);
+
+    if (inActiveExtent && onMonitorScrub) {
+      if (!markerMonitorScrubRef.current) {
+        onClipPreview?.(null);
+      }
+      markerMonitorScrubRef.current = true;
+      onScrubbingChange?.(true);
+      onMonitorScrub(pageX);
+      return;
+    }
+
+    markerMonitorScrubRef.current = false;
+    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+    onClipPreview?.({
+      clipId,
+      x: clip.x,
+      duration: playDuration,
+      sourceInTime: 0,
+      previewEdge: 'in',
+      scrubAudio: true,
+      scrubSourceTime: sourceTime,
+    });
+  };
+
+  const endMarkerMonitorPreview = () => {
+    if (markerMonitorScrubRef.current) {
+      markerMonitorScrubRef.current = false;
+      onMonitorScrub?.(null);
+      onScrubbingChange?.(false);
+    }
+    onClipPreview?.(null);
+  };
+
+  const updateMarkerMoveDrag = (x: number) => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'marker-move') return;
+    const clip = findClip(doc, drag.clipId);
+    if (!clip) return;
+    const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+    const sourceTime = clampMarkerSourceTime(
+      clip,
+      (x - clip.x) / PIXELS_PER_SECOND + sourceSkip(clip),
+      playDuration,
+    );
+    markerMovePreviewRef.current = {
+      clipId: drag.clipId,
+      originalSourceTime: drag.originalSourceTime,
+      sourceTime,
+    };
+    previewMarkerFrame(drag.clipId, sourceTime);
+    schedulePaint();
+  };
+
+  const beginMarkerMove = (
+    x: number,
+    clipId: string,
+    sourceTime: number,
+    pointerId: number,
+  ) => {
+    if (dragRef.current) return;
+    const clip = findClip(doc, clipId);
+    if (!clip) return;
+    hoveredMarkerRef.current = null;
+    onSelectedClipChange(clipId);
+    onSelectedScribbleChange(null);
+    onSelectedPostItChange(null);
+    setSelectedInlineImageId(null);
+    dragRef.current = {
+      kind: 'marker-move',
+      pointerId,
+      clipId,
+      originalSourceTime: sourceTime,
+    };
+    markerMovePreviewRef.current = {
+      clipId,
+      originalSourceTime: sourceTime,
+      sourceTime,
+    };
+    previewMarkerFrame(clipId, sourceTime);
+    schedulePaint();
+    updateMarkerMoveDrag(x);
+  };
+
+  const commitMarkerMoveDrag = () => {
+    const preview = markerMovePreviewRef.current;
+    const drag = dragRef.current;
+    if (drag?.kind !== 'marker-move' || !preview) {
+      markerMovePreviewRef.current = null;
+      if (drag?.kind === 'marker-move') dragRef.current = null;
+      endMarkerMonitorPreview();
+      schedulePaint();
+      return;
+    }
+    endMarkerMonitorPreview();
+    changeDoc((d) => {
+      const clip = findClip(d, preview.clipId);
+      if (!clip) return;
+      setClipMarkerSourceTime(clip, preview.originalSourceTime, preview.sourceTime);
+    });
+    markerMovePreviewRef.current = null;
+    dragRef.current = null;
+    schedulePaint();
+  };
+
   const beginMoveAt = (x: number, y: number) => {
     if (dragRef.current) return;
     const layout = layoutRef.current ?? buildLayout();
@@ -1552,6 +1763,7 @@ export function Canvas({
   beginMoveAtRef.current = beginMoveAt;
   commitScribbleMoveDragRef.current = commitScribbleMoveDrag;
   commitPostItMoveDragRef.current = commitPostItMoveDrag;
+  commitMarkerMoveDragRef.current = commitMarkerMoveDrag;
   commitClipMoveDragRef.current = commitClipMoveDrag;
 
   const updatePlayheadDuplicateDrag = (x: number, y: number) => {
@@ -1675,7 +1887,13 @@ export function Canvas({
     let clipY = drag.originalY + (y - drag.startPageY);
     const snap = clipSnapTargets(drag.sourceClipId);
     if (snap) {
-      clipX = snapClipMoveX(clipX, drag.originalDuration, snap.targets, snap.threshold);
+      clipX = snapClipMoveX(
+        clipX,
+        drag.originalDuration,
+        snap.targets,
+        snap.threshold,
+        clipMarkerSnapOffsets(source, timingRef.current),
+      );
     }
     clipDragPreviewRef.current = {
       clipId: drag.duplicateClipId,
@@ -1852,8 +2070,18 @@ export function Canvas({
         );
         toggleFormatAtRef.current(x, y);
       }
+      if (event.key === '`' || event.code === 'Backquote') {
+        if (event.repeat || isTextInput(event.target)) return;
+        event.preventDefault();
+        addMarkerAtPointerRef.current();
+      }
       if (event.key === 'Backspace' || event.key === 'Delete') {
         if (isTextInput(event.target)) return;
+        if (deleteHoveredMarkerRef.current()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (deleteSelectedInlineImageRef.current()) {
           event.preventDefault();
         }
@@ -1925,6 +2153,8 @@ export function Canvas({
         commitScribbleMoveDragRef.current();
       } else if (dragRef.current?.kind === 'post-it-move') {
         commitPostItMoveDragRef.current();
+      } else if (dragRef.current?.kind === 'marker-move') {
+        commitMarkerMoveDragRef.current();
       } else if (
         dragRef.current?.kind === 'move' &&
         dragRef.current.pointerId === KEYBOARD_CLIP_MOVE_POINTER_ID
@@ -2176,10 +2406,16 @@ export function Canvas({
 
     const target = hitTestCanvas(layout, x, y);
 
+    if (target.kind === 'clip-marker') {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beginMarkerMove(x, target.clipId, target.sourceTime, event.pointerId);
+      return;
+    }
+
     if (target.kind === 'playhead') {
-      onSelectedClipChange(null);
-      clearAnnotationSelection();
       if (target.playheadId !== activePlayheadId) {
+        onSelectedClipChange(null);
+        clearAnnotationSelection();
         onActivePlayheadChange(target.playheadId);
         return;
       }
@@ -2416,13 +2652,19 @@ export function Canvas({
     if (!drag) {
       const target = hitTestCanvas(layout, x, y);
       setHoveredClipId(target.kind === 'clip-body' ? target.clipId : null);
+      hoveredMarkerRef.current =
+        target.kind === 'clip-marker'
+          ? { clipId: target.clipId, sourceTime: target.sourceTime }
+          : null;
       if (canvasRef.current) {
         canvasRef.current.style.cursor =
           target.kind === 'post-it-resize' || target.kind === 'inline-image-resize'
             ? 'nwse-resize'
-            : target.kind === 'inline-image'
-              ? 'move'
-              : '';
+            : target.kind === 'clip-marker'
+              ? 'ew-resize'
+              : target.kind === 'inline-image'
+                ? 'move'
+                : '';
       }
       return;
     }
@@ -2532,6 +2774,11 @@ export function Canvas({
       return;
     }
 
+    if (drag.kind === 'marker-move') {
+      updateMarkerMoveDrag(x);
+      return;
+    }
+
     if (drag.kind === 'post-it-resize') {
       const width = Math.max(
         MIN_POST_IT_WIDTH,
@@ -2609,7 +2856,13 @@ export function Canvas({
       let clipX = drag.originalX + deltaX;
       const snap = noSnap ? null : clipSnapTargets(drag.clipId);
       if (snap) {
-        clipX = snapClipMoveX(clipX, drag.originalDuration, snap.targets, snap.threshold);
+        clipX = snapClipMoveX(
+          clipX,
+          drag.originalDuration,
+          snap.targets,
+          snap.threshold,
+          clipMarkerSnapOffsets(clip, timingRef.current),
+        );
       }
       clipDragPreviewRef.current = {
         clipId: drag.clipId,
@@ -2628,9 +2881,10 @@ export function Canvas({
       if (snap) {
         rightEdge = snapPageXToTargets(rightEdge, snap.targets, snap.threshold);
       }
+      const minDur = Math.max(MIN_CLIP_DURATION, minDurationKeepingMarkers(clip));
       const duration = Math.min(
         drag.maxDuration,
-        Math.max(MIN_CLIP_DURATION, (rightEdge - drag.originalX) / PIXELS_PER_SECOND),
+        Math.max(minDur, (rightEdge - drag.originalX) / PIXELS_PER_SECOND),
       );
       clipDragPreviewRef.current = {
         clipId: drag.clipId,
@@ -2651,10 +2905,12 @@ export function Canvas({
         leftEdge = snapPageXToTargets(leftEdge, snap.targets, snap.threshold);
       }
       const delta = (leftEdge - drag.originalX) / PIXELS_PER_SECOND;
-      const clampedDelta = Math.max(
-        -(drag.originalSourceInTime),
-        Math.min(drag.originalDuration - MIN_CLIP_DURATION, delta),
+      const maxIn = maxSourceInKeepingMarkers(clip);
+      const maxDelta = Math.min(
+        drag.originalDuration - MIN_CLIP_DURATION,
+        maxIn - drag.originalSourceInTime,
       );
+      const clampedDelta = Math.max(-(drag.originalSourceInTime), Math.min(maxDelta, delta));
       clipDragPreviewRef.current = {
         clipId: drag.clipId,
         x: drag.originalX + clampedDelta * PIXELS_PER_SECOND,
@@ -2690,6 +2946,8 @@ export function Canvas({
       commitSplitLine(drag);
     } else if (drag.kind === 'scrub-playhead') {
       onScrubbingChange?.(false);
+    } else if (drag.kind === 'marker-move') {
+      commitMarkerMoveDrag();
     } else if (drag.kind === 'post-it-resize') {
       const preview = postItResizePreviewRef.current;
       if (preview) {
@@ -2748,6 +3006,8 @@ export function Canvas({
 
   const onPointerLeave = () => {
     pointerOnCanvasRef.current = false;
+    hoveredMarkerRef.current = null;
+    setHoveredClipId(null);
     if (canvasRef.current) {
       canvasRef.current.style.cursor = '';
     }

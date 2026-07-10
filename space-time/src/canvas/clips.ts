@@ -4,6 +4,12 @@ import { cloneClip, findClip, newClip } from '../helpers';
 import { MIN_CLIP_DURATION, PIXELS_PER_SECOND } from './constants';
 import { clipWidth } from '../clip-timing';
 import { removePlayheadsWithoutClips } from './playheads';
+import {
+  clipMarkers,
+  maxSourceInKeepingMarkers,
+  minDurationKeepingMarkers,
+  partitionMarkersAtSourceTime,
+} from './clip-markers';
 
 export function commitClipMoves(
   doc: SpaceTimeDoc,
@@ -34,7 +40,8 @@ export function commitClipResize(
 ): void {
   const clip = findClip(doc, clipId);
   if (!clip) return;
-  clip.duration = Math.max(MIN_CLIP_DURATION, duration);
+  const minDur = Math.max(MIN_CLIP_DURATION, minDurationKeepingMarkers(clip));
+  clip.duration = Math.max(minDur, duration);
 }
 
 export function commitClipTrimLeft(
@@ -46,9 +53,19 @@ export function commitClipTrimLeft(
 ): void {
   const clip = findClip(doc, clipId);
   if (!clip) return;
-  clip.x = x;
-  clip.sourceInTime = sourceInTime <= 0 ? null : sourceInTime;
-  clip.duration = Math.max(MIN_CLIP_DURATION, duration);
+  const maxIn = maxSourceInKeepingMarkers(clip);
+  const clampedIn = Math.min(sourceInTime, maxIn);
+  // If we had to pull sourceIn back, keep the right edge fixed by adjusting duration.
+  const inDelta = sourceInTime - clampedIn;
+  const adjustedDuration = duration + inDelta;
+  const adjustedX = x - inDelta * PIXELS_PER_SECOND;
+  const minDur = Math.max(MIN_CLIP_DURATION, minDurationKeepingMarkers({
+    ...clip,
+    sourceInTime: clampedIn <= 0 ? null : clampedIn,
+  }));
+  clip.x = adjustedX;
+  clip.sourceInTime = clampedIn <= 0 ? null : clampedIn;
+  clip.duration = Math.max(minDur, adjustedDuration);
 }
 
 export function splitClipAtX(
@@ -74,7 +91,15 @@ export function splitClipAtX(
   const sourceIn = clip.sourceInTime ?? 0;
   const rightSourceIn = sourceIn + leftDuration;
 
+  // Don't split through a marker — markers must stay visible on a clip.
+  for (const t of clipMarkers(clip)) {
+    if (Math.abs(t - rightSourceIn) < 1e-6) return null;
+  }
+
+  const { left, right } = partitionMarkersAtSourceTime(clipMarkers(clip), rightSourceIn);
+
   clip.duration = leftDuration;
+  clip.markers = left.length > 0 ? left : undefined;
 
   const rightClip = newClip(
     clip.sourceId,
@@ -84,6 +109,7 @@ export function splitClipAtX(
     rightDuration,
   );
   if (clip.name) rightClip.name = clip.name;
+  if (right.length > 0) rightClip.markers = right;
 
   const clipIndex = doc.clips.findIndex((c) => c.id === clipId);
   doc.clips.splice(clipIndex + 1, 0, rightClip);
@@ -129,5 +155,6 @@ export function commitClipDuplicate(
   const clip = newClip(source.sourceId, x, y, source.sourceInTime, source.duration);
   clip.id = clipId;
   if (source.name) clip.name = source.name;
+  if (source.markers && source.markers.length > 0) clip.markers = [...source.markers];
   doc.clips.push(clip);
 }

@@ -28,7 +28,7 @@ type PlayerState =
 // How long (ms) the scrub position must stay put before we re-trigger the audio
 // window. This is also the effective length of the looped slice you hear while
 // holding the mouse still.
-const SCRUB_LOOP_WINDOW_MS = 500;
+const SCRUB_LOOP_WINDOW_MS = 100;
 // Page-space movement (px) below which the scrub position counts as "held".
 const SCRUB_MOVE_EPSILON_PX = 0.75;
 
@@ -92,6 +92,9 @@ export function usePlayheadPlayer(
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
 
   const [playerState, setPlayerState] = useState<PlayerState>({ status: 'idle' });
+  // Bumped when leaving clip-edge / marker-frame override so the playhead
+  // composition rebuilds even if the doc didn't change.
+  const [playheadSyncEpoch, setPlayheadSyncEpoch] = useState(0);
 
   const playerStateRef = useRef(playerState);
   playerStateRef.current = playerState;
@@ -104,6 +107,8 @@ export function usePlayheadPlayer(
 
   const currentXRef = useRef(currentX);
   currentXRef.current = currentX;
+  /** When set, monitor scrub follows this page-x instead of the playhead (marker drag). */
+  const monitorScrubPageXRef = useRef<number | null>(null);
   const playingRef = useRef(false);
   const onPlaybackXRef = useRef(onPlaybackX);
   onPlaybackXRef.current = onPlaybackX;
@@ -112,6 +117,13 @@ export function usePlayheadPlayer(
   const clipPreviewRef = useRef<ReadonlyMap<string, ClipTimingOverride> | null>(null);
   const clipPreviewEdgeRef = useRef<'in' | 'out' | undefined>(undefined);
   const clipEdgePreviewActiveRef = useRef(false);
+  const clipEdgePreviewScrubAudioRef = useRef(false);
+  const clipEdgePreviewScrubSourceTimeRef = useRef<number | null>(null);
+  const clipEdgePreviewScrubTimeRef = useRef(0);
+  const clipEdgePreviewScrubPlaybackRef = useRef(false);
+  const clipEdgePreviewScrubRafRef = useRef<number | null>(null);
+  const clipEdgePreviewScrubHoldStartMsRef = useRef(0);
+  const clipEdgePreviewScrubLastTimeRef = useRef(0);
   const clipEdgePreviewPendingRef = useRef(false);
   const clipEdgePreviewDrainScheduledRef = useRef(false);
   const clipEdgePreviewRafRef = useRef<number | null>(null);
@@ -160,7 +172,7 @@ export function usePlayheadPlayer(
         !scrubRetriggeringRef.current &&
         playerStateRef.current.status === 'ready'
       ) {
-        const curX = currentXRef.current;
+        const curX = monitorScrubPageXRef.current ?? currentXRef.current;
         const now = performance.now();
         const moved = Math.abs(curX - scrubLastXRef.current) > SCRUB_MOVE_EPSILON_PX;
         scrubLastXRef.current = curX;
@@ -397,8 +409,78 @@ export function usePlayheadPlayer(
       if (clipEdgePreviewRafRef.current !== null) {
         cancelAnimationFrame(clipEdgePreviewRafRef.current);
       }
+      if (clipEdgePreviewScrubRafRef.current !== null) {
+        cancelAnimationFrame(clipEdgePreviewScrubRafRef.current);
+        clipEdgePreviewScrubRafRef.current = null;
+      }
+      clipEdgePreviewScrubPlaybackRef.current = false;
+      clipEdgePreviewScrubAudioRef.current = false;
     };
   }, [scrubbingActiveRef, stopScrubSyncLoop]);
+
+  const stopEdgePreviewScrubLoop = useCallback(() => {
+    if (clipEdgePreviewScrubRafRef.current !== null) {
+      cancelAnimationFrame(clipEdgePreviewScrubRafRef.current);
+      clipEdgePreviewScrubRafRef.current = null;
+    }
+  }, []);
+
+  const startEdgePreviewScrubLoop = useCallback(() => {
+    stopEdgePreviewScrubLoop();
+    clipEdgePreviewScrubLastTimeRef.current = clipEdgePreviewScrubTimeRef.current;
+    clipEdgePreviewScrubHoldStartMsRef.current = performance.now();
+    const tick = () => {
+      clipEdgePreviewScrubRafRef.current = null;
+      if (!clipEdgePreviewScrubPlaybackRef.current || !clipEdgePreviewScrubAudioRef.current) {
+        return;
+      }
+      const composition = compositionRef.current;
+      if (
+        composition &&
+        !compositionSyncingRef.current &&
+        !scrubRetriggeringRef.current &&
+        playerStateRef.current.status === 'ready'
+      ) {
+        const compTime = clipEdgePreviewScrubTimeRef.current;
+        const now = performance.now();
+        const moved = Math.abs(compTime - clipEdgePreviewScrubLastTimeRef.current) > 1e-4;
+        clipEdgePreviewScrubLastTimeRef.current = compTime;
+
+        if (moved) {
+          clipEdgePreviewScrubHoldStartMsRef.current = now;
+          setPlaybackPosition(composition, compTime);
+        } else if (now - clipEdgePreviewScrubHoldStartMsRef.current >= SCRUB_LOOP_WINDOW_MS) {
+          clipEdgePreviewScrubHoldStartMsRef.current = now;
+          if (!scrubRetriggeringRef.current) {
+            scrubRetriggeringRef.current = true;
+            enqueueCompositionTask(async () => {
+              try {
+                const active = compositionRef.current;
+                if (
+                  !active ||
+                  !clipEdgePreviewScrubPlaybackRef.current ||
+                  !clipEdgePreviewScrubAudioRef.current
+                ) {
+                  return;
+                }
+                const seekTime = clampSeekTime(active, clipEdgePreviewScrubTimeRef.current);
+                await pauseCompositionSilently(active);
+                await active.play(seekTime);
+              } catch (error) {
+                console.warn('[space-time] marker scrub loop retrigger failed', error);
+              } finally {
+                scrubRetriggeringRef.current = false;
+              }
+            });
+          }
+        } else {
+          setPlaybackPosition(composition, compTime);
+        }
+      }
+      clipEdgePreviewScrubRafRef.current = requestAnimationFrame(tick);
+    };
+    clipEdgePreviewScrubRafRef.current = requestAnimationFrame(tick);
+  }, [enqueueCompositionTask, pauseCompositionSilently, stopEdgePreviewScrubLoop]);
 
   const scheduleClipEdgePreviewDrain = useCallback(() => {
     clipEdgePreviewPendingRef.current = true;
@@ -429,24 +511,27 @@ export function usePlayheadPlayer(
           x: override.x,
           duration: override.duration,
           sourceInTime: override.sourceInTime,
+          scrubSourceTime: clipEdgePreviewScrubSourceTimeRef.current ?? undefined,
         };
 
         const composition = compositionRef.current;
         if (!composition) return;
 
         const generation = ++clipPreviewGenerationRef.current;
+        const audioScrub = clipEdgePreviewScrubAudioRef.current;
 
         try {
           playingRef.current = false;
           clipEdgePreviewActiveRef.current = true;
           structureKeyRef.current = null;
 
-          const { empty, duration } = await updateClipEdgePreviewComposition(
+          const { empty, duration, seekTime: builtSeekTime } = await updateClipEdgePreviewComposition(
             composition,
             docRef.current,
             loaderRef.current,
             timingRef.current,
             preview,
+            { audioScrub },
           );
           if (generation !== clipPreviewGenerationRef.current) return;
 
@@ -458,6 +543,29 @@ export function usePlayheadPlayer(
           if (playerStateRef.current.status !== 'ready') {
             setPlayerState({ status: 'ready', duration });
           }
+
+          if (audioScrub) {
+            // Prefer the latest pointer-driven seek time (may have advanced
+            // while this drain task was queued).
+            const seekTime =
+              clipEdgePreviewScrubSourceTimeRef.current ?? builtSeekTime;
+            clipEdgePreviewScrubTimeRef.current = seekTime;
+            const t = clampSeekTime(composition, seekTime);
+            if (!clipEdgePreviewScrubPlaybackRef.current) {
+              setPlaybackPosition(composition, t);
+              await safeCompositionUpdate(composition);
+              try {
+                await composition.play(t);
+                clipEdgePreviewScrubPlaybackRef.current = true;
+                startEdgePreviewScrubLoop();
+              } catch (error) {
+                console.warn('[space-time] marker scrub playback failed', error);
+              }
+            }
+            // While already scrubbing, previewClipTiming pins playbackOffset
+            // synchronously — don't enqueue more composition work here or
+            // audio lags behind the marker.
+          }
         } catch (error) {
           if (generation !== clipPreviewGenerationRef.current) return;
           console.warn('[space-time] clip edge preview failed', error);
@@ -468,7 +576,7 @@ export function usePlayheadPlayer(
         }
       });
     });
-  }, [enqueueCompositionTask]);
+  }, [enqueueCompositionTask, startEdgePreviewScrubLoop]);
 
   const docSyncKey = JSON.stringify({
     clips: doc.clips,
@@ -582,10 +690,11 @@ export function usePlayheadPlayer(
     // sees the current `doc` because any composition-relevant change also updates
     // `docSyncKey`, re-running the effect on the render with the fresh `doc`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docSyncKey, playhead?.id, playhead?.x, playhead?.y, playhead?.height, enqueueCompositionTask, runCompositionSeek, sweepActiveRef]);
+  }, [docSyncKey, playhead?.id, playhead?.x, playhead?.y, playhead?.height, playheadSyncEpoch, enqueueCompositionTask, runCompositionSeek, sweepActiveRef]);
 
   useLayoutEffect(() => {
     if (clipEdgePreviewActiveRef.current) return;
+    if (monitorScrubPageXRef.current !== null) return;
 
     const composition = compositionRef.current;
     if (
@@ -600,6 +709,32 @@ export function usePlayheadPlayer(
     if (!scrubbing && (playingRef.current || composition.playing)) return;
     scheduleCompositionSeek(xToTime(currentX) - timeOriginRef.current);
   }, [currentX, sweepActiveRef, scrubbingActiveRef, scheduleCompositionSeek]);
+
+  /**
+   * Scrub the live playhead composition to a page-x without moving the drawn
+   * playhead. Used while dragging markers so audio/video match real playback.
+   * Pass null to release (caller should also end scrubbing).
+   */
+  const scrubMonitorToPageX = (pageX: number | null) => {
+    if (pageX === null) {
+      monitorScrubPageXRef.current = null;
+      return;
+    }
+    monitorScrubPageXRef.current = pageX;
+    // Edge-preview override must not be active — this path uses the real mix.
+    if (clipEdgePreviewActiveRef.current) {
+      clipPreviewRef.current = null;
+      clipPreviewEdgeRef.current = undefined;
+      clipEdgePreviewScrubAudioRef.current = false;
+      clipEdgePreviewScrubSourceTimeRef.current = null;
+      clipEdgePreviewActiveRef.current = false;
+      stopEdgePreviewScrubLoop();
+      clipEdgePreviewScrubPlaybackRef.current = false;
+      structureKeyRef.current = null;
+      setPlayheadSyncEpoch((n) => n + 1);
+    }
+    scheduleCompositionSeek(xToTime(pageX) - timeOriginRef.current);
+  };
 
   const play = async (startX?: number) => {
     const composition = compositionRef.current;
@@ -644,11 +779,22 @@ export function usePlayheadPlayer(
   };
 
   const previewClipTiming = (
-    preview: ({ clipId: string; previewEdge?: 'in' | 'out' } & ClipTimingOverride) | null,
+    preview: ({
+      clipId: string;
+      previewEdge?: 'in' | 'out';
+      /** Scrub-style looping audio while seeking (marker drag). */
+      scrubAudio?: boolean;
+      /** Absolute source time to hear/show while scrubAudio is on. */
+      scrubSourceTime?: number;
+    } & ClipTimingOverride) | null,
   ) => {
     if (preview === null) {
+      const wasEdgePreview = clipEdgePreviewActiveRef.current;
+      const wasScrubAudio = clipEdgePreviewScrubAudioRef.current;
       clipPreviewRef.current = null;
       clipPreviewEdgeRef.current = undefined;
+      clipEdgePreviewScrubAudioRef.current = false;
+      clipEdgePreviewScrubSourceTimeRef.current = null;
       clipEdgePreviewPendingRef.current = false;
       if (clipEdgePreviewRafRef.current !== null) {
         cancelAnimationFrame(clipEdgePreviewRafRef.current);
@@ -658,8 +804,22 @@ export function usePlayheadPlayer(
         window.clearTimeout(clipPreviewTimerRef.current);
         clipPreviewTimerRef.current = null;
       }
+      stopEdgePreviewScrubLoop();
+      const composition = compositionRef.current;
+      if (wasScrubAudio && clipEdgePreviewScrubPlaybackRef.current && composition) {
+        clipEdgePreviewScrubPlaybackRef.current = false;
+        enqueueCompositionTask(async () => {
+          await pauseCompositionSilently(composition);
+        });
+      } else {
+        clipEdgePreviewScrubPlaybackRef.current = false;
+      }
       clipEdgePreviewActiveRef.current = false;
       structureKeyRef.current = null;
+      // Edge preview swaps in a single-clip composition; leaving it must
+      // rebuild the normal playhead view even when the doc is unchanged
+      // (e.g. aborting a marker move).
+      if (wasEdgePreview) setPlayheadSyncEpoch((n) => n + 1);
       return;
     }
 
@@ -676,6 +836,24 @@ export function usePlayheadPlayer(
 
     if (preview.previewEdge !== undefined) {
       clipPreviewEdgeRef.current = preview.previewEdge;
+      clipEdgePreviewScrubAudioRef.current = preview.scrubAudio === true;
+      if (preview.scrubAudio === true && preview.scrubSourceTime !== undefined) {
+        clipEdgePreviewScrubSourceTimeRef.current = preview.scrubSourceTime;
+        // Full-source preview: composition time === source time. Update
+        // synchronously so the scrub loop doesn't lag behind the pointer
+        // (the async drain only builds/starts playback).
+        clipEdgePreviewScrubTimeRef.current = preview.scrubSourceTime;
+        clipEdgePreviewScrubHoldStartMsRef.current = performance.now();
+        if (clipEdgePreviewScrubPlaybackRef.current) {
+          const composition = compositionRef.current;
+          if (composition) {
+            setPlaybackPosition(composition, preview.scrubSourceTime);
+            void safeCompositionUpdate(composition);
+          }
+        }
+      } else {
+        clipEdgePreviewScrubSourceTimeRef.current = null;
+      }
       clipEdgePreviewActiveRef.current = true;
       structureKeyRef.current = null;
       if (clipPreviewTimerRef.current !== null) {
@@ -687,6 +865,8 @@ export function usePlayheadPlayer(
     }
 
     clipPreviewEdgeRef.current = undefined;
+    clipEdgePreviewScrubAudioRef.current = false;
+    clipEdgePreviewScrubSourceTimeRef.current = null;
     if (clipPreviewTimerRef.current !== null) return;
     clipPreviewTimerRef.current = window.setTimeout(() => {
       clipPreviewTimerRef.current = null;
@@ -734,6 +914,7 @@ export function usePlayheadPlayer(
 
   const endScrub = async () => {
     scrubPlaybackActiveRef.current = false;
+    monitorScrubPageXRef.current = null;
     stopScrubSyncLoop();
     const composition = compositionRef.current;
     if (!composition) return;
@@ -755,6 +936,7 @@ export function usePlayheadPlayer(
     seek,
     endScrub,
     previewClipTiming,
+    scrubMonitorToPageX,
     loopToDuringPlayback,
     loader: loaderRef.current,
   };

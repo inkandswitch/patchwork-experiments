@@ -3,8 +3,9 @@ import type { RecordingPreview } from '../audio/use-audio-recorder';
 import type { ClipTimingInfo } from '../diffusion/sync-composition';
 import type { Clip, Playhead, PostIt, Scribble, Source, SpaceTimeDoc } from '../types';
 import { clipDisplayName, DEFAULT_IMAGE_DURATION } from '../helpers';
-import { clipWidth } from '../clip-timing';
+import { clipWidth, sourceSkip } from '../clip-timing';
 import { clipsInPlayheadExtent, extentBoxRightEdge, maxEndXForPlayhead } from './playhead-extent';
+import { clipMarkers, markerPageX, visibleMarkerPageXs } from './clip-markers';
 import {
   CLIP_HEIGHT,
   HANDLE_WIDTH,
@@ -26,6 +27,10 @@ export type ClipLayout = {
   sourceType: Source['type'];
   /** Offset (seconds) into the source where this clip begins; null = start. */
   sourceInTime: number | null;
+  /** Marker times in seconds into the source. */
+  markerSourceTimes: number[];
+  /** Page-x positions of those markers that fall in the visible window. */
+  markerXs: number[];
 };
 
 export type PlayheadLayout = {
@@ -92,6 +97,7 @@ export type HitTarget =
   | { kind: 'clip-body'; clipId: string }
   | { kind: 'clip-left-handle'; clipId: string }
   | { kind: 'clip-right-handle'; clipId: string }
+  | { kind: 'clip-marker'; clipId: string; sourceTime: number }
   | { kind: 'playhead'; playheadId: string }
   | { kind: 'post-it'; postItId: string }
   | { kind: 'post-it-resize'; postItId: string }
@@ -107,6 +113,8 @@ export function computeClipLayout(
 ): ClipLayout {
   const clipTiming = timing.get(clip.id);
   const duration = clip.duration ?? clipTiming?.playDuration ?? DEFAULT_IMAGE_DURATION;
+  const sourceIn = sourceSkip(clip);
+  const markerSourceTimes = clipMarkers(clip);
   return {
     clipId: clip.id,
     x: clip.x,
@@ -118,6 +126,8 @@ export function computeClipLayout(
     sourceId: clip.sourceId,
     sourceType: doc.sources[clip.sourceId]?.type ?? 'video',
     sourceInTime: clip.sourceInTime,
+    markerSourceTimes,
+    markerXs: visibleMarkerPageXs(markerSourceTimes, clip.x, sourceIn, duration),
   };
 }
 
@@ -209,6 +219,8 @@ export function applyClipDragPreview(
 ): CanvasLayout {
   const original = layout.clips.find((clip) => clip.clipId === preview.clipId);
   const clips = layout.clips.filter((clip) => clip.clipId !== preview.clipId);
+  const sourceIn = preview.sourceInTime ?? original?.sourceInTime ?? 0;
+  const markerSourceTimes = original?.markerSourceTimes ?? [];
   clips.push({
     clipId: preview.clipId,
     x: preview.x,
@@ -220,6 +232,8 @@ export function applyClipDragPreview(
     sourceId: original?.sourceId ?? '',
     sourceType: original?.sourceType ?? 'video',
     sourceInTime: preview.sourceInTime ?? original?.sourceInTime ?? null,
+    markerSourceTimes,
+    markerXs: visibleMarkerPageXs(markerSourceTimes, preview.x, sourceIn ?? 0, preview.duration),
   });
   clips.sort((a, b) => a.y - b.y);
   return recomputePlayheadExtents({
@@ -378,6 +392,27 @@ export function applyInlineImageResizePreview(
   };
 }
 
+export function applyMarkerMovePreview(
+  layout: CanvasLayout,
+  preview: { clipId: string; originalSourceTime: number; sourceTime: number },
+): CanvasLayout {
+  return {
+    ...layout,
+    clips: layout.clips.map((clip) => {
+      if (clip.clipId !== preview.clipId) return clip;
+      const markerSourceTimes = clip.markerSourceTimes.map((t) =>
+        Math.abs(t - preview.originalSourceTime) < 1e-6 ? preview.sourceTime : t,
+      );
+      const sourceIn = clip.sourceInTime ?? 0;
+      return {
+        ...clip,
+        markerSourceTimes,
+        markerXs: visibleMarkerPageXs(markerSourceTimes, clip.x, sourceIn, clip.duration),
+      };
+    }),
+  };
+}
+
 export function applyScribbleMovePreview(
   layout: CanvasLayout,
   preview: { scribbleId: string; outline: number[][] },
@@ -480,6 +515,24 @@ export function hitTestCanvas(
   }
 
   for (const clip of [...layout.clips].reverse()) {
+    // Markers sit on the top edge and must win over the clip body / handles.
+    const markerHit = Math.max(7, MIN_HANDLE_HIT_SCREEN_PX / layout.camera.z);
+    const sourceIn = clip.sourceInTime ?? 0;
+    for (const sourceTime of clip.markerSourceTimes) {
+      if (sourceTime < sourceIn - 1e-9 || sourceTime > sourceIn + clip.duration + 1e-9) continue;
+      const mx = markerPageX(clip.x, sourceIn, sourceTime);
+      if (
+        pointInRect(pageX, pageY, {
+          x: mx - markerHit / 2,
+          y: clip.y - 2 / layout.camera.z,
+          width: markerHit,
+          height: markerHit,
+        })
+      ) {
+        return { kind: 'clip-marker', clipId: clip.clipId, sourceTime };
+      }
+    }
+
     const rightHandle = {
       x: clip.x + clip.width - handleHit,
       y: clip.y,
@@ -574,6 +627,7 @@ export function playheadJumpEdges(
     const layout = computeClipLayout(doc, timing, clip);
     edges.add(layout.x);
     edges.add(layout.x + layout.width);
+    for (const mx of layout.markerXs) edges.add(mx);
   }
   return [...edges].sort((a, b) => a - b);
 }
