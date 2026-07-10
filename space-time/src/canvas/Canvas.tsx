@@ -1414,6 +1414,50 @@ export function Canvas({
   };
   deleteSelectedInlineImageRef.current = deleteSelectedInlineImage;
 
+  /** Delete the clip or post-it currently under the pointer (no selection required). */
+  const deletePointedItem = () => {
+    if (!pointerOnCanvasRef.current || !lastPointerClientRef.current) return false;
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return false;
+    layoutRef.current = layout;
+    const { x, y } = pagePointFromClient(
+      lastPointerClientRef.current.clientX,
+      lastPointerClientRef.current.clientY,
+    );
+    const target = hitTestCanvas(layout, x, y);
+
+    if (target.kind === 'post-it' || target.kind === 'post-it-resize') {
+      const postItId = target.postItId;
+      if (editingPostItIdRef.current === postItId) stopEditingPostIt();
+      changeDoc((d) => {
+        deletePostIt(d, postItId);
+      });
+      onSelectedPostItChange(null);
+      schedulePaint();
+      return true;
+    }
+
+    if (
+      target.kind === 'clip-body' ||
+      target.kind === 'clip-left-handle' ||
+      target.kind === 'clip-right-handle'
+    ) {
+      const clipId = target.clipId;
+      changeDoc((d) => {
+        deleteClip(d, clipId);
+      });
+      if (selectedClipId === clipId) onSelectedClipChange(null);
+      setHoveredClipId((h) => (h === clipId ? null : h));
+      hoveredMarkerRef.current = null;
+      schedulePaint();
+      return true;
+    }
+
+    return false;
+  };
+  const deletePointedItemRef = useRef<() => boolean>(() => false);
+  deletePointedItemRef.current = deletePointedItem;
+
   useEffect(() => {
     syncGhostSmoothStates(ghostPlayheads, ghostSmoothRef.current);
     ghostAdvanceTimeRef.current = null;
@@ -2042,9 +2086,6 @@ export function Canvas({
     const postIt = findPostIt(doc, postItId);
     if (!postIt) return;
 
-    onSelectedPostItChange(postItId);
-    onSelectedClipChange(null);
-    onSelectedScribbleChange(null);
     dragRef.current = {
       kind: 'post-it-move',
       pointerId: KEYBOARD_PLAYHEAD_MOVE_POINTER_ID,
@@ -2079,9 +2120,6 @@ export function Canvas({
     const clip = findClip(doc, clipId);
     if (!clip) return;
 
-    onSelectedClipChange(clipId);
-    onSelectedScribbleChange(null);
-    onSelectedPostItChange(null);
     const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
     dragRef.current = {
       kind: 'move',
@@ -2118,7 +2156,6 @@ export function Canvas({
     changeDoc((d) => {
       commitClipMove(d, drag.clipId, preview.x, preview.y);
     });
-    onSelectedClipChange(drag.clipId);
     clipDragPreviewRef.current = null;
     dragRef.current = null;
     schedulePaint();
@@ -2637,6 +2674,11 @@ export function Canvas({
           return;
         }
         if (deleteCanvasSelectionRef.current()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        if (deletePointedItemRef.current()) {
           event.preventDefault();
           event.stopImmediatePropagation();
           return;
@@ -3639,7 +3681,6 @@ export function Canvas({
       changeDoc((d) => {
         commitClipMove(d, drag.clipId, preview.x, preview.y);
       });
-      onSelectedClipChange(drag.clipId);
     } else if (drag.kind === 'resize' && preview) {
       clearClipPreview();
       const partners = rollPartnerPreviewsRef.current;
