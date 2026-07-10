@@ -431,6 +431,54 @@ export function applyScribbleMovePreview(
   };
 }
 
+/** Apply a heterogeneous selection-move preview (clips, playheads, annotations, images). */
+export function applySelectionMovePreview(
+  layout: CanvasLayout,
+  preview: {
+    clips: ClipDragPreview[];
+    playheads: Array<{
+      playheadId: string;
+      x: number;
+      y: number;
+      currentX: number;
+      height: number;
+    }>;
+    scribbles: Array<{ scribbleId: string; outline: number[][] }>;
+    postIts: Array<{ postItId: string; x: number; y: number }>;
+    images: Array<{ imageId: string; x: number; y: number }>;
+  },
+): CanvasLayout {
+  let next = applyClipDragPreviews(layout, preview.clips);
+  if (preview.playheads.length > 0) {
+    const byId = new Map(preview.playheads.map((ph) => [ph.playheadId, ph]));
+    next = {
+      ...next,
+      playheads: next.playheads.map((ph) => {
+        const pv = byId.get(ph.playheadId);
+        if (!pv) return ph;
+        return {
+          ...ph,
+          x: pv.x,
+          y: pv.y,
+          currentX: pv.currentX,
+          height: pv.height,
+        };
+      }),
+    };
+    next = recomputePlayheadExtents(next);
+  }
+  for (const scribble of preview.scribbles) {
+    next = applyScribbleMovePreview(next, scribble);
+  }
+  for (const postIt of preview.postIts) {
+    next = applyPostItMovePreview(next, postIt);
+  }
+  for (const image of preview.images) {
+    next = applyInlineImageMovePreview(next, image);
+  }
+  return next;
+}
+
 export function pointInRect(
   x: number,
   y: number,

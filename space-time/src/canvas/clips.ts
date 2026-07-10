@@ -99,7 +99,8 @@ export function splitClipAtX(
   const { left, right } = partitionMarkersAtSourceTime(clipMarkers(clip), rightSourceIn);
 
   clip.duration = leftDuration;
-  clip.markers = left.length > 0 ? left : undefined;
+  if (left.length > 0) clip.markers = left;
+  else delete clip.markers;
 
   const rightClip = newClip(
     clip.sourceId,

@@ -20,6 +20,7 @@
   --st-scribble: oklch(35% 0.02 260);
   --st-scribble-selected: oklch(55% 0.14 280);
   --st-waveform: oklch(38% 0.12 250);
+  --st-selection-bubble: oklch(88% 0.08 95 / 0.45);
   --st-post-it-fill: oklch(91% 0.13 96);
   --st-post-it-selected-fill: oklch(88% 0.15 74);
   --st-post-it-stroke: oklch(80% 0.09 96);

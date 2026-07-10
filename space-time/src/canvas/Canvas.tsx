@@ -40,8 +40,8 @@ import {
   createPlayhead,
   deletePlayhead,
 } from './playheads';
-import { addPostIt, commitPostItPosition, commitPostItSize, updatePostItText } from './post-its';
-import { addScribble, buildScribbleOutline, commitScribbleMove, translateOutline } from './scribbles';
+import { addPostIt, commitPostItPosition, commitPostItSize, deletePostIt, updatePostItText } from './post-its';
+import { addScribble, buildScribbleOutline, commitScribbleMove, deleteScribble, translateOutline } from './scribbles';
 import {
   applyClipDragPreview,
   applyInlineImageMovePreview,
@@ -51,6 +51,7 @@ import {
   applyPlayheadMovePreview,
   applyPostItMovePreview,
   applyPostItResizePreview,
+  applySelectionMovePreview,
   applyScribbleMovePreview,
   computeCanvasLayout,
   hitTestCanvas,
@@ -63,6 +64,15 @@ import {
 } from './layout';
 import { drawCanvas, drawTimeRuler } from './draw';
 import { EmbedWindows } from './EmbedWindows';
+import { commitEmbedMove, deleteEmbed } from './embeds';
+import {
+  EMPTY_SELECTION,
+  pointInSelectionBubble,
+  selectionBubblePolygon,
+  selectionFromLasso,
+  selectionIsEmpty,
+  type CanvasSelection,
+} from './selection-lasso';
 import {
   loadCamera,
   panCameraToKeepPageXVisible,
@@ -296,6 +306,35 @@ type DragState =
       points: number[][];
     }
   | {
+      kind: 'lasso-draw';
+      pointerId: number;
+      points: number[][];
+    }
+  | {
+      kind: 'selection-move';
+      pointerId: number;
+      startPageX: number;
+      startPageY: number;
+      clips: Array<{
+        clipId: string;
+        originalX: number;
+        originalY: number;
+        duration: number;
+        label: string;
+      }>;
+      playheads: Array<{
+        playheadId: string;
+        originalX: number;
+        originalY: number;
+        originalCurrentX: number;
+        height: number;
+      }>;
+      scribbles: Array<{ scribbleId: string; originalOutline: number[][] }>;
+      postIts: Array<{ postItId: string; originalX: number; originalY: number }>;
+      images: Array<{ imageId: string; originalX: number; originalY: number }>;
+      embeds: Array<{ embedId: string; originalX: number; originalY: number }>;
+    }
+  | {
       kind: 'playhead-draw';
       pointerId: number;
       x: number;
@@ -412,6 +451,8 @@ const KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID = -3;
 const KEYBOARD_CLIP_DUPLICATE_POINTER_ID = -4;
 const KEYBOARD_SCRIBBLE_POINTER_ID = -5;
 const KEYBOARD_CLIP_MOVE_POINTER_ID = -6;
+const KEYBOARD_LASSO_POINTER_ID = -7;
+const KEYBOARD_SELECTION_MOVE_POINTER_ID = -8;
 
 function isDuplicateKey(event: KeyboardEvent): boolean {
   return event.code === 'KeyD' || event.key === 'd' || event.key === 'D';
@@ -561,6 +602,26 @@ export function Canvas({
   } | null>(null);
   /** True while marker drag is scrubbing the live playhead mix (not edge preview). */
   const markerMonitorScrubRef = useRef(false);
+  const canvasSelectionRef = useRef<CanvasSelection>({ ...EMPTY_SELECTION });
+  const lassoPathRef = useRef<number[][] | null>(null);
+  const selectionMovePreviewRef = useRef<{
+    clips: ClipDragPreview[];
+    playheads: Array<{
+      playheadId: string;
+      x: number;
+      y: number;
+      currentX: number;
+      height: number;
+    }>;
+    scribbles: Array<{ scribbleId: string; outline: number[][] }>;
+    postIts: Array<{ postItId: string; x: number; y: number }>;
+    images: Array<{ imageId: string; x: number; y: number }>;
+    embeds: Array<{ embedId: string; x: number; y: number }>;
+  } | null>(null);
+  const [embedPositionOverrides, setEmbedPositionOverrides] = useState<Map<
+    string,
+    { x: number; y: number }
+  > | null>(null);
   const selectedInlineImageIdRef = useRef<string | null>(null);
   const timingRef = useRef<Map<string, ClipTimingInfo>>(new Map());
   const loaderRef = useRef(createSourceLoader());
@@ -613,6 +674,7 @@ export function Canvas({
   const sKeyHeldRef = useRef(false);
   const mKeyHeldRef = useRef(false);
   const dKeyHeldRef = useRef(false);
+  const altKeyHeldRef = useRef(false);
   const keysHeldRef = useRef(new Set<string>());
   const pointerOnCanvasRef = useRef(false);
   const isFocusedRef = useRef(isFocused);
@@ -623,7 +685,13 @@ export function Canvas({
   );
   const beginSplitLineRef = useRef<(x: number, y: number, pointerId: number) => void>(() => {});
   const beginScribbleDrawRef = useRef<(x: number, y: number) => void>(() => {});
+  const beginLassoDrawRef = useRef<(x: number, y: number) => void>(() => {});
+  const finishLassoDrawRef = useRef<() => void>(() => {});
   const beginMoveAtRef = useRef<(x: number, y: number) => void>(() => {});
+  const beginSelectionMoveRef = useRef<(x: number, y: number, pointerId: number) => void>(
+    () => {},
+  );
+  const commitSelectionMoveDragRef = useRef<() => void>(() => {});
   const beginPlayheadMoveRef = useRef<(x: number, y: number) => void>(() => {});
   const commitPlayheadMoveRef = useRef<() => void>(() => {});
   const cancelPlayheadMoveRef = useRef<() => void>(() => {});
@@ -640,6 +708,7 @@ export function Canvas({
   const toggleFormatAtRef = useRef<(x: number, y: number) => void>(() => {});
   const addMarkerAtPointerRef = useRef<() => void>(() => {});
   const deleteHoveredMarkerRef = useRef<() => boolean>(() => false);
+  const deleteCanvasSelectionRef = useRef<() => boolean>(() => false);
   const deleteSelectedInlineImageRef = useRef<() => boolean>(() => false);
   const hoveredMarkerRef = useRef<{ clipId: string; sourceTime: number } | null>(null);
   const commitScribbleDrawRef = useRef<(drag: Extract<DragState, { kind: 'scribble-draw' }>) => void>(
@@ -708,6 +777,19 @@ export function Canvas({
     onSelectedScribbleChange(null);
     onSelectedPostItChange(null);
     setSelectedInlineImageId(null);
+  };
+
+  const clearCanvasSelection = () => {
+    canvasSelectionRef.current = { ...EMPTY_SELECTION };
+    lassoPathRef.current = null;
+    selectionMovePreviewRef.current = null;
+    setEmbedPositionOverrides(null);
+    schedulePaint();
+  };
+
+  const setCanvasSelection = (sel: CanvasSelection) => {
+    canvasSelectionRef.current = sel;
+    schedulePaint();
   };
 
   const resolveClipPlayDurationForUi = useCallback(
@@ -916,6 +998,8 @@ export function Canvas({
 
     if (clipDragPreviewRef.current) {
       layoutRef.current = applyClipDragPreview(layout, clipDragPreviewRef.current);
+    } else if (selectionMovePreviewRef.current) {
+      layoutRef.current = applySelectionMovePreview(layout, selectionMovePreviewRef.current);
     } else if (playheadDuplicatePreviewRef.current) {
       layoutRef.current = applyPlayheadDuplicatePreview(
         layout,
@@ -975,6 +1059,10 @@ export function Canvas({
           ? activeDrag.originalPlayheadX
           : null;
 
+    const selectionBubble = selectionIsEmpty(canvasSelectionRef.current)
+      ? null
+      : selectionBubblePolygon(layoutRef.current, canvasSelectionRef.current, deps.doc.embeds);
+
     drawCanvas(
       ctx,
       theme,
@@ -992,6 +1080,8 @@ export function Canvas({
       imageElementStoreRef.current?.imageMap,
       selectedInlineImageIdRef.current,
       timeOriginOverride,
+      selectionBubble,
+      lassoPathRef.current,
     );
 
     const ruler = rulerRef.current;
@@ -1450,6 +1540,260 @@ export function Canvas({
 
   beginScribbleDrawRef.current = beginScribbleDraw;
 
+  const beginLassoDraw = (x: number, y: number) => {
+    if (dragRef.current) return;
+    clearCanvasSelection();
+    onSelectedClipChange(null);
+    clearAnnotationSelection();
+    dragRef.current = {
+      kind: 'lasso-draw',
+      pointerId: KEYBOARD_LASSO_POINTER_ID,
+      points: [[x, y]],
+    };
+    lassoPathRef.current = [[x, y]];
+    schedulePaint();
+  };
+
+  const appendLassoPoint = (x: number, y: number) => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'lasso-draw') return;
+    const last = drag.points[drag.points.length - 1];
+    if (last && Math.hypot(x - last[0]!, y - last[1]!) < 2 / (layoutRef.current?.camera.z ?? 1)) {
+      return;
+    }
+    drag.points.push([x, y]);
+    lassoPathRef.current = drag.points.map((p) => [p[0]!, p[1]!]);
+    schedulePaint();
+  };
+
+  const finishLassoDraw = () => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'lasso-draw') return;
+    const points = drag.points.map((p) => [p[0]!, p[1]!]);
+    dragRef.current = null;
+    lassoPathRef.current = null;
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout || points.length < 3) {
+      clearCanvasSelection();
+      schedulePaint();
+      return;
+    }
+    // Close the polygon for intersection tests.
+    const first = points[0]!;
+    const last = points[points.length - 1]!;
+    if (first[0] !== last[0] || first[1] !== last[1]) {
+      points.push([first[0]!, first[1]!]);
+    }
+    const sel = selectionFromLasso(layout, doc, points);
+    canvasSelectionRef.current = sel;
+    onSelectedClipChange(null);
+    clearAnnotationSelection();
+    schedulePaint();
+  };
+
+  const beginSelectionMove = (x: number, y: number, pointerId: number) => {
+    if (dragRef.current) return;
+    const sel = canvasSelectionRef.current;
+    if (selectionIsEmpty(sel)) return;
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return;
+
+    const clips = sel.clipIds
+      .map((id) => {
+        const clip = findClip(doc, id);
+        if (!clip) return null;
+        const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
+        return {
+          clipId: id,
+          originalX: clip.x,
+          originalY: clip.y,
+          duration: playDuration,
+          label: clipDisplayName(doc, clip),
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
+
+    const playheads = sel.playheadIds
+      .map((id) => {
+        const ph = doc.playheads.find((p) => p.id === id);
+        const layoutPh = layout.playheads.find((p) => p.playheadId === id);
+        if (!ph || !layoutPh) return null;
+        return {
+          playheadId: id,
+          originalX: ph.x,
+          originalY: ph.y,
+          originalCurrentX: playheadCurrentX.get(id) ?? ph.x,
+          height: ph.height,
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    const scribbles = sel.scribbleIds
+      .map((id) => {
+        const scribble = findScribble(doc, id);
+        if (!scribble) return null;
+        return {
+          scribbleId: id,
+          originalOutline: scribble.outline.map(([px, py]) => [px, py]),
+        };
+      })
+      .filter((s): s is NonNullable<typeof s> => s !== null);
+
+    const postIts = sel.postItIds
+      .map((id) => {
+        const postIt = findPostIt(doc, id);
+        if (!postIt) return null;
+        return { postItId: id, originalX: postIt.x, originalY: postIt.y };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+
+    const images = sel.inlineImageIds
+      .map((id) => {
+        const image = findInlineImage(doc, id);
+        if (!image) return null;
+        return { imageId: id, originalX: image.x, originalY: image.y };
+      })
+      .filter((i): i is NonNullable<typeof i> => i !== null);
+
+    const embeds = sel.embedIds
+      .map((id) => {
+        const embed = (doc.embeds ?? []).find((e) => e.id === id);
+        if (!embed) return null;
+        return { embedId: id, originalX: embed.x, originalY: embed.y };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+
+    dragRef.current = {
+      kind: 'selection-move',
+      pointerId,
+      startPageX: x,
+      startPageY: y,
+      clips,
+      playheads,
+      scribbles,
+      postIts,
+      images,
+      embeds,
+    };
+    updateSelectionMoveDrag(x, y);
+  };
+
+  const updateSelectionMoveDrag = (x: number, y: number) => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'selection-move') return;
+    const deltaX = x - drag.startPageX;
+    const deltaY = y - drag.startPageY;
+    selectionMovePreviewRef.current = {
+      clips: drag.clips.map((c) => ({
+        clipId: c.clipId,
+        x: c.originalX + deltaX,
+        y: c.originalY + deltaY,
+        duration: c.duration,
+        label: c.label,
+      })),
+      playheads: drag.playheads.map((ph) => ({
+        playheadId: ph.playheadId,
+        x: ph.originalX + deltaX,
+        y: ph.originalY + deltaY,
+        currentX: ph.originalCurrentX + deltaX,
+        height: ph.height,
+      })),
+      scribbles: drag.scribbles.map((s) => ({
+        scribbleId: s.scribbleId,
+        outline: translateOutline(s.originalOutline, deltaX, deltaY),
+      })),
+      postIts: drag.postIts.map((p) => ({
+        postItId: p.postItId,
+        x: p.originalX + deltaX,
+        y: p.originalY + deltaY,
+      })),
+      images: drag.images.map((i) => ({
+        imageId: i.imageId,
+        x: i.originalX + deltaX,
+        y: i.originalY + deltaY,
+      })),
+      embeds: drag.embeds.map((e) => ({
+        embedId: e.embedId,
+        x: e.originalX + deltaX,
+        y: e.originalY + deltaY,
+      })),
+    };
+    const embedMap = new Map<string, { x: number; y: number }>();
+    for (const e of selectionMovePreviewRef.current.embeds) {
+      embedMap.set(e.embedId, { x: e.x, y: e.y });
+    }
+    setEmbedPositionOverrides(embedMap.size > 0 ? embedMap : null);
+    schedulePaint();
+  };
+
+  const commitSelectionMoveDrag = () => {
+    const preview = selectionMovePreviewRef.current;
+    const drag = dragRef.current;
+    if (drag?.kind !== 'selection-move' || !preview) {
+      selectionMovePreviewRef.current = null;
+      if (drag?.kind === 'selection-move') dragRef.current = null;
+      setEmbedPositionOverrides(null);
+      schedulePaint();
+      return;
+    }
+    changeDoc((d) => {
+      if (preview.clips.length > 0) {
+        commitClipMoves(
+          d,
+          preview.clips.map((c) => ({ clipId: c.clipId, x: c.x, y: c.y })),
+        );
+      }
+      for (const ph of preview.playheads) {
+        commitPlayheadPosition(d, ph.playheadId, ph.x, ph.y);
+      }
+      for (const s of preview.scribbles) {
+        commitScribbleMove(d, s.scribbleId, s.outline);
+      }
+      for (const p of preview.postIts) {
+        commitPostItPosition(d, p.postItId, p.x, p.y);
+      }
+      for (const i of preview.images) {
+        commitInlineImagePosition(d, i.imageId, i.x, i.y);
+      }
+      for (const e of preview.embeds) {
+        commitEmbedMove(d, e.embedId, e.x, e.y);
+      }
+    });
+    for (const ph of preview.playheads) {
+      onPlayheadCurrentXChange(ph.playheadId, ph.currentX);
+    }
+    selectionMovePreviewRef.current = null;
+    dragRef.current = null;
+    setEmbedPositionOverrides(null);
+    schedulePaint();
+  };
+
+  const deleteCanvasSelection = () => {
+    const sel = canvasSelectionRef.current;
+    if (selectionIsEmpty(sel)) return false;
+    changeDoc((d) => {
+      for (const id of sel.clipIds) deleteClip(d, id);
+      for (const id of sel.scribbleIds) deleteScribble(d, id);
+      for (const id of sel.postItIds) deletePostIt(d, id);
+      for (const id of sel.inlineImageIds) deleteInlineImage(d, id);
+      for (const id of sel.embedIds) deleteEmbed(d, id);
+      for (const id of sel.playheadIds) deletePlayhead(d, id);
+    });
+    if (sel.playheadIds.includes(activePlayheadId ?? '')) {
+      onActivePlayheadChange(null);
+    }
+    if (sel.clipIds.includes(selectedClipId ?? '')) onSelectedClipChange(null);
+    clearAnnotationSelection();
+    clearCanvasSelection();
+    schedulePaint();
+    return true;
+  };
+  deleteCanvasSelectionRef.current = deleteCanvasSelection;
+  beginLassoDrawRef.current = beginLassoDraw;
+  finishLassoDrawRef.current = finishLassoDraw;
+  beginSelectionMoveRef.current = beginSelectionMove;
+  commitSelectionMoveDragRef.current = commitSelectionMoveDrag;
+
   const updateScribbleMoveDrag = (x: number, y: number) => {
     const drag = dragRef.current;
     if (drag?.kind !== 'scribble-move') return;
@@ -1739,6 +2083,7 @@ export function Canvas({
     // Post-its sit on top of clips visually, so they win under the pointer.
     for (const postIt of [...layout.postIts].reverse()) {
       if (pointInRect(x, y, { x: postIt.x, y: postIt.y, width: postIt.width, height: postIt.height })) {
+        clearCanvasSelection();
         beginPostItMove(x, y, postIt.postItId);
         return;
       }
@@ -1748,13 +2093,24 @@ export function Canvas({
     // (This is what lets you grab short clips without hitting the handles.)
     const clip = clipAtPoint(layout, x, y);
     if (clip) {
+      clearCanvasSelection();
       beginClipMove(x, y, clip.clipId);
       return;
     }
 
     for (const scribble of [...layout.scribbles].reverse()) {
       if (pointInPolygon(x, y, scribble.outline)) {
+        clearCanvasSelection();
         beginScribbleMove(x, y, scribble.scribbleId);
+        return;
+      }
+    }
+
+    // Empty space inside the selection bubble: move the whole selection.
+    if (!selectionIsEmpty(canvasSelectionRef.current)) {
+      const bubble = selectionBubblePolygon(layout, canvasSelectionRef.current, doc.embeds);
+      if (pointInSelectionBubble(x, y, bubble)) {
+        beginSelectionMove(x, y, KEYBOARD_SELECTION_MOVE_POINTER_ID);
         return;
       }
     }
@@ -2004,6 +2360,7 @@ export function Canvas({
       if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = true;
       if (event.key === 'w' || event.key === 'W') {
         if (event.repeat || isTextInput(event.target)) return;
+        if (event.altKey || altKeyHeldRef.current) return;
         wKeyHeldRef.current = true;
         if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
         const { x, y } = pagePointFromClient(
@@ -2011,6 +2368,17 @@ export function Canvas({
           lastPointerClientRef.current.clientY,
         );
         beginScribbleDrawRef.current(x, y);
+      }
+      if (event.key === 'Alt') {
+        if (event.repeat || isTextInput(event.target)) return;
+        altKeyHeldRef.current = true;
+        event.preventDefault();
+        if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
+        const { x, y } = pagePointFromClient(
+          lastPointerClientRef.current.clientX,
+          lastPointerClientRef.current.clientY,
+        );
+        beginLassoDrawRef.current(x, y);
       }
       if (event.key === 'n' || event.key === 'N') {
         if (event.repeat || isTextInput(event.target)) return;
@@ -2044,6 +2412,7 @@ export function Canvas({
       }
       if (event.key === 'm' || event.key === 'M') {
         if (event.repeat || isTextInput(event.target)) return;
+        if (event.altKey || altKeyHeldRef.current) return;
         mKeyHeldRef.current = true;
         if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
         const { x, y } = pagePointFromClient(
@@ -2085,6 +2454,11 @@ export function Canvas({
           event.stopImmediatePropagation();
           return;
         }
+        if (deleteCanvasSelectionRef.current()) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
         if (deleteSelectedInlineImageRef.current()) {
           event.preventDefault();
         }
@@ -2098,6 +2472,12 @@ export function Canvas({
         const drag = dragRef.current;
         if (drag?.kind === 'scribble-draw') {
           commitScribbleDrawRef.current(drag);
+        }
+      }
+      if (event.key === 'Alt') {
+        altKeyHeldRef.current = false;
+        if (dragRef.current?.kind === 'lasso-draw') {
+          finishLassoDrawRef.current();
         }
       }
       if (event.key === 's' || event.key === 'S') {
@@ -2115,6 +2495,8 @@ export function Canvas({
           commitScribbleMoveDragRef.current();
         } else if (dragRef.current?.kind === 'post-it-move') {
           commitPostItMoveDragRef.current();
+        } else if (dragRef.current?.kind === 'selection-move') {
+          commitSelectionMoveDragRef.current();
         } else if (
           dragRef.current?.kind === 'move' &&
           dragRef.current.pointerId === KEYBOARD_CLIP_MOVE_POINTER_ID
@@ -2138,9 +2520,13 @@ export function Canvas({
       sKeyHeldRef.current = false;
       mKeyHeldRef.current = false;
       dKeyHeldRef.current = false;
+      altKeyHeldRef.current = false;
       keysHeldRef.current.clear();
       if (dragRef.current?.kind === 'scribble-draw') {
         commitScribbleDrawRef.current(dragRef.current);
+      }
+      if (dragRef.current?.kind === 'lasso-draw') {
+        finishLassoDrawRef.current();
       }
       if (
         dragRef.current?.kind === 'split-line' &&
@@ -2156,6 +2542,8 @@ export function Canvas({
         commitScribbleMoveDragRef.current();
       } else if (dragRef.current?.kind === 'post-it-move') {
         commitPostItMoveDragRef.current();
+      } else if (dragRef.current?.kind === 'selection-move') {
+        commitSelectionMoveDragRef.current();
       } else if (dragRef.current?.kind === 'marker-move') {
         commitMarkerMoveDragRef.current();
       } else if (
@@ -2387,7 +2775,14 @@ export function Canvas({
 
     if (event.button !== 0) return;
 
-    if (mKeyHeldRef.current || dKeyHeldRef.current || wKeyHeldRef.current) return;
+    if (
+      mKeyHeldRef.current ||
+      dKeyHeldRef.current ||
+      wKeyHeldRef.current ||
+      altKeyHeldRef.current
+    ) {
+      return;
+    }
 
     const layout = buildLayout();
     if (!layout) return;
@@ -2409,6 +2804,20 @@ export function Canvas({
 
     const target = hitTestCanvas(layout, x, y);
 
+    // Playhead band counts as "empty" for multi-select: bubble drag must win
+    // over scrub so you can move a subset of clips inside a playhead extent.
+    const hitIsSolidElement = target.kind !== 'none' && target.kind !== 'playhead';
+    if (hitIsSolidElement) {
+      clearCanvasSelection();
+    } else if (!selectionIsEmpty(canvasSelectionRef.current)) {
+      const bubble = selectionBubblePolygon(layout, canvasSelectionRef.current, doc.embeds);
+      if (pointInSelectionBubble(x, y, bubble)) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        beginSelectionMove(x, y, event.pointerId);
+        return;
+      }
+    }
+
     if (target.kind === 'clip-marker') {
       event.currentTarget.setPointerCapture(event.pointerId);
       beginMarkerMove(x, target.clipId, target.sourceTime, event.pointerId);
@@ -2416,6 +2825,7 @@ export function Canvas({
     }
 
     if (target.kind === 'playhead') {
+      clearCanvasSelection();
       if (target.playheadId !== activePlayheadId) {
         onSelectedClipChange(null);
         clearAnnotationSelection();
@@ -2600,6 +3010,7 @@ export function Canvas({
       return;
     }
 
+    clearCanvasSelection();
     onSelectedClipChange(null);
     clearAnnotationSelection();
 
@@ -2634,6 +3045,11 @@ export function Canvas({
 
     if (!drag && wKeyHeldRef.current && pointerOnCanvasRef.current) {
       beginScribbleDraw(x, y);
+      drag = dragRef.current;
+    }
+
+    if (!drag && altKeyHeldRef.current && pointerOnCanvasRef.current) {
+      beginLassoDraw(x, y);
       drag = dragRef.current;
     }
 
@@ -2679,6 +3095,8 @@ export function Canvas({
       drag.pointerId !== KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_CLIP_DUPLICATE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_CLIP_MOVE_POINTER_ID &&
+      drag.pointerId !== KEYBOARD_LASSO_POINTER_ID &&
+      drag.pointerId !== KEYBOARD_SELECTION_MOVE_POINTER_ID &&
       event.pointerId !== drag.pointerId
     ) {
       return;
@@ -2747,6 +3165,27 @@ export function Canvas({
       drag.points.push([x, y, 0.5]);
       paintDepsRef.current.scribblePreview = buildScribbleOutline(drag.points);
       schedulePaint();
+      return;
+    }
+
+    if (drag.kind === 'lasso-draw') {
+      if (!altKeyHeldRef.current) {
+        finishLassoDraw();
+        return;
+      }
+      appendLassoPoint(x, y);
+      return;
+    }
+
+    if (drag.kind === 'selection-move') {
+      if (
+        drag.pointerId === KEYBOARD_SELECTION_MOVE_POINTER_ID &&
+        (!mKeyHeldRef.current || !keysHeldRef.current.has('KeyM'))
+      ) {
+        commitSelectionMoveDrag();
+        return;
+      }
+      updateSelectionMoveDrag(x, y);
       return;
     }
 
@@ -2951,6 +3390,8 @@ export function Canvas({
       onScrubbingChange?.(false);
     } else if (drag.kind === 'marker-move') {
       commitMarkerMoveDrag();
+    } else if (drag.kind === 'selection-move') {
+      commitSelectionMoveDrag();
     } else if (drag.kind === 'post-it-resize') {
       const preview = postItResizePreviewRef.current;
       if (preview) {
@@ -3184,7 +3625,11 @@ export function Canvas({
         camera={cameraRef.current}
         rulerHeight={RULER_HEIGHT}
         changeDoc={changeDoc}
-        onInteract={onFocusEditor}
+        onInteract={() => {
+          clearCanvasSelection();
+          onFocusEditor?.();
+        }}
+        positionOverrides={embedPositionOverrides}
       />
     </div>
   );

@@ -717,6 +717,54 @@ function drawVerticalDragPreview(
   ctx.setLineDash([]);
 }
 
+/**
+ * Soft banana-yellow selection bubble: one connected rounded polygon under
+ * the selected items (above the grid).
+ */
+function drawSelectionBubble(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  bubble: readonly number[][],
+): void {
+  if (bubble.length < 3) return;
+  ctx.save();
+  ctx.fillStyle = theme.selectionBubble || 'rgba(230, 210, 120, 0.45)';
+  ctx.beginPath();
+  const first = bubble[0]!;
+  ctx.moveTo(first[0]!, first[1]!);
+  for (let i = 1; i < bubble.length; i++) {
+    const p = bubble[i]!;
+    ctx.lineTo(p[0]!, p[1]!);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLassoPath(
+  ctx: CanvasRenderingContext2D,
+  theme: CanvasTheme,
+  points: readonly number[][],
+  cameraZ: number,
+): void {
+  if (points.length < 2) return;
+  ctx.save();
+  ctx.strokeStyle = theme.selectionBubble || 'rgba(200, 180, 80, 0.9)';
+  ctx.lineWidth = 1.5 / cameraZ;
+  ctx.setLineDash([6 / cameraZ, 4 / cameraZ]);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  const first = points[0]!;
+  ctx.moveTo(first[0]!, first[1]!);
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i]!;
+    ctx.lineTo(p[0]!, p[1]!);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function drawCanvas(
   ctx: CanvasRenderingContext2D,
   theme: CanvasTheme,
@@ -734,6 +782,8 @@ export function drawCanvas(
   imageElements?: Map<string, HTMLImageElement>,
   selectedInlineImageId: string | null = null,
   timeOriginOverride: number | null = null,
+  selectionBubble: readonly number[][] | null = null,
+  lassoPath: readonly number[][] | null = null,
 ): void {
   const { width, height, camera } = layout;
 
@@ -743,6 +793,11 @@ export function drawCanvas(
 
   applyCameraTransform(ctx, camera, dpr);
   drawGrid(ctx, theme, layout, timeOriginOverride);
+
+  // Selection bubble sits above the grid but under canvas elements.
+  if (selectionBubble && selectionBubble.length >= 3) {
+    drawSelectionBubble(ctx, theme, selectionBubble);
+  }
 
   // Inline images are background decoration, drawn beneath everything else.
   for (const image of layout.inlineImages) {
@@ -816,6 +871,10 @@ export function drawCanvas(
       verticalDragPreview.y1,
       verticalDragPreview.valid,
     );
+  }
+
+  if (lassoPath && lassoPath.length >= 2) {
+    drawLassoPath(ctx, theme, lassoPath, camera.z);
   }
 }
 

@@ -82,12 +82,15 @@ export function EmbedWindows({
   rulerHeight,
   changeDoc,
   onInteract,
+  positionOverrides,
 }: {
   embeds: Embed[];
   camera: Camera;
   rulerHeight: number;
   changeDoc: (fn: ChangeFn<SpaceTimeDoc>) => void;
   onInteract?: () => void;
+  /** Ephemeral page-space positions (e.g. while dragging a selection). */
+  positionOverrides?: ReadonlyMap<string, { x: number; y: number }> | null;
 }) {
   const dragRef = useRef<DragState | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -98,13 +101,14 @@ export function EmbedWindows({
     if (event.button !== 0) return;
     event.stopPropagation();
     onInteract?.();
+    const override = positionOverrides?.get(embed.id);
     dragRef.current = {
       mode: 'move',
       id: embed.id,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startX: embed.x,
-      startY: embed.y,
+      startX: override?.x ?? embed.x,
+      startY: override?.y ?? embed.y,
     };
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   };
@@ -164,9 +168,16 @@ export function EmbedWindows({
       style={{ top: rulerHeight }}
     >
       {embeds.map((embed) => {
+        const override = positionOverrides?.get(embed.id);
         const isDragging = preview?.id === embed.id;
-        const x = isDragging && preview?.x !== undefined ? preview.x : embed.x;
-        const y = isDragging && preview?.y !== undefined ? preview.y : embed.y;
+        const x =
+          isDragging && preview?.x !== undefined
+            ? preview.x
+            : (override?.x ?? embed.x);
+        const y =
+          isDragging && preview?.y !== undefined
+            ? preview.y
+            : (override?.y ?? embed.y);
         const width = isDragging && preview?.width !== undefined ? preview.width : embed.width;
         const height = isDragging && preview?.height !== undefined ? preview.height : embed.height;
 
