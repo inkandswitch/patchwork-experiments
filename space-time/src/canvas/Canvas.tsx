@@ -100,6 +100,8 @@ import {
   POST_IT_FONT_SIZE,
   POST_IT_LINE_HEIGHT,
   POST_IT_PADDING,
+  POST_IT_HEIGHT,
+  POST_IT_WIDTH,
   readCanvasTheme,
   saveCamera,
   screenToPage,
@@ -134,6 +136,78 @@ import './canvas.css';
 const RULER_HEIGHT = 24;
 const CLIP_LABEL_PADDING_X = 10;
 
+/** Map a click to a caret offset inside a textarea (textareas are replaced elements). */
+function caretIndexFromPoint(
+  textarea: HTMLTextAreaElement,
+  clientX: number,
+  clientY: number,
+): number {
+  const cs = getComputedStyle(textarea);
+  const rect = textarea.getBoundingClientRect();
+  const mirror = document.createElement('div');
+  mirror.textContent = textarea.value;
+  Object.assign(mirror.style, {
+    position: 'fixed',
+    left: `${rect.left}px`,
+    top: `${rect.top}px`,
+    width: `${rect.width}px`,
+    height: `${rect.height}px`,
+    margin: '0',
+    padding: cs.padding,
+    border: cs.border,
+    boxSizing: cs.boxSizing,
+    font: cs.font,
+    fontSize: cs.fontSize,
+    fontFamily: cs.fontFamily,
+    fontWeight: cs.fontWeight,
+    fontStyle: cs.fontStyle,
+    letterSpacing: cs.letterSpacing,
+    lineHeight: cs.lineHeight,
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
+    overflow: 'hidden',
+    opacity: '0',
+    pointerEvents: 'auto',
+    zIndex: '2147483647',
+  } as CSSStyleDeclaration);
+  document.body.appendChild(mirror);
+
+  let index = textarea.value.length;
+  try {
+    const doc = document as Document & {
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+      caretPositionFromPoint?: (
+        x: number,
+        y: number,
+      ) => { offsetNode: Node; offset: number } | null;
+    };
+    let node: Node | null = null;
+    let offset = 0;
+    if (typeof doc.caretPositionFromPoint === 'function') {
+      const pos = doc.caretPositionFromPoint(clientX, clientY);
+      if (pos) {
+        node = pos.offsetNode;
+        offset = pos.offset;
+      }
+    } else if (typeof doc.caretRangeFromPoint === 'function') {
+      const range = doc.caretRangeFromPoint(clientX, clientY);
+      if (range) {
+        node = range.startContainer;
+        offset = range.startOffset;
+      }
+    }
+    if (node && mirror.contains(node)) {
+      const range = document.createRange();
+      range.selectNodeContents(mirror);
+      range.setEnd(node, offset);
+      index = range.toString().length;
+    }
+  } finally {
+    mirror.remove();
+  }
+  return Math.max(0, Math.min(textarea.value.length, index));
+}
+
 function PostItEditor({
   left,
   top,
@@ -143,7 +217,9 @@ function PostItEditor({
   value,
   onChange,
   onCommit,
-  onCancel,
+  onEscape,
+  caretClientX,
+  caretClientY,
 }: {
   left: number;
   top: number;
@@ -153,9 +229,15 @@ function PostItEditor({
   value: string;
   onChange: (value: string) => void;
   onCommit: () => void;
-  onCancel: () => void;
+  /** Keep text, close editor, restore canvas keyboard focus. */
+  onEscape: () => void;
+  caretClientX?: number | null;
+  caretClientY?: number | null;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Ignore blur while the opening click's focus churn settles; otherwise the
+  // editor opens and immediately commits/closes on the same gesture.
+  const blurCommitEnabledRef = useRef(false);
   const fontSize = POST_IT_FONT_SIZE * zoom;
   const padding = POST_IT_PADDING * zoom;
   const lineHeight = POST_IT_LINE_HEIGHT * zoom;
@@ -163,9 +245,25 @@ function PostItEditor({
   useLayoutEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    textarea.focus();
-    textarea.select();
-  }, []);
+    blurCommitEnabledRef.current = false;
+    textarea.focus({ preventScroll: true });
+    if (caretClientX != null && caretClientY != null) {
+      const index = caretIndexFromPoint(textarea, caretClientX, caretClientY);
+      textarea.setSelectionRange(index, index);
+    } else {
+      const len = textarea.value.length;
+      textarea.setSelectionRange(len, len);
+    }
+    const enableBlur = () => {
+      blurCommitEnabledRef.current = true;
+    };
+    // After the current click gesture finishes (pointerup/click).
+    const timer = window.setTimeout(enableBlur, 0);
+    return () => {
+      window.clearTimeout(timer);
+      blurCommitEnabledRef.current = false;
+    };
+  }, [caretClientX, caretClientY]);
 
   return (
     <textarea
@@ -191,10 +289,13 @@ function PostItEditor({
         event.stopPropagation();
         if (event.key === 'Escape') {
           event.preventDefault();
-          onCancel();
+          onEscape();
         }
       }}
-      onBlur={onCommit}
+      onBlur={() => {
+        if (!blurCommitEnabledRef.current) return;
+        onCommit();
+      }}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
@@ -674,10 +775,21 @@ export function Canvas({
   selectedInlineImageIdRef.current = selectedInlineImageId;
   const [editingDraft, setEditingDraft] = useState('');
   const [postItEditingDraft, setPostItEditingDraft] = useState('');
+  const [postItCaretClient, setPostItCaretClient] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const [isFileDropTarget, setIsFileDropTarget] = useState(false);
   const [, bump] = useState(0);
   const editingClipIdRef = useRef<string | null>(null);
   const editingPostItIdRef = useRef<string | null>(null);
+  const pendingPostItEditRef = useRef<{
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const rafRef = useRef<number | null>(null);
   const cameraAnimRafRef = useRef<number | null>(null);
   const ghostSmoothRef = useRef(new Map<string, GhostSmoothState>());
@@ -762,28 +874,57 @@ export function Canvas({
     setEditingClipId(null);
   };
 
-  const startEditingPostIt = (postItId: string) => {
+  const startEditingPostIt = (
+    postItId: string,
+    caret?: { clientX: number; clientY: number } | null,
+    initialText?: string,
+    geometry?: { x: number; y: number; width: number; height: number } | null,
+  ) => {
     const postIt = findPostIt(doc, postItId);
-    if (!postIt) return;
+    const text = initialText ?? postIt?.text;
+    // Allow starting edit from a just-created id before React has the new doc
+    // snapshot, as long as the caller passes initialText.
+    if (text === undefined && !postIt) return;
+
+    // Switching notes: save the previous one first.
+    if (editingPostItIdRef.current && editingPostItIdRef.current !== postItId) {
+      commitEditingPostIt(false);
+    }
+
     onSelectedPostItChange(postItId);
     onSelectedClipChange(null);
     onSelectedScribbleChange(null);
+    setSelectedInlineImageId(null);
+    setPostItCaretClient(caret ? { x: caret.clientX, y: caret.clientY } : null);
+    setPostItEditingDraft(text ?? '');
+    if (postIt) {
+      pendingPostItEditRef.current = {
+        id: postItId,
+        x: postIt.x,
+        y: postIt.y,
+        width: postIt.width,
+        height: postIt.height,
+      };
+    } else if (geometry) {
+      pendingPostItEditRef.current = { id: postItId, ...geometry };
+    }
+    editingPostItIdRef.current = postItId;
     setEditingPostItId(postItId);
-    setPostItEditingDraft(postIt.text);
   };
 
-  const commitEditingPostIt = () => {
-    if (!editingPostItId) return;
-    const postItId = editingPostItId;
+  const commitEditingPostIt = (restoreCanvasFocus = false) => {
+    // Use the ref so Escape→blur doesn't double-commit from a stale closure.
+    const postItId = editingPostItIdRef.current;
+    if (!postItId) return;
+    editingPostItIdRef.current = null;
     const text = postItEditingDraft;
     setEditingPostItId(null);
+    setPostItCaretClient(null);
+    pendingPostItEditRef.current = null;
     changeDoc((d) => {
       updatePostItText(d, postItId, text);
     });
-  };
-
-  const cancelEditingPostIt = () => {
-    setEditingPostItId(null);
+    if (restoreCanvasFocus) onFocusEditor?.();
   };
 
   const clearAnnotationSelection = () => {
@@ -955,7 +1096,9 @@ export function Canvas({
       // Embed windows are DOM overlays positioned from the (imperative) camera,
       // so re-render them whenever we repaint (e.g. during pan/zoom/playback).
       const hasEmbeds = (paintDepsRef.current.doc.embeds?.length ?? 0) > 0;
-      if (editingClipIdRef.current || hasEmbeds) bump((n) => n + 1);
+      if (editingClipIdRef.current || editingPostItIdRef.current || hasEmbeds) {
+        bump((n) => n + 1);
+      }
     });
   };
   schedulePaintRef.current = schedulePaint;
@@ -1139,9 +1282,12 @@ export function Canvas({
       newId = addPostIt(d, x, y);
     });
     if (newId) {
-      onSelectedPostItChange(newId);
-      onSelectedClipChange(null);
-      onSelectedScribbleChange(null);
+      startEditingPostIt(newId, null, '', {
+        x,
+        y,
+        width: POST_IT_WIDTH,
+        height: POST_IT_HEIGHT,
+      });
     }
     schedulePaint();
   };
@@ -1294,8 +1440,10 @@ export function Canvas({
 
   useEffect(() => {
     if (!editingPostItId) return;
-    if (!findPostIt(doc, editingPostItId)) {
+    if (!findPostIt(doc, editingPostItId) && pendingPostItEditRef.current?.id !== editingPostItId) {
       setEditingPostItId(null);
+      setPostItCaretClient(null);
+      pendingPostItEditRef.current = null;
     }
   }, [doc, editingPostItId]);
 
@@ -2661,7 +2809,9 @@ export function Canvas({
       // Embed windows are DOM overlays positioned from the (imperative) camera;
       // re-render them each frame so they track the animated pan/zoom.
       const hasEmbeds = (paintDepsRef.current.doc.embeds?.length ?? 0) > 0;
-      if (editingClipIdRef.current || hasEmbeds) bump((n) => n + 1);
+      if (editingClipIdRef.current || editingPostItIdRef.current || hasEmbeds) {
+        bump((n) => n + 1);
+      }
       if (t < 1) {
         cameraAnimRafRef.current = requestAnimationFrame(step);
       } else if (index < active.length - 1) {
@@ -2764,17 +2914,17 @@ export function Canvas({
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    onFocusEditor?.();
-
     if (event.ctrlKey) {
       const point = pagePoint(event);
       if (fitActivePlayheadExtent(point.x, point.y)) {
         event.preventDefault();
+        onFocusEditor?.();
         return;
       }
     }
 
     if (event.button === 1) {
+      onFocusEditor?.();
       cancelCameraAnimation();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = {
@@ -2805,6 +2955,7 @@ export function Canvas({
     const { x, y } = pagePoint(event);
 
     if (sKeyHeldRef.current) {
+      onFocusEditor?.();
       const existing = dragRef.current;
       if (existing?.kind === 'split-line' && existing.pointerId === KEYBOARD_SPLIT_POINTER_ID) {
         existing.pointerId = event.pointerId;
@@ -2817,6 +2968,19 @@ export function Canvas({
     }
 
     const target = hitTestCanvas(layout, x, y);
+
+    // Open the note editor without first focusing the canvas root — that focus
+    // steal was blurring the textarea on the same click and immediately closing it.
+    if (target.kind === 'post-it') {
+      if (!selectionIsEmpty(canvasSelectionRef.current)) clearCanvasSelection();
+      startEditingPostIt(target.postItId, {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      });
+      return;
+    }
+
+    onFocusEditor?.();
 
     // Playhead band counts as "empty" for multi-select: bubble drag must win
     // over scrub so you can move a subset of clips inside a playhead extent.
@@ -2862,15 +3026,6 @@ export function Canvas({
         playheadId: target.playheadId,
         pointerId: event.pointerId,
       };
-      return;
-    }
-
-    if (target.kind === 'post-it') {
-      event.currentTarget.setPointerCapture(event.pointerId);
-      onSelectedPostItChange(target.postItId);
-      onSelectedClipChange(null);
-      onSelectedScribbleChange(null);
-      setSelectedInlineImageId(null);
       return;
     }
 
@@ -3538,7 +3693,7 @@ export function Canvas({
     const { x, y } = screenToPage(screenX, screenY, cameraRef.current);
     const target = hitTestCanvas(layout, x, y);
     if (target.kind === 'post-it') {
-      startEditingPostIt(target.postItId);
+      // Single-click already opens the editor; ignore the follow-up double-click.
       return;
     }
     if (target.kind !== 'clip-body') return;
@@ -3570,18 +3725,19 @@ export function Canvas({
       })()
     : null;
 
-  const editingPostItLayout =
-    editingPostItId && layoutRef.current
-      ? layoutRef.current.postIts.find((postIt) => postIt.postItId === editingPostItId)
-      : null;
+  const editingPostIt =
+    (editingPostItId ? findPostIt(doc, editingPostItId) : null) ??
+    (editingPostItId && pendingPostItEditRef.current?.id === editingPostItId
+      ? pendingPostItEditRef.current
+      : null);
 
-  const editingPostItScreen = editingPostItLayout
+  const editingPostItScreen = editingPostIt
     ? (() => {
         const camera = cameraRef.current;
-        const topLeft = pageToScreen(editingPostItLayout.x, editingPostItLayout.y, camera);
+        const topLeft = pageToScreen(editingPostIt.x, editingPostIt.y, camera);
         const bottomRight = pageToScreen(
-          editingPostItLayout.x + editingPostItLayout.width,
-          editingPostItLayout.y + editingPostItLayout.height,
+          editingPostIt.x + editingPostIt.width,
+          editingPostIt.y + editingPostIt.height,
           camera,
         );
         return {
@@ -3679,8 +3835,10 @@ export function Canvas({
           zoom={editingPostItScreen.zoom}
           value={postItEditingDraft}
           onChange={setPostItEditingDraft}
-          onCommit={commitEditingPostIt}
-          onCancel={cancelEditingPostIt}
+          onCommit={() => commitEditingPostIt(false)}
+          onEscape={() => commitEditingPostIt(true)}
+          caretClientX={postItCaretClient?.x}
+          caretClientY={postItCaretClient?.y}
         />
       )}
       <EmbedWindows

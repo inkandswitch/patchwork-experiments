@@ -594,7 +594,12 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       tabIndex={-1}
       className="space-time-editor relative flex h-full min-h-0 flex-col overflow-hidden bg-base-100 outline-none"
       onPointerDownCapture={(e) => {
-        if (e.target instanceof HTMLElement && e.target.closest('input')) return;
+        if (
+          e.target instanceof HTMLElement &&
+          e.target.closest('input, textarea, [contenteditable="true"]')
+        ) {
+          return;
+        }
         rootRef.current?.focus({ preventScroll: true });
       }}
       onKeyDown={onKeyDown}

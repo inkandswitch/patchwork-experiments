@@ -9,8 +9,8 @@ export const MIN_CLIP_DURATION = 0.25;
 export const MIN_PLAYHEAD_HEIGHT = 20;
 export const MIN_VERTICAL_DRAG_PX = 12;
 export const DEFAULT_IMAGE_DURATION = 5;
-export const POST_IT_WIDTH = 160;
-export const POST_IT_HEIGHT = 120;
+export const POST_IT_WIDTH = 140;
+export const POST_IT_HEIGHT = 140;
 export const MIN_POST_IT_WIDTH = 80;
 export const MIN_POST_IT_HEIGHT = 60;
 
