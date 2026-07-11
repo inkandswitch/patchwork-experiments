@@ -8,10 +8,7 @@
 //
 // Plain-JS bundleless module: every bare import is importmap-provided.
 
-import {
-  isValidAutomergeUrl,
-  parseAutomergeUrl,
-} from "@automerge/automerge-repo";
+import { parseAutomergeUrl } from "@automerge/automerge-repo";
 import {
   createMemo,
   createRenderEffect,
@@ -100,7 +97,8 @@ export function useHighlight(store, owner) {
   const highlightedDocIds = createMemo(() => {
     const ids = new Set();
     for (const url of Object.keys(incoming())) {
-      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
+      const docId = docIdOf(url);
+      if (docId !== undefined) ids.add(docId);
     }
     return ids;
   });
@@ -174,12 +172,29 @@ export function shortId(docUrl) {
 // Split a doc or match sub-url (`automerge:<id>/seg/seg`) into its owning
 // document url and id. Falls back to the raw url if it can't be parsed.
 function splitDocUrl(url) {
+  const docId = docIdOf(url);
+  return docId === undefined
+    ? { docUrl: url, docId: url }
+    : { docUrl: `automerge:${docId}`, docId };
+}
+
+// The document id behind a doc or sub-document url, or undefined when the url
+// doesn't parse. Cached module-wide: parseAutomergeUrl checksums the id
+// (double SHA-256 in JS) on every call, and every mounted token re-parses the
+// same urls on every Highlight emission — without the cache this dominated
+// the main thread.
+const docIdCache = new Map();
+
+function docIdOf(url) {
+  if (docIdCache.has(url)) return docIdCache.get(url);
+  let docId;
   try {
-    const { documentId } = parseAutomergeUrl(url);
-    return { docUrl: `automerge:${documentId}`, docId: documentId };
+    docId = parseAutomergeUrl(url).documentId;
   } catch {
-    return { docUrl: url, docId: url };
+    docId = undefined;
   }
+  docIdCache.set(url, docId);
+  return docId;
 }
 
 function clip(text) {

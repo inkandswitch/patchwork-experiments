@@ -95,23 +95,34 @@ export function ChannelView(props: {
   // Readers split by declared granularity: an owner whose every subscription
   // reads the whole channel (no declared keys) is shown once in the headline;
   // everyone else keeps per-key attribution.
-  const headlineReaders = createMemo(() => {
-    readerTick();
-    const byOwner = new Map<string, { owner: ScopeOwner; granular: boolean }>();
-    for (const interest of props.context.interests(props.channel)) {
-      const id = ownerId(interest.owner);
-      if (!id) continue;
-      const entry = byOwner.get(id) ?? {
-        owner: interest.owner,
-        granular: false,
-      };
-      if (interest.keys) entry.granular = true;
-      byOwner.set(id, entry);
-    }
-    return [...byOwner.values()]
-      .filter((entry) => !entry.granular)
-      .map((entry) => entry.owner);
-  });
+  // Content-compared: readerTick fires on every (un)subscribe anywhere in the
+  // store, and an unchanged reader list must keep its identity or the token
+  // rows below remount — each remount re-subscribes, ticking readers again in
+  // a feedback loop.
+  const headlineReaders = createMemo(
+    () => {
+      readerTick();
+      const byOwner = new Map<
+        string,
+        { owner: ScopeOwner; granular: boolean }
+      >();
+      for (const interest of props.context.interests(props.channel)) {
+        const id = ownerId(interest.owner);
+        if (!id) continue;
+        const entry = byOwner.get(id) ?? {
+          owner: interest.owner,
+          granular: false,
+        };
+        if (interest.keys) entry.granular = true;
+        byOwner.set(id, entry);
+      }
+      return [...byOwner.values()]
+        .filter((entry) => !entry.granular)
+        .map((entry) => entry.owner);
+    },
+    undefined,
+    { equals: sameValue },
+  );
   const headlineIds = createMemo(
     () => new Set(headlineReaders().map(ownerId)),
   );
@@ -173,13 +184,17 @@ export function ChannelView(props: {
 
   // Readers not already in the headline, shown only when there are no entries
   // to hang the per-key rows off (a key-declaring reader subscribed to an
-  // empty channel stays visible).
-  const fallbackReaders = createMemo(() => {
-    readerTick();
-    return props.context
-      .readers(props.channel)
-      .filter((owner) => !headlineIds().has(ownerId(owner)));
-  });
+  // empty channel stays visible). Content-compared like headlineReaders.
+  const fallbackReaders = createMemo(
+    () => {
+      readerTick();
+      return props.context
+        .readers(props.channel)
+        .filter((owner) => !headlineIds().has(ownerId(owner)));
+    },
+    undefined,
+    { equals: sameValue },
+  );
 
   return (
     <section class="embark-context__channel">
@@ -239,7 +254,9 @@ export function ChannelView(props: {
                       undefined,
                       { equals: sameValue },
                     );
-                    const readBy = createMemo(() => readersFor(key));
+                    const readBy = createMemo(() => readersFor(key), undefined, {
+                      equals: sameValue,
+                    });
                     const KeyFace = () => (
                       <div class="embark-context__section-key">
                         <ViewSlot
@@ -298,7 +315,9 @@ export function ChannelView(props: {
               const groups = createMemo(() => contributionsFor(key), undefined, {
                 equals: sameValue,
               });
-              const readBy = createMemo(() => readersFor(key));
+              const readBy = createMemo(() => readersFor(key), undefined, {
+                equals: sameValue,
+              });
               return (
                 <tbody class="embark-context__section">
                   <tr>
@@ -402,14 +421,21 @@ function ownerId(owner: ScopeOwner | undefined): string | undefined {
 // The view registered for a type tag, as a signal: undefined while no matching
 // plugin exists (callers fall back to a built-in), upgrading in place when a
 // module registers later (bundles load asynchronously).
+//
+// Resolved mounts are cached module-wide by tag: without the cache every
+// (re)mounted row went undefined -> async load -> real view, mounting each
+// ViewSlot twice (fallback DOM first, the real view after the round-trip).
+const resolvedViews = new Map<string, ContextViewMount>();
+
 function useContextView(
   tag: () => string | undefined,
 ): Accessor<ContextViewMount | undefined> {
   const [mount, setMount] = createSignal<ContextViewMount>();
   createEffect(() => {
     const t = tag();
-    setMount(undefined);
-    if (!t) return;
+    const cached = t ? resolvedViews.get(t) : undefined;
+    setMount(() => cached);
+    if (!t || cached) return;
     let disposed = false;
     let off: (() => void) | undefined;
     onCleanup(() => {
@@ -426,6 +452,7 @@ function useContextView(
       if (!plugin) return false;
       const loaded = await contextViews().load(plugin.id);
       if (disposed || !loaded) return false;
+      resolvedViews.set(t, loaded.module as ContextViewMount);
       setMount(() => loaded.module as ContextViewMount);
       return true;
     };
@@ -450,8 +477,9 @@ function useContextView(
 
 // Content equality (via safe serialization), so re-derived but unchanged
 // structures don't re-mount their views. Falls back to reference equality for
-// values that don't serialize (live objects).
-function sameValue(a: unknown, b: unknown): boolean {
+// values that don't serialize (live objects). Exported for the channel list
+// in ContextViewerTool, which needs the same identity-preserving treatment.
+export function sameValue(a: unknown, b: unknown): boolean {
   return a === b || safeJson(a) === safeJson(b);
 }
 

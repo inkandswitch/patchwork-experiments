@@ -27,7 +27,7 @@ import {
   type HighlightController,
 } from "@embark/selection/tokens";
 import type { ContextViewerDoc } from "./datatype";
-import { ChannelView } from "./ChannelView";
+import { ChannelView, sameValue } from "./ChannelView";
 import "./context-viewer.css";
 
 // Tool entry point: a live view of the canvas's shared context. By default it
@@ -162,15 +162,22 @@ function AllContextView(props: {
       .some((scope) => ownerIsDoc(scope.owner, focus)) ||
     view().readers(channel).some((owner) => ownerIsDoc(owner, focus));
 
-  const shown = createMemo(() => {
-    writes();
-    readerTick();
-    const focus = props.focus;
-    const visible = channels()
-      .filter(hasContent)
-      .filter((channel) => !focus || involved(channel, focus));
-    return visible.sort((a, b) => a.name.localeCompare(b.name));
-  });
+  // Content-compared: this recomputes on every write and reader tick, and an
+  // unchanged channel list must keep its identity or every ChannelView below
+  // remounts (tearing down and re-creating all its token views).
+  const shown = createMemo(
+    () => {
+      writes();
+      readerTick();
+      const focus = props.focus;
+      const visible = channels()
+        .filter(hasContent)
+        .filter((channel) => !focus || involved(channel, focus));
+      return visible.sort((a, b) => a.name.localeCompare(b.name));
+    },
+    undefined,
+    { equals: sameValue },
+  );
 
   return (
     <Show

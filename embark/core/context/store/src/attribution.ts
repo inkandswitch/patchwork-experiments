@@ -8,20 +8,29 @@ import { parseAutomergeUrl, type AutomergeUrl } from "@automerge/automerge-repo"
 
 // Split a doc or match sub-url (`automerge:<id>/seg/seg`) into its owning
 // document url and id. Falls back to the raw url if it can't be parsed.
-export function splitDocUrl(url: AutomergeUrl): {
-  docUrl: AutomergeUrl;
-  docId: string;
-} {
-  try {
-    const { documentId } = parseAutomergeUrl(url);
-    return {
-      docUrl: `automerge:${documentId}` as AutomergeUrl,
-      docId: documentId,
-    };
-  } catch {
-    return { docUrl: url, docId: url };
+// Cached module-wide: parseAutomergeUrl checksums the id (double SHA-256 in
+// JS) on every call, and inspectors call this in per-scope filter loops on
+// every store tick — without the cache this dominated the main thread.
+export function splitDocUrl(url: AutomergeUrl): DocUrlSplit {
+  let split = splitCache.get(url);
+  if (!split) {
+    try {
+      const { documentId } = parseAutomergeUrl(url);
+      split = {
+        docUrl: `automerge:${documentId}` as AutomergeUrl,
+        docId: documentId,
+      };
+    } catch {
+      split = { docUrl: url, docId: url };
+    }
+    splitCache.set(url, split);
   }
+  return split;
 }
+
+type DocUrlSplit = { docUrl: AutomergeUrl; docId: string };
+
+const splitCache = new Map<string, DocUrlSplit>();
 
 // Whether `url` (a document url or a match sub-url) belongs to the same document
 // as `focus`. Compares by document id, so a sub-url pointing inside the focused

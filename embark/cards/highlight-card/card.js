@@ -15,10 +15,7 @@
 // Plain-JS bundleless module: bare imports are importmap-provided; the core
 // platform and the channel definition are imported by their automerge urls.
 
-import {
-  isValidAutomergeUrl,
-  parseAutomergeUrl,
-} from "@automerge/automerge-repo";
+import { parseAutomergeUrl } from "@automerge/automerge-repo";
 
 import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
 
@@ -43,8 +40,7 @@ export default function card(_handle, element) {
 
   const viewDocId = (view) => {
     const url = view.getAttribute("doc-url") ?? view.getAttribute("url");
-    if (!url || !isValidAutomergeUrl(url)) return undefined;
-    return parseAutomergeUrl(url).documentId;
+    return url ? docIdOf(url) : undefined;
   };
 
   // One full sweep: class every mounted view whose document is highlighted,
@@ -63,7 +59,8 @@ export default function card(_handle, element) {
   const unsubscribe = subscribeContext(element, Highlight, (all) => {
     const ids = new Set();
     for (const url of Object.keys(all)) {
-      if (isValidAutomergeUrl(url)) ids.add(parseAutomergeUrl(url).documentId);
+      const docId = docIdOf(url);
+      if (docId !== undefined) ids.add(docId);
     }
     highlightedDocIds = ids;
     apply();
@@ -96,6 +93,24 @@ export default function card(_handle, element) {
       view.classList.remove(HIGHLIGHT_CLASS);
     }
   };
+}
+
+// The document id behind a doc or sub-document url, or undefined when the url
+// doesn't parse. Cached module-wide: parseAutomergeUrl checksums the id
+// (double SHA-256 in JS) on every call, and the sweep re-parses the same urls
+// on every DOM change — without the cache this dominated the main thread.
+const docIdCache = new Map();
+
+function docIdOf(url) {
+  if (docIdCache.has(url)) return docIdCache.get(url);
+  let docId;
+  try {
+    docId = parseAutomergeUrl(url).documentId;
+  } catch {
+    docId = undefined;
+  }
+  docIdCache.set(url, docId);
+  return docId;
 }
 
 // --- Styles --------------------------------------------------------------------
