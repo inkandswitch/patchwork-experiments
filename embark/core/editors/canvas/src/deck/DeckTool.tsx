@@ -18,11 +18,12 @@ import { pressLandsOnInteractiveOrText } from "../surface-press";
 import "./deck.css";
 
 // Card geometry. Mirrored in deck.css (`.embark-deck__card` / `__cover`); keep
-// them in sync. The slot matches the playing card's 0.7 aspect ratio so a held
-// card fills it edge to edge. PAD keeps the folded pile clear of the frame's
-// clip edge and mirrors the fanned panel's CSS padding.
-const CARD_W = 154;
-const CARD_H = 220;
+// them in sync. The slot equals the playing card's own 189×270 footprint (see
+// @embark/card), so a standard card fills it edge to edge at full size. PAD
+// keeps the folded pile clear of the frame's clip edge and mirrors the fanned
+// panel's CSS padding.
+const CARD_W = 189;
+const CARD_H = 270;
 const PAD = 14;
 // Cap on how wide a held card lays out before being scaled into its slot.
 // Fixed-size content (a card's playing-card surface) shrink-wraps below this;
@@ -320,7 +321,7 @@ function DeckCardView(props: {
   const [doc] = useDocument<NamedDoc>(() => props.card.url);
 
   // Natural footprint: the wrapper shrink-wraps the content (so a playing
-  // card's fixed 224×320 surface lays out at exactly that, not stretched into
+  // card's fixed 189×270 surface lays out at exactly that, not stretched into
   // some recorded embed width — autosize embeds carry a stale footprint), and
   // both dimensions are measured live so the scale tracks the real layout.
   let naturalEl: HTMLDivElement | undefined;

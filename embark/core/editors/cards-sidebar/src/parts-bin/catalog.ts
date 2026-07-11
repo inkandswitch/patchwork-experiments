@@ -210,11 +210,34 @@ const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
   },
 ];
 
-// The standard set: every card, a blank placeholder card, a map, an empty
-// markdown note, the pre-made decks, and an empty deck. `repo.create` doesn't
-// run a datatype's `init`, so each factory sets the document's initial value
-// inline.
+// The standard set: the pre-made decks and an empty deck first, then every
+// card, a blank placeholder card, a map, and an empty markdown note.
+// `repo.create` doesn't run a datatype's `init`, so each factory sets the
+// document's initial value inline.
 export const DEFAULT_BIN: BinEntry[] = [
+  // The pre-made decks. Dragging one out deep-clones the deck *and* its cards
+  // (the drag-out rewrite follows the card references), so each canvas gets an
+  // independent pile.
+  ...DECK_SEEDS.map(
+    (seed): BinEntry => ({
+      label: seed.title,
+      toolId: "deck",
+      create: (repo) => mintDeck(repo, seed),
+    }),
+  ),
+  {
+    // A fresh, empty deck: each drag-out starts its own pile; cards are added
+    // by dragging embeds into it.
+    label: "Deck",
+    toolId: "deck",
+    create: (repo) =>
+      repo.create({
+        "@patchwork": { type: "deck" },
+        title: "Deck",
+        fanned: false,
+        cards: [],
+      }),
+  },
   ...CARD_SEEDS.map(
     (seed): BinEntry => ({
       label: seed.title,
@@ -246,29 +269,6 @@ export const DEFAULT_BIN: BinEntry[] = [
       repo.create({
         "@patchwork": { type: "markdown", title: "Note" },
         content: "",
-      }),
-  },
-  // The pre-made decks. Dragging one out deep-clones the deck *and* its cards
-  // (the drag-out rewrite follows the card references), so each canvas gets an
-  // independent pile.
-  ...DECK_SEEDS.map(
-    (seed): BinEntry => ({
-      label: seed.title,
-      toolId: "deck",
-      create: (repo) => mintDeck(repo, seed),
-    }),
-  ),
-  {
-    // A fresh, empty deck: each drag-out starts its own pile; cards are added
-    // by dragging embeds into it.
-    label: "Deck",
-    toolId: "deck",
-    create: (repo) =>
-      repo.create({
-        "@patchwork": { type: "deck" },
-        title: "Deck",
-        fanned: false,
-        cards: [],
       }),
   },
 ];

@@ -19,15 +19,33 @@
   overflow: hidden;
 }
 
-/* The sidebar host: the same row, with a 20px dead zone along the left and
-   top edges — the frame's resize handle hugs the left edge and a click on it
-   collapses the whole sidebar, so keep everything clickable well clear of it.
-   border-box keeps the dead-zone borders inside the 100% frame; otherwise the
-   root overhangs the sidebar by 20px and the parent clips the right edge
-   (hiding the flap tabs). */
+/* The sidebar host: the same row, with a 20px dead zone along the left edge —
+   the frame's resize handle hugs it and a click there collapses the whole
+   sidebar, so keep everything clickable well clear of it. border-box keeps the
+   dead-zone border inside the 100% frame; otherwise the root overhangs the
+   sidebar by 20px and the parent clips the right edge (hiding the flap tabs).
+
+   The top dead band is recreated per-column below (the tab rail's own grey
+   extends up over it; the stack carries a matching grey top border) rather than
+   as a host border, so the flap group on the far right — clear of the resize
+   handle — runs clean to the top edge instead of sitting under a dead strip. */
 .embark-cards--sidebar {
   box-sizing: border-box;
   border-left: 20px solid #f0efee;
+}
+
+/* The tab rail already paints itself grey, so it just pads its content down
+   past the top band (its original 14px plus the 20px band). The flap rail is
+   excluded — the flap group runs to the top. */
+.embark-cards--sidebar > .embark-cards__rail:not(.embark-cards__rail--flap) {
+  padding-top: 34px;
+}
+
+/* The stack column carries its own grey top band; box-border keeps its
+   absolutely positioned panes starting below it, exactly as the host border
+   used to place them. */
+.embark-cards--sidebar > .embark-cards__main {
+  box-sizing: border-box;
   border-top: 20px solid #f0efee;
 }
 
@@ -261,7 +279,8 @@
    pane) and collapses to nothing when folded. Kept mounted either way so its
    contents hold state. The fixed-width content sticks out right of the
    shrinking column and the root's overflow:hidden clips it, so the sheet
-   reads as sliding away rather than squishing. */
+   reads as sliding away rather than squishing. (The docked sidebar overrides
+   this to an even 50:50 split with the stack — see below.) */
 .embark-cards__flap {
   position: relative;
   flex: 0 0 0px;
@@ -285,6 +304,34 @@
   min-height: 0;
   overflow: hidden;
   background: #fafaf9;
+}
+
+/* In the docked sidebar the stack column fits exactly one column of cards
+   while the flap group (parts bin / Inspector) is open, and the flap takes
+   everything left over. 259px = a folded deck's widest footprint (2*PAD +
+   CARD_W + PILE_MAX*PILE_STEP = 28 + 189 + 18 = 235, see foldedSize() in
+   DeckTool) plus the list's 12px padding each side. With the flap closed the
+   stack grows back to fill the sidebar. The sheet face fills its now-
+   responsive column (rather than the fixed slide width), and open/close
+   animates the flap's grow. */
+.embark-cards--sidebar > .embark-cards__main {
+  flex: 1 1 auto;
+}
+
+.embark-cards--sidebar:has(.embark-cards__flap--open) > .embark-cards__main {
+  flex: 0 0 259px;
+}
+
+.embark-cards--sidebar .embark-cards__flap {
+  transition: flex-grow 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.embark-cards--sidebar .embark-cards__flap--open {
+  flex: 1 1 0px;
+}
+
+.embark-cards--sidebar .embark-cards__flap-content {
+  width: 100%;
 }
 
 /* One tab's content: all panes stay mounted, only the selected one shows —

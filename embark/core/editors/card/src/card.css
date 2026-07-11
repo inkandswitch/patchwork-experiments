@@ -4,8 +4,8 @@
    itself. Both faces share one Title / middle / Description skeleton, so the
    description keeps its place at the bottom when the card flips. */
 .embark-card-flip {
-  width: 224px;
-  height: 320px;
+  width: 189px;
+  height: 270px;
   perspective: 1400px;
   font-family:
     system-ui,

@@ -28,7 +28,7 @@
 }
 
 /* Fanned, the cover and cards leave the pile's absolute positioning and
-   become rigid flex items: fixed 154x220 slots that wrap rather than
+   become rigid flex items: fixed 189x270 slots that wrap rather than
    squeeze. */
 .embark-deck--fanned .embark-deck__cover,
 .embark-deck--fanned .embark-deck__card {
@@ -64,8 +64,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 154px;
-  height: 220px;
+  width: 189px;
+  height: 270px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -109,8 +109,8 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 154px;
-  height: 220px;
+  width: 189px;
+  height: 270px;
   border-radius: 10px;
   background: linear-gradient(160deg, #6366f1, #4f46e5);
   color: #ffffff;
