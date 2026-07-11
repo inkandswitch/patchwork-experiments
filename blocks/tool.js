@@ -375,6 +375,9 @@ const CSS = `
 	border-radius: var(--studio-radius-sm, 4px);
 	padding: 0.4rem 0.5rem;
 	resize: none;
+	white-space: pre-wrap;
+	word-break: break-word;
+	overflow-wrap: anywhere;
 }
 
 /* insertion indicator drawn on the block above/below the drop point */
