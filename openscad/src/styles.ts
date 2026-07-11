@@ -83,6 +83,97 @@ export const styles = `
   flex: 1;
 }
 
+.openscad-imports-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px dashed var(--openscad-border);
+  flex-shrink: 0;
+  transition: var(--studio-transition-fast, 0.1s ease);
+}
+
+.openscad-imports-bar[data-drop-active] {
+  background: color-mix(in oklch, var(--openscad-accent-fill), var(--openscad-bg) 85%);
+  border-bottom-color: var(--openscad-accent);
+}
+
+.openscad-imports-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--openscad-muted);
+  flex-shrink: 0;
+}
+
+.openscad-imports-placeholder {
+  font-size: 11.5px;
+  color: var(--openscad-muted);
+}
+
+.openscad-imports-placeholder code {
+  font-family: var(--openscad-family-code);
+  background: var(--openscad-panel);
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+}
+
+.openscad-import-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  background: var(--openscad-panel);
+  border: 1px solid var(--openscad-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 0.15em 0.3em 0.15em 0.55em;
+  font-size: 12px;
+}
+
+.openscad-import-name {
+  border: none;
+  background: none;
+  color: var(--openscad-accent-line, inherit);
+  font-family: var(--openscad-family-code);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.openscad-import-rename {
+  font-family: var(--openscad-family-code);
+  font-size: 12px;
+  border: 1px solid var(--openscad-accent);
+  border-radius: 3px;
+  padding: 0 0.25em;
+  width: 8em;
+  background: var(--openscad-bg);
+  color: var(--openscad-fg);
+}
+
+.openscad-import-source {
+  color: var(--openscad-muted);
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.openscad-import-remove {
+  border: none;
+  background: none;
+  color: var(--openscad-muted);
+  cursor: pointer;
+  padding: 0 0.15em;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.openscad-import-remove:hover {
+  color: var(--openscad-danger);
+}
+
 .openscad-status {
   color: var(--openscad-muted);
   font-size: 11.5px;

@@ -21,10 +21,18 @@ export type LoadProgress = {
 	fromCache: boolean
 }
 
+type ImportInput = {
+	/** valid OpenSCAD identifier, bound to `import("imports/<name>.json")` */
+	name: string
+	/** JSON text for that document's content */
+	json: string
+}
+
 type RenderRequest = {
 	id: number
 	type: "render"
 	source: string
+	imports?: ImportInput[]
 }
 
 type OutgoingMessage =
@@ -125,7 +133,10 @@ function loadFactory(): Promise<CreateOpenSCAD> {
 	return factoryPromise
 }
 
-async function render(source: string): Promise<{stl: Uint8Array; logs: string[]; elapsedMillis: number}> {
+async function render(
+	source: string,
+	imports: ImportInput[] = [],
+): Promise<{stl: Uint8Array; logs: string[]; elapsedMillis: number}> {
 	const createOpenSCAD = await loadFactory()
 	const logs: string[] = []
 	const start = performance.now()
@@ -138,11 +149,31 @@ async function render(source: string): Promise<{stl: Uint8Array; logs: string[];
 	})
 	const instance = engine.getInstance()
 
-	instance.FS.writeFile("/input.scad", source)
+	// Imported docs are written as JSON files and bound to a variable of the
+	// same name via a single generated line prepended to the source (so the
+	// offset is a constant +1, not +N, when at least one import is present).
+	// This relies on the experimental "import-function" feature, which makes
+	// import() return parsed JSON data instead of importing geometry.
+	let finalSource = source
+	if (imports.length > 0) {
+		instance.FS.mkdir("/imports")
+		const bindings: string[] = []
+		for (const imp of imports) {
+			instance.FS.writeFile(`/imports/${imp.name}.json`, imp.json)
+			bindings.push(`${imp.name} = import("imports/${imp.name}.json");`)
+		}
+		finalSource = `${bindings.join(" ")}\n${source}`
+	}
+
+	instance.FS.writeFile("/input.scad", finalSource)
+
+	const args = ["/input.scad"]
+	if (imports.length > 0) args.push("--enable=import-function")
+	args.push("--export-format=binstl", "-o", "/model.stl")
 
 	let exitCode: number
 	try {
-		exitCode = instance.callMain(["/input.scad", "--export-format=binstl", "-o", "/model.stl"])
+		exitCode = instance.callMain(args)
 	} catch (e) {
 		let message = `${e}`
 		if (typeof e === "number" && instance.formatException) {
@@ -161,9 +192,9 @@ async function render(source: string): Promise<{stl: Uint8Array; logs: string[];
 }
 
 self.addEventListener("message", async (e: MessageEvent<RenderRequest>) => {
-	const {id, source} = e.data
+	const {id, source, imports} = e.data
 	try {
-		const {stl, logs, elapsedMillis} = await render(source)
+		const {stl, logs, elapsedMillis} = await render(source, imports)
 		post({type: "result", id, ok: true, stl, logs, elapsedMillis}, [stl.buffer])
 	} catch (err) {
 		post({type: "result", id, ok: false, error: String((err as Error)?.message ?? err), logs: []})

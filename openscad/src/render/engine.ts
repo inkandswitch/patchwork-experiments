@@ -15,6 +15,11 @@ export type RenderResult = {
 	elapsedMillis: number
 }
 
+export type RenderImportInput = {
+	name: string
+	json: string
+}
+
 export class RenderError extends Error {
 	logs: string[]
 	constructor(message: string, logs: string[] = []) {
@@ -70,10 +75,10 @@ function getWorker(): Worker {
 	return worker
 }
 
-export function renderScad(source: string): Promise<RenderResult> {
+export function renderScad(source: string, imports: RenderImportInput[] = []): Promise<RenderResult> {
 	return new Promise((resolve, reject) => {
 		const id = nextId++
 		pending.set(id, {resolve, reject})
-		getWorker().postMessage({id, type: "render", source})
+		getWorker().postMessage({id, type: "render", source, imports})
 	})
 }
