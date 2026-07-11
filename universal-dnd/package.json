@@ -1,6 +1,6 @@
 {
   "name": "@patchwork/universal-dnd",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Hold Shift+Alt to reveal universal drag handles on every patchwork-view.",
   "type": "module",
   "exports": "./dist/index.js",

@@ -9,12 +9,38 @@ Lives in `patchwork-tools/universal-dnd` as a self-contained package. The
 matching upstream platform change is proposed against `patchwork-next` (see
 "Proposed upstream change" below).
 
+## Add it to the threepane system tray
+
+threepane's tray is an explicit `tray: ToolSlot[]` array on the threepane config
+doc (`account.tools.threepane`) — not tag-driven — and there's no tray UI yet, so
+add it from the browser console once, then reload:
+
+```js
+const acct = window.accountDocHandle.doc();
+const cfg = await window.repo.find(acct.tools.threepane);
+cfg.change(d => {
+  if (!Array.isArray(d.tray)) d.tray = ["theme-tray"]; // seed default a pre-tray config never got
+  const id = w => (Array.isArray(w) ? String(w[0]) : String(w));
+  if (!d.tray.some(w => id(w) === "universal-dnd")) d.tray.push("universal-dnd");
+});
+console.log("tray is now:", cfg.doc().tray);
+```
+
+After reload, `window.__patchworkUniversalDnd === true`, a "☰ DnD" control appears
+in the bottom-left tray dock, and Shift+Alt reveals the drag handles.
+
+(The Frame Configurator's Toolbar section can instead add it to the top-bar
+`doctitle` lane via UI — it's tagged `titlebar-tool` — but that's the top bar, not
+the tray. On the `tiling` frame the `system-tray` tag alone is enough; no config.)
+
 ## What it does
 
-- Boot-time side effect (runs when `ModuleWatcher` imports the bundle) installs a
-  global Shift+Alt reveal + a floating badge. No mount required.
+- Boot-time side effect (runs when this module is first imported on the main
+  thread — i.e. when a frame mounts one of its surfaces) installs a global
+  Shift+Alt reveal. A mounted tray/toolbar control also toggles a persistent pin.
 - Reveal = inject a transparent, full-size overlay over each view; each overlay
-  carries a corner grip. Release Shift+Alt (or click the badge to unpin) to hide.
+  carries a corner control cluster (drag handle + copy). Release Shift+Alt (or
+  unpin) to hide.
 - Grips are HTML5-draggable and emit the Patchwork DnD payload below, so existing
   drop targets (sideboard, paper, space, markdown embed) accept them unchanged.
 
@@ -38,12 +64,11 @@ Plus `effectAllowed = "copyMove"` and a drag-image ghost of the view.
 ## Architecture
 
 ```
-index.ts        boot side effect (install) + plugin descriptor (forTitleBar tool)
+index.ts        boot side effect (install) + plugin descriptors (component + tool)
 app.ts          singleton: controller + Shift+Alt keyboard + pin state + subscriptions
 view-layers.ts  the layer abstraction (createViewLayers) — the part worth keeping
-dnd.ts          payload writer + dragHandleDecorator
-badge.ts        always-visible, frame-agnostic affordance (pin/unpin)
-tool.ts         toolbar-tool render (pin/unpin button)
+dnd.ts          payload/clipboard writers + dragHandleDecorator (corner controls)
+tool.ts         mounted control render (pin/unpin button) for both plugin surfaces
 dom.ts          inlined closestHandle/handleFromElement (edge-handles isn't in the import map)
 styles.ts       injected CSS
 ```
@@ -85,9 +110,29 @@ Faster local loop: serve `dist/` and point a site at it via
 `localStorage.defaultToolsUrl = '{"modules":["http://localhost:PORT/dist/index.js"]}'`
 (a manifest URL).
 
-Caveat: whether the `forTitleBar` tool surfaces in tiny-patchwork's toolbar
-depends on the external frame (`documentToolbarToolIds` on the account doc). The
-badge works regardless — that's why it exists.
+Surfacing: the tool needs *some* frame surface to mount it, because that mount is
+what imports this module on the main thread and runs the boot `install()`
+(Shift+Alt reveal). A tool with no mounted surface never runs at all —
+`forTitleBar` is dead (no frame reads it anymore). So it's dual-registered:
+
+- `patchwork:component` (id `universal-dnd`, tagged `system-tray`). Mounted as a
+  bare `<patchwork-view component="universal-dnd">` (no document). This is what a
+  threepane **tray** slot or **sidebar-widget** (bare-string slots resolve to a
+  component) resolves to, and what the **tiling** frame auto-mounts via its
+  registry-driven `useTaggedComponents("system-tray")`.
+- `patchwork:tool` (id `universal-dnd`, `supportedDatatypes: "*"`, `unlisted`,
+  tagged `titlebar-tool`). For threepane's **doctitle** lane and other frames'
+  doc-panel tool surfaces; `titlebar-tool` also surfaces it in the Frame
+  Configurator's Toolbar add-picker.
+
+Placement per frame:
+
+- **threepane** (current patchwork-base): the tray is an explicit `tray: ToolSlot[]`
+  array on the threepane config doc (`account.tools.threepane`), NOT tag-driven.
+  Add `"universal-dnd"` to that array (console or a future configurator tray UI).
+  The Frame Configurator's Toolbar section can add it to the `doctitle` lane via
+  UI (top bar, shown when a doc is open).
+- **tiling** frame: registry-driven — the `system-tray` tag alone makes it appear.
 
 ## Proposed upstream change (the real version)
 

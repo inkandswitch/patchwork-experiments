@@ -103,70 +103,7 @@ html.pw-udnd-active .pw-udnd-hover .pw-udnd-corner {
   background: rgb(22 163 74 / 0.14);
 }
 
-/* Floating status badge (frame-agnostic affordance). */
-.pw-udnd-badge {
-  position: fixed;
-  bottom: 14px;
-  right: 14px;
-  z-index: 2147483600;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px 6px 9px;
-  border-radius: 999px;
-  font: 500 12px/1 system-ui, -apple-system, sans-serif;
-  color: rgb(226 232 240);
-  background: rgb(15 23 42 / 0.72);
-  border: 1px solid rgb(148 163 184 / 0.22);
-  box-shadow: 0 4px 16px rgb(2 6 23 / 0.28);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
-  backdrop-filter: blur(10px) saturate(1.2);
-  cursor: pointer;
-  user-select: none;
-  opacity: 0.5;
-  transition: opacity 0.14s ease, border-color 0.14s ease;
-}
-.pw-udnd-badge:hover {
-  opacity: 1;
-}
-.pw-udnd-badge[data-active="true"] {
-  opacity: 1;
-  border-color: rgb(129 140 248 / 0.5);
-}
-.pw-udnd-badge__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: rgb(100 116 139 / 0.85);
-  transition: background-color 0.14s ease, box-shadow 0.2s ease;
-}
-.pw-udnd-badge[data-active="true"] .pw-udnd-badge__dot {
-  background: rgb(129 140 248);
-  box-shadow: 0 0 0 3px rgb(129 140 248 / 0.25);
-}
-.pw-udnd-badge__keys {
-  display: inline-flex;
-  gap: 3px;
-}
-.pw-udnd-badge kbd {
-  font: 600 10px/1 ui-monospace, "SF Mono", Menlo, monospace;
-  color: rgb(203 213 225);
-  background: rgb(51 65 85 / 0.7);
-  border: 1px solid rgb(148 163 184 / 0.25);
-  border-radius: 4px;
-  padding: 3px 4px;
-  min-width: 14px;
-  text-align: center;
-}
-.pw-udnd-badge__pinned {
-  display: none;
-  opacity: 0.8;
-}
-.pw-udnd-badge[data-pinned="true"] .pw-udnd-badge__pinned {
-  display: inline;
-}
-
-/* Toolbar button (when the frame surfaces the tool). */
+/* Toolbar button (the mounted tray / doctitle control). */
 .pw-udnd-toolbar-button {
   display: inline-flex;
   align-items: center;
@@ -190,9 +127,7 @@ html.pw-udnd-active .pw-udnd-hover .pw-udnd-corner {
 @media (prefers-reduced-motion: reduce) {
   .pw-udnd-overlay,
   .pw-udnd-corner,
-  .pw-udnd-btn,
-  .pw-udnd-badge,
-  .pw-udnd-badge__dot {
+  .pw-udnd-btn {
     transition: none;
   }
 }
