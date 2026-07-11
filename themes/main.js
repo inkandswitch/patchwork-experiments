@@ -15,6 +15,7 @@ export const plugins = [
 	themePlugin("alabaster", "Alabaster", "./alabaster.css"),
 	themePlugin("ayu-light", "Ayu Light", "./ayu-light.css"),
 	themePlugin("ayu-mirage", "Ayu Mirage", "./ayu-mirage.css"),
+	themePlugin("bear", "Bear", "./bear.css"),
 	themePlugin("bento", "Bento", "./bento.css"),
 	themePlugin("bubblegum", "Bubblegum", "./bubblegum.css"),
 	themePlugin("catppuccin-frappe", "Catppuccin Frappé", "./catppuccin-frappe.css"),
