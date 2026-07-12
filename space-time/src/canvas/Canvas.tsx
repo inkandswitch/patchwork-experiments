@@ -2244,7 +2244,7 @@ export function Canvas({
     endMarkerMonitorPreview();
   };
 
-  /** Hold Control and move over a video/audio clip to scrub it under the cursor. */
+  /** Hold Control and move over a clip to preview it under the cursor. */
   const updateCtrlHoverScrub = (x: number, y: number) => {
     if (
       !ctrlKeyHeldRef.current ||
@@ -2279,7 +2279,7 @@ export function Canvas({
     const clip = findClip(doc, clipId);
     if (!clip) return;
     const source = doc.sources[clip.sourceId];
-    if (!source || (source.type !== 'video' && source.type !== 'audio')) return;
+    if (!source) return;
 
     const playDuration = resolveClipPlayDurationForUi(clip.id, clip.duration);
     const sourceTime = clampMarkerSourceTime(
@@ -3090,7 +3090,7 @@ export function Canvas({
         ) {
           const clip = findClip(doc, target.clipId);
           const source = clip ? doc.sources[clip.sourceId] : undefined;
-          if (source && (source.type === 'video' || source.type === 'audio')) {
+          if (source) {
             event.preventDefault();
             onFocusEditor?.();
             return;
