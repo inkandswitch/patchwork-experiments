@@ -8,7 +8,7 @@
 // and paints them as a floating overlay — never mutating the views themselves.
 //
 // Plain-JS bundleless module: bare imports are importmap-provided; channel
-// definitions and the context-store client are imported with plain relative paths (all cards share one package).
+// definitions and the context-store client are imported by automerge url.
 
 import {
   isValidAutomergeUrl,
@@ -20,9 +20,21 @@ import { render } from "solid-js/web";
 import html from "solid-js/html";
 import { extractText } from "./extract.js";
 
-import { getContextHandle, subscribeContext } from "../platform.js";
-import { OpenDocuments, SchemaMatches, schemaKey } from "../schema-matcher/channels.js";
-import { Stickers } from "../stickers-card/channels.js";
+import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
+
+const CORE_PACKAGE_URL = "automerge:2YxstDCjGbfeAqud8w38yuBYBncY";
+const SCHEMA_MATCHER_PACKAGE_URL = "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC";
+const STICKERS_CARD_PACKAGE_URL = "automerge:2Tjy4kfsDHyv7xLCZtuf8dHAWbDy";
+
+const { getContextHandle, subscribeContext } = await import(
+  getImportableUrlFromAutomergeUrl(CORE_PACKAGE_URL, "client.js")
+);
+const { OpenDocuments, SchemaMatches, schemaKey } = await import(
+  getImportableUrlFromAutomergeUrl(SCHEMA_MATCHER_PACKAGE_URL, "channels.js")
+);
+const { Stickers } = await import(
+  getImportableUrlFromAutomergeUrl(STICKERS_CARD_PACKAGE_URL, "channels.js")
+);
 
 // Matches any object carrying a `@patchwork.type` string, i.e. every patchwork
 // document. We use the matches only to enumerate which datatypes are around.

@@ -8,10 +8,15 @@
 // middle slot. Shares no scanning code with Convert-to-metric.
 //
 // Plain-JS bundleless module: bare imports are importmap-provided; sibling
-// cards are imported with relative paths (every card lives in the one shared
-// cards package) and the core platform comes from ../platform.js.
+// cards and the core platform are imported by their automerge urls.
 
-import { runStickerSource } from "../stickers-card/engine.js";
+import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
+
+const STICKERS_CARD_PACKAGE_URL = "automerge:2Tjy4kfsDHyv7xLCZtuf8dHAWbDy";
+
+const { runStickerSource } = await import(
+  getImportableUrlFromAutomergeUrl(STICKERS_CARD_PACKAGE_URL, "engine.js")
+);
 
 export default function card(_handle, element) {
   const source = runStickerSource(element, { scan: scanMetric });

@@ -8,7 +8,7 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 // `(endedAt ?? now) - startedAt - pausedMs` (minus the open pause while
 // `pausedAt` is set). A run is "in progress" while `endedAt` is null.
 export type RunDoc = {
-  "@patchwork": { type: "run"; title?: string };
+  "@patchwork": { type: "run"; title?: string; demo?: boolean };
   startedAt: number;
   endedAt: number | null;
   pausedAt: number | null;

@@ -1,5 +1,5 @@
 {
-  "name": "@embark/page-url",
+  "name": "@embark/weather",
   "type": "module",
   "version": "0.0.1",
   "private": true,
@@ -11,5 +11,9 @@
   "scripts": {
     "sync": "pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "dependencies": {
+    "@embark/core": "automerge:2YxstDCjGbfeAqud8w38yuBYBncY",
+    "@embark/commands-card": "automerge:asYz1WKN9GHigxdQPVVfr5h8MuW"
   }
 }

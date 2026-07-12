@@ -123,6 +123,14 @@ const CARD_SEEDS: CardSeed[] = [
     accent: "#6366f1",
   },
   {
+    rootUrl: "automerge:2qhWc5S2pg83z2xutpiCkafYkdSN",
+    title: "Find Docs",
+    description:
+      "Answers @mention searches with the nearby documents whose title matches.",
+    icon: "search",
+    accent: "#4338ca",
+  },
+  {
     rootUrl: "automerge:asYz1WKN9GHigxdQPVVfr5h8MuW",
     title: "Commands",
     description:
@@ -171,6 +179,30 @@ const CARD_SEEDS: CardSeed[] = [
     accent: "#059669",
   },
   {
+    rootUrl: "automerge:2gtsy4b6hU38DQAMPk6kYHLwxrxE",
+    title: "Weather",
+    description:
+      "Type /Weather to get today's forecast for a place as an inline token. Data from Open-Meteo.",
+    icon: "cloud",
+    accent: "#0369a1",
+  },
+  {
+    rootUrl: "automerge:2otX5sW1C3cozUnmGiKZKviSHAaQ",
+    title: "Metric Converter",
+    description:
+      "Annotates metric quantities in your notes with their imperial equivalents.",
+    icon: "ruler",
+    accent: "#d97706",
+  },
+  {
+    rootUrl: "automerge:2BkapPQei7cVRiWryrVPQEQQKCJ9",
+    title: "Make Stickerable",
+    description:
+      "Lets stickers reach text that isn't a document — switch on a datatype to annotate its views.",
+    icon: "wand",
+    accent: "#be185d",
+  },
+  {
     rootUrl: "automerge:2nay83Kjg393HEaXwerXpHMnDDWw",
     title: "Bird Sightings",
     description:
@@ -194,6 +226,7 @@ const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
       "Pointer",
       "Highlight",
       "Selection",
+      "Find Docs",
     ],
   },
   {
@@ -202,7 +235,7 @@ const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
   },
   {
     title: "Embark",
-    cardTitles: ["Place Finder", "Routes", "Schedule"],
+    cardTitles: ["Place Finder", "Routes", "Schedule", "Weather"],
   },
   {
     title: "Markdown",
@@ -245,6 +278,10 @@ export const DEFAULT_BIN: BinEntry[] = [
       create: (repo) => mintCard(repo, seed),
     }),
   ),
+  // Also offered here (not just in the browser preset): without the extension
+  // bridge the card extracts from its built-in sample text, which makes it
+  // debuggable on a normal canvas.
+  extractDataEntry(),
   { label: "Blank Card", toolId: "card", create: mintPlaceholderCard },
   {
     label: "Map",
@@ -273,29 +310,69 @@ export const DEFAULT_BIN: BinEntry[] = [
   },
 ];
 
-// The @embark/page-url package (patchwork-tools/embark/cards/page-url),
-// published with pushwork; the minted card's src points at its root card.js.
-const PAGE_URL_CARD_PACKAGE = "automerge:eXE2Kjh1YkQEkYS6aAMoAAfYZXn";
+// The @embark/page-extractor package (patchwork-tools/embark/cards/
+// page-extractor), published with pushwork; the minted card's src points at
+// its bundled dist/card.js.
+const PAGE_EXTRACTOR_PACKAGE = "automerge:eXE2Kjh1YkQEkYS6aAMoAAfYZXn";
 
-// What the browser extension's side panel offers (see cards-browser-extension):
-// just the current-page card, whose module talks to the extension's bridge via
-// window.patchworkCards. Same shape the extension seeds its stack with.
-export const BROWSER_BIN: BinEntry[] = [
-  {
-    label: "Current page",
+// The extractor card's bin entry, shared by the standard set and the browser
+// preset. It talks to the extension's bridge via window.patchworkCards when
+// present, and extracts from its built-in sample text when not (same document
+// shape the extension seeds its stack with).
+function extractDataEntry(): BinEntry {
+  return {
+    label: "Extract data",
     toolId: "card",
     create: (repo) =>
       repo.create({
-        "@patchwork": { type: "card", title: "Current page" },
-        src: `/${encodeURIComponent(PAGE_URL_CARD_PACKAGE)}/card.js`,
-        description: "The web page open in the browser",
-        icon: "at",
+        "@patchwork": { type: "card", title: "Extract data" },
+        src: `/${encodeURIComponent(PAGE_EXTRACTOR_PACKAGE)}/dist/card.js`,
+        // No description: the card's own sentence is the whole face.
+        description: "",
+        icon: "braces",
         accent: "#2563eb",
-        url: null,
-        pageTitle: null,
+        prompt: "",
+        targetDeckUrl: null,
+      }),
+  };
+}
+
+// What the browser extension's side panel offers (see cards-browser-extension):
+// the Core deck (Open Documents, Schema Matcher, Pointer, Highlight, Selection,
+// Find Docs — the Pointer card is what lets the inspector's crosshair pick
+// targets), the extractor card, and an empty deck to receive the extracted
+// cards (the extension deliberately seeds no deck, so the user deals one out
+// of the bin and picks it in the card's sentence). The Inspector isn't a bin
+// entry: the card-stack tool offers it as a flap tab beside the bin, same as
+// the in-app sidebar (see CardStackTool).
+export const BROWSER_BIN: BinEntry[] = [
+  {
+    label: "Core",
+    toolId: "deck",
+    create: (repo) => mintDeck(repo, coreDeckSeed()),
+  },
+  extractDataEntry(),
+  {
+    label: "Deck",
+    toolId: "deck",
+    create: (repo) =>
+      repo.create({
+        "@patchwork": { type: "deck" },
+        title: "Deck",
+        fanned: false,
+        cards: [],
       }),
   },
 ];
+
+// The "Core" pre-made deck from DECK_SEEDS, shared with the standard set. A
+// missing row is a programming error in DECK_SEEDS, same as mintDeck's card
+// lookup.
+function coreDeckSeed(): { title: string; cardTitles: string[] } {
+  const seed = DECK_SEEDS.find((entry) => entry.title === "Core");
+  if (!seed) throw new Error("DECK_SEEDS is missing the Core deck");
+  return seed;
+}
 
 // Resolve a card-stack document's `binPreset` to catalog entries. Unset (the
 // in-app stacks) and unknown values fall back to the standard set.

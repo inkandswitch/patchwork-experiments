@@ -468,6 +468,15 @@ export type ContextRequestEvent = CustomEvent<ContextRequestDetail>;
 // v2 key and coexist rather than corrupt a v1 store pinned by an older bundle.
 const BODY_STORE_KEY = Symbol.for("patchwork.context-store.v1");
 
+// The store *factory*, published for the bundleless client (core/client.js):
+// it has no way to import this module, so when a card is the first thing on
+// the page to ask for the body store, it mints one through this symbol
+// instead. Registered at module load — any bundle importing @embark/context
+// makes the factory available; the first loaded copy wins, same as the store.
+const STORE_FACTORY_KEY = Symbol.for("patchwork.context-store.create.v1");
+(globalThis as Record<symbol, unknown>)[STORE_FACTORY_KEY] ??=
+  createContextStore;
+
 export function getBodyContextStore(): ContextStore {
   const host = document.body as unknown as Record<
     symbol,

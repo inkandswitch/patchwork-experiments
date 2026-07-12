@@ -33,7 +33,7 @@ const URL_TO_DIR = {
   "automerge:2xYFYSsg6LhiPE719qB6nCZT9Zyh": "mentions-card",
   "automerge:2otX5sW1C3cozUnmGiKZKviSHAaQ": "metric-converter",
   "automerge:472iiEQWMcQp48hdNQAoDuvhS1cx": "open-documents",
-  "automerge:eXE2Kjh1YkQEkYS6aAMoAAfYZXn": "page-url",
+  "automerge:eXE2Kjh1YkQEkYS6aAMoAAfYZXn": "page-extractor",
   "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp": "poi",
   "automerge:uMCUHr7SvWiwF1YtmZsWhnUhWY2": "pointer",
   "automerge:41HBbYkbrqYd9STaojjQUsFc1jDW": "route",

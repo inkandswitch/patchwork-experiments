@@ -209,11 +209,11 @@
   cursor: grabbing;
 }
 
-/* Remove floats over the card's top-right corner, revealed on hover. */
-.embark-cards__row-delete {
+/* Row actions float over the card's top-right corner, revealed on hover:
+   remove at the corner, copy beside it. */
+.embark-cards__row-action {
   position: absolute;
   top: 6px;
-  right: 6px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -232,14 +232,22 @@
   transition: opacity 120ms ease;
 }
 
-.embark-cards__row:hover .embark-cards__row-delete,
-.embark-cards__row-delete:focus-visible {
+.embark-cards__row:hover .embark-cards__row-action,
+.embark-cards__row-action:focus-visible {
   opacity: 1;
 }
 
-.embark-cards__row-delete:hover {
+.embark-cards__row-action:hover {
   background: #e7e5e4;
   color: #44403c;
+}
+
+.embark-cards__row-delete {
+  right: 6px;
+}
+
+.embark-cards__row-copy {
+  right: 30px;
 }
 
 /* The live view. Framed rows get canvas-like chrome; frameless tools (cards,

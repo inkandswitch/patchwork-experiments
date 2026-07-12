@@ -14,6 +14,7 @@ import {
   FRAMELESS_TOOLS,
   getDocumentDragPayload,
   hasDocumentDrag,
+  writeDocumentDragPayload,
   type DocumentDragItem,
 } from "@embark/dnd";
 import type { CardStackDoc } from "./types";
@@ -268,6 +269,24 @@ function CardStackRow(props: {
 }) {
   const [rowDoc] = useDocument<TypedDoc>(() => props.entry.url);
 
+  // Copy the row's document to the system clipboard as the same payload its
+  // drag would carry (the canvas's copy model): rich flavors for a full-
+  // fidelity paste onto a canvas, plain text carrying the automerge url for
+  // everything else. The icon flashes to a checkmark as feedback.
+  const [copied, setCopied] = createSignal(false);
+  let copiedTimer: number | undefined;
+  onCleanup(() => clearTimeout(copiedTimer));
+  const copyEntry = () => {
+    const item: DocumentDragItem = { url: props.entry.url };
+    if (props.entry.toolId !== undefined) item.toolId = props.entry.toolId;
+    if (props.entry.width !== undefined) item.width = props.entry.width;
+    if (props.entry.height !== undefined) item.height = props.entry.height;
+    if (!copyItemsToClipboard([item])) return;
+    setCopied(true);
+    clearTimeout(copiedTimer);
+    copiedTimer = window.setTimeout(() => setCopied(false), 1000);
+  };
+
   // Presentation traits derive from the rendering tool, same as the canvas:
   // the pinned tool id wins, falling back to the doc's datatype. Auto-size
   // tools (cards, decks) shrink-wrap; everything else gets a fixed body
@@ -295,13 +314,25 @@ function CardStackRow(props: {
     >
       <button
         type="button"
-        class="embark-cards__row-delete"
+        class="embark-cards__row-action embark-cards__row-delete"
         title="Remove card"
         aria-label="Remove card"
         on:pointerdown={(event) => event.stopPropagation()}
         on:click={() => props.onRemove()}
       >
         <CloseIcon />
+      </button>
+      <button
+        type="button"
+        class="embark-cards__row-action embark-cards__row-copy"
+        title="Copy card to clipboard"
+        aria-label="Copy card to clipboard"
+        on:pointerdown={(event) => event.stopPropagation()}
+        on:click={copyEntry}
+      >
+        <Show when={copied()} fallback={<CopyIcon />}>
+          <CheckIcon />
+        </Show>
       </button>
       <div
         class="embark-cards__row-body"
@@ -324,6 +355,29 @@ function CardStackRow(props: {
   );
 }
 
+// Write a document payload to the system clipboard from a button click. A
+// click has no clipboardData and the async clipboard API rejects custom MIME
+// types, so a one-shot `copy` listener fills the event's DataTransfer while
+// execCommand drives the copy — yielding exactly the flavors the canvas's
+// on:copy writes (see writeDocumentDragPayload). Returns whether the copy
+// took.
+function copyItemsToClipboard(items: DocumentDragItem[]): boolean {
+  let written = false;
+  const onCopy = (event: ClipboardEvent) => {
+    if (!event.clipboardData) return;
+    event.preventDefault();
+    writeDocumentDragPayload(event.clipboardData, "card-stack", items);
+    written = true;
+  };
+  document.addEventListener("copy", onCopy, { once: true });
+  try {
+    document.execCommand("copy");
+  } finally {
+    document.removeEventListener("copy", onCopy);
+  }
+  return written;
+}
+
 // Thin "x" for the remove button (inherits the parent's text color).
 function CloseIcon() {
   return (
@@ -338,6 +392,46 @@ function CloseIcon() {
       aria-hidden="true"
     >
       <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  );
+}
+
+// Two overlapping rounded rects for the copy button, same stroke style as
+// CloseIcon.
+function CopyIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+// The post-copy checkmark flash.
+function CheckIcon() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 12.5l5.5 5.5L20 6.5" />
     </svg>
   );
 }

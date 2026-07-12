@@ -9,6 +9,21 @@
 
 const CONTEXT_REQUEST = "patchwork:context-request";
 const BODY_STORE_KEY = Symbol.for("patchwork.context-store.v1");
+// The store factory the bundled TS module publishes at load (see context.ts):
+// this file can't import the implementation, so when a card is the first
+// thing on the page to ask for the body store, it mints one through here.
+const STORE_FACTORY_KEY = Symbol.for("patchwork.context-store.create.v1");
+
+function createBodyStore() {
+  const create = globalThis[STORE_FACTORY_KEY];
+  if (typeof create !== "function") {
+    throw new Error(
+      "[context] no context-store implementation loaded: the body store can " +
+        "only be created once a bundle containing @embark/context has run",
+    );
+  }
+  return create();
+}
 
 function debugNodeName(node) {
   return node instanceof Element ? node.tagName.toLowerCase() : node?.nodeName;
@@ -39,8 +54,10 @@ export function findContextStore(node) {
   });
   node.dispatchEvent(request);
   // Create the body store on demand (mirroring the TS module's
-  // getBodyContextStore) via the shared registered symbol: whichever copy of
-  // the code asks first creates it, and every other copy reuses it.
+  // getBodyContextStore): the store lives on document.body under a registered
+  // symbol, so whichever copy of the code asks first creates it and every
+  // other copy reuses it. Creation goes through the factory the TS module
+  // publishes (see createBodyStore above).
   const store = (request.detail.store ??
     (document.body[BODY_STORE_KEY] ??= createBodyStore()));
   return store;

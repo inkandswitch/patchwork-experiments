@@ -13,12 +13,22 @@
 // while the card is face-up and retracts them when it flips down.
 //
 // Plain-JS bundleless module: bare imports are importmap-provided; sibling
-// cards are imported with relative paths (every card lives in the one shared
-// cards package) and the core platform comes from ../platform.js.
+// cards and the core platform are imported by their automerge urls.
 
-import { findContextStore, requireOwner } from "../platform.js";
-import { CommandQueries, CommandSuggestions } from "../commands-card/channels.js";
-import { createPlaceResolver } from "../commands-card/place-resolve.js";
+import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
+
+const CORE_PACKAGE_URL = "automerge:2YxstDCjGbfeAqud8w38yuBYBncY";
+const COMMANDS_PACKAGE_URL = "automerge:asYz1WKN9GHigxdQPVVfr5h8MuW";
+
+const { findContextStore, requireOwner } = await import(
+  getImportableUrlFromAutomergeUrl(CORE_PACKAGE_URL, "client.js")
+);
+const { CommandQueries, CommandSuggestions } = await import(
+  getImportableUrlFromAutomergeUrl(COMMANDS_PACKAGE_URL, "channels.js")
+);
+const { createPlaceResolver } = await import(
+  getImportableUrlFromAutomergeUrl(COMMANDS_PACKAGE_URL, "place-resolve.js")
+);
 
 // The datatype/board/token tools that live and die with this card. Their
 // implementations load lazily from sibling modules.

@@ -17,9 +17,9 @@ import {
 import { useDocHandle, useDocument, useRepo } from "solid-automerge";
 import { findContextStore } from "@embark/context";
 import { Highlight } from "@embark/selection/channels";
-import type { InspectDoc } from "@embark/inspect";
 import type { DeckDoc, DocumentDragItem } from "@embark/dnd";
 import { DEFAULT_BIN } from "./parts-bin/catalog";
+import { resolveInspectorDoc } from "./inspector-doc";
 import { PartsBinList } from "./parts-bin/PartsBinList";
 import { FlapGroup, FlapPane } from "./FlapGroup";
 import { TabButton } from "./TabButton";
@@ -234,30 +234,6 @@ export function CardsSidebar(props: {
       </FlapGroup>
     </div>
   );
-}
-
-// localStorage key holding this browser's singleton sidebar inspector doc.
-// Deliberately per-device, not synced through the account (like the global
-// card stack), so the same inspector reopens across sessions.
-const INSPECTOR_DOC_KEY = "embark:sidebar-inspector-doc";
-
-// Find-or-create the singleton inspector doc. A stored url that can't be
-// resolved in this repo (e.g. a different device or account) is treated as
-// absent and a fresh doc is minted.
-async function resolveInspectorDoc(repo: Repo): Promise<AutomergeUrl> {
-  const stored = localStorage.getItem(INSPECTOR_DOC_KEY);
-  if (stored && isValidAutomergeUrl(stored)) {
-    try {
-      return (await repo.find<InspectDoc>(stored)).url;
-    } catch {
-      // Fall through and mint a new one.
-    }
-  }
-  const created = repo.create<InspectDoc>({
-    "@patchwork": { type: "inspect" },
-  });
-  localStorage.setItem(INSPECTOR_DOC_KEY, created.url);
-  return created.url;
 }
 
 // Doc ids of the cards held *inside* any deck sitting in the given stack.

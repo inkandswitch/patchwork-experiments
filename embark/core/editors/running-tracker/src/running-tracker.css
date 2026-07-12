@@ -523,3 +523,273 @@
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+
+/* ---- Demo data editor (map + floating panel) ------------------------------ */
+
+.embark-run-demo {
+  --accent: #16a34a;
+  --accent-press: #15803d;
+  --danger: #ef4444;
+  --danger-press: #dc2626;
+  --track: #6366f1;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --card: #ffffff;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+.embark-run-demo__map {
+  position: absolute;
+  inset: 0;
+}
+
+.embark-run-demo__panel {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  width: min(19rem, calc(100% - 1.5rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  pointer-events: none;
+}
+
+.embark-run-demo__section {
+  pointer-events: auto;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  background: var(--card);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+}
+
+.embark-run-demo__heading {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.embark-run-demo__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.embark-run-demo__readout {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.embark-run-demo__readout-sub {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.embark-run-demo__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.embark-run-demo__row span {
+  flex: none;
+}
+
+.embark-run-demo__row input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.embark-run-demo__row input[type="date"],
+.embark-run-demo__row input[type="time"],
+.embark-run-demo__row input[type="number"] {
+  flex: none;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--card);
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.embark-run-demo__row input[type="number"] {
+  width: 3.6rem;
+}
+
+.embark-run-demo__row--check {
+  justify-content: flex-start;
+}
+
+.embark-run-demo__row--check input {
+  accent-color: var(--accent);
+}
+
+.embark-run-demo__create {
+  margin-top: 0.2rem;
+  padding: 0.6rem 0.8rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.embark-run-demo__create:hover:not(:disabled) {
+  background: var(--accent-press);
+}
+
+.embark-run-demo__create:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.embark-run-demo__ghost-btn {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.embark-run-demo__ghost-btn:hover {
+  color: var(--ink);
+}
+
+.embark-run-demo__danger-btn {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.embark-run-demo__danger-btn:hover {
+  background: var(--danger-press);
+}
+
+.embark-run-demo__runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.embark-run-demo__run {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.embark-run-demo__run:hover {
+  background: #f4f6f8;
+}
+
+.embark-run-demo__run--selected {
+  border-color: var(--track);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.embark-run-demo__run-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.embark-run-demo__run-badge {
+  padding: 0.02rem 0.32rem;
+  border-radius: 0.4rem;
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--accent-press);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.embark-run-demo__run-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+/* Waypoint + midpoint markers live outside .embark-run-demo (maplibre appends
+   them to the map canvas container), so they carry their own colors. */
+
+.embark-run-demo__wp {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #16a34a;
+  border: 2.5px solid #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+  cursor: grab;
+}
+
+.embark-run-demo__wp:active {
+  cursor: grabbing;
+}
+
+.embark-run-demo__mid {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #16a34a;
+  opacity: 0.75;
+  cursor: pointer;
+}
+
+.embark-run-demo__mid:hover {
+  opacity: 1;
+}

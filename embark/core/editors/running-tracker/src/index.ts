@@ -16,6 +16,17 @@ export const plugins: Plugin<any>[] = [
     },
   },
   {
+    type: "patchwork:tool",
+    id: "run-demo-data",
+    name: "Demo Runs",
+    icon: "MapPinPlus",
+    supportedDatatypes: [],
+    async load() {
+      const { DemoDataTool } = await import("./DemoDataTool");
+      return DemoDataTool;
+    },
+  },
+  {
     type: "patchwork:datatype",
     id: "run-log",
     name: "Run Tracker",

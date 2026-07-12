@@ -135,6 +135,21 @@ function glyph(name: string): JSX.Element {
           <path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9z" />
         </>
       );
+    case "search":
+      return (
+        <>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.3-4.3" />
+        </>
+      );
+    case "cloud":
+      return <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />;
+    case "wand":
+      return (
+        <>
+          <path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M15 9h.01M17.8 6.2 19 5M3 21l9-9M12.2 6.2 11 5" />
+        </>
+      );
     default:
       return <rect x="4" y="4" width="16" height="16" rx="3" />;
   }

@@ -6,11 +6,23 @@
 // so it renders nothing into the middle slot.
 //
 // Plain-JS bundleless module: bare imports are importmap-provided; channel
-// definitions and the context-store client are imported with plain relative paths (all cards share one package).
+// definitions and the context-store client are imported by automerge url.
 
-import { getContextHandle, subscribeContext } from "../platform.js";
-import { SearchQueries, SearchResults } from "../mentions-card/channels.js";
-import { SchemaMatches, schemaKey } from "../schema-matcher/channels.js";
+import { getImportableUrlFromAutomergeUrl } from "@inkandswitch/patchwork-filesystem";
+
+const CORE_PACKAGE_URL = "automerge:2YxstDCjGbfeAqud8w38yuBYBncY";
+const MENTIONS_PACKAGE_URL = "automerge:2xYFYSsg6LhiPE719qB6nCZT9Zyh";
+const SCHEMA_MATCHER_PACKAGE_URL = "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC";
+
+const { getContextHandle, subscribeContext } = await import(
+  getImportableUrlFromAutomergeUrl(CORE_PACKAGE_URL, "client.js")
+);
+const { SearchQueries, SearchResults } = await import(
+  getImportableUrlFromAutomergeUrl(MENTIONS_PACKAGE_URL, "channels.js")
+);
+const { SchemaMatches, schemaKey } = await import(
+  getImportableUrlFromAutomergeUrl(SCHEMA_MATCHER_PACKAGE_URL, "channels.js")
+);
 
 // A JSON Schema that matches only document *roots*: `@patchwork.type` (a string)
 // lives at the top of every patchwork document and nowhere else, so the schema
