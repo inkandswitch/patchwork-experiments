@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/prose",
+  "version": "0.0.1",
+  "description": "Bear/Typora-style live-preview markdown editor",
+  "type": "module",
+  "main": "prose.js",
+  "exports": {
+    ".": "./prose.js"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
