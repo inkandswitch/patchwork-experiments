@@ -306,7 +306,12 @@
   gap: 6px;
 }
 
+/* Blocks keep their natural height (capped individually) and never compress —
+   the log container above is the only outer scroller. */
 .embark-inspect-regen__text {
+  flex: 0 0 auto;
+  max-height: 160px;
+  overflow: auto;
   font-size: 12px;
   line-height: 1.45;
   color: #44403c;
@@ -314,6 +319,7 @@
 }
 
 .embark-inspect-regen__script {
+  flex: 0 0 auto;
   border: 1px solid #e7e5e4;
   border-radius: 6px;
   overflow: hidden;
