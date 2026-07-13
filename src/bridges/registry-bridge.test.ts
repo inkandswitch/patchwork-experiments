@@ -500,6 +500,47 @@ describe("PackagesUrlMapper.resolvePackage (one package.json read per package)",
     expect(resolved?.hasAutomergeDeps).toBe(false);
   });
 
+  it("external directory importUrl: resolves the entry from package.json", async () => {
+    // The tools-bundle manifest now points at a package *directory*
+    // (`.../tools/threepane/`), not its entry file. resolvePackage must fetch the
+    // package.json and resolve the entry itself, so the resulting marker carries
+    // the real subpath (`dist/index.js`) — not an empty subpath that imports the
+    // 404ing directory. This is the threepane-isolation regression.
+    stubFetchReturning({ name: "threepane", exports: "./dist/index.js" });
+    const mapper = new PackagesUrlMapper();
+    const resolved = await mapper.resolvePackage(
+      "https://netlify.example/tools/threepane/"
+    );
+    expect(resolved?.hosting).toBe("external");
+    if (resolved?.hosting !== "external") throw new Error("unreachable");
+    expect(resolved.entryUrl).toBe(
+      "https://netlify.example/tools/threepane/dist/index.js"
+    );
+
+    // And the produced marker has the right subpath (not the empty-subpath bug).
+    const importUrl = mapper.encodeExternal(
+      resolved.entryUrl,
+      resolved.packageName ?? "fallback-id"
+    );
+    expect(importUrl).toBe(`${HOST}/registry--threepane/dist/index.js`);
+    // Round-trips back to the real external entry.
+    expect(await resolvePackageRequest(importUrl, mapper)).toBe(
+      "https://netlify.example/tools/threepane/dist/index.js"
+    );
+  });
+
+  it("external directory importUrl with `main` fallback resolves the entry", async () => {
+    stubFetchReturning({ name: "threepane", main: "./dist/index.js" });
+    const mapper = new PackagesUrlMapper();
+    const resolved = await mapper.resolvePackage(
+      "https://netlify.example/tools/threepane/"
+    );
+    if (resolved?.hosting !== "external") throw new Error("unreachable");
+    expect(resolved.entryUrl).toBe(
+      "https://netlify.example/tools/threepane/dist/index.js"
+    );
+  });
+
   it("absent package.json (automerge) → undefined (registration falls back)", async () => {
     vi.stubGlobal(
       "fetch",

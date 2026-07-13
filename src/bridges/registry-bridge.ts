@@ -189,15 +189,30 @@ export class PackagesUrlMapper {
   async #resolvePackageUncached(
     importUrl: string
   ): Promise<ResolvedPackage | undefined> {
-    // External: importUrl is already the entry point; read package.json at the
-    // package root (best-effort) for name + deps.
+    // External: a manifest `importUrl` is either a package *directory*
+    // (`.../tools/<name>/`) or a full entry file (`.../dist/index.js`). Mirror
+    // the host loader `httpEntryPointUrl`: a URL that already names a module
+    // file is the entry as-is (keep the `!namesModuleFile` guard); otherwise
+    // fetch package.json at the root and resolve `exports["."]`/`main`. Without
+    // this, `encodeExternal` gets a bare directory, mints an empty subpath, and
+    // the iframe imports the 404ing directory. Best-effort: on no package.json
+    // or no resolvable entry, keep `importUrl` as the entry.
     if (!isValidAutomergeUrl(importUrl)) {
       const root = packageRootFromUrl(importUrl);
       const pkgJson = root ? await fetchPackageJson(root) : undefined;
       const hasAutomergeDeps = this.#registerAutomergeDeps(pkgJson);
+      let entryUrl = importUrl;
+      if (!namesModuleFile(importUrl) && pkgJson && root) {
+        try {
+          const entryPoint = resolvePackageExport(pkgJson);
+          if (entryPoint) entryUrl = new URL(entryPoint, root).href;
+        } catch {
+          // no valid exports/main — keep importUrl as the entry (best-effort)
+        }
+      }
       return {
         hosting: "external",
-        entryUrl: importUrl,
+        entryUrl,
         packageName: pkgJson?.name,
         hasAutomergeDeps,
       };
@@ -372,6 +387,21 @@ export class PackagesUrlMapper {
 
 /** Bundler output directory names an entry point commonly sits under. */
 const BUNDLE_OUTPUT_DIRS = new Set(["dist", "build", "out", "lib"]);
+
+/** Extensions marking a URL as a direct entry point vs. a package/site root. */
+const MODULE_FILE_EXTENSION = /\.(mjs|cjs|js|mts|cts|ts|jsx|tsx)$/;
+
+// TODO: this duplicates `patchwork-filesystem`'s internal `httpEntryPointUrl`
+// (same regex + package.json-entry resolution). Delegate to it once that helper
+// is exported, instead of maintaining a parallel copy here.
+/** Whether a URL's pathname already names a module file (a direct entry). */
+function namesModuleFile(moduleUrl: string): boolean {
+  try {
+    return MODULE_FILE_EXTENSION.test(new URL(moduleUrl, window.location.origin).pathname);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Derive a module URL's package-root directory (ends in "/") by the publish
