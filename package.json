@@ -26,7 +26,7 @@
     "@inkandswitch/patchwork-elements": "1.0.0",
     "@inkandswitch/patchwork-filesystem": "^0.0.8",
     "@inkandswitch/patchwork-plugins": "^0.0.11",
-    "@inkandswitch/patchwork-providers": "0.2.2",
+    "@inkandswitch/patchwork-providers": "0.3.0",
     "debug": "^4.4.3",
     "es-module-shims": "^2.8.1"
   },
