@@ -1,0 +1,6 @@
+{
+  "@patchwork": {
+    "type": "patchwork:module-settings"
+  },
+  "modules": ["."]
+}
