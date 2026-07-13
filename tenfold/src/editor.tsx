@@ -6,11 +6,11 @@ import { indentOnInput } from "@codemirror/language"
 import { search, searchKeymap } from "@codemirror/search"
 import { Compartment, EditorState } from "@codemirror/state"
 import { drawSelection, EditorView, keymap } from "@codemirror/view"
-import { CodeMirror } from "@grjte/codemirror-base/component"
+import { automergeSyncPlugin } from "@automerge/automerge-codemirror"
 import { vim } from "@replit/codemirror-vim"
 import { tsAutocomplete, tsFacet, tsGoto, tsHover, tsLinterWorker, tsSync, tsTwoslash } from "@valtown/codemirror-ts"
 import type { Accessor } from "solid-js"
-import { createEffect, createSignal, on, Show } from "solid-js"
+import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
 import { noirTheme } from "./codemirror/theme.ts"
 import TenfoldDocs from "./docs.tsx"
 
@@ -33,6 +33,7 @@ export default function TenfoldEditor(props: {
 
   const historyCompartment = new Compartment()
   const readOnlyCompartment = new Compartment()
+  const vimCompartment = new Compartment()
 
   const tsFacetCompartment = new Compartment()
 
@@ -112,100 +113,118 @@ export default function TenfoldEditor(props: {
         </div>
       </div>
       <Show when={lastHandle()}>
-        {(handle) => (
-          <div style={{ display: props.editing() != null ? undefined : "none", flex: 1, "min-height": 0 }}>
-            <CodeMirror
-              handle={handle()}
-              path={["content"]}
-              withView={(view: EditorView) => {
-                editorView = view
-                createEffect(
-                  on(props.typescriptPath, () => {
-                    view.dispatch({
-                      effects: historyCompartment.reconfigure([]),
-                    })
-                    setTimeout(() => {
-                      view.dispatch({
-                        effects: historyCompartment.reconfigure(history()),
-                      })
-                    }, 1000)
-                  })
-                )
-                // Read-only while a shared letter is loading.
-                createEffect(() => {
-                  view.dispatch({
-                    effects: readOnlyCompartment.reconfigure(props.loading() ? EditorState.readOnly.of(true) : []),
-                  })
+        {(handle) => {
+          let container!: HTMLDivElement
+          // Rebuild the editor whenever we switch to a different letter's handle.
+          createEffect(
+            on(handle, (h) => {
+              const view = new EditorView({
+                doc: h.doc()?.content?.toString() ?? "",
+                extensions: [
+                  drawSelection(),
+                  vimCompartment.of(withVim() ? vim({ status: true }) : []),
+                  EditorState.allowMultipleSelections.of(true),
+                  EditorView.clickAddsSelectionRange.of((event) => event.altKey),
+                  keymap.of([
+                    indentWithTab,
+                    {
+                      preventDefault: true,
+                      mac: "m-s",
+                      key: "c-s",
+                      run() {
+                        return true
+                      },
+                    },
+                    {
+                      preventDefault: true,
+                      key: "m-c-v",
+                      run() {
+                        setWithVim((prev) => !prev)
+                        return true
+                      },
+                    },
+                    ...defaultKeymap,
+                    ...historyKeymap,
+                    ...completionKeymap,
+                    ...searchKeymap,
+                  ]),
+                  historyCompartment.of([history()]),
+                  readOnlyCompartment.of([]),
+                  javascript(),
+                  noirTheme,
+                  tsFacetCompartment.of(tsFacet.of({ worker: props.worker, path: props.typescriptPath() })),
+                  autocompletion({
+                    override: [tsAutocomplete()],
+                    closeOnBlur: false,
+                  }),
+                  tsSync(),
+                  tsGoto(),
+                  tsHover(),
+                  tsTwoslash(),
+                  tsLinterWorker(),
+                  indentOnInput(),
+                  search({ caseSensitive: false, regexp: true }),
+                  EditorView.lineWrapping,
+                  EditorState.transactionFilter.of((tr) => {
+                    const start = completionStatus(tr.startState)
+                    const after = completionStatus(tr.state)
+
+                    if (
+                      !tr.reconfigured &&
+                      tr.changes.empty &&
+                      !tr.effects.length &&
+                      start == "active" &&
+                      !after &&
+                      !tr.scrollIntoView &&
+                      tr.startState.selection == tr.newSelection &&
+                      tr.selection == tr.startState.selection
+                    ) {
+                      return []
+                    }
+
+                    return tr
+                  }),
+                  automergeSyncPlugin({ handle: h as never, path: ["content"] }),
+                ],
+              })
+              container.appendChild(view.dom)
+              editorView = view
+
+              // Toggle vim mode without rebuilding the editor.
+              createEffect(() => {
+                view.dispatch({
+                  effects: vimCompartment.reconfigure(withVim() ? vim({ status: true }) : []),
                 })
-              }}
-              extensions={[
-                drawSelection(),
-                withVim() ? vim({ status: true }) : [],
-                EditorState.allowMultipleSelections.of(true),
-                EditorView.clickAddsSelectionRange.of((event) => event.altKey),
-                keymap.of([
-                  indentWithTab,
-                  {
-                    preventDefault: true,
-                    mac: "m-s",
-                    key: "c-s",
-                    run() {
-                      return true
-                    },
-                  },
-                  {
-                    preventDefault: true,
-                    key: "m-c-v",
-                    run() {
-                      setWithVim((prev) => !prev)
-                      return true
-                    },
-                  },
-                  ...defaultKeymap,
-                  ...historyKeymap,
-                  ...completionKeymap,
-                  ...searchKeymap,
-                ]),
-                historyCompartment.of([history()]),
-                readOnlyCompartment.of([]),
-                javascript(),
-                noirTheme,
-                tsFacetCompartment.of(tsFacet.of({ worker: props.worker, path: props.typescriptPath() })),
-                autocompletion({
-                  override: [tsAutocomplete()],
-                  closeOnBlur: false,
-                }),
-                tsSync(),
-                tsGoto(),
-                tsHover(),
-                tsTwoslash(),
-                tsLinterWorker(),
-                indentOnInput(),
-                search({ caseSensitive: false, regexp: true }),
-                EditorView.lineWrapping,
-                EditorState.transactionFilter.of((tr) => {
-                  const start = completionStatus(tr.startState)
-                  const after = completionStatus(tr.state)
+              })
+              createEffect(
+                on(props.typescriptPath, () => {
+                  view.dispatch({
+                    effects: historyCompartment.reconfigure([]),
+                  })
+                  setTimeout(() => {
+                    view.dispatch({
+                      effects: historyCompartment.reconfigure(history()),
+                    })
+                  }, 1000)
+                })
+              )
+              // Read-only while a shared letter is loading.
+              createEffect(() => {
+                view.dispatch({
+                  effects: readOnlyCompartment.reconfigure(props.loading() ? EditorState.readOnly.of(true) : []),
+                })
+              })
 
-                  if (
-                    !tr.reconfigured &&
-                    tr.changes.empty &&
-                    !tr.effects.length &&
-                    start == "active" &&
-                    !after &&
-                    !tr.scrollIntoView &&
-                    tr.startState.selection == tr.newSelection &&
-                    tr.selection == tr.startState.selection
-                  ) {
-                    return []
-                  }
-
-                  return tr
-                }),
-              ]}
+              onCleanup(() => view.destroy())
+            })
+          )
+          return (
+            <div
+              ref={container}
+              style={{ display: props.editing() != null ? undefined : "none", flex: 1, "min-height": 0 }}
             />
-          </div>
-        )}
+          )
+        }}
       </Show>
       <div style={{ display: props.editing() == null ? undefined : "none", overflow: "auto", flex: 1 }}>
         <TenfoldDocs />
