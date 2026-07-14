@@ -14,7 +14,6 @@ import {
   syncSoloClipScrubComposition,
   updatePlayheadCompositionTiming,
   updateClipEdgePreviewComposition,
-  clipsInPlayheadExtent,
   type ClipEdgePreview,
   type ClipTimingInfo,
   type ClipTimingOverride,
@@ -759,9 +758,8 @@ export function usePlayheadPlayer(
   };
 
   /**
-   * Scrub a specific clip at page-x using the same pipeline as playhead/marker
-   * scrub. If the clip is in the active playhead mix, scrubs that mix; otherwise
-   * builds a one-clip solo with the same timing clock and scrubs that.
+   * Scrub a specific clip at page-x (Control-hover / marker). Always solos that
+   * clip in the monitor — never the full playhead mix (unlike playhead drag).
    */
   const scrubClipToPageX = (clipId: string | null, pageX: number | null) => {
     if (clipId === null || pageX === null) {
@@ -774,13 +772,6 @@ export function usePlayheadPlayer(
     const clip = docRef.current.clips.find((c) => c.id === clipId);
     if (!clip) return;
 
-    const playhead = playheadRef.current;
-    const inExtent =
-      !!playhead &&
-      clipsInPlayheadExtent(docRef.current, playhead, timingRef.current).some(
-        (c) => c.id === clipId,
-      );
-
     // Clear trim/edge-preview override so we own the composition.
     if (clipEdgePreviewActiveRef.current) {
       clipPreviewRef.current = null;
@@ -792,22 +783,6 @@ export function usePlayheadPlayer(
       clipEdgePreviewScrubPlaybackRef.current = false;
     }
 
-    if (inExtent) {
-      if (soloScrubClipIdRef.current !== null) {
-        // Leave solo mode and restore the playhead mix, then scrub once rebuilt.
-        soloScrubClipIdRef.current = null;
-        soloScrubEnsureGenRef.current += 1;
-        structureKeyRef.current = null;
-        monitorScrubPageXRef.current = pageX;
-        setPlayheadSyncEpoch((n) => n + 1);
-        return;
-      }
-      scrubMonitorToPageX(pageX);
-      return;
-    }
-
-    // Out of extent: solo composition with timeOrigin at clip left edge, then
-    // the same scheduleCompositionSeek clock as marker/playhead scrub.
     monitorScrubPageXRef.current = pageX;
     const composition = compositionRef.current;
     if (!composition) return;

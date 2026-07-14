@@ -75,6 +75,11 @@ export type Clip = {
    * clip's visible [sourceIn, sourceIn+duration] window — trimming cannot hide them.
    */
   markers?: number[];
+  /**
+   * When true, the clip stays on the canvas (extent, snap, scrub) but is omitted
+   * from playhead playback / monitor mix. Toggle with `h` while pointing at it.
+   */
+  disabled?: boolean;
 };
 
 export type Playhead = {

@@ -31,6 +31,8 @@ export type ClipLayout = {
   markerSourceTimes: number[];
   /** Page-x positions of those markers that fall in the visible window. */
   markerXs: number[];
+  /** Hidden from playhead mix; drawn translucent on the canvas. */
+  disabled: boolean;
 };
 
 export type PlayheadLayout = {
@@ -99,6 +101,9 @@ export type HitTarget =
   | { kind: 'clip-right-handle'; clipId: string }
   | { kind: 'clip-marker'; clipId: string; sourceTime: number }
   | { kind: 'playhead'; playheadId: string }
+  | { kind: 'playhead-origin'; playheadId: string }
+  | { kind: 'playhead-origin-top'; playheadId: string }
+  | { kind: 'playhead-origin-bottom'; playheadId: string }
   | { kind: 'post-it'; postItId: string }
   | { kind: 'post-it-resize'; postItId: string }
   | { kind: 'scribble'; scribbleId: string }
@@ -128,6 +133,7 @@ export function computeClipLayout(
     sourceInTime: clip.sourceInTime,
     markerSourceTimes,
     markerXs: visibleMarkerPageXs(markerSourceTimes, clip.x, sourceIn, duration),
+    disabled: clip.disabled === true,
   };
 }
 
@@ -234,6 +240,7 @@ export function applyClipDragPreview(
     sourceInTime: preview.sourceInTime ?? original?.sourceInTime ?? null,
     markerSourceTimes,
     markerXs: visibleMarkerPageXs(markerSourceTimes, preview.x, sourceIn ?? 0, preview.duration),
+    disabled: original?.disabled ?? false,
   });
   clips.sort((a, b) => a.y - b.y);
   return recomputePlayheadExtents({
@@ -305,6 +312,37 @@ export function applyPlayheadMovePreview(
             height: playheadPreview.height,
             currentX: playheadPreview.currentX,
             maxEndX,
+          }
+        : ph,
+    ),
+  };
+}
+
+/** Live preview while dragging the playhead origin (move or resize). Clips stay put. */
+export function applyPlayheadOriginPreview(
+  layout: CanvasLayout,
+  preview: { playheadId: string; x: number; y: number; height: number; currentX: number },
+): CanvasLayout {
+  const playheads = layout.playheads.map((ph) =>
+    ph.playheadId === preview.playheadId
+      ? {
+          ...ph,
+          x: preview.x,
+          y: preview.y,
+          height: preview.height,
+          currentX: preview.currentX,
+        }
+      : ph,
+  );
+  const next = recomputePlayheadExtents({ ...layout, playheads });
+  // Keep the line inside the recomputed extent (origin may have pushed it right).
+  return {
+    ...next,
+    playheads: next.playheads.map((ph) =>
+      ph.playheadId === preview.playheadId
+        ? {
+            ...ph,
+            currentX: Math.max(ph.x, Math.min(ph.maxEndX, preview.currentX)),
           }
         : ph,
     ),
@@ -533,6 +571,39 @@ export function pointInPlayheadPath(
   return pageX >= pathLeft && pageX <= pathRight;
 }
 
+/** Hit half-width of the playhead origin strip (page space). */
+export function playheadOriginHitHalfWidth(cameraZ: number): number {
+  return Math.max(HANDLE_WIDTH, MIN_HANDLE_HIT_SCREEN_PX / cameraZ) / 2;
+}
+
+/** Hit radius of the origin top/bottom knobs (page space). */
+export function playheadOriginKnobHitRadius(cameraZ: number): number {
+  return Math.max(MIN_HANDLE_HIT_SCREEN_PX, 16) / cameraZ / 2;
+}
+
+/**
+ * Which origin hotspot (if any) contains the page point. Knobs win over the
+ * stem so short playheads stay resizable.
+ */
+export function hitTestPlayheadOrigin(
+  layout: CanvasLayout,
+  pageX: number,
+  pageY: number,
+  ph: PlayheadLayout,
+): 'top' | 'bottom' | 'body' | null {
+  const halfW = playheadOriginHitHalfWidth(layout.camera.z);
+  if (pageX < ph.x - halfW || pageX > ph.x + halfW) return null;
+  if (pageY < ph.y - halfW || pageY > ph.y + ph.height + halfW) return null;
+
+  const knobR = playheadOriginKnobHitRadius(layout.camera.z);
+  const topDist = Math.hypot(pageX - ph.x, pageY - ph.y);
+  const bottomDist = Math.hypot(pageX - ph.x, pageY - (ph.y + ph.height));
+  if (topDist <= knobR) return 'top';
+  if (bottomDist <= knobR) return 'bottom';
+  if (pageY >= ph.y && pageY <= ph.y + ph.height) return 'body';
+  return null;
+}
+
 export function hitTestCanvas(
   layout: CanvasLayout,
   pageX: number,
@@ -560,6 +631,15 @@ export function hitTestCanvas(
     ) {
       return { kind: 'post-it', postItId: postIt.postItId };
     }
+  }
+
+  // Origin hotspots sit on the playhead's left edge and must beat clip trim
+  // handles / bodies so you can still grab an origin that coincides with a clip.
+  for (const ph of [...layout.playheads].reverse()) {
+    const originHit = hitTestPlayheadOrigin(layout, pageX, pageY, ph);
+    if (originHit === 'top') return { kind: 'playhead-origin-top', playheadId: ph.playheadId };
+    if (originHit === 'bottom') return { kind: 'playhead-origin-bottom', playheadId: ph.playheadId };
+    if (originHit === 'body') return { kind: 'playhead-origin', playheadId: ph.playheadId };
   }
 
   for (const clip of [...layout.clips].reverse()) {

@@ -11,16 +11,7 @@ import {
   partitionMarkersAtSourceTime,
 } from './clip-markers';
 
-export function commitClipMoves(
-  doc: SpaceTimeDoc,
-  moves: ReadonlyArray<{ clipId: string; x: number; y: number }>,
-): void {
-  for (const { clipId, x, y } of moves) {
-    commitClipMove(doc, clipId, x, y);
-  }
-}
-
-export function commitClipMove(
+function setClipPosition(
   doc: SpaceTimeDoc,
   clipId: string,
   x: number,
@@ -30,6 +21,34 @@ export function commitClipMove(
   if (!clip) return;
   clip.x = x;
   clip.y = y;
+}
+
+/**
+ * Move several clips. By default prunes empty playheads once at the end — never
+ * between clips, so a batch move can't look "empty" mid-update. Pass
+ * `pruneEmptyPlayheads: false` when the caller still needs to update playhead
+ * geometry in the same change (then prune once after everything lands).
+ */
+export function commitClipMoves(
+  doc: SpaceTimeDoc,
+  moves: ReadonlyArray<{ clipId: string; x: number; y: number }>,
+  options?: { pruneEmptyPlayheads?: boolean },
+): void {
+  for (const { clipId, x, y } of moves) {
+    setClipPosition(doc, clipId, x, y);
+  }
+  if (options?.pruneEmptyPlayheads !== false) {
+    removePlayheadsWithoutClips(doc);
+  }
+}
+
+export function commitClipMove(
+  doc: SpaceTimeDoc,
+  clipId: string,
+  x: number,
+  y: number,
+): void {
+  setClipPosition(doc, clipId, x, y);
   removePlayheadsWithoutClips(doc);
 }
 

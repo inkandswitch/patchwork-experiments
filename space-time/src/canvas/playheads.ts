@@ -46,6 +46,21 @@ export function commitPlayheadPosition(
   playhead.y = y;
 }
 
+/** Update origin x/y and vertical band height together (origin drag / resize). */
+export function commitPlayheadGeometry(
+  doc: SpaceTimeDoc,
+  playheadId: string,
+  x: number,
+  y: number,
+  height: number,
+): void {
+  const playhead = findPlayhead(doc, playheadId);
+  if (!playhead) return;
+  playhead.x = x;
+  playhead.y = y;
+  playhead.height = Math.max(MIN_PLAYHEAD_HEIGHT, height);
+}
+
 export function commitPlayheadOriginX(
   doc: SpaceTimeDoc,
   playheadId: string,

@@ -179,7 +179,8 @@ function touchableClipsForPlayhead(
   playhead: Playhead,
   timing: Map<string, ClipTimingInfo>,
 ): Clip[] {
-  return clipsInPlayheadExtent(doc, playhead, timing);
+  // Disabled clips still shape playhead extent, but are omitted from the mix.
+  return clipsInPlayheadExtent(doc, playhead, timing).filter((clip) => !clip.disabled);
 }
 
 export { clipsInPlayheadExtent } from '../canvas/playhead-extent';
@@ -194,6 +195,11 @@ export function playheadCompositionStructureKey(
   return JSON.stringify({
     playheadId: playhead.id,
     clips: touchable.map((clip) => `${clip.id}:${clip.sourceId}`),
+    // Include disabled in-extent ids so toggling hide rebuilds the mix.
+    hidden: clipsInPlayheadExtent(doc, playhead, timing)
+      .filter((clip) => clip.disabled)
+      .map((clip) => clip.id)
+      .sort(),
   });
 }
 

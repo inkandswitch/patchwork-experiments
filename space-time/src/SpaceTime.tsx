@@ -41,13 +41,6 @@ import { createAudioFile } from './audio/create-audio-file';
 
 import './styles.css';
 
-function formatTime(seconds: number): string {
-  const whole = Math.max(0, Math.floor(seconds));
-  const mins = Math.floor(whole / 60);
-  const secs = whole % 60;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-}
-
 export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const rootRef = useRef<HTMLDivElement>(null);
   const [doc, changeDoc] = useDocument<SpaceTimeDoc>(docUrl, { suspense: true });
@@ -604,15 +597,6 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       }}
       onKeyDown={onKeyDown}
     >
-      {activePlayhead && playerState.status === 'ready' && (
-        <div className="flex shrink-0 items-center border-b border-base-300 px-3 py-2">
-          <span className="ml-auto text-xs text-base-content/60">
-            {formatTime(currentX / PIXELS_PER_SECOND)}
-            {isRecording ? ' · Recording…' : ' · Hold . to record'}
-          </span>
-        </div>
-      )}
-
       <div className="relative flex min-h-0 flex-1">
         <Canvas
           docUrl={docUrl}

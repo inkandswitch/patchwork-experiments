@@ -36,9 +36,11 @@ import {
 } from './clips';
 import {
   commitPlayheadDuplicate as writePlayheadDuplicate,
+  commitPlayheadGeometry,
   commitPlayheadPosition,
   createPlayhead,
   deletePlayhead,
+  removePlayheadsWithoutClips,
 } from './playheads';
 import { addPostIt, commitPostItPosition, commitPostItSize, deletePostIt, updatePostItText } from './post-its';
 import { addScribble, buildScribbleOutline, commitScribbleMove, deleteScribble, translateOutline } from './scribbles';
@@ -49,6 +51,7 @@ import {
   applyMarkerMovePreview,
   applyPlayheadDuplicatePreview,
   applyPlayheadMovePreview,
+  applyPlayheadOriginPreview,
   applyPostItMovePreview,
   applyPostItResizePreview,
   applySelectionMovePreview,
@@ -456,6 +459,18 @@ type DragState =
       crossesClip: boolean;
     }
   | {
+      kind: 'playhead-origin';
+      mode: 'move' | 'resize-top' | 'resize-bottom';
+      pointerId: number;
+      playheadId: string;
+      startPageX: number;
+      startPageY: number;
+      originalX: number;
+      originalY: number;
+      originalHeight: number;
+      originalCurrentX: number;
+    }
+  | {
       kind: 'scrub-playhead';
       playheadId: string;
       pointerId: number;
@@ -566,6 +581,7 @@ const KEYBOARD_SCRIBBLE_POINTER_ID = -5;
 const KEYBOARD_CLIP_MOVE_POINTER_ID = -6;
 const KEYBOARD_LASSO_POINTER_ID = -7;
 const KEYBOARD_SELECTION_MOVE_POINTER_ID = -8;
+const KEYBOARD_PLAYHEAD_DRAW_POINTER_ID = -9;
 
 function isDuplicateKey(event: KeyboardEvent): boolean {
   return event.code === 'KeyD' || event.key === 'd' || event.key === 'D';
@@ -608,9 +624,8 @@ type CanvasProps = {
   /** Scrub the live playhead mix to a page-x (marker drag); null to release. */
   onMonitorScrub?: (pageX: number | null) => void;
   /**
-   * Scrub a specific clip at page-x (marker / Control-hover). Uses the playhead
-   * mix when the clip is in extent, otherwise a solo composition with the same
-   * clock. Pass null clipId to release.
+   * Scrub a specific clip at page-x (marker / Control-hover). Always solos that
+   * clip — not the full playhead mix. Pass null clipId to release.
    */
   onClipScrub?: (clipId: string | null, pageX: number | null) => void;
   onFocusEditor?: () => void;
@@ -715,6 +730,13 @@ export function Canvas({
     clips: ClipDragPreview[];
     playhead: PlayheadMovePreview;
   } | null>(null);
+  const playheadOriginPreviewRef = useRef<{
+    playheadId: string;
+    x: number;
+    y: number;
+    height: number;
+    currentX: number;
+  } | null>(null);
   const scribbleMovePreviewRef = useRef<{ scribbleId: string; outline: number[][] } | null>(null);
   const postItMovePreviewRef = useRef<{ postItId: string; x: number; y: number } | null>(null);
   const postItResizePreviewRef = useRef<{ postItId: string; width: number; height: number } | null>(
@@ -783,6 +805,7 @@ export function Canvas({
     followPlayback,
     verticalDragPreview: null as { x: number; y0: number; y1: number; valid: boolean } | null,
     scribblePreview: null as number[][] | null,
+    hoveredPlayheadOriginId: null as string | null,
   });
 
   const [hoveredClipId, setHoveredClipId] = useState<string | null>(null);
@@ -831,6 +854,10 @@ export function Canvas({
     () => {},
   );
   const beginSplitLineRef = useRef<(x: number, y: number, pointerId: number) => void>(() => {});
+  const commitPlayheadDrawRef = useRef<
+    (drag: Extract<DragState, { kind: 'playhead-draw' }>) => void
+  >(() => {});
+  const beginPlayheadDrawRef = useRef<(x: number, y: number, pointerId: number) => void>(() => {});
   const beginScribbleDrawRef = useRef<(x: number, y: number) => void>(() => {});
   const beginLassoDrawRef = useRef<(x: number, y: number) => void>(() => {});
   const finishLassoDrawRef = useRef<() => void>(() => {});
@@ -855,6 +882,7 @@ export function Canvas({
   const addPostItAtRef = useRef<(x: number, y: number) => void>(() => {});
   const toggleFormatAtRef = useRef<(x: number, y: number) => void>(() => {});
   const addMarkerAtPointerRef = useRef<() => void>(() => {});
+  const toggleDisableAtPointerRef = useRef<() => void>(() => {});
   const deleteHoveredMarkerRef = useRef<() => boolean>(() => false);
   const deleteCanvasSelectionRef = useRef<() => boolean>(() => false);
   const deleteSelectedInlineImageRef = useRef<() => boolean>(() => false);
@@ -1199,6 +1227,8 @@ export function Canvas({
         playheadMovePreviewRef.current.clips,
         playheadMovePreviewRef.current.playhead,
       );
+    } else if (playheadOriginPreviewRef.current) {
+      layoutRef.current = applyPlayheadOriginPreview(layout, playheadOriginPreviewRef.current);
     } else {
       layoutRef.current = layout;
     }
@@ -1244,7 +1274,10 @@ export function Canvas({
         : activeDrag?.kind === 'playhead-duplicate' &&
             activeDrag.sourcePlayheadId === deps.activePlayheadId
           ? activeDrag.originalPlayheadX
-          : null;
+          : activeDrag?.kind === 'playhead-origin' &&
+              activeDrag.playheadId === deps.activePlayheadId
+            ? activeDrag.originalX
+            : null;
 
     const selectionBubble = selectionIsEmpty(canvasSelectionRef.current)
       ? null
@@ -1269,6 +1302,7 @@ export function Canvas({
       timeOriginOverride,
       selectionBubble,
       lassoPathRef.current,
+      deps.hoveredPlayheadOriginId,
     );
 
     const ruler = rulerRef.current;
@@ -1401,6 +1435,31 @@ export function Canvas({
   };
   addMarkerAtPointerRef.current = addMarkerAtPointer;
 
+  /** Point at a clip and press `h` to hide/show it in the playhead mix. */
+  const toggleDisableAtPointer = () => {
+    if (!pointerOnCanvasRef.current || !lastPointerClientRef.current) return;
+    const { x, y } = pagePointFromClient(
+      lastPointerClientRef.current.clientX,
+      lastPointerClientRef.current.clientY,
+    );
+    const layout = layoutRef.current ?? buildLayout();
+    if (!layout) return;
+    layoutRef.current = layout;
+
+    const clipLayout = clipAtPoint(layout, x, y);
+    if (!clipLayout) return;
+
+    changeDoc((d) => {
+      const c = findClip(d, clipLayout.clipId);
+      if (!c) return;
+      if (c.disabled) delete c.disabled;
+      else c.disabled = true;
+    });
+    onSelectedClipChange(clipLayout.clipId);
+    schedulePaint();
+  };
+  toggleDisableAtPointerRef.current = toggleDisableAtPointer;
+
   const deleteHoveredMarker = () => {
     const hovered = hoveredMarkerRef.current;
     if (!hovered) return false;
@@ -1501,6 +1560,7 @@ export function Canvas({
       followPlayback,
       verticalDragPreview: paintDepsRef.current.verticalDragPreview,
       scribblePreview: paintDepsRef.current.scribblePreview,
+      hoveredPlayheadOriginId: paintDepsRef.current.hoveredPlayheadOriginId,
     };
     schedulePaint();
   }, [doc, activePlayheadId, playheadCurrentX, selectedClipId, selectedScribbleId, selectedPostItId, selectedInlineImageId, hoveredClipId, ghostPlayheads, recordingPreview, loopingPlayheadIds, followPlayback, editingClipId, editingPostItId]);
@@ -1672,6 +1732,68 @@ export function Canvas({
   commitSplitLineRef.current = commitSplitLine;
   beginSplitLineRef.current = beginSplitLine;
 
+  const updatePlayheadDrawDrag = (
+    drag: Extract<DragState, { kind: 'playhead-draw' }>,
+    y: number,
+  ) => {
+    const layout = layoutRef.current;
+    if (!layout) return;
+
+    drag.y1 = y;
+    let crosses = false;
+    for (const clip of layout.clips) {
+      if (segmentCrossesClip(drag.x, drag.y0, drag.y1, clip)) {
+        crosses = true;
+        break;
+      }
+    }
+    drag.crossesClip = crosses;
+    const dy = Math.abs(drag.y1 - drag.y0);
+    paintDepsRef.current.verticalDragPreview = {
+      x: drag.x,
+      y0: drag.y0,
+      y1: drag.y1,
+      valid: !crosses && dy >= MIN_VERTICAL_DRAG_PX,
+    };
+    schedulePaint();
+  };
+
+  const beginPlayheadDraw = (x: number, y: number, pointerId: number) => {
+    const layout = buildLayout();
+    if (!layout) return;
+    layoutRef.current = layout;
+    onSelectedClipChange(null);
+    clearAnnotationSelection();
+    clearCanvasSelection();
+    dragRef.current = {
+      kind: 'playhead-draw',
+      pointerId,
+      x,
+      y0: y,
+      y1: y,
+      crossesClip: false,
+    };
+    updatePlayheadDrawDrag(dragRef.current, y);
+  };
+
+  const commitPlayheadDraw = (drag: Extract<DragState, { kind: 'playhead-draw' }>) => {
+    const dy = Math.abs(drag.y1 - drag.y0);
+    paintDepsRef.current.verticalDragPreview = null;
+
+    if (!drag.crossesClip && dy >= MIN_PLAYHEAD_HEIGHT) {
+      changeDoc((d) => {
+        const id = createPlayhead(d, drag.x, drag.y0, drag.y1);
+        if (id) onActivePlayheadChange(id);
+      });
+    }
+
+    dragRef.current = null;
+    schedulePaint();
+  };
+
+  commitPlayheadDrawRef.current = commitPlayheadDraw;
+  beginPlayheadDrawRef.current = beginPlayheadDraw;
+
   const updatePlayheadMoveDrag = (x: number, y: number) => {
     const drag = dragRef.current;
     if (drag?.kind !== 'playhead-move') return;
@@ -1739,7 +1861,9 @@ export function Canvas({
       return;
     }
     changeDoc((d) => {
-      commitPlayheadPosition(d, preview.playhead.playheadId, preview.playhead.x, preview.playhead.y);
+      // Move clips + playhead together before pruning empty playheads. Pruning
+      // mid-update (playhead already moved, clips still old) can make the
+      // extent look empty and delete the playhead.
       if (preview.clips.length > 0) {
         commitClipMoves(
           d,
@@ -1748,8 +1872,11 @@ export function Canvas({
             x: clip.x,
             y: clip.y,
           })),
+          { pruneEmptyPlayheads: false },
         );
       }
+      commitPlayheadPosition(d, preview.playhead.playheadId, preview.playhead.x, preview.playhead.y);
+      removePlayheadsWithoutClips(d);
     });
     onPlayheadCurrentXChange(preview.playhead.playheadId, preview.playhead.currentX);
     playheadMovePreviewRef.current = null;
@@ -1768,6 +1895,89 @@ export function Canvas({
   beginPlayheadMoveRef.current = beginPlayheadMove;
   commitPlayheadMoveRef.current = commitPlayheadMove;
   cancelPlayheadMoveRef.current = cancelPlayheadMove;
+
+  const updatePlayheadOriginDrag = (x: number, y: number) => {
+    const drag = dragRef.current;
+    if (drag?.kind !== 'playhead-origin') return;
+    let nextX = drag.originalX;
+    let nextY = drag.originalY;
+    let nextHeight = drag.originalHeight;
+    if (drag.mode === 'move') {
+      nextX = drag.originalX + (x - drag.startPageX);
+      nextY = drag.originalY + (y - drag.startPageY);
+    } else if (drag.mode === 'resize-top') {
+      const bottom = drag.originalY + drag.originalHeight;
+      nextY = Math.min(y, bottom - MIN_PLAYHEAD_HEIGHT);
+      nextHeight = bottom - nextY;
+    } else {
+      nextHeight = Math.max(MIN_PLAYHEAD_HEIGHT, y - drag.originalY);
+    }
+    // Origin is the left edge of the extent — keep the playhead line inside it.
+    const nextCurrentX = Math.max(drag.originalCurrentX, nextX);
+    playheadOriginPreviewRef.current = {
+      playheadId: drag.playheadId,
+      x: nextX,
+      y: nextY,
+      height: nextHeight,
+      currentX: nextCurrentX,
+    };
+    paintDepsRef.current.hoveredPlayheadOriginId = drag.playheadId;
+    schedulePaint();
+  };
+
+  const beginPlayheadOriginDrag = (
+    mode: 'move' | 'resize-top' | 'resize-bottom',
+    playheadId: string,
+    x: number,
+    y: number,
+    pointerId: number,
+  ) => {
+    if (dragRef.current) return;
+    const playhead = doc.playheads.find((p) => p.id === playheadId);
+    if (!playhead) return;
+    if (playheadId !== activePlayheadId) {
+      onActivePlayheadChange(playheadId);
+    }
+    onSelectedClipChange(null);
+    clearAnnotationSelection();
+    clearCanvasSelection();
+    dragRef.current = {
+      kind: 'playhead-origin',
+      mode,
+      pointerId,
+      playheadId,
+      startPageX: x,
+      startPageY: y,
+      originalX: playhead.x,
+      originalY: playhead.y,
+      originalHeight: playhead.height,
+      originalCurrentX: playheadCurrentX.get(playheadId) ?? playhead.x,
+    };
+    updatePlayheadOriginDrag(x, y);
+  };
+
+  const commitPlayheadOriginDrag = () => {
+    const preview = playheadOriginPreviewRef.current;
+    if (!preview) {
+      playheadOriginPreviewRef.current = null;
+      if (dragRef.current?.kind === 'playhead-origin') dragRef.current = null;
+      schedulePaint();
+      return;
+    }
+    // Clamp the line against the live preview extent (same as paint).
+    const layout = layoutRef.current;
+    const ph = layout?.playheads.find((p) => p.playheadId === preview.playheadId);
+    const currentX = ph
+      ? Math.max(ph.x, Math.min(ph.maxEndX, preview.currentX))
+      : preview.currentX;
+    changeDoc((d) => {
+      commitPlayheadGeometry(d, preview.playheadId, preview.x, preview.y, preview.height);
+    });
+    onPlayheadCurrentXChange(preview.playheadId, currentX);
+    playheadOriginPreviewRef.current = null;
+    dragRef.current = null;
+    schedulePaint();
+  };
 
   const beginScribbleDraw = (x: number, y: number) => {
     if (dragRef.current) return;
@@ -1993,6 +2203,7 @@ export function Canvas({
         commitClipMoves(
           d,
           preview.clips.map((c) => ({ clipId: c.clipId, x: c.x, y: c.y })),
+          { pruneEmptyPlayheads: false },
         );
       }
       for (const ph of preview.playheads) {
@@ -2010,6 +2221,7 @@ export function Canvas({
       for (const e of preview.embeds) {
         commitEmbedMove(d, e.embedId, e.x, e.y);
       }
+      removePlayheadsWithoutClips(d);
     });
     for (const ph of preview.playheads) {
       onPlayheadCurrentXChange(ph.playheadId, ph.currentX);
@@ -2252,6 +2464,7 @@ export function Canvas({
       mKeyHeldRef.current ||
       dKeyHeldRef.current ||
       sKeyHeldRef.current ||
+      pKeyHeldRef.current ||
       wKeyHeldRef.current ||
       shiftKeyHeldRef.current
     ) {
@@ -2649,7 +2862,16 @@ export function Canvas({
       const focused = isFocusedRef.current;
       if (focused && !focused()) return;
       keysHeldRef.current.add(event.code);
-      if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = true;
+      if (event.key === 'p' || event.key === 'P') {
+        if (event.repeat || isTextInput(event.target)) return;
+        pKeyHeldRef.current = true;
+        if (!pointerOnCanvasRef.current || !lastPointerClientRef.current || dragRef.current) return;
+        const { x, y } = pagePointFromClient(
+          lastPointerClientRef.current.clientX,
+          lastPointerClientRef.current.clientY,
+        );
+        beginPlayheadDrawRef.current(x, y, KEYBOARD_PLAYHEAD_DRAW_POINTER_ID);
+      }
       if (event.key === 'w' || event.key === 'W') {
         if (event.repeat || isTextInput(event.target)) return;
         if (event.shiftKey || shiftKeyHeldRef.current) return;
@@ -2755,6 +2977,11 @@ export function Canvas({
         event.preventDefault();
         addMarkerAtPointerRef.current();
       }
+      if (event.key === 'h' || event.key === 'H') {
+        if (event.repeat || isTextInput(event.target)) return;
+        event.preventDefault();
+        toggleDisableAtPointerRef.current();
+      }
       if (event.key === 'Backspace' || event.key === 'Delete') {
         if (isTextInput(event.target)) return;
         if (deleteHoveredMarkerRef.current()) {
@@ -2779,7 +3006,13 @@ export function Canvas({
     };
     const onKeyUp = (event: KeyboardEvent) => {
       keysHeldRef.current.delete(event.code);
-      if (event.key === 'p' || event.key === 'P') pKeyHeldRef.current = false;
+      if (event.key === 'p' || event.key === 'P') {
+        pKeyHeldRef.current = false;
+        const drag = dragRef.current;
+        if (drag?.kind === 'playhead-draw' && drag.pointerId === KEYBOARD_PLAYHEAD_DRAW_POINTER_ID) {
+          commitPlayheadDrawRef.current(drag);
+        }
+      }
       if (event.key === 'w' || event.key === 'W') {
         wKeyHeldRef.current = false;
         const drag = dragRef.current;
@@ -2850,6 +3083,14 @@ export function Canvas({
       if (
         dragRef.current?.kind === 'split-line' &&
         dragRef.current.pointerId === KEYBOARD_SPLIT_POINTER_ID
+      ) {
+        paintDepsRef.current.verticalDragPreview = null;
+        dragRef.current = null;
+        schedulePaint();
+      }
+      if (
+        dragRef.current?.kind === 'playhead-draw' &&
+        dragRef.current.pointerId === KEYBOARD_PLAYHEAD_DRAW_POINTER_ID
       ) {
         paintDepsRef.current.verticalDragPreview = null;
         dragRef.current = null;
@@ -3143,6 +3384,22 @@ export function Canvas({
       return;
     }
 
+    if (pKeyHeldRef.current) {
+      onFocusEditor?.();
+      const existing = dragRef.current;
+      if (
+        existing?.kind === 'playhead-draw' &&
+        existing.pointerId === KEYBOARD_PLAYHEAD_DRAW_POINTER_ID
+      ) {
+        existing.pointerId = event.pointerId;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
+      beginPlayheadDraw(x, y, event.pointerId);
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+
     const target = hitTestCanvas(layout, x, y);
 
     // Open the note editor without first focusing the canvas root — that focus
@@ -3158,9 +3415,14 @@ export function Canvas({
 
     onFocusEditor?.();
 
-    // Playhead band counts as "empty" for multi-select: bubble drag must win
+    // Playhead band / origin count as "empty" for multi-select: bubble drag must win
     // over scrub so you can move a subset of clips inside a playhead extent.
-    const hitIsSolidElement = target.kind !== 'none' && target.kind !== 'playhead';
+    const hitIsSolidElement =
+      target.kind !== 'none' &&
+      target.kind !== 'playhead' &&
+      target.kind !== 'playhead-origin' &&
+      target.kind !== 'playhead-origin-top' &&
+      target.kind !== 'playhead-origin-bottom';
     if (hitIsSolidElement) {
       clearCanvasSelection();
     } else if (!selectionIsEmpty(canvasSelectionRef.current)) {
@@ -3175,6 +3437,22 @@ export function Canvas({
     if (target.kind === 'clip-marker') {
       event.currentTarget.setPointerCapture(event.pointerId);
       beginMarkerMove(x, target.clipId, target.sourceTime, event.pointerId);
+      return;
+    }
+
+    if (
+      target.kind === 'playhead-origin' ||
+      target.kind === 'playhead-origin-top' ||
+      target.kind === 'playhead-origin-bottom'
+    ) {
+      const mode =
+        target.kind === 'playhead-origin-top'
+          ? 'resize-top'
+          : target.kind === 'playhead-origin-bottom'
+            ? 'resize-bottom'
+            : 'move';
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beginPlayheadOriginDrag(mode, target.playheadId, x, y, event.pointerId);
       return;
     }
 
@@ -3372,21 +3650,6 @@ export function Canvas({
     clearCanvasSelection();
     onSelectedClipChange(null);
     clearAnnotationSelection();
-
-    if (pKeyHeldRef.current) {
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragRef.current = {
-        kind: 'playhead-draw',
-        pointerId: event.pointerId,
-        x,
-        y0: y,
-        y1: y,
-        crossesClip: false,
-      };
-      paintDepsRef.current.verticalDragPreview = { x, y0: y, y1: y, valid: true };
-      schedulePaint();
-      return;
-    }
   };
 
   const onPointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -3421,6 +3684,11 @@ export function Canvas({
       drag = dragRef.current;
     }
 
+    if (!drag && pKeyHeldRef.current) {
+      beginPlayheadDraw(x, y, KEYBOARD_PLAYHEAD_DRAW_POINTER_ID);
+      drag = dragRef.current;
+    }
+
     if (!drag && mKeyHeldRef.current) {
       beginMoveAt(x, y);
       drag = dragRef.current;
@@ -3439,18 +3707,32 @@ export function Canvas({
         target.kind === 'clip-marker'
           ? { clipId: target.clipId, sourceTime: target.sourceTime }
           : null;
+      const originHover =
+        target.kind === 'playhead-origin' ||
+        target.kind === 'playhead-origin-top' ||
+        target.kind === 'playhead-origin-bottom'
+          ? target.playheadId
+          : null;
+      if (paintDepsRef.current.hoveredPlayheadOriginId !== originHover) {
+        paintDepsRef.current.hoveredPlayheadOriginId = originHover;
+        schedulePaint();
+      }
       updateCtrlHoverScrub(x, y);
       if (canvasRef.current) {
         canvasRef.current.style.cursor =
           ctrlHoverScrubActiveRef.current
             ? 'ew-resize'
-            : target.kind === 'post-it-resize' || target.kind === 'inline-image-resize'
-              ? 'nwse-resize'
-              : target.kind === 'clip-marker'
-                ? 'ew-resize'
-                : target.kind === 'inline-image'
-                  ? 'move'
-                  : '';
+            : target.kind === 'playhead-origin-top' || target.kind === 'playhead-origin-bottom'
+              ? 'ns-resize'
+              : target.kind === 'playhead-origin'
+                ? 'move'
+                : target.kind === 'post-it-resize' || target.kind === 'inline-image-resize'
+                  ? 'nwse-resize'
+                  : target.kind === 'clip-marker'
+                    ? 'ew-resize'
+                    : target.kind === 'inline-image'
+                      ? 'move'
+                      : '';
       }
       return;
     }
@@ -3459,6 +3741,7 @@ export function Canvas({
 
     if (
       drag.pointerId !== KEYBOARD_SPLIT_POINTER_ID &&
+      drag.pointerId !== KEYBOARD_PLAYHEAD_DRAW_POINTER_ID &&
       drag.pointerId !== KEYBOARD_SCRIBBLE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_PLAYHEAD_MOVE_POINTER_ID &&
       drag.pointerId !== KEYBOARD_PLAYHEAD_DUPLICATE_POINTER_ID &&
@@ -3500,25 +3783,7 @@ export function Canvas({
         updateSplitLineDrag(drag, y);
         return;
       }
-
-      drag.y1 = y;
-      let crosses = false;
-      for (const clip of layout.clips) {
-        if (segmentCrossesClip(drag.x, drag.y0, drag.y1, clip)) {
-          crosses = true;
-          break;
-        }
-      }
-      drag.crossesClip = crosses;
-      const dy = Math.abs(drag.y1 - drag.y0);
-      const valid = !crosses && dy >= MIN_VERTICAL_DRAG_PX;
-      paintDepsRef.current.verticalDragPreview = {
-        x: drag.x,
-        y0: drag.y0,
-        y1: drag.y1,
-        valid,
-      };
-      schedulePaint();
+      updatePlayheadDrawDrag(drag, y);
       return;
     }
 
@@ -3564,6 +3829,11 @@ export function Canvas({
         return;
       }
       updatePlayheadMoveDrag(x, y);
+      return;
+    }
+
+    if (drag.kind === 'playhead-origin') {
+      updatePlayheadOriginDrag(x, y);
       return;
     }
 
@@ -3757,17 +4027,9 @@ export function Canvas({
     const preview = clipDragPreviewRef.current;
 
     if (drag.kind === 'playhead-draw') {
-      const dy = Math.abs(drag.y1 - drag.y0);
-      paintDepsRef.current.verticalDragPreview = null;
-
-      if (!drag.crossesClip && dy >= MIN_PLAYHEAD_HEIGHT) {
-        changeDoc((d) => {
-          const id = createPlayhead(d, drag.x, drag.y0, drag.y1);
-          if (id) onActivePlayheadChange(id);
-        });
-      }
-
-      schedulePaint();
+      commitPlayheadDraw(drag);
+    } else if (drag.kind === 'playhead-origin') {
+      commitPlayheadOriginDrag();
     } else if (drag.kind === 'split-line') {
       commitSplitLine(drag);
     } else if (drag.kind === 'scrub-playhead') {
@@ -3835,7 +4097,10 @@ export function Canvas({
     rollPartnerPreviewsRef.current = [];
     dragRef.current = null;
     bump((n) => n + 1);
-    if (drag.pointerId !== KEYBOARD_SPLIT_POINTER_ID) {
+    if (
+      drag.pointerId !== KEYBOARD_SPLIT_POINTER_ID &&
+      drag.pointerId !== KEYBOARD_PLAYHEAD_DRAW_POINTER_ID
+    ) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   };
@@ -3844,6 +4109,10 @@ export function Canvas({
     pointerOnCanvasRef.current = false;
     hoveredMarkerRef.current = null;
     setHoveredClipId(null);
+    if (paintDepsRef.current.hoveredPlayheadOriginId) {
+      paintDepsRef.current.hoveredPlayheadOriginId = null;
+      schedulePaint();
+    }
     endCtrlHoverScrub();
     if (canvasRef.current) {
       canvasRef.current.style.cursor = '';

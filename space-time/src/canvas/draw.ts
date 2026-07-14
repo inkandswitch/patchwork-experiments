@@ -241,6 +241,9 @@ function drawClip(
   const fill = selected ? theme.clipSelectedFill : hovered ? theme.clipFillHover : theme.clipFill;
   const stroke = selected ? theme.clipSelectedStroke : theme.clipStroke;
 
+  ctx.save();
+  if (clip.disabled) ctx.globalAlpha = 0.5;
+
   if (selected) {
     // Soft outer glow so selection reads clearly over filmstrips/waveforms.
     ctx.save();
@@ -282,13 +285,14 @@ function drawClip(
   roundRect(ctx, clip.x, clip.y, clip.width, clip.height, radius);
   ctx.stroke();
 
+  const baseAlpha = clip.disabled ? 0.5 : 1;
   ctx.fillStyle = theme.handleFill;
-  ctx.globalAlpha = hasFrames ? 0.85 : 1;
+  ctx.globalAlpha = hasFrames ? 0.85 * baseAlpha : baseAlpha;
   roundRect(ctx, clip.x, clip.y, HANDLE_WIDTH, clip.height, radius);
   ctx.fill();
   roundRect(ctx, clip.x + clip.width - HANDLE_WIDTH, clip.y, HANDLE_WIDTH, clip.height, radius);
   ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.globalAlpha = baseAlpha;
 
   ctx.save();
   ctx.beginPath();
@@ -325,6 +329,8 @@ function drawClip(
   if (clip.markerXs.length > 0) {
     drawClipMarkers(ctx, theme, clip);
   }
+
+  ctx.restore();
 }
 
 /** Small downward-pointing triangle, à la Final Cut Pro clip markers. */
@@ -384,10 +390,53 @@ function drawPlayheadExtent(
   ctx.restore();
 }
 
+/** Quiet hover grip on the playhead origin — same language as the monitor edge capsule. */
+function drawPlayheadOriginGrip(
+  ctx: CanvasRenderingContext2D,
+  ph: CanvasLayout['playheads'][number],
+  cameraZ: number,
+): void {
+  const invZ = 1 / cameraZ;
+  const gripW = 6 * invZ;
+  const gripH = ph.height;
+  if (gripH <= 0) return;
+  const x = ph.x - gripW / 2;
+  const y = ph.y;
+  const r = Math.min(gripW / 2, gripH / 2);
+
+  ctx.save();
+  // Soft shadow so it stays readable on light and dark frames.
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 2 * invZ;
+  ctx.shadowOffsetY = 0.5 * invZ;
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, gripW, gripH, r);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+  ctx.lineWidth = 1 * invZ;
+  ctx.stroke();
+
+  // Center ridge (vertical, since the origin edge is vertical).
+  const ridgeW = 1.5 * invZ;
+  const ridgePad = Math.min(6 * invZ, gripH * 0.12);
+  const ridgeH = Math.max(0, gripH - ridgePad * 2);
+  if (ridgeH > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.roundRect(ph.x - ridgeW / 2, ph.y + ridgePad, ridgeW, ridgeH, ridgeW / 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawPlayhead(
   ctx: CanvasRenderingContext2D,
   theme: CanvasTheme,
   ph: CanvasLayout['playheads'][number],
+  cameraZ: number,
+  showOriginGrip = false,
 ): void {
   ctx.save();
 
@@ -402,6 +451,10 @@ function drawPlayhead(
   ctx.moveTo(ph.currentX, ph.y);
   ctx.lineTo(ph.currentX, ph.y + ph.height);
   ctx.stroke();
+
+  if (showOriginGrip) {
+    drawPlayheadOriginGrip(ctx, ph, cameraZ);
+  }
 
   if (ph.looping) {
     ctx.font = '13px ui-sans-serif, system-ui, sans-serif';
@@ -784,6 +837,7 @@ export function drawCanvas(
   timeOriginOverride: number | null = null,
   selectionBubble: readonly number[][] | null = null,
   lassoPath: readonly number[][] | null = null,
+  hoveredPlayheadOriginId: string | null = null,
 ): void {
   const { width, height, camera } = layout;
 
@@ -855,7 +909,7 @@ export function drawCanvas(
   }
 
   for (const ph of layout.playheads) {
-    drawPlayhead(ctx, theme, ph);
+    drawPlayhead(ctx, theme, ph, camera.z, ph.playheadId === hoveredPlayheadOriginId);
   }
 
   if (layout.recordingPreview) {

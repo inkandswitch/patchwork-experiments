@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -427,33 +428,39 @@ export function Monitor({ mountRef, loading, error, docUrl }: MonitorProps) {
     while (drag.samples.length > 2 && now - drag.samples[0]!.t > 120) drag.samples.shift();
   };
 
-  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+  const finishResize = (pointerId: number, clientX: number, clientY: number) => {
     const resize = resizeRef.current;
-    if (resize && event.pointerId === resize.pointerId) {
-      resizeRef.current = null;
-      setResizing(false);
-      const el = rootRef.current;
-      if (el) {
-        try {
-          el.releasePointerCapture(event.pointerId);
-        } catch {
-          /* ignore */
-        }
+    if (!resize || resize.pointerId !== pointerId) return;
+    resizeRef.current = null;
+    setResizing(false);
+    const el = rootRef.current;
+    if (el) {
+      try {
+        el.releasePointerCapture(pointerId);
+      } catch {
+        /* ignore */
       }
-      saveSize(sizeRef.current);
-      // Re-settle to the current snap with the new size (keeps docked edges flush).
-      const targets = snapTargets();
-      if (targets) {
-        posRef.current = { ...targets[snapRef.current] };
-        applyTransform();
-      }
-      const rect = el?.getBoundingClientRect();
-      const over = !!rect &&
-        event.clientX >= rect.left &&
-        event.clientX <= rect.right &&
-        event.clientY >= rect.top &&
-        event.clientY <= rect.bottom;
-      setHovered(over);
+    }
+    saveSize(sizeRef.current);
+    // Re-settle to the current snap with the new size (keeps docked edges flush).
+    const targets = snapTargets();
+    if (targets) {
+      posRef.current = { ...targets[snapRef.current] };
+      applyTransform();
+    }
+    const rect = el?.getBoundingClientRect();
+    const over =
+      !!rect &&
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom;
+    setHovered(over);
+  };
+
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (resizeRef.current && event.pointerId === resizeRef.current.pointerId) {
+      finishResize(event.pointerId, event.clientX, event.clientY);
       return;
     }
 
@@ -496,7 +503,11 @@ export function Monitor({ mountRef, loading, error, docUrl }: MonitorProps) {
     const kind = resizeKindForSnap(snapRef.current);
     const { w, h } = sizeRef.current;
     const p = posRef.current;
-    el.setPointerCapture(event.pointerId);
+    try {
+      el.setPointerCapture(event.pointerId);
+    } catch {
+      /* ignore — window listeners still end the resize */
+    }
     resizeRef.current = {
       pointerId: event.pointerId,
       kind,
@@ -514,6 +525,34 @@ export function Monitor({ mountRef, loading, error, docUrl }: MonitorProps) {
     setResizing(true);
     setLifted(false);
   };
+
+  // Window-level listeners so a fast pointer-up outside the monitor still ends
+  // resize (React element handlers / capture can miss quick flicks).
+  useEffect(() => {
+    if (!resizing) return;
+    const onUp = (event: PointerEvent) => {
+      finishResize(event.pointerId, event.clientX, event.clientY);
+    };
+    const onLost = (event: PointerEvent) => {
+      finishResize(event.pointerId, event.clientX, event.clientY);
+    };
+    const onBlur = () => {
+      const resize = resizeRef.current;
+      if (!resize) return;
+      finishResize(resize.pointerId, posRef.current.x, posRef.current.y);
+    };
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
+    window.addEventListener('lostpointercapture', onLost, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onUp, true);
+      window.removeEventListener('lostpointercapture', onLost, true);
+      window.removeEventListener('blur', onBlur);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resizing]);
 
   // Position at the current snap on mount, and re-anchor to it when the canvas
   // resizes (unless the user is actively dragging/throwing it).
