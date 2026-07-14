@@ -1,0 +1,97 @@
+/* Gruvbox Dark — retro groove */
+[theme="gruvbox-dark"] {
+	color-scheme: dark;
+	--studio-fill: #282828;
+	--studio-line: #ebdbb2;
+	--studio-primary: #83a598;
+	--studio-secondary: #8ec07c;
+	--studio-danger: #fb4934;
+	--studio-warning: #fabd2f;
+	--studio-added: #b8bb26;
+	--studio-deleted: #fb4934;
+	--studio-modified: #83a598;
+	--studio-link: #83a598;
+	--studio-selection-fill: #3c3836;
+
+	/* Warm invert: accent ink is gruvbox bg0 (#282828), keeping accent chips in the
+	   retro-warm register instead of the auto pure black. */
+	--studio-primary-line: #282828;
+	--studio-danger-line: #282828;
+
+	/* line numbers in gruvbox grey */
+	--text-editor-gutter-line: #928374;
+
+	--syntax-comment: #928374;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #928374;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #928374;
+	--syntax-invalid: #fb4934;
+
+	--syntax-operator: #ebdbb2;
+	--syntax-punctuation: #ebdbb2;
+
+	--syntax-bool: #d3869b;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #d3869b;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #fb4934;
+
+	--syntax-type-name: #fabd2f;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #fabd2f;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #fe8019;
+
+	--syntax-function--variable-name: #8ec07c;
+	--syntax-function--property-name: #8ec07c;
+
+	--syntax-variable-name: #83a598;
+	--syntax-definition--variable-name: #83a598;
+
+	--syntax-string: #b8bb26;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #d3869b;
+	--syntax-integer: #d3869b;
+	--syntax-float: #d3869b;
+
+	--syntax-escape: #fe8019;
+	--syntax-regexp: #b8bb26;
+	--syntax-special--string: #b8bb26;
+
+	--syntax-tag-name: #fb4934;
+	--syntax-angle-bracket: #ebdbb2;
+
+	--syntax-attribute-name: #fabd2f;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #fe8019;
+
+	--syntax-strong: #ebdbb2;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ebdbb2;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #fb4934;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #83a598;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #928374;
+	--syntax-list: #ebdbb2;
+
+	--syntax-inserted: #b8bb26;
+	--syntax-deleted: #fb4934;
+	--syntax-changed: #83a598;
+
+	--syntax-content-separator: #504945;
+}

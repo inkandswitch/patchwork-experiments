@@ -21,35 +21,36 @@ function injectStyles() {
       align-items: center;
       gap: 6px;
       cursor: pointer;
-      padding: 2px 8px;
-      border-radius: 6px;
-      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2px 10px;
+      border-radius: var(--studio-radius-round, 9999px);
+      font-family: var(--studio-family-sans, "Jost*", "Jost", system-ui, -apple-system, sans-serif);
       font-size: 12px;
-      color: white;
-      background: rgba(34, 197, 94, 0.15);
-      border: 1px solid rgba(34, 197, 94, 0.3);
-      transition: background 0.15s;
+      color: var(--studio-chrome-line, white);
+      background: color-mix(in srgb, var(--studio-primary, #ff2284), transparent 86%);
+      border: 1px solid color-mix(in srgb, var(--studio-primary, #ff2284), transparent 70%);
+      transition: background var(--studio-transition, 0.15s ease);
       user-select: none;
       height: 28px;
       box-sizing: border-box;
     }
 
     .call-titlebar:hover {
-      background: rgba(34, 197, 94, 0.25);
+      background: color-mix(in srgb, var(--studio-primary, #ff2284), transparent 76%);
     }
 
     .call-titlebar-dot {
       width: 6px;
       height: 6px;
-      border-radius: 50%;
-      background: #22c55e;
+      border-radius: var(--studio-radius-round, 9999px);
+      background: var(--studio-primary, #ff2284);
       flex-shrink: 0;
     }
 
     .call-titlebar-count {
-      font-weight: 600;
+      font-weight: 700;
       font-size: 12px;
-      color: #22c55e;
+      font-family: var(--studio-family-code, monaco, "Lifesender Mono", ui-monospace, monospace);
+      color: var(--studio-primary, #ff2284);
     }
 
     .call-titlebar-thumbs {
@@ -61,10 +62,10 @@ function injectStyles() {
     .call-titlebar-thumb {
       width: 20px;
       height: 20px;
-      border-radius: 50%;
+      border-radius: var(--studio-radius-round, 9999px);
       object-fit: cover;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: #16213e;
+      border: 1px solid color-mix(in srgb, var(--studio-chrome-line, #fff), transparent 80%);
+      background: var(--studio-chrome-offset-20, #16213e);
     }
 
     .call-titlebar-thumb.local {
@@ -74,38 +75,38 @@ function injectStyles() {
     .call-titlebar-overflow {
       width: 20px;
       height: 20px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.15);
+      border-radius: var(--studio-radius-round, 9999px);
+      background: color-mix(in srgb, var(--studio-chrome-line, #fff), transparent 85%);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 9px;
       font-weight: 700;
-      color: white;
+      color: var(--studio-chrome-line, white);
       flex-shrink: 0;
     }
 
     .call-titlebar-popover {
       position: fixed;
-      background: #1e1e2e;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 10px;
-      padding: 4px;
+      background: var(--studio-chrome, #1e1e2e);
+      border: 1px solid color-mix(in srgb, var(--studio-chrome-line, #fff), transparent 88%);
+      border-radius: var(--studio-radius-lg, 12px);
+      padding: 5px;
       min-width: 180px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      box-shadow: var(--studio-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
       z-index: 10000;
       display: flex;
       flex-direction: column;
       gap: 2px;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: var(--studio-family-sans, "Jost*", "Jost", system-ui, -apple-system, sans-serif);
     }
 
     .call-titlebar-popover button {
       background: none;
       border: none;
-      color: white;
+      color: var(--studio-chrome-line, white);
       padding: 8px 12px;
-      border-radius: 7px;
+      border-radius: var(--studio-radius-md, 8px);
       cursor: pointer;
       font-size: 13px;
       font-family: inherit;
@@ -113,19 +114,19 @@ function injectStyles() {
       display: flex;
       align-items: center;
       gap: 8px;
-      transition: background 0.1s;
+      transition: background var(--studio-transition-fast, 0.1s ease);
     }
 
     .call-titlebar-popover button:hover {
-      background: rgba(255, 255, 255, 0.1);
+      background: color-mix(in srgb, var(--studio-chrome-line, #fff), transparent 90%);
     }
 
     .call-titlebar-popover button.hangup {
-      color: #f87171;
+      color: var(--studio-danger, #f87171);
     }
 
     .call-titlebar-popover button.hangup:hover {
-      background: rgba(239, 68, 68, 0.15);
+      background: color-mix(in srgb, var(--studio-danger, #ef4444), transparent 85%);
     }
   `;
   document.head.appendChild(style);

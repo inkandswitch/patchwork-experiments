@@ -6,7 +6,7 @@ import path from 'path';
 
 export default defineConfig({
   base: './',
-  plugins: [react(), cssInjectedByJsPlugin()],
+  plugins: [react(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
     alias: {
@@ -18,6 +18,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     minify: false,
     rollupOptions: {
       external,

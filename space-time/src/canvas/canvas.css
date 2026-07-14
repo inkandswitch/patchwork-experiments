@@ -1,0 +1,152 @@
+.st-canvas-root {
+  --st-bg: oklch(96% 0.01 260);
+  --st-grid: oklch(90% 0.01 260);
+  --st-grid-major: oklch(84% 0.02 260);
+  --st-border: oklch(82% 0.02 260);
+  --st-text: oklch(25% 0.02 260);
+  --st-text-muted: oklch(50% 0.02 260);
+  --st-clip-fill: oklch(78% 0.08 250);
+  --st-clip-fill-hover: oklch(74% 0.1 250);
+  --st-clip-stroke: oklch(60% 0.1 250);
+  --st-clip-selected-fill: oklch(72% 0.12 280);
+  --st-clip-selected-stroke: oklch(55% 0.14 280);
+  --st-marker: oklch(55% 0.18 250);
+  --st-handle-fill: oklch(88% 0.02 260);
+  --st-playhead: oklch(65% 0.15 25);
+  --st-playhead-active: oklch(55% 0.2 25);
+  --st-playhead-band: oklch(65% 0.15 25);
+  --st-playhead-band-active: oklch(55% 0.2 25);
+  --st-danger: oklch(55% 0.2 25);
+  --st-scribble: oklch(35% 0.02 260);
+  --st-scribble-selected: oklch(55% 0.14 280);
+  --st-waveform: oklch(38% 0.12 250);
+  --st-selection-bubble: oklch(88% 0.08 95 / 0.45);
+  --st-post-it-fill: oklch(91% 0.13 96);
+  --st-post-it-selected-fill: oklch(88% 0.15 74);
+  --st-post-it-stroke: oklch(80% 0.09 96);
+  --st-post-it-selected-stroke: oklch(70% 0.13 66);
+  background: var(--st-bg);
+}
+
+.st-ruler {
+  background: var(--st-bg);
+  border-bottom: 1px solid var(--st-border);
+}
+
+.st-canvas {
+  touch-action: none;
+}
+
+.st-file-drop-overlay {
+  background: color-mix(in oklch, var(--st-clip-selected-stroke) 12%, transparent);
+  border: 2px dashed var(--st-clip-selected-stroke);
+  border-radius: 6px;
+}
+
+.st-file-drop-label {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--st-clip-selected-stroke);
+  color: oklch(98% 0 0);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.st-embed-window {
+  border: 1px solid var(--st-border);
+  border-radius: 8px;
+  background: oklch(100% 0 0);
+  box-shadow: 0 4px 16px oklch(0% 0 0 / 0.15);
+  overflow: hidden;
+}
+
+.st-embed-titlebar {
+  height: 24px;
+  padding: 0 6px;
+  background: var(--st-handle-fill);
+  border-bottom: 1px solid var(--st-border);
+  cursor: grab;
+  user-select: none;
+}
+
+.st-embed-titlebar:active {
+  cursor: grabbing;
+}
+
+.st-embed-grip {
+  color: var(--st-text-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.st-embed-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--st-text);
+  user-select: none;
+}
+
+.st-embed-controls {
+  gap: 2px;
+}
+
+.st-embed-btn,
+.st-embed-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--st-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.st-embed-btn:hover,
+.st-embed-close:hover {
+  background: oklch(0% 0 0 / 0.08);
+  color: var(--st-text);
+}
+
+.st-embed-scale-label {
+  min-width: 34px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--st-text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.st-embed-scale-label:hover {
+  color: var(--st-text);
+}
+
+.st-embed-body {
+  background: oklch(100% 0 0);
+}
+
+.st-embed-content > patchwork-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.st-embed-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 0%,
+    transparent 50%,
+    var(--st-border) 50%,
+    var(--st-border) 100%
+  );
+}

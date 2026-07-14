@@ -1,0 +1,53 @@
+/* Bento — pale rose, cute gay colours for rabbits: hot pink + mint on white */
+[theme="bento"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #241019;
+	--studio-primary: #ff3d8b;
+	--studio-secondary: #14c4a3;
+	--studio-danger: #fa2573;
+	--studio-warning: #ff9e3d;
+	--studio-added: #14c4a3;
+	--studio-deleted: #fa2573;
+	--studio-modified: #6f7bff;
+	--studio-link: #5a6fff;
+	--studio-selection-fill: #ffe1ec;
+	/* tint the derived ramp rose, not the mint secondary, so chrome reads pale rose */
+	--studio-offset-tint: var(--studio-primary);
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: #b15cff;
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-link);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-link);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: #ff5ca8;
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: #ff5ca8;
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: var(--studio-secondary);
+	--syntax-function--property-name: var(--studio-secondary);
+	--syntax-definition--variable-name: #b15cff;
+
+	--syntax-string: var(--studio-primary);
+	--syntax-number: var(--studio-link);
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: #22b8d6;
+	--syntax-attribute-name: var(--studio-primary);
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #22b8d6;
+	--syntax-meta: #8a5cff;
+
+	--syntax-heading: var(--studio-secondary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

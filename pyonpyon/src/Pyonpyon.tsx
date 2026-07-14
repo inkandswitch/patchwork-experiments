@@ -14,7 +14,9 @@ import {
   type PointerEvent as DomPointerEvent,
   type TransitionEvent,
 } from 'react';
-import { toolify } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import type {
   Obj,
   ObjectTable,
@@ -629,4 +631,15 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 };
 
-export const renderPyonpyonEditor = toolify(PyonpyonEditor);
+export function renderPyonpyonEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <PyonpyonEditor docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

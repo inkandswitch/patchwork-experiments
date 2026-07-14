@@ -1,0 +1,312 @@
+"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_km","duration_seconds","rpe"
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Squat (Barbell)",,"",0,"warmup",45,5,,,
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Squat (Barbell)",,"",1,"warmup",135,6,,,6
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Squat (Barbell)",,"",2,"normal",230,6,,,8
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Squat (Barbell)",,"",3,"normal",230,6,,,8
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Squat (Barbell)",,"",4,"normal",230,6,,,8.5
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bench Press (Barbell)",,"",0,"warmup",95,6,,,6
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bench Press (Barbell)",,"",1,"normal",130,6,,,8
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bench Press (Barbell)",,"",2,"normal",135,6,,,9
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bench Press (Barbell)",,"",3,"normal",135,6,,,9.5
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Lat Pulldown (Cable)",,"",0,"warmup",35,6,,,
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Lat Pulldown (Cable)",,"",1,"normal",60,6,,,
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Lat Pulldown (Cable)",,"",2,"normal",60,6,,,
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Lat Pulldown (Cable)",,"",3,"normal",60,6,,,8
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Standing Calf Raise (Dumbbell)",0,"",0,"normal",60,12,,,6
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Standing Calf Raise (Dumbbell)",0,"",1,"normal",60,12,,,6
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Standing Calf Raise (Dumbbell)",0,"",2,"normal",60,12,,,
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bicep Curl (Dumbbell)",0,"",0,"normal",40,12,,,8
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bicep Curl (Dumbbell)",0,"",1,"normal",40,12,,,9
+"Full Body 1","8 Jun 2026, 20:13","8 Jun 2026, 21:22","","Bicep Curl (Dumbbell)",0,"",2,"normal",40,12,,,10
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Romanian Deadlift (Dumbbell)",,"",0,"warmup",60,6,,,6
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Romanian Deadlift (Dumbbell)",,"",1,"warmup",80,6,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Romanian Deadlift (Dumbbell)",,"",2,"normal",140,6,,,6
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Romanian Deadlift (Dumbbell)",,"",3,"normal",140,8,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Romanian Deadlift (Dumbbell)",,"",4,"normal",140,8,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Bench Press (Dumbbell)",,"",0,"warmup",70,18,,,6
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Bench Press (Dumbbell)",,"",1,"normal",115,4,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Bench Press (Dumbbell)",,"",2,"normal",105,4,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Bench Press (Dumbbell)",,"",3,"normal",105,4,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Single Arm Cable Row",0,"",0,"warmup",70,6,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Single Arm Cable Row",0,"",1,"normal",110,6,,,7
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Single Arm Cable Row",0,"",2,"normal",110,6,,,7
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Single Arm Cable Row",0,"",3,"normal",110,6,,,7
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Chest Fly (Dumbbell)",0,"",0,"normal",40,12,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Chest Fly (Dumbbell)",0,"",1,"normal",40,12,,,8
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Chest Fly (Dumbbell)",0,"",2,"normal",40,12,,,9.5
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Triceps Pushdown",,"",0,"normal",35,12,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Triceps Pushdown",,"",1,"normal",45,12,,,
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Triceps Pushdown",,"",2,"normal",45,12,,,8.5
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Lateral Raise (Dumbbell)",,"",0,"normal",15,12,,,7
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Lateral Raise (Dumbbell)",,"",1,"normal",15,12,,,8.5
+"Full Body 3","7 Jun 2026, 11:30","7 Jun 2026, 12:10","","Lateral Raise (Dumbbell)",,"",2,"normal",15,12,,,
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Chest Supported Incline Row (Dumbbell)",,"",0,"warmup",20,6,,0,6
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Chest Supported Incline Row (Dumbbell)",,"",1,"warmup",30,6,,0,6
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Chest Supported Incline Row (Dumbbell)",,"",2,"normal",35,8,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Chest Supported Incline Row (Dumbbell)",,"",3,"normal",35,8,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Chest Supported Incline Row (Dumbbell)",,"",4,"normal",35,8,,0,8
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Goblet Squat",,"",0,"warmup",45,6,,0,
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Goblet Squat",,"",1,"normal",53,8,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Goblet Squat",,"",2,"normal",53,8,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Goblet Squat",,"",3,"normal",53,8,,0,8
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Shoulder Press (Dumbbell)",0,"",0,"normal",60,8,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Shoulder Press (Dumbbell)",0,"",1,"normal",60,10,,0,7.5
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Shoulder Press (Dumbbell)",0,"",2,"normal",60,10,,0,8.5
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Frog Pumps (Dumbbell)",0,"",0,"normal",44,12,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Frog Pumps (Dumbbell)",0,"",1,"normal",53,12,,0,7
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Frog Pumps (Dumbbell)",0,"",2,"normal",53,12,,0,
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Crunch (Weighted)",0,"",0,"normal",10,12,,0,6
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Crunch (Weighted)",0,"",1,"normal",20,12,,0,
+"Full Body 2","6 Jun 2026, 14:16","6 Jun 2026, 14:47","Not much equipment here but I got the job done.","Crunch (Weighted)",0,"",2,"normal",20,12,,0,
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Squat (Barbell)",,"",0,"warmup",87.08,6,,,
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Squat (Barbell)",,"",1,"warmup",130.07,6,,,
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Squat (Barbell)",,"",2,"normal",220.46,6,,,8
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Squat (Barbell)",,"",3,"normal",220.46,6,,,8.5
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Squat (Barbell)",,"",4,"normal",220.46,6,,,9
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bench Press (Barbell)",,"",0,"warmup",88.18,6,,,6
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bench Press (Barbell)",,"",1,"normal",132.28,6,,,
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bench Press (Barbell)",,"",2,"normal",132.28,6,,,9.5
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bench Press (Barbell)",,"",3,"normal",132.28,5,,,10
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Lat Pulldown (Cable)",,"",0,"warmup",35,12,,,7
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Lat Pulldown (Cable)",,"",1,"normal",57.5,6,,,8.5
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Lat Pulldown (Cable)",,"",2,"normal",57.5,6,,,8
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Lat Pulldown (Cable)",,"",3,"normal",57.5,4,,,9
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bicep Curl (Dumbbell)",,"",0,"normal",40,12,,,8
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bicep Curl (Dumbbell)",,"",1,"normal",40,10,,,9
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Bicep Curl (Dumbbell)",,"",2,"normal",40,10,,,10
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Standing Calf Raise (Dumbbell)",,"",0,"normal",40,12,,,6
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Standing Calf Raise (Dumbbell)",,"",1,"normal",40,12,,,6
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Standing Calf Raise (Dumbbell)",,"",2,"normal",40,12,,,6
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Side Bend (Dumbbell)",,"",0,"normal",35,12,,,6
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Side Bend (Dumbbell)",,"",1,"normal",35,12,,,6
+"Full Body 1","3 Jun 2026, 16:44","3 Jun 2026, 17:53","Not bad for first time doing this setup. Don’t superset the lat pd with bicep curls.","Side Bend (Dumbbell)",,"",2,"normal",35,12,,,7
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Deadlift (Barbell)",,"",0,"normal",235,5,,,
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Deadlift (Barbell)",,"",1,"normal",265,8,,,
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Deadlift (Barbell)",,"",2,"normal",265,8,,,
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Deadlift (Barbell)",,"",3,"failure",265,6,,,
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Overhead Press (Barbell)",,"",0,"normal",80,8,,,8
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Overhead Press (Barbell)",,"",1,"normal",80,8,,,8
+"Hey, I can sync to Strava","1 Jun 2026, 13:44","1 Jun 2026, 14:27","","Overhead Press (Barbell)",,"",2,"normal",80,8,,,10
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Bicep Curl (Dumbbell)",,"",0,"normal",20,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Bicep Curl (Dumbbell)",,"",1,"normal",22.51,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Bicep Curl (Dumbbell)",,"",2,"normal",22.51,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Skullcrusher (Dumbbell)",,"",0,"normal",20,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Skullcrusher (Dumbbell)",,"",1,"normal",22.51,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Skullcrusher (Dumbbell)",,"",2,"normal",22.51,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Bent Over Row (Dumbbell)",,"",0,"normal",22.51,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Bent Over Row (Dumbbell)",,"",1,"normal",22.51,12,,,
+"Evening Workout","31 May 2026, 15:28","31 May 2026, 15:31","","Bent Over Row (Dumbbell)",,"",2,"failure",22.51,10,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Squat (Barbell)",,"",0,"normal",134.99,5,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Squat (Barbell)",,"",1,"normal",184.99,5,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Squat (Barbell)",,"",2,"normal",205.01,5,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Squat (Barbell)",,"",3,"normal",214.99,5,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Squat (Barbell)",,"",4,"normal",220,6,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Bench Press (Barbell)",,"",0,"normal",114.99,8,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Bench Press (Barbell)",,"",1,"normal",114.99,8,,,
+"Afternoon Workout","30 May 2026, 09:59","30 May 2026, 10:20","","Bench Press (Barbell)",,"",2,"normal",114.99,4,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Deadlift (Barbell)",,"",0,"normal",255.01,8,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Deadlift (Barbell)",,"",1,"normal",255.01,8,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Deadlift (Barbell)",,"",2,"normal",255.01,8,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Overhead Press (Barbell)",,"",0,"normal",75,8,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Overhead Press (Barbell)",,"",1,"normal",80.01,8,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Overhead Press (Barbell)",,"",2,"normal",80.01,8,,,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Side Plank",,"",0,"normal",,,,30,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Side Plank",,"",1,"normal",,,,30,
+"Pull Day","25 May 2026, 13:16","25 May 2026, 14:12","","Side Plank",,"",2,"normal",,,,30,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Squat (Barbell)",,"",0,"normal",184.99,8,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Squat (Barbell)",,"",1,"normal",195,8,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Squat (Barbell)",,"",2,"normal",205.01,8,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Bench Press (Barbell)",,"",0,"normal",95,8,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Bench Press (Barbell)",,"",1,"normal",105.01,8,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Bench Press (Barbell)",,"",2,"normal",105.01,8,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Pull Up (Assisted)",,"",0,"normal",42.51,5,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Pull Up (Assisted)",,"",1,"normal",42.51,5,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Pull Up (Assisted)",,"",2,"normal",47.51,5,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Russian Twist (Bodyweight)",,"",0,"normal",,20,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Russian Twist (Bodyweight)",,"",1,"normal",,20,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Russian Twist (Bodyweight)",,"",2,"normal",,20,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Bent Over Row (Dumbbell)",,"",0,"normal",30,12,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Bent Over Row (Dumbbell)",,"",1,"normal",30,12,,,
+"Push Day!","22 May 2026, 11:45","22 May 2026, 16:17","","Bent Over Row (Dumbbell)",,"",2,"normal",30,12,,,
+"Push Day!","13 May 2026, 12:51","13 May 2026, 13:52","","Squat (Barbell)",,"",0,"normal",209.99,8,,,
+"Push Day!","13 May 2026, 12:51","13 May 2026, 13:52","","Squat (Barbell)",,"",1,"normal",209.99,8,,,
+"Push Day!","13 May 2026, 12:51","13 May 2026, 13:52","","Squat (Barbell)",,"",2,"normal",205.01,8,,,
+"Push Day!","13 May 2026, 12:51","13 May 2026, 13:52","","Bench Press (Barbell)",,"",0,"normal",120,8,,,
+"Push Day!","13 May 2026, 12:51","13 May 2026, 13:52","","Bench Press (Barbell)",,"",1,"normal",120,8,,,
+"Push Day!","13 May 2026, 12:51","13 May 2026, 13:52","","Bench Press (Barbell)",,"",2,"normal",120,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Deadlift (Barbell)",,"",0,"normal",245,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Deadlift (Barbell)",,"",1,"normal",245,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Deadlift (Barbell)",,"",2,"normal",245,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Overhead Press (Barbell)",,"",0,"normal",75,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Overhead Press (Barbell)",,"",1,"normal",75,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Overhead Press (Barbell)",,"",2,"normal",77.01,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Romanian Deadlift (Dumbbell)",,"",0,"normal",123.46,12,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Romanian Deadlift (Dumbbell)",,"",1,"normal",123.46,12,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Romanian Deadlift (Dumbbell)",,"",2,"normal",123.46,12,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Lunge (Barbell)",,"",0,"normal",45,10,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Lunge (Barbell)",,"",1,"normal",45,10,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Lunge (Barbell)",,"",2,"normal",45,10,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Bent Over Row (Dumbbell)",,"",0,"normal",61.73,8,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Bent Over Row (Dumbbell)",,"",1,"normal",61.73,6,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Bent Over Row (Dumbbell)",,"",2,"normal",61.73,3,,,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Plank",,"",0,"normal",,,,45,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Plank",,"",1,"normal",,,,45,
+"Pull Day Copy","11 May 2026, 12:59","11 May 2026, 14:05","","Plank",,"",2,"normal",,,,45,
+"Push Day!","6 May 2026, 12:39","6 May 2026, 13:42","","Squat (Barbell)",,"",0,"normal",205.01,8,,,
+"Push Day!","6 May 2026, 12:39","6 May 2026, 13:42","","Squat (Barbell)",,"",1,"normal",205.01,8,,,
+"Push Day!","6 May 2026, 12:39","6 May 2026, 13:42","","Squat (Barbell)",,"",2,"failure",205.01,6,,,
+"Push Day!","6 May 2026, 12:39","6 May 2026, 13:42","","Bench Press (Barbell)",,"",0,"normal",114.99,8,,,
+"Push Day!","6 May 2026, 12:39","6 May 2026, 13:42","","Bench Press (Barbell)",,"",1,"normal",114.99,8,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Deadlift (Barbell)",,"",0,"normal",242.51,8,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Deadlift (Barbell)",,"",1,"normal",242.51,8,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Deadlift (Barbell)",,"",2,"normal",242.51,8,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Overhead Press (Barbell)",,"",0,"normal",66.14,10,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Overhead Press (Barbell)",,"",1,"normal",79.37,8,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Overhead Press (Barbell)",,"",2,"failure",79.37,7,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Lat Pulldown (Cable)",,"",0,"normal",50,12,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Lat Pulldown (Cable)",,"",1,"normal",50,11,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Lat Pulldown (Cable)",,"",2,"failure",50,6,,,
+"Pull Day","4 May 2026, 12:40","4 May 2026, 16:33","","Plank",,"",0,"normal",,,,60,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Deadlift (Barbell)",,"",0,"normal",230.01,8,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Deadlift (Barbell)",,"",1,"normal",230.01,8,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Deadlift (Barbell)",,"",2,"normal",230.01,8,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Overhead Press (Barbell)",,"",0,"normal",64.99,10,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Overhead Press (Barbell)",,"",1,"normal",64.99,10,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Overhead Press (Barbell)",,"",2,"normal",64.99,10,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Pull Up (Assisted)",,"",0,"normal",47.51,5,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Pull Up (Assisted)",,"",1,"normal",47.51,5,,,
+"Pull Day","29 Apr 2026, 12:38","29 Apr 2026, 14:54","","Pull Up (Assisted)",,"",2,"normal",47.51,5,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Squat (Barbell)",,"",0,"normal",180.01,8,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Squat (Barbell)",,"",1,"normal",220,8,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Squat (Barbell)",,"",2,"normal",220,8,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Squat (Barbell)",,"",3,"normal",220,7,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Bench Press (Barbell)",,"",0,"normal",133,8,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Bench Press (Barbell)",,"",1,"failure",133,6,,,
+"Push Day!","9 Apr 2026, 10:52","9 Apr 2026, 11:39","","Bench Press (Barbell)",,"",2,"normal",133,6,,,
+"Pull Day","7 Apr 2026, 11:26","7 Apr 2026, 12:00","","Deadlift (Barbell)",,"",0,"normal",230.01,12,,,
+"Pull Day","7 Apr 2026, 11:26","7 Apr 2026, 12:00","","Deadlift (Barbell)",,"",1,"normal",230.01,12,,,
+"Pull Day","7 Apr 2026, 11:26","7 Apr 2026, 12:00","","Deadlift (Barbell)",,"",2,"normal",230.01,12,,,
+"Pull Day","7 Apr 2026, 11:26","7 Apr 2026, 12:00","","Overhead Press (Barbell)",,"",0,"normal",77.01,8,,,
+"Pull Day","7 Apr 2026, 11:26","7 Apr 2026, 12:00","","Overhead Press (Barbell)",,"",1,"normal",77.01,8,,,
+"Pull Day","7 Apr 2026, 11:26","7 Apr 2026, 12:00","","Overhead Press (Barbell)",,"",2,"normal",77.01,8,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Deadlift (Barbell)",,"",0,"normal",265,8,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Deadlift (Barbell)",,"",1,"normal",265,8,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Deadlift (Barbell)",,"",2,"normal",265,7,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Overhead Press (Barbell)",,"",0,"normal",80.01,8,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Overhead Press (Barbell)",,"",1,"normal",80.01,8,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Overhead Press (Barbell)",,"",2,"normal",80.01,8,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Cross Body Crunch",,"",0,"normal",,18,,,
+"Pull Day","1 Apr 2026, 12:39","1 Apr 2026, 13:50","","Cross Body Crunch",,"",1,"normal",,18,,,
+"Push Day!","30 Mar 2026, 13:17","30 Mar 2026, 14:03","","Squat (Barbell)",,"",0,"normal",214.99,8,,,
+"Push Day!","30 Mar 2026, 13:17","30 Mar 2026, 14:03","","Squat (Barbell)",,"",1,"normal",214.99,8,,,
+"Push Day!","30 Mar 2026, 13:17","30 Mar 2026, 14:03","","Squat (Barbell)",,"",2,"normal",214.99,8,,,
+"Push Day!","30 Mar 2026, 13:17","30 Mar 2026, 14:03","","Bench Press (Barbell)",,"",0,"normal",130.01,8,,,
+"Push Day!","30 Mar 2026, 13:17","30 Mar 2026, 14:03","","Bench Press (Barbell)",,"",1,"normal",130.01,8,,,
+"Push Day!","30 Mar 2026, 13:17","30 Mar 2026, 14:03","","Bench Press (Barbell)",,"",2,"normal",130.01,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Deadlift (Barbell)",,"",0,"normal",259.99,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Deadlift (Barbell)",,"",1,"normal",259.99,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Deadlift (Barbell)",,"",2,"normal",259.99,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Deadlift (Barbell)",,"",3,"normal",259.99,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Deadlift (Barbell)",,"",4,"normal",259.99,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Overhead Press (Barbell)",,"",0,"normal",77.01,8,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Overhead Press (Barbell)",,"",1,"normal",77.01,8,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Overhead Press (Barbell)",,"",2,"normal",77.01,8,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Pull Up (Assisted)",,"",0,"normal",47.51,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Pull Up (Assisted)",,"",1,"normal",47.51,5,,,
+"Pull Day","25 Mar 2026, 12:05","25 Mar 2026, 13:13","","Pull Up (Assisted)",,"",2,"normal",47.51,5,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Squat (Barbell)",,"",0,"normal",205.01,8,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Squat (Barbell)",,"",1,"normal",205.01,8,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Squat (Barbell)",,"",2,"normal",205.01,8,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Bench Press (Barbell)",,"",0,"normal",130.01,8,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Bench Press (Barbell)",,"",1,"normal",130.01,8,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Bench Press (Barbell)",,"",2,"failure",130.01,6,,,
+"Push Day!","20 Mar 2026, 08:09","20 Mar 2026, 09:11","","Pull Up (Assisted)",,"",0,"normal",42.51,5,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Squat (Barbell)",,"",0,"normal",200,8,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Squat (Barbell)",,"",1,"normal",200,8,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Squat (Barbell)",,"",2,"normal",200,8,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Bench Press (Barbell)",,"",0,"failure",130.01,7,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Bench Press (Barbell)",,"",1,"failure",130.01,6,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Lat Pulldown (Cable)",,"",0,"normal",42.51,12,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Lat Pulldown (Cable)",,"",1,"normal",42.51,12,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Lat Pulldown (Cable)",,"",2,"normal",42.51,12,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Russian Twist (Bodyweight)",,"",0,"normal",,24,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Russian Twist (Bodyweight)",,"",1,"normal",,23,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Bent Over Row (Dumbbell)",,"",0,"normal",35.01,12,,,
+"Push Day!","15 Mar 2026, 05:39","15 Mar 2026, 06:44","","Bent Over Row (Dumbbell)",,"",1,"normal",35.01,12,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Deadlift (Barbell)",,"",0,"normal",250,5,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Deadlift (Barbell)",,"",1,"normal",250,5,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Deadlift (Barbell)",,"",2,"normal",250,5,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Deadlift (Barbell)",,"",3,"normal",250,5,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Deadlift (Barbell)",,"",4,"normal",250,5,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Overhead Press (Barbell)",,"",0,"normal",75,8,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Overhead Press (Barbell)",,"",1,"normal",75,8,,,
+"Pull Day","11 Mar 2026, 09:28","15 Mar 2026, 05:39","","Overhead Press (Barbell)",,"",2,"normal",75,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Squat (Barbell)",,"",0,"normal",195,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Squat (Barbell)",,"",1,"normal",195,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Squat (Barbell)",,"",2,"normal",195,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Bench Press (Barbell)",,"",0,"normal",125,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Bench Press (Barbell)",,"",1,"normal",125,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Bench Press (Barbell)",,"",2,"normal",125,8,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Pull Up (Assisted)",,"",0,"normal",42.51,5,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Pull Up (Assisted)",,"",1,"failure",42.51,4,,,
+"Push Day!","9 Mar 2026, 13:35","9 Mar 2026, 14:17","","Pull Up (Assisted)",,"",2,"failure",47.51,3,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Deadlift (Barbell)",,"",0,"normal",245,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Deadlift (Barbell)",,"",1,"normal",245,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Deadlift (Barbell)",,"",2,"normal",245,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Deadlift (Barbell)",,"",3,"normal",245,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Deadlift (Barbell)",,"",4,"normal",245,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Overhead Press (Barbell)",,"",0,"normal",75,8,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Overhead Press (Barbell)",,"",1,"normal",75,8,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Overhead Press (Barbell)",,"",2,"normal",75,8,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Pull Up (Assisted)",,"",0,"normal",42.51,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Pull Up (Assisted)",,"",1,"normal",47.51,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Pull Up (Assisted)",,"",2,"normal",47.51,5,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Bent Over Row (Barbell)",,"",0,"normal",70,10,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Bent Over Row (Barbell)",,"",1,"normal",70,12,,,
+"Pull Day","4 Mar 2026, 11:51","4 Mar 2026, 12:48","","Bent Over Row (Barbell)",,"",2,"normal",70,12,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Squat (Barbell)",,"",0,"normal",189.99,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Squat (Barbell)",,"",1,"normal",189.99,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Squat (Barbell)",,"",2,"normal",189.99,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Bench Press (Barbell)",,"",0,"normal",125,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Bench Press (Barbell)",,"",1,"normal",125,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Bench Press (Barbell)",,"",2,"failure",125,6,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Russian Twist (Bodyweight)",,"",0,"normal",,24,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Russian Twist (Bodyweight)",,"",1,"normal",,24,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Russian Twist (Bodyweight)",,"",2,"normal",,24,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Bent Over Row (Dumbbell)",,"",0,"normal",55.01,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Bent Over Row (Dumbbell)",,"",1,"normal",55.01,8,,,
+"Push Day!","28 Feb 2026, 06:18","28 Feb 2026, 07:00","","Bent Over Row (Dumbbell)",,"",2,"normal",55.01,8,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Deadlift (Barbell)",,"",0,"normal",234.99,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Deadlift (Barbell)",,"",1,"normal",234.99,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Deadlift (Barbell)",,"",2,"normal",234.99,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Deadlift (Barbell)",,"",3,"normal",234.99,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Deadlift (Barbell)",,"",4,"normal",234.99,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Overhead Press (Barbell)",,"",0,"normal",75,8,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Overhead Press (Barbell)",,"",1,"normal",77.49,8,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Overhead Press (Barbell)",,"",2,"normal",75,3,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Pull Up (Assisted)",,"",0,"normal",47.51,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Pull Up (Assisted)",,"",1,"normal",47.51,5,,,
+"Pull Day","25 Feb 2026, 10:42","25 Feb 2026, 11:31","","Pull Up (Assisted)",,"",2,"normal",42.51,4,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Squat (Barbell)",,"",0,"normal",184.99,8,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Squat (Barbell)",,"",1,"normal",184.99,8,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Squat (Barbell)",,"",2,"normal",184.99,8,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Bench Press (Barbell)",,"",0,"normal",125,8,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Bench Press (Barbell)",,"",1,"normal",125,6,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Bench Press (Barbell)",,"",2,"normal",125,6,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Pull Up (Assisted)",,"",0,"normal",42.51,5,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Pull Up (Assisted)",,"",1,"normal",42.51,4,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Pull Up (Assisted)",,"",2,"normal",47.51,3,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Russian Twist (Bodyweight)",,"",0,"normal",,20,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Russian Twist (Bodyweight)",,"",1,"normal",,20,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Russian Twist (Bodyweight)",,"",2,"normal",,20,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Bent Over Row (Dumbbell)",,"",0,"normal",30,12,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Bent Over Row (Dumbbell)",,"",1,"normal",30,12,,,
+"Push Day!","23 Feb 2026, 07:42","23 Feb 2026, 08:43","","Bent Over Row (Dumbbell)",,"",2,"normal",30,12,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Deadlift (Barbell)",,"",0,"normal",242.51,5,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Deadlift (Barbell)",,"",1,"normal",242.51,5,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Deadlift (Barbell)",,"",2,"normal",242.51,5,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Deadlift (Barbell)",,"",3,"normal",242.51,5,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Deadlift (Barbell)",,"",4,"normal",242.51,3,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Overhead Press (Barbell)",,"",0,"normal",77.16,8,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Overhead Press (Barbell)",,"",1,"normal",77.16,7,,,
+"Afternoon Workout","21 Feb 2026, 06:26","23 Feb 2026, 07:37","","Overhead Press (Barbell)",,"",2,"normal",77.16,2,,,

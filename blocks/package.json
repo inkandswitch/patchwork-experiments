@@ -1,0 +1,19 @@
+{
+  "name": "@patchwork/blocks",
+  "version": "0.0.1",
+  "description": "Block editor for markdown files with a drop-aside canvas",
+  "type": "module",
+  "main": "blocks.js",
+  "exports": {
+    ".": "./blocks.js"
+  },
+  "pushwork": {
+    "url": "automerge:4GHarwzaqaGPYHd1xkLGCdHDhyzj"
+  },
+  "scripts": {
+    "push": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}

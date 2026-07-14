@@ -4,6 +4,7 @@
   "description": "Automerge-backed voxel playground (Three.js / Rapier)",
   "type": "module",
   "exports": "./dist/index.js",
+  "url": "automerge:2C7EQCimJsoXpZQWbEpS812u45Qp",
   "scripts": {
     "build": "tsc && vite build",
     "sync": "pnpm build && npx pushwork sync",

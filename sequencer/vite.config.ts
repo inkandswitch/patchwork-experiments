@@ -10,6 +10,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     sourcemap: "inline",
     target: "esnext",
     assetsInlineLimit: 500000, // Inline audio samples as base64 for faster first play
@@ -46,7 +48,7 @@ export default defineConfig({
     },
   },
 
-  plugins: [wasm(), react(), cssInjectedByJsPlugin()],
+  plugins: [wasm(), react(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   worker: {
     format: "es",

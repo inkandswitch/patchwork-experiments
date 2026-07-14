@@ -1,7 +1,5 @@
 import type { Plugin, Tool, Datatype } from "@inkandswitch/patchwork-plugins";
 
-import "./index.css";
-
 export const plugins: Plugin<any>[] = [
   {
     type: "patchwork:datatype",
@@ -20,6 +18,7 @@ export const plugins: Plugin<any>[] = [
     icon: "Backpack",
     supportedDatatypes: ["lighterpack"],
     async load() {
+      await import("./index.css");
       const { LighterpackTool } = await import("./tool");
       return LighterpackTool;
     },
@@ -31,6 +30,7 @@ export const plugins: Plugin<any>[] = [
     icon: "CheckSquare",
     supportedDatatypes: ["lighterpack"],
     async load() {
+      await import("./index.css");
       const { LighterpackChecklistTool } = await import("./checklist");
       return LighterpackChecklistTool;
     },

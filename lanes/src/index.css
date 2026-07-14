@@ -1,0 +1,15 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  /* Scope theme vars to .lanes so OS dark mode on :root doesn't leak into
+     light hosts (e.g. space viewer windows). */
+  themes: light --default;
+  root: ".lanes";
+}
+
+@layer tool {
+  .lanes {
+    height: 100%;
+    color: var(--color-base-content);
+    color-scheme: light;
+  }
+}

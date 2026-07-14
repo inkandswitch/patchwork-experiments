@@ -1,0 +1,89 @@
+/* Sunset — warm dusk glow: coral and amber fading into a purple sky */
+[theme="sunset"] {
+	color-scheme: dark;
+	--studio-fill: #1c0f12;
+	--studio-line: #ecd6c6;
+	--studio-primary: #ec8a5e;
+	--studio-secondary: #c887a0;
+	--studio-danger: #e05656;
+	--studio-warning: #ecc266;
+	--studio-added: #9cc070;
+	--studio-deleted: #e05656;
+	--studio-modified: #ec8a5e;
+	--studio-link: #b48ad0;
+	--studio-selection-fill: #3c1f28;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+
+	--syntax-comment: #7e5a52;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8e6a60;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #8e6a60;
+	--syntax-invalid: #e05656;
+
+	--syntax-operator: #ec8a5e;
+	--syntax-punctuation: #b4947e;
+
+	--syntax-bool: #ecc266;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ecc266;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #d4708a;
+
+	--syntax-type-name: #ec8a5e;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #ec8a5e;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #c887a0;
+
+	--syntax-function--variable-name: #ecc266;
+	--syntax-function--property-name: #ecc266;
+
+	--syntax-variable-name: #ecd6c6;
+	--syntax-definition--variable-name: #ecd6c6;
+
+	--syntax-string: #9cc070;
+
+	--syntax-number: #b48ad0;
+	--syntax-integer: #b48ad0;
+	--syntax-float: #b48ad0;
+
+	--syntax-escape: #d4708a;
+	--syntax-regexp: #ec8a5e;
+	--syntax-special--string: #9cc070;
+
+	--syntax-tag-name: #d4708a;
+	--syntax-angle-bracket: #b4947e;
+
+	--syntax-attribute-name: #ec8a5e;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #c887a0;
+
+	--syntax-strong: #ecd6c6;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ecd6c6;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ec8a5e;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #b48ad0;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #7e5a52;
+	--syntax-style-quote: italic;
+	--syntax-list: #ecd6c6;
+
+	--syntax-inserted: #9cc070;
+	--syntax-deleted: #e05656;
+	--syntax-changed: #ecc266;
+}

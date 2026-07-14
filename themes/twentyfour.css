@@ -1,0 +1,136 @@
+/* Twentyfour — Patchwork's own restrained neutral palette, set in Merriweather.
+   White pages, near-black ink, greyscale muted tones, a single red accent. */
+
+/* Merriweather is bundled alongside this theme and self-hosted — the relative
+   url() resolves against this CSS file's own automerge service-worker URL, so
+   it loads from automerge with no external/CDN request. Variable weight axis
+   300–900; browsers synthesize the italic faces the theme asks for. */
+@font-face {
+	font-family: "Merriweather";
+	font-weight: 300 900;
+	font-style: normal;
+	font-display: swap;
+	src: url("./fonts/merriweather-var.woff2") format("woff2-variations");
+}
+/* The variable file carries no italic axis, so the true italic faces the theme
+   asks for (comments, strings, emphasis) are supplied as their own woff2s. */
+@font-face {
+	font-family: "Merriweather";
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+	src: url("./fonts/merriweather-italic.woff2") format("woff2");
+}
+@font-face {
+	font-family: "Merriweather";
+	font-weight: 700;
+	font-style: italic;
+	font-display: swap;
+	src: url("./fonts/merriweather-bolditalic.woff2") format("woff2");
+}
+
+/* Jost is bundled and self-hosted here too — a variable geometric sans
+   (weights 100–900) available to anything naming "Jost". */
+@font-face {
+	font-family: "Jost";
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+	src: url("./fonts/jost-vf.woff2") format("woff2-variations");
+}
+
+[theme="twentyfour"] {
+	color-scheme: light;
+	--studio-fill: #f5f5f5;
+	--studio-line: #171717;
+	--studio-primary: #171717;
+	--studio-secondary: #737373;
+	--studio-danger: #dc2626;
+	--studio-warning: #b45309;
+	--studio-added: #16a34a;
+	--studio-deleted: #dc2626;
+	--studio-modified: #525252;
+	--studio-link: #2563eb;
+	--studio-selection-fill: #e5e5e5;
+
+	/* Merriweather if installed, otherwise a clean system serif — no web fonts */
+	--studio-family-sans: Merriweather, Georgia, "Iowan Old Style", "Times New Roman", serif;
+
+	/* the page sits brighter than the surrounding app chrome */
+	--text-editor-fill: #ffffff;
+
+	--syntax-comment: #a3a3a3;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #737373;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #737373;
+	--syntax-invalid: #dc2626;
+
+	--syntax-operator: #525252;
+	--syntax-punctuation: #525252;
+
+	--syntax-bool: #171717;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #171717;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #171717;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #404040;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #404040;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #737373;
+
+	--syntax-function--variable-name: #171717;
+	--syntax-function--property-name: #171717;
+
+	--syntax-variable-name: #262626;
+	--syntax-definition--variable-name: #262626;
+
+	--syntax-string: #15803d;
+	--syntax-fill-string: #f0fdf488;
+	--syntax-style-string: italic;
+
+	--syntax-number: #525252;
+	--syntax-integer: #525252;
+	--syntax-float: #525252;
+
+	--syntax-escape: #171717;
+	--syntax-regexp: #737373;
+	--syntax-special--string: #15803d;
+
+	--syntax-tag-name: #171717;
+	--syntax-angle-bracket: #525252;
+
+	--syntax-attribute-name: #737373;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #737373;
+
+	--syntax-strong: #171717;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #171717;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #171717;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #2563eb;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #737373;
+	--syntax-style-quote: italic;
+	--syntax-list: #171717;
+
+	--syntax-inserted: #16a34a;
+	--syntax-deleted: #dc2626;
+	--syntax-changed: #525252;
+}

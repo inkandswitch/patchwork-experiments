@@ -1,0 +1,91 @@
+/* Yalla — a warm parchment notebook: sepia ink and golden olive on aged paper, set in a book serif */
+[theme="yalla"] {
+	color-scheme: light;
+	--studio-fill: #fdf6e3; /* aged paper */
+	--studio-line: #3e2c1c; /* sepia ink */
+	--studio-primary: #8b6914; /* golden brown */
+	--studio-secondary: #c49a6c; /* tan */
+	--studio-danger: #b5453c; /* clay red */
+	--studio-warning: #d4a843;
+	--studio-added: #6b7f3a; /* olive */
+	--studio-deleted: #b5453c;
+	--studio-modified: #8b6914;
+	--studio-link: #7a5c2e;
+	--studio-selection-fill: #f0e4c8;
+
+	--studio-family-sans: Georgia, "Palatino Linotype", "Book Antiqua", Palatino,
+		serif;
+	--studio-family-code: "IBM Plex Mono", "Courier Prime", "Courier New",
+		monospace;
+
+	--text-editor-fill: #fdf8ee; /* a touch lighter than the page */
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--studio-primary);
+
+	--syntax-comment: #a08a6e;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #5c3d1e;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #6b5640;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: var(--studio-primary);
+	--syntax-punctuation: #6b5640;
+
+	--syntax-bool: var(--studio-added);
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #9e5a2a;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #874124;
+
+	--syntax-type-name: var(--studio-link);
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: var(--studio-link);
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: var(--studio-secondary);
+
+	--syntax-function--variable-name: #5c6e28;
+	--syntax-function--property-name: #5c6e28;
+
+	--syntax-variable-name: #9e5a2a;
+	--syntax-definition--variable-name: #9e5a2a;
+
+	--syntax-string: var(--studio-added);
+	--syntax-fill-string: #e8dfca55;
+
+	--syntax-number: var(--studio-primary);
+	--syntax-integer: var(--studio-primary);
+	--syntax-float: var(--studio-primary);
+
+	--syntax-escape: #874124;
+	--syntax-regexp: var(--studio-link);
+	--syntax-special--string: var(--studio-added);
+
+	--syntax-tag-name: #874124;
+	--syntax-angle-bracket: #6b5640;
+
+	--syntax-attribute-name: var(--studio-link);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--studio-secondary);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #5c3d1e;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: var(--studio-secondary);
+}

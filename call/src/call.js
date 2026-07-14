@@ -32,6 +32,32 @@ export const plugins = [
 		},
 	},
 	{
+		// The base `chat` tool's call feature, extracted here as a real plugin:
+		// contributes the presence-bar call button and folds the transcript into the
+		// assistant's context. Discovered via the shared registry when active.
+		type: "chat:feature",
+		id: "call",
+		name: "Voice/video call",
+		tier: "full",
+		async load() {
+			return (await import("./chat-call.js")).callFeature()
+		},
+	},
+	{
+		// `/call` (and `/call transcript`). A self-contained slash command whose
+		// behaviour rides behind `run` — the base dispatches it generically with the
+		// SlotContext, no hardcoded case in the host.
+		type: "chat:slash",
+		id: "call",
+		cmd: "/call",
+		usage: "/call [transcript]",
+		desc: "Start a voice/video call in this chat (or /call transcript to pin it)",
+		tier: "full",
+		async load() {
+			return {run: (await import("./chat-call.js")).callSlashRun}
+		},
+	},
+	{
 		type: "patchwork:tool",
 		id: "telephone",
 		name: "Telephone",

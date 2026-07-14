@@ -1,0 +1,94 @@
+/* GitHub Light — Primer light */
+[theme="github-light"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #1f2328;
+	--studio-primary: #0969da;
+	--studio-secondary: #8250df;
+	--studio-danger: #cf222e;
+	--studio-warning: #bf8700;
+	--studio-added: #1a7f37;
+	--studio-deleted: #cf222e;
+	--studio-modified: #0969da;
+	--studio-link: #0969da;
+	--studio-selection-fill: #ddf4ff;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #f6f8fa;
+	--text-editor-gutter-line: #656d76;
+	--text-editor-gutter-border: #d0d7de;
+
+	--syntax-comment: #6e7781;
+	--syntax-style-comment: normal;
+
+	--syntax-doc-comment: #6e7781;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #6e7781;
+	--syntax-invalid: #cf222e;
+
+	--syntax-operator: #0550ae;
+	--syntax-punctuation: #1f2328;
+
+	--syntax-bool: #0550ae;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #0550ae;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #cf222e;
+
+	--syntax-type-name: #0550ae;
+	--syntax-weight-type-name: normal;
+
+	--syntax-class-name: #953800;
+	--syntax-weight-class-name: normal;
+
+	--syntax-type-operator: #0550ae;
+
+	--syntax-function--variable-name: #8250df;
+	--syntax-function--property-name: #8250df;
+
+	--syntax-variable-name: #953800;
+	--syntax-definition--variable-name: #953800;
+
+	--syntax-string: #0a3069;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #0550ae;
+	--syntax-integer: #0550ae;
+	--syntax-float: #0550ae;
+
+	--syntax-escape: #0550ae;
+	--syntax-regexp: #0a3069;
+	--syntax-special--string: #0a3069;
+
+	--syntax-tag-name: #116329;
+	--syntax-angle-bracket: #1f2328;
+
+	--syntax-attribute-name: #0550ae;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #953800;
+
+	--syntax-strong: #1f2328;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #1f2328;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #0550ae;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #0969da;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6e7781;
+	--syntax-list: #1f2328;
+
+	--syntax-inserted: #1a7f37;
+	--syntax-deleted: #cf222e;
+	--syntax-changed: #0969da;
+
+	--syntax-content-separator: #d0d7de;
+}

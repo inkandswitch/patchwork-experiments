@@ -5,6 +5,7 @@ import {
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import type { UnconferenceDoc, Session } from "./types";
 import { ContactChip } from "./ContactChip";
@@ -563,6 +564,15 @@ export function UnconferenceTool({
       <UnconferenceToolInner docUrl={docUrl} element={element} />
     </RepoContext.Provider>
   );
+}
+
+export function renderUnconferenceTool(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+) {
+  const root = createRoot(element);
+  root.render(<UnconferenceTool docUrl={handle.url} element={element} />);
+  return () => root.unmount();
 }
 
 const POSTIT_SIZE = "w-full aspect-square min-h-0";

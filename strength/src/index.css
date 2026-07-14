@@ -1,0 +1,451 @@
+@import "tailwindcss";
+
+.strength {
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  color-scheme: light dark;
+}
+
+@keyframes strength-work-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.55);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgb(16 185 129 / 0);
+    transform: scale(1.01);
+  }
+}
+
+@keyframes strength-go-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(5 150 105 / 0.5);
+  }
+  50% {
+    transform: scale(1.04);
+    box-shadow: 0 0 0 10px rgb(5 150 105 / 0);
+  }
+}
+
+.strength-rest-ready {
+  animation: strength-work-pulse 1.4s ease-in-out infinite;
+}
+
+.strength-rest-go {
+  animation: strength-go-pulse 1.2s ease-in-out infinite;
+}
+
+.strength-rest-fill {
+  transition: width 1s linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strength-rest-ready,
+  .strength-rest-go {
+    animation: none;
+  }
+}
+
+/* Dark mode: OS preference and explicit host themes (e.g. DaisyUI). */
+@media (prefers-color-scheme: dark) {
+  .strength {
+    color: #e2e8f0;
+  }
+}
+
+:is(html.dark, html[data-theme="dark"], .dark) .strength {
+  color: #e2e8f0;
+}
+
+@layer components {
+  @media (prefers-color-scheme: dark) {
+    .strength {
+      & :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]), textarea) {
+        background-color: #1e293b;
+        color: #f1f5f9;
+        border-color: #475569;
+      }
+
+      & :where(input, textarea)::placeholder {
+        color: #64748b;
+      }
+
+      & input.border-transparent,
+      & input[class*="border-transparent"] {
+        background-color: transparent;
+      }
+
+      & .bg-slate-50 {
+        background-color: #0f172a;
+      }
+      & .bg-white {
+        background-color: #1e293b;
+      }
+      & .bg-slate-100 {
+        background-color: #334155;
+      }
+      & .bg-emerald-50 {
+        background-color: rgb(6 78 59 / 0.35);
+      }
+      & .bg-emerald-100 {
+        background-color: rgb(6 95 70 / 0.45);
+      }
+      & .bg-amber-50 {
+        background-color: rgb(120 53 15 / 0.35);
+      }
+      & .bg-amber-100 {
+        background-color: rgb(120 53 15 / 0.45);
+      }
+      & .bg-amber-200 {
+        background-color: rgb(120 53 15 / 0.55);
+      }
+      & .bg-red-50 {
+        background-color: rgb(127 29 29 / 0.35);
+      }
+      & .bg-sky-50 {
+        background-color: rgb(12 74 110 / 0.35);
+      }
+      & .bg-violet-50 {
+        background-color: rgb(76 29 149 / 0.35);
+      }
+      & .bg-violet-100 {
+        background-color: rgb(76 29 149 / 0.45);
+      }
+
+      & .border-slate-50 {
+        border-color: #1e293b;
+      }
+      & .border-slate-100 {
+        border-color: #334155;
+      }
+      & .border-slate-200 {
+        border-color: #475569;
+      }
+      & .border-slate-300 {
+        border-color: #64748b;
+      }
+      & .border-emerald-100 {
+        border-color: rgb(6 95 70 / 0.55);
+      }
+      & .border-emerald-200 {
+        border-color: rgb(16 185 129 / 0.45);
+      }
+      & .border-emerald-300 {
+        border-color: #34d399;
+      }
+      & .border-emerald-600 {
+        border-color: #34d399;
+      }
+      & .border-amber-100 {
+        border-color: rgb(120 53 15 / 0.55);
+      }
+      & .border-amber-200 {
+        border-color: rgb(180 83 9 / 0.55);
+      }
+      & .border-amber-300 {
+        border-color: #fbbf24;
+      }
+      & .border-red-100 {
+        border-color: rgb(127 29 29 / 0.55);
+      }
+      & .border-sky-200 {
+        border-color: rgb(12 74 110 / 0.55);
+      }
+      & .border-violet-200 {
+        border-color: rgb(76 29 149 / 0.55);
+      }
+
+      & .text-slate-400 {
+        color: #64748b;
+      }
+      & .text-slate-500 {
+        color: #94a3b8;
+      }
+      & .text-slate-600 {
+        color: #cbd5e1;
+      }
+      & .text-slate-700 {
+        color: #e2e8f0;
+      }
+      & .text-slate-800 {
+        color: #f1f5f9;
+      }
+      & .text-slate-900 {
+        color: #f8fafc;
+      }
+      & .text-emerald-600 {
+        color: #34d399;
+      }
+      & .text-emerald-700 {
+        color: #34d399;
+      }
+      & .text-emerald-800 {
+        color: #6ee7b7;
+      }
+      & .text-emerald-900 {
+        color: #a7f3d0;
+      }
+      & .text-amber-800 {
+        color: #fcd34d;
+      }
+      & .text-amber-900 {
+        color: #fde68a;
+      }
+      & .text-red-800 {
+        color: #fca5a5;
+      }
+      & .text-sky-800 {
+        color: #7dd3fc;
+      }
+      & .text-violet-700 {
+        color: #a78bfa;
+      }
+      & .text-violet-800 {
+        color: #c4b5fd;
+      }
+      & .hover\:text-violet-700:hover {
+        color: #a78bfa;
+      }
+
+      & .ring-emerald-200 {
+        --tw-ring-color: rgb(16 185 129 / 0.45);
+      }
+
+      & .divide-slate-100 > :not(:last-child) {
+        border-color: #334155;
+      }
+
+      & .hover\:bg-slate-50:hover {
+        background-color: #334155;
+      }
+      & .hover\:bg-white:hover {
+        background-color: #334155;
+      }
+      & .hover\:bg-emerald-50:hover {
+        background-color: rgb(6 78 59 / 0.45);
+      }
+      & .hover\:bg-amber-100:hover {
+        background-color: rgb(120 53 15 / 0.55);
+      }
+      & .hover\:bg-red-50:hover {
+        background-color: rgb(127 29 29 / 0.45);
+      }
+      & .hover\:text-slate-600:hover {
+        color: #cbd5e1;
+      }
+      & .hover\:text-red-600:hover {
+        color: #f87171;
+      }
+      & .hover\:border-slate-200:hover {
+        border-color: #64748b;
+      }
+      & .hover\:border-slate-300:hover {
+        border-color: #94a3b8;
+      }
+      & .hover\:border-emerald-400:hover {
+        border-color: #34d399;
+      }
+
+      & .focus\:border-emerald-400:focus {
+        border-color: #34d399;
+      }
+    }
+  }
+
+  :is(html.dark, html[data-theme="dark"], .dark) .strength {
+    & :where(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]), textarea) {
+      background-color: #1e293b;
+      color: #f1f5f9;
+      border-color: #475569;
+    }
+
+    & :where(input, textarea)::placeholder {
+      color: #64748b;
+    }
+
+    & input.border-transparent,
+    & input[class*="border-transparent"] {
+      background-color: transparent;
+    }
+
+    & .bg-slate-50 {
+      background-color: #0f172a;
+    }
+    & .bg-white {
+      background-color: #1e293b;
+    }
+    & .bg-slate-100 {
+      background-color: #334155;
+    }
+    & .bg-emerald-50 {
+      background-color: rgb(6 78 59 / 0.35);
+    }
+    & .bg-emerald-100 {
+      background-color: rgb(6 95 70 / 0.45);
+    }
+    & .bg-amber-50 {
+      background-color: rgb(120 53 15 / 0.35);
+    }
+    & .bg-amber-100 {
+      background-color: rgb(120 53 15 / 0.45);
+    }
+    & .bg-amber-200 {
+      background-color: rgb(120 53 15 / 0.55);
+    }
+    & .bg-red-50 {
+      background-color: rgb(127 29 29 / 0.35);
+    }
+    & .bg-sky-50 {
+      background-color: rgb(12 74 110 / 0.35);
+    }
+    & .bg-violet-50 {
+      background-color: rgb(76 29 149 / 0.35);
+    }
+    & .bg-violet-100 {
+      background-color: rgb(76 29 149 / 0.45);
+    }
+
+    & .border-slate-50 {
+      border-color: #1e293b;
+    }
+    & .border-slate-100 {
+      border-color: #334155;
+    }
+    & .border-slate-200 {
+      border-color: #475569;
+    }
+    & .border-slate-300 {
+      border-color: #64748b;
+    }
+    & .border-emerald-100 {
+      border-color: rgb(6 95 70 / 0.55);
+    }
+    & .border-emerald-200 {
+      border-color: rgb(16 185 129 / 0.45);
+    }
+    & .border-emerald-300 {
+      border-color: #34d399;
+    }
+    & .border-emerald-600 {
+      border-color: #34d399;
+    }
+    & .border-amber-100 {
+      border-color: rgb(120 53 15 / 0.55);
+    }
+    & .border-amber-200 {
+      border-color: rgb(180 83 9 / 0.55);
+    }
+    & .border-amber-300 {
+      border-color: #fbbf24;
+    }
+    & .border-red-100 {
+      border-color: rgb(127 29 29 / 0.55);
+    }
+    & .border-sky-200 {
+      border-color: rgb(12 74 110 / 0.55);
+    }
+    & .border-violet-200 {
+      border-color: rgb(76 29 149 / 0.55);
+    }
+
+    & .text-slate-400 {
+      color: #64748b;
+    }
+    & .text-slate-500 {
+      color: #94a3b8;
+    }
+    & .text-slate-600 {
+      color: #cbd5e1;
+    }
+    & .text-slate-700 {
+      color: #e2e8f0;
+    }
+    & .text-slate-800 {
+      color: #f1f5f9;
+    }
+    & .text-slate-900 {
+      color: #f8fafc;
+    }
+    & .text-emerald-600 {
+      color: #34d399;
+    }
+    & .text-emerald-700 {
+      color: #34d399;
+    }
+    & .text-emerald-800 {
+      color: #6ee7b7;
+    }
+    & .text-emerald-900 {
+      color: #a7f3d0;
+    }
+    & .text-amber-800 {
+      color: #fcd34d;
+    }
+    & .text-amber-900 {
+      color: #fde68a;
+    }
+    & .text-red-800 {
+      color: #fca5a5;
+    }
+    & .text-sky-800 {
+      color: #7dd3fc;
+    }
+    & .text-violet-700 {
+      color: #a78bfa;
+    }
+    & .text-violet-800 {
+      color: #c4b5fd;
+    }
+    & .hover\:text-violet-700:hover {
+      color: #a78bfa;
+    }
+
+    & .ring-emerald-200 {
+      --tw-ring-color: rgb(16 185 129 / 0.45);
+    }
+
+    & .divide-slate-100 > :not(:last-child) {
+      border-color: #334155;
+    }
+
+    & .hover\:bg-slate-50:hover {
+      background-color: #334155;
+    }
+    & .hover\:bg-white:hover {
+      background-color: #334155;
+    }
+    & .hover\:bg-emerald-50:hover {
+      background-color: rgb(6 78 59 / 0.45);
+    }
+    & .hover\:bg-amber-100:hover {
+      background-color: rgb(120 53 15 / 0.55);
+    }
+    & .hover\:bg-red-50:hover {
+      background-color: rgb(127 29 29 / 0.45);
+    }
+    & .hover\:text-slate-600:hover {
+      color: #cbd5e1;
+    }
+    & .hover\:text-red-600:hover {
+      color: #f87171;
+    }
+    & .hover\:border-slate-200:hover {
+      border-color: #64748b;
+    }
+    & .hover\:border-slate-300:hover {
+      border-color: #94a3b8;
+    }
+    & .hover\:border-emerald-400:hover {
+      border-color: #34d399;
+    }
+
+    & .focus\:border-emerald-400:focus {
+      border-color: #34d399;
+    }
+  }
+}

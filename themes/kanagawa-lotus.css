@@ -1,0 +1,93 @@
+/* Kanagawa Lotus — the daytime companion to Kanagawa Wave, soft aged paper */
+[theme="kanagawa-lotus"] {
+	color-scheme: light;
+	--studio-fill: #f2ecbc; /* lotusWhite3 */
+	--studio-line: #545464; /* lotusInk1 */
+	--studio-primary: #4d699b; /* lotusBlue4 (crystalBlue) */
+	--studio-secondary: #624c83; /* lotusViolet4 (oniViolet) */
+	--studio-danger: #c84053; /* lotusRed */
+	--studio-warning: #cc6d00; /* lotusOrange */
+	--studio-added: #6f894e; /* lotusGreen */
+	--studio-deleted: #c84053;
+	--studio-modified: #4d699b;
+	--studio-link: #4d699b;
+	--studio-selection-fill: #c9cbd1; /* lotusViolet3 */
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #e5ddb0; /* lotusWhite2 */
+	--text-editor-gutter-line: #8a8980;
+	--text-editor-gutter-border: #dcd5ac; /* lotusWhite1 */
+
+	--syntax-comment: #a09cac; /* lotusViolet1 */
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #a09cac;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #766b90; /* lotusViolet2 */
+	--syntax-invalid: #d7474b; /* lotusRed2 */
+
+	--syntax-operator: #766b90;
+	--syntax-punctuation: #545464;
+
+	--syntax-bool: #cc6d00; /* lotusOrange (surimiOrange) */
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #cc6d00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #624c83; /* oniViolet */
+	--syntax-style-keyword: italic;
+
+	--syntax-type-name: #5e857a; /* lotusAqua2 (waveAqua2) */
+	--syntax-class-name: #5e857a;
+
+	--syntax-type-operator: #4e8ca2; /* lotusTeal1 */
+
+	--syntax-function--variable-name: #4d699b; /* crystalBlue */
+	--syntax-function--property-name: #4d699b;
+
+	--syntax-variable-name: #545464;
+	--syntax-definition--variable-name: #545464;
+
+	--syntax-string: #6f894e; /* springGreen */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #b35b79; /* lotusPink (sakuraPink) */
+	--syntax-integer: #b35b79;
+	--syntax-float: #b35b79;
+
+	--syntax-escape: #cc6d00;
+	--syntax-regexp: #b35b79;
+	--syntax-special--string: #6f894e;
+
+	--syntax-tag-name: #624c83;
+	--syntax-angle-bracket: #766b90;
+
+	--syntax-attribute-name: #4e8ca2;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #5e857a;
+
+	--syntax-strong: #43436c; /* lotusInk2 */
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #43436c;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #4d699b;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #4d699b;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #a09cac;
+	--syntax-style-quote: italic;
+	--syntax-list: #545464;
+
+	--syntax-inserted: #6f894e;
+	--syntax-deleted: #c84053;
+	--syntax-changed: #4d699b;
+
+	--syntax-content-separator: #dcd5ac;
+}

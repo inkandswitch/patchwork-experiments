@@ -5,6 +5,7 @@ import {
 } from "@automerge/automerge-repo-react-hooks";
 import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { useEffect, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import type { UnconferenceDoc, Session } from "./types";
 
@@ -230,4 +231,13 @@ export function ScheduleViewTool({
       <ScheduleViewToolInner docUrl={docUrl} element={element} />
     </RepoContext.Provider>
   );
+}
+
+export function renderScheduleViewTool(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+) {
+  const root = createRoot(element);
+  root.render(<ScheduleViewTool docUrl={handle.url} element={element} />);
+  return () => root.unmount();
 }

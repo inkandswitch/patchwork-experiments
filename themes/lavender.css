@@ -1,0 +1,91 @@
+/* Lavender — soft lilac haze, gentle and calm */
+[theme="lavender"] {
+	color-scheme: light;
+	--studio-fill: #f5f0fa;
+	--studio-line: #2d2843;
+	--studio-primary: #7c5cbf;
+	--studio-secondary: #9b7ad8;
+	--studio-danger: #c4475a;
+	--studio-warning: #b07f24;
+	--studio-added: #4a8a5e;
+	--studio-deleted: #c4475a;
+	--studio-modified: #7c5cbf;
+	--studio-link: #7c5cbf;
+	--studio-selection-fill: #e8ddf5;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	/* the page sits a touch brighter than the surrounding app */
+	--text-editor-fill: #faf6fe;
+
+	--syntax-comment: #9a8ab0;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #7a6890;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #7a6890;
+	--syntax-invalid: #c4475a;
+
+	--syntax-operator: #7c5cbf;
+	--syntax-punctuation: #5a4a70;
+
+	--syntax-bool: #9b7ad8;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #9b7ad8;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #a0449e;
+
+	--syntax-type-name: #7c5cbf;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #7c5cbf;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #9b7ad8;
+
+	--syntax-function--variable-name: #4a7ab8;
+	--syntax-function--property-name: #4a7ab8;
+
+	--syntax-variable-name: #5a4a70;
+	--syntax-definition--variable-name: #5a4a70;
+
+	--syntax-string: #4a8a5e;
+
+	--syntax-number: #9b7ad8;
+	--syntax-integer: #9b7ad8;
+	--syntax-float: #9b7ad8;
+
+	--syntax-escape: #a0449e;
+	--syntax-regexp: #7c5cbf;
+	--syntax-special--string: #4a8a5e;
+
+	--syntax-tag-name: #a0449e;
+	--syntax-angle-bracket: #5a4a70;
+
+	--syntax-attribute-name: #7c5cbf;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #9b7ad8;
+
+	--syntax-strong: #2d2843;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #2d2843;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #7c5cbf;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #7c5cbf;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9a8ab0;
+	--syntax-style-quote: italic;
+	--syntax-list: #2d2843;
+
+	--syntax-inserted: #4a8a5e;
+	--syntax-deleted: #c4475a;
+	--syntax-changed: #7c5cbf;
+}

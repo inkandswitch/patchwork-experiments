@@ -1,0 +1,93 @@
+/* Tokyo Night Storm — a darker, bluer Tokyo Night */
+[theme="tokyo-night-storm"] {
+	color-scheme: dark;
+	--studio-fill: #24283b;
+	--studio-line: #c0caf5;
+	--studio-primary: #7aa2f7;
+	--studio-secondary: #7dcfff;
+	--studio-danger: #f7768e;
+	--studio-warning: #e0af68;
+	--studio-added: #9ece6a;
+	--studio-deleted: #f7768e;
+	--studio-modified: #7aa2f7;
+	--studio-link: #7aa2f7;
+	--studio-selection-fill: #2e3c64;
+
+	--text-editor-gutter-fill: var(--text-editor-fill);
+	--text-editor-gutter-line: #3b4261;
+	--text-editor-gutter-border: none;
+
+	--syntax-comment: #565f89;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #565f89;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #565f89;
+	--syntax-invalid: #f7768e;
+
+	--syntax-operator: #89ddff;
+	--syntax-punctuation: #a9b1d6;
+
+	--syntax-bool: #ff9e64;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ff9e64;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #bb9af7;
+
+	--syntax-type-name: #2ac3de;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #2ac3de;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #89ddff;
+
+	--syntax-function--variable-name: #7aa2f7;
+	--syntax-function--property-name: #7aa2f7;
+
+	--syntax-variable-name: #c0caf5;
+	--syntax-definition--variable-name: #c0caf5;
+
+	--syntax-string: #9ece6a;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #ff9e64;
+	--syntax-integer: #ff9e64;
+	--syntax-float: #ff9e64;
+
+	--syntax-escape: #89ddff;
+	--syntax-regexp: #b4f9f8;
+	--syntax-special--string: #9ece6a;
+
+	--syntax-tag-name: #f7768e;
+	--syntax-angle-bracket: #a9b1d6;
+
+	--syntax-attribute-name: #bb9af7;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #2ac3de;
+
+	--syntax-strong: #c0caf5;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #c0caf5;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #7aa2f7;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #7aa2f7;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #565f89;
+	--syntax-list: #c0caf5;
+
+	--syntax-inserted: #9ece6a;
+	--syntax-deleted: #f7768e;
+	--syntax-changed: #e0af68;
+
+	--syntax-content-separator: #3b4261;
+}

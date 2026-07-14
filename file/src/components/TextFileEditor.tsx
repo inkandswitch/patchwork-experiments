@@ -36,6 +36,16 @@ import {draculaTheme, draculaHighlightStyle} from "../dracula"
 import {lycheeTheme, lycheeHighlightStyle} from "../lychee"
 import {getLanguageExtension} from "../languages"
 import type {FileDoc} from "../types"
+import type {PatchworkViewElement} from "@inkandswitch/patchwork-elements"
+
+/**
+ * fired (bubbling, composed) before the editor is created so containers can
+ * contribute codemirror extensions by pushing them into detail.extensions
+ */
+export type FileCodemirrorExtensionsEventDetail = {
+	url: string
+	extensions: Extension[]
+}
 
 enum mod {
 	shift = 1,
@@ -70,9 +80,26 @@ function isDarkMode() {
 	return window.matchMedia("(prefers-color-scheme: dark)").matches
 }
 
-export function TextFileEditor(props: {doc: FileDoc; handle: any}) {
+export function TextFileEditor(props: {
+	doc: FileDoc
+	handle: any
+	element?: PatchworkViewElement
+}) {
 	let container!: HTMLDivElement
 	const themeCompartment = new Compartment()
+
+	// ask containers if they'd like to inject any codemirror extensions
+	const containerExtensions: Extension[] = []
+	props.element?.dispatchEvent(
+		new CustomEvent<FileCodemirrorExtensionsEventDetail>(
+			"file:codemirror-extensions",
+			{
+				detail: {url: props.handle.url, extensions: containerExtensions},
+				bubbles: true,
+				composed: true,
+			}
+		)
+	)
 
 	const lightTheme: Extension = [
 		lycheeTheme,
@@ -135,6 +162,7 @@ export function TextFileEditor(props: {doc: FileDoc; handle: any}) {
 				},
 			}),
 			automergeSyncPlugin({handle: props.handle, path: ["content"]}),
+			...containerExtensions,
 		],
 	})
 

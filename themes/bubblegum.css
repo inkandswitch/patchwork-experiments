@@ -1,0 +1,53 @@
+/* Bubblegum — bright candy pink, poppy and light, with candy blue and grape purple */
+[theme="bubblegum"] {
+	color-scheme: light;
+	--studio-fill: #fff4fb;
+	--studio-line: #46235a;
+	--studio-primary: #ff2e98;
+	--studio-secondary: #34b6ff;
+	--studio-danger: #ff3d6e;
+	--studio-warning: #ffc23d;
+	--studio-added: #2fd07a;
+	--studio-deleted: #ff3d6e;
+	--studio-modified: #b03dff;
+	--studio-link: #34b6ff;
+	--studio-selection-fill: #ffd2ec;
+	/* blow the chrome bubblegum-pink, not candy-blue */
+	--studio-offset-tint: var(--studio-primary);
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-secondary);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-secondary);
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: #ff5cb0;
+	--syntax-function--property-name: #ff5cb0;
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #1fae66;
+	--syntax-number: var(--studio-modified);
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #d99a1f;
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #d99a1f;
+	--syntax-meta: var(--studio-modified);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

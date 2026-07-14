@@ -1,0 +1,94 @@
+/* Ultraviolet — a pure BLUE #00F blacklight field glowing magenta, cyan, lime and yellow */
+[theme="ultraviolet"] {
+	color-scheme: dark;
+	--studio-fill: #0000ff;
+	--studio-line: #ffffff;
+	--studio-primary: #ff00ff;
+	--studio-secondary: #00ffff;
+	--studio-danger: #ff0000;
+	--studio-warning: #ffff00;
+	--studio-added: #00ff00;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ff00ff;
+	--studio-link: #00ffff;
+	--studio-selection-fill: #ff00ff;
+	--studio-chrome-fill: #0000ff;
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: #ff00ff;
+	--text-editor-selection-fill: #ff00ff55;
+	--text-editor-gutter-line: #8888ff;
+
+	--syntax-comment: #8888ff;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8888ff;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #ff00ff;
+	--syntax-invalid: #ff0000;
+
+	--syntax-operator: #00ffff;
+	--syntax-punctuation: #9999ff;
+
+	--syntax-bool: #ffff00;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ffff00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ff00ff;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #00ffff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #00ffff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00ffff;
+
+	--syntax-function--variable-name: #ffff00;
+	--syntax-function--property-name: #ffff00;
+
+	--syntax-definition--variable-name: #ff00ff;
+
+	--syntax-string: #00ff00;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #ffff00;
+	--syntax-integer: #ffff00;
+	--syntax-float: #ffff00;
+
+	--syntax-escape: #ff00ff;
+	--syntax-regexp: #00ff00;
+	--syntax-special--string: #00ff00;
+
+	--syntax-tag-name: #ff00ff;
+	--syntax-angle-bracket: #9999ff;
+
+	--syntax-attribute-name: #00ffff;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ff00ff;
+
+	--syntax-strong: #ffffff;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #00ffff;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ffff00;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #00ffff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #8888ff;
+
+	--syntax-inserted: #00ff00;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ff00ff;
+
+	--syntax-content-separator: #3333ff;
+}

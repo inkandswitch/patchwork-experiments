@@ -1,2 +1,0 @@
-# Dockview Frame for Patchwork
-

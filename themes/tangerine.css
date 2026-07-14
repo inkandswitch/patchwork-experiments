@@ -1,0 +1,88 @@
+/* Tangerine — warm and sunny: tangerine and amber on cream, leaf-green strings */
+[theme="tangerine"] {
+	color-scheme: light;
+	--studio-fill: #fff7f0; /* cream */
+	--studio-line: #4a2a14; /* deep roast */
+	--studio-primary: #ff6a1a; /* tangerine */
+	--studio-secondary: #ff9e3d; /* amber */
+	--studio-danger: #e8341a;
+	--studio-warning: #ffc23d;
+	--studio-added: #2fa84f; /* leaf */
+	--studio-deleted: #e8341a;
+	--studio-modified: #c8451a; /* burnt orange */
+	--studio-link: #ff6a1a;
+	--studio-selection-fill: #ffe0c8;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #c89a78;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #b88a68;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #c8451a;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: #a87a5a;
+
+	--syntax-bool: #c8451a;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #c8451a;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #c8451a;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #c8451a;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: var(--studio-secondary);
+
+	--syntax-function--variable-name: var(--studio-secondary);
+	--syntax-function--property-name: var(--studio-secondary);
+
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: var(--studio-added);
+	--syntax-fill-string: #2fa84f14;
+
+	--syntax-number: #c8451a;
+	--syntax-integer: #c8451a;
+	--syntax-float: #c8451a;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: var(--studio-secondary);
+	--syntax-special--string: var(--studio-added);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-angle-bracket: #a87a5a;
+
+	--syntax-attribute-name: var(--studio-warning);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--studio-warning);
+
+	--syntax-emphasis: var(--studio-primary);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #c89a78;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #ffd8b8;
+}

@@ -1,27 +1,51 @@
-export type LivelymergeDoc = {
+export interface LivelymergeDoc {
   '@patchwork': { type: 'livelymerge' };
   title: string;
-  objectTable: Record<string, Referent>;
-};
-
-export type World = {};
+  objectTable: Record<string, Obj | Arr | Fun>;
+}
 
 export type Obj = {
-  type: 'obj';
-  _id: number;
-  _protoId?: number;
+  $type: 'obj';
+  $id: string;
+  $protoId?: string;
+  $jsGlobal?: string; // if set, this object is a stand-in for an object that's defined in the JS global scope (in which case $protoId is ignored)
 } & Record<string, any>;
 
-/** Heap reference to an object or array in objectTable. */
-export type Ref = {
-  type: 'ref';
-  id: number;
-};
+export interface Arr {
+  $type: 'arr';
+  $id: string;
+  $values: Val[];
+}
 
-/** @deprecated Legacy ref format; still accepted when deserializing. */
-export type ObjRef = {
-  type: 'obj ref';
-  id: number;
-};
+export interface Fun {
+  $type: 'fun';
+  $id: string;
+  $codeForShow: string;
+  $code: string;
+  $scopes: Ref[];
+  $prototypeId?: string;
+  [key: string]: any;
+}
 
-export type Referent = Obj | unknown[];
+export interface Ref {
+  $type: 'ref';
+  $id: string;
+}
+
+export type Val = Ref | number | string | boolean | null | undefined;
+
+export function isObj(value: any): value is Obj {
+  return typeof value === 'object' && value?.$type === 'obj';
+}
+
+export function isArr(value: any): value is Arr {
+  return typeof value === 'object' && value?.$type === 'arr';
+}
+
+export function isFun(value: any): value is Fun {
+  return typeof value === 'object' && value?.$type === 'fun';
+}
+
+export function isRef(value: any): value is Ref {
+  return typeof value === 'object' && value?.$type === 'ref';
+}

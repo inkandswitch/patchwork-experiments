@@ -1,0 +1,53 @@
+/* Unicorn — a magical purple night sky with iridescent pink, cyan, mint and gold */
+[theme="unicorn"] {
+	color-scheme: dark;
+	--studio-fill: #221538;
+	--studio-line: #f1e7ff;
+	--studio-primary: #ff7ad1;
+	--studio-secondary: #5cf0ff;
+	--studio-danger: #ff6385;
+	--studio-warning: #ffd86b;
+	--studio-added: #6bffae;
+	--studio-deleted: #ff6385;
+	--studio-modified: #b58bff;
+	--studio-link: #5cf0ff;
+	--studio-selection-fill: #3d2a5c;
+	/* tint the dark ramp lavender so chrome stays purple-night, not cyan */
+	--studio-offset-tint: var(--studio-modified);
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-secondary);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-secondary);
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: var(--studio-warning);
+	--syntax-function--property-name: var(--studio-warning);
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: var(--studio-added);
+	--syntax-number: var(--studio-modified);
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: var(--studio-warning);
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: var(--studio-warning);
+	--syntax-meta: var(--studio-modified);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

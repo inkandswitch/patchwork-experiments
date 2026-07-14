@@ -1,0 +1,97 @@
+/* Tokyo Night Day — the light side of Tokyo Night, with its signature blue text */
+[theme="tokyo-night-day"] {
+	color-scheme: light;
+	--studio-fill: #e1e2e7;
+	--studio-line: #3760bf;
+	--studio-primary: #2e7de9;
+	--studio-secondary: #007197;
+	--studio-danger: #f52a65;
+	--studio-warning: #b15c00;
+	--studio-added: #587539;
+	--studio-deleted: #f52a65;
+	--studio-modified: #2e7de9;
+	--studio-link: #2e7de9;
+	--studio-selection-fill: #b7c1e3;
+
+	--text-editor-active-line-fill: #3760bf08;
+	--text-editor-active-line-fill--gutter: #d0d5e3;
+	--text-editor-gutter-fill: var(--text-editor-fill);
+	--text-editor-gutter-line: #a8aecb;
+	--text-editor-gutter-border: #d0d5e3;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+
+	--syntax-comment: #848cb5;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #848cb5;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #848cb5;
+	--syntax-invalid: #f52a65;
+
+	--syntax-operator: #6172b0;
+	--syntax-punctuation: #6172b0;
+
+	--syntax-bool: #b15c00;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #b15c00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #9854f1;
+
+	--syntax-type-name: #007197;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #007197;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #6172b0;
+
+	--syntax-function--variable-name: #2e7de9;
+	--syntax-function--property-name: #2e7de9;
+
+	--syntax-variable-name: #3760bf;
+	--syntax-definition--variable-name: #3760bf;
+
+	--syntax-string: #587539;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #b15c00;
+	--syntax-integer: #b15c00;
+	--syntax-float: #b15c00;
+
+	--syntax-escape: #118c74;
+	--syntax-regexp: #118c74;
+	--syntax-special--string: #587539;
+
+	--syntax-tag-name: #f52a65;
+	--syntax-angle-bracket: #6172b0;
+
+	--syntax-attribute-name: #118c74;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #007197;
+
+	--syntax-strong: #3760bf;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #3760bf;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #2e7de9;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #2e7de9;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #848cb5;
+	--syntax-list: #3760bf;
+
+	--syntax-inserted: #587539;
+	--syntax-deleted: #f52a65;
+	--syntax-changed: #2e7de9;
+
+	--syntax-content-separator: #d0d5e3;
+}

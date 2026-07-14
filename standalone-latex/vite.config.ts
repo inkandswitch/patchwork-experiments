@@ -1,12 +1,21 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
-import external from "@inkandswitch/patchwork-bootloader/externals";
+import bootloaderExternals from "@inkandswitch/patchwork-bootloader/externals";
 import path from "path";
+
+// The tool bundles its own React (react isn't in the host importmap), so
+// the react-hooks package must be bundled too — otherwise the host-served
+// copy runs against the host's React and hooks crash with a null
+// dispatcher. Its automerge-repo imports stay external, so handles still
+// resolve to the host's repo instance.
+const external = bootloaderExternals.filter(
+  (name) => name !== "@automerge/automerge-repo-react-hooks"
+);
 
 export default defineConfig({
   base: "./",
-  plugins: [react(), cssInjectedByJsPlugin()],
+  plugins: [react(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
     alias: {
@@ -24,6 +33,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     minify: false,
     rollupOptions: {
       external,

@@ -16,6 +16,8 @@ import { MainDocumentView } from "./components/MainDocumentView";
 import { ensureAccountSubdocs } from "./account/ensureSubdocs";
 import CommandPalette from "../commands/CommandPalette";
 import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { render } from "solid-js/web";
+import type { ToolImplementation } from "@inkandswitch/patchwork-plugins";
 import "./styles.css";
 
 const MIN_SIDEBAR_WIDTH = 48;
@@ -148,5 +150,15 @@ export const PatchworkFrame = ({
         />
       )}
     </div>
+  );
+};
+
+export const renderPatchworkFrame: ToolImplementation<AccountDoc> = (
+  handle,
+  element
+) => {
+  return render(
+    () => <PatchworkFrame handle={handle} element={element} repo={element.repo} />,
+    element
   );
 };

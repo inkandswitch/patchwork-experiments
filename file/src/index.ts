@@ -2,9 +2,7 @@
 // Bundleless plugin that supports viewing and editing various file types
 
 import {FileDatatype} from "./datatype"
-import {FileTool} from "./tool"
 import {NewFileDatatype} from "./new-file-datatype"
-import {NewFileTool} from "./new-file-tool"
 
 export * from "./types"
 export * from "./datatype"
@@ -28,7 +26,7 @@ export const plugins = [
 		icon: "File",
 		supportedDatatypes: ["file"],
 		async load() {
-			return FileTool
+			return (await import("./tool")).FileTool
 		},
 	},
 	{
@@ -47,7 +45,7 @@ export const plugins = [
 		icon: "FilePlus",
 		supportedDatatypes: ["new-file"],
 		async load() {
-			return NewFileTool
+			return (await import("./new-file-tool")).NewFileTool
 		},
 	},
 ]

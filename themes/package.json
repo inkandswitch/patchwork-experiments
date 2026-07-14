@@ -1,0 +1,14 @@
+{
+  "name": "@patchwork/themes",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./main.js",
+  "exports": {
+    ".": "./main.js"
+  },
+  "scripts": {
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  }
+}

@@ -35,9 +35,11 @@ const externals = [
 
 export default defineConfig({
   base: "./",
-  plugins: [react(), tailwindcss(), cssInjectedByJsPlugin()],
+  plugins: [react(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   build: {
+
+    cssCodeSplit: true,
     rollupOptions: {
       external: externals,
       input: "./src/index.ts",

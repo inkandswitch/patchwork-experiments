@@ -1,0 +1,4 @@
+allowBuilds:
+  cbor-extract: true
+  esbuild: true
+verifyDepsBeforeRun: false

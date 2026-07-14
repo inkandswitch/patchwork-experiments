@@ -1,5 +1,4 @@
 import { Plugin } from "@inkandswitch/patchwork-plugins";
-import { toolify } from "@inkandswitch/patchwork-react";
 
 export const plugins: Plugin<any>[] = [
   {
@@ -19,8 +18,8 @@ export const plugins: Plugin<any>[] = [
     icon: "Calendar",
     supportedDatatypes: ["unconference"],
     async load() {
-      const { UnconferenceTool } = await import("./UnconferenceTool");
-      return toolify(UnconferenceTool);
+      const { renderUnconferenceTool } = await import("./UnconferenceTool");
+      return renderUnconferenceTool;
     },
   },
   {
@@ -30,8 +29,8 @@ export const plugins: Plugin<any>[] = [
     icon: "Calendar",
     supportedDatatypes: ["unconference"],
     async load() {
-      const { ScheduleViewTool } = await import("./ScheduleViewTool");
-      return toolify(ScheduleViewTool);
+      const { renderScheduleViewTool } = await import("./ScheduleViewTool");
+      return renderScheduleViewTool;
     },
   },
 ];

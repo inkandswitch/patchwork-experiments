@@ -12,7 +12,7 @@ export default defineConfig({
     topLevelAwait(),
     wasm(),
     react(),
-    cssInjectedByJsPlugin(),
+    cssInjectedByJsPlugin({ relativeCSSInjection: true }),
   ],
 
   define: {
@@ -20,6 +20,8 @@ export default defineConfig({
   },
 
   build: {
+
+    cssCodeSplit: true,
     emptyOutDir: true,
     minify: false,
     sourcemap: true,

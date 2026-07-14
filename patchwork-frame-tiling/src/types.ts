@@ -1,0 +1,111 @@
+import { AutomergeUrl } from "@automerge/automerge-repo";
+
+/**
+ * The frame is mounted against an `account` document, shared with (and
+ * switchable to/from) other frame implementations like threepane. Only
+ * `rootFolderUrl` is required by the tiling frame itself; the rest exist for
+ * compatibility with the wider patchwork frame ecosystem.
+ */
+export type TinyPatchworkConfigDoc = {
+  rootFolderUrl?: AutomergeUrl;
+  moduleSettingsUrl?: AutomergeUrl;
+  contactUrl?: AutomergeUrl;
+  /**
+   * The most-recent tiling session's {@link TilingLayoutDoc} — the "current"
+   * layout a new tab resumes from. It's a rolling pointer: opening a new tab
+   * mints a fresh session (cloned from here) and repoints this at it, POSIX
+   * `unlink`-style. The previously-pointed doc isn't deleted; it just becomes
+   * unreferenced cold storage (still openable by a tab that has it in its URL).
+   */
+  currentLayoutUrl?: AutomergeUrl;
+  /**
+   * Legacy single shared layout (pre per-tab sessions). Read only as a fallback
+   * clone source for the first new-model session so existing users' arrangement
+   * carries over; no longer written.
+   */
+  tilingLayoutUrl?: AutomergeUrl;
+
+  /** Remembered per-doc / per-datatype tool choices (see {@link ToolPreferences}). */
+  toolPreferences?: ToolPreferences;
+
+  /**
+   * Private per-tool storage docs, keyed by an arbitrary tool-chosen id.
+   * Lazily created and populated by the `patchwork:tool-storage` provider
+   * (see `patchwork-base/providers`) the first time a tool requests it — lets
+   * a tool persist account-scoped data (chat history, an API key, …) without
+   * a `docUrl` of its own, and without reaching for `window.accountDocHandle`.
+   */
+  toolStorage?: { [toolId: string]: AutomergeUrl };
+};
+
+/**
+ * The user's remembered tool choices, synced on their account so they follow
+ * across devices. Resolution prefers the most specific scope (see
+ * `resolvePreferredTool`): the document, then its datatype.
+ */
+export type ToolPreferences = {
+  /** Last tool chosen for a given document, keyed by AutomergeUrl. */
+  byDoc?: { [url: string]: string };
+  /** Last tool chosen for a given datatype, keyed by `@patchwork.type`. */
+  byType?: { [type: string]: string };
+};
+
+export type PanelView = {
+  /**
+   * The document shown in this panel. **Absent** for an *empty content frame* —
+   * a placeholder content panel kept beside the folder/context panes so they
+   * never span the full width. The next document opened fills the empty frame
+   * instead of splitting the folder. Always absent for a `"context"` panel: a
+   * context tool is a registry-tagged `patchwork:component`, mounted against
+   * no document.
+   */
+  url?: AutomergeUrl;
+  toolId?: string;
+  /**
+   * Marks a panel's special role:
+   * - `"context"` — a context panel (comments, history, …) that describes the
+   *   selected content panel and is itself excluded from being the "selected
+   *   document".
+   * - `"root-folder"` — the account's root folder navigator. The url is
+   *   deliberately **not** stored; it's resolved to the *viewer's*
+   *   `rootFolderUrl` at render time, so a shared layout doesn't carry (and
+   *   leak) the author's folder — the recipient sees their own folders instead.
+   */
+  role?: "context" | "root-folder";
+};
+
+export type SplitDirection = "horizontal" | "vertical";
+
+/** The edge of a target panel a dragged panel is dropped against. */
+export type DropSide = "left" | "right" | "top" | "bottom";
+
+/** A leaf panel shows a single document with a back-history stack. */
+export type LeafNode = {
+  kind: "leaf";
+  id: string;
+  view: PanelView;
+  history: PanelView[];
+};
+
+/** A split node tiles two children along an axis. */
+export type SplitNode = {
+  kind: "split";
+  id: string;
+  direction: SplitDirection;
+  children: [LayoutNode, LayoutNode];
+  /** Persisted sizes (percentages) for the two children. */
+  sizes: [number, number];
+};
+
+export type LayoutNode = LeafNode | SplitNode;
+
+/**
+ * A standalone document that persists the tiling frame's panel layout so the
+ * arrangement survives a reload. Kept separate from the account/config doc so
+ * the frame owns its own state instead of leaning on frame-specific fields of
+ * {@link TinyPatchworkConfigDoc}.
+ */
+export type TilingLayoutDoc = {
+  layout: LayoutNode | null;
+  "@patchwork"?: { type: string };
+};

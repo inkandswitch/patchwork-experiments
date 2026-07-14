@@ -1,0 +1,94 @@
+/* One Light — Atom's light theme */
+[theme="one-light"] {
+	color-scheme: light;
+	--studio-fill: #fafafa;
+	--studio-line: #383a42;
+	--studio-primary: #4078f2;
+	--studio-secondary: #0184bc;
+	--studio-danger: #e45649;
+	--studio-warning: #c18401;
+	--studio-added: #50a14f;
+	--studio-deleted: #e45649;
+	--studio-modified: #4078f2;
+	--studio-link: #4078f2;
+	--studio-selection-fill: #e5e5e6;
+
+	--text-editor-cursor-fill: #526fff;
+	--text-editor-gutter-fill: var(--text-editor-fill);
+	--text-editor-gutter-line: #a0a1a7;
+	--text-editor-gutter-border: none;
+
+	--syntax-comment: #a0a1a7;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #a0a1a7;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #a0a1a7;
+	--syntax-invalid: #e45649;
+
+	--syntax-operator: #0184bc;
+	--syntax-punctuation: #383a42;
+
+	--syntax-bool: #986801;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #986801;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #a626a4;
+
+	--syntax-type-name: #c18401;
+	--syntax-weight-type-name: normal;
+
+	--syntax-class-name: #c18401;
+	--syntax-weight-class-name: normal;
+
+	--syntax-type-operator: #0184bc;
+
+	--syntax-function--variable-name: #4078f2;
+	--syntax-function--property-name: #4078f2;
+
+	--syntax-variable-name: #e45649;
+	--syntax-definition--variable-name: #e45649;
+
+	--syntax-string: #50a14f;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #986801;
+	--syntax-integer: #986801;
+	--syntax-float: #986801;
+
+	--syntax-escape: #0184bc;
+	--syntax-regexp: #50a14f;
+	--syntax-special--string: #50a14f;
+
+	--syntax-tag-name: #e45649;
+	--syntax-angle-bracket: #383a42;
+
+	--syntax-attribute-name: #986801;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #c18401;
+
+	--syntax-strong: #383a42;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #383a42;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #e45649;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #4078f2;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #a0a1a7;
+	--syntax-list: #383a42;
+
+	--syntax-inserted: #50a14f;
+	--syntax-deleted: #e45649;
+	--syntax-changed: #4078f2;
+
+	--syntax-content-separator: #d3d3d4;
+}

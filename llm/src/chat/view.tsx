@@ -1,15 +1,16 @@
 import { render } from "solid-js/web";
-import { createSignal, Show } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { RepoContext, useDocument } from "@automerge/automerge-repo-solid-primitives";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
-import { Square } from "lucide-solid";
+import { Square, Settings } from "lucide-solid";
+import { popup, subscribeConfig, describeConfig } from "@chee/patchwork-llm";
 
 import type { LLMChatDoc, LLMProcessDoc } from "../types";
 import { runLLMProcess } from "../llm-process/run";
 import "./view.css";
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 
 export const LLMChatTool: ToolRender = (handle, element) => {
   const dispose = render(
@@ -18,6 +19,7 @@ export const LLMChatTool: ToolRender = (handle, element) => {
         <LLMChatView 
           handle={handle as DocHandle<LLMChatDoc>} 
           repo={element.repo}
+          element={element}
         />
       </RepoContext.Provider>
     ),
@@ -26,7 +28,7 @@ export const LLMChatTool: ToolRender = (handle, element) => {
   return dispose;
 };
 
-function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
+function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo; element: HTMLElement }) {
   const [doc] = useDocument<LLMChatDoc>(() => props.handle.url);
   const [processDoc] = useDocument<LLMProcessDoc>(() => doc()?.processUrl);
   const [activeTab, setActiveTab] = createSignal<"chat" | "documents">("chat");
@@ -67,26 +69,50 @@ function LLMChatView(props: { handle: DocHandle<LLMChatDoc>; repo: Repo }) {
     abortController?.abort();
   };
 
+  // Open the @chee/patchwork-llm model picker. It writes the chosen
+  // provider/model/API key to the account settings doc, shared across tools.
+  const openModelPicker = () => {
+    const el = popup();
+    document.body.append(el);
+    el.showPopover();
+    el.result.finally(() => el.remove());
+  };
+
+  // Live label of the currently-selected model (kept in sync with the config).
+  const [modelLabel, setModelLabel] = createSignal("");
+  const unsubscribe = subscribeConfig(props.element, (cfg) => setModelLabel(describeConfig(cfg)));
+  onCleanup(unsubscribe);
+
   return (
-    <Show when={doc()} fallback={<div class="chat-root">Loading…</div>}>
+    <Show when={doc()} fallback={<div class="llm-process-chat chat-root">Loading…</div>}>
       {(currentDoc) => (
-        <div class="chat-root">
+        <div class="llm-process-chat chat-root">
           <div class="chat-header">
             <div class="chat-tabs">
               <button
-                class={activeTab() === "chat" ? "active" : ""}
+                data-active={activeTab() === "chat" ? "" : undefined}
                 onClick={() => setActiveTab("chat")}
               >
                 Chat
               </button>
               <button
-                class={activeTab() === "documents" ? "active" : ""}
+                data-active={activeTab() === "documents" ? "" : undefined}
                 onClick={() => setActiveTab("documents")}
               >
                 Documents
               </button>
             </div>
-            <div class="chat-version">v{VERSION}</div>
+            <div class="chat-header-right">
+              <Show when={modelLabel()}>
+                <button class="chat-model" title="Choose model" onClick={openModelPicker}>
+                  {modelLabel()}
+                </button>
+              </Show>
+              <button class="chat-settings" title="Choose model" onClick={openModelPicker}>
+                <Settings size={14} />
+              </button>
+              <div class="chat-version">v{VERSION}</div>
+            </div>
           </div>
 
           <Show when={activeTab() === "chat"}>

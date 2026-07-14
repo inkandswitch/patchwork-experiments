@@ -1,0 +1,93 @@
+/* Gruvbox Light — retro groove */
+[theme="gruvbox-light"] {
+	color-scheme: light;
+	--studio-fill: #fbf1c7;
+	--studio-line: #3c3836;
+	--studio-primary: #076678;
+	--studio-secondary: #427b58;
+	--studio-danger: #9d0006;
+	--studio-warning: #b57614;
+	--studio-added: #79740e;
+	--studio-deleted: #9d0006;
+	--studio-modified: #076678;
+	--studio-link: #076678;
+	--studio-selection-fill: #ebdbb2;
+
+	--text-editor-gutter-fill: #ebdbb2;
+	--text-editor-gutter-line: #928374;
+	--text-editor-gutter-border: none;
+
+	--syntax-comment: #928374;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #928374;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #928374;
+	--syntax-invalid: #9d0006;
+
+	--syntax-operator: #3c3836;
+	--syntax-punctuation: #3c3836;
+
+	--syntax-bool: #8f3f71;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #8f3f71;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #9d0006;
+
+	--syntax-type-name: #b57614;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #b57614;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #af3a03;
+
+	--syntax-function--variable-name: #79740e;
+	--syntax-function--property-name: #79740e;
+
+	--syntax-variable-name: #076678;
+	--syntax-definition--variable-name: #076678;
+
+	--syntax-string: #79740e;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #8f3f71;
+	--syntax-integer: #8f3f71;
+	--syntax-float: #8f3f71;
+
+	--syntax-escape: #af3a03;
+	--syntax-regexp: #79740e;
+	--syntax-special--string: #79740e;
+
+	--syntax-tag-name: #9d0006;
+	--syntax-angle-bracket: #3c3836;
+
+	--syntax-attribute-name: #b57614;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #af3a03;
+
+	--syntax-strong: #3c3836;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #3c3836;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #9d0006;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #076678;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #928374;
+	--syntax-list: #3c3836;
+
+	--syntax-inserted: #79740e;
+	--syntax-deleted: #9d0006;
+	--syntax-changed: #076678;
+
+	--syntax-content-separator: #928374;
+}

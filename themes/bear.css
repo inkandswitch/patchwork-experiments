@@ -1,0 +1,100 @@
+/* Bear — after the Bear app's default "Red Graphite": clean warm near-white,
+   soft charcoal ink, and Bear's signature red for markers, headings and links */
+[theme="bear"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #4c4c4c;
+	--studio-primary: #d34d42; /* Bear red */
+	--studio-secondary: #6b7a86; /* graphite slate */
+	--studio-danger: #d34d42;
+	--studio-warning: #c9761a;
+	--studio-added: #5a9a4a;
+	--studio-deleted: #d34d42;
+	--studio-modified: #6b7a86;
+	--studio-link: #d34d42;
+	--studio-selection-fill: #fbe0dd;
+
+	/* ink on a red/slate surface reads as the paper white */
+	--studio-primary-line: #ffffff;
+	--studio-danger-line: #ffffff;
+	--studio-secondary-line: #ffffff;
+
+	--text-editor-fill: #ffffff;
+	--text-editor-cursor-fill: #d34d42;
+	--text-editor-gutter-fill: #fafafa;
+	--text-editor-gutter-line: #b9b9b9;
+	--text-editor-gutter-border: #ededed;
+
+	--syntax-comment: #a3a3a3;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #9aa4ac;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #6b7a86;
+	--syntax-invalid: #d34d42;
+
+	--syntax-operator: #6b7a86;
+	--syntax-punctuation: #a0a7ad;
+
+	--syntax-bool: #d34d42;
+	--syntax-weight-bool: normal;
+
+	--syntax-atom: #d34d42;
+	--syntax-weight-atom: normal;
+
+	--syntax-keyword: #d34d42;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #4a7a86;
+	--syntax-class-name: #4a7a86;
+
+	--syntax-type-operator: #6b7a86;
+
+	--syntax-function--variable-name: #3d7ab0;
+	--syntax-function--property-name: #4c4c4c;
+
+	--syntax-variable-name: #4c4c4c;
+	--syntax-definition--variable-name: #3d7ab0;
+
+	--syntax-string: #5a9a4a;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #c9761a;
+	--syntax-integer: #c9761a;
+	--syntax-float: #c9761a;
+
+	--syntax-escape: #c9761a;
+	--syntax-regexp: #5a9a4a;
+	--syntax-special--string: #5a9a4a;
+
+	--syntax-tag-name: #d34d42;
+	--syntax-angle-bracket: #a0a7ad;
+
+	--syntax-attribute-name: #c9761a;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #4a7a86;
+
+	--syntax-strong: #3a3a3a;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #3a3a3a;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #d34d42; /* Bear reds its headings */
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #d34d42;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9aa4ac;
+	--syntax-style-quote: italic;
+	--syntax-list: #d34d42;
+
+	--syntax-inserted: #5a9a4a;
+	--syntax-deleted: #d34d42;
+	--syntax-changed: #6b7a86;
+
+	--syntax-content-separator: #ededed;
+}

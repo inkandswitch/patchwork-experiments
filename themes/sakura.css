@@ -1,0 +1,53 @@
+/* Sakura — cherry blossom: soft pinks and blossom white with a leaf-green accent */
+[theme="sakura"] {
+	color-scheme: light;
+	--studio-fill: #fff6f8;
+	--studio-line: #5b3a4a;
+	--studio-primary: #ff7fab;
+	--studio-secondary: #7ec07a;
+	--studio-danger: #e8557a;
+	--studio-warning: #f0a85e;
+	--studio-added: #7ec07a;
+	--studio-deleted: #e8557a;
+	--studio-modified: #c884d6;
+	--studio-link: #e86fa0;
+	--studio-selection-fill: #ffdbe7;
+	/* keep the ramp blossom-pink rather than the leaf-green secondary */
+	--studio-offset-tint: var(--studio-primary);
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-modified);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-modified);
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: #e8896a;
+	--syntax-function--property-name: #e8896a;
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #5aa860;
+	--syntax-number: #d98a3f;
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #d98a3f;
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #d98a3f;
+	--syntax-meta: var(--studio-modified);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

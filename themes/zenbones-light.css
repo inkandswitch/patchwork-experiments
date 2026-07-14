@@ -1,0 +1,93 @@
+/* Zenbones Light — mcchrish's warm, low-contrast minimal light theme */
+[theme="zenbones-light"] {
+	color-scheme: light;
+	--studio-fill: #f0edec;
+	--studio-line: #2c363c;
+	--studio-primary: #286486; /* water/blue */
+	--studio-secondary: #88507d; /* blossom/magenta */
+	--studio-danger: #a8334c; /* rose/red */
+	--studio-warning: #944927; /* wood/yellow-brown */
+	--studio-added: #4f6c31; /* leaf/green */
+	--studio-deleted: #a8334c;
+	--studio-modified: #286486;
+	--studio-link: #286486;
+	--studio-selection-fill: #cbd9d8;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #e7e2e0;
+	--text-editor-gutter-line: #a8a3a1;
+	--text-editor-gutter-border: #ded9d7;
+
+	--syntax-comment: #9d9491;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #9d9491;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #8f8b8a;
+	--syntax-invalid: #a8334c;
+
+	--syntax-operator: #576369;
+	--syntax-punctuation: #576369;
+
+	--syntax-bool: #a8334c;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #a8334c;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #286486; /* water */
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #3b8992; /* sky/cyan */
+	--syntax-class-name: #3b8992;
+
+	--syntax-type-operator: #3b8992;
+
+	--syntax-function--variable-name: #944927; /* wood */
+	--syntax-function--property-name: #944927;
+
+	--syntax-variable-name: #2c363c;
+	--syntax-definition--variable-name: #2c363c;
+
+	--syntax-string: #4f6c31; /* leaf */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #88507d; /* blossom */
+	--syntax-integer: #88507d;
+	--syntax-float: #88507d;
+
+	--syntax-escape: #a8334c;
+	--syntax-regexp: #3b8992;
+	--syntax-special--string: #4f6c31;
+
+	--syntax-tag-name: #286486;
+	--syntax-angle-bracket: #576369;
+
+	--syntax-attribute-name: #3b8992;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #944927;
+
+	--syntax-strong: #2c363c;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #2c363c;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #286486;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #286486;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9d9491;
+	--syntax-style-quote: italic;
+	--syntax-list: #2c363c;
+
+	--syntax-inserted: #4f6c31;
+	--syntax-deleted: #a8334c;
+	--syntax-changed: #286486;
+
+	--syntax-content-separator: #ded9d7;
+}

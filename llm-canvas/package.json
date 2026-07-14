@@ -64,7 +64,6 @@
     "@inkandswitch/patchwork-elements": "link:../../patchwork-next/packages/elements",
     "@inkandswitch/patchwork-filesystem": "link:../../patchwork-next/packages/filesystem",
     "@inkandswitch/patchwork-plugins": "link:../../patchwork-next/packages/plugins",
-    "@inkandswitch/patchwork-react": "link:../../patchwork-next/packages/react",
     "@tldraw/tldraw": "4.3.1",
     "@types/lodash": "^4.17.20",
     "lodash": "^4.17.21",

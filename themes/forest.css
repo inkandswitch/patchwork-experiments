@@ -1,0 +1,90 @@
+/* Forest — deep canopy greens, bark browns, dappled moss light */
+[theme="forest"] {
+	color-scheme: dark;
+	--studio-fill: #121c12;
+	--studio-line: #c8d8c0;
+	--studio-primary: #6aad6a;
+	--studio-secondary: #88bb88;
+	--studio-danger: #cc5544;
+	--studio-warning: #c89440;
+	--studio-added: #6aad6a;
+	--studio-deleted: #cc5544;
+	--studio-modified: #6aad6a;
+	--studio-link: #88bb88;
+	--studio-selection-fill: #1e3020;
+
+	--text-editor-cursor-fill: var(--studio-secondary);
+
+	--syntax-comment: #4a6a48;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #5a7a58;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #5a7a58;
+	--syntax-invalid: #cc5544;
+
+	--syntax-operator: #88bb88;
+	--syntax-punctuation: #7a9a70;
+
+	--syntax-bool: #c89440;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #c89440;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #a0cc80;
+
+	--syntax-type-name: #6aad6a;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #6aad6a;
+	--syntax-weight-class-name: bold;
+
+	/* bark brown for the structural operators */
+	--syntax-type-operator: #b08a5a;
+
+	--syntax-function--variable-name: #b8d4a0;
+	--syntax-function--property-name: #b8d4a0;
+
+	--syntax-variable-name: #c8d8c0;
+	--syntax-definition--variable-name: #c8d8c0;
+
+	--syntax-string: #a8c890;
+
+	--syntax-number: #c89440;
+	--syntax-integer: #c89440;
+	--syntax-float: #c89440;
+
+	--syntax-escape: #cc5544;
+	--syntax-regexp: #88bb88;
+	--syntax-special--string: #a8c890;
+
+	--syntax-tag-name: #a0cc80;
+	--syntax-angle-bracket: #7a9a70;
+
+	--syntax-attribute-name: #6aad6a;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #b08a5a;
+
+	--syntax-strong: #c8d8c0;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #c8d8c0;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #88bb88;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #88bb88;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #5a7a58;
+	--syntax-style-quote: italic;
+	--syntax-list: #c8d8c0;
+
+	--syntax-inserted: #6aad6a;
+	--syntax-deleted: #cc5544;
+	--syntax-changed: #c89440;
+}

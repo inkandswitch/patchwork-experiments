@@ -1,0 +1,99 @@
+/* Material Ocean — the deep-sea variant of the Material Theme, indigo with cyan neon */
+[theme="material-ocean"] {
+	color-scheme: dark;
+	--studio-fill: #0f111a;
+	--studio-line: #a6accd;
+	--studio-primary: #82aaff;
+	--studio-secondary: #89ddff;
+	--studio-danger: #ff5370;
+	--studio-warning: #ffcb6b;
+	--studio-added: #c3e88d;
+	--studio-deleted: #ff5370;
+	--studio-modified: #c792ea;
+	--studio-link: #82aaff;
+	--studio-selection-fill: #1f2233;
+
+	--text-editor-cursor-fill: var(--studio-warning);
+	--text-editor-active-line-fill: #ffffff05;
+	--text-editor-active-line-fill--gutter: #0b0e16;
+	--text-editor-gutter-fill: #0b0e16;
+	--text-editor-gutter-line: #464b5d;
+	--text-editor-gutter-border: #1f2233;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+	--text-editor-tooltip-fill: #1f2233;
+
+	--syntax-comment: #464b5d;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #464b5d;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #89ddff;
+	--syntax-invalid: #ff5370;
+
+	--syntax-operator: #89ddff;
+	--syntax-punctuation: #717cb4;
+
+	--syntax-bool: #ffcb6b;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ffcb6b;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #c792ea;
+
+	--syntax-type-name: #ffcb6b;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #ffcb6b;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #89ddff;
+
+	--syntax-function--variable-name: #82aaff;
+	--syntax-function--property-name: #82aaff;
+
+	--syntax-variable-name: #a6accd;
+	--syntax-definition--variable-name: #f78c6c;
+
+	--syntax-string: #c3e88d;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #f78c6c;
+	--syntax-integer: #f78c6c;
+	--syntax-float: #f78c6c;
+
+	--syntax-escape: #89ddff;
+	--syntax-regexp: #89ddff;
+	--syntax-special--string: #c3e88d;
+
+	--syntax-tag-name: #f07178;
+	--syntax-angle-bracket: #717cb4;
+
+	--syntax-attribute-name: #ffcb6b;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ffcb6b;
+
+	--syntax-strong: #a6accd;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #a6accd;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #82aaff;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #82aaff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #676695;
+	--syntax-list: #a6accd;
+
+	--syntax-inserted: #c3e88d;
+	--syntax-deleted: #ff5370;
+	--syntax-changed: #c792ea;
+
+	--syntax-content-separator: #1f2233;
+}

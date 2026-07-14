@@ -1,0 +1,92 @@
+/* PaperColor Light — the beloved Vim scheme, Material-ish on flat #eee paper */
+[theme="papercolor-light"] {
+	color-scheme: light;
+	--studio-fill: #eeeeee;
+	--studio-line: #444444;
+	--studio-primary: #005faf; /* blue */
+	--studio-secondary: #8700af; /* purple */
+	--studio-danger: #d70000; /* red */
+	--studio-warning: #d75f00; /* orange */
+	--studio-added: #008700; /* green */
+	--studio-deleted: #d70000;
+	--studio-modified: #005faf;
+	--studio-link: #005faf;
+	--studio-selection-fill: #d0d0d0;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #e4e4e4;
+	--text-editor-gutter-line: #878787;
+	--text-editor-gutter-border: #d0d0d0;
+
+	--syntax-comment: #878787;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #878787;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #808080;
+	--syntax-invalid: #d70000;
+
+	--syntax-operator: #4e4e4e;
+	--syntax-punctuation: #4e4e4e;
+
+	--syntax-bool: #d70000;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #d70000;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #d70087; /* magenta/pink */
+
+	--syntax-type-name: #d75f00; /* orange */
+	--syntax-class-name: #d75f00;
+
+	--syntax-type-operator: #005faf;
+
+	--syntax-function--variable-name: #005faf; /* blue */
+	--syntax-function--property-name: #005faf;
+
+	--syntax-variable-name: #444444;
+	--syntax-definition--variable-name: #444444;
+
+	--syntax-string: #5f8700; /* olive green */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #af5f00; /* brown-orange */
+	--syntax-integer: #af5f00;
+	--syntax-float: #af5f00;
+
+	--syntax-escape: #d70000;
+	--syntax-regexp: #d75f00;
+	--syntax-special--string: #5f8700;
+
+	--syntax-tag-name: #008700; /* green */
+	--syntax-angle-bracket: #4e4e4e;
+
+	--syntax-attribute-name: #d70087;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #d75f00;
+
+	--syntax-strong: #444444;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #444444;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #005faf;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #005faf;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #878787;
+	--syntax-style-quote: italic;
+	--syntax-list: #444444;
+
+	--syntax-inserted: #008700;
+	--syntax-deleted: #d70000;
+	--syntax-changed: #005faf;
+
+	--syntax-content-separator: #d0d0d0;
+}

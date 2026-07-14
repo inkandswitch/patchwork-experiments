@@ -1,0 +1,148 @@
+export const PIXELS_PER_SECOND = 80;
+export const TRACK_HEIGHT = 48;
+/** Left gutter before the time axis (track names/buttons removed). */
+export const TRACK_LABEL_WIDTH = 0;
+export const RULER_HEIGHT = 28;
+/** Drop zone above the first track / below the last track when dragging clips. */
+export const TRACK_EDGE_PADDING = 24;
+export const HANDLE_WIDTH = 8;
+/** Clip edges snap to the playhead within this distance (matches playhead hit target). */
+export const SNAP_THRESHOLD_PX = 6;
+export const SNAP_THRESHOLD_SECONDS = SNAP_THRESHOLD_PX / PIXELS_PER_SECOND;
+export const MIN_CLIP_DURATION = 0.25;
+export const MIN_TIMELINE_WIDTH = 600;
+
+export type TimelineTheme = {
+  bg: string;
+  rulerBg: string;
+  labelBg: string;
+  trackBg: string;
+  trackAltBg: string;
+  grid: string;
+  gridMajor: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  clipFill: string;
+  clipFillHover: string;
+  clipStroke: string;
+  clipSelectedFill: string;
+  clipSelectedStroke: string;
+  handleFill: string;
+  playhead: string;
+  buttonFill: string;
+  buttonHover: string;
+  buttonText: string;
+  danger: string;
+};
+
+const THEME_VARS: Array<[keyof TimelineTheme, string]> = [
+  ['bg', '--timeline-bg'],
+  ['rulerBg', '--timeline-ruler-bg'],
+  ['labelBg', '--timeline-label-bg'],
+  ['trackBg', '--timeline-track-bg'],
+  ['trackAltBg', '--timeline-track-alt-bg'],
+  ['grid', '--timeline-grid'],
+  ['gridMajor', '--timeline-grid-major'],
+  ['border', '--timeline-border'],
+  ['text', '--timeline-text'],
+  ['textMuted', '--timeline-text-muted'],
+  ['clipFill', '--timeline-clip-fill'],
+  ['clipFillHover', '--timeline-clip-fill-hover'],
+  ['clipStroke', '--timeline-clip-stroke'],
+  ['clipSelectedFill', '--timeline-clip-selected-fill'],
+  ['clipSelectedStroke', '--timeline-clip-selected-stroke'],
+  ['handleFill', '--timeline-handle-fill'],
+  ['playhead', '--timeline-playhead'],
+  ['buttonFill', '--timeline-button-fill'],
+  ['buttonHover', '--timeline-button-hover'],
+  ['buttonText', '--timeline-button-text'],
+  ['danger', '--timeline-danger'],
+];
+
+export function readTimelineTheme(root: HTMLElement): TimelineTheme {
+  const style = getComputedStyle(root);
+  const theme = {} as TimelineTheme;
+  for (const [key, cssVar] of THEME_VARS) {
+    theme[key] = style.getPropertyValue(cssVar).trim();
+  }
+  return theme;
+}
+
+export function timeToX(time: number, scrollX: number): number {
+  return TRACK_LABEL_WIDTH + time * PIXELS_PER_SECOND - scrollX;
+}
+
+export function xToTime(x: number, scrollX: number): number {
+  return (x - TRACK_LABEL_WIDTH + scrollX) / PIXELS_PER_SECOND;
+}
+
+export function snapTimeToTargets(time: number, targets: readonly number[]): number {
+  let bestTime = time;
+  let bestDist = SNAP_THRESHOLD_SECONDS + 1;
+  for (const target of targets) {
+    const dist = Math.abs(time - target);
+    if (dist <= SNAP_THRESHOLD_SECONDS && dist < bestDist) {
+      bestDist = dist;
+      bestTime = target;
+    }
+  }
+  return bestTime;
+}
+
+export function snapTimeToPlayhead(time: number, playheadTime: number): number {
+  return snapTimeToTargets(time, [playheadTime]);
+}
+
+/** Nudge clip start so a start/end edge snaps to a target time without changing duration. */
+export function snapClipMoveTime(
+  time: number,
+  duration: number,
+  targets: readonly number[],
+): number {
+  const leftEdge = time;
+  const rightEdge = time + duration;
+  let bestTime = time;
+  let bestDist = SNAP_THRESHOLD_SECONDS + 1;
+
+  for (const target of targets) {
+    const leftDist = Math.abs(leftEdge - target);
+    if (leftDist <= SNAP_THRESHOLD_SECONDS && leftDist < bestDist) {
+      bestDist = leftDist;
+      bestTime = target;
+    }
+    const rightDist = Math.abs(rightEdge - target);
+    if (rightDist <= SNAP_THRESHOLD_SECONDS && rightDist < bestDist) {
+      bestDist = rightDist;
+      bestTime = target - duration;
+    }
+  }
+  return bestTime;
+}
+
+export function timelineContentWidth(duration: number): number {
+  return Math.max(MIN_TIMELINE_WIDTH, duration * PIXELS_PER_SECOND + 240);
+}
+
+export function tracksContentHeight(trackCount: number): number {
+  return TRACK_EDGE_PADDING * 2 + trackCount * TRACK_HEIGHT;
+}
+
+export function tracksAreaHeight(trackCount: number): number {
+  return tracksContentHeight(trackCount);
+}
+
+export function totalCanvasHeight(trackCount: number): number {
+  return RULER_HEIGHT + tracksAreaHeight(trackCount);
+}
+
+export function trackTop(trackIndex: number): number {
+  return RULER_HEIGHT + TRACK_EDGE_PADDING + trackIndex * TRACK_HEIGHT;
+}
+
+export function formatRulerTime(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  const mins = Math.floor(whole / 60);
+  const secs = whole % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}

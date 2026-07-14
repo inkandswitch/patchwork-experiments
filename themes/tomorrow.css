@@ -1,0 +1,92 @@
+/* Tomorrow — Chris Kempson's classic light theme, the base for a thousand ports */
+[theme="tomorrow"] {
+	color-scheme: light;
+	--studio-fill: #ffffff;
+	--studio-line: #4d4d4c;
+	--studio-primary: #4271ae; /* blue */
+	--studio-secondary: #8959a8; /* purple */
+	--studio-danger: #c82829; /* red */
+	--studio-warning: #f5871f; /* orange */
+	--studio-added: #718c00; /* green */
+	--studio-deleted: #c82829;
+	--studio-modified: #4271ae;
+	--studio-link: #4271ae;
+	--studio-selection-fill: #d6d6d6;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #efefef;
+	--text-editor-gutter-line: #8e908c;
+	--text-editor-gutter-border: #e0e0e0;
+
+	--syntax-comment: #8e908c;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8e908c;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #8e908c;
+	--syntax-invalid: #c82829;
+
+	--syntax-operator: #3e999f; /* aqua */
+	--syntax-punctuation: #4d4d4c;
+
+	--syntax-bool: #f5871f;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #f5871f;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #8959a8; /* purple */
+
+	--syntax-type-name: #eab700; /* yellow */
+	--syntax-class-name: #eab700;
+
+	--syntax-type-operator: #3e999f;
+
+	--syntax-function--variable-name: #4271ae; /* blue */
+	--syntax-function--property-name: #4271ae;
+
+	--syntax-variable-name: #c82829; /* red */
+	--syntax-definition--variable-name: #c82829;
+
+	--syntax-string: #718c00; /* green */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #f5871f; /* orange */
+	--syntax-integer: #f5871f;
+	--syntax-float: #f5871f;
+
+	--syntax-escape: #f5871f;
+	--syntax-regexp: #3e999f;
+	--syntax-special--string: #718c00;
+
+	--syntax-tag-name: #c82829;
+	--syntax-angle-bracket: #4d4d4c;
+
+	--syntax-attribute-name: #eab700;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #8959a8;
+
+	--syntax-strong: #4d4d4c;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #4d4d4c;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #4271ae;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #4271ae;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #8e908c;
+	--syntax-style-quote: italic;
+	--syntax-list: #4d4d4c;
+
+	--syntax-inserted: #718c00;
+	--syntax-deleted: #c82829;
+	--syntax-changed: #4271ae;
+
+	--syntax-content-separator: #e0e0e0;
+}

@@ -35,7 +35,10 @@ import {
 import { highlightSelectionMatches } from "@codemirror/search";
 import { latex } from "codemirror-lang-latex";
 import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
-import { toolify, ReactToolProps } from "./react-util";
+import { createRoot } from "react-dom/client";
+import { RepoContext } from "@automerge/automerge-repo-react-hooks";
+import type { ToolElement, ToolImplementation } from "@inkandswitch/patchwork-plugins";
+import type { AutomergeUrl } from "@automerge/automerge-repo";
 import { LaTeXDoc } from "./datatype";
 import "./styles.css";
 
@@ -68,7 +71,7 @@ const cmDarkTheme = EditorView.theme(
   { dark: true }
 );
 
-export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
+export const LaTeXEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const [doc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
   const handle = useDocHandle<LaTeXDoc>(docUrl, { suspense: true });
   const editorContainerRef = useRef<HTMLDivElement>(null);
@@ -126,4 +129,15 @@ export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
   );
 };
 
-export const renderLaTeXEditor = toolify(LaTeXEditor);
+export function renderLaTeXEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <LaTeXEditor docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

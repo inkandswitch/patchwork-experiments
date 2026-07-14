@@ -32,7 +32,6 @@ export type ParsedBlock =
 export type LLMProcessDoc = {
   "@patchwork": { type: "llm-process" };
   title: string;
-  model: string;
   systemPrompt: string;
   docFolderUrl: AutomergeUrl;
   skills?: string[];
@@ -43,7 +42,6 @@ export type LLMProcessDoc = {
 export type LLMChatDoc = {
   "@patchwork": { type: "llm-chat" };
   title: string;
-  model: string;
   docFolderUrl: AutomergeUrl;
   skills?: string[];
   processUrl: AutomergeUrl;

@@ -1,0 +1,94 @@
+/* Acid — a corrosive pure-lime #0F0 field that eats your retinas, spiked with magenta, blue and red */
+[theme="acid"] {
+	color-scheme: light;
+	--studio-fill: #00ff00;
+	--studio-line: #000000;
+	--studio-primary: #ff00ff;
+	--studio-secondary: #0000ff;
+	--studio-danger: #ff0000;
+	--studio-warning: #ff00ff;
+	--studio-added: #0000ff;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ff00ff;
+	--studio-link: #0000ff;
+	--studio-selection-fill: #ffff00;
+	--studio-chrome-fill: #00ff00;
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: #ff00ff;
+	--text-editor-selection-fill: #ffff0055;
+	--text-editor-gutter-line: #008000;
+
+	--syntax-comment: #008000;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #008000;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #ff00ff;
+	--syntax-invalid: #ff0000;
+
+	--syntax-operator: #ff0000;
+	--syntax-punctuation: #008000;
+
+	--syntax-bool: #0000ff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #0000ff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ff00ff;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #0000ff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #0000ff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #ff0000;
+
+	--syntax-function--variable-name: #ff00ff;
+	--syntax-function--property-name: #ff00ff;
+
+	--syntax-definition--variable-name: #0000ff;
+
+	--syntax-string: #ff0000;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #0000ff;
+	--syntax-integer: #0000ff;
+	--syntax-float: #0000ff;
+
+	--syntax-escape: #ff0000;
+	--syntax-regexp: #ff0000;
+	--syntax-special--string: #ff0000;
+
+	--syntax-tag-name: #ff00ff;
+	--syntax-angle-bracket: #008000;
+
+	--syntax-attribute-name: #0000ff;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ff00ff;
+
+	--syntax-strong: #000000;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ff00ff;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ff00ff;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #0000ff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #008000;
+
+	--syntax-inserted: #0000ff;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ff00ff;
+
+	--syntax-content-separator: #00cc00;
+}

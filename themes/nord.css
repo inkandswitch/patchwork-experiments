@@ -1,0 +1,92 @@
+/* Nord — an arctic, north-bluish colour palette */
+[theme="nord"] {
+	color-scheme: dark;
+	--studio-fill: #2e3440;
+	--studio-line: #d8dee9;
+	--studio-primary: #88c0d0;
+	--studio-secondary: #81a1c1;
+	--studio-danger: #bf616a;
+	--studio-warning: #ebcb8b;
+	--studio-added: #a3be8c;
+	--studio-deleted: #bf616a;
+	--studio-modified: #ebcb8b;
+	--studio-link: #88c0d0;
+	--studio-selection-fill: #434c5e;
+
+	/* line numbers in nord3 polar-night */
+	--text-editor-gutter-line: #4c566a;
+
+	--syntax-comment: #616e88;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #616e88;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #5e81ac;
+	--syntax-invalid: #bf616a;
+
+	--syntax-operator: #81a1c1;
+	--syntax-punctuation: #eceff4;
+
+	--syntax-bool: #81a1c1;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #b48ead;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #81a1c1;
+
+	--syntax-type-name: #8fbcbb;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #8fbcbb;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #81a1c1;
+
+	--syntax-function--variable-name: #88c0d0;
+	--syntax-function--property-name: #88c0d0;
+
+	--syntax-variable-name: #d8dee9;
+	--syntax-definition--variable-name: #d8dee9;
+
+	--syntax-string: #a3be8c;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #b48ead;
+	--syntax-integer: #b48ead;
+	--syntax-float: #b48ead;
+
+	--syntax-escape: #ebcb8b;
+	--syntax-regexp: #ebcb8b;
+	--syntax-special--string: #a3be8c;
+
+	--syntax-tag-name: #81a1c1;
+	--syntax-angle-bracket: #eceff4;
+
+	--syntax-attribute-name: #8fbcbb;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #d08770;
+
+	--syntax-strong: #eceff4;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #eceff4;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #88c0d0;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #88c0d0;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #616e88;
+	--syntax-list: #d8dee9;
+
+	--syntax-inserted: #a3be8c;
+	--syntax-deleted: #bf616a;
+	--syntax-changed: #ebcb8b;
+
+	--syntax-content-separator: #4c566a;
+}

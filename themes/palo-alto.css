@@ -1,0 +1,83 @@
+/* Palo Alto Research Center — the Alto/Smalltalk look: paper-white, crisp black,
+   a single restrained Xerox red; monochrome-leaning Bravo-printout syntax */
+[theme="palo-alto"] {
+	color-scheme: light;
+	--studio-fill: #f6f5f1; /* paper white */
+	--studio-line: #111111;
+	--studio-primary: #c8102e; /* Xerox red */
+	--studio-secondary: #1a1a1a;
+	--studio-danger: #c8102e;
+	--studio-warning: #8a6d00;
+	--studio-added: #2e6b3f;
+	--studio-deleted: #c8102e;
+	--studio-modified: #1f4e8c;
+	--studio-link: #1f4e8c;
+	--studio-selection-fill: #d9d7cf;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #6b6b6b;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #4a4a4a;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #3a3a3a;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-punctuation: #3a3a3a;
+
+	--syntax-bool: var(--studio-primary);
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--studio-primary);
+
+	--syntax-type-name: var(--studio-secondary);
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: var(--studio-secondary);
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #3a3a3a;
+
+	--syntax-function--variable-name: var(--studio-modified);
+	--syntax-function--property-name: var(--studio-modified);
+
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: var(--studio-added);
+
+	--syntax-number: var(--studio-modified);
+	--syntax-integer: var(--studio-modified);
+	--syntax-float: var(--studio-modified);
+
+	--syntax-escape: var(--studio-primary);
+	--syntax-regexp: var(--studio-modified);
+	--syntax-special--string: var(--studio-added);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-angle-bracket: #3a3a3a;
+
+	--syntax-attribute-name: var(--studio-modified);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--studio-modified);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6b6b6b;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #d9d7cf;
+}

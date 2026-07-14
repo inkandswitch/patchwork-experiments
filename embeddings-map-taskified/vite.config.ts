@@ -9,9 +9,11 @@ import external from '@inkandswitch/patchwork-bootloader/externals';
 
 export default defineConfig({
   base: './',
-  plugins: [topLevelAwait(), wasm(), react(), tailwindcss(), cssInjectedByJsPlugin()],
+  plugins: [topLevelAwait(), wasm(), react(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   build: {
+
+    cssCodeSplit: true,
     minify: false,
     rollupOptions: {
       external,

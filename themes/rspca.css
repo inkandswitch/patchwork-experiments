@@ -1,0 +1,93 @@
+/* RSPCA — the "For Every Kind" rebrand: vivid electric-blue chrome, a warm
+   sand page inked in deep indigo, with the coral "report a concern" alert and
+   the chartreuse "donate" yellow as accents. Sans set in Roboto. */
+[theme="rspca"] {
+	color-scheme: light;
+
+	/* the page: sand ground, deep-indigo ink */
+	--studio-fill: #fdf3e4;
+	--studio-line: #241468;
+
+	/* the chrome: electric RSPCA blue, cream ink sitting on top of it */
+	--studio-chrome-fill: #2622f7;
+	--studio-chrome-line: #fdf3e4;
+
+	/* accents pulled straight off the brand's buttons */
+	--studio-primary: #2622f7; /* RSPCA blue */
+	--studio-secondary: #eae84c; /* donate yellow */
+	--studio-danger: #e0533a; /* "report a concern" coral */
+	--studio-warning: #eab308; /* amber */
+	--studio-added: #2622f7;
+	--studio-deleted: #e0533a;
+	--studio-modified: #eab308;
+	--studio-link: #2622f7;
+	--studio-selection-fill: #d4d3fb;
+	--studio-offset-tint: var(--studio-primary);
+
+	/* ink placed ON each accent surface (button/pill). the default snaps to
+	   pure black/white at L≈0.62, but the brand inks its buttons by hand:
+	   cream on the blue/coral, deep indigo on the yellow/amber — matching the
+	   real "Donate" (purple-on-yellow) and "Report a concern" (cream-on-coral)
+	   buttons rather than the auto flip (which would give black-on-yellow and a
+	   coin-toss on the near-0.62 coral). */
+	--studio-primary-line: #fdf3e4;
+	--studio-secondary-line: #241468;
+	--studio-danger-line: #fdf3e4;
+	--studio-warning-line: #241468;
+	--studio-link-line: #fdf3e4;
+
+	--studio-family-sans: "Roboto", system-ui, -apple-system, "Helvetica Neue",
+		Arial, sans-serif;
+
+	/* the editor surface: a touch lighter than the sand page, same indigo ink */
+	--editor-fill: #fefaf6;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-selection-fill: #d4d3fb;
+	--text-editor-gutter-line: var(--studio-line-offset-40);
+
+	--syntax-comment: var(--studio-line-offset-40);
+	--syntax-style-comment: italic;
+	--syntax-doc-comment: var(--studio-line-offset-40);
+	--syntax-style-doc-comment: italic;
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-danger);
+	--syntax-punctuation: var(--studio-line-offset-30);
+
+	--syntax-bool: var(--studio-danger);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-danger);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: #a8620d;
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: #a8620d;
+	--syntax-weight-class-name: bold;
+	--syntax-type-operator: var(--studio-danger);
+
+	--syntax-function--variable-name: #7a3fd0;
+	--syntax-function--property-name: #7a3fd0;
+	--syntax-definition--variable-name: var(--studio-line);
+
+	--syntax-string: #2f7d3a;
+	--syntax-number: var(--studio-danger);
+	--syntax-integer: var(--studio-danger);
+	--syntax-float: var(--studio-danger);
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #2f7d3a;
+	--syntax-special--string: #2f7d3a;
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #a8620d;
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #a8620d;
+	--syntax-meta: #7a3fd0;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-link: var(--studio-primary);
+	--syntax-style-link: underline;
+}

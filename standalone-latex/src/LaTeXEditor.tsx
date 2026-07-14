@@ -1,19 +1,44 @@
 import {
-  useDocument,
+  RepoContext,
   useDocHandle,
+  useDocument,
+  useRepo,
 } from "@automerge/automerge-repo-react-hooks";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo";
+import type { EdgeHandle } from "@inkandswitch/edge-handles";
+import type {
+  ToolElement,
+  ToolImplementation,
+} from "@inkandswitch/patchwork-plugins";
+import {
+  Cable,
+  Download,
+  LocateFixed,
+  PanelRightClose,
+  PanelRightOpen,
+  ScrollText,
+  Sigma,
+} from "lucide-react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createRoot } from "react-dom/client";
+
+import { EditorState } from "@codemirror/state";
 import {
   EditorView,
-  keymap,
-  lineNumbers,
-  highlightActiveLine,
-  highlightSpecialChars,
   drawSelection,
   dropCursor,
+  highlightActiveLine,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
 } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
 import {
   defaultKeymap,
   history,
@@ -21,179 +46,95 @@ import {
   indentWithTab,
 } from "@codemirror/commands";
 import {
-  syntaxHighlighting,
-  defaultHighlightStyle,
   bracketMatching,
+  defaultHighlightStyle,
   foldGutter,
   indentOnInput,
+  syntaxHighlighting,
 } from "@codemirror/language";
 import {
   autocompletion,
-  completionKeymap,
   closeBrackets,
   closeBracketsKeymap,
+  completionKeymap,
 } from "@codemirror/autocomplete";
 import { highlightSelectionMatches } from "@codemirror/search";
-import { latex } from "codemirror-lang-latex";
 import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
-import type { SiglumCompiler as SiglumCompilerType } from "@siglum/engine";
-import { toolify, ReactToolProps } from "./react-util";
-import { LaTeXDoc, getDocTitle } from "./datatype";
-import type { HtmlGenerator as HtmlGeneratorType } from "latex.js";
+import { latex } from "codemirror-lang-latex";
+
+import {
+  compileLatexToPdf,
+  downloadBlob,
+  onCompilerProgress,
+  pdfSupported,
+  prewarmCompiler,
+} from "./compile";
+import {
+  forwardSearch,
+  inverseSearch,
+  parseSyncTex,
+  type SyncTexData,
+} from "./synctex";
+import { getDocTitle, type LaTeXDoc } from "./datatype";
+import {
+  addTarget,
+  createPdfFileDoc,
+  ensureOutputEdge,
+  findOutputEdge,
+  isFileLikeDoc,
+  publishPdf,
+  removeTarget,
+  resolveTargets,
+  type FileDocShape,
+  type OutputTarget,
+} from "./outputs";
+import { OutputsPanel } from "./OutputsPanel";
+import { PdfPreview, type PdfPreviewHandle } from "./PdfPreview";
 import "./styles.css";
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+const MAIN_TEX_FILE = "document.tex"; // what the engine names the source
 
-const LATEXJS_BASE_URL = "https://cdn.jsdelivr.net/npm/latex.js/dist/";
-const SIGLUM_TEXLIVE_URL = "https://cdn.siglum.org/tl2025";
-
-// ---------------------------------------------------------------------------
-// LaTeX.js (HTML preview)
-// ---------------------------------------------------------------------------
-
-type LatexJsModule = typeof import("latex.js");
-let latexjsModule: LatexJsModule | null = null;
-
-async function loadLatexJs(): Promise<LatexJsModule> {
-  if (latexjsModule) return latexjsModule;
-  latexjsModule = await import("latex.js");
-  return latexjsModule;
-}
-
-function renderLatexToHtml(content: string, mod: LatexJsModule): string {
-  const generator = new mod.HtmlGenerator({ hyphenate: false });
-  const parsed = mod.parse(content, { generator }) as HtmlGeneratorType;
-  const htmlDoc = parsed.htmlDocument(LATEXJS_BASE_URL);
-  return "<!DOCTYPE html>\n" + htmlDoc.documentElement.outerHTML;
-}
-
-// ---------------------------------------------------------------------------
-// Siglum (PDF compilation) -- loaded from CDN to avoid WASM bundling issues
-// ---------------------------------------------------------------------------
-
-const SIGLUM_VERSION = "0.1.4";
-const SIGLUM_MODULE_URL = `https://esm.sh/@siglum/engine@${SIGLUM_VERSION}`;
-const SIGLUM_WORKER_URL = `https://cdn.jsdelivr.net/npm/@siglum/engine@${SIGLUM_VERSION}/src/worker.js`;
-
-async function fetchWorkerBlobUrl(): Promise<string> {
-  const resp = await fetch(SIGLUM_WORKER_URL);
-  const text = await resp.text();
-  const blob = new Blob([text], { type: "application/javascript" });
-  return URL.createObjectURL(blob);
-}
-
-let compilerInstance: SiglumCompilerType | null = null;
-
-async function getOrCreateCompiler(
-  onProgress?: (stage: string, detail: string) => void
-): Promise<SiglumCompilerType> {
-  if (compilerInstance?.isReady()) return compilerInstance;
-
-  if (compilerInstance) {
-    await compilerInstance.init();
-    return compilerInstance;
-  }
-
-  const [{ SiglumCompiler }, workerUrl] = await Promise.all([
-    import(/* @vite-ignore */ SIGLUM_MODULE_URL) as Promise<
-      typeof import("@siglum/engine")
-    >,
-    fetchWorkerBlobUrl(),
-  ]);
-
-  compilerInstance = new SiglumCompiler({
-    bundlesUrl: `${SIGLUM_TEXLIVE_URL}/bundles`,
-    wasmUrl: `${SIGLUM_TEXLIVE_URL}/busytex.wasm`,
-    workerUrl,
-    onProgress,
-    verbose: false,
-  });
-
-  await compilerInstance.init();
-  return compilerInstance;
-}
-
-// ---------------------------------------------------------------------------
-// CodeMirror themes
-// ---------------------------------------------------------------------------
-
-type PreviewMode = "html" | "pdf";
+// ─── CodeMirror setup ────────────────────────────────────────────────────────
 
 const cmTheme = EditorView.theme({
   "&": { height: "100%", fontSize: "13px" },
   ".cm-scroller": {
     overflow: "auto",
-    fontFamily: "'SF Mono', Menlo, Monaco, Consolas, monospace",
+    fontFamily: "'SF Mono', ui-monospace, Menlo, Monaco, Consolas, monospace",
+    lineHeight: "1.55",
   },
-  ".cm-content": { padding: "12px 0" },
+  ".cm-content": { padding: "16px 0" },
   ".cm-gutters": { border: "none", background: "transparent" },
   ".cm-lineNumbers .cm-gutterElement": {
-    padding: "0 8px 0 12px",
-    minWidth: "32px",
+    padding: "0 10px 0 14px",
+    minWidth: "36px",
   },
   "&.cm-focused": { outline: "none" },
 });
 
 const cmDarkTheme = EditorView.theme(
   {
-    "&": { backgroundColor: "#1a1a1a", color: "#e5e5e5" },
-    ".cm-cursor": { borderLeftColor: "#e5e5e5" },
+    "&": { backgroundColor: "#16161a", color: "#e7e7ea" },
+    ".cm-cursor": { borderLeftColor: "#e7e7ea" },
     ".cm-activeLine": { backgroundColor: "#ffffff08" },
     ".cm-activeLineGutter": { backgroundColor: "#ffffff08" },
-    ".cm-selectionBackground": {
-      backgroundColor: "#ffffff20 !important",
-    },
-    ".cm-gutters": { color: "#555" },
+    ".cm-selectionBackground": { backgroundColor: "#ffffff22 !important" },
+    ".cm-gutters": { color: "#55555c" },
   },
   { dark: true }
 );
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+type EditorActions = { forwardSync: () => void };
 
-export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
-  const [doc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
-  const handle = useDocHandle<LaTeXDoc>(docUrl, { suspense: true });
+function useCodeMirror(
+  handle: DocHandle<LaTeXDoc>,
+  actionsRef: { current: EditorActions }
+) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
 
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-
-  // Preview state
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("html");
-  const [latexjsMod, setLatexjsMod] = useState<LatexJsModule | null>(null);
-
-  // HTML preview
-  const [htmlError, setHtmlError] = useState<string | null>(null);
-  const htmlRenderTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const lastRenderedHtml = useRef("");
-
-  // PDF preview
-  const [pdfStatus, setPdfStatus] = useState<
-    "idle" | "init" | "compiling" | "ready" | "error" | "unsupported"
-  >("idle");
-  const [pdfMessage, setPdfMessage] = useState<string | null>(null);
-  const pdfBlobUrlRef = useRef<string | null>(null);
-  const pdfBytesRef = useRef<Uint8Array | null>(null);
-  const pdfCompileTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const lastCompiledPdf = useRef("");
-
-  // Load LaTeX.js on mount
   useEffect(() => {
-    loadLatexJs().then(setLatexjsMod);
-  }, []);
-
-  // Initialize CodeMirror
-  useEffect(() => {
-    if (!editorContainerRef.current || !handle) return;
-
+    if (!containerRef.current || !handle) return;
     const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
     const state = EditorState.create({
@@ -213,6 +154,14 @@ export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
         history(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         keymap.of([
+          {
+            key: "Mod-j",
+            preventDefault: true,
+            run: () => {
+              actionsRef.current.forwardSync();
+              return true;
+            },
+          },
           ...closeBracketsKeymap,
           ...defaultKeymap,
           ...historyKeymap,
@@ -227,160 +176,286 @@ export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
       ],
     });
 
-    const view = new EditorView({
-      state,
-      parent: editorContainerRef.current,
+    const view = new EditorView({ state, parent: containerRef.current });
+    viewRef.current = view;
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [handle, actionsRef]);
+
+  return { containerRef, viewRef };
+}
+
+function cursorLine(view: EditorView): number {
+  return view.state.doc.lineAt(view.state.selection.main.head).number;
+}
+
+function jumpToLine(view: EditorView, line: number) {
+  const clamped = Math.min(Math.max(1, line), view.state.doc.lines);
+  const info = view.state.doc.line(clamped);
+  view.dispatch({
+    selection: { anchor: info.from },
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
+// ─── output wiring ───────────────────────────────────────────────────────────
+
+function useOutputs(
+  handle: DocHandle<LaTeXDoc>,
+  hive: ToolElement["hive"],
+  pdfRef: { current: Uint8Array | null }
+) {
+  const repo = useRepo();
+  const [edge, setEdge] = useState<EdgeHandle<Uint8Array> | null>(null);
+  const [targets, setTargets] = useState<OutputTarget[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    findOutputEdge(repo, handle).then((e) => {
+      if (!cancelled && e) setEdge(e);
     });
-
-    return () => view.destroy();
-  }, [handle]);
-
-  // ------ HTML preview ------
-
-  const renderHtmlPreview = useCallback(
-    (content: string) => {
-      if (!latexjsMod || previewMode !== "html") return;
-      if (content === lastRenderedHtml.current) return;
-      lastRenderedHtml.current = content;
-
-      try {
-        const html = renderLatexToHtml(content, latexjsMod);
-        if (iframeRef.current) {
-          iframeRef.current.removeAttribute("src");
-          iframeRef.current.srcdoc = html;
-        }
-        setHtmlError(null);
-      } catch (e: any) {
-        const msg = e.location
-          ? `Line ${e.location.start.line}, Col ${e.location.start.column}: ${e.message}`
-          : e.message || "Failed to render LaTeX";
-        setHtmlError(msg);
-      }
-    },
-    [latexjsMod, previewMode]
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, handle]);
 
   useEffect(() => {
-    if (!doc?.content || !latexjsMod || previewMode !== "html") return;
-
-    if (htmlRenderTimeout.current) clearTimeout(htmlRenderTimeout.current);
-    htmlRenderTimeout.current = setTimeout(() => {
-      renderHtmlPreview(doc.content);
-    }, 400);
-
-    return () => {
-      if (htmlRenderTimeout.current) clearTimeout(htmlRenderTimeout.current);
+    if (!edge) return;
+    let cancelled = false;
+    const refresh = () => {
+      resolveTargets(repo, edge).then((t) => {
+        if (!cancelled) setTargets(t);
+      });
     };
-  }, [doc?.content, latexjsMod, previewMode, renderHtmlPreview]);
+    refresh();
+    const unsub = edge.onMembersChange(() => {
+      refresh();
+      if (pdfRef.current != null) publishPdf(edge, pdfRef.current);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [edge, repo, pdfRef]);
 
-  // ------ PDF compilation ------
-
-  const compilePdf = useCallback(
-    async (content: string) => {
-      if (content === lastCompiledPdf.current) return;
-
-      if (typeof SharedArrayBuffer === "undefined") {
-        setPdfStatus("unsupported");
-        setPdfMessage(
-          "PDF compilation requires SharedArrayBuffer, which is not available. " +
-            "The server must send Cross-Origin-Opener-Policy and Cross-Origin-Embedder-Policy headers."
-        );
-        return;
-      }
-
+  const withEdge = useCallback(
+    async (fn: (e: EdgeHandle<Uint8Array>) => Promise<void>) => {
+      setBusy(true);
       try {
-        setPdfStatus("init");
-        setPdfMessage("Loading TeX engine...");
+        let e = edge;
+        if (!e) {
+          e = await ensureOutputEdge(repo, handle);
+          setEdge(e);
+        }
+        await fn(e);
+      } catch (err) {
+        console.error("[latex] output wiring failed", err);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [edge, repo, handle]
+  );
 
-        const compiler = await getOrCreateCompiler((stage, detail) => {
-          setPdfMessage(`${stage}${detail ? `: ${detail}` : ""}`);
-        });
+  const newDocument = useCallback(() => {
+    void withEdge(async (e) => {
+      const title = getDocTitle(handle.doc()?.content ?? "");
+      const fileHandle = await createPdfFileDoc(
+        repo,
+        title,
+        pdfRef.current ?? new Uint8Array(),
+        hive
+      );
+      await addTarget(repo, e, fileHandle.url, ["content"]);
+    });
+  }, [withEdge, repo, handle, hive, pdfRef]);
 
-        setPdfStatus("compiling");
-        setPdfMessage("Compiling...");
-
-        const result = await compiler.compile(content);
-
-        if (result.success && result.pdf) {
-          // Revoke previous blob
-          if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current);
-
-          // Copy into a plain ArrayBuffer so Blob accepts it
-          const buf = new ArrayBuffer(result.pdf.byteLength);
-          new Uint8Array(buf).set(result.pdf);
-
-          pdfBytesRef.current = new Uint8Array(buf);
-          const blob = new Blob([buf], { type: "application/pdf" });
-          const url = URL.createObjectURL(blob);
-          pdfBlobUrlRef.current = url;
-
-          if (iframeRef.current) {
-            iframeRef.current.removeAttribute("srcdoc");
-            iframeRef.current.src = url;
+  const dropDoc = useCallback(
+    (url: AutomergeUrl) => {
+      void (async () => {
+        try {
+          const docHandle = await repo.find<FileDocShape>(url);
+          if (isFileLikeDoc(docHandle.doc())) {
+            await withEdge((e) => addTarget(repo, e, url, ["content"]));
           }
-
-          lastCompiledPdf.current = content;
-          setPdfStatus("ready");
-          setPdfMessage(null);
-        } else {
-          setPdfStatus("error");
-          setPdfMessage(result.error || result.log || "Compilation failed");
+          // Non file-like docs can't hold raw PDF bytes; ignore the drop.
+        } catch (err) {
+          console.error(`[latex] failed to load dropped doc ${url}`, err);
         }
-      } catch (e: any) {
-        setPdfStatus("error");
-        setPdfMessage(e.message || "PDF compilation failed");
-      }
+      })();
     },
-    []
+    [repo, withEdge]
   );
 
-  // Trigger PDF compilation on mode switch or content change
+  const remove = useCallback(
+    (target: OutputTarget) => {
+      if (edge) removeTarget(edge, target.key);
+    },
+    [edge]
+  );
+
+  return { edge, targets, busy, newDocument, dropDoc, remove };
+}
+
+// ─── component ───────────────────────────────────────────────────────────────
+
+type Status = "warming" | "compiling" | "ready" | "error" | "unsupported";
+
+const LaTeXEditorInner = ({
+  docUrl,
+  hive,
+}: {
+  docUrl: AutomergeUrl;
+  hive: ToolElement["hive"];
+}) => {
+  const [doc] = useDocument<LaTeXDoc>(docUrl, { suspense: true });
+  const handle = useDocHandle<LaTeXDoc>(docUrl, { suspense: true });
+
+  const actionsRef = useRef<EditorActions>({ forwardSync: () => {} });
+  const { containerRef: editorRef, viewRef } = useCodeMirror(handle, actionsRef);
+  const pdfRef = useRef<PdfPreviewHandle>(null);
+
+  const [previewOpen, setPreviewOpen] = useState(true);
+  const [outputsOpen, setOutputsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const pdfBytesRef = useRef<Uint8Array | null>(null);
+  const syncTexRef = useRef<SyncTexData | null>(null);
+
+  const [status, setStatus] = useState<Status>(
+    pdfSupported() ? "warming" : "unsupported"
+  );
+  const [progress, setProgress] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [logText, setLogText] = useState<string | null>(null);
+
+  const lastCompiledRef = useRef<string | null>(null);
+  // Coalescing compile pump: `head` is the newest source waiting to be
+  // compiled, `pumping` guards a single in-flight compile.
+  const headRef = useRef<string | null>(null);
+  const pumpingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const outputs = useOutputs(handle, hive, pdfBytesRef);
+  const edgeRef = useRef<EdgeHandle<Uint8Array> | null>(null);
+  edgeRef.current = outputs.edge;
+
+  // Warm the engine the moment the editor opens, so the first compile
+  // pays only the compile cost, not the ~45MB engine download.
   useEffect(() => {
-    if (!doc?.content || previewMode !== "pdf") return;
+    if (pdfSupported()) prewarmCompiler();
+  }, []);
 
-    if (pdfCompileTimeout.current) clearTimeout(pdfCompileTimeout.current);
-    pdfCompileTimeout.current = setTimeout(() => {
-      compilePdf(doc.content);
-    }, 1500);
-
-    return () => {
-      if (pdfCompileTimeout.current) clearTimeout(pdfCompileTimeout.current);
-    };
-  }, [doc?.content, previewMode, compilePdf]);
-
-  // Switch preview content when mode changes
+  // Surface the engine's detailed download/format progress while busy.
   useEffect(() => {
-    if (previewMode === "html" && latexjsMod && doc?.content) {
-      lastRenderedHtml.current = "";
-      renderHtmlPreview(doc.content);
+    return onCompilerProgress((stage, detail) => {
+      setProgress(detail ? `${stage}: ${detail}` : stage);
+    });
+  }, []);
+
+  // Publish the latest PDF once the output edge finishes loading.
+  useEffect(() => {
+    if (outputs.edge && pdfBytesRef.current) {
+      publishPdf(outputs.edge, pdfBytesRef.current);
     }
-    if (previewMode === "pdf" && pdfBlobUrlRef.current && iframeRef.current) {
-      iframeRef.current.removeAttribute("srcdoc");
-      iframeRef.current.src = pdfBlobUrlRef.current;
-    }
-  }, [previewMode]);
+  }, [outputs.edge]);
 
-  // Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
-      if (pdfBlobUrlRef.current) URL.revokeObjectURL(pdfBlobUrlRef.current);
+      mountedRef.current = false;
     };
   }, []);
 
-  // ------ Download ------
+  // ── compile pump ──
+  // Latest-wins, no debounce: compile starts as soon as something changes.
+  // While a compile is in flight new edits just overwrite the head; when it
+  // finishes the pump immediately picks up the freshest source. So results
+  // arrive as soon as possible, yet at most one compile ever runs and edits
+  // never queue up — the same buildup-safety a debounce gives, without the
+  // wait. A `setTimeout(0)` between runs yields to React so typing stays
+  // responsive.
+  const pump = useCallback(async () => {
+    if (pumpingRef.current) return;
+    if (!pdfSupported()) {
+      setStatus("unsupported");
+      return;
+    }
+    pumpingRef.current = true;
+    try {
+      while (headRef.current != null) {
+        const content = headRef.current;
+        headRef.current = null;
+        if (content === lastCompiledRef.current) continue;
 
-  const downloadCurrent = useCallback(() => {
-    if (!doc?.content) return;
-    const title = getDocTitle(doc.content);
+        setStatus("compiling");
+        const result = await compileLatexToPdf(content, setProgress);
+        if (!mountedRef.current) return;
 
-    if (previewMode === "html" && latexjsMod) {
-      try {
-        const html = renderLatexToHtml(doc.content, latexjsMod);
-        downloadBlob(new Blob([html], { type: "text/html" }), `${title}.html`);
-      } catch (e: any) {
-        alert("Export failed: " + e.message);
+        if (result.ok) {
+          lastCompiledRef.current = content;
+          pdfBytesRef.current = result.bytes;
+          setPdfBytes(result.bytes);
+          syncTexRef.current = parseSyncTex(result.syncTex, MAIN_TEX_FILE);
+          setLogText(result.log ?? null);
+          setErrorMessage(null);
+          setStatus("ready");
+          setProgress(null);
+          if (edgeRef.current) publishPdf(edgeRef.current, result.bytes);
+        } else {
+          // Keep showing the last good PDF; just report the error.
+          setErrorMessage(result.error);
+          setLogText(result.log ?? null);
+          setStatus("error");
+          setProgress(null);
+        }
+        await new Promise((r) => setTimeout(r, 0));
       }
-    } else if (previewMode === "pdf" && pdfBytesRef.current) {
+    } finally {
+      pumpingRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (doc?.content == null) return;
+    if (doc.content === lastCompiledRef.current) return;
+    headRef.current = doc.content;
+    void pump();
+  }, [doc?.content, pump]);
+
+  // ── SyncTeX: forward (cursor → PDF) ──
+  const forwardSync = useCallback(() => {
+    const view = viewRef.current;
+    const parsed = syncTexRef.current;
+    if (!view || !parsed) return;
+    const rect = forwardSearch(parsed, cursorLine(view));
+    if (rect) {
+      if (!previewOpen) setPreviewOpen(true);
+      pdfRef.current?.scrollToRect(rect);
+    }
+  }, [viewRef, previewOpen]);
+  actionsRef.current.forwardSync = forwardSync;
+
+  // ── SyncTeX: inverse (PDF click → cursor) ──
+  const inverseSync = useCallback(
+    (page: number, xPt: number, yPt: number) => {
+      const view = viewRef.current;
+      const parsed = syncTexRef.current;
+      if (!view || !parsed) return;
+      const hit = inverseSearch(parsed, page, xPt, yPt);
+      if (hit) jumpToLine(view, hit.line);
+    },
+    [viewRef]
+  );
+
+  // ── download ──
+  const download = useCallback(() => {
+    const title = getDocTitle(doc?.content ?? "");
+    if (pdfBytesRef.current) {
       downloadBlob(
         new Blob([pdfBytesRef.current.buffer as ArrayBuffer], {
           type: "application/pdf",
@@ -388,87 +463,187 @@ export const LaTeXEditor: React.FC<ReactToolProps> = ({ docUrl }) => {
         `${title}.pdf`
       );
     }
-  }, [doc?.content, latexjsMod, previewMode]);
+  }, [doc?.content]);
 
-  // ------ Render ------
+  const title = useMemo(() => getDocTitle(doc?.content ?? ""), [doc?.content]);
 
-  if (!doc) return <div className="latex-loading">Loading...</div>;
-
-  const showError =
-    previewMode === "html"
-      ? htmlError
-      : pdfStatus === "error" || pdfStatus === "unsupported"
-        ? pdfMessage
-        : null;
-
-  const showProgress =
-    previewMode === "pdf" &&
-    (pdfStatus === "init" || pdfStatus === "compiling");
-
-  const canDownload =
-    (previewMode === "html" && latexjsMod) ||
-    (previewMode === "pdf" && pdfBytesRef.current);
+  const liveTargets = outputs.targets.length;
+  const compiling = status === "compiling" || status === "warming";
+  const hasPdf = pdfBytes != null;
+  const canSync = syncTexRef.current != null && hasPdf;
 
   return (
-    <div className="latex-container">
-      {showError && (
-        <div className="latex-error">
-          <span className="latex-error-icon">!</span>
-          <span className="latex-error-text">{showError}</span>
+    <div className="ltx-root">
+      {/* ── toolbar ── */}
+      <header className="ltx-toolbar">
+        <div className="ltx-brand">
+          <Sigma size={14} />
+          <span className="ltx-title" title={title}>
+            {title}
+          </span>
         </div>
-      )}
-      <div className="latex-split">
-        <div className="latex-editor-pane">
-          <div ref={editorContainerRef} className="latex-cm-container" />
+
+        {compiling && (
+          <span className="ltx-status">
+            <span className="ltx-spinner small" />
+            {status === "warming" ? "Loading engine…" : "Compiling…"}
+          </span>
+        )}
+
+        <div className="ltx-toolbar-spacer" />
+
+        <button
+          className={`ltx-btn ghost${logsOpen ? " active" : ""}${status === "error" ? " warn" : ""}`}
+          onClick={() => setLogsOpen((o) => !o)}
+          title="Compilation log"
+        >
+          <ScrollText size={13} />
+          Log
+        </button>
+
+        <button
+          className={`ltx-btn ghost outputs-toggle${outputsOpen ? " active" : ""}${liveTargets > 0 ? " live" : ""}`}
+          onClick={() => setOutputsOpen((o) => !o)}
+          title="Write the compiled PDF to other documents"
+        >
+          <Cable size={13} />
+          Outputs
+          {liveTargets > 0 && <span className="count">{liveTargets}</span>}
+        </button>
+
+        <button
+          className="ltx-icon-btn"
+          onClick={forwardSync}
+          disabled={!canSync}
+          title="Show cursor position in PDF (⌘J)"
+        >
+          <LocateFixed size={14} />
+        </button>
+
+        <button
+          className="ltx-icon-btn"
+          onClick={download}
+          disabled={!hasPdf}
+          title="Download PDF"
+        >
+          <Download size={14} />
+        </button>
+
+        <button
+          className="ltx-icon-btn"
+          onClick={() => setPreviewOpen((o) => !o)}
+          title={previewOpen ? "Collapse preview" : "Show preview"}
+        >
+          {previewOpen ? (
+            <PanelRightClose size={14} />
+          ) : (
+            <PanelRightOpen size={14} />
+          )}
+        </button>
+      </header>
+
+      {/* ── panes ── */}
+      <div className="ltx-split">
+        <div className={`ltx-editor-pane${previewOpen ? "" : " solo"}`}>
+          <div ref={editorRef} className="ltx-cm-container" />
         </div>
-        <div className="latex-preview-pane">
-          <div className="latex-preview-controls">
-            <div className="latex-mode-toggle">
-              <button
-                className={`latex-mode-btn ${previewMode === "html" ? "active" : ""}`}
-                onClick={() => setPreviewMode("html")}
-              >
-                HTML
-              </button>
-              <button
-                className={`latex-mode-btn ${previewMode === "pdf" ? "active" : ""}`}
-                onClick={() => setPreviewMode("pdf")}
-              >
-                PDF
-              </button>
-            </div>
+
+        {previewOpen && (
+          <div className="ltx-preview-pane">
+            {status === "unsupported" ? (
+              <div className="ltx-placeholder ltx-unsupported">
+                <Sigma size={28} />
+                <p>
+                  This browser can't run the TeX engine. It needs cross-origin
+                  isolation (SharedArrayBuffer) — try a recent Chrome, Edge, or
+                  Firefox.
+                </p>
+              </div>
+            ) : (
+              <>
+                <PdfPreview
+                  ref={pdfRef}
+                  bytes={pdfBytes}
+                  onInverseClick={inverseSync}
+                />
+
+                {/* Full overlay only until the first PDF exists; after that a
+                    quiet corner badge so recompiles don't strobe the view. */}
+                {compiling && !hasPdf && (
+                  <div className="ltx-progress">
+                    <div className="ltx-spinner" />
+                    <span>{progress ?? "Compiling…"}</span>
+                  </div>
+                )}
+                {compiling && hasPdf && (
+                  <div className="ltx-compiling-badge">
+                    <div className="ltx-spinner small" />
+                    <span>{progress ?? "Compiling…"}</span>
+                  </div>
+                )}
+
+                {!hasPdf && !compiling && status === "error" && (
+                  <div className="ltx-placeholder">
+                    Couldn’t compile — see the log.
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── log drawer ── */}
+      {logsOpen && (
+        <div className="ltx-logs">
+          <div className="ltx-logs-head">
+            <span className={status === "error" ? "err" : ""}>
+              {status === "error"
+                ? (errorMessage ?? "Compilation error")
+                : "Compiled successfully"}
+            </span>
             <button
-              onClick={downloadCurrent}
-              className="latex-download-btn"
-              disabled={!canDownload}
-              title={
-                previewMode === "html" ? "Download HTML" : "Download PDF"
-              }
+              className="ltx-icon-btn small"
+              onClick={() => setLogsOpen(false)}
+              title="Close log"
             >
-              <Download size={14} />
+              <PanelRightClose size={12} />
             </button>
           </div>
-
-          {showProgress && (
-            <div className="latex-progress">
-              <div className="latex-progress-spinner" />
-              <span>{pdfMessage}</span>
-            </div>
-          )}
-
-          {!latexjsMod && previewMode === "html" ? (
-            <div className="latex-preview-loading">Loading renderer...</div>
-          ) : (
-            <iframe
-              ref={iframeRef}
-              className="latex-preview-iframe"
-              title="LaTeX Preview"
-            />
-          )}
+          <pre className="ltx-logs-body">
+            {logText || "No log output yet."}
+          </pre>
         </div>
-      </div>
+      )}
+
+      {/* Anchored to the root so it stays usable while the preview is
+          collapsed. */}
+      {outputsOpen && (
+        <OutputsPanel
+          targets={outputs.targets}
+          busy={outputs.busy}
+          onNewDocument={outputs.newDocument}
+          onDropDoc={outputs.dropDoc}
+          onRemove={outputs.remove}
+        />
+      )}
     </div>
   );
 };
 
-export const renderLaTeXEditor = toolify(LaTeXEditor);
+// ─── mount ───────────────────────────────────────────────────────────────────
+
+export function renderLaTeXEditor(
+  handle: DocHandle<LaTeXDoc>,
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <Suspense fallback={<div className="ltx-placeholder">Loading…</div>}>
+        <LaTeXEditorInner docUrl={handle.url} hive={element.hive} />
+      </Suspense>
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

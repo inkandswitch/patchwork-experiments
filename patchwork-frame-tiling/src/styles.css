@@ -1,0 +1,549 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+patchwork-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  contain: layout;
+}
+
+.tile-app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-base-200, oklch(0.96 0.005 270));
+  color: var(--color-base-content, oklch(0.2 0.02 270));
+  overflow: hidden;
+}
+
+.tile-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  background: var(--color-base-200, oklch(0.96 0.005 270));
+  color: var(--color-base-content, oklch(0.2 0.02 270));
+  overflow: hidden;
+}
+
+/* App-level top strip */
+.tile-topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 44px;
+  padding: 0 0.5rem;
+  background: var(--color-base-100, oklch(1 0 0));
+  border-bottom: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  user-select: none;
+}
+
+.tile-topbar__group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tile-topbar__spacer {
+  flex: 1 1 auto;
+}
+
+/* System tray: a row of configured component widgets in the top bar. */
+.tile-topbar__tray {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.25rem;
+}
+
+.tile-topbar__tray:empty {
+  display: none;
+}
+
+.tile-topbar__menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.tile-topbar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-base-content, oklch(0.4 0.02 270));
+  opacity: 0.8;
+  cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease, color 0.12s ease;
+}
+
+.tile-topbar__btn:hover:not(:disabled) {
+  background: var(--color-base-200, oklch(0.95 0.005 270));
+  opacity: 1;
+}
+
+.tile-topbar__btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.tile-topbar__avatar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-base-content, oklch(0.4 0.02 270));
+  cursor: pointer;
+  overflow: hidden;
+  transition: box-shadow 0.12s ease;
+}
+
+.tile-topbar__avatar-btn:hover {
+  box-shadow: 0 0 0 2px var(--color-primary, oklch(0.6 0.18 250));
+}
+
+.tile-topbar__avatar-btn patchwork-view {
+  width: 26px;
+  height: 26px;
+  pointer-events: none;
+}
+
+/* Create-new popover */
+.tile-topbar__popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 16rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-base-100, oklch(1 0 0));
+  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.12);
+  overflow: hidden;
+}
+
+.tile-topbar__filter {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 0.6rem;
+  font-size: 0.8125rem;
+  border: 0;
+  border-bottom: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  background: var(--color-base-100, oklch(1 0 0));
+  color: var(--color-base-content, oklch(0.2 0.02 270));
+  outline: none;
+}
+
+.tile-topbar__list {
+  max-height: 18rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tile-topbar__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8125rem;
+  text-align: left;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-base-content, oklch(0.2 0.02 270));
+  cursor: pointer;
+}
+
+.tile-topbar__item:hover {
+  background: var(--color-primary, oklch(0.6 0.18 250));
+  color: var(--color-primary-content, oklch(0.98 0 0));
+}
+
+.tile-topbar__empty {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.8125rem;
+  opacity: 0.6;
+}
+
+.tile-frame__empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  opacity: 0.6;
+}
+
+/* Static stand-in shown when the frame is previewed inside another frame
+   (e.g. the frame configurator's "Frame Tool" cards) — avoids recursive mount. */
+.tile-frame--nested {
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+.tile-group {
+  width: 100%;
+  height: 100%;
+}
+
+/* A single tiled panel */
+.tile-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-base-100, oklch(1 0 0));
+  border: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.tile-panel--active {
+  border-color: var(--color-primary, oklch(0.6 0.18 250));
+  box-shadow: 0 0 0 1px var(--color-primary, oklch(0.6 0.18 250));
+}
+
+/* The current "selected document" gets an accent rail along the top of its
+   header so context panels visibly point back to it. */
+.tile-panel--selected .tile-panel__header {
+  box-shadow: inset 0 2px 0 var(--color-accent, oklch(0.72 0.15 160));
+}
+
+/* Context panels read as secondary chrome rather than primary content. */
+.tile-panel--context .tile-panel__header {
+  background: var(--color-base-300, oklch(0.93 0.01 270));
+}
+
+.tile-panel--context .tile-panel__title {
+  opacity: 0.85;
+}
+
+.tile-panel__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 34px;
+  padding: 0 0.4rem;
+  background: var(--color-base-200, oklch(0.96 0.005 270));
+  border-bottom: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  user-select: none;
+}
+
+.tile-panel__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 0.25rem;
+}
+
+.tile-panel__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.tile-panel__tool-picker {
+  max-width: 8.5rem;
+  height: 24px;
+  margin-right: 0.25rem;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  color: var(--color-base-content, oklch(0.35 0.02 270));
+  background: var(--color-base-100, oklch(1 0 0));
+  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  border-radius: 5px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.tile-panel__tool-picker:hover {
+  border-color: var(--color-primary, oklch(0.6 0.18 250));
+}
+
+.tile-panel__tool-picker:focus-visible {
+  border-color: var(--color-primary, oklch(0.6 0.18 250));
+  box-shadow: 0 0 0 1px var(--color-primary, oklch(0.6 0.18 250));
+}
+
+.tile-panel__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-base-content, oklch(0.45 0.02 270));
+  opacity: 0.7;
+  cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease, color 0.12s ease;
+}
+
+.tile-panel__icon-btn:hover:not(:disabled) {
+  background: var(--color-base-300, oklch(0.9 0.01 270));
+  opacity: 1;
+}
+
+.tile-panel__icon-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.tile-panel__icon-btn--close:hover:not(:disabled) {
+  background: oklch(0.62 0.22 25 / 0.15);
+  color: oklch(0.55 0.22 25);
+}
+
+/* Subject chip on a context panel: names + reveals the document it describes. */
+.tile-panel__subject {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 9rem;
+  height: 22px;
+  padding: 0 0.45rem;
+  font-size: 0.7rem;
+  color: var(--color-base-content, oklch(0.4 0.02 270));
+  background: var(--color-base-100, oklch(1 0 0));
+  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.tile-panel__subject:hover {
+  border-color: var(--color-accent, oklch(0.72 0.15 160));
+  color: var(--color-accent, oklch(0.55 0.15 160));
+}
+
+.tile-panel__subject-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Context-tool launcher dropdown. */
+.tile-context-launcher {
+  position: relative;
+  display: inline-flex;
+}
+
+.tile-context-launcher__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 9rem;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  background: var(--color-base-100, oklch(1 0 0));
+  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  border-radius: 8px;
+  box-shadow: 0 6px 20px oklch(0 0 0 / 0.12);
+}
+
+.tile-context-launcher__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.8rem;
+  text-align: left;
+  color: var(--color-base-content, oklch(0.3 0.02 270));
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.tile-context-launcher__item:hover {
+  background: var(--color-base-200, oklch(0.96 0.005 270));
+}
+
+.tile-panel__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+.tile-panel__view {
+  position: absolute;
+  inset: 0;
+}
+
+/* Placeholder shown in an empty content frame (no document open yet). */
+.tile-panel__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.tile-panel__empty p {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+.tile-panel__empty span {
+  font-size: 0.8rem;
+  opacity: 0.45;
+}
+
+/* --- Drag & drop to rearrange panels --- */
+
+/* Drag handle (grip) at the head of each panel header. */
+.tile-panel__grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: var(--color-base-content, oklch(0.45 0.02 270));
+  opacity: 0.45;
+  cursor: grab;
+  border-radius: 5px;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.tile-panel__grip:hover {
+  opacity: 0.9;
+  background: var(--color-base-300, oklch(0.9 0.01 270));
+}
+
+.tile-panel__grip:active {
+  cursor: grabbing;
+}
+
+/* The panel being dragged reads as lifted/ghosted. */
+.tile-panel--dragging {
+  opacity: 0.55;
+}
+
+/* Drop surface over a candidate target panel's body during a drag. */
+.tile-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+/* Edge preview: a translucent slab on the half the drop will land in. */
+.tile-dropzone__preview {
+  position: absolute;
+  background: oklch(0.6 0.18 250 / 0.2);
+  background: color-mix(
+    in oklch,
+    var(--color-primary, oklch(0.6 0.18 250)) 22%,
+    transparent
+  );
+  outline: 2px solid var(--color-primary, oklch(0.6 0.18 250));
+  outline-offset: -2px;
+  border-radius: 4px;
+  pointer-events: none;
+  transition: inset 0.08s ease;
+}
+
+.tile-dropzone__preview--left {
+  inset: 0 50% 0 0;
+}
+.tile-dropzone__preview--right {
+  inset: 0 0 0 50%;
+}
+.tile-dropzone__preview--top {
+  inset: 0 0 50% 0;
+}
+.tile-dropzone__preview--bottom {
+  inset: 50% 0 0 0;
+}
+
+/* Resize handles between tiled panels */
+.tile-resize-handle {
+  position: relative;
+  background: transparent;
+  transition: background 0.12s ease;
+  flex: 0 0 auto;
+}
+
+.tile-resize-handle--vertical {
+  width: 8px;
+  cursor: col-resize;
+}
+
+.tile-resize-handle--horizontal {
+  height: 8px;
+  cursor: row-resize;
+}
+
+.tile-resize-handle::after {
+  content: "";
+  position: absolute;
+  background: var(--color-base-300, oklch(0.86 0.01 270));
+  border-radius: 2px;
+  transition: background 0.12s ease;
+}
+
+.tile-resize-handle--vertical::after {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 36px;
+}
+
+.tile-resize-handle--horizontal::after {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 36px;
+  height: 3px;
+}
+
+.tile-resize-handle:hover::after,
+.tile-resize-handle[data-resize-handle-active]::after {
+  background: var(--color-primary, oklch(0.6 0.18 250));
+}

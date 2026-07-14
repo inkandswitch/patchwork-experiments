@@ -28,7 +28,9 @@ import {
   type VerifiedTodoDoc,
   type Visible,
 } from './bridge';
-import { toolify } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
 
 export const VerifiedTodoListEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
@@ -288,4 +290,15 @@ const TodoRow = ({ visible, onToggle, onDelete }: TodoRowProps) => {
   );
 };
 
-export const renderVerifiedTodoListEditor = toolify(VerifiedTodoListEditor);
+export function renderVerifiedTodoListEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <VerifiedTodoListEditor docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

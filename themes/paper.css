@@ -1,0 +1,104 @@
+/* Paper — warm off-white paper, near-black ink, very restrained accents */
+[theme="paper"] {
+	color-scheme: light;
+	--studio-fill: #f4f1e8;
+	--studio-line: #2b2b2b;
+	--studio-primary: #5a5346;
+	--studio-secondary: #8a8170;
+	--studio-danger: #b23a2a;
+	--studio-warning: #9a7b1a;
+	--studio-added: #4a7a3a;
+	--studio-deleted: #b23a2a;
+	--studio-modified: #5a5346;
+	--studio-link: #3d5a66;
+	--studio-selection-fill: #e6e0cf;
+
+	/* Accent invert: ink on an accent surface (comment button, badges) is the warm
+	   paper itself rather than the auto neutral white — the restrained, inked-on-
+	   paper feel this theme is going for. */
+	--studio-primary-line: var(--studio-fill);
+	--studio-secondary-line: var(--studio-fill);
+	--studio-danger-line: var(--studio-fill);
+	--studio-warning-line: var(--studio-fill);
+
+	/* a clean system serif keeps the print-reading feel without web fonts */
+	--studio-family-sans: Georgia, "Iowan Old Style", "Times New Roman", serif;
+
+	/* the page sits a touch brighter than the surrounding app */
+	--text-editor-fill: #fbfaf3;
+
+	--syntax-comment: #9a9483;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #8a8170;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #8a8170;
+	--syntax-invalid: #b23a2a;
+
+	--syntax-operator: #5a5346;
+	--syntax-punctuation: #5a5346;
+
+	--syntax-bool: #5a5346;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #5a5346;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #2b2b2b;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #5a5346;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #5a5346;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #8a8170;
+
+	--syntax-function--variable-name: #2b2b2b;
+	--syntax-function--property-name: #2b2b2b;
+
+	--syntax-variable-name: #44403a;
+	--syntax-definition--variable-name: #44403a;
+
+	--syntax-string: #4a7a3a;
+	--syntax-fill-string: #eef1e288;
+	--syntax-style-string: italic;
+
+	--syntax-number: #5a5346;
+	--syntax-integer: #5a5346;
+	--syntax-float: #5a5346;
+
+	--syntax-escape: #2b2b2b;
+	--syntax-regexp: #8a8170;
+	--syntax-special--string: #4a7a3a;
+
+	--syntax-tag-name: #2b2b2b;
+	--syntax-angle-bracket: #5a5346;
+
+	--syntax-attribute-name: #8a8170;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #8a8170;
+
+	--syntax-strong: #2b2b2b;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #2b2b2b;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #2b2b2b;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #3d5a66;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #8a8170;
+	--syntax-style-quote: italic;
+	--syntax-list: #2b2b2b;
+
+	--syntax-inserted: #4a7a3a;
+	--syntax-deleted: #b23a2a;
+	--syntax-changed: #5a5346;
+}

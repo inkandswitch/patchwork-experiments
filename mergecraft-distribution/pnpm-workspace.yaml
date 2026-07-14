@@ -1,0 +1,16 @@
+# pnpm 11 reads build-script approvals from here (the package.json `pnpm` field
+# is no longer read). These two transitive native deps don't need their build
+# scripts for this tool's `vite build`, so they're explicitly denied — which
+# also clears the ERR_PNPM_IGNORED_BUILDS that was blocking `pnpm build`/`push`.
+allowBuilds:
+  cbor-extract: false
+  esbuild: false
+
+# Force a single `@automerge/automerge-repo` across the whole tree. Without this,
+# `patchwork-plugins` pins `2.5.0` while `bireactive` peers on `2.6.0-subduction`,
+# so `ToolRender`'s `DocHandle<Doc>` and `connectStore`'s `DocHandle<Doc>` come
+# from two different copies and don't unify (the old `type Handle` cast hack).
+# The host externalizes this dependency anyway and serves `2.6.0-subduction.37`,
+# so pinning to it makes the types match the runtime too.
+overrides:
+  "@automerge/automerge-repo": 2.6.0-subduction.37

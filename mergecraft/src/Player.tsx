@@ -1,7 +1,8 @@
 import { useKeyboardControls } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import {
-  CapsuleCollider,
+  CoefficientCombineRule,
+  CylinderCollider,
   interactionGroups,
   RapierRigidBody,
   RigidBody,
@@ -16,6 +17,14 @@ import { Model as Axe } from "./Axe.jsx";
 import { VRPlayerControl } from "./VRPlayerControl";
 
 const SPEED = 5;
+// Minecraft-ish body: 1.8 tall, 0.6 wide. A *cylinder* (flat top/bottom) slides
+// along walls and block tops far more cleanly than a capsule, whose rounded caps
+// catch on the seams between adjacent fixed colliders. CylinderCollider(halfH,
+// radius) → height = 2*halfH = 1.8, so the player just clears a 2-block gap. Eye
+// sits near the top (1.62 above feet ≈ centre + 0.72) like Minecraft's camera.
+const PLAYER_HALF_HEIGHT = 0.9;
+const PLAYER_RADIUS = 0.3;
+const EYE_OFFSET = 0.72;
 const direction = new THREE.Vector3();
 const frontVector = new THREE.Vector3();
 const sideVector = new THREE.Vector3();
@@ -95,7 +104,9 @@ export function Player({ lerp = THREE.MathUtils.lerp }) {
       undefined,
       interactionGroups([1, 0], [1])
     );
-    const grounded = ray != null && Math.abs(ray.timeOfImpact) <= 1.25;
+    // Feet are `halfHeight` below the body centre; allow a small margin.
+    const grounded =
+      ray != null && Math.abs(ray.timeOfImpact) <= PLAYER_HALF_HEIGHT + 0.15;
 
     if (grounded) {
       rigidBodyRef.current.setLinvel({ x: 0, y: 7.5, z: 0 }, true);
@@ -111,9 +122,9 @@ export function Player({ lerp = THREE.MathUtils.lerp }) {
 
     vectorHelper.set(velocity.x, velocity.y, velocity.z);
 
-    // update camera
+    // update camera — eye level near the top of the body, not its centre
     const { x, y, z } = rigidBodyRef.current.translation();
-    state.camera.position.set(x, y, z);
+    state.camera.position.set(x, y + EYE_OFFSET, z);
 
     // update axe
     if (axe.current != null) {
@@ -162,7 +173,11 @@ export function Player({ lerp = THREE.MathUtils.lerp }) {
         canSleep={false}
         collisionGroups={interactionGroups([0], [0])}
       >
-        <CapsuleCollider args={[0.75, 0.5]} />
+        <CylinderCollider
+          args={[PLAYER_HALF_HEIGHT, PLAYER_RADIUS]}
+          friction={0}
+          frictionCombineRule={CoefficientCombineRule.Min}
+        />
 
         <IfInSessionMode allow={["immersive-ar", "immersive-vr"]}>
           <VRPlayerControl playerJump={playerJump} playerMove={playerMove} />

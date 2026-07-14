@@ -1,0 +1,18 @@
+{
+  "name": "@patchwork/universal-dnd",
+  "version": "0.0.3",
+  "description": "Hold Shift+Alt to reveal universal drag handles on every patchwork-view.",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "vite build",
+    "push": "vite build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.3.5"
+  }
+}

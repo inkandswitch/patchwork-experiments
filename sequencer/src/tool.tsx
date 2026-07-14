@@ -1,5 +1,9 @@
-import { useDocument, AutomergeUrl } from "@automerge/react/slim";
+import { useDocument, AutomergeUrl, RepoContext } from "@automerge/react/slim";
+import { Repo } from "@automerge/automerge-repo";
+import ReactDOM from "react-dom/client";
 import { useState } from "react";
+import "./style.css";
+import { useSubscribe } from "@inkandswitch/patchwork-providers-react";
 import { SequencerDoc, Toggle } from "./datatype";
 import { Player } from "./components/Player";
 import { UIGrid } from "./components/SequencerGrid";
@@ -17,10 +21,10 @@ import { toggleFn } from "./music/toggle-play";
 import { globalInstrumentSchedulers } from "./music/instrument-scheduler";
 import { SamplePlayer } from "./music/sample-player";
 import { ROW_COUNT, SongConfig, totalStepsFromConfig } from "./config";
-import { TinyPatchworkLayoutDoc } from "./patchwork-types";
 
 type SequencerProps = {
   docUrl: AutomergeUrl;
+  element: HTMLElement;
 };
 
 function updateToggle(
@@ -40,7 +44,7 @@ function updateToggle(
   }
 }
 
-export const Sequencer = ({ docUrl }: SequencerProps) => {
+export const Sequencer = ({ docUrl, element }: SequencerProps) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playStartTime, setPlayStartTime] = useState(0);
   const [playingIdx, setPlayingIdx] = useState(0);
@@ -51,10 +55,14 @@ export const Sequencer = ({ docUrl }: SequencerProps) => {
 
   const [doc, changeDoc] = useDocument<SequencerDoc>(docUrl, { suspense: true });
 
-  // Get contactUrl from patchwork account doc
-  const accountDocHandle = window.accountDocHandle;
-  const [accountDoc] = useDocument<TinyPatchworkLayoutDoc>(accountDocHandle?.url);
-  const userContactUrl = accountDoc?.contactUrl || null;
+  // Get contactUrl via the account provider's `patchwork:contact` selector
+  // (see patchwork-base/providers) instead of `window.accountDocHandle`.
+  const userContactUrl =
+    useSubscribe<AutomergeUrl | null>(
+      element,
+      { type: "patchwork:contact" },
+      null
+    ) ?? null;
 
   if (!doc || !doc.config) {
     return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>Loading...</div>;
@@ -361,3 +369,21 @@ export const Sequencer = ({ docUrl }: SequencerProps) => {
     </div>
   );
 };
+
+// Kept here (rather than main.tsx) so the entry point never statically
+// imports react-dom/@automerge/react — those shouldn't load until a
+// sequencer document is actually opened.
+export function renderSequencer(
+  handle: { url: AutomergeUrl },
+  element: HTMLElement & { repo: Repo }
+) {
+  console.log("[Sequencer] Startup with handle.url:", handle.url);
+  const root = ReactDOM.createRoot(element);
+
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <Sequencer docUrl={handle.url} element={element} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

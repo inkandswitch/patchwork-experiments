@@ -1,0 +1,105 @@
+/* Classic macOS — Platinum / System 7 era: 1-bit black on window-gray, sharp
+   corners, hard offset drop shadows, no animation. Document areas are white
+   like a MacWrite page; selection inverts to white-on-black; tooltips are
+   Balloon Help yellow. Code is MPW/THINK-C monochrome with two restrained
+   accents (blue types, green strings). */
+[theme="classic-macos"] {
+	color-scheme: light;
+	--studio-fill: #c3c3c3; /* platinum window gray */
+	--studio-line: #000000;
+	--studio-primary: #1e51d0; /* restrained system blue */
+	--studio-secondary: #5a5a5a;
+	--studio-danger: #c00000;
+	--studio-warning: #b35a00;
+	--studio-added: #007a2e;
+	--studio-deleted: #c00000;
+	--studio-modified: #1e51d0;
+	--studio-link: #1e51d0;
+	--studio-selection-fill: #1e51d0;
+
+	/* classic system fonts: Chicago for chrome, Monaco for code */
+	--studio-family-sans: "Chicago", "Charcoal CY", "Charcoal", "Geneva",
+		"Helvetica Neue", Helvetica, Arial, sans-serif;
+	--studio-family-code: "Monaco", "Andale Mono", "Lucida Console",
+		"Courier New", monospace;
+
+	/* sharp corners */
+	--studio-radius-xs: 0px;
+	--studio-radius-sm: 0px;
+	--studio-radius: 2px;
+	--studio-radius-md: 3px;
+	--studio-radius-lg: 4px;
+	--studio-radius-xl: 6px;
+
+	/* hard, solid drop shadows — no blur */
+	--studio-shadow-sm: 1px 1px 0 #000000;
+	--studio-shadow: 2px 2px 0 #000000;
+	--studio-shadow-md: 3px 3px 0 #000000;
+	--studio-shadow-lg: 4px 4px 0 #000000;
+
+	/* System 7 had no animations; everything snaps */
+	--studio-transition-fast: 0s;
+	--studio-transition: 0s;
+	--studio-transition-slow: 0s;
+
+	/* white MacWrite page, inverted selection, hard black gutter rule */
+	--text-editor-fill: #ffffff;
+	--text-editor-selection-fill: #000000;
+	--text-editor-selection-line: #ffffff;
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+	--text-editor-gutter-border: #000000;
+
+	/* Balloon Help: pale yellow balloon, black text */
+	--text-editor-tooltip-fill: #ffffcc;
+	--text-editor-tooltip-color: #000000;
+
+	/* MPW/THINK-C monochrome + two restrained accents */
+	--syntax-comment: #6e6e6e;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #5a5a5a;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #4a4a4a;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-weight-bool: bold;
+	--syntax-weight-atom: bold;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #0a3d91;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #0a3d91;
+	--syntax-weight-class-name: bold;
+
+	--syntax-definition--variable-name: #0a3d91;
+
+	--syntax-string: #0a6e2e;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #0a6e2e;
+	--syntax-special--string: #0a6e2e;
+
+	--syntax-tag-name: #0a3d91;
+	--syntax-weight-tag-name: bold;
+
+	--syntax-attribute-name: #6e6e6e;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #0a3d91;
+
+	--syntax-style-emphasis: italic;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6e6e6e;
+	--syntax-style-quote: italic;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #8a8a8a;
+}

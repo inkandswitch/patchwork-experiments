@@ -1,0 +1,95 @@
+/* Ivy — a green-tinted monochrome (hue 160°) on warm near-white: deep ivy
+   greens, the signature "foc green" accent, flat and editorial */
+[theme="ivy"] {
+	color-scheme: light;
+	--studio-fill: #f5faf8; /* green-tinted white */
+	--studio-line: #021810; /* green-tinted black */
+	--studio-primary: #00cc88; /* foc green */
+	--studio-secondary: #009966; /* link green */
+	--studio-danger: #b03020;
+	--studio-warning: #b08410;
+	--studio-added: #00aa55;
+	--studio-deleted: #b03020;
+	--studio-modified: #009966;
+	--studio-link: #009966;
+	--studio-selection-fill: #cdf5e3;
+
+	/* App chrome (sideboard, toolbars) is painted in the official Feeling of
+	   Computing green — the site's signature --green: hsl(160 100% 40%), same as
+	   --studio-primary. Chrome ink stays the deep green-black --studio-line
+	   (#021810 on #00cc88 ≈ 8.8:1). */
+	--studio-chrome-fill: var(--studio-primary);
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #4f7a68;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #4f7a68;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #00805a;
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: #00805a;
+	--syntax-punctuation: #2a4a3a;
+
+	--syntax-bool: #00945f;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #00945f;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #007a52;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #005c3d;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #005c3d;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00b377;
+
+	--syntax-function--variable-name: #00b377;
+	--syntax-function--property-name: #00b377;
+
+	--syntax-definition--variable-name: #00b377;
+
+	--syntax-string: #00a066;
+	--syntax-fill-string: #00a06614;
+
+	--syntax-number: #007049;
+	--syntax-integer: #007049;
+	--syntax-float: #007049;
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: #00b377;
+	--syntax-special--string: #00a066;
+
+	--syntax-tag-name: #007a52;
+	--syntax-angle-bracket: #2a4a3a;
+
+	--syntax-attribute-name: #005c3d;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #005c3d;
+
+	--syntax-emphasis: #007a52;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--studio-secondary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #4f7a68;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #d6ebe0;
+}

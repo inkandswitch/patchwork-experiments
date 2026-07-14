@@ -14,6 +14,7 @@
  */
 
 import { next as Automerge } from "@automerge/automerge";
+import { createTranscriptionStream } from "@chee/patchwork-transcript";
 
 const RTC_CONFIG = {
   iceServers: [
@@ -40,9 +41,6 @@ export const QUALITY_PRESETS = {
   potato: { label: "\u{1F954}", maxFramerate: 5, scaleResolutionDownBy: 4, maxBitrate: 100_000 },
 };
 export const QUALITY_LEVELS = ["high", "medium", "low", "potato"];
-
-const TARGET_SAMPLE_RATE = 16000;
-const WORKER_BUFFER_SIZE = 4096;
 
 const COORD_CHANNEL = "patchwork-call-coordination";
 const COORD_PING_MS = 3000;
@@ -101,9 +99,8 @@ export class CallSession extends EventTarget {
     this.peers = new Map();
 
     // Transcription
-    this._whisperWorker = null;
-    this._trackReader = null;
-    this._trackReaderRunning = false;
+    this._transcriptionStream = null; // @chee/patchwork-transcript session
+    this._transcriptionToken = null;  // guards against stop racing async start
     this._prefixCursor = null; // cursor anchored to last char of prefix (the space)
     this._currentInterimLength = 0;
 
@@ -471,6 +468,7 @@ export class CallSession extends EventTarget {
     for (const track of this.localStream.getAudioTracks()) {
       track.enabled = this.micEnabled;
     }
+    this._transcriptionStream?.setEnabled(this.micEnabled);
     this._emit("state-changed");
   }
 
@@ -1012,38 +1010,25 @@ export class CallSession extends EventTarget {
       console.warn("[transcription] No audio track found in localStream");
       return;
     }
-    console.log("[transcription] Audio track:", audioTrack.label, "enabled:", audioTrack.enabled, "readyState:", audioTrack.readyState);
 
-    const workerUrl = new URL("./worker.js", import.meta.url);
-    console.log("[transcription] Loading worker from:", workerUrl.href);
-    // Workers loaded from service-worker-served URLs (automerge:) can fail as
-    // modules. Fetch the script and create a blob worker instead.
-    try {
-      const res = await fetch(workerUrl);
-      const src = await res.text();
-      const blob = new Blob([src], { type: "application/javascript" });
-      this._whisperWorker = new Worker(URL.createObjectURL(blob), { type: "module" });
-      console.log("[transcription] Worker created via blob URL");
-    } catch (blobErr) {
-      console.warn("[transcription] Blob worker failed, trying direct URL:", blobErr);
-      this._whisperWorker = new Worker(workerUrl, { type: "module" });
-    }
+    // @chee/patchwork-transcript runs Silero VAD + the ASR model in a worker and
+    // reads the mic track itself (MediaStreamTrackProcessor — keeps flowing when
+    // the page loses focus). We keep the speaker-prefix / cursor bookkeeping here
+    // since it's specific to call's shared transcript document.
+    const token = {};
+    this._transcriptionToken = token;
 
-    this._whisperWorker.onmessage = (e) => {
-      const { type, text, message } = e.data;
-      console.log("[transcription] Worker message:", type, text || message || "");
-
-      if (type === "status") {
-        this._emit("transcription-status", { message });
-      } else if (type === "ready") {
-        this._emit("transcription-status", { message: null });
-      } else if (type === "recording_start") {
-        // Speech started — insert speaker prefix and anchor cursor to its last char
+    const stream = await createTranscriptionStream({
+      track: audioTrack,
+      enabled: this.micEnabled,
+      onStatus: (message) => this._emit("transcription-status", { message }),
+      onReady: () => this._emit("transcription-status", { message: null }),
+      onSpeechStart: () => {
+        // Insert speaker prefix and anchor a cursor to its last char (the space),
+        // which is stable and survives concurrent edits from other speakers.
         this.handle.change((doc) => {
           const prefix = `<${this.myName}> `;
           Automerge.splice(doc, ["content"], doc.content.length, 0, prefix);
-          // Cursor on the space char at end of prefix — this char is stable
-          // and survives concurrent edits from other speakers
           this._prefixCursor = Automerge.getCursor(
             doc,
             ["content"],
@@ -1051,165 +1036,89 @@ export class CallSession extends EventTarget {
           );
           this._currentInterimLength = 0;
         });
-      } else if (type === "interim") {
-        // Interim transcription — replace previous interim text after the prefix cursor
-        if (this._prefixCursor != null) {
-          this.handle.change((doc) => {
-            const anchorPos = Automerge.getCursorPosition(
-              doc,
-              ["content"],
-              this._prefixCursor
-            );
-            // Interim text starts right after the anchor char (the space)
-            const insertPos = anchorPos + 1;
-            Automerge.splice(
-              doc,
-              ["content"],
-              insertPos,
-              this._currentInterimLength,
-              text
-            );
-            this._currentInterimLength = text.length;
-          });
-          this._emit("transcript", { text, speaker: this.myName, interim: true });
-        }
-      } else if (type === "final") {
-        // Final transcription — replace interim text with final + newline
-        if (this._prefixCursor != null) {
-          this.handle.change((doc) => {
-            const anchorPos = Automerge.getCursorPosition(
-              doc,
-              ["content"],
-              this._prefixCursor
-            );
-            const insertPos = anchorPos + 1;
-            Automerge.splice(
-              doc,
-              ["content"],
-              insertPos,
-              this._currentInterimLength,
-              text + "\n"
-            );
-          });
-          this._prefixCursor = null;
-          this._currentInterimLength = 0;
-          this._emit("transcript", { text, speaker: this.myName });
-        }
-      } else if (type === "recording_end") {
-        // Speech ended without a final (e.g. too short) — clean up prefix
-        if (this._prefixCursor != null) {
-          const prefixLen = `<${this.myName}> `.length;
-          this.handle.change((doc) => {
-            const anchorPos = Automerge.getCursorPosition(
-              doc,
-              ["content"],
-              this._prefixCursor
-            );
-            // Delete prefix + any leftover interim text
-            const startPos = anchorPos - (prefixLen - 1);
-            Automerge.splice(
-              doc,
-              ["content"],
-              startPos,
-              prefixLen + this._currentInterimLength,
-              ""
-            );
-          });
-          this._prefixCursor = null;
-          this._currentInterimLength = 0;
-        }
-      }
-    };
-
-    this._whisperWorker.onerror = (err) => {
-      console.error("[transcription] Worker error:", err.message, err);
-    };
-
-    // Use MediaStreamTrackProcessor to read audio frames directly from the
-    // microphone track. This bypasses AudioContext entirely — the browser
-    // keeps the media track alive for WebRTC even when the page/browser
-    // loses focus, so transcription continues in the background.
-    const trackProcessor = new MediaStreamTrackProcessor({ track: audioTrack });
-    const reader = trackProcessor.readable.getReader();
-    this._trackReader = reader;
-    this._trackReaderRunning = true;
-
-    let resampleBuffer = new Float32Array(0);
-
-    const pumpFrames = async () => {
-      while (this._trackReaderRunning) {
-        let result;
-        try {
-          result = await reader.read();
-        } catch (err) {
-          if (this._trackReaderRunning) {
-            console.warn("[transcription] Track reader error:", err);
-          }
-          break;
-        }
-        if (result.done) break;
-
-        const frame = result.value;
-        if (!this.micEnabled) {
-          frame.close();
-          continue;
-        }
-
-        // Extract raw PCM samples from the AudioData frame
-        const srcRate = frame.sampleRate;
-        const numSamples = frame.numberOfFrames;
-        const raw = new Float32Array(numSamples);
-        frame.copyTo(raw, { planeIndex: 0 });
-        frame.close();
-
-        // Resample to TARGET_SAMPLE_RATE
-        let samples;
-        if (srcRate === TARGET_SAMPLE_RATE) {
-          samples = raw;
-        } else {
-          const ratio = srcRate / TARGET_SAMPLE_RATE;
-          const outLen = Math.round(numSamples / ratio);
-          samples = new Float32Array(outLen);
-          for (let i = 0; i < outLen; i++) {
-            const srcIdx = i * ratio;
-            const lo = Math.floor(srcIdx);
-            const hi = Math.min(lo + 1, numSamples - 1);
-            const frac = srcIdx - lo;
-            samples[i] = raw[lo] * (1 - frac) + raw[hi] * frac;
-          }
-        }
-
-        // Accumulate and send in WORKER_BUFFER_SIZE chunks
-        const combined = new Float32Array(resampleBuffer.length + samples.length);
-        combined.set(resampleBuffer);
-        combined.set(samples, resampleBuffer.length);
-
-        let offset = 0;
-        while (offset + WORKER_BUFFER_SIZE <= combined.length) {
-          const chunk = combined.slice(offset, offset + WORKER_BUFFER_SIZE);
-          this._whisperWorker.postMessage(
-            { type: "audio", buffer: chunk },
-            [chunk.buffer]
+      },
+      onInterim: (text) => {
+        // Replace previous interim text right after the prefix cursor.
+        if (this._prefixCursor == null) return;
+        this.handle.change((doc) => {
+          const anchorPos = Automerge.getCursorPosition(
+            doc,
+            ["content"],
+            this._prefixCursor
           );
-          offset += WORKER_BUFFER_SIZE;
-        }
-        resampleBuffer = combined.slice(offset);
-      }
-    };
+          const insertPos = anchorPos + 1;
+          Automerge.splice(
+            doc,
+            ["content"],
+            insertPos,
+            this._currentInterimLength,
+            text
+          );
+          this._currentInterimLength = text.length;
+        });
+        this._emit("transcript", { text, speaker: this.myName, interim: true });
+      },
+      onFinal: (text) => {
+        // Replace interim text with the final transcription + newline.
+        if (this._prefixCursor == null) return;
+        this.handle.change((doc) => {
+          const anchorPos = Automerge.getCursorPosition(
+            doc,
+            ["content"],
+            this._prefixCursor
+          );
+          const insertPos = anchorPos + 1;
+          Automerge.splice(
+            doc,
+            ["content"],
+            insertPos,
+            this._currentInterimLength,
+            text + "\n"
+          );
+        });
+        this._prefixCursor = null;
+        this._currentInterimLength = 0;
+        this._emit("transcript", { text, speaker: this.myName });
+      },
+      onSpeechEnd: () => {
+        // Speech ended without a final (e.g. too short) — clean up the prefix.
+        if (this._prefixCursor == null) return;
+        const prefixLen = `<${this.myName}> `.length;
+        this.handle.change((doc) => {
+          const anchorPos = Automerge.getCursorPosition(
+            doc,
+            ["content"],
+            this._prefixCursor
+          );
+          const startPos = anchorPos - (prefixLen - 1);
+          Automerge.splice(
+            doc,
+            ["content"],
+            startPos,
+            prefixLen + this._currentInterimLength,
+            ""
+          );
+        });
+        this._prefixCursor = null;
+        this._currentInterimLength = 0;
+      },
+      onError: (err) => console.error("[transcription] stream error:", err),
+    });
 
-    pumpFrames();
-    console.log("[transcription] Setup complete (MediaStreamTrackProcessor), streaming audio to worker");
+    // _stopTranscription may have run while we awaited the worker spawn.
+    if (this._transcriptionToken !== token) {
+      stream.close();
+      return;
+    }
+    this._transcriptionStream = stream;
+    console.log("[transcription] Setup complete (streaming via @chee/patchwork-transcript)");
   }
 
   _stopTranscription() {
-    if (this._whisperWorker) {
-      this._whisperWorker.terminate();
-      this._whisperWorker = null;
-    }
-    this._trackReaderRunning = false;
-    if (this._trackReader) {
-      this._trackReader.cancel().catch(() => {});
-      this._trackReader = null;
+    this._transcriptionToken = null;
+    if (this._transcriptionStream) {
+      this._transcriptionStream.close();
+      this._transcriptionStream = null;
     }
     this._prefixCursor = null;
     this._currentInterimLength = 0;

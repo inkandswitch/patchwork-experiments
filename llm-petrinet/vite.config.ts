@@ -6,13 +6,15 @@ import external from "@inkandswitch/patchwork-bootloader/externals";
 
 export default defineConfig({
   base: "./",
-  plugins: [solid(), cssInjectedByJsPlugin()],
+  plugins: [solid(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   esbuild: {
     target: "es2022",
   },
 
   build: {
+
+    cssCodeSplit: true,
     target: "es2022",
     emptyOutDir: true,
     minify: false,

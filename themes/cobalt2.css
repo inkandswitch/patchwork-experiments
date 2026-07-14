@@ -1,0 +1,99 @@
+/* Cobalt2 — Wes Bos's deep-blue theme with signature yellow strings */
+[theme="cobalt2"] {
+	color-scheme: dark;
+	--studio-fill: #193549;
+	--studio-line: #ffffff;
+	--studio-primary: #ffc600;
+	--studio-secondary: #2affdf;
+	--studio-danger: #ff0088;
+	--studio-warning: #ff9d00;
+	--studio-added: #2affdf;
+	--studio-deleted: #ff0088;
+	--studio-modified: #ffc600;
+	--studio-link: #9effff;
+	--studio-selection-fill: #234e6d;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-active-line-fill: #ffffff05;
+	--text-editor-active-line-fill--gutter: #122738;
+	--text-editor-gutter-fill: #122738;
+	--text-editor-gutter-line: #6a8099;
+	--text-editor-gutter-border: #1f4662;
+	--text-editor-gutter-font-size: 0.8em;
+	--text-editor-gutter-font-size--line-numbers: 0.8em;
+	--text-editor-tooltip-fill: #1f4662;
+
+	--syntax-comment: #6a8099;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #6a8099;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #2affdf;
+	--syntax-invalid: #ff0088;
+
+	--syntax-operator: #ff9d00;
+	--syntax-punctuation: #a8becc;
+
+	--syntax-bool: #ff628c;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ff628c;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ff9d00;
+
+	--syntax-type-name: #2affdf;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #2affdf;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #ff9d00;
+
+	--syntax-function--variable-name: #2affdf;
+	--syntax-function--property-name: #2affdf;
+
+	--syntax-variable-name: #ffffff;
+	--syntax-definition--variable-name: #ff628c;
+
+	--syntax-string: #ffc600;
+	--syntax-fill-string: #ffc60014;
+
+	--syntax-number: #ff628c;
+	--syntax-integer: #ff628c;
+	--syntax-float: #ff628c;
+
+	--syntax-escape: #ff628c;
+	--syntax-regexp: #ff628c;
+	--syntax-special--string: #ffc600;
+
+	--syntax-tag-name: #ff628c;
+	--syntax-angle-bracket: #a8becc;
+
+	--syntax-attribute-name: #ff9d00;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #2affdf;
+
+	--syntax-strong: #ffffff;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ffffff;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ffc600;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #9effff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #6a8099;
+	--syntax-list: #ffffff;
+
+	--syntax-inserted: #2affdf;
+	--syntax-deleted: #ff0088;
+	--syntax-changed: #ffc600;
+
+	--syntax-content-separator: #1f4662;
+}

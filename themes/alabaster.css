@@ -1,0 +1,95 @@
+/* Alabaster — Nikita Prokopov's minimal light theme: highlight strings and
+   constants, leave the rest alone. Less rainbow, more calm. */
+[theme="alabaster"] {
+	color-scheme: light;
+	--studio-fill: #f7f7f7;
+	--studio-line: #000000;
+	--studio-primary: #325cc0; /* definitions blue */
+	--studio-secondary: #7a3e9d; /* constants purple */
+	--studio-danger: #aa3731; /* dark red */
+	--studio-warning: #a8480f;
+	--studio-added: #448c27; /* strings green */
+	--studio-deleted: #aa3731;
+	--studio-modified: #325cc0;
+	--studio-link: #325cc0;
+	--studio-selection-fill: #dce9ff;
+
+	--text-editor-cursor-fill: #000000;
+	--text-editor-gutter-fill: #f0f0f0;
+	--text-editor-gutter-line: #b0b0b0;
+	--text-editor-gutter-border: #e4e4e4;
+
+	/* Alabaster keeps comments quiet and keywords un-highlighted */
+	--syntax-comment: #7f7f7f;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #7f7f7f;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #325cc0;
+	--syntax-invalid: #aa3731;
+
+	--syntax-operator: #000000;
+	--syntax-punctuation: #000000;
+
+	--syntax-bool: #7a3e9d;
+	--syntax-weight-bool: normal;
+
+	--syntax-atom: #7a3e9d;
+	--syntax-weight-atom: normal;
+
+	--syntax-keyword: #000000; /* deliberately not highlighted */
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #000000;
+	--syntax-class-name: #000000;
+
+	--syntax-type-operator: #000000;
+
+	--syntax-function--variable-name: #325cc0; /* definitions */
+	--syntax-function--property-name: #000000;
+
+	--syntax-variable-name: #000000;
+	--syntax-definition--variable-name: #325cc0;
+
+	--syntax-string: #448c27; /* green */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #7a3e9d; /* purple */
+	--syntax-integer: #7a3e9d;
+	--syntax-float: #7a3e9d;
+
+	--syntax-escape: #7a3e9d;
+	--syntax-regexp: #448c27;
+	--syntax-special--string: #448c27;
+
+	--syntax-tag-name: #325cc0;
+	--syntax-angle-bracket: #000000;
+
+	--syntax-attribute-name: #7a3e9d;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #000000;
+
+	--syntax-strong: #000000;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #000000;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #000000;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #325cc0;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #7f7f7f;
+	--syntax-style-quote: italic;
+	--syntax-list: #000000;
+
+	--syntax-inserted: #448c27;
+	--syntax-deleted: #aa3731;
+	--syntax-changed: #325cc0;
+
+	--syntax-content-separator: #e4e4e4;
+}

@@ -1,0 +1,94 @@
+/* Rose Pine Dawn — the light variant, soho vibes at sunrise */
+[theme="rose-pine-dawn"] {
+	color-scheme: light;
+	--studio-fill: #faf4ed;
+	--studio-line: #575279;
+	--studio-primary: #907aa9;
+	--studio-secondary: #56949f;
+	--studio-danger: #b4637a;
+	--studio-warning: #ea9d34;
+	--studio-added: #56949f;
+	--studio-deleted: #b4637a;
+	--studio-modified: #907aa9;
+	--studio-link: #907aa9;
+	--studio-selection-fill: #f2e9e1;
+
+	/* cursor in rose; line numbers in muted, borderless gutter */
+	--text-editor-cursor-fill: #d7827e;
+	--text-editor-gutter-line: #9893a5;
+	--text-editor-gutter-border: none;
+
+	--syntax-comment: #9893a5;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #9893a5;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #797593;
+	--syntax-invalid: #b4637a;
+
+	--syntax-operator: #286983;
+	--syntax-punctuation: #797593;
+
+	--syntax-bool: #d7827e;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #d7827e;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #286983;
+
+	--syntax-type-name: #ea9d34;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #ea9d34;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #286983;
+
+	--syntax-function--variable-name: #d7827e;
+	--syntax-function--property-name: #d7827e;
+
+	--syntax-variable-name: #575279;
+	--syntax-definition--variable-name: #575279;
+
+	--syntax-string: #ea9d34;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #d7827e;
+	--syntax-integer: #d7827e;
+	--syntax-float: #d7827e;
+
+	--syntax-escape: #b4637a;
+	--syntax-regexp: #907aa9;
+	--syntax-special--string: #ea9d34;
+
+	--syntax-tag-name: #b4637a;
+	--syntax-angle-bracket: #797593;
+
+	--syntax-attribute-name: #907aa9;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #56949f;
+
+	--syntax-strong: #575279;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #575279;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #d7827e;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #907aa9;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #9893a5;
+	--syntax-list: #575279;
+
+	--syntax-inserted: #56949f;
+	--syntax-deleted: #b4637a;
+	--syntax-changed: #ea9d34;
+
+	--syntax-content-separator: #dfdad9;
+}

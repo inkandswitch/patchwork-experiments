@@ -35,18 +35,75 @@ function createStyles() {
   const style = document.createElement("style");
   style.textContent = `
     .call-container {
+      /* The Patchwork "sticker" house style (the same tokens glomper / newspace
+         / loom share — chee rabbits × Mimi): hot-pink #ff2284 cherries, mint
+         #40dcba, lemon #fffdc7 highlight, hard ink outlines, chunky 3px-offset
+         drop-shadows, and the press = translate(2px,2px) + shadow-collapses
+         physics. system-ui for words, monaco for data. The video stage itself
+         must stay dark (cameras want a dark backdrop), so on the stage the hard
+         outlines/shadows are drawn in the accent rather than ink so they read;
+         the lobby + transcript get the full light sticker treatment. Every
+         value still defers to the theme's --studio-* vars when present. */
+      --stage: var(--studio-line, #16100e);
+      --stage-panel: color-mix(in oklch, var(--studio-line, #16100e), var(--studio-fill, #fff) 12%);
+      --stage-ink: var(--studio-fill, #fff);
+      --stage-ink-dim: color-mix(in srgb, var(--studio-fill, #fff), transparent 30%);
+      --stage-accent: var(--studio-primary, #ff2284);
+      --stage-accent-deep: color-mix(in oklch, var(--stage-accent), #000 30%);
+      --stage-accent-text: #fff;
+      --stage-accent2: var(--studio-secondary, #40dcba);
+      --stage-sky: #5b8def;
+      --stage-danger: var(--studio-danger, #ff2a50);
+      --stage-warning: var(--studio-warning, #fdca40);
+      --stage-ok: var(--stage-accent2);
+      --stage-lemon: #fffdc7;
+      --stage-chip: color-mix(in srgb, var(--stage), transparent 40%);
+      --stage-chip-strong: color-mix(in srgb, var(--stage), transparent 25%);
+      --stage-glass: color-mix(in srgb, var(--stage-ink), transparent 85%);
+      --stage-glass-hover: color-mix(in srgb, var(--stage-ink), transparent 70%);
+      --stage-mono: var(--studio-family-code, monaco, Consolas, "Lucida Console", monospace);
+      --stage-sans: var(--studio-family-sans, system-ui, -apple-system, "Segoe UI", sans-serif);
+      --stage-radius: 10px;
+      --stage-radius-sm: 7px;
+      --stage-bw: 1.5px;
+      --stage-press: translate(2px, 2px);
       width: 100%;
       height: 100%;
-      background: #111;
-      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--stage);
+      font-family: var(--stage-sans);
       overflow: hidden;
+    }
+
+    .call-container ::selection {
+      background: color-mix(in srgb, var(--stage-accent2), transparent 35%);
+    }
+
+    .call-container ::selection {
+      background: color-mix(in srgb, var(--stage-ok), transparent 35%);
+    }
+
+    .call-loading {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--stage-chip-strong);
+      color: var(--stage-ink);
+      padding: 4px 10px;
+      border-radius: var(--stage-radius-sm);
+      font-size: 11px;
+      font-family: var(--stage-sans);
+      letter-spacing: 0.02em;
+      z-index: 10;
+      display: none;
     }
 
     .call-grid {
       width: 100%;
       height: 100%;
       display: grid;
-      gap: 1px;
+      gap: var(--studio-space-sm, 8px);
+      padding: var(--studio-space-sm, 8px);
+      box-sizing: border-box;
     }
 
     .call-grid[data-count="1"] {
@@ -74,12 +131,13 @@ function createStyles() {
 
     .call-participant {
       position: relative;
-      background: #16213e;
+      background: var(--stage-panel);
       overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
       min-height: 0;
+      border-radius: var(--studio-radius-lg, 12px);
     }
 
     .call-participant video {
@@ -94,44 +152,58 @@ function createStyles() {
 
     .call-participant-bar {
       position: absolute;
-      bottom: 8px;
-      left: 8px;
+      bottom: var(--studio-space-sm, 8px);
+      left: var(--studio-space-sm, 8px);
       display: flex;
       align-items: center;
-      gap: 6px;
-      background: rgba(0, 0, 0, 0.6);
-      color: white;
-      padding: 4px 6px 4px 10px;
-      border-radius: 8px;
-      font-size: 13px;
+      gap: var(--studio-space-xs, 6px);
+      background: var(--stage-chip);
+      color: var(--stage-ink);
+      padding: 4px 6px 4px 12px;
+      border-radius: var(--stage-radius-sm);
+      border: 1px solid var(--stage-glass);
+      font-family: var(--stage-sans);
+      font-size: 12px;
+      letter-spacing: 0.01em;
+      backdrop-filter: blur(8px);
     }
 
     .call-participant-bar span {
       pointer-events: none;
     }
 
+    /* The control buttons share the family's sticker press physics with the
+       lobby join button: rounded square, hard ink outline, 3px offset shadow
+       that collapses on :active (translate 2px). Not circles. */
     .call-btn {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      border: none;
+      width: 34px;
+      height: 34px;
+      border-radius: var(--stage-radius);
+      border: var(--stage-bw) solid #000;
       cursor: pointer;
       font-size: 13px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      transition: background 0.15s;
+      background: var(--stage-glass);
+      color: var(--stage-ink);
+      box-shadow: 3px 3px 0 0 #000;
+      transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
       padding: 0;
     }
 
     .call-btn:hover {
-      background: rgba(255, 255, 255, 0.3);
+      filter: brightness(1.04);
+    }
+
+    .call-btn:active {
+      transform: var(--stage-press);
+      box-shadow: 0 0 0 0 #000;
     }
 
     .call-btn.off {
-      background: #dc2626;
+      background: var(--stage-danger);
+      color: var(--studio-fill, #fff);
     }
 
     .call-status-overlay {
@@ -141,9 +213,11 @@ function createStyles() {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: rgba(0, 0, 0, 0.55);
-      color: white;
-      font-size: 13px;
+      background: var(--stage-chip);
+      color: var(--stage-ink);
+      font-family: var(--stage-sans);
+      font-size: 12px;
+      letter-spacing: 0.02em;
       gap: 8px;
       z-index: 5;
       pointer-events: none;
@@ -159,18 +233,19 @@ function createStyles() {
 
     .call-status-overlay .call-retry-btn {
       pointer-events: auto;
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      padding: 4px 14px;
-      border-radius: 6px;
+      background: var(--stage-glass);
+      border: 1px solid var(--stage-glass-hover);
+      color: var(--stage-ink);
+      padding: 6px 16px;
+      border-radius: var(--studio-radius-round, 9999px);
       cursor: pointer;
       font-size: 12px;
       font-family: inherit;
+      transition: background var(--studio-transition, 0.15s ease);
     }
 
     .call-status-overlay .call-retry-btn:hover {
-      background: rgba(255, 255, 255, 0.35);
+      background: var(--stage-glass-hover);
     }
 
     .call-status-dot {
@@ -181,15 +256,15 @@ function createStyles() {
     }
 
     .call-status-dot.connecting {
-      background: #f59e0b;
+      background: var(--stage-warning);
       animation: pulse-dot 1.2s ease-in-out infinite;
     }
-    .call-status-dot.connected { background: #22c55e; }
+    .call-status-dot.connected { background: var(--stage-ok); }
     .call-status-dot.reconnecting {
-      background: #f59e0b;
+      background: var(--stage-warning);
       animation: pulse-dot 0.6s ease-in-out infinite;
     }
-    .call-status-dot.failed { background: #ef4444; }
+    .call-status-dot.failed { background: var(--stage-danger); }
 
     @keyframes pulse-dot {
       0%, 100% { opacity: 1; }
@@ -198,17 +273,21 @@ function createStyles() {
 
     .call-local-status {
       position: absolute;
-      top: 8px;
-      left: 8px;
-      background: rgba(0, 0, 0, 0.7);
-      color: white;
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 12px;
+      top: var(--studio-space-sm, 8px);
+      left: var(--studio-space-sm, 8px);
+      background: var(--stage-chip-strong);
+      color: var(--stage-ink);
+      padding: 8px 14px;
+      border-radius: var(--stage-radius-sm);
+      border: 1px solid var(--stage-glass);
+      font-family: var(--stage-sans);
+      font-size: 11px;
+      letter-spacing: 0.02em;
       z-index: 10;
       display: flex;
       flex-direction: column;
       gap: 6px;
+      backdrop-filter: blur(8px);
     }
 
     .call-local-status[hidden] {
@@ -216,23 +295,25 @@ function createStyles() {
     }
 
     .call-local-status .call-retry-btn {
-      background: rgba(255, 255, 255, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      color: white;
-      padding: 3px 10px;
-      border-radius: 5px;
+      background: var(--stage-glass);
+      border: 1px solid var(--stage-glass-hover);
+      color: var(--stage-ink);
+      padding: 4px 12px;
+      border-radius: var(--studio-radius-round, 9999px);
       cursor: pointer;
       font-size: 11px;
       font-family: inherit;
+      transition: background var(--studio-transition, 0.15s ease);
     }
 
     .call-local-status .call-retry-btn:hover {
-      background: rgba(255, 255, 255, 0.35);
+      background: var(--stage-glass-hover);
     }
 
     .call-btn .quality-label {
       font-size: 9px;
       font-weight: 700;
+      font-family: var(--stage-mono);
       pointer-events: none;
     }
 
@@ -245,76 +326,90 @@ function createStyles() {
       bottom: calc(100% + 6px);
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 8px;
-      padding: 4px;
+      background: var(--stage-chip-strong);
+      border: 1px solid var(--stage-glass);
+      border-radius: var(--studio-radius-lg, 12px);
+      padding: 5px;
       display: flex;
       flex-direction: column;
       gap: 2px;
       z-index: 30;
       min-width: 56px;
+      box-shadow: var(--studio-shadow-lg, 0 10px 15px -3px rgb(0 0 0 / 0.3));
+      backdrop-filter: blur(8px);
     }
 
     .call-quality-menu button {
       background: none;
       border: none;
-      color: white;
-      padding: 5px 10px;
-      border-radius: 5px;
+      color: var(--stage-ink);
+      padding: 6px 12px;
+      border-radius: var(--stage-radius-sm);
       cursor: pointer;
       font-size: 12px;
-      font-family: inherit;
+      font-family: var(--stage-sans);
       font-weight: 500;
       text-align: center;
       white-space: nowrap;
+      transition: background var(--studio-transition-fast, 0.1s ease);
     }
 
     .call-quality-menu button:hover {
-      background: rgba(255, 255, 255, 0.15);
+      background: var(--stage-glass);
     }
 
     .call-quality-menu button.active {
-      background: rgba(255, 255, 255, 0.25);
+      background: var(--stage-glass-hover);
     }
 
+    /* lemon "data" chip — the family's --highlight, hard ink edge, mono digits */
     .call-sending-quality {
       position: absolute;
-      bottom: 8px;
-      right: 8px;
-      background: rgba(0, 0, 0, 0.6);
-      color: rgba(255, 255, 255, 0.7);
-      padding: 2px 6px;
-      border-radius: 5px;
+      bottom: var(--studio-space-sm, 8px);
+      right: var(--studio-space-sm, 8px);
+      background: var(--stage-lemon);
+      color: #000;
+      padding: 2px 8px;
+      border: 1px solid #000;
+      border-radius: var(--stage-radius-sm);
       font-size: 10px;
-      font-weight: 600;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-weight: 700;
+      font-family: var(--stage-mono);
       pointer-events: none;
       z-index: 4;
     }
 
+    /* The lobby is a real sticker scene (the family's light "paper" surface),
+       not the dark stage — so the hard ink outlines + chunky offset shadows on
+       the preview and the join button actually read. A faint dotted ground, the
+       same touch glomper uses. */
     .call-lobby {
       position: absolute;
       inset: 0;
       z-index: 20;
-      background: #111;
+      background-color: var(--studio-fill, #fffaff);
+      background-image: radial-gradient(color-mix(in srgb, var(--studio-line, #000), transparent 88%) 0.5px, transparent 0.5px);
+      background-size: 16px 16px;
+      background-position: -8px -8px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 20px;
-      font-family: system-ui, -apple-system, sans-serif;
-      color: white;
+      gap: var(--studio-space-lg, 24px);
+      font-family: var(--stage-sans);
+      color: var(--studio-line, #1a1714);
     }
 
     .call-lobby-preview {
       width: 320px;
       max-width: 80%;
       aspect-ratio: 4 / 3;
-      border-radius: 12px;
+      border-radius: var(--stage-radius);
       overflow: hidden;
-      background: #16213e;
+      background: var(--stage-panel);
       position: relative;
+      border: var(--stage-bw) solid var(--stage-accent);
+      box-shadow: 3px 3px 0 0 var(--stage-accent);
     }
 
     .call-lobby-preview video {
@@ -330,59 +425,78 @@ function createStyles() {
     }
 
     .call-lobby-toggle {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      border: none;
+      width: 46px;
+      height: 46px;
+      border-radius: var(--stage-radius);
+      border: var(--stage-bw) solid #000;
       cursor: pointer;
       font-size: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(255, 255, 255, 0.15);
-      color: white;
-      transition: background 0.15s;
+      background: #fff;
+      color: #000;
+      box-shadow: 3px 3px 0 0 #000;
+      transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
     }
 
     .call-lobby-toggle:hover {
-      background: rgba(255, 255, 255, 0.3);
+      filter: brightness(0.97);
+    }
+
+    .call-lobby-toggle:active {
+      transform: var(--stage-press);
+      box-shadow: 0 0 0 0 #000;
     }
 
     .call-lobby-toggle.off {
-      background: #dc2626;
+      background: var(--stage-danger);
+      color: #fff;
     }
 
     .lobby-quality-label {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
+      font-family: var(--stage-mono);
       pointer-events: none;
     }
 
+    /* The hero. The family's sticker press-button: a chunky 3px ink offset
+       shadow that the button sinks into on :active (translate 2px, shadow
+       collapses) — same physics as glomper's --press / newspace's toolbar. */
     .call-lobby-join {
-      padding: 12px 36px;
-      border-radius: 24px;
-      border: none;
-      background: #22c55e;
-      color: white;
-      font-size: 16px;
-      font-weight: 600;
-      font-family: inherit;
+      padding: 13px 40px;
+      border-radius: var(--stage-radius);
+      border: var(--stage-bw) solid #000;
+      background: var(--stage-accent);
+      color: var(--stage-accent-text);
+      font-size: 15px;
+      font-weight: 800;
+      font-family: var(--stage-sans);
       cursor: pointer;
-      transition: background 0.15s;
+      transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
+      box-shadow: 3px 3px 0 0 #000;
     }
 
     .call-lobby-join:hover {
-      background: #16a34a;
+      filter: brightness(1.04);
+    }
+
+    .call-lobby-join:active {
+      transform: var(--stage-press);
+      box-shadow: 0 0 0 0 #000;
     }
 
     .call-lobby-name {
-      font-size: 14px;
+      font-size: 13px;
+      font-family: var(--stage-sans);
+      letter-spacing: 0.02em;
       opacity: 0.7;
     }
 
     .call-lobby-error {
       font-size: 13px;
-      color: #f87171;
+      color: var(--stage-danger);
       text-align: center;
       max-width: 280px;
     }
@@ -391,36 +505,47 @@ function createStyles() {
       position: absolute;
       inset: 0;
       z-index: 20;
-      background: #111;
+      background-color: var(--studio-fill, #fffaff);
+      background-image: radial-gradient(color-mix(in srgb, var(--studio-line, #000), transparent 88%) 0.5px, transparent 0.5px);
+      background-size: 16px 16px;
+      background-position: -8px -8px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 16px;
-      font-family: system-ui, -apple-system, sans-serif;
-      color: white;
+      gap: var(--studio-space-md, 16px);
+      font-family: var(--stage-sans);
+      color: var(--studio-line, #1a1714);
     }
 
     .call-other-tab-msg {
-      font-size: 15px;
+      font-size: 13px;
+      font-family: var(--stage-sans);
+      letter-spacing: 0.02em;
       opacity: 0.8;
     }
 
     .call-other-tab button {
-      padding: 10px 28px;
-      border-radius: 20px;
-      border: none;
-      background: #3b82f6;
-      color: white;
-      font-size: 14px;
-      font-weight: 600;
-      font-family: inherit;
+      padding: 11px 30px;
+      border-radius: var(--stage-radius);
+      border: var(--stage-bw) solid #000;
+      background: var(--stage-sky);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      font-family: var(--stage-sans);
       cursor: pointer;
-      transition: background 0.15s;
+      transition: transform 0.06s, box-shadow 0.06s, filter 0.1s;
+      box-shadow: 3px 3px 0 0 #000;
     }
 
     .call-other-tab button:hover {
-      background: #2563eb;
+      filter: brightness(1.04);
+    }
+
+    .call-other-tab button:active {
+      transform: var(--stage-press);
+      box-shadow: 0 0 0 0 #000;
     }
 
     .call-teleprint-panel {
@@ -429,14 +554,14 @@ function createStyles() {
       right: 12px;
       width: 380px;
       height: 420px;
-      background: #1a1a2e;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 12px;
+      background: var(--stage-panel);
+      border: 1px solid var(--stage-glass);
+      border-radius: 8px;
       overflow: hidden;
       z-index: 25;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      box-shadow: var(--studio-shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.5));
       resize: both;
     }
 
@@ -473,10 +598,7 @@ export default function TelephoneTool(handle, element) {
 
   // Transcription loading indicator
   const loadingIndicator = document.createElement("div");
-  loadingIndicator.style.cssText =
-    "position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);" +
-    "color:white;padding:4px 10px;border-radius:6px;font-size:12px;" +
-    "font-family:system-ui,sans-serif;z-index:10;display:none;";
+  loadingIndicator.className = "call-loading";
   container.appendChild(loadingIndicator);
 
   // ---- Local video box ----
@@ -734,7 +856,6 @@ export default function TelephoneTool(handle, element) {
   hangUpBtn.className = "call-btn off";
   hangUpBtn.textContent = "\u{1F4DE}";
   hangUpBtn.title = "Hang up";
-  hangUpBtn.style.background = "#dc2626";
   hangUpBtn.addEventListener("click", () => {
     if (!session) return;
     session.leave();

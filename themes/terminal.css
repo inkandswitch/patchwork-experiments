@@ -1,0 +1,102 @@
+/* Terminal — green phosphor CRT */
+[theme="terminal"] {
+	color-scheme: dark;
+	--studio-fill: #000000;
+	--studio-line: #00cc00;
+	--studio-primary: #00ff00;
+	--studio-secondary: #00cc00;
+	--studio-danger: #ff0000;
+	--studio-warning: #ffff00;
+	--studio-added: #00ff00;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ffff00;
+	--studio-link: #00ffff;
+	--studio-selection-fill: #003300;
+
+	--studio-family-sans: "VT323", "Courier New", "Lucida Console", monospace;
+	--studio-family-code: "VT323", "Courier New", "Lucida Console", monospace;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-selection-line: var(--studio-primary);
+	--text-editor-active-line-fill: #00ff0008;
+	--text-editor-active-line-fill--gutter: #002200;
+	--text-editor-gutter-fill: var(--text-editor-fill);
+	--text-editor-gutter-line: #006600;
+	--text-editor-gutter-border: #003300;
+	--text-editor-tooltip-fill: #001a00;
+
+	--syntax-comment: #006600;
+	--syntax-style-comment: normal;
+
+	--syntax-doc-comment: #008800;
+	--syntax-style-doc-comment: normal;
+
+	--syntax-meta: #008800;
+	--syntax-invalid: #ff0000;
+
+	--syntax-operator: #00cc00;
+	--syntax-punctuation: #009900;
+
+	--syntax-bool: #00ff00;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #00ff00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #00ff00;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #00ffcc;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #00ffcc;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #00cc00;
+
+	--syntax-function--variable-name: #00ff66;
+	--syntax-function--property-name: #00ff66;
+
+	--syntax-variable-name: #00cc00;
+	--syntax-definition--variable-name: #00ff00;
+
+	--syntax-string: #00cc66;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #00ffcc;
+	--syntax-integer: #00ffcc;
+	--syntax-float: #00ffcc;
+
+	--syntax-escape: #ffff00;
+	--syntax-regexp: #00cc66;
+	--syntax-special--string: #00cc66;
+
+	--syntax-tag-name: #00ff00;
+	--syntax-angle-bracket: #009900;
+
+	--syntax-attribute-name: #00cc66;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #00ffcc;
+
+	--syntax-strong: #00ff00;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #00ff00;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #00ff00;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #00ffff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #006600;
+	--syntax-list: #00cc00;
+
+	--syntax-inserted: #00ff00;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ffff00;
+
+	--syntax-content-separator: #003300;
+}

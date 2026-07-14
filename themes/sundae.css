@@ -1,0 +1,55 @@
+/* Sundae — ice cream sundae: vanilla cream, strawberry pink, cherry red, caramel and mint */
+[theme="sundae"] {
+	color-scheme: light;
+	--studio-fill: #fdf8ef;
+	--studio-line: #463530;
+	--studio-primary: #ff5e9a;
+	--studio-secondary: #46c2a0;
+	--studio-danger: #e23a4e;
+	--studio-warning: #d68a3c;
+	--studio-added: #46c2a0;
+	--studio-deleted: #e23a4e;
+	--studio-modified: #d68a3c;
+	--studio-link: #2f9d86;
+	--studio-selection-fill: #ffdde7;
+	/* swirl the cream strawberry-pink, not mint */
+	--studio-offset-tint: var(--studio-primary);
+
+	/* a clean white scoop for the editor against the cream studio */
+	--text-editor-fill: #ffffff;
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-link);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: #a86bc4;
+	--syntax-weight-bool: bold;
+	--syntax-atom: #a86bc4;
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: #c07d33;
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: #c07d33;
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: #ff84b3;
+	--syntax-function--property-name: #ff84b3;
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: var(--studio-secondary);
+	--syntax-number: #a86bc4;
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: var(--studio-warning);
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: var(--studio-warning);
+	--syntax-meta: #a86bc4;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

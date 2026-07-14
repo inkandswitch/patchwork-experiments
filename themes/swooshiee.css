@@ -1,0 +1,166 @@
+/* Swooshiee — swooshes forever through four colours:
+
+       #33ccff  →  #c6c964  →  #f8f19a  →  #b52873  →  (loop)
+       blue        olive       cream       magenta
+
+   ...but interpolated through OKLCH, not sRGB. Why the fuss? A keyframe
+   animation on a colour property tweens in sRGB by default, which drags the
+   path through muddy greys. Gradients let you say `linear-gradient(in oklch,…)`
+   — but there's no equivalent keyword for `@keyframes`. So instead of animating
+   a colour directly, we register the three OKLCH channels (L, C, H) as typed
+   custom properties and animate *those*, then recompose with oklch(). The tween
+   now travels along the OKLCH path itself: bright, even, no dead greys.
+
+   Each hex was converted to its exact OKLCH coordinates:
+       #33ccff -> oklch(79.0% .140 226.2)   blue
+       #c6c964 -> oklch(81.3% .125 110.4)   olive
+       #f8f19a -> oklch(94.5% .108 104.3)   cream
+       #b52873 -> oklch(52.6% .187 353.4)   magenta
+
+   Everything in the theme hangs off the live hue, so the whole thing swooshes
+   together — while the background stays dark and the text stays legible (they
+   borrow only the moving *hue*, keeping their own lightness). */
+
+@property --sw-l { syntax: "<number>"; inherits: true; initial-value: 79; }
+@property --sw-c { syntax: "<number>"; inherits: true; initial-value: 0.14; }
+@property --sw-h { syntax: "<number>"; inherits: true; initial-value: 226; }
+
+@keyframes swooshy {
+	0%,  100% { --sw-l: 79.0; --sw-c: .140; --sw-h: 226.2; } /* blue */
+	25%       { --sw-l: 81.3; --sw-c: .125; --sw-h: 110.4; } /* olive */
+	50%       { --sw-l: 94.5; --sw-c: .108; --sw-h: 104.3; } /* cream */
+	75%       { --sw-l: 52.6; --sw-c: .187; --sw-h: 353.4; } /* magenta */
+}
+
+[theme="swooshiee"] {
+	color-scheme: dark;
+
+	/* one lap through all four colours every 16s, constant speed, forever */
+	animation: swooshy 16s linear infinite;
+
+	/* the live colour, rebuilt each frame from the animated channels */
+	--swoosh: oklch(calc(var(--sw-l) * 1%) var(--sw-c) var(--sw-h));
+
+	/* ---- palette anchored to the moving hue ---- */
+	/* accents keep a fixed bright lightness so they pop on the dark ground,
+	   fanned out by hue offset so it reads as a (moving) palette not a monotone */
+	--sw-a0:  oklch(74% .17 var(--sw-h));
+	--sw-a1:  oklch(74% .17 calc(var(--sw-h) +  40));
+	--sw-a2:  oklch(74% .17 calc(var(--sw-h) +  80));
+	--sw-a3:  oklch(74% .17 calc(var(--sw-h) + 120));
+	--sw-a4:  oklch(74% .17 calc(var(--sw-h) + 160));
+	--sw-a5:  oklch(74% .17 calc(var(--sw-h) + 200));
+	--sw-a6:  oklch(74% .17 calc(var(--sw-h) - 40));
+	--sw-a7:  oklch(74% .17 calc(var(--sw-h) - 80));
+
+	/* backdrop + ink borrow only the hue, keeping their own lightness so the
+	   page shifts colour but never washes out or goes unreadable */
+	--sw-bg:      oklch(16% .03  var(--sw-h));
+	--sw-bg-lift: oklch(22% .045 var(--sw-h));
+	--sw-editor:  oklch(13% .025 var(--sw-h));
+	--sw-ink:     oklch(93% .025 var(--sw-h));
+	--sw-ink-dim: oklch(66% .035 var(--sw-h));
+
+	/* ---- studio chrome ---- */
+	--studio-fill: var(--sw-bg);
+	--studio-line: var(--sw-ink);
+	--studio-primary: var(--swoosh);          /* the actual blue/olive/cream/magenta */
+	--studio-secondary: var(--sw-a4);
+	--studio-danger: var(--sw-a6);
+	--studio-warning: var(--sw-a1);
+	--studio-added: var(--sw-a3);
+	--studio-deleted: var(--sw-a6);
+	--studio-modified: var(--sw-a5);
+	--studio-link: var(--sw-a2);
+	--studio-selection-fill: color-mix(in oklch, var(--swoosh) 28%, transparent);
+	--studio-chrome-fill: var(--sw-bg-lift);
+	/* primary surface can be as light as cream (94%), so ink it dark */
+	--studio-primary-line: var(--sw-bg);
+
+	--text-editor-fill: var(--sw-editor);
+	--text-editor-cursor-fill: var(--swoosh);
+	--text-editor-selection-fill: color-mix(in oklch, var(--sw-a5) 30%, transparent);
+	--text-editor-gutter-line: var(--sw-ink-dim);
+
+	/* ---- syntax: fanned across the moving hue ---- */
+	--syntax-comment: var(--sw-ink-dim);
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: var(--sw-ink-dim);
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: var(--sw-a7);
+	--syntax-invalid: var(--sw-a6);
+
+	--syntax-operator: var(--sw-a4);
+	--syntax-punctuation: var(--sw-ink-dim);
+
+	--syntax-bool: var(--sw-a6);
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: var(--sw-a6);
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--sw-a5);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: var(--sw-a2);
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: var(--sw-a2);
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: var(--sw-a4);
+
+	--syntax-function--variable-name: var(--sw-a3);
+	--syntax-function--property-name: var(--sw-a3);
+
+	--syntax-definition--variable-name: var(--sw-a5);
+
+	--syntax-string: var(--sw-a1);
+	--syntax-fill-string: color-mix(in oklch, var(--sw-a1) 12%, transparent);
+
+	--syntax-number: var(--sw-a0);
+	--syntax-integer: var(--sw-a0);
+	--syntax-float: var(--sw-a0);
+
+	--syntax-escape: var(--sw-a1);
+	--syntax-regexp: var(--sw-a3);
+	--syntax-special--string: var(--sw-a3);
+
+	--syntax-tag-name: var(--sw-a5);
+	--syntax-angle-bracket: var(--sw-ink-dim);
+
+	--syntax-attribute-name: var(--sw-a1);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--sw-a7);
+
+	--syntax-strong: var(--sw-a0);
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: var(--sw-a3);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--swoosh);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--sw-a2);
+	--syntax-style-link: underline;
+
+	--syntax-quote: var(--sw-ink-dim);
+	--syntax-list: var(--sw-a7);
+
+	--syntax-inserted: var(--sw-a3);
+	--syntax-deleted: var(--sw-a6);
+	--syntax-changed: var(--sw-a5);
+
+	--syntax-content-separator: var(--sw-bg-lift);
+}
+
+/* be kind to folks who'd rather things hold still */
+@media (prefers-reduced-motion: reduce) {
+	[theme="swooshiee"] {
+		animation: none;
+	}
+}

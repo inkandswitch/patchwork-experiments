@@ -1,0 +1,27 @@
+{
+  "name": "@patchwork/tldraw-text-list",
+  "version": "0.0.1",
+  "description": "Embeddable bireactive lens: a live, editable bullet list of the text in a tldraw doc's shapes, composed entirely from optics",
+  "type": "module",
+  "exports": "./dist/index.js",
+  "scripts": {
+    "build": "tsc && vite build",
+    "test": "vitest run",
+    "push": "pnpm build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "keywords": [],
+  "author": "Ink & Switch",
+  "dependencies": {
+    "@automerge/automerge-repo": "2.6.0-subduction.37",
+    "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "bireactive": "^0.3.5"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.0.3",
+    "@types/node": "^20.19.39",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.2",
+    "vitest": "^3.2.4"
+  }
+}

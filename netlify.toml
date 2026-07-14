@@ -1,0 +1,35 @@
+# Netlify config for the patchwork-tools *tools bundle* (static-dist:
+# modules.json + tools/). A Patchwork shell (lives in patchwork-next) is
+# deployed separately and points at this site's modules.json via
+# VITE_DEFAULT_MODULES (build-time) or localStorage.defaultToolsUrl (runtime).
+#
+# CORS for cross-origin module import() is emitted into the publish dir as a
+# `_headers` file by scripts/bundle.mjs (also honoured by Cloudflare Pages),
+# so it isn't duplicated here.
+#
+# `build:tools:ci` installs + builds every tool independently (patchwork-tools
+# is not a workspace) and then aggregates into static-dist/. Tools that fail to
+# build are skipped, so a broken WIP tool won't fail the whole deploy.
+#
+# Deploys run on Netlify's Git integration: production on the production branch,
+# automatic Deploy Previews for every PR. Also used by `pnpm deploy:tools` (CLI).
+[build]
+  publish = "static-dist"
+  command = "pnpm build:tools:ci"
+
+[build.environment]
+  # Match the local toolchain. Netlify auto-detects pnpm from pnpm-lock.yaml;
+  # pin PNPM_VERSION here too if you need an exact pnpm.
+  NODE_VERSION = "22"
+  # PNPM_VERSION = "11"
+  # pnpm 11 turns blocked dependency build scripts into a hard error
+  # (ERR_PNPM_IGNORED_BUILDS) on a clean install, which fails any tool whose
+  # native deps (esbuild, cbor-extract, @swc/core, core-js …) need a build and
+  # that doesn't approve them in its own pnpm-workspace.yaml `allowBuilds`.
+  # Since patchwork-tools isn't a workspace, approve all builds for the CI
+  # install. build-static.mjs also sets this per tool install; keeping it here
+  # makes the CI behaviour explicit and covers Netlify's own install step.
+  # The settings env prefix differs by pnpm major: 10 reads `npm_config_*`,
+  # 11 reads `pnpm_config_*`. Set both so it works regardless of version.
+  pnpm_config_dangerously_allow_all_builds = "true"
+  npm_config_dangerously_allow_all_builds = "true"

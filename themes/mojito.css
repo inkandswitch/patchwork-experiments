@@ -1,0 +1,88 @@
+/* Mojito — a fresh mint-and-lime cooler: mint green, teal, lime, on mint cream */
+[theme="mojito"] {
+	color-scheme: light;
+	--studio-fill: #f2fff5; /* mint cream */
+	--studio-line: #1f4a2e; /* deep mint */
+	--studio-primary: #00b86b; /* mint green */
+	--studio-secondary: #00a8a8; /* teal */
+	--studio-danger: #e8345a; /* cocktail cherry */
+	--studio-warning: #f5a623;
+	--studio-added: #00b86b;
+	--studio-deleted: #e8345a;
+	--studio-modified: #00a8a8;
+	--studio-link: #00a8a8;
+	--studio-selection-fill: #c8f5d8;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-line: var(--text-editor-line-offset-40);
+
+	--syntax-comment: #7bb89a;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #6aa88a;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: var(--studio-secondary);
+	--syntax-invalid: var(--studio-danger);
+
+	--syntax-operator: var(--studio-primary);
+	--syntax-punctuation: #6a9a80;
+
+	--syntax-bool: #7a9a00; /* lime */
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #7a9a00;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: var(--studio-secondary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: var(--studio-secondary);
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: var(--studio-secondary);
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: var(--studio-primary);
+
+	--syntax-function--variable-name: var(--studio-primary);
+	--syntax-function--property-name: var(--studio-primary);
+
+	--syntax-definition--variable-name: var(--studio-secondary);
+
+	--syntax-string: #7ac850; /* lime */
+	--syntax-fill-string: #7ac85014;
+
+	--syntax-number: var(--studio-secondary);
+	--syntax-integer: var(--studio-secondary);
+	--syntax-float: var(--studio-secondary);
+
+	--syntax-escape: var(--studio-danger);
+	--syntax-regexp: var(--studio-secondary);
+	--syntax-special--string: #7ac850;
+
+	--syntax-tag-name: var(--studio-danger);
+	--syntax-angle-bracket: #6a9a80;
+
+	--syntax-attribute-name: var(--studio-warning);
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: var(--studio-warning);
+
+	--syntax-emphasis: var(--studio-secondary);
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+
+	--syntax-link: var(--studio-link);
+	--syntax-style-link: underline;
+
+	--syntax-quote: #7bb89a;
+
+	--syntax-inserted: var(--studio-added);
+	--syntax-deleted: var(--studio-deleted);
+	--syntax-changed: var(--studio-modified);
+
+	--syntax-content-separator: #c0e8d0;
+}

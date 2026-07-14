@@ -3,7 +3,9 @@ import { useDocument } from '@automerge/automerge-repo-react-hooks';
 import { Marked } from 'marked';
 import { Eye, Pencil, Plus, X } from 'lucide-react';
 import { useState, useCallback } from 'react';
-import { toolify } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import { NoteDoc } from './types';
 import './styles.css';
 
@@ -114,4 +116,15 @@ const NoteEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   );
 };
 
-export const renderNoteEditor = toolify(NoteEditor);
+export function renderNoteEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <NoteEditor docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

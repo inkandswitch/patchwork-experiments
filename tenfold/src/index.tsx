@@ -2,7 +2,6 @@
 import type { AutomergeUrl, DocHandle } from "@automerge/automerge-repo"
 import { type LoadableDatatype, type LoadablePlugin, type ToolDescription, type ToolImplementation } from "@inkandswitch/patchwork-plugins"
 import { render } from "solid-js/web"
-import "./index.css"
 import { TenfriendDatatype } from "./tenfriend-datatype"
 import { TenfriendTool } from "./tenfriend-tool"
 
@@ -12,16 +11,8 @@ export type TenfoldLetters = TenfoldLetterer[][]
 
 export type TenfoldLettersDoc = { letters: string[][] }
 
-function addStyles(textContent: string, element: HTMLElement = self.document?.head) {
-  const id = "tenfold-styles"
-  const el = element.querySelector(`#${id}`) ?? document.createElement("style")
-  Object.assign(el, { textContent, id })
-  element.append(el)
-}
-
-async function loadStyles() {
-  const url = new URL("./tenfold.css", import.meta.url)
-  return (await fetch(url)).text()
+async function ensureStyles() {
+  await import("./index.css")
 }
 
 export interface TenfoldState {
@@ -90,8 +81,7 @@ export const plugins = [
     name: "Tenfold",
     supportedDatatypes: ["inkandswitch/tenfold"],
     async load() {
-      const styles = await loadStyles()
-      addStyles(styles)
+      await ensureStyles()
       const tool = await import("./tool.tsx")
       return (handle, element) => {
         return render(() => <tool.default handle={handle as DocHandle<Tenfold>} element={element} />, element)
@@ -114,8 +104,7 @@ export const plugins = [
     icon: "Users",
     supportedDatatypes: ["tenfriend"],
     async load() {
-      const styles = await loadStyles()
-      addStyles(styles)
+      await ensureStyles()
       return TenfriendTool
     },
   } satisfies LoadablePlugin<ToolDescription, ToolImplementation>,

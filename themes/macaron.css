@@ -1,0 +1,54 @@
+/* Macaron — French macaron pastels: rose, pistachio, lavender and lemon on almond cream */
+[theme="macaron"] {
+	color-scheme: light;
+	--studio-fill: #fbf6f2;
+	--studio-line: #5a4a55;
+	--studio-primary: #ec7faf;
+	--studio-secondary: #8fce9d;
+	--studio-danger: #ef6b88;
+	--studio-warning: #ecc24f;
+	--studio-added: #8fce9d;
+	--studio-deleted: #ef6b88;
+	--studio-modified: #b58fd6;
+	--studio-link: #a98fd6;
+	--studio-selection-fill: #f6dcec;
+	/* tint the ramp rose so chrome stays macaron-pink, not pistachio */
+	--studio-offset-tint: var(--studio-primary);
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	/* deepen pastels in code so tokens stay legible on the cream paper */
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-modified);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-modified);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-modified);
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: #d77fae;
+	--syntax-function--property-name: #d77fae;
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: #5aab72;
+	--syntax-number: #cf9b3a;
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #cf9b3a;
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #cf9b3a;
+	--syntax-meta: var(--studio-modified);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

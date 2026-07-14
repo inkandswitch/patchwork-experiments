@@ -1,0 +1,62 @@
+.source-clip {
+  background: var(--timeline-clip-selected-fill, oklch(55% 0.14 245));
+  border: 1px solid var(--timeline-clip-selected-stroke, oklch(78% 0.1 245));
+  color: var(--timeline-text, oklch(95% 0.01 260));
+  user-select: none;
+  pointer-events: none;
+}
+
+.source-add-button {
+  background: var(--timeline-clip-selected-fill, oklch(55% 0.14 245));
+  border-color: var(--timeline-clip-selected-stroke, oklch(78% 0.1 245));
+  color: var(--timeline-text, oklch(95% 0.01 260));
+}
+
+.source-add-button:hover {
+  background: var(--timeline-clip-fill-hover, oklch(52% 0.13 250));
+  border-color: var(--timeline-clip-selected-stroke, oklch(78% 0.1 245));
+  color: var(--timeline-text, oklch(95% 0.01 260));
+}
+
+.source-clip-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.source-clip-handle {
+  flex-shrink: 0;
+  width: 8px;
+  align-self: stretch;
+  background: var(--timeline-handle-fill, oklch(38% 0.08 250));
+}
+
+.source-clip-handle-left {
+  border-radius: 4px 0 0 4px;
+}
+
+.source-clip-handle-right {
+  border-radius: 0 4px 4px 0;
+}
+
+.source-playhead {
+  background: var(--timeline-playhead, oklch(62% 0.22 25));
+}
+
+/* Floating preview of a clip while it is dragged from the source monitor. */
+.source-drag-chip {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  pointer-events: none;
+  background: var(--timeline-clip-selected-fill, oklch(55% 0.14 245));
+  border: 1px solid var(--timeline-clip-selected-stroke, oklch(78% 0.1 245));
+  color: oklch(95% 0.01 260);
+  box-shadow: 0 4px 14px oklch(0% 0 0 / 0.35);
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}

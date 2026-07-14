@@ -1,0 +1,101 @@
+/* Turbo — the Turbo Pascal 7 IDE: DOS blue screen, bright yellow text, white reserved words, cyan strings */
+[theme="turbo"] {
+	color-scheme: dark;
+	--studio-family-sans: "IBM Plex Mono", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+	--studio-family-serif: "IBM Plex Mono", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+	--studio-family-code: "IBM Plex Mono", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+	--studio-fill: #0000aa;
+	--studio-line: #ffff00;
+	--studio-primary: #ff00ff;
+	--document-list-primary: #ff00ff;
+	--studio-secondary: #00ffff;
+	--studio-danger: #ff5555;
+	--studio-warning: #ffff00;
+	--studio-added: #00ff00;
+	--studio-deleted: #ff5555;
+	--studio-modified: #00ffff;
+	--studio-link: #00ffff;
+	--studio-selection-fill: #00aaaa;
+	--studio-chrome-fill: #0000aa;
+	--studio-offset-tint: var(--studio-secondary);
+
+	--text-editor-cursor-fill: #ffffff;
+	--text-editor-active-line-fill: #ffffff10;
+	--text-editor-selection-fill: #00aaaa88;
+	--text-editor-gutter-fill: #0000aa;
+	--text-editor-gutter-line: #7777dd;
+
+	--syntax-comment: #808080;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #808080;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #00ffff;
+	--syntax-invalid: #ff5555;
+
+	--syntax-operator: #ffffff;
+	--syntax-punctuation: #ffffff;
+
+	--syntax-bool: #ffffff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ffffff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ffffff;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #ffffff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #ffffff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #ffffff;
+
+	--syntax-function--variable-name: #ffff00;
+	--syntax-function--property-name: #ffff00;
+
+	--syntax-definition--variable-name: #ffff00;
+
+	--syntax-string: #00ffff;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #00ff00;
+	--syntax-integer: #00ff00;
+	--syntax-float: #00ff00;
+
+	--syntax-escape: #ff5555;
+	--syntax-regexp: #00ffff;
+	--syntax-special--string: #00ffff;
+
+	--syntax-tag-name: #ffffff;
+	--syntax-angle-bracket: #ffff00;
+
+	--syntax-attribute-name: #00ffff;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #00ffff;
+
+	--syntax-strong: #ffffff;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ffff00;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #ffffff;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #00ffff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #808080;
+	--syntax-list: #ffff00;
+
+	--syntax-inserted: #00ff00;
+	--syntax-deleted: #ff5555;
+	--syntax-changed: #00ffff;
+
+	--syntax-content-separator: #0000dd;
+}

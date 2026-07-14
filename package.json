@@ -1,5 +1,16 @@
 {
   "name": "patchwork-tools",
   "private": true,
-  "description": "Tool packages for Patchwork. The pw-modules CLI lives in patchwork-next; run `pnpm run link-cli` there to install it, then `pnpm run register` in any tool here to deploy."
+  "type": "module",
+  "description": "Tool packages for Patchwork. The pw-modules CLI lives in patchwork-next; run `pnpm run link-cli` there to install it, then `pnpm run register` in any tool here to deploy.",
+  "scripts": {
+    "build:static": "node scripts/build-static.mjs",
+    "build:static:fresh": "node scripts/build-static.mjs --build",
+    "build:tools:ci": "node scripts/build-static.mjs --install",
+    "bundle": "node scripts/bundle.mjs",
+    "serve:tools": "node scripts/serve-tools.mjs",
+    "dev:tools": "pnpm build:static:fresh && pnpm serve:tools",
+    "deploy:tools": "pnpm build:static:fresh && pnpm dlx netlify-cli deploy --dir=static-dist --prod"
+  },
+  "packageManager": "pnpm@11.9.0"
 }

@@ -1,0 +1,93 @@
+/* Kanagawa — inspired by the colours of Katsushika Hokusai's The Great Wave */
+[theme="kanagawa"] {
+	color-scheme: dark;
+	--studio-fill: #1f1f28;
+	--studio-line: #dcd7ba;
+	--studio-primary: #7e9cd8;
+	--studio-secondary: #7fb4ca;
+	--studio-danger: #c34043;
+	--studio-warning: #c0a36e;
+	--studio-added: #76946a;
+	--studio-deleted: #c34043;
+	--studio-modified: #7e9cd8;
+	--studio-link: #7e9cd8;
+	--studio-selection-fill: #2d4f67;
+
+	/* cursor in oldWhite; line numbers in fujiGray */
+	--text-editor-cursor-fill: #c8c093;
+	--text-editor-gutter-line: #727169;
+
+	--syntax-comment: #727169;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #727169;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #727169;
+	--syntax-invalid: #c34043;
+
+	--syntax-operator: #c0a36e;
+	--syntax-punctuation: #9cabca;
+
+	--syntax-bool: #ffa066;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ffa066;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #957fb8;
+
+	--syntax-type-name: #7aa89f;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #7aa89f;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #c0a36e;
+
+	--syntax-function--variable-name: #7e9cd8;
+	--syntax-function--property-name: #7e9cd8;
+
+	--syntax-variable-name: #dcd7ba;
+	--syntax-definition--variable-name: #dcd7ba;
+
+	--syntax-string: #98bb6c;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #d27e99;
+	--syntax-integer: #d27e99;
+	--syntax-float: #d27e99;
+
+	--syntax-escape: #c34043;
+	--syntax-regexp: #7fb4ca;
+	--syntax-special--string: #98bb6c;
+
+	--syntax-tag-name: #957fb8;
+	--syntax-angle-bracket: #9cabca;
+
+	--syntax-attribute-name: #7e9cd8;
+	--syntax-style-attribute-name: normal;
+
+	--syntax-namespace: #7fb4ca;
+
+	--syntax-strong: #dcd7ba;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #dcd7ba;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #957fb8;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #7e9cd8;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #727169;
+	--syntax-list: #dcd7ba;
+
+	--syntax-inserted: #76946a;
+	--syntax-deleted: #c34043;
+	--syntax-changed: #c0a36e;
+
+	--syntax-content-separator: #54546d;
+}

@@ -19,7 +19,9 @@ import {
   readStoredLatencyOffsetChunks,
   writeStoredLatencyOffsetChunks,
 } from './latency';
-import { toolify } from './react-util';
+import { createRoot } from 'react-dom/client';
+import { RepoContext } from '@automerge/automerge-repo-react-hooks';
+import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import type {
   LayerNoSamples,
   LooperDoc,
@@ -1171,4 +1173,15 @@ function displayFullHelp() {
   }
 }
 
-export const renderLooperEditor = toolify(LooperEditor);
+export function renderLooperEditor(
+  handle: { url: AutomergeUrl },
+  element: ToolElement
+): ReturnType<ToolImplementation> {
+  const root = createRoot(element);
+  root.render(
+    <RepoContext.Provider value={element.repo}>
+      <LooperEditor docUrl={handle.url} />
+    </RepoContext.Provider>
+  );
+  return () => root.unmount();
+}

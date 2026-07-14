@@ -1,0 +1,92 @@
+/* Oxocarbon — nyoom's dark theme built on IBM's Carbon design palette */
+[theme="oxocarbon"] {
+	color-scheme: dark;
+	--studio-fill: #161616;
+	--studio-line: #f2f4f8;
+	--studio-primary: #be95ff; /* purple */
+	--studio-secondary: #33b1ff; /* blue */
+	--studio-danger: #ee5396; /* magenta */
+	--studio-warning: #ff7eb6; /* pink */
+	--studio-added: #42be65; /* green */
+	--studio-deleted: #ee5396;
+	--studio-modified: #33b1ff;
+	--studio-link: #33b1ff;
+	--studio-selection-fill: #2a2a2a;
+
+	--text-editor-cursor-fill: var(--studio-primary);
+	--text-editor-gutter-fill: #1c1c1c;
+	--text-editor-gutter-line: #525252;
+	--text-editor-gutter-border: #262626;
+
+	--syntax-comment: #525252;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #525252;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #78a9ff;
+	--syntax-invalid: #ee5396;
+
+	--syntax-operator: #3ddbd9; /* teal-cyan */
+	--syntax-punctuation: #f2f4f8;
+
+	--syntax-bool: #be95ff;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #be95ff;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #ff7eb6; /* pink */
+
+	--syntax-type-name: #3ddbd9; /* cyan */
+	--syntax-class-name: #3ddbd9;
+
+	--syntax-type-operator: #3ddbd9;
+
+	--syntax-function--variable-name: #82cfff; /* light blue */
+	--syntax-function--property-name: #82cfff;
+
+	--syntax-variable-name: #f2f4f8;
+	--syntax-definition--variable-name: #f2f4f8;
+
+	--syntax-string: #42be65; /* green */
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #be95ff; /* purple */
+	--syntax-integer: #be95ff;
+	--syntax-float: #be95ff;
+
+	--syntax-escape: #ee5396;
+	--syntax-regexp: #3ddbd9;
+	--syntax-special--string: #42be65;
+
+	--syntax-tag-name: #ff7eb6;
+	--syntax-angle-bracket: #f2f4f8;
+
+	--syntax-attribute-name: #33b1ff;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #3ddbd9;
+
+	--syntax-strong: #f2f4f8;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #f2f4f8;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #be95ff;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #33b1ff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #525252;
+	--syntax-style-quote: italic;
+	--syntax-list: #f2f4f8;
+
+	--syntax-inserted: #42be65;
+	--syntax-deleted: #ee5396;
+	--syntax-changed: #33b1ff;
+
+	--syntax-content-separator: #262626;
+}

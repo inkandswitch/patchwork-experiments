@@ -1,0 +1,45 @@
+import {For, Show, type Accessor} from "solid-js"
+import type {ChatMessage} from "../types"
+import {SVG_ICONS} from "../lib/svg-icons"
+
+export function MessageReactions(props: {
+	msg: ChatMessage
+	rawIdx: number
+	// Passed explicitly (via SlotContext) so this component carries no context
+	// dependency and can live in another bundle.
+	myName: Accessor<string>
+	onToggleReaction: (idx: number, emoji: string) => void
+	onAddReaction: (idx: number, anchorEl: HTMLElement) => void
+}) {
+	const myName = props.myName
+
+	const reactionEntries = () => {
+		const r = props.msg.reactions
+		if (!r) return []
+		return Object.entries(r).filter(([, users]) => users.length > 0)
+	}
+
+	return (
+		<Show when={reactionEntries().length > 0}>
+			<div class="chat-reactions">
+				<For each={reactionEntries()}>
+					{([emoji, users]) => (
+						<button
+							class="chat-reaction"
+							classList={{mine: users.includes(myName())}}
+							on:click={() => props.onToggleReaction(props.rawIdx, emoji)}
+						>
+							{emoji}
+							<span class="chat-reaction-count">{users.length}</span>
+						</button>
+					)}
+				</For>
+				<button
+					class="chat-reaction-add"
+					on:click={(e) => props.onAddReaction(props.rawIdx, e.currentTarget)}
+					innerHTML={SVG_ICONS.plus}
+				/>
+			</div>
+		</Show>
+	)
+}

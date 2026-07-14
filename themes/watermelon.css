@@ -1,0 +1,53 @@
+/* Watermelon — summer slice: green rind, pink flesh and dark seed accents on seed-cream */
+[theme="watermelon"] {
+	color-scheme: light;
+	--studio-fill: #fbfdf2;
+	--studio-line: #234a2b;
+	--studio-primary: #ff5c8a;
+	--studio-secondary: #34a14f;
+	--studio-danger: #e63e63;
+	--studio-warning: #ffb12e;
+	--studio-added: #34a14f;
+	--studio-deleted: #e63e63;
+	--studio-modified: #6e4a2e;
+	--studio-link: #2f8f49;
+	--studio-selection-fill: #ffdde6;
+	/* leave the ramp tinted by the green secondary — chrome reads like rind */
+
+	--editor-cursor-fill: var(--studio-primary);
+
+	--syntax-keyword: var(--studio-primary);
+	--syntax-weight-keyword: bold;
+
+	--syntax-operator: var(--studio-secondary);
+	--syntax-punctuation: var(--text-editor-line-offset-30);
+
+	/* dark seeds for the constant tokens */
+	--syntax-bool: var(--studio-modified);
+	--syntax-weight-bool: bold;
+	--syntax-atom: var(--studio-modified);
+	--syntax-weight-atom: bold;
+
+	--syntax-type-name: var(--studio-modified);
+	--syntax-weight-type-name: bold;
+	--syntax-class-name: var(--studio-modified);
+	--syntax-weight-class-name: bold;
+
+	--syntax-function--variable-name: #ff8c42;
+	--syntax-function--property-name: #ff8c42;
+	--syntax-definition--variable-name: var(--studio-primary);
+
+	--syntax-string: var(--studio-added);
+	--syntax-number: #ff8c42;
+	--syntax-escape: var(--studio-danger);
+
+	--syntax-tag-name: var(--studio-primary);
+	--syntax-attribute-name: #e09a1f;
+	--syntax-style-attribute-name: italic;
+	--syntax-namespace: #e09a1f;
+	--syntax-meta: var(--studio-modified);
+
+	--syntax-heading: var(--studio-primary);
+	--syntax-weight-heading: bold;
+	--syntax-style-link: underline;
+}

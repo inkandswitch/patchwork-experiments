@@ -1,0 +1,94 @@
+/* Electric — a raw CYAN #0FF field arced through with blue, magenta and red */
+[theme="electric"] {
+	color-scheme: light;
+	--studio-fill: #00ffff;
+	--studio-line: #000000;
+	--studio-primary: #0000ff;
+	--studio-secondary: #ff00ff;
+	--studio-danger: #ff0000;
+	--studio-warning: #ff6a00;
+	--studio-added: #008000;
+	--studio-deleted: #ff0000;
+	--studio-modified: #ff00ff;
+	--studio-link: #0000ff;
+	--studio-selection-fill: #ff00ff;
+	--studio-chrome-fill: #00ffff;
+	--studio-offset-tint: var(--studio-primary);
+
+	--text-editor-cursor-fill: #0000ff;
+	--text-editor-selection-fill: #ff00ff44;
+	--text-editor-gutter-line: #008080;
+
+	--syntax-comment: #008080;
+	--syntax-style-comment: italic;
+
+	--syntax-doc-comment: #008080;
+	--syntax-style-doc-comment: italic;
+
+	--syntax-meta: #ff00ff;
+	--syntax-invalid: #ff0000;
+
+	--syntax-operator: #ff0000;
+	--syntax-punctuation: #008080;
+
+	--syntax-bool: #ff0000;
+	--syntax-weight-bool: bold;
+
+	--syntax-atom: #ff0000;
+	--syntax-weight-atom: bold;
+
+	--syntax-keyword: #0000ff;
+	--syntax-weight-keyword: bold;
+
+	--syntax-type-name: #0000ff;
+	--syntax-weight-type-name: bold;
+
+	--syntax-class-name: #0000ff;
+	--syntax-weight-class-name: bold;
+
+	--syntax-type-operator: #ff0000;
+
+	--syntax-function--variable-name: #ff00ff;
+	--syntax-function--property-name: #ff00ff;
+
+	--syntax-definition--variable-name: #0000ff;
+
+	--syntax-string: #008000;
+	--syntax-fill-string: transparent;
+
+	--syntax-number: #ff0000;
+	--syntax-integer: #ff0000;
+	--syntax-float: #ff0000;
+
+	--syntax-escape: #ff0000;
+	--syntax-regexp: #008000;
+	--syntax-special--string: #008000;
+
+	--syntax-tag-name: #ff00ff;
+	--syntax-angle-bracket: #008080;
+
+	--syntax-attribute-name: #0000ff;
+	--syntax-style-attribute-name: italic;
+
+	--syntax-namespace: #ff00ff;
+
+	--syntax-strong: #000000;
+	--syntax-weight-strong: bold;
+
+	--syntax-emphasis: #ff00ff;
+	--syntax-style-emphasis: italic;
+
+	--syntax-heading: #0000ff;
+	--syntax-weight-heading: bold;
+
+	--syntax-link: #0000ff;
+	--syntax-style-link: underline;
+
+	--syntax-quote: #008080;
+
+	--syntax-inserted: #008000;
+	--syntax-deleted: #ff0000;
+	--syntax-changed: #ff00ff;
+
+	--syntax-content-separator: #00cccc;
+}

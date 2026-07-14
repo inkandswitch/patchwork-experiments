@@ -6,7 +6,6 @@ export const LLMProcessDatatype: DatatypeImplementation<LLMProcessDoc> = {
   init(doc: LLMProcessDoc, repo: Repo) {
     doc["@patchwork"] = { type: "llm-process" };
     doc.title = "LLM Process";
-    doc.model = "anthropic/claude-sonnet-4.6";
     doc.systemPrompt = "";
     doc.messages = [];
 
