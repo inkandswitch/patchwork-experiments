@@ -1,0 +1,479 @@
+import type { DocHandle, Repo } from "@automerge/automerge-repo";
+import type { CardDoc } from "@embark/card";
+import type { DeckCard, DeckDoc } from "@embark/dnd";
+
+// The parts bin is code-defined: this module *is* the bin. Each entry is
+// display data plus a factory that mints the document backing its preview, so
+// shipping a new module version updates every bin — nothing about the bin is
+// persisted per browser (which is also why there is no delete or rename: the
+// catalog here is the single source of truth).
+export type BinEntry = {
+  // Shown as the entry's heading and on its drag token.
+  label: string;
+  // Which tool renders the preview (and the dropped embed); the minted
+  // document's datatype when unset.
+  toolId?: string;
+  // The canvas footprint to recreate when this example is dropped; the canvas
+  // default is used when unset.
+  width?: number;
+  height?: number;
+  // Mint the session-local document backing this entry's preview. Dragging the
+  // entry out clones that document (see PartsBinList), so it stays pristine.
+  create: (repo: Repo) => DocHandle<unknown>;
+};
+
+// Berlin, matching @embark/map's defaults, inlined so the parts bin mints a
+// fresh map without depending on the map feature package.
+const DEFAULT_CENTER: [number, number] = [13.388, 52.517];
+const DEFAULT_ZOOM = 9.5;
+
+// Every card in the bin is one `card` document (see @embark/card): it names the
+// behavior module it loads and carries the chrome the shell draws around it.
+// This one table is the whole card catalog — a uniform row per card, minted into
+// an identical document shape. Because each row is a real document the bin hands
+// out clones of, formerly handle-less cards (weather, timer, …) get their own
+// per-instance state when dragged out.
+type CardSeed = {
+  // The card feature package's head-less rootUrl. The service worker redirects
+  // it to the latest heads, so a fresh mint always loads the newest published
+  // `card.js`.
+  rootUrl: string;
+  title: string;
+  description: string;
+  // A glyph name in the card icon registry (see @embark/card icons), drawn as
+  // the mirrored corner pips.
+  icon: string;
+  accent: string;
+  // Extra persisted fields the card's module reads off its own document (e.g.
+  // the bird card's madlib choices).
+  state?: Record<string, unknown>;
+};
+
+const CARD_SEEDS: CardSeed[] = [
+  {
+    rootUrl: "automerge:472iiEQWMcQp48hdNQAoDuvhS1cx",
+    title: "Open Documents",
+    description:
+      "Shares the document you have open (and docs it links to) so other cards can find them.",
+    icon: "file",
+    accent: "#64748b",
+  },
+  {
+    rootUrl: "automerge:uMCUHr7SvWiwF1YtmZsWhnUhWY2",
+    title: "Pointer",
+    description:
+      "Shares where you last clicked and the document under the click.",
+    icon: "pointer",
+    accent: "#ea580c",
+  },
+  {
+    rootUrl: "automerge:28TRQajF97CozAr4TNGHvbsm8Jhr",
+    title: "Highlight",
+    description:
+      "Draws a blue glow around every view whose document is highlighted.",
+    icon: "sun",
+    accent: "#3b82f6",
+  },
+  {
+    rootUrl: "automerge:3FqZv79rgfNX5nKn9kkpWGCSQUjW",
+    title: "Selection",
+    description:
+      "Tracks the selected and highlighted documents and renders document links as tokens.",
+    icon: "selection",
+    accent: "#0d9488",
+  },
+  {
+    rootUrl: "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC",
+    title: "Schema Matcher",
+    description:
+      "Answers schema queries by matching them against the open documents.",
+    icon: "braces",
+    accent: "#7c3aed",
+  },
+  {
+    rootUrl: "automerge:r1gkpehGtt4WTR1pz7mBac9SnJp",
+    title: "Place Finder",
+    description:
+      "Answers place searches on the canvas, dropping a pin per result.",
+    icon: "pin",
+    accent: "#0ea5e9",
+  },
+  {
+    rootUrl: "automerge:41HBbYkbrqYd9STaojjQUsFc1jDW",
+    title: "Routes",
+    description:
+      "Type /Drive, /Walk, or /Transit to route between two places. Data from OSRM.",
+    icon: "route",
+    accent: "#8b5cf6",
+  },
+  {
+    rootUrl: "automerge:3jBqTXqoHp8pyXeUZKbXcJch7qxm",
+    title: "Schedule",
+    description:
+      "Highlights times and durations and runs a per-paragraph running clock.",
+    icon: "clock",
+    accent: "#ca8a04",
+  },
+  {
+    rootUrl: "automerge:2xYFYSsg6LhiPE719qB6nCZT9Zyh",
+    title: "Mentions",
+    description:
+      "While on the canvas, turns on inline @mentions for every editor here.",
+    icon: "at",
+    accent: "#6366f1",
+  },
+  {
+    rootUrl: "automerge:2qhWc5S2pg83z2xutpiCkafYkdSN",
+    title: "Find Docs",
+    description:
+      "Answers @mention searches with the nearby documents whose title matches.",
+    icon: "search",
+    accent: "#4338ca",
+  },
+  {
+    rootUrl: "automerge:asYz1WKN9GHigxdQPVVfr5h8MuW",
+    title: "Commands",
+    description:
+      "While on the canvas, turns on the / command menu for every editor here.",
+    icon: "slash",
+    accent: "#0891b2",
+  },
+  {
+    rootUrl: "automerge:2Tjy4kfsDHyv7xLCZtuf8dHAWbDy",
+    title: "Stickers",
+    description:
+      "While on the canvas, renders sticker annotations in every editor here.",
+    icon: "sparkles",
+    accent: "#db2777",
+  },
+  {
+    rootUrl: "automerge:7tDif9cz12ZQXv55Yo73io1UUw4",
+    title: "Geo Shapes",
+    description:
+      "While on the canvas, draws the markers and lines other cards publish on every map here.",
+    icon: "shapes",
+    accent: "#3b82f6",
+  },
+  {
+    rootUrl: "automerge:25PPbHiDGuNmsTGSvCgiPnas8iqD",
+    title: "Geo Markers",
+    description:
+      "Finds places in the open documents and publishes a map marker for each.",
+    icon: "pin",
+    accent: "#2563eb",
+  },
+  {
+    rootUrl: "automerge:FBLNJtT5p4RcTEFErfZTNjswqNP",
+    title: "Geo Lines",
+    description:
+      "Finds routes in the open documents and publishes a map line for each.",
+    icon: "route",
+    accent: "#0284c7",
+  },
+  {
+    rootUrl: "automerge:3daZBaqA2YR5nEhTmRQoYz6coLhV",
+    title: "Geo Zoom",
+    description:
+      "Zooms maps in on highlighted shapes, and back out when the highlight clears.",
+    icon: "zoom",
+    accent: "#059669",
+  },
+  {
+    rootUrl: "automerge:2gtsy4b6hU38DQAMPk6kYHLwxrxE",
+    title: "Weather",
+    description:
+      "Type /Weather to get today's forecast for a place as an inline token. Data from Open-Meteo.",
+    icon: "cloud",
+    accent: "#0369a1",
+  },
+  {
+    rootUrl: "automerge:2otX5sW1C3cozUnmGiKZKviSHAaQ",
+    title: "Metric Converter",
+    description:
+      "Annotates metric quantities in your notes with their imperial equivalents.",
+    icon: "ruler",
+    accent: "#d97706",
+  },
+  {
+    rootUrl: "automerge:2BkapPQei7cVRiWryrVPQEQQKCJ9",
+    title: "Make Stickerable",
+    description:
+      "Lets stickers reach text that isn't a document — switch on a datatype to annotate its views.",
+    icon: "wand",
+    accent: "#be185d",
+  },
+  {
+    rootUrl: "automerge:2nay83Kjg393HEaXwerXpHMnDDWw",
+    title: "Bird Sightings",
+    description:
+      "Watches a map and asks eBird what's been seen there, minting a pin per species.",
+    icon: "bird",
+    accent: "#16a34a",
+    state: { kind: "all", period: "week" },
+  },
+];
+
+// Pre-made piles: themed sets of cards, each minted as its own deck document.
+// Every card in a deck is a fresh `card` document (via the same CARD_SEEDS
+// rows, matched by title), so a deck's cards are independent of the loose
+// examples in the bin.
+const DECK_SEEDS: { title: string; cardTitles: string[] }[] = [
+  {
+    title: "Core",
+    cardTitles: [
+      "Open Documents",
+      "Schema Matcher",
+      "Pointer",
+      "Highlight",
+      "Selection",
+      "Find Docs",
+    ],
+  },
+  {
+    title: "Maps",
+    cardTitles: ["Geo Shapes", "Geo Markers", "Geo Lines", "Geo Zoom"],
+  },
+  {
+    title: "Embark",
+    cardTitles: ["Place Finder", "Routes", "Schedule", "Weather"],
+  },
+  {
+    title: "Markdown",
+    cardTitles: ["Mentions", "Stickers", "Commands"],
+  },
+];
+
+// The standard set: the pre-made decks and an empty deck first, then every
+// card, a blank placeholder card, a map, and an empty markdown note.
+// `repo.create` doesn't run a datatype's `init`, so each factory sets the
+// document's initial value inline.
+export const DEFAULT_BIN: BinEntry[] = [
+  // The pre-made decks. Dragging one out deep-clones the deck *and* its cards
+  // (the drag-out rewrite follows the card references), so each canvas gets an
+  // independent pile.
+  ...DECK_SEEDS.map(
+    (seed): BinEntry => ({
+      label: seed.title,
+      toolId: "deck",
+      create: (repo) => mintDeck(repo, seed),
+    }),
+  ),
+  {
+    // A fresh, empty deck: each drag-out starts its own pile; cards are added
+    // by dragging embeds into it.
+    label: "Deck",
+    toolId: "deck",
+    create: (repo) =>
+      repo.create({
+        "@patchwork": { type: "deck" },
+        title: "Deck",
+        fanned: false,
+        cards: [],
+      }),
+  },
+  ...CARD_SEEDS.map(
+    (seed): BinEntry => ({
+      label: seed.title,
+      toolId: "card",
+      create: (repo) => mintCard(repo, seed),
+    }),
+  ),
+  // Also offered here (not just in the browser preset): without the extension
+  // bridge the card extracts from its built-in sample text, which makes it
+  // debuggable on a normal canvas.
+  extractDataEntry(),
+  { label: "Blank Card", toolId: "card", create: mintPlaceholderCard },
+  {
+    label: "Map",
+    toolId: "map",
+    create: (repo) =>
+      repo.create({
+        // An explicit `@patchwork.title`: a map has no text to derive a name
+        // from, and without one the bin token falls back to the raw datatype id.
+        "@patchwork": { type: "map", title: "Map" },
+        center: [...DEFAULT_CENTER],
+        zoom: DEFAULT_ZOOM,
+      }),
+  },
+  {
+    // No pinned tool id: the note resolves its editor from its "markdown"
+    // datatype — the same fallback the canvas uses when the example is dropped,
+    // so the preview always matches the dragged-out embed. Pinning a stale id
+    // here (e.g. the legacy "codemirror-base") silently blanks the preview
+    // whenever that id isn't registered in the host.
+    label: "Note",
+    create: (repo) =>
+      repo.create({
+        "@patchwork": { type: "markdown", title: "Note" },
+        content: "",
+      }),
+  },
+];
+
+// The @embark/page-extractor package (patchwork-tools/embark/cards/
+// page-extractor), published with pushwork; the minted card's src points at
+// its bundled dist/card.js.
+const PAGE_EXTRACTOR_PACKAGE = "automerge:eXE2Kjh1YkQEkYS6aAMoAAfYZXn";
+
+// The extractor card's bin entry, shared by the standard set and the browser
+// preset. It talks to the extension's bridge via window.patchworkCards when
+// present, and extracts from its built-in sample text when not (same document
+// shape the extension seeds its stack with).
+function extractDataEntry(): BinEntry {
+  return {
+    label: "Extract data",
+    toolId: "card",
+    create: (repo) =>
+      repo.create({
+        "@patchwork": { type: "card", title: "Extract data" },
+        src: `/${encodeURIComponent(PAGE_EXTRACTOR_PACKAGE)}/dist/card.js`,
+        // No description: the card's own sentence is the whole face.
+        description: "",
+        icon: "braces",
+        accent: "#2563eb",
+        prompt: "",
+        targetDeckUrl: null,
+      }),
+  };
+}
+
+// What the browser extension's side panel offers (see cards-browser-extension):
+// the Core deck (Open Documents, Schema Matcher, Pointer, Highlight, Selection,
+// Find Docs — the Pointer card is what lets the inspector's crosshair pick
+// targets), the extractor card, and an empty deck to receive the extracted
+// cards (the extension deliberately seeds no deck, so the user deals one out
+// of the bin and picks it in the card's sentence). The Inspector isn't a bin
+// entry: the card-stack tool offers it as a flap tab beside the bin, same as
+// the in-app sidebar (see CardStackTool).
+export const BROWSER_BIN: BinEntry[] = [
+  {
+    label: "Core",
+    toolId: "deck",
+    create: (repo) => mintDeck(repo, coreDeckSeed()),
+  },
+  extractDataEntry(),
+  {
+    label: "Deck",
+    toolId: "deck",
+    create: (repo) =>
+      repo.create({
+        "@patchwork": { type: "deck" },
+        title: "Deck",
+        fanned: false,
+        cards: [],
+      }),
+  },
+];
+
+// The "Core" pre-made deck from DECK_SEEDS, shared with the standard set. A
+// missing row is a programming error in DECK_SEEDS, same as mintDeck's card
+// lookup.
+function coreDeckSeed(): { title: string; cardTitles: string[] } {
+  const seed = DECK_SEEDS.find((entry) => entry.title === "Core");
+  if (!seed) throw new Error("DECK_SEEDS is missing the Core deck");
+  return seed;
+}
+
+// Resolve a card-stack document's `binPreset` to catalog entries. Unset (the
+// in-app stacks) and unknown values fall back to the standard set.
+export function binEntriesForPreset(preset: string | undefined): BinEntry[] {
+  return preset === "browser" ? BROWSER_BIN : DEFAULT_BIN;
+}
+
+// The urls are head-less (the service worker redirects to the latest heads on
+// load), so a fresh mint always wires up the newest published module. Cards
+// are bundleless plain-JS packages, so the behavior module is served straight
+// from the package root at `automerge:<package rootUrl>/card.js`.
+function mintCard(repo: Repo, seed: CardSeed) {
+  return repo.create<CardDoc>({
+    "@patchwork": { type: "card", title: seed.title },
+    src: `/${encodeURIComponent(seed.rootUrl)}/card.js`,
+    description: seed.description,
+    icon: seed.icon,
+    accent: seed.accent,
+    ...(seed.state as Partial<CardDoc>),
+  });
+}
+
+// A pre-made deck: a folded pile of freshly minted cards, one per named
+// CARD_SEEDS row. A missing title is a programming error in DECK_SEEDS, so it
+// throws rather than silently dealing a thinner deck.
+function mintDeck(repo: Repo, seed: { title: string; cardTitles: string[] }) {
+  const cards: DeckCard[] = seed.cardTitles.map((cardTitle) => {
+    const cardSeed = CARD_SEEDS.find((entry) => entry.title === cardTitle);
+    if (!cardSeed) throw new Error(`Unknown card seed: ${cardTitle}`);
+    return {
+      id: crypto.randomUUID(),
+      url: mintCard(repo, cardSeed).url,
+      toolId: "card",
+    };
+  });
+
+  return repo.create<DeckDoc>({
+    "@patchwork": { type: "deck" },
+    title: seed.title,
+    fanned: false,
+    cards,
+  });
+}
+
+// The starting spec of a blank card: instructions for turning it into a real
+// one via the inspector's regenerate loop.
+const PLACEHOLDER_SPEC = `# Blank Card
+
+This card has no behavior yet.
+
+Describe what it should do here, then right-click the card on the canvas,
+choose Inspect, and press "Regenerate code" under this spec.
+`;
+
+// The no-op behavior module the blank card ships with: it only labels the
+// middle slot so the card reads as intentionally empty.
+const PLACEHOLDER_MODULE = `// A placeholder behavior. Regenerate this module from the card's spec.
+export default (handle, element) => {
+  const note = document.createElement("div");
+  note.textContent = "No behavior yet";
+  note.style.cssText =
+    "color: #a8a29e; font-size: 12px; text-align: center; padding: 12px 8px;";
+  element.appendChild(note);
+  return () => note.remove();
+};
+`;
+
+// A blank placeholder card, minted entirely client-side: its package is a
+// plain folder doc holding a `spec.md` and a bundleless `card.js` — no build
+// step, no published module. Editing the spec and regenerating (see
+// @embark/inspect) is how it becomes a real card.
+function mintPlaceholderCard(repo: Repo) {
+  const spec = repo.create({
+    "@patchwork": { type: "file" },
+    name: "spec.md",
+    extension: "md",
+    mimeType: "text/markdown",
+    content: PLACEHOLDER_SPEC,
+  });
+  const module = repo.create({
+    "@patchwork": { type: "file" },
+    name: "card.js",
+    extension: "js",
+    mimeType: "text/javascript",
+    content: PLACEHOLDER_MODULE,
+  });
+  const pkg = repo.create({
+    "@patchwork": { type: "folder" },
+    title: "Blank Card",
+    docs: [
+      { name: "spec.md", type: "file", url: spec.url },
+      { name: "card.js", type: "file", url: module.url },
+    ],
+  });
+
+  return repo.create<CardDoc>({
+    "@patchwork": { type: "card", title: "Blank Card" },
+    src: `/${encodeURIComponent(pkg.url)}/card.js`,
+    description:
+      "A card without any behavior. Inspect it and edit the spec to make it do something.",
+    icon: "card",
+    accent: "#a8a29e",
+  });
+}

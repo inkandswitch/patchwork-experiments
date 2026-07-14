@@ -1,0 +1,11 @@
+{
+  "name": "@embark/timer-source",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./card": "./card.js"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@embark/schedule",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./card": "./card.js"
+  },
+  "scripts": {
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "dependencies": {
+    "@embark/stickers-card": "automerge:2Tjy4kfsDHyv7xLCZtuf8dHAWbDy"
+  }
+}

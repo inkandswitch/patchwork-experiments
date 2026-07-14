@@ -1,0 +1,17 @@
+/* The default token pill, shown when no datatype-specific token tool exists (or
+   before one has loaded). Callers style the outer host element themselves; this
+   only governs the generic fallback face. */
+.token-view {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0 0.35em;
+  border-radius: 0.35em;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.9em;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}

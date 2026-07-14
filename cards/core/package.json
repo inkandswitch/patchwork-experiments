@@ -1,0 +1,16 @@
+{
+  "name": "@embark/core",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./channels/codemirror": "./channels/codemirror.js",
+    "./channels/map": "./channels/map.js"
+  },
+  "scripts": {
+    "sync": "pushwork sync"
+  }
+}

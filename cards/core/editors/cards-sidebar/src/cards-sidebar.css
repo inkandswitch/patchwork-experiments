@@ -1,0 +1,381 @@
+/* The Cards sidebar: tab rail | active stack | flap group (a second tabbed
+   sheet holding the parts bin and the Inspector, which squeezes the stack
+   when open — see FlapGroup). The root fills whatever surface it's docked
+   into (the frame's context sidebar, or the hidden body parking spot). The
+   full-frame card-stack tool reuses the root as a plain row (one pane + a
+   one-tab flap group); the sidebar arrangement lives under `--sidebar`. */
+.embark-cards {
+  --cards-flap-width: 340px;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #fafaf9;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  overflow: hidden;
+}
+
+/* The sidebar host: the same row, with a 20px dead zone along the left edge —
+   the frame's resize handle hugs it and a click there collapses the whole
+   sidebar, so keep everything clickable well clear of it. border-box keeps the
+   dead-zone border inside the 100% frame; otherwise the root overhangs the
+   sidebar by 20px and the parent clips the right edge (hiding the flap tabs).
+
+   The top dead band is recreated per-column below (the tab rail's own grey
+   extends up over it; the stack carries a matching grey top border) rather than
+   as a host border, so the flap group on the far right — clear of the resize
+   handle — runs clean to the top edge instead of sitting under a dead strip. */
+.embark-cards--sidebar {
+  box-sizing: border-box;
+  border-left: 20px solid #f0efee;
+}
+
+/* The tab rail already paints itself grey, so it just pads its content down
+   past the top band (its original 14px plus the 20px band). The flap rail is
+   excluded — the flap group runs to the top. */
+.embark-cards--sidebar > .embark-cards__rail:not(.embark-cards__rail--flap) {
+  padding-top: 34px;
+}
+
+/* The stack column carries its own grey top band; box-border keeps its
+   absolutely positioned panes starting below it, exactly as the host border
+   used to place them. */
+.embark-cards--sidebar > .embark-cards__main {
+  box-sizing: border-box;
+  border-top: 20px solid #f0efee;
+}
+
+/* The vertical tab rail on the sidebar's left edge, file-folder style: labels
+   read top-to-bottom, the active tab joins the stack pane on its right. */
+.embark-cards__rail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 14px 0 0;
+  background: #f0efee;
+  border-right: 1px solid #e0deda;
+}
+
+/* The flap group's rail: same tabs, but this rail marks the second sheet's
+   left edge — a border and leftward shadow layer it over the stack pane, and
+   the active tab merges rightward into the flap pane instead. No tab reads
+   active while the group is folded. */
+.embark-cards__rail--flap {
+  position: relative;
+  z-index: 3;
+  border-right: none;
+  border-left: 1px solid #e0deda;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.06);
+}
+
+/* The active tab reads purely from its background merging with the paper —
+   no accent marker. */
+.embark-cards__tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 6px;
+  border: none;
+  background: transparent;
+  color: #78716c;
+  cursor: pointer;
+  user-select: none;
+}
+
+.embark-cards__tab:hover {
+  color: #44403c;
+}
+
+.embark-cards__tab--active {
+  background: #fafaf9;
+  color: #1c1917;
+}
+
+/* A hidden tab whose stack holds a highlighted card: tint it and run a soft
+   pulse so page-driven highlight (a hovered token, a map pin) is noticeable
+   without it looking selected. */
+.embark-cards__tab--highlighted:not(.embark-cards__tab--active) {
+  background: rgba(59, 130, 246, 0.12);
+  color: #1c1917;
+  animation: embark-cards-tab-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes embark-cards-tab-pulse {
+  0%,
+  100% {
+    background: rgba(59, 130, 246, 0.1);
+  }
+  50% {
+    background: rgba(59, 130, 246, 0.22);
+  }
+}
+
+.embark-cards__tab-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* The middle column: both panes stay mounted, only the active one shows. */
+.embark-cards__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+/* z-index: 0 makes each pane a stacking context, trapping the inline
+   z-indexes card content brings (a folded deck's pile) so they can't paint
+   over the flaps. */
+.embark-cards__pane {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: none;
+  min-height: 0;
+}
+
+.embark-cards__pane--active {
+  display: block;
+}
+
+/* The inspect view fills its flap pane (a flex column). The view brings its
+   own toolbar with the target crosshair; it mounts only while its tab is
+   showing (see CardsSidebar). */
+.embark-cards__inspector-view {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Drop affordance while a document hovers a stack pane. */
+.embark-cards__pane--drag-over::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  pointer-events: none;
+  border: 2px dashed #6366f1;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.embark-cards__hint {
+  padding: 24px 16px;
+  color: #a8a29e;
+  font-size: 13px;
+  text-align: center;
+  user-select: none;
+}
+
+/* The stack list: a flex column whose visual order is driven by each row's
+   `order` style (set from the entry's index in the document array), so
+   reorders never move DOM nodes — and never remount the live views.
+   border-box keeps the padding inside the 100% height; otherwise the list
+   overhangs its pane by 24px and cards paint into the Inspector below. */
+.embark-cards__list {
+  box-sizing: border-box;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 12px;
+}
+
+/* Suppress text selection across the list while a reorder drag is live. */
+.embark-cards__list--reordering {
+  user-select: none;
+}
+
+.embark-cards__row {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.embark-cards__row--dragging {
+  opacity: 0.75;
+  cursor: grabbing;
+}
+
+/* Row actions float over the card's top-right corner, revealed on hover:
+   remove at the corner, copy beside it. */
+.embark-cards__row-action {
+  position: absolute;
+  top: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #a8a29e;
+  cursor: pointer;
+  line-height: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.embark-cards__row:hover .embark-cards__row-action,
+.embark-cards__row-action:focus-visible {
+  opacity: 1;
+}
+
+.embark-cards__row-action:hover {
+  background: #e7e5e4;
+  color: #44403c;
+}
+
+.embark-cards__row-delete {
+  right: 6px;
+}
+
+.embark-cards__row-copy {
+  right: 30px;
+}
+
+/* The live view. Framed rows get canvas-like chrome; frameless tools (cards,
+   decks) bring their own. Auto-size rows shrink-wrap the content, everything
+   else uses the fixed height set inline. */
+.embark-cards__row-body {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.embark-cards__row-body--framed {
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.embark-cards__row-body--autosize {
+  overflow: visible;
+}
+
+.embark-cards__row-body patchwork-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.embark-cards__row-body--autosize patchwork-view {
+  height: auto;
+}
+
+/* The flap group's pane (see FlapGroup): the second sheet's body, which
+   squeezes the stack panes when open (fanned decks re-wrap to the narrower
+   pane) and collapses to nothing when folded. Kept mounted either way so its
+   contents hold state. The fixed-width content sticks out right of the
+   shrinking column and the root's overflow:hidden clips it, so the sheet
+   reads as sliding away rather than squishing. (The docked sidebar overrides
+   this to an even 50:50 split with the stack — see below.) */
+.embark-cards__flap {
+  position: relative;
+  flex: 0 0 0px;
+  min-height: 0;
+  z-index: 3;
+  overflow: hidden;
+  transition: flex-basis 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.embark-cards__flap--open {
+  flex-basis: var(--cards-flap-width);
+}
+
+/* The sheet face: paper background, fixed width regardless of the column's
+   animated basis — see the note on `.embark-cards__flap`. */
+.embark-cards__flap-content {
+  position: relative;
+  box-sizing: border-box;
+  width: var(--cards-flap-width);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #fafaf9;
+}
+
+/* In the docked sidebar the stack column fits exactly one column of cards
+   while the flap group (parts bin / Inspector) is open, and the flap takes
+   everything left over. 259px = a folded deck's widest footprint (2*PAD +
+   CARD_W + PILE_MAX*PILE_STEP = 28 + 189 + 18 = 235, see foldedSize() in
+   DeckTool) plus the list's 12px padding each side. With the flap closed the
+   stack grows back to fill the sidebar. The sheet face fills its now-
+   responsive column (rather than the fixed slide width), and open/close
+   animates the flap's grow. */
+.embark-cards--sidebar > .embark-cards__main {
+  flex: 1 1 auto;
+}
+
+.embark-cards--sidebar:has(.embark-cards__flap--open) > .embark-cards__main {
+  flex: 0 0 259px;
+}
+
+.embark-cards--sidebar .embark-cards__flap {
+  transition: flex-grow 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.embark-cards--sidebar .embark-cards__flap--open {
+  flex: 1 1 0px;
+}
+
+.embark-cards--sidebar .embark-cards__flap-content {
+  width: 100%;
+}
+
+/* One tab's content: all panes stay mounted, only the selected one shows —
+   the same pattern as the stack panes. */
+.embark-cards__flap-pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.embark-cards__flap-pane--active {
+  display: flex;
+}
+
+.embark-cards__flap-title {
+  flex: 0 0 auto;
+  padding: 12px 14px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #57534e;
+  user-select: none;
+}
+
+/* The shared bin list brings its own padding/background (parts-bin.css);
+   let it fill and scroll within the pane. */
+.embark-cards__flap-pane .embark-parts-bin__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: transparent;
+}
+
+/* The <patchwork-context> boundary is display:contents, so make the flap
+   pane itself the flex context for the list. */
+.embark-cards__flap-pane patchwork-context {
+  display: contents;
+}

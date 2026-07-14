@@ -1,0 +1,277 @@
+.embark-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: #fafaf9;
+  background-image: radial-gradient(#e7e5e4 1px, transparent 1px);
+  background-size: 22px 22px;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+/* The canvas is focusable so it can receive Backspace/Delete for the selected
+   embed, but we don't want a focus ring around the whole surface. */
+.embark-canvas:focus {
+  outline: none;
+}
+
+/* Drop affordance: a dashed outline + tint while a document is hovering. */
+.embark-canvas--drag-over::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 2px dashed #6366f1;
+  background: rgba(99, 102, 241, 0.06);
+}
+
+.embark-canvas__empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #a8a29e;
+  font-size: 14px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.embark-embed {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 10px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 6px 16px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  transition:
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+}
+
+/* Selected embed: lifts off the canvas with a slightly deeper shadow rather
+   than a colored ring. Press Backspace/Delete to remove it. */
+.embark-embed--selected {
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.14);
+}
+
+/* Frameless embed: the embedded tool supplies its own chrome, so drop the
+   border, background, clipping and rounded corners. It is dragged by grabbing
+   its surface (see canvas.tsx); interactive regions opt out via
+   stopPropagation. */
+.embark-embed--frameless {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+/* Locked embeds are pinned, so the surface isn't a drag handle. The embedded
+   tool (e.g. the parts-bin drawer) may also leave transparent margins around
+   its chrome; dropping pointer events here lets clicks fall through to the
+   canvas/embeds behind, and the tool re-enables them on its own elements. */
+.embark-embed--locked .embark-embed__view {
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Selection for a frameless embed: a drop-shadow follows the content's own
+   shape (e.g. a rounded card) instead of boxing a transparent rectangle. */
+.embark-embed--frameless.embark-embed--selected {
+  box-shadow: none;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.16));
+}
+
+/* Auto-size embed: the tool reports its own intrinsic size and changes it as
+   its state changes (e.g. the deck fanning out), so the frame shrink-wraps the
+   content instead of being pinned to a stored width/height. A min size avoids a
+   0×0 flash before the tool's module finishes loading. */
+.embark-embed--autosize {
+  width: max-content;
+  height: max-content;
+  min-width: 140px;
+  min-height: 160px;
+  /* The content animates its own size (e.g. cards fanning out); don't clip it
+     mid-transition if the frame resizes a beat ahead of the content. */
+  overflow: visible;
+}
+
+/* Let the body size to its content rather than filling a fixed frame. */
+.embark-embed--autosize .embark-embed__view {
+  flex: 0 0 auto;
+}
+
+.embark-embed--autosize .embark-embed__view patchwork-view {
+  height: auto;
+}
+
+/* The little drag handle: a slim strip with a grip glyph centered, and a
+   delete button parked at the right edge. */
+.embark-embed__handle {
+  position: relative;
+  flex: 0 0 auto;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b6b2ad;
+  background: #f5f5f4;
+  border-bottom: 1px solid #ececeb;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.embark-embed__handle:active {
+  cursor: grabbing;
+}
+
+/* Delete button in the top-right of the drag bar. Absolutely positioned so the
+   grip stays centered. Fades up on hover of the embed. */
+.embark-embed__delete {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8a29e;
+  cursor: pointer;
+  line-height: 0;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.embark-embed:hover .embark-embed__delete,
+.embark-embed__delete:focus-visible {
+  opacity: 1;
+}
+
+.embark-embed__delete:hover {
+  background: #e7e5e4;
+  color: #44403c;
+}
+
+.embark-embed__view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.embark-embed__view patchwork-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* While a move is carried outside the canvas the embed hides (parked at its
+   origin) and the cursor-following pill below stands in for it; on release it
+   either moves out (a target accepted it) or springs back (no taker). */
+.embark-embed--carried {
+  visibility: hidden;
+}
+
+/* The stand-in for an embed carried outside the canvas: a small title pill
+   centered under the cursor (the translate centers it on the cursor point set
+   by JS). Fixed at body level so the canvas's overflow clipping can't touch
+   it; pointer-events: none keeps it out of drop hit-testing. */
+.embark-embed__drag-pill {
+  position: fixed;
+  z-index: 2147483647;
+  transform: translate(-50%, -50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #6366f1;
+  color: #ffffff;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+/* Invisible resize target in the bottom-right corner: no fill, just the
+   resize cursor so it reveals itself on hover. */
+.embark-embed__resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+/* Right-click menu: a small floating list anchored at the click point. Sits
+   above every embed and is dismissed by any press on the canvas. */
+.embark-canvas__menu {
+  position: absolute;
+  z-index: 2147483647;
+  min-width: 132px;
+  padding: 4px;
+  background: #ffffff;
+  border: 1px solid #e7e5e4;
+  border-radius: 8px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.16);
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+.embark-canvas__menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #1c1917;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+/* Fixed-width column so item labels line up whether or not a check is shown. */
+.embark-canvas__menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: #57534e;
+}
+
+.embark-canvas__menu-item:hover:not(:disabled) {
+  background: #f5f5f4;
+}
+
+.embark-canvas__menu-item:disabled {
+  color: #c2bdb8;
+  cursor: default;
+}

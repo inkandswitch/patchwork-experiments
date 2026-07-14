@@ -1,0 +1,7 @@
+/* The `codemirror-extension` context view's placeholder. Injected when the
+   view loads. */
+.embark-cm-extension-face {
+  font-size: 11px;
+  font-style: italic;
+  color: #a8a29e;
+}

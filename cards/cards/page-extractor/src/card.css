@@ -1,0 +1,139 @@
+/* The page-extractor card's middle-slot content: one madlib sentence whose two
+   blanks (the prompt, the target deck) are the card's controls, a muted status
+   line that only appears when something is missing, and a footer with a quiet
+   reload button. The card frame, title, and pips are drawn by the shared card
+   shell. */
+
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --page-extractor-fg: var(--editor-line, #292524);
+    --page-extractor-muted: var(--editor-line-offset-50, #78716c);
+    --page-extractor-accent: var(--studio-link, #2563eb);
+    --page-extractor-busy: var(--studio-secondary, #0284c7);
+    --page-extractor-danger: var(--studio-danger, #dc2626);
+    --page-extractor-fill-hover: var(--editor-fill-offset-10, #eff6ff);
+    --page-extractor-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+.page-extractor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--page-extractor-family);
+}
+
+.page-extractor__sentence {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--page-extractor-fg);
+}
+
+/* The free-text blank: an inline fill-in that grows with its content
+   (field-sizing needs Chrome 123+; the extension already requires newer). */
+.page-extractor__prompt {
+  field-sizing: content;
+  display: inline-block;
+  vertical-align: top;
+  min-width: 12ch;
+  max-width: 100%;
+  resize: none;
+  border: none;
+  border-bottom: 2px dotted var(--page-extractor-accent);
+  border-radius: 0;
+  background: transparent;
+  padding: 0 2px;
+  margin: 0 1px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--page-extractor-accent);
+}
+
+.page-extractor__prompt::placeholder {
+  font-weight: 400;
+  color: var(--page-extractor-muted);
+}
+
+.page-extractor__prompt:focus {
+  outline: none;
+  background: var(--page-extractor-fill-hover);
+}
+
+/* The deck blank: a select dressed as a pickable word, like the bird card's
+   madlib swaps. Hovering it glows the deck it names. */
+.page-extractor__swap {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  border-bottom: 2px dotted var(--page-extractor-accent);
+  border-radius: 0;
+  background: transparent;
+  padding: 0 2px;
+  margin: 0 1px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--page-extractor-accent);
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.page-extractor__swap:focus {
+  outline: none;
+  background: var(--page-extractor-fill-hover);
+}
+
+.page-extractor__status {
+  font-size: 12px;
+  color: var(--page-extractor-muted);
+}
+
+.page-extractor__status.is-busy {
+  color: var(--page-extractor-busy);
+}
+
+.page-extractor__status.is-error {
+  color: var(--page-extractor-danger);
+}
+
+/* Bottom row: the reload button on the left, the build marker on the right. */
+.page-extractor__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* A quiet text button — it earns color on hover, not a border. */
+.page-extractor__reload {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--page-extractor-muted);
+  cursor: pointer;
+}
+
+.page-extractor__reload:hover:not(:disabled) {
+  color: var(--page-extractor-accent);
+  background: var(--page-extractor-fill-hover);
+}
+
+.page-extractor__reload:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Build marker so a synced module can be told apart from a stale one. */
+.page-extractor__version {
+  font-size: 10px;
+  color: var(--page-extractor-muted);
+  opacity: 0.7;
+}

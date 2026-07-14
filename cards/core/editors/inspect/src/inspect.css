@@ -1,0 +1,365 @@
+/* The inspector fills its embed: an adaptive tab bar across the top (only the
+   tabs that have content) over a single pane that shows the selected view and
+   scrolls on its own. */
+.embark-inspect {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background: #ffffff;
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+/* The baked-in build stamp (see vite.config.ts), floated over the bottom-right
+   corner so it's visible regardless of which tab is open. */
+.embark-inspect__build {
+  position: absolute;
+  right: 6px;
+  bottom: 4px;
+  z-index: 10;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 10px;
+  color: #a8a29e;
+  pointer-events: none;
+}
+
+/* The target row: the crosshair button plus either the current focus (the
+   inspected document's token + a clear button) or a hint for the
+   whole-context / armed states. */
+.embark-inspect__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #ffffff;
+  border-bottom: 1px solid #f0eeec;
+}
+
+.embark-inspect__target {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #57534e;
+  cursor: pointer;
+}
+
+.embark-inspect__target:hover {
+  background: #faf9f8;
+  color: #1c1917;
+}
+
+.embark-inspect__target--armed {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.embark-inspect__hint {
+  font-size: 12px;
+  color: #a8a29e;
+}
+
+.embark-inspect__target--armed + .embark-inspect__hint {
+  color: #2563eb;
+}
+
+.embark-inspect__target-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.embark-inspect__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #a8a29e;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.embark-inspect__clear:hover {
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+.embark-inspect__tabs {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 2px;
+  padding: 4px 4px 0;
+  border-bottom: 1px solid #f0eeec;
+  background: #faf9f8;
+}
+
+.embark-inspect__tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #78716c;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  border-bottom: 2px solid transparent;
+}
+
+.embark-inspect__tab:hover {
+  color: #44403c;
+  background: #f0eeec;
+}
+
+.embark-inspect__tab--active {
+  color: #1c1917;
+  background: #ffffff;
+  border-bottom-color: #1c1917;
+}
+
+.embark-inspect__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* The embedded viewer fills the body and scrolls on its own. */
+.embark-inspect__view {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+}
+
+.embark-inspect__empty {
+  padding: 16px;
+  color: #a8a29e;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* Spec tab: the codemirror editor fills the body and scrolls on its own. */
+.embark-inspect-spec {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.embark-inspect-spec .cm-editor {
+  height: 100%;
+}
+
+/* Source tab: a file tree beside the single open file (VSCode-style). */
+.embark-inspect-source {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.embark-inspect-source__tree {
+  flex: 0 0 auto;
+  width: 200px;
+  min-width: 120px;
+  max-width: 45%;
+  overflow: auto;
+  padding: 4px 0;
+  border-right: 1px solid #f0eeec;
+  background: #faf9f8;
+  font-size: 12px;
+}
+
+.embark-inspect-source__pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.embark-inspect-source__row {
+  appearance: none;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #44403c;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.embark-inspect-source__row:hover {
+  background: #f0eeec;
+}
+
+.embark-inspect-source__row--active {
+  background: #e7e5e4;
+  color: #1c1917;
+}
+
+.embark-inspect-source__twisty {
+  flex: 0 0 auto;
+  width: 12px;
+  color: #a8a29e;
+  font-size: 10px;
+  text-align: center;
+}
+
+.embark-inspect-source__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.embark-inspect-source__loading {
+  padding: 4px 8px;
+  color: #a8a29e;
+  font-size: 12px;
+}
+
+/* Spec tab footer: the regenerate action and its streaming run log. The spec
+   editor above keeps its flexible height; the log caps its own and scrolls. */
+.embark-inspect-regen {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #f0eeec;
+  background: #faf9f8;
+}
+
+.embark-inspect-regen__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+.embark-inspect-regen__button {
+  appearance: none;
+  border: 1px solid #d6d3d1;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #1c1917;
+  cursor: pointer;
+}
+
+.embark-inspect-regen__button:hover {
+  background: #f0eeec;
+}
+
+.embark-inspect-regen__button--stop {
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+.embark-inspect-regen__status {
+  font-size: 12px;
+  color: #78716c;
+}
+
+.embark-inspect-regen__notice {
+  padding: 0 8px 8px;
+  font-size: 12px;
+  color: #b45309;
+}
+
+.embark-inspect-regen__log {
+  max-height: 200px;
+  overflow: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Blocks keep their natural height (capped individually) and never compress —
+   the log container above is the only outer scroller. */
+.embark-inspect-regen__text {
+  flex: 0 0 auto;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #44403c;
+  white-space: pre-wrap;
+}
+
+.embark-inspect-regen__script {
+  flex: 0 0 auto;
+  border: 1px solid #e7e5e4;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.embark-inspect-regen__script-desc {
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #78716c;
+  border-bottom: 1px solid #f0eeec;
+  background: #faf9f8;
+}
+
+.embark-inspect-regen__code {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.embark-inspect-regen__result {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 80px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #57534e;
+  border-top: 1px solid #f0eeec;
+  background: #faf9f8;
+}
+
+.embark-inspect-regen__result--error {
+  color: #b91c1c;
+  background: #fef2f2;
+}

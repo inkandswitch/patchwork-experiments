@@ -1,0 +1,195 @@
+/* Styled after Things (Cultured Code): a quiet white list, rounded-square
+   checkboxes that fill blue when done, seamless in-place editing, and a soft
+   "New To-Do" row instead of a boxed button. Sticker surface markup
+   (`__slot` / `__sticker` / `__tool` and the inline `style` spans) is kept
+   intact — the new look just reframes the rows around them. */
+.embark-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  padding: 0.6rem 0.5rem;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+  color: #1f2329;
+  -webkit-font-smoothing: antialiased;
+}
+
+.embark-todo__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 7px;
+}
+
+.embark-todo__row:hover {
+  background: #f5f6f7;
+}
+
+.embark-todo__row:hover .embark-todo__delete {
+  opacity: 1;
+}
+
+/* Things-style checkbox: a rounded square that fills with blue and shows a
+   white tick when checked. The native control is restyled in place so the
+   toggle stays a real checkbox. */
+.embark-todo__checkbox {
+  flex: none;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 1.5px solid #c4c8cf;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.embark-todo__checkbox:hover {
+  border-color: #8b9098;
+}
+
+.embark-todo__checkbox:checked {
+  border-color: #3478f6;
+  background-color: #3478f6;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+}
+
+.embark-todo__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Done items dim rather than strike through — Things keeps them readable and
+   lets the filled checkbox carry the "done" signal. */
+.embark-todo__row--done .embark-todo__text {
+  color: #b0b4ba;
+}
+
+/* Editing happens in place: a borderless, transparent input sitting exactly
+   where the text was, so there is no visible "edit box" popping in. */
+.embark-todo__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+}
+
+.embark-todo__input::placeholder {
+  color: #b0b4ba;
+}
+
+.embark-todo__slot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* A text sticker chip, echoing the markdown renderer's `.cm-sticker--text`. */
+.embark-todo__sticker {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0.2em;
+  padding: 0.05em 0.4em;
+  border-radius: 0.5em;
+  font-size: 0.82em;
+  line-height: 1.4;
+  color: #3b4252;
+  background: #eceef1;
+  white-space: nowrap;
+}
+
+.embark-todo__tool {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin: 0 0.2em;
+}
+
+.embark-todo__tool patchwork-view {
+  display: inline-block;
+  width: 5.5em;
+  height: 1.6em;
+  vertical-align: middle;
+}
+
+.embark-todo__delete {
+  flex: none;
+  opacity: 0;
+  width: 1.3rem;
+  height: 1.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #b0b4ba;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    opacity 0.12s ease,
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+
+.embark-todo__delete:hover {
+  background: #ececee;
+  color: #e0533d;
+}
+
+/* The "New To-Do" affordance: a quiet row (not a boxed button) that lines its
+   blue "+" up with the checkboxes above it and lights up on hover. */
+.embark-todo__add {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin-top: 0.1rem;
+  padding: 0.3rem 0.4rem;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #9aa0a6;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.embark-todo__add:hover {
+  background: #f5f6f7;
+  color: #5f6368;
+}
+
+.embark-todo__add-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1;
+  color: #3478f6;
+}

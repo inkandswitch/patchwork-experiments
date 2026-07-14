@@ -1,0 +1,18 @@
+# cards/* are mostly bundleless plain-JS packages outside the pnpm workspace:
+# their package.json dependencies are automerge: urls (the isolation bridge's
+# rewrite allowlist), which pnpm cannot resolve. Editors that need a card's
+# channel definitions depend on it via the link: protocol instead. The
+# page-extractor card is the exception — a vite-bundled card with real npm
+# deps, so it joins the workspace.
+#
+# core/ itself is one pushwork package (a single registered module and the
+# platform import surface for cards) but not a pnpm project — only the built
+# sub-packages inside it are.
+packages:
+  - "core/editors/*"
+  - "core/context/*"
+  - "core/dnd"
+  - "cards/page-extractor"
+
+onlyBuiltDependencies:
+  - cbor-extract

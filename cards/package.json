@@ -1,0 +1,22 @@
+{
+  "name": "@tiny-patchwork/embark",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r build",
+    "sync": "pnpm -r build && node scripts/sync-packages.mjs",
+    "sync:packages": "node scripts/sync-packages.mjs",
+    "register": "node scripts/register-modules.mjs"
+  },
+  "devDependencies": {
+    "@automerge/automerge-repo": "2.6.0-subduction.29",
+    "@automerge/automerge-repo-storage-nodefs": "2.6.0-subduction.29",
+    "@automerge/automerge-subduction": "0.15.0",
+    "@inkandswitch/patchwork-bootloader": "^0.2.5",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.16",
+    "vite-plugin-css-injected-by-js": "^3.5.2",
+    "vite-plugin-solid": "^2.10.0"
+  }
+}

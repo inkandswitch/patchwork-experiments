@@ -1,0 +1,20 @@
+{
+  "name": "@embark/bird-sighting",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./card": "./card.js"
+  },
+  "scripts": {
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+  },
+  "dependencies": {
+    "@embark/core": "automerge:2YxstDCjGbfeAqud8w38yuBYBncY",
+    "@embark/schema-matcher": "automerge:x5C77Bg2ivBhDnAHoupCKb6cDYC",
+    "@embark/selection": "automerge:3FqZv79rgfNX5nKn9kkpWGCSQUjW"
+  }
+}
