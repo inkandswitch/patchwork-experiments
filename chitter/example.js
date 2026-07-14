@@ -55,17 +55,7 @@ export default async function example(repo) {
     title: "Chitter",
     messages: [
       msg("goose", "welcome to chitter!! this whole chat is a document", 34),
-      msg(
-        "goose",
-        "share it with someone and you're chatting. no server, no signup",
-        33
-      ),
-      msg(
-        "gander",
-        "try */shrug* or */tableflip* — and there are ~spoilers~ and __underlines__ too",
-        21
-      ),
-      msg("gander", "leave a reaction on this one 👇", 20),
+      msg("goose", "share it with someone to have a lil chat", 33),
     ],
     docs: [],
     plugins: PLUGINS,
