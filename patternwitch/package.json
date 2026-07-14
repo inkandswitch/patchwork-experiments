@@ -1,0 +1,16 @@
+{
+  "name": "@patchwork/patternwitch",
+  "version": "0.0.1",
+  "description": "PatternWitch — a pixel painter for Patchwork",
+  "type": "module",
+  "main": "patternwitch.js",
+  "exports": {
+    ".": "patternwitch.js"
+  },
+  "scripts": {
+    "build": "echo no build step",
+    "push": "pushwork sync"
+  },
+  "keywords": [],
+  "author": "Ink & Switch"
+}
