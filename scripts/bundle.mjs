@@ -196,12 +196,14 @@ function renderInitScript(examples) {
 const examples = ${JSON.stringify(examples, null, 2)};
 
 export default async function init(repo, folder) {
+  console.log(\`init: running \${examples.length} example(s) from\`, import.meta.url);
   for (const path of examples) {
     try {
       const mod = await import(new URL(path, import.meta.url).href);
       const result = await mod.default(repo);
       const links = (Array.isArray(result) ? result : [result]).filter(Boolean);
       if (links.length) folder.change((doc) => { doc.docs.push(...links); });
+      console.log(\`init: \${path} created\`, links.map((l) => \`\${l.name} (\${l.type})\`));
     } catch (err) {
       console.warn(\`init: example \${path} failed\`, err);
     }

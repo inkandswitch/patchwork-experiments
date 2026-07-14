@@ -9,11 +9,11 @@ export default async function example(repo) {
       type: "mergecraft",
       suggestedImportUrl: new URL("./dist/index.js", import.meta.url).href,
     },
-    title: "Example world",
+    title: "Mergecraft",
     cubes: pyramid(0, -10),
   });
 
-  return { name: "Example world", type: "mergecraft", url: handle.url };
+  return { name: "Mergecraft", type: "mergecraft", url: handle.url };
 }
 
 // 5x5 base, 3x3 middle, single capstone, centred on (cx, ground y=0, cz).
