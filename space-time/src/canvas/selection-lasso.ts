@@ -1,6 +1,7 @@
 import type { Embed, SpaceTimeDoc } from '../types';
 import type { CanvasLayout } from './layout';
 import { pointInPolygon, pointInRect } from './layout';
+import { PLAYHEAD_ORIGIN_GRIP_SCREEN_PX } from './constants';
 
 /** Ephemeral multi-selection (not stored in Automerge). */
 export type CanvasSelection = {
@@ -248,6 +249,20 @@ export function playheadExtentBounds(ph: CanvasLayout['playheads'][number]): Sel
   const left = Math.min(ph.x, ph.currentX);
   const right = Math.max(ph.maxEndX, ph.currentX);
   return { x: left, y: ph.y, width: Math.max(1, right - left), height: ph.height };
+}
+
+/** Page-space bounds of the origin capsule grip (matches drawn affordance). */
+export function playheadOriginHandleBounds(
+  ph: { x: number; y: number; height: number },
+  cameraZ: number,
+): SelectionBounds {
+  const gripW = PLAYHEAD_ORIGIN_GRIP_SCREEN_PX / Math.max(cameraZ, 1e-6);
+  return {
+    x: ph.x - gripW / 2,
+    y: ph.y,
+    width: gripW,
+    height: Math.max(0, ph.height),
+  };
 }
 
 export function scribbleBounds(outline: number[][]): SelectionBounds | null {
@@ -829,7 +844,30 @@ export function selectionBubblePolygon(
   return buildSelectionBubblePolygon(selectionItemShapes(layout, selection, embeds));
 }
 
-/** Build a selection from a freehand lasso polygon (closed). Full containment. */
+/**
+ * Signed area via shoelace. Canvas Y grows downward, so:
+ * positive → clockwise on screen, negative → counterclockwise.
+ */
+export function polygonSignedArea(polygon: readonly number[][]): number {
+  if (polygon.length < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]!;
+    const b = polygon[(i + 1) % polygon.length]!;
+    const ax = a[0];
+    const ay = a[1];
+    const bx = b[0];
+    const by = b[1];
+    if (ax === undefined || ay === undefined || bx === undefined || by === undefined) continue;
+    sum += ax * by - bx * ay;
+  }
+  return sum / 2;
+}
+
+/**
+ * Build a selection from a freehand lasso polygon (closed).
+ * Clockwise → fully contained items; counterclockwise → any intersecting item.
+ */
 export function selectionFromLasso(
   layout: CanvasLayout,
   doc: SpaceTimeDoc,
@@ -837,30 +875,30 @@ export function selectionFromLasso(
 ): CanvasSelection {
   if (polygon.length < 3) return { ...EMPTY_SELECTION };
 
+  // Near-zero / ambiguous winding defaults to containment (clockwise mode).
+  const contain = polygonSignedArea(polygon) >= 0;
+  const hitRect = contain ? rectContainedInPolygon : rectIntersectsPolygon;
+  const hitPolygon = contain ? polygonContainedInPolygon : polygonIntersectsPolygon;
+
   const clipIds: string[] = [];
   for (const clip of layout.clips) {
-    if (
-      rectContainedInPolygon(
-        { x: clip.x, y: clip.y, width: clip.width, height: clip.height },
-        polygon,
-      )
-    ) {
+    if (hitRect({ x: clip.x, y: clip.y, width: clip.width, height: clip.height }, polygon)) {
       clipIds.push(clip.clipId);
     }
   }
 
-  // Playhead only if its entire extent band is inside the lasso — so you can
-  // lasso clips inside a playhead without selecting the playhead itself.
+  // Playheads are selected via the origin handle only (not the extent band),
+  // so you can lasso clips without grabbing the playhead.
   const playheadIds: string[] = [];
   for (const ph of layout.playheads) {
-    if (rectContainedInPolygon(playheadExtentBounds(ph), polygon)) {
+    if (hitRect(playheadOriginHandleBounds(ph, layout.camera.z), polygon)) {
       playheadIds.push(ph.playheadId);
     }
   }
 
   const scribbleIds: string[] = [];
   for (const scribble of layout.scribbles) {
-    if (scribble.outline.length >= 3 && polygonContainedInPolygon(scribble.outline, polygon)) {
+    if (scribble.outline.length >= 3 && hitPolygon(scribble.outline, polygon)) {
       scribbleIds.push(scribble.scribbleId);
     }
   }
@@ -868,7 +906,7 @@ export function selectionFromLasso(
   const postItIds: string[] = [];
   for (const postIt of layout.postIts) {
     if (
-      rectContainedInPolygon(
+      hitRect(
         { x: postIt.x, y: postIt.y, width: postIt.width, height: postIt.height },
         polygon,
       )
@@ -880,7 +918,7 @@ export function selectionFromLasso(
   const inlineImageIds: string[] = [];
   for (const image of layout.inlineImages) {
     if (
-      rectContainedInPolygon(
+      hitRect(
         { x: image.x, y: image.y, width: image.width, height: image.height },
         polygon,
       )
@@ -892,7 +930,7 @@ export function selectionFromLasso(
   const embedIds: string[] = [];
   for (const embed of doc.embeds ?? []) {
     if (
-      rectContainedInPolygon(
+      hitRect(
         { x: embed.x, y: embed.y, width: embed.width, height: embed.height },
         polygon,
       )

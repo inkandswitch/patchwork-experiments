@@ -7,6 +7,8 @@ export const MIN_HANDLE_HIT_SCREEN_PX = 14;
 export const SNAP_THRESHOLD_SCREEN_PX = 6;
 export const MIN_CLIP_DURATION = 0.25;
 export const MIN_PLAYHEAD_HEIGHT = 20;
+/** Screen-pixel width of the playhead-origin capsule grip (lasso + hover affordance). */
+export const PLAYHEAD_ORIGIN_GRIP_SCREEN_PX = 6;
 export const MIN_VERTICAL_DRAG_PX = 12;
 export const DEFAULT_IMAGE_DURATION = 5;
 export const POST_IT_WIDTH = 140;

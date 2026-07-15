@@ -2279,9 +2279,7 @@ export function Canvas({
     const scribble = findScribble(doc, scribbleId);
     if (!scribble) return;
 
-    onSelectedScribbleChange(scribbleId);
-    onSelectedClipChange(null);
-    onSelectedPostItChange(null);
+    // Move without changing selection (same as clip / post-it m-move).
     dragRef.current = {
       kind: 'scribble-move',
       pointerId: KEYBOARD_PLAYHEAD_MOVE_POINTER_ID,

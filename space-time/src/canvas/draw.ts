@@ -3,6 +3,7 @@ import {
   CLIP_HEIGHT,
   HANDLE_WIDTH,
   PIXELS_PER_SECOND,
+  PLAYHEAD_ORIGIN_GRIP_SCREEN_PX,
   POST_IT_FONT_FAMILY,
   POST_IT_FONT_SIZE,
   POST_IT_FONT_WEIGHT,
@@ -397,7 +398,7 @@ function drawPlayheadOriginGrip(
   cameraZ: number,
 ): void {
   const invZ = 1 / cameraZ;
-  const gripW = 6 * invZ;
+  const gripW = PLAYHEAD_ORIGIN_GRIP_SCREEN_PX * invZ;
   const gripH = ph.height;
   if (gripH <= 0) return;
   const x = ph.x - gripW / 2;
@@ -801,12 +802,11 @@ function drawLassoPath(
   cameraZ: number,
 ): void {
   if (points.length < 2) return;
+  const invZ = 1 / cameraZ;
   ctx.save();
-  ctx.strokeStyle = theme.selectionBubble || 'rgba(200, 180, 80, 0.9)';
-  ctx.lineWidth = 1.5 / cameraZ;
-  ctx.setLineDash([6 / cameraZ, 4 / cameraZ]);
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
+
   ctx.beginPath();
   const first = points[0]!;
   ctx.moveTo(first[0]!, first[1]!);
@@ -814,7 +814,46 @@ function drawLassoPath(
     const p = points[i]!;
     ctx.lineTo(p[0]!, p[1]!);
   }
+
+  // Soft fill (closed through the start) so the region reads clearly while drawing.
+  if (points.length >= 3) {
+    ctx.save();
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(230, 200, 60, 0.22)';
+    ctx.fill();
+    ctx.restore();
+    // Rebuild the open stroke path after closePath.
+    ctx.beginPath();
+    ctx.moveTo(first[0]!, first[1]!);
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i]!;
+      ctx.lineTo(p[0]!, p[1]!);
+    }
+  }
+
+  // Dark halo under a brighter dashed stroke — readable on light and dark frames.
+  ctx.setLineDash([7 * invZ, 5 * invZ]);
+  ctx.strokeStyle = 'rgba(40, 30, 0, 0.55)';
+  ctx.lineWidth = 3.5 * invZ;
   ctx.stroke();
+  ctx.strokeStyle = 'rgba(255, 210, 40, 0.95)';
+  ctx.lineWidth = 2 * invZ;
+  ctx.stroke();
+
+  // Closing dashed segment so the open path still reads as a loop.
+  if (points.length >= 3) {
+    const last = points[points.length - 1]!;
+    ctx.beginPath();
+    ctx.moveTo(last[0]!, last[1]!);
+    ctx.lineTo(first[0]!, first[1]!);
+    ctx.strokeStyle = 'rgba(40, 30, 0, 0.35)';
+    ctx.lineWidth = 3 * invZ;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 210, 40, 0.7)';
+    ctx.lineWidth = 1.75 * invZ;
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 
@@ -908,8 +947,16 @@ export function drawCanvas(
     drawGhostPlayhead(ctx, ghost);
   }
 
+  // While lassoing, show every origin grip so you can aim the lasso at them.
+  const showAllOrigins = !!lassoPath && lassoPath.length >= 1;
   for (const ph of layout.playheads) {
-    drawPlayhead(ctx, theme, ph, camera.z, ph.playheadId === hoveredPlayheadOriginId);
+    drawPlayhead(
+      ctx,
+      theme,
+      ph,
+      camera.z,
+      showAllOrigins || ph.playheadId === hoveredPlayheadOriginId,
+    );
   }
 
   if (layout.recordingPreview) {
