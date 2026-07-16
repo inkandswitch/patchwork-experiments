@@ -649,8 +649,22 @@ x = 2;`)).toThrow("cannot assign to const-declared variable 'x'");
       expect(result).toMatch(/\(\$scope\d+\) => function \(e\) \{[^"]*\$scope\d+\.canvasEvents\.push\(e\)/);
     });
 
-    it('rewrites canvasEvents in initUI.js arrow callbacks and processEvents', () => {
-      const source = readFileSync(join(__dirname, '../initUI.js'), 'utf8');
+    it('rewrites captured event-queue bindings in arrow callbacks and processEvents', () => {
+      // Inline version of the old initUI.js fixture (the file itself is gone): a
+      // captured let binding shared by listener arrows and a sibling function.
+      const source = `
+function initUI() {
+  let canvasEvents = [];
+  canvas.addEventListener('pointerdown', (e) => canvasEvents.push(e));
+  function processEvents() {
+    for (const e of canvasEvents) {
+      handle(e);
+    }
+    canvasEvents = [];
+  }
+  processEvents();
+}
+`;
       const result = transpile(source);
       expect(result).toMatch(/\(\$scope\d+\) => \(e\) => \$scope\d+\.canvasEvents\.push\(e\)/);
       expect(result).toMatch(/for \(const e of \$scope\d+\.canvasEvents\)/);

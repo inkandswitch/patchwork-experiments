@@ -1,7 +1,20 @@
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
-window.gcRoot = {};
+// Per-user (ephemeral) UI state lives in `$uiState`, an ephemeral `$`-property of the
+// global object: per-replica, never stored in the Automerge document, lost on reload,
+// but persistent across transactions. It is (re)initialized by initUI(), which runs at
+// the start of every session. Raw host objects (DOM events, etc.) must never enter the
+// Livelymerge heap — those live in plain side-tables on `window` instead.
+$uiState = null;
+
+function setPointerLocation(p) {
+  // Last known pointer position for THIS user (per-replica; never shared or persisted).
+  if ($uiState) $uiState.pointerLocation = p;
+}
+function getPointerLocation() {
+  return $uiState ? $uiState.pointerLocation : null;
+}
 
 // +-----------------------+
 // |  Classes and Objects  |
@@ -433,9 +446,11 @@ class Set {
   add(value) {
     for (const [k, v] of this.entries) {
       if (v === value) {
-        return;
+        return this;
       }
     }
+    this.entries.push([value, value]);
+    return this;
   }
 
   delete(value) {
@@ -453,6 +468,7 @@ class Set {
         return true;
       }
     }
+    return false;
   }
 
   clear() {
@@ -479,10 +495,25 @@ class Set {
 }
 
 function initUI() {
-  window.gcRoot = { eventListeners: [] };
+  // Per-user UI state: ephemeral (never in the Automerge document), survives across
+  // transactions, reset on reload. `eventListeners` keeps the listener closures (and
+  // their captured scopes) alive across transactions; without it the GC would collect
+  // them and the browser-held listener proxies would go stale.
+  $uiState = {
+    eventListeners: [],
+    /** pointerId → { timer, pressPt, startPt, longClickMoveCancelPx? }; raw DOM events
+     *  are not representable in the heap, so they live in window._lcEvts instead. */
+    longClickByPointerId: {},
+    pointerLocation: null,
+  };
+  // Raw side-tables (plain JS on the real window; never touch the LM heap):
+  window._canvasEvents = new window.Array(); // DOM events queued between frames
+  window._lcEvts = new window.Object(); // pointerId → raw pointerdown event
+  window._lcTimers = new window.Object(); // pointerId → raw timer handle (a host object in Node)
+
   function addEventListener(source, type, listener) {
     // prevents GC from collecting the listener
-    window.gcRoot.eventListeners.push(listener);
+    $uiState.eventListeners.push(listener);
     source.addEventListener(type, listener);
   }
 
@@ -492,42 +523,44 @@ function initUI() {
   window.LONG_CLICK_MOVE_CANCEL_PX = 7;
   /** When true, a completed long-click runs halo cycling like meta-click (see {@link WorldMorph.longClickHaloDefersAt}). Default false; toggled from world menu "Long click for halos". */
   window.longClickForHalos = false;
-  /** pointerId → { timer, downEvt, pressPt, startPt } */
-  window.gcRoot._longClickByPointerId = new Map();
-  window.gcRoot._longClickDisarmPointer = function (pointerId) {
-    let arm = window.gcRoot._longClickByPointerId.get(pointerId);
+  $uiState.longClickDisarmPointer = function (pointerId) {
+    let arm = $uiState.longClickByPointerId[pointerId];
     if (!arm) return;
-    if (arm.timer) clearTimeout(arm.timer);
-    window.gcRoot._longClickByPointerId.delete(pointerId);
+    if (window._lcTimers[pointerId] != null) clearTimeout(window._lcTimers[pointerId]);
+    delete $uiState.longClickByPointerId[pointerId];
+    delete window._lcEvts[pointerId];
+    delete window._lcTimers[pointerId];
   };
-  window.gcRoot._longClickArmIfNeeded = function (pressPt, downEvt) {
+  $uiState.longClickArmIfNeeded = function (pressPt, downEvt) {
     if (!downEvt || typeof downEvt.pointerId !== 'number') return;
     if (typeof downEvt.button === 'number' && downEvt.button !== 0) return;
-    window.gcRoot._longClickDisarmPointer(downEvt.pointerId);
+    $uiState.longClickDisarmPointer(downEvt.pointerId);
     let pid = downEvt.pointerId;
     let ms = window.LONG_CLICK_MS != null ? window.LONG_CLICK_MS : 1000;
     let timer = setTimeout(function () {
-      let arm = window.gcRoot._longClickByPointerId.get(pid);
+      let arm = $uiState.longClickByPointerId[pid];
       if (!arm) return;
+      let downEvt = window._lcEvts[pid];
       try {
-        arm.downEvt.longClick = true;
+        if (downEvt) downEvt.longClick = true;
       } catch (err) {
         /* ignore */
       }
       if (window.longClickForHalos !== false && topLevelMorph && topLevelMorph.onLongClickHalo)
-        topLevelMorph.onLongClickHalo(arm.pressPt, arm.downEvt);
+        topLevelMorph.onLongClickHalo(arm.pressPt, downEvt);
     }, ms);
-    window.gcRoot._longClickByPointerId.set(pid, {
-      timer,
-      downEvt,
+    window._lcEvts[pid] = downEvt;
+    window._lcTimers[pid] = timer; // raw handle stays out of the heap
+    $uiState.longClickByPointerId[pid] = {
+      armed: true,
       pressPt: pt(pressPt.x, pressPt.y),
       startPt: pt(pressPt.x, pressPt.y),
-    });
+    };
   };
 
   window.actorID = window.Automerge.getActorId(window.handle.doc());
   // Fresh UI init must not inherit stale soft-shift state.
-  window.shiftKeyPressedFlag = false;
+  shiftKeyPressedFlag = false; // (was window.shiftKeyPressedFlag — a dead write; the flag lives on the LM global)
   if (topLevelMorph) topLevelMorph.shiftKeyDown = false;
   _refreshPadModifierStyles();
 
@@ -536,19 +569,17 @@ function initUI() {
   if (window._uiAbortController) window._uiAbortController.abort();
   window._uiAbortController = new window.AbortController();
 
-  let canvasEvents = [];
-
   canvas.style.touchAction = 'none';
-  addEventListener(canvas, 'pointerdown', (e) => canvasEvents.push(e));
-  addEventListener(canvas, 'pointerup', (e) => canvasEvents.push(e));
-  addEventListener(canvas, 'pointermove', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'pointerdown', (e) => window._canvasEvents.push(e));
+  addEventListener(canvas, 'pointerup', (e) => window._canvasEvents.push(e));
+  addEventListener(canvas, 'pointermove', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'pointercancel', (ev) => {
-    if (ev && ev.pointerId != null) window.gcRoot._longClickDisarmPointer(ev.pointerId);
+    if (ev && ev.pointerId != null) $uiState.longClickDisarmPointer(ev.pointerId);
   });
   canvas.tabIndex = 1;
-  addEventListener(canvas, 'keydown', (e) => canvasEvents.push(e));
-  addEventListener(canvas, 'keypress', (e) => canvasEvents.push(e));
-  addEventListener(canvas, 'keyup', (e) => canvasEvents.push(e));
+  addEventListener(canvas, 'keydown', (e) => window._canvasEvents.push(e));
+  addEventListener(canvas, 'keypress', (e) => window._canvasEvents.push(e));
+  addEventListener(canvas, 'keyup', (e) => window._canvasEvents.push(e));
 
   function onFrame() {
     try {
@@ -565,12 +596,17 @@ function initUI() {
     }
   }
 
+  // requestAnimationFrame holds onFrame's proxy, but that is invisible to the LM GC:
+  // without an LM-visible root, onFrame's captured scope would be collected and the
+  // next frame would fire a stale closure. Retaining it here keeps it (and everything
+  // it captures, e.g. processEvents) alive — ephemerally, per user.
+  $uiState.onFrame = onFrame;
   if (window._uiRafId != null) window.cancelAnimationFrame(window._uiRafId);
   window._uiRafId = window.requestAnimationFrame(onFrame);
 
   function processEvents() {
-    const seen = new Set();
-    for (const e of canvasEvents) {
+    const seen = new window.Set(); // native Set; holds raw DOM events
+    for (const e of window._canvasEvents) {
       if (seen.has(e)) continue;
       seen.add(e);
 
@@ -605,7 +641,7 @@ function initUI() {
           console.error('unsupported event type', e.type);
       }
     }
-    canvasEvents = [];
+    window._canvasEvents = new window.Array();
   }
   console.log('initUI loaded');
   ensureAlldefsSourceLines();
@@ -652,7 +688,7 @@ function onKeyUp(e) {
 }
 function onPointerDown(p, e) {
   if (e && e.actorID == null) e.actorID = window.actorID;
-  window._longClickArmIfNeeded(p, e);
+  if ($uiState && $uiState.longClickArmIfNeeded) $uiState.longClickArmIfNeeded(p, e);
   topLevelMorph.onPointerDown(p, e);
 }
 function onPointerDownNow(p, e) {
@@ -661,18 +697,23 @@ function onPointerDownNow(p, e) {
 }
 function onPointerMove(p, e) {
   if (e && e.actorID == null) e.actorID = window.actorID;
-  if (e && typeof e.pointerId === 'number') {
-    let arm = window.gcRoot._longClickByPointerId.get(e.pointerId);
+  if (e && typeof e.pointerId === 'number' && $uiState) {
+    let arm = $uiState.longClickByPointerId[e.pointerId];
     if (arm) {
-      let lim = window.LONG_CLICK_MOVE_CANCEL_PX != null ? window.LONG_CLICK_MOVE_CANCEL_PX : 18;
-      if (p.dist(arm.startPt) > lim) window._longClickDisarmPointer(e.pointerId);
+      let lim =
+        arm.longClickMoveCancelPx != null
+          ? arm.longClickMoveCancelPx
+          : window.LONG_CLICK_MOVE_CANCEL_PX != null
+            ? window.LONG_CLICK_MOVE_CANCEL_PX
+            : 18;
+      if (p.dist(arm.startPt) > lim) $uiState.longClickDisarmPointer(e.pointerId);
     }
   }
   topLevelMorph.onPointerMove(p, e);
 }
 function onPointerUp(p, e) {
   if (e && e.actorID == null) e.actorID = window.actorID;
-  if (e && typeof e.pointerId === 'number') window._longClickDisarmPointer(e.pointerId);
+  if (e && typeof e.pointerId === 'number' && $uiState) $uiState.longClickDisarmPointer(e.pointerId);
   topLevelMorph.onPointerUp(p, e);
 }
 function pointerEventCanvasLocalPt(canvas, e) {
@@ -2153,8 +2194,11 @@ class TextBox extends Shape {
       let term = this.selectedTextString();
       let hits = methodsContaining(term);
       if (!hits || hits.length === 0) {
-        let pt = window.pointerLocation ? window.pointerLocation.copy() : pt(120, 120);
-        showFindNoMatchesMenu(Lively, pt, term);
+        // (was `let pt = ... : pt(120, 120)` — the local `pt` shadowed the global
+        //  pt() and referenced itself in its own initializer: a TDZ ReferenceError
+        //  whenever the pointer location was unknown.)
+        let at = getPointerLocation() ? getPointerLocation().copy() : pt(120, 120);
+        showFindNoMatchesMenu(Lively, at, term);
       } else {
         Lively.addMorph(
           new MethodListPanel(null, hits, null, 'Occurrences of "' + term + '"', term),
@@ -2731,6 +2775,48 @@ class Morph {
     this.layoutChanged();
     return morph;
   }
+  addEphemeralMorph(morph) {
+    /**
+     * Attach `morph` as a PER-USER (ephemeral) submorph: rendered and hit-tested like
+     * any submorph, drawn above the persistent ones, but never stored in the Automerge
+     * document and never seen by other users. Halos and their handles live here.
+     * Note it is the attachment EDGE that is ephemeral: `morph`'s own subtree (regular
+     * submorphs, shape, etc.) stays ephemeral automatically because it is only
+     * reachable through this $-edge. Only meant for freshly created per-user morphs —
+     * attaching an already-persistent morph here would orphan it on reload (its owner
+     * back-pointer would survive but this list would not).
+     */
+    if (morph.owner) morph.owner.removeMorph(morph);
+    this.ephemeralSubmorphs().push(morph);
+    morph.owner = this;
+    morph.changed();
+    this.layoutChanged();
+    return morph;
+  }
+  ephemeralSubmorphs() {
+    /** This morph's per-user submorph list; lazily created (after a reload, persistent morphs come back without one). */
+    if (!this.$submorphs) this.$submorphs = [];
+    return this.$submorphs;
+  }
+  allSubmorphs() {
+    /** Persistent + ephemeral submorphs in DRAW order: persistent first, ephemeral on top. */
+    let all = [];
+    if (this.submorphs) this.submorphs.forEach((m) => all.push(m));
+    if (this.$submorphs) this.$submorphs.forEach((m) => all.push(m));
+    return all;
+  }
+  allSubmorphsTopFirst() {
+    /** Persistent + ephemeral submorphs in HIT-TEST order (reverse draw order): ephemeral frontmost-first, then persistent frontmost-first. */
+    let all = [];
+    if (this.$submorphs) for (let i = this.$submorphs.length - 1; i >= 0; i--) all.push(this.$submorphs.at(i));
+    if (this.submorphs) for (let i = this.submorphs.length - 1; i >= 0; i--) all.push(this.submorphs.at(i));
+    return all;
+  }
+  eachSubmorph(fn) {
+    /** Iterate persistent then ephemeral submorphs (draw order) without allocating a combined list. */
+    if (this.submorphs) this.submorphs.forEach(fn);
+    if (this.$submorphs) this.$submorphs.forEach(fn);
+  }
   asString() {
     return 'a ' + this.className + ' (' + this.shape.asString() + ')';
   }
@@ -2855,8 +2941,8 @@ class Morph {
     return eval(str);
   }
   forEverySubmorph(fn) {
-    // Exhaustvely call fn on this and every submorph
-    this.submorphs.forEach((sub) => {
+    // Exhaustively call fn on every submorph, persistent and ephemeral, recursively
+    this.eachSubmorph((sub) => {
       fn.call(this, sub);
       sub.forEverySubmorph(fn);
     });
@@ -2865,7 +2951,7 @@ class Morph {
     // Includes this morph's shape and all descendant submorph shapes.
     // Return value is in owner coordinates, matching getBounds().
     let b = this.shape.getBounds().copy(); // local coords
-    this.submorphs.forEach((sub) => {
+    this.eachSubmorph((sub) => {
       b = b.union(sub.fullBounds()); // child bounds are in this local coords
     });
     return b.translatedBy(this.transform.translation);
@@ -2880,8 +2966,8 @@ class Morph {
     return this.owner.globalize(this.transform.transformPt(pt));
   }
   hasSubmorphs() {
-    if (this.submorphs == null) return false;
-    return this.submorphs.length > 0;
+    if (this.submorphs != null && this.submorphs.length > 0) return true;
+    return this.$submorphs != null && this.$submorphs.length > 0;
   }
   inaHand() {
     if (this.owner == null) return false;
@@ -2911,7 +2997,7 @@ class Morph {
   localContentBounds() {
     /** Shape + submorph stickouts in morph-local coords (before this morph's transform). */
     let b = this.shape.getBounds().copy();
-    this.submorphs.forEach((sub) => {
+    this.eachSubmorph((sub) => {
       b = b.union(sub.fullBounds());
     });
     return b;
@@ -2969,8 +3055,9 @@ class Morph {
       return false;
     }
     let eventConsumed = false;
-    this.submorphs.forEach((sub, idx) => {
+    this.eachSubmorph((sub) => {
       // localP is in this morph's local coords, i.e. owner coords for submorphs
+      // (ephemeral submorphs come last, so as the topmost layer they win the dispatch)
       if (sub.fullBounds().includesPt(localP)) eventConsumed = sub.onPointerDown(localP, evt);
     });
     if (eventConsumed) return true;
@@ -2997,7 +3084,7 @@ class Morph {
     let localP = this.relativize(p);
     // If any submorph responds, then we're done
     let eventConsumed = false;
-    this.submorphs.forEach((sub, idx) => {
+    this.eachSubmorph((sub) => {
       // localP is in this morph's local coords, i.e. owner coords for submorphs
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerMove(localP, evt);
     });
@@ -3032,7 +3119,7 @@ class Morph {
     let localP = this.relativize(p);
     // If any submorph responds true, then we're done
     let eventConsumed = false;
-    this.submorphs.forEach((sub, idx) => {
+    this.eachSubmorph((sub) => {
       // localP is in this morph's local coords, i.e. owner coords for submorphs
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerUp(localP, evt);
     });
@@ -3060,11 +3147,17 @@ class Morph {
     return this.getBounds().topLeft;
   }
   promote(submorph) {
-    if (submorph === this.submorphs.at(-1)) return; // already frontmost
-    let idx = this.submorphs.indexOf(submorph);
+    // Reorder to frontmost within whichever list holds it (persistent or ephemeral).
+    let list = this.submorphs;
+    let idx = list ? list.indexOf(submorph) : -1;
+    if (idx < 0 && this.$submorphs) {
+      list = this.$submorphs;
+      idx = list.indexOf(submorph);
+    }
     if (idx < 0) return;
-    this.submorphs.splice(idx, 1);
-    this.submorphs.push(submorph);
+    if (submorph === list.at(-1)) return; // already frontmost in its layer
+    list.splice(idx, 1);
+    list.push(submorph);
     this.changed();
   }
   relativize(pt) {
@@ -3079,6 +3172,7 @@ class Morph {
   }
   removeMorph(submorph) {
     deleteFromArray(this.submorphs, submorph);
+    if (this.$submorphs) deleteFromArray(this.$submorphs, submorph);
     this.changed();
   }
   renderMeOn(ctx) {
@@ -3089,7 +3183,7 @@ class Morph {
   }
   renderOn(ctx) {
     this.renderMeOn(ctx);
-    this.submorphs.forEach((each) => {
+    this.eachSubmorph((each) => {
       ctx.save();
       let pf = this.world().pointerFocus;
       let inHand = each.inaHand();
@@ -3188,8 +3282,8 @@ class Morph {
   }
   showHalo() {
     this.world().removeExistingHalos();
-    // console.log('showHalo() on ' + this.asString());
-    this.world().addMorph(new HaloMorph(this));
+    // Per-user UI: halos never enter the Automerge document.
+    this.world().addEphemeralMorph(new HaloMorph(this));
   }
   showMorphMenuAt(worldPt, optsIfAny) {
     /** Show {@link morphMenu} at a world point; returns false when there is no menu. */
@@ -3714,11 +3808,11 @@ class LineMorph extends Morph {
       if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
       return;
     }
-    if (!window.pointerLocation) {
+    if (!getPointerLocation()) {
       this.clearAllHandles();
       return;
     }
-    let localP = this.localize(window.pointerLocation);
+    let localP = this.localize(getPointerLocation());
     if (!this.shape.includesPt(localP)) {
       this.clearAllHandles();
       return;
@@ -3921,7 +4015,7 @@ function showPasteHistoryMenu(pane, textBox) {
     entries.push({ label: history.length - i + '. ' + preview, text: '' + raw });
   }
   let anchor =
-    window.pointerLocation ||
+    getPointerLocation() ||
     (pane.globalize ? pane.globalize(pane.shape.getBounds().topLeft) : pt(8, 8));
   let menu = null;
   menu = new MenuMorph(
@@ -4516,7 +4610,7 @@ class ScrollPane extends Morph {
       ? ptIfAny
       : this.paneMenuAnchorInWorld
         ? this.paneMenuAnchorInWorld()
-        : window.pointerLocation || this.globalize(this.shape.getBounds().topLeft);
+        : getPointerLocation() || this.globalize(this.shape.getBounds().topLeft);
     let thisPane = this;
     let menu = new MenuMorph(
       rect(worldPt.x, worldPt.y, 165, Math.max(48, 24 + items.length * 18)),
@@ -6517,7 +6611,7 @@ class HaloHandle extends Morph {
       this.scaleStartTransform = this.target.transform.scale.copy();
     }
     let worldTopLeft = this.owner.getBounds().topLeft.addPt(this.getBounds().topLeft); // handle topLeft in world before reparent
-    this.world().addMorph(this); // handle owner was halo; now world (translation still halo-local, so handle jumps)
+    this.world().addEphemeralMorph(this); // handle owner was halo; now world (per-user, like the halo itself)
     this.transform.translation = worldTopLeft.subPt(this.shape.getBounds().topLeft); // set world position so topLeft stays at worldTopLeft
     this.syncBoundsFromGeometry();
     this.world().setPointerFocus(this);
@@ -6771,7 +6865,7 @@ class HandMorph extends Morph {
   constructor(id, location, color) {
     super(null, new Pen().makeHandShape(location, color));
     this.actorID = id;
-    window.pointerLocation = location ? location.copy() : this.location();
+    setPointerLocation(location ? location.copy() : this.location());
   }
   dropMorph(p, evt) {
     let worldPt = p ? p : this.location();
@@ -6806,7 +6900,7 @@ class HandMorph extends Morph {
   }
   onPointerDown(p, evt) {
     this.hitPoint = p;
-    window.pointerLocation = p;
+    setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
     if (!evt.altKey) return false;
     if (evt.shiftKey) {
@@ -6825,13 +6919,13 @@ class HandMorph extends Morph {
     return true;
   }
   onPointerMove(p, evt) {
-    let d = p.subPt(window.pointerLocation ? window.pointerLocation : this.location());
-    window.pointerLocation = p;
+    let d = p.subPt(getPointerLocation() ? getPointerLocation() : this.location());
+    setPointerLocation(p);
     this.moveBy(d);
     // Submorphs ride under transform; do not move them separately.
   }
   onPointerUp(p, evt) {
-    window.pointerLocation = p;
+    setPointerLocation(p);
     if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
   }
   static new(...args) {
@@ -6976,8 +7070,8 @@ class OnScreenKeyboardMorph extends Morph {
     // startStepping must run after addMorph — Morph.startStepping uses this.world().
   }
   _noteOskBodyPressForLongClick(evt) {
-    if (!evt || typeof evt.pointerId !== 'number') return;
-    let arm = w._longClickByPointerId.get(evt.pointerId);
+    if (!evt || typeof evt.pointerId !== 'number' || !$uiState) return;
+    let arm = $uiState.longClickByPointerId[evt.pointerId];
     if (arm) arm.longClickMoveCancelPx = OnScreenKeyboardMorph.OSK_LONG_CLICK_MOVE_CANCEL_PX;
   }
   _startOskBodyDragIfNeeded(p, evt) {
@@ -7459,7 +7553,7 @@ class WorldMorph extends Morph {
     this.keyboardFocus = null;
     this.shiftKeyDown = false; // maintained here
     this.hands = null;
-    window.pointerLocation = bounds.topLeft;
+    setPointerLocation(bounds.topLeft);
   }
   addHand(handMorph) {
     // maybe should check for duplicate adds
@@ -7476,7 +7570,7 @@ class WorldMorph extends Morph {
       this.removeExistingHalos();
       return;
     }
-    let existingHalo = this.submorphs.find((morph) => morph.className == 'HaloMorph');
+    let existingHalo = this.allSubmorphs().find((morph) => morph.className == 'HaloMorph');
     let prevTarget = existingHalo && existingHalo.target;
     let continueChain =
       prevTarget &&
@@ -7489,7 +7583,8 @@ class WorldMorph extends Morph {
     this.removeExistingHalos();
     let nextIx = currentIx + 1;
     if (nextIx < candidates.length) {
-      this.addMorph(new HaloMorph(candidates[nextIx]));
+      // Per-user UI: my halo is mine alone (never enters the Automerge document).
+      this.addEphemeralMorph(new HaloMorph(candidates[nextIx]));
     }
   }
   dismissFleetingMenusAt(p) {
@@ -7574,7 +7669,7 @@ class WorldMorph extends Morph {
     if (!this.hands) this.hands = [];
     else color = Color.green;
     console.log('creating hand morph');
-    const hm = new HandMorph(window.actorID, window.pointerLocation, color);
+    const hm = new HandMorph(window.actorID, getPointerLocation(), color);
     console.log('adding hand morph');
     this.addHand(hm);
   }
@@ -7732,7 +7827,7 @@ class WorldMorph extends Morph {
     this.cycleHaloAt(pt);
   }
   onPointerDown(p, evt) {
-    window.pointerLocation = p;
+    setPointerLocation(p);
     // Dismiss fleeting menus but still deliver this click to morphs underneath
     // (otherwise the first click after a pane menu only closes the menu).
     this.dismissFleetingMenusAt(p);
@@ -7753,8 +7848,9 @@ class WorldMorph extends Morph {
       return pf.finishStickyCollapsedTitleBarDrag(pForFocus, evt);
     }
     let hit = false; // return of true stops at top morph
-    this.submorphs.toReversed().forEach((morph) => {
-      // Pass world/owner coords into child; it will localize as needed
+    this.allSubmorphsTopFirst().forEach((morph) => {
+      // Pass world/owner coords into child; it will localize as needed.
+      // Top-first order means ephemeral morphs (halos, per-user UI) see the event first.
       if (!hit) hit = morph.onPointerDown(p, evt);
     });
     if (!hit) {
@@ -7764,7 +7860,7 @@ class WorldMorph extends Morph {
     return hit;
   }
   onPointerMove(p, evt) {
-    window.pointerLocation = p;
+    setPointerLocation(p);
     let hand = this.handForID(evt.actorID);
     if (hand) {
       hand.onPointerMove(p, evt);
@@ -7775,10 +7871,10 @@ class WorldMorph extends Morph {
       let pForFocus = this.pointerFocus.owner ? this.pointerFocus.owner.localize(p) : p;
       return this.pointerFocus.onPointerMove(pForFocus, evt);
     }
-    this.submorphs.forEach((morph) => morph.onPointerMove(p, evt));
+    this.eachSubmorph((morph) => morph.onPointerMove(p, evt));
   }
   onPointerUp(p, evt) {
-    window.pointerLocation = p;
+    setPointerLocation(p);
     let hand = this.handForID(evt.actorID);
     if (hand) {
       let handHandled = hand.hasSubmorphs() || evt.altKey;
@@ -7790,14 +7886,18 @@ class WorldMorph extends Morph {
       let pForFocus = this.pointerFocus.owner ? this.pointerFocus.owner.localize(p) : p;
       result = this.pointerFocus.onPointerUp(pForFocus, evt);
     } else {
-      this.submorphs.forEach((morph) => morph.onPointerUp(p, evt));
+      this.eachSubmorph((morph) => morph.onPointerUp(p, evt));
     }
     return result;
   }
   removeExistingHalos() {
-    this.submorphs.forEach((morph) => {
-      if (morph.className == 'HaloMorph') morph.remove();
+    // Halos are per-user: they live in $submorphs. Collect first, then remove, so we
+    // never mutate a list while iterating it. (Scans both layers for robustness.)
+    let halos = [];
+    this.eachSubmorph((morph) => {
+      if (morph.className == 'HaloMorph') halos.push(morph);
     });
+    halos.forEach((halo) => halo.remove());
   }
   removeHand(handMorph) {
     this.hands = this.hands.filter((m) => m !== handMorph);
@@ -7982,9 +8082,9 @@ class WorldMorph extends Morph {
     // Deepest morph under pt; among overlapping siblings, frontmost wins.
     // pt is world coordinates.
     let walk = (ownerMorph, worldPt) => {
-      let subs = ownerMorph.submorphs || [];
-      for (let i = subs.length - 1; i >= 0; i--) {
-        let sub = subs[i];
+      let subs = ownerMorph.allSubmorphsTopFirst(); // ephemeral layer is frontmost
+      for (let i = 0; i < subs.length; i++) {
+        let sub = subs.at(i);
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
         if (sub.fullBounds().includesPt(pInOwner)) {
           let deeper = walk(sub, worldPt);
@@ -7998,9 +8098,9 @@ class WorldMorph extends Morph {
   topMorphAtExcludingHaloUI(pt) {
     /** Like {@link topMorphAt} but skips halo UI and hands so halo cycling hits morphs *behind* them (avoids halos-on-halos). */
     let walk = (ownerMorph, worldPt) => {
-      let subs = ownerMorph.submorphs || [];
-      for (let i = subs.length - 1; i >= 0; i--) {
-        let sub = subs[i];
+      let subs = ownerMorph.allSubmorphsTopFirst();
+      for (let i = 0; i < subs.length; i++) {
+        let sub = subs.at(i);
         let cn = sub.className;
         if (cn === 'HaloMorph' || cn === 'HaloHandle' || cn === 'HandMorph') continue;
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;

@@ -14,10 +14,12 @@ import {
   lmGetOwn,
   lmGetWithDelegation,
   lmHeapPropertyNames,
+  lmIsEphemeralKey,
   lmIsReservedKey,
   lmObjDelegatesTo,
   lmOwnUserPropertyKeys,
   lmSetOwn,
+  lmUserKey,
 } from './lmStorage';
 import {
   type LivelymergeDoc,
@@ -31,6 +33,31 @@ import {
   isRef,
   isFun,
 } from './types';
+
+/**
+ * Late-bound values: per-replica stand-ins for JS globals. Serialized as a symbolic
+ * reference; each replica resolves them against its own globalThis at access time.
+ * (Old documents are upgraded lazily by ensureHeapRoots.)
+ */
+export const JS_GLOBAL_IDS = [
+  'canvas',
+  'ctx',
+  'document',
+  'window',
+  'Math',
+  'String',
+  'Date',
+  'Number',
+  'JSON',
+  'Promise',
+  'RegExp',
+  'parseInt',
+  'parseFloat',
+  'isNaN',
+  'isFinite',
+  'localStorage',
+  'fetch',
+] as const;
 
 export interface Proxy {
   $isProxy: boolean;
@@ -57,8 +84,35 @@ export interface LivelymergeRuntime {
 export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): LivelymergeRuntime {
   // docHandle from factory parameter
   let doc: LivelymergeDoc;
-  let newObjects: Map<string, Obj | Arr | Fun> | null = null;
-  let proxies: Map<string, Proxy> | null = null;
+
+  // -- The shadow document --
+  // Holds every object that has not (yet) been proven persistently reachable: freshly
+  // allocated objects and long-lived ephemeral (per-replica) objects alike. Same entry
+  // format as doc.objectTable, but a plain JS object: never synced, never persisted.
+  // Entries move to doc.objectTable at GC time iff persistently reachable ("promotion");
+  // the objectId is preserved, so references and proxies survive promotion unchanged.
+  const shadowTable: Record<string, Obj | Arr | Fun> = Object.create(null);
+
+  // -- Ephemeral properties sidecar --
+  // objectId × propertyName -> canonical Val. Backs `$foo` properties: per-replica,
+  // lost on reload, persistent across transactions. Deliberately strong (not weak):
+  // it is a root set for ephemeral liveness — GC sweeps dead rows explicitly.
+  const ephemeralProps = new Map<string, Record<string, Val>>();
+
+  // -- Proxy cache --
+  // objectId -> WeakRef<proxy>. One proxy per objectId for as long as anyone holds it,
+  // so `===`, Map keys, etc. work across transactions and across promotion. Proxies
+  // resolve their backing store (shadow vs. Automerge) per access, which is what makes
+  // promotion invisible to reference holders.
+  const proxyCache = new Map<string, WeakRef<Proxy>>();
+  const proxyReaper =
+    typeof FinalizationRegistry !== 'undefined'
+      ? new FinalizationRegistry<string>((id) => {
+          const ref = proxyCache.get(id);
+          if (ref && ref.deref() === undefined) proxyCache.delete(id);
+        })
+      : null;
+
   let $global: any;
 
   let inChangeCall = false;
@@ -83,7 +137,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         $intervalFns: { $type: 'ref', $id: 'interval-fns' },
       };
     }
-    for (const id of ['canvas', 'ctx', 'document'] as const) {
+    for (const id of JS_GLOBAL_IDS) {
       if (!doc.objectTable[id]) {
         doc.objectTable[id] = { $type: 'obj', $id: id, $jsGlobal: id };
       }
@@ -105,8 +159,6 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
 
     inChangeCall = true;
-    newObjects = null;
-    proxies = null;
     let exception: any;
     let returnValue: T | undefined = undefined;
     try {
@@ -168,7 +220,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function lookupHeapEntry(id: string): Obj | Arr | Fun | undefined {
-    return newObjects?.get(id) ?? doc.objectTable[id];
+    return shadowTable[id] ?? doc.objectTable[id];
   }
 
   function lookupHeapProto(id: string): Obj | undefined {
@@ -184,6 +236,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   function liveHeapFun(fun: Fun): Fun {
     const live = lookupHeapEntry(fun.$id);
     return isFun(live) ? live : fun;
+  }
+
+  function liveHeapArr(arr: Arr): Arr {
+    const live = lookupHeapEntry(arr.$id);
+    return isArr(live) ? live : arr;
   }
 
   function lmGetPrototypeOf(obj: Obj): Proxy | null {
@@ -213,7 +270,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       entry.$protoId = proto?.$id ?? 'object-prototype';
     }
     for (const [k, v] of Object.entries(obj)) {
-      entry[k.startsWith('@') ? k : '@' + k] = toVal(v);
+      if (lmIsEphemeralKey(k)) {
+        // `{ $halo: x }` — an ephemeral property, never stored in the heap entry.
+        writeEphemeralProp($id, k, v);
+        continue;
+      }
+      entry[k.startsWith('@') ? k : '@' + k] = toValLenient(v, `property '${k}' of object ${$id}`);
     }
     installHeapEntry($id, entry);
     return deserialize(entry);
@@ -224,7 +286,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const entry: Arr = {
       $type: 'arr',
       $id,
-      $values: values.map(toVal),
+      $values: values.map((v: any) => toValLenient(v, `element of array ${$id}`)),
     };
     installHeapEntry($id, entry);
     return deserialize(entry);
@@ -243,20 +305,166 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     return deserialize(entry);
   }
 
-  function ensureNewObjects() {
-    if (!newObjects) {
-      newObjects = new Map();
-    }
-    return newObjects;
-  }
-
   function installHeapEntry(id: string, entry: Obj | Arr | Fun): void {
-    ensureNewObjects().set(id, entry);
-    doc.objectTable[id] = entry;
+    // Fresh objects live in the shadow document only. GC promotes them into
+    // doc.objectTable iff they are persistently reachable at end of transaction,
+    // so temporaries never generate Automerge ops at all.
+    shadowTable[id] = entry;
   }
 
+  // -- Ephemeral ($-prefixed) properties --
+
+  function readEphemeralProp(id: string, prop: string): unknown {
+    const props = ephemeralProps.get(id);
+    if (!props || !Object.hasOwn(props, prop)) return undefined;
+    return deserialize(props[prop]);
+  }
+
+  function writeEphemeralProp(id: string, prop: string, value: unknown): boolean {
+    let props = ephemeralProps.get(id);
+    if (!props) {
+      props = Object.create(null) as Record<string, Val>;
+      ephemeralProps.set(id, props);
+    }
+    props[prop] = toValLenient(value, `ephemeral property '${prop}' of object ${id}`);
+    return true;
+  }
+
+  function deleteEphemeralProp(id: string, prop: string): boolean {
+    const props = ephemeralProps.get(id);
+    if (props) {
+      delete props[prop];
+      if (Object.keys(props).length === 0) ephemeralProps.delete(id);
+    }
+    return true;
+  }
+
+  // -- Serialization / write barrier --
+  //
+  // Two regimes:
+  //   STRICT  — writes whose target lives in the Automerge document. Unrepresentable
+  //             (host) values throw immediately, at the write, with a real stack trace.
+  //   LENIENT — writes whose target lives in the shadow document, and all ephemeral
+  //             ($-prefixed) properties. These stores are per-replica, so raw host
+  //             values (DOM events, timers, ...) are tolerated — closures routinely
+  //             capture them (the transpiler seeds captured params onto scope objects).
+  //             Each tolerated host value is tagged with provenance; if the containing
+  //             object later becomes persistently reachable, PROMOTION throws, and the
+  //             error names the property and object the host value came in through.
+
+  function isAutomergeScalar(x: unknown): boolean {
+    return x instanceof Date || x instanceof Uint8Array;
+  }
+
+  /** host value -> where it entered the heap, for promotion-time error messages. */
+  const hostValueProvenance = new WeakMap<object, string>();
+
+  /** Returns a human-readable violation for strict storage, or null if representable.
+   * Plain JSON-ish data (e.g. results of String.split) is representable in Automerge as
+   * an unaliased leaf value, so it passes — but it must not smuggle LM proxies
+   * (aliasing would be silently lost) and `$`-keys would collide with serialized forms. */
+  function findUnrepresentable(x: any, depth = 0): string | null {
+    if (depth > 100) return 'value is too deeply nested to store';
+    if (x === null || x === undefined) return null;
+    const t = typeof x;
+    if (t === 'number' || t === 'string' || t === 'boolean') return null;
+    if (isAutomergeScalar(x)) return null;
+    if (isProxy(x)) {
+      return (
+        'a Livelymerge object inside a plain JS value ' +
+        '(aliasing would be lost) — use a Livelymerge array/object to hold it instead'
+      );
+    }
+    if (Array.isArray(x)) {
+      for (const v of x) {
+        const bad = findUnrepresentable(v, depth + 1);
+        if (bad) return bad;
+      }
+      return null;
+    }
+    if (t === 'object') {
+      const proto = Object.getPrototypeOf(x);
+      if (proto !== Object.prototype && proto !== null) {
+        return (
+          `a ${x.constructor?.name ?? 'host'} object — only Livelymerge objects, plain JSON ` +
+          'data, Dates, and Uint8Arrays are representable. For per-replica host resources ' +
+          '(canvas, DOM, sockets), use a late-bound global or ephemeral ($-prefixed) state instead'
+        );
+      }
+      for (const k of Object.keys(x)) {
+        if (k.startsWith('$')) {
+          return `a plain object with a "$"-prefixed key ('${k}') — it would collide with the serialized heap format`;
+        }
+        const bad = findUnrepresentable(x[k], depth + 1);
+        if (bad) return bad;
+      }
+      return null;
+    }
+    return `a value of type ${t} — only Livelymerge objects, plain JSON data, Dates, and Uint8Arrays are representable`;
+  }
+
+  /** Strict serialization: target lives in the Automerge document. */
   function toVal(x: any): Val {
-    return isProxy(x) ? toRef(x) : x === undefined ? null : x;
+    if (isProxy(x)) return toRef(x);
+    if (x === undefined) return null;
+    const bad = findUnrepresentable(x);
+    if (bad) {
+      throw new TypeError(`Livelymerge: cannot store ${bad}`);
+    }
+    return x;
+  }
+
+  /** Lenient serialization: target is per-replica (shadow document or an ephemeral
+   * property). Host values pass through, tagged for promotion-time diagnostics.
+   * LM proxies nested inside plain values are still rejected — losing aliasing is a
+   * bug regardless of where the value lives. */
+  function toValLenient(x: any, provenance: string): Val {
+    if (isProxy(x)) return toRef(x);
+    if (x === undefined) return null;
+    if (
+      x !== null &&
+      (typeof x === 'object' || typeof x === 'function') &&
+      !isAutomergeScalar(x)
+    ) {
+      if (nestedProxyViolation(x)) {
+        throw new TypeError(
+          'Livelymerge: cannot store a Livelymerge object inside a plain JS value ' +
+            '(aliasing would be lost) — use a Livelymerge array/object to hold it instead',
+        );
+      }
+      if (!hostValueProvenance.has(x)) hostValueProvenance.set(x, provenance);
+    }
+    return x;
+  }
+
+  function nestedProxyViolation(x: any, depth = 0): boolean {
+    if (depth > 20 || x === null || typeof x !== 'object') return false;
+    if (isProxy(x)) return true;
+    if (Array.isArray(x)) return x.some((v) => nestedProxyViolation(v, depth + 1));
+    if (Object.getPrototypeOf(x) === Object.prototype) {
+      return Object.keys(x).some((k) => nestedProxyViolation(x[k], depth + 1));
+    }
+    return false; // host object: opaque, don't walk it
+  }
+
+  function enrichWriteError(e: unknown, prop: PropertyKey, id: string): unknown {
+    if (e instanceof TypeError && e.message.startsWith('Livelymerge:')) {
+      const enriched = new TypeError(
+        `${e.message} (while assigning property '${String(prop)}' of object ${id})`,
+      );
+      enriched.stack = e.stack;
+      return enriched;
+    }
+    return e;
+  }
+
+  /** Serializer for a write landing on `id`: lenient while the entry is per-replica
+   * (shadow-resident), strict once it lives in the Automerge document. */
+  function serializerFor(id: string): (x: any) => Val {
+    if (Object.hasOwn(shadowTable, id)) {
+      return (x: any) => toValLenient(x, `object ${id}`);
+    }
+    return toVal;
   }
 
   function toRef(proxy: Proxy): Ref {
@@ -269,7 +477,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   function deserialize(value: any): Proxy {
     if (isRef(value)) {
-      return deserialize(newObjects?.get(value.$id) ?? doc.objectTable[value.$id]);
+      return deserialize(shadowTable[value.$id] ?? doc.objectTable[value.$id]);
     } else if (isObj(value)) {
       return proxifyObj(value);
     } else if (isArr(value)) {
@@ -281,8 +489,17 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
   }
 
+  function cachedProxy(id: string): Proxy | undefined {
+    return proxyCache.get(id)?.deref();
+  }
+
+  function cacheProxy(id: string, p: Proxy): void {
+    proxyCache.set(id, new WeakRef(p));
+    proxyReaper?.register(p, id);
+  }
+
   function proxifyObj(obj: Obj): Proxy {
-    let p = proxies?.get(obj.$id);
+    let p = cachedProxy(obj.$id);
     if (p) {
       return p;
     }
@@ -291,18 +508,27 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       return proxifyJsGlobalObj(obj);
     }
 
+    // Captured once; every access resolves the live entry by id, so the same proxy
+    // stays valid across transactions and across shadow → Automerge promotion.
+    const id = obj.$id;
+
     let _ref: Ref | null = null;
     const ref = () => {
       if (!_ref) {
-        _ref = { $type: 'ref', $id: obj.$id };
+        _ref = { $type: 'ref', $id: id };
       }
       return _ref;
     };
 
     p = new Proxy(Object.create(null), {
       set(_, prop, value) {
+        if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (lmIsReservedKey(prop)) return false;
-        return lmSetOwn(liveHeapObj(obj), prop, value, toVal);
+        try {
+          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id));
+        } catch (e) {
+          throw enrichWriteError(e, prop, id);
+        }
       },
       get(_, prop) {
         const entry = liveHeapObj(obj);
@@ -310,7 +536,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$isProxy':
             return true;
           case '$id':
-            return entry.$id;
+            return id;
           case '$toRef':
             return ref();
           case '$unwrapped':
@@ -319,33 +545,43 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             return !entry.$protoId ? null : lmGetPrototypeOf(entry);
         }
 
+        if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop)) return undefined;
 
         const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize);
         if (value !== undefined) return value;
 
         if (prop === 'toString') {
-          return () => `[obj ${entry.$id}]`;
+          return () => `[obj ${id}]`;
         }
 
         return undefined;
       },
+      deleteProperty(_, prop) {
+        if (lmIsEphemeralKey(prop)) return deleteEphemeralProp(id, prop as string);
+        if (lmIsReservedKey(prop) || typeof prop === 'symbol') return false;
+        const entry = liveHeapObj(obj);
+        delete entry[lmUserKey(prop)];
+        return true;
+      },
     }) as unknown as Proxy;
 
-    ensureProxies().set(obj.$id, p);
+    cacheProxy(id, p);
     return p;
   }
 
   function proxifyJsGlobalObj(obj: Obj): Proxy {
-    let p = proxies?.get(obj.$id);
+    let p = cachedProxy(obj.$id);
     if (p) {
       return p;
     }
 
+    const id = obj.$id;
+
     let _ref: Ref | null = null;
     const ref = () => {
       if (!_ref) {
-        _ref = { $type: 'ref', $id: obj.$id };
+        _ref = { $type: 'ref', $id: id };
       }
       return _ref;
     };
@@ -360,6 +596,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       typeof nativeTarget === 'function' ? (function () { }) as (...args: never[]) => unknown : Object.create(null);
     p = new Proxy(target, {
       set(_, prop, value) {
+        if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (lmIsReservedKey(prop)) return false;
         const nativeTarget = jsTarget();
         if (!nativeTarget) return false;
@@ -371,7 +608,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$isProxy':
             return true;
           case '$id':
-            return entry.$id;
+            return id;
           case '$toRef':
             return ref();
           case '$unwrapped':
@@ -380,6 +617,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             return null;
         }
 
+        if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop)) return undefined;
 
         const nativeTarget = jsTarget();
@@ -390,6 +628,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         }
 
         return readJsGlobalProperty(nativeTarget, prop);
+      },
+      deleteProperty(_, prop) {
+        if (lmIsEphemeralKey(prop)) return deleteEphemeralProp(id, prop as string);
+        if (lmIsReservedKey(prop)) return false;
+        const nativeTarget = jsTarget();
+        if (!nativeTarget) return false;
+        return Reflect.deleteProperty(nativeTarget, prop);
       },
       apply(_, thisArg, args) {
         const nativeTarget = jsTarget();
@@ -407,7 +652,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       },
     }) as unknown as Proxy;
 
-    ensureProxies().set(obj.$id, p);
+    cacheProxy(id, p);
     return p;
   }
 
@@ -416,28 +661,38 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function proxifyArr(arr: Arr): Proxy {
-    let p = proxies?.get(arr.$id);
+    let p = cachedProxy(arr.$id);
     if (p) {
       return p;
     }
 
+    const id = arr.$id;
+    // Resolve the live entry per access so the same proxy stays valid across
+    // transactions and across shadow -> Automerge promotion.
+    const vals = () => liveHeapArr(arr).$values;
+
     let _ref: Ref | null = null;
     const ref = () => {
       if (!_ref) {
-        _ref = { $type: 'ref', $id: arr.$id };
+        _ref = { $type: 'ref', $id: id };
       }
       return _ref;
     };
 
     p = new Proxy(arr, {
       set(_, prop, value) {
+        if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (prop === 'length') {
-          arr.$values.length = Number(value);
+          vals().length = Number(value);
           return true;
         }
         if (isArrayIndexKey(prop) && prop !== 'length') {
           const idx = typeof prop === 'number' ? prop : Number(prop);
-          arr.$values[idx] = toVal(value);
+          try {
+            vals()[idx] = serializerFor(id)(value);
+          } catch (e) {
+            throw enrichWriteError(e, prop, id);
+          }
           return true;
         }
         unsupportedArrayAccess('write', prop);
@@ -447,74 +702,74 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$isProxy':
             return true;
           case '$id':
-            return arr.$id;
+            return id;
           case '$toRef':
             return ref();
           case '$unwrapped':
-            return arr;
+            return liveHeapArr(arr);
           case 'toString':
-            return () => `[${arr.$values.map(deserialize).map((x) => x.toString())}]`;
+            return () => `[${vals().map(deserialize).map((x) => x.toString())}]`;
 
           // override array methods
           case 'at': {
             return function (index: number) {
-              return deserialize(arr.$values.at(index));
+              return deserialize(vals().at(index));
             };
           }
           case 'push': {
             return function () {
               for (const arg of arguments) {
-                arr.$values.push(toVal(arg));
+                vals().push(serializerFor(id)(arg));
               }
-              return arr.$values.length;
+              return vals().length;
             };
           }
           case 'pop': {
             return function () {
-              return deserialize(arr.$values.pop());
+              return deserialize(vals().pop());
             };
           }
           case 'unshift': {
             return function () {
               for (const arg of arguments) {
-                arr.$values.unshift(toVal(arg));
+                vals().unshift(serializerFor(id)(arg));
               }
-              return arr.$values.length;
+              return vals().length;
             };
           }
           case 'shift': {
             return function () {
-              return deserialize(arr.$values.shift());
+              return deserialize(vals().shift());
             };
           }
           case 'findIndex': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return arr.$values.map(deserialize).findIndex(predicate, thisArg);
+              return vals().map(deserialize).findIndex(predicate, thisArg);
             };
           }
           case 'find': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return arr.$values.map(deserialize).find(predicate, thisArg);
+              return vals().map(deserialize).find(predicate, thisArg);
             };
           }
           case 'filter': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return $arr(arr.$values.map(deserialize).filter(predicate, thisArg));
+              return $arr(vals().map(deserialize).filter(predicate, thisArg));
             };
           }
           case 'includes': {
             return function (searchElement: any, fromIndex?: number) {
-              return arr.$values.map(deserialize).includes(searchElement, fromIndex);
+              return vals().map(deserialize).includes(searchElement, fromIndex);
             };
           }
           case 'indexOf': {
             return function (searchElement: any, fromIndex?: number) {
-              return arr.$values.map(deserialize).indexOf(searchElement, fromIndex);
+              return vals().map(deserialize).indexOf(searchElement, fromIndex);
             };
           }
           case 'forEach': {
             return function (callbackFn: (value: any, index: number) => void, thisArg?: any) {
-              arr.$values.map(deserialize).forEach(callbackFn, thisArg);
+              vals().map(deserialize).forEach(callbackFn, thisArg);
             };
           }
           case 'reduce': {
@@ -522,7 +777,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
               callbackFn: (accumulator: any, value: any, index: number) => any,
               initialValue?: any,
             ) {
-              const items = arr.$values.map(deserialize);
+              const items = vals().map(deserialize);
               if (arguments.length >= 2) {
                 return items.reduce(callbackFn, initialValue);
               }
@@ -531,51 +786,51 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'map': {
             return function (callbackFn: (value: any) => any, thisArg?: any) {
-              return $arr(arr.$values.map(deserialize).map(callbackFn, thisArg));
+              return $arr(vals().map(deserialize).map(callbackFn, thisArg));
             };
           }
           case 'slice': {
             return function (startIdx: number, endIdx?: number) {
-              return $arr(arr.$values.slice(startIdx, endIdx).map(deserialize));
+              return $arr(vals().slice(startIdx, endIdx).map(deserialize));
             };
           }
           case 'splice': {
             return function (startIdx: number, deleteCount = 0, ...args: any[]) {
               return $arr(
-                arr.$values.splice(startIdx, deleteCount, ...args.map(toVal)).map(deserialize),
+                vals().splice(startIdx, deleteCount, ...args.map(serializerFor(id))).map(deserialize),
               );
             };
           }
           case 'concat': {
             return function (...args: any[]) {
-              return $arr(arr.$values.concat(...args.map(toVal)).map(deserialize));
+              return $arr(vals().concat(...args.map(serializerFor(id))).map(deserialize));
             };
           }
           case 'join': {
             return function (separator?: string) {
-              return arr.$values.map(deserialize).join(separator);
+              return vals().map(deserialize).join(separator);
             };
           }
           case 'sort': {
             return function (compareFn?: (a: any, b: any) => number) {
-              const sorted = arr.$values.map(deserialize).sort(compareFn);
-              arr.$values.splice(0, arr.$values.length, ...sorted.map(toVal));
+              const sorted = vals().map(deserialize).sort(compareFn);
+              vals().splice(0, vals().length, ...sorted.map(serializerFor(id)));
               return p;
             };
           }
           case 'toReversed': {
             return function () {
-              return $arr(arr.$values.map(deserialize).toReversed());
+              return $arr(vals().map(deserialize).toReversed());
             };
           }
           case 'toSorted': {
             return function (compareFn?: (a: any, b: any) => number) {
-              return $arr(arr.$values.map(deserialize).toSorted(compareFn));
+              return $arr(vals().map(deserialize).toSorted(compareFn));
             };
           }
           case 'toSpliced': {
             return function (start: number, deleteCount?: number, ...items: any[]) {
-              const copy = arr.$values.map(deserialize);
+              const copy = vals().map(deserialize);
               if (arguments.length === 1) return $arr(copy.toSpliced(start));
               if (arguments.length === 2) return $arr(copy.toSpliced(start, deleteCount as number));
               return $arr(copy.toSpliced(start, deleteCount as number, ...items));
@@ -583,7 +838,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'with': {
             return function (index: number, value: any) {
-              return $arr(arr.$values.map(deserialize).with(index, value));
+              return $arr(vals().map(deserialize).with(index, value));
             };
           }
           case Symbol.iterator: {
@@ -594,10 +849,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
                   return this;
                 },
                 next() {
-                  if (i >= arr.$values.length) {
+                  if (i >= vals().length) {
                     return { done: true, value: undefined };
                   }
-                  return { done: false, value: deserialize(arr.$values[i++]) };
+                  return { done: false, value: deserialize(vals()[i++]) };
                 },
               };
             };
@@ -605,17 +860,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         }
 
         if (prop === 'length') {
-          return arr.$values.length;
+          return vals().length;
         }
 
         if (isArrayIndexKey(prop)) {
-          return deserialize(arr.$values[prop as any]);
+          return deserialize(vals()[prop as any]);
         }
+
+        if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
 
         unsupportedArrayAccess('read', prop);
       },
       ownKeys() {
-        const keys: Array<string | symbol> = lmArrayIndexKeys(arr);
+        const keys: Array<string | symbol> = lmArrayIndexKeys(liveHeapArr(arr));
         keys.push('length');
         return keys;
       },
@@ -626,16 +883,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (isArrayIndexKey(prop)) {
           if (prop === 'length') {
             return {
-              value: arr.$values.length,
+              value: vals().length,
               writable: true,
               enumerable: false,
               configurable: false,
             };
           }
           const idx = typeof prop === 'string' ? Number(prop) : prop;
-          if (typeof idx === 'number' && idx >= 0 && idx < arr.$values.length) {
+          if (typeof idx === 'number' && idx >= 0 && idx < vals().length) {
             return {
-              value: deserialize(arr.$values[idx]),
+              value: deserialize(vals()[idx]),
               writable: true,
               enumerable: true,
               configurable: true,
@@ -646,7 +903,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         return undefined;
       },
     }) as unknown as Proxy;
-    ensureProxies().set(arr.$id, p);
+    cacheProxy(id, p);
     return p;
   }
 
@@ -742,15 +999,17 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function proxifyFun(fun: Fun): Proxy {
-    const existing = proxies?.get(fun.$id);
+    const existing = cachedProxy(fun.$id);
     if (existing) {
       return existing;
     }
 
+    const id = fun.$id;
+
     let _ref: Ref | null = null;
     const ref = () => {
       if (!_ref) {
-        _ref = { $type: 'ref', $id: fun.$id };
+        _ref = { $type: 'ref', $id: id };
       }
       return _ref;
     };
@@ -772,6 +1031,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     });
     funProxy = new Proxy(target, {
       set(_, prop, value) {
+        if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         const live = liveHeapFun(fun);
         if (prop === 'prototype') {
           if (!isConstructibleFun(live)) {
@@ -784,7 +1044,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           return true;
         }
         if (lmIsReservedKey(prop)) return false;
-        if (!lmSetOwn(live, prop, value, toVal)) return false;
+        try {
+          if (!lmSetOwn(live, prop, value, serializerFor(id))) return false;
+        } catch (e) {
+          throw enrichWriteError(e, prop, id);
+        }
         return true;
       },
       get(_, prop) {
@@ -793,7 +1057,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$isProxy':
             return true;
           case '$id':
-            return live.$id;
+            return id;
           case '$toRef':
             return ref();
           case '$unwrapped':
@@ -810,10 +1074,17 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case 'apply':
             return (thisArg: unknown, args: unknown[]) => fn().apply(thisArg, args);
         }
+        if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop)) return undefined;
         const own = lmGetOwn(live, prop);
         if (own !== undefined) return deserialize(own);
         return undefined;
+      },
+      deleteProperty(_, prop) {
+        if (lmIsEphemeralKey(prop)) return deleteEphemeralProp(id, prop as string);
+        if (lmIsReservedKey(prop) || typeof prop === 'symbol' || prop === 'prototype') return false;
+        delete liveHeapFun(fun)[lmUserKey(prop)];
+        return true;
       },
       apply(_, thisArg, args) {
         return fn().apply(thisArg, args);
@@ -831,41 +1102,74 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         return instance;
       },
     }) as unknown as Proxy;
-    ensureProxies().set(fun.$id, funProxy);
+    cacheProxy(id, funProxy);
     return funProxy;
   }
 
-  function ensureProxies() {
-    if (!proxies) {
-      proxies = new Map();
+  function entryStoredValues(entry: Obj | Arr | Fun): Array<[string, unknown]> {
+    if (isArr(entry)) {
+      return entry.$values.map((v, i) => [String(i), v] as [string, unknown]);
     }
-    return proxies;
+    // Objects and functions: user properties (internal $-fields hold only ids/refs/code).
+    return lmHeapPropertyNames(entry)
+      .filter((k) => k.startsWith('@'))
+      .map((k) => [k.slice(1), (entry as Record<string, unknown>)[k]] as [string, unknown]);
+  }
+
+  function validateEntryForPromotion(id: string, entry: Obj | Arr | Fun): void {
+    for (const [prop, v] of entryStoredValues(entry)) {
+      // Stored values are already canonical: object references appear as Refs, which
+      // are exactly the representable case. Only non-Ref leaves need validation.
+      if (isRef(v)) continue;
+      const bad = findUnrepresentable(v);
+      if (bad) {
+        const origin =
+          v !== null && (typeof v === 'object' || typeof v === 'function')
+            ? hostValueProvenance.get(v as object)
+            : undefined;
+        throw new TypeError(
+          `Livelymerge: object ${id} became persistently reachable, but its property ` +
+            `'${prop}' holds ${bad}` +
+            (origin ? ` (the value was stored via ${origin})` : '') +
+            '. Keep such values in ephemeral ($-prefixed) state, or use a late-bound global.',
+        );
+      }
+    }
   }
 
   function gc(extraRoot?: unknown) {
-    const visited = new Set<string>();
-    function visit(id: string) {
-      if (visited.has(id)) {
-        return;
-      }
-      visited.add(id);
+    // End-of-transaction GC. Classifies every SHADOW object as one of:
+    //   promote  — persistently reachable: moved from the shadow document into the
+    //              Automerge document (same objectId, so references and cached
+    //              proxies survive promotion unchanged);
+    //   retain   — not persistently reachable, but reachable from live ephemeral
+    //              ($-prefixed) properties: stays in the shadow document;
+    //   collect  — reachable from neither: removed.
+    //
+    // PERSISTENT objects are NEVER collected. Reachability is a global property in a
+    // local-first system: an offline replica may still hold or re-link an object that
+    // looks unreachable here, and a local sweep would silently destroy their work at
+    // merge time. Unreachable persistent objects simply remain in the object table —
+    // this does not grow the Automerge *history* (deletion would add ops, never remove
+    // them), only the current-state snapshot.
+    //
+    // The traversal is $-edge-blind by construction: heap entries never contain
+    // ephemeral keys (those live in the ephemeralProps sidecar), so following an
+    // entry's properties can never drag ephemeral state into the Automerge document.
 
-      let val = newObjects?.get(id);
-      if (val) {
-        doc.objectTable[id] = val;
-      } else {
-        val = doc.objectTable[id];
-        if (!val) {
-          throw new Error('BAD: missing referent with id ' + id);
-        }
-      }
+    const persistentLive = new Set<string>();
+    const ephemeralLive = new Set<string>();
 
+    function traverse(val: Obj | Arr | Fun, visitRef: (id: string) => void) {
+      const lookAt = (v: Val) => {
+        if (isRef(v)) visitRef(v.$id);
+      };
       if (isObj(val)) {
         for (const p of lmHeapPropertyNames(val)) {
           lookAt(val[p]);
         }
         if (val.$protoId != null) {
-          visit(val.$protoId);
+          visitRef(val.$protoId);
         }
       } else if (isArr(val)) {
         for (let i = 0; i < val.$values.length; i++) {
@@ -876,7 +1180,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           lookAt(v);
         }
         if (val.$prototypeId != null) {
-          visit(val.$prototypeId);
+          visitRef(val.$prototypeId);
         }
         for (const prop of lmOwnUserPropertyKeys(val)) {
           lookAt(lmGetOwn(val, prop) as Val);
@@ -886,39 +1190,119 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
     }
 
-    function lookAt(v: Val) {
-      if (isRef(v)) {
-        visit(v.$id);
+    // -- Phase 1: mark persistent. Shadow entries reached here are candidates for
+    // promotion; they are validated and installed only after marking completes, so a
+    // failed promotion leaves the shadow document untouched (the Automerge change is
+    // rolled back by the thrown error, and shadow state must not be half-moved).
+
+    const toPromote: string[] = [];
+
+    function visitPersistent(id: string) {
+      if (persistentLive.has(id)) {
+        return;
+      }
+      persistentLive.add(id);
+
+      let val = shadowTable[id];
+      if (val) {
+        // Persistently reachable, so it graduates from the shadow document to the
+        // Automerge document (after validation, below). objectId is preserved.
+        toPromote.push(id);
+      } else {
+        val = doc.objectTable[id];
+        if (!val) {
+          // A dangling reference. This can legitimately happen after a merge:
+          // another replica's GC may have collected an object that a concurrent
+          // change here started referencing. Non-fatal; reads yield undefined.
+          console.warn('Livelymerge gc: missing referent with id ' + id);
+          return;
+        }
+      }
+      traverse(val, visitPersistent);
+    }
+
+    // The persistent root: the global object (everything else hangs off it).
+    visitPersistent('global');
+
+    // Validate every promotion candidate before installing any of them. Host values
+    // were tolerated while these entries were per-replica; crossing into the shared,
+    // persistent document is where they become errors — reported with the provenance
+    // recorded at the original write.
+    for (const id of toPromote) {
+      validateEntryForPromotion(id, shadowTable[id]!);
+    }
+    for (const id of toPromote) {
+      doc.objectTable[id] = shadowTable[id]!;
+      delete shadowTable[id];
+    }
+
+    // -- Phase 2: mark ephemeral. --
+    // Roots are the ephemeral properties of live objects. Marking an object
+    // ephemeral-live exposes its own ephemeral properties as further roots, so this
+    // runs as a worklist to a fixpoint. (Ephemeral references into the Automerge
+    // document need no special pinning: persistent objects are never swept.)
+
+    const worklist: string[] = [];
+
+    const enqueueEphemeralPropsOf = (id: string) => {
+      const props = ephemeralProps.get(id);
+      if (!props) return;
+      for (const prop of Object.keys(props)) {
+        const v = props[prop];
+        if (isRef(v)) worklist.push(v.$id);
+      }
+    };
+
+    for (const id of persistentLive) {
+      enqueueEphemeralPropsOf(id);
+    }
+
+    // The result of a do-it is an ephemeral root for this collection: print-it must be
+    // able to read it after the change, but evaluating an expression must not publish
+    // its value into the shared document. If nothing ends up referencing it, the next
+    // collection reclaims it.
+    if (isProxy(extraRoot)) {
+      worklist.push(extraRoot.$id);
+    }
+
+    while (worklist.length > 0) {
+      const id = worklist.pop()!;
+      if (persistentLive.has(id) || ephemeralLive.has(id)) {
+        continue;
+      }
+      ephemeralLive.add(id);
+      const val = shadowTable[id] ?? doc.objectTable[id];
+      if (!val) {
+        // Dangling ephemeral reference (e.g. the referent was collected by another
+        // replica, or the row outlived its target). Reads yield undefined.
+        continue;
+      }
+      traverse(val, (refId) => worklist.push(refId));
+      enqueueEphemeralPropsOf(id);
+    }
+
+    // -- Sweep (shadow document only; persistent objects are immortal, see above). --
+
+    let numShadowReclaimed = 0;
+    for (const id of Object.keys(shadowTable)) {
+      if (!ephemeralLive.has(id)) {
+        // Not ephemeral-live, and not promoted (promotion removed it from the
+        // shadow table already): fresh garbage or an abandoned ephemeral object.
+        delete shadowTable[id];
+        numShadowReclaimed++;
       }
     }
-
-    // -- visit the root objects --
-
-    // root 1 of 3: the global object
-    visit('global');
-
-    // root 2 of 3: the local-only state that's stored in window
-    const windowGcRoot = (window as any).gcRoot;
-    if (windowGcRoot && isProxy(windowGcRoot)) {
-      visit(windowGcRoot.$id);
-    }
-
-    // root 3 of 3: usually the result of a do-it
-    if (isProxy(extraRoot)) {
-      visit(extraRoot.$id);
-    }
-
-    let numReclaimed = 0;
-    for (const id of Object.keys(doc.objectTable)) {
-      if (!visited.has(id)) {
-        delete doc.objectTable[id];
-        numReclaimed++;
+    // Ephemeral-property rows survive as long as their owner exists anywhere:
+    // in the Automerge document (persistent objects are never swept, so membership is
+    // the liveness test) or still in the shadow document.
+    for (const id of [...ephemeralProps.keys()]) {
+      if (!doc.objectTable[id] && !ephemeralLive.has(id)) {
+        ephemeralProps.delete(id);
       }
     }
     if ((globalThis as any).debugGC) {
-      console.log('reclaimed', numReclaimed, 'objects');
+      console.log('reclaimed', numShadowReclaimed, 'ephemeral objects');
     }
-    newObjects = null;
   }
 
   // Object
@@ -1056,16 +1440,25 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   // setTimeout & friends
 
+  /** Browsers return numeric timer ids; Node returns Timeout objects. Normalize to the
+   * numeric id (Node's Timeout has Symbol.toPrimitive) so ids are heap-representable
+   * and clearTimeout/clearInterval accept them in both environments. */
+  function normalizeTimerId(id: unknown): number {
+    return typeof id === 'number' ? id : Number(id);
+  }
+
   function $setTimeout(fn: () => void, delay?: number) {
-    const id = setTimeout(() => {
-      change(() => {
-        try {
-          fn();
-        } finally {
-          delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
-        }
-      });
-    }, delay);
+    const id = normalizeTimerId(
+      setTimeout(() => {
+        change(() => {
+          try {
+            fn();
+          } finally {
+            delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
+          }
+        });
+      }, delay),
+    );
     change(() => {
       (doc.objectTable['timeout-fns'] as Obj)[id as any] = toVal(fn);
     });
@@ -1080,7 +1473,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function $setInterval(fn: () => void, period?: number) {
-    const id = setInterval(() => change(fn), period);
+    const id = normalizeTimerId(setInterval(() => change(fn), period));
     change(() => {
       (doc.objectTable['interval-fns'] as Obj)[id as any] = toVal(fn);
     });
@@ -1130,15 +1523,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   function evaluateSource(source: string): unknown {
     return change(() => {
       const realCode = transpile(wrapForCompletionValue(source));
-      console.log('realCode', realCode);
+      if ((globalThis as any).debugEval) console.log('realCode', realCode);
       const runtimeParams = getRuntimeParams();
       const fn = new Function(...Object.keys(runtimeParams), realCode);
-      console.log('fn', fn);
-      const ans = fn(
-        ...Object.values(runtimeParams),
-      );
-      console.log('ans', ans);
-      return ans;
+      return fn(...Object.values(runtimeParams));
     });
   }
 

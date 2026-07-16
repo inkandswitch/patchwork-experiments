@@ -9,6 +9,26 @@ export function lmIsReservedKey(prop: PropertyKey): boolean {
   return typeof prop === 'string' && prop.startsWith('$');
 }
 
+/**
+ * The proxy protocol keys. These are the only `$`-names with fixed runtime meaning on
+ * every proxy; all other `$`-prefixed property names denote *ephemeral* (per-replica,
+ * non-persistent) properties, stored in a sidecar map outside the heap. Heap entries
+ * themselves still never store user keys beginning with `$` (user keys are `@`-prefixed),
+ * so ephemeral properties can never leak into the Automerge document.
+ */
+export const LM_PROXY_PROTOCOL_KEYS = new Set(['$isProxy', '$id', '$toRef', '$unwrapped']);
+
+export function lmIsProtocolKey(prop: PropertyKey): boolean {
+  return typeof prop === 'string' && LM_PROXY_PROTOCOL_KEYS.has(prop);
+}
+
+/** True for user-facing ephemeral property names: `$foo` but not the proxy protocol keys. */
+export function lmIsEphemeralKey(prop: PropertyKey): boolean {
+  return (
+    typeof prop === 'string' && prop.startsWith('$') && !LM_PROXY_PROTOCOL_KEYS.has(prop)
+  );
+}
+
 export function lmUserKey(prop: PropertyKey): string {
   const plain = String(prop);
   return plain.startsWith('@') ? plain : '@' + plain;
