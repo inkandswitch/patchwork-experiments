@@ -19,6 +19,7 @@ import {
   lmObjDelegatesTo,
   lmOwnUserPropertyKeys,
   lmSetOwn,
+  lmSameStoredVal,
   lmUserKey,
 } from './lmStorage';
 import {
@@ -561,7 +562,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsEphemeralKey(prop)) return deleteEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop) || typeof prop === 'symbol') return false;
         const entry = liveHeapObj(obj);
-        delete entry[lmUserKey(prop)];
+        const key = lmUserKey(prop);
+        if (Object.hasOwn(entry, key)) delete entry[key]; // deleting an absent key is free
         return true;
       },
     }) as unknown as Proxy;
@@ -689,7 +691,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (isArrayIndexKey(prop) && prop !== 'length') {
           const idx = typeof prop === 'number' ? prop : Number(prop);
           try {
-            vals()[idx] = serializerFor(id)(value);
+            const next = serializerFor(id)(value);
+            const cur = vals();
+            if (!(idx < cur.length && lmSameStoredVal(cur[idx], next))) {
+              cur[idx] = next;
+            }
           } catch (e) {
             throw enrichWriteError(e, prop, id);
           }
@@ -750,6 +756,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case 'find': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
               return vals().map(deserialize).find(predicate, thisArg);
+            };
+          }
+          case 'some': {
+            return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+              return vals().map(deserialize).some(predicate, thisArg);
+            };
+          }
+          case 'every': {
+            return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
+              return vals().map(deserialize).every(predicate, thisArg);
             };
           }
           case 'filter': {
@@ -1137,6 +1153,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
   }
 
+  const warnedMissingReferents = new Set<string>();
+
   function gc(extraRoot?: unknown) {
     // End-of-transaction GC. Classifies every SHADOW object as one of:
     //   promote  — persistently reachable: moved from the shadow document into the
@@ -1211,10 +1229,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       } else {
         val = doc.objectTable[id];
         if (!val) {
-          // A dangling reference. This can legitimately happen after a merge:
-          // another replica's GC may have collected an object that a concurrent
-          // change here started referencing. Non-fatal; reads yield undefined.
-          console.warn('Livelymerge gc: missing referent with id ' + id);
+          // A dangling reference: refs baked into documents by earlier builds whose GC
+          // swept persistent objects, or persistent refs to per-user objects from a
+          // previous session (e.g. a stale pointerFocus). Non-fatal; reads yield
+          // undefined. Warn once per id — this runs every transaction, and a legacy
+          // dangler would otherwise flood the console at frame rate.
+          if (!warnedMissingReferents.has(id)) {
+            warnedMissingReferents.add(id);
+            console.warn('Livelymerge gc: missing referent with id ' + id);
+          }
           return;
         }
       }
@@ -1264,6 +1287,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (isProxy(extraRoot)) {
       worklist.push(extraRoot.$id);
     }
+
+    // Pending timer callbacks are ephemeral roots too: the browser holds the native
+    // closure, which is invisible to this GC (see the setTimeout section).
+    eachPendingTimerRef((v) => {
+      if (isRef(v)) worklist.push(v.$id);
+    });
 
     while (worklist.length > 0) {
       const id = worklist.pop()!;
@@ -1439,6 +1468,25 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   });
 
   // setTimeout & friends
+  //
+  // Pending timer callbacks are EPHEMERAL GC roots, per replica, held in runtime maps
+  // below — never in the Automerge document. Rationale: a native timer cannot survive
+  // a reload anyway (registering the callback in the shared doc was only ever a
+  // GC-retention hack), it is invisible to other users by nature, and the doc
+  // registration was expensive: every setTimeout promoted the callback closure — with
+  // its full $code source strings — into the document (~1000 ops per registration
+  // under Automerge text encoding, e.g. on EVERY pointerdown via the long-click arm),
+  // then deleted it again, leaving the promoted closure behind as an immortal orphan
+  // under never-collect.
+
+  /** timer id → Ref to the pending callback's heap entry (an ephemeral GC root). */
+  const pendingTimeoutFns = new Map<number, Val>();
+  const pendingIntervalFns = new Map<number, Val>();
+
+  function eachPendingTimerRef(visit: (v: Val) => void): void {
+    for (const v of pendingTimeoutFns.values()) visit(v);
+    for (const v of pendingIntervalFns.values()) visit(v);
+  }
 
   /** Browsers return numeric timer ids; Node returns Timeout objects. Normalize to the
    * numeric id (Node's Timeout has Symbol.toPrimitive) so ids are heap-representable
@@ -1450,41 +1498,30 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   function $setTimeout(fn: () => void, delay?: number) {
     const id = normalizeTimerId(
       setTimeout(() => {
-        change(() => {
-          try {
-            fn();
-          } finally {
-            delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
-          }
-        });
+        // Release the root first; the native closure keeps `fn` callable, and the
+        // end-of-change GC may then reclaim the callback if nothing else holds it.
+        pendingTimeoutFns.delete(id);
+        change(() => fn());
       }, delay),
     );
-    change(() => {
-      (doc.objectTable['timeout-fns'] as Obj)[id as any] = toVal(fn);
-    });
+    pendingTimeoutFns.set(id, toValLenient(fn, `setTimeout callback ${id}`));
     return id;
   }
 
   function $clearTimeout(id: number) {
     clearTimeout(id);
-    change(() => {
-      delete (doc.objectTable['timeout-fns'] as Obj)[id as any];
-    });
+    pendingTimeoutFns.delete(id);
   }
 
   function $setInterval(fn: () => void, period?: number) {
     const id = normalizeTimerId(setInterval(() => change(fn), period));
-    change(() => {
-      (doc.objectTable['interval-fns'] as Obj)[id as any] = toVal(fn);
-    });
+    pendingIntervalFns.set(id, toValLenient(fn, `setInterval callback ${id}`));
     return id;
   }
 
   function $clearInterval(id: number) {
     clearInterval(id);
-    change(() => {
-      delete (doc.objectTable['interval-fns'] as Obj)[id as any];
-    });
+    pendingIntervalFns.delete(id);
   }
 
   function getRuntimeParams(): Record<string, unknown> {

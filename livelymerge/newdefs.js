@@ -24,9 +24,9 @@ let menuItemMaxChars = 30;
 let menuSeparator = '—menuSep—';
 let paneSelectionMenuNarrowBy = 0;
 let paneSelectionMenuMinWidth = 48;
-let shiftKeyPressedFlag = false;
-let lockKeyPressedFlag = false;
-let metaKeyPressedFlag = false;
+let $shiftKeyPressedFlag = false;
+let $lockKeyPressedFlag = false;
+let $metaKeyPressedFlag = false;
 let pasteBufferItems = ['nothing to paste'];
 let kbdDefaultShiftTable = {
   1: '!',
@@ -52,7 +52,7 @@ let kbdDefaultShiftTable = {
   '/': '?',
 };
 let kbdShiftTable = { ...kbdDefaultShiftTable };
-let useOnScreenKbd = false;
+let $useOnScreenKbd = false;
 let longClickForHalosLabel = 'Long click for halos';
 let onScreenKeyboardLabel = 'Show on-screen keyboard';
 let TRANSCRIPT_MAX_BEFORE_TRUNC = 1000;
@@ -63,8 +63,8 @@ let Lively = null;
 let topLevelMorph = null;
 let recentChanges = null;
 let bugImage = null;
-let _onScreenKeyboardMorph = null;
-let _oskSavedChrome = null;
+let $onScreenKeyboardMorph = null;
+let $oskSavedChrome = null;
 let _transcriptConsoleTargets = [];
 let _exportCatalogApi = null;
 let _lastEvalSource = null;
@@ -560,8 +560,8 @@ function initUI() {
 
   window.actorID = window.Automerge.getActorId(window.handle.doc());
   // Fresh UI init must not inherit stale soft-shift state.
-  shiftKeyPressedFlag = false; // (was window.shiftKeyPressedFlag — a dead write; the flag lives on the LM global)
-  if (topLevelMorph) topLevelMorph.shiftKeyDown = false;
+  $shiftKeyPressedFlag = false; // per-user soft-shift resets on session start
+  if (topLevelMorph) topLevelMorph.$shiftKeyDown = false;
   _refreshPadModifierStyles();
 
   // Remove any previous listeners so we never double-register (avoids doubled clicks)
@@ -733,61 +733,61 @@ function pointerEventCanvasLocalPt(canvas, e) {
   return pt(cx - r.left, cy - r.top);
 }
 function setShiftKeyPressed(v) {
-  shiftKeyPressedFlag = !!v;
+  $shiftKeyPressedFlag = !!v;
   _refreshPadModifierStyles();
 }
 function setLockKeyPressed(v) {
-  lockKeyPressedFlag = !!v;
+  $lockKeyPressedFlag = !!v;
   _refreshPadModifierStyles();
 }
 function setMetaKeyPressed(v) {
-  metaKeyPressedFlag = !!v;
+  $metaKeyPressedFlag = !!v;
   _refreshPadModifierStyles();
 }
 function toggleMetaKeyPressed() {
-  setMetaKeyPressed(!metaKeyPressedFlag);
+  setMetaKeyPressed(!$metaKeyPressedFlag);
 }
 function consumeSoftMetaKey() {
-  if (!metaKeyPressedFlag) return;
-  metaKeyPressedFlag = false;
+  if (!$metaKeyPressedFlag) return;
+  $metaKeyPressedFlag = false;
   _refreshPadModifierStyles();
 }
 function consumeSoftShiftKey() {
   /** Clear one-shot soft SHIFT (LOCK is unchanged). */
-  if (!shiftKeyPressedFlag || lockKeyPressedFlag) return;
+  if (!$shiftKeyPressedFlag || $lockKeyPressedFlag) return;
   setShiftKeyPressed(false);
 }
 function isShiftKeyPressed() {
   /** True if shift should apply: hardware shift, LOCK, shift flag, or world shiftKeyDown from keys. */
-  let worldDown = topLevelMorph && topLevelMorph.shiftKeyDown;
-  return shiftKeyPressedFlag || lockKeyPressedFlag || !!worldDown;
+  let worldDown = topLevelMorph && topLevelMorph.$shiftKeyDown;
+  return $shiftKeyPressedFlag || $lockKeyPressedFlag || !!worldDown;
 }
 function isLockKeyPressed() {
-  return lockKeyPressedFlag;
+  return $lockKeyPressedFlag;
 }
 function isMetaKeyPressed() {
-  return metaKeyPressedFlag;
+  return $metaKeyPressedFlag;
 }
 function effectiveMetaKey(evt) {
   /** True if meta should apply: hardware meta or soft META flag (use {@link consumeSoftMetaKey} after halo use). */
-  return !!(evt && evt.metaKey) || metaKeyPressedFlag;
+  return !!(evt && evt.metaKey) || $metaKeyPressedFlag;
 }
 function effectiveShiftKey(evt) {
   /** True if shift should apply for this event (LOCK forces shift until cleared). */
   let hardware = !!evt && evt.shiftKey;
-  let worldDown = topLevelMorph && topLevelMorph.shiftKeyDown;
+  let worldDown = topLevelMorph && topLevelMorph.$shiftKeyDown;
   let evtType = evt && evt.type ? evt.type : '';
   let worldDownApplies =
     worldDown && evtType !== 'pointerdown' && evtType !== 'pointermove' && evtType !== 'pointerup';
-  let flag = shiftKeyPressedFlag;
-  if (flag) shiftKeyPressedFlag = false;
+  let flag = $shiftKeyPressedFlag;
+  if (flag) $shiftKeyPressedFlag = false;
   if (flag) _refreshPadModifierStyles();
-  return hardware || flag || lockKeyPressedFlag || worldDownApplies;
+  return hardware || flag || $lockKeyPressedFlag || worldDownApplies;
 }
 function _refreshPadModifierStyles() {
   let root = topLevelMorph;
   if (!root) return;
-  let kb = _onScreenKeyboardMorph;
+  let kb = $onScreenKeyboardMorph;
   if (kb && kb.world() && kb.refreshModifierKeyHighlights) kb.refreshModifierKeyHighlights();
   if (kb && kb.world() && kb.refreshKeyLabels) kb.refreshKeyLabels();
   if (root.changed) root.changed();
@@ -1949,9 +1949,9 @@ class TextBox extends Shape {
       let shiftTable = getKbdShiftTable ? getKbdShiftTable() : kbdShiftTable || {};
       let shiftChar =
         evt.shiftKey ||
-        lockKeyPressedFlag ||
-        shiftKeyPressedFlag ||
-        (topLevelMorph && topLevelMorph.shiftKeyDown);
+        $lockKeyPressedFlag ||
+        $shiftKeyPressedFlag ||
+        (topLevelMorph && topLevelMorph.$shiftKeyDown);
       if (shiftChar && /^[a-z]$/.test(k)) k = k.toUpperCase();
       else if (shiftChar && shiftTable[k]) k = shiftTable[k];
       this.paste(k);
@@ -2681,8 +2681,8 @@ function paneMenuIsFrontmostForPanel(world, panelMorph) {
   return false;
 }
 function keyboardFocusBelongsToScrollPane(world, scrollPane) {
-  /** True when `world.keyboardFocus` is the content morph (or a submorph of it) for `scrollPane`. */
-  let f = world && world.keyboardFocus;
+  /** True when `world.$keyboardFocus` (per-user) is the content morph (or a submorph of it) for `scrollPane`. */
+  let f = world && world.$keyboardFocus;
   if (!f || !scrollPane || !scrollPane.contentPane) return false;
   let want = scrollPane.contentPane;
   let x = f;
@@ -2693,8 +2693,8 @@ function keyboardFocusBelongsToScrollPane(world, scrollPane) {
   return false;
 }
 function textPaneWithKeyboardFocus(world) {
-  /** TextPane on the owner chain of `world.keyboardFocus`, if any. */
-  let f = world && world.keyboardFocus;
+  /** TextPane on the owner chain of `world.$keyboardFocus` (per-user), if any. */
+  let f = world && world.$keyboardFocus;
   if (!f) return null;
   let m = f;
   while (m && m !== world) {
@@ -2705,14 +2705,14 @@ function textPaneWithKeyboardFocus(world) {
 }
 function shouldShowOnScreenKeyboardForWorld(world) {
   /** True when OSK should track keyboard focus in a TextPane. */
-  if (!world || !useOnScreenKbd) return false;
+  if (!world || !$useOnScreenKbd) return false;
   let pane = textPaneWithKeyboardFocus(world);
   if (!pane) return false;
   return keyboardFocusBelongsToScrollPane(world, pane);
 }
 function morphIsUnderOnScreenKeyboard(morph) {
   /** True if `morph` is the OSK or a submorph of it (clicks must not clear keyboardFocus). */
-  let kb = _onScreenKeyboardMorph;
+  let kb = $onScreenKeyboardMorph;
   if (!kb || !morph || !kb.world()) return false;
   let x = morph;
   while (x) {
@@ -2747,7 +2747,7 @@ class Morph {
     this.transform.translateBy(this.origin);
     this.shape.setBounds(this.shape.getBounds().translatedBy(this.origin.negated()));
     this.submorphs = []; // array of Morphs in Z-order -- first is frontmost
-    this.steppingSpecs = [];
+    this.$steppingSpecs = [];
     this.hasChanged = true; //some call on changed() says we need to rerender
     if (traceMe) console.log('log ', 2);
   }
@@ -3185,7 +3185,7 @@ class Morph {
     this.renderMeOn(ctx);
     this.eachSubmorph((each) => {
       ctx.save();
-      let pf = this.world().pointerFocus;
+      let pf = this.world().$pointerFocus;
       let inHand = each.inaHand();
       let haloGrabOrCopyShadow =
         pf &&
@@ -3237,8 +3237,8 @@ class Morph {
     this.changed();
   }
   restartSteppingOnCopy(copy, specHook) {
-    copy.steppingSpecs = (this.steppingSpecs || []).map((spec) => spec.copyForMorph(copy));
-    copy.steppingSpecs.forEach((spec) => {
+    copy.$steppingSpecs = (this.$steppingSpecs || []).map((spec) => spec.copyForMorph(copy));
+    copy.$steppingSpecs.forEach((spec) => {
       if (!this.isStepping(spec.methodName)) return;
       if (specHook && specHook(spec, copy)) return;
       copy.startStepping(spec.methodName, spec.arg, spec.stepPeriod, spec.nextStepTime);
@@ -3310,16 +3310,16 @@ class Morph {
     // Replace any existing step with the same method name on this morph
     this.stopStepping(method);
     let spec = new StepSpec(this, method, argIfAny, msTime, nextStepTimeIfAny);
-    if (!this.steppingSpecs) this.steppingSpecs = [];
-    this.steppingSpecs.push(spec);
+    if (!this.$steppingSpecs) this.$steppingSpecs = [];
+    this.$steppingSpecs.push(spec);
     this.world().startSteppingSpec(spec);
   }
   stopStepping(methodName) {
-    if (!this.steppingSpecs) this.steppingSpecs = [];
+    if (!this.$steppingSpecs) this.$steppingSpecs = [];
     if (methodName) {
-      deleteFromArrayPred(this.steppingSpecs, (spec) => spec.methodName == methodName);
+      deleteFromArrayPred(this.$steppingSpecs, (spec) => spec.methodName == methodName);
     } else {
-      clearArray(this.steppingSpecs);
+      clearArray(this.$steppingSpecs);
     }
     this.world().stopSteppingMorph(this, methodName);
   }
@@ -3802,7 +3802,7 @@ class LineMorph extends Morph {
       this.clearMidpointHandles();
       return;
     }
-    let pf = world.pointerFocus;
+    let pf = world.$pointerFocus;
     if (pf && this.isLineHandle(pf)) {
       this.ensureVertexHandles();
       if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
@@ -4207,7 +4207,7 @@ class KbdKeyMorph extends SimpleButtonMorph {
   onPointerUp(p, evt) {
     this.actorID = null;
     this.hitPoint = null;
-    if (this.world() && this.world().pointerFocus === this) this.world().setPointerFocus(null);
+    if (this.world() && this.world().$pointerFocus === this) this.world().setPointerFocus(null);
     return true;
   }
   refreshModifierHighlight() {
@@ -4216,7 +4216,7 @@ class KbdKeyMorph extends SimpleButtonMorph {
     let active = false;
     if (spec && spec.type === 'shift') active = isShiftKeyPressed();
     else if (spec && spec.type === 'caps_unused') active = isLockKeyPressed();
-    else if (spec && spec.type === 'meta_toggle') active = metaKeyPressedFlag;
+    else if (spec && spec.type === 'meta_toggle') active = $metaKeyPressedFlag;
     this.shape.boxColor = active ? padModifierHighlightOn(base) : base;
     this.changed();
   }
@@ -4293,7 +4293,7 @@ function refreshWorldMenuItems(menuMorph) {
     if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel))
       refreshed.push(menuToggleLabel(longClickForHalosLabel, window.longClickForHalos));
     else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
-      refreshed.push(menuToggleLabel(onScreenKeyboardLabel, useOnScreenKbd));
+      refreshed.push(menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd));
     else refreshed.push(line);
   });
   menuMorph.setList(refreshed);
@@ -5183,7 +5183,7 @@ class HuePickerMorph extends Morph {
   }
   onPointerUp(p, evt) {
     this.hitPoint = null;
-    if (this.world() && this.world().pointerFocus === this) this.world().setPointerFocus(null);
+    if (this.world() && this.world().$pointerFocus === this) this.world().setPointerFocus(null);
     return true;
   }
   pickColorAt(localP) {
@@ -6618,9 +6618,9 @@ class HaloHandle extends Morph {
     this.halo.remove();
     return true;
   }
-  onPointerMove(pt, evt) {
+  onPointerMove(p, evt) {
     if (!this.hitPoint) return false;
-    let delta = pt.subPt(this.hitPoint);
+    let delta = p.subPt(this.hitPoint);
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
       this.moveBy(delta);
@@ -6650,12 +6650,12 @@ class HaloHandle extends Morph {
     }
     if (this.handleName == 'Rotate') {
       let c = this.target.getBounds().center();
-      let currentAngle = Math.atan2(pt.y - c.y, pt.x - c.x);
+      let currentAngle = Math.atan2(p.y - c.y, p.x - c.x);
       this.target.rotateBy(currentAngle - this.rotateStartAngle);
       this.rotateStartAngle = currentAngle;
     }
     this.moveBy(delta);
-    this.hitPoint = pt;
+    this.hitPoint = p;
     return true;
   }
   onPointerUp(pt, evt) {
@@ -6960,17 +6960,17 @@ function syncOnScreenKeyboardWithFocus(worldIfAny) {
   if (!world) return;
   if (!shouldShowOnScreenKeyboardForWorld(world)) {
     if (
-      _onScreenKeyboardMorph &&
-      _onScreenKeyboardMorph.world() &&
-      _onScreenKeyboardMorph._openedViaFocusSync
+      $onScreenKeyboardMorph &&
+      $onScreenKeyboardMorph.world() &&
+      $onScreenKeyboardMorph._openedViaFocusSync
     ) {
-      _onScreenKeyboardMorph.remove();
-      _onScreenKeyboardMorph = null;
+      $onScreenKeyboardMorph.remove();
+      $onScreenKeyboardMorph = null;
       _refreshPadModifierStyles();
     }
     return;
   }
-  let kb = _onScreenKeyboardMorph;
+  let kb = $onScreenKeyboardMorph;
   if (kb && kb.world()) {
     kb._openedViaFocusSync = true;
     _refreshPadModifierStyles();
@@ -6978,30 +6978,30 @@ function syncOnScreenKeyboardWithFocus(worldIfAny) {
   }
   kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
-  world.addMorph(kb);
+  world.addEphemeralMorph(kb); // OSK is per-user UI
   kb.startStepping('stepRefreshLockLabels', null, 200);
-  _onScreenKeyboardMorph = kb;
+  $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
 }
 function toggleOnScreenKeyboard(worldIfAny) {
   let world = worldIfAny || Lively;
   if (!world) return null;
-  if (_onScreenKeyboardMorph && _onScreenKeyboardMorph.world()) {
-    _onScreenKeyboardMorph.remove();
-    _onScreenKeyboardMorph = null;
+  if ($onScreenKeyboardMorph && $onScreenKeyboardMorph.world()) {
+    $onScreenKeyboardMorph.remove();
+    $onScreenKeyboardMorph = null;
     _refreshPadModifierStyles();
-    if (useOnScreenKbd) syncOnScreenKeyboardWithFocus(world);
+    if ($useOnScreenKbd) syncOnScreenKeyboardWithFocus(world);
     return null;
   }
-  if (useOnScreenKbd) {
+  if ($useOnScreenKbd) {
     syncOnScreenKeyboardWithFocus(world);
-    return _onScreenKeyboardMorph;
+    return $onScreenKeyboardMorph;
   }
   let kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
-  world.addMorph(kb);
+  world.addEphemeralMorph(kb); // OSK is per-user UI
   kb.startStepping('stepRefreshLockLabels', null, 200);
-  _onScreenKeyboardMorph = kb;
+  $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
   return kb;
 }
@@ -7009,7 +7009,7 @@ function saveOnScreenKeyboardChrome(kb) {
   /** Remember OSK position/size (world bounds) for the next show. */
   if (!kb || !kb.getBounds) return;
   let b = kb.getBounds();
-  _oskSavedChrome = {
+  $oskSavedChrome = {
     x: b.topLeft.x,
     y: b.topLeft.y,
     w: b.width(),
@@ -7017,7 +7017,7 @@ function saveOnScreenKeyboardChrome(kb) {
   };
 }
 function onScreenKeyboardBoundsForWorld(world) {
-  let c = _oskSavedChrome;
+  let c = $oskSavedChrome;
   if (c && c.w > 0 && c.h > 0) return rect(c.x, c.y, c.w, c.h);
   return defaultOnScreenKeyboardBounds(world);
 }
@@ -7032,7 +7032,7 @@ function pressPadShiftKey() {
     setLockKeyPressed(false);
     setShiftKeyPressed(false);
   } else {
-    setShiftKeyPressed(!shiftKeyPressedFlag);
+    setShiftKeyPressed(!$shiftKeyPressedFlag);
   }
   _refreshPadModifierStyles();
 }
@@ -7288,17 +7288,17 @@ class OnScreenKeyboardMorph extends Morph {
       return;
     }
     if (spec.type === 'close') {
-      useOnScreenKbd = false;
+      $useOnScreenKbd = false;
       this.remove();
       return;
     }
     let locked = isLockKeyPressed();
-    let shiftLike = locked || shiftKeyPressedFlag;
+    let shiftLike = locked || $shiftKeyPressedFlag;
     let key = spec.key;
     if (spec.type === 'space') key = ' ';
     if (!key) return;
-    let metaChord = metaKeyPressedFlag || !!(evtIfAny && evtIfAny.metaKey);
-    if (metaChord && metaKeyPressedFlag) consumeSoftMetaKey();
+    let metaChord = $metaKeyPressedFlag || !!(evtIfAny && evtIfAny.metaKey);
+    if (metaChord && $metaKeyPressedFlag) consumeSoftMetaKey();
     if (!metaChord) {
       let shiftTable = getKbdShiftTable ? getKbdShiftTable() : kbdShiftTable || {};
       if (/^[a-z]$/i.test(key)) {
@@ -7312,7 +7312,7 @@ class OnScreenKeyboardMorph extends Morph {
     let evt = {
       key: key,
       keyCode: key === 'Enter' ? 13 : key === 'Tab' ? 9 : key === 'Backspace' ? 8 : 0,
-      // Keep synthetic virtual-key events from latching WorldMorph.shiftKeyDown.
+      // Keep synthetic virtual-key events from latching WorldMorph.$shiftKeyDown.
       shiftKey: false,
       metaKey: metaChord,
       ctrlKey: metaChord,
@@ -7323,8 +7323,8 @@ class OnScreenKeyboardMorph extends Morph {
     };
     let world = this.world();
     if (!world) return;
-    world.shiftKeyDown = false; // synthetic key events are one-shot; avoid sticky world shift state
-    let focus = world.keyboardFocus;
+    world.$shiftKeyDown = false; // synthetic key events are one-shot; avoid sticky world shift state
+    let focus = world.$keyboardFocus;
     if (focus && focus.className === 'TextPane' && focus.contentPane) focus = focus.contentPane;
     if (focus && focus.onKeyDown) focus.onKeyDown(evt);
     else world.onKeyDown(evt);
@@ -7417,7 +7417,7 @@ class OnScreenKeyboardMorph extends Morph {
     this.stopStepping('stepRefreshLockLabels');
     saveOnScreenKeyboardChrome(this);
     clearOskPadModifierState();
-    if (_onScreenKeyboardMorph === this) _onScreenKeyboardMorph = null;
+    if ($onScreenKeyboardMorph === this) $onScreenKeyboardMorph = null;
     if (_refreshPadModifierStyles) _refreshPadModifierStyles();
     return super.remove();
   }
@@ -7548,10 +7548,14 @@ class WorldMorph extends Morph {
     super(bounds, null);
     this.setColor(Color.green.lighter().lighter());
     if (traceMe) console.log('log ', 4);
-    this.stepList = [];
-    this.pointerFocus = null;
-    this.keyboardFocus = null;
-    this.shiftKeyDown = false; // maintained here
+    // PER-USER ($-prefixed): the stepping schedule is replica-local execution state.
+    // Only the replica that started an animation runs its step methods (others see the
+    // results through the document); reload stops local animations until restarted;
+    // and per-step bookkeeping (nextStepTime) never generates Automerge ops.
+    this.$stepList = [];
+    this.$pointerFocus = null;
+    this.$keyboardFocus = null;
+    this.$shiftKeyDown = false; // maintained here
     this.hands = null;
     setPointerLocation(bounds.topLeft);
   }
@@ -7628,10 +7632,10 @@ class WorldMorph extends Morph {
     // This avoids stepping corruption when other code calls stopStepping/removeMorph
     // while we're processing due steps.
     let now = Date.now();
-    let due = this.stepList.filter((spec) => spec.nextStepTime < now);
+    let due = this.activeStepList().filter((spec) => spec.nextStepTime < now);
     due.forEach((spec) => {
       // If spec was removed during earlier step processing, skip it.
-      if (!this.stepList.includes(spec)) return;
+      if (!this.activeStepList().includes(spec)) return;
       spec.nextStepTime = now + spec.stepPeriod;
       try {
         if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
@@ -7674,7 +7678,7 @@ class WorldMorph extends Morph {
     this.addHand(hm);
   }
   isSteppingMorph(morph, methodName) {
-    return this.stepList.some((spec) => {
+    return this.activeStepList().some((spec) => {
       if (spec.stepMorph !== morph) return false;
       if (methodName != null) return spec.methodName === methodName;
       return true;
@@ -7801,22 +7805,22 @@ class WorldMorph extends Morph {
   }
   onKeyDown(evt) {
     // Match browser modifier state (handles Shift+N and both Shift keys reliably).
-    this.shiftKeyDown = !!evt.shiftKey;
+    this.$shiftKeyDown = !!evt.shiftKey;
     _refreshPadModifierStyles();
-    if (!this.keyboardFocus) return null;
-    if (this.keyboardFocus.onKeyDown) return this.keyboardFocus.onKeyDown(evt);
+    if (!this.$keyboardFocus) return null;
+    if (this.$keyboardFocus.onKeyDown) return this.$keyboardFocus.onKeyDown(evt);
   }
   onKeyPress(evt) {
-    this.shiftKeyDown = !!evt.shiftKey;
+    this.$shiftKeyDown = !!evt.shiftKey;
     _refreshPadModifierStyles();
-    if (this.keyboardFocus != null && this.keyboardFocus.world() != null) {
-      this.keyboardFocus.onKeyPress(evt);
+    if (this.$keyboardFocus != null && this.$keyboardFocus.world() != null) {
+      this.$keyboardFocus.onKeyPress(evt);
     }
   }
   onKeyUp(evt) {
-    this.shiftKeyDown = !!evt.shiftKey;
+    this.$shiftKeyDown = !!evt.shiftKey;
     _refreshPadModifierStyles();
-    if (this.keyboardFocus && this.keyboardFocus.onKeyUp) this.keyboardFocus.onKeyUp(evt);
+    if (this.$keyboardFocus && this.$keyboardFocus.onKeyUp) this.$keyboardFocus.onKeyUp(evt);
     return super.onKeyUp(evt);
   }
   onLongClickHalo(pt, downEvt) {
@@ -7842,8 +7846,8 @@ class WorldMorph extends Morph {
       hand.onPointerDown(p, evt);
       return true;
     }
-    if (this.pointerFocus && this.pointerFocus._stickyDragCollapsedBar) {
-      let pf = this.pointerFocus;
+    if (this.$pointerFocus && this.$pointerFocus._stickyDragCollapsedBar) {
+      let pf = this.$pointerFocus;
       let pForFocus = pf.owner ? pf.owner.localize(p) : p;
       return pf.finishStickyCollapsedTitleBarDrag(pForFocus, evt);
     }
@@ -7866,10 +7870,10 @@ class WorldMorph extends Morph {
       hand.onPointerMove(p, evt);
       if (hand.hasSubmorphs()) return true;
     }
-    if (this.pointerFocus) {
+    if (this.$pointerFocus) {
       // pointerFocus expects pt in its owner's coords (e.g. SliderMorph in ListPane)
-      let pForFocus = this.pointerFocus.owner ? this.pointerFocus.owner.localize(p) : p;
-      return this.pointerFocus.onPointerMove(pForFocus, evt);
+      let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
+      return this.$pointerFocus.onPointerMove(pForFocus, evt);
     }
     this.eachSubmorph((morph) => morph.onPointerMove(p, evt));
   }
@@ -7882,9 +7886,9 @@ class WorldMorph extends Morph {
       if (handHandled) return true;
     }
     let result;
-    if (this.pointerFocus) {
-      let pForFocus = this.pointerFocus.owner ? this.pointerFocus.owner.localize(p) : p;
-      result = this.pointerFocus.onPointerUp(pForFocus, evt);
+    if (this.$pointerFocus) {
+      let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
+      result = this.$pointerFocus.onPointerUp(pForFocus, evt);
     } else {
       this.eachSubmorph((morph) => morph.onPointerUp(p, evt));
     }
@@ -7926,16 +7930,26 @@ class WorldMorph extends Morph {
      *   (see handleVirtualKey) and physical keys from the host. Only TextMorph sets it;
      *   other morphs clear it via clearKeyboardFocusUnlessTypingOrOsk when a morph
      *   handles a click that did not go to a submorph (e.g. chrome, not TextMorph).
-     * — World menu “On-screen keyboard” toggles useOnScreenKbd; the keyboard’s ✕ key
-     *   removes it and clears useOnScreenKbd.
-     * — When useOnScreenKbd is true, OSK follows keyboardFocus automatically.
+     * — World menu “On-screen keyboard” toggles $useOnScreenKbd; the keyboard’s ✕ key
+     *   removes it and clears $useOnScreenKbd.
+     * — When $useOnScreenKbd is true, OSK follows keyboardFocus automatically.
      */
-    if (this.keyboardFocus === morphOrNull) return;
-    this.keyboardFocus = morphOrNull;
+    // PER-USER ($-prefixed): my physical keyboard's focus is mine by nature. Shared
+    // focus meant two people editing different panes routed keys to whichever pane
+    // was focused last, and a focus set before reload leaked into the next session.
+    if (this.$keyboardFocus === morphOrNull) return;
+    this.$keyboardFocus = morphOrNull;
     syncOnScreenKeyboardWithFocus(this);
   }
   setPointerFocus(morphOrNull) {
-    this.pointerFocus = morphOrNull;
+    /**
+     * PER-USER ($-prefixed): the morph receiving my pointer stream. Two reasons it
+     * must be ephemeral: (1) two users dragging concurrently must not steal each
+     * other's gesture; (2) it can point at per-user morphs (halo handles) — a
+     * persistent reference would make them persistently reachable, silently promoting
+     * the whole halo into the shared document at end-of-transaction GC.
+     */
+    this.$pointerFocus = morphOrNull;
   }
   showHaloHelp() {
     Lively.addMorph(
@@ -8019,7 +8033,7 @@ class WorldMorph extends Morph {
       'Open Console',
       'Restart Console',
       menuToggleLabel(longClickForHalosLabel, window.longClickForHalos),
-      menuToggleLabel(onScreenKeyboardLabel, useOnScreenKbd),
+      menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd),
     ];
     // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
     // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
@@ -8037,7 +8051,7 @@ class WorldMorph extends Morph {
         refreshWorldMenuItems(this);
       }
       if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
-        useOnScreenKbd = !useOnScreenKbd;
+        $useOnScreenKbd = !$useOnScreenKbd;
         syncOnScreenKeyboardWithFocus(this.world());
         refreshWorldMenuItems(this);
       }
@@ -8066,17 +8080,22 @@ class WorldMorph extends Morph {
     menu.isFleetingMenu = !!opts.fleeting;
     Lively.addMorph(menu);
   }
+  activeStepList() {
+    /** Lazily created: worlds restored from older documents have no $stepList yet. */
+    if (!this.$stepList) this.$stepList = [];
+    return this.$stepList;
+  }
   startSteppingSpec(spec) {
-    this.stepList.push(spec);
+    this.activeStepList().push(spec);
   }
   stopSteppingMorph(morph, methodName) {
     if (methodName) {
-      this.stepList = this.stepList.filter(
+      this.$stepList = this.activeStepList().filter(
         (spec) => !(spec.stepMorph === morph && spec.methodName === methodName),
       );
       return;
     }
-    this.stepList = this.stepList.filter((spec) => spec.stepMorph !== morph);
+    this.$stepList = this.activeStepList().filter((spec) => spec.stepMorph !== morph);
   }
   topMorphAt(pt) {
     // Deepest morph under pt; among overlapping siblings, frontmost wins.

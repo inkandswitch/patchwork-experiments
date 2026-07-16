@@ -144,6 +144,76 @@ describe('ephemeral submorphs ($submorphs)', () => {
   }, 60_000);
 });
 
+describe('per-user focus', () => {
+  it('keyboardFocus is per-user: readable across transactions, never in the document', () => {
+    const { handle, rt } = makeWorld();
+    rt.eval(`Lively.setKeyboardFocus(Lively.testBox);`);
+    // readable in a later transaction, and identity-stable
+    expect(rt.eval(`Lively.$keyboardFocus === Lively.testBox`)).toBe(true);
+    // never serialized into the shared document
+    expect(JSON.stringify(handle.doc().objectTable)).not.toContain('@$keyboardFocus');
+    const worldId = rt.eval(`Lively.$id`) as string;
+    const worldEntry = handle.doc().objectTable[worldId] as Record<string, unknown>;
+    expect(Object.keys(worldEntry).some((k) => k.includes('keyboardFocus'))).toBe(false);
+    // clearing works
+    rt.eval(`Lively.setKeyboardFocus(null);`);
+    expect(rt.eval(`Lively.$keyboardFocus`)).toBe(null);
+  }, 60_000);
+});
+
+describe('per-user modifier state', () => {
+  it('soft modifiers and shiftKeyDown never touch the document', () => {
+    const { handle, rt } = makeWorld();
+    rt.eval(`setShiftKeyPressed(true); setMetaKeyPressed(true);`);
+    expect(rt.eval(`isShiftKeyPressed()`)).toBe(true);
+    rt.eval(`Lively.onKeyDown({ shiftKey: true, key: 'Shift' });`);
+    expect(rt.eval(`Lively.$shiftKeyDown`)).toBe(true);
+    // nothing persisted: neither the flags on the global nor shiftKeyDown on the world
+    const table = handle.doc().objectTable as Record<string, Record<string, unknown>>;
+    const globalKeys = Object.keys(table['global']);
+    expect(globalKeys.some((k) => k.toLowerCase().includes('pressedflag'))).toBe(false);
+    const worldId = rt.eval(`Lively.$id`) as string;
+    expect(Object.keys(table[worldId]).some((k) => k.includes('shiftKeyDown'))).toBe(false);
+  }, 60_000);
+});
+
+describe('per-user stepping', () => {
+  it('runs animations locally with zero Automerge ops for the schedule', () => {
+    const { handle, rt } = makeWorld();
+    rt.eval(`
+      Lively.testBox.wiggle = function () { this.moveBy(pt(2, 0)); };
+      Lively.testBox.startStepping('wiggle', null, 0, Date.now() - 5);
+    `);
+    const x0 = rt.eval(`Lively.testBox.getBounds().topLeft.x`) as number;
+    rt.eval(`Lively.handleStepList();`);
+    expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBeCloseTo(x0 + 2, 6);
+    rt.eval(`Lively.handleStepList();`);
+    expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBeCloseTo(x0 + 4, 6);
+
+    // The schedule is replica-local: no entry in the shared document carries the
+    // schedule STATE properties (the box's movement, of course, is shared). Two
+    // pitfalls this check avoids: class $code source strings legitimately mention
+    // $stepList as text (so no raw-JSON substring checks), and method refs like
+    // @handleStepList/@activeStepList are persistent class structure by design (so
+    // exact state-key matches only). @nextStepTime/@stepPeriod anywhere would betray
+    // a promoted StepSpec.
+    const stateKeys = new Set(['@stepList', '@steppingSpecs', '@nextStepTime', '@stepPeriod']);
+    const table = handle.doc().objectTable as Record<string, Record<string, unknown>>;
+    const offendingKeys: string[] = [];
+    for (const [id, entry] of Object.entries(table)) {
+      for (const k of Object.keys(entry)) {
+        if (stateKeys.has(k)) offendingKeys.push(`${id}.${k}`);
+      }
+    }
+    expect(offendingKeys, `stepping schedule leaked into the document:\n  ${offendingKeys.join('\n  ')}`).toEqual([]);
+
+    rt.eval(`Lively.testBox.stopStepping('wiggle');`);
+    rt.eval(`Lively.handleStepList();`);
+    expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBeCloseTo(x0 + 4, 6);
+    expect(rt.eval(`Lively.isSteppingMorph ? Lively.isSteppingMorph(Lively.testBox, 'wiggle') : false`)).toBe(false);
+  }, 60_000);
+});
+
 describe('persistent objects are never collected', () => {
   it('an unlinked persistent object stays in the object table', () => {
     const handle = createAutomergeTestDocHandle();

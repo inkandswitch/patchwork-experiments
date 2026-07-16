@@ -56,6 +56,22 @@ export function lmGetOwn(entry: Record<string, any>, prop: PropertyKey): unknown
   return undefined;
 }
 
+/** True when writing `next` over `cur` would be a no-op we can skip. Covers
+ * primitives (including strings — significant under Automerge text encoding, where a
+ * rewritten string costs one op per character), Refs to the same object, and equal
+ * Dates. Plain objects/arrays always rewrite (deep comparison is not worth it, and
+ * list identity matters). Note the CRDT nuance: an elided same-value write no longer
+ * asserts LWW recency; Livelymerge accepts that trade for op economy. */
+export function lmSameStoredVal(cur: unknown, next: unknown): boolean {
+  if (cur === next) return typeof next !== 'object' || next === null;
+  if (cur == null || next == null) return false;
+  const c = cur as any;
+  const n = next as any;
+  if (c.$type === 'ref' && n.$type === 'ref') return c.$id === n.$id;
+  if (cur instanceof Date && next instanceof Date) return cur.getTime() === next.getTime();
+  return false;
+}
+
 export function lmSetOwn(
   entry: Record<string, any>,
   prop: PropertyKey,
@@ -63,7 +79,14 @@ export function lmSetOwn(
   serialize: (value: unknown) => unknown,
 ): boolean {
   if (typeof prop === 'symbol' || lmIsReservedKey(prop)) return false;
-  entry[lmUserKey(prop)] = serialize(value);
+  const key = lmUserKey(prop);
+  const next = serialize(value);
+  // Same-value elision: skip the store when nothing would change. This is what makes
+  // "no persistent ops on an idle frame" a robust property rather than a coding
+  // discipline — idempotent per-frame/per-event writes (didDrag = false, actorID =
+  // null, ...) cost nothing.
+  if (Object.hasOwn(entry, key) && lmSameStoredVal(entry[key], next)) return true;
+  entry[key] = next;
   return true;
 }
 
