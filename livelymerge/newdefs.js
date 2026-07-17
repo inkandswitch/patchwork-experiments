@@ -8629,9 +8629,12 @@ function presentError(err, contextIfAny) {
   console.error(report);
   let panel = openErrorStackPanel(err, contextIfAny);
   if (!_alldefsSourceLines) {
-    ensureAlldefsSourceLines().then(function () {
-      if (panel && panel.refreshStackSources) panel.refreshStackSources();
-    });
+    // ensureAlldefsSourceLines is currently disabled and returns null.
+    let loading = ensureAlldefsSourceLines();
+    if (loading && loading.then)
+      loading.then(function () {
+        if (panel && panel.refreshStackSources) panel.refreshStackSources();
+      });
   }
   return panel;
 }

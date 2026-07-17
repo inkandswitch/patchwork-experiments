@@ -14,7 +14,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as Automerge from '@automerge/automerge';
-import { createAutomergeTestDocHandle } from './testDocHandle';
+import { createAutomergeTestDocHandle, roundTripDocHandle } from './testDocHandle';
 import { createLivelymergeRuntime } from './livelymergeRuntime';
 
 function makeCtxStub() {
@@ -323,19 +323,106 @@ initLively();
     expect(() => rt.eval(`openErrorStackPanel(${fakeErr}, 'test context')`)).not.toThrow();
   }, 120_000);
 
-  it('opens for a real host error and survives promotion (raw Error stays per-replica)', () => {
+  it('handleRuntimeError presents a real host error and survives promotion', () => {
     const { rt } = setup();
     rt.eval(`
 initUI();
 initLively();
 `);
+    // Full path: handleRuntimeError -> presentError -> ErrorStackPanel. Covers the
+    // raw-Error-stays-per-replica rule and the disabled ensureAlldefsSourceLines guard.
     expect(() =>
       rt.eval(`
 (() => {
-  try { null.foo; } catch (e) { openErrorStackPanel(e, 'probe context'); }
+  try { null.foo; } catch (e) { handleRuntimeError(e, 'probe context'); }
 })()
 `),
     ).not.toThrow();
     expect(rt.eval(`!!Lively.submorphs.find((m) => m.className === 'ErrorStackPanel')`)).toBe(true);
+  }, 120_000);
+});
+
+describe('document integrity', () => {
+  it('an object held only by raw JS is resurrected when stored back into the heap', () => {
+    const { handle, rt } = setup();
+    // The object is reachable only through a raw window side-table, which the GC
+    // cannot see — so its heap entry is swept at the end of the transaction.
+    rt.eval(`hub = {}`);
+    rt.eval(`window._probeStash = { marker: 42 }`);
+    rt.eval(`1 + 1`); // idle transaction: the stashed object's entry is collected
+    // Storing the stale proxy back into the persistent heap must resurrect the
+    // entry, not bake a dangling ref into the document.
+    const warns: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      const s = args.map(String).join(' ');
+      if (s.includes('missing referent')) warns.push(s);
+      else origWarn(...args);
+    };
+    try {
+      rt.eval(`hub.later = window._probeStash`);
+      rt.eval(`1 + 1`);
+    } finally {
+      console.warn = origWarn;
+    }
+    expect(warns).toEqual([]);
+    expect(rt.eval(`hub.later.marker`)).toBe(42);
+    expect(rt.findDanglingRefs()).toEqual([]);
+    // and it survives a reload
+    const rt2 = createLivelymergeRuntime(roundTripDocHandle(handle as any));
+    expect(rt2.eval(`hub.later.marker`)).toBe(42);
+  }, 120_000);
+
+  it('a fresh session bakes no dangling refs into the document', () => {
+    const { harness, handle, rt } = setup();
+    rt.eval(`init()`);
+    const dispatch = (type: string, x: number, y: number) => {
+      for (const fn of harness.listeners.get(type) ?? []) fn(makeNativeEvt(type, x, y));
+    };
+    const runFrame = () => {
+      const cb = harness.rafQueue.shift();
+      if (cb) cb();
+    };
+    for (let i = 0; i < 4; i++) runFrame();
+    dispatch('pointerdown', 50, 30);
+    runFrame();
+    dispatch('pointermove', 120, 90);
+    runFrame();
+    dispatch('pointerup', 120, 90);
+    runFrame();
+    rt.eval(`Lively.addMorph(new BrowserPanel())`);
+    for (let i = 0; i < 4; i++) runFrame();
+
+    // Every ref stored anywhere in the document must resolve within the document
+    // (post-reload, the shadow table is empty, so an unresolved ref would surface
+    // as a "Livelymerge gc: missing referent" warning).
+    const table = (handle.doc() as any).objectTable;
+    const ids = new Set(Object.keys(table));
+    const missing: string[] = [];
+    const lookAt = (v: any, where: string) => {
+      if (v && typeof v === 'object' && v.$type === 'ref' && !ids.has(v.$id)) {
+        missing.push(`${v.$id} <- ${where}`);
+      }
+    };
+    for (const [id, entry] of Object.entries<any>(table)) {
+      if (entry.$type === 'obj' || entry.$type === 'fun') {
+        for (const k of Object.keys(entry)) {
+          if (k.startsWith('@')) lookAt(entry[k], `${entry.$type} ${id} prop ${k}`);
+        }
+      }
+      if (entry.$type === 'obj' && entry.$protoId && !ids.has(entry.$protoId)) {
+        missing.push(`${entry.$protoId} <- obj ${id} $protoId`);
+      }
+      if (entry.$type === 'arr') {
+        entry.$values.forEach((v: any, i: number) => lookAt(v, `arr ${id}[${i}]`));
+      }
+      if (entry.$type === 'fun') {
+        (entry.$scopes || []).forEach((v: any, i: number) => lookAt(v, `fun ${id} scope[${i}]`));
+        if (entry.$prototypeId && !ids.has(entry.$prototypeId)) {
+          missing.push(`${entry.$prototypeId} <- fun ${id} $prototypeId`);
+        }
+      }
+    }
+    expect(missing, `dangling refs:\n  ${missing.slice(0, 10).join('\n  ')}`).toEqual([]);
   }, 120_000);
 });

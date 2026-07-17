@@ -79,6 +79,8 @@ export interface LivelymergeRuntime {
   printIt(source: string): string;
   change<T>(fn: () => T): T;
   formatEvalResult(value: unknown): string;
+  /** Diagnostic: refs whose target id exists in neither the document nor the shadow heap. */
+  findDanglingRefs(): string[];
   doc(): LivelymergeDoc;
 }
 
@@ -161,6 +163,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     inChangeCall = true;
     let exception: any;
+    let committed = false;
     let returnValue: T | undefined = undefined;
     try {
       docHandle.change((_doc) => {
@@ -179,10 +182,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           gc(returnValue);
         }
       });
+      committed = true;
     } catch (e) {
       exception = exception ?? e;
     } finally {
       inChangeCall = false;
+      // Shadow-side deletions from gc's promotion/sweep only apply if the Automerge
+      // change actually committed; on an aborted change the document side was rolled
+      // back, so the shadow entries must survive.
+      flushPendingShadowDeletes(committed);
     }
     if (exception) {
       console.error(exception);
@@ -474,7 +482,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function toRef(proxy: Proxy): Ref {
-    return { $type: 'ref', $id: proxy.$id };
+    const id = proxy.$id;
+    // Resurrection at the write barrier: JS-side references (window side-tables, DOM
+    // closures) are invisible to the GC, so the entry may have been swept while the
+    // proxy lived on. Storing the proxy re-establishes reachability — reinstall the
+    // entry (proxies keep their entry via $unwrapped) instead of baking a dangling
+    // ref into the heap.
+    if (!Object.hasOwn(shadowTable, id) && !(doc && doc.objectTable[id])) {
+      const entry = proxy.$unwrapped;
+      if (entry && (isObj(entry) || isArr(entry) || isFun(entry))) {
+        shadowTable[id] = entry;
+      }
+    }
+    return { $type: 'ref', $id: id };
   }
 
   function isProxy(x: any): x is Proxy {
@@ -1181,6 +1201,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   const warnedMissingReferents = new Set<string>();
 
+  /** Shadow-table removals scheduled by gc(), applied by change() only after the
+   * Automerge change has committed (see the promotion/sweep notes in gc). */
+  let pendingShadowDeletes: string[] = [];
+
+  function flushPendingShadowDeletes(commit: boolean) {
+    if (commit) {
+      for (const id of pendingShadowDeletes) {
+        delete shadowTable[id];
+      }
+    }
+    pendingShadowDeletes = [];
+  }
+
   function gc(extraRoot?: unknown) {
     // End-of-transaction GC. Classifies every SHADOW object as one of:
     //   promote  — persistently reachable: moved from the shadow document into the
@@ -1204,30 +1237,31 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const persistentLive = new Set<string>();
     const ephemeralLive = new Set<string>();
 
-    function traverse(val: Obj | Arr | Fun, visitRef: (id: string) => void) {
-      const lookAt = (v: Val) => {
-        if (isRef(v)) visitRef(v.$id);
+    function traverse(val: Obj | Arr | Fun, visitRef: (id: string, via: string) => void) {
+      const from = val.$id;
+      const lookAt = (v: Val, via: string) => {
+        if (isRef(v)) visitRef(v.$id, via);
       };
       if (isObj(val)) {
         for (const p of lmHeapPropertyNames(val)) {
-          lookAt(val[p]);
+          lookAt(val[p], `obj ${from} property '${p}'`);
         }
         if (val.$protoId != null) {
-          visitRef(val.$protoId);
+          visitRef(val.$protoId, `obj ${from} $protoId`);
         }
       } else if (isArr(val)) {
         for (let i = 0; i < val.$values.length; i++) {
-          lookAt(val.$values[i]);
+          lookAt(val.$values[i], `arr ${from}[${i}]`);
         }
       } else if (isFun(val)) {
         for (const v of val.$scopes) {
-          lookAt(v);
+          lookAt(v, `fun ${from} scope`);
         }
         if (val.$prototypeId != null) {
-          visitRef(val.$prototypeId);
+          visitRef(val.$prototypeId, `fun ${from} $prototypeId`);
         }
         for (const prop of lmOwnUserPropertyKeys(val)) {
-          lookAt(lmGetOwn(val, prop) as Val);
+          lookAt(lmGetOwn(val, prop) as Val, `fun ${from} property '@${prop}'`);
         }
       } else {
         throw new Error('WAT');
@@ -1241,7 +1275,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     const toPromote: string[] = [];
 
-    function visitPersistent(id: string) {
+    function visitPersistent(id: string, via?: string) {
       if (persistentLive.has(id)) {
         return;
       }
@@ -1255,16 +1289,29 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       } else {
         val = doc.objectTable[id];
         if (!val) {
-          // A dangling reference: refs baked into documents by earlier builds whose GC
-          // swept persistent objects, or persistent refs to per-user objects from a
-          // previous session (e.g. a stale pointerFocus). Non-fatal; reads yield
-          // undefined. Warn once per id — this runs every transaction, and a legacy
-          // dangler would otherwise flood the console at frame rate.
-          if (!warnedMissingReferents.has(id)) {
-            warnedMissingReferents.add(id);
-            console.warn('Livelymerge gc: missing referent with id ' + id);
+          // The entry is in neither store, but a live proxy may still carry it
+          // (JS-side references are invisible to this GC, so the entry may have been
+          // swept out from under the proxy). Resurrect it rather than leaving a
+          // dangling reference in the persistent heap.
+          const entry = cachedProxy(id)?.$unwrapped;
+          if (entry && (isObj(entry) || isArr(entry) || isFun(entry))) {
+            shadowTable[id] = entry;
+            val = entry;
+            toPromote.push(id);
+          } else {
+            // A dangling reference: refs baked into documents by earlier builds or
+            // damaged sessions. Non-fatal; reads yield undefined. Warn once per id —
+            // this runs every transaction, and a legacy dangler would otherwise flood
+            // the console at frame rate.
+            if (!warnedMissingReferents.has(id)) {
+              warnedMissingReferents.add(id);
+              console.warn(
+                `Livelymerge gc: missing referent with id ${id}` +
+                  (via ? ` (referenced by ${via})` : ''),
+              );
+            }
+            return;
           }
-          return;
         }
       }
       traverse(val, visitPersistent);
@@ -1280,9 +1327,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     for (const id of toPromote) {
       validateEntryForPromotion(id, shadowTable[id]!);
     }
+    // Install promotions into the (draft) document, but DEFER the shadow-side
+    // deletions until the change has committed: if anything later in this change
+    // throws, Automerge rolls the installs back — deleting the shadow entries here
+    // would then lose the objects from both stores, and every surviving proxy write
+    // would bake a dangling reference into the document.
     for (const id of toPromote) {
       doc.objectTable[id] = shadowTable[id]!;
-      delete shadowTable[id];
+      pendingShadowDeletes.push(id);
     }
 
     // -- Phase 2: mark ephemeral. --
@@ -1337,13 +1389,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
 
     // -- Sweep (shadow document only; persistent objects are immortal, see above). --
+    // Like promotion, sweep deletions are deferred until the change commits.
 
     let numShadowReclaimed = 0;
     for (const id of Object.keys(shadowTable)) {
-      if (!ephemeralLive.has(id)) {
-        // Not ephemeral-live, and not promoted (promotion removed it from the
-        // shadow table already): fresh garbage or an abandoned ephemeral object.
-        delete shadowTable[id];
+      if (!ephemeralLive.has(id) && !persistentLive.has(id)) {
+        // Not ephemeral-live and not just promoted: fresh garbage or an abandoned
+        // ephemeral object.
+        pendingShadowDeletes.push(id);
         numShadowReclaimed++;
       }
     }
@@ -1607,6 +1660,40 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     });
   }
 
+  /** Diagnostic: every ref stored in the document or shadow heap whose target id
+   * resolves to neither store. Run `runtime.findDanglingRefs()` from the devtools
+   * console; each entry names the referrer, so damage can be traced to its source. */
+  function findDanglingRefs(): string[] {
+    const out: string[] = [];
+    const tables: Array<[string, Record<string, Obj | Arr | Fun>]> = [
+      ['doc', doc.objectTable as Record<string, Obj | Arr | Fun>],
+      ['shadow', shadowTable],
+    ];
+    const exists = (id: string) =>
+      Object.hasOwn(shadowTable, id) || doc.objectTable[id] !== undefined;
+    const lookAt = (v: unknown, where: string) => {
+      if (isRef(v) && !exists(v.$id)) out.push(`${v.$id} <- ${where}`);
+    };
+    for (const [store, table] of tables) {
+      for (const [id, entry] of Object.entries(table)) {
+        if (isObj(entry)) {
+          for (const p of lmHeapPropertyNames(entry)) lookAt(entry[p], `${store} obj ${id} '${p}'`);
+          if (entry.$protoId && !exists(entry.$protoId))
+            out.push(`${entry.$protoId} <- ${store} obj ${id} $protoId`);
+        } else if (isArr(entry)) {
+          entry.$values.forEach((v, i) => lookAt(v, `${store} arr ${id}[${i}]`));
+        } else if (isFun(entry)) {
+          entry.$scopes.forEach((v, i) => lookAt(v, `${store} fun ${id} scope[${i}]`));
+          if (entry.$prototypeId && !exists(entry.$prototypeId))
+            out.push(`${entry.$prototypeId} <- ${store} fun ${id} $prototypeId`);
+          for (const p of lmOwnUserPropertyKeys(entry))
+            lookAt(lmGetOwn(entry, p), `${store} fun ${id} '@${p}'`);
+        }
+      }
+    }
+    return out;
+  }
+
   return {
     eval(source: string) {
       return evaluateSource(source);
@@ -1617,6 +1704,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     },
     change,
     formatEvalResult,
+    findDanglingRefs,
     doc() {
       return doc;
     },
