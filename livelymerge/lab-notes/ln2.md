@@ -2,7 +2,7 @@
 
 ## Introduction
 
-In the _Livelymerge_ project, Dan Ingalls and I (Alex Warth) are exploring the opportunities and challenges that arise from using an Automerge document as the heap of a program.
+In the _Livelymerge_ project, Dan Ingalls, Peter Van Hardenberg, and I (Alex Warth) are exploring the opportunities and challenges that arise from using an Automerge document as the heap of a program.
 
 A couple of opportunities:
 
@@ -28,7 +28,7 @@ Dan's Lively Kernel (LK) is a Squeak-like system that was written entirely in Ja
 
 As part of the Livelymerge project, Dan has written a new LK-like system whose heap is represented as an Automerge document. It includes a graphical user interface based on [Morphic](https://rmod-files.lille.inria.fr/FreeBooks/CollectiveNBlueBook/morphic.final.pdf), editable text areas, and even a Smalltalk-style browser. Everything in the system is written from scratch (the graphics bottom out at the HTML canvas) and the code can be viewed and edited from inside the system. This means that the user can make fundamental changes to the system, and in a multi-user context, those changes apply to all of the participants.
 
-(Sidebar: for a long time, I've wanted people at Ink & Switch to experience this kind of self-sustaining system firsthand, and this project is a nice excuse to make that happen.)
+(Sidebar: for a long time, I've wanted my colleagues at Ink & Switch to experience this kind of self-sustaining system firsthand, and this project was a nice excuse to make that happen.)
 
 ## LM's Object Model
 
