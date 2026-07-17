@@ -65,6 +65,19 @@ function isSuperCallee(callee: SyntaxNode, source: string): boolean {
   return callee.name === 'super' || nodeText(callee, source) === 'super';
 }
 
+/** Method names that cannot double as a `function <name>` identifier (`new`, `delete`, …). */
+const RESERVED_WORDS = new Set([
+  'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete',
+  'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for', 'function', 'if',
+  'import', 'in', 'instanceof', 'new', 'null', 'return', 'super', 'switch', 'this', 'throw',
+  'true', 'try', 'typeof', 'var', 'void', 'while', 'with',
+]);
+
+function functionNameFor(methodName: string): string {
+  if (RESERVED_WORDS.has(methodName) || !/^[A-Za-z_$][\w$]*$/.test(methodName)) return '';
+  return methodName;
+}
+
 function methodFuncSource(methodNode: SyntaxNode, source: string, name: string): string {
   let child = methodNode.firstChild;
   while (child && (nodeText(child, source) === 'static' || nodeText(child, source) === 'async')) {
@@ -78,7 +91,8 @@ function methodFuncSource(methodNode: SyntaxNode, source: string, name: string):
   const block = methodNode.getChild('Block');
   const params = paramList ? nodeText(paramList, source) : '()';
   const body = block ? nodeText(block, source) : '{}';
-  return `function ${name}${params} ${body}`;
+  const fnName = functionNameFor(name);
+  return `function ${fnName}${fnName ? '' : ' '}${params} ${body}`;
 }
 
 function blockInner(block: SyntaxNode, source: string): string {
@@ -175,11 +189,25 @@ function memberRef(ref: string, name: string): string {
 }
 
 function rewriteThisMemberAccess(source: string): string {
-  return source.replace(/\bthis\.(@?[\w$]+)\b/g, (match, name: string) => {
-    if (name.startsWith('$')) return match;
-    if (name.startsWith('@')) return match;
-    return `this['@${name}']`;
-  });
+  // AST-based: a textual regex would also rewrite `this.foo` occurrences inside
+  // string literals and comments, corrupting the stored code.
+  const tree = parser.parse(source);
+  const edits: { from: number; to: number; text: string }[] = [];
+  function walk(node: SyntaxNode): void {
+    if (node.name === 'MemberExpression') {
+      const obj = node.firstChild;
+      const prop = node.getChild('PropertyName');
+      if (obj?.name === 'this' && prop && prop.from > obj.to) {
+        const name = nodeText(prop, source);
+        if (!name.startsWith('$') && !name.startsWith('@')) {
+          edits.push({ from: obj.to, to: prop.to, text: `['@${name}']` });
+        }
+      }
+    }
+    for (let child = node.firstChild; child; child = child.nextSibling) walk(child);
+  }
+  walk(tree.topNode);
+  return applyReplacements(source, edits);
 }
 
 function constructorCallsSuper(funcSource: string): boolean {

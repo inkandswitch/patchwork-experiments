@@ -1204,11 +1204,18 @@ function walkBlockScopedRefs(
   if (FUNCTION_NODES.has(node.name) || node.name === 'FunctionDeclaration') return;
 
   if (node.name === 'VariableDeclaration') {
-    // A declaration that itself binds a scoped name is rewritten wholesale by
-    // transformBindingDeclaration (which also rewrites references to other scoped
-    // names in its initializers); skip it here to avoid overlapping edits.
-    if (declarationDeclaresScopedName(node, builder.source, scopedNames)) return;
-    // Otherwise it stays a plain declaration, so its initializer expressions still
+    // A declaration bound for the wholesale rewrite (transformBindingDeclaration
+    // re-slices its initializers, rewriting scoped refs itself) must be skipped here
+    // to avoid overlapping edits. In-place-rewritten declarations keep their
+    // initializer ranges intact, so those initializers fall through to the normal
+    // scoped-reference walk below.
+    if (
+      declarationDeclaresScopedName(node, builder.source, scopedNames) &&
+      declUsesWholesaleTransform(node, builder.source, scopedNames)
+    ) {
+      return;
+    }
+    // Plain and in-place-rewritten declarations: initializer expressions still
     // need references to scoped bindings rewritten (e.g. `let t = maxW + 1`).
     for (let child = node.firstChild; child; child = child.nextSibling) {
       if (child.name !== 'Equals') continue;
@@ -1456,6 +1463,94 @@ function joinTransformedStatements(
       return index === 0 ? text : `${indent}${text}`;
     })
     .join('\n');
+}
+
+/** True when a captured declaration must be rewritten wholesale (text replacement of
+ * the entire statement) rather than with in-place per-declarator edits: inside a
+ * for-spec (statement separators are illegal there) or when a destructuring pattern
+ * binds a captured name (there is no single `$scopeN.x = init` form for it). The
+ * wholesale path re-slices initializer text from the original source, so nested
+ * literal/function wraps are lost there — the in-place path is preferred. */
+function declUsesWholesaleTransform(
+  declNode: SyntaxNode,
+  source: string,
+  scopedBindings: Set<string>,
+): boolean {
+  const keyword = declarationKeyword(declNode, source);
+  if (!keyword || keyword === 'var') return true;
+  const parentName = declNode.parent?.name;
+  if (parentName === 'ForSpec' || parentName === 'ForInSpec' || parentName === 'ForOfSpec') {
+    return true;
+  }
+  for (let child = declNode.firstChild; child; child = child.nextSibling) {
+    if (child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
+      const names = new Set<string>();
+      collectPatternBindings(child, source, names);
+      for (const name of names) {
+        if (scopedBindings.has(name)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function declaratorHasInitializer(bindingNode: SyntaxNode): boolean {
+  for (let n = bindingNode.nextSibling; n && n.name !== ',' && n.name !== ';'; n = n.nextSibling) {
+    if (n.name === 'Equals') return true;
+  }
+  return false;
+}
+
+/** Rewrite a declaration binding captured names via small in-place edits that leave
+ * every initializer expression untouched, so nested `$arr`/`$obj`/`$fun` wraps and
+ * free-variable rewrites inside the initializers survive:
+ *   `let a = 1, xs = [], b = 2;` → `let a = 1; $scopeN.xs = $arr([]); let b = 2;` */
+function collectInPlaceDeclarationEdits(
+  builder: ScopeBuilder,
+  declNode: SyntaxNode,
+  scopeName: string,
+  scopedBindings: Set<string>,
+  edits: Edit[],
+): void {
+  const source = builder.source;
+  const keyword = declarationKeyword(declNode, source);
+  if (!keyword) return;
+
+  let prefixFrom = declNode.from; // start of the `let `/`, ` segment before the next declarator
+  let prefixIsComma = false;
+  let prevWasScoped = false;
+  for (let child = declNode.firstChild; child; child = child.nextSibling) {
+    if (child.name === ',') {
+      prefixFrom = child.from;
+      prefixIsComma = true;
+      continue;
+    }
+    const isBinding =
+      child.name === 'VariableDefinition' ||
+      child.name === 'ObjectPattern' ||
+      child.name === 'ArrayPattern';
+    if (!isBinding) continue;
+
+    const name = child.name === 'VariableDefinition' ? nodeText(child, source) : null;
+    if (name !== null && scopedBindings.has(name)) {
+      const init = declaratorHasInitializer(child) ? '' : ' = undefined';
+      edits.push({
+        kind: 'replace',
+        from: prefixFrom,
+        to: child.to,
+        text: `${prefixIsComma ? '; ' : ''}${scopeName}.${name}${init}`,
+      });
+      prevWasScoped = true;
+    } else {
+      // A local declarator after a captured one needs its keyword restored:
+      // the `,` that linked it to the (now separate) scope assignment becomes `; let`.
+      if (prevWasScoped && prefixIsComma) {
+        edits.push({ kind: 'replace', from: prefixFrom, to: prefixFrom + 1, text: `; ${keyword}` });
+      }
+      prevWasScoped = false;
+    }
+    prefixIsComma = false;
+  }
 }
 
 function transformBindingDeclaration(
@@ -2293,6 +2388,10 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
   }
 
   for (const { declNode, blockScope, scopeName, bindings, allScopedNames } of declTransforms.values()) {
+    if (!declUsesWholesaleTransform(declNode, builder.source, bindings)) {
+      collectInPlaceDeclarationEdits(builder, declNode, scopeName, bindings, edits);
+      continue;
+    }
     const transformed = transformBindingDeclaration(
       builder,
       declNode,

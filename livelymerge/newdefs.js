@@ -66,7 +66,6 @@ let bugImage = null;
 let $onScreenKeyboardMorph = null;
 let $oskSavedChrome = null;
 let _transcriptConsoleTargets = [];
-let _exportCatalogApi = null;
 let _lastEvalSource = null;
 let _evalJustFailed = false;
 let _alldefsSourceLines = null;
@@ -74,9 +73,6 @@ let _lastErrorReport = null;
 let _errorRecoveryInProgress = false;
 let traceMe = false;
 let debugReparent = false;
-let patchesUrl = null;
-let exportCatalogUrl = null;
-let exportOrganizedSystemString = null;
 let copyPasteBuffer = null;
 
 function clearArray(xs) {
@@ -102,73 +98,63 @@ function isClass(fn) {
   return typeof fn === 'function' && /^\s*class\s+/.test(fn.toString());
 }
 function findSuperclassOf(sub) {
-  // findSuperclassOf (Ellipse) ==> Shape
-  // findSuperclassOf (Rectangle) ==> null or Obj
-  if (!isClass(sub)) return null;
-  let maybeSuper = Obj;
+  // findSuperclassOf(Ellipse) ==> Shape; null for base classes
+  if (!isClass(sub) || !sub.prototype) return null;
+  let superProto = Object.getPrototypeOf(sub.prototype);
+  if (!superProto) return null;
   for (const cName of allClassNames()) {
-    let cls = w[cName];
-    if (sub.inheritsFrom(cls)) maybeSuper = cls;
+    let cls = $global[cName];
+    if (cls !== sub && cls.prototype === superProto) return cls;
   }
-  return maybeSuper;
+  return null;
 }
 function subclassDepth(cls) {
-  // subclassDepth(Ellipse);
-  if (findSuperclassOf(cls) === Obj) return 1;
-  return 1 + subclassDepth(findSuperclassOf(cls));
-}
-function superclass(sub) {
-  // superclass (Ellipse) ==> must be Obj
-  if (!isClass(sub)) return null;
-  allClassNames().forEach((cName) => {
-    let cls = w[cName];
-    if (Object.getPrototypeOf(sub) === cls.prototype) return cName;
-  });
-  return 'must be Obj';
+  // Prototype-chain hops below the base; used for superclass ordering.
+  let depth = 0;
+  let p = cls && cls.prototype ? Object.getPrototypeOf(cls.prototype) : null;
+  while (p) {
+    depth++;
+    p = Object.getPrototypeOf(p);
+  }
+  return depth;
 }
 function allClassNames() {
   // allClassNames().length ==> 27
-  let names = Object.getOwnPropertyNames(w).sort();
-  let classNames = [];
-  for (let i = 0; i < names.length; i++) {
-    if (w[names[i]] != null && Object.getOwnPropertyNames(w[names[i]]).indexOf('proto') >= 0)
-      classNames.push(names[i]);
-  }
-  return classNames;
+  return Object.getOwnPropertyNames($global)
+    .sort()
+    .filter((name) => isClass($global[name]));
 }
 function allClassNamesInSuperclassOrder() {
   // allClassNamesInSuperclassOrder()
   return allClassNames().sort(function (a, b) {
-    return subclassDepth(w[a]) - subclassDepth(w[b]);
+    return subclassDepth($global[a]) - subclassDepth($global[b]);
   });
+}
+function classStaticNames(cls) {
+  // Statics only. The class transpiler also mirrors instance methods onto the class
+  // object (the prototype literal reads them back); those are not statics.
+  let proto = cls.prototype;
+  return Object.getOwnPropertyNames(cls)
+    .filter((name) => !(proto && proto[name] === cls[name]))
+    .sort();
+}
+function classInstanceMemberNames(cls) {
+  // Method (and accessor) names on the class's prototype, minus bookkeeping keys.
+  return Object.getOwnPropertyNames(cls.prototype)
+    .filter((name) => name !== 'className' && name !== 'constructor')
+    .sort();
 }
 function allClassNamesWithStatics() {
   // allClassNamesWithStatics()
   // Returns two formats in one sorted array:
   //    Classname - for regular classes
   //    Classname.class - for classes with static methods
-  let names = Object.getOwnPropertyNames(w).sort();
   let classNames = [];
-  for (let i = 0; i < names.length; i++) {
-    if (w[names[i]] != null) {
-      if (Object.getOwnPropertyNames(w[names[i]]).indexOf('proto') >= 0) {
-        classNames.push(names[i]);
-        if (Object.getOwnPropertyNames(w[names[i]]).length > 2)
-          classNames.push(names[i] + '.class');
-      }
-    }
+  for (const name of allClassNames()) {
+    classNames.push(name);
+    if (classStaticNames($global[name]).length > 0) classNames.push(name + '.class');
   }
   return classNames;
-}
-function classNamesList() {
-  // classNamesList()
-  let names = Object.getOwnPropertyNames(w).sort();
-  let list = [];
-  for (let i = 0; i < names.length; i++) {
-    if (w[names[i]] != null && Object.getOwnPropertyNames(w[names[i]]).indexOf('proto') >= 0)
-      list.push(names[i]);
-  }
-  return list;
 }
 function dropNewline(str) {
   if (str.charCodeAt(str.length - 1) == 10) return str.slice(0, -1); // drop newline
@@ -518,11 +504,11 @@ function initUI() {
   }
 
   /** After this many ms with the pointer still down, the original pointerdown gets `longClick === true`. */
-  window.LONG_CLICK_MS = 700;
+  $LONG_CLICK_MS = 700;
   /** Cancel long-click timer if the pointer moves farther than this from press (CSS px). */
-  window.LONG_CLICK_MOVE_CANCEL_PX = 7;
+  $LONG_CLICK_MOVE_CANCEL_PX = 7;
   /** When true, a completed long-click runs halo cycling like meta-click (see {@link WorldMorph.longClickHaloDefersAt}). Default false; toggled from world menu "Long click for halos". */
-  window.longClickForHalos = false;
+  $longClickForHalos = false;
   $uiState.longClickDisarmPointer = function (pointerId) {
     let arm = $uiState.longClickByPointerId[pointerId];
     if (!arm) return;
@@ -536,7 +522,7 @@ function initUI() {
     if (typeof downEvt.button === 'number' && downEvt.button !== 0) return;
     $uiState.longClickDisarmPointer(downEvt.pointerId);
     let pid = downEvt.pointerId;
-    let ms = window.LONG_CLICK_MS != null ? window.LONG_CLICK_MS : 1000;
+    let ms = $LONG_CLICK_MS != null ? $LONG_CLICK_MS : 1000;
     let timer = setTimeout(function () {
       let arm = $uiState.longClickByPointerId[pid];
       if (!arm) return;
@@ -546,7 +532,7 @@ function initUI() {
       } catch (err) {
         /* ignore */
       }
-      if (window.longClickForHalos !== false && topLevelMorph && topLevelMorph.onLongClickHalo)
+      if ($longClickForHalos !== false && topLevelMorph && topLevelMorph.onLongClickHalo)
         topLevelMorph.onLongClickHalo(arm.pressPt, downEvt);
     }, ms);
     window._lcEvts[pid] = downEvt;
@@ -558,7 +544,7 @@ function initUI() {
     };
   };
 
-  window.actorID = window.Automerge.getActorId(window.handle.doc());
+  $actorID = window.Automerge.getActorId(window.handle.doc());
   // Fresh UI init must not inherit stale soft-shift state.
   $shiftKeyPressedFlag = false; // per-user soft-shift resets on session start
   if (topLevelMorph) topLevelMorph.$shiftKeyDown = false;
@@ -610,7 +596,7 @@ function initUI() {
       if (seen.has(e)) continue;
       seen.add(e);
 
-      e.actorID = window.actorID;
+      e.actorID = $actorID;
 
       switch (e.type) {
         case 'pointerdown': {
@@ -651,26 +637,8 @@ function initUI() {
 //   topLevelMorph = Lively; // 'install' the morphic world in patchwork world
 //   return Lively;
 // }
-function readPatches() {
-  // Load and apply monkey-patches from a JS file (e.g. alldefs-patches.js).
-  // Set patchesUrl to the script URL if not same directory as page. Returns a Promise.
-  let url = patchesUrl != null ? patchesUrl : 'alldefs-patches.js';
-  return fetch(url)
-    .then((r) => {
-      if (!r.ok) throw new Error('readPatches: ' + r.status);
-      return r.text();
-    })
-    .then((code) => {
-      try {
-        new Function('w', code)(w);
-      } catch (e) {
-        console.error('readPatches error', e);
-        throw e;
-      }
-    });
-}
 function onKeyDown(e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   // console.log('TODO(dan): handle key press event', e);
   // if (e.key == 'Meta') return; // ignore; check evt.metaKey on simple chars
   topLevelMorph.onKeyDown(e);
@@ -678,33 +646,33 @@ function onKeyDown(e) {
   e.preventDefault();
 }
 function onKeyPress(e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   // console.log('TODO(dan): handle key onKeyPress event', e);
   // topLevelMorph.onKeyPress(e);
 }
 function onKeyUp(e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   if (topLevelMorph && topLevelMorph.onKeyUp) topLevelMorph.onKeyUp(e);
 }
 function onPointerDown(p, e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   if ($uiState && $uiState.longClickArmIfNeeded) $uiState.longClickArmIfNeeded(p, e);
   topLevelMorph.onPointerDown(p, e);
 }
 function onPointerDownNow(p, e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   topLevelMorph.onPointerDown(p, e);
 }
 function onPointerMove(p, e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   if (e && typeof e.pointerId === 'number' && $uiState) {
     let arm = $uiState.longClickByPointerId[e.pointerId];
     if (arm) {
       let lim =
         arm.longClickMoveCancelPx != null
           ? arm.longClickMoveCancelPx
-          : window.LONG_CLICK_MOVE_CANCEL_PX != null
-            ? window.LONG_CLICK_MOVE_CANCEL_PX
+          : $LONG_CLICK_MOVE_CANCEL_PX != null
+            ? $LONG_CLICK_MOVE_CANCEL_PX
             : 18;
       if (p.dist(arm.startPt) > lim) $uiState.longClickDisarmPointer(e.pointerId);
     }
@@ -712,7 +680,7 @@ function onPointerMove(p, e) {
   topLevelMorph.onPointerMove(p, e);
 }
 function onPointerUp(p, e) {
-  if (e && e.actorID == null) e.actorID = window.actorID;
+  if (e && e.actorID == null) e.actorID = $actorID;
   if (e && typeof e.pointerId === 'number' && $uiState) $uiState.longClickDisarmPointer(e.pointerId);
   topLevelMorph.onPointerUp(p, e);
 }
@@ -2824,7 +2792,7 @@ class Morph {
     // Promote my top-level ancestor to be the frontmost morph in the world
     let worldMorph = this.world();
     let m = this;
-    while (m.owner && m.owner !== w) m = m.owner;
+    while (m.owner && m.owner !== worldMorph) m = m.owner;
     if (m.owner === worldMorph && worldMorph.submorphs.at(-1) !== m) worldMorph.promote(m);
   }
   boundsInOwnerAfterTransform() {
@@ -3195,7 +3163,7 @@ class Morph {
       if (inHand || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
         let owningHand = each.myOwningHand ? each.myOwningHand() : null;
         let world = this.world ? this.world() : null;
-        let focusActorID = each.actorID != null ? each.actorID : window.actorID;
+        let focusActorID = each.actorID != null ? each.actorID : $actorID;
         let focusHand =
           !owningHand && world && world.handForID ? world.handForID(focusActorID) : null;
         let handForShadow = owningHand || focusHand;
@@ -3572,11 +3540,11 @@ class LineMorph extends Morph {
     this.bounds = worldBounds.copy();
     this.arrowheads = pl.arrowheads;
     this.handleRadius = opts.handleRadius != null ? opts.handleRadius : 5;
-    this._vertexHandles = [];
-    this._midpointHandles = [];
-    this._vertexDragActive = false;
-    this._dragVertexIndex = null;
-    this._mergeNeighborIx = null;
+    this.$vertexHandles = [];
+    this.$midpointHandles = [];
+    this.$vertexDragActive = false;
+    this.$dragVertexIndex = null;
+    this.$mergeNeighborIx = null;
   }
   adjacentOverlapVertex(dragIx) {
     /** Neighboring vertex index if drag handle overlaps it (circles touch), else null. */
@@ -3611,24 +3579,25 @@ class LineMorph extends Morph {
     this.clearMidpointHandles();
   }
   clearMidpointHandles() {
-    (this._midpointHandles || []).forEach((h) => h.remove());
-    this._midpointHandles = [];
+    (this.$midpointHandles || []).forEach((h) => h.remove());
+    this.$midpointHandles = [];
   }
   clearVertexHandles() {
-    (this._vertexHandles || []).forEach((h) => h.remove());
-    this._vertexHandles = [];
+    (this.$vertexHandles || []).forEach((h) => h.remove());
+    this.$vertexHandles = [];
   }
   ensureMidpointHandles() {
     let mids = this.segmentMidpoints();
     let r = Math.max(3, this.handleRadius - 1);
-    if (this._midpointHandles && this._midpointHandles.length === mids.length) {
+    if (this.$midpointHandles && this.$midpointHandles.length === mids.length) {
       this.layoutMidpointHandles();
       return;
     }
     this.clearMidpointHandles();
-    this._midpointHandles = mids.map((m) => {
+    // Per-user hover UI: handles attach via the ephemeral layer, never the document.
+    this.$midpointHandles = mids.map((m) => {
       let h = new LineMidpointHandle(this, m.segmentIndex, r);
-      this.addMorph(h);
+      this.addEphemeralMorph(h);
       h.positionAt(m.pt);
       return h;
     });
@@ -3637,17 +3606,18 @@ class LineMorph extends Morph {
     let verts = this.shape.vertices;
     let r = this.handleRadius;
     let needRebuild =
-      !this._vertexHandles ||
-      this._vertexHandles.length !== verts.length ||
-      this._vertexHandles.some((h) => h.owner !== this);
+      !this.$vertexHandles ||
+      this.$vertexHandles.length !== verts.length ||
+      this.$vertexHandles.some((h) => h.owner !== this);
     if (!needRebuild) {
       this.layoutVertexHandles();
       return;
     }
     this.clearVertexHandles();
-    this._vertexHandles = verts.map((v, i) => {
+    // Per-user hover UI: handles attach via the ephemeral layer, never the document.
+    this.$vertexHandles = verts.map((v, i) => {
       let h = new LineVertexHandle(this, i, r);
-      this.addMorph(h);
+      this.addEphemeralMorph(h);
       h.positionAtVertex(v);
       return h;
     });
@@ -3676,25 +3646,25 @@ class LineMorph extends Morph {
   }
   layoutMidpointHandles() {
     let mids = this.segmentMidpoints();
-    if (!this._midpointHandles || this._midpointHandles.length !== mids.length) return;
-    mids.forEach((m, i) => this._midpointHandles[i].positionAt(m.pt));
+    if (!this.$midpointHandles || this.$midpointHandles.length !== mids.length) return;
+    mids.forEach((m, i) => this.$midpointHandles[i].positionAt(m.pt));
   }
   layoutVertexHandles() {
     let verts = this.shape.vertices;
-    if (!this._vertexHandles || this._vertexHandles.length !== verts.length) return;
-    verts.forEach((v, i) => this._vertexHandles[i].positionAtVertex(v));
+    if (!this.$vertexHandles || this.$vertexHandles.length !== verts.length) return;
+    verts.forEach((v, i) => this.$vertexHandles[i].positionAtVertex(v));
   }
   mergeDraggedVertexWithNeighbor() {
-    let dragIx = this._dragVertexIndex;
-    let neighbor = this._mergeNeighborIx;
+    let dragIx = this.$dragVertexIndex;
+    let neighbor = this.$mergeNeighborIx;
     if (dragIx == null || neighbor == null) return;
     let verts = this.shape.vertices;
     if (verts.length < 3) return;
     let removeIx = dragIx;
     if (neighbor > dragIx) removeIx = neighbor;
     verts.splice(removeIx, 1);
-    this._dragVertexIndex = null;
-    this._mergeNeighborIx = null;
+    this.$dragVertexIndex = null;
+    this.$mergeNeighborIx = null;
     this.syncShapeFromVertices();
   }
   morphCopy() {
@@ -3752,10 +3722,10 @@ class LineMorph extends Morph {
     return super.onPointerDown(p, evt);
   }
   refreshMergeHighlight() {
-    let dragIx = this._dragVertexIndex;
+    let dragIx = this.$dragVertexIndex;
     let neighbor = this.adjacentOverlapVertex(dragIx);
-    this._mergeNeighborIx = neighbor;
-    (this._vertexHandles || []).forEach((h, i) => {
+    this.$mergeNeighborIx = neighbor;
+    (this.$vertexHandles || []).forEach((h, i) => {
       let on = neighbor != null && (i === dragIx || i === neighbor);
       if (h.setMergeHighlight) h.setMergeHighlight(on);
     });
@@ -3797,7 +3767,7 @@ class LineMorph extends Morph {
   stepHoverHandles() {
     let world = this.world();
     if (!world) return;
-    if (this._vertexDragActive) {
+    if (this.$vertexDragActive) {
       this.ensureVertexHandles();
       this.clearMidpointHandles();
       return;
@@ -3828,11 +3798,11 @@ class LineMorph extends Morph {
   syncShapeFromVertices() {
     this.syncGeometryFromVertices();
     let n = this.shape.vertices.length;
-    if (!this._vertexHandles || this._vertexHandles.length !== n) this.ensureVertexHandles();
+    if (!this.$vertexHandles || this.$vertexHandles.length !== n) this.ensureVertexHandles();
     else this.layoutVertexHandles();
-    if (!this._vertexDragActive) {
+    if (!this.$vertexDragActive) {
       let nm = this.segmentMidpoints().length;
-      if (!this._midpointHandles || this._midpointHandles.length !== nm)
+      if (!this.$midpointHandles || this.$midpointHandles.length !== nm)
         this.ensureMidpointHandles();
       else this.layoutMidpointHandles();
     }
@@ -3864,9 +3834,9 @@ class LineVertexHandle extends Morph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     let lm = this.lineMorph;
-    lm._vertexDragActive = true;
-    lm._dragVertexIndex = this.vertexIndex;
-    lm._mergeNeighborIx = null;
+    lm.$vertexDragActive = true;
+    lm.$dragVertexIndex = this.vertexIndex;
+    lm.$mergeNeighborIx = null;
     this.hitPoint = p;
     this.actorID = evt.actorID;
     lm.clearMidpointHandles();
@@ -3877,7 +3847,7 @@ class LineVertexHandle extends Morph {
     if (!this.hitPoint) return false;
     let lm = this.lineMorph;
     let verts = lm.shape.vertices;
-    let i = lm._dragVertexIndex != null ? lm._dragVertexIndex : this.vertexIndex;
+    let i = lm.$dragVertexIndex != null ? lm.$dragVertexIndex : this.vertexIndex;
     if (i < 0 || i >= verts.length) return true;
     verts[i] = pt(p.x, p.y);
     lm.syncGeometryFromVertices();
@@ -3888,12 +3858,12 @@ class LineVertexHandle extends Morph {
   }
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
-    if (lm._mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
+    if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
     this.hitPoint = null;
     this.actorID = null;
-    lm._vertexDragActive = false;
-    lm._dragVertexIndex = null;
-    lm._mergeNeighborIx = null;
+    lm.$vertexDragActive = false;
+    lm.$dragVertexIndex = null;
+    lm.$mergeNeighborIx = null;
     lm.syncShapeFromVertices();
     this.world().setPointerFocus(null);
     return true;
@@ -3930,7 +3900,7 @@ class LineMidpointHandle extends Morph {
     this.lineMorph = lineMorph;
     this.segmentIndex = segmentIndex;
     this.handleRadius = handleRadius;
-    this._dragVertexIndex = null;
+    this.$dragVertexIndex = null;
   }
   acceptsDroppingMorphs() {
     return false;
@@ -3938,23 +3908,23 @@ class LineMidpointHandle extends Morph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     let lm = this.lineMorph;
-    lm._vertexDragActive = true;
+    lm.$vertexDragActive = true;
     this.hitPoint = p;
     this.actorID = evt.actorID;
     let newIx = lm.insertVertexOnSegment(this.segmentIndex, p);
-    lm._dragVertexIndex = newIx;
-    lm._mergeNeighborIx = null;
-    this._dragVertexIndex = newIx;
+    lm.$dragVertexIndex = newIx;
+    lm.$mergeNeighborIx = null;
+    this.$dragVertexIndex = newIx;
     lm.ensureVertexHandles();
     lm.clearMidpointHandles();
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint || this._dragVertexIndex == null) return false;
+    if (!this.hitPoint || this.$dragVertexIndex == null) return false;
     let lm = this.lineMorph;
     let verts = lm.shape.vertices;
-    let i = lm._dragVertexIndex;
+    let i = lm.$dragVertexIndex;
     if (i < 0 || i >= verts.length) return true;
     verts[i] = pt(p.x, p.y);
     lm.syncGeometryFromVertices();
@@ -3965,13 +3935,13 @@ class LineMidpointHandle extends Morph {
   }
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
-    if (lm._mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
+    if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
     this.hitPoint = null;
     this.actorID = null;
-    this._dragVertexIndex = null;
-    lm._vertexDragActive = false;
-    lm._dragVertexIndex = null;
-    lm._mergeNeighborIx = null;
+    this.$dragVertexIndex = null;
+    lm.$vertexDragActive = false;
+    lm.$dragVertexIndex = null;
+    lm.$mergeNeighborIx = null;
     lm.syncShapeFromVertices();
     this.world().setPointerFocus(null);
     return true;
@@ -4291,7 +4261,7 @@ function refreshWorldMenuItems(menuMorph) {
   menuMorph.itemList.forEach((line) => {
     let cap = menuItemCaption(line);
     if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel))
-      refreshed.push(menuToggleLabel(longClickForHalosLabel, window.longClickForHalos));
+      refreshed.push(menuToggleLabel(longClickForHalosLabel, $longClickForHalos));
     else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
       refreshed.push(menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd));
     else refreshed.push(line);
@@ -5550,7 +5520,7 @@ class PanelMorph extends Morph {
     return this.titleBar ? this.titleBar.collapsedTitleBarWidth() : this.titleButtonWidth + 24;
   }
   contentMorphs() {
-    return deleteFromArray(this.submorphs, this.titleBar);
+    return this.submorphs.filter((m) => m !== this.titleBar);
   }
   defaultRect() {
     return rect(400, 60, 400, 300);
@@ -5851,7 +5821,7 @@ class BrowserPanel extends PanelMorph {
     if (!deleteClassNamed(className)) return;
     this.selectedClass = null;
     this.selectedMethod = null;
-    this.classPane.setList(['w.'].concat(allClassNamesWithStatics()));
+    this.classPane.setList(['globals'].concat(allClassNamesWithStatics()));
     if (this.messagePane) this.messagePane.setList(['message names']);
     if (this.methodPane) this.methodPane.setText('Method text', { force: true });
     this.updateBrowserTitle();
@@ -5875,7 +5845,7 @@ class BrowserPanel extends PanelMorph {
   exportThisClassToOSPaste() {
     if (!this.selectedClass) return;
     let classSelection = this.selectedClass;
-    if (classSelection == 'w.') return;
+    if (classSelection == 'globals') return;
     let exportText = exportStringForSelection(classSelection, {
       includeHeader: true,
       includeClassDef: true,
@@ -5889,7 +5859,7 @@ class BrowserPanel extends PanelMorph {
     /** Class list (upper-left) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
     this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.4)));
-    this.classPane.setList(['w.'].concat(allClassNamesWithStatics()));
+    this.classPane.setList(['globals'].concat(allClassNamesWithStatics()));
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
       let applyClass = () => {
@@ -5897,18 +5867,7 @@ class BrowserPanel extends PanelMorph {
         this.selectedClass = classSelection;
         this.selectedMethod = null;
         this.updateBrowserTitle();
-        let obj = null;
-        if (classSelection == 'w.') obj = w;
-        else if (classSelection.endsWith('.class')) {
-          this.classOnly = classSelection.split('.')[0];
-          obj = w[this.classOnly];
-        } else obj = w[classSelection].proto;
-        let msgList = Object.getOwnPropertyNames(obj).sort();
-        if (classSelection.endsWith('.class')) {
-          msgList = msgList.filter((sel) => ['proto', 'name'].indexOf(sel) == -1);
-        }
-        msgList = msgList.filter((msg) => msg[0] == msg[0].toLowerCase());
-        this.messagePane.setList(msgList);
+        this.messagePane.setList(this.messageListForSelection(classSelection));
       };
       if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
         if (this.selectedClass != null && classSelection === this.selectedClass) return;
@@ -5941,15 +5900,15 @@ class BrowserPanel extends PanelMorph {
         this.updateBrowserTitle();
         let methodString = null;
         let headerString = null;
-        if (this.selectedClass == 'w.') {
-          methodString = w[this.selectedMethod].toString();
-          headerString = 'w.' + this.selectedMethod + ' = ';
+        if (this.selectedClass == 'globals') {
+          methodString = $global[this.selectedMethod].toString();
+          headerString = this.selectedMethod + ' = ';
         } else if (this.selectedClass.endsWith('.class')) {
-          methodString = w[this.classOnly][this.selectedMethod].toString();
-          headerString = 'w.' + this.classOnly + '.' + this.selectedMethod + ' = ';
+          methodString = $global[this.classOnly][this.selectedMethod].toString();
+          headerString = this.classOnly + '.' + this.selectedMethod + ' = ';
         } else {
-          methodString = w[this.selectedClass].proto[this.selectedMethod].toString();
-          headerString = 'w.' + this.selectedClass + '.proto.' + this.selectedMethod + ' = ';
+          methodString = $global[this.selectedClass].prototype[this.selectedMethod].toString();
+          headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
         }
         this.methodPane.setText(headerString + methodString, { force: true });
       };
@@ -5999,33 +5958,35 @@ class BrowserPanel extends PanelMorph {
       if (ok) this.deleteThisMethod();
     });
   }
+  messageListForSelection(classSelection) {
+    /** Names shown in the message pane for a class-pane selection. */
+    if (classSelection == 'globals') {
+      // Lowercase-first names only: classes get their own list entries.
+      return Object.getOwnPropertyNames($global)
+        .sort()
+        .filter((msg) => msg[0] == msg[0].toLowerCase());
+    }
+    if (classSelection.endsWith('.class')) {
+      this.classOnly = classSelection.split('.')[0];
+      return classStaticNames($global[this.classOnly]);
+    }
+    return classInstanceMemberNames($global[classSelection]);
+  }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
-    let classSelection = this.selectedClass;
-    let obj = null;
-    if (classSelection == 'w.') obj = w;
-    else if (classSelection.endsWith('.class')) {
-      if (!this.classOnly) this.classOnly = classSelection.split('.')[0];
-      obj = w[this.classOnly];
-    } else obj = w[classSelection].proto;
-    let msgList = Object.getOwnPropertyNames(obj).sort();
-    if (classSelection.endsWith('.class')) {
-      msgList = msgList.filter((sel) => ['proto', 'name'].indexOf(sel) == -1);
-    }
-    msgList = msgList.filter((msg) => msg[0] == msg[0].toLowerCase());
-    this.messagePane.setList(msgList);
+    this.messagePane.setList(this.messageListForSelection(this.selectedClass));
   }
   selectedClassName() {
-    if (!this.selectedClass || this.selectedClass == 'w.') return null;
+    if (!this.selectedClass || this.selectedClass == 'globals') return null;
     if (this.selectedClass.endsWith('.class')) return this.selectedClass.split('.')[0];
     return this.selectedClass;
   }
   selectedMethodSpec() {
     if (!this.selectedMethod) return null;
-    if (this.selectedClass == 'w.') return 'w.' + this.selectedMethod;
+    if (this.selectedClass == 'globals') return this.selectedMethod;
     if (this.selectedClass && this.selectedClass.endsWith('.class'))
-      return this.selectedClass.split('.')[0] + '.class.' + this.selectedMethod;
-    if (this.selectedClass) return this.selectedClass + '.proto.' + this.selectedMethod;
+      return this.selectedClass.split('.')[0] + '.' + this.selectedMethod;
+    if (this.selectedClass) return this.selectedClass + '.prototype.' + this.selectedMethod;
     return null;
   }
   spawnMethodCopyToWindow() {
@@ -6036,7 +5997,7 @@ class BrowserPanel extends PanelMorph {
     );
   }
   spawnThisClassToWindow() {
-    if (!this.selectedClass || this.selectedClass == 'w.') return;
+    if (!this.selectedClass || this.selectedClass == 'globals') return;
     let text = exportStringForSelection(this.selectedClass, {
       includeHeader: true,
       includeClassDef: true,
@@ -6380,7 +6341,7 @@ class MethodListPanel extends PanelMorph {
           preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
         } else {
           methodString = methodFromSpec(spec);
-          preamble = (spec.startsWith('w.') ? spec : 'w.' + spec) + ' = ';
+          preamble = spec + ' = ';
         }
         this.printPane.setText(preamble + methodString, { force: true });
         this._occurrenceLastSpec = spec;
@@ -6443,9 +6404,7 @@ class MethodListPanel extends PanelMorph {
     if (!text) return null;
     let ix = text.indexOf(' =');
     if (ix < 0) return null;
-    let lhs = text.slice(0, ix).trim();
-    if (lhs.startsWith('w.')) return lhs.slice(2);
-    return lhs;
+    return text.slice(0, ix).trim();
   }
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
@@ -6469,7 +6428,8 @@ class ErrorStackPanel extends MethodListPanel {
       return f.listLabel;
     });
     super(initialBounds, specs, null, optionalTitle || errorPanelTitle(err), null);
-    this.errorErr = err;
+    // The raw host Error is per-replica (not representable in the document).
+    this.$errorErr = err;
     this.errorContext = contextIfAny;
     this.stackFrames = stackFrames;
     if (this.printPane)
@@ -7317,7 +7277,7 @@ class OnScreenKeyboardMorph extends Morph {
       metaKey: metaChord,
       ctrlKey: metaChord,
       altKey: false,
-      actorID: window.actorID,
+      actorID: $actorID,
       preventDefault: function () {},
       stopPropagation: function () {},
     };
@@ -7536,7 +7496,7 @@ function openTranscript() {
   let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
   Lively.addMorph(panel);
   panel.beTopMorph();
-  w._lastTranscriptPanel = panel;
+  _lastTranscriptPanel = panel;
   return panel;
 }
 //  WorldMorph
@@ -7562,7 +7522,7 @@ class WorldMorph extends Morph {
   addHand(handMorph) {
     // maybe should check for duplicate adds
     if (!this.hands) this.hands = [];
-    if (handMorph.actorID == null) handMorph.actorID = window.actorID;
+    if (handMorph.actorID == null) handMorph.actorID = $actorID;
     this.hands.push(handMorph);
     handMorph.owner = this;
     this.updateCursorForHands();
@@ -7673,7 +7633,7 @@ class WorldMorph extends Morph {
     if (!this.hands) this.hands = [];
     else color = Color.green;
     console.log('creating hand morph');
-    const hm = new HandMorph(window.actorID, getPointerLocation(), color);
+    const hm = new HandMorph($actorID, getPointerLocation(), color);
     console.log('adding hand morph');
     this.addHand(hm);
   }
@@ -7714,7 +7674,7 @@ class WorldMorph extends Morph {
   makeBouncer() {
     // Lively.makeBouncer()
     // Lively.startStepping("makeBouncer", , 250)
-    if (!w.bouncers) w.bouncers = [];
+    if (!bouncers) bouncers = [];
     let world = Lively;
     if (!world) return null;
     let wb = world.getBounds();
@@ -7777,7 +7737,7 @@ class WorldMorph extends Morph {
       this.syncRotationToVelocity();
       world.changed();
     };
-    w.bouncers.push(bug);
+    bouncers.push(bug);
     bug.startStepping('bouncerStep', null, 50);
     return bug;
   }
@@ -7801,7 +7761,7 @@ class WorldMorph extends Morph {
     return chain;
   }
   myHand() {
-    return this.handForID(window.actorID);
+    return this.handForID($actorID);
   }
   onKeyDown(evt) {
     // Match browser modifier state (handles Shift+N and both Shift keys reliably).
@@ -7970,8 +7930,8 @@ class WorldMorph extends Morph {
     'Z' - Scale: Drag the handle to resize the object (changes bounds)
     Shift-drag Z: drag to grow or shrink via transform.scale (shape and submorphs)
     Note that on platforms that do not offer meta keys, halos can still be accessed by enabling the "Long click for halos" option in the world menu.  This may occasionally prove bothersome when selecting in text, but you can always turn the feature off again.
-    [Long-press is currently w.LONG_CLICK_MS ==> 700 ms
-    and w.LONG_CLICK_MOVE_CANCEL_PX ==> 7 pixels]
+    [Long-press is currently $LONG_CLICK_MS ==> 700 ms
+    and $LONG_CLICK_MOVE_CANCEL_PX ==> 7 pixels]
     `,
         'Halo help',
       ),
@@ -8032,7 +7992,7 @@ class WorldMorph extends Morph {
       'Open Transcript',
       'Open Console',
       'Restart Console',
-      menuToggleLabel(longClickForHalosLabel, window.longClickForHalos),
+      menuToggleLabel(longClickForHalosLabel, $longClickForHalos),
       menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd),
     ];
     // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
@@ -8047,7 +8007,7 @@ class WorldMorph extends Morph {
       if (item == 'Halo help') wld.showHaloHelp();
       if (item == 'Text help') wld.showTextHelp();
       if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel)) {
-        window.longClickForHalos = !window.longClickForHalos;
+        $longClickForHalos = !$longClickForHalos;
         refreshWorldMenuItems(this);
       }
       if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
@@ -8060,19 +8020,19 @@ class WorldMorph extends Morph {
         let p = openTranscript();
         if (p) {
           p.setPanelTitle('Transcript');
-          w.Transcript = p;
+          Transcript = p;
         }
       }
       if (item == 'Open Console') {
         let p = openTranscript();
         if (p) {
           p.setPanelTitle('Console');
-          w.Console = p;
+          Console = p;
           if (p.transcriptPane) p.transcriptPane.setConsoleMirror(true);
         }
       }
       if (item == 'Restart Console') {
-        let con = w.Console;
+        let con = Console;
         if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
       }
       this.shape.selectLineAt(0); // deselect after actions
@@ -8156,36 +8116,35 @@ function exportPartsForSelection(selection, optsIfAny) {
   let includeClassDef = opts.includeClassDef !== false;
   let classSelection = selection;
   if (!classSelection) return null;
-  let obj = null;
-  let header = '';
+  let header = '// Export for ' + classSelection + '\n';
   let classDef = '';
-  let lines = [];
-  if (classSelection == 'w.') {
-    obj = w;
-    header = '// Export for w.\n';
-  } else if (classSelection.endsWith('.class')) {
-    let classOnly = classSelection.split('.')[0];
-    obj = w[classOnly];
-    header = '// Export for ' + classSelection + '\n';
-  } else {
-    obj = w[classSelection] && w[classSelection].proto;
-    header = '// Export for ' + classSelection + '\n';
-    if (includeClassDef && w[classSelection] && preambleForClass)
-      classDef = preambleForClass(w[classSelection]);
+  if (classSelection == 'globals') {
+    let names = Object.getOwnPropertyNames($global)
+      .filter((name) => typeof $global[name] == 'function' && !isClass($global[name]))
+      .filter((name) => !exportMethodShouldOmit(name))
+      .sort();
+    let lines = names.map((name) => name + ' = ' + $global[name].toString());
+    return { header, classDef, lines };
   }
-  if (!obj) return null;
-  let names = Object.getOwnPropertyNames(obj)
-    .filter((name) => typeof obj[name] == 'function')
-    .filter((name) => !exportMethodShouldOmit(name))
-    .sort();
-  lines = names.map((name) => {
-    if (classSelection == 'w.') return 'w.' + name + ' = ' + obj[name].toString();
-    if (classSelection.endsWith('.class')) {
-      let classOnly = classSelection.split('.')[0];
-      return 'w.' + classOnly + '.' + name + ' = ' + obj[name].toString();
-    }
-    return 'w.' + classSelection + '.proto.' + name + ' = ' + obj[name].toString();
-  });
+  if (classSelection.endsWith('.class')) {
+    let classOnly = classSelection.split('.')[0];
+    let cls = $global[classOnly];
+    if (!cls) return null;
+    let names = classStaticNames(cls)
+      .filter((name) => typeof cls[name] == 'function')
+      .filter((name) => !exportMethodShouldOmit(name));
+    let lines = names.map((name) => classOnly + '.' + name + ' = ' + cls[name].toString());
+    return { header, classDef, lines };
+  }
+  let cls = $global[classSelection];
+  if (!cls || !cls.prototype) return null;
+  if (includeClassDef && isClass(cls)) classDef = cls.toString();
+  let names = classInstanceMemberNames(cls)
+    .filter((name) => typeof cls.prototype[name] == 'function')
+    .filter((name) => !exportMethodShouldOmit(name));
+  let lines = names.map(
+    (name) => classSelection + '.prototype.' + name + ' = ' + cls.prototype[name].toString(),
+  );
   return { header, classDef, lines };
 }
 function exportStringForSelection(selection, optsIfAny) {
@@ -8200,31 +8159,25 @@ function exportStringForSelection(selection, optsIfAny) {
   return out.join('\n');
 }
 function exportSelectionsForEntireSystem() {
-  let selections = ['w.'];
+  let selections = ['globals'];
   allClassNamesInSuperclassOrder().forEach((className) => {
     selections.push(className);
-    let statics = Object.getOwnPropertyNames(w[className] || {}).filter(
-      (name) => name !== 'proto' && name !== 'name',
-    );
-    if (statics.length > 0) selections.push(className + '.class');
+    if (classStaticNames($global[className]).length > 0) selections.push(className + '.class');
   });
   return selections;
 }
 function methodFromSpec(spec) {
-  // methodFromSpec('Color.prototype.copy')
-  // methodFromSpec('Color.class.green')
-  let dotIx = spec.indexOf('.');
-  let className = spec.slice(0, dotIx);
-  let dotIx2 = spec.indexOf('.', dotIx + 1);
-  let protoPart = '';
-  let selector = spec.slice(dotIx + 1);
-  if (dotIx2 >= 0) {
-    protoPart = spec.slice(dotIx + 1, dotIx + 6);
-    selector = spec.slice(dotIx2 + 1);
-  }
-  if (className == 'w') return w[selector];
-  if (protoPart == 'class') return w[className][selector];
-  return w[className].proto[selector];
+  // methodFromSpec('rect')                     — a global function
+  // methodFromSpec('Color.gray')               — a class static
+  // methodFromSpec('Color.prototype.copy')     — an instance method
+  let parts = spec.split('.');
+  if (parts.length == 1) return $global[parts[0]];
+  let cls = $global[parts[0]];
+  if (cls == null) return null;
+  if (parts.length == 2) return cls[parts[1]];
+  if (parts.length == 3 && parts[1] == 'prototype' && cls.prototype)
+    return cls.prototype[parts[2]];
+  return null;
 }
 function methodSpecKey(spec) {
   /** Method spec key without a recent-changes date suffix. */
@@ -8232,40 +8185,30 @@ function methodSpecKey(spec) {
   if (spec.includes('[')) return spec.slice(0, spec.indexOf('[') - 1).trim();
   return spec;
 }
-function deleteExprForMethodSpec(spec) {
-  /** `eval` expression to remove a live method (`Morph.prototype.foo`, `init`, …). */
-  let key = methodSpecKey(spec);
-  if (!key) return null;
-  if (key.startsWith('w.')) return 'delete w.' + key.slice(2);
-  let dotIx = key.indexOf('.');
-  if (dotIx < 0) return null;
-  let className = key.slice(0, dotIx);
-  let dotIx2 = key.indexOf('.', dotIx + 1);
-  if (dotIx2 < 0) return null;
-  let kind = key.slice(dotIx + 1, dotIx2);
-  let selector = key.slice(dotIx2 + 1);
-  if (kind == 'proto') return 'delete w.' + className + '.proto.' + selector;
-  if (kind == 'class') return 'delete w.' + className + '.' + selector;
-  return null;
-}
 function deleteMethodWithSpec(spec) {
-  let expr = deleteExprForMethodSpec(spec);
-  if (!expr) return false;
+  /** Remove a live method by spec (`Morph.prototype.foo`, `Color.gray`, `init`, …). */
+  let key = methodSpecKey(spec);
+  if (!key) return false;
   try {
-    eval(expr);
+    let parts = key.split('.');
+    if (parts.length == 1) delete $global[parts[0]];
+    else if (parts.length == 2) delete $global[parts[0]][parts[1]];
+    else if (parts.length == 3 && parts[1] == 'prototype')
+      delete $global[parts[0]].prototype[parts[2]];
+    else return false;
     return true;
   } catch (e) {
-    console.log('delete failed: ' + expr, e);
+    console.log('delete failed: ' + key, e);
     return false;
   }
 }
 function deleteClassNamed(className) {
-  if (!className || className == 'w' || !w[className]) return false;
+  if (!className || className == 'globals' || !$global[className]) return false;
   try {
-    eval('delete w.' + className);
+    delete $global[className];
     return true;
   } catch (e) {
-    console.log('delete class failed: w.' + className, e);
+    console.log('delete class failed: ' + className, e);
     return false;
   }
 }
@@ -8378,54 +8321,33 @@ function stats() {
 function allMethodSpecs() {
   // allMethodSpecs().length ==> 307
   let methodSpecs = [];
-  // First, include all methods of our world, w
-  let methodNames = Object.getOwnPropertyNames(w).sort();
-  methodNames.forEach((methodName) => {
-    if (typeof w[methodName] == 'function') {
-      methodSpecs.push('w.' + methodName);
-    }
-  });
-  allClassNamesInSuperclassOrder().forEach((className) => {
-    methodNames = Object.getOwnPropertyNames(w[className].proto).sort();
-    methodNames.forEach((methodName) => {
-      methodSpecs.push(className + '.proto.' + methodName);
+  // First, all global functions (classes get their own entries below)
+  Object.getOwnPropertyNames($global)
+    .sort()
+    .forEach((name) => {
+      if (typeof $global[name] == 'function' && !isClass($global[name])) methodSpecs.push(name);
     });
-    methodNames = Object.getOwnPropertyNames(w[className]).sort();
-    if (methodNames.length > 2) {
-      // Skip classes with only name, proto
-      methodNames.forEach((methodName) => {
-        // Here we allow, eg, class constants such as Color.red
-        /* if (typeof w[className][methodName] == "function") {*/
-        if (methodName != 'proto' && methodName != 'name') {
-          methodSpecs.push(className + '.class.' + methodName);
-        }
-      });
-    }
+  allClassNamesInSuperclassOrder().forEach((className) => {
+    let cls = $global[className];
+    classInstanceMemberNames(cls).forEach((methodName) => {
+      methodSpecs.push(className + '.prototype.' + methodName);
+    });
+    // Here we allow, eg, class constants such as Color.red
+    classStaticNames(cls).forEach((methodName) => {
+      methodSpecs.push(className + '.' + methodName);
+    });
   });
   return methodSpecs;
 }
-function loadExportCatalog() {
-  if (_exportCatalogApi && _exportCatalogApi.version === 2) return Promise.resolve();
-  let base = exportCatalogUrl != null ? exportCatalogUrl : 'alldefs-export-catalog.js';
-  let url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'v=2';
-  return fetch(url)
-    .then(function (r) {
-      if (!r.ok) throw new Error('loadExportCatalog: ' + r.status + ' ' + url);
-      return r.text();
-    })
-    .then(function (code) {
-      _exportCatalogApi = null;
-      exportOrganizedSystemString = null;
-      new Function('w', code)(w);
-      if (!_exportCatalogApi || _exportCatalogApi.version !== 2)
-        throw new Error('loadExportCatalog: catalog did not install');
-    });
-}
 function exportEntireSystem() {
-  // exportEntireSystem() — categorized alldefs; viewExportedSystem() to browse
-  return loadExportCatalog().then(function () {
-    return _exportCatalogApi.finish(_exportCatalogApi.organizedString());
-  });
+  // exportEntireSystem() — full system source; viewExportedSystem() to browse
+  let parts = exportSelectionsForEntireSystem().map((selection) =>
+    exportStringForSelection(selection, { includeHeader: true, includeClassDef: true }),
+  );
+  let text = parts.filter((part) => part && part.length > 0).join('\n\n');
+  storageSetItem('system.export', text);
+  storageSetItem('system.export.timestamp', new Date().toLocaleString());
+  return text.length;
 }
 function viewExportedSystem() {
   let text = storageGetItem('system.export') || storageGetItem('system.methods');
@@ -8441,10 +8363,7 @@ function exportMethodShouldOmit(name) {
     name === 'downloadTextFile' ||
     name === '_finishSystemExport' ||
     name === 'viewExportedSystem' ||
-    name === 'loadExportCatalog' ||
     name === 'exportEntireSystem' ||
-    name === 'exportOrganizedSystemString' ||
-    name === '_exportCatalogApi' ||
     name === 'exportMethodShouldOmit' ||
     name === 'exportOmitMethodNames'
   )
@@ -8544,43 +8463,26 @@ function formatStackTraceForReport(err) {
   return parts;
 }
 function stackNameToMethodSpec(name) {
+  // 'Proxy.foo' / 'Object.foo' wrappers come from the runtime's proxies; the bare
+  // trailing name is the interesting part.
   if (!name || name === 'eval' || name === '<anonymous>') return null;
   let s = String(name).trim();
-  if (s.startsWith('w.')) s = s.slice(2);
-  if (/^\w+\.proto\.\w+$/.test(s)) return s;
-  if (/^\w+\.class\.\w+$/.test(s)) return s;
-  if (/^\w+$/.test(s) && typeof w[s] === 'function') return 'w.' + s;
-  return null;
-}
-function methodSpecForAlldefsLine(lineNo) {
-  let lines = _alldefsSourceLines;
-  if (!lines || lineNo < 1 || lineNo > lines.length) return null;
-  for (let i = lineNo - 1; i >= 0; i--) {
-    let line = lines[i];
-    let m = line.match(/^w\.(\w+)\.proto\.(\w+)\s*=/);
-    if (m) return m[1] + '.proto.' + m[2];
-    m = line.match(/^w\.(\w+)\s*=\s*function/);
-    if (m) return 'w.' + m[1];
-  }
+  if (/^(Proxy|Object)\.\w+$/.test(s)) s = s.slice(s.indexOf('.') + 1);
+  if (/^\w+\.prototype\.\w+$/.test(s)) return s;
+  if (/^\w+$/.test(s) && typeof $global[s] === 'function') return s;
   return null;
 }
 function stackFrameSourceText(frame) {
   if (frame.methodSpec) {
     try {
-      if (frame.methodSpec.startsWith('w.')) {
-        let fn = w[frame.methodSpec.slice(2)];
-        if (typeof fn === 'function') return frame.methodSpec + ' = ' + fn.toString();
-      } else {
-        let fn = methodFromSpec(frame.methodSpec);
-        if (typeof fn === 'function') return 'w.' + frame.methodSpec + ' = ' + fn.toString();
-      }
+      let fn = methodFromSpec(frame.methodSpec);
+      if (typeof fn === 'function') return frame.methodSpec + ' = ' + fn.toString();
     } catch (e) {
       /* fall through */
     }
   }
   if (frame.alldefsLine && _alldefsSourceLines) {
-    return w
-      .alldefsSourceExcerpt(frame.alldefsLine, 4)
+    return alldefsSourceExcerpt(frame.alldefsLine, 4)
       .map(function (ex) {
         return String(ex.no).padStart(5) + '  ' + ex.text;
       })
@@ -8606,13 +8508,11 @@ function stackFrameListLabel(frame) {
 function stackFrameHighlightName(frame) {
   if (!frame) return null;
   if (frame.methodSpec) {
-    let spec = frame.methodSpec.startsWith('w.') ? frame.methodSpec.slice(2) : frame.methodSpec;
-    let dot = spec.lastIndexOf('.');
-    return dot >= 0 ? spec.slice(dot + 1) : spec;
+    let dot = frame.methodSpec.lastIndexOf('.');
+    return dot >= 0 ? frame.methodSpec.slice(dot + 1) : frame.methodSpec;
   }
   let n = frame.name ? String(frame.name).trim() : '';
   if (!n || n === 'eval' || n === '<anonymous>') return null;
-  if (n.startsWith('w.')) n = n.slice(2);
   let dot = n.lastIndexOf('.');
   return dot >= 0 ? n.slice(dot + 1) : n;
 }
@@ -8622,7 +8522,6 @@ function stackFrameFromRawLine(rawLine) {
   let parsed = parseStackFrameLine(line);
   let alldefsRef = extractAlldefsLineFromFrame(line);
   let methodSpec = stackNameToMethodSpec(name);
-  if (!methodSpec && alldefsRef) methodSpec = methodSpecForAlldefsLine(alldefsRef.line);
   let frame = {
     name: name,
     file: parsed ? parsed.file : null,

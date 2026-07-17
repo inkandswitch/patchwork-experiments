@@ -477,11 +477,29 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
   return [() => y, () => z];
 }`)).toBe(`{
   const $scope2 = $obj({});
-  let x=1;
-  $scope2.y = 2;
-  $scope2.z = 3;
+  let x = 1; $scope2.y = 2; $scope2.z = 3;
   return $arr([$fun("() => y", "($scope2) => () => $scope2.y", [$scope2]), $fun("() => z", "($scope2) => () => $scope2.z", [$scope2])]);
 }`);
+    });
+
+    it('keeps $arr/$obj/$fun wraps on initializers of captured declarations', () => {
+      expect(transpile(`{
+  let xs = [];
+  [1].forEach(function (n) { xs.push(n); });
+}`)).toContain('$scope2.xs = $arr([])');
+      expect(transpile(`{
+  let o = { a: 1 };
+  [1].forEach(function (n) { o.a = n; });
+}`)).toContain('$scope2.o = $obj({ a: 1 })');
+      expect(transpile(`{
+  let cb = function () { return 1; };
+  [1].forEach(function (n) { cb(); });
+}`)).toContain('$scope2.cb = $fun(');
+      // a captured declarator with no initializer still gets a defined slot
+      expect(transpile(`{
+  let xs;
+  [1].forEach(function (n) { xs = n; });
+}`)).toContain('$scope2.xs = undefined');
     });
   });
 

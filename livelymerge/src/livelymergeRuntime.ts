@@ -208,6 +208,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     return x.$unwrapped;
   }
 
+  function unwrapLmFun(x: unknown): Fun | null {
+    if (!isProxy(x) || !isFun(x.$unwrapped)) return null;
+    return x.$unwrapped;
+  }
+
   function lmArrayIndexKeys(arr: Arr): string[] {
     return arr.$values.map((_, i) => String(i));
   }
@@ -718,8 +723,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
           // override array methods
           case 'at': {
+            // Normalize the index ourselves: Automerge's mutable list proxy (the
+            // $values view inside a change callback) mishandles negative at() indices
+            // (clamps them to 0), so never delegate at() to it.
             return function (index: number) {
-              return deserialize(vals().at(index));
+              const items = vals();
+              let i = Math.trunc(Number(index) || 0);
+              if (i < 0) i += items.length;
+              if (i < 0 || i >= items.length) return undefined;
+              return deserialize(items[i]);
             };
           }
           case 'push': {
@@ -819,7 +831,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'concat': {
             return function (...args: any[]) {
-              return $arr(vals().concat(...args.map(serializerFor(id))).map(deserialize));
+              // Match JS concat semantics: array arguments (LM or plain) contribute
+              // their elements; everything else is appended as a single element.
+              const out: any[] = vals().map(deserialize);
+              for (const arg of args) {
+                if (unwrapLmArr(arg) || Array.isArray(arg)) out.push(...(arg as any[]));
+                else out.push(arg);
+              }
+              return $arr(out);
             };
           }
           case 'join': {
@@ -884,6 +903,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         }
 
         if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
+
+        if (typeof prop === 'symbol') {
+          // Well-known-symbol probes from JS internals (string coercion via
+          // Symbol.toPrimitive, inspect, isConcatSpreadable, …): absent, not an
+          // error. Symbol.iterator is handled above.
+          return undefined;
+        }
 
         unsupportedArrayAccess('read', prop);
       },
@@ -1372,6 +1398,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
     const arrUnwrapped = unwrapLmArr(obj);
     if (arrUnwrapped) return $arr(lmArrayIndexKeys(arrUnwrapped));
+    const funUnwrapped = unwrapLmFun(obj);
+    if (funUnwrapped) return $arr(lmOwnUserPropertyKeys(liveHeapFun(funUnwrapped)));
     return $arr(Object.keys(obj as object));
   };
 
@@ -1393,6 +1421,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
       return lmHasOwn(unwrapped, prop);
     }
+    const funUnwrapped = unwrapLmFun(obj);
+    if (funUnwrapped && typeof prop === 'string') {
+      return lmHasOwn(liveHeapFun(funUnwrapped) as unknown as Obj, prop);
+    }
     return Object.hasOwn(obj as object, prop);
   };
 
@@ -1407,6 +1439,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
     const arrUnwrapped = unwrapLmArr(obj);
     if (arrUnwrapped) return $arr([...lmArrayIndexKeys(arrUnwrapped), 'length']);
+    const funUnwrapped = unwrapLmFun(obj);
+    if (funUnwrapped) return $arr(lmOwnUserPropertyKeys(liveHeapFun(funUnwrapped)));
     return $arr(Object.getOwnPropertyNames(obj as object));
   };
 
@@ -1549,9 +1583,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     let factory = codeFactoryCache.get(code);
     if (!factory) {
       const runtimeParams = getRuntimeParams();
-      factory = new Function(...Object.keys(runtimeParams), 'return ' + code) as (
-        ...runtime: unknown[]
-      ) => (...scopeArgs: unknown[]) => unknown;
+      try {
+        factory = new Function(...Object.keys(runtimeParams), 'return ' + code) as (
+          ...runtime: unknown[]
+        ) => (...scopeArgs: unknown[]) => unknown;
+      } catch (e) {
+        throw new SyntaxError(
+          `Livelymerge: stored function code does not parse (${(e as Error).message}) in:\n${code}`,
+        );
+      }
       codeFactoryCache.set(code, factory);
     }
     const runtimeParams = getRuntimeParams();
