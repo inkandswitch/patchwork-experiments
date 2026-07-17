@@ -149,7 +149,7 @@ The use of proxies in LM's object model is all about _ergonomics_. It makes inte
 
 We have implemented a Livelymerge tool for Patchwork. Here's what a freshly-created LM document looks like when viewed through this tool:
 
-![image](LM-fresh.png)
+![_A freshly-created Livelymerge document. The canvas is still blank; the panel in the top-right corner shows the state of the underlying Automerge document (its number of operations and current heads); and the workspace is open at the bottom, where we've just evaluated `3+4` with print-it._](lm-fresh.png)
 
 At the bottom of the page there is a large text area that works like a Smalltalk workspace. If the user selects some of the code inside the workspace and invokes "print it" (Cmd-P), that code will be evaluated by LM and the result will be displayed (by appending its stringified value to the workspace). "Do it" (Cmd-D) evaluates the selected code but doesn't display the result.
 
@@ -157,7 +157,7 @@ The area at the center of the page is an (initially blank) HTML canvas. We provi
 
 You can write and execute code in the workspace that creates new objects in the heap and (via the aforementioned canvas bindings) implements a LK-like GUI, as shown below:
 
-![image](LM-GUI.png)
+![_The same tool, after some code has been evaluated in the workspace: a Morphic world with draggable shapes, a world menu, a welcome window, and a Smalltalk-style browser showing the source code of `Color.prototype.computeFillStyle`. Every one of these is an object in the heap — i.e., in the Automerge document (note the op count in the corner!) — and all of it can be edited from inside the system._](lm-morphic.png)
 
 Dan is working on a lab note about the system depicted above, so stay tuned! In the meantime, I'll use the rest of this section to explain how the LM tool hosts this system, focusing on its interaction with the program's AM document.
 
