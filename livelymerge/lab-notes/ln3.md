@@ -2,15 +2,17 @@
 
 ## Introduction
 
-In the _Livelymerge_ project, Dan Ingalls and I (Alex Warth) are building a Lively Kernel-like system whose heap is an Automerge document. (See the previous lab note for the details of our object model.) The whole point of this arrangement is that every object is persistent and shared: if you and I are looking at the same document, we're looking at the same objects, and they'll still be there two weeks from now.
+In the _Livelymerge_ project, Dan Ingalls, Peter van Hardenberg, and I (Alex Warth) are building a Lively Kernel-like system whose heap is an Automerge document. (See the previous lab note for the details of our object model.) The whole point of this arrangement is that every object is persistent and shared: if you and I are looking at the same document, we're looking at the same objects, and they'll still be there two weeks from now.
 
 It didn't take much multi-user testing to discover that this is sometimes exactly what you _don't_ want.
 
-Here's the example that forced the issue. In Morphic, you meta-click a morph to summon its _halo_ — a ring of handles for moving, copying, resizing, etc. A halo is a morph like any other, so in our system it was a persistent, shared object. Which meant: when I meta-clicked a rectangle, my halo popped up **on your screen**. And if I closed my laptop without dismissing it, it would still be there — for both of us — two weeks later.
+Here's the example that forced the issue. In Morphic, you cmd-click a morph to summon its _halo_ — a ring of handles for moving, copying, resizing, etc. A halo is a morph like any other, so in our system it was a persistent, shared object. Which meant: when I cmd-clicked a rectangle, my halo popped up **on your screen**. And if I closed my laptop without dismissing it, it would still be there — for both of us — two weeks later.
 
 The halo is _my_ UI, part of _my_ session. So are my keyboard focus, the hover affordances under my pointer, and the animations I've started. None of this belongs in the document.
 
-We call this **local state**: state that is per-user and ephemeral (it's fine — desirable, even — for it to vanish on reload), but that must survive across _transactions_. That last part is what makes it interesting: a halo has to stick around from one frame to the next, so it can't just be a temporary variable. (For a while we worked around this by stashing things on `window`, the JS global object. That "worked", but it was a hack — that state was invisible to our object model, and it caused exactly the kind of bugs you'd expect.)
+We call this **local state**: state that is per-user and ephemeral — it's fine (desirable, even) for it to vanish on reload.
+
+Supporting local state is trickier than it sounds. Here's why: everything that happens in LM — handling a pointer event, redrawing the screen — runs inside a short-lived _transaction_ on the Automerge document (a single call to `change`; there's one per frame). At the end of each transaction, the system garbage-collects any newly-created objects that didn't end up in the heap. So a halo can't just live in a temporary variable — it would be swept away at the end of the frame in which it was created. It has to survive from one transaction to the next, and until now, the only home we had for an object like that was the shared, persistent heap. (For a while we worked around this by stashing things on `window`, the JS global object. That "worked", but it was a hack — that state was invisible to our object model, and it caused exactly the kind of bugs you'd expect.)
 
 ## The programmer's view: `$`-properties
 
@@ -106,5 +108,3 @@ One implementation detail worth calling out: object ids are shared across the do
 ## Future Work
 
 There's a third category of state hiding in this design. A user's _hand_ (the Morphic object that represents their cursor) should be **visible to others but persisted by no one** — you want to see where I'm pointing, but nobody wants 60 updates per second in the document, or my hand fossilized in it after I leave. Shared-but-ephemeral state probably wants a presence channel rather than the Automerge document; we haven't built this yet.
-
-The `$`-prefix convention can't express locality for computed keys, array indices, or Map entries. We may need an escape hatch (something like `local(obj, prop)`) if this starts to hurt.
