@@ -58,21 +58,21 @@ clone and are simply skipped.
 
 ### Point a shell at the bundle
 
-A shell can load any tools host without rebuilding, via `VITE_DEFAULT_MODULES`
-(build-time) or `localStorage.defaultToolsUrl` (runtime):
+A shell can load any tools host without rebuilding, via `PATCHWORK_SYSTEM_PACKAGE_LIST_URL`
+(build-time) or `localStorage.systemPackageListURL` (runtime):
 
 ```sh
 # terminal 1 — tools host (here)
 pnpm dev:tools
 
 # terminal 2 — a shell in patchwork-next
-VITE_DEFAULT_MODULES=http://localhost:4455/modules.json \
+PATCHWORK_SYSTEM_PACKAGE_LIST_URL=http://localhost:4455/modules.json \
   pnpm --filter tiny-patchwork dev
 ```
 
 ```js
 // or at runtime, against a deployed shell / Netlify deploy preview:
-localStorage.defaultToolsUrl = "http://localhost:4455/modules.json";
+localStorage.systemPackageListURL = "http://localhost:4455/modules.json";
 ```
 
 Deploys run via Netlify's Git integration (`netlify.toml`): production on the

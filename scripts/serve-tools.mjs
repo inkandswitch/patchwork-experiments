@@ -7,8 +7,8 @@
  *
  * This is the local-development stand-in for the Netlify tools deployment.
  * Point a shell at it with either:
- *   - VITE_DEFAULT_MODULES=http://localhost:4455/modules.json (build-time), or
- *   - localStorage.defaultToolsUrl = "http://localhost:4455/modules.json" (runtime)
+ *   - PATCHWORK_SYSTEM_PACKAGE_LIST_URL=http://localhost:4455/modules.json (build-time), or
+ *   - localStorage.systemPackageListURL = "http://localhost:4455/modules.json" (runtime)
  *
  * Usage:
  *   node scripts/serve-tools.mjs [--dir <dir>] [--port <port>]

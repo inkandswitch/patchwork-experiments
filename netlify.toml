@@ -1,7 +1,7 @@
 # Netlify config for the patchwork-tools *tools bundle* (static-dist:
 # modules.json + tools/). A Patchwork shell (lives in patchwork-next) is
 # deployed separately and points at this site's modules.json via
-# VITE_DEFAULT_MODULES (build-time) or localStorage.defaultToolsUrl (runtime).
+# PATCHWORK_SYSTEM_PACKAGE_LIST_URL (build-time) or localStorage.systemPackageListURL (runtime).
 #
 # CORS for cross-origin module import() is emitted into the publish dir as a
 # `_headers` file by scripts/bundle.mjs (also honoured by Cloudflare Pages),

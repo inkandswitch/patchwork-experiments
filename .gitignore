@@ -8,3 +8,6 @@ static-dist/
 .automerge-data
 .pnpm-store
 .DS_Store
+
+# Local Netlify folder
+.netlify
