@@ -358,7 +358,8 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.world().changed();
   };
   setTimeout(() => {
-    Lively.spiral.startStepping('animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 }, 50);
+    Lively.spiral.startStepping('animatedSpiral', 
+      { goDist: 2, turnAngle: 60, nSteps: 8 /* was 26 */ }, 50);
   }, 2000);
 }
 
@@ -6825,7 +6826,10 @@ class HandMorph extends Morph {
   constructor(id, location, color) {
     super(null, new Pen().makeHandShape(location, color));
     this.actorID = id;
-    setPointerLocation(location ? location.copy() : this.location());
+    // Per-hand last point for move deltas — must not share the world pointerLocation
+    // (WorldMorph updates that before/after hand moves).
+    this.$handPointerLocation = location ? location.copy() : this.location();
+    setPointerLocation(this.$handPointerLocation);
   }
   dropMorph(p, evt) {
     let worldPt = p ? p : this.location();
@@ -6859,7 +6863,10 @@ class HandMorph extends Morph {
     return this.getBounds().topLeft;
   }
   onPointerDown(p, evt) {
-    this.hitPoint = p;
+    // For testing multiple hands only!! 
+    // Click a hand makes you 'be' that like that user
+    if (this.actorID !== $actorID) {$actorID = this.actorID; return};
+    this.$handPointerLocation = p;
     setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
     if (!evt.altKey) return false;
@@ -6879,12 +6886,15 @@ class HandMorph extends Morph {
     return true;
   }
   onPointerMove(p, evt) {
-    let d = p.subPt(getPointerLocation() ? getPointerLocation() : this.location());
+    let prev = this.$handPointerLocation ? this.$handPointerLocation : this.location();
+    let d = p.subPt(prev);
+    this.$handPointerLocation = p;
     setPointerLocation(p);
     this.moveBy(d);
     // Submorphs ride under transform; do not move them separately.
   }
   onPointerUp(p, evt) {
+    this.$handPointerLocation = p;
     setPointerLocation(p);
     if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
   }
@@ -7629,9 +7639,9 @@ class WorldMorph extends Morph {
       this.updateCursorForHands();
       return;
     }
-    let color = Color.blue;
-    if (!this.hands) this.hands = [];
-    else color = Color.green;
+    if (!this.hands) this.hands = [];  //Means we're using hands    // for testing we give new hands IDs of 0, 1, 2, 3, 4, etc
+      let id = this.hands.length;
+      $actorID = id;  // now we act like another user N    let color = Color[['green', 'blue', 'red', 'yellow', 'cyan'][id%5]];
     console.log('creating hand morph');
     const hm = new HandMorph($actorID, getPointerLocation(), color);
     console.log('adding hand morph');
@@ -7824,11 +7834,15 @@ class WorldMorph extends Morph {
     return hit;
   }
   onPointerMove(p, evt) {
-    setPointerLocation(p);
     let hand = this.handForID(evt.actorID);
     if (hand) {
+      // Hand must see the previous location to compute its delta; update shared
+      // pointerLocation only after the hand has moved.
       hand.onPointerMove(p, evt);
+      setPointerLocation(p);
       if (hand.hasSubmorphs()) return true;
+    } else {
+      setPointerLocation(p);
     }
     if (this.$pointerFocus) {
       // pointerFocus expects pt in its owner's coords (e.g. SliderMorph in ListPane)
