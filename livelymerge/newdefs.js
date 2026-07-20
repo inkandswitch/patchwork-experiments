@@ -6863,12 +6863,12 @@ class HandMorph extends Morph {
     return this.getBounds().topLeft;
   }
   onPointerDown(p, evt) {
-    // For testing multiple hands only!! 
-    // Click a hand makes you 'be' that like that user
-    if (this.actorID !== $actorID) {$actorID = this.actorID; return};
+    this.hitPoint = p;
     this.$handPointerLocation = p;
     setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
+    // Switching active hand when clicking another is handled in WorldMorph.onPointerDown
+    // (hands live in world.hands, not the submorph tree, so inactive hands never get events).
     if (!evt.altKey) return false;
     if (evt.shiftKey) {
       // Alt+Shift click means copy target into hand.
@@ -7597,6 +7597,27 @@ class WorldMorph extends Morph {
     if (matched) return matched;
     return null;
   }
+  handAt(pt, excludeIfAny) {
+    /** Frontmost hand whose bounds contain world-pt `pt`, optionally skipping one hand. */
+    if (!this.hands || this.hands.length == 0) return null;
+    for (let i = this.hands.length - 1; i >= 0; i--) {
+      let hand = this.hands[i];
+      if (excludeIfAny && hand === excludeIfAny) continue;
+      // Hands are owned by the world but not in submorphs; owner coords == world coords.
+      if (hand.fullBounds && hand.fullBounds().includesPt(pt)) return hand;
+    }
+    return null;
+  }
+  activateHand(hand, p, evt) {
+    /** Make `hand` the local active user (testing multi-hand). */
+    if (!hand) return false;
+    $actorID = hand.actorID;
+    if (evt) evt.actorID = hand.actorID;
+    // Avoid a jump on the first move after switching.
+    hand.$handPointerLocation = p ? p : getPointerLocation();
+    if (p) setPointerLocation(p);
+    return true;
+  }
   handleStepList() {
     // Fire all due specs without mutating stepList structure during iteration.
     // This avoids stepping corruption when other code calls stopStepping/removeMorph
@@ -7639,9 +7660,11 @@ class WorldMorph extends Morph {
       this.updateCursorForHands();
       return;
     }
-    if (!this.hands) this.hands = [];  //Means we're using hands    // for testing we give new hands IDs of 0, 1, 2, 3, 4, etc
+    if (!this.hands) this.hands = [];  //Means we're using hands
+    // for testing we give new hands IDs of 0, 1, 2, 3, 4, etc
       let id = this.hands.length;
-      $actorID = id;  // now we act like another user N    let color = Color[['green', 'blue', 'red', 'yellow', 'cyan'][id%5]];
+      $actorID = id;  // now we act like another user N
+    let color = Color[['green', 'blue', 'red', 'yellow', 'cyan'][id%5]];
     console.log('creating hand morph');
     const hm = new HandMorph($actorID, getPointerLocation(), color);
     console.log('adding hand morph');
@@ -7810,8 +7833,16 @@ class WorldMorph extends Morph {
       this.cycleHaloAt(p);
       return true;
     }
+    // Hands are drawn from this.hands, not the submorph tree. If the active hand
+    // (cursor) is over another hand, clicking it switches $actorID to that hand.
+    let activeHand = this.handForID(evt.actorID);
+    let handUnder = this.handAt(p, activeHand);
+    if (handUnder) {
+      this.activateHand(handUnder, p, evt);
+      return true;
+    }
     // this.removeExistingHalos();  // OK here?
-    let hand = this.handForID(evt.actorID);
+    let hand = activeHand;
     if (hand && evt.altKey) {
       hand.onPointerDown(p, evt);
       return true;
