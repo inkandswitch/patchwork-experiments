@@ -366,7 +366,8 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           <div className="pointer-events-auto flex items-center gap-2">
             <button
               type="button"
-              className="btn btn-sm gap-1 border-base-300 bg-white text-black shadow-sm hover:bg-white"
+              className="btn btn-sm gap-1 border-base-300 text-black shadow-sm"
+              style={{ backgroundColor: 'white', backgroundImage: 'none', paddingInline: '0.75rem' }}
               onClick={openDrawer}
             >
               <span className="text-base leading-none">▲</span>
