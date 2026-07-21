@@ -8109,10 +8109,13 @@ class WorldMorph extends Morph {
       for (let i = 0; i < subs.length; i++) {
         let sub = subs.at(i);
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
-        if (sub.fullBounds().includesPt(pInOwner)) {
-          let deeper = walk(sub, worldPt);
-          return deeper != null ? deeper : sub;
-        }
+        // fullBounds (AABB incl. submorph stickouts) is just a cheap prefilter;
+        // the hit itself must be on a shape, so rotated morphs' AABB corner
+        // wedges and stickout dead zones fall through to siblings behind.
+        if (!sub.fullBounds().includesPt(pInOwner)) continue;
+        let deeper = walk(sub, worldPt);
+        if (deeper != null) return deeper;
+        if (sub.includesPt(pInOwner)) return sub;
       }
       return null;
     };
@@ -8127,10 +8130,11 @@ class WorldMorph extends Morph {
         let cn = sub.className;
         if (cn === 'HaloMorph' || cn === 'HaloHandle' || cn === 'HandMorph') continue;
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
-        if (sub.fullBounds().includesPt(pInOwner)) {
-          let deeper = walk(sub, worldPt);
-          return deeper != null ? deeper : sub;
-        }
+        // Same shape-exact hit rule as topMorphAt: bounds only gate descent.
+        if (!sub.fullBounds().includesPt(pInOwner)) continue;
+        let deeper = walk(sub, worldPt);
+        if (deeper != null) return deeper;
+        if (sub.includesPt(pInOwner)) return sub;
       }
       return null;
     };
