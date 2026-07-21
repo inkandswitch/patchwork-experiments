@@ -2784,8 +2784,18 @@ class Morph {
   }
   eachSubmorph(fn) {
     /** Iterate persistent then ephemeral submorphs (draw order) without allocating a combined list. */
+try {
     if (this.submorphs) this.submorphs.forEach(fn);
+} catch (e) {
+  console.log('boom! while iterating over persistent submorphs');
+  debugger;
+}
+try {
     if (this.$submorphs) this.$submorphs.forEach(fn);
+} catch (e) {
+  console.log('boom! while iterating over local submorphs');
+  debugger;
+}
   }
   asString() {
     return 'a ' + this.className + ' (' + this.shape.asString() + ')';
