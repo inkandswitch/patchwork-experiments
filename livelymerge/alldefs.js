@@ -1961,12 +1961,10 @@ w.Morph.proto.clippedBoundsInWorld = function () {
 };
 w.Morph.proto.fullBounds = function () {
   // Includes this morph's shape and all descendant submorph shapes.
-  // Return value is in owner coordinates, matching getBounds().
-  let b = this.shape.getBounds().copy(); // local coords
-  this.submorphs.forEach((sub) => {
-    b = b.union(sub.fullBounds()); // child bounds are in this local coords
-  });
-  return b.translatedBy(this.transform.translation);
+  // Return value is in owner coordinates with this morph's full transform
+  // applied (the axis-aligned footprint when rotated/scaled), so hit tests
+  // against it match what's rendered.
+  return this.boundsInOwnerAfterTransform();
 };
 w.Morph.proto.boundsInWorld = function () {
   /** Axis-aligned bounds of this morph in world coordinates. */
@@ -2868,22 +2866,23 @@ w.SimpleTransform.proto.initialize = function (trans, rot, scale) {
 w.SimpleTransform.proto.translateBy = function (delta) {
   this.translation = this.translation.addPt(delta);
 };
+// NOTE: Point.rotatedBy(r) turns the OPPOSITE way from ctx.rotate(r)
+// (polarAngle is measured from +y, so rotatedBy(r) is the canvas rotation
+// by -r). Rendering applies ctx.rotate(+rotation), so transformPt must use
+// rotatedBy(-rotation) and invertPt must use rotatedBy(+rotation).
 w.SimpleTransform.proto.transformPt = function (p) {
   // local -> owner
   // Match render order used in rendering:
   //   ctx.translate(tx, ty); ctx.rotate(rot); ctx.scale(sx, sy);
   // Applied to a point, that means: scale, then rotate, then translate.
   let q = p.scaleBy(this.scale); // scale about origin
-  q = q.rotatedBy(this.rotation, w.pt(0, 0)); // rotate about origin
+  q = q.rotatedBy(-this.rotation, w.pt(0, 0)); // rotate about origin (see NOTE above)
   return q.addPt(this.translation); // then translate
 };
 w.SimpleTransform.proto.invertPt = function (p) {
   // owner -> local (inverse of transformPt)
   let q = p.subPt(this.translation); // undo translation
-  // NOTE: Point.rotatedBy and canvas ctx.rotate use opposite visual senses
-  // in this coordinate system, so we use +rotation here to correctly
-  // align pointer hit-testing with rendered rotation.
-  q = q.rotatedBy(this.rotation, w.pt(0, 0)); // undo rotation (sign adjusted)
+  q = q.rotatedBy(this.rotation, w.pt(0, 0)); // undo rotation (see NOTE above)
   // guard against degenerate scale
   let sx = this.scale.x || 1;
   let sy = this.scale.y || 1;

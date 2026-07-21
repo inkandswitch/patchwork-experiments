@@ -1105,13 +1105,14 @@ class SimpleTransform {
   copy() {
     return new SimpleTransform(this.translation, this.rotation, this.scale);
   }
+  // NOTE: Point.rotatedBy(r) turns the OPPOSITE way from ctx.rotate(r)
+  // (polarAngle is measured from +y, so rotatedBy(r) is the canvas rotation
+  // by -r). Rendering applies ctx.rotate(+rotation), so transformPt must use
+  // rotatedBy(-rotation) and invertPt must use rotatedBy(+rotation).
   invertPt(p) {
     // owner -> local (inverse of transformPt)
     let q = p.subPt(this.translation); // undo translation
-    // NOTE: Point.rotatedBy and canvas ctx.rotate use opposite visual senses
-    // in this coordinate system, so we use +rotation here to correctly
-    // align pointer hit-testing with rendered rotation.
-    q = q.rotatedBy(this.rotation, pt(0, 0)); // undo rotation (sign adjusted)
+    q = q.rotatedBy(this.rotation, pt(0, 0)); // undo rotation (see NOTE above)
     // guard against degenerate scale
     let sx = this.scale.x || 1;
     let sy = this.scale.y || 1;
@@ -1123,7 +1124,7 @@ class SimpleTransform {
     //   ctx.translate(tx, ty); ctx.rotate(rot); ctx.scale(sx, sy);
     // Applied to a point, that means: scale, then rotate, then translate.
     let q = p.scaleBy(this.scale); // scale about origin
-    q = q.rotatedBy(this.rotation, pt(0, 0)); // rotate about origin
+    q = q.rotatedBy(-this.rotation, pt(0, 0)); // rotate about origin (see NOTE above)
     return q.addPt(this.translation); // then translate
   }
   translateBy(delta) {
@@ -2918,12 +2919,10 @@ class Morph {
   }
   fullBounds() {
     // Includes this morph's shape and all descendant submorph shapes.
-    // Return value is in owner coordinates, matching getBounds().
-    let b = this.shape.getBounds().copy(); // local coords
-    this.eachSubmorph((sub) => {
-      b = b.union(sub.fullBounds()); // child bounds are in this local coords
-    });
-    return b.translatedBy(this.transform.translation);
+    // Return value is in owner coordinates with this morph's full transform
+    // applied (the axis-aligned footprint when rotated/scaled), so hit tests
+    // against it match what's rendered.
+    return this.boundsInOwnerAfterTransform();
   }
   getBounds() {
     // NOTE: does not include submorph stickouts; use {@link fullBounds} or {@link boundsInOwnerAfterTransform}.
