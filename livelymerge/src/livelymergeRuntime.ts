@@ -1611,12 +1611,23 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     pendingIntervalFns.delete(id);
   }
 
+  /** User-facing eval ($eval in transpiled code): evaluates `source` through the LM
+   * transpiler, so literals, free variables, and functions behave exactly as in
+   * directly-entered code. The transpiler rewrites direct `eval(x)` calls to
+   * `$eval.call(this, x)`, so the evaluated source sees the caller's `this`.
+   * Non-string arguments pass through unchanged, as with JS's eval. */
+  function $eval(this: unknown, source: unknown): unknown {
+    if (typeof source !== 'string') return source;
+    return evaluateSource(source, this);
+  }
+
   function getRuntimeParams(): Record<string, unknown> {
     return {
       $global,
       $obj,
       $arr,
       $fun,
+      $eval,
       Object: $Object,
       Array: $Array,
       console: $console,
@@ -1650,13 +1661,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const runtimeParams = getRuntimeParams();
     return factory(...Object.values(runtimeParams));
   }
-  function evaluateSource(source: string): unknown {
+  function evaluateSource(source: string, thisArg?: unknown): unknown {
     return change(() => {
       const realCode = transpile(wrapForCompletionValue(source));
       if ((globalThis as any).debugEval) console.log('realCode', realCode);
       const runtimeParams = getRuntimeParams();
       const fn = new Function(...Object.keys(runtimeParams), realCode);
-      return fn(...Object.values(runtimeParams));
+      return fn.call(thisArg, ...Object.values(runtimeParams));
     });
   }
 

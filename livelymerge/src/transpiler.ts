@@ -12,6 +12,7 @@ const INJECTED_NAMES = new Set([
   '$obj',
   '$arr',
   '$fun',
+  '$eval',
   'Object',
   'Array',
   'console',
@@ -2603,7 +2604,7 @@ function renderFuncCall(
 ): string {
   const params = renderScopeList(scopes);
   const codeFuncArg = scopes.length > 0 ? `(${params}) => ${codeInner}` : `() => ${codeInner}`;
-  const showArg = JSON.stringify(showInner);
+  const showArg = JSON.stringify(undoEvalRewriteForShow(showInner));
   const codeArg = JSON.stringify(codeFuncArg);
   const scopeArg = scopes.length > 0 ? `, [${params}]` : '';
   const call = `$fun(${showArg}, ${codeArg}${scopeArg})`;
@@ -2678,7 +2679,60 @@ function parenthesizeNewGlobalTargets(source: string): string {
   return source.replace(/\bnew (?!\()(\$global(?:\.[\w$]+)+)(\s*\()/g, 'new ($1)$2');
 }
 
+// User-facing eval. A direct call `eval(x)` becomes `$eval.call(this, x)`: $eval
+// (injected by the runtime) transpiles the source before evaluating it, and threading
+// `this` through as ordinary source text lets the regular scope machinery capture it
+// (e.g. `$scopeN.this` inside arrows), so the evaluated source sees the caller's
+// receiver as with JS's direct eval. A bare `eval` reference becomes `$eval`, which
+// evaluates in the global scope (as with JS's indirect eval). Bodies of
+// do-not-transpile functions keep the raw JS eval.
+function rewriteEvalRefs(source: string): string {
+  if (!/\beval\b/.test(source)) return source;
+  const tree = parser.parse(source);
+  const edits: { from: number; to: number; text: string }[] = [];
+  const visit = (node: SyntaxNode): void => {
+    if (isDoNotTranspileFunction(node, source)) return;
+    if (node.name === 'VariableName' && nodeText(node, source) === 'eval') {
+      const parent = node.parent;
+      const argList = node.nextSibling;
+      if (
+        parent?.name === 'CallExpression' &&
+        parent.from === node.from &&
+        argList?.name === 'ArgList'
+      ) {
+        edits.push({ from: node.from, to: argList.from + 1, text: '$eval.call(this, ' });
+      } else if (parent?.name === 'Property' && parent.from === node.from && parent.to === node.to) {
+        // Shorthand object property `{eval}`: keep the key, substitute the value.
+        edits.push({ from: node.from, to: node.to, text: 'eval: $eval' });
+      } else {
+        edits.push({ from: node.from, to: node.to, text: '$eval' });
+      }
+      return;
+    }
+    for (let child = node.firstChild; child; child = child.nextSibling) visit(child);
+  };
+  visit(tree.topNode);
+  if (edits.length === 0) return source;
+  edits.sort((a, b) => b.from - a.from);
+  let out = source;
+  for (const edit of edits) {
+    out = out.slice(0, edit.from) + edit.text + out.slice(edit.to);
+  }
+  return out;
+}
+
+// Inverse of rewriteEvalRefs, applied to show strings only: the user must see their
+// original `eval(...)` source in the browser, not the injected $eval plumbing.
+function undoEvalRewriteForShow(show: string): string {
+  if (!show.includes('$eval')) return show;
+  return show
+    .replace(/\$eval\.call\(this, /g, 'eval(')
+    .replace(/eval: \$eval/g, 'eval')
+    .replace(/\$eval\b/g, 'eval');
+}
+
 export function transpileCore(source: string): string {
+  source = rewriteEvalRefs(source);
   const tree = parser.parse(source);
   rejectVarDeclarations(tree.topNode, source);
   const builder = new ScopeBuilder(source);
