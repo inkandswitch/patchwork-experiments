@@ -3221,7 +3221,22 @@ class Morph {
     world.addMorph(new StylePanel(r, this));
   }
   rotateBy(angle) {
-    this.transform.rotation += angle;
+    this.setRotation(this.transform.rotation + angle);
+  }
+  setRotation(rot) {
+    // Rotate about the center of the morph's shape: adjust the translation so
+    // the shape center stays at the same point in owner coordinates. (The
+    // transform itself always rotates about the morph's local origin.)
+    let c = this.shape.getBounds().center(); // local coords
+    let before = this.transform.transformPt(c);
+    this.transform.rotation = rot;
+    let after = this.transform.transformPt(c);
+    let delta = before.subPt(after);
+    this.transform.translation = this.transform.translation.addPt(delta);
+    // Update the cached bounds in place, like moveBy (replacing this.bounds
+    // would orphan a rect another same-frame mutation may have written to).
+    if (this.bounds) this.bounds.moveBy(delta);
+    this.changed();
   }
   scaleBy(scale) {
     const scalePt = typeof scale === 'number' ? pt(scale, scale) : scale;
@@ -3301,13 +3316,22 @@ class Morph {
     this.bounds = this.getBounds().copy();
   }
   testTransform(whenDone) {
-    // Spin a bit, then reset and optionally run next
-    this.startStepping('rotateBy', Math.PI / 10, 25);
-    setTimeout(() => {
-      this.stopStepping();
-      this.transform.rotation = 0;
-      if (whenDone) whenDone();
-    }, 500);
+    // Spin a bit, then reset and optionally run next. Driven by stepping (not
+    // a raw timer) so the heap writes in setRotation happen inside the frame
+    // loop's runtime.change transaction.
+    this.$testTransformStepsLeft = 20; // ~500ms at 25ms/step
+    this.$testTransformWhenDone = whenDone;
+    this.startStepping('testTransformStep', null, 25);
+  }
+  testTransformStep() {
+    this.rotateBy(Math.PI / 10);
+    this.$testTransformStepsLeft -= 1;
+    if (this.$testTransformStepsLeft > 0) return;
+    this.stopStepping('testTransformStep');
+    this.setRotation(0);
+    let whenDone = this.$testTransformWhenDone;
+    this.$testTransformWhenDone = null;
+    if (whenDone) whenDone();
   }
   topMorph() {
     // Note this gets used also to find the
@@ -6553,7 +6577,8 @@ class HaloHandle extends Morph {
     // Drag, Rotate and Scale here drag the handle during manipulation
     this.hitPoint = this.owner.globalize(pt);
     if (this.handleName == 'Rotate') {
-      let c = this.target.getBounds().center();
+      // Pivot is the shape center's true world position (rotateBy keeps it fixed).
+      let c = this.target.globalize(this.target.shape.getBounds().center());
       this.rotateStartAngle = Math.atan2(this.hitPoint.y - c.y, this.hitPoint.x - c.x);
     }
     if (this.handleName == 'Scale') {
@@ -6609,7 +6634,7 @@ class HaloHandle extends Morph {
       }
     }
     if (this.handleName == 'Rotate') {
-      let c = this.target.getBounds().center();
+      let c = this.target.globalize(this.target.shape.getBounds().center());
       let currentAngle = Math.atan2(p.y - c.y, p.x - c.x);
       this.target.rotateBy(currentAngle - this.rotateStartAngle);
       this.rotateStartAngle = currentAngle;
