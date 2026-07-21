@@ -1893,7 +1893,7 @@ class TextBox extends Shape {
     this.workspaceObj = {}; // used for doit and printit
   }
   acceptKeyboardInput(evt) {
-    // ** Note selStart and stop may be reversed!
+    // ** Note $selStart and stop may be reversed!
     let paneDirty = !!(
       this.owner &&
       this.owner.owner &&
@@ -1999,7 +1999,7 @@ class TextBox extends Shape {
     return new TextCharSpec(lineIndex, lineY, originX + xBest, strIx);
   }
   clearTyping() {
-    this.duringTyping = false;
+    this.$duringTyping = false;
   }
   compose() {
     this.lines = [];
@@ -2064,30 +2064,31 @@ class TextBox extends Shape {
   }
   extendSelectionTo(p) {
     let spec = this.charSpecForPt(p);
-    if (this._shiftAnchorIx != null) {
-      let a = this._shiftAnchorIx;
+    if (this.$shiftAnchorIx != null) {
+      let a = this.$shiftAnchorIx;
       let b = spec.strIx;
-      this.selStart = this.charSpecForIndex(Math.min(a, b));
-      this.selStop = this.charSpecForIndex(Math.max(a, b));
+      this.$selStart = this.charSpecForIndex(Math.min(a, b));
+      this.$selStop = this.charSpecForIndex(Math.max(a, b));
     } else {
-      this.selStop = spec;
+      this.$selStop = spec;
     }
     // console.log("After extendSelectionTo" + spec.asString());
   }
   finSelection() {
-    this._shiftAnchorIx = null;
-    //  If we were selecting backward, now rectify so selStart < selStop
-    if (this.selStart.strIx > this.selStop.strIx) {
-      let swap = this.selStart;
-      this.selStart = this.selStop;
-      this.selStop = swap;
+    this.ensureSelectionSpecs();
+    this.$shiftAnchorIx = null;
+    //  If we were selecting backward, now rectify so $selStart < $selStop
+    if (this.$selStart.strIx > this.$selStop.strIx) {
+      let swap = this.$selStart;
+      this.$selStart = this.$selStop;
+      this.$selStop = swap;
     }
     // A chance to notice null selections for selectWord
-    if (this.selStart.strIx == this.selStop.strIx) {
-      if (this.priorNullSelection == this.selStop.strIx) this.handleSelectWord();
-      else this.priorNullSelection = this.selStop.strIx;
+    if (this.$selStart.strIx == this.$selStop.strIx) {
+      if (this.$priorNullSelection == this.$selStop.strIx) this.handleSelectWord();
+      else this.$priorNullSelection = this.$selStop.strIx;
     } else {
-      this.priorNullSelection = -1;
+      this.$priorNullSelection = -1;
     }
     this.clearTyping();
   }
@@ -2102,16 +2103,17 @@ class TextBox extends Shape {
     return ctx;
   }
   handleArrowKeys(key) {
-    let leftIx = this.selStart.strIx;
-    let rightIx = this.selStop.strIx;
+    this.ensureSelectionSpecs();
+    let leftIx = this.$selStart.strIx;
+    let rightIx = this.$selStop.strIx;
     if (key == 'ArrowLeft') {
-      this.selStart = this.charSpecForIndex(leftIx - 1);
-      this.selStop = this.charSpecForIndex(leftIx - 1);
+      this.$selStart = this.charSpecForIndex(leftIx - 1);
+      this.$selStop = this.charSpecForIndex(leftIx - 1);
       return;
     }
     if (key == 'ArrowRight') {
-      this.selStart = this.charSpecForIndex(rightIx + 1);
-      this.selStop = this.charSpecForIndex(rightIx + 1);
+      this.$selStart = this.charSpecForIndex(rightIx + 1);
+      this.$selStop = this.charSpecForIndex(rightIx + 1);
       return;
     }
     if (key == 'ArrowUp') return;
@@ -2119,12 +2121,13 @@ class TextBox extends Shape {
   }
   handleBackspace() {
     // backspace
+    this.ensureSelectionSpecs();
     if (this.selectedTextString().length > 0)
       this.paste(''); // first BS deletes
     else {
-      if (this.selStart.strIx >= 1) {
+      if (this.$selStart.strIx >= 1) {
         // subsequent BS deletes backwards
-        this.setSelectionRange([this.selStart.strIx - 1, this.selStart.strIx - 1]);
+        this.setSelectionRange([this.$selStart.strIx - 1, this.$selStart.strIx - 1]);
         this.paste('');
       }
     }
@@ -2133,10 +2136,13 @@ class TextBox extends Shape {
   handleEscapeKey(evt) {
     // Typing ESC selects everything since typing started
     // -- handy if your next action is to hit ctrl-F to search for it
-    // selStop is already at the end of type-in
-    this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringPutIn.length);
+    // $selStop is already at the end of type-in
+    this.ensureSelectionSpecs();
+    if (this.$stringPutIn == null) return;
+    this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringPutIn.length);
   }
   handleKeyboardShortcuts(evt) {
+    this.ensureSelectionSpecs();
     let k = evt.key && evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
     if ('dacxvzgdspf'.indexOf(k) < 0) return; // so as to not prevent default for some useful cases??
     if (k == 'a') this.setSelectionRange([0, this.string.length - 1]); // SELECT ALL
@@ -2191,26 +2197,26 @@ class TextBox extends Shape {
     }
     if (k == 'p') {
       // PRINT IT
-      let selA = this.selStart.strIx;
-      let selB = this.selStop.strIx;
+      let selA = this.$selStart.strIx;
+      let selB = this.$selStop.strIx;
       let start = Math.min(selA, selB);
       let end = Math.max(selA, selB); // end is exclusive
       let evalThing = this.wsEval.call(this.workspaceObj, this.string.slice(start, end));
       if (_evalJustFailed) return;
       let ins = ' ==> ' + this.printitString(evalThing);
       // Save undo state so ctrl-Z can restore both string and selection.
-      this._printitUndo = {
+      this.$printitUndo = {
         prefix: this.string.slice(0, end),
         suffix: this.string.slice(end),
         selA: start,
         selB: end,
       };
-      this.string = this._printitUndo.prefix + ins + this._printitUndo.suffix;
+      this.string = this.$printitUndo.prefix + ins + this.$printitUndo.suffix;
       let bottomY = this.compose();
       this.extent.y = bottomY - this.topLeft.y;
       // Move caret to after inserted text.
       let caretIx = end + ins.length;
-      this.selStart = this.selStop = this.charSpecForIndex(caretIx);
+      this.$selStart = this.$selStop = this.charSpecForIndex(caretIx);
       this.clearTyping();
     }
     evt.preventDefault();
@@ -2218,34 +2224,36 @@ class TextBox extends Shape {
   }
   handleSelectWord() {
     // A chance to notice null selections for selectWord
-    //  console.log('handling select word at ' + this.selStart.strIx);
+    //  console.log('handling select word at ' + this.$selStart.strIx);
     // debugger;
-    let pair = this.selectWord(this.string, this.selStart.strIx);
+    this.ensureSelectionSpecs();
+    let pair = this.selectWord(this.string, this.$selStart.strIx);
     this.setSelectionRange(pair);
   }
   noteReplacement(str) {
     // Copied logic of paste() to save state
-    if (this.duringTyping) {
-      this.stringPutIn += str;
+    this.ensureSelectionSpecs();
+    if (this.$duringTyping) {
+      this.$stringPutIn += str;
       return;
     }
     // New edit makes any prior printit undo irrelevant.
-    this._printitUndo = null;
-    this.selStartStrix = this.selStart.strIx;
-    this.selStopStrix = this.selStop.strIx;
-    this.stringTakenOut = this.string.slice(this.selStartStrix, this.selStopStrix);
-    this.stringPutIn = str.slice(0);
-    this.duringTyping = true;
+    this.$printitUndo = null;
+    let startStrix = this.$selStart.strIx;
+    let stopStrix = this.$selStop.strIx;
+    this.$stringTakenOut = this.string.slice(startStrix, stopStrix);
+    this.$stringPutIn = str.slice(0);
+    this.$duringTyping = true;
   }
   paste(str) {
     // Paste the string over the current selection
     this.noteReplacement(str); // copied logic to save state
-    let before = this.string.slice(0, this.selStart.strIx);
-    let after = this.string.slice(this.selStop.strIx, this.string.length);
+    let before = this.string.slice(0, this.$selStart.strIx);
+    let after = this.string.slice(this.$selStop.strIx, this.string.length);
     this.string = before + str + after;
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
-    this.selStart = this.selStop = this.charSpecForIndex(this.selStart.strIx + str.length);
+    this.$selStart = this.$selStop = this.charSpecForIndex(this.$selStart.strIx + str.length);
   }
   printitString(obj) {
     if (obj === undefined) return 'undefined';
@@ -2256,14 +2264,16 @@ class TextBox extends Shape {
   }
   redoReplacement(str) {
     // The selection is at the end of last replacement.  We simply have to
-    // find the next occurrence of stringTakenOut, extend the selection
-    // from there to the end of stringTakenOut, and call paste (stringPutIn)
-    let nextIx = this.string.indexOf(this.stringTakenOut, this.selStart.strIx);
+    // find the next occurrence of $stringTakenOut, extend the selection
+    // from there to the end of $stringTakenOut, and call paste ($stringPutIn)
+    this.ensureSelectionSpecs();
+    if (this.$stringTakenOut == null || this.$stringPutIn == null) return;
+    let nextIx = this.string.indexOf(this.$stringTakenOut, this.$selStart.strIx);
     if (nextIx < 0) return;
-    this.selStart = this.charSpecForIndex(nextIx);
-    this.selStop = this.charSpecForIndex(nextIx + this.stringTakenOut.length);
-    this.duringTyping = false; // so we don't grow stringPutIn
-    this.paste(this.stringPutIn);
+    this.$selStart = this.charSpecForIndex(nextIx);
+    this.$selStop = this.charSpecForIndex(nextIx + this.$stringTakenOut.length);
+    this.$duringTyping = false; // so we don't grow $stringPutIn
+    this.paste(this.$stringPutIn);
   }
   render(ctx) {
     ctx.save();
@@ -2299,22 +2309,22 @@ class TextBox extends Shape {
       if (
         !this.disableSelectionRendering &&
         !this.noMenuLineHighlight &&
-        lineNo == this.selectedLineIndex - 1
+        lineNo == this.$selectedLineIndex - 1
       ) {
         // line selection for lists and menus
         ctx.fillRect(this.topLeft.x, selY, this.extent.x, this.lineHeight);
       }
-      if (!this.disableSelectionRendering && !this.noMenuLineHighlight && this.selStart != null) {
+      if (!this.disableSelectionRendering && !this.noMenuLineHighlight && this.$selStart != null) {
         // character selection for editing - egad...
-        let spec1 = this.selStart;
-        let spec2 = this.selStop;
+        let spec1 = this.$selStart;
+        let spec2 = this.$selStop;
         // Flip stop and start if selection was drawn backwards
         if (
           spec1.lineNo > spec2.lineNo ||
           (spec1.lineNo == spec2.lineNo && spec1.charX > spec2.charX)
         ) {
-          spec1 = this.selStop;
-          spec2 = this.selStart;
+          spec1 = this.$selStop;
+          spec2 = this.$selStart;
         }
         if (spec1.charX < 1) spec1.charX = 1; // Selection was overwriting border??
         if (spec2.charX < 1) spec2.charX = 1;
@@ -2385,16 +2395,16 @@ class TextBox extends Shape {
     this.render(ctx);
   }
   selectedTextString() {
-    if (this.selectedLineIndex > 0) return this.lines[this.selectedLineIndex - 1].string;
-    if (this.selStart != null) return this.string.slice(this.selStart.strIx, this.selStop.strIx);
+    if (this.$selectedLineIndex > 0) return this.lines[this.$selectedLineIndex - 1].string;
+    if (this.$selStart != null) return this.string.slice(this.$selStart.strIx, this.$selStop.strIx);
     return null;
   }
   selectLineAt(p) {
     // Special case: numeric 0 clears the selection
-    if (p === 0) return (this.selectedLineIndex = 0);
-    if (!this.includesPt(p)) return (this.selectedLineIndex = 0);
+    if (p === 0) return (this.$selectedLineIndex = 0);
+    if (!this.includesPt(p)) return (this.$selectedLineIndex = 0);
     // Note line index is 1...N; 0 means no selection
-    this.selectedLineIndex = Math.floor((p.y - (this.topLeft.y + this.hang)) / this.lineHeight + 1);
+    this.$selectedLineIndex = Math.floor((p.y - (this.topLeft.y + this.hang)) / this.lineHeight + 1);
   }
   selectSearchString(str) {
     // Private method for use in search browsers
@@ -2491,8 +2501,8 @@ class TextBox extends Shape {
   setBounds(newBounds) {
     super.setBounds(newBounds);
     let savedMenuLine = null;
-    if (this.selectedLineIndex > 0 && this.lines && this.lines.length >= this.selectedLineIndex) {
-      savedMenuLine = dropNewline(this.lines[this.selectedLineIndex - 1].string);
+    if (this.$selectedLineIndex > 0 && this.lines && this.lines.length >= this.$selectedLineIndex) {
+      savedMenuLine = dropNewline(this.lines[this.$selectedLineIndex - 1].string);
     }
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
@@ -2511,30 +2521,32 @@ class TextBox extends Shape {
     this.noBreak = ifSo;
   }
   setNullSelection() {
-    this.selectedLineIndex = 0; // means no selection (for menus, lists, etc)
-    this.selStart = this.selStop = new TextCharSpec(0, this.topLeft.y + this.hang, 0, 0);
+    this.$selectedLineIndex = 0; // means no selection (for menus, lists, etc)
+    this.$selStart = this.$selStop = new TextCharSpec(0, this.topLeft.y + this.hang, 0, 0);
     // Must not equal caret index 0 or the first click at doc start looks like a repeat click and runs selectWord.
-    this.priorNullSelection = -1;
-    this.selStartIndex = this.selStopIndex = 0; // indices into this.string
+    this.$priorNullSelection = -1;
+  }
+  ensureSelectionSpecs() {
+    // Selection is per-user ($-state) and lost on reload; restore a null selection on demand.
+    if (this.$selStart == null || this.$selStop == null) this.setNullSelection();
   }
   setSelectedTextString(str) {
     let idx = 0;
     this.lines.forEach((line, index) => {
       if (dropNewline(line.string) == str) idx = index;
     });
-    return (this.selectedLineIndex = idx + 1);
+    return (this.$selectedLineIndex = idx + 1);
   }
   setSelectionRange(pair) {
-    this.selStart = this.charSpecForIndex(pair[0]);
-    this.selStop = this.charSpecForIndex(pair[1] + 1);
+    this.$selStart = this.charSpecForIndex(pair[0]);
+    this.$selStop = this.charSpecForIndex(pair[1] + 1);
     // console.log('setSelectionRange() = ' + pair)
-    this.priorNullSelection = -1;
+    this.$priorNullSelection = -1;
   }
   setText(str) {
     this.string = str;
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
-    this.scrollY = 0;
     this.setNullSelection();
   }
   setWorkspaceObj(wsObj) {
@@ -2545,16 +2557,16 @@ class TextBox extends Shape {
     /** Shift-click: extend selection from the end farthest from pointer; empty selection anchors at index (right side). */
     let clickSpec = this.charSpecForPt(p);
     let ci = clickSpec.strIx;
-    if (!this.selStart || !this.selStop) {
+    if (!this.$selStart || !this.$selStop) {
       this.startSelectionAt(p);
       return;
     }
-    let a = Math.min(this.selStart.strIx, this.selStop.strIx);
-    let b = Math.max(this.selStart.strIx, this.selStop.strIx);
+    let a = Math.min(this.$selStart.strIx, this.$selStop.strIx);
+    let b = Math.max(this.$selStart.strIx, this.$selStop.strIx);
     if (a === b) {
-      this._shiftAnchorIx = a;
-      this.selStart = this.charSpecForIndex(Math.min(a, ci));
-      this.selStop = this.charSpecForIndex(Math.max(a, ci));
+      this.$shiftAnchorIx = a;
+      this.$selStart = this.charSpecForIndex(Math.min(a, ci));
+      this.$selStop = this.charSpecForIndex(Math.max(a, ci));
       return;
     }
     let distA = Math.abs(ci - a);
@@ -2563,15 +2575,15 @@ class TextBox extends Shape {
     if (distA < distB) farIx = b;
     else if (distB < distA) farIx = a;
     else farIx = b;
-    this._shiftAnchorIx = farIx;
-    this.selStart = this.charSpecForIndex(Math.min(farIx, ci));
-    this.selStop = this.charSpecForIndex(Math.max(farIx, ci));
+    this.$shiftAnchorIx = farIx;
+    this.$selStart = this.charSpecForIndex(Math.min(farIx, ci));
+    this.$selStop = this.charSpecForIndex(Math.max(farIx, ci));
   }
   startSelectionAt(p) {
-    this.selectedLineIndex = 0; // list/menu line mode must not override char selection in editors
+    this.$selectedLineIndex = 0; // list/menu line mode must not override char selection in editors
     let spec = this.charSpecForPt(p);
-    this.selStart = this.selStop = spec;
-    this._shiftAnchorIx = null;
+    this.$selStart = this.$selStop = spec;
+    this.$shiftAnchorIx = null;
     // console.log("After startSelectionAt" + spec.asString());
   }
   textDrawOriginX(lineNo) {
@@ -2585,9 +2597,9 @@ class TextBox extends Shape {
     return padL;
   }
   undoReplacement() {
-    if (this._printitUndo) {
-      let u = this._printitUndo;
-      this._printitUndo = null;
+    if (this.$printitUndo) {
+      let u = this.$printitUndo;
+      this.$printitUndo = null;
       this.string = u.prefix + u.suffix;
       let bottomY = this.compose();
       this.extent.y = bottomY - this.topLeft.y;
@@ -2596,9 +2608,11 @@ class TextBox extends Shape {
       return;
     }
     // Recreate selection range
-    this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringPutIn.length);
-    this.paste(this.stringTakenOut);
-    this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringTakenOut.length);
+    this.ensureSelectionSpecs();
+    if (this.$stringPutIn == null || this.$stringTakenOut == null) return;
+    this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringPutIn.length);
+    this.paste(this.$stringTakenOut);
+    this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringTakenOut.length);
     this.clearTyping();
   }
   wsEval(str) {
@@ -2813,12 +2827,16 @@ try {
     let sx = this.transform.scale.x || 1;
     let sy = this.transform.scale.y || 1;
     let rot = this.transform.rotation || 0;
+    let b;
     if (Math.abs(rot) < 1e-10 && Math.abs(sx - 1) < 1e-10 && Math.abs(sy - 1) < 1e-10) {
-      return local.translatedBy(this.transform.translation);
+      b = local.translatedBy(this.transform.translation);
+    } else {
+      let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
+      let pts = corners.map((c) => this.transform.transformPt(c));
+      b = unionPts(pts);
     }
-    let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
-    let pts = corners.map((c) => this.transform.transformPt(c));
-    return unionPts(pts);
+    let scrollY = this.$scrollOffsetY;
+    return scrollY ? b.translatedBy(pt(0, scrollY)) : b;
   }
   boundsInWorld() {
     /** Axis-aligned bounds of this morph in world coordinates. */
@@ -2936,12 +2954,17 @@ try {
   }
   getBounds() {
     // NOTE: does not include submorph stickouts; use {@link fullBounds} or {@link boundsInOwnerAfterTransform}.
-    return this.shape.getBounds().translatedBy(this.transform.translation);
+    let b = this.shape.getBounds().translatedBy(this.transform.translation);
+    let scrollY = this.$scrollOffsetY;
+    return scrollY ? b.translatedBy(pt(0, scrollY)) : b;
   }
-  globalize(pt) {
+  globalize(p) {
     // local coordinates -> world
-    if (this.owner == null) return pt;
-    return this.owner.globalize(this.transform.transformPt(pt));
+    if (this.owner == null) return p;
+    let q = this.transform.transformPt(p);
+    let scrollY = this.$scrollOffsetY;
+    if (scrollY) q = pt(q.x, q.y + scrollY);
+    return this.owner.globalize(q);
   }
   hasSubmorphs() {
     if (this.submorphs != null && this.submorphs.length > 0) return true;
@@ -3138,9 +3161,11 @@ try {
     list.push(submorph);
     this.changed();
   }
-  relativize(pt) {
+  relativize(p) {
     // owner coordinates -> local
-    return this.transform.invertPt(pt);
+    // $scrollOffsetY is this user's scroll offset (see ScrollPane); undo it before the shared transform.
+    let scrollY = this.$scrollOffsetY;
+    return this.transform.invertPt(scrollY ? pt(p.x, p.y - scrollY) : p);
   }
   remove() {
     this.stopStepping();
@@ -3192,7 +3217,8 @@ try {
       }
       // ctx.transform(each.getTransform);
       const tfm = each.transform;
-      ctx.translate(tfm.translation.x, tfm.translation.y);
+      let scrollY = each.$scrollOffsetY;
+      ctx.translate(tfm.translation.x, tfm.translation.y + (scrollY ? scrollY : 0));
       ctx.rotate(tfm.rotation);
       ctx.scale(tfm.scale.x, tfm.scale.y);
       each.renderOn(ctx);
@@ -4156,8 +4182,8 @@ class SimpleButtonMorph extends TextMorph {
     this.shape.borderColor = Color.gray;
     this.shape.noMenuLineHighlight = true;
     this.shape.disableSelectionRendering = true;
-    this.shape.selStart = null;
-    this.shape.selStop = null;
+    this.shape.$selStart = null;
+    this.shape.$selStop = null;
     this.shape.inset = pt(0, 0);
     this.shape.hang = 0;
     this.shape.composeBottomPad = 0;
@@ -4226,8 +4252,8 @@ class KbdKeyMorph extends SimpleButtonMorph {
   }
   setKeyLabel(label) {
     this.setText(label);
-    this.shape.selStart = null;
-    this.shape.selStop = null;
+    this.shape.$selStart = null;
+    this.shape.$selStop = null;
   }
   static new(...args) {
     return new this(...args);
@@ -4350,7 +4376,7 @@ class ListMorph extends Morph {
     }
     this.actorID = null;
     this.hitPoint = null;
-    let selectionIndex = this.shape.selectedLineIndex;
+    let selectionIndex = this.shape.$selectedLineIndex;
     this.world().setPointerFocus(null);
     if (selectionIndex > 0) {
       let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
@@ -4479,14 +4505,18 @@ class ScrollPane extends Morph {
     this.paneMenu = null;
   }
   _scrollContentTo(scrollPos) {
+    // Scroll state is per-user: it lives in contentPane.$scrollOffsetY (applied by the
+    // Morph coordinate primitives), never in the shared transform.
     let clipped = Math.max(0, Math.min(1, scrollPos));
+    // Heal legacy documents that scrolled by mutating the shared translation.
+    if (this.contentPane.transform.translation.y !== 0) this.contentPane.transform.translation.y = 0;
     let ht = this.contentPane.getBounds().height();
     let slideRoom = ht - this.getBounds().height();
     if (!slideRoom || slideRoom <= 0) {
-      this.contentPane.transform.translation.y = 0;
+      this.contentPane.$scrollOffsetY = 0;
       return 0;
     }
-    this.contentPane.transform.translation.y = Math.min(0, -slideRoom * clipped);
+    this.contentPane.$scrollOffsetY = Math.min(0, -slideRoom * clipped);
     return clipped;
   }
   clippedBounds() {
@@ -4506,7 +4536,9 @@ class ScrollPane extends Morph {
     let ht = this.contentPane.getBounds().height();
     let slideRoom = ht - this.getBounds().height();
     if (!slideRoom || slideRoom <= 0) return 0;
-    return -this.contentPane.transform.translation.y / slideRoom;
+    // Per-user scroll state; legacy shared-translation scroll counts until healed.
+    let scrollY = (this.contentPane.$scrollOffsetY || 0) + this.contentPane.transform.translation.y;
+    return -scrollY / slideRoom;
   }
   installContentAndScrollbar(contentPaneSpec, scrollBarSpec, contentMorph, onTextSaved) {
     this.contentPaneSpec = contentPaneSpec;
@@ -4540,7 +4572,7 @@ class ScrollPane extends Morph {
       return;
     }
     if (slideRoom > 0) {
-      let spec = this.contentPane.shape.selStop || this.contentPane.shape.selStart;
+      let spec = this.contentPane.shape.$selStop || this.contentPane.shape.$selStart;
       let caretY = spec ? spec.charY + this.contentPane.shape.lineHeight / 2 : null;
       if (caretY == null) {
         let clipped = this._scrollContentTo(this.getScrollPosition());
@@ -4952,15 +4984,11 @@ class SliderMorph extends Morph {
     let opts = optsIfAny || {};
     super(initialBounds);
     this.setColor(Color.gray);
-    this.value = 0.0; // By convention, my value ranges from 0.0 to 1.0
+    // Value and thumb are per-user ($value / $thumb): each user scrolls independently.
     this.valExtent = 0.1; // for when showing a range
     this.showsMenuButton = opts.menuButton !== false; // scrollbars: true; plain sliders: pass false
     this.menuButtonFraction = this.showsMenuButton ? 0.1 : 0;
-    this.slider = this.addMorph(new Morph(rect(0, 0, 10, 10)));
-    this.styleSlider();
-    this.slider.onPointerDown = function () {
-      return false;
-    }; // ignore blipper
+    this.ensureThumb();
     if (this.showsMenuButton) {
       this.menuButton = this.addMorph(new Morph(rect(0, 0, 1, 1)));
       this.menuButton.setColor(Color.blue);
@@ -4979,6 +5007,27 @@ class SliderMorph extends Morph {
   }
   clipValue(val) {
     return Math.round(Math.min(1.0, Math.max(0.0, val)) * 1000) / 1000;
+  }
+  ensureThumb() {
+    // Per-user thumb: each replica lazily builds its own (my $-state is lost on reload).
+    if (this.slider) {
+      // Heal legacy documents whose thumb was a shared submorph.
+      this.removeMorph(this.slider);
+      this.slider = null;
+    }
+    if (this.$thumb && this.$thumb.owner === this) return this.$thumb;
+    let thumb = new Morph(rect(0, 0, 10, 10));
+    thumb.onPointerDown = function () {
+      return false;
+    }; // ignore blipper
+    this.$thumb = thumb;
+    this.addEphemeralMorph(thumb);
+    this.styleSlider();
+    return thumb;
+  }
+  getValue() {
+    // By convention, my value ranges from 0.0 to 1.0; per-user, 0 until this user moves it
+    return this.$value == null ? 0 : this.$value;
   }
   isVertical() {
     let bnds = this.shape.getBounds();
@@ -5024,8 +5073,9 @@ class SliderMorph extends Morph {
     }
     let track = this.trackBounds();
     if (!track.includesPt(localP)) return false;
-    if (!this.slider.includesPt(localP)) {
-      let sliderBR = this.slider.getBounds().bottomRight();
+    let thumb = this.ensureThumb();
+    if (!thumb.includesPt(localP)) {
+      let sliderBR = thumb.getBounds().bottomRight();
       if (localP.lePt(sliderBR)) this.tweakValue(-0.1);
       else this.tweakValue(0.1);
       return true;
@@ -5047,9 +5097,9 @@ class SliderMorph extends Morph {
       let elevPix = Math.max(ext * track.width(), 6);
       newValue = (localP.x - track.topLeft.x - elevPix / 2) / (track.width() - elevPix);
     }
-    this.value = this.clipValue(newValue);
-    if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
-    else this.emitValueFunction.call(this.owner, this.value);
+    this.$value = this.clipValue(newValue);
+    if (this.valueTarget) this.valueTarget[this.valueMessage](this.$value);
+    else this.emitValueFunction.call(this.owner, this.$value);
     this.syncThumbToValue();
     return true;
   }
@@ -5071,38 +5121,44 @@ class SliderMorph extends Morph {
     this.adjustForNewBounds();
   }
   setValue(newValue) {
-    this.value = newValue;
+    this.$value = newValue;
     this.adjustForNewBounds();
   }
   setValueQuiet(newValue) {
     /** Update value + thumb without console (avoids re-entrancy when transcript mirrors console). */
-    this.value = newValue;
+    this.$value = newValue;
     this.syncThumbToValue();
   }
   setValueTarget(target, msgName) {
     this.valueTarget = target;
     this.valueMessage = msgName;
   }
+  renderOn(ctx) {
+    if (!this.$thumb) this.syncThumbToValue(); // lazily rebuild this user's thumb (e.g. after reload)
+    super.renderOn(ctx);
+  }
   styleSlider() {
-    this.slider.setColor(Color.green.darker());
+    if (this.$thumb) this.$thumb.setColor(Color.green.darker());
   }
   syncThumbToValue() {
-    /** Reposition thumb from this.value — no console (safe when console is mirrored to Transcript). */
+    /** Reposition thumb from my per-user value — no console (safe when console is mirrored to Transcript). */
+    let thumb = this.ensureThumb();
     let bnds = this.shape.getBounds();
     let track = this.trackBounds();
     let ext = this.valExtent;
+    let value = this.getValue();
     let topLeft;
     let sliderExt;
     if (this.isVertical()) {
       let elevPixV = Math.max(ext * track.height(), 6);
-      topLeft = pt(0, track.topLeft.y + (track.height() - elevPixV) * this.value);
+      topLeft = pt(0, track.topLeft.y + (track.height() - elevPixV) * value);
       sliderExt = pt(track.width(), elevPixV);
     } else {
       let elevPixH = Math.max(ext * track.width(), 6);
-      topLeft = pt(track.topLeft.x + (track.width() - elevPixH) * this.value, track.topLeft.y);
+      topLeft = pt(track.topLeft.x + (track.width() - elevPixH) * value, track.topLeft.y);
       sliderExt = pt(elevPixH, track.height());
     }
-    this.slider.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
+    thumb.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
   }
   test() {
     // SliderMorph.prototype.test()
@@ -5112,14 +5168,14 @@ class SliderMorph extends Morph {
     let sliderV = Lively.addMorph(
       new SliderMorph(
         rect(50, 100, 10, 200),
-        (value) => readOut.setText('sliderV = ' + sliderV.value.toFixed(2)),
+        (value) => readOut.setText('sliderV = ' + sliderV.getValue().toFixed(2)),
         sliderOpts,
       ),
     );
     let sliderH = Lively.addMorph(
       new SliderMorph(
         rect(100, 50, 200, 10),
-        (value) => readOut.setText('sliderH = ' + sliderH.value.toFixed(2)),
+        (value) => readOut.setText('sliderH = ' + sliderH.getValue().toFixed(2)),
         sliderOpts,
       ),
     );
@@ -5137,9 +5193,9 @@ class SliderMorph extends Morph {
     return rect(leftW, 0, Math.max(0, bnds.width() - leftW), bnds.height());
   }
   tweakValue(tweak) {
-    this.setValue(this.clipValue(this.value + tweak));
-    if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
-    else this.emitValueFunction.call(this.owner, this.value);
+    this.setValue(this.clipValue(this.getValue() + tweak));
+    if (this.valueTarget) this.valueTarget[this.valueMessage](this.$value);
+    else this.emitValueFunction.call(this.owner, this.$value);
   }
   static new(...args) {
     return new this(...args);
@@ -5415,10 +5471,10 @@ class PanelTitleBar extends Morph {
     }
     s.noMenuLineHighlight = true;
     s.disableSelectionRendering = true;
-    s.selectedLineIndex = 0;
-    s.selStart = null;
-    s.selStop = null;
-    s.priorNullSelection = 0;
+    s.$selectedLineIndex = 0;
+    s.$selStart = null;
+    s.$selStop = null;
+    s.$priorNullSelection = 0;
     s.composeBottomPad = 0;
     s.lineHeight = this.HEIGHT;
     s.setBorderWidth(2);
@@ -6557,9 +6613,9 @@ class HaloHandle extends Morph {
     letter.setStyles(null, 0, null);
     letter.boxColor = null;
     if (iconLetter != 'I') letter.moveBy(m.nudge);
-    letter.selectedLineIndex = 0;
-    letter.selStart = null;
-    letter.selStop = null;
+    letter.$selectedLineIndex = 0;
+    letter.$selStart = null;
+    letter.$selStop = null;
   }
   makeHandleShape(index, iconLetter, halo) {
     let radius = 10;
@@ -6797,8 +6853,8 @@ class HaloMorph extends Morph {
     letter.borderWidth = 1;
     letter.borderColor = chrome.borderColor;
     letter.fill = chrome.fill;
-    letter.selStart = null;
-    letter.selStop = null;
+    letter.$selStart = null;
+    letter.$selStop = null;
     letter.disableSelectionRendering = true;
     letter.noMenuLineHighlight = true;
     letter.centerGlyph = true;
