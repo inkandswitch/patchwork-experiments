@@ -3349,7 +3349,16 @@ try {
   }
   syncBoundsFromGeometry() {
     // Sync cached this.bounds with shape + translation (setBounds/moveBy already keep it; reparent paths did not).
-    this.bounds = this.getBounds().copy();
+    // Update in place, like setRotation: replacing this.bounds would orphan a rect
+    // that a same-frame in-place mutation (e.g. Morph.moveBy) already wrote a fresh
+    // point into, baking a dangling ref into the document.
+    let b = this.getBounds();
+    if (this.bounds) {
+      this.bounds.topLeft = b.topLeft.copy();
+      this.bounds.extent = b.extent.copy();
+    } else {
+      this.bounds = b.copy();
+    }
   }
   testTransform(whenDone) {
     // Spin a bit, then reset and optionally run next. Driven by stepping (not
@@ -3688,10 +3697,11 @@ class LineMorph extends Morph {
     let pad = 10 + (this.handleRadius != null ? this.handleRadius : 5);
     return unionPts(verts).expandBy(pad);
   }
-  insertVertexOnSegment(segmentIndex, pt) {
+  insertVertexOnSegment(segmentIndex, p) {
+    // NB: don't name the parameter `pt` — it would shadow the global pt() below.
     let verts = this.shape.vertices;
     let ix = segmentIndex + 1;
-    verts.splice(ix, 0, pt(pt.x, pt.y));
+    verts.splice(ix, 0, pt(p.x, p.y));
     this.syncShapeFromVertices();
     return ix;
   }

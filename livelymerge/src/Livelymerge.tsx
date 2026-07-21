@@ -132,7 +132,11 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
 
 export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const docHandle = useDocHandle<LivelymergeDoc>(docUrl, { suspense: true })!;
-  (window as any).runtime = runtime = createLivelymergeRuntime(docHandle);
+  // One runtime per doc handle — recreating it on every render would wipe the shadow
+  // table and all per-user ($-prefixed) state, and reset the GC's once-per-id
+  // missing-referent warning dedup (re-warning the same ids on every render).
+  runtime = useMemo(() => createLivelymergeRuntime(docHandle), [docHandle]);
+  (window as any).runtime = runtime;
   (window as any).handle = docHandle; // needed for historical reasons, will go away once we update alldefs
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
