@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Livelymerge — multiuser architecture</title>
+    <style>
+      :root {
+        --ink: #1a1a1a;
+        --muted: #4a4a4a;
+        --faint: #7a7a7a;
+        --stroke: #2a2a2a;
+        --soft: #c8c8c8;
+        --fill: #f0f0f0;
+        --elev: #fafafa;
+        --page: #ffffff;
+        --accent: #1a5fb4;
+        --local: #e8eef6;
+        --shared: #ebe8e0;
+        --font: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px 20px 48px;
+        background: var(--page);
+        color: var(--ink);
+        font-family: var(--font);
+        line-height: 1.45;
+      }
+
+      header {
+        max-width: 1280px;
+        margin: 0 auto 16px;
+      }
+
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 1.75rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      header p {
+        margin: 0;
+        max-width: 62rem;
+        color: var(--muted);
+        font-size: 1rem;
+      }
+
+      .poster-wrap {
+        max-width: 1280px;
+        margin: 0 auto;
+        border: 1px solid var(--soft);
+        background: var(--elev);
+        overflow: auto;
+      }
+
+      .poster-wrap svg {
+        display: block;
+        width: 100%;
+        min-width: 1100px;
+        height: auto;
+      }
+
+      footer {
+        max-width: 1280px;
+        margin: 16px auto 0;
+        color: var(--faint);
+        font-size: 0.85rem;
+      }
+
+      footer code {
+        font-family: var(--mono);
+        font-size: 0.8em;
+      }
+
+      @media print {
+        body {
+          padding: 0;
+        }
+        .poster-wrap {
+          border: none;
+          overflow: visible;
+        }
+        .poster-wrap svg {
+          min-width: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Livelymerge — multiuser architecture</h1>
+      <p>
+        One figure, two users. Read top → bottom on each side (events → frame → Morphic +
+        <code>$</code> shadow), then the shared Automerge band at the bottom. Numbered
+        callouts sit beside each region.
+      </p>
+    </header>
+
+    <div class="poster-wrap" role="img" aria-label="Architecture diagram of two Morphic replicas sharing one Automerge object memory">
+      <svg viewBox="0 0 1280 980" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrM" markerWidth="7" markerHeight="7" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#2a2a2a" />
+          </marker>
+        </defs>
+
+        <!-- Title bar -->
+        <rect x="0" y="0" width="1280" height="44" fill="#fafafa" />
+        <text
+          x="640"
+          y="28"
+          text-anchor="middle"
+          fill="#1a1a1a"
+          font-size="16"
+          font-weight="600"
+          font-family="Georgia, serif"
+        >
+          Two Morphic workflows · one Automerge object memory
+        </text>
+
+        <!-- LEFT NOTES -->
+        <g transform="translate(16,70)">
+          <rect width="170" height="100" fill="#f0f0f0" stroke="#c8c8c8" />
+          <rect width="4" height="100" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">1</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">User / actor</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Hardware pointer &amp; keyboard for this browser tab.</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Events stamped with this replica’s $actorID</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">before Morphic sees them.</text>
+        </g>
+
+        <g transform="translate(16,200)">
+          <rect width="170" height="130" fill="#f0f0f0" stroke="#c8c8c8" />
+          <rect width="4" height="130" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">2</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Frame cycle</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">requestAnimationFrame drives the loop.</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Each tick: one runtime.change</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">(Automerge transaction).</text>
+          <text x="14" y="80" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Inside: processEvents → steps →</text>
+          <text x="14" y="94" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">render → GC.</text>
+        </g>
+
+        <g transform="translate(16,370)">
+          <rect width="170" height="150" fill="#e8eef6" stroke="#c8c8c8" />
+          <rect width="4" height="150" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">3</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">$ local shadow</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Dashed overlay = per-user edges.</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">$uiState, $pointerFocus,</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">$keyboardFocus, $submorphs (halos),</text>
+          <text x="14" y="80" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">hands, $stepList.</text>
+          <text x="14" y="94" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Never serialized; gone on reload.</text>
+        </g>
+
+        <g transform="translate(16,560)">
+          <rect width="170" height="110" fill="#e8eef6" stroke="#c8c8c8" />
+          <rect width="4" height="110" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">4</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Stepping</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Only this replica runs specs on</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">its $stepList.</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Step methods write shared morph</text>
+          <text x="14" y="80" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">fields; peers see motion via merge,</text>
+          <text x="14" y="94" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">not re-step.</text>
+        </g>
+
+        <!-- RIGHT NOTES -->
+        <g transform="translate(1100,70)">
+          <rect width="170" height="100" fill="#f0f0f0" stroke="#c8c8c8" />
+          <rect width="4" height="100" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">1′</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Peer user</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Independent input stream.</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Own $actorID — concurrent edits</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">don’t steal focus.</text>
+        </g>
+
+        <g transform="translate(1100,200)">
+          <rect width="170" height="130" fill="#f0f0f0" stroke="#c8c8c8" />
+          <rect width="4" height="130" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">2′</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Independent rAF</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Same loop shape, separate clock.</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">No shared animation timer</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">across users.</text>
+          <text x="14" y="80" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Each change() is local until</text>
+          <text x="14" y="94" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">ops sync.</text>
+        </g>
+
+        <g transform="translate(1100,370)">
+          <rect width="170" height="150" fill="#e8eef6" stroke="#c8c8c8" />
+          <rect width="4" height="150" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">3′</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Peer $ shadow</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">B’s halos never appear on A’s</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">canvas.</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Same morph ids underneath;</text>
+          <text x="14" y="80" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">different ephemeral attachments.</text>
+          <text x="14" y="94" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">GC: $-reachable → retain locally.</text>
+        </g>
+
+        <g transform="translate(1100,560)">
+          <rect width="170" height="110" fill="#e8eef6" stroke="#c8c8c8" />
+          <rect width="4" height="110" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">4′</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Peer steps</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Bouncer A started ≠ run on B.</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">B only executes what B registered.</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Avoids N× side effects.</text>
+        </g>
+
+        <g transform="translate(1100,800)">
+          <rect width="170" height="130" fill="#ebe8e0" stroke="#c8c8c8" />
+          <rect width="4" height="130" fill="#1a5fb4" />
+          <text x="14" y="18" fill="#1a5fb4" font-size="12" font-weight="700" font-family="Georgia, serif">5</text>
+          <text x="36" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Shared heap</text>
+          <text x="14" y="38" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Persistent iff reachable from root</text>
+          <text x="14" y="52" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">with no $-edges on the path.</text>
+          <text x="14" y="66" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Panels, text, shapes, methods</text>
+          <text x="14" y="80" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">live here.</text>
+          <text x="14" y="94" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Both sides promote into this band.</text>
+        </g>
+
+        <!-- Leader curves -->
+        <path d="M186 120 C193 120, 193 110, 200 110" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M186 250 C193 250, 193 210, 200 210" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M186 430 C193 430, 193 370, 200 370" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M186 600 C193 600, 193 555, 200 555" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M1080 120 C1090 120, 1090 110, 1100 110" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M1080 210 C1090 210, 1090 250, 1100 250" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M1080 370 C1090 370, 1090 430, 1100 430" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M1080 555 C1090 555, 1090 600, 1100 600" fill="none" stroke="#7a7a7a" stroke-width="1" />
+        <path d="M1080 820 C1090 820, 1090 850, 1100 850" fill="none" stroke="#7a7a7a" stroke-width="1" />
+
+        <!-- COLUMN A -->
+        <rect x="200" y="58" width="380" height="620" fill="#fafafa" stroke="#c8c8c8" stroke-width="1.25" />
+        <text x="390" y="80" text-anchor="middle" fill="#1a1a1a" font-size="14" font-weight="600" font-family="Georgia, serif">User A (replica)</text>
+
+        <circle cx="390" cy="110" r="26" fill="#f0f0f0" stroke="#1a5fb4" stroke-width="2" />
+        <text x="390" y="116" text-anchor="middle" fill="#1a5fb4" font-size="16" font-weight="700" font-family="Georgia, serif">A</text>
+        <text x="390" y="158" text-anchor="middle" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">pointer / keyboard</text>
+        <text x="390" y="172" text-anchor="middle" fill="#1a1a1a" font-size="10" font-weight="600" font-family="ui-monospace, monospace">$actorID</text>
+
+        <g transform="translate(220,175)">
+          <rect width="340" height="100" fill="#f0f0f0" stroke="#1a5fb4" stroke-width="1.5" />
+          <text x="12" y="20" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Animation frame cycle</text>
+          <text x="12" y="42" fill="#4a4a4a" font-size="10" font-family="ui-monospace, monospace">requestAnimationFrame(onFrame)</text>
+          <text x="12" y="58" fill="#1a1a1a" font-size="10" font-family="ui-monospace, monospace">→ runtime.change(() =&gt; {</text>
+          <text x="24" y="74" fill="#1a1a1a" font-size="10" font-family="ui-monospace, monospace">processEvents();  handleStepList();  render();</text>
+          <text x="12" y="90" fill="#4a4a4a" font-size="10" font-family="ui-monospace, monospace">});  /* schedule next rAF */</text>
+          <circle cx="312" cy="50" r="18" fill="none" stroke="#1a5fb4" stroke-width="1.5" stroke-dasharray="3 2" />
+          <text x="312" y="54" text-anchor="middle" fill="#1a5fb4" font-size="9" font-family="Georgia, serif">rAF</text>
+        </g>
+
+        <g transform="translate(220,300)">
+          <rect width="340" height="200" fill="#ebe8e0" stroke="#c8c8c8" />
+          <text x="12" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Morphic world — shared objects</text>
+          <text x="12" y="34" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">WorldMorph · panels · text · shapes (same ids as peer)</text>
+          <rect x="24" y="48" width="72" height="40" fill="none" stroke="#c8c8c8" />
+          <rect x="108" y="54" width="88" height="52" fill="none" stroke="#c8c8c8" />
+          <rect x="210" y="60" width="64" height="44" fill="none" stroke="#c8c8c8" />
+          <text x="12" y="130" fill="#7a7a7a" font-size="9" font-family="Georgia, serif">drawn every frame · hit-tested for this user’s events</text>
+          <rect x="6" y="6" width="328" height="188" fill="#e8eef6" fill-opacity="0.5" stroke="#2a2a2a" stroke-dasharray="5 3" stroke-width="1.4" />
+          <text x="18" y="158" fill="#1a1a1a" font-size="11" font-weight="600" font-family="Georgia, serif">$ local shadow (A)</text>
+          <text x="18" y="174" fill="#4a4a4a" font-size="10" font-family="ui-monospace, monospace">$uiState · focus · $submorphs (halos) · hands</text>
+          <text x="18" y="188" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">ephemeral · per-replica · not in Automerge</text>
+        </g>
+
+        <g transform="translate(220,530)">
+          <rect width="340" height="70" fill="#e8eef6" stroke="#c8c8c8" stroke-dasharray="3 2" />
+          <text x="12" y="22" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Stepping — A’s $stepList only</text>
+          <text x="12" y="42" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">startStepping → StepSpec on morph + world.$stepList</text>
+          <text x="12" y="58" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">handleStepList each frame · writes shared position / state</text>
+        </g>
+
+        <!-- COLUMN B -->
+        <rect x="700" y="58" width="380" height="620" fill="#fafafa" stroke="#c8c8c8" stroke-width="1.25" />
+        <text x="890" y="80" text-anchor="middle" fill="#1a1a1a" font-size="14" font-weight="600" font-family="Georgia, serif">User B (replica)</text>
+
+        <circle cx="890" cy="110" r="26" fill="#f0f0f0" stroke="#1a5fb4" stroke-width="2" />
+        <text x="890" y="116" text-anchor="middle" fill="#1a5fb4" font-size="16" font-weight="700" font-family="Georgia, serif">B</text>
+        <text x="890" y="158" text-anchor="middle" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">pointer / keyboard</text>
+        <text x="890" y="172" text-anchor="middle" fill="#1a1a1a" font-size="10" font-weight="600" font-family="ui-monospace, monospace">$actorID</text>
+
+        <g transform="translate(720,175)">
+          <rect width="340" height="100" fill="#f0f0f0" stroke="#1a5fb4" stroke-width="1.5" />
+          <text x="12" y="20" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Animation frame cycle</text>
+          <text x="12" y="42" fill="#4a4a4a" font-size="10" font-family="ui-monospace, monospace">requestAnimationFrame(onFrame)</text>
+          <text x="12" y="58" fill="#1a1a1a" font-size="10" font-family="ui-monospace, monospace">→ runtime.change(() =&gt; {</text>
+          <text x="24" y="74" fill="#1a1a1a" font-size="10" font-family="ui-monospace, monospace">processEvents();  handleStepList();  render();</text>
+          <text x="12" y="90" fill="#4a4a4a" font-size="10" font-family="ui-monospace, monospace">});  /* schedule next rAF */</text>
+          <circle cx="312" cy="50" r="18" fill="none" stroke="#1a5fb4" stroke-width="1.5" stroke-dasharray="3 2" />
+          <text x="312" y="54" text-anchor="middle" fill="#1a5fb4" font-size="9" font-family="Georgia, serif">rAF</text>
+        </g>
+
+        <g transform="translate(720,300)">
+          <rect width="340" height="200" fill="#ebe8e0" stroke="#c8c8c8" />
+          <text x="12" y="18" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Morphic world — shared objects</text>
+          <text x="12" y="34" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">WorldMorph · panels · text · shapes (same ids as peer)</text>
+          <rect x="24" y="48" width="72" height="40" fill="none" stroke="#c8c8c8" />
+          <rect x="108" y="54" width="88" height="52" fill="none" stroke="#c8c8c8" />
+          <rect x="210" y="60" width="64" height="44" fill="none" stroke="#c8c8c8" />
+          <text x="12" y="130" fill="#7a7a7a" font-size="9" font-family="Georgia, serif">drawn every frame · hit-tested for this user’s events</text>
+          <rect x="6" y="6" width="328" height="188" fill="#e8eef6" fill-opacity="0.5" stroke="#2a2a2a" stroke-dasharray="5 3" stroke-width="1.4" />
+          <text x="18" y="158" fill="#1a1a1a" font-size="11" font-weight="600" font-family="Georgia, serif">$ local shadow (B)</text>
+          <text x="18" y="174" fill="#4a4a4a" font-size="10" font-family="ui-monospace, monospace">$uiState · focus · $submorphs (halos) · hands</text>
+          <text x="18" y="188" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">ephemeral · per-replica · not in Automerge</text>
+        </g>
+
+        <g transform="translate(720,530)">
+          <rect width="340" height="70" fill="#e8eef6" stroke="#c8c8c8" stroke-dasharray="3 2" />
+          <text x="12" y="22" fill="#1a1a1a" font-size="12" font-weight="600" font-family="Georgia, serif">Stepping — B’s $stepList only</text>
+          <text x="12" y="42" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">startStepping → StepSpec on morph + world.$stepList</text>
+          <text x="12" y="58" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">handleStepList each frame · writes shared position / state</text>
+        </g>
+
+        <!-- Sync between columns -->
+        <path d="M588 640 L692 640" stroke="#1a5fb4" stroke-width="1" stroke-dasharray="2 4" />
+        <text x="640" y="632" text-anchor="middle" fill="#1a5fb4" font-size="10" font-family="Georgia, serif">Automerge sync (ops both ways)</text>
+
+        <!-- Down to shared -->
+        <path d="M390 690 L390 730" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrM)" />
+        <path d="M890 690 L890 730" stroke="#2a2a2a" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrM)" />
+        <text x="400" y="715" fill="#7a7a7a" font-size="10" font-family="Georgia, serif">promote / merge</text>
+        <text x="900" y="715" fill="#7a7a7a" font-size="10" font-family="Georgia, serif">promote / merge</text>
+
+        <!-- Shared Automerge band -->
+        <rect x="200" y="740" width="880" height="160" fill="#ebe8e0" stroke="#2a2a2a" stroke-width="1.75" />
+        <text x="640" y="768" text-anchor="middle" fill="#1a1a1a" font-size="15" font-weight="600" font-family="Georgia, serif">Shared Automerge object memory</text>
+        <text x="640" y="788" text-anchor="middle" fill="#4a4a4a" font-size="11" font-family="Georgia, serif">one document · shared object table · morph tree + class methods</text>
+
+        <g transform="translate(240,810)">
+          <rect width="118" height="32" fill="#fafafa" stroke="#c8c8c8" />
+          <text x="59" y="20" text-anchor="middle" fill="#1a1a1a" font-size="11" font-family="Georgia, serif">WorldMorph</text>
+        </g>
+        <g transform="translate(370,810)">
+          <rect width="118" height="32" fill="#fafafa" stroke="#c8c8c8" />
+          <text x="59" y="20" text-anchor="middle" fill="#1a1a1a" font-size="11" font-family="Georgia, serif">PanelMorph</text>
+        </g>
+        <g transform="translate(500,810)">
+          <rect width="118" height="32" fill="#fafafa" stroke="#c8c8c8" />
+          <text x="59" y="20" text-anchor="middle" fill="#1a1a1a" font-size="11" font-family="Georgia, serif">TextBox</text>
+        </g>
+        <g transform="translate(630,810)">
+          <rect width="118" height="32" fill="#fafafa" stroke="#c8c8c8" />
+          <text x="59" y="20" text-anchor="middle" fill="#1a1a1a" font-size="11" font-family="Georgia, serif">Shape / Pen</text>
+        </g>
+        <g transform="translate(760,810)">
+          <rect width="140" height="32" fill="#fafafa" stroke="#c8c8c8" />
+          <text x="70" y="20" text-anchor="middle" fill="#1a1a1a" font-size="11" font-family="Georgia, serif">methods / classes</text>
+        </g>
+
+        <text x="240" y="875" fill="#4a4a4a" font-size="10" font-family="Georgia, serif">Persistent morphs &amp; data · visible to both · survives reload</text>
+        <text x="240" y="890" fill="#7a7a7a" font-size="10" font-family="Georgia, serif">Not here: halos, focus, $uiState, per-user step schedules, raw DOM events</text>
+
+        <!-- Frame cycle footer -->
+        <rect x="16" y="920" width="1248" height="48" fill="#fafafa" stroke="#c8c8c8" />
+        <text x="28" y="940" fill="#1a1a1a" font-size="11" font-weight="600" font-family="Georgia, serif">Per-frame (each side):</text>
+
+        <g transform="translate(150,928)">
+          <rect width="55" height="28" fill="#f0f0f0" stroke="#1a5fb4" />
+          <text x="8" y="18" fill="#1a1a1a" font-size="10" font-weight="600" font-family="Georgia, serif">1 rAF</text>
+        </g>
+        <text x="210" y="948" fill="#7a7a7a" font-size="12">→</text>
+        <g transform="translate(230,928)">
+          <rect width="78" height="28" fill="#f0f0f0" stroke="#1a5fb4" />
+          <text x="8" y="18" fill="#1a1a1a" font-size="10" font-weight="600" font-family="Georgia, serif">2 change()</text>
+        </g>
+        <text x="314" y="948" fill="#7a7a7a" font-size="12">→</text>
+        <g transform="translate(334,928)">
+          <rect width="110" height="28" fill="#f0f0f0" stroke="#1a5fb4" />
+          <text x="8" y="18" fill="#1a1a1a" font-size="10" font-weight="600" font-family="Georgia, serif">3 processEvents</text>
+        </g>
+        <text x="450" y="948" fill="#7a7a7a" font-size="12">→</text>
+        <g transform="translate(470,928)">
+          <rect width="118" height="28" fill="#f0f0f0" stroke="#1a5fb4" />
+          <text x="8" y="18" fill="#1a1a1a" font-size="10" font-weight="600" font-family="Georgia, serif">4 handleStepList</text>
+        </g>
+        <text x="594" y="948" fill="#7a7a7a" font-size="12">→</text>
+        <g transform="translate(614,928)">
+          <rect width="72" height="28" fill="#f0f0f0" stroke="#1a5fb4" />
+          <text x="8" y="18" fill="#1a1a1a" font-size="10" font-weight="600" font-family="Georgia, serif">5 render</text>
+        </g>
+        <text x="692" y="948" fill="#7a7a7a" font-size="12">→</text>
+        <g transform="translate(712,928)">
+          <rect width="200" height="28" fill="#f0f0f0" stroke="#1a5fb4" />
+          <text x="8" y="18" fill="#1a1a1a" font-size="10" font-weight="600" font-family="Georgia, serif">6 GC promote / retain / collect</text>
+        </g>
+        <text x="930" y="948" fill="#7a7a7a" font-size="10" font-family="Georgia, serif">$uiState.onFrame keeps the loop alive across transactions</text>
+      </svg>
+    </div>
+
+    <footer>
+      Source companion to the Cursor canvas of the same name. Open this file in a browser:
+      <code>livelymerge/multiuser-architecture.html</code>
+    </footer>
+  </body>
+</html>

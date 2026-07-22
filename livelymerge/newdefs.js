@@ -2005,10 +2005,16 @@ class TextBox extends Shape {
     this.lines = [];
     this.lineStarts = [];
     let ctx = this.getTextContext(this.font);
-    let str = this.string;
+    let str = this.string != null ? String(this.string) : '';
     let lineStart = 0;
     let lineTopLeft = this.topLeft.addPt(this.inset);
     let lineNo = 0;
+    if (str.length === 0) {
+      // Empty text still occupies one line of height so caret/selection are visible.
+      this.lines.push(new TextLineSpec(lineTopLeft, pt(this.extent.x, this.lineHeight), ''));
+      this.lineStarts.push(0);
+      return lineTopLeft.y + this.lineHeight + 2;
+    }
     let inAlpha = false;
     let alphaBreak = 0;
     for (let idx = 0; idx < str.length; idx++) {
@@ -2522,7 +2528,12 @@ class TextBox extends Shape {
   }
   setNullSelection() {
     this.$selectedLineIndex = 0; // means no selection (for menus, lists, etc)
-    this.$selStart = this.$selStop = new TextCharSpec(0, this.topLeft.y + this.hang, 0, 0);
+    // Prefer a real charSpec so empty panes still get full lineheight for caret/selection.
+    let spec =
+      this.lines && this.lines.length > 0
+        ? this.charSpecForIndex(0)
+        : new TextCharSpec(0, this.topLeft.y + this.hang, this.inset ? this.inset.x : 0, 0);
+    this.$selStart = this.$selStop = spec;
     // Must not equal caret index 0 or the first click at doc start looks like a repeat click and runs selectWord.
     this.$priorNullSelection = -1;
   }
@@ -2544,7 +2555,7 @@ class TextBox extends Shape {
     this.$priorNullSelection = -1;
   }
   setText(str) {
-    this.string = str;
+    this.string = str != null ? String(str) : '';
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
     this.setNullSelection();
@@ -4824,8 +4835,9 @@ class TextPane extends ScrollPane {
   setText(text, opts) {
     let force = opts && opts.force;
     if (!force && this.hasUnsavedChanges()) return false;
-    this.contentPane.setText(text);
-    this._savedTextSnapshot = text;
+    let normalized = text != null ? String(text) : '';
+    this.contentPane.setText(normalized);
+    this._savedTextSnapshot = normalized;
     if (this.contentPane && this.contentPane.shape) this.contentPane.shape.editorID = null;
     this.scrollToTop();
     return true;
@@ -8549,10 +8561,42 @@ function parseStackFrameLine(line) {
   if (m[1] != null) return { name: m[1].trim(), file: m[2], line: +m[3], col: +m[4] };
   return { name: null, file: m[5], line: +m[6], col: +m[7] };
 }
+function defsSourceFile() {
+  /** Basename of the live defs script (override with window.defsScriptUrl). */
+  let url =
+    window.defsScriptUrl != null
+      ? window.defsScriptUrl
+      : window.alldefsScriptUrl != null
+        ? window.alldefsScriptUrl
+        : 'newdefs.js';
+  return shortStackFileName(url);
+}
+function shortStackFileName(file) {
+  let s = String(file || '');
+  let q = s.indexOf('?');
+  if (q >= 0) s = s.slice(0, q);
+  let ix = s.lastIndexOf('/');
+  if (ix >= 0) s = s.slice(ix + 1);
+  return s || file;
+}
+function isDefsStackFile(file) {
+  let base = shortStackFileName(file).toLowerCase();
+  let want = defsSourceFile().toLowerCase();
+  // Accept configured name plus the historical alldefs/newdefs aliases.
+  return base === want || base === 'newdefs.js' || base === 'alldefs.js';
+}
+function extractDefsLineFromFrame(line) {
+  let m = ('' + line).match(/([\w.-]+\.js)(?:\?[^:]*)?:(\d+)(?::(\d+))?/i);
+  if (!m || !isDefsStackFile(m[1])) return null;
+  return { file: shortStackFileName(m[1]), line: +m[2], col: m[3] != null ? +m[3] : 0 };
+}
+/** @deprecated alias — prefer extractDefsLineFromFrame */
 function extractAlldefsLineFromFrame(line) {
-  let m = ('' + line).match(/alldefs\.js(?:\?[^:]*)?:(\d+):(\d+)/i);
-  if (!m) return null;
-  return { line: +m[1], col: +m[2] };
+  return extractDefsLineFromFrame(line);
+}
+/** @deprecated alias — prefer isDefsStackFile */
+function isAlldefsStackFile(file) {
+  return isDefsStackFile(file);
 }
 function stackFrameLabelName(line) {
   let m = ('' + line).trim().match(/^at\s+(.+?)\s+\(/);
@@ -8565,17 +8609,6 @@ function scrubStackFrameUrls(line) {
     return shortStackFileName(url);
   });
 }
-function shortStackFileName(file) {
-  let s = String(file || '');
-  let q = s.indexOf('?');
-  if (q >= 0) s = s.slice(0, q);
-  let ix = s.lastIndexOf('/');
-  if (ix >= 0) s = s.slice(ix + 1);
-  return s || file;
-}
-function isAlldefsStackFile(file) {
-  return /alldefs\.js$/i.test(shortStackFileName(file));
-}
 function formatStackFrameLine(rawLine) {
   let line = String(rawLine).trim();
   let frame = parseStackFrameLine(line);
@@ -8584,10 +8617,10 @@ function formatStackFrameLine(rawLine) {
     if (frame.name) return ['  at ' + frame.name + ' (' + shortFile + ':' + frame.line + ')'];
     return ['  at ' + shortFile + ':' + frame.line];
   }
-  let alldefsRef = extractAlldefsLineFromFrame(line);
-  if (alldefsRef) {
+  let defsRef = extractDefsLineFromFrame(line);
+  if (defsRef) {
     let name = stackFrameLabelName(line);
-    return ['  at ' + name + ' (alldefs.js:' + alldefsRef.line + ')'];
+    return ['  at ' + name + ' (' + defsRef.file + ':' + defsRef.line + ')'];
   }
   let scrubbed = scrubStackFrameUrls(line);
   return [scrubbed.startsWith('at ') ? '  ' + scrubbed : scrubbed];
@@ -8651,7 +8684,8 @@ function stackFrameListLabel(frame) {
   if (frame.name && frame.file && frame.line)
     return frame.name + ' (' + shortStackFileName(frame.file) + ':' + frame.line + ')';
   if (frame.name) return frame.name;
-  if (frame.alldefsLine) return 'alldefs.js:' + frame.alldefsLine;
+  if (frame.alldefsLine)
+    return (frame.defsFile || defsSourceFile()) + ':' + frame.alldefsLine;
   return 'frame';
 }
 function stackFrameHighlightName(frame) {
@@ -8669,13 +8703,25 @@ function stackFrameFromRawLine(rawLine) {
   let line = String(rawLine).trim();
   let name = stackFrameLabelName(line);
   let parsed = parseStackFrameLine(line);
-  let alldefsRef = extractAlldefsLineFromFrame(line);
+  let defsRef = extractDefsLineFromFrame(line);
   let methodSpec = stackNameToMethodSpec(name);
+  let file = parsed ? shortStackFileName(parsed.file) : defsRef ? defsRef.file : null;
+  let lineNo = parsed ? parsed.line : defsRef ? defsRef.line : null;
+  let defsLine = null;
+  let defsFile = null;
+  if (file && lineNo != null && isDefsStackFile(file)) {
+    defsLine = lineNo;
+    defsFile = file;
+  } else if (defsRef) {
+    defsLine = defsRef.line;
+    defsFile = defsRef.file;
+  }
   let frame = {
     name: name,
-    file: parsed ? parsed.file : null,
-    line: parsed ? parsed.line : alldefsRef ? alldefsRef.line : null,
-    alldefsLine: alldefsRef ? alldefsRef.line : null,
+    file: file,
+    line: lineNo,
+    alldefsLine: defsLine, // line in defs source file, if any
+    defsFile: defsFile,
     methodSpec: methodSpec,
   };
   frame.listLabel = stackFrameListLabel(frame);
@@ -8715,7 +8761,12 @@ function ensureAlldefsSourceLines() {
   return null;
 
   if (_alldefsSourceLines) return Promise.resolve(_alldefsSourceLines);
-  let url = window.alldefsScriptUrl != null ? window.alldefsScriptUrl : 'alldefs.js';
+  let url =
+    window.defsScriptUrl != null
+      ? window.defsScriptUrl
+      : window.alldefsScriptUrl != null
+        ? window.alldefsScriptUrl
+        : defsSourceFile();
   return fetch(url)
     .then(function (r) {
       if (!r.ok) throw new Error('ensureAlldefsSourceLines: ' + r.status + ' ' + url);
@@ -8726,7 +8777,7 @@ function ensureAlldefsSourceLines() {
       return _alldefsSourceLines;
     })
     .catch(function (e) {
-      console.warn('alldefs source not loaded for stack excerpts', e);
+      console.warn('defs source not loaded for stack excerpts', e);
       return null;
     });
 }
