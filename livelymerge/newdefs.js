@@ -492,6 +492,7 @@ function initUI() {
      *  are not representable in the heap, so they live in window._lcEvts instead. */
     longClickByPointerId: {},
     pointerLocation: null,
+    lastFrameTime: null,
   };
   // Raw side-tables (plain JS on the real window; never touch the LM heap):
   window._canvasEvents = new window.Array(); // DOM events queued between frames
@@ -568,7 +569,22 @@ function initUI() {
   addEventListener(canvas, 'keypress', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'keyup', (e) => window._canvasEvents.push(e));
 
-  function onFrame() {
+  /** Target time between frames (ms). rAF fires at the display's refresh rate
+   *  (60Hz+); frames that arrive sooner than this are skipped, so events/render
+   *  run at ~30Hz. */
+  $FRAME_INTERVAL_MS = 1000 / 30;
+
+  function onFrame(now) {
+    if ($uiState.lastFrameTime != null && now - $uiState.lastFrameTime < $FRAME_INTERVAL_MS) {
+      window._uiRafId = window.requestAnimationFrame(onFrame);
+      return;
+    }
+    // Advance by the interval rather than to `now`, so 16.7ms rAF ticks don't drift
+    // us down to 20Hz; snap to `now` when we've fallen behind (hidden tab, slow frame).
+    $uiState.lastFrameTime =
+      $uiState.lastFrameTime == null || now - $uiState.lastFrameTime >= 2 * $FRAME_INTERVAL_MS
+        ? now
+        : $uiState.lastFrameTime + $FRAME_INTERVAL_MS;
     try {
       window.runtime.change(() => {
         processEvents();
