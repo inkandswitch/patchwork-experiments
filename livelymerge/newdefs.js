@@ -1010,21 +1010,21 @@ class Rectangle {
   }
   onPointerDown(p, e) {
     if (this.includesPt(p)) {
-      this.hitPoint = p;
-      this.actorID = e.actorID;
+      this.$hitPoint = p;
+      this.$dragActorID = e.actorID;
       return true;
     }
     return false;
   }
   onPointerMove(p, e) {
-    if (this.hitPoint) {
-      this.moveBy(p.subPt(this.hitPoint));
-      this.hitPoint = p;
+    if (this.$hitPoint) {
+      this.moveBy(p.subPt(this.$hitPoint));
+      this.$hitPoint = p;
     }
   }
   onPointerUp(p) {
-    this.actorID = null;
-    delete this.hitPoint;
+    this.$dragActorID = null;
+    delete this.$hitPoint;
   }
   overlapBounceAxis(other, velIfAny) {
     /**
@@ -1732,9 +1732,9 @@ class PolyLine extends Shape {
     this.morphOrigin = this.morphOrigin.translatedBy(d);
   }
   onPointerMove(p) {
-    if (this.hitPoint) {
-      this.moveBy(p.subPt(this.hitPoint));
-      this.hitPoint = p;
+    if (this.$hitPoint) {
+      this.moveBy(p.subPt(this.$hitPoint));
+      this.$hitPoint = p;
     }
   }
   recomputeBounds() {
@@ -2986,8 +2986,8 @@ try {
     return b;
   }
   dragFrom(p, evt) {
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
   }
   dropOnTopMorphAt(worldDropPt, anchorLocal) {
@@ -3164,16 +3164,16 @@ try {
     if (effectiveShiftKey(evt)) {
       // shift drag means copy
       let copy = this.world().addMorph(this.morphCopy());
-      copy.hitPoint = p;
-      copy.actorID = evt.actorID;
+      copy.$hitPoint = p;
+      copy.$dragActorID = evt.actorID;
       this.world().setPointerFocus(copy);
       return true; // could merge code
     }
-    this.hitPoint = p;
-    this.didDrag = false;
+    this.$hitPoint = p;
+    this.$didDrag = false;
     // For nested morphs, plain drag should pick up to world on first real move.
-    this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
-    this.actorID = evt.actorID;
+    this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
     return true;
   }
@@ -3187,29 +3187,29 @@ try {
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerMove(localP, evt);
     });
     if (eventConsumed) return true;
-    if (!this.hitPoint) return false;
-    let delta = p.subPt(this.hitPoint);
+    if (!this.$hitPoint) return false;
+    let delta = p.subPt(this.$hitPoint);
     if (
-      this._pickUpOnDrag &&
+      this.$pickUpOnDrag &&
       this.owner != null &&
       this.owner !== this.world() &&
       (delta.x !== 0 || delta.y !== 0)
     ) {
       let oldOwner = this.owner;
-      let worldPrev = oldOwner.globalize(this.hitPoint);
+      let worldPrev = oldOwner.globalize(this.$hitPoint);
       let worldNow = oldOwner.globalize(p);
       let deltaWorld = worldNow.subPt(worldPrev);
-      let anchorLocal = this.relativize(this.hitPoint);
+      let anchorLocal = this.relativize(this.$hitPoint);
       this.reparentToOwnerPreservingWorldAnchor(this.world(), anchorLocal);
       this.moveBy(deltaWorld);
-      this.hitPoint = worldNow;
-      this._pickUpOnDrag = false;
-      this.didDrag = true;
+      this.$hitPoint = worldNow;
+      this.$pickUpOnDrag = false;
+      this.$didDrag = true;
       return true;
     }
     this.moveBy(delta);
-    if (delta.x !== 0 || delta.y !== 0) this.didDrag = true;
-    this.hitPoint = p;
+    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
+    this.$hitPoint = p;
     return true;
   }
   onPointerUp(p, evt) {
@@ -3222,11 +3222,11 @@ try {
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerUp(localP, evt);
     });
     if (eventConsumed) return true;
-    let wasDrag = !!this.didDrag;
-    this.actorID = null;
-    this.hitPoint = null;
-    this.didDrag = false;
-    this._pickUpOnDrag = false;
+    let wasDrag = !!this.$didDrag;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
+    this.$didDrag = false;
+    this.$pickUpOnDrag = false;
     this.world().setPointerFocus(null);
     if (wasDrag) {
       // p is in owner coords; convert to world for drop target selection.
@@ -3295,7 +3295,7 @@ try {
       if (inHand || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
         let owningHand = each.myOwningHand ? each.myOwningHand() : null;
         let world = this.world ? this.world() : null;
-        let focusActorID = each.actorID != null ? each.actorID : $actorID;
+        let focusActorID = each.$dragActorID != null ? each.$dragActorID : $actorID;
         let focusHand =
           !owningHand && world && world.handForID ? world.handForID(focusActorID) : null;
         let handForShadow = owningHand || focusHand;
@@ -3597,13 +3597,13 @@ class ImageMorph extends Morph {
       if (maybeHit) maybeHit.showHalo();
       return false;
     }
-    // Let generic Morph logic manage hitPoint, actorID, and pointerFocus.
-    this.dragStartAngle = this.transform.rotation;
+    // Let generic Morph logic manage $hitPoint, $dragActorID, and pointerFocus.
+    this.$dragStartAngle = this.transform.rotation;
     return super.onPointerDown(p, evt);
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
-    let prev = this.hitPoint;
+    if (!this.$hitPoint) return false;
+    let prev = this.$hitPoint;
     let moved = super.onPointerMove(p, evt);
     if (!moved) return false;
     // Rotate to face drag direction (only when pointer has moved enough to reduce jitter)
@@ -4004,14 +4004,14 @@ class LineVertexHandle extends Morph {
     lm.$vertexDragActive = true;
     lm.$dragVertexIndex = this.vertexIndex;
     lm.$mergeNeighborIx = null;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     lm.clearMidpointHandles();
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     let lm = this.lineMorph;
     let verts = lm.shape.vertices;
     let i = lm.$dragVertexIndex != null ? lm.$dragVertexIndex : this.vertexIndex;
@@ -4026,8 +4026,8 @@ class LineVertexHandle extends Morph {
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
     if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
-    this.hitPoint = null;
-    this.actorID = null;
+    this.$hitPoint = null;
+    this.$dragActorID = null;
     lm.$vertexDragActive = false;
     lm.$dragVertexIndex = null;
     lm.$mergeNeighborIx = null;
@@ -4076,8 +4076,8 @@ class LineMidpointHandle extends Morph {
     if (!this.includesPt(p)) return false;
     let lm = this.lineMorph;
     lm.$vertexDragActive = true;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     let newIx = lm.insertVertexOnSegment(this.segmentIndex, p);
     lm.$dragVertexIndex = newIx;
     lm.$mergeNeighborIx = null;
@@ -4088,7 +4088,7 @@ class LineMidpointHandle extends Morph {
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint || this.$dragVertexIndex == null) return false;
+    if (!this.$hitPoint || this.$dragVertexIndex == null) return false;
     let lm = this.lineMorph;
     let verts = lm.shape.vertices;
     let i = lm.$dragVertexIndex;
@@ -4103,8 +4103,8 @@ class LineMidpointHandle extends Morph {
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
     if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
-    this.hitPoint = null;
-    this.actorID = null;
+    this.$hitPoint = null;
+    this.$dragActorID = null;
     this.$dragVertexIndex = null;
     lm.$vertexDragActive = false;
     lm.$dragVertexIndex = null;
@@ -4216,8 +4216,8 @@ class TextMorph extends Morph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     let localP = this.relativize(p);
     if (effectiveShiftKey(evt)) this.shape.shiftExtendSelectionToPointer(localP);
     else this.shape.startSelectionAt(localP);
@@ -4232,24 +4232,24 @@ class TextMorph extends Morph {
     if (!this.includesPt(p)) return false;
     // Shift-drag extends selection range; it should not switch to morph-drag behavior.
     if (effectiveShiftKey(evt)) {
-      if (this.hitPoint) this.shape.extendSelectionTo(this.relativize(p));
+      if (this.$hitPoint) this.shape.extendSelectionTo(this.relativize(p));
       return true;
     }
-    if (this.hitPoint) this.shape.extendSelectionTo(this.relativize(p));
+    if (this.$hitPoint) this.shape.extendSelectionTo(this.relativize(p));
     return true;
   }
   onPointerUp(p, evt) {
     // event handling should go to the shape (text); while morph ops to morph(super)...
     if (!this.includesPt(p)) {
       // Release pointer focus even when mouse-up happens outside pane bounds.
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     }
     this.shape.finSelection(); // A chance to notice selectWord click
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     this.world().setPointerFocus(null);
     return true;
   }
@@ -4300,8 +4300,8 @@ class SimpleButtonMorph extends TextMorph {
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
     return true;
   }
@@ -4309,8 +4309,8 @@ class SimpleButtonMorph extends TextMorph {
     return false;
   }
   onPointerUp(p, evt) {
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     return true;
   }
   static new(...args) {
@@ -4332,18 +4332,18 @@ class KbdKeyMorph extends SimpleButtonMorph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     if (this.keyboardMorph) this.keyboardMorph.handleVirtualKey(this.keySpec, evt);
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(p, evt) {
-    return !!this.hitPoint;
+    return !!this.$hitPoint;
   }
   onPointerUp(p, evt) {
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     if (this.world() && this.world().$pointerFocus === this) this.world().setPointerFocus(null);
     return true;
   }
@@ -4461,8 +4461,8 @@ class ListMorph extends Morph {
     // p is in owner coordinates; includesPt(p) uses relativize(p) for shape hit test
     if (!this.includesPt(p)) return false;
     clearKeyboardFocusUnlessTypingOrOsk(this);
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     this.shape.selectLineAt(this.relativize(p));
     this.world().setPointerFocus(this);
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
@@ -4470,19 +4470,19 @@ class ListMorph extends Morph {
   }
   onPointerMove(p, evt) {
     if (!this.includesPt(p)) return false;
-    if (this.hitPoint) this.shape.selectLineAt(this.relativize(p));
+    if (this.$hitPoint) this.shape.selectLineAt(this.relativize(p));
     return true;
   }
   onPointerUp(p, evt) {
     if (!this.includesPt(p)) {
       // Release pointer focus even when mouse-up happens outside pane bounds.
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     }
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     let selectionIndex = this.shape.$selectedLineIndex;
     this.world().setPointerFocus(null);
     if (selectionIndex > 0) {
@@ -5210,7 +5210,7 @@ class SliderMorph extends Morph {
     }
   }
   onPointerDown(pt, evt) {
-    //	Note: want setMouseFocus to also cache the transform and record the hitPoint.
+    //	Note: want setMouseFocus to also cache the transform and record the $hitPoint.
     //	Ideally thereafter only have to say, eg, morph moveTo: evt.hand.adjustedMousePoint
     if (!this.includesPt(pt)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(pt)) return true;
@@ -5245,12 +5245,12 @@ class SliderMorph extends Morph {
       else this.tweakValue(page);
       return true;
     }
-    this.hitPoint = pt;
+    this.$hitPoint = pt;
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(pt, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     let localP = this.relativize(pt);
     let track = this.trackBounds();
     let ext = this.valExtent;
@@ -5270,14 +5270,14 @@ class SliderMorph extends Morph {
   }
   onPointerUp(pt, evt) {
     if (!this.includesPt(pt)) {
-      if (this.hitPoint) {
-        this.hitPoint = null;
+      if (this.$hitPoint) {
+        this.$hitPoint = null;
         this.world().setPointerFocus(null);
         return true;
       }
       return false;
     }
-    this.hitPoint = null;
+    this.$hitPoint = null;
     this.world().setPointerFocus(null);
     return true;
   }
@@ -5396,18 +5396,18 @@ class HuePickerMorph extends Morph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
-    this.hitPoint = p;
+    this.$hitPoint = p;
     this.world().setPointerFocus(this);
     this.applyPickAt(this.relativize(p));
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     this.applyPickAt(this.relativize(p));
     return true;
   }
   onPointerUp(p, evt) {
-    this.hitPoint = null;
+    this.$hitPoint = null;
     if (this.world() && this.world().$pointerFocus === this) this.world().setPointerFocus(null);
     return true;
   }
@@ -5518,8 +5518,8 @@ class StylePane extends Morph {
     btn.shape.verticalNudge = 5;
     btn.onPointerUp = function (p, evt) {
       if (onPress) onPress();
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     };
@@ -5747,7 +5747,7 @@ class PanelMorph extends Morph {
     this._stashedContent = [];
     this.lastLocationExpanded = null;
     this.lastLocationCollapsed = null;
-    this._stickyDragCollapsedBar = false;
+    this.$stickyDragCollapsedBar = false;
     let b = this.shape.getBounds();
     this.titleBar = new PanelTitleBar(
       this,
@@ -5767,12 +5767,12 @@ class PanelMorph extends Morph {
     return snap;
   }
   beginTitleBarPress(p, evt, hitInfo) {
-    this.hitPoint = p;
-    this.didDrag = false;
-    this.actorID = evt.actorID;
-    this._closeBtnPressed = !!hitInfo.onClose;
-    this._collapseBtnPressed = !hitInfo.onClose && !!hitInfo.onCollapse;
-    this._titleBarDrag = !hitInfo.onClose && !hitInfo.onCollapse;
+    this.$hitPoint = p;
+    this.$didDrag = false;
+    this.$dragActorID = evt.actorID;
+    this.$closeBtnPressed = !!hitInfo.onClose;
+    this.$collapseBtnPressed = !hitInfo.onClose && !!hitInfo.onCollapse;
+    this.$titleBarDrag = !hitInfo.onClose && !hitInfo.onCollapse;
     this.world().setPointerFocus(this);
     return true;
   }
@@ -5781,12 +5781,12 @@ class PanelMorph extends Morph {
     return optionalRect != null ? optionalRect : this.defaultRect();
   }
   clearTitleBarPress() {
-    this.hitPoint = null;
-    this._titleBarDrag = false;
-    this._collapseBtnPressed = false;
-    this._closeBtnPressed = false;
-    this.didDrag = false;
-    this.actorID = null;
+    this.$hitPoint = null;
+    this.$titleBarDrag = false;
+    this.$collapseBtnPressed = false;
+    this.$closeBtnPressed = false;
+    this.$didDrag = false;
+    this.$dragActorID = null;
     this.world().setPointerFocus(null);
   }
   collapsedBarGridSnap() {
@@ -5805,18 +5805,18 @@ class PanelMorph extends Morph {
   }
   finishStickyCollapsedTitleBarDrag(p, evt) {
     /** End first-collapse sticky drag: drop on pointerDown (not pointerUp). */
-    if (!this._stickyDragCollapsedBar) return false;
-    if (this.didDrag) {
+    if (!this.$stickyDragCollapsedBar) return false;
+    if (this.$didDrag) {
       let worldDropPt = this.owner ? this.owner.globalize(p) : p;
       let anchorLocal = this.relativize(p);
       this.dropOnTopMorphAt(worldDropPt, anchorLocal);
     }
     if (this.collapsed) this.applyCollapsedBarGridSnap();
     this.savePanelLocation();
-    this._stickyDragCollapsedBar = false;
-    this.hitPoint = null;
-    this.didDrag = false;
-    this.actorID = null;
+    this.$stickyDragCollapsedBar = false;
+    this.$hitPoint = null;
+    this.$didDrag = false;
+    this.$dragActorID = null;
     this.world().setPointerFocus(null);
     return true;
   }
@@ -5857,28 +5857,28 @@ class PanelMorph extends Morph {
     return super.onPointerDown(p, evt);
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     if (
-      (this._collapseBtnPressed || this._closeBtnPressed) &&
-      !this._titleBarDrag &&
-      !this._stickyDragCollapsedBar
+      (this.$collapseBtnPressed || this.$closeBtnPressed) &&
+      !this.$titleBarDrag &&
+      !this.$stickyDragCollapsedBar
     ) {
-      this.hitPoint = p;
+      this.$hitPoint = p;
       return true;
     }
-    if (!this._titleBarDrag && !this._stickyDragCollapsedBar) return false;
-    let delta = p.subPt(this.hitPoint);
+    if (!this.$titleBarDrag && !this.$stickyDragCollapsedBar) return false;
+    let delta = p.subPt(this.$hitPoint);
     this.moveBy(delta);
-    if (delta.x !== 0 || delta.y !== 0) this.didDrag = true;
-    this.hitPoint = p;
+    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
+    this.$hitPoint = p;
     if (this.collapsed) {
       let snap = this.applyCollapsedBarGridSnap();
-      if (snap.x !== 0 || snap.y !== 0) this.hitPoint = this.hitPoint.addPt(snap);
+      if (snap.x !== 0 || snap.y !== 0) this.$hitPoint = this.$hitPoint.addPt(snap);
     }
     return true;
   }
   onPointerUp(p, evt) {
-    if (this._closeBtnPressed) {
+    if (this.$closeBtnPressed) {
       if (this.submorphHasUnsavedText(this)) {
         this.promptOkToCancelEdits((okToCancel) => {
           this.clearTitleBarPress();
@@ -5890,7 +5890,7 @@ class PanelMorph extends Morph {
         return true;
       }
       this.remove();
-    } else if (this._collapseBtnPressed) {
+    } else if (this.$collapseBtnPressed) {
       if (this.submorphHasUnsavedText(this)) {
         let upP = p;
         this.promptOkToCancelEdits((okToCancel) => {
@@ -5900,10 +5900,10 @@ class PanelMorph extends Morph {
           }
           this.revertUnsavedEdits();
           this.toggleCollapse();
-          if (this._stickyDragCollapsedBar) {
-            this.hitPoint = upP;
-            this.didDrag = false;
-            this._collapseBtnPressed = false;
+          if (this.$stickyDragCollapsedBar) {
+            this.$hitPoint = upP;
+            this.$didDrag = false;
+            this.$collapseBtnPressed = false;
             return;
           }
           this.clearTitleBarPress();
@@ -5911,14 +5911,14 @@ class PanelMorph extends Morph {
         return true;
       }
       this.toggleCollapse();
-      if (this._stickyDragCollapsedBar) {
-        this.hitPoint = p;
-        this.didDrag = false;
-        this._collapseBtnPressed = false;
+      if (this.$stickyDragCollapsedBar) {
+        this.$hitPoint = p;
+        this.$didDrag = false;
+        this.$collapseBtnPressed = false;
         return true;
       }
-    } else if (this._titleBarDrag) {
-      if (this.didDrag) {
+    } else if (this.$titleBarDrag) {
+      if (this.$didDrag) {
         let worldDropPt = this.owner ? this.owner.globalize(p) : p;
         let anchorLocal = this.relativize(p);
         this.dropOnTopMorphAt(worldDropPt, anchorLocal);
@@ -5926,7 +5926,7 @@ class PanelMorph extends Morph {
       if (this.collapsed) this.applyCollapsedBarGridSnap();
       this.savePanelLocation();
     }
-    if (this._titleBarDrag || this._collapseBtnPressed || this._closeBtnPressed) {
+    if (this.$titleBarDrag || this.$collapseBtnPressed || this.$closeBtnPressed) {
       this.clearTitleBarPress();
       return true;
     }
@@ -6012,7 +6012,7 @@ class PanelMorph extends Morph {
       if (r) this.setBounds(r);
       this._savedBounds = null;
       this.titleBar.setCollapseGlyph(false);
-      this._stickyDragCollapsedBar = false;
+      this.$stickyDragCollapsedBar = false;
     } else {
       let hasSavedCollapsedLocation = !!this.lastLocationCollapsed;
       this.lastLocationExpanded = this.getBounds().copy();
@@ -6032,7 +6032,7 @@ class PanelMorph extends Morph {
       }
       super.setBounds(cr);
       this.titleBar.setCollapseGlyph(true);
-      this._stickyDragCollapsedBar = !hasSavedCollapsedLocation;
+      this.$stickyDragCollapsedBar = !hasSavedCollapsedLocation;
     }
     this.layoutChrome();
   }
@@ -6424,8 +6424,8 @@ class StylePanel extends PanelMorph {
     this.styleActionButton(this.revertBtn);
     this.revertBtn.onPointerUp = function (p, evt) {
       panel.revertStyle();
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     };
@@ -6438,8 +6438,8 @@ class StylePanel extends PanelMorph {
     this.styleActionButton(this.saveBtn);
     this.saveBtn.onPointerUp = function (p, evt) {
       panel.saveStyle();
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     };
@@ -6812,7 +6812,7 @@ class HaloHandle extends Morph {
   }
   onPointerDown(pt, evt) {
     if (!this.includesPt(pt)) return false;
-    this.hitPoint = pt; // set for pointerDownOnHandle (e.g. Rotate) and for drag handles
+    this.$hitPoint = pt; // set for pointerDownOnHandle (e.g. Rotate) and for drag handles
     if (['Menu', 'Style', 'Browse', 'Inspect', 'Delete'].includes(this.handleName))
       return this.halo.pointerDownOnHandle(this, pt, evt);
     // These handles become active handles on the target
@@ -6826,25 +6826,25 @@ class HaloHandle extends Morph {
       this.target.reparentToOwnerPreservingWorldAnchor(this.world(), null);
     }
     // Drag, Rotate and Scale here drag the handle during manipulation
-    this.hitPoint = this.owner.globalize(pt);
+    this.$hitPoint = this.owner.globalize(pt);
     if (this.handleName == 'Rotate') {
       // Pivot is the shape center's true world position (rotateBy keeps it fixed).
       let c = this.target.globalize(this.target.shape.getBounds().center());
-      this.rotateStartAngle = Math.atan2(this.hitPoint.y - c.y, this.hitPoint.x - c.x);
+      this.$rotateStartAngle = Math.atan2(this.$hitPoint.y - c.y, this.$hitPoint.x - c.x);
     }
     if (this.handleName == 'Scale') {
       let b = this.target.getBounds();
-      this.scaleStartTopLeft = b.topLeft.copy();
-      this.scaleStartBottomRight = b.bottomRight().copy();
+      this.$scaleStartTopLeft = b.topLeft.copy();
+      this.$scaleStartBottomRight = b.bottomRight().copy();
       let ow = this.target.owner;
-      this.scaleStartTopLeftWorld = ow
-        ? ow.globalize(this.scaleStartTopLeft)
-        : this.scaleStartTopLeft.copy();
-      this.scaleStartBottomRightWorld = ow
-        ? ow.globalize(this.scaleStartBottomRight)
-        : this.scaleStartBottomRight.copy();
+      this.$scaleStartTopLeftWorld = ow
+        ? ow.globalize(this.$scaleStartTopLeft)
+        : this.$scaleStartTopLeft.copy();
+      this.$scaleStartBottomRightWorld = ow
+        ? ow.globalize(this.$scaleStartBottomRight)
+        : this.$scaleStartBottomRight.copy();
       this.scaleTransformDrag = effectiveShiftKey(evt);
-      this.scaleStartTransform = this.target.transform.scale.copy();
+      this.$scaleStartTransform = this.target.transform.scale.copy();
     }
     let worldTopLeft = this.owner.getBounds().topLeft.addPt(this.getBounds().topLeft); // handle topLeft in world before reparent
     this.world().addEphemeralMorph(this); // handle owner was halo; now world (per-user, like the halo itself)
@@ -6855,24 +6855,24 @@ class HaloHandle extends Morph {
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
-    let delta = p.subPt(this.hitPoint);
+    if (!this.$hitPoint) return false;
+    let delta = p.subPt(this.$hitPoint);
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
       this.moveBy(delta);
       let cornerPos = this.getBounds().center();
       if (this.scaleTransformDrag) {
-        let sw = this.scaleStartBottomRightWorld.x - this.scaleStartTopLeftWorld.x;
-        let sh = this.scaleStartBottomRightWorld.y - this.scaleStartTopLeftWorld.y;
+        let sw = this.$scaleStartBottomRightWorld.x - this.$scaleStartTopLeftWorld.x;
+        let sh = this.$scaleStartBottomRightWorld.y - this.$scaleStartTopLeftWorld.y;
         if (Math.abs(sw) < 1) sw = sw < 0 ? -1 : 1;
         if (Math.abs(sh) < 1) sh = sh < 0 ? -1 : 1;
-        let nw = cornerPos.x - this.scaleStartTopLeftWorld.x;
-        let nh = cornerPos.y - this.scaleStartTopLeftWorld.y;
+        let nw = cornerPos.x - this.$scaleStartTopLeftWorld.x;
+        let nh = cornerPos.y - this.$scaleStartTopLeftWorld.y;
         let r = (nw / sw + nh / sh) / 2;
         r = Math.max(0.05, Math.min(24, r));
         this.target.transform.scale = pt(
-          this.scaleStartTransform.x * r,
-          this.scaleStartTransform.y * r,
+          this.$scaleStartTransform.x * r,
+          this.$scaleStartTransform.y * r,
         );
         if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
         this.target.changed();
@@ -6880,18 +6880,18 @@ class HaloHandle extends Morph {
         if (world && world.changed) world.changed();
       } else {
         this.target.setBounds(
-          this.scaleStartTopLeft.extent(cornerPos.subPt(this.scaleStartTopLeft)),
+          this.$scaleStartTopLeft.extent(cornerPos.subPt(this.$scaleStartTopLeft)),
         );
       }
     }
     if (this.handleName == 'Rotate') {
       let c = this.target.globalize(this.target.shape.getBounds().center());
       let currentAngle = Math.atan2(p.y - c.y, p.x - c.x);
-      this.target.rotateBy(currentAngle - this.rotateStartAngle);
-      this.rotateStartAngle = currentAngle;
+      this.target.rotateBy(currentAngle - this.$rotateStartAngle);
+      this.$rotateStartAngle = currentAngle;
     }
     this.moveBy(delta);
-    this.hitPoint = p;
+    this.$hitPoint = p;
     return true;
   }
   onPointerUp(pt, evt) {
@@ -7109,10 +7109,10 @@ class HandMorph extends Morph {
   dropMorph(p, evt) {
     let worldPt = p ? p : this.location();
     this.submorphs.slice().forEach((morphToDrop) => {
-      let anchorLocal = morphToDrop._handGrabAnchorLocal;
+      let anchorLocal = morphToDrop.$handGrabAnchorLocal;
       if (!anchorLocal) anchorLocal = morphToDrop.shape.getBounds().topLeft;
       morphToDrop.dropOnTopMorphAt(worldPt, anchorLocal);
-      morphToDrop._handGrabAnchorLocal = null;
+      morphToDrop.$handGrabAnchorLocal = null;
     });
   }
   grabMorph(p, evt) {
@@ -7120,7 +7120,7 @@ class HandMorph extends Morph {
     let morphUnder = this.world().topMorphAt(worldPt);
     if (!morphUnder || morphUnder === this || morphUnder.className == 'WorldMorph') return false;
     let anchorLocal = morphUnder.localize(worldPt);
-    morphUnder._handGrabAnchorLocal = anchorLocal;
+    morphUnder.$handGrabAnchorLocal = anchorLocal;
     morphUnder.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
     return true;
   }
@@ -7138,7 +7138,7 @@ class HandMorph extends Morph {
     return this.getBounds().topLeft;
   }
   onPointerDown(p, evt) {
-    this.hitPoint = p;
+    this.$hitPoint = p;
     this.$handPointerLocation = p;
     setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
@@ -7152,7 +7152,7 @@ class HandMorph extends Morph {
       if (!morphUnder || morphUnder.className == 'WorldMorph' || morphUnder === this) return false;
       let copy = morphUnder.morphCopy();
       let anchorLocal = copy.localize(p);
-      copy._handGrabAnchorLocal = anchorLocal;
+      copy.$handGrabAnchorLocal = anchorLocal;
       copy.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
       return true;
     }
@@ -7171,7 +7171,8 @@ class HandMorph extends Morph {
   onPointerUp(p, evt) {
     this.$handPointerLocation = p;
     setPointerLocation(p);
-    if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
+    // $hitPoint is per-replica; it can be missing (e.g. after a reload while laden) — treat that as a drop.
+    if (this.hasSubmorphs() && (!this.$hitPoint || this.$hitPoint.dist(p) > 2)) this.dropMorph();
   }
   static new(...args) {
     return new this(...args);
@@ -7320,15 +7321,15 @@ class OnScreenKeyboardMorph extends Morph {
     if (arm) arm.longClickMoveCancelPx = OnScreenKeyboardMorph.OSK_LONG_CLICK_MOVE_CANCEL_PX;
   }
   _startOskBodyDragIfNeeded(p, evt) {
-    if (!this._oskBodyPress || this.hitPoint) return false;
+    if (!this.$oskBodyPress || this.$hitPoint) return false;
     let slop = OnScreenKeyboardMorph.OSK_BODY_DRAG_SLOP;
-    if (p.dist(this._oskBodyPress.ownerPt) < slop) return true;
-    this.hitPoint = this._oskBodyPress.ownerPt;
-    this.didDrag = false;
-    this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
-    this.actorID = evt.actorID;
+    if (p.dist(this.$oskBodyPress.ownerPt) < slop) return true;
+    this.$hitPoint = this.$oskBodyPress.ownerPt;
+    this.$didDrag = false;
+    this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
-    this._oskBodyPress = null;
+    this.$oskBodyPress = null;
     return super.onPointerMove(p, evt);
   }
   applyKeyMetrics(keyMorph, ks, displayText) {
@@ -7626,22 +7627,22 @@ class OnScreenKeyboardMorph extends Morph {
     this.beTopMorph();
     if (effectiveShiftKey(evt)) {
       let copy = this.world().addMorph(this.morphCopy());
-      copy.hitPoint = p;
-      copy.actorID = evt.actorID;
+      copy.$hitPoint = p;
+      copy.$dragActorID = evt.actorID;
       this.world().setPointerFocus(copy);
       return true;
     }
-    this._oskBodyPress = { ownerPt: p.copy ? p.copy() : pt(p.x, p.y) };
+    this.$oskBodyPress = { ownerPt: p.copy ? p.copy() : pt(p.x, p.y) };
     this._noteOskBodyPressForLongClick(evt);
     return true;
   }
   onPointerMove(p, evt) {
     if (this._startOskBodyDragIfNeeded(p, evt)) return true;
-    if (this._oskBodyPress) return true;
+    if (this.$oskBodyPress) return true;
     return super.onPointerMove(p, evt);
   }
   onPointerUp(p, evt) {
-    this._oskBodyPress = null;
+    this.$oskBodyPress = null;
     return super.onPointerUp(p, evt);
   }
   refreshKeyLabels() {
@@ -8138,7 +8139,7 @@ class WorldMorph extends Morph {
       hand.onPointerDown(p, evt);
       return true;
     }
-    if (this.$pointerFocus && this.$pointerFocus._stickyDragCollapsedBar) {
+    if (this.$pointerFocus && this.$pointerFocus.$stickyDragCollapsedBar) {
       let pf = this.$pointerFocus;
       let pForFocus = pf.owner ? pf.owner.localize(p) : p;
       return pf.finishStickyCollapsedTitleBarDrag(pForFocus, evt);
