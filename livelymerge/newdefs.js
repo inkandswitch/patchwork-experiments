@@ -503,10 +503,11 @@ function initUI() {
   window._lcEvts = new window.Object(); // pointerId → raw pointerdown event
   window._lcTimers = new window.Object(); // pointerId → raw timer handle (a host object in Node)
 
-  function addEventListener(source, type, listener) {
+  function addEventListener(source, type, listener, optsIfAny) {
     // prevents GC from collecting the listener
     $uiState.eventListeners.push(listener);
-    source.addEventListener(type, listener);
+    if (optsIfAny) source.addEventListener(type, listener, optsIfAny);
+    else source.addEventListener(type, listener);
   }
 
   /** After this many ms with the pointer still down, the original pointerdown gets `longClick === true`. */
@@ -572,6 +573,16 @@ function initUI() {
   addEventListener(canvas, 'keydown', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'keypress', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'keyup', (e) => window._canvasEvents.push(e));
+  // Wheel must preventDefault synchronously (too late inside rAF processEvents).
+  addEventListener(
+    canvas,
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      window._canvasEvents.push(e);
+    },
+    { passive: false },
+  );
 
   /** Target time between frames (ms). rAF fires at the display's refresh rate
    *  (60Hz+); frames that arrive sooner than this are skipped, so events/render
@@ -644,6 +655,11 @@ function initUI() {
         case 'keyup':
           onKeyUp(e);
           break;
+        case 'wheel': {
+          const pt = pointerEventCanvasLocalPt(canvas, e);
+          onWheel(pt, e);
+          break;
+        }
         default:
           console.error('unsupported event type', e.type);
       }
@@ -704,6 +720,10 @@ function onPointerUp(p, e) {
   if (e && e.actorID == null) e.actorID = $actorID;
   if (e && typeof e.pointerId === 'number' && $uiState) $uiState.longClickDisarmPointer(e.pointerId);
   topLevelMorph.onPointerUp(p, e);
+}
+function onWheel(p, e) {
+  if (e && e.actorID == null) e.actorID = $actorID;
+  if (topLevelMorph && topLevelMorph.onWheel) topLevelMorph.onWheel(p, e);
 }
 function pointerEventCanvasLocalPt(canvas, e) {
   /** Local coords on canvas for Pointer Events. Touch/pen use clientX/Y − rect (Safari often omits or misreports offsetX/Y). */
@@ -2167,6 +2187,51 @@ class TextBox extends Shape {
     if (this.$stringPutIn == null) return;
     this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringPutIn.length);
   }
+  evalSelectionRange() {
+    /**
+     * Range to evaluate for do-it / print-it: existing selection, or (if null) the
+     * current line. If that line is entirely a //-comment, use the text after '//'.
+     * Updates the visible selection when expanding a null selection.
+     * Returns [start, end) as exclusive end indices into this.string.
+     */
+    this.ensureSelectionSpecs();
+    let selA = this.$selStart.strIx;
+    let selB = this.$selStop.strIx;
+    let start = Math.min(selA, selB);
+    let end = Math.max(selA, selB);
+    if (start !== end) return [start, end];
+
+    // Null selection: expand to current composed line.
+    if (!this.lineStarts || this.lineStarts.length === 0) return [start, end];
+    let ix = start;
+    let lineNo = 0;
+    for (let i = 0; i < this.lineStarts.length; i++) {
+      let ls = this.lineStarts[i];
+      let next =
+        i === this.lineStarts.length - 1 ? this.string.length + 1 : this.lineStarts[i + 1];
+      if (ix >= ls && ix < next) {
+        lineNo = i;
+        break;
+      }
+    }
+    let lineStart = this.lineStarts[lineNo];
+    let raw = this.lines[lineNo] ? this.lines[lineNo].string : '';
+    let content = dropNewline(raw);
+    start = lineStart;
+    end = lineStart + content.length;
+    // Entirely a //-comment (optional leading whitespace, then //)...
+    let lead = content.match(/^\s*/)[0].length;
+    if (content.slice(lead, lead + 2) === '//') {
+      start = lineStart + lead + 2;
+      // end remains at end of line content
+    }
+    if (end > start) this.setSelectionRange([start, end - 1]);
+    else {
+      this.$selStart = this.$selStop = this.charSpecForIndex(start);
+      this.$priorNullSelection = -1;
+    }
+    return [start, end];
+  }
   handleKeyboardShortcuts(evt) {
     this.ensureSelectionSpecs();
     let k = evt.key && evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
@@ -2219,14 +2284,14 @@ class TextBox extends Shape {
     }
     if (k == 'd') {
       // DO IT
-      this.wsEval.call(this.workspaceObj, this.selectedTextString());
+      let range = this.evalSelectionRange();
+      this.wsEval.call(this.workspaceObj, this.string.slice(range[0], range[1]));
     }
     if (k == 'p') {
       // PRINT IT
-      let selA = this.$selStart.strIx;
-      let selB = this.$selStop.strIx;
-      let start = Math.min(selA, selB);
-      let end = Math.max(selA, selB); // end is exclusive
+      let range = this.evalSelectionRange();
+      let start = range[0];
+      let end = range[1]; // exclusive
       let evalThing = this.wsEval.call(this.workspaceObj, this.string.slice(start, end));
       if (_evalJustFailed) return;
       let ins = ' ==> ' + this.printitString(evalThing);
@@ -2240,9 +2305,10 @@ class TextBox extends Shape {
       this.string = this.$printitUndo.prefix + ins + this.$printitUndo.suffix;
       let bottomY = this.compose();
       this.extent.y = bottomY - this.topLeft.y;
-      // Move caret to after inserted text.
-      let caretIx = end + ins.length;
-      this.$selStart = this.$selStop = this.charSpecForIndex(caretIx);
+      // Select the inserted result so Delete can clear it; $printitUndo still
+      // restores the former expression selection on ctrl-Z.
+      this.$selStart = this.charSpecForIndex(end);
+      this.$selStop = this.charSpecForIndex(end + ins.length);
       this.clearTyping();
     }
     evt.preventDefault();
@@ -4493,6 +4559,33 @@ class MenuMorph extends ListMorph {
 // +---------+
 // Scroll panes, text editors, transcripts, sliders, hue picker.
 
+function isScrollPaneMorph(m) {
+  /** ScrollPane or a subclass (instanceOf is unavailable in the LM class system). */
+  if (!m) return false;
+  if (m.instanceOf && typeof ScrollPane !== 'undefined' && m.instanceOf(ScrollPane)) return true;
+  let n = m.className;
+  return (
+    n === 'ScrollPane' ||
+    n === 'TextPane' ||
+    n === 'ListPane' ||
+    n === 'TranscriptTextPane'
+  );
+}
+function scrollPaneAtWorldPt(world, worldPt) {
+  /** Innermost scroll pane under `worldPt`, if any. */
+  if (!world || !worldPt) return null;
+  let m =
+    world.topMorphAtExcludingHaloUI
+      ? world.topMorphAtExcludingHaloUI(worldPt)
+      : world.topMorphAt
+        ? world.topMorphAt(worldPt)
+        : null;
+  while (m && m !== world) {
+    if (isScrollPaneMorph(m)) return m;
+    m = m.owner;
+  }
+  return null;
+}
 function hitScrollPaneMenuButtonAt(world, worldPt) {
   /** Scrollbar whose menuButton (if any) contains `worldPt`. */
   let m = world.topMorphAtExcludingHaloUI(worldPt);
@@ -4580,6 +4673,35 @@ class ScrollPane extends Morph {
     // Per-user scroll state; legacy shared-translation scroll counts until healed.
     let scrollY = (this.contentPane.$scrollOffsetY || 0) + this.contentPane.transform.translation.y;
     return -scrollY / slideRoom;
+  }
+  contentLineHeight() {
+    let shape = this.contentPane && this.contentPane.shape;
+    let lh = shape && shape.lineHeight;
+    return lh > 0 ? lh : 16;
+  }
+  pageScrollValueDelta() {
+    /** Scrollbar 0..1 delta for one page step: (visibleLines - 1) lines of content. */
+    if (!this.contentPane) return 0.1;
+    let paneH = this.getBounds().height();
+    let contentH = this.contentPane.getBounds().height();
+    let slideRoom = contentH - paneH;
+    if (!slideRoom || slideRoom <= 0) return 0;
+    let lh = this.contentLineHeight();
+    let visibleLines = Math.max(1, Math.floor(paneH / lh));
+    let pageLines = Math.max(1, visibleLines - 1);
+    return Math.min(1, (pageLines * lh) / slideRoom);
+  }
+  scrollByLines(lineCount) {
+    /** Move content by `lineCount` lines (positive = down / toward end). */
+    if (!this.contentPane || !lineCount) return this.getScrollPosition();
+    let paneH = this.getBounds().height();
+    let contentH = this.contentPane.getBounds().height();
+    let slideRoom = contentH - paneH;
+    if (!slideRoom || slideRoom <= 0) return 0;
+    let delta = (lineCount * this.contentLineHeight()) / slideRoom;
+    let clipped = this._scrollContentTo(this.getScrollPosition() + delta);
+    this.syncScrollBar(clipped);
+    return clipped;
   }
   installContentAndScrollbar(contentPaneSpec, scrollBarSpec, contentMorph, onTextSaved) {
     this.contentPaneSpec = contentPaneSpec;
@@ -5098,16 +5220,14 @@ class SliderMorph extends Morph {
     if (this.menuButton && this.menuButton.includesPt(localP)) {
       let pane = this.owner;
       let world = this.world();
-      if (pane && pane.instanceOf && pane.instanceOf(ScrollPane) && pane.paneMenu) {
+      // Duck-type ScrollPane: LM objects have no instanceOf, so the old guard never opened menus.
+      if (pane && pane.paneMenu && pane.showPaneMenuFromMenuButton) {
         if (fleetingPaneMenuForScrollPane(world, pane)) removeFleetingPaneMenuFor(pane);
         else {
           let menu = pane.showPaneMenuFromMenuButton();
-          if (menu) {
-            let worldPt = pane.globalize(pt);
-            world.setPointerFocus(menu);
-            menu.hitPoint = worldPt;
-            menu.actorID = evt.actorID;
-            menu.shape.selectLineAt(menu.relativize(worldPt));
+          if (menu && world) {
+            // Open only — do not start a drag-select from the button click point (off-menu).
+            world.setPointerFocus(null);
           }
         }
       }
@@ -5117,9 +5237,12 @@ class SliderMorph extends Morph {
     if (!track.includesPt(localP)) return false;
     let thumb = this.ensureThumb();
     if (!thumb.includesPt(localP)) {
+      let pane = this.owner;
+      let page =
+        pane && pane.pageScrollValueDelta ? pane.pageScrollValueDelta() : this.valExtent || 0.1;
       let sliderBR = thumb.getBounds().bottomRight();
-      if (localP.lePt(sliderBR)) this.tweakValue(-0.1);
-      else this.tweakValue(0.1);
+      if (localP.lePt(sliderBR)) this.tweakValue(-page);
+      else this.tweakValue(page);
       return true;
     }
     this.hitPoint = pt;
@@ -5492,6 +5615,20 @@ class PanelTitleBar extends Morph {
     title.verticallyCenterSingleLine = true;
     title.verticalNudge = 8;
     title.composeBottomPad = 0;
+    // Title label is chrome, not an editor — never steal drag as text selection.
+    title.disableSelectionRendering = true;
+    title.noMenuLineHighlight = true;
+    title.$selStart = null;
+    title.$selStop = null;
+    this.titleMorph.onPointerDown = function () {
+      return false;
+    };
+    this.titleMorph.onPointerMove = function () {
+      return false;
+    };
+    this.titleMorph.onPointerUp = function () {
+      return false;
+    };
     this.layout();
   }
   collapsedTitleBarWidth() {
@@ -5564,6 +5701,15 @@ class PanelTitleBar extends Morph {
       this.addMorph(this.closeBtn);
     }
     this.changed();
+  }
+  onPointerDown(p, evt) {
+    /** Title-bar chrome: drag / collapse / close via the owning panel (not text select). */
+    if (!this.includesPt(p)) return false;
+    let hitInfo = this.hitInfo(p);
+    if (!hitInfo || !this.panel || !this.panel.beginTitleBarPress) return false;
+    // `p` is panel-local (our owner); beginTitleBarPress expects world/owner coords of the panel.
+    let worldP = this.panel.globalize(p);
+    return this.panel.beginTitleBarPress(worldP, evt, hitInfo);
   }
   setCollapseGlyph(collapsed) {
     this.collapseBtn.shape.setText(collapsed ? '▶' : '▼');
@@ -5704,10 +5850,7 @@ class PanelMorph extends Morph {
       }
       // else: continue to handle title bar press immediately
     }
-    // except title hits get immediate action
-    if (this.titleMorph.includesPt(p)) {
-      return super.onPointerDown(p, evt);
-    }
+    // Title bar (including the title label) always drags / chrome-acts — never text-selects.
     let localP = this.relativize(p);
     let hitInfo = this.titleBarHitInfo(localP);
     if (hitInfo) return this.beginTitleBarPress(p, evt, hitInfo);
@@ -7954,6 +8097,22 @@ class WorldMorph extends Morph {
     if (pointerOnOskKeyUI(this, pt)) return;
     if (this.longClickHaloDefersAt(pt)) return;
     this.cycleHaloAt(pt);
+  }
+  onWheel(p, evt) {
+    setPointerLocation(p);
+    let pane = scrollPaneAtWorldPt(this, p);
+    if (!pane || !pane.scrollByLines) return false;
+    let lh = pane.contentLineHeight ? pane.contentLineHeight() : 16;
+    let deltaPx = evt.deltaY;
+    if (evt.deltaMode === 1) deltaPx = evt.deltaY * lh; // DOM_DELTA_LINE
+    else if (evt.deltaMode === 2) deltaPx = evt.deltaY * pane.getBounds().height(); // DOM_DELTA_PAGE
+    // At least one line when the wheel notch is coarse; trackpads keep proportional motion.
+    let lines = deltaPx / lh;
+    if (Math.abs(lines) < 0.01) return false;
+    if (Math.abs(lines) < 1 && evt.deltaMode === 0 && Math.abs(evt.deltaY) >= 40)
+      lines = Math.sign(lines);
+    pane.scrollByLines(lines);
+    return true;
   }
   onPointerDown(p, evt) {
     setPointerLocation(p);
