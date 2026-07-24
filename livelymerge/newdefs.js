@@ -7068,7 +7068,7 @@ class HaloMorph extends Morph {
       }
       case 'Browse': {
         let className = this.target && this.target.className ? this.target.className : 'Morph';
-        let browser = Lively.addMorph(new BrowserPanel());
+        let browser = Lively.addEphemeralMorph(new BrowserPanel());
         browser.classPane.setSelectionString(className);
         break;
       }
@@ -8338,7 +8338,7 @@ class WorldMorph extends Morph {
       let wld = this.world();
       let cap = menuItemCaption(item);
       if (item == 'ToDo List') storageEditItem('ToDoList');
-      if (item == 'System browser') wld.addMorph(new BrowserPanel());
+      if (item == 'System browser') wld.addEphemeralMorph(new BrowserPanel());
       if (item == 'Recent changes') browseRecentChanges();
       if (item == 'Morphic help') wld.showMorphicHelp();
       if (item == 'Halo help') wld.showHaloHelp();
