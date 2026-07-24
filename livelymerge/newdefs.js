@@ -140,8 +140,8 @@ function classStaticNames(cls) {
 }
 function classInstanceMemberNames(cls) {
   // Method (and accessor) names on the class's prototype, minus bookkeeping keys.
-  return Object.getOwnPropertyNames(cls.prototype)
-    .filter((name) => name !== 'className' && name !== 'constructor')
+  return (Object.getOwnPropertyNames(cls.prototype)
+    .filter((name) => name !== 'className' && name !== 'constructor'))
     .sort();
 }
 function allClassNamesWithStatics() {
@@ -301,13 +301,14 @@ function populateLively() {
   // populateLively()
   initLively(); // build a simple world with a single rectangle morph
   Lively.box = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
+/*
   Lively.oval = Lively.addMorph(new Morph(null, new Ellipse(pt(60, 75), pt(30, 15))));
   Lively.oval.setStyles(Color.green.lighter(), 2, Color.black);
   Lively.star = Lively.addMorph(new Morph(null, new Pen().star(10, 30, Color.black)));
   Lively.star.setColor(Color.yellow);
   let d = pt(30, 100).subPt(Lively.star.getBounds().topLeft);
   Lively.star.moveBy(d);
-
+*/
   let welcomeRect = rect(25, 350, 400, 220);
   let boxB = Lively.box.getBounds();
   let lineY = welcomeRect.topLeft.y - 20;
@@ -332,6 +333,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   );
 
   Lively.showWorldMenuAt(pt(130, 40));
+/*
   testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
@@ -357,10 +359,12 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.trail = this.owner.addMorph(new Morph(null, this.pen.polyLine()));
     this.world().changed();
   };
+
   setTimeout(() => {
     Lively.spiral.startStepping('animatedSpiral', 
-      { goDist: 2, turnAngle: 60, nSteps: 8 /* was 26 */ }, 50);
+      { goDist: 2, turnAngle: 60, nSteps: 8 }, 50); // was 26
   }, 2000);
+*/
 }
 
 // comment this out if you want to run in pyonpyon
@@ -5987,7 +5991,7 @@ class BrowserPanel extends PanelMorph {
     /** Class list (upper-left) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
     this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.4)));
-    this.classPane.setList(['globals'].concat(allClassNamesWithStatics()));
+    this.classPane.setList(['globals'].concat(allClassNames()));
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
       let applyClass = () => {
@@ -6028,13 +6032,13 @@ class BrowserPanel extends PanelMorph {
         this.updateBrowserTitle();
         let methodString = null;
         let headerString = null;
-        if (this.selectedClass == 'globals') {
+        if (this.selectedClass == 'globals') {           // Global methods
           methodString = $global[this.selectedMethod].toString();
           headerString = this.selectedMethod + ' = ';
-        } else if (this.selectedClass.endsWith('.class')) {
-          methodString = $global[this.classOnly][this.selectedMethod].toString();
-          headerString = this.classOnly + '.' + this.selectedMethod + ' = ';
-        } else {
+        } else if (this.selectedMethod.endsWith('*')) {  // Class methods
+          methodString = $global[this.selectedClass][this.selectedMethod.slice(0,-1)].toString();
+          headerString = this.selectedClass + '.' + this.selectedMethod.slice(0,-1) + ' = ';
+        } else {                                         // Proto methods
           methodString = $global[this.selectedClass].prototype[this.selectedMethod].toString();
           headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
         }
@@ -6094,11 +6098,11 @@ class BrowserPanel extends PanelMorph {
         .sort()
         .filter((msg) => msg[0] == msg[0].toLowerCase());
     }
-    if (classSelection.endsWith('.class')) {
-      this.classOnly = classSelection.split('.')[0];
-      return classStaticNames($global[this.classOnly]);
-    }
-    return classInstanceMemberNames($global[classSelection]);
+    return classInstanceMemberNames($global[classSelection])
+      .concat(classStaticNames($global[classSelection])
+              // Note: we mark statics with '*'
+              .map((each => each + '*' )))
+      .sort();
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -9017,4 +9021,5 @@ function inspectString(obj) {
     typeStr = typeStr + ': ' + err;
   }
   return typeStr;
-}
+};
+init()
