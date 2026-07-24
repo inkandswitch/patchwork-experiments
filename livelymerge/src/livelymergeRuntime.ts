@@ -102,6 +102,27 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   // it is a root set for ephemeral liveness — GC sweeps dead rows explicitly.
   const ephemeralProps = new Map<string, Record<string, Val>>();
 
+  // -- Remembered set (incremental GC) --
+  // persistentReachable: ids known (as of the last committed transaction) to be
+  // reachable from 'global' in the persistent heap. Phase 1 of the GC trusts this set
+  // and re-traverses only entries written since the last committed GC (dirtyIds),
+  // instead of the whole persistent heap through Automerge draft proxies. null means
+  // "unknown — do a full traversal" (first transaction of a session, or after an
+  // aborted change). The set is deliberately an OVER-approximation: persistent
+  // objects are immortal by design, so a stale member costs only extra promotion or
+  // ephemeral retention, never a wrong collection. Under-approximation cannot occur
+  // for locally-caused reachability (every mutation lands in dirtyIds via the proxy
+  // write funnels); reachability introduced by REMOTE replicas is covered by the
+  // doc-residency fallbacks in gc().
+  let persistentReachable: Set<string> | null = null;
+  const dirtyIds = new Set<string>();
+  /** Reachable-set additions staged by gc(), applied only if the change commits. */
+  let pendingReachableAdds: Set<string> | null = null;
+
+  function markDirty(id: string): void {
+    dirtyIds.add(id);
+  }
+
   // -- Proxy cache --
   // objectId -> WeakRef<proxy>. One proxy per objectId for as long as anyone holds it,
   // so `===`, Map keys, etc. work across transactions and across promotion. Proxies
@@ -187,10 +208,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       exception = exception ?? e;
     } finally {
       inChangeCall = false;
-      // Shadow-side deletions from gc's promotion/sweep only apply if the Automerge
-      // change actually committed; on an aborted change the document side was rolled
-      // back, so the shadow entries must survive.
-      flushPendingShadowDeletes(committed);
+      // Shadow-side deletions and reachable-set additions from gc only apply if the
+      // Automerge change actually committed; on an aborted change the document side
+      // was rolled back, so the shadow entries must survive and the reachable set
+      // must be rebuilt.
+      flushPendingGcState(committed);
     }
     if (exception) {
       console.error(exception);
@@ -551,7 +573,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (lmIsReservedKey(prop)) return false;
         try {
-          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id));
+          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id), () => markDirty(id));
         } catch (e) {
           throw enrichWriteError(e, prop, id);
         }
@@ -588,7 +610,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsReservedKey(prop) || typeof prop === 'symbol') return false;
         const entry = liveHeapObj(obj);
         const key = lmUserKey(prop);
-        if (Object.hasOwn(entry, key)) delete entry[key]; // deleting an absent key is free
+        if (Object.hasOwn(entry, key)) {
+          // Deleting an absent key is free (and stays out of the dirty set).
+          delete entry[key];
+          markDirty(id);
+        }
         return true;
       },
     }) as unknown as Proxy;
@@ -710,7 +736,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       set(_, prop, value) {
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (prop === 'length') {
-          vals().length = Number(value);
+          const cur = vals();
+          const next = Number(value);
+          if (cur.length !== next) {
+            cur.length = next;
+            markDirty(id);
+          }
           return true;
         }
         if (isArrayIndexKey(prop) && prop !== 'length') {
@@ -720,6 +751,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             const cur = vals();
             if (!(idx < cur.length && lmSameStoredVal(cur[idx], next))) {
               cur[idx] = next;
+              markDirty(id);
             }
           } catch (e) {
             throw enrichWriteError(e, prop, id);
@@ -756,6 +788,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'push': {
             return function () {
+              if (arguments.length > 0) markDirty(id);
               for (const arg of arguments) {
                 vals().push(serializerFor(id)(arg));
               }
@@ -764,11 +797,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'pop': {
             return function () {
-              return deserialize(vals().pop());
+              const items = vals();
+              if (items.length > 0) markDirty(id);
+              return deserialize(items.pop());
             };
           }
           case 'unshift': {
             return function () {
+              if (arguments.length > 0) markDirty(id);
               for (const arg of arguments) {
                 vals().unshift(serializerFor(id)(arg));
               }
@@ -777,7 +813,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'shift': {
             return function () {
-              return deserialize(vals().shift());
+              const items = vals();
+              if (items.length > 0) markDirty(id);
+              return deserialize(items.shift());
             };
           }
           case 'findIndex': {
@@ -844,9 +882,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'splice': {
             return function (startIdx: number, deleteCount = 0, ...args: any[]) {
-              return $arr(
-                vals().splice(startIdx, deleteCount, ...args.map(serializerFor(id))).map(deserialize),
-              );
+              const removed = vals().splice(startIdx, deleteCount, ...args.map(serializerFor(id)));
+              if (removed.length > 0 || args.length > 0) markDirty(id);
+              return $arr(removed.map(deserialize));
             };
           }
           case 'concat': {
@@ -869,6 +907,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case 'sort': {
             return function (compareFn?: (a: any, b: any) => number) {
               const sorted = vals().map(deserialize).sort(compareFn);
+              if (vals().length > 0) markDirty(id);
               vals().splice(0, vals().length, ...sorted.map(serializerFor(id)));
               return p;
             };
@@ -1056,7 +1095,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
     const proto = $obj({});
     (proto as any).constructor = funProxy;
-    live.$prototypeId = proto.$id;
+    live.$prototypeId = proto.$id; // mutation on read: the fun gains a $prototypeId edge
+    markDirty(live.$id);
     return proto;
   }
 
@@ -1102,12 +1142,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           if (value !== null && !isLmObj(value)) {
             throw new TypeError('Function.prototype is not an object or null');
           }
-          live.$prototypeId = value === null ? undefined : value.$id;
+          const nextProtoId = value === null ? undefined : value.$id;
+          if (live.$prototypeId !== nextProtoId) {
+            live.$prototypeId = nextProtoId;
+            markDirty(id);
+          }
           return true;
         }
         if (lmIsReservedKey(prop)) return false;
         try {
-          if (!lmSetOwn(live, prop, value, serializerFor(id))) return false;
+          if (!lmSetOwn(live, prop, value, serializerFor(id), () => markDirty(id))) return false;
         } catch (e) {
           throw enrichWriteError(e, prop, id);
         }
@@ -1145,7 +1189,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       deleteProperty(_, prop) {
         if (lmIsEphemeralKey(prop)) return deleteEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop) || typeof prop === 'symbol' || prop === 'prototype') return false;
-        delete liveHeapFun(fun)[lmUserKey(prop)];
+        const live = liveHeapFun(fun);
+        const key = lmUserKey(prop);
+        if (Object.hasOwn(live, key)) {
+          delete live[key];
+          markDirty(id);
+        }
         return true;
       },
       apply(_, thisArg, args) {
@@ -1205,13 +1254,25 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
    * Automerge change has committed (see the promotion/sweep notes in gc). */
   let pendingShadowDeletes: string[] = [];
 
-  function flushPendingShadowDeletes(commit: boolean) {
+  function flushPendingGcState(commit: boolean) {
     if (commit) {
       for (const id of pendingShadowDeletes) {
         delete shadowTable[id];
       }
+      if (pendingReachableAdds) {
+        if (persistentReachable === null) persistentReachable = new Set();
+        for (const id of pendingReachableAdds) persistentReachable.add(id);
+      }
+      dirtyIds.clear();
+    } else {
+      // Aborted change: the document rolled back (promotions included), so the
+      // reachable-set additions staged this transaction are invalid. Aborts are
+      // rare (promotion validation failures) — just rebuild from scratch next time.
+      persistentReachable = null;
+      dirtyIds.clear();
     }
     pendingShadowDeletes = [];
+    pendingReachableAdds = null;
   }
 
   function gc(extraRoot?: unknown) {
@@ -1234,8 +1295,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     // ephemeral keys (those live in the ephemeralProps sidecar), so following an
     // entry's properties can never drag ephemeral state into the Automerge document.
 
-    const persistentLive = new Set<string>();
     const ephemeralLive = new Set<string>();
+
+    // Live view of persistent reachability for THIS transaction: the committed set
+    // from prior transactions plus everything discovered live below. The additions
+    // are staged (pendingReachableAdds) and only join the committed set if the
+    // change commits.
+    const newlyReachable = new Set<string>();
+    const isPersistentLive = (id: string): boolean =>
+      newlyReachable.has(id) || (persistentReachable !== null && persistentReachable.has(id));
 
     function traverse(val: Obj | Arr | Fun, visitRef: (id: string, via: string) => void) {
       const from = val.$id;
@@ -1272,14 +1340,23 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     // promotion; they are validated and installed only after marking completes, so a
     // failed promotion leaves the shadow document untouched (the Automerge change is
     // rolled back by the thrown error, and shadow state must not be half-moved).
+    //
+    // INCREMENTAL (remembered set): with a committed reachable set available, only
+    // entries actually written since the last committed GC (dirtyIds) are
+    // re-traversed — new reachability can only be introduced by a write, and every
+    // write funnels through the proxy traps, which record it. Unlinking is ignored:
+    // the set over-approximates, which is safe because persistent objects are
+    // immortal by design (a stale member costs extra promotion/retention, never a
+    // wrong collection). Without a committed set (first transaction of a session, or
+    // after an aborted change) this falls back to the full traversal from 'global'.
 
     const toPromote: string[] = [];
 
     function visitPersistent(id: string, via?: string) {
-      if (persistentLive.has(id)) {
+      if (isPersistentLive(id)) {
         return;
       }
-      persistentLive.add(id);
+      newlyReachable.add(id);
 
       let val = shadowTable[id];
       if (val) {
@@ -1317,8 +1394,27 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       traverse(val, visitPersistent);
     }
 
-    // The persistent root: the global object (everything else hangs off it).
-    visitPersistent('global');
+    if (persistentReachable === null) {
+      // The persistent root: the global object (everything else hangs off it).
+      visitPersistent('global');
+    } else {
+      // Re-scan only the dirty entries. A dirty entry's outgoing refs matter only if
+      // the entry itself is persistently reachable: known-live, or doc-resident but
+      // absent from the cached set — that second case covers objects linked into the
+      // persistent heap by REMOTE replicas, whose writes never hit our local write
+      // barrier (and, conservatively, writes into unreachable-but-immortal doc
+      // objects, which the full traversal would have turned into dangling refs).
+      // Dirty entries that are shadow-resident and unreached are skipped here; if a
+      // dirty live object points at them, the traversal below finds and promotes
+      // them with their current contents.
+      for (const id of dirtyIds) {
+        const known = isPersistentLive(id);
+        if (!known && doc.objectTable[id] === undefined) continue;
+        if (!known) newlyReachable.add(id);
+        const entry = lookupHeapEntry(id);
+        if (entry) traverse(entry, visitPersistent);
+      }
+    }
 
     // Validate every promotion candidate before installing any of them. Host values
     // were tolerated while these entries were per-replica; crossing into the shared,
@@ -1337,6 +1433,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       pendingShadowDeletes.push(id);
     }
 
+    // Everything discovered live this transaction joins the committed reachable set
+    // — but only if the change commits (see flushPendingGcState).
+    pendingReachableAdds = newlyReachable;
+
     // -- Phase 2: mark ephemeral. --
     // Roots are the ephemeral properties of live objects. Marking an object
     // ephemeral-live exposes its own ephemeral properties as further roots, so this
@@ -1354,8 +1454,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
     };
 
-    for (const id of persistentLive) {
-      enqueueEphemeralPropsOf(id);
+    // Root the ephemeral rows of live owners. Iterate the rows (few) rather than the
+    // live set (the whole reachable heap): a row roots if its owner is persistently
+    // reachable, or at least doc-resident — persistent objects are immortal, so
+    // doc-residency is the row's survival test at sweep time anyway, and it also
+    // covers owners linked by remote replicas that the local reachability cache has
+    // never seen.
+    for (const id of ephemeralProps.keys()) {
+      if (isPersistentLive(id) || doc.objectTable[id] !== undefined) {
+        enqueueEphemeralPropsOf(id);
+      }
     }
 
     // The result of a do-it is an ephemeral root for this collection: print-it must be
@@ -1374,7 +1482,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     while (worklist.length > 0) {
       const id = worklist.pop()!;
-      if (persistentLive.has(id) || ephemeralLive.has(id)) {
+      if (isPersistentLive(id) || ephemeralLive.has(id)) {
         continue;
       }
       ephemeralLive.add(id);
@@ -1393,7 +1501,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     let numShadowReclaimed = 0;
     for (const id of Object.keys(shadowTable)) {
-      if (!ephemeralLive.has(id) && !persistentLive.has(id)) {
+      if (!ephemeralLive.has(id) && !isPersistentLive(id)) {
         // Not ephemeral-live and not just promoted: fresh garbage or an abandoned
         // ephemeral object.
         pendingShadowDeletes.push(id);
@@ -1409,7 +1517,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
     }
     if ((globalThis as any).debugGC) {
-      console.log('reclaimed', numShadowReclaimed, 'ephemeral objects');
+      console.log(
+        'gc:',
+        persistentReachable === null ? 'FULL scan,' : `incremental (${dirtyIds.size} dirty),`,
+        newlyReachable.size,
+        'newly reachable,',
+        toPromote.length,
+        'promoted,',
+        numShadowReclaimed,
+        'ephemeral objects reclaimed',
+      );
     }
   }
 

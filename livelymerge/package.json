@@ -7,6 +7,7 @@
   "scripts": {
     "build": "vite build",
     "test": "vitest run",
+    "bench": "BENCH=1 vitest run src/perfBench.test.ts --disableConsoleIntercept",
     "sync": "pnpm build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
