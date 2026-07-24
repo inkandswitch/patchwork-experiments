@@ -77,18 +77,20 @@ export function lmSetOwn(
   prop: PropertyKey,
   value: unknown,
   serialize: (value: unknown) => unknown,
-  onMutate?: () => void,
+  onMutate?: (oldValue: unknown, newValue: unknown) => void,
 ): boolean {
   if (typeof prop === 'symbol' || lmIsReservedKey(prop)) return false;
   const key = lmUserKey(prop);
   const next = serialize(value);
+  const has = Object.hasOwn(entry, key);
+  const cur = has ? entry[key] : undefined;
   // Same-value elision: skip the store when nothing would change. This is what makes
   // "no persistent ops on an idle frame" a robust property rather than a coding
   // discipline — idempotent per-frame/per-event writes (didDrag = false, actorID =
   // null, ...) cost nothing. Elided writes also skip onMutate, so they never dirty
-  // the GC's remembered set.
-  if (Object.hasOwn(entry, key) && lmSameStoredVal(entry[key], next)) return true;
-  onMutate?.();
+  // the GC's edge tracking.
+  if (has && lmSameStoredVal(cur, next)) return true;
+  onMutate?.(cur, next);
   entry[key] = next;
   return true;
 }

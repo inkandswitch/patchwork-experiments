@@ -1,11 +1,13 @@
 /**
- * Regression tests for the remembered-set (incremental) GC: after the first
- * transaction's full traversal, gc re-scans only entries written since the last
- * committed transaction. These tests exercise the cases where incrementality could
- * diverge from the full traversal: promotion deferred to a later transaction,
- * promotion chains through shadow objects, same-value-elided writes, aborted
- * changes, and writes onto objects linked by a remote replica (whose writes never
- * hit the local write barrier).
+ * Regression tests for the incremental PRECISE GC (edge cache): after the first
+ * transaction's full traversal, gc re-reads only entries whose ref-structure changed
+ * and re-traces reachability over a plain-JS edge cache. The reachable set is exact —
+ * unlinks shrink it, so stale reachability can never cause spurious promotion.
+ *
+ * These tests pin down the cases where incrementality could diverge from a full
+ * traversal: promotion deferred to a later transaction, promotion chains,
+ * value-only writes, unlink precision, aborted changes, and writes that bypass the
+ * local barrier (remote replicas → noteExternalChanges).
  */
 import { describe, expect, it } from 'vitest';
 import { createLivelymergeRuntime } from './livelymergeRuntime';
@@ -18,7 +20,7 @@ function makeRuntime() {
   return { handle, runtime };
 }
 
-describe('remembered-set gc', () => {
+describe('incremental precise gc', () => {
   it('promotes an ephemeral object linked to the persistent heap in a LATER transaction', () => {
     const { runtime } = makeRuntime();
     runtime.eval('$stash = { a: 42 }'); // txn 1: ephemeral root only — stays shadow
@@ -50,15 +52,16 @@ describe('remembered-set gc', () => {
     expect(runtime.eval('xs[0].v')).toBe(1);
   });
 
-  it('same-value elided writes do not disturb reachability', () => {
+  it('value-only and same-value writes do not disturb reachability', () => {
     const { runtime } = makeRuntime();
     runtime.eval('x = { a: 1 }');
     const x = runtime.eval('x') as { $id: string };
-    runtime.eval('x.a = 1'); // elided: same value, no dirty
-    runtime.eval('x = x'); // elided: same ref
-    runtime.eval('y = x'); // new edge, elision-free
+    runtime.eval('x.a = 2'); // value-only: never edge-dirty
+    runtime.eval('x.a = 2'); // elided
+    runtime.eval('x = x'); // elided (same ref)
+    runtime.eval('y = x'); // new edge
     expect(runtime.doc().objectTable[x.$id]).toBeDefined();
-    expect(runtime.eval('y.a')).toBe(1);
+    expect(runtime.eval('y.a')).toBe(2);
   });
 
   it('unlinked persistent objects stay immortal (unchanged semantics)', () => {
@@ -68,6 +71,31 @@ describe('remembered-set gc', () => {
     runtime.eval('x = null');
     runtime.eval('1'); // one more gc cycle
     expect(runtime.doc().objectTable[x.$id]).toBeDefined();
+  });
+
+  it('PRECISION: writes onto an unlinked object do not promote fresh objects', () => {
+    const { runtime } = makeRuntime();
+    runtime.eval('x = { a: 1 }'); // promoted
+    runtime.eval('$keep = x'); // hold the proxy through an ephemeral root
+    runtime.eval('x = null'); // unlink: the precise trace drops it
+    runtime.eval('$keep.child = { b: 2 }'); // write onto the unreachable immortal object
+    const child = runtime.eval('$keep.child') as { $id: string };
+    // Not promoted (its parent is not persistently reachable)...
+    expect(runtime.doc().objectTable[child.$id]).toBeUndefined();
+    // ...but still alive and readable via the ephemeral chain.
+    expect(runtime.eval('$keep.child.b')).toBe(2);
+  });
+
+  it('PRECISION: relinking promotes the subtree accumulated while unlinked', () => {
+    const { runtime } = makeRuntime();
+    runtime.eval('x = { a: 1 }');
+    runtime.eval('$keep = x');
+    runtime.eval('x = null');
+    runtime.eval('$keep.child = { b: 2 }');
+    runtime.eval('y = $keep'); // relink → child becomes persistently reachable
+    const child = runtime.eval('y.child') as { $id: string };
+    expect(runtime.doc().objectTable[child.$id]).toBeDefined();
+    expect(runtime.eval('y.child.b')).toBe(2);
   });
 
   it('purely ephemeral objects survive transactions without being promoted', () => {
@@ -99,22 +127,37 @@ describe('remembered-set gc', () => {
 
   it('promotes local objects linked onto a REMOTELY-added persistent object', () => {
     const { handle, runtime } = makeRuntime();
-    runtime.eval('1'); // initialize roots; commits the full-scan reachable set
+    runtime.eval('1'); // initialize roots; commits the full-scan state
     // Simulate a remote replica linking a brand-new object into the persistent heap:
-    // these writes never pass through the runtime's write barrier.
+    // these writes never pass through the runtime's write barrier. (In production
+    // the automerge-repo DocHandle 'change' event delivers this via patches; the
+    // test handle has no event emitter, so notify the runtime directly.)
     handle.change((d) => {
       d.objectTable['remote-obj'] = { $type: 'obj', $id: 'remote-obj' } as Obj;
       (d.objectTable['global'] as Obj)['@remote'] = { $type: 'ref', $id: 'remote-obj' } as Ref;
     });
-    // A local write onto the remotely-linked object must still promote its target,
-    // even though 'remote-obj' is absent from the local reachability cache.
+    runtime.noteExternalChanges(['global', 'remote-obj']);
+    // A local write onto the remotely-linked object must promote its target.
     runtime.eval('remote.child = { z: 9 }');
     const child = runtime.eval('remote.child') as { $id: string };
     expect(runtime.doc().objectTable[child.$id]).toBeDefined();
     expect(runtime.eval('remote.child.z')).toBe(9);
   });
 
-  it('ephemeral props of promoted-later objects keep their referents alive', () => {
+  it('noteExternalChanges() with no ids forces a safe full re-traversal', () => {
+    const { handle, runtime } = makeRuntime();
+    runtime.eval('1');
+    handle.change((d) => {
+      d.objectTable['remote-obj2'] = { $type: 'obj', $id: 'remote-obj2' } as Obj;
+      (d.objectTable['global'] as Obj)['@remote2'] = { $type: 'ref', $id: 'remote-obj2' } as Ref;
+    });
+    runtime.noteExternalChanges(); // no patch details available
+    runtime.eval('remote2.child = { z: 10 }');
+    const child = runtime.eval('remote2.child') as { $id: string };
+    expect(runtime.doc().objectTable[child.$id]).toBeDefined();
+  });
+
+  it('ephemeral props of persistent objects keep their referents alive without promoting them', () => {
     const { runtime } = makeRuntime();
     runtime.eval('x = { a: 1 }');
     runtime.eval('x.$side = { s: 8 }'); // ephemeral prop on a persistent object

@@ -82,6 +82,11 @@ export interface LivelymergeRuntime {
   /** Diagnostic: refs whose target id exists in neither the document nor the shadow heap. */
   findDanglingRefs(): string[];
   doc(): LivelymergeDoc;
+  /** Tell the GC about doc changes that bypassed the local write barrier (e.g. a
+   * remote replica's writes): pass the affected objectTable ids, or nothing to
+   * force a full re-traversal on the next transaction. Wired automatically when the
+   * doc handle exposes change events. */
+  noteExternalChanges(ids?: string[]): void;
 }
 
 export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): LivelymergeRuntime {
@@ -102,25 +107,51 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   // it is a root set for ephemeral liveness — GC sweeps dead rows explicitly.
   const ephemeralProps = new Map<string, Record<string, Val>>();
 
-  // -- Remembered set (incremental GC) --
-  // persistentReachable: ids known (as of the last committed transaction) to be
-  // reachable from 'global' in the persistent heap. Phase 1 of the GC trusts this set
-  // and re-traverses only entries written since the last committed GC (dirtyIds),
-  // instead of the whole persistent heap through Automerge draft proxies. null means
-  // "unknown — do a full traversal" (first transaction of a session, or after an
-  // aborted change). The set is deliberately an OVER-approximation: persistent
-  // objects are immortal by design, so a stale member costs only extra promotion or
-  // ephemeral retention, never a wrong collection. Under-approximation cannot occur
-  // for locally-caused reachability (every mutation lands in dirtyIds via the proxy
-  // write funnels); reachability introduced by REMOTE replicas is covered by the
-  // doc-residency fallbacks in gc().
+  // -- Incremental precise GC (edge cache) --
+  // The GC's phase-1 job is to know exactly which ids are reachable from 'global' in
+  // the persistent heap, without re-traversing the whole heap through (slow) Automerge
+  // draft proxies every transaction. Reachability only changes when the heap's EDGE
+  // structure changes, and every edge mutation funnels through the proxy write
+  // barrier, which sees both the old and the new value. So:
+  //
+  //   - edgeCache: outgoing ref-targets per doc-resident entry, built during the
+  //     initial full traversal and refreshed per entry when its edges change.
+  //   - edgeDirtyIds: entries whose outgoing edges MAY have changed — a ref was
+  //     written or removed ($-structure changes included). Value-only writes never
+  //     land here, so pure-animation frames cost nothing.
+  //   - persistentReachable: the PRECISE reachable set from the last trace. Valid
+  //     until an edge changes; then one full re-trace over edgeCache at plain-JS
+  //     speed recomputes it exactly (unlinks shrink it — no over-approximation, so
+  //     no spurious promotion). null means "rebuild everything with a full
+  //     traversal" (first transaction of a session, or after an aborted change).
+  //
+  // Writes by REMOTE replicas never hit the local barrier; the runtime subscribes to
+  // the doc handle's change events (when available) and marks patched entries
+  // edge-dirty — see noteExternalChanges.
   let persistentReachable: Set<string> | null = null;
-  const dirtyIds = new Set<string>();
-  /** Reachable-set additions staged by gc(), applied only if the change commits. */
-  let pendingReachableAdds: Set<string> | null = null;
+  const edgeCache = new Map<string, string[]>();
+  const edgeDirtyIds = new Set<string>();
 
-  function markDirty(id: string): void {
-    dirtyIds.add(id);
+  function markEdgeDirty(id: string): void {
+    edgeDirtyIds.add(id);
+  }
+
+  /** Barrier helper: an edge changed iff a ref was stored or displaced. Leaf values
+   * can never contain refs (plain JSON with $-keys is rejected at serialization), so
+   * checking the top-level values is exact. */
+  function markEdgeDirtyIfRefs(id: string, oldValue: unknown, newValue?: unknown): void {
+    if (isRef(oldValue) || isRef(newValue)) edgeDirtyIds.add(id);
+  }
+
+  /** External (e.g. remote-replica) changes bypass the local write barrier. Call with
+   * the affected objectTable ids to mark them edge-dirty, or with no argument to
+   * invalidate all incremental GC state (full re-traversal on the next transaction). */
+  function noteExternalChanges(ids?: string[]): void {
+    if (!ids) {
+      persistentReachable = null;
+      return;
+    }
+    for (const id of ids) edgeDirtyIds.add(id);
   }
 
   // -- Proxy cache --
@@ -573,7 +604,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (lmIsReservedKey(prop)) return false;
         try {
-          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id), () => markDirty(id));
+          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id), (oldV, newV) =>
+            markEdgeDirtyIfRefs(id, oldV, newV),
+          );
         } catch (e) {
           throw enrichWriteError(e, prop, id);
         }
@@ -611,9 +644,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         const entry = liveHeapObj(obj);
         const key = lmUserKey(prop);
         if (Object.hasOwn(entry, key)) {
-          // Deleting an absent key is free (and stays out of the dirty set).
+          // Deleting an absent key is free; deleting a ref removes an edge.
+          const oldV = entry[key];
           delete entry[key];
-          markDirty(id);
+          markEdgeDirtyIfRefs(id, oldV);
         }
         return true;
       },
@@ -739,8 +773,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           const cur = vals();
           const next = Number(value);
           if (cur.length !== next) {
+            // Truncation may drop refs (edges); growth adds only holes.
+            if (next < cur.length && cur.slice(next).some(isRef)) markEdgeDirty(id);
             cur.length = next;
-            markDirty(id);
           }
           return true;
         }
@@ -750,8 +785,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             const next = serializerFor(id)(value);
             const cur = vals();
             if (!(idx < cur.length && lmSameStoredVal(cur[idx], next))) {
+              markEdgeDirtyIfRefs(id, idx < cur.length ? cur[idx] : undefined, next);
               cur[idx] = next;
-              markDirty(id);
             }
           } catch (e) {
             throw enrichWriteError(e, prop, id);
@@ -788,34 +823,36 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'push': {
             return function () {
-              if (arguments.length > 0) markDirty(id);
               for (const arg of arguments) {
-                vals().push(serializerFor(id)(arg));
+                const v = serializerFor(id)(arg);
+                if (isRef(v)) markEdgeDirty(id);
+                vals().push(v);
               }
               return vals().length;
             };
           }
           case 'pop': {
             return function () {
-              const items = vals();
-              if (items.length > 0) markDirty(id);
-              return deserialize(items.pop());
+              const popped = vals().pop();
+              markEdgeDirtyIfRefs(id, popped);
+              return deserialize(popped);
             };
           }
           case 'unshift': {
             return function () {
-              if (arguments.length > 0) markDirty(id);
               for (const arg of arguments) {
-                vals().unshift(serializerFor(id)(arg));
+                const v = serializerFor(id)(arg);
+                if (isRef(v)) markEdgeDirty(id);
+                vals().unshift(v);
               }
               return vals().length;
             };
           }
           case 'shift': {
             return function () {
-              const items = vals();
-              if (items.length > 0) markDirty(id);
-              return deserialize(items.shift());
+              const shifted = vals().shift();
+              markEdgeDirtyIfRefs(id, shifted);
+              return deserialize(shifted);
             };
           }
           case 'findIndex': {
@@ -882,8 +919,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'splice': {
             return function (startIdx: number, deleteCount = 0, ...args: any[]) {
-              const removed = vals().splice(startIdx, deleteCount, ...args.map(serializerFor(id)));
-              if (removed.length > 0 || args.length > 0) markDirty(id);
+              const inserted = args.map(serializerFor(id));
+              const removed = vals().splice(startIdx, deleteCount, ...inserted);
+              if (removed.some(isRef) || inserted.some(isRef)) markEdgeDirty(id);
               return $arr(removed.map(deserialize));
             };
           }
@@ -906,8 +944,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'sort': {
             return function (compareFn?: (a: any, b: any) => number) {
+              // Rearranges the same elements: the edge SET is unchanged, never dirty.
               const sorted = vals().map(deserialize).sort(compareFn);
-              if (vals().length > 0) markDirty(id);
               vals().splice(0, vals().length, ...sorted.map(serializerFor(id)));
               return p;
             };
@@ -1096,7 +1134,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const proto = $obj({});
     (proto as any).constructor = funProxy;
     live.$prototypeId = proto.$id; // mutation on read: the fun gains a $prototypeId edge
-    markDirty(live.$id);
+    markEdgeDirty(live.$id);
     return proto;
   }
 
@@ -1145,13 +1183,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           const nextProtoId = value === null ? undefined : value.$id;
           if (live.$prototypeId !== nextProtoId) {
             live.$prototypeId = nextProtoId;
-            markDirty(id);
+            markEdgeDirty(id);
           }
           return true;
         }
         if (lmIsReservedKey(prop)) return false;
         try {
-          if (!lmSetOwn(live, prop, value, serializerFor(id), () => markDirty(id))) return false;
+          if (
+            !lmSetOwn(live, prop, value, serializerFor(id), (oldV, newV) =>
+              markEdgeDirtyIfRefs(id, oldV, newV),
+            )
+          ) {
+            return false;
+          }
         } catch (e) {
           throw enrichWriteError(e, prop, id);
         }
@@ -1192,8 +1236,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         const live = liveHeapFun(fun);
         const key = lmUserKey(prop);
         if (Object.hasOwn(live, key)) {
+          const oldV = live[key];
           delete live[key];
-          markDirty(id);
+          markEdgeDirtyIfRefs(id, oldV);
         }
         return true;
       },
@@ -1254,25 +1299,26 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
    * Automerge change has committed (see the promotion/sweep notes in gc). */
   let pendingShadowDeletes: string[] = [];
 
+  /** The reachable set traced by gc(), promoted to persistentReachable on commit. */
+  let pendingReachable: Set<string> | null = null;
+
   function flushPendingGcState(commit: boolean) {
     if (commit) {
       for (const id of pendingShadowDeletes) {
         delete shadowTable[id];
       }
-      if (pendingReachableAdds) {
-        if (persistentReachable === null) persistentReachable = new Set();
-        for (const id of pendingReachableAdds) persistentReachable.add(id);
-      }
-      dirtyIds.clear();
+      if (pendingReachable) persistentReachable = pendingReachable;
+      edgeDirtyIds.clear();
     } else {
       // Aborted change: the document rolled back (promotions included), so the
-      // reachable-set additions staged this transaction are invalid. Aborts are
-      // rare (promotion validation failures) — just rebuild from scratch next time.
+      // traced set and any edge lists refreshed this transaction are invalid. Aborts
+      // are rare (promotion validation failures) — rebuild from scratch next time.
       persistentReachable = null;
-      dirtyIds.clear();
+      edgeCache.clear();
+      edgeDirtyIds.clear();
     }
     pendingShadowDeletes = [];
-    pendingReachableAdds = null;
+    pendingReachable = null;
   }
 
   function gc(extraRoot?: unknown) {
@@ -1297,13 +1343,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     const ephemeralLive = new Set<string>();
 
-    // Live view of persistent reachability for THIS transaction: the committed set
-    // from prior transactions plus everything discovered live below. The additions
-    // are staged (pendingReachableAdds) and only join the committed set if the
-    // change commits.
-    const newlyReachable = new Set<string>();
-    const isPersistentLive = (id: string): boolean =>
-      newlyReachable.has(id) || (persistentReachable !== null && persistentReachable.has(id));
+    // The PRECISE reachable set for THIS transaction. When no edges changed, the
+    // committed set is reused as-is; otherwise it is recomputed exactly by a trace
+    // over the edge cache. It replaces the committed set only if the change commits
+    // (see flushPendingGcState).
+    let reachable: Set<string>;
 
     function traverse(val: Obj | Arr | Fun, visitRef: (id: string, via: string) => void) {
       const from = val.$id;
@@ -1341,29 +1385,42 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     // failed promotion leaves the shadow document untouched (the Automerge change is
     // rolled back by the thrown error, and shadow state must not be half-moved).
     //
-    // INCREMENTAL (remembered set): with a committed reachable set available, only
-    // entries actually written since the last committed GC (dirtyIds) are
-    // re-traversed — new reachability can only be introduced by a write, and every
-    // write funnels through the proxy traps, which record it. Unlinking is ignored:
-    // the set over-approximates, which is safe because persistent objects are
-    // immortal by design (a stale member costs extra promotion/retention, never a
-    // wrong collection). Without a committed set (first transaction of a session, or
-    // after an aborted change) this falls back to the full traversal from 'global'.
+    // INCREMENTAL AND PRECISE (edge cache): reachability changes only when the
+    // heap's edge structure changes, and every local edge mutation funnels through
+    // the write barrier (edgeDirtyIds; remote mutations arrive via
+    // noteExternalChanges). When no edges changed, the committed reachable set is
+    // still exact and phase 1 is O(1). When edges did change, only the dirty entries
+    // are re-read through the Automerge draft (to refresh their edge lists); the
+    // full re-trace then runs over the edge cache at plain-JS speed and computes the
+    // reachable set EXACTLY — unlinked subtrees drop out, so stale reachability can
+    // never cause spurious promotion. Writes onto unreachable-but-immortal doc
+    // objects behave as they always have: no promotion (phase 2's ephemeral marking
+    // may still retain the targets).
 
     const toPromote: string[] = [];
 
+    // Visits `id`, recording its outgoing edges in the edge cache as a side effect.
+    // Doc-resident entries with cached edges are traced at plain-JS speed;
+    // everything else (shadow entries, first encounters, remote additions) is read
+    // once and cached.
     function visitPersistent(id: string, via?: string) {
-      if (isPersistentLive(id)) {
+      if (reachable.has(id)) {
         return;
       }
-      newlyReachable.add(id);
+      reachable.add(id);
 
       let val = shadowTable[id];
       if (val) {
         // Persistently reachable, so it graduates from the shadow document to the
-        // Automerge document (after validation, below). objectId is preserved.
+        // Automerge document (after validation, below). objectId is preserved; the
+        // edge list cached below stays valid for the promoted doc entry.
         toPromote.push(id);
       } else {
+        const cached = edgeCache.get(id);
+        if (cached !== undefined) {
+          for (const t of cached) visitPersistent(t, `entry ${id}`);
+          return;
+        }
         val = doc.objectTable[id];
         if (!val) {
           // The entry is in neither store, but a live proxy may still carry it
@@ -1391,28 +1448,44 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
         }
       }
-      traverse(val, visitPersistent);
+      const edges: string[] = [];
+      traverse(val, (t, via2) => {
+        edges.push(t);
+        visitPersistent(t, via2);
+      });
+      edgeCache.set(id, edges);
     }
 
     if (persistentReachable === null) {
-      // The persistent root: the global object (everything else hangs off it).
+      // Full traversal from the persistent root: the global object (everything else
+      // hangs off it). Rebuilds the edge cache as it goes.
+      edgeCache.clear();
+      reachable = new Set();
       visitPersistent('global');
     } else {
-      // Re-scan only the dirty entries. A dirty entry's outgoing refs matter only if
-      // the entry itself is persistently reachable: known-live, or doc-resident but
-      // absent from the cached set — that second case covers objects linked into the
-      // persistent heap by REMOTE replicas, whose writes never hit our local write
-      // barrier (and, conservatively, writes into unreachable-but-immortal doc
-      // objects, which the full traversal would have turned into dangling refs).
-      // Dirty entries that are shadow-resident and unreached are skipped here; if a
-      // dirty live object points at them, the traversal below finds and promotes
-      // them with their current contents.
-      for (const id of dirtyIds) {
-        const known = isPersistentLive(id);
-        if (!known && doc.objectTable[id] === undefined) continue;
-        if (!known) newlyReachable.add(id);
-        const entry = lookupHeapEntry(id);
-        if (entry) traverse(entry, visitPersistent);
+      // Refresh the edge lists of entries whose edges may have changed. Each costs
+      // one draft read of that entry; value-only writes never land in edgeDirtyIds,
+      // so this loop is empty on pure-animation frames. Shadow-resident dirty
+      // entries are skipped: the trace reads shadow entries directly, and their
+      // reachability is determined by whoever points at them.
+      let edgesChanged = false;
+      for (const id of edgeDirtyIds) {
+        if (Object.hasOwn(shadowTable, id)) continue;
+        const entry = doc.objectTable[id];
+        if (entry === undefined) {
+          if (edgeCache.delete(id)) edgesChanged = true;
+          continue;
+        }
+        const edges: string[] = [];
+        traverse(entry, (t) => edges.push(t));
+        edgeCache.set(id, edges);
+        edgesChanged = true;
+      }
+      if (edgesChanged) {
+        reachable = new Set();
+        visitPersistent('global');
+      } else {
+        reachable = persistentReachable;
       }
     }
 
@@ -1433,9 +1506,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       pendingShadowDeletes.push(id);
     }
 
-    // Everything discovered live this transaction joins the committed reachable set
-    // — but only if the change commits (see flushPendingGcState).
-    pendingReachableAdds = newlyReachable;
+    // The traced set replaces the committed reachable set — but only if the change
+    // commits (see flushPendingGcState).
+    pendingReachable = reachable;
 
     // -- Phase 2: mark ephemeral. --
     // Roots are the ephemeral properties of live objects. Marking an object
@@ -1454,14 +1527,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
     };
 
-    // Root the ephemeral rows of live owners. Iterate the rows (few) rather than the
-    // live set (the whole reachable heap): a row roots if its owner is persistently
-    // reachable, or at least doc-resident — persistent objects are immortal, so
-    // doc-residency is the row's survival test at sweep time anyway, and it also
-    // covers owners linked by remote replicas that the local reachability cache has
-    // never seen.
+    // Root the ephemeral rows of persistently-reachable owners. Iterate the rows
+    // (few) rather than the live set (the whole reachable heap). Rows of shadow
+    // owners are enqueued by the worklist below when their owner becomes
+    // ephemeral-live, exactly as before.
     for (const id of ephemeralProps.keys()) {
-      if (isPersistentLive(id) || doc.objectTable[id] !== undefined) {
+      if (reachable.has(id)) {
         enqueueEphemeralPropsOf(id);
       }
     }
@@ -1482,7 +1553,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     while (worklist.length > 0) {
       const id = worklist.pop()!;
-      if (isPersistentLive(id) || ephemeralLive.has(id)) {
+      if (reachable.has(id) || ephemeralLive.has(id)) {
         continue;
       }
       ephemeralLive.add(id);
@@ -1501,7 +1572,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     let numShadowReclaimed = 0;
     for (const id of Object.keys(shadowTable)) {
-      if (!ephemeralLive.has(id) && !isPersistentLive(id)) {
+      if (!ephemeralLive.has(id) && !reachable.has(id)) {
         // Not ephemeral-live and not just promoted: fresh garbage or an abandoned
         // ephemeral object.
         pendingShadowDeletes.push(id);
@@ -1519,9 +1590,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if ((globalThis as any).debugGC) {
       console.log(
         'gc:',
-        persistentReachable === null ? 'FULL scan,' : `incremental (${dirtyIds.size} dirty),`,
-        newlyReachable.size,
-        'newly reachable,',
+        persistentReachable === null
+          ? 'FULL scan,'
+          : reachable === persistentReachable
+            ? 'no edge changes (trace skipped),'
+            : `re-traced (${edgeDirtyIds.size} edge-dirty),`,
+        reachable.size,
+        'reachable,',
         toPromote.length,
         'promoted,',
         numShadowReclaimed,
@@ -1822,6 +1897,33 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     return out;
   }
 
+  // Remote replicas' writes bypass the local write barrier. When the doc handle
+  // exposes an event emitter (automerge-repo DocHandle), mark remotely-patched
+  // entries edge-dirty so the next GC refreshes their edge lists. Events emitted
+  // synchronously by our own docHandle.change are filtered via inChangeCall; a
+  // late-delivered local event just causes a harmless extra refresh.
+  const emitter = docHandle as unknown as {
+    on?: (event: string, cb: (payload: unknown) => void) => void;
+  };
+  if (typeof emitter.on === 'function') {
+    emitter.on('change', (payload) => {
+      if (inChangeCall) return;
+      const patches = (payload as { patches?: Array<{ path?: unknown[] }> })?.patches;
+      if (!Array.isArray(patches)) {
+        noteExternalChanges(); // unknown event shape: invalidate everything
+        return;
+      }
+      const ids: string[] = [];
+      for (const patch of patches) {
+        const path = patch?.path;
+        if (Array.isArray(path) && path[0] === 'objectTable' && typeof path[1] === 'string') {
+          ids.push(path[1]);
+        }
+      }
+      noteExternalChanges(ids);
+    });
+  }
+
   return {
     eval(source: string) {
       return evaluateSource(source);
@@ -1836,5 +1938,6 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     doc() {
       return doc;
     },
+    noteExternalChanges,
   };
 }

@@ -458,6 +458,9 @@ describe.runIf(RUN)('livelymerge perf benchmarks', () => {
         for (let i = 0; i < n; i++) { os.push({ v: i }); }
         return os;
       }
+      function relink(i) {
+        objs[i % 2000].link = objs[(i + 1) % 2000];
+      }
       objs = makeObjs(2000);
     `);
     const bigTxMs = measure(() => bigRuntime.change(() => 0));
@@ -466,6 +469,18 @@ describe.runIf(RUN)('livelymerge perf benchmarks', () => {
       msPerChange: bigTxMs,
       innerOps: 2_000,
       nsPerOp: (bigTxMs * 1e6) / 2_000,
+    });
+
+    // A ref write invalidates the reachable set: measures one dirty-entry re-read
+    // plus the full precise re-trace over the edge cache (plain-JS speed).
+    const relink = bigRuntime.eval('relink') as (i: number) => void;
+    let relinkI = 0;
+    const relinkMs = measure(() => bigRuntime.change(() => relink(relinkI++)));
+    rows.push({
+      scenario: 'ref write + precise re-trace, 2000-obj heap',
+      msPerChange: relinkMs,
+      innerOps: 2_000,
+      nsPerOp: (relinkMs * 1e6) / 2_000,
     });
 
     console.log(
