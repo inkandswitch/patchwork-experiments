@@ -11,11 +11,12 @@
 // Invalid (??) or repeated (xx) words score against you, as do letters that fall off.
 //
 // Load this file the way newdefs.js is loaded -- evaluate it in a LivelyMerge workspace --
-// and then evaluate openQBF() to put a game in a panel in the world.
+// then evaluate QBFScores.js, and then runQBF() to put a game and the high-scores viewer
+// in the world.
 //
 // Differences from the original, all deliberate:
-//   - The scores server and its QBFScoresViewer are not ported. Best game / best word per
-//     level are kept in the game morph, and so in the document, instead.
+//   - High scores use a pluggable store (default: Lively.qbfHighScores in the document)
+//     instead of the Node QBFScoresServer. See QBFScores.js / qbfSetScoresStore.
 //   - The word log is one monospaced text in three columns rather than several text morphs.
 //   - Tiles are made as they enter the hopper rather than all 104 at once, which keeps the
 //     document (and the op traffic) small.
@@ -60,7 +61,7 @@ function qbfCompactStringToArray(str) {
   return words;
 }
 function qbfCompactStringFromArray(words) {
-  /** Inverse of qbfCompactStringForEach; handy for making a new QBFWords.txt. */
+  /** Encode a sorted word array for compact in-memory lookup. */
   let charOffset = 'A'.charCodeAt(0);
   let matchLength = (a, b) => {
     let lim = Math.min(a.length, b.length);
@@ -82,6 +83,29 @@ function qbfCompactStringFromArray(words) {
     prev = word;
   });
   return str;
+}
+function qbfWordsFromText(text) {
+  /**
+   * Parse QBFWords.txt: one uppercase word per line in the source distribution.
+   * As in the original QBF, ignore words longer than nine letters and install
+   * lowercase words. Empty lines are ignored.
+   */
+  let words = [];
+  String(text)
+    .split(/\r?\n/)
+    .forEach((line) => {
+      let word = line.trim().toLowerCase();
+      if (word.length > 0 && word.length <= 9) {
+        words.push(word);
+      }
+    });
+  return words;
+}
+function qbfInstallWordListText(text) {
+  /** Parse and compact the text form before installing it as per-user state. */
+  let words = qbfWordsFromText(text);
+  qbfSetWordList(qbfCompactStringFromArray(words));
+  return words.length + ' words loaded';
 }
 function qbfSetWordList(listOrCompactString) {
   /** Give the game a word list: either an array of words or a compact string. */
@@ -109,10 +133,10 @@ function qbfLookupWord(word) {
 }
 function qbfLoadWordListFromUrl(urlIfAny) {
   /**
-   * Try to load QBFWords.txt (the compact TWL list that ships beside this file) so that
-   * words get checked. Fetching may not be permitted where this runs; failure is quiet
-   * and simply leaves checking off. The list can also be pasted into a workspace as
-   *   qbfSetWordList('aaChDedD...')
+   * Load QBFWords.txt (one uppercase word per line), discard words longer than nine
+   * characters, lowercase and compact the remainder, then enable word checking.
+   * Fetching may not be permitted where this runs; failure is quiet and leaves
+   * checking off.
    */
   let url = urlIfAny != null ? urlIfAny : 'QBFWords.txt';
   try {
@@ -123,7 +147,7 @@ function qbfLoadWordListFromUrl(urlIfAny) {
         }
         return response.text();
       })
-      .then((text) => qbfSetWordList(text.trim()))
+      .then((text) => qbfInstallWordListText(text))
       .catch((err) => {
         console.log('QBF: no word list (' + err + '); all words will be accepted');
         return null;
@@ -143,6 +167,12 @@ function qbfGameFor(morph) {
   /** The QBFMorph owning morph, if any. */
   let m = morph;
   while (m && m.className !== 'QBFMorph') m = m.owner;
+  return m;
+}
+function qbfButtonHostFor(morph) {
+  /** Nearest owner that handles buttonFired (game board or scores viewer). */
+  let m = morph;
+  while (m && typeof m.buttonFired !== 'function') m = m.owner;
   return m;
 }
 function qbfStyleText(morph, opts) {
@@ -244,8 +274,8 @@ class QBFButtonMorph extends SimpleButtonMorph {
     let pressed = this.hitPoint != null && this.includesPt(p);
     super.onPointerUp(p, evt);
     if (!pressed) return true;
-    let game = qbfGameFor(this);
-    if (game) game.buttonFired(this.actionName);
+    let host = qbfButtonHostFor(this);
+    if (host) host.buttonFired(this.actionName);
     return true;
   }
   setLabel(str) {
@@ -418,6 +448,8 @@ class QBFMorph extends Morph {
     if (actionName === 'restart') this.doRestart();
     if (actionName === 'level') this.doChooseLevel();
     if (actionName === 'rules') this.doShowRules();
+    if (actionName === 'scores') this.doOpenScores();
+    if (actionName === 'name') this.doChoosePlayerName();
     this.focusKeyboard();
   }
   chooseLevelNamed(caption) {
@@ -498,6 +530,24 @@ class QBFMorph extends Morph {
     menu.isFleetingMenu = true;
     world.addMorph(menu);
   }
+  doChoosePlayerName(thenFnIfAny) {
+    /** Ask for a name used when posting high scores. */
+    let game = this;
+    let resume = thenFnIfAny;
+    if (typeof qbfPromptPlayerName !== 'function') {
+      if (!game.playerName) game.playerName = 'anonymous';
+      if (resume) resume.call(game);
+      return;
+    }
+    qbfPromptPlayerName(game.playerName, (name) => {
+      if (name) game.playerName = name;
+      if (game.nameButton) {
+        game.nameButton.setLabel(game.playerName ? game.playerName : 'choose name');
+      }
+      game.focusKeyboard();
+      if (resume) resume.call(game);
+    });
+  }
   doClear() {
     // Esc key or clear button: take all the tiles back out of the outbox.
     while (this.outboxLetters.length > 0) this.removeFromOutbox(this.outboxLetters.pop());
@@ -565,6 +615,15 @@ class QBFMorph extends Morph {
       });
     this.focusKeyboard();
   }
+  doOpenScores() {
+    /** Raise or open the high-scores viewer (QBFScores.js). */
+    if (typeof openQBFScores === 'function') {
+      openQBFScores();
+    } else {
+      console.log('QBF: load QBFScores.js to show the high-scores viewer');
+    }
+    this.focusKeyboard();
+  }
   doRestart() {
     let panel = this.panelMorph();
     if (this.gameOver || !panel || !panel.promptConfirm) {
@@ -588,7 +647,7 @@ class QBFMorph extends Morph {
   doShowRules() {
     let panel = this.panelMorph();
     let tl = panel ? panel.topLeftInWorld().addPt(pt(40, 40)) : pt(80, 80);
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         tl.extent(pt(570, 350)),
         `The Quick Brown Fox lets you make words from letter tiles that move along a rack.
@@ -616,11 +675,11 @@ and thus the difficulty, of play...
     Super-quick has a shorter conveyor, so the letters come faster.
 High scores and best words are tallied for each level of play.
 
-Words are only checked against a dictionary if one has been loaded; without it any
-string of letters counts as a word. To load the tournament word list evaluate
+Words are checked against QBFWords.txt when it can be loaded. The loader lowercases
+the words and, as in the original game, ignores entries longer than nine letters.
+Without a loaded dictionary, any string of letters counts as a word. To reload it,
+evaluate
     qbfLoadWordListFromUrl()
-or paste the contents of QBFWords.txt into
-    qbfSetWordList('...')
 
 The Quick Brown Fox was written by Dan Ingalls for the Lively Kernel; this is its port
 to LivelyMerge.`,
@@ -857,6 +916,26 @@ to LivelyMerge.`,
     }
     this.postLevelStats();
     this.appendLog('-- game over --');
+    this.postScoresToStore();
+  }
+  postScoresToStore() {
+    /**
+     * Publish this level's bests through the pluggable scores store.
+     * If the player has no name yet, ask first and retry.
+     */
+    if (typeof qbfPostLevelScore !== 'function') return;
+    if (!this.playerName) {
+      this.doChoosePlayerName(this.postScoresToStore);
+      return;
+    }
+    qbfPostLevelScore(this.playerName, this.level.caption, {
+      bestGame: this.level.bestGameScore,
+      bestWord: this.level.bestWord,
+      bestWordScore: this.level.bestWordScore,
+      time: new Date().toISOString(),
+    });
+    let viewer = typeof findQBFScoresViewer === 'function' ? findQBFScoresViewer() : null;
+    if (viewer) viewer.refresh();
   }
   postLevelStats() {
     this.bestWordBox.setText(String(this.bestWordScore));
@@ -1003,6 +1082,14 @@ to LivelyMerge.`,
       g.translatedBy(pt(lay.hSpacing, 30)),
       'how to play',
       'rules',
+    );
+    // Scores / name sit to the left of the score column, as in the original.
+    let scoresOrigin = rect(lay.rack.topLeft.x - 110, g.topLeft.y, 100, 24);
+    this.scoresButton = this.addButton(scoresOrigin, 'show scores', 'scores');
+    this.nameButton = this.addButton(
+      scoresOrigin.translatedBy(pt(0, 30)),
+      this.playerName ? this.playerName : 'choose name',
+      'name',
     );
   }
   setupFox(lay) {
@@ -1215,7 +1302,10 @@ QBFMorph.prototype.numLetters = 103;
 QBFMorph.prototype.ticksPerSec = 20;
 
 function openQBF(topLeftIfAny) {
-  /** Put a Quick Brown Fox in a panel in the world; answers the panel. */
+  /**
+   * Put a Quick Brown Fox in a panel in the world, and open the high-scores viewer
+   * beside it when QBFScores.js is loaded. Answers the game panel.
+   */
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(40, 40);
   let game = new QBFMorph();
   let ext = game.getBounds().extent;
@@ -1223,11 +1313,14 @@ function openQBF(topLeftIfAny) {
     rect(tl.x, tl.y, ext.x, ext.y + PanelTitleBar.prototype.HEIGHT),
   );
   panel.setPanelTitle('the Quick Brown Fox');
-  Lively.addMorph(panel);
+  Lively.addEphemeralMorph(panel);
   panel.addMorph(game);
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
   game.startTicking();
+  if (typeof openQBFScores === 'function') {
+    openQBFScores(pt(tl.x + ext.x + 16, tl.y));
+  }
   game.focusKeyboard();
   return panel;
 }
@@ -1237,6 +1330,7 @@ function runQBF() {
    * Open a Quick Brown Fox game (QBF.js must already have been evaluated).
    * From a workspace: runQBF()
    * Also tries to fetch QBFWords.txt for word checking; missing list is fine.
+   * Prefer loading QBFScores.js as well so openQBF opens the high-scores viewer.
    */
   qbfLoadWordListFromUrl();
   return openQBF();

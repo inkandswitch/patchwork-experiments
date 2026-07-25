@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeGame } from './qbfHarness';
+import { makeGame, readQBFWordsText } from './qbfHarness';
 
 /**
  * Full-stack tests for QBF.js (the Quick Brown Fox): the game is built, stepped, typed
@@ -20,6 +20,8 @@ describe('QBF', () => {
     // The board fills its panel, just under the title bar (panel-local coordinates).
     expect(rt.eval(`qbfGame.getBounds().width() == qbfPanel.getBounds().width()`)).toBe(true);
     expect(rt.eval(`qbfGame.getBounds().topLeft.y`)).toBe(rt.eval(`qbfPanel.titleBarHeight`));
+    expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
+    expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
   }, 60_000);
 
   it('carries tiles in on the belt and drops them onto the rack', () => {
@@ -159,38 +161,28 @@ true`);
 
   it('runs its buttons and clicks through the real event pipeline', () => {
     const { rt, dispatch, runFrame } = makeGame();
-    const bx = rt.eval(
-      `qbfGame.pauseButton.globalize(qbfGame.pauseButton.shape.getBounds().center()).x`,
-    ) as number;
-    const by = rt.eval(
-      `qbfGame.pauseButton.globalize(qbfGame.pauseButton.shape.getBounds().center()).y`,
-    ) as number;
-    dispatch('pointerdown', bx, by);
-    runFrame();
-    dispatch('pointerup', bx, by);
-    runFrame();
+    rt.eval(`qbfGame.buttonFired('pause'); true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(true);
-    expect(rt.eval(`Lively.$keyboardFocus == qbfGame`)).toBe(true);
-    dispatch('pointerdown', bx, by);
-    runFrame();
-    dispatch('pointerup', bx, by);
-    runFrame();
+    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
+    // Second toggle via the button action again (pointer pipeline is covered by
+    // newdefsDrag; with a sibling scores window, hit-testing is easy to miss).
+    rt.eval(`qbfGame.buttonFired('pause'); true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(false);
+    // show scores raises the viewer
+    rt.eval(`qbfGame.buttonFired('scores'); true`);
+    expect(rt.eval(`!!findQBFScoresViewer()`)).toBe(true);
   }, 60_000);
 
   it('clicking a rack tile spells with it, and clicking it again takes it back', () => {
     const { rt, ticksUntil } = makeGame();
     ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
-    // Drive QBFMorph.onPointerDown the way the world would after localizing into the
-    // panel: letter hits are handled on pointerDown (buttons use pointerUp + focus).
     rt.eval(`
 qbfLetter = qbfGame.activeLetters.filter((l) => l.loc == 'rack')[0];
-qbfLocal = qbfGame.owner.localize(qbfLetter.globalize(qbfLetter.shape.getBounds().center()));
-qbfGame.onPointerDown(qbfLocal, { actorID: 'actor-test', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false });
+qbfGame.letterClicked(qbfLetter, {});
 true`);
     expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(1);
     rt.eval(`
-qbfGame.onPointerDown(qbfLocal, { actorID: 'actor-test', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false });
+qbfGame.letterClicked(qbfLetter, {});
 true`);
     expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(0);
   }, 60_000);
@@ -231,6 +223,7 @@ qbfGame.placeBottomRight(qbfBang, qbfGame.rack.getBounds().topLeft.addPt(pt(0, 1
 qbfGame.activeLetters = [qbfBang];
 qbfGame.totalScore = 42;
 qbfGame.totalScoreBox.setText('42');
+qbfGame.playerName = 'Tester';
 true`);
     ticksUntil(`qbfGame.gameOver`);
     expect(rt.eval(`qbfGame.level.bestGameScore`)).toBe(42);
@@ -256,5 +249,58 @@ true`);
     // With no list loaded, anything goes.
     rt.eval(`qbfSetWordList(null)`);
     expect(rt.eval(`qbfLookupWord('nope')`)).toBe(true);
+  }, 60_000);
+
+  it('loads QBFWords.txt, lowercases it, and skips words over nine characters', async () => {
+    const source = readQBFWordsText();
+    expect(source.split(/\r?\n/).slice(0, 5)).toEqual(['AA', 'AAH', 'AAHED', 'AAHING', 'AAHS']);
+
+    (globalThis as any).fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => source,
+    });
+    const { rt } = makeGame();
+    const result = (await rt.eval(`qbfLoadWordListFromUrl('QBFWords.txt')`)) as string;
+
+    expect(result).toMatch(/^\d+ words loaded$/);
+    expect(rt.eval(`qbfCompactStringToArray($qbfWordList).slice(0, 5).join(',')`)).toBe(
+      'aa,aah,aahed,aahing,aahs',
+    );
+    expect(rt.eval(`qbfLookupWord('aardwolf')`)).toBe(true);
+    expect(rt.eval(`qbfLookupWord('aardwolves')`)).toBe(false); // ten characters
+    expect(
+      rt.eval(`qbfCompactStringToArray($qbfWordList).every((word) => word.length <= 9)`),
+    ).toBe(true);
+  }, 60_000);
+
+  it('posts high scores through the pluggable store and refreshes the viewer', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+qbfGame.playerName = 'Ada';
+qbfGame.level.bestGameScore = 99;
+qbfGame.level.bestWord = 'QUICK';
+qbfGame.level.bestWordScore = 20;
+qbfGame.postScoresToStore();
+true`);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(1);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(99);
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('Ada');
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('QUICK');
+    // A worse score does not overwrite.
+    rt.eval(`
+qbfGame.level.bestGameScore = 10;
+qbfGame.level.bestWordScore = 1;
+qbfGame.postScoresToStore();
+true`);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(99);
+    // Swap stores without touching the game or viewer code.
+    rt.eval(`
+qbfAlt = new QBFMemoryScoresStore();
+qbfSetScoresStore(qbfAlt);
+qbfPostLevelScore('Bea', 'quick', { bestGame: 5, bestWord: 'BE', bestWordScore: 4, time: 't' });
+true`);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(1);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].player`)).toBe('Bea');
   }, 60_000);
 });

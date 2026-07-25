@@ -30,6 +30,10 @@ export type Harness = {
   rafQueue: Array<() => void>;
 };
 
+export function readQBFWordsText() {
+  return readFileSync(join(__dirname, '..', 'QBFWords.txt'), 'utf8');
+}
+
 function installBrowserStubs(harness: Harness) {
   const ctx = makeCtxStub();
   const canvas: any = {
@@ -111,16 +115,19 @@ export function makeGame() {
   g.runtime = rt;
   rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8'));
   rt.eval(readFileSync(join(__dirname, '..', 'QBF.js'), 'utf8'));
+  rt.eval(readFileSync(join(__dirname, '..', 'QBFScores.js'), 'utf8'));
   rt.eval(`
 initUI();
 initLively();
+qbfSetScoresStore(new QBFMemoryScoresStore());
 qbfPanel = openQBF(pt(10, 10));
 qbfGame = qbfPanel.submorphs.find((m) => m.className == 'QBFMorph');
+qbfScores = findQBFScoresViewer();
 `);
   // Hold the game morph once: each rt.eval is an Automerge.change (~0.5s), so
   // re-looking-up qbfGame every tick would dominate. Nested evals inside rt.change
   // share one commit (see livelymergeRuntime.change / inChangeCall).
-  const game = rt.eval(`qbfGame`) as { tick: () => void; onKeyDown: (e: { key: string }) => void };
+  const game = rt.eval(`qbfGame`) as any;
   const ticks = (n: number) => {
     rt.change(() => {
       for (let i = 0; i < n; i++) game.tick();
