@@ -11,8 +11,10 @@
 // Invalid (??) or repeated (xx) words score against you, as do letters that fall off.
 //
 // Load this file the way newdefs.js is loaded -- evaluate it in a LivelyMerge workspace --
-// then evaluate QBFScores.js, and then runQBF() to put a game and the high-scores viewer
-// in the world.
+// then evaluate QBFScores.js (and optionally QBFSounds.js), then QBFWords.js for the
+// tournament dictionary, and then runQBF() to put a game and the high-scores viewer in
+// the world. (Fetch of QBFWords.txt is attempted as a convenience, but Patchwork does
+// not serve that file, so evaluating QBFWords.js is the reliable way to enable checking.)
 //
 // Differences from the original, all deliberate:
 //   - High scores use a pluggable store (default: Lively.qbfHighScores in the document)
@@ -30,6 +32,43 @@
 // loaded every word is accepted -- see qbfLookupWord.
 $qbfWordList = null;
 
+// PER-USER: letters that should scream on their first tumble frame. Kept ephemeral so
+// Automerge sync / other replicas cannot re-arm the fall sound (a doc-resident
+// fallSoundPending flag was causing screams with no local tumble).
+$qbfPendingFallSounds = null;
+
+function qbfArmFallSound(letter) {
+  if (!$qbfPendingFallSounds) $qbfPendingFallSounds = [];
+  $qbfPendingFallSounds.push(letter);
+}
+function qbfConsumeFallSound(letter) {
+  /** True once if this replica armed a scream for letter; clears that arming. */
+  let pending = $qbfPendingFallSounds;
+  if (!pending || pending.length === 0) return false;
+  for (let i = 0; i < pending.length; i++) {
+    if (pending[i] === letter) {
+      pending.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function qbfSound(eventName, argIfAny) {
+  /**
+   * Optional sound hook. Quiet unless QBFSounds.js has been evaluated.
+   * eventName is one of: 'letterFall', 'letterDrop', 'letterUndrop',
+   * 'wordCommit', 'wordReject'.
+   */
+  if (typeof QBFSounds === 'undefined' || !QBFSounds) return;
+  let fn = QBFSounds[eventName];
+  if (typeof fn !== 'function') return;
+  try {
+    fn.call(QBFSounds, argIfAny);
+  } catch (err) {
+    console.log('QBF sound error (' + eventName + '): ' + err);
+  }
+}
 function qbfCompactStringForEach(str, func) {
   /**
    * Walk the words of a compact word list, calling func(word) with each.
@@ -131,29 +170,56 @@ function qbfLookupWord(word) {
   });
   return found;
 }
+function qbfInstallFetchedWordList(text) {
+  /**
+   * Install text fetched off-thread. Promise callbacks run outside Automerge.change
+   * (unlike setTimeout), so wrap the install when a runtime is available.
+   * Keep this a top-level function: LM promise callbacks must not close over outer
+   * locals (nested free-var capture is unreliable).
+   */
+  let rt = window.runtime;
+  let msg =
+    rt && typeof rt.change === 'function'
+      ? rt.change(() => qbfInstallWordListText(text))
+      : qbfInstallWordListText(text);
+  console.log('QBF: ' + msg);
+  return msg;
+}
 function qbfLoadWordListFromUrl(urlIfAny) {
   /**
-   * Load QBFWords.txt (one uppercase word per line), discard words longer than nine
-   * characters, lowercase and compact the remainder, then enable word checking.
-   * Fetching may not be permitted where this runs; failure is quiet and leaves
-   * checking off.
+   * Try to fetch a word-list text file (one uppercase word per line), discard words
+   * longer than nine characters, lowercase and compact the remainder, then enable
+   * word checking. Prefer evaluating QBFWords.js instead: relative fetch of
+   * QBFWords.txt usually 404s under Patchwork because that file is not a served asset.
+   *
+   * Note: .then callbacks here only call top-level functions / use their parameters.
+   * Do not close over locals from this function -- LM free-var capture in nested
+   * promise callbacks is unreliable.
    */
   let url = urlIfAny != null ? urlIfAny : 'QBFWords.txt';
   try {
     return fetch(url)
       .then((response) => {
         if (!response.ok) {
-          throw new Error('QBF word list: ' + response.status + ' ' + url);
+          throw new Error('HTTP ' + response.status);
         }
         return response.text();
       })
-      .then((text) => qbfInstallWordListText(text))
+      .then((text) => qbfInstallFetchedWordList(text))
       .catch((err) => {
-        console.log('QBF: no word list (' + err + '); all words will be accepted');
+        console.log(
+          'QBF: no word list via fetch (' +
+            err +
+            '); evaluate QBFWords.js after QBF.js, or all words will be accepted',
+        );
         return null;
       });
   } catch (err) {
-    console.log('QBF: cannot fetch a word list here; all words will be accepted');
+    console.log(
+      'QBF: cannot fetch a word list here (' +
+        err +
+        '); evaluate QBFWords.js after QBF.js, or all words will be accepted',
+    );
     return null;
   }
 }
@@ -405,6 +471,7 @@ class QBFMorph extends Morph {
     this.fillLetter(letter, Color.gray);
     this.outboxLetters.push(outLetter);
     this.updateOutbox();
+    qbfSound('letterDrop', this.multipliers[this.outboxLetters.length]);
   }
   addWordLabel(scoreRect) {
     let m = this.addMorph(
@@ -558,10 +625,12 @@ class QBFMorph extends Morph {
     if (this.outboxLetters.length === 0) return;
     this.removeFromOutbox(this.outboxLetters.pop());
     this.updateOutbox();
+    qbfSound('letterUndrop');
   }
   doEnter() {
     // Enter key or button: submit the word now in the outbox.
     if (this.outboxLetters.length === 0) return;
+    let committedMult = this.multipliers[this.outboxLetters.length];
     let word = '';
     this.outboxLetters.forEach((letter) => {
       word += letter.shape.string;
@@ -596,6 +665,11 @@ class QBFMorph extends Morph {
     }
     this.outboxLetters = [];
     this.updateOutbox();
+    if (valid || this.noCheck) {
+      qbfSound('wordCommit', committedMult);
+    } else {
+      qbfSound('wordReject');
+    }
   }
   doPause(val) {
     this.paused = !!val;
@@ -675,10 +749,10 @@ and thus the difficulty, of play...
     Super-quick has a shorter conveyor, so the letters come faster.
 High scores and best words are tallied for each level of play.
 
-Words are checked against QBFWords.txt when it can be loaded. The loader lowercases
-the words and, as in the original game, ignores entries longer than nine letters.
-Without a loaded dictionary, any string of letters counts as a word. To reload it,
-evaluate
+Words are checked against the tournament list when QBFWords.js has been evaluated
+(or when QBFWords.txt can be fetched). The loader lowercases the words and, as in the
+original game, ignores entries longer than nine letters. Without a loaded dictionary,
+any string of letters counts as a word. To (re)load it, evaluate QBFWords.js, or
     qbfLoadWordListFromUrl()
 
 The Quick Brown Fox was written by Dan Ingalls for the Lively Kernel; this is its port
@@ -792,9 +866,13 @@ to LivelyMerge.`,
     this.totalScore -= this.letterValue(letter.shape.string);
     this.totalScoreBox.setText(String(this.totalScore));
     this.showMultiplier();
-    // Now set the tile tumbling onto the pile.
+    // Now set the tile tumbling onto the pile. The scream waits until the first
+    // rotateBy in letterFallToPile so it starts with the tumble, not the drop-off.
+    // Arm the sound in ephemeral per-replica state (not on the letter) so sync
+    // cannot replay it on another replica or after a merge.
     letter.loc = 'falling';
     letter.copyInOutbox = null;
+    qbfArmFallSound(letter);
     letter.moveBy(pt(-8, 0));
     this.fillLetter(letter, Color.gray);
     letter.vel = pt(-2 + Math.random() * 0.5, 0);
@@ -804,6 +882,7 @@ to LivelyMerge.`,
   }
   letterFallToPile(letter) {
     // One frame of an accelerating, tumbling fall.
+    if (qbfConsumeFallSound(letter)) qbfSound('letterFall');
     letter.moveBy(letter.vel);
     letter.vel = letter.vel.addPt(pt(0, 1));
     letter.rotateBy(letter.rot);
@@ -1329,9 +1408,10 @@ function runQBF() {
   /**
    * Open a Quick Brown Fox game (QBF.js must already have been evaluated).
    * From a workspace: runQBF()
-   * Also tries to fetch QBFWords.txt for word checking; missing list is fine.
+   * Prefer evaluating QBFWords.js beforehand for word checking; this also tries
+   * fetch('QBFWords.txt') as a convenience when that URL is served.
    * Prefer loading QBFScores.js as well so openQBF opens the high-scores viewer.
    */
-  qbfLoadWordListFromUrl();
+  if (!$qbfWordList) qbfLoadWordListFromUrl();
   return openQBF();
 }
