@@ -9,12 +9,12 @@
 // host AudioContext must never enter the Automerge document.
 //
 // Events:
-//   letterFall   -- ~1.5s descending scream when a tile starts tumbling off the rack
-//   letterDrop   -- single trumpet blat; pitch follows the word multiplier
-//                  (low for x0/x1, then each step up a major-chord arpeggio)
+//   letterFall   -- ~3s descending scream when a tile starts tumbling off the rack
+//   letterDrop   -- brassy single-note boop; pitch follows word length
+//                  (low for lengths 1–2; rises from length 3 through a major chord)
 //   letterUndrop -- short "zzwit" when delete retracts the most recent drop
 //   wordCommit   -- two-trumpet ta-da on the same pitch as the last letter drop,
-//                  growing louder (and higher with the multiplier) for longer words
+//                  growing louder for longer words
 //   wordReject   -- flatulent raspberry when the word is invalid / repeated
 
 // PER-USER: the shared AudioContext for this replica. Created lazily on first play.
@@ -26,19 +26,12 @@ $qbfAudioUnlock = null;
 class QBFSoundsPlayer {
   constructor() {
     /**
-     * Major-chord arpeggio offsets in semitones from a low root, keyed by the
-     * game's word-length multiplier (0..7). Multipliers 0 and 1 share the root.
+     * Semitone offsets from root, indexed by outbox word length.
+     * Lengths 1–2 stay on the root; length 3 begins the major-chord climb.
+     * Stored as an array (not an object with numeric keys) so LivelyMerge
+     * indexing is reliable.
      */
-    this.chordSteps = {
-      0: 0,
-      1: 0,
-      2: 4, // major third
-      3: 7, // perfect fifth
-      4: 12, // octave
-      5: 16, // octave + third
-      6: 19, // octave + fifth
-      7: 24, // two octaves
-    };
+    this.pitchByLength = [0, 0, 0, 4, 7, 12, 16, 19, 24, 28];
     this.rootHz = 196; // G3 -- a roomy low trumpet root
   }
 
@@ -71,10 +64,12 @@ class QBFSoundsPlayer {
     return ctx ? ctx.currentTime : 0;
   }
 
-  hzForMultiplier(mult) {
-    let steps = this.chordSteps;
-    let semis = steps[mult] != null ? steps[mult] : steps[0];
-    return this.rootHz * Math.pow(2, semis / 12);
+  hzForWordLength(lenIfAny) {
+    let steps = this.pitchByLength;
+    let len = lenIfAny != null ? lenIfAny : 0;
+    if (len < 0) len = 0;
+    if (len >= steps.length) len = steps.length - 1;
+    return this.rootHz * Math.pow(2, steps[len] / 12);
   }
 
   /** Soft gain envelope: attack, hold, release. */
@@ -88,8 +83,8 @@ class QBFSoundsPlayer {
   }
 
   /**
-   * One brassy "trumpet" voice: slightly bright sawtooth through a mild
-   * low-pass, with a tiny detuned twin for body.
+   * One brassy "trumpet" voice for fanfares: sawtooth through a mild low-pass,
+   * with a tiny detuned twin for body.
    * Optional envelopeOverrides: { attack, hold, release } in seconds.
    */
   trumpet(ctx, freq, t0, dur, peak, envelopeOverridesIfAny) {
@@ -125,6 +120,62 @@ class QBFSoundsPlayer {
     mk(2, 0.12); // quiet octave for brass bite
   }
 
+  /**
+   * Brassy single-note "boop" for letter drops -- brighter and buzzier than the
+   * fanfare voice (which reads more mellow / piano-like when alone).
+   */
+  brassBoop(ctx, freq, t0, dur, peak) {
+    let master = ctx.createGain();
+    master.connect(ctx.destination);
+    this.envelope(master, t0, peak, 0.012, Math.max(0.04, dur * 0.25), dur * 0.65);
+
+    // Bright bandpass keeps the brass edge without going thin.
+    let filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(freq * 2.2, t0);
+    filter.Q.setValueAtTime(0.9, t0);
+    filter.connect(master);
+
+    let mk = (type, ratio, level) => {
+      let osc = ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq * ratio, t0);
+      let g = ctx.createGain();
+      g.gain.setValueAtTime(level, t0);
+      osc.connect(g);
+      g.connect(filter);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.05);
+    };
+    // Square + saw = brassier than soft saw alone.
+    mk('square', 1, 0.4);
+    mk('sawtooth', 1.002, 0.35);
+    mk('sawtooth', 2, 0.22); // strong octave harmonic
+    mk('square', 3, 0.08); // odd harmonic bite
+
+    // Short "lip buzz" noise at the attack.
+    let buzzLen = Math.floor(ctx.sampleRate * 0.04);
+    let noiseBuffer = ctx.createBuffer(1, buzzLen, ctx.sampleRate);
+    let data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < buzzLen; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    let noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    let noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.setValueAtTime(freq * 3, t0);
+    noiseFilter.Q.setValueAtTime(1.5, t0);
+    let noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.35, t0);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.05);
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(master);
+    noise.start(t0);
+    noise.stop(t0 + 0.06);
+  }
+
   /** A pair of trumpets a fifth apart -- used for the commit fanfare. */
   trumpetPair(ctx, rootHz, t0, dur, peak, envelopeOverridesIfAny) {
     this.trumpet(ctx, rootHz, t0, dur, peak, envelopeOverridesIfAny);
@@ -132,21 +183,21 @@ class QBFSoundsPlayer {
   }
 
   letterFall() {
-    /** ~1.5s scream of someone falling off a cliff. */
+    /** ~3s scream of someone falling off a cliff. */
     let ctx = this.ensureContext();
     if (!ctx) return;
     let t0 = ctx.currentTime;
-    let dur = 1.5;
+    let dur = 3.0;
 
     let master = ctx.createGain();
     master.connect(ctx.destination);
-    this.envelope(master, t0, 0.45, 0.06, 0.85, 0.55);
+    this.envelope(master, t0, 0.45, 0.08, 1.8, 1.0);
 
     // Descending "Aaaahh!"
     let voice = ctx.createOscillator();
     voice.type = 'sawtooth';
     voice.frequency.setValueAtTime(880, t0);
-    voice.frequency.exponentialRampToValueAtTime(110, t0 + dur);
+    voice.frequency.exponentialRampToValueAtTime(90, t0 + dur);
     let voiceGain = ctx.createGain();
     voiceGain.gain.setValueAtTime(0.35, t0);
     voice.connect(voiceGain);
@@ -166,11 +217,11 @@ class QBFSoundsPlayer {
     let noiseFilter = ctx.createBiquadFilter();
     noiseFilter.type = 'bandpass';
     noiseFilter.frequency.setValueAtTime(1200, t0);
-    noiseFilter.frequency.exponentialRampToValueAtTime(200, t0 + dur);
+    noiseFilter.frequency.exponentialRampToValueAtTime(160, t0 + dur);
     noiseFilter.Q.setValueAtTime(0.8, t0);
     let noiseGain = ctx.createGain();
     noiseGain.gain.setValueAtTime(0.25, t0);
-    noiseGain.gain.exponentialRampToValueAtTime(0.05, t0 + dur);
+    noiseGain.gain.exponentialRampToValueAtTime(0.04, t0 + dur);
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
     noiseGain.connect(master);
@@ -178,18 +229,17 @@ class QBFSoundsPlayer {
     noise.stop(t0 + dur);
   }
 
-  letterDrop(multIfAny) {
+  letterDrop(wordLengthIfAny) {
     /**
-     * Single trumpet blat when a letter lands in the outbox.
-     * Pitch follows the current word multiplier (major-chord steps).
-     * Softer, more gradual release than a staccato peep.
+     * Brassy single-note boop when a letter lands in the outbox.
+     * Pitch follows word length: low for 1–2, rising from 3 onward.
      */
     let ctx = this.ensureContext();
     if (!ctx) return;
-    let mult = multIfAny != null ? multIfAny : 0;
-    let hz = this.hzForMultiplier(mult);
+    let len = wordLengthIfAny != null ? wordLengthIfAny : 0;
+    let hz = this.hzForWordLength(len);
     let t0 = ctx.currentTime;
-    this.trumpet(ctx, hz, t0, 0.55, 0.2, { attack: 0.025, hold: 0.12, release: 0.4 });
+    this.brassBoop(ctx, hz, t0, 0.5, 0.28);
   }
 
   letterUndrop() {
@@ -239,17 +289,17 @@ class QBFSoundsPlayer {
     noise.stop(t0 + dur);
   }
 
-  wordCommit(multIfAny) {
+  wordCommit(wordLengthIfAny) {
     /**
-     * Two-trumpet ta-da on the same pitch as the last letter-drop blat.
-     * Louder for higher multipliers -- a six-letter word (x4) should feel grand.
+     * Two-trumpet ta-da on the same pitch as the last letter-drop boop.
+     * Louder for longer words -- a six-letter word should feel grand.
      */
     let ctx = this.ensureContext();
     if (!ctx) return;
-    let mult = multIfAny != null ? multIfAny : 1;
-    let hz = this.hzForMultiplier(mult);
-    // Peak grows with the multiplier; x4 (six letters) is satisfyingly loud.
-    let peak = 0.28 + mult * 0.07;
+    let len = wordLengthIfAny != null ? wordLengthIfAny : 1;
+    let hz = this.hzForWordLength(len);
+    // Peak grows with length past 2; six letters is satisfyingly loud.
+    let peak = 0.26 + Math.max(0, len - 2) * 0.07;
     if (peak > 0.62) peak = 0.62;
     let softEnv = { attack: 0.02, hold: 0.04, release: 0.12 };
     let t0 = ctx.currentTime;

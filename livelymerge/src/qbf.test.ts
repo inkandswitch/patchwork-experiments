@@ -164,11 +164,37 @@ true`);
     rt.eval(`qbfGame.buttonFired('pause'); true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(true);
     expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
-    // Second toggle via the button action again (pointer pipeline is covered by
-    // newdefsDrag; with a sibling scores window, hit-testing is easy to miss).
     rt.eval(`qbfGame.buttonFired('pause'); true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(false);
-    // show scores raises the viewer
+
+    // Pointer press/release on the button itself (owner coords). Catches the
+    // hitPoint vs $hitPoint regression that left every QBF button dead.
+    rt.eval(`
+qbfBtn = qbfGame.pauseButton;
+qbfP = qbfBtn.getBounds().center();
+qbfBtn.onPointerDown(qbfP, { actorID: 'test' });
+true`);
+    expect(rt.eval(`qbfBtn.hitPoint != null`)).toBe(true);
+    rt.eval(`qbfBtn.onPointerUp(qbfP, { actorID: 'test' }); true`);
+    expect(rt.eval(`qbfGame.paused`)).toBe(true);
+    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
+
+    // World canvas pipeline: ephemeral panels must count as frontmost or every
+    // click is eaten by bringTopLevelPanelToFrontIfNeeded.
+    rt.eval(`qbfGame.buttonFired('pause'); true`); // unpause
+    rt.eval(`qbfPanel.beTopMorph(); true`);
+    rt.eval(`
+qbfBtn = qbfGame.pauseButton;
+qbfC = qbfBtn.owner.globalize(qbfBtn.getBounds().center());
+true`);
+    const cx = rt.eval(`qbfC.x`) as number;
+    const cy = rt.eval(`qbfC.y`) as number;
+    dispatch('pointerdown', cx, cy);
+    runFrame();
+    dispatch('pointerup', cx, cy);
+    runFrame();
+    expect(rt.eval(`qbfGame.paused`)).toBe(true);
+
     rt.eval(`qbfGame.buttonFired('scores'); true`);
     expect(rt.eval(`!!findQBFScoresViewer()`)).toBe(true);
   }, 60_000);

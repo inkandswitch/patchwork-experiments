@@ -337,6 +337,7 @@ class QBFButtonMorph extends SimpleButtonMorph {
     this.shape.compose();
   }
   onPointerUp(p, evt) {
+    // SimpleButtonMorph (and Morph) keep the press in hitPoint.
     let pressed = this.hitPoint != null && this.includesPt(p);
     super.onPointerUp(p, evt);
     if (!pressed) return true;
@@ -471,7 +472,7 @@ class QBFMorph extends Morph {
     this.fillLetter(letter, Color.gray);
     this.outboxLetters.push(outLetter);
     this.updateOutbox();
-    qbfSound('letterDrop', this.multipliers[this.outboxLetters.length]);
+    qbfSound('letterDrop', this.outboxLetters.length);
   }
   addWordLabel(scoreRect) {
     let m = this.addMorph(
@@ -630,7 +631,7 @@ class QBFMorph extends Morph {
   doEnter() {
     // Enter key or button: submit the word now in the outbox.
     if (this.outboxLetters.length === 0) return;
-    let committedMult = this.multipliers[this.outboxLetters.length];
+    let committedLength = this.outboxLetters.length;
     let word = '';
     this.outboxLetters.forEach((letter) => {
       word += letter.shape.string;
@@ -666,7 +667,7 @@ class QBFMorph extends Morph {
     this.outboxLetters = [];
     this.updateOutbox();
     if (valid || this.noCheck) {
-      qbfSound('wordCommit', committedMult);
+      qbfSound('wordCommit', committedLength);
     } else {
       qbfSound('wordReject');
     }
@@ -1270,8 +1271,10 @@ to LivelyMerge.`,
     let panel = this.panelMorph();
     if (panel && panel.collapsed) return; // a collapsed window pauses the game
     if (this.paused || (this.gameOver && this.fallingLetters.length === 0)) return;
-    this.pulley.rotateBy(-Math.PI / 15);
-    this.pulley2.rotateBy(-Math.PI / 15);
+    // Decorative spin: bump rotation directly. Morph.rotateBy -> setRotation does
+    // center-fix math + changed() and was ~40% of tick time for no gameplay gain.
+    this.pulley.transform.rotation += -Math.PI / 15;
+    this.pulley2.transform.rotation += -Math.PI / 15;
     if (this.activeLetters.length === 4) this.xStep = -this.letterW / this.ticksPerSec;
     if (this.letterInBin) this.letterInBin.moveBy(pt(0, 0.3)); // the next tile creeps down
     if (this.fallingLetters.length > 0)
