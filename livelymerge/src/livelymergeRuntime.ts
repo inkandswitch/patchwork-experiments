@@ -149,9 +149,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   function noteExternalChanges(ids?: string[]): void {
     if (!ids) {
       persistentReachable = null;
+      matCache.clear();
       return;
     }
-    for (const id of ids) edgeDirtyIds.add(id);
+    for (const id of ids) {
+      edgeDirtyIds.add(id);
+      invalidateMat(id);
+    }
   }
 
   // -- Proxy cache --
@@ -171,6 +175,59 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   let $global: any;
 
   let inChangeCall = false;
+
+  // -- Materialized read-cache (EXPERIMENTAL) --
+  // Doc-resident Obj/Fun entries are read through plain-JS copies. Reading through an
+  // Automerge draft proxy costs a WASM op-set seek per key, and render re-reads the
+  // same prototypes, functions, and scope objects hundreds of times per frame. Copies
+  // are invalidated on every local write to the entry, on external (remote) changes
+  // via noteExternalChanges, and wholesale when a change aborts (the copy may reflect
+  // rolled-back draft state). Arrays keep the live read path: their read and write
+  // methods share the same $values view.
+  const matCache = new Map<string, Obj | Fun>();
+
+  function invalidateMat(id: string): void {
+    matCache.delete(id);
+  }
+
+  /** Write-through: keep a cached copy current instead of re-materializing the whole
+   * entry (a full key enumeration through the Automerge proxy) on the next read. */
+  function matWriteThrough(id: string, key: string, next: unknown): void {
+    const m = matCache.get(id);
+    if (m) (m as any)[key] = materializeStoredVal(next);
+  }
+
+  function matDeleteThrough(id: string, key: string): void {
+    const m = matCache.get(id);
+    if (m) delete (m as any)[key];
+  }
+
+  function materializeStoredVal(v: any): any {
+    if (v == null || typeof v !== 'object') return v;
+    if (v instanceof Date) return v;
+    if (v.$type === 'ref') return { $type: 'ref', $id: v.$id };
+    return v;
+  }
+
+  function materializedEntry(id: string): Obj | Arr | Fun | undefined {
+    const hit = matCache.get(id);
+    if (hit) return hit;
+    const e = doc.objectTable[id];
+    if (!e || isArr(e)) return e;
+    const plain: any = {};
+    for (const k of lmHeapPropertyNames(e)) {
+      if (k === '$scopes') continue;
+      plain[k] = materializeStoredVal((e as any)[k]);
+    }
+    if (isFun(e)) plain.$scopes = e.$scopes.map(materializeStoredVal);
+    matCache.set(id, plain);
+    return plain;
+  }
+
+  /** Read-only heap lookup: shadow entries live, doc entries as materialized copies. */
+  function lookupHeapEntryRead(id: string): Obj | Arr | Fun | undefined {
+    return shadowTable[id] ?? materializedEntry(id);
+  }
 
   function ensureHeapRoots(): void {
     if (!doc.objectTable['object-prototype']) {
@@ -200,6 +257,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       const key = '@' + id;
       if (!globalObj[key]) {
         globalObj[key] = { $type: 'ref', $id: id };
+        invalidateMat('global');
       }
     }
   }
@@ -244,6 +302,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       // was rolled back, so the shadow entries must survive and the reachable set
       // must be rebuilt.
       flushPendingGcState(committed);
+      // Materialized copies made during an aborted change may reflect rolled-back
+      // draft state; drop them all.
+      if (!committed) matCache.clear();
     }
     if (exception) {
       console.error(exception);
@@ -291,13 +352,25 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function lookupHeapProto(id: string): Obj | undefined {
-    const val = lookupHeapEntry(id);
+    const val = lookupHeapEntryRead(id);
     return isObj(val) ? val : undefined;
   }
 
   function liveHeapObj(obj: Obj): Obj {
     const live = lookupHeapEntry(obj.$id);
     return isObj(live) ? live : obj;
+  }
+
+  /** Read-only variant of liveHeapObj: may answer a materialized copy. */
+  function liveHeapObjRead(obj: Obj): Obj {
+    const live = lookupHeapEntryRead(obj.$id);
+    return isObj(live) ? live : obj;
+  }
+
+  /** Read-only variant of liveHeapFun: may answer a materialized copy. */
+  function liveHeapFunRead(fun: Fun): Fun {
+    const live = lookupHeapEntryRead(fun.$id);
+    return isFun(live) ? live : fun;
   }
 
   function liveHeapFun(fun: Fun): Fun {
@@ -312,7 +385,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   function lmGetPrototypeOf(obj: Obj): Proxy | null {
     if (!obj.$protoId) return null;
-    const entry = lookupHeapEntry(obj.$protoId);
+    const entry = lookupHeapEntryRead(obj.$protoId);
     return entry ? deserialize(entry) : null;
   }
 
@@ -556,7 +629,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   function deserialize(value: any): Proxy {
     if (isRef(value)) {
-      return deserialize(shadowTable[value.$id] ?? doc.objectTable[value.$id]);
+      return deserialize(lookupHeapEntryRead(value.$id));
     } else if (isObj(value)) {
       return proxifyObj(value);
     } else if (isArr(value)) {
@@ -604,15 +677,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (lmIsReservedKey(prop)) return false;
         try {
-          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id), (oldV, newV) =>
-            markEdgeDirtyIfRefs(id, oldV, newV),
-          );
+          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id), (oldV, newV) => {
+            matWriteThrough(id, lmUserKey(prop), newV);
+            markEdgeDirtyIfRefs(id, oldV, newV);
+          });
         } catch (e) {
           throw enrichWriteError(e, prop, id);
         }
       },
       get(_, prop) {
-        const entry = liveHeapObj(obj);
+        const entry = liveHeapObjRead(obj);
         switch (prop) {
           case '$isProxy':
             return true;
@@ -621,7 +695,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$toRef':
             return ref();
           case '$unwrapped':
-            return entry;
+            return liveHeapObj(obj); // always the live entry: callers may write through it
           case '__proto__':
             return !entry.$protoId ? null : lmGetPrototypeOf(entry);
         }
@@ -647,6 +721,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           // Deleting an absent key is free; deleting a ref removes an edge.
           const oldV = entry[key];
           delete entry[key];
+          matDeleteThrough(id, key);
           markEdgeDirtyIfRefs(id, oldV);
         }
         return true;
@@ -674,11 +749,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     };
 
     const jsTarget = () => {
-      const target = getJsGlobalTarget(liveHeapObj(obj));
+      const target = getJsGlobalTarget(liveHeapObjRead(obj));
       return isJsGlobalTarget(target) ? target : null;
     };
 
-    const nativeTarget = getJsGlobalTarget(liveHeapObj(obj));
+    const nativeTarget = getJsGlobalTarget(liveHeapObjRead(obj));
     const target =
       typeof nativeTarget === 'function' ? (function () { }) as (...args: never[]) => unknown : Object.create(null);
     p = new Proxy(target, {
@@ -690,7 +765,6 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         return Reflect.set(nativeTarget, prop, toJsValue(value));
       },
       get(_, prop) {
-        const entry = liveHeapObj(obj);
         switch (prop) {
           case '$isProxy':
             return true;
@@ -699,7 +773,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$toRef':
             return ref();
           case '$unwrapped':
-            return entry;
+            return liveHeapObj(obj);
           case '__proto__':
             return null;
         }
@@ -1127,13 +1201,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function getFunPrototype(fun: Fun, funProxy: Proxy): Proxy {
-    const live = liveHeapFun(fun);
-    if (live.$prototypeId) {
-      return deserialize(lookupHeapEntry(live.$prototypeId)!);
+    const cheap = liveHeapFunRead(fun);
+    if (cheap.$prototypeId) {
+      return deserialize(lookupHeapEntryRead(cheap.$prototypeId)!);
     }
+    const live = liveHeapFun(fun);
     const proto = $obj({});
     (proto as any).constructor = funProxy;
     live.$prototypeId = proto.$id; // mutation on read: the fun gains a $prototypeId edge
+    matWriteThrough(live.$id, '$prototypeId', proto.$id);
     markEdgeDirty(live.$id);
     return proto;
   }
@@ -1183,6 +1259,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           const nextProtoId = value === null ? undefined : value.$id;
           if (live.$prototypeId !== nextProtoId) {
             live.$prototypeId = nextProtoId;
+            matWriteThrough(id, '$prototypeId', nextProtoId);
             markEdgeDirty(id);
           }
           return true;
@@ -1190,9 +1267,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsReservedKey(prop)) return false;
         try {
           if (
-            !lmSetOwn(live, prop, value, serializerFor(id), (oldV, newV) =>
-              markEdgeDirtyIfRefs(id, oldV, newV),
-            )
+            !lmSetOwn(live, prop, value, serializerFor(id), (oldV, newV) => {
+              matWriteThrough(id, lmUserKey(prop), newV);
+              markEdgeDirtyIfRefs(id, oldV, newV);
+            })
           ) {
             return false;
           }
@@ -1202,7 +1280,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         return true;
       },
       get(_, prop) {
-        const live = liveHeapFun(fun);
+        const live = liveHeapFunRead(fun);
         switch (prop) {
           case '$isProxy':
             return true;
@@ -1211,7 +1289,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$toRef':
             return ref();
           case '$unwrapped':
-            return live;
+            return liveHeapFun(fun); // always the live entry: callers may write through it
           case 'prototype':
             if (!isConstructibleFun(live)) {
               return undefined;
@@ -1238,6 +1316,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (Object.hasOwn(live, key)) {
           const oldV = live[key];
           delete live[key];
+          matDeleteThrough(id, key);
           markEdgeDirtyIfRefs(id, oldV);
         }
         return true;
@@ -1503,6 +1582,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     // would bake a dangling reference into the document.
     for (const id of toPromote) {
       doc.objectTable[id] = shadowTable[id]!;
+      invalidateMat(id);
       pendingShadowDeletes.push(id);
     }
 
