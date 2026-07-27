@@ -78,6 +78,7 @@ export function lmSetOwn(
   value: unknown,
   serialize: (value: unknown) => unknown,
   onMutate?: (oldValue: unknown, newValue: unknown) => void,
+  writeEntry?: () => Record<string, any>,
 ): boolean {
   if (typeof prop === 'symbol' || lmIsReservedKey(prop)) return false;
   const key = lmUserKey(prop);
@@ -91,7 +92,10 @@ export function lmSetOwn(
   // the GC's edge tracking.
   if (has && lmSameStoredVal(cur, next)) return true;
   onMutate?.(cur, next);
-  entry[key] = next;
+  // `entry` may be a cheap read view (a materialized copy of a doc entry); the store
+  // must hit the real document, so callers pass `writeEntry` to resolve it — lazily,
+  // so fully-elided writes never touch the Automerge document at all.
+  (writeEntry ? writeEntry() : entry)[key] = next;
   return true;
 }
 

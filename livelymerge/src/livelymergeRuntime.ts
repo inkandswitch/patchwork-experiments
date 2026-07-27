@@ -631,8 +631,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     // closures) are invisible to the GC, so the entry may have been swept while the
     // proxy lived on. Storing the proxy re-establishes reachability — reinstall the
     // entry (proxies keep their entry via $unwrapped) instead of baking a dangling
-    // ref into the heap.
-    if (!Object.hasOwn(shadowTable, id) && !(doc && doc.objectTable[id])) {
+    // ref into the heap. (A matCache hit proves the entry is doc-resident — only doc
+    // entries are ever cached — and skips the objectTable probe.)
+    if (!Object.hasOwn(shadowTable, id) && !matCache.has(id) && !(doc && doc.objectTable[id])) {
       const entry = proxy.$unwrapped;
       if (entry && (isObj(entry) || isArr(entry) || isFun(entry))) {
         shadowTable[id] = entry;
@@ -695,10 +696,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
         if (lmIsReservedKey(prop)) return false;
         try {
-          return lmSetOwn(liveHeapObj(obj), prop, value, serializerFor(id), (oldV, newV) => {
-            matWriteThrough(id, lmUserKey(prop), newV);
-            markEdgeDirtyIfRefs(id, oldV, newV);
-          });
+          // Compare against the cheap read view; resolve the live doc entry only
+          // when the write isn't elided.
+          return lmSetOwn(
+            liveHeapObjRead(obj),
+            prop,
+            value,
+            serializerFor(id),
+            (oldV, newV) => {
+              matWriteThrough(id, lmUserKey(prop), newV);
+              markEdgeDirtyIfRefs(id, oldV, newV);
+            },
+            () => liveHeapObj(obj),
+          );
         } catch (e) {
           throw enrichWriteError(e, prop, id);
         }
@@ -864,13 +874,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     p = new Proxy(arr, {
       set(_, prop, value) {
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
+        // Compare against the cheap read view; touch the live doc entry only when
+        // the write isn't elided.
         if (prop === 'length') {
-          const cur = vals();
+          const cur = valsRead();
           const next = Number(value);
           if (cur.length !== next) {
             // Truncation may drop refs (edges); growth adds only holes.
             if (next < cur.length && cur.slice(next).some(isRef)) markEdgeDirty(id);
-            cur.length = next;
+            vals().length = next;
             const mv = matArrVals(id);
             if (mv) mv.length = next;
           }
@@ -880,10 +892,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           const idx = typeof prop === 'number' ? prop : Number(prop);
           try {
             const next = serializerFor(id)(value);
-            const cur = vals();
+            const cur = valsRead();
             if (!(idx < cur.length && lmSameStoredVal(cur[idx], next))) {
               markEdgeDirtyIfRefs(id, idx < cur.length ? cur[idx] : undefined, next);
-              cur[idx] = next;
+              vals()[idx] = next;
               const mv = matArrVals(id);
               if (mv) mv[idx] = materializeStoredVal(next);
             }
@@ -1283,8 +1295,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     funProxy = new Proxy(target, {
       set(_, prop, value) {
         if (lmIsEphemeralKey(prop)) return writeEphemeralProp(id, prop as string, value);
-        const live = liveHeapFun(fun);
         if (prop === 'prototype') {
+          const live = liveHeapFun(fun);
           if (!isConstructibleFun(live)) {
             return false;
           }
@@ -1302,10 +1314,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsReservedKey(prop)) return false;
         try {
           if (
-            !lmSetOwn(live, prop, value, serializerFor(id), (oldV, newV) => {
-              matWriteThrough(id, lmUserKey(prop), newV);
-              markEdgeDirtyIfRefs(id, oldV, newV);
-            })
+            // Compare against the cheap read view; resolve the live doc entry only
+            // when the write isn't elided.
+            !lmSetOwn(
+              liveHeapFunRead(fun),
+              prop,
+              value,
+              serializerFor(id),
+              (oldV, newV) => {
+                matWriteThrough(id, lmUserKey(prop), newV);
+                markEdgeDirtyIfRefs(id, oldV, newV);
+              },
+              () => liveHeapFun(fun),
+            )
           ) {
             return false;
           }
