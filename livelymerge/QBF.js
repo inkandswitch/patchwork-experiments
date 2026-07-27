@@ -335,8 +335,8 @@ class QBFButtonMorph extends SimpleButtonMorph {
     this.shape.compose();
   }
   onPointerUp(p, evt) {
-    // SimpleButtonMorph (and Morph) keep the press in hitPoint.
-    let pressed = this.hitPoint != null && this.includesPt(p);
+    // SimpleButtonMorph (and Morph) keep the press in $hitPoint.
+    let pressed = this.$hitPoint != null && this.includesPt(p);
     super.onPointerUp(p, evt);
     if (!pressed) return true;
     let host = qbfButtonHostFor(this);
