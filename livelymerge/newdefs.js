@@ -140,8 +140,8 @@ function classStaticNames(cls) {
 }
 function classInstanceMemberNames(cls) {
   // Method (and accessor) names on the class's prototype, minus bookkeeping keys.
-  return Object.getOwnPropertyNames(cls.prototype)
-    .filter((name) => name !== 'className' && name !== 'constructor')
+  return (Object.getOwnPropertyNames(cls.prototype)
+    .filter((name) => name !== 'className' && name !== 'constructor'))
     .sort();
 }
 function allClassNamesWithStatics() {
@@ -301,13 +301,14 @@ function populateLively() {
   // populateLively()
   initLively(); // build a simple world with a single rectangle morph
   Lively.box = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
+/*
   Lively.oval = Lively.addMorph(new Morph(null, new Ellipse(pt(60, 75), pt(30, 15))));
   Lively.oval.setStyles(Color.green.lighter(), 2, Color.black);
   Lively.star = Lively.addMorph(new Morph(null, new Pen().star(10, 30, Color.black)));
   Lively.star.setColor(Color.yellow);
   let d = pt(30, 100).subPt(Lively.star.getBounds().topLeft);
   Lively.star.moveBy(d);
-
+*/
   let welcomeRect = rect(25, 350, 400, 220);
   let boxB = Lively.box.getBounds();
   let lineY = welcomeRect.topLeft.y - 20;
@@ -332,6 +333,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   );
 
   Lively.showWorldMenuAt(pt(130, 40));
+/*
   testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
@@ -357,9 +359,12 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.trail = this.owner.addMorph(new Morph(null, this.pen.polyLine()));
     this.world().changed();
   };
+
   setTimeout(() => {
-    Lively.spiral.startStepping('animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 }, 50);
+    Lively.spiral.startStepping('animatedSpiral', 
+      { goDist: 2, turnAngle: 60, nSteps: 8 }, 50); // was 26
   }, 2000);
+*/
 }
 
 // comment this out if you want to run in pyonpyon
@@ -491,16 +496,18 @@ function initUI() {
      *  are not representable in the heap, so they live in window._lcEvts instead. */
     longClickByPointerId: {},
     pointerLocation: null,
+    lastFrameTime: null,
   };
   // Raw side-tables (plain JS on the real window; never touch the LM heap):
   window._canvasEvents = new window.Array(); // DOM events queued between frames
   window._lcEvts = new window.Object(); // pointerId → raw pointerdown event
   window._lcTimers = new window.Object(); // pointerId → raw timer handle (a host object in Node)
 
-  function addEventListener(source, type, listener) {
+  function addEventListener(source, type, listener, optsIfAny) {
     // prevents GC from collecting the listener
     $uiState.eventListeners.push(listener);
-    source.addEventListener(type, listener);
+    if (optsIfAny) source.addEventListener(type, listener, optsIfAny);
+    else source.addEventListener(type, listener);
   }
 
   /** After this many ms with the pointer still down, the original pointerdown gets `longClick === true`. */
@@ -566,8 +573,33 @@ function initUI() {
   addEventListener(canvas, 'keydown', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'keypress', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'keyup', (e) => window._canvasEvents.push(e));
+  // Wheel must preventDefault synchronously (too late inside rAF processEvents).
+  addEventListener(
+    canvas,
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      window._canvasEvents.push(e);
+    },
+    { passive: false },
+  );
 
-  function onFrame() {
+  /** Target time between frames (ms). rAF fires at the display's refresh rate
+   *  (60Hz+); frames that arrive sooner than this are skipped, so events/render
+   *  run at ~30Hz. */
+  $FRAME_INTERVAL_MS = 1000 / 30;
+
+  function onFrame(now) {
+    if ($uiState.lastFrameTime != null && now - $uiState.lastFrameTime < $FRAME_INTERVAL_MS) {
+      window._uiRafId = window.requestAnimationFrame(onFrame);
+      return;
+    }
+    // Advance by the interval rather than to `now`, so 16.7ms rAF ticks don't drift
+    // us down to 20Hz; snap to `now` when we've fallen behind (hidden tab, slow frame).
+    $uiState.lastFrameTime =
+      $uiState.lastFrameTime == null || now - $uiState.lastFrameTime >= 2 * $FRAME_INTERVAL_MS
+        ? now
+        : $uiState.lastFrameTime + $FRAME_INTERVAL_MS;
     try {
       window.runtime.change(() => {
         processEvents();
@@ -623,6 +655,11 @@ function initUI() {
         case 'keyup':
           onKeyUp(e);
           break;
+        case 'wheel': {
+          const pt = pointerEventCanvasLocalPt(canvas, e);
+          onWheel(pt, e);
+          break;
+        }
         default:
           console.error('unsupported event type', e.type);
       }
@@ -683,6 +720,10 @@ function onPointerUp(p, e) {
   if (e && e.actorID == null) e.actorID = $actorID;
   if (e && typeof e.pointerId === 'number' && $uiState) $uiState.longClickDisarmPointer(e.pointerId);
   topLevelMorph.onPointerUp(p, e);
+}
+function onWheel(p, e) {
+  if (e && e.actorID == null) e.actorID = $actorID;
+  if (topLevelMorph && topLevelMorph.onWheel) topLevelMorph.onWheel(p, e);
 }
 function pointerEventCanvasLocalPt(canvas, e) {
   /** Local coords on canvas for Pointer Events. Touch/pen use clientX/Y − rect (Safari often omits or misreports offsetX/Y). */
@@ -969,21 +1010,21 @@ class Rectangle {
   }
   onPointerDown(p, e) {
     if (this.includesPt(p)) {
-      this.hitPoint = p;
-      this.actorID = e.actorID;
+      this.$hitPoint = p;
+      this.$dragActorID = e.actorID;
       return true;
     }
     return false;
   }
   onPointerMove(p, e) {
-    if (this.hitPoint) {
-      this.moveBy(p.subPt(this.hitPoint));
-      this.hitPoint = p;
+    if (this.$hitPoint) {
+      this.moveBy(p.subPt(this.$hitPoint));
+      this.$hitPoint = p;
     }
   }
   onPointerUp(p) {
-    this.actorID = null;
-    delete this.hitPoint;
+    this.$dragActorID = null;
+    delete this.$hitPoint;
   }
   overlapBounceAxis(other, velIfAny) {
     /**
@@ -1104,13 +1145,14 @@ class SimpleTransform {
   copy() {
     return new SimpleTransform(this.translation, this.rotation, this.scale);
   }
+  // NOTE: Point.rotatedBy(r) turns the OPPOSITE way from ctx.rotate(r)
+  // (polarAngle is measured from +y, so rotatedBy(r) is the canvas rotation
+  // by -r). Rendering applies ctx.rotate(+rotation), so transformPt must use
+  // rotatedBy(-rotation) and invertPt must use rotatedBy(+rotation).
   invertPt(p) {
     // owner -> local (inverse of transformPt)
     let q = p.subPt(this.translation); // undo translation
-    // NOTE: Point.rotatedBy and canvas ctx.rotate use opposite visual senses
-    // in this coordinate system, so we use +rotation here to correctly
-    // align pointer hit-testing with rendered rotation.
-    q = q.rotatedBy(this.rotation, pt(0, 0)); // undo rotation (sign adjusted)
+    q = q.rotatedBy(this.rotation, pt(0, 0)); // undo rotation (see NOTE above)
     // guard against degenerate scale
     let sx = this.scale.x || 1;
     let sy = this.scale.y || 1;
@@ -1122,7 +1164,7 @@ class SimpleTransform {
     //   ctx.translate(tx, ty); ctx.rotate(rot); ctx.scale(sx, sy);
     // Applied to a point, that means: scale, then rotate, then translate.
     let q = p.scaleBy(this.scale); // scale about origin
-    q = q.rotatedBy(this.rotation, pt(0, 0)); // rotate about origin
+    q = q.rotatedBy(-this.rotation, pt(0, 0)); // rotate about origin (see NOTE above)
     return q.addPt(this.translation); // then translate
   }
   translateBy(delta) {
@@ -1690,9 +1732,9 @@ class PolyLine extends Shape {
     this.morphOrigin = this.morphOrigin.translatedBy(d);
   }
   onPointerMove(p) {
-    if (this.hitPoint) {
-      this.moveBy(p.subPt(this.hitPoint));
-      this.hitPoint = p;
+    if (this.$hitPoint) {
+      this.moveBy(p.subPt(this.$hitPoint));
+      this.$hitPoint = p;
     }
   }
   recomputeBounds() {
@@ -1891,7 +1933,7 @@ class TextBox extends Shape {
     this.workspaceObj = {}; // used for doit and printit
   }
   acceptKeyboardInput(evt) {
-    // ** Note selStart and stop may be reversed!
+    // ** Note $selStart and stop may be reversed!
     let paneDirty = !!(
       this.owner &&
       this.owner.owner &&
@@ -1997,16 +2039,22 @@ class TextBox extends Shape {
     return new TextCharSpec(lineIndex, lineY, originX + xBest, strIx);
   }
   clearTyping() {
-    this.duringTyping = false;
+    this.$duringTyping = false;
   }
   compose() {
     this.lines = [];
     this.lineStarts = [];
     let ctx = this.getTextContext(this.font);
-    let str = this.string;
+    let str = this.string != null ? String(this.string) : '';
     let lineStart = 0;
     let lineTopLeft = this.topLeft.addPt(this.inset);
     let lineNo = 0;
+    if (str.length === 0) {
+      // Empty text still occupies one line of height so caret/selection are visible.
+      this.lines.push(new TextLineSpec(lineTopLeft, pt(this.extent.x, this.lineHeight), ''));
+      this.lineStarts.push(0);
+      return lineTopLeft.y + this.lineHeight + 2;
+    }
     let inAlpha = false;
     let alphaBreak = 0;
     for (let idx = 0; idx < str.length; idx++) {
@@ -2062,30 +2110,31 @@ class TextBox extends Shape {
   }
   extendSelectionTo(p) {
     let spec = this.charSpecForPt(p);
-    if (this._shiftAnchorIx != null) {
-      let a = this._shiftAnchorIx;
+    if (this.$shiftAnchorIx != null) {
+      let a = this.$shiftAnchorIx;
       let b = spec.strIx;
-      this.selStart = this.charSpecForIndex(Math.min(a, b));
-      this.selStop = this.charSpecForIndex(Math.max(a, b));
+      this.$selStart = this.charSpecForIndex(Math.min(a, b));
+      this.$selStop = this.charSpecForIndex(Math.max(a, b));
     } else {
-      this.selStop = spec;
+      this.$selStop = spec;
     }
     // console.log("After extendSelectionTo" + spec.asString());
   }
   finSelection() {
-    this._shiftAnchorIx = null;
-    //  If we were selecting backward, now rectify so selStart < selStop
-    if (this.selStart.strIx > this.selStop.strIx) {
-      let swap = this.selStart;
-      this.selStart = this.selStop;
-      this.selStop = swap;
+    this.ensureSelectionSpecs();
+    this.$shiftAnchorIx = null;
+    //  If we were selecting backward, now rectify so $selStart < $selStop
+    if (this.$selStart.strIx > this.$selStop.strIx) {
+      let swap = this.$selStart;
+      this.$selStart = this.$selStop;
+      this.$selStop = swap;
     }
     // A chance to notice null selections for selectWord
-    if (this.selStart.strIx == this.selStop.strIx) {
-      if (this.priorNullSelection == this.selStop.strIx) this.handleSelectWord();
-      else this.priorNullSelection = this.selStop.strIx;
+    if (this.$selStart.strIx == this.$selStop.strIx) {
+      if (this.$priorNullSelection == this.$selStop.strIx) this.handleSelectWord();
+      else this.$priorNullSelection = this.$selStop.strIx;
     } else {
-      this.priorNullSelection = -1;
+      this.$priorNullSelection = -1;
     }
     this.clearTyping();
   }
@@ -2100,16 +2149,17 @@ class TextBox extends Shape {
     return ctx;
   }
   handleArrowKeys(key) {
-    let leftIx = this.selStart.strIx;
-    let rightIx = this.selStop.strIx;
+    this.ensureSelectionSpecs();
+    let leftIx = this.$selStart.strIx;
+    let rightIx = this.$selStop.strIx;
     if (key == 'ArrowLeft') {
-      this.selStart = this.charSpecForIndex(leftIx - 1);
-      this.selStop = this.charSpecForIndex(leftIx - 1);
+      this.$selStart = this.charSpecForIndex(leftIx - 1);
+      this.$selStop = this.charSpecForIndex(leftIx - 1);
       return;
     }
     if (key == 'ArrowRight') {
-      this.selStart = this.charSpecForIndex(rightIx + 1);
-      this.selStop = this.charSpecForIndex(rightIx + 1);
+      this.$selStart = this.charSpecForIndex(rightIx + 1);
+      this.$selStop = this.charSpecForIndex(rightIx + 1);
       return;
     }
     if (key == 'ArrowUp') return;
@@ -2117,12 +2167,13 @@ class TextBox extends Shape {
   }
   handleBackspace() {
     // backspace
+    this.ensureSelectionSpecs();
     if (this.selectedTextString().length > 0)
       this.paste(''); // first BS deletes
     else {
-      if (this.selStart.strIx >= 1) {
+      if (this.$selStart.strIx >= 1) {
         // subsequent BS deletes backwards
-        this.setSelectionRange([this.selStart.strIx - 1, this.selStart.strIx - 1]);
+        this.setSelectionRange([this.$selStart.strIx - 1, this.$selStart.strIx - 1]);
         this.paste('');
       }
     }
@@ -2131,10 +2182,58 @@ class TextBox extends Shape {
   handleEscapeKey(evt) {
     // Typing ESC selects everything since typing started
     // -- handy if your next action is to hit ctrl-F to search for it
-    // selStop is already at the end of type-in
-    this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringPutIn.length);
+    // $selStop is already at the end of type-in
+    this.ensureSelectionSpecs();
+    if (this.$stringPutIn == null) return;
+    this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringPutIn.length);
+  }
+  evalSelectionRange() {
+    /**
+     * Range to evaluate for do-it / print-it: existing selection, or (if null) the
+     * current line. If that line is entirely a //-comment, use the text after '//'.
+     * Updates the visible selection when expanding a null selection.
+     * Returns [start, end) as exclusive end indices into this.string.
+     */
+    this.ensureSelectionSpecs();
+    let selA = this.$selStart.strIx;
+    let selB = this.$selStop.strIx;
+    let start = Math.min(selA, selB);
+    let end = Math.max(selA, selB);
+    if (start !== end) return [start, end];
+
+    // Null selection: expand to current composed line.
+    if (!this.lineStarts || this.lineStarts.length === 0) return [start, end];
+    let ix = start;
+    let lineNo = 0;
+    for (let i = 0; i < this.lineStarts.length; i++) {
+      let ls = this.lineStarts[i];
+      let next =
+        i === this.lineStarts.length - 1 ? this.string.length + 1 : this.lineStarts[i + 1];
+      if (ix >= ls && ix < next) {
+        lineNo = i;
+        break;
+      }
+    }
+    let lineStart = this.lineStarts[lineNo];
+    let raw = this.lines[lineNo] ? this.lines[lineNo].string : '';
+    let content = dropNewline(raw);
+    start = lineStart;
+    end = lineStart + content.length;
+    // Entirely a //-comment (optional leading whitespace, then //)...
+    let lead = content.match(/^\s*/)[0].length;
+    if (content.slice(lead, lead + 2) === '//') {
+      start = lineStart + lead + 2;
+      // end remains at end of line content
+    }
+    if (end > start) this.setSelectionRange([start, end - 1]);
+    else {
+      this.$selStart = this.$selStop = this.charSpecForIndex(start);
+      this.$priorNullSelection = -1;
+    }
+    return [start, end];
   }
   handleKeyboardShortcuts(evt) {
+    this.ensureSelectionSpecs();
     let k = evt.key && evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
     if ('dacxvzgdspf'.indexOf(k) < 0) return; // so as to not prevent default for some useful cases??
     if (k == 'a') this.setSelectionRange([0, this.string.length - 1]); // SELECT ALL
@@ -2185,30 +2284,31 @@ class TextBox extends Shape {
     }
     if (k == 'd') {
       // DO IT
-      this.wsEval.call(this.workspaceObj, this.selectedTextString());
+      let range = this.evalSelectionRange();
+      this.wsEval.call(this.workspaceObj, this.string.slice(range[0], range[1]));
     }
     if (k == 'p') {
       // PRINT IT
-      let selA = this.selStart.strIx;
-      let selB = this.selStop.strIx;
-      let start = Math.min(selA, selB);
-      let end = Math.max(selA, selB); // end is exclusive
+      let range = this.evalSelectionRange();
+      let start = range[0];
+      let end = range[1]; // exclusive
       let evalThing = this.wsEval.call(this.workspaceObj, this.string.slice(start, end));
       if (_evalJustFailed) return;
       let ins = ' ==> ' + this.printitString(evalThing);
       // Save undo state so ctrl-Z can restore both string and selection.
-      this._printitUndo = {
+      this.$printitUndo = {
         prefix: this.string.slice(0, end),
         suffix: this.string.slice(end),
         selA: start,
         selB: end,
       };
-      this.string = this._printitUndo.prefix + ins + this._printitUndo.suffix;
+      this.string = this.$printitUndo.prefix + ins + this.$printitUndo.suffix;
       let bottomY = this.compose();
       this.extent.y = bottomY - this.topLeft.y;
-      // Move caret to after inserted text.
-      let caretIx = end + ins.length;
-      this.selStart = this.selStop = this.charSpecForIndex(caretIx);
+      // Select the inserted result so Delete can clear it; $printitUndo still
+      // restores the former expression selection on ctrl-Z.
+      this.$selStart = this.charSpecForIndex(end);
+      this.$selStop = this.charSpecForIndex(end + ins.length);
       this.clearTyping();
     }
     evt.preventDefault();
@@ -2216,34 +2316,36 @@ class TextBox extends Shape {
   }
   handleSelectWord() {
     // A chance to notice null selections for selectWord
-    //  console.log('handling select word at ' + this.selStart.strIx);
+    //  console.log('handling select word at ' + this.$selStart.strIx);
     // debugger;
-    let pair = this.selectWord(this.string, this.selStart.strIx);
+    this.ensureSelectionSpecs();
+    let pair = this.selectWord(this.string, this.$selStart.strIx);
     this.setSelectionRange(pair);
   }
   noteReplacement(str) {
     // Copied logic of paste() to save state
-    if (this.duringTyping) {
-      this.stringPutIn += str;
+    this.ensureSelectionSpecs();
+    if (this.$duringTyping) {
+      this.$stringPutIn += str;
       return;
     }
     // New edit makes any prior printit undo irrelevant.
-    this._printitUndo = null;
-    this.selStartStrix = this.selStart.strIx;
-    this.selStopStrix = this.selStop.strIx;
-    this.stringTakenOut = this.string.slice(this.selStartStrix, this.selStopStrix);
-    this.stringPutIn = str.slice(0);
-    this.duringTyping = true;
+    this.$printitUndo = null;
+    let startStrix = this.$selStart.strIx;
+    let stopStrix = this.$selStop.strIx;
+    this.$stringTakenOut = this.string.slice(startStrix, stopStrix);
+    this.$stringPutIn = str.slice(0);
+    this.$duringTyping = true;
   }
   paste(str) {
     // Paste the string over the current selection
     this.noteReplacement(str); // copied logic to save state
-    let before = this.string.slice(0, this.selStart.strIx);
-    let after = this.string.slice(this.selStop.strIx, this.string.length);
+    let before = this.string.slice(0, this.$selStart.strIx);
+    let after = this.string.slice(this.$selStop.strIx, this.string.length);
     this.string = before + str + after;
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
-    this.selStart = this.selStop = this.charSpecForIndex(this.selStart.strIx + str.length);
+    this.$selStart = this.$selStop = this.charSpecForIndex(this.$selStart.strIx + str.length);
   }
   printitString(obj) {
     if (obj === undefined) return 'undefined';
@@ -2254,14 +2356,16 @@ class TextBox extends Shape {
   }
   redoReplacement(str) {
     // The selection is at the end of last replacement.  We simply have to
-    // find the next occurrence of stringTakenOut, extend the selection
-    // from there to the end of stringTakenOut, and call paste (stringPutIn)
-    let nextIx = this.string.indexOf(this.stringTakenOut, this.selStart.strIx);
+    // find the next occurrence of $stringTakenOut, extend the selection
+    // from there to the end of $stringTakenOut, and call paste ($stringPutIn)
+    this.ensureSelectionSpecs();
+    if (this.$stringTakenOut == null || this.$stringPutIn == null) return;
+    let nextIx = this.string.indexOf(this.$stringTakenOut, this.$selStart.strIx);
     if (nextIx < 0) return;
-    this.selStart = this.charSpecForIndex(nextIx);
-    this.selStop = this.charSpecForIndex(nextIx + this.stringTakenOut.length);
-    this.duringTyping = false; // so we don't grow stringPutIn
-    this.paste(this.stringPutIn);
+    this.$selStart = this.charSpecForIndex(nextIx);
+    this.$selStop = this.charSpecForIndex(nextIx + this.$stringTakenOut.length);
+    this.$duringTyping = false; // so we don't grow $stringPutIn
+    this.paste(this.$stringPutIn);
   }
   render(ctx) {
     ctx.save();
@@ -2297,22 +2401,22 @@ class TextBox extends Shape {
       if (
         !this.disableSelectionRendering &&
         !this.noMenuLineHighlight &&
-        lineNo == this.selectedLineIndex - 1
+        lineNo == this.$selectedLineIndex - 1
       ) {
         // line selection for lists and menus
         ctx.fillRect(this.topLeft.x, selY, this.extent.x, this.lineHeight);
       }
-      if (!this.disableSelectionRendering && !this.noMenuLineHighlight && this.selStart != null) {
+      if (!this.disableSelectionRendering && !this.noMenuLineHighlight && this.$selStart != null) {
         // character selection for editing - egad...
-        let spec1 = this.selStart;
-        let spec2 = this.selStop;
+        let spec1 = this.$selStart;
+        let spec2 = this.$selStop;
         // Flip stop and start if selection was drawn backwards
         if (
           spec1.lineNo > spec2.lineNo ||
           (spec1.lineNo == spec2.lineNo && spec1.charX > spec2.charX)
         ) {
-          spec1 = this.selStop;
-          spec2 = this.selStart;
+          spec1 = this.$selStop;
+          spec2 = this.$selStart;
         }
         if (spec1.charX < 1) spec1.charX = 1; // Selection was overwriting border??
         if (spec2.charX < 1) spec2.charX = 1;
@@ -2383,16 +2487,16 @@ class TextBox extends Shape {
     this.render(ctx);
   }
   selectedTextString() {
-    if (this.selectedLineIndex > 0) return this.lines[this.selectedLineIndex - 1].string;
-    if (this.selStart != null) return this.string.slice(this.selStart.strIx, this.selStop.strIx);
+    if (this.$selectedLineIndex > 0) return this.lines[this.$selectedLineIndex - 1].string;
+    if (this.$selStart != null) return this.string.slice(this.$selStart.strIx, this.$selStop.strIx);
     return null;
   }
   selectLineAt(p) {
     // Special case: numeric 0 clears the selection
-    if (p === 0) return (this.selectedLineIndex = 0);
-    if (!this.includesPt(p)) return (this.selectedLineIndex = 0);
+    if (p === 0) return (this.$selectedLineIndex = 0);
+    if (!this.includesPt(p)) return (this.$selectedLineIndex = 0);
     // Note line index is 1...N; 0 means no selection
-    this.selectedLineIndex = Math.floor((p.y - (this.topLeft.y + this.hang)) / this.lineHeight + 1);
+    this.$selectedLineIndex = Math.floor((p.y - (this.topLeft.y + this.hang)) / this.lineHeight + 1);
   }
   selectSearchString(str) {
     // Private method for use in search browsers
@@ -2489,8 +2593,8 @@ class TextBox extends Shape {
   setBounds(newBounds) {
     super.setBounds(newBounds);
     let savedMenuLine = null;
-    if (this.selectedLineIndex > 0 && this.lines && this.lines.length >= this.selectedLineIndex) {
-      savedMenuLine = dropNewline(this.lines[this.selectedLineIndex - 1].string);
+    if (this.$selectedLineIndex > 0 && this.lines && this.lines.length >= this.$selectedLineIndex) {
+      savedMenuLine = dropNewline(this.lines[this.$selectedLineIndex - 1].string);
     }
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
@@ -2509,30 +2613,37 @@ class TextBox extends Shape {
     this.noBreak = ifSo;
   }
   setNullSelection() {
-    this.selectedLineIndex = 0; // means no selection (for menus, lists, etc)
-    this.selStart = this.selStop = new TextCharSpec(0, this.topLeft.y + this.hang, 0, 0);
+    this.$selectedLineIndex = 0; // means no selection (for menus, lists, etc)
+    // Prefer a real charSpec so empty panes still get full lineheight for caret/selection.
+    let spec =
+      this.lines && this.lines.length > 0
+        ? this.charSpecForIndex(0)
+        : new TextCharSpec(0, this.topLeft.y + this.hang, this.inset ? this.inset.x : 0, 0);
+    this.$selStart = this.$selStop = spec;
     // Must not equal caret index 0 or the first click at doc start looks like a repeat click and runs selectWord.
-    this.priorNullSelection = -1;
-    this.selStartIndex = this.selStopIndex = 0; // indices into this.string
+    this.$priorNullSelection = -1;
+  }
+  ensureSelectionSpecs() {
+    // Selection is per-user ($-state) and lost on reload; restore a null selection on demand.
+    if (this.$selStart == null || this.$selStop == null) this.setNullSelection();
   }
   setSelectedTextString(str) {
     let idx = 0;
     this.lines.forEach((line, index) => {
       if (dropNewline(line.string) == str) idx = index;
     });
-    return (this.selectedLineIndex = idx + 1);
+    return (this.$selectedLineIndex = idx + 1);
   }
   setSelectionRange(pair) {
-    this.selStart = this.charSpecForIndex(pair[0]);
-    this.selStop = this.charSpecForIndex(pair[1] + 1);
+    this.$selStart = this.charSpecForIndex(pair[0]);
+    this.$selStop = this.charSpecForIndex(pair[1] + 1);
     // console.log('setSelectionRange() = ' + pair)
-    this.priorNullSelection = -1;
+    this.$priorNullSelection = -1;
   }
   setText(str) {
-    this.string = str;
+    this.string = str != null ? String(str) : '';
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
-    this.scrollY = 0;
     this.setNullSelection();
   }
   setWorkspaceObj(wsObj) {
@@ -2543,16 +2654,16 @@ class TextBox extends Shape {
     /** Shift-click: extend selection from the end farthest from pointer; empty selection anchors at index (right side). */
     let clickSpec = this.charSpecForPt(p);
     let ci = clickSpec.strIx;
-    if (!this.selStart || !this.selStop) {
+    if (!this.$selStart || !this.$selStop) {
       this.startSelectionAt(p);
       return;
     }
-    let a = Math.min(this.selStart.strIx, this.selStop.strIx);
-    let b = Math.max(this.selStart.strIx, this.selStop.strIx);
+    let a = Math.min(this.$selStart.strIx, this.$selStop.strIx);
+    let b = Math.max(this.$selStart.strIx, this.$selStop.strIx);
     if (a === b) {
-      this._shiftAnchorIx = a;
-      this.selStart = this.charSpecForIndex(Math.min(a, ci));
-      this.selStop = this.charSpecForIndex(Math.max(a, ci));
+      this.$shiftAnchorIx = a;
+      this.$selStart = this.charSpecForIndex(Math.min(a, ci));
+      this.$selStop = this.charSpecForIndex(Math.max(a, ci));
       return;
     }
     let distA = Math.abs(ci - a);
@@ -2561,15 +2672,15 @@ class TextBox extends Shape {
     if (distA < distB) farIx = b;
     else if (distB < distA) farIx = a;
     else farIx = b;
-    this._shiftAnchorIx = farIx;
-    this.selStart = this.charSpecForIndex(Math.min(farIx, ci));
-    this.selStop = this.charSpecForIndex(Math.max(farIx, ci));
+    this.$shiftAnchorIx = farIx;
+    this.$selStart = this.charSpecForIndex(Math.min(farIx, ci));
+    this.$selStop = this.charSpecForIndex(Math.max(farIx, ci));
   }
   startSelectionAt(p) {
-    this.selectedLineIndex = 0; // list/menu line mode must not override char selection in editors
+    this.$selectedLineIndex = 0; // list/menu line mode must not override char selection in editors
     let spec = this.charSpecForPt(p);
-    this.selStart = this.selStop = spec;
-    this._shiftAnchorIx = null;
+    this.$selStart = this.$selStop = spec;
+    this.$shiftAnchorIx = null;
     // console.log("After startSelectionAt" + spec.asString());
   }
   textDrawOriginX(lineNo) {
@@ -2583,9 +2694,9 @@ class TextBox extends Shape {
     return padL;
   }
   undoReplacement() {
-    if (this._printitUndo) {
-      let u = this._printitUndo;
-      this._printitUndo = null;
+    if (this.$printitUndo) {
+      let u = this.$printitUndo;
+      this.$printitUndo = null;
       this.string = u.prefix + u.suffix;
       let bottomY = this.compose();
       this.extent.y = bottomY - this.topLeft.y;
@@ -2594,9 +2705,11 @@ class TextBox extends Shape {
       return;
     }
     // Recreate selection range
-    this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringPutIn.length);
-    this.paste(this.stringTakenOut);
-    this.selStart = this.charSpecForIndex(this.selStop.strIx - this.stringTakenOut.length);
+    this.ensureSelectionSpecs();
+    if (this.$stringPutIn == null || this.$stringTakenOut == null) return;
+    this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringPutIn.length);
+    this.paste(this.$stringTakenOut);
+    this.$selStart = this.charSpecForIndex(this.$selStop.strIx - this.$stringTakenOut.length);
     this.clearTyping();
   }
   wsEval(str) {
@@ -2634,18 +2747,10 @@ class TextBox extends Shape {
 // +---------+
 // Base morph: tree, transforms, drag/drop, focus, stepping.
 
-function isWorldFrontmostMorph(world, morph) {
-  /** True when `morph` is the frontmost world child for hit-testing (ephemeral layer included). */
-  if (!world || !morph || !world.allSubmorphsTopFirst) return false;
-  let top = world.allSubmorphsTopFirst();
-  return top.length > 0 && top.at(0) === morph;
-}
 function paneMenuIsFrontmostForPanel(world, panelMorph) {
   /** True when the world's front morph is a selection pane menu owned by a scroll pane in `panelMorph`. */
-  if (!world || !panelMorph || !world.allSubmorphsTopFirst) return false;
-  let top = world.allSubmorphsTopFirst();
-  if (!top.length) return false;
-  let front = top.at(0);
+  if (!world || !panelMorph || !world.submorphs || world.submorphs.length === 0) return false;
+  let front = world.submorphs.at(-1);
   if (!front || front.className !== 'MenuMorph' || !front.isFleetingMenu) return false;
   let pane = front._paneMenuOwnerScrollPane;
   if (!pane) return false;
@@ -2790,8 +2895,18 @@ class Morph {
   }
   eachSubmorph(fn) {
     /** Iterate persistent then ephemeral submorphs (draw order) without allocating a combined list. */
+try {
     if (this.submorphs) this.submorphs.forEach(fn);
+} catch (e) {
+  console.log('boom! while iterating over persistent submorphs');
+  debugger;
+}
+try {
     if (this.$submorphs) this.$submorphs.forEach(fn);
+} catch (e) {
+  console.log('boom! while iterating over local submorphs');
+  debugger;
+}
   }
   asString() {
     return 'a ' + this.className + ' (' + this.shape.asString() + ')';
@@ -2801,9 +2916,7 @@ class Morph {
     let worldMorph = this.world();
     let m = this;
     while (m.owner && m.owner !== worldMorph) m = m.owner;
-    // Use hit-test order (persistent + ephemeral). Ephemeral panels live in $submorphs,
-    // so checking only world.submorphs left them forever "buried" and ate every click.
-    if (m.owner === worldMorph && !isWorldFrontmostMorph(worldMorph, m)) worldMorph.promote(m);
+    if (m.owner === worldMorph && worldMorph.submorphs.at(-1) !== m) worldMorph.promote(m);
   }
   boundsInOwnerAfterTransform() {
     /** Axis-aligned footprint in owner space; applies scale and rotation like {@link Morph#renderOn}. */
@@ -2811,12 +2924,16 @@ class Morph {
     let sx = this.transform.scale.x || 1;
     let sy = this.transform.scale.y || 1;
     let rot = this.transform.rotation || 0;
+    let b;
     if (Math.abs(rot) < 1e-10 && Math.abs(sx - 1) < 1e-10 && Math.abs(sy - 1) < 1e-10) {
-      return local.translatedBy(this.transform.translation);
+      b = local.translatedBy(this.transform.translation);
+    } else {
+      let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
+      let pts = corners.map((c) => this.transform.transformPt(c));
+      b = unionPts(pts);
     }
-    let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
-    let pts = corners.map((c) => this.transform.transformPt(c));
-    return unionPts(pts);
+    let scrollY = this.$scrollOffsetY;
+    return scrollY ? b.translatedBy(pt(0, scrollY)) : b;
   }
   boundsInWorld() {
     /** Axis-aligned bounds of this morph in world coordinates. */
@@ -2836,8 +2953,7 @@ class Morph {
     if (topLevel.className != 'PanelMorph' || topLevel.owner !== world) return false;
     // Simpler/stronger policy: if the panel is not globally frontmost, first click
     // only raises it; second click can act on inner controls.
-    // Must include ephemeral world children (QBF / scores panels use addEphemeralMorph).
-    if (!isWorldFrontmostMorph(world, topLevel)) {
+    if (world.submorphs.at(-1) !== topLevel) {
       // A pane menu sitting above this panel must not eat the first text click.
       if (paneMenuIsFrontmostForPanel && paneMenuIsFrontmostForPanel(world, topLevel)) return false;
       topLevel.beTopMorph();
@@ -2870,8 +2986,8 @@ class Morph {
     return b;
   }
   dragFrom(p, evt) {
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
   }
   dropOnTopMorphAt(worldDropPt, anchorLocal) {
@@ -2928,21 +3044,24 @@ class Morph {
   }
   fullBounds() {
     // Includes this morph's shape and all descendant submorph shapes.
-    // Return value is in owner coordinates, matching getBounds().
-    let b = this.shape.getBounds().copy(); // local coords
-    this.eachSubmorph((sub) => {
-      b = b.union(sub.fullBounds()); // child bounds are in this local coords
-    });
-    return b.translatedBy(this.transform.translation);
+    // Return value is in owner coordinates with this morph's full transform
+    // applied (the axis-aligned footprint when rotated/scaled), so hit tests
+    // against it match what's rendered.
+    return this.boundsInOwnerAfterTransform();
   }
   getBounds() {
     // NOTE: does not include submorph stickouts; use {@link fullBounds} or {@link boundsInOwnerAfterTransform}.
-    return this.shape.getBounds().translatedBy(this.transform.translation);
+    let b = this.shape.getBounds().translatedBy(this.transform.translation);
+    let scrollY = this.$scrollOffsetY;
+    return scrollY ? b.translatedBy(pt(0, scrollY)) : b;
   }
-  globalize(pt) {
+  globalize(p) {
     // local coordinates -> world
-    if (this.owner == null) return pt;
-    return this.owner.globalize(this.transform.transformPt(pt));
+    if (this.owner == null) return p;
+    let q = this.transform.transformPt(p);
+    let scrollY = this.$scrollOffsetY;
+    if (scrollY) q = pt(q.x, q.y + scrollY);
+    return this.owner.globalize(q);
   }
   hasSubmorphs() {
     if (this.submorphs != null && this.submorphs.length > 0) return true;
@@ -3045,16 +3164,16 @@ class Morph {
     if (effectiveShiftKey(evt)) {
       // shift drag means copy
       let copy = this.world().addMorph(this.morphCopy());
-      copy.hitPoint = p;
-      copy.actorID = evt.actorID;
+      copy.$hitPoint = p;
+      copy.$dragActorID = evt.actorID;
       this.world().setPointerFocus(copy);
       return true; // could merge code
     }
-    this.hitPoint = p;
-    this.didDrag = false;
+    this.$hitPoint = p;
+    this.$didDrag = false;
     // For nested morphs, plain drag should pick up to world on first real move.
-    this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
-    this.actorID = evt.actorID;
+    this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
     return true;
   }
@@ -3068,29 +3187,29 @@ class Morph {
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerMove(localP, evt);
     });
     if (eventConsumed) return true;
-    if (!this.hitPoint) return false;
-    let delta = p.subPt(this.hitPoint);
+    if (!this.$hitPoint) return false;
+    let delta = p.subPt(this.$hitPoint);
     if (
-      this._pickUpOnDrag &&
+      this.$pickUpOnDrag &&
       this.owner != null &&
       this.owner !== this.world() &&
       (delta.x !== 0 || delta.y !== 0)
     ) {
       let oldOwner = this.owner;
-      let worldPrev = oldOwner.globalize(this.hitPoint);
+      let worldPrev = oldOwner.globalize(this.$hitPoint);
       let worldNow = oldOwner.globalize(p);
       let deltaWorld = worldNow.subPt(worldPrev);
-      let anchorLocal = this.relativize(this.hitPoint);
+      let anchorLocal = this.relativize(this.$hitPoint);
       this.reparentToOwnerPreservingWorldAnchor(this.world(), anchorLocal);
       this.moveBy(deltaWorld);
-      this.hitPoint = worldNow;
-      this._pickUpOnDrag = false;
-      this.didDrag = true;
+      this.$hitPoint = worldNow;
+      this.$pickUpOnDrag = false;
+      this.$didDrag = true;
       return true;
     }
     this.moveBy(delta);
-    if (delta.x !== 0 || delta.y !== 0) this.didDrag = true;
-    this.hitPoint = p;
+    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
+    this.$hitPoint = p;
     return true;
   }
   onPointerUp(p, evt) {
@@ -3103,11 +3222,11 @@ class Morph {
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerUp(localP, evt);
     });
     if (eventConsumed) return true;
-    let wasDrag = !!this.didDrag;
-    this.actorID = null;
-    this.hitPoint = null;
-    this.didDrag = false;
-    this._pickUpOnDrag = false;
+    let wasDrag = !!this.$didDrag;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
+    this.$didDrag = false;
+    this.$pickUpOnDrag = false;
     this.world().setPointerFocus(null);
     if (wasDrag) {
       // p is in owner coords; convert to world for drop target selection.
@@ -3139,9 +3258,11 @@ class Morph {
     list.push(submorph);
     this.changed();
   }
-  relativize(pt) {
+  relativize(p) {
     // owner coordinates -> local
-    return this.transform.invertPt(pt);
+    // $scrollOffsetY is this user's scroll offset (see ScrollPane); undo it before the shared transform.
+    let scrollY = this.$scrollOffsetY;
+    return this.transform.invertPt(scrollY ? pt(p.x, p.y - scrollY) : p);
   }
   remove() {
     this.stopStepping();
@@ -3174,7 +3295,7 @@ class Morph {
       if (inHand || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
         let owningHand = each.myOwningHand ? each.myOwningHand() : null;
         let world = this.world ? this.world() : null;
-        let focusActorID = each.actorID != null ? each.actorID : $actorID;
+        let focusActorID = each.$dragActorID != null ? each.$dragActorID : $actorID;
         let focusHand =
           !owningHand && world && world.handForID ? world.handForID(focusActorID) : null;
         let handForShadow = owningHand || focusHand;
@@ -3193,7 +3314,8 @@ class Morph {
       }
       // ctx.transform(each.getTransform);
       const tfm = each.transform;
-      ctx.translate(tfm.translation.x, tfm.translation.y);
+      let scrollY = each.$scrollOffsetY;
+      ctx.translate(tfm.translation.x, tfm.translation.y + (scrollY ? scrollY : 0));
       ctx.rotate(tfm.rotation);
       ctx.scale(tfm.scale.x, tfm.scale.y);
       each.renderOn(ctx);
@@ -3232,7 +3354,22 @@ class Morph {
     world.addMorph(new StylePanel(r, this));
   }
   rotateBy(angle) {
-    this.transform.rotation += angle;
+    this.setRotation(this.transform.rotation + angle);
+  }
+  setRotation(rot) {
+    // Rotate about the center of the morph's shape: adjust the translation so
+    // the shape center stays at the same point in owner coordinates. (The
+    // transform itself always rotates about the morph's local origin.)
+    let c = this.shape.getBounds().center(); // local coords
+    let before = this.transform.transformPt(c);
+    this.transform.rotation = rot;
+    let after = this.transform.transformPt(c);
+    let delta = before.subPt(after);
+    this.transform.translation = this.transform.translation.addPt(delta);
+    // Update the cached bounds in place, like moveBy (replacing this.bounds
+    // would orphan a rect another same-frame mutation may have written to).
+    if (this.bounds) this.bounds.moveBy(delta);
+    this.changed();
   }
   scaleBy(scale) {
     const scalePt = typeof scale === 'number' ? pt(scale, scale) : scale;
@@ -3309,16 +3446,34 @@ class Morph {
   }
   syncBoundsFromGeometry() {
     // Sync cached this.bounds with shape + translation (setBounds/moveBy already keep it; reparent paths did not).
-    this.bounds = this.getBounds().copy();
+    // Update in place, like setRotation: replacing this.bounds would orphan a rect
+    // that a same-frame in-place mutation (e.g. Morph.moveBy) already wrote a fresh
+    // point into, baking a dangling ref into the document.
+    let b = this.getBounds();
+    if (this.bounds) {
+      this.bounds.topLeft = b.topLeft.copy();
+      this.bounds.extent = b.extent.copy();
+    } else {
+      this.bounds = b.copy();
+    }
   }
   testTransform(whenDone) {
-    // Spin a bit, then reset and optionally run next
-    this.startStepping('rotateBy', Math.PI / 10, 25);
-    setTimeout(() => {
-      this.stopStepping();
-      this.transform.rotation = 0;
-      if (whenDone) whenDone();
-    }, 500);
+    // Spin a bit, then reset and optionally run next. Driven by stepping (not
+    // a raw timer) so the heap writes in setRotation happen inside the frame
+    // loop's runtime.change transaction.
+    this.$testTransformStepsLeft = 20; // ~500ms at 25ms/step
+    this.$testTransformWhenDone = whenDone;
+    this.startStepping('testTransformStep', null, 25);
+  }
+  testTransformStep() {
+    this.rotateBy(Math.PI / 10);
+    this.$testTransformStepsLeft -= 1;
+    if (this.$testTransformStepsLeft > 0) return;
+    this.stopStepping('testTransformStep');
+    this.setRotation(0);
+    let whenDone = this.$testTransformWhenDone;
+    this.$testTransformWhenDone = null;
+    if (whenDone) whenDone();
   }
   topMorph() {
     // Note this gets used also to find the
@@ -3442,13 +3597,13 @@ class ImageMorph extends Morph {
       if (maybeHit) maybeHit.showHalo();
       return false;
     }
-    // Let generic Morph logic manage hitPoint, actorID, and pointerFocus.
-    this.dragStartAngle = this.transform.rotation;
+    // Let generic Morph logic manage $hitPoint, $dragActorID, and pointerFocus.
+    this.$dragStartAngle = this.transform.rotation;
     return super.onPointerDown(p, evt);
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
-    let prev = this.hitPoint;
+    if (!this.$hitPoint) return false;
+    let prev = this.$hitPoint;
     let moved = super.onPointerMove(p, evt);
     if (!moved) return false;
     // Rotate to face drag direction (only when pointer has moved enough to reduce jitter)
@@ -3639,10 +3794,11 @@ class LineMorph extends Morph {
     let pad = 10 + (this.handleRadius != null ? this.handleRadius : 5);
     return unionPts(verts).expandBy(pad);
   }
-  insertVertexOnSegment(segmentIndex, pt) {
+  insertVertexOnSegment(segmentIndex, p) {
+    // NB: don't name the parameter `pt` — it would shadow the global pt() below.
     let verts = this.shape.vertices;
     let ix = segmentIndex + 1;
-    verts.splice(ix, 0, pt(pt.x, pt.y));
+    verts.splice(ix, 0, pt(p.x, p.y));
     this.syncShapeFromVertices();
     return ix;
   }
@@ -3848,14 +4004,14 @@ class LineVertexHandle extends Morph {
     lm.$vertexDragActive = true;
     lm.$dragVertexIndex = this.vertexIndex;
     lm.$mergeNeighborIx = null;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     lm.clearMidpointHandles();
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     let lm = this.lineMorph;
     let verts = lm.shape.vertices;
     let i = lm.$dragVertexIndex != null ? lm.$dragVertexIndex : this.vertexIndex;
@@ -3870,8 +4026,8 @@ class LineVertexHandle extends Morph {
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
     if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
-    this.hitPoint = null;
-    this.actorID = null;
+    this.$hitPoint = null;
+    this.$dragActorID = null;
     lm.$vertexDragActive = false;
     lm.$dragVertexIndex = null;
     lm.$mergeNeighborIx = null;
@@ -3920,8 +4076,8 @@ class LineMidpointHandle extends Morph {
     if (!this.includesPt(p)) return false;
     let lm = this.lineMorph;
     lm.$vertexDragActive = true;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     let newIx = lm.insertVertexOnSegment(this.segmentIndex, p);
     lm.$dragVertexIndex = newIx;
     lm.$mergeNeighborIx = null;
@@ -3932,7 +4088,7 @@ class LineMidpointHandle extends Morph {
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint || this.$dragVertexIndex == null) return false;
+    if (!this.$hitPoint || this.$dragVertexIndex == null) return false;
     let lm = this.lineMorph;
     let verts = lm.shape.vertices;
     let i = lm.$dragVertexIndex;
@@ -3947,8 +4103,8 @@ class LineMidpointHandle extends Morph {
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
     if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
-    this.hitPoint = null;
-    this.actorID = null;
+    this.$hitPoint = null;
+    this.$dragActorID = null;
     this.$dragVertexIndex = null;
     lm.$vertexDragActive = false;
     lm.$dragVertexIndex = null;
@@ -4060,8 +4216,8 @@ class TextMorph extends Morph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     let localP = this.relativize(p);
     if (effectiveShiftKey(evt)) this.shape.shiftExtendSelectionToPointer(localP);
     else this.shape.startSelectionAt(localP);
@@ -4076,24 +4232,24 @@ class TextMorph extends Morph {
     if (!this.includesPt(p)) return false;
     // Shift-drag extends selection range; it should not switch to morph-drag behavior.
     if (effectiveShiftKey(evt)) {
-      if (this.hitPoint) this.shape.extendSelectionTo(this.relativize(p));
+      if (this.$hitPoint) this.shape.extendSelectionTo(this.relativize(p));
       return true;
     }
-    if (this.hitPoint) this.shape.extendSelectionTo(this.relativize(p));
+    if (this.$hitPoint) this.shape.extendSelectionTo(this.relativize(p));
     return true;
   }
   onPointerUp(p, evt) {
     // event handling should go to the shape (text); while morph ops to morph(super)...
     if (!this.includesPt(p)) {
       // Release pointer focus even when mouse-up happens outside pane bounds.
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     }
     this.shape.finSelection(); // A chance to notice selectWord click
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     this.world().setPointerFocus(null);
     return true;
   }
@@ -4133,8 +4289,8 @@ class SimpleButtonMorph extends TextMorph {
     this.shape.borderColor = Color.gray;
     this.shape.noMenuLineHighlight = true;
     this.shape.disableSelectionRendering = true;
-    this.shape.selStart = null;
-    this.shape.selStop = null;
+    this.shape.$selStart = null;
+    this.shape.$selStop = null;
     this.shape.inset = pt(0, 0);
     this.shape.hang = 0;
     this.shape.composeBottomPad = 0;
@@ -4144,8 +4300,8 @@ class SimpleButtonMorph extends TextMorph {
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
     return true;
   }
@@ -4153,8 +4309,8 @@ class SimpleButtonMorph extends TextMorph {
     return false;
   }
   onPointerUp(p, evt) {
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     return true;
   }
   static new(...args) {
@@ -4176,18 +4332,18 @@ class KbdKeyMorph extends SimpleButtonMorph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     if (this.keyboardMorph) this.keyboardMorph.handleVirtualKey(this.keySpec, evt);
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(p, evt) {
-    return !!this.hitPoint;
+    return !!this.$hitPoint;
   }
   onPointerUp(p, evt) {
-    this.actorID = null;
-    this.hitPoint = null;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
     if (this.world() && this.world().$pointerFocus === this) this.world().setPointerFocus(null);
     return true;
   }
@@ -4203,8 +4359,8 @@ class KbdKeyMorph extends SimpleButtonMorph {
   }
   setKeyLabel(label) {
     this.setText(label);
-    this.shape.selStart = null;
-    this.shape.selStop = null;
+    this.shape.$selStart = null;
+    this.shape.$selStop = null;
   }
   static new(...args) {
     return new this(...args);
@@ -4305,8 +4461,8 @@ class ListMorph extends Morph {
     // p is in owner coordinates; includesPt(p) uses relativize(p) for shape hit test
     if (!this.includesPt(p)) return false;
     clearKeyboardFocusUnlessTypingOrOsk(this);
-    this.hitPoint = p;
-    this.actorID = evt.actorID;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
     this.shape.selectLineAt(this.relativize(p));
     this.world().setPointerFocus(this);
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
@@ -4314,20 +4470,20 @@ class ListMorph extends Morph {
   }
   onPointerMove(p, evt) {
     if (!this.includesPt(p)) return false;
-    if (this.hitPoint) this.shape.selectLineAt(this.relativize(p));
+    if (this.$hitPoint) this.shape.selectLineAt(this.relativize(p));
     return true;
   }
   onPointerUp(p, evt) {
     if (!this.includesPt(p)) {
       // Release pointer focus even when mouse-up happens outside pane bounds.
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     }
-    this.actorID = null;
-    this.hitPoint = null;
-    let selectionIndex = this.shape.selectedLineIndex;
+    this.$dragActorID = null;
+    this.$hitPoint = null;
+    let selectionIndex = this.shape.$selectedLineIndex;
     this.world().setPointerFocus(null);
     if (selectionIndex > 0) {
       let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
@@ -4403,6 +4559,33 @@ class MenuMorph extends ListMorph {
 // +---------+
 // Scroll panes, text editors, transcripts, sliders, hue picker.
 
+function isScrollPaneMorph(m) {
+  /** ScrollPane or a subclass (instanceOf is unavailable in the LM class system). */
+  if (!m) return false;
+  if (m.instanceOf && typeof ScrollPane !== 'undefined' && m.instanceOf(ScrollPane)) return true;
+  let n = m.className;
+  return (
+    n === 'ScrollPane' ||
+    n === 'TextPane' ||
+    n === 'ListPane' ||
+    n === 'TranscriptTextPane'
+  );
+}
+function scrollPaneAtWorldPt(world, worldPt) {
+  /** Innermost scroll pane under `worldPt`, if any. */
+  if (!world || !worldPt) return null;
+  let m =
+    world.topMorphAtExcludingHaloUI
+      ? world.topMorphAtExcludingHaloUI(worldPt)
+      : world.topMorphAt
+        ? world.topMorphAt(worldPt)
+        : null;
+  while (m && m !== world) {
+    if (isScrollPaneMorph(m)) return m;
+    m = m.owner;
+  }
+  return null;
+}
 function hitScrollPaneMenuButtonAt(world, worldPt) {
   /** Scrollbar whose menuButton (if any) contains `worldPt`. */
   let m = world.topMorphAtExcludingHaloUI(worldPt);
@@ -4456,14 +4639,18 @@ class ScrollPane extends Morph {
     this.paneMenu = null;
   }
   _scrollContentTo(scrollPos) {
+    // Scroll state is per-user: it lives in contentPane.$scrollOffsetY (applied by the
+    // Morph coordinate primitives), never in the shared transform.
     let clipped = Math.max(0, Math.min(1, scrollPos));
+    // Heal legacy documents that scrolled by mutating the shared translation.
+    if (this.contentPane.transform.translation.y !== 0) this.contentPane.transform.translation.y = 0;
     let ht = this.contentPane.getBounds().height();
     let slideRoom = ht - this.getBounds().height();
     if (!slideRoom || slideRoom <= 0) {
-      this.contentPane.transform.translation.y = 0;
+      this.contentPane.$scrollOffsetY = 0;
       return 0;
     }
-    this.contentPane.transform.translation.y = Math.min(0, -slideRoom * clipped);
+    this.contentPane.$scrollOffsetY = Math.min(0, -slideRoom * clipped);
     return clipped;
   }
   clippedBounds() {
@@ -4483,7 +4670,38 @@ class ScrollPane extends Morph {
     let ht = this.contentPane.getBounds().height();
     let slideRoom = ht - this.getBounds().height();
     if (!slideRoom || slideRoom <= 0) return 0;
-    return -this.contentPane.transform.translation.y / slideRoom;
+    // Per-user scroll state; legacy shared-translation scroll counts until healed.
+    let scrollY = (this.contentPane.$scrollOffsetY || 0) + this.contentPane.transform.translation.y;
+    return -scrollY / slideRoom;
+  }
+  contentLineHeight() {
+    let shape = this.contentPane && this.contentPane.shape;
+    let lh = shape && shape.lineHeight;
+    return lh > 0 ? lh : 16;
+  }
+  pageScrollValueDelta() {
+    /** Scrollbar 0..1 delta for one page step: (visibleLines - 1) lines of content. */
+    if (!this.contentPane) return 0.1;
+    let paneH = this.getBounds().height();
+    let contentH = this.contentPane.getBounds().height();
+    let slideRoom = contentH - paneH;
+    if (!slideRoom || slideRoom <= 0) return 0;
+    let lh = this.contentLineHeight();
+    let visibleLines = Math.max(1, Math.floor(paneH / lh));
+    let pageLines = Math.max(1, visibleLines - 1);
+    return Math.min(1, (pageLines * lh) / slideRoom);
+  }
+  scrollByLines(lineCount) {
+    /** Move content by `lineCount` lines (positive = down / toward end). */
+    if (!this.contentPane || !lineCount) return this.getScrollPosition();
+    let paneH = this.getBounds().height();
+    let contentH = this.contentPane.getBounds().height();
+    let slideRoom = contentH - paneH;
+    if (!slideRoom || slideRoom <= 0) return 0;
+    let delta = (lineCount * this.contentLineHeight()) / slideRoom;
+    let clipped = this._scrollContentTo(this.getScrollPosition() + delta);
+    this.syncScrollBar(clipped);
+    return clipped;
   }
   installContentAndScrollbar(contentPaneSpec, scrollBarSpec, contentMorph, onTextSaved) {
     this.contentPaneSpec = contentPaneSpec;
@@ -4517,7 +4735,7 @@ class ScrollPane extends Morph {
       return;
     }
     if (slideRoom > 0) {
-      let spec = this.contentPane.shape.selStop || this.contentPane.shape.selStart;
+      let spec = this.contentPane.shape.$selStop || this.contentPane.shape.$selStart;
       let caretY = spec ? spec.charY + this.contentPane.shape.lineHeight / 2 : null;
       if (caretY == null) {
         let clipped = this._scrollContentTo(this.getScrollPosition());
@@ -4759,8 +4977,9 @@ class TextPane extends ScrollPane {
   setText(text, opts) {
     let force = opts && opts.force;
     if (!force && this.hasUnsavedChanges()) return false;
-    this.contentPane.setText(text);
-    this._savedTextSnapshot = text;
+    let normalized = text != null ? String(text) : '';
+    this.contentPane.setText(normalized);
+    this._savedTextSnapshot = normalized;
     if (this.contentPane && this.contentPane.shape) this.contentPane.shape.editorID = null;
     this.scrollToTop();
     return true;
@@ -4929,15 +5148,11 @@ class SliderMorph extends Morph {
     let opts = optsIfAny || {};
     super(initialBounds);
     this.setColor(Color.gray);
-    this.value = 0.0; // By convention, my value ranges from 0.0 to 1.0
+    // Value and thumb are per-user ($value / $thumb): each user scrolls independently.
     this.valExtent = 0.1; // for when showing a range
     this.showsMenuButton = opts.menuButton !== false; // scrollbars: true; plain sliders: pass false
     this.menuButtonFraction = this.showsMenuButton ? 0.1 : 0;
-    this.slider = this.addMorph(new Morph(rect(0, 0, 10, 10)));
-    this.styleSlider();
-    this.slider.onPointerDown = function () {
-      return false;
-    }; // ignore blipper
+    this.ensureThumb();
     if (this.showsMenuButton) {
       this.menuButton = this.addMorph(new Morph(rect(0, 0, 1, 1)));
       this.menuButton.setColor(Color.blue);
@@ -4957,6 +5172,27 @@ class SliderMorph extends Morph {
   clipValue(val) {
     return Math.round(Math.min(1.0, Math.max(0.0, val)) * 1000) / 1000;
   }
+  ensureThumb() {
+    // Per-user thumb: each replica lazily builds its own (my $-state is lost on reload).
+    if (this.slider) {
+      // Heal legacy documents whose thumb was a shared submorph.
+      this.removeMorph(this.slider);
+      this.slider = null;
+    }
+    if (this.$thumb && this.$thumb.owner === this) return this.$thumb;
+    let thumb = new Morph(rect(0, 0, 10, 10));
+    thumb.onPointerDown = function () {
+      return false;
+    }; // ignore blipper
+    this.$thumb = thumb;
+    this.addEphemeralMorph(thumb);
+    this.styleSlider();
+    return thumb;
+  }
+  getValue() {
+    // By convention, my value ranges from 0.0 to 1.0; per-user, 0 until this user moves it
+    return this.$value == null ? 0 : this.$value;
+  }
   isVertical() {
     let bnds = this.shape.getBounds();
     return bnds.height() > bnds.width();
@@ -4974,7 +5210,7 @@ class SliderMorph extends Morph {
     }
   }
   onPointerDown(pt, evt) {
-    //	Note: want setMouseFocus to also cache the transform and record the hitPoint.
+    //	Note: want setMouseFocus to also cache the transform and record the $hitPoint.
     //	Ideally thereafter only have to say, eg, morph moveTo: evt.hand.adjustedMousePoint
     if (!this.includesPt(pt)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(pt)) return true;
@@ -4984,16 +5220,14 @@ class SliderMorph extends Morph {
     if (this.menuButton && this.menuButton.includesPt(localP)) {
       let pane = this.owner;
       let world = this.world();
-      if (pane && pane.instanceOf && pane.instanceOf(ScrollPane) && pane.paneMenu) {
+      // Duck-type ScrollPane: LM objects have no instanceOf, so the old guard never opened menus.
+      if (pane && pane.paneMenu && pane.showPaneMenuFromMenuButton) {
         if (fleetingPaneMenuForScrollPane(world, pane)) removeFleetingPaneMenuFor(pane);
         else {
           let menu = pane.showPaneMenuFromMenuButton();
-          if (menu) {
-            let worldPt = pane.globalize(pt);
-            world.setPointerFocus(menu);
-            menu.hitPoint = worldPt;
-            menu.actorID = evt.actorID;
-            menu.shape.selectLineAt(menu.relativize(worldPt));
+          if (menu && world) {
+            // Open only — do not start a drag-select from the button click point (off-menu).
+            world.setPointerFocus(null);
           }
         }
       }
@@ -5001,18 +5235,22 @@ class SliderMorph extends Morph {
     }
     let track = this.trackBounds();
     if (!track.includesPt(localP)) return false;
-    if (!this.slider.includesPt(localP)) {
-      let sliderBR = this.slider.getBounds().bottomRight();
-      if (localP.lePt(sliderBR)) this.tweakValue(-0.1);
-      else this.tweakValue(0.1);
+    let thumb = this.ensureThumb();
+    if (!thumb.includesPt(localP)) {
+      let pane = this.owner;
+      let page =
+        pane && pane.pageScrollValueDelta ? pane.pageScrollValueDelta() : this.valExtent || 0.1;
+      let sliderBR = thumb.getBounds().bottomRight();
+      if (localP.lePt(sliderBR)) this.tweakValue(-page);
+      else this.tweakValue(page);
       return true;
     }
-    this.hitPoint = pt;
+    this.$hitPoint = pt;
     this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(pt, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     let localP = this.relativize(pt);
     let track = this.trackBounds();
     let ext = this.valExtent;
@@ -5024,22 +5262,22 @@ class SliderMorph extends Morph {
       let elevPix = Math.max(ext * track.width(), 6);
       newValue = (localP.x - track.topLeft.x - elevPix / 2) / (track.width() - elevPix);
     }
-    this.value = this.clipValue(newValue);
-    if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
-    else this.emitValueFunction.call(this.owner, this.value);
+    this.$value = this.clipValue(newValue);
+    if (this.valueTarget) this.valueTarget[this.valueMessage](this.$value);
+    else this.emitValueFunction.call(this.owner, this.$value);
     this.syncThumbToValue();
     return true;
   }
   onPointerUp(pt, evt) {
     if (!this.includesPt(pt)) {
-      if (this.hitPoint) {
-        this.hitPoint = null;
+      if (this.$hitPoint) {
+        this.$hitPoint = null;
         this.world().setPointerFocus(null);
         return true;
       }
       return false;
     }
-    this.hitPoint = null;
+    this.$hitPoint = null;
     this.world().setPointerFocus(null);
     return true;
   }
@@ -5048,38 +5286,44 @@ class SliderMorph extends Morph {
     this.adjustForNewBounds();
   }
   setValue(newValue) {
-    this.value = newValue;
+    this.$value = newValue;
     this.adjustForNewBounds();
   }
   setValueQuiet(newValue) {
     /** Update value + thumb without console (avoids re-entrancy when transcript mirrors console). */
-    this.value = newValue;
+    this.$value = newValue;
     this.syncThumbToValue();
   }
   setValueTarget(target, msgName) {
     this.valueTarget = target;
     this.valueMessage = msgName;
   }
+  renderOn(ctx) {
+    if (!this.$thumb) this.syncThumbToValue(); // lazily rebuild this user's thumb (e.g. after reload)
+    super.renderOn(ctx);
+  }
   styleSlider() {
-    this.slider.setColor(Color.green.darker());
+    if (this.$thumb) this.$thumb.setColor(Color.green.darker());
   }
   syncThumbToValue() {
-    /** Reposition thumb from this.value — no console (safe when console is mirrored to Transcript). */
+    /** Reposition thumb from my per-user value — no console (safe when console is mirrored to Transcript). */
+    let thumb = this.ensureThumb();
     let bnds = this.shape.getBounds();
     let track = this.trackBounds();
     let ext = this.valExtent;
+    let value = this.getValue();
     let topLeft;
     let sliderExt;
     if (this.isVertical()) {
       let elevPixV = Math.max(ext * track.height(), 6);
-      topLeft = pt(0, track.topLeft.y + (track.height() - elevPixV) * this.value);
+      topLeft = pt(0, track.topLeft.y + (track.height() - elevPixV) * value);
       sliderExt = pt(track.width(), elevPixV);
     } else {
       let elevPixH = Math.max(ext * track.width(), 6);
-      topLeft = pt(track.topLeft.x + (track.width() - elevPixH) * this.value, track.topLeft.y);
+      topLeft = pt(track.topLeft.x + (track.width() - elevPixH) * value, track.topLeft.y);
       sliderExt = pt(elevPixH, track.height());
     }
-    this.slider.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
+    thumb.setBounds(bnds.topLeft.addPt(topLeft).extent(sliderExt));
   }
   test() {
     // SliderMorph.prototype.test()
@@ -5089,14 +5333,14 @@ class SliderMorph extends Morph {
     let sliderV = Lively.addMorph(
       new SliderMorph(
         rect(50, 100, 10, 200),
-        (value) => readOut.setText('sliderV = ' + sliderV.value.toFixed(2)),
+        (value) => readOut.setText('sliderV = ' + sliderV.getValue().toFixed(2)),
         sliderOpts,
       ),
     );
     let sliderH = Lively.addMorph(
       new SliderMorph(
         rect(100, 50, 200, 10),
-        (value) => readOut.setText('sliderH = ' + sliderH.value.toFixed(2)),
+        (value) => readOut.setText('sliderH = ' + sliderH.getValue().toFixed(2)),
         sliderOpts,
       ),
     );
@@ -5114,9 +5358,9 @@ class SliderMorph extends Morph {
     return rect(leftW, 0, Math.max(0, bnds.width() - leftW), bnds.height());
   }
   tweakValue(tweak) {
-    this.setValue(this.clipValue(this.value + tweak));
-    if (this.valueTarget) this.valueTarget[this.valueMessage](this.value);
-    else this.emitValueFunction.call(this.owner, this.value);
+    this.setValue(this.clipValue(this.getValue() + tweak));
+    if (this.valueTarget) this.valueTarget[this.valueMessage](this.$value);
+    else this.emitValueFunction.call(this.owner, this.$value);
   }
   static new(...args) {
     return new this(...args);
@@ -5152,18 +5396,18 @@ class HuePickerMorph extends Morph {
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
     if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
-    this.hitPoint = p;
+    this.$hitPoint = p;
     this.world().setPointerFocus(this);
     this.applyPickAt(this.relativize(p));
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     this.applyPickAt(this.relativize(p));
     return true;
   }
   onPointerUp(p, evt) {
-    this.hitPoint = null;
+    this.$hitPoint = null;
     if (this.world() && this.world().$pointerFocus === this) this.world().setPointerFocus(null);
     return true;
   }
@@ -5274,8 +5518,8 @@ class StylePane extends Morph {
     btn.shape.verticalNudge = 5;
     btn.onPointerUp = function (p, evt) {
       if (onPress) onPress();
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     };
@@ -5371,6 +5615,20 @@ class PanelTitleBar extends Morph {
     title.verticallyCenterSingleLine = true;
     title.verticalNudge = 8;
     title.composeBottomPad = 0;
+    // Title label is chrome, not an editor — never steal drag as text selection.
+    title.disableSelectionRendering = true;
+    title.noMenuLineHighlight = true;
+    title.$selStart = null;
+    title.$selStop = null;
+    this.titleMorph.onPointerDown = function () {
+      return false;
+    };
+    this.titleMorph.onPointerMove = function () {
+      return false;
+    };
+    this.titleMorph.onPointerUp = function () {
+      return false;
+    };
     this.layout();
   }
   collapsedTitleBarWidth() {
@@ -5392,10 +5650,10 @@ class PanelTitleBar extends Morph {
     }
     s.noMenuLineHighlight = true;
     s.disableSelectionRendering = true;
-    s.selectedLineIndex = 0;
-    s.selStart = null;
-    s.selStop = null;
-    s.priorNullSelection = 0;
+    s.$selectedLineIndex = 0;
+    s.$selStart = null;
+    s.$selStop = null;
+    s.$priorNullSelection = 0;
     s.composeBottomPad = 0;
     s.lineHeight = this.HEIGHT;
     s.setBorderWidth(2);
@@ -5444,6 +5702,15 @@ class PanelTitleBar extends Morph {
     }
     this.changed();
   }
+  onPointerDown(p, evt) {
+    /** Title-bar chrome: drag / collapse / close via the owning panel (not text select). */
+    if (!this.includesPt(p)) return false;
+    let hitInfo = this.hitInfo(p);
+    if (!hitInfo || !this.panel || !this.panel.beginTitleBarPress) return false;
+    // `p` is panel-local (our owner); beginTitleBarPress expects world/owner coords of the panel.
+    let worldP = this.panel.globalize(p);
+    return this.panel.beginTitleBarPress(worldP, evt, hitInfo);
+  }
   setCollapseGlyph(collapsed) {
     this.collapseBtn.shape.setText(collapsed ? '▶' : '▼');
   }
@@ -5480,7 +5747,7 @@ class PanelMorph extends Morph {
     this._stashedContent = [];
     this.lastLocationExpanded = null;
     this.lastLocationCollapsed = null;
-    this._stickyDragCollapsedBar = false;
+    this.$stickyDragCollapsedBar = false;
     let b = this.shape.getBounds();
     this.titleBar = new PanelTitleBar(
       this,
@@ -5500,12 +5767,12 @@ class PanelMorph extends Morph {
     return snap;
   }
   beginTitleBarPress(p, evt, hitInfo) {
-    this.hitPoint = p;
-    this.didDrag = false;
-    this.actorID = evt.actorID;
-    this._closeBtnPressed = !!hitInfo.onClose;
-    this._collapseBtnPressed = !hitInfo.onClose && !!hitInfo.onCollapse;
-    this._titleBarDrag = !hitInfo.onClose && !hitInfo.onCollapse;
+    this.$hitPoint = p;
+    this.$didDrag = false;
+    this.$dragActorID = evt.actorID;
+    this.$closeBtnPressed = !!hitInfo.onClose;
+    this.$collapseBtnPressed = !hitInfo.onClose && !!hitInfo.onCollapse;
+    this.$titleBarDrag = !hitInfo.onClose && !hitInfo.onCollapse;
     this.world().setPointerFocus(this);
     return true;
   }
@@ -5514,12 +5781,12 @@ class PanelMorph extends Morph {
     return optionalRect != null ? optionalRect : this.defaultRect();
   }
   clearTitleBarPress() {
-    this.hitPoint = null;
-    this._titleBarDrag = false;
-    this._collapseBtnPressed = false;
-    this._closeBtnPressed = false;
-    this.didDrag = false;
-    this.actorID = null;
+    this.$hitPoint = null;
+    this.$titleBarDrag = false;
+    this.$collapseBtnPressed = false;
+    this.$closeBtnPressed = false;
+    this.$didDrag = false;
+    this.$dragActorID = null;
     this.world().setPointerFocus(null);
   }
   collapsedBarGridSnap() {
@@ -5538,18 +5805,18 @@ class PanelMorph extends Morph {
   }
   finishStickyCollapsedTitleBarDrag(p, evt) {
     /** End first-collapse sticky drag: drop on pointerDown (not pointerUp). */
-    if (!this._stickyDragCollapsedBar) return false;
-    if (this.didDrag) {
+    if (!this.$stickyDragCollapsedBar) return false;
+    if (this.$didDrag) {
       let worldDropPt = this.owner ? this.owner.globalize(p) : p;
       let anchorLocal = this.relativize(p);
       this.dropOnTopMorphAt(worldDropPt, anchorLocal);
     }
     if (this.collapsed) this.applyCollapsedBarGridSnap();
     this.savePanelLocation();
-    this._stickyDragCollapsedBar = false;
-    this.hitPoint = null;
-    this.didDrag = false;
-    this.actorID = null;
+    this.$stickyDragCollapsedBar = false;
+    this.$hitPoint = null;
+    this.$didDrag = false;
+    this.$dragActorID = null;
     this.world().setPointerFocus(null);
     return true;
   }
@@ -5571,8 +5838,7 @@ class PanelMorph extends Morph {
     if (!this.includesPt(p)) return false;
     // first click only raises a buried panel,
     // except chrome buttons (collapse/delete) should act immediately.
-    // Frontmost check includes ephemeral world children ($submorphs).
-    if (!isWorldFrontmostMorph(this.world(), this)) {
+    if (this.world().submorphs.at(-1) !== this) {
       let localP = this.relativize(p);
       let hitInfo = this.titleBarHitInfo(localP);
       let onCollapse = hitInfo && hitInfo.onCollapse;
@@ -5584,38 +5850,35 @@ class PanelMorph extends Morph {
       }
       // else: continue to handle title bar press immediately
     }
-    // except title hits get immediate action
-    if (this.titleMorph.includesPt(p)) {
-      return super.onPointerDown(p, evt);
-    }
+    // Title bar (including the title label) always drags / chrome-acts — never text-selects.
     let localP = this.relativize(p);
     let hitInfo = this.titleBarHitInfo(localP);
     if (hitInfo) return this.beginTitleBarPress(p, evt, hitInfo);
     return super.onPointerDown(p, evt);
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
+    if (!this.$hitPoint) return false;
     if (
-      (this._collapseBtnPressed || this._closeBtnPressed) &&
-      !this._titleBarDrag &&
-      !this._stickyDragCollapsedBar
+      (this.$collapseBtnPressed || this.$closeBtnPressed) &&
+      !this.$titleBarDrag &&
+      !this.$stickyDragCollapsedBar
     ) {
-      this.hitPoint = p;
+      this.$hitPoint = p;
       return true;
     }
-    if (!this._titleBarDrag && !this._stickyDragCollapsedBar) return false;
-    let delta = p.subPt(this.hitPoint);
+    if (!this.$titleBarDrag && !this.$stickyDragCollapsedBar) return false;
+    let delta = p.subPt(this.$hitPoint);
     this.moveBy(delta);
-    if (delta.x !== 0 || delta.y !== 0) this.didDrag = true;
-    this.hitPoint = p;
+    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
+    this.$hitPoint = p;
     if (this.collapsed) {
       let snap = this.applyCollapsedBarGridSnap();
-      if (snap.x !== 0 || snap.y !== 0) this.hitPoint = this.hitPoint.addPt(snap);
+      if (snap.x !== 0 || snap.y !== 0) this.$hitPoint = this.$hitPoint.addPt(snap);
     }
     return true;
   }
   onPointerUp(p, evt) {
-    if (this._closeBtnPressed) {
+    if (this.$closeBtnPressed) {
       if (this.submorphHasUnsavedText(this)) {
         this.promptOkToCancelEdits((okToCancel) => {
           this.clearTitleBarPress();
@@ -5627,7 +5890,7 @@ class PanelMorph extends Morph {
         return true;
       }
       this.remove();
-    } else if (this._collapseBtnPressed) {
+    } else if (this.$collapseBtnPressed) {
       if (this.submorphHasUnsavedText(this)) {
         let upP = p;
         this.promptOkToCancelEdits((okToCancel) => {
@@ -5637,10 +5900,10 @@ class PanelMorph extends Morph {
           }
           this.revertUnsavedEdits();
           this.toggleCollapse();
-          if (this._stickyDragCollapsedBar) {
-            this.hitPoint = upP;
-            this.didDrag = false;
-            this._collapseBtnPressed = false;
+          if (this.$stickyDragCollapsedBar) {
+            this.$hitPoint = upP;
+            this.$didDrag = false;
+            this.$collapseBtnPressed = false;
             return;
           }
           this.clearTitleBarPress();
@@ -5648,14 +5911,14 @@ class PanelMorph extends Morph {
         return true;
       }
       this.toggleCollapse();
-      if (this._stickyDragCollapsedBar) {
-        this.hitPoint = p;
-        this.didDrag = false;
-        this._collapseBtnPressed = false;
+      if (this.$stickyDragCollapsedBar) {
+        this.$hitPoint = p;
+        this.$didDrag = false;
+        this.$collapseBtnPressed = false;
         return true;
       }
-    } else if (this._titleBarDrag) {
-      if (this.didDrag) {
+    } else if (this.$titleBarDrag) {
+      if (this.$didDrag) {
         let worldDropPt = this.owner ? this.owner.globalize(p) : p;
         let anchorLocal = this.relativize(p);
         this.dropOnTopMorphAt(worldDropPt, anchorLocal);
@@ -5663,7 +5926,7 @@ class PanelMorph extends Morph {
       if (this.collapsed) this.applyCollapsedBarGridSnap();
       this.savePanelLocation();
     }
-    if (this._titleBarDrag || this._collapseBtnPressed || this._closeBtnPressed) {
+    if (this.$titleBarDrag || this.$collapseBtnPressed || this.$closeBtnPressed) {
       this.clearTitleBarPress();
       return true;
     }
@@ -5749,7 +6012,7 @@ class PanelMorph extends Morph {
       if (r) this.setBounds(r);
       this._savedBounds = null;
       this.titleBar.setCollapseGlyph(false);
-      this._stickyDragCollapsedBar = false;
+      this.$stickyDragCollapsedBar = false;
     } else {
       let hasSavedCollapsedLocation = !!this.lastLocationCollapsed;
       this.lastLocationExpanded = this.getBounds().copy();
@@ -5769,7 +6032,7 @@ class PanelMorph extends Morph {
       }
       super.setBounds(cr);
       this.titleBar.setCollapseGlyph(true);
-      this._stickyDragCollapsedBar = !hasSavedCollapsedLocation;
+      this.$stickyDragCollapsedBar = !hasSavedCollapsedLocation;
     }
     this.layoutChrome();
   }
@@ -5871,7 +6134,7 @@ class BrowserPanel extends PanelMorph {
     /** Class list (upper-left) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
     this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.4)));
-    this.classPane.setList(['globals'].concat(allClassNamesWithStatics()));
+    this.classPane.setList(['globals'].concat(allClassNames()));
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
       let applyClass = () => {
@@ -5912,13 +6175,13 @@ class BrowserPanel extends PanelMorph {
         this.updateBrowserTitle();
         let methodString = null;
         let headerString = null;
-        if (this.selectedClass == 'globals') {
+        if (this.selectedClass == 'globals') {           // Global methods
           methodString = $global[this.selectedMethod].toString();
           headerString = this.selectedMethod + ' = ';
-        } else if (this.selectedClass.endsWith('.class')) {
-          methodString = $global[this.classOnly][this.selectedMethod].toString();
-          headerString = this.classOnly + '.' + this.selectedMethod + ' = ';
-        } else {
+        } else if (this.selectedMethod.endsWith('*')) {  // Class methods
+          methodString = $global[this.selectedClass][this.selectedMethod.slice(0,-1)].toString();
+          headerString = this.selectedClass + '.' + this.selectedMethod.slice(0,-1) + ' = ';
+        } else {                                         // Proto methods
           methodString = $global[this.selectedClass].prototype[this.selectedMethod].toString();
           headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
         }
@@ -5978,11 +6241,11 @@ class BrowserPanel extends PanelMorph {
         .sort()
         .filter((msg) => msg[0] == msg[0].toLowerCase());
     }
-    if (classSelection.endsWith('.class')) {
-      this.classOnly = classSelection.split('.')[0];
-      return classStaticNames($global[this.classOnly]);
-    }
-    return classInstanceMemberNames($global[classSelection]);
+    return classInstanceMemberNames($global[classSelection])
+      .concat(classStaticNames($global[classSelection])
+              // Note: we mark statics with '*'
+              .map((each => each + '*' )))
+      .sort();
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -6161,8 +6424,8 @@ class StylePanel extends PanelMorph {
     this.styleActionButton(this.revertBtn);
     this.revertBtn.onPointerUp = function (p, evt) {
       panel.revertStyle();
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     };
@@ -6175,8 +6438,8 @@ class StylePanel extends PanelMorph {
     this.styleActionButton(this.saveBtn);
     this.saveBtn.onPointerUp = function (p, evt) {
       panel.saveStyle();
-      this.actorID = null;
-      this.hitPoint = null;
+      this.$dragActorID = null;
+      this.$hitPoint = null;
       this.world().setPointerFocus(null);
       return true;
     };
@@ -6535,9 +6798,9 @@ class HaloHandle extends Morph {
     letter.setStyles(null, 0, null);
     letter.boxColor = null;
     if (iconLetter != 'I') letter.moveBy(m.nudge);
-    letter.selectedLineIndex = 0;
-    letter.selStart = null;
-    letter.selStop = null;
+    letter.$selectedLineIndex = 0;
+    letter.$selStart = null;
+    letter.$selStop = null;
   }
   makeHandleShape(index, iconLetter, halo) {
     let radius = 10;
@@ -6549,7 +6812,7 @@ class HaloHandle extends Morph {
   }
   onPointerDown(pt, evt) {
     if (!this.includesPt(pt)) return false;
-    this.hitPoint = pt; // set for pointerDownOnHandle (e.g. Rotate) and for drag handles
+    this.$hitPoint = pt; // set for pointerDownOnHandle (e.g. Rotate) and for drag handles
     if (['Menu', 'Style', 'Browse', 'Inspect', 'Delete'].includes(this.handleName))
       return this.halo.pointerDownOnHandle(this, pt, evt);
     // These handles become active handles on the target
@@ -6563,24 +6826,25 @@ class HaloHandle extends Morph {
       this.target.reparentToOwnerPreservingWorldAnchor(this.world(), null);
     }
     // Drag, Rotate and Scale here drag the handle during manipulation
-    this.hitPoint = this.owner.globalize(pt);
+    this.$hitPoint = this.owner.globalize(pt);
     if (this.handleName == 'Rotate') {
-      let c = this.target.getBounds().center();
-      this.rotateStartAngle = Math.atan2(this.hitPoint.y - c.y, this.hitPoint.x - c.x);
+      // Pivot is the shape center's true world position (rotateBy keeps it fixed).
+      let c = this.target.globalize(this.target.shape.getBounds().center());
+      this.$rotateStartAngle = Math.atan2(this.$hitPoint.y - c.y, this.$hitPoint.x - c.x);
     }
     if (this.handleName == 'Scale') {
       let b = this.target.getBounds();
-      this.scaleStartTopLeft = b.topLeft.copy();
-      this.scaleStartBottomRight = b.bottomRight().copy();
+      this.$scaleStartTopLeft = b.topLeft.copy();
+      this.$scaleStartBottomRight = b.bottomRight().copy();
       let ow = this.target.owner;
-      this.scaleStartTopLeftWorld = ow
-        ? ow.globalize(this.scaleStartTopLeft)
-        : this.scaleStartTopLeft.copy();
-      this.scaleStartBottomRightWorld = ow
-        ? ow.globalize(this.scaleStartBottomRight)
-        : this.scaleStartBottomRight.copy();
+      this.$scaleStartTopLeftWorld = ow
+        ? ow.globalize(this.$scaleStartTopLeft)
+        : this.$scaleStartTopLeft.copy();
+      this.$scaleStartBottomRightWorld = ow
+        ? ow.globalize(this.$scaleStartBottomRight)
+        : this.$scaleStartBottomRight.copy();
       this.scaleTransformDrag = effectiveShiftKey(evt);
-      this.scaleStartTransform = this.target.transform.scale.copy();
+      this.$scaleStartTransform = this.target.transform.scale.copy();
     }
     let worldTopLeft = this.owner.getBounds().topLeft.addPt(this.getBounds().topLeft); // handle topLeft in world before reparent
     this.world().addEphemeralMorph(this); // handle owner was halo; now world (per-user, like the halo itself)
@@ -6591,24 +6855,24 @@ class HaloHandle extends Morph {
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.hitPoint) return false;
-    let delta = p.subPt(this.hitPoint);
+    if (!this.$hitPoint) return false;
+    let delta = p.subPt(this.$hitPoint);
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
       this.moveBy(delta);
       let cornerPos = this.getBounds().center();
       if (this.scaleTransformDrag) {
-        let sw = this.scaleStartBottomRightWorld.x - this.scaleStartTopLeftWorld.x;
-        let sh = this.scaleStartBottomRightWorld.y - this.scaleStartTopLeftWorld.y;
+        let sw = this.$scaleStartBottomRightWorld.x - this.$scaleStartTopLeftWorld.x;
+        let sh = this.$scaleStartBottomRightWorld.y - this.$scaleStartTopLeftWorld.y;
         if (Math.abs(sw) < 1) sw = sw < 0 ? -1 : 1;
         if (Math.abs(sh) < 1) sh = sh < 0 ? -1 : 1;
-        let nw = cornerPos.x - this.scaleStartTopLeftWorld.x;
-        let nh = cornerPos.y - this.scaleStartTopLeftWorld.y;
+        let nw = cornerPos.x - this.$scaleStartTopLeftWorld.x;
+        let nh = cornerPos.y - this.$scaleStartTopLeftWorld.y;
         let r = (nw / sw + nh / sh) / 2;
         r = Math.max(0.05, Math.min(24, r));
         this.target.transform.scale = pt(
-          this.scaleStartTransform.x * r,
-          this.scaleStartTransform.y * r,
+          this.$scaleStartTransform.x * r,
+          this.$scaleStartTransform.y * r,
         );
         if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
         this.target.changed();
@@ -6616,18 +6880,18 @@ class HaloHandle extends Morph {
         if (world && world.changed) world.changed();
       } else {
         this.target.setBounds(
-          this.scaleStartTopLeft.extent(cornerPos.subPt(this.scaleStartTopLeft)),
+          this.$scaleStartTopLeft.extent(cornerPos.subPt(this.$scaleStartTopLeft)),
         );
       }
     }
     if (this.handleName == 'Rotate') {
-      let c = this.target.getBounds().center();
+      let c = this.target.globalize(this.target.shape.getBounds().center());
       let currentAngle = Math.atan2(p.y - c.y, p.x - c.x);
-      this.target.rotateBy(currentAngle - this.rotateStartAngle);
-      this.rotateStartAngle = currentAngle;
+      this.target.rotateBy(currentAngle - this.$rotateStartAngle);
+      this.$rotateStartAngle = currentAngle;
     }
     this.moveBy(delta);
-    this.hitPoint = p;
+    this.$hitPoint = p;
     return true;
   }
   onPointerUp(pt, evt) {
@@ -6774,8 +7038,8 @@ class HaloMorph extends Morph {
     letter.borderWidth = 1;
     letter.borderColor = chrome.borderColor;
     letter.fill = chrome.fill;
-    letter.selStart = null;
-    letter.selStop = null;
+    letter.$selStart = null;
+    letter.$selStop = null;
     letter.disableSelectionRendering = true;
     letter.noMenuLineHighlight = true;
     letter.centerGlyph = true;
@@ -6804,7 +7068,7 @@ class HaloMorph extends Morph {
       }
       case 'Browse': {
         let className = this.target && this.target.className ? this.target.className : 'Morph';
-        let browser = Lively.addMorph(new BrowserPanel());
+        let browser = Lively.addEphemeralMorph(new BrowserPanel());
         browser.classPane.setSelectionString(className);
         break;
       }
@@ -6845,10 +7109,10 @@ class HandMorph extends Morph {
   dropMorph(p, evt) {
     let worldPt = p ? p : this.location();
     this.submorphs.slice().forEach((morphToDrop) => {
-      let anchorLocal = morphToDrop._handGrabAnchorLocal;
+      let anchorLocal = morphToDrop.$handGrabAnchorLocal;
       if (!anchorLocal) anchorLocal = morphToDrop.shape.getBounds().topLeft;
       morphToDrop.dropOnTopMorphAt(worldPt, anchorLocal);
-      morphToDrop._handGrabAnchorLocal = null;
+      morphToDrop.$handGrabAnchorLocal = null;
     });
   }
   grabMorph(p, evt) {
@@ -6856,7 +7120,7 @@ class HandMorph extends Morph {
     let morphUnder = this.world().topMorphAt(worldPt);
     if (!morphUnder || morphUnder === this || morphUnder.className == 'WorldMorph') return false;
     let anchorLocal = morphUnder.localize(worldPt);
-    morphUnder._handGrabAnchorLocal = anchorLocal;
+    morphUnder.$handGrabAnchorLocal = anchorLocal;
     morphUnder.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
     return true;
   }
@@ -6874,10 +7138,12 @@ class HandMorph extends Morph {
     return this.getBounds().topLeft;
   }
   onPointerDown(p, evt) {
-    this.hitPoint = p;
+    this.$hitPoint = p;
     this.$handPointerLocation = p;
     setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
+    // Switching active hand when clicking another is handled in WorldMorph.onPointerDown
+    // (hands live in world.hands, not the submorph tree, so inactive hands never get events).
     if (!evt.altKey) return false;
     if (evt.shiftKey) {
       // Alt+Shift click means copy target into hand.
@@ -6886,7 +7152,7 @@ class HandMorph extends Morph {
       if (!morphUnder || morphUnder.className == 'WorldMorph' || morphUnder === this) return false;
       let copy = morphUnder.morphCopy();
       let anchorLocal = copy.localize(p);
-      copy._handGrabAnchorLocal = anchorLocal;
+      copy.$handGrabAnchorLocal = anchorLocal;
       copy.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
       return true;
     }
@@ -6905,7 +7171,8 @@ class HandMorph extends Morph {
   onPointerUp(p, evt) {
     this.$handPointerLocation = p;
     setPointerLocation(p);
-    if (this.hasSubmorphs() && this.hitPoint.dist(p) > 2) this.dropMorph();
+    // $hitPoint is per-replica; it can be missing (e.g. after a reload while laden) — treat that as a drop.
+    if (this.hasSubmorphs() && (!this.$hitPoint || this.$hitPoint.dist(p) > 2)) this.dropMorph();
   }
   static new(...args) {
     return new this(...args);
@@ -7054,15 +7321,15 @@ class OnScreenKeyboardMorph extends Morph {
     if (arm) arm.longClickMoveCancelPx = OnScreenKeyboardMorph.OSK_LONG_CLICK_MOVE_CANCEL_PX;
   }
   _startOskBodyDragIfNeeded(p, evt) {
-    if (!this._oskBodyPress || this.hitPoint) return false;
+    if (!this.$oskBodyPress || this.$hitPoint) return false;
     let slop = OnScreenKeyboardMorph.OSK_BODY_DRAG_SLOP;
-    if (p.dist(this._oskBodyPress.ownerPt) < slop) return true;
-    this.hitPoint = this._oskBodyPress.ownerPt;
-    this.didDrag = false;
-    this._pickUpOnDrag = this.owner != null && this.owner !== this.world();
-    this.actorID = evt.actorID;
+    if (p.dist(this.$oskBodyPress.ownerPt) < slop) return true;
+    this.$hitPoint = this.$oskBodyPress.ownerPt;
+    this.$didDrag = false;
+    this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
+    this.$dragActorID = evt.actorID;
     this.world().setPointerFocus(this);
-    this._oskBodyPress = null;
+    this.$oskBodyPress = null;
     return super.onPointerMove(p, evt);
   }
   applyKeyMetrics(keyMorph, ks, displayText) {
@@ -7360,22 +7627,22 @@ class OnScreenKeyboardMorph extends Morph {
     this.beTopMorph();
     if (effectiveShiftKey(evt)) {
       let copy = this.world().addMorph(this.morphCopy());
-      copy.hitPoint = p;
-      copy.actorID = evt.actorID;
+      copy.$hitPoint = p;
+      copy.$dragActorID = evt.actorID;
       this.world().setPointerFocus(copy);
       return true;
     }
-    this._oskBodyPress = { ownerPt: p.copy ? p.copy() : pt(p.x, p.y) };
+    this.$oskBodyPress = { ownerPt: p.copy ? p.copy() : pt(p.x, p.y) };
     this._noteOskBodyPressForLongClick(evt);
     return true;
   }
   onPointerMove(p, evt) {
     if (this._startOskBodyDragIfNeeded(p, evt)) return true;
-    if (this._oskBodyPress) return true;
+    if (this.$oskBodyPress) return true;
     return super.onPointerMove(p, evt);
   }
   onPointerUp(p, evt) {
-    this._oskBodyPress = null;
+    this.$oskBodyPress = null;
     return super.onPointerUp(p, evt);
   }
   refreshKeyLabels() {
@@ -7606,6 +7873,27 @@ class WorldMorph extends Morph {
     if (matched) return matched;
     return null;
   }
+  handAt(pt, excludeIfAny) {
+    /** Frontmost hand whose bounds contain world-pt `pt`, optionally skipping one hand. */
+    if (!this.hands || this.hands.length == 0) return null;
+    for (let i = this.hands.length - 1; i >= 0; i--) {
+      let hand = this.hands[i];
+      if (excludeIfAny && hand === excludeIfAny) continue;
+      // Hands are owned by the world but not in submorphs; owner coords == world coords.
+      if (hand.fullBounds && hand.fullBounds().includesPt(pt)) return hand;
+    }
+    return null;
+  }
+  activateHand(hand, p, evt) {
+    /** Make `hand` the local active user (testing multi-hand). */
+    if (!hand) return false;
+    $actorID = hand.actorID;
+    if (evt) evt.actorID = hand.actorID;
+    // Avoid a jump on the first move after switching.
+    hand.$handPointerLocation = p ? p : getPointerLocation();
+    if (p) setPointerLocation(p);
+    return true;
+  }
   handleStepList() {
     // Fire all due specs without mutating stepList structure during iteration.
     // This avoids stepping corruption when other code calls stopStepping/removeMorph
@@ -7647,12 +7935,13 @@ class WorldMorph extends Morph {
       this.hands = null;
       this.updateCursorForHands();
       return;
-    }  if (!this.hands) this.hands = [];
+    }
+    if (!this.hands) this.hands = [];  //Means we're using hands
     // for testing we give new hands IDs of 0, 1, 2, 3, 4, etc
-    let id = this.hands.length;
-    let color = w.Color[['green', 'blue', 'red'][id%3]];
-  
-   console.log('creating hand morph');
+      let id = this.hands.length;
+      $actorID = id;  // now we act like another user N
+    let color = Color[['green', 'blue', 'red', 'yellow', 'cyan'][id%5]];
+    console.log('creating hand morph');
     const hm = new HandMorph($actorID, getPointerLocation(), color);
     console.log('adding hand morph');
     this.addHand(hm);
@@ -7810,6 +8099,22 @@ class WorldMorph extends Morph {
     if (this.longClickHaloDefersAt(pt)) return;
     this.cycleHaloAt(pt);
   }
+  onWheel(p, evt) {
+    setPointerLocation(p);
+    let pane = scrollPaneAtWorldPt(this, p);
+    if (!pane || !pane.scrollByLines) return false;
+    let lh = pane.contentLineHeight ? pane.contentLineHeight() : 16;
+    let deltaPx = evt.deltaY;
+    if (evt.deltaMode === 1) deltaPx = evt.deltaY * lh; // DOM_DELTA_LINE
+    else if (evt.deltaMode === 2) deltaPx = evt.deltaY * pane.getBounds().height(); // DOM_DELTA_PAGE
+    // At least one line when the wheel notch is coarse; trackpads keep proportional motion.
+    let lines = deltaPx / lh;
+    if (Math.abs(lines) < 0.01) return false;
+    if (Math.abs(lines) < 1 && evt.deltaMode === 0 && Math.abs(evt.deltaY) >= 40)
+      lines = Math.sign(lines);
+    pane.scrollByLines(lines);
+    return true;
+  }
   onPointerDown(p, evt) {
     setPointerLocation(p);
     // Dismiss fleeting menus but still deliver this click to morphs underneath
@@ -7820,13 +8125,21 @@ class WorldMorph extends Morph {
       this.cycleHaloAt(p);
       return true;
     }
+    // Hands are drawn from this.hands, not the submorph tree. If the active hand
+    // (cursor) is over another hand, clicking it switches $actorID to that hand.
+    let activeHand = this.handForID(evt.actorID);
+    let handUnder = this.handAt(p, activeHand);
+    if (handUnder) {
+      this.activateHand(handUnder, p, evt);
+      return true;
+    }
     // this.removeExistingHalos();  // OK here?
-    let hand = this.handForID(evt.actorID);
+    let hand = activeHand;
     if (hand && evt.altKey) {
       hand.onPointerDown(p, evt);
       return true;
     }
-    if (this.$pointerFocus && this.$pointerFocus._stickyDragCollapsedBar) {
+    if (this.$pointerFocus && this.$pointerFocus.$stickyDragCollapsedBar) {
       let pf = this.$pointerFocus;
       let pForFocus = pf.owner ? pf.owner.localize(p) : p;
       return pf.finishStickyCollapsedTitleBarDrag(pForFocus, evt);
@@ -8025,7 +8338,7 @@ class WorldMorph extends Morph {
       let wld = this.world();
       let cap = menuItemCaption(item);
       if (item == 'ToDo List') storageEditItem('ToDoList');
-      if (item == 'System browser') wld.addMorph(new BrowserPanel());
+      if (item == 'System browser') wld.addEphemeralMorph(new BrowserPanel());
       if (item == 'Recent changes') browseRecentChanges();
       if (item == 'Morphic help') wld.showMorphicHelp();
       if (item == 'Halo help') wld.showHaloHelp();
@@ -8089,10 +8402,13 @@ class WorldMorph extends Morph {
       for (let i = 0; i < subs.length; i++) {
         let sub = subs.at(i);
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
-        if (sub.fullBounds().includesPt(pInOwner)) {
-          let deeper = walk(sub, worldPt);
-          return deeper != null ? deeper : sub;
-        }
+        // fullBounds (AABB incl. submorph stickouts) is just a cheap prefilter;
+        // the hit itself must be on a shape, so rotated morphs' AABB corner
+        // wedges and stickout dead zones fall through to siblings behind.
+        if (!sub.fullBounds().includesPt(pInOwner)) continue;
+        let deeper = walk(sub, worldPt);
+        if (deeper != null) return deeper;
+        if (sub.includesPt(pInOwner)) return sub;
       }
       return null;
     };
@@ -8107,10 +8423,11 @@ class WorldMorph extends Morph {
         let cn = sub.className;
         if (cn === 'HaloMorph' || cn === 'HaloHandle' || cn === 'HandMorph') continue;
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
-        if (sub.fullBounds().includesPt(pInOwner)) {
-          let deeper = walk(sub, worldPt);
-          return deeper != null ? deeper : sub;
-        }
+        // Same shape-exact hit rule as topMorphAt: bounds only gate descent.
+        if (!sub.fullBounds().includesPt(pInOwner)) continue;
+        let deeper = walk(sub, worldPt);
+        if (deeper != null) return deeper;
+        if (sub.includesPt(pInOwner)) return sub;
       }
       return null;
     };
@@ -8424,10 +8741,42 @@ function parseStackFrameLine(line) {
   if (m[1] != null) return { name: m[1].trim(), file: m[2], line: +m[3], col: +m[4] };
   return { name: null, file: m[5], line: +m[6], col: +m[7] };
 }
+function defsSourceFile() {
+  /** Basename of the live defs script (override with window.defsScriptUrl). */
+  let url =
+    window.defsScriptUrl != null
+      ? window.defsScriptUrl
+      : window.alldefsScriptUrl != null
+        ? window.alldefsScriptUrl
+        : 'newdefs.js';
+  return shortStackFileName(url);
+}
+function shortStackFileName(file) {
+  let s = String(file || '');
+  let q = s.indexOf('?');
+  if (q >= 0) s = s.slice(0, q);
+  let ix = s.lastIndexOf('/');
+  if (ix >= 0) s = s.slice(ix + 1);
+  return s || file;
+}
+function isDefsStackFile(file) {
+  let base = shortStackFileName(file).toLowerCase();
+  let want = defsSourceFile().toLowerCase();
+  // Accept configured name plus the historical alldefs/newdefs aliases.
+  return base === want || base === 'newdefs.js' || base === 'alldefs.js';
+}
+function extractDefsLineFromFrame(line) {
+  let m = ('' + line).match(/([\w.-]+\.js)(?:\?[^:]*)?:(\d+)(?::(\d+))?/i);
+  if (!m || !isDefsStackFile(m[1])) return null;
+  return { file: shortStackFileName(m[1]), line: +m[2], col: m[3] != null ? +m[3] : 0 };
+}
+/** @deprecated alias — prefer extractDefsLineFromFrame */
 function extractAlldefsLineFromFrame(line) {
-  let m = ('' + line).match(/alldefs\.js(?:\?[^:]*)?:(\d+):(\d+)/i);
-  if (!m) return null;
-  return { line: +m[1], col: +m[2] };
+  return extractDefsLineFromFrame(line);
+}
+/** @deprecated alias — prefer isDefsStackFile */
+function isAlldefsStackFile(file) {
+  return isDefsStackFile(file);
 }
 function stackFrameLabelName(line) {
   let m = ('' + line).trim().match(/^at\s+(.+?)\s+\(/);
@@ -8440,17 +8789,6 @@ function scrubStackFrameUrls(line) {
     return shortStackFileName(url);
   });
 }
-function shortStackFileName(file) {
-  let s = String(file || '');
-  let q = s.indexOf('?');
-  if (q >= 0) s = s.slice(0, q);
-  let ix = s.lastIndexOf('/');
-  if (ix >= 0) s = s.slice(ix + 1);
-  return s || file;
-}
-function isAlldefsStackFile(file) {
-  return /alldefs\.js$/i.test(shortStackFileName(file));
-}
 function formatStackFrameLine(rawLine) {
   let line = String(rawLine).trim();
   let frame = parseStackFrameLine(line);
@@ -8459,10 +8797,10 @@ function formatStackFrameLine(rawLine) {
     if (frame.name) return ['  at ' + frame.name + ' (' + shortFile + ':' + frame.line + ')'];
     return ['  at ' + shortFile + ':' + frame.line];
   }
-  let alldefsRef = extractAlldefsLineFromFrame(line);
-  if (alldefsRef) {
+  let defsRef = extractDefsLineFromFrame(line);
+  if (defsRef) {
     let name = stackFrameLabelName(line);
-    return ['  at ' + name + ' (alldefs.js:' + alldefsRef.line + ')'];
+    return ['  at ' + name + ' (' + defsRef.file + ':' + defsRef.line + ')'];
   }
   let scrubbed = scrubStackFrameUrls(line);
   return [scrubbed.startsWith('at ') ? '  ' + scrubbed : scrubbed];
@@ -8526,7 +8864,8 @@ function stackFrameListLabel(frame) {
   if (frame.name && frame.file && frame.line)
     return frame.name + ' (' + shortStackFileName(frame.file) + ':' + frame.line + ')';
   if (frame.name) return frame.name;
-  if (frame.alldefsLine) return 'alldefs.js:' + frame.alldefsLine;
+  if (frame.alldefsLine)
+    return (frame.defsFile || defsSourceFile()) + ':' + frame.alldefsLine;
   return 'frame';
 }
 function stackFrameHighlightName(frame) {
@@ -8544,13 +8883,25 @@ function stackFrameFromRawLine(rawLine) {
   let line = String(rawLine).trim();
   let name = stackFrameLabelName(line);
   let parsed = parseStackFrameLine(line);
-  let alldefsRef = extractAlldefsLineFromFrame(line);
+  let defsRef = extractDefsLineFromFrame(line);
   let methodSpec = stackNameToMethodSpec(name);
+  let file = parsed ? shortStackFileName(parsed.file) : defsRef ? defsRef.file : null;
+  let lineNo = parsed ? parsed.line : defsRef ? defsRef.line : null;
+  let defsLine = null;
+  let defsFile = null;
+  if (file && lineNo != null && isDefsStackFile(file)) {
+    defsLine = lineNo;
+    defsFile = file;
+  } else if (defsRef) {
+    defsLine = defsRef.line;
+    defsFile = defsRef.file;
+  }
   let frame = {
     name: name,
-    file: parsed ? parsed.file : null,
-    line: parsed ? parsed.line : alldefsRef ? alldefsRef.line : null,
-    alldefsLine: alldefsRef ? alldefsRef.line : null,
+    file: file,
+    line: lineNo,
+    alldefsLine: defsLine, // line in defs source file, if any
+    defsFile: defsFile,
     methodSpec: methodSpec,
   };
   frame.listLabel = stackFrameListLabel(frame);
@@ -8590,7 +8941,12 @@ function ensureAlldefsSourceLines() {
   return null;
 
   if (_alldefsSourceLines) return Promise.resolve(_alldefsSourceLines);
-  let url = window.alldefsScriptUrl != null ? window.alldefsScriptUrl : 'alldefs.js';
+  let url =
+    window.defsScriptUrl != null
+      ? window.defsScriptUrl
+      : window.alldefsScriptUrl != null
+        ? window.alldefsScriptUrl
+        : defsSourceFile();
   return fetch(url)
     .then(function (r) {
       if (!r.ok) throw new Error('ensureAlldefsSourceLines: ' + r.status + ' ' + url);
@@ -8601,7 +8957,7 @@ function ensureAlldefsSourceLines() {
       return _alldefsSourceLines;
     })
     .catch(function (e) {
-      console.warn('alldefs source not loaded for stack excerpts', e);
+      console.warn('defs source not loaded for stack excerpts', e);
       return null;
     });
 }
@@ -8825,4 +9181,5 @@ function inspectString(obj) {
     typeStr = typeStr + ': ' + err;
   }
   return typeStr;
-}
+};
+init()
