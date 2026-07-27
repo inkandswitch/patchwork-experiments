@@ -7909,17 +7909,35 @@ class WorldMorph extends Morph {
     due.forEach((spec) => {
       // If spec was removed during earlier step processing, skip it.
       if (!this.activeStepList().includes(spec)) return;
-      spec.nextStepTime = now + spec.stepPeriod;
-      try {
-        if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
-        else spec.stepMorph[spec.methodName]();
-      } catch (err) {
-        let morphName = spec.stepMorph.className || 'Morph';
-        let fn = spec.stepMorph[spec.methodName];
-        if (typeof fn === 'function') _lastEvalSource = fn.toString();
-        handleRuntimeError(err, 'stepping ' + morphName + '.' + spec.methodName);
-        if (spec.stepMorph.stopStepping) spec.stepMorph.stopStepping(spec.methodName);
-        else this.stopSteppingMorph(spec.stepMorph, spec.methodName);
+      // Advance from the scheduled time, not from `now`: re-anchoring on the frame
+      // time stretches every period up to the next frame boundary (a 50ms step on
+      // 33ms frames would fire every ~67ms). A late frame owes missed steps; run
+      // them, so steppers keep wall-clock speed through slow frames -- but at most
+      // maxCatchUpSteps, past which (hidden tab, long stall) the backlog is dropped
+      // and the spec re-anchors at `now`.
+      let maxCatchUpSteps = 4;
+      let runs = 1;
+      spec.nextStepTime += spec.stepPeriod;
+      while (spec.stepPeriod > 0 && spec.nextStepTime < now && runs < maxCatchUpSteps) {
+        spec.nextStepTime += spec.stepPeriod;
+        runs++;
+      }
+      if (spec.nextStepTime < now) spec.nextStepTime = now + spec.stepPeriod;
+      for (let i = 0; i < runs; i++) {
+        // The step itself may stop or remove the stepper; don't run it again.
+        if (i > 0 && !this.activeStepList().includes(spec)) return;
+        try {
+          if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+          else spec.stepMorph[spec.methodName]();
+        } catch (err) {
+          let morphName = spec.stepMorph.className || 'Morph';
+          let fn = spec.stepMorph[spec.methodName];
+          if (typeof fn === 'function') _lastEvalSource = fn.toString();
+          handleRuntimeError(err, 'stepping ' + morphName + '.' + spec.methodName);
+          if (spec.stepMorph.stopStepping) spec.stepMorph.stopStepping(spec.methodName);
+          else this.stopSteppingMorph(spec.stepMorph, spec.methodName);
+          return;
+        }
       }
     });
   }
