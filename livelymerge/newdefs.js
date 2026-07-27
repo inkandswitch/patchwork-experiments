@@ -2953,7 +2953,13 @@ try {
     if (topLevel.className != 'PanelMorph' || topLevel.owner !== world) return false;
     // Simpler/stronger policy: if the panel is not globally frontmost, first click
     // only raises it; second click can act on inner controls.
-    if (world.submorphs.at(-1) !== topLevel) {
+    // Frontmost within the panel's own layer: an ephemeral panel draws above all
+    // persistent morphs, so being last in $submorphs makes it globally frontmost.
+    let siblings =
+      world.$submorphs && world.$submorphs.includes(topLevel)
+        ? world.$submorphs
+        : world.submorphs;
+    if (siblings.at(-1) !== topLevel) {
       // A pane menu sitting above this panel must not eat the first text click.
       if (paneMenuIsFrontmostForPanel && paneMenuIsFrontmostForPanel(world, topLevel)) return false;
       topLevel.beTopMorph();
