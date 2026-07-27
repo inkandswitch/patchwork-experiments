@@ -51,7 +51,7 @@ import {
   isValidAutomergeUrl,
   isValidDocumentId,
   stringifyAutomergeUrl,
-} from "@automerge/automerge-repo";
+} from "@automerge/automerge-repo/slim";
 import { log } from "../log.js";
 
 // The patchwork document-drag MIME types. Mirrors the sideboard's convention

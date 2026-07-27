@@ -20,7 +20,7 @@ import {
   type Repo,
   isValidAutomergeUrl,
   parseAutomergeUrl,
-} from "@automerge/automerge-repo";
+} from "@automerge/automerge-repo/slim";
 import { getAllRegistries } from "@inkandswitch/patchwork-plugins";
 import {
   type FolderDoc,

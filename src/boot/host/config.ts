@@ -9,7 +9,7 @@
  * the boundary relays verbatim (never parsing).
  */
 
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo/slim";
 
 /** The root `patchwork:component` id to mount inside the iframe. */
 export function readRootComponentId(host: HTMLElement): string {

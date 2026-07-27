@@ -24,7 +24,7 @@
  *   iframe → host:  { type: "providers-bridge-unsubscribe", id }
  */
 
-import { isValidAutomergeUrl } from "@automerge/automerge-repo";
+import { isValidAutomergeUrl } from "@automerge/automerge-repo/slim";
 import { log } from "../log.js";
 
 /**

@@ -121,7 +121,7 @@ export function workerBootstrap(params: WorkerBootstrapParams): void {
 
   // Bracket a class method literally named `import` — es-module-shims' lexer
   // misreads it as a dynamic import. Only relayed host modules need this (e.g.
-  // @automerge/automerge-repo's `Repo.import()`); it matches ../es-module-shims.ts.
+  // @automerge/automerge-repo/slim's `Repo.import()`); it matches ../es-module-shims.ts.
   function fixImportMethod(src: string): string {
     return src.replace(
       /^(\s+)import\s*\(([^)]*)\)\s*\{/gm,

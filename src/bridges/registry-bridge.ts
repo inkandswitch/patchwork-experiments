@@ -18,7 +18,7 @@
 import {
   isValidAutomergeUrl,
   type AutomergeUrl,
-} from "@automerge/automerge-repo";
+} from "@automerge/automerge-repo/slim";
 import {
   getImportableUrlFromAutomergeUrl,
   resolvePackageExport,

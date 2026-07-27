@@ -54,7 +54,7 @@ export async function setupEsModuleShims(
       // Rewrite class methods literally named `import` to bracket notation.
       // es-module-shims' lexer misreads a method named `import` as a dynamic
       // `import()` expression and throws a parse error. This is a live case,
-      // not vestigial: @automerge/automerge-repo's Repo class has an
+      // not vestigial: @automerge/automerge-repo/slim's Repo class has an
       // `import(binary, args) { … }` method, and Repo loads into every iframe.
       const source = result.source.replace(
         /^(\s+)import\s*\(([^)]*)\)\s*\{/gm,

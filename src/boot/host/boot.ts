@@ -29,7 +29,7 @@
  * resolves/mounts the root component against its own registry.
  */
 
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo/slim";
 import type { RepoProviderElement } from "@inkandswitch/patchwork-providers";
 import {
   createIntermediaryRepo,

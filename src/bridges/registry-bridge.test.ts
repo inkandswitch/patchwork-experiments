@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import {
   generateAutomergeUrl,
   type AutomergeUrl,
-} from "@automerge/automerge-repo";
+} from "@automerge/automerge-repo/slim";
 import {
   getImportableUrlFromAutomergeUrl,
 } from "@inkandswitch/patchwork-filesystem";

@@ -21,7 +21,7 @@ export const plugins: Plugin<any>[] = [
     // worker just to read this `plugins` metadata; that worker has no import
     // map, so a top-level import of component.js (which transitively pulls in
     // @automerge/automerge-repo and the rest of the isolation runtime) fails
-    // with "Failed to resolve module specifier @automerge/automerge-repo".
+    // with "Failed to resolve module specifier @automerge/automerge-repo/slim".
     // Deferring it keeps discovery to metadata only — the runtime imports
     // happen later, when load() runs in a context that has the import map.
     load: async () => (await import("./component.js")).mountIsolation,

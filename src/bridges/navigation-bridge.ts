@@ -9,7 +9,7 @@
  *   iframe → host:  { type: "open-document", detail: OpenDocumentEventDetail }
  */
 
-import type { AutomergeUrl } from "@automerge/automerge-repo";
+import type { AutomergeUrl } from "@automerge/automerge-repo/slim";
 import type { OpenDocumentEventDetail } from "../../events.js";
 import { log } from "../log.js";
 

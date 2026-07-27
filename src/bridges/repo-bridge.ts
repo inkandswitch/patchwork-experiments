@@ -17,7 +17,7 @@ import {
   type PeerId,
   type DocumentId,
   parseAutomergeUrl,
-} from "@automerge/automerge-repo";
+} from "@automerge/automerge-repo/slim";
 import { MessageChannelNetworkAdapter } from "@automerge/automerge-repo-network-messagechannel";
 import { log } from "../log.js";
 
