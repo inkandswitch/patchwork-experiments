@@ -177,14 +177,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   let inChangeCall = false;
 
   // -- Materialized read-cache (EXPERIMENTAL) --
-  // Doc-resident Obj/Fun entries are read through plain-JS copies. Reading through an
-  // Automerge draft proxy costs a WASM op-set seek per key, and render re-reads the
-  // same prototypes, functions, and scope objects hundreds of times per frame. Copies
-  // are invalidated on every local write to the entry, on external (remote) changes
-  // via noteExternalChanges, and wholesale when a change aborts (the copy may reflect
-  // rolled-back draft state). Arrays keep the live read path: their read and write
-  // methods share the same $values view.
-  const matCache = new Map<string, Obj | Fun>();
+  // Doc-resident entries (Obj, Fun, and Arr) are read through plain-JS copies.
+  // Reading through an Automerge draft proxy costs a WASM op-set seek per key, and
+  // render re-reads the same prototypes, functions, scope objects, and submorph lists
+  // hundreds of times per frame. Copies are kept current by write-through (local
+  // writes mirror onto the copy), invalidated per-id on external (remote) changes via
+  // noteExternalChanges, and dropped wholesale when a change aborts (the copy may
+  // reflect rolled-back draft state).
+  const matCache = new Map<string, Obj | Arr | Fun>();
 
   function invalidateMat(id: string): void {
     matCache.delete(id);
@@ -202,6 +202,13 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (m) delete (m as any)[key];
   }
 
+  /** The cached copy's $values for array id, or undefined when not cached. Array
+   * mutators mirror their operation onto this so the copy never goes stale. */
+  function matArrVals(id: string): Val[] | undefined {
+    const m = matCache.get(id);
+    return m && isArr(m) ? m.$values : undefined;
+  }
+
   function materializeStoredVal(v: any): any {
     if (v == null || typeof v !== 'object') return v;
     if (v instanceof Date) return v;
@@ -213,13 +220,18 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const hit = matCache.get(id);
     if (hit) return hit;
     const e = doc.objectTable[id];
-    if (!e || isArr(e)) return e;
-    const plain: any = {};
-    for (const k of lmHeapPropertyNames(e)) {
-      if (k === '$scopes') continue;
-      plain[k] = materializeStoredVal((e as any)[k]);
+    if (!e) return e;
+    let plain: any;
+    if (isArr(e)) {
+      plain = { $type: 'arr', $id: id, $values: e.$values.map(materializeStoredVal) };
+    } else {
+      plain = {};
+      for (const k of lmHeapPropertyNames(e)) {
+        if (k === '$scopes') continue;
+        plain[k] = materializeStoredVal((e as any)[k]);
+      }
+      if (isFun(e)) plain.$scopes = e.$scopes.map(materializeStoredVal);
     }
-    if (isFun(e)) plain.$scopes = e.$scopes.map(materializeStoredVal);
     matCache.set(id, plain);
     return plain;
   }
@@ -371,6 +383,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   function liveHeapFunRead(fun: Fun): Fun {
     const live = lookupHeapEntryRead(fun.$id);
     return isFun(live) ? live : fun;
+  }
+
+  /** Read-only variant of liveHeapArr: may answer a materialized copy. */
+  function liveHeapArrRead(arr: Arr): Arr {
+    const live = lookupHeapEntryRead(arr.$id);
+    return isArr(live) ? live : arr;
   }
 
   function liveHeapFun(fun: Fun): Fun {
@@ -829,8 +847,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     const id = arr.$id;
     // Resolve the live entry per access so the same proxy stays valid across
-    // transactions and across shadow -> Automerge promotion.
+    // transactions and across shadow -> Automerge promotion. Mutators use vals()
+    // (the live Automerge/shadow view) and mirror their operation onto the cached
+    // copy; read-only paths use valsRead() (the materialized copy when doc-resident).
     const vals = () => liveHeapArr(arr).$values;
+    const valsRead = () => liveHeapArrRead(arr).$values;
 
     let _ref: Ref | null = null;
     const ref = () => {
@@ -850,6 +871,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             // Truncation may drop refs (edges); growth adds only holes.
             if (next < cur.length && cur.slice(next).some(isRef)) markEdgeDirty(id);
             cur.length = next;
+            const mv = matArrVals(id);
+            if (mv) mv.length = next;
           }
           return true;
         }
@@ -861,6 +884,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             if (!(idx < cur.length && lmSameStoredVal(cur[idx], next))) {
               markEdgeDirtyIfRefs(id, idx < cur.length ? cur[idx] : undefined, next);
               cur[idx] = next;
+              const mv = matArrVals(id);
+              if (mv) mv[idx] = materializeStoredVal(next);
             }
           } catch (e) {
             throw enrichWriteError(e, prop, id);
@@ -880,7 +905,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case '$unwrapped':
             return liveHeapArr(arr);
           case 'toString':
-            return () => `[${vals().map(deserialize).map((x) => x.toString())}]`;
+            return () => `[${valsRead().map(deserialize).map((x) => x.toString())}]`;
 
           // override array methods
           case 'at': {
@@ -888,7 +913,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             // $values view inside a change callback) mishandles negative at() indices
             // (clamps them to 0), so never delegate at() to it.
             return function (index: number) {
-              const items = vals();
+              const items = valsRead();
               let i = Math.trunc(Number(index) || 0);
               if (i < 0) i += items.length;
               if (i < 0 || i >= items.length) return undefined;
@@ -901,13 +926,15 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
                 const v = serializerFor(id)(arg);
                 if (isRef(v)) markEdgeDirty(id);
                 vals().push(v);
+                matArrVals(id)?.push(materializeStoredVal(v));
               }
-              return vals().length;
+              return valsRead().length;
             };
           }
           case 'pop': {
             return function () {
               const popped = vals().pop();
+              matArrVals(id)?.pop();
               markEdgeDirtyIfRefs(id, popped);
               return deserialize(popped);
             };
@@ -918,55 +945,57 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
                 const v = serializerFor(id)(arg);
                 if (isRef(v)) markEdgeDirty(id);
                 vals().unshift(v);
+                matArrVals(id)?.unshift(materializeStoredVal(v));
               }
-              return vals().length;
+              return valsRead().length;
             };
           }
           case 'shift': {
             return function () {
               const shifted = vals().shift();
+              matArrVals(id)?.shift();
               markEdgeDirtyIfRefs(id, shifted);
               return deserialize(shifted);
             };
           }
           case 'findIndex': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return vals().map(deserialize).findIndex(predicate, thisArg);
+              return valsRead().map(deserialize).findIndex(predicate, thisArg);
             };
           }
           case 'find': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return vals().map(deserialize).find(predicate, thisArg);
+              return valsRead().map(deserialize).find(predicate, thisArg);
             };
           }
           case 'some': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return vals().map(deserialize).some(predicate, thisArg);
+              return valsRead().map(deserialize).some(predicate, thisArg);
             };
           }
           case 'every': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return vals().map(deserialize).every(predicate, thisArg);
+              return valsRead().map(deserialize).every(predicate, thisArg);
             };
           }
           case 'filter': {
             return function (predicate: (value: any, index: number) => boolean, thisArg?: any) {
-              return $arr(vals().map(deserialize).filter(predicate, thisArg));
+              return $arr(valsRead().map(deserialize).filter(predicate, thisArg));
             };
           }
           case 'includes': {
             return function (searchElement: any, fromIndex?: number) {
-              return vals().map(deserialize).includes(searchElement, fromIndex);
+              return valsRead().map(deserialize).includes(searchElement, fromIndex);
             };
           }
           case 'indexOf': {
             return function (searchElement: any, fromIndex?: number) {
-              return vals().map(deserialize).indexOf(searchElement, fromIndex);
+              return valsRead().map(deserialize).indexOf(searchElement, fromIndex);
             };
           }
           case 'forEach': {
             return function (callbackFn: (value: any, index: number) => void, thisArg?: any) {
-              vals().map(deserialize).forEach(callbackFn, thisArg);
+              valsRead().map(deserialize).forEach(callbackFn, thisArg);
             };
           }
           case 'reduce': {
@@ -974,7 +1003,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
               callbackFn: (accumulator: any, value: any, index: number) => any,
               initialValue?: any,
             ) {
-              const items = vals().map(deserialize);
+              const items = valsRead().map(deserialize);
               if (arguments.length >= 2) {
                 return items.reduce(callbackFn, initialValue);
               }
@@ -983,18 +1012,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'map': {
             return function (callbackFn: (value: any) => any, thisArg?: any) {
-              return $arr(vals().map(deserialize).map(callbackFn, thisArg));
+              return $arr(valsRead().map(deserialize).map(callbackFn, thisArg));
             };
           }
           case 'slice': {
             return function (startIdx: number, endIdx?: number) {
-              return $arr(vals().slice(startIdx, endIdx).map(deserialize));
+              return $arr(valsRead().slice(startIdx, endIdx).map(deserialize));
             };
           }
           case 'splice': {
             return function (startIdx: number, deleteCount = 0, ...args: any[]) {
               const inserted = args.map(serializerFor(id));
               const removed = vals().splice(startIdx, deleteCount, ...inserted);
+              matArrVals(id)?.splice(startIdx, deleteCount, ...inserted.map(materializeStoredVal));
               if (removed.some(isRef) || inserted.some(isRef)) markEdgeDirty(id);
               return $arr(removed.map(deserialize));
             };
@@ -1003,7 +1033,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             return function (...args: any[]) {
               // Match JS concat semantics: array arguments (LM or plain) contribute
               // their elements; everything else is appended as a single element.
-              const out: any[] = vals().map(deserialize);
+              const out: any[] = valsRead().map(deserialize);
               for (const arg of args) {
                 if (unwrapLmArr(arg) || Array.isArray(arg)) out.push(...(arg as any[]));
                 else out.push(arg);
@@ -1013,30 +1043,33 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'join': {
             return function (separator?: string) {
-              return vals().map(deserialize).join(separator);
+              return valsRead().map(deserialize).join(separator);
             };
           }
           case 'sort': {
             return function (compareFn?: (a: any, b: any) => number) {
               // Rearranges the same elements: the edge SET is unchanged, never dirty.
-              const sorted = vals().map(deserialize).sort(compareFn);
-              vals().splice(0, vals().length, ...sorted.map(serializerFor(id)));
+              const sorted = valsRead().map(deserialize).sort(compareFn);
+              const serialized = sorted.map(serializerFor(id));
+              vals().splice(0, vals().length, ...serialized);
+              const mv = matArrVals(id);
+              if (mv) mv.splice(0, mv.length, ...serialized.map(materializeStoredVal));
               return p;
             };
           }
           case 'toReversed': {
             return function () {
-              return $arr(vals().map(deserialize).toReversed());
+              return $arr(valsRead().map(deserialize).toReversed());
             };
           }
           case 'toSorted': {
             return function (compareFn?: (a: any, b: any) => number) {
-              return $arr(vals().map(deserialize).toSorted(compareFn));
+              return $arr(valsRead().map(deserialize).toSorted(compareFn));
             };
           }
           case 'toSpliced': {
             return function (start: number, deleteCount?: number, ...items: any[]) {
-              const copy = vals().map(deserialize);
+              const copy = valsRead().map(deserialize);
               if (arguments.length === 1) return $arr(copy.toSpliced(start));
               if (arguments.length === 2) return $arr(copy.toSpliced(start, deleteCount as number));
               return $arr(copy.toSpliced(start, deleteCount as number, ...items));
@@ -1044,7 +1077,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           }
           case 'with': {
             return function (index: number, value: any) {
-              return $arr(vals().map(deserialize).with(index, value));
+              return $arr(valsRead().map(deserialize).with(index, value));
             };
           }
           case Symbol.iterator: {
@@ -1055,10 +1088,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
                   return this;
                 },
                 next() {
-                  if (i >= vals().length) {
+                  const items = valsRead();
+                  if (i >= items.length) {
                     return { done: true, value: undefined };
                   }
-                  return { done: false, value: deserialize(vals()[i++]) };
+                  return { done: false, value: deserialize(items[i++]) };
                 },
               };
             };
@@ -1066,11 +1100,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         }
 
         if (prop === 'length') {
-          return vals().length;
+          return valsRead().length;
         }
 
         if (isArrayIndexKey(prop)) {
-          return deserialize(vals()[prop as any]);
+          return deserialize(valsRead()[prop as any]);
         }
 
         if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
@@ -1085,7 +1119,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         unsupportedArrayAccess('read', prop);
       },
       ownKeys() {
-        const keys: Array<string | symbol> = lmArrayIndexKeys(liveHeapArr(arr));
+        const keys: Array<string | symbol> = lmArrayIndexKeys(liveHeapArrRead(arr));
         keys.push('length');
         return keys;
       },
@@ -1096,16 +1130,17 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (isArrayIndexKey(prop)) {
           if (prop === 'length') {
             return {
-              value: vals().length,
+              value: valsRead().length,
               writable: true,
               enumerable: false,
               configurable: false,
             };
           }
           const idx = typeof prop === 'string' ? Number(prop) : prop;
-          if (typeof idx === 'number' && idx >= 0 && idx < vals().length) {
+          const items = valsRead();
+          if (typeof idx === 'number' && idx >= 0 && idx < items.length) {
             return {
-              value: deserialize(vals()[idx]),
+              value: deserialize(items[idx]),
               writable: true,
               enumerable: true,
               configurable: true,
