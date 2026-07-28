@@ -332,7 +332,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
   Lively.showWorldMenuAt(pt(130, 40));
 
-//  testTransforms();
+  testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
   // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug)...
