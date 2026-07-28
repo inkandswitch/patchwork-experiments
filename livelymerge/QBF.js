@@ -455,11 +455,9 @@ class QBFMorph extends Morph {
     let box = this.addMorph(new QBFTextMorph(r, '0'));
     let fontSize = fontSizeIfAny != null ? fontSizeIfAny : 15;
     qbfStyleText(box, { fontSize: fontSize, noBreak: true, center: fontSize > 20 });
-    if (fontSize > 20) {
-      // Match original centered large digit under the "multiplier" caption.
-      box.shape.verticallyCenterSingleLine = true;
-      box.shape.verticalNudge = 0;
-    }
+    // Tall readouts keep lineHeight ≈ box height so setText doesn't shrink them.
+    // verticallyCenterSingleLine would then place the glyph at the top (it centers the
+    // line slot, not the font). Leave it off and let qbfStyleText's hang do the job.
     return box;
   }
   addToOutbox(letter) {
@@ -1017,7 +1015,10 @@ to LivelyMerge.`,
      * If the player has no name yet, ask first and retry.
      */
     if (!this.playerName) {
-      this.doChoosePlayerName(this.postScoresToStore);
+      let game = this;
+      this.doChoosePlayerName(function () {
+        game.postScoresToStore();
+      });
       return;
     }
     qbfPostLevelScore(this.playerName, this.level.caption, {
@@ -1401,6 +1402,8 @@ function openQBF(topLeftIfAny) {
    * beside it. Answers the game panel.
    */
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(40, 40);
+  // Scores first so the game panel is added last and ends up frontmost.
+  openQBFScores(tl.subPt(pt(100, -100)));
   let game = new QBFMorph();
   let ext = game.getBounds().extent;
   let panel = new PanelMorph(
@@ -1412,7 +1415,6 @@ function openQBF(topLeftIfAny) {
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
   game.startTicking();
-  openQBFScores(pt(tl.x + ext.x + 16, tl.y));
   game.focusKeyboard();
   return panel;
 }
@@ -1427,7 +1429,7 @@ function runQBF() {
    * High scores, sounds, and the word list ship in this file.
    */
   if (!$qbfWordList) qbfLoadWordListFromUrl();
-  return openQBF();
+  return openQBF(pt(40, 40).addPt(pt(100, 0)));
 }
 
 //  QBFScores -- high-score viewer and pluggable score store for Quick Brown Fox
@@ -1841,6 +1843,10 @@ class QBFScoresMorph extends Morph {
       borderWidth: 1,
       borderColor: Color.gray,
       lineHeight: 14,
+      // Must stay small: the default hang centers a single line in the tall box and
+      // pushes the whole table out of view.
+      hang: 4,
+      insetX: 6,
     });
     // Allow selecting / copying the table; keep it non-editable.
     this.scoresText.shape.disableSelectionRendering = false;
@@ -1891,6 +1897,7 @@ class QBFScoresMorph extends Morph {
     let msg = 'Sorry, scores are not available.';
     if (errIfAny) msg = msg + '\n' + errIfAny;
     this.scoresText.setText(msg);
+    this.restoreScoresTextHeight();
   }
   showScoreEntries(entries) {
     let lineItems = [];
@@ -1960,9 +1967,28 @@ class QBFScoresMorph extends Morph {
           ['(no scores yet)', '', '', '', ''],
         ]) + footer,
       );
-      return;
+    } else {
+      this.scoresText.setText(qbfPrintScoreTable(grid) + footer);
     }
-    this.scoresText.setText(qbfPrintScoreTable(grid) + footer);
+    // setText shrinks the text box to the composed lines; restore the pane height
+    // so the white scores area stays the intended size.
+    this.restoreScoresTextHeight();
+  }
+  restoreScoresTextHeight() {
+    if (!this.scoresText) return;
+    let st = this.scoresText;
+    let b = st.getBounds();
+    let h = st.qbfBoxHeight != null ? st.qbfBoxHeight : Math.max(b.height(), 40);
+    let w = b.width();
+    // Avoid TextBox.setBounds (it shrinks to composed text). Keep the white pane tall.
+    st.transform.translation = pt(b.topLeft.x, b.topLeft.y);
+    st.shape.topLeft = pt(0, 0);
+    st.shape.extent = pt(w, h);
+    st.shape.hang = 4;
+    st.shape.lineHeight = 14;
+    st.shape.compose();
+    st.shape.extent = pt(w, h);
+    st.bounds = rect(b.topLeft.x, b.topLeft.y, w, h);
   }
   remove() {
     let store = qbfScoresStore();
@@ -1975,7 +2001,20 @@ class QBFScoresMorph extends Morph {
     Morph.prototype.setBounds.call(this, newBounds);
     if (this.scoresText) {
       let b = this.getBounds();
-      this.scoresText.setBounds(rect(12, 40, Math.max(80, b.width() - 24), Math.max(40, b.height() - 52)));
+      this.scoresText.qbfBoxHeight = Math.max(40, b.height() - 52);
+      this.scoresText.transform.translation = pt(12, 40);
+      this.scoresText.shape.topLeft = pt(0, 0);
+      this.scoresText.shape.extent = pt(Math.max(80, b.width() - 24), this.scoresText.qbfBoxHeight);
+      this.scoresText.shape.hang = 4;
+      this.scoresText.shape.lineHeight = 14;
+      this.scoresText.shape.compose();
+      this.scoresText.shape.extent = pt(Math.max(80, b.width() - 24), this.scoresText.qbfBoxHeight);
+      this.scoresText.bounds = rect(
+        12,
+        40,
+        Math.max(80, b.width() - 24),
+        this.scoresText.qbfBoxHeight,
+      );
       if (this.updateButton) {
         this.updateButton.setBounds(rect(b.width() - 100, 8, 80, 24));
       }
@@ -2057,7 +2096,15 @@ function qbfPromptPlayerName(initialName, onDone) {
   field.shape.boxColor = Color.white;
   field.shape.setBorderWidth(1);
   field.shape.setBorderColor(Color.gray);
+  field.shape.setNoBreak(true);
   field.shape.compose();
+  let accept = function () {
+    let name = field.shape.string;
+    if (name != null) name = String(name).trim();
+    if (!name) name = 'anonymous';
+    panel.remove();
+    if (onDone) onDone(name);
+  };
   let ok = new QBFButtonMorph(
     rect(inner.center().x - 40, inner.bottom() - 34, 80, 26),
     'OK',
@@ -2066,11 +2113,17 @@ function qbfPromptPlayerName(initialName, onDone) {
   panel.addMorph(ok);
   panel.buttonFired = function (actionName) {
     if (actionName !== 'ok') return;
-    let name = field.shape.string;
-    if (name != null) name = String(name).trim();
-    if (!name) name = 'anonymous';
-    panel.remove();
-    if (onDone) onDone(name);
+    accept();
+  };
+  // Enter / Return confirms the name (default TextMorph would insert a newline).
+  field.onKeyDown = function (evt) {
+    if (evt.key === 'Enter' || evt.keyCode === 13) {
+      accept();
+      if (evt.preventDefault) evt.preventDefault();
+      if (evt.stopPropagation) evt.stopPropagation();
+      return true;
+    }
+    return TextMorph.prototype.onKeyDown.call(this, evt);
   };
   panel.layoutChrome();
   let world = panel.world && panel.world();

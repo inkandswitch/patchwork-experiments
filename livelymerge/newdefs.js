@@ -301,14 +301,12 @@ function populateLively() {
   // populateLively()
   initLively(); // build a simple world with a single rectangle morph
   Lively.box = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
-/*
   Lively.oval = Lively.addMorph(new Morph(null, new Ellipse(pt(60, 75), pt(30, 15))));
   Lively.oval.setStyles(Color.green.lighter(), 2, Color.black);
   Lively.star = Lively.addMorph(new Morph(null, new Pen().star(10, 30, Color.black)));
   Lively.star.setColor(Color.yellow);
   let d = pt(30, 100).subPt(Lively.star.getBounds().topLeft);
   Lively.star.moveBy(d);
-*/
   let welcomeRect = rect(25, 350, 400, 220);
   let boxB = Lively.box.getBounds();
   let lineY = welcomeRect.topLeft.y - 20;
@@ -333,8 +331,8 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   );
 
   Lively.showWorldMenuAt(pt(130, 40));
-/*
-  testTransforms();
+
+//  testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
   // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug)...
@@ -362,9 +360,9 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
   setTimeout(() => {
     Lively.spiral.startStepping('animatedSpiral', 
-      { goDist: 2, turnAngle: 60, nSteps: 8 }, 50); // was 26
+      { goDist: 2, turnAngle: 60, nSteps: 14 }, 50); // was 26
   }, 2000);
-*/
+
 }
 
 // comment this out if you want to run in pyonpyon
@@ -1277,10 +1275,10 @@ class Pen {
     let morph;
     if (bugImage && bugImage.instanceOf && bugImage.instanceOf(EmojiMorph)) {
       morph = new EmojiMorph(bugImage._emojiName, bugImage._emojiSize);
-      morph.transform.scale = pt(0.5, 0.5);
+      //morph.transform.scale = pt(0.5, 0.5);
     } else {
       morph = new EmojiMorph(emoji || 'LADYBUG', 32);
-      morph.transform.scale = pt(0.5, 0.5);
+      //morph.transform.scale = pt(0.5, 0.5);
     }
     morph.moveTo(this.location);
     morph.setHeading(this.heading);
