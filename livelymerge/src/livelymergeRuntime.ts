@@ -150,6 +150,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (!ids) {
       persistentReachable = null;
       matCache.clear();
+      heapRootsEnsured = false;
       return;
     }
     for (const id of ids) {
@@ -185,6 +186,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   // noteExternalChanges, and dropped wholesale when a change aborts (the copy may
   // reflect rolled-back draft state).
   const matCache = new Map<string, Obj | Arr | Fun>();
+
+  // Heap roots are immortal once created, so ensureHeapRoots (a few dozen doc probes)
+  // runs on the first change of a session and is skipped afterwards. Reset when its
+  // work may have been rolled back (aborted change) or when an external change of
+  // unknown shape arrives (see noteExternalChanges).
+  let heapRootsEnsured = false;
 
   function invalidateMat(id: string): void {
     matCache.delete(id);
@@ -275,7 +282,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function ensureObjectPrototype(): void {
-    ($Object as { prototype: Proxy }).prototype = deserialize(doc.objectTable['object-prototype']);
+    ($Object as { prototype: Proxy }).prototype = deserialize(
+      lookupHeapEntryRead('object-prototype'),
+    );
   }
 
   function change<T>(fn: () => T): T {
@@ -290,8 +299,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     try {
       docHandle.change((_doc) => {
         doc = _doc;
-        ensureHeapRoots();
-        $global = (globalThis as any).$global = deserialize(doc.objectTable['global']);
+        if (!heapRootsEnsured) {
+          ensureHeapRoots();
+          heapRootsEnsured = true;
+        }
+        $global = (globalThis as any).$global = deserialize(lookupHeapEntryRead('global'));
         if (!$global) {
           throw new Error('Failed to initialize $global from document');
         }
@@ -314,9 +326,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       // was rolled back, so the shadow entries must survive and the reachable set
       // must be rebuilt.
       flushPendingGcState(committed);
-      // Materialized copies made during an aborted change may reflect rolled-back
-      // draft state; drop them all.
-      if (!committed) matCache.clear();
+      // An aborted change rolls the document back: materialized copies made during
+      // it may reflect discarded draft state, and roots it created are gone.
+      if (!committed) {
+        matCache.clear();
+        heapRootsEnsured = false;
+      }
     }
     if (exception) {
       console.error(exception);
@@ -1544,7 +1559,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       }
       reachable.add(id);
 
-      let val = shadowTable[id];
+      let val: Obj | Arr | Fun | undefined = shadowTable[id];
       if (val) {
         // Persistently reachable, so it graduates from the shadow document to the
         // Automerge document (after validation, below). objectId is preserved; the
@@ -1556,7 +1571,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           for (const t of cached) visitPersistent(t, `entry ${id}`);
           return;
         }
-        val = doc.objectTable[id];
+        val = materializedEntry(id);
         if (!val) {
           // The entry is in neither store, but a live proxy may still carry it
           // (JS-side references are invisible to this GC, so the entry may have been
@@ -1606,7 +1621,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       let edgesChanged = false;
       for (const id of edgeDirtyIds) {
         if (Object.hasOwn(shadowTable, id)) continue;
-        const entry = doc.objectTable[id];
+        // The write that dirtied the entry also updated its materialized copy, so
+        // the refreshed edge list can be read at plain-JS speed.
+        const entry = materializedEntry(id);
         if (entry === undefined) {
           if (edgeCache.delete(id)) edgesChanged = true;
           continue;
@@ -1693,7 +1710,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         continue;
       }
       ephemeralLive.add(id);
-      const val = shadowTable[id] ?? doc.objectTable[id];
+      const val = lookupHeapEntryRead(id);
       if (!val) {
         // Dangling ephemeral reference (e.g. the referent was collected by another
         // replica, or the row outlived its target). Reads yield undefined.
@@ -1717,9 +1734,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     }
     // Ephemeral-property rows survive as long as their owner exists anywhere:
     // in the Automerge document (persistent objects are never swept, so membership is
-    // the liveness test) or still in the shadow document.
+    // the liveness test) or still in the shadow document. Check the plain-JS sets
+    // first — reachable owners are doc-resident by construction (promotions are
+    // already installed) — so the per-row doc probe only runs for the rare row on an
+    // unreachable-but-immortal doc object.
     for (const id of [...ephemeralProps.keys()]) {
-      if (!doc.objectTable[id] && !ephemeralLive.has(id)) {
+      if (!ephemeralLive.has(id) && !reachable.has(id) && !doc.objectTable[id]) {
         ephemeralProps.delete(id);
       }
     }

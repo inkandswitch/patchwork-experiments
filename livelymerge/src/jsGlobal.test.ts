@@ -27,6 +27,9 @@ function installTestJsGlobal(rt: LivelymergeRuntime) {
     };
     (doc.objectTable.global as Obj)['@testBox'] = { $type: 'ref', $id: 'test-box' };
   });
+  // Raw doc writes bypass the runtime's write barrier (and its materialized read
+  // cache) — same as a remote replica's writes, so report them the same way.
+  rt.noteExternalChanges(['test-box', 'global']);
 }
 
 describe('jsGlobal proxies', () => {
