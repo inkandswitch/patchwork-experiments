@@ -3092,6 +3092,22 @@ try {
   isaHand() {
     return false;
   }
+  isInWorld() {
+    /** True while this morph is attached to the world, including riding in a hand.
+     * remove()/removeMorph leave the owner back-pointer set (see remove), so walk
+     * the chain checking real membership in each owner's submorph/hand lists. */
+    let m = this;
+    while (m.owner != null) {
+      let o = m.owner;
+      let attached =
+        (o.submorphs != null && o.submorphs.includes(m)) ||
+        (o.$submorphs != null && o.$submorphs.includes(m)) ||
+        (o.hands != null && o.hands.includes(m));
+      if (!attached) return false;
+      m = o;
+    }
+    return m.className === 'WorldMorph';
+  }
   isStepping(methodName) {
     return this.world().isSteppingMorph(this, methodName);
   }
@@ -7909,6 +7925,13 @@ class WorldMorph extends Morph {
     due.forEach((spec) => {
       // If spec was removed during earlier step processing, skip it.
       if (!this.activeStepList().includes(spec)) return;
+      // A morph that has left the world must stop stepping, no matter how it was
+      // removed -- remove(), a bare removeMorph, or removal of an enclosing
+      // container (only the first of which can clean up its own schedule).
+      if (spec.stepMorph.isInWorld && !spec.stepMorph.isInWorld()) {
+        this.stopSteppingMorph(spec.stepMorph);
+        return;
+      }
       // Advance from the scheduled time, not from `now`: re-anchoring on the frame
       // time stretches every period up to the next frame boundary (a 50ms step on
       // 33ms frames would fire every ~67ms). A late frame owes missed steps; run
