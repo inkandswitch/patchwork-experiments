@@ -116,15 +116,18 @@ true`);
 
   it('penalizes tiles that fall off the end, and tumbles them onto the pile', () => {
     const { rt, ticksUntil } = makeGame();
-    ticksUntil(`qbfGame.nMissed > 0`);
+    ticksUntil(`qbfGame.fallingLetters.length > 0`);
+    // Miss tally waits for the thump on landing — not the start of the fall.
+    expect(rt.eval(`qbfGame.pointsMissed`)).toBe(0);
+    expect(rt.eval(`Number(qbfGame.missedPointsBox.shape.string)`)).toBe(0);
+    expect(rt.eval(`qbfGame.fallingLetters.length`)).toBeGreaterThan(0);
+    // The tile lands on the pile ledge and stops there; then the miss is scored.
+    ticksUntil(`qbfGame.fallingLetters.length == 0`);
     expect(rt.eval(`qbfGame.pointsMissed`)).toBeGreaterThan(0);
     expect(rt.eval(`qbfGame.totalScore`)).toBeLessThan(0);
     expect(rt.eval(`Number(qbfGame.missedPointsBox.shape.string)`)).toBe(
       rt.eval(`-qbfGame.pointsMissed`),
     );
-    expect(rt.eval(`qbfGame.fallingLetters.length`)).toBeGreaterThan(0);
-    // The tile lands on the pile ledge and stops there.
-    ticksUntil(`qbfGame.fallingLetters.length == 0`);
     const landY = rt.eval(`qbfGame.pile.getBounds().topLeft.y`) as number;
     const landedY = rt.eval(
       `qbfGame.submorphs.filter((m) => m.loc == 'falling').map((m) => m.boundsInOwnerAfterTransform().bottom()).pop()`,

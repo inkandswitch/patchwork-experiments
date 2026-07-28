@@ -536,6 +536,7 @@ class QBFMorph extends Morph {
     let switchNow = () => {
       this.level = level;
       this.setup();
+      this.focusKeyboard();
     };
     if (this.gameOver || !panel || !panel.promptConfirm) {
       switchNow();
@@ -551,6 +552,7 @@ class QBFMorph extends Morph {
           switchNow();
         } else {
           this.doPause(false);
+          this.focusKeyboard();
         }
       },
     );
@@ -712,6 +714,7 @@ class QBFMorph extends Morph {
     let panel = this.panelMorph();
     if (this.gameOver || !panel || !panel.promptConfirm) {
       this.setup();
+      this.focusKeyboard();
       return;
     }
     this.doPause(true);
@@ -722,8 +725,10 @@ class QBFMorph extends Morph {
       (ok) => {
         if (ok) {
           this.setup();
+          this.focusKeyboard();
         } else {
           this.doPause(false);
+          this.focusKeyboard();
         }
       },
     );
@@ -870,12 +875,8 @@ to LivelyMerge.`,
       letter.remove();
       return;
     }
-    this.nMissed++;
-    this.pointsMissed += this.letterValue(letter.shape.string);
-    this.missedPointsBox.setText(String(-this.pointsMissed));
-    this.totalScore -= this.letterValue(letter.shape.string);
-    this.totalScoreBox.setText(String(this.totalScore));
-    this.showMultiplier();
+    // Score the miss when the tile lands (with the thump), not when it leaves the rack.
+    letter.pendingMissValue = this.letterValue(letter.shape.string);
     // Now set the tile tumbling onto the pile. The scream waits until the first
     // rotateBy in letterFallToPile so it starts with the tumble, not the drop-off.
     // Arm the sound in ephemeral per-replica state (not on the letter) so sync
@@ -904,6 +905,19 @@ to LivelyMerge.`,
     deleteFromArray(this.fallingLetters, letter);
     letter.moveBy(pt(0, landY - foot.bottom()));
     qbfSound('wordReject');
+    this.registerMissedLetter(letter);
+  }
+  registerMissedLetter(letter) {
+    /** Apply the miss penalty once the falling tile has landed on the pile. */
+    let value = letter.pendingMissValue;
+    if (value == null) value = this.letterValue(letter.shape.string);
+    letter.pendingMissValue = null;
+    this.nMissed++;
+    this.pointsMissed += value;
+    this.missedPointsBox.setText(String(-this.pointsMissed));
+    this.totalScore -= value;
+    this.totalScoreBox.setText(String(this.totalScore));
+    this.showMultiplier();
   }
   lettersSlideOnRack() {
     // Leftward motion propagates along the rack wherever tiles touch.
@@ -1102,6 +1116,7 @@ to LivelyMerge.`,
     this.postLevelStats();
     this.resizeOwningPanel();
     this.startTicking();
+    this.focusKeyboard();
   }
   setupBoxes(lay) {
     // Copy — TextBox construction mutates the extent Point it is given, and must
