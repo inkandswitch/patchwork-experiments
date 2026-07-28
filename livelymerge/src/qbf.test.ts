@@ -22,6 +22,10 @@ describe('QBF', () => {
     expect(rt.eval(`qbfGame.getBounds().topLeft.y`)).toBe(rt.eval(`qbfPanel.titleBarHeight`));
     expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
     expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
+    expect(rt.eval(`String(qbfScores.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
+    expect(rt.eval(`!!qbfScores.quickButton && !!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(
+      true,
+    );
   }, 60_000);
 
   it('carries tiles in on the belt and drops them onto the rack', () => {

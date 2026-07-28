@@ -711,6 +711,8 @@ class QBFMorph extends Morph {
     this.focusKeyboard();
   }
   doRestart() {
+    // Tournament games (launched from the game server) cannot be restarted.
+    if (this.tournamentGameNumber != null) return;
     let panel = this.panelMorph();
     if (this.gameOver || !panel || !panel.promptConfirm) {
       this.setup();
@@ -1041,6 +1043,17 @@ to LivelyMerge.`,
       bestWordScore: this.level.bestWordScore,
       time: new Date().toISOString(),
     });
+    if (this.tournamentGameNumber != null) {
+      qbfPostRecentGameResult({
+        gameNumber: this.tournamentGameNumber,
+        level: this.level.caption,
+        player: this.playerName,
+        score: this.totalScore,
+        bestWord: this.bestWord,
+        bestWordScore: this.bestWordScore,
+        time: new Date().toISOString(),
+      });
+    }
     let viewer = findQBFScoresViewer();
     if (viewer) viewer.refresh();
   }
@@ -1103,7 +1116,9 @@ to LivelyMerge.`,
     this.setBounds(this.getBounds().topLeft.extent(lay.boardExtent));
     this.setStyles(Color.orange.darker(), 1, Color.black);
     this.buildBoard(lay);
-    this.letterQueue = this.shuffledLetters(this.letterSet(this.numLetters)).concat(['!']);
+    if (!this.applyTournamentQueue()) {
+      this.letterQueue = this.shuffledLetters(this.letterSet(this.numLetters)).concat(['!']);
+    }
     // First tile onto the belt, second into the hopper behind it.
     let letter = this.nextTile();
     letter.loc = 'belt';
@@ -1117,6 +1132,28 @@ to LivelyMerge.`,
     this.resizeOwningPanel();
     this.startTicking();
     this.focusKeyboard();
+  }
+  applyTournamentQueue() {
+    /**
+     * If this board was launched from the game server, reuse that minute's seeded
+     * tile list so every player of Game #N gets the same letters.
+     */
+    if (this.tournamentLetterQueue && this.tournamentLetterQueue.length > 0) {
+      this.letterQueue = this.tournamentLetterQueue.slice();
+      return true;
+    }
+    return false;
+  }
+  updateRestartButton() {
+    /** Gray out restart for tournament games; restore for casual play. */
+    if (!this.restartButton) return;
+    let tourney = this.tournamentGameNumber != null;
+    let s = this.restartButton.shape;
+    s.boxColor = tourney ? Color.veryLightGray : Color.lightGray;
+    s.fill = s.boxColor;
+    s.textColor = tourney ? Color.gray : Color.black;
+    s.setBorderColor(tourney ? Color.lightGray : Color.gray);
+    s.compose();
   }
   setupBoxes(lay) {
     // Copy — TextBox construction mutates the extent Point it is given, and must
@@ -1190,6 +1227,7 @@ to LivelyMerge.`,
       'level',
     );
     this.restartButton = this.addButton(g.translatedBy(pt(0, 30)), 'restart', 'restart');
+    this.updateRestartButton();
     this.infoButton = this.addButton(
       g.translatedBy(pt(lay.hSpacing, 30)),
       'how to play',
@@ -1257,17 +1295,19 @@ to LivelyMerge.`,
     if (mult < 0.1) str = '-';
     this.multiplierBox.setText(str);
   }
-  shuffle(inp) {
+  shuffle(inp, randIfAny) {
+    // Optional rand() in [0,1) for seeded tournament tile queues.
+    let rand = randIfAny || Math.random;
     let shuffled = inp.slice(0);
     for (let i = 0; i < shuffled.length; i++) {
-      let j = Math.floor(Math.random() * shuffled.length);
+      let j = Math.floor(rand() * shuffled.length);
       let t = shuffled[i];
       shuffled[i] = shuffled[j];
       shuffled[j] = t;
     }
     return shuffled;
   }
-  shuffledLetters(letters) {
+  shuffledLetters(letters, randIfAny) {
     /**
      * Shuffle, but keep the vowel/consonant ratio constant along the way, which avoids
      * frustrating runs of all vowels or all consonants. Makes a much better game!
@@ -1281,8 +1321,8 @@ to LivelyMerge.`,
         consonants.push(each);
       }
     });
-    vowels = this.shuffle(vowels);
-    consonants = this.shuffle(consonants);
+    vowels = this.shuffle(vowels, randIfAny);
+    consonants = this.shuffle(consonants, randIfAny);
     let ratio = vowels.length / (vowels.length + consonants.length);
     let mixed = [];
     while (vowels.length > 0 && consonants.length > 0) {
@@ -1447,10 +1487,214 @@ function runQBF() {
   return openQBF(pt(40, 40).addPt(pt(100, 0)));
 }
 
+// ---------------------------------------------------------------------------
+// Game-server clock and seeded tile queues
+// ---------------------------------------------------------------------------
+// Game numbers are minutes since local midnight (0..1439). Everyone who hits a
+// speed button in the same minute gets the same Game # and the same tile list.
+
+function qbfCurrentGameNumber() {
+  let d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
+function qbfSecondsLeftInMinute() {
+  let d = new Date();
+  return Math.max(0, 60 - d.getSeconds() - d.getMilliseconds() / 1000);
+}
+function qbfSpeedRank(caption) {
+  // Fastest first when sorting recent results.
+  if (caption === 'super quick') return 0;
+  if (caption === 'quick') return 1;
+  if (caption === 'not so quick') return 2;
+  return 9;
+}
+function qbfMulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function qbfLetterBag(nLetters) {
+  /** Same bag as QBFMorph.letterSet, as a plain function for the game server. */
+  let probs = QBFMorph.prototype.letterFrequencies;
+  let bag = [];
+  let keys = Object.keys(probs).sort();
+  for (let k = 0; k < keys.length; k++) {
+    let letr = keys[k];
+    let n = Math.max(1, Math.floor((probs[letr] / 100) * nLetters));
+    if (letr === 'U') n = 4;
+    for (let i = 0; i < n; i++) bag.push(letr);
+  }
+  return bag;
+}
+function qbfSeededShuffle(list, rand) {
+  let shuffled = list.slice(0);
+  for (let i = 0; i < shuffled.length; i++) {
+    let j = Math.floor(rand() * shuffled.length);
+    let t = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = t;
+  }
+  return shuffled;
+}
+function qbfSeededShuffledLetters(letterList, rand) {
+  let vowels = [];
+  let consonants = [];
+  for (let i = 0; i < letterList.length; i++) {
+    let ch = letterList[i];
+    if ('AEIOUaeiou'.includes(ch)) vowels.push(ch);
+    else consonants.push(ch);
+  }
+  vowels = qbfSeededShuffle(vowels, rand);
+  consonants = qbfSeededShuffle(consonants, rand);
+  let ratio = vowels.length / (vowels.length + consonants.length);
+  let mixed = [];
+  while (vowels.length > 0 && consonants.length > 0) {
+    if (vowels.length / (vowels.length + consonants.length) > ratio) mixed.push(vowels.pop());
+    else mixed.push(consonants.pop());
+  }
+  return mixed.concat(consonants, vowels);
+}
+function qbfTileQueueForGame(gameNumber) {
+  /** Letter queue (plus trailing '!') shared by everyone who joins Game #N. */
+  let rand = qbfMulberry32((gameNumber * 2654435761) >>> 0);
+  let bag = qbfLetterBag(QBFMorph.prototype.numLetters);
+  return qbfSeededShuffledLetters(bag, rand).concat(['!']);
+}
+
+function qbfRecentGamesList() {
+  if (!Lively.qbfRecentGames) Lively.qbfRecentGames = [];
+  return Lively.qbfRecentGames;
+}
+function qbfPostRecentGameResult(entry) {
+  /**
+   * Record one player's finish for a tournament game number.
+   * Groups by game # only (all speeds together). Keeps the newest ~5 game numbers.
+   */
+  if (!entry || entry.gameNumber == null) return;
+  let list = qbfRecentGamesList();
+  let game = null;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i] && list[i].gameNumber === entry.gameNumber) {
+      game = list[i];
+      break;
+    }
+  }
+  if (!game) {
+    game = { gameNumber: entry.gameNumber, results: [] };
+    list.unshift(game);
+  }
+  let results = game.results || [];
+  let found = false;
+  for (let i = 0; i < results.length; i++) {
+    if (results[i] && results[i].player === entry.player && results[i].level === entry.level) {
+      results[i] = {
+        player: entry.player,
+        level: entry.level,
+        score: entry.score,
+        bestWord: entry.bestWord,
+        bestWordScore: entry.bestWordScore,
+        time: entry.time,
+      };
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    results.push({
+      player: entry.player,
+      level: entry.level,
+      score: entry.score,
+      bestWord: entry.bestWord,
+      bestWordScore: entry.bestWordScore,
+      time: entry.time,
+    });
+  }
+  game.results = results;
+  // Newest game numbers first; drop older groups.
+  list.sort((a, b) => {
+    if (a.gameNumber < b.gameNumber) return 1;
+    if (a.gameNumber > b.gameNumber) return -1;
+    return 0;
+  });
+  while (list.length > 5) list.pop();
+  qbfScoresNotify();
+}
+
+function findQBFGame() {
+  /** The open QBFMorph in the world, if any. */
+  if (!Lively) return null;
+  let found = null;
+  Lively.eachSubmorph((m) => {
+    if (found) return;
+    if (m.className === 'QBFMorph') {
+      found = m;
+      return;
+    }
+    if (m.submorphs) {
+      m.submorphs.forEach((sub) => {
+        if (!found && sub.className === 'QBFMorph') found = sub;
+      });
+    }
+  });
+  return found;
+}
+
+function openQBFPlaying(optsIfAny) {
+  /**
+   * Open or reuse a QBF board for a tournament minute.
+   * opts: { levelCaption, gameNumber, letterQueue, topLeft }
+   */
+  let opts = optsIfAny || {};
+  if (!$qbfWordList) qbfLoadWordListFromUrl();
+  let queue = opts.letterQueue ? opts.letterQueue.slice() : null;
+  let game = findQBFGame();
+  if (game) {
+    if (opts.levelCaption) {
+      let level = (game.levels || game.freshLevels()).find((e) => e.caption === opts.levelCaption);
+      if (level) game.level = level;
+    }
+    game.tournamentGameNumber = opts.gameNumber != null ? opts.gameNumber : null;
+    game.tournamentLetterQueue = queue;
+    game.setup();
+    game.focusKeyboard();
+    let panel = game.panelMorph();
+    if (panel && panel.beTopMorph) panel.beTopMorph();
+    return panel || game;
+  }
+  let tl = opts.topLeft != null ? opts.topLeft : pt(40, 40).addPt(pt(100, 0));
+  openQBFScores(tl.subPt(pt(100, -100)));
+  game = new QBFMorph();
+  if (opts.levelCaption) {
+    game.levels = game.freshLevels();
+    let level = game.levels.find((e) => e.caption === opts.levelCaption);
+    if (level) game.level = level;
+  }
+  game.tournamentGameNumber = opts.gameNumber != null ? opts.gameNumber : null;
+  game.tournamentLetterQueue = queue;
+  game.setup();
+  let ext = game.getBounds().extent;
+  let panel = new PanelMorph(
+    rect(tl.x, tl.y, ext.x, ext.y + PanelTitleBar.prototype.HEIGHT),
+  );
+  panel.setPanelTitle('the Quick Brown Fox');
+  Lively.addEphemeralMorph(panel);
+  panel.addMorph(game);
+  game.setPaneBoundsIn(panel.paneLayoutBounds());
+  panel.layoutChrome();
+  game.startTicking();
+  game.focusKeyboard();
+  return panel;
+}
+
 //  QBFScores -- high-score viewer and pluggable score store for Quick Brown Fox
 // ---------------------------------------------------------------------------
 // Port of the original QBFScoresViewer (Lively Kernel / QBFScoresServer).
 // Included in QBF.js (no separate file to evaluate).
+// Now also the "game server": launch pane + recent games + high scores.
 //
 // Score records keep the original shape, keyed by player then by level caption:
 //   {
@@ -1819,13 +2063,18 @@ class QBFMemoryScoresStore {
   }
 }
 
-//  QBFScoresMorph
-// ----------------
-// The high-scores window body: a monospaced table plus an Update button.
+//  QBFScoresMorph  (QBF Game Server)
+// -----------------------------------
+// Three panes in one panel (same width as before, taller):
+//   top ~20%  — current Game # + launch buttons (super quick / quick / not so quick)
+//   mid ~50%  — recent tournament games (last ~5)
+//   bot ~30%  — classic high-scores table
 class QBFScoresMorph extends Morph {
   constructor() {
-    super(rect(0, 0, 520, 320));
+    super(rect(0, 0, 520, 560));
     this.setStyles(Color.orange.darker(), 1, Color.black);
+    this.$shownGameNumber = null;
+    this.$tileQueue = null;
     this.build();
     this._onScoresChanged = () => {
       this.refresh();
@@ -1833,23 +2082,107 @@ class QBFScoresMorph extends Morph {
     let store = qbfScoresStore();
     if (store.subscribe) store.subscribe(this._onScoresChanged);
     this.refresh();
+    this.syncGameClock(true);
   }
   build() {
     (this.submorphs || []).slice().forEach((m) => this.removeMorph(m));
-    let title = this.addMorph(
-      new QBFTextMorph(rect(12, 10, 400, 22), 'Quick Brown Fox High Scores'),
+    let w = this.getBounds().width();
+    let h = this.getBounds().height();
+    let pad = 10;
+    let innerW = w - 2 * pad;
+
+    // --- Top: Game # + countdown (left), speed buttons at same Y (right) ---
+    // Width sized for a typical "Game #2345" at 16px (minutes-since-midnight is ≤4 digits).
+    let labelW = 100;
+    let labelH = 22;
+    let labelY = 8;
+    this.gameNumberLabel = this.addMorph(
+      new QBFTextMorph(rect(pad, labelY, labelW, labelH), 'Game #0'),
     );
-    qbfStyleText(title, {
+    qbfStyleText(this.gameNumberLabel, {
       fontSize: 16,
       boxColor: null,
       borderWidth: 0,
       textColor: Color.white,
     });
-    this.updateButton = this.addMorph(
-      new QBFButtonMorph(rect(420, 8, 80, 24), 'Update', 'update'),
+    // Thin horizontal countdown, only as wide as the Game # text.
+    let trackY = labelY + labelH + 2;
+    let trackH = 8;
+    this.minuteTrack = this.addMorph(new QBFDecorMorph(rect(pad, trackY, labelW, trackH)));
+    this.minuteTrack.setStyles(Color.white, 1, Color.black);
+    this.minuteFill = this.minuteTrack.addMorph(new QBFDecorMorph(rect(0, 0, 1, trackH)));
+    this.minuteFill.setStyles(Color.gray.darker(), 0, null);
+    this.updateMinuteCountdown();
+    // Speed buttons share the Game # row's top Y, stacked to the right.
+    let btnH = 22;
+    let btnGap = 3;
+    let btnW = Math.floor(Math.min(200, innerW - 40) * 0.6);
+    let btnX = pad + labelW + 16;
+    let btnY = labelY;
+    this.superQuickButton = this.addMorph(
+      new QBFButtonMorph(rect(btnX, btnY, btnW, btnH), 'super quick', 'launchSuperQuick'),
     );
+    this.quickButton = this.addMorph(
+      new QBFButtonMorph(
+        rect(btnX, btnY + btnH + btnGap, btnW, btnH),
+        'quick',
+        'launchQuick',
+      ),
+    );
+    this.notSoQuickButton = this.addMorph(
+      new QBFButtonMorph(
+        rect(btnX, btnY + 2 * (btnH + btnGap), btnW, btnH),
+        'not so quick',
+        'launchNotSoQuick',
+      ),
+    );
+    let btnBottom = btnY + 3 * btnH + 2 * btnGap;
+    // Same orange strip above "Recent games" as between middle and bottom panes.
+    let paneGap = 10;
+
+    // --- Middle: recent games ---
+    let midTop = btnBottom + paneGap;
+    let lowerH = h - midTop - pad;
+    let midBlock = Math.floor(lowerH * (50 / 80));
+    let botBlock = lowerH - midBlock;
+    this.recentLabel = this.addMorph(
+      new QBFTextMorph(rect(pad, midTop, innerW, 16), 'Recent games'),
+    );
+    qbfStyleText(this.recentLabel, {
+      fontSize: 12,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
+    this.recentText = this.addMorph(
+      new QBFTextMorph(rect(pad, midTop + 18, innerW, midBlock - 28), '(no recent games yet)'),
+    );
+    qbfStyleText(this.recentText, {
+      fontSize: 11,
+      fontFamily: 'Courier, monospace',
+      boxColor: Color.white,
+      borderWidth: 1,
+      borderColor: Color.gray,
+      lineHeight: 14,
+      hang: 4,
+      insetX: 6,
+    });
+    this.recentText.shape.disableSelectionRendering = false;
+    this.recentText.qbfBoxHeight = midBlock - 28;
+
+    // --- Bottom: high scores ---
+    let botTop = midTop + midBlock;
+    this.highScoresLabel = this.addMorph(
+      new QBFTextMorph(rect(pad, botTop, innerW - 90, 16), 'High scores'),
+    );
+    qbfStyleText(this.highScoresLabel, {
+      fontSize: 12,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
     this.scoresText = this.addMorph(
-      new QBFTextMorph(rect(12, 40, 496, 260), 'Looking for scores...'),
+      new QBFTextMorph(rect(pad, botTop + 18, innerW, botBlock - 28), 'Looking for scores...'),
     );
     qbfStyleText(this.scoresText, {
       fontSize: 11,
@@ -1858,16 +2191,55 @@ class QBFScoresMorph extends Morph {
       borderWidth: 1,
       borderColor: Color.gray,
       lineHeight: 14,
-      // Must stay small: the default hang centers a single line in the tall box and
-      // pushes the whole table out of view.
       hang: 4,
       insetX: 6,
     });
-    // Allow selecting / copying the table; keep it non-editable.
     this.scoresText.shape.disableSelectionRendering = false;
+    this.scoresText.qbfBoxHeight = botBlock - 28;
   }
   buttonFired(actionName) {
-    if (actionName === 'update') this.refresh();
+    if (actionName === 'launchSuperQuick') this.launchLevel('super quick');
+    if (actionName === 'launchQuick') this.launchLevel('quick');
+    if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
+  }
+  launchLevel(caption) {
+    this.syncGameClock(true);
+    let n = this.$shownGameNumber != null ? this.$shownGameNumber : qbfCurrentGameNumber();
+    let queue = this.$tileQueue || qbfTileQueueForGame(n);
+    openQBFPlaying({
+      levelCaption: caption,
+      gameNumber: n,
+      letterQueue: queue,
+    });
+  }
+  syncGameClock(forceIfAny) {
+    /** Refresh Game # and the ephemeral tile queue when the minute rolls. */
+    let n = qbfCurrentGameNumber();
+    if (!forceIfAny && n === this.$shownGameNumber) {
+      this.updateMinuteCountdown();
+      return;
+    }
+    this.$shownGameNumber = n;
+    this.$tileQueue = qbfTileQueueForGame(n);
+    if (this.gameNumberLabel) this.gameNumberLabel.setText('Game #' + n);
+    this.updateMinuteCountdown();
+  }
+  updateMinuteCountdown() {
+    /** Thin horizontal gray fill grows left→right as the minute elapses. */
+    if (!this.minuteTrack || !this.minuteFill) return;
+    let trackH = this.minuteTrack.getBounds().height();
+    let trackW = this.minuteTrack.getBounds().width();
+    let elapsed = 1 - qbfSecondsLeftInMinute() / 60;
+    let fillW = Math.max(1, Math.round(trackW * elapsed));
+    this.minuteFill.setBounds(rect(0, 0, fillW, trackH));
+  }
+  tickGameClock() {
+    this.syncGameClock(false);
+  }
+  startGameClock() {
+    if (!this.world || !this.world()) return;
+    // ~4 Hz so the countdown slider moves smoothly.
+    this.startStepping('tickGameClock', null, 250);
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
@@ -1877,8 +2249,7 @@ class QBFScoresMorph extends Morph {
     let consumed = false;
     this.eachSubmorph((sub) => {
       if (sub.fullBounds().includesPt(localP)) {
-        // Update button uses QBFButtonMorph (fires on pointerUp via actionName).
-        if (sub.actionName === 'update' && sub.onPointerDown) {
+        if (sub.actionName && sub.onPointerDown) {
           consumed = sub.onPointerDown(localP, evt) || consumed;
         } else if (sub.onPointerDown) {
           consumed = sub.onPointerDown(localP, evt) || consumed;
@@ -1895,6 +2266,8 @@ class QBFScoresMorph extends Morph {
     return m;
   }
   refresh() {
+    this.syncGameClock(false);
+    this.refreshRecentGames();
     this.scoresText.setText('Looking for scores...');
     try {
       let store = qbfScoresStore();
@@ -1908,11 +2281,65 @@ class QBFScoresMorph extends Morph {
       this.regret(err);
     }
   }
+  refreshRecentGames() {
+    if (!this.recentText) return;
+    let list = qbfRecentGamesList();
+    if (!list || list.length === 0) {
+      this.recentText.setText(
+        '(no recent games yet)\n\nWait for a new Game #, then all players\nhit their chosen speed button.',
+      );
+      this.restoreTextHeight(this.recentText);
+      return;
+    }
+    let lines = [];
+    lines.push(
+      qbfPadRight('game', 6) +
+        qbfPadRight('player', 12) +
+        qbfPadRight('speed', 14) +
+        qbfPadLeft('score', 6) +
+        '  word',
+    );
+    for (let i = 0; i < list.length; i++) {
+      let g = list[i];
+      if (!g) continue;
+      let results = (g.results || []).slice();
+      results.sort((a, b) => {
+        let sa = a && a.score != null ? a.score : 0;
+        let sb = b && b.score != null ? b.score : 0;
+        if (sa < sb) return 1; // highest score first
+        if (sa > sb) return -1;
+        // Tie-break: faster speed first, then name.
+        let ra = qbfSpeedRank(a && a.level);
+        let rb = qbfSpeedRank(b && b.level);
+        if (ra !== rb) return ra - rb;
+        let pa = (a && a.player) || '';
+        let pb = (b && b.player) || '';
+        if (pa < pb) return -1;
+        if (pa > pb) return 1;
+        return 0;
+      });
+      for (let j = 0; j < results.length; j++) {
+        let r = results[j];
+        if (!r) continue;
+        let gameCol = j === 0 ? '#' + g.gameNumber : '';
+        lines.push(
+          qbfPadRight(gameCol, 6) +
+            qbfPadRight(r.player || '?', 12) +
+            qbfPadRight(r.level || '', 14) +
+            qbfPadLeft(String(r.score), 6) +
+            '  ' +
+            (r.bestWord || ''),
+        );
+      }
+    }
+    this.recentText.setText(lines.join('\n'));
+    this.restoreTextHeight(this.recentText);
+  }
   regret(errIfAny) {
     let msg = 'Sorry, scores are not available.';
     if (errIfAny) msg = msg + '\n' + errIfAny;
     this.scoresText.setText(msg);
-    this.restoreScoresTextHeight();
+    this.restoreTextHeight(this.scoresText);
   }
   showScoreEntries(entries) {
     let lineItems = [];
@@ -1985,17 +2412,13 @@ class QBFScoresMorph extends Morph {
     } else {
       this.scoresText.setText(qbfPrintScoreTable(grid) + footer);
     }
-    // setText shrinks the text box to the composed lines; restore the pane height
-    // so the white scores area stays the intended size.
-    this.restoreScoresTextHeight();
+    this.restoreTextHeight(this.scoresText);
   }
-  restoreScoresTextHeight() {
-    if (!this.scoresText) return;
-    let st = this.scoresText;
+  restoreTextHeight(st) {
+    if (!st) return;
     let b = st.getBounds();
     let h = st.qbfBoxHeight != null ? st.qbfBoxHeight : Math.max(b.height(), 40);
     let w = b.width();
-    // Avoid TextBox.setBounds (it shrinks to composed text). Keep the white pane tall.
     st.transform.translation = pt(b.topLeft.x, b.topLeft.y);
     st.shape.topLeft = pt(0, 0);
     st.shape.extent = pt(w, h);
@@ -2005,7 +2428,11 @@ class QBFScoresMorph extends Morph {
     st.shape.extent = pt(w, h);
     st.bounds = rect(b.topLeft.x, b.topLeft.y, w, h);
   }
+  restoreScoresTextHeight() {
+    this.restoreTextHeight(this.scoresText);
+  }
   remove() {
+    this.stopStepping('tickGameClock');
     let store = qbfScoresStore();
     if (store.unsubscribe && this._onScoresChanged) {
       store.unsubscribe(this._onScoresChanged);
@@ -2014,26 +2441,17 @@ class QBFScoresMorph extends Morph {
   }
   setPaneBoundsIn(newBounds) {
     Morph.prototype.setBounds.call(this, newBounds);
-    if (this.scoresText) {
-      let b = this.getBounds();
-      this.scoresText.qbfBoxHeight = Math.max(40, b.height() - 52);
-      this.scoresText.transform.translation = pt(12, 40);
-      this.scoresText.shape.topLeft = pt(0, 0);
-      this.scoresText.shape.extent = pt(Math.max(80, b.width() - 24), this.scoresText.qbfBoxHeight);
-      this.scoresText.shape.hang = 4;
-      this.scoresText.shape.lineHeight = 14;
-      this.scoresText.shape.compose();
-      this.scoresText.shape.extent = pt(Math.max(80, b.width() - 24), this.scoresText.qbfBoxHeight);
-      this.scoresText.bounds = rect(
-        12,
-        40,
-        Math.max(80, b.width() - 24),
-        this.scoresText.qbfBoxHeight,
-      );
-      if (this.updateButton) {
-        this.updateButton.setBounds(rect(b.width() - 100, 8, 80, 24));
-      }
+    // Rebuild layout from the new extent so the 20/50/30 split stays honest.
+    let keepGame = this.$shownGameNumber;
+    let keepQueue = this.$tileQueue;
+    this.build();
+    this.$shownGameNumber = keepGame;
+    this.$tileQueue = keepQueue;
+    if (this.gameNumberLabel && keepGame != null) {
+      this.gameNumberLabel.setText('Game #' + keepGame);
     }
+    this.refresh();
+    this.startGameClock();
   }
   static new(...args) {
     return new this(...args);
@@ -2041,11 +2459,9 @@ class QBFScoresMorph extends Morph {
 }
 
 function findQBFScoresViewer() {
-  /** The open QBFScoresMorph in the world, if any. */
+  /** The open QBFScoresMorph (game server) in the world, if any. */
   if (!Lively) return null;
   let found = null;
-  // The viewer panel is per-user UI, so it normally lives in Lively.$submorphs.
-  // eachSubmorph scans both persistent and ephemeral layers.
   Lively.eachSubmorph((m) => {
     if (found) return;
     if (m.className === 'QBFScoresMorph') {
@@ -2062,7 +2478,7 @@ function findQBFScoresViewer() {
 }
 
 function openQBFScores(topLeftIfAny) {
-  /** Put a high-scores viewer in a panel; answers the panel. */
+  /** Put the QBF game server in a panel; answers the panel. */
   let existing = findQBFScoresViewer();
   if (existing) {
     let panel = existing.panelMorph();
@@ -2071,6 +2487,7 @@ function openQBFScores(topLeftIfAny) {
       panel.beTopMorph && panel.beTopMorph();
     }
     existing.refresh();
+    existing.startGameClock();
     return panel || existing;
   }
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(560, 40);
@@ -2079,16 +2496,18 @@ function openQBFScores(topLeftIfAny) {
   let panel = new PanelMorph(
     rect(tl.x, tl.y, ext.x, ext.y + PanelTitleBar.prototype.HEIGHT),
   );
-  panel.setPanelTitle('QBFScoresViewer');
-  Lively.addEphemeralMorph(panel);
+  panel.setPanelTitle('QBF Game Server');
+  // Persistent: survives document save/load (not ephemeral UI).
+  Lively.addMorph(panel);
   panel.addMorph(viewer);
   viewer.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
+  viewer.startGameClock();
   return panel;
 }
 
 function runQBFScores() {
-  /** Open (or raise) the high-scores viewer. */
+  /** Open (or raise) the QBF game server. */
   return openQBFScores();
 }
 
