@@ -115,7 +115,6 @@ export function makeGame() {
   g.runtime = rt;
   rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8'));
   rt.eval(readFileSync(join(__dirname, '..', 'QBF.js'), 'utf8'));
-  rt.eval(readFileSync(join(__dirname, '..', 'QBFScores.js'), 'utf8'));
   rt.eval(`
 initUI();
 initLively();

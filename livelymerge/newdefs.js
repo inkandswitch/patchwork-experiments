@@ -1279,16 +1279,8 @@ class Pen {
       morph = new EmojiMorph(bugImage._emojiName, bugImage._emojiSize);
       morph.transform.scale = pt(0.5, 0.5);
     } else {
-      let size = 32;
-      let canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      let ctx = canvas.getContext('2d');
-      ctx.font = size + 'px serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(emoji || '🐞', size / 2, size / 2);
-      morph = new ImageMorph(new ImageShape(canvas));
+      morph = new EmojiMorph(emoji || 'LADYBUG', 32);
+      morph.transform.scale = pt(0.5, 0.5);
     }
     morph.moveTo(this.location);
     morph.setHeading(this.heading);
@@ -1801,16 +1793,29 @@ class PolyLine extends Shape {
 //  ImageShape
 // ------------
 // Bitmap/canvas shape with alpha tight bounds.
+// The bitmap itself is per-replica (`$image`): HTMLCanvasElement / HTMLImageElement
+// cannot live in the Automerge document. Prefer EmojiMorph for glyphs — it paints
+// with fillText and needs no bitmap at all.
+function isHtmlCanvasLike(x) {
+  // Duck-type: do NOT use `instanceof window.HTMLCanvasElement`. The LM `window`
+  // proxy returns a .bind()'d constructor, and `x instanceof boundFn` throws
+  // "Right-hand side of 'instanceof' is not an object".
+  return !!(x && typeof x.getContext === 'function' && typeof x.width === 'number');
+}
+function isHtmlImageLike(x) {
+  return !!(
+    x &&
+    typeof x === 'object' &&
+    (x.tagName === 'IMG' || (typeof x.src === 'string' && 'naturalWidth' in x))
+  );
+}
 class ImageShape extends Shape {
   constructor(imageOrSize) {
     let image = null;
     let width = 32;
     let height = 32;
     if (typeof imageOrSize === 'object' && imageOrSize !== null) {
-      if (
-        imageOrSize instanceof window.HTMLImageElement ||
-        imageOrSize instanceof window.HTMLCanvasElement
-      ) {
+      if (isHtmlImageLike(imageOrSize) || isHtmlCanvasLike(imageOrSize)) {
         image = imageOrSize;
         width = image.naturalWidth || image.width || 32;
         height = image.naturalHeight || image.height || 32;
@@ -1821,7 +1826,8 @@ class ImageShape extends Shape {
     }
     const bounds = rect(0, 0, width, height);
     super('ImageShape', bounds, null, 0, null);
-    this.image = image;
+    // Ephemeral: survives promotion; lost on remote load until re-bound.
+    this.$image = image;
     this.width = width;
     this.height = height;
     this.morphOrigin = bounds.center();
@@ -1858,9 +1864,9 @@ class ImageShape extends Shape {
     return rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
   }
   copy() {
-    let img = this.image;
+    let img = this.$image;
     let dup = null;
-    if (img instanceof window.HTMLCanvasElement) {
+    if (isHtmlCanvasLike(img)) {
       dup = document.createElement('canvas');
       dup.width = img.width;
       dup.height = img.height;
@@ -1878,9 +1884,11 @@ class ImageShape extends Shape {
   }
   render(ctx) {
     let b = this.getBounds();
-    if (this.image && (this.image.complete || this.image.width)) {
-      ctx.drawImage(this.image, b.topLeft.x, b.topLeft.y, b.width(), b.height());
+    let img = this.$image;
+    if (img && (img.complete || img.width)) {
+      ctx.drawImage(img, b.topLeft.x, b.topLeft.y, b.width(), b.height());
     } else {
+      // Placeholder when the per-replica bitmap is missing (e.g. after a remote load).
       ctx.fillStyle = 'rgba(200,100,100,0.8)';
       ctx.fillRect(b.topLeft.x, b.topLeft.y, b.width(), b.height());
       ctx.strokeStyle = '#333';
@@ -1897,7 +1905,7 @@ class ImageShape extends Shape {
     return tight;
   }
   setImage(img) {
-    this.image = img;
+    this.$image = img;
     if (img) {
       this.width = img.naturalWidth || img.width || this.width;
       this.height = img.naturalHeight || img.height || this.height;
@@ -2916,7 +2924,23 @@ try {
     let worldMorph = this.world();
     let m = this;
     while (m.owner && m.owner !== worldMorph) m = m.owner;
-    if (m.owner === worldMorph && worldMorph.submorphs.at(-1) !== m) worldMorph.promote(m);
+    if (m.owner !== worldMorph) return;
+    // Ephemeral panels live in $submorphs; check the list that actually holds m.
+    let list =
+      worldMorph.$submorphs && worldMorph.$submorphs.includes(m)
+        ? worldMorph.$submorphs
+        : worldMorph.submorphs;
+    if (!list || list.at(-1) === m) return;
+    // Already frontmost among non-fleeting siblings?
+    let frontNonFleeting = null;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (!list.at(i).isFleetingMenu) {
+        frontNonFleeting = list.at(i);
+        break;
+      }
+    }
+    if (frontNonFleeting === m) return;
+    worldMorph.promote(m);
   }
   boundsInOwnerAfterTransform() {
     /** Axis-aligned footprint in owner space; applies scale and rotation like {@link Morph#renderOn}. */
@@ -3268,6 +3292,7 @@ try {
   }
   promote(submorph) {
     // Reorder to frontmost within whichever list holds it (persistent or ephemeral).
+    // Fleeting menus stay above ordinary morphs so confirms are not buried by beTopMorph.
     let list = this.submorphs;
     let idx = list ? list.indexOf(submorph) : -1;
     if (idx < 0 && this.$submorphs) {
@@ -3275,9 +3300,17 @@ try {
       idx = list.indexOf(submorph);
     }
     if (idx < 0) return;
-    if (submorph === list.at(-1)) return; // already frontmost in its layer
     list.splice(idx, 1);
-    list.push(submorph);
+    if (submorph.isFleetingMenu) {
+      list.push(submorph);
+    } else {
+      let insertAt = list.length;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list.at(i).isFleetingMenu) insertAt = i;
+        else break;
+      }
+      list.splice(insertAt, 0, submorph);
+    }
     this.changed();
   }
   relativize(p) {
@@ -3566,13 +3599,9 @@ class ImageMorph extends Morph {
      */
     if (!this.shape) return this.getBounds().insetBy(10);
     let sb = this.shape._contentBoundsLocal;
-    if (
-      !sb &&
-      this.shape.image instanceof window.HTMLCanvasElement &&
-      !this.shape._alphaBoundsTried
-    ) {
+    if (!sb && isHtmlCanvasLike(this.shape.$image) && !this.shape._alphaBoundsTried) {
       this.shape._alphaBoundsTried = true;
-      this.shape.setContentBoundsFromTightCanvas(this.shape.image);
+      this.shape.setContentBoundsFromTightCanvas(this.shape.$image);
       sb = this.shape._contentBoundsLocal;
     }
     if (!sb) sb = this.shape.getBounds().insetBy(10);
@@ -3582,24 +3611,11 @@ class ImageMorph extends Morph {
     return unionPts(ownerPts);
   }
   demo() {
-    // Demo: show a ladybug image (emoji drawn to canvas, then used as image); drag to move and rotate.
-    let size = 64;
-    let canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    let ctx = canvas.getContext('2d');
-    ctx.font = size + 'px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🐞', size / 2, size / 2);
-    let img = new Image();
-    img.onload = function () {
-      let shape = new ImageShape(img);
-      let morph = new ImageMorph(shape);
-      morph.transform.translation = pt(280, 120);
-      Lively.addMorph(morph);
-    };
-    img.src = canvas.toDataURL('image/png');
+    // Demo: ladybug emoji drawn directly (no canvas bake — see EmojiMorph).
+    let morph = new EmojiMorph('LADYBUG', 64);
+    morph.transform.translation = pt(280, 120);
+    Lively.addMorph(morph);
+    return morph;
   }
   morphCopy() {
     let copy = new ImageMorph(this.shape.copy());
@@ -3659,23 +3675,16 @@ class ImageMorph extends Morph {
 
 //  EmojiMorph
 // ------------
-// Named emoji or short literal rendered to a tight canvas.
+// Named emoji or short literal painted with fillText each frame. No canvas raster —
+// HTMLCanvas bitmaps cannot live in the Automerge document, and `instanceof
+// window.HTMLCanvasElement` is unsafe under the LM window proxy (bound ctor).
 class EmojiMorph extends ImageMorph {
   constructor(emojiName, sizePx) {
     const size = Math.max(8, Math.floor(sizePx != null ? sizePx : 32));
-    const ch = EmojiMorph.prototype.resolveChar(emojiName);
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.font = size + 'px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(ch, size / 2, size / 2);
-    super(new ImageShape(canvas));
+    super({ width: size, height: size });
     this._emojiName = emojiName;
     this._emojiSize = size;
-    this.shape.setContentBoundsFromTightCanvas(canvas);
+    this._emojiChar = EmojiMorph.prototype.resolveChar(emojiName);
   }
   morphCopy() {
     let copy = new EmojiMorph(this._emojiName, this._emojiSize);
@@ -3684,6 +3693,18 @@ class EmojiMorph extends ImageMorph {
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => m.morphCopy());
     return copy;
+  }
+  renderMeOn(ctx) {
+    let b = this.shape.getBounds();
+    let size = this._emojiSize != null ? this._emojiSize : Math.min(b.width(), b.height());
+    let ch = this._emojiChar || EmojiMorph.prototype.resolveChar(this._emojiName);
+    ctx.save();
+    // Color-emoji fonts first; generic sans-serif is a last-ditch fallback.
+    ctx.font = size + 'px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ch, b.center().x, b.center().y);
+    ctx.restore();
   }
   resolveChar(name) {
     if (name == null || name === '') return '\u{1F41E}';
@@ -3705,6 +3726,8 @@ EmojiMorph.prototype.emojiByName = {
   SNAIL: '\u{1F40C}',
   BEE: '\u{1F41D}',
   BUG: '\u{1F41B}',
+  FOX: '\u{1F98A}',
+  'FOX FACE': '\u{1F98A}',
 };
 
 //  LineMorph
@@ -4191,7 +4214,7 @@ function showPasteHistoryMenu(pane, textBox) {
       if (pane.onTextBoundsChanged && newH !== oldH) pane.onTextBoundsChanged(priorScrollPos);
     },
   );
-  world.addMorph(menu);
+  world.addEphemeralMorph(menu);
 }
 //  TextMorph
 // -----------
@@ -4852,7 +4875,7 @@ class ScrollPane extends Morph {
       menu._paneMenuPinWhileInContent = thisPane.contentPane;
       menu.setList(items);
     }
-    this.world().addMorph(menu);
+    this.world().addEphemeralMorph(menu);
     return menu;
   }
   showPaneMenuFromMenuButton() {
@@ -5583,6 +5606,15 @@ StylePane.prototype.CONTROL_INSET = 3;
 // +----------+
 // Titled windows: browser, inspector, style, method list, transcript.
 
+function fleetingMenuAnchorPt(fallbackPtIfAny) {
+  /**
+   * World point for fleeting menus / confirms: prefer the pointer, nudged right
+   * so the same click that opened the menu does not hit the first item.
+   */
+  let pos = getPointerLocation();
+  if (pos) return pos.addPt(pt(28, 4));
+  return fallbackPtIfAny != null ? fallbackPtIfAny : pt(120, 120);
+}
 function promptConfirmMenu(world, pt, titleLine, yesLine, noLine, onResult) {
   /** Fleeting yes/no confirm; title line is not selectable. */
   let menu = new MenuMorph(
@@ -5596,7 +5628,11 @@ function promptConfirmMenu(world, pt, titleLine, yesLine, noLine, onResult) {
   let bg = Color.yellow;
   menu.shape.boxColor = bg;
   menu.shape.fill = bg;
-  world.addMorph(menu);
+  menu.isFleetingMenu = true;
+  // Ephemeral: must draw above per-user panels (e.g. QBF), which live in $submorphs.
+  world.addEphemeralMorph(menu);
+  // Re-assert frontmost: a later beTopMorph on the panel must not bury this dialog.
+  if (world.promote) world.promote(menu);
 }
 function promptOkToCancelEditsMenu(world, pt, onResult) {
   /** Menu: yes; cancel = discard edits & continue; NO = keep edits (abort). Title line acts like NO. */
@@ -5610,7 +5646,9 @@ function promptOkToCancelEditsMenu(world, pt, onResult) {
   let bg = Color.yellow;
   menu.shape.boxColor = bg;
   menu.shape.fill = bg;
-  world.addMorph(menu);
+  menu.isFleetingMenu = true;
+  world.addEphemeralMorph(menu);
+  if (world.promote) world.promote(menu);
 }
 //  PanelTitleBar
 // ---------------
@@ -5860,7 +5898,20 @@ class PanelMorph extends Morph {
     if (!this.includesPt(p)) return false;
     // first click only raises a buried panel,
     // except chrome buttons (collapse/delete) should act immediately.
-    if (this.world().submorphs.at(-1) !== this) {
+    // Frontmost check uses the panel's own world layer (persistent or ephemeral).
+    let world = this.world();
+    let siblings =
+      world.$submorphs && world.$submorphs.includes(this) ? world.$submorphs : world.submorphs;
+    let frontNonFleeting = null;
+    if (siblings) {
+      for (let i = siblings.length - 1; i >= 0; i--) {
+        if (!siblings.at(i).isFleetingMenu) {
+          frontNonFleeting = siblings.at(i);
+          break;
+        }
+      }
+    }
+    if (frontNonFleeting !== this) {
       let localP = this.relativize(p);
       let hitInfo = this.titleBarHitInfo(localP);
       let onCollapse = hitInfo && hitInfo.onCollapse;
@@ -5964,10 +6015,17 @@ class PanelMorph extends Morph {
     return rect(0, th, b.width(), Math.max(8, b.height() - th));
   }
   promptConfirm(titleLine, yesLine, noLine, onResult) {
-    promptConfirmMenu(this.world(), this.menuAnchorPt(100), titleLine, yesLine, noLine, onResult);
+    promptConfirmMenu(
+      this.world(),
+      fleetingMenuAnchorPt(this.menuAnchorPt(100)),
+      titleLine,
+      yesLine,
+      noLine,
+      onResult,
+    );
   }
   promptOkToCancelEdits(onResult) {
-    promptOkToCancelEditsMenu(this.world(), this.menuAnchorPt(150), onResult);
+    promptOkToCancelEditsMenu(this.world(), fleetingMenuAnchorPt(this.menuAnchorPt(150)), onResult);
   }
   rectForSpawnedPanel(insetPx, minW, minH) {
     /** Bounds for a new world-level panel offset from this one (uses world coords; works when nested). */
@@ -7860,9 +7918,12 @@ class WorldMorph extends Morph {
     }
   }
   dismissFleetingMenusAt(p) {
-    let fleetingMenus = this.submorphs.filter(
-      (morph) => morph.className == 'MenuMorph' && morph.isFleetingMenu,
-    );
+    // Scan persistent + ephemeral children: confirms / level menus are ephemeral so they
+    // sit above per-user panels.
+    let fleetingMenus = [];
+    this.eachSubmorph((morph) => {
+      if (morph.className == 'MenuMorph' && morph.isFleetingMenu) fleetingMenus.push(morph);
+    });
     if (fleetingMenus.length == 0) return false;
     if (hitScrollPaneMenuButtonAt(this, p)) return false;
     let clickWasInside = fleetingMenus.some((morph) => morph.includesPt(p));
@@ -8422,7 +8483,7 @@ class WorldMorph extends Morph {
       this.shape.selectLineAt(0); // deselect after actions
     });
     menu.isFleetingMenu = !!opts.fleeting;
-    Lively.addMorph(menu);
+    Lively.addEphemeralMorph(menu);
   }
   activeStepList() {
     /** Lazily created: worlds restored from older documents have no $stepList yet. */
@@ -8627,7 +8688,7 @@ function showFindNoMatchesMenu(world, pt, searchString) {
     },
   );
   menu.isFleetingMenu = true;
-  world.addMorph(menu);
+  world.addEphemeralMorph(menu);
 }
 function noteMethodChanges(evalString) {
   /* recentChanges is an array of triples as in the last line here

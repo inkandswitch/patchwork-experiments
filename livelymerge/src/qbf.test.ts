@@ -123,13 +123,13 @@ true`);
       rt.eval(`-qbfGame.pointsMissed`),
     );
     expect(rt.eval(`qbfGame.fallingLetters.length`)).toBeGreaterThan(0);
-    // The tile lands on the pile and stops there.
+    // The tile lands on the pile ledge and stops there.
     ticksUntil(`qbfGame.fallingLetters.length == 0`);
-    const pileY = rt.eval(`qbfGame.pile.getBounds().topLeft.y`) as number;
+    const landY = rt.eval(`qbfGame.pile.getBounds().topLeft.y`) as number;
     const landedY = rt.eval(
-      `qbfGame.submorphs.filter((m) => m.loc == 'falling').map((m) => m.getBounds().bottomRight().y).pop()`,
+      `qbfGame.submorphs.filter((m) => m.loc == 'falling').map((m) => m.boundsInOwnerAfterTransform().bottom()).pop()`,
     ) as number;
-    expect(landedY).toBeCloseTo(pileY, 5);
+    expect(landedY).toBeCloseTo(landY, 5);
   }, 60_000);
 
   it('pauses and resumes, and stops stepping while its window is collapsed', () => {
@@ -168,14 +168,16 @@ true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(false);
 
     // Pointer press/release on the button itself (owner coords). Catches the
-    // hitPoint vs $hitPoint regression that left every QBF button dead.
+    // $hitPoint vs hitPoint regression that left every QBF button dead.
+    // $hitPoint is ephemeral — check it in the same eval that sets it.
     rt.eval(`
 qbfBtn = qbfGame.pauseButton;
 qbfP = qbfBtn.getBounds().center();
 qbfBtn.onPointerDown(qbfP, { actorID: 'test' });
+qbfHitOk = qbfBtn.$hitPoint != null;
+qbfBtn.onPointerUp(qbfP, { actorID: 'test' });
 true`);
-    expect(rt.eval(`qbfBtn.hitPoint != null`)).toBe(true);
-    rt.eval(`qbfBtn.onPointerUp(qbfP, { actorID: 'test' }); true`);
+    expect(rt.eval(`qbfHitOk`)).toBe(true);
     expect(rt.eval(`qbfGame.paused`)).toBe(true);
     expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
 
