@@ -20,6 +20,8 @@
     "@automerge/automerge-repo-react-hooks": "2.5.0",
     "@dimforge/rapier3d-compat": "^0.14.0",
     "@inkandswitch/patchwork-plugins": "^0.0.2",
+    "@inkandswitch/patchwork-providers": "0.3.0",
+    "@inkandswitch/patchwork-providers-react": "0.2.2",
     "@pmndrs/branding": "0.0.8",
     "@react-three/drei": "9.120.4",
     "@react-three/fiber": "8.17.10",

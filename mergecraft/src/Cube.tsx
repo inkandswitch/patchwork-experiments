@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { AutomergeUrl } from "@automerge/automerge-repo";
+import { AutomergeUrl, decodeHeads, UrlHeads } from "@automerge/automerge-repo";
 import { useDocument } from "@automerge/automerge-repo-react-hooks";
 
 import { useFrame, useThree } from "@react-three/fiber";
@@ -8,6 +8,7 @@ import { RigidBody } from "@react-three/rapier";
 import * as THREE from "three";
 
 import { Doc } from "./datatype";
+import { diffCubes, cellKey, type CubeDiff } from "./diff";
 
 import dirt from "./assets/dirt.jpg?url";
 
@@ -17,8 +18,27 @@ import dirt from "./assets/dirt.jpg?url";
 
 type Cell = [number, number, number];
 
-export const Cubes = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+export const Cubes = ({
+  docUrl,
+  baselineHeads,
+}: {
+  docUrl: AutomergeUrl;
+  baselineHeads?: UrlHeads;
+}) => {
   const [doc, changeDoc] = useDocument<Doc>(docUrl);
+
+  // Recomputes on every doc change automatically: useDocument re-renders with
+  // a fresh doc snapshot, so no change-listener/tick is needed (unlike
+  // tldraw4's useShapeDiff, which reads handle.doc() outside React state).
+  const diff = useMemo<CubeDiff | null>(() => {
+    if (!doc || !baselineHeads) return null;
+    try {
+      return diffCubes(doc, decodeHeads(baselineHeads));
+    } catch (error) {
+      console.warn("[mergecraft/diff] failed to compute diff", error);
+      return null;
+    }
+  }, [doc, baselineHeads]);
 
   const addCube = useCallback(
     (x: number, y: number, z: number) =>
@@ -54,14 +74,21 @@ export const Cubes = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           each cube mounts/unmounts exactly when it appears/disappears and survivors
           keep their identity (and position) untouched. */}
       {cubes.map((coords) => (
-        <Cube key={`${coords[0]},${coords[1]},${coords[2]}`} position={coords} />
+        <Cube
+          key={cellKey(coords)}
+          position={coords}
+          added={diff?.added.has(cellKey(coords)) ?? false}
+        />
+      ))}
+      {diff?.deleted.map((coords) => (
+        <GhostCube key={cellKey(coords)} position={coords} />
       ))}
       <BlockTargeting addCube={addCube} removeCube={removeCube} />
     </>
   );
 };
 
-function Cube({ position }: { position: Cell }) {
+function Cube({ position, added }: { position: Cell; added: boolean }) {
   const texture = useTexture(dirt);
   return (
     <RigidBody position={position} type="fixed" colliders="cuboid" friction={0}>
@@ -69,9 +96,41 @@ function Cube({ position }: { position: Cell }) {
           read back from the mesh's world position so nothing can drift. */}
       <mesh name="cube" receiveShadow castShadow>
         <boxGeometry />
-        <meshStandardMaterial map={texture} />
+        {/* Draft-added blocks: `color` multiplies the texture green and the
+            emissive term adds a glow so the tint pops even in shadow. */}
+        <meshStandardMaterial
+          map={texture}
+          color={added ? "#4ade80" : "white"}
+          emissive={added ? "#22c55e" : "black"}
+          emissiveIntensity={added ? 0.5 : 0}
+        />
       </mesh>
     </RigidBody>
+  );
+}
+
+// Blocks deleted since the draft baseline render as inert ghosts: no RigidBody
+// (the player walks through them), no raycast (the crosshair ignores them, so
+// they can't be "removed" again and a block can be re-placed through them),
+// red-tinted and semi-transparent. They never touch the Automerge doc —
+// `diffCubes` reads the doc, not the scene, so ghosts can't re-enter the diff.
+function GhostCube({ position }: { position: Cell }) {
+  const texture = useTexture(dirt);
+  return (
+    <mesh position={position} raycast={() => null}>
+      <boxGeometry />
+      {/* Same pop treatment as added blocks: bright multiply color plus an
+          emissive glow, but faded well down so ghosts read as "not there". */}
+      <meshStandardMaterial
+        map={texture}
+        color="#f87171"
+        emissive="#ef4444"
+        emissiveIntensity={0.6}
+        transparent
+        opacity={0.2}
+        depthWrite={false}
+      />
+    </mesh>
   );
 }
 

@@ -1,4 +1,4 @@
-import { type AutomergeUrl } from "@automerge/automerge-repo";
+import { type AutomergeUrl, type UrlHeads } from "@automerge/automerge-repo";
 import { Canvas } from "@react-three/fiber";
 import { Sky, PointerLockControls, KeyboardControls } from "@react-three/drei";
 import { Physics } from "@react-three/rapier";
@@ -22,7 +22,13 @@ const keyboardMap = [
 // is listening to.
 const store = createXRStore();
 
-function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
+function Scene({
+  docUrl,
+  baselineHeads,
+}: {
+  docUrl: AutomergeUrl;
+  baselineHeads?: UrlHeads;
+}) {
   return (
     <Canvas id="mergecraft-canvas" shadows camera={{ fov: 75 }}>
       <XR store={store}>
@@ -32,7 +38,7 @@ function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
         <Physics gravity={[0, -30, 0]}>
           <Ground />
           <Player />
-          <Cubes docUrl={docUrl} />
+          <Cubes docUrl={docUrl} baselineHeads={baselineHeads} />
         </Physics>
         {/* Restrict click-to-lock to the canvas itself, so clicking elsewhere on
             the page (e.g. other Patchwork tools) doesn't steal mouse input. */}
@@ -42,7 +48,13 @@ function Scene({ docUrl }: { docUrl: AutomergeUrl }) {
   );
 }
 
-export default function App({ docUrl }: { docUrl: AutomergeUrl }) {
+export default function App({
+  docUrl,
+  baselineHeads,
+}: {
+  docUrl: AutomergeUrl;
+  baselineHeads?: UrlHeads;
+}) {
   return (
     <>
       {/* Fixed crosshair at screen centre — marks where the raycast targets. */}
@@ -83,7 +95,7 @@ export default function App({ docUrl }: { docUrl: AutomergeUrl }) {
         Enter VR
       </button>
       <KeyboardControls map={keyboardMap}>
-        <Scene docUrl={docUrl} />
+        <Scene docUrl={docUrl} baselineHeads={baselineHeads} />
       </KeyboardControls>
     </>
   );
