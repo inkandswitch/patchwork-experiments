@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { type AutomergeUrl, type UrlHeads } from "@automerge/automerge-repo";
 import { Canvas } from "@react-three/fiber";
 import { Sky, PointerLockControls, KeyboardControls } from "@react-three/drei";
@@ -55,8 +56,43 @@ export default function App({
   docUrl: AutomergeUrl;
   baselineHeads?: UrlHeads;
 }) {
+  // Keystrokes inside the tool must not trigger host-app shortcuts. The
+  // wrapper is focusable and grabs focus on mousedown, so key events target
+  // it; we stop their propagation right there. KeyboardControls listens on
+  // the wrapper itself (via `domElement`) rather than `window` — listeners on
+  // the same node still fire when propagation is stopped, so the game keeps
+  // its WASD/jump input while the host never sees the keys.
+  const [wrapper, setWrapper] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!wrapper) return;
+    // While the game has focus it owns the keyboard outright: stop the event
+    // from reaching host-app listeners and cancel browser default actions
+    // (e.g. Space/arrows scrolling the surrounding pane). Escape still exits
+    // pointer lock — that's browser-enforced and not cancelable.
+    const stop = (e: KeyboardEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    const types = ["keydown", "keyup", "keypress"] as const;
+    for (const type of types) wrapper.addEventListener(type, stop);
+    return () => {
+      for (const type of types) wrapper.removeEventListener(type, stop);
+    };
+  }, [wrapper]);
+
   return (
-    <>
+    <div
+      ref={setWrapper}
+      tabIndex={0}
+      onMouseDown={(e) => e.currentTarget.focus()}
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        outline: "none",
+      }}
+    >
       {/* Fixed crosshair at screen centre — marks where the raycast targets. */}
       <div
         style={{
@@ -94,9 +130,11 @@ export default function App({
       >
         Enter VR
       </button>
-      <KeyboardControls map={keyboardMap}>
-        <Scene docUrl={docUrl} baselineHeads={baselineHeads} />
-      </KeyboardControls>
-    </>
+      {wrapper && (
+        <KeyboardControls map={keyboardMap} domElement={wrapper}>
+          <Scene docUrl={docUrl} baselineHeads={baselineHeads} />
+        </KeyboardControls>
+      )}
+    </div>
   );
 }
