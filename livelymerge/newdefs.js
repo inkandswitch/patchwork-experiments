@@ -144,6 +144,128 @@ function classInstanceMemberNames(cls) {
     .filter((name) => name !== 'className' && name !== 'constructor'))
     .sort();
 }
+function constructorBodyFromSource(src) {
+  // constructorBodyFromSource(Point.toString()) ==> "constructor(x, y) {\n    ...\n  }"
+  // If the class source has no explicit constructor, returns "constructor() {}".
+  if (!src || typeof src !== 'string') return null;
+  let match = src.match(/(^|\n)[ \t]*constructor[ \t]*\(/);
+  if (!match) return 'constructor() {}';
+  let ctorStart = match.index + match[1].length;
+  while (ctorStart < src.length && /[ \t]/.test(src[ctorStart])) ctorStart++;
+  let i = src.indexOf('(', ctorStart);
+  if (i < 0) return null;
+  let depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === '(') depth++;
+    else if (src[i] === ')') {
+      depth--;
+      if (depth === 0) {
+        i++;
+        break;
+      }
+    }
+  }
+  while (i < src.length && /\s/.test(src[i])) i++;
+  if (src[i] !== '{') return null;
+  depth = 0;
+  for (; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) return src.slice(ctorStart, i + 1);
+    }
+  }
+  return null;
+}
+function constructorBodyOf(cls) {
+  // constructorBodyOf(Point) ==> "constructor(x, y) {\n    this.x = x;\n    this.y = y;\n  }"
+  if (!isClass(cls)) return null;
+  return constructorBodyFromSource(cls.toString());
+}
+function constructorFunctionSource(cls) {
+  // constructorFunctionSource(Point) ==> "function constructor(x, y) {\n    ...\n  }"
+  // Form shown / accepted in the system browser as: Point.constructor = <this>
+  let body = constructorBodyOf(cls);
+  if (!body) return null;
+  return 'function ' + body;
+}
+function constructorMethodFromFunction(fn) {
+  // Normalize a function's toString() into "constructor(...) { ... }".
+  if (typeof fn !== 'function') return null;
+  let s = fn.toString();
+  let m = s.match(/^function\s*(?:[A-Za-z_$][\w$]*)?\s*\(/);
+  if (m) return 'constructor' + s.slice(s.indexOf('('));
+  // Arrow or other — wrap as no-arg body if we can find a block.
+  let brace = s.indexOf('{');
+  if (brace >= 0) return 'constructor()' + s.slice(brace);
+  return 'constructor() { return (' + s + ').apply(this, arguments); }';
+}
+function replaceConstructorInClassSource(classSource, newCtorMethod) {
+  // Splice newCtorMethod ("constructor(...) { ... }") into a class source string.
+  if (!classSource || !newCtorMethod) return classSource;
+  let match = classSource.match(/(^|\n)[ \t]*constructor[ \t]*\(/);
+  if (!match) {
+    // No explicit constructor — insert before the class closing brace.
+    let close = classSource.lastIndexOf('}');
+    if (close < 0) return classSource;
+    let indented = '\n  ' + newCtorMethod.replace(/\n/g, '\n  ') + '\n';
+    return classSource.slice(0, close) + indented + classSource.slice(close);
+  }
+  let oldCtor = constructorBodyFromSource(classSource);
+  if (!oldCtor) return classSource;
+  let ctorStart = match.index + match[1].length;
+  while (ctorStart < classSource.length && /[ \t]/.test(classSource[ctorStart])) ctorStart++;
+  return classSource.slice(0, ctorStart) + newCtorMethod + classSource.slice(ctorStart + oldCtor.length);
+}
+function installClassConstructor(className, ctorFn) {
+  // Replace the constructor Fun for className while keeping the existing prototype
+  // (so live instances stay valid) and copying statics onto the new Fun.
+  // Also rewrites $codeForShow to an updated class { constructor... } source so
+  // isClass() / toString() / the browser keep working.
+  let oldCls = $global[className];
+  if (!isClass(oldCls) || typeof ctorFn !== 'function') return false;
+  let oldProto = oldCls.prototype;
+  if (!oldProto) return false;
+  let newCtorMethod = constructorMethodFromFunction(ctorFn);
+  if (!newCtorMethod) return false;
+  let newClassSource = replaceConstructorInClassSource(oldCls.toString(), newCtorMethod);
+  let staticNames = classStaticNames(oldCls);
+  let staticVals = {};
+  for (let i = 0; i < staticNames.length; i++) {
+    staticVals[staticNames[i]] = oldCls[staticNames[i]];
+  }
+  // Rebind global to the accepted function; keep the live prototype object.
+  $global[className] = ctorFn;
+  ctorFn.prototype = oldProto;
+  oldProto.constructor = ctorFn;
+  for (let i = 0; i < staticNames.length; i++) {
+    ctorFn[staticNames[i]] = staticVals[staticNames[i]];
+  }
+  // Keep class identity in toString / isClass (constructor $codeForShow is full class text).
+  let live = ctorFn.$unwrapped;
+  if (live && live.$codeForShow !== undefined) live.$codeForShow = newClassSource;
+  return true;
+}
+function acceptClassConstructorAssignment(evalString) {
+  // acceptClassConstructorAssignment('Point.constructor = function constructor(x, y) { ... }')
+  // Handles browser save / do-it of the synthetic Class.constructor = form.
+  if (!evalString || typeof evalString !== 'string') return false;
+  let src = dropNewline(evalString.trim());
+  let m = src.match(/^([A-Za-z_$][\w$]*)\.constructor\s*=\s*(function[\s\S]*)$/);
+  if (!m) return false;
+  let className = m[1];
+  if (!isClass($global[className])) return false;
+  let rhs = m[2].replace(/;\s*$/, '');
+  let ctorFn;
+  try {
+    ctorFn = eval('(' + rhs + ')');
+  } catch (e) {
+    console.log('constructor accept failed to eval function:', e);
+    return false;
+  }
+  if (typeof ctorFn !== 'function') return false;
+  return installClassConstructor(className, ctorFn);
+}
 function allClassNamesWithStatics() {
   // allClassNamesWithStatics()
   // Returns two formats in one sorted array:
@@ -2721,6 +2843,17 @@ class TextBox extends Shape {
   wsEval(str) {
     _lastEvalSource = str;
     let label = 'evaluate: ' + truncateString(str, 80);
+    // Class.constructor = function constructor(...) { ... } — keep live instances.
+    if (
+      typeof str === 'string' &&
+      /^[A-Za-z_$][\w$]*\.constructor\s*=\s*function/.test(str.trim())
+    ) {
+      return evaluateWithErrorRecovery(() => {
+        if (!acceptClassConstructorAssignment(str))
+          throw new Error('constructor accept failed');
+        return true;
+      }, label);
+    }
     if (this.evalContext)
       return evaluateWithErrorRecovery(() => this.evalContext.evalInMe(str), label);
     return evaluateWithErrorRecovery(() => eval(str), label);
@@ -6256,6 +6389,10 @@ class BrowserPanel extends PanelMorph {
         if (this.selectedClass == 'globals') {           // Global methods
           methodString = $global[this.selectedMethod].toString();
           headerString = this.selectedMethod + ' = ';
+        } else if (this.selectedMethod === 'constructor') {
+          // Synthetic assignable form; accept via installClassConstructor (keeps prototype).
+          methodString = constructorFunctionSource($global[this.selectedClass]);
+          headerString = this.selectedClass + '.constructor = ';
         } else if (this.selectedMethod.endsWith('*')) {  // Class methods
           methodString = $global[this.selectedClass][this.selectedMethod.slice(0,-1)].toString();
           headerString = this.selectedClass + '.' + this.selectedMethod.slice(0,-1) + ' = ';
@@ -6319,11 +6456,12 @@ class BrowserPanel extends PanelMorph {
         .sort()
         .filter((msg) => msg[0] == msg[0].toLowerCase());
     }
-    return classInstanceMemberNames($global[classSelection])
-      .concat(classStaticNames($global[classSelection])
-              // Note: we mark statics with '*'
-              .map((each => each + '*' )))
-      .sort();
+    // Pin constructor at the top; other names sorted (statics marked with '*').
+    return ['constructor'].concat(
+      classInstanceMemberNames($global[classSelection])
+        .concat(classStaticNames($global[classSelection]).map((each) => each + '*'))
+        .sort(),
+    );
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -6337,6 +6475,7 @@ class BrowserPanel extends PanelMorph {
   selectedMethodSpec() {
     if (!this.selectedMethod) return null;
     if (this.selectedClass == 'globals') return this.selectedMethod;
+    if (this.selectedMethod === 'constructor') return this.selectedClass + '.constructor';
     if (this.selectedClass && this.selectedClass.endsWith('.class'))
       return this.selectedClass.split('.')[0] + '.' + this.selectedMethod;
     if (this.selectedClass) return this.selectedClass + '.prototype.' + this.selectedMethod;
@@ -8617,10 +8756,12 @@ function methodFromSpec(spec) {
   // methodFromSpec('rect')                     — a global function
   // methodFromSpec('Color.gray')               — a class static
   // methodFromSpec('Color.prototype.copy')     — an instance method
+  // methodFromSpec('Point.constructor')        — the class constructor Fun itself
   let parts = spec.split('.');
   if (parts.length == 1) return $global[parts[0]];
   let cls = $global[parts[0]];
   if (cls == null) return null;
+  if (parts.length == 2 && parts[1] === 'constructor' && isClass(cls)) return cls;
   if (parts.length == 2) return cls[parts[1]];
   if (parts.length == 3 && parts[1] == 'prototype' && cls.prototype)
     return cls.prototype[parts[2]];
@@ -8636,8 +8777,10 @@ function deleteMethodWithSpec(spec) {
   /** Remove a live method by spec (`Morph.prototype.foo`, `Color.gray`, `init`, …). */
   let key = methodSpecKey(spec);
   if (!key) return false;
+  let parts = key.split('.');
+  // Refuse to delete a class via the constructor row.
+  if (parts.length == 2 && parts[1] === 'constructor') return false;
   try {
-    let parts = key.split('.');
     if (parts.length == 1) delete $global[parts[0]];
     else if (parts.length == 2) delete $global[parts[0]][parts[1]];
     else if (parts.length == 3 && parts[1] == 'prototype')
