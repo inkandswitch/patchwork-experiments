@@ -1,14 +1,16 @@
 /** Minimal LM runtime for tests — mirrors Livelymerge eval primitives. */
 import {
+  lmFindSlotForWrite,
   lmGetOwn,
   lmGetWithDelegation,
+  lmIsEphemeralKey,
   lmIsReservedKey,
   lmObjDelegatesTo,
   lmOwnUserPropertyKeys,
   lmSetOwn,
 } from './lmStorage';
 import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
-import type { Fun, Obj, Ref, Val } from './types';
+import type { AccessorVal, Fun, Obj, Ref, Val } from './types';
 import { isFun, isObj, isRef } from './types';
 
 export interface TestProxy {
@@ -22,6 +24,8 @@ let objectTable: Record<string, Obj | Fun> = {
 };
 let newObjects: Map<string, Obj | Fun> | null = null;
 let proxies: Map<string, TestProxy> | null = null;
+/** Per-object ephemeral ($-prefixed) properties, like the real runtime's sidecar. */
+let ephemeralProps: Map<string, Record<string, Val>> = new Map();
 export let $global: TestProxy;
 
 function ensureNewObjects() {
@@ -81,20 +85,41 @@ function proxifyObj(obj: Obj): TestProxy {
 
   const p = new Proxy(Object.create(null), {
     set(_, prop, value) {
+      if (lmIsEphemeralKey(prop)) {
+        let row = ephemeralProps.get(obj.$id);
+        if (!row) ephemeralProps.set(obj.$id, (row = {}));
+        row[prop as string] = toVal(value);
+        return true;
+      }
       if (lmIsReservedKey(prop)) return false;
-      return lmSetOwn(liveHeapObj(obj), prop, value, toVal);
+      const entry = liveHeapObj(obj);
+      const slot = lmFindSlotForWrite(entry, prop, lookupHeapProto);
+      if (slot && 'accessor' in slot) {
+        const setter = slot.accessor.$set;
+        if (setter) (deserialize(setter) as any).call(p, value);
+        return true;
+      }
+      return lmSetOwn(entry, prop, value, toVal);
     },
     get(_, prop) {
       const entry = liveHeapObj(obj);
       if (prop === '$isProxy') return true;
       if (prop === '$id') return entry.$id;
       if (prop === '$unwrapped') return entry;
+      if (lmIsEphemeralKey(prop)) {
+        const row = ephemeralProps.get(obj.$id);
+        return row && Object.hasOwn(row, prop as string)
+          ? deserialize(row[prop as string])
+          : undefined;
+      }
       if (prop === '__proto__') {
         if (!entry.$protoId) return null;
         const protoEntry = lookupHeapProto(entry.$protoId);
         return protoEntry ? deserialize(protoEntry) : null;
       }
-      const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize);
+      const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize, (acc) =>
+        acc.$get ? (deserialize(acc.$get) as any).call(p) : undefined,
+      );
       if (value !== undefined) return value;
       if (prop === 'toString') {
         return () => `[obj ${entry.$id}]`;
@@ -166,6 +191,12 @@ function proxifyFun(fun: Fun): TestProxy {
       if (prop === 'toString') {
         return () => fun.$codeForShow;
       }
+      if (prop === 'call') {
+        return (thisArg: unknown, ...args: unknown[]) => callFn().apply(thisArg, args);
+      }
+      if (prop === 'apply') {
+        return (thisArg: unknown, args: unknown[]) => callFn().apply(thisArg, args);
+      }
       const own = lmGetOwn(fun, prop);
       if (own !== undefined) return deserialize(own);
       return undefined;
@@ -225,6 +256,13 @@ export function $arr(values: unknown[]): TestProxy {
   return $obj(Object.fromEntries(values.map((v, i) => [String(i), toVal(v)])));
 }
 
+export function $accessor(get: TestProxy | null, set: TestProxy | null): AccessorVal {
+  const acc: AccessorVal = { $type: 'accessor' };
+  if (get) acc.$get = toRef(get);
+  if (set) acc.$set = toRef(set);
+  return acc;
+}
+
 const $Object = Object.assign(function Object() {
   return $obj({});
 }, {
@@ -248,6 +286,7 @@ export function resetEvalHarness() {
   ensureObjectPrototypeDefaults(objectTable);
   newObjects = null;
   proxies = null;
+  ephemeralProps = new Map();
   $global = $obj({});
 }
 
@@ -257,6 +296,7 @@ function runtimeParams(): Record<string, unknown> {
     $obj,
     $arr,
     $fun,
+    $accessor,
     Object: $Object,
     Array: { isArray: Array.isArray },
     console,

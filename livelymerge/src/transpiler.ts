@@ -12,6 +12,7 @@ const INJECTED_NAMES = new Set([
   '$obj',
   '$arr',
   '$fun',
+  '$accessor',
   '$eval',
   'Object',
   'Array',

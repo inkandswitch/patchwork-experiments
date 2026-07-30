@@ -1,3 +1,5 @@
+import { isAccessorVal, type AccessorVal } from './types';
+
 /** Plain keys that Automerge materializations may spuriously expose — never delegate on these. */
 const LM_INTRINSIC_PLAIN_KEYS = new Set(['toString', 'valueOf', 'constructor', '__proto__']);
 
@@ -68,6 +70,9 @@ export function lmSameStoredVal(cur: unknown, next: unknown): boolean {
   const c = cur as any;
   const n = next as any;
   if (c.$type === 'ref' && n.$type === 'ref') return c.$id === n.$id;
+  if (c.$type === 'accessor' && n.$type === 'accessor') {
+    return c.$get?.$id === n.$get?.$id && c.$set?.$id === n.$set?.$id;
+  }
   if (cur instanceof Date && next instanceof Date) return cur.getTime() === next.getTime();
   return false;
 }
@@ -133,16 +138,48 @@ export function lmGetWithDelegation(
   prop: PropertyKey,
   lookup: LmHeapLookup,
   deserialize: (value: unknown) => unknown,
+  invokeGetter?: (acc: AccessorVal) => unknown,
 ): unknown {
   if (typeof prop === 'symbol') return undefined;
   const userKey = lmUserKey(prop);
   const plain = String(prop);
   let current: (LmProtoEntry & Record<string, any>) | undefined = entry;
   while (current) {
-    if (lmHeapHasOwn(current, userKey)) return deserialize(lmHeapGet(current, userKey));
+    if (lmHeapHasOwn(current, userKey)) {
+      const raw = lmHeapGet(current, userKey);
+      if (isAccessorVal(raw)) return invokeGetter ? invokeGetter(raw) : undefined;
+      return deserialize(raw);
+    }
     if (lmIsDelegatablePlainKey(plain) && Object.hasOwn(current, plain)) {
       return deserialize(current[plain]);
     }
+    if (current.$protoId) current = lookup(current.$protoId);
+    else break;
+  }
+  return undefined;
+}
+
+/** For an assignment `receiver.prop = v`: the first `prop` slot on the delegation
+ * chain (own entry included) decides what the write means — a data slot anywhere
+ * means a plain own write (possibly shadowing), an accessor slot means "invoke its
+ * setter with the receiver" (or silently ignore the write when it has no setter),
+ * and no slot at all means a fresh own property. Hot writes (own data slot already
+ * present) return on the first iteration without walking the chain. */
+export function lmFindSlotForWrite(
+  entry: LmProtoEntry & Record<string, any>,
+  prop: PropertyKey,
+  lookup: LmHeapLookup,
+): { accessor: AccessorVal } | { data: true } | undefined {
+  if (typeof prop === 'symbol') return undefined;
+  const userKey = lmUserKey(prop);
+  const plain = String(prop);
+  let current: (LmProtoEntry & Record<string, any>) | undefined = entry;
+  while (current) {
+    if (lmHeapHasOwn(current, userKey)) {
+      const raw = lmHeapGet(current, userKey);
+      return isAccessorVal(raw) ? { accessor: raw } : { data: true };
+    }
+    if (lmIsDelegatablePlainKey(plain) && Object.hasOwn(current, plain)) return { data: true };
     if (current.$protoId) current = lookup(current.$protoId);
     else break;
   }

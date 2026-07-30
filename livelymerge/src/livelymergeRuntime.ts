@@ -11,6 +11,7 @@ import {
 import { ensureObjectPrototypeDefaults } from './objectPrototypeDefaults';
 import {
   lmCallToString,
+  lmFindSlotForWrite,
   lmGetOwn,
   lmGetWithDelegation,
   lmHeapPropertyNames,
@@ -23,12 +24,14 @@ import {
   lmUserKey,
 } from './lmStorage';
 import {
+  type AccessorVal,
   type LivelymergeDoc,
   type Obj,
   type Arr,
   type Fun,
   type Ref,
   type Val,
+  isAccessorVal,
   isObj,
   isArr,
   isRef,
@@ -138,9 +141,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
   /** Barrier helper: an edge changed iff a ref was stored or displaced. Leaf values
    * can never contain refs (plain JSON with $-keys is rejected at serialization), so
-   * checking the top-level values is exact. */
+   * checking the top-level values is exact — refs appear either bare or inside an
+   * accessor record's $get/$set. */
   function markEdgeDirtyIfRefs(id: string, oldValue: unknown, newValue?: unknown): void {
-    if (isRef(oldValue) || isRef(newValue)) edgeDirtyIds.add(id);
+    if (isRef(oldValue) || isRef(newValue) || isAccessorVal(oldValue) || isAccessorVal(newValue)) {
+      edgeDirtyIds.add(id);
+    }
   }
 
   /** External (e.g. remote-replica) changes bypass the local write barrier. Call with
@@ -220,6 +226,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (v == null || typeof v !== 'object') return v;
     if (v instanceof Date) return v;
     if (v.$type === 'ref') return { $type: 'ref', $id: v.$id };
+    if (v.$type === 'accessor') {
+      const acc: any = { $type: 'accessor' };
+      if (v.$get) acc.$get = { $type: 'ref', $id: v.$get.$id };
+      if (v.$set) acc.$set = { $type: 'ref', $id: v.$set.$id };
+      return acc;
+    }
     return v;
   }
 
@@ -465,6 +477,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     return deserialize(entry);
   }
 
+  /** A getter/setter pair as a storable property value (see AccessorVal). The class
+   * transpiler emits `'@x': $accessor(getFun, setFun)` in prototype literals; the
+   * obj proxy's get/set traps invoke the referenced functions with the receiver. */
+  function $accessor(get: Proxy | null, set: Proxy | null): AccessorVal {
+    const acc: AccessorVal = { $type: 'accessor' };
+    if (get) acc.$get = toRef(get);
+    if (set) acc.$set = toRef(set);
+    return acc;
+  }
+
   function $fun($codeForShow: string, $code: string, scopes: Proxy[] = []) {
     const $id = Math.random().toString();
     const entry: Fun = {
@@ -556,6 +578,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       return null;
     }
     if (t === 'object') {
+      // Accessor records are a canonical stored form (created only by $accessor);
+      // their $get/$set are Refs, which are representable by construction.
+      if (isAccessorVal(x)) return null;
       const proto = Object.getPrototypeOf(x);
       if (proto !== Object.prototype && proto !== null) {
         return (
@@ -713,8 +738,18 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         try {
           // Compare against the cheap read view; resolve the live doc entry only
           // when the write isn't elided.
+          const entry = liveHeapObjRead(obj);
+          // An accessor slot on the delegation chain intercepts the write (JS
+          // semantics). The common case — an own data slot — exits the lookup on
+          // its first iteration, so plain writes stay cheap.
+          const slot = lmFindSlotForWrite(entry, prop, lookupHeapProto);
+          if (slot && 'accessor' in slot) {
+            const setter = slot.accessor.$set;
+            if (setter) (deserialize(setter) as any).call(p, value);
+            return true; // no setter: silently ignored, like sloppy-mode JS
+          }
           return lmSetOwn(
-            liveHeapObjRead(obj),
+            entry,
             prop,
             value,
             serializerFor(id),
@@ -746,7 +781,9 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop)) return undefined;
 
-        const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize);
+        const value = lmGetWithDelegation(entry, prop, lookupHeapProto, deserialize, (acc) =>
+          acc.$get ? (deserialize(acc.$get) as any).call(p) : undefined,
+        );
         if (value !== undefined) return value;
 
         if (prop === 'toString') {
@@ -1503,6 +1540,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       const from = val.$id;
       const lookAt = (v: Val, via: string) => {
         if (isRef(v)) visitRef(v.$id, via);
+        else if (isAccessorVal(v)) {
+          if (v.$get) visitRef(v.$get.$id, `${via} getter`);
+          if (v.$set) visitRef(v.$set.$id, `${via} setter`);
+        }
       };
       if (isObj(val)) {
         for (const p of lmHeapPropertyNames(val)) {
@@ -1975,6 +2016,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       $obj,
       $arr,
       $fun,
+      $accessor,
       $eval,
       Object: $Object,
       Array: $Array,

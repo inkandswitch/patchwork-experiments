@@ -368,14 +368,27 @@ function transpileFunctionSource(codeSource: string, showSource?: string): strin
   return result;
 }
 
-function renderPrototypeAccessor(member: Extract<ClassMember, { kind: 'method' }>): string {
-  const funcSource = rewriteThisMemberAccess(member.funcSource);
-  const paramsStart = funcSource.indexOf('(');
-  const bodyStart = funcSource.indexOf('{');
-  if (paramsStart === -1 || bodyStart === -1) return '';
-  const params = funcSource.slice(paramsStart, bodyStart).trim();
-  const body = funcSource.slice(bodyStart);
-  return `${member.accessor} ['${atMemberName(member.name)}']${params} ${body}`;
+/** Prototype accessors become `'@name': $accessor(getFun, setFun)` in the prototype
+ * literal. A literal `get`/`set` would be useless there: $obj flattens its argument
+ * with Object.entries (invoking any getter once), and heap entries can only store
+ * $fun-backed functions. The proxy get/set traps interpret the accessor record. */
+function renderAccessorEntries(
+  accessors: Extract<ClassMember, { kind: 'method' }>[],
+  superGlobal: string,
+): string[] {
+  const byName = new Map<string, { get?: string; set?: string }>();
+  for (const a of accessors) {
+    const pair = byName.get(a.name) ?? {};
+    const showSource = rewriteSuperCalls(a.funcSource, superGlobal, 'instance');
+    const rendered = transpileFunctionSource(rewriteThisMemberAccess(showSource), showSource);
+    if (a.accessor === 'get') pair.get = rendered;
+    else pair.set = rendered;
+    byName.set(a.name, pair);
+  }
+  return [...byName.entries()].map(
+    ([name, pair]) =>
+      `'${atMemberName(name)}': $accessor(${pair.get ?? 'null'}, ${pair.set ?? 'null'})`,
+  );
 }
 
 function renderStaticInit(member: ClassMember, ref: string, superGlobal: string): string {
@@ -390,6 +403,9 @@ function renderStaticInit(member: ClassMember, ref: string, superGlobal: string)
     return transpileCore(blockSource).trim();
   }
   if (member.kind === 'method' && member.static) {
+    // Static accessors have no runtime representation on Fun entries; skip them
+    // rather than misinstalling the getter as a plain static method.
+    if (member.accessor !== 'method') return '';
     let funcSource = rewriteSuperCalls(member.funcSource, superGlobal, 'static');
     return `${ref}.${member.name} = ${transpileFunctionSource(funcSource)};`;
   }
@@ -438,10 +454,7 @@ function renderClassSetup(
     const literalParts = [
       classNameProp,
       ...instanceMethods.map((m) => `'${atMemberName(m.name)}': ${memberRef(ref, m.name)}`),
-      ...prototypeAccessors.map((a) => {
-        const src = rewriteSuperCalls(a.funcSource, superGlobal, 'instance');
-        return renderPrototypeAccessor({ ...a, funcSource: src });
-      }),
+      ...renderAccessorEntries(prototypeAccessors, superGlobal),
     ];
     lines.push(`${ref}.prototype = $obj({ ${literalParts.join(', ')} }${prototypeSuffix(superGlobal, explicitSuper)});`);
   } else {

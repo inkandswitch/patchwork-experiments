@@ -32,7 +32,16 @@ export interface Ref {
   $id: string;
 }
 
-export type Val = Ref | number | string | boolean | null | undefined;
+/** A stored getter/setter pair. Lives as a property value on a heap entry (usually a
+ * class prototype); the proxy get/set traps invoke the referenced functions with the
+ * receiver as `this` instead of returning/overwriting the record itself. */
+export interface AccessorVal {
+  $type: 'accessor';
+  $get?: Ref;
+  $set?: Ref;
+}
+
+export type Val = Ref | AccessorVal | number | string | boolean | null | undefined;
 
 export function isObj(value: any): value is Obj {
   return typeof value === 'object' && value?.$type === 'obj';
@@ -48,4 +57,8 @@ export function isFun(value: any): value is Fun {
 
 export function isRef(value: any): value is Ref {
   return typeof value === 'object' && value?.$type === 'ref';
+}
+
+export function isAccessorVal(value: any): value is AccessorVal {
+  return typeof value === 'object' && value?.$type === 'accessor';
 }

@@ -2963,13 +2963,71 @@ class Morph {
     //console.log('shape = ', this.shape.asString());
     this.bounds = this.shape.getBounds(); //a Rectangle in owner coordinates
     this.origin = this.shape.morphOrigin;
-    this.transform = this.nullTransformation(); // a transform object with trans/rot/scale
-    this.transform.translateBy(this.origin);
+    this._transform = this.nullTransformation(); // persistent transform (trans/rot/scale); see the `transform` getter
+    this._transform.translateBy(this.origin);
     this.shape.setBounds(this.shape.getBounds().translatedBy(this.origin.negated()));
     this.submorphs = []; // array of Morphs in Z-order -- first is frontmost
     this.$steppingSpecs = [];
     this.hasChanged = true; //some call on changed() says we need to rerender
     if (traceMe) console.log('log ', 2);
+  }
+  get transform() {
+    /**
+     * The transform to use for rendering, hit-testing, and mutation. During a
+     * direct-manipulation interaction (drag, halo rotate/scale, ...) this is
+     * $transform, a PER-USER ephemeral copy, so per-frame mutations never touch the
+     * Automerge document; the copy is promoted into the persistent _transform once,
+     * on pointer-up. See {@link Morph#beginEphemeralTransform} and
+     * {@link Morph#commitEphemeralTransform}.
+     */
+    return this.$transform != null ? this.$transform : this._transform;
+  }
+  set transform(tfm) {
+    this._transform = tfm;
+  }
+  beginEphemeralTransform() {
+    /**
+     * Start of a direct-manipulation interaction: install an ephemeral copy of the
+     * current transform for {@link Morph#transform} to answer, so the interaction's
+     * per-frame mutations stay out of the shared document. No-op when an interaction
+     * is already in progress. Points are copied too — in-place point mutation must
+     * never leak into the persistent transform.
+     */
+    if (this.$transform != null) return;
+    let t = this.transform;
+    let eph = new SimpleTransform(
+      t.translation.copy(),
+      t.rotation || 0,
+      t.scale ? t.scale.copy() : pt(1, 1),
+    );
+    this.$transform = eph;
+    // A morph from a pre-getter document carries an own `transform` data property
+    // that shadows the prototype getter, so reads would never see $transform. Leave
+    // such a morph on its old direct-mutation path (commit is then a no-op too).
+    if (this.transform !== eph) this.$transform = null;
+  }
+  commitEphemeralTransform() {
+    /**
+     * End of an interaction: copy the ephemeral transform's values back into the
+     * persistent transform, then drop the copy. Mutates the persistent transform in
+     * place — no new document objects (doc entries are immortal, so promoting the
+     * copy would orphan the old transform on every drag), and aliases other code
+     * holds onto the transform stay valid. Unchanged fields cost nothing: same-value
+     * writes are elided at the storage layer, so a plain click is op-free.
+     */
+    let eph = this.$transform;
+    if (eph == null) return;
+    this.$transform = null;
+    let t = this.transform;
+    t.translation.x = eph.translation.x;
+    t.translation.y = eph.translation.y;
+    t.rotation = eph.rotation;
+    if (t.scale) {
+      t.scale.x = eph.scale.x;
+      t.scale.y = eph.scale.y;
+    } else {
+      t.scale = eph.scale.copy();
+    }
   }
   acceptsDroppingMorphs() {
     return true;
@@ -3343,6 +3401,7 @@ try {
       let copy = this.world().addMorph(this.morphCopy());
       copy.$hitPoint = p;
       copy.$dragActorID = evt.actorID;
+      copy.beginEphemeralTransform();
       this.world().setPointerFocus(copy);
       return true; // could merge code
     }
@@ -3351,6 +3410,7 @@ try {
     // For nested morphs, plain drag should pick up to world on first real move.
     this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
     this.$dragActorID = evt.actorID;
+    this.beginEphemeralTransform();
     this.world().setPointerFocus(this);
     return true;
   }
@@ -3412,6 +3472,8 @@ try {
       let anchorLocal = this.relativize(p);
       this.dropOnTopMorphAt(worldDropPt, anchorLocal);
     }
+    // After the drop, so any drop-time transform adjustment lands in the same commit.
+    this.commitEphemeralTransform();
     return true;
   }
   onTextBoundsChanged() {
@@ -6397,8 +6459,17 @@ class BrowserPanel extends PanelMorph {
           methodString = $global[this.selectedClass][this.selectedMethod.slice(0,-1)].toString();
           headerString = this.selectedClass + '.' + this.selectedMethod.slice(0,-1) + ' = ';
         } else {                                         // Proto methods
-          methodString = $global[this.selectedClass].prototype[this.selectedMethod].toString();
-          headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
+          let member = $global[this.selectedClass].prototype[this.selectedMethod];
+          if (typeof member == 'function') {
+            methodString = $global[this.selectedClass].prototype[this.selectedMethod].toString();
+            headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
+          } else {
+            // A getter/setter: reading it through the prototype yields a value, not a
+            // function. Its source lives in the class definition.
+            methodString =
+              '// ' + this.selectedMethod + ' is a getter/setter — edit it in the class definition';
+            headerString = '';
+          }
         }
         this.methodPane.setText(headerString + methodString, { force: true });
       };
@@ -7042,6 +7113,10 @@ class HaloHandle extends Morph {
     if (this.handleName == 'Grab') {
       this.target.reparentToOwnerPreservingWorldAnchor(this.world(), null);
     }
+    // The remaining handles (Copy/Drag/Grab/Scale/Rotate) mutate the target's
+    // transform on every pointer move; do that on the ephemeral copy and promote it
+    // once, in onPointerUp.
+    this.target.beginEphemeralTransform();
     // Drag, Rotate and Scale here drag the handle during manipulation
     this.$hitPoint = this.owner.globalize(pt);
     if (this.handleName == 'Rotate') {
@@ -7116,6 +7191,7 @@ class HaloHandle extends Morph {
       let worldPt = this.owner ? this.owner.globalize(pt) : pt;
       this.target.dropOnTopMorphAt(worldPt);
     }
+    if (this.target) this.target.commitEphemeralTransform();
     this.world().setPointerFocus(null);
     this.remove();
   }
@@ -7846,6 +7922,7 @@ class OnScreenKeyboardMorph extends Morph {
       let copy = this.world().addMorph(this.morphCopy());
       copy.$hitPoint = p;
       copy.$dragActorID = evt.actorID;
+      copy.beginEphemeralTransform();
       this.world().setPointerFocus(copy);
       return true;
     }
