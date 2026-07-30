@@ -91,6 +91,7 @@ function readAutomergeDocStats(amDoc: Doc<LivelymergeDoc>) {
 
 function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
   const [stats, setStats] = useState(() => readAutomergeDocStats(handle.doc()));
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const refresh = () => setStats(readAutomergeDocStats(handle.doc()));
@@ -105,27 +106,34 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
 
   return (
     <div
-      className="pointer-events-none absolute top-2 right-2 z-30 max-w-[min(24rem,calc(100%-1rem))] font-mono text-[11px] leading-snug text-base-content/80"
+      className="absolute top-2 right-2 z-30 max-w-[min(24rem,calc(100%-1rem))] font-mono text-[11px] leading-snug text-base-content/80"
       aria-live="polite"
       aria-label="Automerge document statistics"
     >
-      <div className="rounded-md border border-base-300/70 bg-base-100/90 px-2.5 py-1.5 shadow-sm backdrop-blur-sm">
-        <div className="tabular-nums">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((e) => !e)}
+        className="block w-full cursor-pointer rounded-md border border-base-300/70 bg-base-100/90 px-2.5 py-1.5 text-left shadow-sm backdrop-blur-sm"
+      >
+        <div className="tabular-nums whitespace-nowrap">
           <span className="text-base-content/55">ops</span> {stats.numOps.toLocaleString()}
         </div>
-        <div className="mt-0.5">
-          <span className="text-base-content/55">heads</span>{' '}
-          {stats.heads.length === 0 ? (
-            '—'
-          ) : (
-            <ul className="mt-0.5 list-none space-y-0.5 break-all">
-              {stats.heads.map((head: string) => (
-                <li key={head}>{head}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+        {expanded && (
+          <div className="mt-0.5">
+            <span className="text-base-content/55">heads</span>{' '}
+            {stats.heads.length === 0 ? (
+              '—'
+            ) : (
+              <ul className="mt-0.5 list-none space-y-0.5 break-all">
+                {stats.heads.map((head: string) => (
+                  <li key={head}>{head}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </button>
     </div>
   );
 }
