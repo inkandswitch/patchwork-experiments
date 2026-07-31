@@ -521,7 +521,6 @@ class QBFMorph extends Morph {
     if (actionName === 'restart') this.doRestart();
     if (actionName === 'level') this.doChooseLevel();
     if (actionName === 'rules') this.doShowRules();
-    if (actionName === 'scores') this.doOpenScores();
     if (actionName === 'name') this.doChoosePlayerName();
     this.focusKeyboard();
   }
@@ -573,9 +572,8 @@ class QBFMorph extends Morph {
     let hSpacing = 110;
     let vSpacing = 48;
     let gameButtonsY = scoreY + 4 * vSpacing + 26;
-    // Ledge sits ~30px above "show scores" — the fall distance that reads well with
-    // the scream timing. Keep it clear of the scores/name buttons (which used to
-    // cover a pile at y=430).
+    // Ledge sits ~30px above the name button — the fall distance that reads well with
+    // the scream timing. Keep it clear of that button (which used to cover a pile at y=430).
     let pileY = gameButtonsY - 30;
     let pileX = 30;
     let pileW = rackX - 60;
@@ -585,13 +583,13 @@ class QBFMorph extends Morph {
       belt: rect(beltX, rackY - 5, beltW, 2),
       binTopRight: pt(beltX + beltW + 23, 24),
       pile: rect(pileX, pileY, pileW, 6),
-      // Slim enough to sit between the ledge and the scores button without overlap.
+      // Slim enough to sit between the ledge and the name button without overlap.
       missedPoints: rect(pileX, pileY + 9, pileW, 18),
       log: rect(rackX + 5, outboxY + 66, 8 * lw, 206),
       score: rect(scoreX, scoreY, scoreW, 30),
       keyButtons: rect(rackX + 20, rackY - lh - 59, rackW - 40, 42),
       gameButtons: rect(scoreX, gameButtonsY, 100, 24),
-      scoresButton: rect(rackX - 110, gameButtonsY, 100, 24),
+      nameButton: rect(rackX - 110, gameButtonsY, 100, 24),
       fox: rect(28, 24, 64, 64),
       hSpacing: hSpacing,
       vSpacing: vSpacing,
@@ -676,8 +674,8 @@ class QBFMorph extends Morph {
     if ((valid || this.noCheck) && this.wordScore > this.bestWordScore) {
       this.bestWordScore = this.wordScore;
       this.bestWord = word;
-      this.bestWordBox.setText(String(this.bestWordScore));
-      this.bestWordLetters.setText(this.bestWord);
+      this.topWordBox.setText(String(this.bestWordScore));
+      this.topWordLetters.setText(this.bestWord);
     }
     this.outboxLetters = [];
     this.updateOutbox();
@@ -703,11 +701,6 @@ class QBFMorph extends Morph {
           this.paused ? Color.veryLightGray : letter.colorBeforePause || Color.black,
         );
       });
-    this.focusKeyboard();
-  }
-  doOpenScores() {
-    /** Raise or open the high-scores viewer. */
-    openQBFScores();
     this.focusKeyboard();
   }
   doRestart() {
@@ -764,7 +757,7 @@ Use the level button (it reads "${this.level.caption}" just now) to choose your 
 and thus the difficulty, of play...
     Not-so-quick has a longer rack, and so one more letter to work with.
     Super-quick has a shorter conveyor, so the letters come faster.
-High scores and best words are tallied for each level of play.
+High scores are tallied for each speed of play.
 
 Words are checked against the tournament list embedded in this file
 (or when QBFWords.txt can be fetched). The loader lowercases the words and, as in the
@@ -804,30 +797,9 @@ to LivelyMerge.`,
   }
   freshLevels() {
     return [
-      {
-        caption: 'not so quick',
-        beltSize: 3,
-        rackSize: 9,
-        bestWord: ' ',
-        bestWordScore: 0,
-        bestGameScore: 0,
-      },
-      {
-        caption: 'quick',
-        beltSize: 3,
-        rackSize: 8,
-        bestWord: ' ',
-        bestWordScore: 0,
-        bestGameScore: 0,
-      },
-      {
-        caption: 'super quick',
-        beltSize: 2,
-        rackSize: 8,
-        bestWord: ' ',
-        bestWordScore: 0,
-        bestGameScore: 0,
-      },
+      { caption: 'not so quick', beltSize: 3, rackSize: 9 },
+      { caption: 'quick', beltSize: 3, rackSize: 8 },
+      { caption: 'super quick', beltSize: 2, rackSize: 8 },
     ];
   }
   letterClicked(letter, evt) {
@@ -1015,19 +987,13 @@ to LivelyMerge.`,
     letter.setBounds(rect(c.x - ext.x / 2, c.y - ext.y / 2 + 2, ext.x, ext.y));
   }
   postFinalScore() {
-    // Best word and best word score are only kept along with a best game.
-    if (this.totalScore > this.level.bestGameScore) {
-      this.level.bestGameScore = this.totalScore;
-      this.level.bestWord = this.bestWord;
-      this.level.bestWordScore = this.bestWordScore;
-    }
     this.postLevelStats();
     this.appendLog('-- game over --');
     this.postScoresToStore();
   }
   postScoresToStore() {
     /**
-     * Publish this level's bests through the pluggable scores store.
+     * Publish this game's score through the pluggable scores store.
      * If the player has no name yet, ask first and retry.
      */
     if (!this.playerName) {
@@ -1037,32 +1003,32 @@ to LivelyMerge.`,
       });
       return;
     }
+    let when = new Date().toISOString();
     qbfPostLevelScore(this.playerName, this.level.caption, {
-      bestGame: this.level.bestGameScore,
-      bestWord: this.level.bestWord,
-      bestWordScore: this.level.bestWordScore,
-      time: new Date().toISOString(),
+      bestGame: this.totalScore,
+      bestWord: this.bestWord,
+      bestWordScore: this.bestWordScore,
+      time: when,
     });
     if (this.tournamentGameNumber != null) {
-      qbfPostRecentGameResult({
-        gameNumber: this.tournamentGameNumber,
-        level: this.level.caption,
-        player: this.playerName,
-        score: this.totalScore,
-        bestWord: this.bestWord,
-        bestWordScore: this.bestWordScore,
-        time: new Date().toISOString(),
-      });
+      qbfPostRecentGameResult(
+        new QBFGameScore(
+          this.totalScore,
+          this.playerName,
+          this.level.caption,
+          this.bestWord,
+          this.bestWordScore,
+          this.tournamentGameNumber,
+          when,
+        ),
+      );
     }
     let viewer = findQBFScoresViewer();
     if (viewer) viewer.refresh();
   }
   postLevelStats() {
-    this.bestWordBox.setText(String(this.bestWordScore));
-    this.bestWordLetters.setText(this.bestWord || ' ');
-    this.bestGameBox.setText(String(this.level.bestGameScore));
-    this.levelWordBox.setText(String(this.level.bestWordScore));
-    this.levelWordLetters.setText(this.level.bestWord || ' ');
+    this.topWordBox.setText(String(this.bestWordScore));
+    this.topWordLetters.setText(this.bestWord || ' ');
   }
   removeFromOutbox(letter) {
     if (letter.original) {
@@ -1164,17 +1130,15 @@ to LivelyMerge.`,
     this.letterScoreBox = this.addReadout(s, 'letter score');
     this.wordScoreBox = this.addReadout(s.translatedBy(pt(0, v)), 'word score');
     this.totalScoreBox = this.addReadout(s.translatedBy(pt(0, 2 * v)), 'game score');
-    this.bestWordBox = this.addReadout(s.translatedBy(pt(0, 3 * v)), 'top word');
-    this.bestWordLetters = this.addWordLabel(s.translatedBy(pt(0, 3 * v)));
     // Original: letter∪word score bounds, shifted right by hSpacing; large centered digits.
     this.multiplierBox = this.addReadout(
       this.letterScoreBox.getBounds().union(this.wordScoreBox.getBounds()).translatedBy(pt(h, 0)),
       ' multiplier',
       30,
     );
-    this.bestGameBox = this.addReadout(s.translatedBy(pt(h, 2 * v)), 'best game');
-    this.levelWordBox = this.addReadout(s.translatedBy(pt(h, 3 * v)), 'best word');
-    this.levelWordLetters = this.addWordLabel(s.translatedBy(pt(h, 3 * v)));
+    // Top word sits where "best game" used to be (right column, game-score row).
+    this.topWordBox = this.addReadout(s.translatedBy(pt(h, 2 * v)), 'top word');
+    this.topWordLetters = this.addWordLabel(s.translatedBy(pt(h, 2 * v)));
     // White plate under the outbox for the scrolling word history (like the original).
     this.logPlate = this.addMorph(new QBFDecorMorph(lay.log));
     this.logPlate.setStyles(Color.white, 1, Color.gray);
@@ -1233,10 +1197,9 @@ to LivelyMerge.`,
       'how to play',
       'rules',
     );
-    // Scores / name sit to the left of the score column, below the pile ledge.
-    this.scoresButton = this.addButton(lay.scoresButton, 'show scores', 'scores');
+    // Name sits to the left of the score column, below the pile ledge.
     this.nameButton = this.addButton(
-      lay.scoresButton.translatedBy(pt(0, 30)),
+      lay.nameButton,
       this.playerName ? this.playerName : 'choose name',
       'name',
     );
@@ -1273,7 +1236,7 @@ to LivelyMerge.`,
     this.outbox = rail(lay.outbox);
     this.belt = rail(lay.belt);
     this.belt2 = rail(lay.belt.translatedBy(pt(0, 16)));
-    // Landing ledge for fallen tiles — black bar, kept above scores/name buttons.
+    // Landing ledge for fallen tiles — black bar, kept above the name button.
     this.pile = rail(lay.pile);
     let radius = 9;
     this.pulley = this.addPulley(lay.belt.topLeft.addPt(pt(0, radius)), radius);
@@ -1453,12 +1416,10 @@ QBFMorph.prototype.ticksPerSec = 20;
 
 function openQBF(topLeftIfAny) {
   /**
-   * Put a Quick Brown Fox in a panel in the world, and open the high-scores viewer
-   * beside it. Answers the game panel.
+   * Put a Quick Brown Fox in a panel in the world, and open the game server
+   * 20px to its right. Answers the game panel.
    */
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(40, 40);
-  // Scores first so the game panel is added last and ends up frontmost.
-  openQBFScores(tl.subPt(pt(100, -100)));
   let game = new QBFMorph();
   let ext = game.getBounds().extent;
   let panel = new PanelMorph(
@@ -1469,6 +1430,8 @@ function openQBF(topLeftIfAny) {
   panel.addMorph(game);
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
+  openQBFScores(pt(tl.x + panel.getBounds().width() + 20, tl.y));
+  if (panel.beTopMorph) panel.beTopMorph();
   game.startTicking();
   game.focusKeyboard();
   return panel;
@@ -1569,50 +1532,38 @@ function qbfRecentGamesList() {
   if (!Lively.qbfRecentGames) Lively.qbfRecentGames = [];
   return Lively.qbfRecentGames;
 }
-function qbfPostRecentGameResult(entry) {
+function qbfPostRecentGameResult(entryIfAny) {
   /**
    * Record one player's finish for a tournament game number.
    * Groups by game # only (all speeds together). Keeps the newest ~5 game numbers.
+   * Accepts a QBFGameScore or a plain/legacy object.
    */
-  if (!entry || entry.gameNumber == null) return;
+  let gs = QBFGameScore.fromAny(entryIfAny);
+  if (gs.gameNo === '' || gs.gameNo == null) return;
   let list = qbfRecentGamesList();
   let game = null;
   for (let i = 0; i < list.length; i++) {
-    if (list[i] && list[i].gameNumber === entry.gameNumber) {
+    if (list[i] && list[i].gameNumber === gs.gameNo) {
       game = list[i];
       break;
     }
   }
   if (!game) {
-    game = { gameNumber: entry.gameNumber, results: [] };
+    game = { gameNumber: gs.gameNo, results: [] };
     list.unshift(game);
   }
   let results = game.results || [];
+  let plain = gs.toPlain();
   let found = false;
   for (let i = 0; i < results.length; i++) {
-    if (results[i] && results[i].player === entry.player && results[i].level === entry.level) {
-      results[i] = {
-        player: entry.player,
-        level: entry.level,
-        score: entry.score,
-        bestWord: entry.bestWord,
-        bestWordScore: entry.bestWordScore,
-        time: entry.time,
-      };
+    let prior = QBFGameScore.fromAny(results[i]);
+    if (prior.player === gs.player && prior.speed === gs.speed) {
+      results[i] = plain;
       found = true;
       break;
     }
   }
-  if (!found) {
-    results.push({
-      player: entry.player,
-      level: entry.level,
-      score: entry.score,
-      bestWord: entry.bestWord,
-      bestWordScore: entry.bestWordScore,
-      time: entry.time,
-    });
-  }
+  if (!found) results.push(plain);
   game.results = results;
   // Newest game numbers first; drop older groups.
   list.sort((a, b) => {
@@ -1666,7 +1617,6 @@ function openQBFPlaying(optsIfAny) {
     return panel || game;
   }
   let tl = opts.topLeft != null ? opts.topLeft : pt(40, 40).addPt(pt(100, 0));
-  openQBFScores(tl.subPt(pt(100, -100)));
   game = new QBFMorph();
   if (opts.levelCaption) {
     game.levels = game.freshLevels();
@@ -1685,6 +1635,8 @@ function openQBFPlaying(optsIfAny) {
   panel.addMorph(game);
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
+  openQBFScores(pt(tl.x + panel.getBounds().width() + 20, tl.y));
+  if (panel.beTopMorph) panel.beTopMorph();
   game.startTicking();
   game.focusKeyboard();
   return panel;
@@ -1805,6 +1757,86 @@ function qbfFormatScoreTime(timeVal) {
     return String(timeVal || '');
   }
 }
+
+//  QBFGameScore
+// --------------
+// One finished game's score line — used for both recent games and high scores.
+// Field order is the display column order.
+class QBFGameScore {
+  constructor(score, player, speed, bestWord, BWPoints, gameNo, gameDate) {
+    this.score = score != null ? Number(score) : 0;
+    this.player = player != null ? String(player) : '';
+    this.speed = speed != null ? String(speed) : '';
+    this.bestWord = bestWord != null ? String(bestWord) : '';
+    this.BWPoints = BWPoints != null ? Number(BWPoints) : 0;
+    this.gameNo = gameNo != null && gameNo !== '' ? gameNo : '';
+    this.gameDate = gameDate != null ? gameDate : '';
+  }
+  static fromAny(obj) {
+    /** Accept a QBFGameScore, new plain shape, or legacy store/recent-game entry. */
+    if (!obj) return new QBFGameScore(0, '', '', '', 0, '', '');
+    if (obj.className === 'QBFGameScore') {
+      return new QBFGameScore(
+        obj.score,
+        obj.player,
+        obj.speed,
+        obj.bestWord,
+        obj.BWPoints,
+        obj.gameNo,
+        obj.gameDate,
+      );
+    }
+    let score = obj.score != null ? obj.score : obj.bestGame;
+    let speed = obj.speed != null ? obj.speed : obj.level;
+    let BWPoints = obj.BWPoints != null ? obj.BWPoints : obj.bestWordScore;
+    let gameNo =
+      obj.gameNo != null && obj.gameNo !== ''
+        ? obj.gameNo
+        : obj.gameNumber != null
+          ? obj.gameNumber
+          : '';
+    let gameDate = obj.gameDate != null ? obj.gameDate : obj.time;
+    return new QBFGameScore(score, obj.player, speed, obj.bestWord, BWPoints, gameNo, gameDate);
+  }
+  toPlain() {
+    return {
+      score: this.score,
+      player: this.player,
+      speed: this.speed,
+      bestWord: this.bestWord,
+      BWPoints: this.BWPoints,
+      gameNo: this.gameNo,
+      gameDate: this.gameDate,
+    };
+  }
+  asRow() {
+    let word = this.bestWord && this.bestWord !== ' ' ? this.bestWord : '';
+    let gameCol = this.gameNo !== '' && this.gameNo != null ? '#' + this.gameNo : '';
+    return [
+      String(this.score),
+      this.player,
+      this.speed,
+      word,
+      String(this.BWPoints),
+      gameCol,
+      qbfFormatScoreTime(this.gameDate),
+    ];
+  }
+  static headerRow() {
+    return ['score', 'player', 'speed', 'best word', 'pts', 'game #', 'date'];
+  }
+  static printTable(scores) {
+    let grid = [QBFGameScore.headerRow()];
+    for (let i = 0; i < (scores || []).length; i++) {
+      grid.push(scores[i].asRow());
+    }
+    return qbfPrintScoreTable(grid);
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
 function qbfMergePlayerScore(prior, incoming) {
   /**
    * Same merge rules as the original postScoresToServer: keep the better game
@@ -2136,7 +2168,14 @@ class QBFScoresMorph extends Morph {
         'launchNotSoQuick',
       ),
     );
-    let btnBottom = btnY + 3 * btnH + 2 * btnGap;
+    this.finishButton = this.addMorph(
+      new QBFButtonMorph(
+        rect(btnX, btnY + 3 * (btnH + btnGap), btnW, btnH),
+        'finish',
+        'finishTiles',
+      ),
+    );
+    let btnBottom = btnY + 4 * btnH + 3 * btnGap;
     // Same orange strip above "Recent games" as between middle and bottom panes.
     let paneGap = 10;
 
@@ -2201,6 +2240,7 @@ class QBFScoresMorph extends Morph {
     if (actionName === 'launchSuperQuick') this.launchLevel('super quick');
     if (actionName === 'launchQuick') this.launchLevel('quick');
     if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
+    if (actionName === 'finishTiles') this.finishTiles();
   }
   launchLevel(caption) {
     this.syncGameClock(true);
@@ -2211,6 +2251,20 @@ class QBFScoresMorph extends Morph {
       gameNumber: n,
       letterQueue: queue,
     });
+  }
+  finishTiles() {
+    /**
+     * Cut off the remaining letter supply so the open board ends soon.
+     * Tiles already on the belt/rack still play out; then "!" arrives (if needed)
+     * and the game wraps up — handy when checking score reporting.
+     */
+    let game = findQBFGame();
+    if (!game || game.gameOver) return;
+    let bangInFlight =
+      (game.letterInBin && game.letterInBin.shape.string === '!') ||
+      (game.activeLetters || []).some((l) => l && l.shape.string === '!');
+    game.letterQueue = bangInFlight ? [] : ['!'];
+    if (game.nLeftBox) game.nLeftBox.setText(String(game.letterQueue.length));
   }
   syncGameClock(forceIfAny) {
     /** Refresh Game # and the ephemeral tile queue when the minute rolls. */
@@ -2291,48 +2345,30 @@ class QBFScoresMorph extends Morph {
       this.restoreTextHeight(this.recentText);
       return;
     }
-    let lines = [];
-    lines.push(
-      qbfPadRight('game', 6) +
-        qbfPadRight('player', 12) +
-        qbfPadRight('speed', 14) +
-        qbfPadLeft('score', 6) +
-        '  word',
-    );
+    let scores = [];
     for (let i = 0; i < list.length; i++) {
       let g = list[i];
       if (!g) continue;
       let results = (g.results || []).slice();
       results.sort((a, b) => {
-        let sa = a && a.score != null ? a.score : 0;
-        let sb = b && b.score != null ? b.score : 0;
-        if (sa < sb) return 1; // highest score first
-        if (sa > sb) return -1;
-        // Tie-break: faster speed first, then name.
-        let ra = qbfSpeedRank(a && a.level);
-        let rb = qbfSpeedRank(b && b.level);
+        let ga = QBFGameScore.fromAny(a);
+        let gb = QBFGameScore.fromAny(b);
+        if (ga.score < gb.score) return 1;
+        if (ga.score > gb.score) return -1;
+        let ra = qbfSpeedRank(ga.speed);
+        let rb = qbfSpeedRank(gb.speed);
         if (ra !== rb) return ra - rb;
-        let pa = (a && a.player) || '';
-        let pb = (b && b.player) || '';
-        if (pa < pb) return -1;
-        if (pa > pb) return 1;
+        if (ga.player < gb.player) return -1;
+        if (ga.player > gb.player) return 1;
         return 0;
       });
       for (let j = 0; j < results.length; j++) {
-        let r = results[j];
-        if (!r) continue;
-        let gameCol = j === 0 ? '#' + g.gameNumber : '';
-        lines.push(
-          qbfPadRight(gameCol, 6) +
-            qbfPadRight(r.player || '?', 12) +
-            qbfPadRight(r.level || '', 14) +
-            qbfPadLeft(String(r.score), 6) +
-            '  ' +
-            (r.bestWord || ''),
-        );
+        let gs = QBFGameScore.fromAny(results[j]);
+        if (gs.gameNo === '' || gs.gameNo == null) gs.gameNo = g.gameNumber;
+        scores.push(gs);
       }
     }
-    this.recentText.setText(lines.join('\n'));
+    this.recentText.setText(QBFGameScore.printTable(scores));
     this.restoreTextHeight(this.recentText);
   }
   regret(errIfAny) {
@@ -2342,75 +2378,48 @@ class QBFScoresMorph extends Morph {
     this.restoreTextHeight(this.scoresText);
   }
   showScoreEntries(entries) {
-    let lineItems = [];
+    let scores = [];
     for (let i = 0; i < entries.length; i++) {
       let e = entries[i];
-      if (!e || e.bestGame == null) continue;
-      lineItems.push({
-        level: e.level,
-        player: e.player,
-        bestGame: e.bestGame,
-        bestWord: e.bestWord,
-        bestWordScore: e.bestWordScore,
-        time: e.time,
-      });
+      if (!e) continue;
+      let gs = QBFGameScore.fromAny(e);
+      // Legacy flat entries carry score as bestGame; skip empties.
+      if (e.bestGame == null && e.score == null) continue;
+      scores.push(gs);
     }
-    this.renderScoreLines(lineItems);
+    this.renderScoreLines(scores);
   }
   showScores(allScores) {
-    let lineItems = [];
+    let scores = [];
     let players = allScores || {};
     Object.keys(players).forEach((userName) => {
       let userObj = players[userName] || {};
       Object.keys(userObj).forEach((level) => {
         let rec = userObj[level];
-        if (!rec || rec.bestGame == null) return;
-        lineItems.push({
-          level: level,
-          player: userName,
-          bestGame: rec.bestGame,
-          bestWord: rec.bestWord,
-          bestWordScore: rec.bestWordScore,
-          time: rec.time,
-        });
+        if (!rec || (rec.bestGame == null && rec.score == null)) return;
+        let gs = QBFGameScore.fromAny(rec);
+        gs.player = userName;
+        gs.speed = level;
+        scores.push(gs);
       });
     });
-    this.renderScoreLines(lineItems);
+    this.renderScoreLines(scores);
   }
-  renderScoreLines(lineItems) {
-    lineItems.sort((a, b) => {
-      if (a.level > b.level) return 1;
-      if (a.level < b.level) return -1;
-      if (a.bestGame < b.bestGame) return 1;
-      return -1;
+  renderScoreLines(scores) {
+    scores.sort((a, b) => {
+      if (a.speed > b.speed) return 1;
+      if (a.speed < b.speed) return -1;
+      if (a.score < b.score) return 1;
+      if (a.score > b.score) return -1;
+      return 0;
     });
-    let grid = [];
-    let level = 'none';
-    grid.push(['game score', 'best word', 'score', 'player', 'time']);
-    for (let i = 0; i < lineItems.length; i++) {
-      let item = lineItems[i];
-      if (item.level !== level) {
-        level = item.level;
-        grid.push([level, '', '', '', '']);
-      }
-      grid.push([
-        String(item.bestGame),
-        item.bestWord || '',
-        String(item.bestWordScore),
-        item.player,
-        qbfFormatScoreTime(item.time),
-      ]);
-    }
     let footer = '\n      -- Scores are shared in this document --';
-    if (lineItems.length === 0) {
+    if (scores.length === 0) {
       this.scoresText.setText(
-        qbfPrintScoreTable([
-          ['game score', 'best word', 'score', 'player', 'time'],
-          ['(no scores yet)', '', '', '', ''],
-        ]) + footer,
+        QBFGameScore.printTable([]) + '\n(no scores yet)' + footer,
       );
     } else {
-      this.scoresText.setText(qbfPrintScoreTable(grid) + footer);
+      this.scoresText.setText(QBFGameScore.printTable(scores) + footer);
     }
     this.restoreTextHeight(this.scoresText);
   }
@@ -2490,7 +2499,18 @@ function openQBFScores(topLeftIfAny) {
     existing.startGameClock();
     return panel || existing;
   }
-  let tl = topLeftIfAny != null ? topLeftIfAny : pt(560, 40);
+  // Prefer 20px to the right of an open QBF game; else the caller tip or a default.
+  let tl = topLeftIfAny;
+  if (tl == null) {
+    let game = findQBFGame();
+    let gamePanel = game && game.panelMorph ? game.panelMorph() : null;
+    if (gamePanel) {
+      let gtl = gamePanel.topLeftInWorld ? gamePanel.topLeftInWorld() : gamePanel.getBounds().topLeft;
+      tl = pt(gtl.x + gamePanel.getBounds().width() + 20, gtl.y);
+    } else {
+      tl = pt(560, 40);
+    }
+  }
   let viewer = new QBFScoresMorph();
   let ext = viewer.getBounds().extent;
   let panel = new PanelMorph(

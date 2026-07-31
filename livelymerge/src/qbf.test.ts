@@ -20,12 +20,16 @@ describe('QBF', () => {
     // The board fills its panel, just under the title bar (panel-local coordinates).
     expect(rt.eval(`qbfGame.getBounds().width() == qbfPanel.getBounds().width()`)).toBe(true);
     expect(rt.eval(`qbfGame.getBounds().topLeft.y`)).toBe(rt.eval(`qbfPanel.titleBarHeight`));
-    expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
+    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('choose name');
+    expect(rt.eval(`!!qbfGame.scoresButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.bestGameBox`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.topWordBox && qbfGame.topWordBox.shape.string`)).toBe('0');
     expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
     expect(rt.eval(`String(qbfScores.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
     expect(rt.eval(`!!qbfScores.quickButton && !!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(
       true,
     );
+    expect(rt.eval(`qbfScores.finishButton.shape.string`)).toBe('finish');
   }, 60_000);
 
   it('carries tiles in on the belt and drops them onto the rack', () => {
@@ -261,13 +265,12 @@ qbfGame.totalScoreBox.setText('42');
 qbfGame.playerName = 'Tester';
 true`);
     ticksUntil(`qbfGame.gameOver`);
-    expect(rt.eval(`qbfGame.level.bestGameScore`)).toBe(42);
+    expect(rt.eval(`qbfGame.totalScore`)).toBe(42);
     expect(rt.eval(`qbfGame.logLines.pop()`)).toContain('game over');
     rt.eval(`qbfGame.doRestart()`);
     expect(rt.eval(`qbfGame.gameOver`)).toBe(false);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(0);
-    expect(rt.eval(`qbfGame.level.bestGameScore`)).toBe(42);
-    expect(rt.eval(`Number(qbfGame.bestGameBox.shape.string)`)).toBe(42);
+    expect(rt.eval(`Number(qbfGame.topWordBox.shape.string)`)).toBe(0);
   }, 60_000);
 
   it('encodes and decodes compact word lists', () => {
@@ -313,19 +316,21 @@ true`);
     const { rt } = makeGame();
     rt.eval(`
 qbfGame.playerName = 'Ada';
-qbfGame.level.bestGameScore = 99;
-qbfGame.level.bestWord = 'QUICK';
-qbfGame.level.bestWordScore = 20;
+qbfGame.totalScore = 99;
+qbfGame.bestWord = 'QUICK';
+qbfGame.bestWordScore = 20;
 qbfGame.postScoresToStore();
 true`);
     expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(1);
     expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(99);
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('Ada');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('QUICK');
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('score');
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('speed');
     // A worse score does not overwrite.
     rt.eval(`
-qbfGame.level.bestGameScore = 10;
-qbfGame.level.bestWordScore = 1;
+qbfGame.totalScore = 10;
+qbfGame.bestWordScore = 1;
 qbfGame.postScoresToStore();
 true`);
     expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(99);
@@ -337,5 +342,32 @@ qbfPostLevelScore('Bea', 'quick', { bestGame: 5, bestWord: 'BE', bestWordScore: 
 true`);
     expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(1);
     expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].player`)).toBe('Bea');
+  }, 60_000);
+
+  it('formats recent games and high scores with QBFGameScore columns', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+qbfPostRecentGameResult(new QBFGameScore(42, 'Ada', 'quick', 'FOX', 18, 100, '2026-07-25T12:00:00Z'));
+qbfScores.refresh();
+true`);
+    const recent = rt.eval(`qbfScores.recentText.shape.string`) as string;
+    expect(recent).toContain('score');
+    expect(recent).toContain('player');
+    expect(recent).toContain('Ada');
+    expect(recent).toContain('FOX');
+    expect(recent).toContain('#100');
+    const header = rt.eval(`QBFGameScore.headerRow().join(',')`) as string;
+    expect(header).toBe('score,player,speed,best word,pts,game #,date');
+  }, 60_000);
+
+  it('finish button cuts the tile queue down to a terminal "!"', () => {
+    const { rt } = makeGame();
+    expect(rt.eval(`qbfGame.letterQueue.length`)).toBeGreaterThan(1);
+    rt.eval(`qbfScores.finishTiles()`);
+    expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe('!');
+    expect(rt.eval(`Number(qbfGame.nLeftBox.shape.string)`)).toBe(1);
+    // Second finish while "!" is still queued stays a single bang.
+    rt.eval(`qbfScores.finishTiles()`);
+    expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe('!');
   }, 60_000);
 });
