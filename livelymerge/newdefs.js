@@ -6086,6 +6086,9 @@ class PanelMorph extends Morph {
     this.$closeBtnPressed = !!hitInfo.onClose;
     this.$collapseBtnPressed = !hitInfo.onClose && !!hitInfo.onCollapse;
     this.$titleBarDrag = !hitInfo.onClose && !hitInfo.onCollapse;
+    // Unconditional: a collapse press can turn into a sticky drag, and for
+    // close/collapse-without-drag the commit is op-free anyway.
+    this.beginEphemeralTransform();
     this.world().setPointerFocus(this);
     return true;
   }
@@ -6094,6 +6097,7 @@ class PanelMorph extends Morph {
     return optionalRect != null ? optionalRect : this.defaultRect();
   }
   clearTitleBarPress() {
+    this.commitEphemeralTransform();
     this.$hitPoint = null;
     this.$titleBarDrag = false;
     this.$collapseBtnPressed = false;
@@ -6126,6 +6130,7 @@ class PanelMorph extends Morph {
     }
     if (this.collapsed) this.applyCollapsedBarGridSnap();
     this.savePanelLocation();
+    this.commitEphemeralTransform();
     this.$stickyDragCollapsedBar = false;
     this.$hitPoint = null;
     this.$didDrag = false;

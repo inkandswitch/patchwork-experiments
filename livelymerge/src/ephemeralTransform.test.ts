@@ -225,6 +225,47 @@ describe('ephemeral transform during drag', () => {
     expect(docBoundsTlEnd!.y).toBeCloseTo(docBoundsTlStart!.y + 20, 6);
   }, 60_000);
 
+  it('dragging a panel by its title bar goes through $transform too', () => {
+    const { handle, rt, dispatch, runFrame, getFrameError } = makeWorld();
+
+    // A titled panel like the welcome window; its title-bar drag uses
+    // beginTitleBarPress/clearTitleBarPress, not the generic Morph drag path.
+    rt.eval(
+      `Lively.testPanel = Lively.addMorph(new MethodPanel(rect(100, 300, 200, 120), 'hello panel', 'Test Panel'));`,
+    );
+
+    // Title bar spans y 300..324; x 128..272 is the title label (no chrome buttons).
+    dispatch('pointerdown', 200, 312);
+    runFrame();
+    expect(rt.eval(`Lively.testPanel.$titleBarDrag`)).toBe(true);
+    const docStart = docPointCoords(handle, rt, `Lively.testPanel._transform.translation`);
+    const tableSizeAfterDown = Object.keys(handle.doc().objectTable).length;
+
+    dispatch('pointermove', 220, 332);
+    runFrame();
+    dispatch('pointermove', 240, 352);
+    runFrame();
+
+    // Mid-drag: renders at the dragged position, but not one document write.
+    expect(rt.eval(`Lively.testPanel.$transform != null`)).toBe(true);
+    expect(rt.eval(`Lively.testPanel.transform.translation.x`)).toBeCloseTo(
+      (rt.eval(`Lively.testPanel._transform.translation.x`) as number) + 40,
+      6,
+    );
+    expect(docPointCoords(handle, rt, `Lively.testPanel._transform.translation`)).toEqual(docStart);
+    expect(Object.keys(handle.doc().objectTable).length).toBe(tableSizeAfterDown);
+
+    dispatch('pointerup', 240, 352);
+    runFrame();
+
+    expect(getFrameError(), `frame loop threw: ${String((getFrameError() as any)?.stack ?? getFrameError())}`).toBeNull();
+    expect(rt.eval(`Lively.testPanel.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testPanel.$titleBarDrag`)).toBe(false);
+    const docEnd = docPointCoords(handle, rt, `Lively.testPanel._transform.translation`);
+    expect(docEnd!.x).toBeCloseTo(docStart!.x + 40, 6);
+    expect(docEnd!.y).toBeCloseTo(docStart!.y + 40, 6);
+  }, 60_000);
+
   it('a click without a drag leaves the document transform untouched', () => {
     const { handle, rt, dispatch, runFrame, getFrameError } = makeWorld();
 
