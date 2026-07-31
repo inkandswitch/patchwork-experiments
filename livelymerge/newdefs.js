@@ -403,7 +403,7 @@ function render() {
   topLevelMorph.render(ctx);
 }
 function viewportBounds() {
-  /** Layout box for the drawable canvas (Pyonpyon host: .canvas-container); else canvas bounding rect. */
+  /** Layout box for the drawable canvas (Livelymerge host: .canvas-container); else canvas bounding rect. */
   if (typeof document === 'undefined') return null;
   let c = canvas;
   if (!c) return null;
@@ -469,7 +469,7 @@ function populateLively() {
   Lively.addMorph(
     new MethodPanel(
       welcomeRect,
-      `The shapes you see are objects in Pyonpyon.  You can drag them around, copy and reshape them at will.  The tools for such manipulation are described in "halos" described in 'Halo help' in the screen menu.
+      `The shapes you see are objects in Livelymerge.  You can drag them around, copy and reshape them at will.  The tools for such manipulation are described in "halos" described in 'Halo help' in the screen menu.
 
 Everywhere you see text, you can edit it, search, and evaluate JavaScript expressions as in 'Text help' also in the screen menu.
   355/113 -- select this and press ctrl-P
