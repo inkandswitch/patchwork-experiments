@@ -66,6 +66,7 @@ let bugImage = null;
 let $onScreenKeyboardMorph = null;
 let $oskSavedChrome = null;
 let _transcriptConsoleTargets = [];
+let _consoleMirrorInstalled = false;
 let _lastEvalSource = null;
 let _evalJustFailed = false;
 let _alldefsSourceLines = null;
@@ -217,16 +218,17 @@ function replaceConstructorInClassSource(classSource, newCtorMethod) {
   while (ctorStart < classSource.length && /[ \t]/.test(classSource[ctorStart])) ctorStart++;
   return classSource.slice(0, ctorStart) + newCtorMethod + classSource.slice(ctorStart + oldCtor.length);
 }
-function installClassConstructor(className, ctorFn) {
+function installClassConstructor(className, ctorFn, ctorMethodForShowIfAny) {
   // Replace the constructor Fun for className while keeping the existing prototype
   // (so live instances stay valid) and copying statics onto the new Fun.
   // Also rewrites $codeForShow to an updated class { constructor... } source so
   // isClass() / toString() / the browser keep working.
+  // ctorMethodForShowIfAny: optional "constructor(...) { ... }" with super() kept for display.
   let oldCls = $global[className];
   if (!isClass(oldCls) || typeof ctorFn !== 'function') return false;
   let oldProto = oldCls.prototype;
   if (!oldProto) return false;
-  let newCtorMethod = constructorMethodFromFunction(ctorFn);
+  let newCtorMethod = ctorMethodForShowIfAny || constructorMethodFromFunction(ctorFn);
   if (!newCtorMethod) return false;
   let newClassSource = replaceConstructorInClassSource(oldCls.toString(), newCtorMethod);
   let staticNames = classStaticNames(oldCls);
@@ -246,6 +248,28 @@ function installClassConstructor(className, ctorFn) {
   if (live && live.$codeForShow !== undefined) live.$codeForShow = newClassSource;
   return true;
 }
+function nameOfClass(cls) {
+  if (!cls) return null;
+  let names = allClassNames();
+  for (let i = 0; i < names.length; i++) {
+    if ($global[names[i]] === cls) return names[i];
+  }
+  return null;
+}
+function rewriteSuperInConstructorSource(fnSource, superName) {
+  // Standalone `function constructor(){ super(...) }` is not class-syntax, so rewrite
+  // super like the class transpiler before eval. Keeps display source with super() intact.
+  if (!fnSource) return fnSource;
+  let sName = superName || 'Object';
+  let s = fnSource;
+  // super.method(args) -> Super.method.call(this, args)
+  s = s.replace(/\bsuper\.([A-Za-z_$][\w$]*)\s*\(/g, sName + '.$1.call(this, ');
+  // super(args) -> Super.call(this, args)
+  s = s.replace(/\bsuper\s*\(/g, sName + '.call(this, ');
+  // Normalize empty arg lists: .call(this, ) -> .call(this)
+  s = s.replace(/\.call\(this,\s*\)/g, '.call(this)');
+  return s;
+}
 function acceptClassConstructorAssignment(evalString) {
   // acceptClassConstructorAssignment('Point.constructor = function constructor(x, y) { ... }')
   // Handles browser save / do-it of the synthetic Class.constructor = form.
@@ -256,15 +280,19 @@ function acceptClassConstructorAssignment(evalString) {
   let className = m[1];
   if (!isClass($global[className])) return false;
   let rhs = m[2].replace(/;\s*$/, '');
+  let showMethod = constructorMethodFromFunction({ toString: () => rhs });
+  let superCls = findSuperclassOf($global[className]);
+  let superName = nameOfClass(superCls) || 'Object';
+  let evalRhs = rewriteSuperInConstructorSource(rhs, superName);
   let ctorFn;
   try {
-    ctorFn = eval('(' + rhs + ')');
+    ctorFn = eval('(' + evalRhs + ')');
   } catch (e) {
     console.log('constructor accept failed to eval function:', e);
     return false;
   }
   if (typeof ctorFn !== 'function') return false;
-  return installClassConstructor(className, ctorFn);
+  return installClassConstructor(className, ctorFn, showMethod);
 }
 function allClassNamesWithStatics() {
   // allClassNamesWithStatics()
@@ -2423,6 +2451,8 @@ class TextBox extends Shape {
       let evalThing = this.wsEval.call(this.workspaceObj, this.string.slice(start, end));
       if (_evalJustFailed) return;
       let ins = ' ==> ' + this.printitString(evalThing);
+      if (hasTranscriptConsoleTargets())
+        _routeConsoleToTranscripts('', this.printitString(evalThing));
       // Save undo state so ctrl-Z can restore both string and selection.
       this.$printitUndo = {
         prefix: this.string.slice(0, end),
@@ -5232,25 +5262,20 @@ class TextPane extends ScrollPane {
 // Append-only transcript; mirrors console quietly.
 class TranscriptTextPane extends TextPane {
   constructor(panelBounds, boundsSpec) {
-    ScrollPane.prototype.initialize.call(this, panelBounds, boundsSpec);
+    // Was ScrollPane.prototype.initialize.call(...) — initialize went away when
+    // ScrollPane moved to class constructors, which made Open console crash.
+    super(panelBounds, boundsSpec);
     this._savedTextSnapshot = '';
     this._consoleMirroring = false;
     this._transcriptReentry = 0;
-    let self = this;
-    let contentSpec = rect(0, 0, 0.95, 1);
-    ScrollPane.prototype.installContentAndScrollbar.call(
-      this,
-      contentSpec,
-      rect(0.95, 0, 0.05, 1),
-      new TextMorph(this.subBounds(contentSpec), ''),
-      function () {
-        self._savedTextSnapshot = self.contentPane.shape.string;
-      },
-    );
-    this.setPaneMenu(TextPane.prototype.defaultPaneMenuSpec());
+    // TextPane seeds content with 'Text pane'; start transcripts empty.
+    if (this.contentPane) {
+      this.contentPane.setText('');
+      this._savedTextSnapshot = '';
+    }
   }
   _appendTranscriptLineQuiet(line) {
-    /** Append one line without going through mirrored nextPut / noisy scroll path. */
+    /** Append one line without going through mirrored push / noisy scroll path. */
     let cur = this.contentPane.shape.string || '';
     let add = (line == null ? '' : '' + line) + '\n';
     let next = this._truncateIfNeeded(cur + add);
@@ -5305,7 +5330,7 @@ class TranscriptTextPane extends TextPane {
       if (this._transcriptReentry < 0) this._transcriptReentry = 0;
     }
   }
-  nextPut(str) {
+  push(str) {
     this._transcriptReentry++;
     try {
       if (this._transcriptReentry >= 3) {
@@ -5342,9 +5367,6 @@ class TranscriptTextPane extends TextPane {
     this._scrollTranscriptBottomQuiet();
   }
   setConsoleMirror(on) {
-    // TODO: get this working again
-    return;
-
     this._transcriptReentry++;
     try {
       if (this._transcriptReentry >= 3) {
@@ -7038,6 +7060,8 @@ class ErrorStackPanel extends MethodListPanel {
 // Panel hosting a TranscriptTextPane.
 class TranscriptPanelMorph extends PanelMorph {
   constructor(initialBounds) {
+    // Open with 'openTranscript()' ;
+    // Show with 'Transcript.push("Hi there")' ;
     super(initialBounds);
     let panelBounds = this.paneLayoutBounds();
     this.transcriptPane = this.addMorph(new TranscriptTextPane(panelBounds, rect(0, 0, 1, 1)));
@@ -7048,8 +7072,8 @@ class TranscriptPanelMorph extends PanelMorph {
   clear() {
     if (this.transcriptPane) this.transcriptPane.clear();
   }
-  nextPut(str) {
-    if (this.transcriptPane) this.transcriptPane.nextPut(str);
+  push(str) {
+    if (this.transcriptPane) this.transcriptPane.push(str);
   }
   receivesConsoleOutput() {
     return this.transcriptPane && this.transcriptPane.receivesConsoleOutput();
@@ -8016,53 +8040,84 @@ function _routeConsoleToTranscripts(label, line) {
   let copy = arr.slice();
   for (let i = 0; i < copy.length; i++) {
     let tp = copy[i];
-    if (tp && tp.nextPut) tp.nextPut(payload + '\n');
+    if (tp && tp.push) tp.push(payload + '\n');
   }
 }
 function hasTranscriptConsoleTargets() {
   let arr = _transcriptConsoleTargets;
   return !!(arr && arr.length > 0);
 }
+function _consoleMsgLine(msg) {
+  if (msg === null) return 'null';
+  if (msg === undefined) return 'undefined';
+  if (typeof msg === 'string') return msg;
+  if (typeof msg === 'number' || typeof msg === 'boolean') return '' + msg;
+  try {
+    return JSON.stringify(msg);
+  } catch (e) {
+    try {
+      return '' + msg;
+    } catch (e2) {
+      return '?';
+    }
+  }
+}
+function log(msg) {
+  // Open Console logger: reaches transcript targets without relying on $console.
+  let line = _consoleMsgLine(msg);
+  _routeConsoleToTranscripts('', line);
+  try {
+    window.console.log(msg);
+  } catch (e) {}
+  return line;
+}
+function _lmConsoleMirrorSink(level, line) {
+  // Optional runtime hook (console.setMirrorSink) when the synced package has it.
+  let label = level === 'log' ? '' : '' + level;
+  _routeConsoleToTranscripts(label, line);
+}
+function _mirroredConsoleLog(msg) {
+  _routeConsoleToTranscripts('', _consoleMsgLine(msg));
+  try {
+    window.console.log(msg);
+  } catch (e) {}
+}
+function _mirroredConsoleInfo(msg) {
+  _routeConsoleToTranscripts('info', _consoleMsgLine(msg));
+  try {
+    window.console.info(msg);
+  } catch (e) {}
+}
+function _mirroredConsoleWarn(msg) {
+  _routeConsoleToTranscripts('warn', _consoleMsgLine(msg));
+  try {
+    window.console.warn(msg);
+  } catch (e) {}
+}
+function _mirroredConsoleError(msg) {
+  _routeConsoleToTranscripts('error', _consoleMsgLine(msg));
+  try {
+    window.console.error(msg);
+  } catch (e) {}
+}
 function _ensureConsoleMirrorInstalled() {
-  /** Wraps console once; mirrored panes registered via TranscriptTextPane.setConsoleMirror(true). */
-  if (window._consoleMirrorInstalled) return;
-  let root = typeof console !== 'undefined' ? console : null;
-  if (!root) return;
-  window._consoleMirrorInstalled = true;
-  _transcriptConsoleTargets = [];
-  let origLog = root.log.bind(root);
-  let origWarn = root.warn.bind(root);
-  let origErr = root.error.bind(root);
-  let origInfo = root.info ? root.info.bind(root) : origLog;
-  let fmtLine = function (args) {
-    let parts = [];
-    for (let i = 0; i < args.length; i++) parts.push(_transcriptFmtConsoleArg(args[i]));
-    return parts.join(' ');
-  };
-  root.log = function () {
-    let a = arguments;
-    origLog.apply(root, a);
-    if (!hasTranscriptConsoleTargets()) return;
-    _routeConsoleToTranscripts('', fmtLine(a));
-  };
-  root.info = function () {
-    let a = arguments;
-    origInfo.apply(root, a);
-    if (!hasTranscriptConsoleTargets()) return;
-    _routeConsoleToTranscripts('info', fmtLine(a));
-  };
-  root.warn = function () {
-    let a = arguments;
-    origWarn.apply(root, a);
-    if (!hasTranscriptConsoleTargets()) return;
-    _routeConsoleToTranscripts('warn', fmtLine(a));
-  };
-  root.error = function () {
-    let a = arguments;
-    origErr.apply(root, a);
-    if (!hasTranscriptConsoleTargets()) return;
-    _routeConsoleToTranscripts('error', fmtLine(a));
-  };
+  /** Wire console → transcript. Prefer runtime setMirrorSink; else replace console.log
+   * with top-level one-arg wrappers (no nested origLog / rest-arg free-var bugs). */
+  if (!_consoleMirrorInstalled) {
+    _transcriptConsoleTargets = [];
+    _consoleMirrorInstalled = true;
+  }
+  try {
+    window._consoleMirrorInstalled = false;
+  } catch (e) {}
+  if (typeof console.setMirrorSink === 'function') {
+    console.setMirrorSink(_lmConsoleMirrorSink);
+    return;
+  }
+  console.log = _mirroredConsoleLog;
+  console.info = _mirroredConsoleInfo;
+  console.warn = _mirroredConsoleWarn;
+  console.error = _mirroredConsoleError;
 }
 function openTranscript() {
   /** Opens a transcript panel in the upper-right quadrant of the backing canvas. */
@@ -8076,7 +8131,6 @@ function openTranscript() {
   let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
   Lively.addMorph(panel);
   panel.beTopMorph();
-  _lastTranscriptPanel = panel;
   return panel;
 }
 //  WorldMorph
@@ -8665,35 +8719,26 @@ class WorldMorph extends Morph {
       if (item == 'Morphic help') wld.showMorphicHelp();
       if (item == 'Halo help') wld.showHaloHelp();
       if (item == 'Text help') wld.showTextHelp();
-      if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel)) {
-        $longClickForHalos = !$longClickForHalos;
-        refreshWorldMenuItems(this);
-      }
-      if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
-        $useOnScreenKbd = !$useOnScreenKbd;
-        syncOnScreenKeyboardWithFocus(this.world());
-        refreshWorldMenuItems(this);
-      }
       if (item == 'Init hand') this.world().initHand(true);
-      if (item == 'Open Transcript') {
-        let p = openTranscript();
-        if (p) {
-          p.setPanelTitle('Transcript');
-          Transcript = p;
-        }
-      }
+      if (item == 'Open Transcript') Transcript = openTranscript();
       if (item == 'Open Console') {
         let p = openTranscript();
-        if (p) {
-          p.setPanelTitle('Console');
-          Console = p;
-          if (p.transcriptPane) p.transcriptPane.setConsoleMirror(true);
-        }
+        p.setPanelTitle('Console');
+        p.transcriptPane.setConsoleMirror(true);
+        Console = p;
+        log('Console ready — use log(msg) or console.log(msg); errors also appear.');
       }
       if (item == 'Restart Console') {
         let con = Console;
         if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
       }
+      if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel)) {
+        $longClickForHalos = !$longClickForHalos;
+        refreshWorldMenuItems(this); }
+      if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
+        $useOnScreenKbd = !$useOnScreenKbd;
+        syncOnScreenKeyboardWithFocus(this.world());
+        refreshWorldMenuItems(this); }
       this.shape.selectLineAt(0); // deselect after actions
     });
     menu.isFleetingMenu = !!opts.fleeting;
@@ -9333,6 +9378,8 @@ function presentError(err, contextIfAny) {
   let report = formatErrorReport(err, contextIfAny);
   _lastErrorReport = report;
   console.error(report);
+  // Open Console: show the report even when $console mirroring is unavailable.
+  _routeConsoleToTranscripts('error', report);
   let panel = openErrorStackPanel(err, contextIfAny);
   if (!_alldefsSourceLines) {
     // ensureAlldefsSourceLines is currently disabled and returns null.
@@ -9347,6 +9394,7 @@ function presentError(err, contextIfAny) {
 function recoverFromRuntimeError(err, contextIfAny) {
   if (_errorRecoveryInProgress) {
     console.error('error during recovery', err);
+    _routeConsoleToTranscripts('error', 'error during recovery');
     return null;
   }
   _errorRecoveryInProgress = true;
@@ -9354,6 +9402,7 @@ function recoverFromRuntimeError(err, contextIfAny) {
     let report = formatErrorReport(err, contextIfAny);
     _lastErrorReport = report;
     console.error(report);
+    _routeConsoleToTranscripts('error', report);
     if (window._uiRafId != null) {
       window.cancelAnimationFrame(window._uiRafId);
       window._uiRafId = null;
