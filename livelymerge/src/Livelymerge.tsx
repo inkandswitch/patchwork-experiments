@@ -114,7 +114,8 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((e) => !e)}
-        className="block w-full cursor-pointer rounded-md border border-base-300/70 bg-base-100/90 px-2.5 py-1.5 text-left shadow-sm backdrop-blur-sm"
+        className="block w-full cursor-pointer rounded-md border border-base-300/70 px-2.5 py-1.5 text-left shadow-sm"
+        style={{ backgroundColor: 'white' }}
       >
         <div className="tabular-nums whitespace-nowrap">
           <span className="text-base-content/55">ops</span> {stats.numOps.toLocaleString()}
