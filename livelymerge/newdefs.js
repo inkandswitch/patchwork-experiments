@@ -3097,6 +3097,75 @@ class Morph {
       }
     }
   }
+  //  Pointer-drag protocol
+  //  ---------------------
+  //  ONE state machine for every pointer-driven manipulation (plain drags,
+  //  shift-drag copies, panel title-bar drags, halo handles). A client's pointer
+  //  handlers call begin/continue/end; the protocol owns the bookkeeping that used
+  //  to be re-implemented at every site: $hitPoint/$didDrag/$dragActorID, pointer
+  //  focus, and the ephemeral-transform lifecycle (begin on press, one commit on
+  //  release — so per-frame moves never touch the shared document).
+  //
+  //  Hooks for subclasses:
+  //    dragMovedBy(delta, p, evt) — per-move behavior; default moves dragTarget().
+  //    dragEnded(p, evt, wasDrag) — release behavior; default drops on the morph
+  //                                 under the pointer. Clients with multi-modal
+  //                                 release flows (e.g. PanelMorph chrome buttons)
+  //                                 skip dragEnded and call finishPointerDrag()
+  //                                 from their own cleanup instead.
+  //    The drag target defaults to the receiver; pass another morph to
+  //    beginPointerDrag when the focus holder manipulates something else
+  //    (a HaloHandle manipulating the halo's target).
+  beginPointerDrag(p, evt, dragTargetIfAny) {
+    this.$hitPoint = p;
+    this.$didDrag = false;
+    this.$dragActorID = evt.actorID;
+    this.$dragTarget = dragTargetIfAny != null && dragTargetIfAny !== this ? dragTargetIfAny : null;
+    this.dragTarget().beginEphemeralTransform();
+    this.world().setPointerFocus(this);
+    return true;
+  }
+  continuePointerDrag(p, evt) {
+    if (!this.$hitPoint) return false;
+    let delta = p.subPt(this.$hitPoint);
+    // Update $hitPoint before the hook: some hooks re-anchor it (collapsed-bar snap).
+    this.$hitPoint = p;
+    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
+    this.dragMovedBy(delta, p, evt);
+    return true;
+  }
+  endPointerDrag(p, evt) {
+    let wasDrag = !!this.$didDrag;
+    this.dragEnded(p, evt, wasDrag);
+    this.finishPointerDrag();
+    return true;
+  }
+  finishPointerDrag() {
+    /** Commit the drag target's ephemeral state and clear all drag bookkeeping.
+     * Safe to call when no drag is active (the commit is a no-op then). */
+    let target = this.dragTarget();
+    this.$dragTarget = null;
+    this.$hitPoint = null;
+    this.$didDrag = false;
+    this.$dragActorID = null;
+    this.$pickUpOnDrag = false;
+    this.world().setPointerFocus(null);
+    target.commitEphemeralTransform();
+  }
+  dragTarget() {
+    return this.$dragTarget != null ? this.$dragTarget : this;
+  }
+  dragMovedBy(delta, p, evt) {
+    this.dragTarget().moveBy(delta);
+  }
+  dragEnded(p, evt, wasDrag) {
+    if (!wasDrag) return;
+    // p is in owner coords; convert to world for drop target selection.
+    let worldDropPt = this.owner ? this.owner.globalize(p) : p;
+    // Keep the same local point under the cursor as at grab/drag (not bounds topLeft).
+    let anchorLocal = this.relativize(p);
+    this.dropOnTopMorphAt(worldDropPt, anchorLocal);
+  }
   acceptsDroppingMorphs() {
     return true;
   }
@@ -3273,9 +3342,7 @@ try {
     return b;
   }
   dragFrom(p, evt) {
-    this.$hitPoint = p;
-    this.$dragActorID = evt.actorID;
-    this.world().setPointerFocus(this);
+    return this.beginPointerDrag(p, evt);
   }
   dropOnTopMorphAt(worldDropPt, anchorLocal) {
     // Reparent under worldDropPt while preserving world position of a local anchor.
@@ -3465,22 +3532,13 @@ try {
     clearKeyboardFocusUnlessTypingOrOsk(this);
     this.beTopMorph();
     if (effectiveShiftKey(evt)) {
-      // shift drag means copy
+      // shift drag means copy: the copy takes over as the pointer-focused dragee
       let copy = this.world().addMorph(this.morphCopy());
-      copy.$hitPoint = p;
-      copy.$dragActorID = evt.actorID;
-      copy.beginEphemeralTransform();
-      this.world().setPointerFocus(copy);
-      return true; // could merge code
+      return copy.beginPointerDrag(p, evt);
     }
-    this.$hitPoint = p;
-    this.$didDrag = false;
     // For nested morphs, plain drag should pick up to world on first real move.
     this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
-    this.$dragActorID = evt.actorID;
-    this.beginEphemeralTransform();
-    this.world().setPointerFocus(this);
-    return true;
+    return this.beginPointerDrag(p, evt);
   }
   onPointerMove(p, evt) {
     // p is in owner coordinates
@@ -3493,29 +3551,23 @@ try {
     });
     if (eventConsumed) return true;
     if (!this.$hitPoint) return false;
-    let delta = p.subPt(this.$hitPoint);
-    if (
-      this.$pickUpOnDrag &&
-      this.owner != null &&
-      this.owner !== this.world() &&
-      (delta.x !== 0 || delta.y !== 0)
-    ) {
-      let oldOwner = this.owner;
-      let worldPrev = oldOwner.globalize(this.$hitPoint);
-      let worldNow = oldOwner.globalize(p);
-      let deltaWorld = worldNow.subPt(worldPrev);
-      let anchorLocal = this.relativize(this.$hitPoint);
-      this.reparentToOwnerPreservingWorldAnchor(this.world(), anchorLocal);
-      this.moveBy(deltaWorld);
-      this.$hitPoint = worldNow;
-      this.$pickUpOnDrag = false;
-      this.$didDrag = true;
-      return true;
+    if (this.$pickUpOnDrag && this.owner != null && this.owner !== this.world()) {
+      let delta = p.subPt(this.$hitPoint);
+      if (delta.x !== 0 || delta.y !== 0) {
+        let oldOwner = this.owner;
+        let worldPrev = oldOwner.globalize(this.$hitPoint);
+        let worldNow = oldOwner.globalize(p);
+        let deltaWorld = worldNow.subPt(worldPrev);
+        let anchorLocal = this.relativize(this.$hitPoint);
+        this.reparentToOwnerPreservingWorldAnchor(this.world(), anchorLocal);
+        this.moveBy(deltaWorld);
+        this.$hitPoint = worldNow;
+        this.$pickUpOnDrag = false;
+        this.$didDrag = true;
+        return true;
+      }
     }
-    this.moveBy(delta);
-    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
-    this.$hitPoint = p;
-    return true;
+    return this.continuePointerDrag(p, evt);
   }
   onPointerUp(p, evt) {
     // p is in owner coordinates
@@ -3527,22 +3579,7 @@ try {
       if (sub.includesPt(localP)) eventConsumed = sub.onPointerUp(localP, evt);
     });
     if (eventConsumed) return true;
-    let wasDrag = !!this.$didDrag;
-    this.$dragActorID = null;
-    this.$hitPoint = null;
-    this.$didDrag = false;
-    this.$pickUpOnDrag = false;
-    this.world().setPointerFocus(null);
-    if (wasDrag) {
-      // p is in owner coords; convert to world for drop target selection.
-      let worldDropPt = this.owner ? this.owner.globalize(p) : p;
-      // Keep the same local point under the cursor as at grab/drag (not bounds topLeft).
-      let anchorLocal = this.relativize(p);
-      this.dropOnTopMorphAt(worldDropPt, anchorLocal);
-    }
-    // After the drop, so any drop-time transform adjustment lands in the same commit.
-    this.commitEphemeralTransform();
-    return true;
+    return this.endPointerDrag(p, evt);
   }
   onTextBoundsChanged() {
     // to be noticeable by text containers
@@ -3900,29 +3937,18 @@ class ImageMorph extends Morph {
     this.$dragStartAngle = this.transform.rotation;
     return super.onPointerDown(p, evt);
   }
-  onPointerMove(p, evt) {
-    if (!this.$hitPoint) return false;
-    let prev = this.$hitPoint;
-    let moved = super.onPointerMove(p, evt);
-    if (!moved) return false;
+  dragMovedBy(delta, p, evt) {
+    super.dragMovedBy(delta, p, evt);
     // Rotate to face drag direction (only when pointer has moved enough to reduce jitter)
-    let delta = p.subPt(prev);
-    if (p.dist(prev) > 2 && (delta.x !== 0 || delta.y !== 0)) {
+    if (Math.sqrt(delta.x * delta.x + delta.y * delta.y) > 2 && (delta.x !== 0 || delta.y !== 0)) {
       this.transform.rotation = Math.atan2(delta.y, delta.x) + Math.PI / 2;
     }
-    return true;
-  }
-  onPointerUp(p, evt) {
-    // Clear generic Morph drag state, then drop pointer focus.
-    super.onPointerUp(p, evt);
-    this.world().setPointerFocus(null);
-    return true;
   }
   setHeading(angleDegrees) {
     this.transform.rotation = (angleDegrees / 180) * Math.PI;
   }
   syncRotationToVelocity() {
-    /** Match {@link ImageMorph#onPointerMove} drag convention: sprite “forward” aligns with velocity. */
+    /** Match {@link ImageMorph#dragMovedBy} drag convention: sprite “forward” aligns with velocity. */
     if (!this.velocity) return;
     let vx = this.velocity.x;
     let vy = this.velocity.y;
@@ -6080,31 +6106,23 @@ class PanelMorph extends Morph {
     return snap;
   }
   beginTitleBarPress(p, evt, hitInfo) {
-    this.$hitPoint = p;
-    this.$didDrag = false;
-    this.$dragActorID = evt.actorID;
     this.$closeBtnPressed = !!hitInfo.onClose;
     this.$collapseBtnPressed = !hitInfo.onClose && !!hitInfo.onCollapse;
     this.$titleBarDrag = !hitInfo.onClose && !hitInfo.onCollapse;
-    // Unconditional: a collapse press can turn into a sticky drag, and for
-    // close/collapse-without-drag the commit is op-free anyway.
-    this.beginEphemeralTransform();
-    this.world().setPointerFocus(this);
-    return true;
+    // Shared drag protocol — begun even for chrome presses: a collapse press can
+    // turn into a sticky drag, and a press that never moves commits op-free.
+    return this.beginPointerDrag(p, evt);
   }
   boundsForNew(optionalRect) {
     /** Resolve optional bounds for panel {@link initialize}. */
     return optionalRect != null ? optionalRect : this.defaultRect();
   }
   clearTitleBarPress() {
-    this.commitEphemeralTransform();
-    this.$hitPoint = null;
     this.$titleBarDrag = false;
     this.$collapseBtnPressed = false;
     this.$closeBtnPressed = false;
-    this.$didDrag = false;
-    this.$dragActorID = null;
-    this.world().setPointerFocus(null);
+    // Commits the ephemeral transform/bounds and clears the shared drag state.
+    this.finishPointerDrag();
   }
   collapsedBarGridSnap() {
     if (!this.collapsed) return pt(0, 0);
@@ -6130,12 +6148,8 @@ class PanelMorph extends Morph {
     }
     if (this.collapsed) this.applyCollapsedBarGridSnap();
     this.savePanelLocation();
-    this.commitEphemeralTransform();
     this.$stickyDragCollapsedBar = false;
-    this.$hitPoint = null;
-    this.$didDrag = false;
-    this.$dragActorID = null;
-    this.world().setPointerFocus(null);
+    this.finishPointerDrag();
     return true;
   }
   hasVisibleCloseBtn() {
@@ -6198,15 +6212,14 @@ class PanelMorph extends Morph {
       return true;
     }
     if (!this.$titleBarDrag && !this.$stickyDragCollapsedBar) return false;
-    let delta = p.subPt(this.$hitPoint);
+    return this.continuePointerDrag(p, evt);
+  }
+  dragMovedBy(delta, p, evt) {
     this.moveBy(delta);
-    if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
-    this.$hitPoint = p;
     if (this.collapsed) {
       let snap = this.applyCollapsedBarGridSnap();
       if (snap.x !== 0 || snap.y !== 0) this.$hitPoint = this.$hitPoint.addPt(snap);
     }
-    return true;
   }
   onPointerUp(p, evt) {
     if (this.$closeBtnPressed) {
@@ -7180,16 +7193,12 @@ class HaloHandle extends Morph {
     if (this.handleName == 'Grab') {
       this.target.reparentToOwnerPreservingWorldAnchor(this.world(), null);
     }
-    // The remaining handles (Copy/Drag/Grab/Scale/Rotate) mutate the target's
-    // transform on every pointer move; do that on the ephemeral copy and promote it
-    // once, in onPointerUp.
-    this.target.beginEphemeralTransform();
     // Drag, Rotate and Scale here drag the handle during manipulation
-    this.$hitPoint = this.owner.globalize(pt);
+    let worldP = this.owner.globalize(pt);
     if (this.handleName == 'Rotate') {
       // Pivot is the shape center's true world position (rotateBy keeps it fixed).
       let c = this.target.globalize(this.target.shape.getBounds().center());
-      this.$rotateStartAngle = Math.atan2(this.$hitPoint.y - c.y, this.$hitPoint.x - c.x);
+      this.$rotateStartAngle = Math.atan2(worldP.y - c.y, worldP.x - c.x);
     }
     if (this.handleName == 'Scale') {
       let b = this.target.getBounds();
@@ -7209,13 +7218,17 @@ class HaloHandle extends Morph {
     this.world().addEphemeralMorph(this); // handle owner was halo; now world (per-user, like the halo itself)
     this.transform.translation = worldTopLeft.subPt(this.shape.getBounds().topLeft); // set world position so topLeft stays at worldTopLeft
     this.syncBoundsFromGeometry();
-    this.world().setPointerFocus(this);
+    // Shared drag protocol, with the halo's target as the drag target: its
+    // per-frame transform edits stay ephemeral until one commit on pointer-up.
+    this.beginPointerDrag(worldP, evt, this.target);
     this.halo.remove();
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.$hitPoint) return false;
-    let delta = p.subPt(this.$hitPoint);
+    // No submorph dispatch (the letter TextMorph must never see drag moves).
+    return this.continuePointerDrag(p, evt);
+  }
+  dragMovedBy(delta, p, evt) {
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
       this.moveBy(delta);
@@ -7250,16 +7263,15 @@ class HaloHandle extends Morph {
       this.$rotateStartAngle = currentAngle;
     }
     this.moveBy(delta);
-    this.$hitPoint = p;
-    return true;
   }
-  onPointerUp(pt, evt) {
+  dragEnded(p, evt, wasDrag) {
     if (this.target && ['Copy', 'Grab'].includes(this.handleName)) {
-      let worldPt = this.owner ? this.owner.globalize(pt) : pt;
+      let worldPt = this.owner ? this.owner.globalize(p) : p;
       this.target.dropOnTopMorphAt(worldPt);
     }
-    if (this.target) this.target.commitEphemeralTransform();
-    this.world().setPointerFocus(null);
+  }
+  onPointerUp(pt, evt) {
+    this.endPointerDrag(pt, evt);
     this.remove();
   }
   static new(...args) {
@@ -7684,11 +7696,8 @@ class OnScreenKeyboardMorph extends Morph {
     if (!this.$oskBodyPress || this.$hitPoint) return false;
     let slop = OnScreenKeyboardMorph.OSK_BODY_DRAG_SLOP;
     if (p.dist(this.$oskBodyPress.ownerPt) < slop) return true;
-    this.$hitPoint = this.$oskBodyPress.ownerPt;
-    this.$didDrag = false;
     this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
-    this.$dragActorID = evt.actorID;
-    this.world().setPointerFocus(this);
+    this.beginPointerDrag(this.$oskBodyPress.ownerPt, evt);
     this.$oskBodyPress = null;
     return super.onPointerMove(p, evt);
   }
@@ -7987,11 +7996,7 @@ class OnScreenKeyboardMorph extends Morph {
     this.beTopMorph();
     if (effectiveShiftKey(evt)) {
       let copy = this.world().addMorph(this.morphCopy());
-      copy.$hitPoint = p;
-      copy.$dragActorID = evt.actorID;
-      copy.beginEphemeralTransform();
-      this.world().setPointerFocus(copy);
-      return true;
+      return copy.beginPointerDrag(p, evt);
     }
     this.$oskBodyPress = { ownerPt: p.copy ? p.copy() : pt(p.x, p.y) };
     this._noteOskBodyPressForLongClick(evt);

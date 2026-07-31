@@ -266,6 +266,47 @@ describe('ephemeral transform during drag', () => {
     expect(docEnd!.y).toBeCloseTo(docStart!.y + 40, 6);
   }, 60_000);
 
+  it('dragging via the halo Drag handle goes through $transform on the target', () => {
+    const { handle, rt, dispatch, runFrame, getFrameError } = makeWorld();
+
+    // Show the halo on the box and locate its Drag handle in world coordinates.
+    rt.eval(`Lively.cycleHaloAt(pt(60, 35));`);
+    expect(rt.eval(`Lively.ephemeralSubmorphs().length`)).toBe(1);
+    const hx = rt.eval(
+      `Lively.ephemeralSubmorphs().at(0).globalize(Lively.ephemeralSubmorphs().at(0).dragHandle.getBounds().center()).x`,
+    ) as number;
+    const hy = rt.eval(
+      `Lively.ephemeralSubmorphs().at(0).globalize(Lively.ephemeralSubmorphs().at(0).dragHandle.getBounds().center()).y`,
+    ) as number;
+
+    const startX = rt.eval(`Lively.testBox.getBounds().topLeft.x`) as number;
+    const docStart = docPointCoords(handle, rt, `Lively.testBox._transform.translation`);
+
+    dispatch('pointerdown', hx, hy);
+    runFrame();
+    const tableSizeAfterDown = Object.keys(handle.doc().objectTable).length;
+    dispatch('pointermove', hx + 10, hy + 5);
+    runFrame();
+    dispatch('pointermove', hx + 30, hy + 15);
+    runFrame();
+
+    // Mid-drag: the target follows visually, the document does not.
+    expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBeCloseTo(startX + 30, 4);
+    expect(docPointCoords(handle, rt, `Lively.testBox._transform.translation`)).toEqual(docStart);
+    expect(Object.keys(handle.doc().objectTable).length).toBe(tableSizeAfterDown);
+
+    dispatch('pointerup', hx + 30, hy + 15);
+    runFrame();
+
+    expect(getFrameError(), `frame loop threw: ${String((getFrameError() as any)?.stack ?? getFrameError())}`).toBeNull();
+    expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBeCloseTo(startX + 30, 4);
+    const docEnd = docPointCoords(handle, rt, `Lively.testBox._transform.translation`);
+    expect(docEnd!.x).toBeCloseTo(docStart!.x + 30, 4);
+    expect(docEnd!.y).toBeCloseTo(docStart!.y + 15, 4);
+  }, 60_000);
+
   it('a click without a drag leaves the document transform untouched', () => {
     const { handle, rt, dispatch, runFrame, getFrameError } = makeWorld();
 
