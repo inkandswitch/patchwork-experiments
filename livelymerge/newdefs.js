@@ -2991,7 +2991,7 @@ class Morph {
     this.shape = shape ? shape : new Shape('Rectangle', bounds, Color.green, 1, Color.black);
     this.shape.morph = this;
     //console.log('shape = ', this.shape.asString());
-    this.bounds = this.shape.getBounds(); //a Rectangle in owner coordinates
+    this._bounds = this.shape.getBounds(); //a Rectangle in owner coordinates; see the `bounds` getter
     this.origin = this.shape.morphOrigin;
     this._transform = this.nullTransformation(); // persistent transform (trans/rot/scale); see the `transform` getter
     this._transform.translateBy(this.origin);
@@ -3013,15 +3013,29 @@ class Morph {
     return this.$transform != null ? this.$transform : this._transform;
   }
   set transform(tfm) {
-    this._transform = tfm;
+    // Mid-interaction, a wholesale assignment replaces the ephemeral view (commit
+    // then persists its values); otherwise it lands on the persistent slot.
+    if (this.$transform != null) this.$transform = tfm;
+    else this._transform = tfm;
+  }
+  get bounds() {
+    /** Cached bounding rect in owner coordinates; same ephemeral scheme as {@link Morph#transform}. */
+    return this.$bounds != null ? this.$bounds : this._bounds;
+  }
+  set bounds(b) {
+    // setBounds/syncBoundsFromGeometry assign wholesale, per frame during a halo
+    // Scale drag — mid-interaction that must replace the ephemeral view.
+    if (this.$bounds != null) this.$bounds = b;
+    else this._bounds = b;
   }
   beginEphemeralTransform() {
     /**
-     * Start of a direct-manipulation interaction: install an ephemeral copy of the
-     * current transform for {@link Morph#transform} to answer, so the interaction's
-     * per-frame mutations stay out of the shared document. No-op when an interaction
-     * is already in progress. Points are copied too — in-place point mutation must
-     * never leak into the persistent transform.
+     * Start of a direct-manipulation interaction: install ephemeral copies of the
+     * current transform AND cached bounds for the {@link Morph#transform} and
+     * {@link Morph#bounds} getters to answer, so the interaction's per-frame
+     * mutations stay out of the shared document. No-op when an interaction is
+     * already in progress. Points are copied too — in-place point mutation must
+     * never leak into the persistent objects.
      */
     if (this.$transform != null) return;
     let t = this.transform;
@@ -3031,32 +3045,56 @@ class Morph {
       t.scale ? t.scale.copy() : pt(1, 1),
     );
     this.$transform = eph;
-    // A morph from a pre-getter document carries an own `transform` data property
-    // that shadows the prototype getter, so reads would never see $transform. Leave
-    // such a morph on its old direct-mutation path (commit is then a no-op too).
-    if (this.transform !== eph) this.$transform = null;
+    // A morph from a pre-getter document carries own `transform`/`bounds` data
+    // properties that shadow the prototype getters, so reads would never see the
+    // ephemeral copies. Leave such a morph on its old direct-mutation path
+    // (commit is then a no-op too).
+    if (this.transform !== eph) {
+      this.$transform = null;
+      return;
+    }
+    let b = this.bounds;
+    if (b != null) {
+      let ephB = new Rectangle(b.topLeft.copy(), b.extent.copy());
+      this.$bounds = ephB;
+      if (this.bounds !== ephB) this.$bounds = null;
+    }
   }
   commitEphemeralTransform() {
     /**
-     * End of an interaction: copy the ephemeral transform's values back into the
-     * persistent transform, then drop the copy. Mutates the persistent transform in
-     * place — no new document objects (doc entries are immortal, so promoting the
-     * copy would orphan the old transform on every drag), and aliases other code
-     * holds onto the transform stay valid. Unchanged fields cost nothing: same-value
-     * writes are elided at the storage layer, so a plain click is op-free.
+     * End of an interaction: copy the ephemeral transform's and bounds' values back
+     * into the persistent objects, then drop the copies. Mutates in place — no new
+     * document objects (doc entries are immortal, so promoting a copy would orphan
+     * the old one on every drag), and aliases other code holds stay valid. Unchanged
+     * fields cost nothing: same-value writes are elided at the storage layer, so a
+     * plain click is op-free.
      */
     let eph = this.$transform;
-    if (eph == null) return;
-    this.$transform = null;
-    let t = this.transform;
-    t.translation.x = eph.translation.x;
-    t.translation.y = eph.translation.y;
-    t.rotation = eph.rotation;
-    if (t.scale) {
-      t.scale.x = eph.scale.x;
-      t.scale.y = eph.scale.y;
-    } else {
-      t.scale = eph.scale.copy();
+    if (eph != null) {
+      this.$transform = null;
+      let t = this.transform;
+      t.translation.x = eph.translation.x;
+      t.translation.y = eph.translation.y;
+      t.rotation = eph.rotation;
+      if (t.scale) {
+        t.scale.x = eph.scale.x;
+        t.scale.y = eph.scale.y;
+      } else {
+        t.scale = eph.scale.copy();
+      }
+    }
+    let ephB = this.$bounds;
+    if (ephB != null) {
+      this.$bounds = null;
+      let b = this.bounds;
+      if (b != null) {
+        b.topLeft.x = ephB.topLeft.x;
+        b.topLeft.y = ephB.topLeft.y;
+        b.extent.x = ephB.extent.x;
+        b.extent.y = ephB.extent.y;
+      } else {
+        this._bounds = ephB;
+      }
     }
   }
   acceptsDroppingMorphs() {

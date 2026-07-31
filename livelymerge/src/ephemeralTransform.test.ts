@@ -178,8 +178,16 @@ describe('ephemeral transform during drag', () => {
     const docStart = docPointCoords(handle, rt, `Lively.testBox._transform.translation`);
     expect(docStart).toBeDefined();
 
-    // Down inside the box, then a move: the interaction is now mid-flight.
+    // Down inside the box; measure after this frame so beTopMorph promotion etc.
+    // don't muddy the mid-drag no-op assertions below.
     dispatch('pointerdown', 50, 30);
+    runFrame();
+    const tlId = rt.eval(`Lively.testBox._bounds.topLeft.$id`) as string;
+    const docBoundsTlStart = docPointCoords(handle, rt, `Lively.testBox._bounds.topLeft`);
+    const tableSizeAfterDown = Object.keys(handle.doc().objectTable).length;
+
+    // Two move frames: the interaction is now mid-flight.
+    dispatch('pointermove', 60, 40);
     runFrame();
     dispatch('pointermove', 70, 50);
     runFrame();
@@ -190,8 +198,13 @@ describe('ephemeral transform during drag', () => {
       (rt.eval(`Lively.testBox._transform.translation.x`) as number) + 20,
       6,
     );
-    // …while the persistent transform and its document entry are untouched.
+    // …while the persistent transform/bounds and their document entries are
+    // untouched, and the move frames allocated nothing in the document (the old
+    // bounds path promoted one fresh topLeft Point per frame).
     expect(docPointCoords(handle, rt, `Lively.testBox._transform.translation`)).toEqual(docStart);
+    expect(rt.eval(`Lively.testBox.$bounds != null`)).toBe(true);
+    expect(docPointCoords(handle, rt, `Lively.testBox._bounds.topLeft`)).toEqual(docBoundsTlStart);
+    expect(Object.keys(handle.doc().objectTable).length).toBe(tableSizeAfterDown);
 
     // Pointer-up: the ephemeral values are committed into the same document objects.
     dispatch('pointerup', 70, 50);
@@ -199,12 +212,17 @@ describe('ephemeral transform during drag', () => {
 
     expect(getFrameError(), `frame loop threw: ${String((getFrameError() as any)?.stack ?? getFrameError())}`).toBeNull();
     expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.$bounds == null`)).toBe(true);
     expect(rt.eval(`Lively.testBox._transform.$id`)).toBe(tfmId); // same object, mutated in place
+    expect(rt.eval(`Lively.testBox._bounds.topLeft.$id`)).toBe(tlId); // ditto: no orphaned Points
     expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBeCloseTo(startX + 20, 6);
     expect(rt.eval(`Lively.testBox.getBounds().topLeft.y`)).toBeCloseTo(startY + 20, 6);
     const docEnd = docPointCoords(handle, rt, `Lively.testBox._transform.translation`);
     expect(docEnd!.x).toBeCloseTo(docStart!.x + 20, 6);
     expect(docEnd!.y).toBeCloseTo(docStart!.y + 20, 6);
+    const docBoundsTlEnd = docPointCoords(handle, rt, `Lively.testBox._bounds.topLeft`);
+    expect(docBoundsTlEnd!.x).toBeCloseTo(docBoundsTlStart!.x + 20, 6);
+    expect(docBoundsTlEnd!.y).toBeCloseTo(docBoundsTlStart!.y + 20, 6);
   }, 60_000);
 
   it('a click without a drag leaves the document transform untouched', () => {
