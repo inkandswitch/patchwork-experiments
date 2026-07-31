@@ -30,6 +30,8 @@ describe('QBF', () => {
       true,
     );
     expect(rt.eval(`qbfScores.finishButton.shape.string`)).toBe('finish');
+    expect(rt.eval(`!!qbfScores.recentScroll && qbfScores.recentScroll.className`)).toBe('TextPane');
+    expect(rt.eval(`!!qbfScores.scoresScroll && qbfScores.scoresScroll.className`)).toBe('TextPane');
   }, 60_000);
 
   it('carries tiles in on the belt and drops them onto the rack', () => {
@@ -267,10 +269,55 @@ true`);
     ticksUntil(`qbfGame.gameOver`);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(42);
     expect(rt.eval(`qbfGame.logLines.pop()`)).toContain('game over');
+    expect(rt.eval(`!!qbfGame._finalScorePosted`)).toBe(true);
     rt.eval(`qbfGame.doRestart()`);
     expect(rt.eval(`qbfGame.gameOver`)).toBe(false);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(0);
     expect(rt.eval(`Number(qbfGame.topWordBox.shape.string)`)).toBe(0);
+  }, 60_000);
+
+  it('waits for falling tiles to land before posting the final score', () => {
+    const { rt, game, ticksUntil } = makeGame();
+    rt.change(() => {
+      while (game.activeLetters.length > 0) {
+        (game.activeLetters as any).pop().remove();
+      }
+      (game as any).fallingLetters = [];
+      if ((game as any).letterInBin) {
+        (game as any).letterInBin.remove();
+        (game as any).letterInBin = null;
+      }
+      (game as any).letterQueue = [];
+    });
+    rt.eval(`
+Lively.qbfHighScoreList = [];
+qbfGame.playerName = 'Faller';
+qbfGame.tournamentGameNumber = 777;
+qbfGame.totalScore = 50;
+qbfGame.bestWord = 'CAT';
+qbfGame.bestWordScore = 5;
+qbfFall = new QBFLetterMorph('Z', 10, qbfGame.letterExtent(), 24);
+qbfGame.addMorph(qbfFall);
+qbfFall.loc = 'falling';
+qbfFall.pendingMissValue = 10;
+qbfFall.vel = pt(0, 20);
+qbfFall.rot = 0;
+qbfGame.fallingLetters = [qbfFall];
+qbfGame.placeBottomRight(qbfFall, qbfGame.pile.getBounds().topLeft.addPt(pt(40, -80)));
+qbfBang = new QBFLetterMorph('!', 0, qbfGame.letterExtent(), 24);
+qbfGame.addMorph(qbfBang);
+qbfBang.loc = 'rack';
+qbfGame.placeBottomRight(qbfBang, qbfGame.rack.getBounds().topLeft.addPt(pt(0, 1)));
+qbfGame.activeLetters = [qbfBang];
+true`);
+    ticksUntil(`qbfGame.gameOver`);
+    expect(rt.eval(`qbfGame._finalScorePosted`)).toBe(false);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(0);
+    ticksUntil(`qbfGame._finalScorePosted`);
+    expect(rt.eval(`qbfGame.totalScore`)).toBe(40);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(40);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].gameNo`)).toBe(777);
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('#777');
   }, 60_000);
 
   it('encodes and decodes compact word lists', () => {
@@ -319,26 +366,34 @@ qbfGame.playerName = 'Ada';
 qbfGame.totalScore = 99;
 qbfGame.bestWord = 'QUICK';
 qbfGame.bestWordScore = 20;
+qbfGame.tournamentGameNumber = 321;
 qbfGame.postScoresToStore();
 true`);
     expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(1);
     expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(99);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].gameNo`)).toBe(321);
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('Ada');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('QUICK');
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('#321');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('score');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('speed');
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain(
+      'Scores are only retained for 30 days',
+    );
     // A worse score does not overwrite.
     rt.eval(`
 qbfGame.totalScore = 10;
 qbfGame.bestWordScore = 1;
+qbfGame.tournamentGameNumber = 999;
 qbfGame.postScoresToStore();
 true`);
     expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].bestGame`)).toBe(99);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].gameNo`)).toBe(321);
     // Swap stores without touching the game or viewer code.
     rt.eval(`
 qbfAlt = new QBFMemoryScoresStore();
 qbfSetScoresStore(qbfAlt);
-qbfPostLevelScore('Bea', 'quick', { bestGame: 5, bestWord: 'BE', bestWordScore: 4, time: 't' });
+qbfPostLevelScore('Bea', 'quick', { bestGame: 5, bestWord: 'BE', bestWordScore: 4, time: 't', gameNo: 12 });
 true`);
     expect(rt.eval(`qbfScoresStore().getScoreEntries().length`)).toBe(1);
     expect(rt.eval(`qbfScoresStore().getScoreEntries()[0].player`)).toBe('Bea');
@@ -356,8 +411,10 @@ true`);
     expect(recent).toContain('Ada');
     expect(recent).toContain('FOX');
     expect(recent).toContain('#100');
+    expect(recent).not.toContain('2026');
     const header = rt.eval(`QBFGameScore.headerRow().join(',')`) as string;
     expect(header).toBe('score,player,speed,best word,pts,game #,date');
+    expect(rt.eval(`qbfFormatScoreTime('2026-07-25T15:30:00Z')`)).not.toContain('2026');
   }, 60_000);
 
   it('finish button cuts the tile queue down to a terminal "!"', () => {
