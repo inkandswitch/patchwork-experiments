@@ -3286,13 +3286,14 @@ try {
     return scrollY ? b.translatedBy(pt(0, scrollY)) : b;
   }
   boundsInWorld() {
-    /** Axis-aligned bounds of this morph in world coordinates. */
-    let ob = this.getBounds();
-    let o = this.owner;
-    if (!o || o.owner == null) return ob;
-    let corners = [ob.topLeft, ob.topRight(), ob.bottomRight(), ob.bottomLeft()];
-    let pts = corners.map((c) => o.globalize(c));
-    return unionPts(pts);
+    /** Axis-aligned bounds of this morph in world coordinates. Maps the shape's
+     * corners through the full transform chain — including this morph's own
+     * rotation/scale, which getBounds ignores — so halos etc. frame the morph
+     * where it is rendered. */
+    if (this.owner == null) return this.getBounds();
+    let local = this.shape.getBounds();
+    let corners = [local.topLeft, local.topRight(), local.bottomRight(), local.bottomLeft()];
+    return unionPts(corners.map((c) => this.globalize(c)));
   }
   bringTopLevelPanelToFrontIfNeeded(p) {
     // If this morph is inside a buried top-level PanelMorph, bring that panel
