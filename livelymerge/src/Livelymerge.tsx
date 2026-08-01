@@ -104,9 +104,23 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
     };
   }, [handle]);
 
+  // All box-model / positioning styles are inline on purpose: this tool renders into
+  // Patchwork's shared light-DOM document, where every loaded tool injects its own
+  // stylesheet. Tailwind utilities here resolve through cascade layers and the
+  // `--spacing` / `--color-*` variables, and depending on which other tools happen to
+  // be loaded those can fail to resolve, silently collapsing padding/offsets to 0.
+  // Inline px values are immune to all of that.
+  const labelStyle = { color: 'rgba(0, 0, 0, 0.55)' };
+
   return (
     <div
-      className="absolute top-2 right-2 z-30 max-w-[min(24rem,calc(100%-1rem))] font-mono text-[11px] leading-snug text-base-content/80"
+      style={{
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        zIndex: 30,
+        maxWidth: 'min(24rem, calc(100% - 1rem))',
+      }}
       aria-live="polite"
       aria-label="Automerge document statistics"
     >
@@ -114,19 +128,32 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((e) => !e)}
-        className="block w-full cursor-pointer rounded-md border border-base-300/70 px-2.5 py-1.5 text-left shadow-sm"
-        style={{ backgroundColor: 'white' }}
+        style={{
+          display: 'block',
+          width: '100%',
+          cursor: 'pointer',
+          textAlign: 'left',
+          backgroundColor: 'white',
+          border: '1px solid rgba(0, 0, 0, 0.15)',
+          borderRadius: 6,
+          padding: '6px 10px',
+          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+          fontSize: 11,
+          lineHeight: 1.4,
+          color: 'rgba(0, 0, 0, 0.8)',
+        }}
       >
-        <div className="tabular-nums whitespace-nowrap">
-          <span className="text-base-content/55">ops</span> {stats.numOps.toLocaleString()}
+        <div style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+          <span style={labelStyle}>ops</span> {stats.numOps.toLocaleString()}
         </div>
         {expanded && (
-          <div className="mt-0.5">
-            <span className="text-base-content/55">heads</span>{' '}
+          <div style={{ marginTop: 2 }}>
+            <span style={labelStyle}>heads</span>{' '}
             {stats.heads.length === 0 ? (
               '—'
             ) : (
-              <ul className="mt-0.5 list-none space-y-0.5 break-all">
+              <ul style={{ marginTop: 2, listStyle: 'none', padding: 0, wordBreak: 'break-all' }}>
                 {stats.heads.map((head: string) => (
                   <li key={head}>{head}</li>
                 ))}
