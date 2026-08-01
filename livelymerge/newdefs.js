@@ -7211,9 +7211,18 @@ class HaloHandle extends Morph {
         ? this.target.owner.globalize(this.$scaleAnchorInOwner)
         : this.$scaleAnchorInOwner.copy();
       this.$scaleStartPointerWorld = worldP.copy();
-      this.$scaleStartTopLeft = this.target.getBounds().topLeft.copy();
       this.scaleTransformDrag = effectiveShiftKey(evt);
       this.$scaleStartTransform = this.target.transform.scale.copy();
+      // Start-of-drag frame for the resize preview (SimpleTransform.copy()
+      // aliases its points, so build one with copies).
+      let tfm = this.target.transform;
+      this.$scaleStartTfm = new SimpleTransform(
+        tfm.translation.copy(),
+        tfm.rotation || 0,
+        tfm.scale ? tfm.scale.copy() : pt(1, 1),
+      );
+      this.$scaleStartShapeExtent = this.target.shape.getBounds().extent.copy();
+      this.$scaleDesiredExtent = null;
     }
     let worldTopLeft = this.owner.getBounds().topLeft.addPt(this.getBounds().topLeft); // handle topLeft in world before reparent
     this.world().addEphemeralMorph(this); // handle owner was halo; now world (per-user, like the halo itself)
@@ -7251,17 +7260,29 @@ class HaloHandle extends Morph {
           this.$scaleAnchorInOwner.subPt(after),
         );
       } else {
-        // Resize: reshape in the morph's local coordinates, routed through
-        // setBounds so subclasses (panels, scroll panes, text) relayout.
-        // setBounds re-origins the shape and pins the translation at the
-        // rect's topLeft; under any rotation/scale the rendered anchor corner
-        // (the local origin) IS the translation, so passing the anchor's
-        // owner-coord position keeps it fixed. The extent is in local
-        // (pre-transform) units, matching setBounds' shape semantics.
-        let aLocal = this.target.shape.getBounds().topLeft;
-        let aInOwner = this.target.transform.transformPt(aLocal);
-        let ext = this.target.localize(cornerPos).subPt(aLocal);
-        this.target.setBounds(aInOwner.extent(ext));
+        // Resize preview: per-frame feedback lives ONLY on the ephemeral
+        // transform — the frozen shape is stretched via the scale, with the
+        // anchor re-pinned — so neither the shape nor any submorph relayout
+        // touches the document while the pointer moves. The one real
+        // setBounds (+ subclass relayout) happens in dragEnded.
+        let cornerInOwner = this.target.owner ? this.target.owner.localize(cornerPos) : cornerPos;
+        let scrollY = this.target.$scrollOffsetY;
+        if (scrollY) cornerInOwner = pt(cornerInOwner.x, cornerInOwner.y - scrollY);
+        // Desired final local extent, measured in the start-of-drag frame so
+        // the preview's own scale edits don't feed back into the math.
+        let localCorner = this.$scaleStartTfm.invertPt(cornerInOwner);
+        let ext = localCorner.subPt(this.$scaleAnchorLocal).maxPt(pt(1, 1));
+        this.$scaleDesiredExtent = ext;
+        let e0 = this.$scaleStartShapeExtent;
+        let s0 = this.$scaleStartTransform;
+        this.target.transform.scale = pt(
+          (s0.x * ext.x) / Math.max(e0.x, 0.001),
+          (s0.y * ext.y) / Math.max(e0.y, 0.001),
+        );
+        let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
+        this.target.transform.translation = this.target.transform.translation.addPt(
+          this.$scaleAnchorInOwner.subPt(after),
+        );
       }
       if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
       this.target.changed();
@@ -7279,6 +7300,22 @@ class HaloHandle extends Morph {
     if (this.target && ['Copy', 'Grab'].includes(this.handleName)) {
       let worldPt = this.owner ? this.owner.globalize(p) : p;
       this.target.dropOnTopMorphAt(worldPt);
+    }
+    if (this.target && this.handleName == 'Scale' && !this.scaleTransformDrag && wasDrag) {
+      // The one real resize: drop the preview stretch back to the start
+      // scale, then route the final rect through setBounds so subclasses
+      // (panels, scroll panes, text) relayout. setBounds re-origins the shape
+      // and pins the translation at the rect's topLeft; under any rotation or
+      // scale the rendered anchor corner (the local origin) IS the
+      // translation, so passing the anchor's owner-coord position keeps it
+      // fixed. This runs before finishPointerDrag's commit, so the whole
+      // drag still lands in the document as a single write.
+      let s0 = this.$scaleStartTransform;
+      this.target.transform.scale = pt(s0.x, s0.y);
+      let ext = this.$scaleDesiredExtent;
+      if (ext) this.target.setBounds(this.$scaleAnchorInOwner.extent(ext.copy()));
+      if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
+      this.target.changed();
     }
   }
   onPointerUp(pt, evt) {

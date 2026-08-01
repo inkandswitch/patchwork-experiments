@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as Automerge from '@automerge/automerge';
 import { createAutomergeTestDocHandle } from './testDocHandle';
 import { createLivelymergeRuntime } from './livelymergeRuntime';
 
@@ -270,13 +271,16 @@ initLively();
       pumpFrame();
     };
     pumpFrame();
+    // NOTE: no top-level `let` bindings to halo UI in these evals — non-$
+    // globals are persistent, so a binding would promote the (ephemeral) halo
+    // into the document and wreck the op-economy assertions below.
     const scaleHandleCenter = (): [number, number] => {
-      const x = rt.eval(`
-let halo = Lively.ephemeralSubmorphs().find((m) => m.className == 'HaloMorph');
-halo.globalize(halo.resizeHandle.getBounds().center()).x`) as number;
-      const y = rt.eval(`
-let halo3 = Lively.ephemeralSubmorphs().find((m) => m.className == 'HaloMorph');
-halo3.globalize(halo3.resizeHandle.getBounds().center()).y`) as number;
+      const x = rt.eval(
+        `(() => { let halo = Lively.ephemeralSubmorphs().find((m) => m.className == 'HaloMorph'); return halo.globalize(halo.resizeHandle.getBounds().center()).x; })()`,
+      ) as number;
+      const y = rt.eval(
+        `(() => { let halo = Lively.ephemeralSubmorphs().find((m) => m.className == 'HaloMorph'); return halo.globalize(halo.resizeHandle.getBounds().center()).y; })()`,
+      ) as number;
       return [x, y];
     };
 
@@ -369,8 +373,20 @@ Lively.panel.showHalo();
     ];
     const [px, py] = scaleHandleCenter();
     dispatch('pointerdown', px, py);
+    // Op economy: while the pointer moves, the resize is a purely ephemeral
+    // preview — the document must not change until the commit on pointer-up.
+    const headsAfterDown = JSON.stringify(Automerge.getHeads(docHandle.doc() as any));
+    dispatch('pointermove', px + 10, py + 8);
     dispatch('pointermove', px + 30, py + 25);
+    expect(
+      JSON.stringify(Automerge.getHeads(docHandle.doc() as any)),
+      'pointer moves during a resize must be op-free',
+    ).toBe(headsAfterDown);
     dispatch('pointerup', px + 30, py + 25);
+    expect(
+      JSON.stringify(Automerge.getHeads(docHandle.doc() as any)),
+      'pointer-up must commit the resize',
+    ).not.toBe(headsAfterDown);
     expect(rt.eval(`Lively.panel.transform.rotation`)).toBeCloseTo(Math.PI / 6, 6);
     expect(
       rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).x`),
