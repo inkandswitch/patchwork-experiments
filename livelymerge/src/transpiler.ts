@@ -338,11 +338,16 @@ function buildScopesInBlock(node: SyntaxNode, builder: ScopeBuilder, currentScop
     const loopScope = builder.createScope(currentScope, node.getChild('Block'));
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
     if (spec) registerForSpec(spec, builder, loopScope);
-    const block = node.getChild('Block');
-    if (block) {
-      for (let child = block.firstChild; child; child = child.nextSibling) {
-        if (child.name === '{' || child.name === '}') continue;
-        buildScopesInBlock(child, builder, loopScope);
+    // The loop body is the last child: a Block, or a single brace-less statement.
+    const body = node.lastChild;
+    if (body && body !== spec) {
+      if (body.name === 'Block') {
+        for (let child = body.firstChild; child; child = child.nextSibling) {
+          if (child.name === '{' || child.name === '}') continue;
+          buildScopesInBlock(child, builder, loopScope);
+        }
+      } else {
+        buildScopesInBlock(body, builder, loopScope);
       }
     }
     return;
@@ -682,8 +687,16 @@ function walkFunctionBodyNode(
         walkFreeVarNode(builder, expr, funcNode, loopScope, funcScope, enclosingScope, freeVarUses, []),
       );
     }
-    const block = node.getChild('Block');
-    if (block) walkFunctionBody(builder, block, funcNode, loopScope, funcScope, enclosingScope, freeVarUses);
+    // The loop body is the last child: a Block, or a single brace-less statement
+    // (which must be walked too — free vars in it need the $global rewrite).
+    const body = node.lastChild;
+    if (body && body !== spec) {
+      if (body.name === 'Block') {
+        walkFunctionBody(builder, body, funcNode, loopScope, funcScope, enclosingScope, freeVarUses);
+      } else {
+        walkFunctionBodyNode(builder, body, funcNode, loopScope, funcScope, enclosingScope, freeVarUses);
+      }
+    }
     return;
   }
 
