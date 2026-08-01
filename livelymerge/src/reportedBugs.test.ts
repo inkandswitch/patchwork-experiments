@@ -124,7 +124,11 @@ function setup() {
   g.handle = handle;
   g.runtime = rt;
   const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
-  rt.eval(src);
+  // Strip the trailing top-level init(): each test boots the world itself
+  // (initUI()/initLively(), or an explicit rt.eval('init()') for the
+  // full-boot tests). Letting the source's init() run too would leave a stale
+  // demo-world rAF closure and timers that crash once re-initialized.
+  rt.eval(src.replace(/\binit\(\)\s*$/, ''));
   return { harness, handle, rt };
 }
 

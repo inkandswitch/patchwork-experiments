@@ -90,7 +90,10 @@ describe('op economy: quiescent transactions generate no Automerge ops', () => {
     g.handle = handle;
     g.runtime = rt;
     const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
-    rt.eval(src);
+    // Strip the trailing top-level init(): it boots a demo world whose rAF
+    // closure and timers go stale (and crash/write ops) once the test's own
+    // initUI()/initLively() replace them.
+    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
     rt.eval(`
 initUI();
 initLively();

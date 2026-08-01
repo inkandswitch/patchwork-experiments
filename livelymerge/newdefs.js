@@ -509,7 +509,10 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   };
 
   setTimeout(() => {
-    Lively.spiral.startStepping('animatedSpiral', 
+    // The world may have been re-initialized since this was scheduled (e.g. a
+    // fresh initLively()); there is no spiral to animate then.
+    if (!Lively || !Lively.spiral) return;
+    Lively.spiral.startStepping('animatedSpiral',
       { goDist: 2, turnAngle: 60, nSteps: 14 }, 50); // was 26
   }, 2000);
 

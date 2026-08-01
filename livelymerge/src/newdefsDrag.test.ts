@@ -65,7 +65,10 @@ function installBrowserStubs(harness: Harness) {
       get(_t, prop) {
         if (prop === 'createElement') return () => elementStub();
         if (prop === 'body' || prop === 'documentElement') return elementStub();
-        // querySelector/getElementById/etc. -> null; other methods -> no-op
+        // TextBox.getTextContext does document.querySelector('canvas'); returning
+        // null would crash compose() on ctx.measureText for any multi-line text.
+        if (prop === 'querySelector') return (sel: string) => (sel === 'canvas' ? canvas : null);
+        // getElementById/etc. -> null; other methods -> no-op
         return (..._args: unknown[]) => null;
       },
       set() {
@@ -96,8 +99,10 @@ describe('newdefs full-stack drag', () => {
     g.runtime = rt;
     const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
 
-    // Load all class/function defs into the heap/global.
-    rt.eval(src);
+    // Load all class/function defs into the heap/global. Strip the trailing
+    // top-level init(): it boots a demo world whose rAF closure and timers go
+    // stale (and crash) once the test's own initUI()/initLively() replace them.
+    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
 
     // Build a minimal world with one draggable box (skip heavy populateLively).
     rt.eval(`

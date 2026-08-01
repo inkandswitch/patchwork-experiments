@@ -90,7 +90,10 @@ describe('halo handle drag (full stack)', () => {
     g.handle = handle;
     g.runtime = rt;
     const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
-    rt.eval(src);
+    // Strip the trailing top-level init(): it boots a demo world whose rAF
+    // closure and timers go stale (and crash) once the test's own
+    // initUI()/initLively() replace them.
+    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
     rt.eval(`
 initUI();
 initLively();
@@ -109,18 +112,18 @@ Lively.testBox = Lively.addMorph(new Morph(rect(100, 100, 80, 50)));
     pumpFrame();
 
     // Show the halo on the box, then locate its Drag handle in world coordinates.
-    rt.eval(`Lively.cycleHaloAt(pt(140, 125));`);
+    // NOTE: no top-level `let` bindings to halo UI in these evals (and no
+    // halo-valued completion values) — non-$ globals are persistent, so a
+    // binding would promote the (ephemeral) halo tree into the document and
+    // defeat this test's own leak assertions.
+    rt.eval(`Lively.cycleHaloAt(pt(140, 125)); null`);
     expect(rt.eval(`Lively.ephemeralSubmorphs().length`)).toBe(1);
-    const hx = rt.eval(`
-      let halo = Lively.ephemeralSubmorphs().at(0);
-      let h = halo.dragHandle;
-      halo.globalize(h.getBounds().center()).x
-    `) as number;
-    const hy = rt.eval(`
-      let halo2 = Lively.ephemeralSubmorphs().at(0);
-      let h2 = halo2.dragHandle;
-      halo2.globalize(h2.getBounds().center()).y
-    `) as number;
+    const hx = rt.eval(
+      `(() => { let halo = Lively.ephemeralSubmorphs().at(0); return halo.globalize(halo.dragHandle.getBounds().center()).x; })()`,
+    ) as number;
+    const hy = rt.eval(
+      `(() => { let halo = Lively.ephemeralSubmorphs().at(0); return halo.globalize(halo.dragHandle.getBounds().center()).y; })()`,
+    ) as number;
     expect(typeof hx).toBe('number');
     expect(typeof hy).toBe('number');
 
