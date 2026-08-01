@@ -117,7 +117,7 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
       style={{
         position: 'absolute',
         top: 8,
-        left: 8,
+        right: 8,
         zIndex: 30,
         maxWidth: 'min(24rem, calc(100% - 1rem))',
       }}
