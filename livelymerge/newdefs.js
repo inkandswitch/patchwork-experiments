@@ -7202,16 +7202,16 @@ class HaloHandle extends Morph {
       this.$rotateStartAngle = Math.atan2(worldP.y - c.y, worldP.x - c.x);
     }
     if (this.handleName == 'Scale') {
-      let b = this.target.getBounds();
-      this.$scaleStartTopLeft = b.topLeft.copy();
-      this.$scaleStartBottomRight = b.bottomRight().copy();
-      let ow = this.target.owner;
-      this.$scaleStartTopLeftWorld = ow
-        ? ow.globalize(this.$scaleStartTopLeft)
-        : this.$scaleStartTopLeft.copy();
-      this.$scaleStartBottomRightWorld = ow
-        ? ow.globalize(this.$scaleStartBottomRight)
-        : this.$scaleStartBottomRight.copy();
+      // Anchors are relative to the shape's local topLeft — the fixed point of
+      // both scale modes. (Owner-coord bounds corners are only meaningful for
+      // unrotated targets.)
+      this.$scaleAnchorLocal = this.target.shape.getBounds().topLeft.copy();
+      this.$scaleAnchorInOwner = this.target.transform.transformPt(this.$scaleAnchorLocal);
+      this.$scaleAnchorWorld = this.target.owner
+        ? this.target.owner.globalize(this.$scaleAnchorInOwner)
+        : this.$scaleAnchorInOwner.copy();
+      this.$scaleStartPointerWorld = worldP.copy();
+      this.$scaleStartTopLeft = this.target.getBounds().topLeft.copy();
       this.scaleTransformDrag = effectiveShiftKey(evt);
       this.$scaleStartTransform = this.target.transform.scale.copy();
     }
@@ -7230,32 +7230,49 @@ class HaloHandle extends Morph {
     return this.continuePointerDrag(p, evt);
   }
   dragMovedBy(delta, p, evt) {
+    this.moveBy(delta); // the handle itself tracks the pointer
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
-      this.moveBy(delta);
       let cornerPos = this.getBounds().center();
       if (this.scaleTransformDrag) {
-        let sw = this.$scaleStartBottomRightWorld.x - this.$scaleStartTopLeftWorld.x;
-        let sh = this.$scaleStartBottomRightWorld.y - this.$scaleStartTopLeftWorld.y;
-        if (Math.abs(sw) < 1) sw = sw < 0 ? -1 : 1;
-        if (Math.abs(sh) < 1) sh = sh < 0 ? -1 : 1;
-        let nw = cornerPos.x - this.$scaleStartTopLeftWorld.x;
-        let nh = cornerPos.y - this.$scaleStartTopLeftWorld.y;
-        let r = (nw / sw + nh / sh) / 2;
+        // Uniform transform scale: ratio of the pointer's distance from the
+        // anchor (the shape's rendered topLeft corner, which stays fixed).
+        let startDist = Math.max(this.$scaleStartPointerWorld.dist(this.$scaleAnchorWorld), 1);
+        let r = p.dist(this.$scaleAnchorWorld) / startDist;
         r = Math.max(0.05, Math.min(24, r));
         this.target.transform.scale = pt(
           this.$scaleStartTransform.x * r,
           this.$scaleStartTransform.y * r,
         );
-        if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
-        this.target.changed();
-        let world = this.target.world();
-        if (world && world.changed) world.changed();
-      } else {
+        // The transform scales about the morph's local origin; re-pin the
+        // anchor in owner coordinates (as setRotation does for the center).
+        let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
+        this.target.transform.translation = this.target.transform.translation.addPt(
+          this.$scaleAnchorInOwner.subPt(after),
+        );
+      } else if (Math.abs(this.target.transform.rotation || 0) < 1e-10) {
+        // Unrotated: reshape via setBounds so subclasses relayout. setBounds
+        // extents are pre-scale units, so divide by the transform scale to
+        // keep the rendered corner under the handle.
+        let s = this.target.transform.scale;
+        let ext = cornerPos.subPt(this.$scaleStartTopLeft);
         this.target.setBounds(
-          this.$scaleStartTopLeft.extent(cornerPos.subPt(this.$scaleStartTopLeft)),
+          this.$scaleStartTopLeft.extent(pt(ext.x / (s.x || 1), ext.y / (s.y || 1))),
+        );
+      } else {
+        // Rotated: reshape in the morph's local coordinates. The shape's
+        // topLeft keeps its local position and the transform is untouched, so
+        // the rendered anchor corner stays fixed without compensation.
+        let localCorner = this.target.localize(cornerPos);
+        let ext = localCorner.subPt(this.$scaleAnchorLocal).maxPt(pt(1, 1));
+        this.target.shape.setBounds(
+          rect(this.$scaleAnchorLocal.x, this.$scaleAnchorLocal.y, ext.x, ext.y),
         );
       }
+      if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
+      this.target.changed();
+      let world = this.target.world();
+      if (world && world.changed) world.changed();
     }
     if (this.handleName == 'Rotate') {
       let c = this.target.globalize(this.target.shape.getBounds().center());
@@ -7263,7 +7280,6 @@ class HaloHandle extends Morph {
       this.target.rotateBy(currentAngle - this.$rotateStartAngle);
       this.$rotateStartAngle = currentAngle;
     }
-    this.moveBy(delta);
   }
   dragEnded(p, evt, wasDrag) {
     if (this.target && ['Copy', 'Grab'].includes(this.handleName)) {

@@ -235,4 +235,127 @@ halo && halo.getBounds().containsRect
 `),
     ).toBe(true);
   }, 60_000);
+
+  it('scale handle resizes rotated morphs about a fixed anchor', () => {
+    // Regression (July 2026), three Scale-handle bugs:
+    //  1. dragMovedBy moved the handle by delta twice, so resizes ran at 2x
+    //     pointer speed.
+    //  2. The resize path set owner-coord bounds via setBounds, which warps a
+    //     rotated target (setBounds math assumes an identity rotation).
+    //  3. The shift (transform-scale) path scaled about the local origin with
+    //     no translation compensation, so rotated / origin-offset targets
+    //     drifted while scaling.
+    const harness: Harness = { listeners: new Map(), rafQueue: [] };
+    installBrowserStubs(harness);
+    const docHandle = createAutomergeTestDocHandle();
+    const rt = createLivelymergeRuntime(docHandle);
+    const g = globalThis as any;
+    g.handle = docHandle;
+    g.runtime = rt;
+    const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
+    // Strip the trailing top-level init() (see the halo-frame test above).
+    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+    rt.eval(`
+initUI();
+initLively();
+`);
+    const pumpFrame = () => {
+      const cbs = harness.rafQueue.splice(0, harness.rafQueue.length);
+      cbs.forEach((cb) => cb());
+    };
+    const dispatch = (type: string, x: number, y: number, extra: object = {}) => {
+      (harness.listeners.get(type) ?? []).forEach((fn) =>
+        fn({ type, pointerId: 1, button: 0, offsetX: x, offsetY: y, pointerType: 'mouse', ...extra }),
+      );
+      pumpFrame();
+    };
+    pumpFrame();
+    const scaleHandleCenter = (): [number, number] => {
+      const x = rt.eval(`
+let halo = Lively.ephemeralSubmorphs().find((m) => m.className == 'HaloMorph');
+halo.globalize(halo.resizeHandle.getBounds().center()).x`) as number;
+      const y = rt.eval(`
+let halo3 = Lively.ephemeralSubmorphs().find((m) => m.className == 'HaloMorph');
+halo3.globalize(halo3.resizeHandle.getBounds().center()).y`) as number;
+      return [x, y];
+    };
+
+    // --- Unrotated resize tracks the pointer 1:1 (not 2x). While dragging,
+    // the target's bottomRight snaps to the handle's center and then follows
+    // it exactly, so the final extent is (handle center + drag delta - topLeft).
+    rt.eval(`
+Lively.box = Lively.addMorph(new Morph(rect(100, 100, 80, 50)));
+Lively.box.showHalo();
+`);
+    const [bx, by] = scaleHandleCenter();
+    dispatch('pointerdown', bx, by);
+    dispatch('pointermove', bx + 40, by + 20);
+    dispatch('pointerup', bx + 40, by + 20);
+    expect(rt.eval(`Lively.box.getBounds().topLeft.x`)).toBeCloseTo(100, 4);
+    expect(rt.eval(`Lively.box.getBounds().topLeft.y`)).toBeCloseTo(100, 4);
+    expect(rt.eval(`Lively.box.getBounds().extent.x`)).toBeCloseTo(bx + 40 - 100, 4);
+    expect(rt.eval(`Lively.box.getBounds().extent.y`)).toBeCloseTo(by + 20 - 100, 4);
+
+    // --- Rotated resize: reshapes the shape in local coords. The rendered
+    // anchor corner (the shape's local topLeft) stays fixed and the rendered
+    // opposite corner ends up under the handle.
+    rt.eval(`
+Lively.rotBox = Lively.addMorph(new Morph(rect(200, 200, 100, 20)));
+Lively.rotBox.rotateBy(Math.PI / 2);
+Lively.rotBox.showHalo();
+`);
+    const anchorBefore = [
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().topLeft).x`) as number,
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().topLeft).y`) as number,
+    ];
+    const [rx, ry] = scaleHandleCenter();
+    dispatch('pointerdown', rx, ry);
+    dispatch('pointermove', rx - 10, ry - 15);
+    dispatch('pointermove', rx - 30, ry - 40);
+    dispatch('pointerup', rx - 30, ry - 40);
+    expect(rt.eval(`Lively.rotBox.transform.rotation`)).toBeCloseTo(Math.PI / 2, 6);
+    expect(
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().topLeft).x`),
+    ).toBeCloseTo(anchorBefore[0], 4);
+    expect(
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().topLeft).y`),
+    ).toBeCloseTo(anchorBefore[1], 4);
+    expect(
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().bottomRight()).x`),
+    ).toBeCloseTo(rx - 30, 4);
+    expect(
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().bottomRight()).y`),
+    ).toBeCloseTo(ry - 40, 4);
+
+    // --- Shift-drag (uniform transform scale) on a rotated morph: the shape
+    // is untouched, the scale follows the pointer's distance from the anchor,
+    // and the rendered anchor corner stays pinned.
+    rt.eval(`
+Lively.rotBox2 = Lively.addMorph(new Morph(rect(400, 300, 100, 20)));
+Lively.rotBox2.rotateBy(Math.PI / 2);
+Lively.rotBox2.showHalo();
+`);
+    const anchor2 = [
+      rt.eval(`Lively.rotBox2.globalize(Lively.rotBox2.shape.getBounds().topLeft).x`) as number,
+      rt.eval(`Lively.rotBox2.globalize(Lively.rotBox2.shape.getBounds().topLeft).y`) as number,
+    ];
+    const [sx, sy] = scaleHandleCenter();
+    dispatch('pointerdown', sx, sy, { shiftKey: true });
+    dispatch('pointermove', sx + 20, sy + 60, { shiftKey: true });
+    dispatch('pointerup', sx + 20, sy + 60, { shiftKey: true });
+    const startDist = Math.max(Math.hypot(sx - anchor2[0], sy - anchor2[1]), 1);
+    const expectedR = Math.hypot(sx + 20 - anchor2[0], sy + 60 - anchor2[1]) / startDist;
+    expect(rt.eval(`Lively.rotBox2.transform.scale.x`)).toBeCloseTo(expectedR, 4);
+    expect(rt.eval(`Lively.rotBox2.transform.scale.y`)).toBeCloseTo(expectedR, 4);
+    expect(rt.eval(`Lively.rotBox2.shape.getBounds().extent.x`)).toBeCloseTo(100, 6);
+    expect(rt.eval(`Lively.rotBox2.shape.getBounds().extent.y`)).toBeCloseTo(20, 6);
+    expect(
+      rt.eval(`Lively.rotBox2.globalize(Lively.rotBox2.shape.getBounds().topLeft).x`),
+    ).toBeCloseTo(anchor2[0], 4);
+    expect(
+      rt.eval(`Lively.rotBox2.globalize(Lively.rotBox2.shape.getBounds().topLeft).y`),
+    ).toBeCloseTo(anchor2[1], 4);
+    // All halo UI cleaned up after the drags.
+    expect(rt.eval(`Lively.ephemeralSubmorphs().length`)).toBe(0);
+  }, 120_000);
 });
