@@ -246,6 +246,10 @@ halo && halo.getBounds().containsRect
     //  3. The shift (transform-scale) path scaled about the local origin with
     //     no translation compensation, so rotated / origin-offset targets
     //     drifted while scaling.
+    //  4. Resizing snapped the shape's corner to the handle's position on the
+    //     first move. The handle sits on the halo frame's (axis-aligned)
+    //     corner, which for a rotated morph is far from the shape's rendered
+    //     corner — so the size jumped drastically at drag start.
     const harness: Harness = { listeners: new Map(), rafQueue: [] };
     installBrowserStubs(harness);
     const docHandle = createAutomergeTestDocHandle();
@@ -284,9 +288,9 @@ initLively();
       return [x, y];
     };
 
-    // --- Unrotated resize tracks the pointer 1:1 (not 2x). While dragging,
-    // the target's bottomRight snaps to the handle's center and then follows
-    // it exactly, so the final extent is (handle center + drag delta - topLeft).
+    // --- Resizing is RELATIVE: final extent = start extent + drag delta
+    // (1:1 with the pointer, no 2x, and no snap-to-handle jump on the first
+    // move — the handle sits on the halo frame, not on the shape's corner).
     rt.eval(`
 Lively.box = Lively.addMorph(new Morph(rect(100, 100, 80, 50)));
 Lively.box.showHalo();
@@ -297,12 +301,13 @@ Lively.box.showHalo();
     dispatch('pointerup', bx + 40, by + 20);
     expect(rt.eval(`Lively.box.getBounds().topLeft.x`)).toBeCloseTo(100, 4);
     expect(rt.eval(`Lively.box.getBounds().topLeft.y`)).toBeCloseTo(100, 4);
-    expect(rt.eval(`Lively.box.getBounds().extent.x`)).toBeCloseTo(bx + 40 - 100, 4);
-    expect(rt.eval(`Lively.box.getBounds().extent.y`)).toBeCloseTo(by + 20 - 100, 4);
+    expect(rt.eval(`Lively.box.getBounds().extent.x`)).toBeCloseTo(80 + 40, 4);
+    expect(rt.eval(`Lively.box.getBounds().extent.y`)).toBeCloseTo(50 + 20, 4);
 
-    // --- Rotated resize: reshapes the shape in local coords. The rendered
-    // anchor corner (the shape's local topLeft) stays fixed and the rendered
-    // opposite corner ends up under the handle.
+    // --- Rotated resize: still relative. The rendered anchor corner (the
+    // shape's local topLeft) stays fixed, the rendered opposite corner moves
+    // by exactly the drag delta (NOT a jump to the handle's position), and
+    // the extent changes by the delta expressed in the shape's local axes.
     rt.eval(`
 Lively.rotBox = Lively.addMorph(new Morph(rect(200, 200, 100, 20)));
 Lively.rotBox.rotateBy(Math.PI / 2);
@@ -311,6 +316,10 @@ Lively.rotBox.showHalo();
     const anchorBefore = [
       rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().topLeft).x`) as number,
       rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().topLeft).y`) as number,
+    ];
+    const cornerBefore = [
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().bottomRight()).x`) as number,
+      rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().bottomRight()).y`) as number,
     ];
     const [rx, ry] = scaleHandleCenter();
     dispatch('pointerdown', rx, ry);
@@ -326,10 +335,14 @@ Lively.rotBox.showHalo();
     ).toBeCloseTo(anchorBefore[1], 4);
     expect(
       rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().bottomRight()).x`),
-    ).toBeCloseTo(rx - 30, 4);
+    ).toBeCloseTo(cornerBefore[0] - 30, 4);
     expect(
       rt.eval(`Lively.rotBox.globalize(Lively.rotBox.shape.getBounds().bottomRight()).y`),
-    ).toBeCloseTo(ry - 40, 4);
+    ).toBeCloseTo(cornerBefore[1] - 40, 4);
+    // At 90°, a world-space delta (u,v) is (v,-u) in shape-local axes:
+    // extent (100,20) + (-40,+30) = (60,50).
+    expect(rt.eval(`Lively.rotBox.shape.getBounds().extent.x`)).toBeCloseTo(60, 4);
+    expect(rt.eval(`Lively.rotBox.shape.getBounds().extent.y`)).toBeCloseTo(50, 4);
 
     // --- Shift-drag (uniform transform scale) on a rotated morph: the shape
     // is untouched, the scale follows the pointer's distance from the anchor,
@@ -371,6 +384,10 @@ Lively.panel.showHalo();
       rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).x`) as number,
       rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).y`) as number,
     ];
+    const panelCornerBefore = [
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().bottomRight()).x`) as number,
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().bottomRight()).y`) as number,
+    ];
     const [px, py] = scaleHandleCenter();
     dispatch('pointerdown', px, py);
     // Op economy: while the pointer moves, the resize is a purely ephemeral
@@ -394,13 +411,13 @@ Lively.panel.showHalo();
     expect(
       rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).y`),
     ).toBeCloseTo(panelAnchor[1], 4);
-    // The rendered corner tracked the handle, so the shape genuinely resized...
+    // The rendered corner moved by exactly the drag delta (relative resize)...
     expect(
       rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().bottomRight()).x`),
-    ).toBeCloseTo(px + 30, 4);
+    ).toBeCloseTo(panelCornerBefore[0] + 30, 4);
     expect(
       rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().bottomRight()).y`),
-    ).toBeCloseTo(py + 25, 4);
+    ).toBeCloseTo(panelCornerBefore[1] + 25, 4);
     // ...and the chrome relayout ran: the title bar spans the new shape width.
     expect(
       rt.eval(`Lively.panel.titleBar.getBounds().width() - Lively.panel.shape.getBounds().width()`),

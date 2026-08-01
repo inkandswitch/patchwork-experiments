@@ -7226,6 +7226,19 @@ class HaloHandle extends Morph {
       );
       this.$scaleStartShapeExtent = this.target.shape.getBounds().extent.copy();
       this.$scaleDesiredExtent = null;
+      // Where the grab started, in start-local coordinates. Resizing is
+      // RELATIVE: start extent + the handle's movement along the shape's own
+      // axes. The handle sits on the halo frame, not on the shape's corner,
+      // so snapping the corner to it would make a rotated morph's size jump
+      // on the first move.
+      let downCornerWorld = this.owner.globalize(this.getBounds().center());
+      let downCornerInOwner = this.target.owner
+        ? this.target.owner.localize(downCornerWorld)
+        : downCornerWorld;
+      let downScrollY = this.target.$scrollOffsetY;
+      if (downScrollY)
+        downCornerInOwner = pt(downCornerInOwner.x, downCornerInOwner.y - downScrollY);
+      this.$scaleStartCornerLocal = this.$scaleStartTfm.invertPt(downCornerInOwner);
     }
     let worldTopLeft = this.owner.getBounds().topLeft.addPt(this.getBounds().topLeft); // handle topLeft in world before reparent
     this.world().addEphemeralMorph(this); // handle owner was halo; now world (per-user, like the halo itself)
@@ -7271,10 +7284,14 @@ class HaloHandle extends Morph {
         let cornerInOwner = this.target.owner ? this.target.owner.localize(cornerPos) : cornerPos;
         let scrollY = this.target.$scrollOffsetY;
         if (scrollY) cornerInOwner = pt(cornerInOwner.x, cornerInOwner.y - scrollY);
-        // Desired final local extent, measured in the start-of-drag frame so
-        // the preview's own scale edits don't feed back into the math.
+        // Desired final local extent: the start extent adjusted by the
+        // handle's movement, measured in the start-of-drag frame so the
+        // preview's own scale edits don't feed back into the math. (Relative,
+        // not corner-snapping — see the note at $scaleStartCornerLocal.)
         let localCorner = this.$scaleStartTfm.invertPt(cornerInOwner);
-        let ext = localCorner.subPt(this.$scaleAnchorLocal).maxPt(pt(1, 1));
+        let ext = this.$scaleStartShapeExtent
+          .addPt(localCorner.subPt(this.$scaleStartCornerLocal))
+          .maxPt(pt(1, 1));
         this.$scaleDesiredExtent = ext;
         let e0 = this.$scaleStartShapeExtent;
         let s0 = this.$scaleStartTransform;
