@@ -636,6 +636,219 @@ class Set {
   }
 }
 
+// +----------------------------------+
+// |  Ephemeral interaction streaming |
+// +----------------------------------+
+// While a user drags/rotates/resizes a morph, per-frame state lives only in the
+// ephemeral overlays ($transform/$bounds) and the document sees ONE write at the
+// end. So that other users can still watch the interaction live, each replica
+// broadcasts its active overlays once per frame via automerge-repo ephemeral
+// messages (peer-to-peer through the sync server, never persisted), and applies
+// incoming ones to the same $-overlays on its side.
+//
+// Wire format — plain JSON, and deliberately NO $-prefixed keys: LM reads/writes of
+// $-names on HOST objects route to the ephemeral-property sidecar, not the object,
+// so $-keys on a message would be invisible from LM code.
+//   { type: 'lm-eph', v: 1, actor, end?, objects: [{ id, props: { transform, bounds } }] }
+// Values are className-tagged trees ({ c: 'Point', x, y }, ...). Receivers decode by
+// prototype delegation (Object.create($global[c].prototype) + fields), validate
+// every number, and may ONLY write the whitelisted $-props (see
+// ephApplyOverlayEntry) — a malformed or malicious message can never touch the
+// document, because $-props never persist by construction.
+//
+// Timing policy is entirely receiver-side: an overlay lapses $EPH_OVERLAY_MS after
+// the last message about it, so a sender that dies mid-drag self-heals. The final
+// message (sent from finishPointerDrag AFTER the commit, so it carries exactly the
+// committed values) is flagged end:true; the receiver gives it the short
+// $EPH_OVERLAY_END_MS deadline, and by the time it lapses the synced document says
+// the same thing — the overlay's removal is invisible.
+//
+// GC note: decoded overlays are shadow objects reachable only through $-props
+// (ephemeral-live, swept once the lease cleanup nulls them), and window._ephOverlays
+// holds only ids and numbers — nothing here pins heap objects.
+
+function ephStreamRegister(morph) {
+  /** Called by {@link Morph#continuePointerDrag} on the first real move. */
+  if (!$uiState || !$uiState.ephStreamMorphs) return;
+  if (morph.$transform == null) return; // legacy/shadowed morph: nothing ephemeral to stream
+  if (!$uiState.ephStreamMorphs.includes(morph)) $uiState.ephStreamMorphs.push(morph);
+}
+function ephStreamEnd(morph) {
+  /** Called by {@link Morph#finishPointerDrag} after the commit: deregister and send
+   * the final (end:true) message with the committed values. */
+  if (!$uiState || !$uiState.ephStreamMorphs) return;
+  let ix = $uiState.ephStreamMorphs.indexOf(morph);
+  if (ix < 0) return; // never moved (plain click) or streaming unavailable
+  $uiState.ephStreamMorphs.splice(ix, 1);
+  if (!window.handle || !window.handle.broadcast) return;
+  let objs = new window.Array();
+  objs.push(ephOverlayEntryFor(morph));
+  ephBroadcast(objs, true);
+}
+function flushEphemeralStream() {
+  /** Once per frame (see onFrame): one batched message for all active overlays. */
+  if (!$uiState || !$uiState.ephStreamMorphs || $uiState.ephStreamMorphs.length === 0) return;
+  if (!window.handle || !window.handle.broadcast) return;
+  let objs = new window.Array();
+  $uiState.ephStreamMorphs.forEach((m) => {
+    if (m.$transform != null) objs.push(ephOverlayEntryFor(m));
+  });
+  if (objs.length > 0) ephBroadcast(objs, false);
+}
+function ephOverlayEntryFor(morph) {
+  // Host objects throughout (new window.Object/Array): handle.broadcast needs plain
+  // JSON, and building it host-side avoids any LM->JS conversion questions.
+  let entry = new window.Object();
+  entry.id = morph.$id;
+  let props = new window.Object();
+  props.transform = ephEncodeValue(morph.transform, 0);
+  if (morph.bounds != null) props.bounds = ephEncodeValue(morph.bounds, 0);
+  entry.props = props;
+  return entry;
+}
+function ephBroadcast(objs, isEnd) {
+  let msg = new window.Object();
+  msg.type = 'lm-eph';
+  msg.v = 1;
+  msg.actor = $actorID;
+  if (isEnd) msg.end = true;
+  msg.objects = objs;
+  window.handle.broadcast(msg);
+}
+function ephEncodeValue(v, depth) {
+  /** LM value -> plain-JSON host tree. Data objects become { c: className, ...fields }.
+   * v1 carries primitives and class-tagged objects only (no arrays — the geometry
+   * types need none; extend BOTH codec directions together if that changes). */
+  if (v == null) return null;
+  let t = typeof v;
+  if (t === 'number' || t === 'string' || t === 'boolean') return v;
+  if (t === 'function' || depth >= 6) return null;
+  if (Array.isArray(v)) return null;
+  if (t === 'object' && typeof v.className === 'string') {
+    let out = new window.Object();
+    out.c = v.className;
+    Object.getOwnPropertyNames(v).forEach((k) => {
+      let ev = ephEncodeValue(v[k], depth + 1);
+      if (ev != null) out[k] = ev;
+    });
+    return out;
+  }
+  return null;
+}
+function ephDecodeValue(v, depth) {
+  /** Host tree -> LM value. { c } nodes revive by prototype delegation: in LM an
+   * instance IS fields + a prototype, so no constructors or per-class registry.
+   * NOTE: Object.keys here is LM's, which handles host objects; window.Object.keys
+   * would not work (host functions read through the window proxy are bound, and a
+   * bound Object loses its statics). */
+  if (v == null) return null;
+  let t = typeof v;
+  if (t === 'number' || t === 'string' || t === 'boolean') return v;
+  if (t !== 'object' || depth >= 6) return null;
+  let c = v.c;
+  if (typeof c !== 'string') return null;
+  let cls = $global[c];
+  if (!cls || !cls.prototype) return null;
+  let obj = Object.create(cls.prototype);
+  let ks = Object.keys(v);
+  for (let i = 0; i < ks.length; i++) {
+    let k = ks.at(i);
+    if (k === 'c') continue;
+    obj[k] = ephDecodeValue(v[k], depth + 1);
+  }
+  return obj;
+}
+function ephFiniteNumber(x) {
+  return typeof x === 'number' && Number.isFinite(x);
+}
+function ephValidPointValue(p) {
+  return p != null && p.className === 'Point' && ephFiniteNumber(p.x) && ephFiniteNumber(p.y);
+}
+function ephValidTransformValue(t) {
+  return (
+    t != null &&
+    t.className === 'SimpleTransform' &&
+    ephValidPointValue(t.translation) &&
+    ephFiniteNumber(t.rotation) &&
+    ephValidPointValue(t.scale)
+  );
+}
+function ephValidBoundsValue(b) {
+  return (
+    b != null &&
+    b.className === 'Rectangle' &&
+    ephValidPointValue(b.topLeft) &&
+    ephValidPointValue(b.extent)
+  );
+}
+function processEphemeralInbound() {
+  /** Once per frame (see onFrame): drain the inbound queue, then sweep lapsed overlays. */
+  if (!window._ephemeralMessages || !window._ephOverlays) return;
+  let now = $uiState && $uiState.lastFrameTime != null ? $uiState.lastFrameTime : 0;
+  if (window._ephemeralMessages.length > 0) {
+    for (const m of window._ephemeralMessages) ephApplyMessage(m, now);
+    window._ephemeralMessages = new window.Array();
+  }
+  ephSweepOverlays(now);
+}
+function ephApplyMessage(m, now) {
+  if (!m || m.type !== 'lm-eph' || m.v !== 1) return;
+  if (m.actor === $actorID) return; // echo safety
+  let objs = m.objects;
+  if (!objs) return;
+  let n = Math.min(objs.length, 32);
+  for (let i = 0; i < n; i++) ephApplyOverlayEntry(objs[i], !!m.end, now);
+}
+function ephApplyOverlayEntry(entry, isEnd, now) {
+  if (!entry || typeof entry.id !== 'string' || !entry.props) return;
+  let morph = topLevelMorph ? morphWithId(topLevelMorph, entry.id) : null;
+  // Unknown id: e.g. motion messages for a remote copy can outrun the doc change
+  // that creates it — drop silently; later messages apply once sync catches up.
+  if (!morph) return;
+  // Local interaction wins: apply only when the morph has no overlay at all, or
+  // when the existing overlay is remote-owned (i.e. tracked in _ephOverlays).
+  // Locally-initiated overlays are never in that table.
+  if (morph.$transform != null && window._ephOverlays[entry.id] == null) return;
+  // THE WHITELIST: these two ephemeral props, validated, applied as a pair —
+  // hit-testing and fullBounds assume transform and bounds agree. Extend here
+  // (with a validator) to stream more ephemeral state.
+  let tfm = ephDecodeValue(entry.props.transform, 0);
+  if (!ephValidTransformValue(tfm)) return;
+  let bnds = null;
+  if (entry.props.bounds != null) {
+    bnds = ephDecodeValue(entry.props.bounds, 0);
+    if (!ephValidBoundsValue(bnds)) return;
+  }
+  morph.$transform = tfm;
+  morph.$bounds = bnds;
+  window._ephOverlays[entry.id] =
+    now + (isEnd ? $EPH_OVERLAY_END_MS || 250 : $EPH_OVERLAY_MS || 1000);
+  morph.changed();
+}
+function ephSweepOverlays(now) {
+  // LM's Object.keys (handles host objects); window.Object.keys does not exist —
+  // host functions read through the window proxy are bound, losing their statics.
+  let ids = Object.keys(window._ephOverlays);
+  for (let i = 0; i < ids.length; i++) {
+    let id = ids.at(i);
+    if (window._ephOverlays[id] > now) continue;
+    delete window._ephOverlays[id];
+    let morph = topLevelMorph ? morphWithId(topLevelMorph, id) : null;
+    if (!morph) continue;
+    morph.$transform = null;
+    morph.$bounds = null;
+    morph.changed();
+  }
+}
+function morphWithId(root, id) {
+  if (root.$id === id) return root;
+  let found = null;
+  root.eachSubmorph((m) => {
+    if (found == null) found = morphWithId(m, id);
+  });
+  return found;
+}
+
 function initUI() {
   // Per-user UI state: ephemeral (never in the Automerge document), survives across
   // transactions, reset on reload. `eventListeners` keeps the listener closures (and
@@ -648,11 +861,16 @@ function initUI() {
     longClickByPointerId: {},
     pointerLocation: null,
     lastFrameTime: null,
+    /** Morphs whose interaction overlays this user is broadcasting (see the
+     *  "Ephemeral interaction streaming" section). */
+    ephStreamMorphs: [],
   };
   // Raw side-tables (plain JS on the real window; never touch the LM heap):
   window._canvasEvents = new window.Array(); // DOM events queued between frames
   window._lcEvts = new window.Object(); // pointerId → raw pointerdown event
   window._lcTimers = new window.Object(); // pointerId → raw timer handle (a host object in Node)
+  window._ephemeralMessages = new window.Array(); // inbound lm-eph payloads queued between frames
+  window._ephOverlays = new window.Object(); // morphId → deadline (frame-clock ms) for remote-owned overlays
 
   function addEventListener(source, type, listener, optsIfAny) {
     // prevents GC from collecting the listener
@@ -703,6 +921,25 @@ function initUI() {
   };
 
   $actorID = window.Automerge.getActorId(window.handle.doc());
+
+  // Receiver-side overlay lifetimes (the sender never dictates timing): lapse after
+  // this much silence about an ongoing interaction / after its end:true message.
+  $EPH_OVERLAY_MS = 1000;
+  $EPH_OVERLAY_END_MS = 250;
+  // Inbound ephemeral messages: like the canvas listeners below, the callback runs
+  // OUTSIDE the frame transaction, so it may only touch window side-tables; the
+  // queue is drained inside the frame by processEphemeralInbound. The listener is
+  // held in a $-global (NOT a window slot: reading an LM function back through the
+  // host-object proxy breaks — no `bind` — and the $-global also keeps it alive
+  // for the GC, like $uiState.eventListeners does for the canvas listeners).
+  if (window.handle.on) {
+    if ($lmEphListener != null && window.handle.off)
+      window.handle.off('ephemeral-message', $lmEphListener);
+    $lmEphListener = (payload) => {
+      if (payload && payload.message) window._ephemeralMessages.push(payload.message);
+    };
+    window.handle.on('ephemeral-message', $lmEphListener);
+  }
   // Fresh UI init must not inherit stale soft-shift state.
   $shiftKeyPressedFlag = false; // per-user soft-shift resets on session start
   if (topLevelMorph) topLevelMorph.$shiftKeyDown = false;
@@ -754,6 +991,8 @@ function initUI() {
     try {
       window.runtime.change(() => {
         processEvents();
+        processEphemeralInbound();
+        flushEphemeralStream();
         if (render) {
           render();
         }
@@ -3135,6 +3374,8 @@ class Morph {
     this.$hitPoint = p;
     if (delta.x !== 0 || delta.y !== 0) this.$didDrag = true;
     this.dragMovedBy(delta, p, evt);
+    // Registered on first real move (not on press), so plain clicks never stream.
+    if (this.$didDrag) ephStreamRegister(this.dragTarget());
     return true;
   }
   endPointerDrag(p, evt) {
@@ -3154,6 +3395,8 @@ class Morph {
     this.$pickUpOnDrag = false;
     this.world().setPointerFocus(null);
     target.commitEphemeralTransform();
+    // After the commit, so the final broadcast carries the committed values.
+    ephStreamEnd(target);
   }
   dragTarget() {
     return this.$dragTarget != null ? this.$dragTarget : this;
