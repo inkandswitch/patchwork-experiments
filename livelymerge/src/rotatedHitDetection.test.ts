@@ -355,6 +355,41 @@ Lively.rotBox2.showHalo();
     expect(
       rt.eval(`Lively.rotBox2.globalize(Lively.rotBox2.shape.getBounds().topLeft).y`),
     ).toBeCloseTo(anchor2[1], 4);
+
+    // --- Resizing a rotated panel still runs the panel's relayout (title bar
+    // chrome and content panes follow the new shape).
+    rt.eval(`
+Lively.panel = Lively.addMorph(new MethodPanel(rect(500, 350, 200, 120), 'hello world', 'T'));
+Lively.panel.rotateBy(Math.PI / 6);
+Lively.panel.showHalo();
+`);
+    const panelAnchor = [
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).x`) as number,
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).y`) as number,
+    ];
+    const [px, py] = scaleHandleCenter();
+    dispatch('pointerdown', px, py);
+    dispatch('pointermove', px + 30, py + 25);
+    dispatch('pointerup', px + 30, py + 25);
+    expect(rt.eval(`Lively.panel.transform.rotation`)).toBeCloseTo(Math.PI / 6, 6);
+    expect(
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).x`),
+    ).toBeCloseTo(panelAnchor[0], 4);
+    expect(
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().topLeft).y`),
+    ).toBeCloseTo(panelAnchor[1], 4);
+    // The rendered corner tracked the handle, so the shape genuinely resized...
+    expect(
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().bottomRight()).x`),
+    ).toBeCloseTo(px + 30, 4);
+    expect(
+      rt.eval(`Lively.panel.globalize(Lively.panel.shape.getBounds().bottomRight()).y`),
+    ).toBeCloseTo(py + 25, 4);
+    // ...and the chrome relayout ran: the title bar spans the new shape width.
+    expect(
+      rt.eval(`Lively.panel.titleBar.getBounds().width() - Lively.panel.shape.getBounds().width()`),
+    ).toBeCloseTo(0, 4);
+
     // All halo UI cleaned up after the drags.
     expect(rt.eval(`Lively.ephemeralSubmorphs().length`)).toBe(0);
   }, 120_000);

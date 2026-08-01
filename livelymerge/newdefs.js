@@ -7250,24 +7250,18 @@ class HaloHandle extends Morph {
         this.target.transform.translation = this.target.transform.translation.addPt(
           this.$scaleAnchorInOwner.subPt(after),
         );
-      } else if (Math.abs(this.target.transform.rotation || 0) < 1e-10) {
-        // Unrotated: reshape via setBounds so subclasses relayout. setBounds
-        // extents are pre-scale units, so divide by the transform scale to
-        // keep the rendered corner under the handle.
-        let s = this.target.transform.scale;
-        let ext = cornerPos.subPt(this.$scaleStartTopLeft);
-        this.target.setBounds(
-          this.$scaleStartTopLeft.extent(pt(ext.x / (s.x || 1), ext.y / (s.y || 1))),
-        );
       } else {
-        // Rotated: reshape in the morph's local coordinates. The shape's
-        // topLeft keeps its local position and the transform is untouched, so
-        // the rendered anchor corner stays fixed without compensation.
-        let localCorner = this.target.localize(cornerPos);
-        let ext = localCorner.subPt(this.$scaleAnchorLocal).maxPt(pt(1, 1));
-        this.target.shape.setBounds(
-          rect(this.$scaleAnchorLocal.x, this.$scaleAnchorLocal.y, ext.x, ext.y),
-        );
+        // Resize: reshape in the morph's local coordinates, routed through
+        // setBounds so subclasses (panels, scroll panes, text) relayout.
+        // setBounds re-origins the shape and pins the translation at the
+        // rect's topLeft; under any rotation/scale the rendered anchor corner
+        // (the local origin) IS the translation, so passing the anchor's
+        // owner-coord position keeps it fixed. The extent is in local
+        // (pre-transform) units, matching setBounds' shape semantics.
+        let aLocal = this.target.shape.getBounds().topLeft;
+        let aInOwner = this.target.transform.transformPt(aLocal);
+        let ext = this.target.localize(cornerPos).subPt(aLocal);
+        this.target.setBounds(aInOwner.extent(ext));
       }
       if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
       this.target.changed();
