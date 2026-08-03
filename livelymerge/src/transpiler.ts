@@ -106,6 +106,43 @@ function shorthandPropertyNode(node: SyntaxNode): SyntaxNode | null {
   return first;
 }
 
+/** Visit the variable targets of a destructuring-assignment pattern — `({ x } = o)`,
+ * `[a, ...b] = xs` — which write variables but contain no VariableName nodes:
+ * shorthand targets are `PatternProperty > PropertyName` (visited with
+ * shorthand=true; a rewrite must expand to `x: <ref>`), keyed/array/rest targets are
+ * VariableDefinition nodes. One level only: nested patterns, default values, and
+ * member-expression targets are left to the caller's normal recursion. Declaration,
+ * parameter, and catch patterns bind rather than reference and never reach the
+ * expression walkers, so a bare pattern seen there is always an assignment target. */
+function forEachAssignmentPatternTarget(
+  pattern: SyntaxNode,
+  source: string,
+  visit: (node: SyntaxNode, name: string, shorthand: boolean) => void,
+): void {
+  if (pattern.name === 'ObjectPattern') {
+    for (let child = pattern.firstChild; child; child = child.nextSibling) {
+      if (child.name !== 'PatternProperty') continue;
+      const first = child.firstChild;
+      if (
+        first?.name === 'PropertyName' &&
+        (!first.nextSibling || first.nextSibling.name === 'Equals')
+      ) {
+        visit(first, nodeText(first, source), true);
+        continue;
+      }
+      for (let part = child.firstChild; part; part = part.nextSibling) {
+        if (part.name === 'VariableDefinition') visit(part, nodeText(part, source), false);
+      }
+    }
+    return;
+  }
+  if (pattern.name === 'ArrayPattern') {
+    for (let child = pattern.firstChild; child; child = child.nextSibling) {
+      if (child.name === 'VariableDefinition') visit(child, nodeText(child, source), false);
+    }
+  }
+}
+
 function firstBlockStatement(block: SyntaxNode): SyntaxNode | null {
   for (let child = block.firstChild; child; child = child.nextSibling) {
     if (child.name === '{' || child.name === '}') continue;
@@ -455,13 +492,14 @@ function forEachForSpecExpression(spec: SyntaxNode, visit: (expr: SyntaxNode) =>
         }
       }
     } else if (
-      child.name === 'VariableDefinition' ||
       child.name === 'ObjectPattern' ||
-      child.name === 'ArrayPattern' ||
-      child.name === 'of' ||
-      child.name === 'in' ||
-      child.name === ';'
+      child.name === 'ArrayPattern'
     ) {
+      // A bare pattern in a for-spec (`for ({ x } of xs)`) is an assignment target
+      // (declaration patterns sit inside the VariableDeclaration child above); the
+      // walkers' pattern branches handle its variable writes.
+      visit(child);
+    } else if (child.name === 'VariableDefinition' || child.name === 'of' || child.name === 'in' || child.name === ';') {
       continue;
     } else {
       visit(child);
@@ -934,6 +972,15 @@ function walkFreeVarNode(
     return;
   }
 
+  if (node.name === 'ObjectPattern' || node.name === 'ArrayPattern') {
+    // Destructuring-assignment targets write variables just like assignment LHS
+    // names do. Fall through afterwards: defaults, member-expression targets, and
+    // nested patterns are ordinary children.
+    forEachAssignmentPatternTarget(node, builder.source, (target, _name, isShorthand) => {
+      recordFreeVarNameUse(builder, target, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, isShorthand);
+    });
+  }
+
   if (node.name === 'Block') {
     const innerScope = blockScopeForAnalysis(builder, node, currentScope);
     walkFunctionBody(builder, node, funcNode, innerScope, funcScope, enclosingScope, freeVarUses);
@@ -1403,6 +1450,20 @@ function walkScopedBindingRefs(
     return;
   }
 
+  if (node.name === 'ObjectPattern' || node.name === 'ArrayPattern') {
+    // Destructuring-assignment targets; fall through for defaults and nested content.
+    forEachAssignmentPatternTarget(node, builder.source, (target, name, isShorthand) => {
+      if (!bindingResolvesToScopedName(builder, name, currentScope, targetScope, scopedNames)) return;
+      const member = `${targetScope.name}.${name}`;
+      edits.push({
+        kind: 'replace',
+        from: target.from,
+        to: target.to,
+        text: isShorthand ? `${name}: ${member}` : member,
+      });
+    });
+  }
+
   for (let child = node.firstChild; child; child = child.nextSibling) {
     walkScopedBindingRefs(builder, child, currentScope, targetScope, scopedNames, edits);
   }
@@ -1491,6 +1552,26 @@ function walkInitExprGlobalRefs(
       edits.push({ kind: 'replace', from: shorthand.from, to: shorthand.to, text: `${name}: $global.${name}` });
     }
     return;
+  }
+  if (node.name === 'ObjectPattern' || node.name === 'ArrayPattern') {
+    // Destructuring-assignment targets; fall through for defaults and nested content.
+    forEachAssignmentPatternTarget(node, builder.source, (target, name, isShorthand) => {
+      if (!shouldRewriteToWorld(name)) return;
+      let ref: string | null = null;
+      if (bindingResolvesToScopedName(builder, name, declBlockScope, declBlockScope, scopedNames)) {
+        ref = `${scopeName}.${name}`;
+      } else {
+        const binding = builder.resolve(name, declBlockScope);
+        if (!binding || isRootScope(binding.scope)) ref = `$global.${name}`;
+      }
+      if (!ref) return;
+      edits.push({
+        kind: 'replace',
+        from: target.from,
+        to: target.to,
+        text: isShorthand ? `${name}: ${ref}` : ref,
+      });
+    });
   }
   for (let child = node.firstChild; child; child = child.nextSibling) {
     walkInitExprGlobalRefs(builder, child, declBlockScope, scopeName, scopedNames, freeVarUses, edits);
@@ -1969,6 +2050,29 @@ function walkForWorldRefs(
       expandToWorld();
       return;
     }
+  }
+
+  if (node.name === 'ObjectPattern' || node.name === 'ArrayPattern') {
+    // Destructuring-assignment targets, same resolution as an assignment's LHS name
+    // (const-assignment check included); fall through for defaults and nested content.
+    forEachAssignmentPatternTarget(node, builder.source, (target, name, isShorthand) => {
+      if (!shouldRewriteToWorld(name)) return;
+      if (freeVarUses.some((use) => use.from === target.from && use.to === target.to && !use.world)) return;
+      const binding = funcScope
+        ? resolveInFunction(builder, name, currentScope, funcScope)
+        : builder.resolve(name, currentScope);
+      if (binding && isRootScope(binding.scope) && builder.rootConstNames.has(name)) {
+        throw new Error(`cannot assign to const-declared variable '${name}'`);
+      }
+      const isWorldUse = isWorldFreeVarRef(freeVarUses, target.from, target.to);
+      if (binding && !isRootScope(binding.scope) && !isWorldUse) return;
+      edits.push({
+        kind: 'replace',
+        from: target.from,
+        to: target.to,
+        text: isShorthand ? `${name}: $global.${name}` : `$global.${name}`,
+      });
+    });
   }
 
   if (node.name === 'Block') {
@@ -2685,6 +2789,20 @@ function rewriteClosureScopedRefsInNode(
       edits.push({ from: shorthand.from, to: shorthand.to, text: `${name}: ${scopeName}.${name}` });
     }
     return;
+  }
+
+  if (node.name === 'ObjectPattern' || node.name === 'ArrayPattern') {
+    // Destructuring-assignment targets; fall through for defaults and nested content.
+    forEachAssignmentPatternTarget(node, source, (target, name, isShorthand) => {
+      const scopeName = captured.get(name);
+      if (!scopeName) return;
+      const member = `${scopeName}.${name}`;
+      edits.push({
+        from: target.from,
+        to: target.to,
+        text: isShorthand ? `${name}: ${member}` : member,
+      });
+    });
   }
 
   for (let child = node.firstChild; child; child = child.nextSibling) {

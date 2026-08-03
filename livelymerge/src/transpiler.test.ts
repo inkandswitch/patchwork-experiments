@@ -572,6 +572,75 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
     });
   });
 
+  describe('destructuring-assignment to captured variables', () => {
+    it('rewrites a shorthand pattern write in the declaring block', () => {
+      expect(transpile(`{
+  let x = 0;
+  [1].forEach(() => { x++; });
+  ({ x } = { x: 5 });
+  return x;
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  $scope2.x = 0;
+  $arr([1]).forEach($fun("() => { x++; }", "($scope2) => () => { $scope2.x++; }", [$scope2]));
+  ({ x: $scope2.x } = $obj({ x: 5 }));
+  return $scope2.x;
+}`);
+    });
+
+    it('captures a binding whose only closure use is a pattern write', () => {
+      expect(transpile(`{
+  let x = 0;
+  [1].forEach(() => { ({ x } = { x: 5 }); });
+  return x;
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  $scope2.x = 0;
+  $arr([1]).forEach($fun("() => { ({ x } = { x: 5 }); }", "($scope2) => () => { ({ x: $scope2.x } = $obj({ x: 5 })); }", [$scope2]));
+  return $scope2.x;
+}`);
+    });
+
+    it('rewrites keyed, nested, array, and rest targets', () => {
+      const result = transpile(`{
+  let a = 0, b = 0, c = null, d = 0;
+  [1].forEach(() => { a++; b++; c = null; d++; });
+  ({ k: a, m: { d } } = obj);
+  [b, ...c] = arr;
+}`);
+      expect(result).toContain('({ k: $scope2.a, m: { d: $scope2.d } } = $global.obj);');
+      expect(result).toContain('[$scope2.b, ...$scope2.c] = $global.arr;');
+    });
+
+    it('rewrites pattern writes to globals and default values reading captured vars', () => {
+      expect(transpile(`({ x } = obj);`)).toBe(`({ x: $global.x } = $global.obj);`);
+      expect(transpile(`{
+  let fallback = 1;
+  let y = 0;
+  [1].forEach(() => { fallback++; y++; });
+  ({ y = fallback } = obj);
+}`)).toContain('({ y: $scope2.y = $scope2.fallback } = $global.obj);');
+    });
+
+    it('rewrites an assignment-form for-of pattern', () => {
+      expect(transpile(`{
+  let x = 0;
+  [1].forEach(() => { x++; });
+  for ({ x } of [{ x: 1 }]) { console.log(x); }
+}`)).toContain('for ({ x: $scope2.x } of $arr([$obj({ x: 1 })]))');
+    });
+
+    it('leaves uncaptured local pattern writes alone and rejects const targets', () => {
+      expect(transpile(`function f() {
+  let x = 0;
+  ({ x } = { x: 5 });
+  return x;
+}`)).toContain('({ x } = $obj({ x: 5 }));');
+      expect(() => transpile(`const K = 1;
+({ K } = obj);`)).toThrow(/cannot assign to const/);
+    });
+  });
+
   describe('this in closures', () => {
     it('threads `this` into a nested closure via the owning scope object', () => {
       const result = transpile(`class M {
@@ -852,5 +921,18 @@ describe('shorthand-capture end to end (real runtime)', () => {
 }`);
     expect(rt.eval(`collect().lines.length`)).toBe(2);
     expect(rt.eval(`collect().lines[1]`)).toBe('b');
+  });
+
+  it('a destructuring assignment to a captured variable round-trips', async () => {
+    const { createLivelymergeRuntime } = await import('./livelymergeRuntime');
+    const { createAutomergeTestDocHandle } = await import('./testDocHandle');
+    const rt = createLivelymergeRuntime(createAutomergeTestDocHandle());
+    rt.eval(`function pick(obj) {
+  let x = 0;
+  [1].forEach(() => { x++; });
+  ({ x } = obj);
+  return x;
+}`);
+    expect(rt.eval(`pick({ x: 7 })`)).toBe(7);
   });
 });
