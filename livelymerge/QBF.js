@@ -1347,6 +1347,8 @@ to LivelyMerge.`,
     this.startStepping('tick', null, Math.round(1000 / this.ticksPerSec));
   }
   tick() {
+    // Close a finished signup epoch even if the game-server stepper is idle.
+    if (Lively && Lively.qbfEpochStartMs != null) qbfFinishExpiredTournament();
     let panel = this.panelMorph();
     if (panel && panel.collapsed) return; // a collapsed window pauses the game
     if (this.paused || (this.gameOver && this.fallingLetters.length === 0)) return;
@@ -1505,16 +1507,165 @@ function runQBF() {
 // ---------------------------------------------------------------------------
 // Game-server clock and seeded tile queues
 // ---------------------------------------------------------------------------
-// Game numbers are minutes since local midnight (0..1439). Everyone who hits a
-// speed button in the same minute gets the same Game # and the same tile list.
+// Game numbers run 100..999 (then wrap to 100). An epoch begins when someone
+// first hits a speed button; anyone else joining within 60s gets the same Game #
+// and the same seeded tile queue. When the minute ends the number advances and
+// the server goes idle (countdown stopped) until the next signup. Idle = no
+// stepping and no Automerge writes.
+//
+// Tournament clock is stored as flat scalars on Lively (qbfGameNumber /
+// qbfEpochStartMs). Nested maps are easy to get wrong if an object literal is
+// ever stored as a plain JSON leaf — field writes then evaporate and the epoch
+// never opens.
 
+function qbfEpochDurationMs() {
+  return Lively && Lively.$qbfEpochDurationMs != null ? Lively.$qbfEpochDurationMs : 60000;
+}
+function qbfNextGameNumber(n) {
+  let next = (n == null ? 99 : Number(n)) + 1;
+  if (next < 100 || next > 999 || isNaN(next)) return 100;
+  return next;
+}
+function qbfEnsureTournamentState() {
+  /**
+   * One-time migrate from the old nested Lively.qbfTournament map, if present.
+   * Does not create clock fields until the first signup (idle stays write-free).
+   */
+  if (!Lively || !Lively.qbfTournament) return;
+  let old = Lively.qbfTournament;
+  if (Lively.qbfGameNumber == null && old.gameNumber != null) {
+    Lively.qbfGameNumber = old.gameNumber;
+  }
+  if (Lively.qbfEpochStartMs == null && old.epochStartMs != null) {
+    Lively.qbfEpochStartMs = old.epochStartMs;
+  }
+  Lively.qbfTournament = null;
+}
+function qbfStoredGameNumber() {
+  let n = Lively && Lively.qbfGameNumber;
+  if (n == null || n < 100 || n > 999 || isNaN(Number(n))) return 100;
+  return Number(n);
+}
+function qbfTournamentEpochOpen(nowMs) {
+  if (!Lively || Lively.qbfEpochStartMs == null) return false;
+  return nowMs - Lively.qbfEpochStartMs < qbfEpochDurationMs();
+}
+function qbfViewTournament(nowMsIfAny) {
+  /**
+   * Read-only view of the tournament clock for UI. Does not write the document.
+   * If an epoch has expired, answers the next Game # as idle (frac 0).
+   */
+  let nowMs = nowMsIfAny != null ? nowMsIfAny : Date.now();
+  if (Lively) qbfEnsureTournamentState();
+  let n = qbfStoredGameNumber();
+  let start = Lively ? Lively.qbfEpochStartMs : null;
+  let dur = qbfEpochDurationMs();
+  if (start == null) {
+    return { gameNumber: n, open: false, frac: 0, expired: false };
+  }
+  let elapsed = nowMs - start;
+  if (elapsed < dur) {
+    return {
+      gameNumber: n,
+      open: true,
+      frac: Math.max(0, Math.min(1, elapsed / dur)),
+      expired: false,
+    };
+  }
+  return { gameNumber: qbfNextGameNumber(n), open: false, frac: 0, expired: true };
+}
+function qbfClearEpochEndTimer() {
+  if (!Lively || Lively.$qbfEpochEndTimer == null) return;
+  clearTimeout(Lively.$qbfEpochEndTimer);
+  Lively.$qbfEpochEndTimer = null;
+}
+function qbfArmEpochEndTimer() {
+  /**
+   * One-shot timer to close the epoch. Replica-local ($-prefixed): does not write
+   * Automerge while waiting. Stepping still paints the countdown bar.
+   */
+  qbfClearEpochEndTimer();
+  if (!Lively || Lively.qbfEpochStartMs == null) return;
+  let delay = Lively.qbfEpochStartMs + qbfEpochDurationMs() - Date.now();
+  if (delay < 0) delay = 0;
+  Lively.$qbfEpochEndTimer = setTimeout(() => {
+    Lively.$qbfEpochEndTimer = null;
+    qbfFinishExpiredTournament();
+  }, delay + 25);
+}
+function qbfFinishExpiredTournament() {
+  /** Commit an expired epoch (if any) and refresh the open game-server UI. */
+  if (!qbfCommitExpiredTournament()) return false;
+  let viewer = findQBFScoresViewer();
+  if (viewer) {
+    viewer.applyTournamentView(qbfViewTournament());
+    viewer.stopGameClockStepping();
+    if (viewer.minuteTrack && viewer.minuteTrack.changed) viewer.minuteTrack.changed();
+  }
+  return true;
+}
+function qbfCommitExpiredTournament() {
+  /** If the open epoch is past its minute, prune stale scores, advance Game #, clear epoch. */
+  if (!Lively || Lively.qbfEpochStartMs == null) return false;
+  if (Date.now() - Lively.qbfEpochStartMs < qbfEpochDurationMs()) return false;
+  qbfEndTournamentEpoch();
+  return true;
+}
+function qbfEndTournamentEpoch() {
+  /**
+   * Close a finished epoch: drop scores older than 30 days, then advance Game #.
+   * Idle afterward (epochStartMs null) until the next signup.
+   */
+  if (!Lively) return;
+  qbfClearEpochEndTimer();
+  try {
+    qbfPruneOldScores();
+  } catch (err) {
+    console.log('QBF prune scores error: ' + err);
+  }
+  Lively.qbfGameNumber = qbfNextGameNumber(qbfStoredGameNumber());
+  Lively.qbfEpochStartMs = null;
+  qbfScoresNotify();
+}
+function qbfJoinOrStartTournamentGame() {
+  /**
+   * First speed-button signup opens a 60s epoch for the waiting Game #.
+   * Later signups in that window join the same number and tile queue.
+   */
+  qbfEnsureTournamentState();
+  let now = Date.now();
+  if (qbfTournamentEpochOpen(now)) {
+    let n = qbfStoredGameNumber();
+    return {
+      gameNumber: n,
+      queue: qbfTileQueueForGame(n),
+      started: false,
+    };
+  }
+  // Idle or expired: close a finished epoch (prune + advance), then open a fresh one.
+  if (Lively.qbfEpochStartMs != null) {
+    qbfEndTournamentEpoch();
+  }
+  if (Lively.qbfGameNumber == null) Lively.qbfGameNumber = 100;
+  Lively.qbfEpochStartMs = now;
+  qbfArmEpochEndTimer();
+  qbfScoresNotify();
+  let n = qbfStoredGameNumber();
+  return {
+    gameNumber: n,
+    queue: qbfTileQueueForGame(n),
+    started: true,
+  };
+}
+/** @deprecated wall-clock game numbers — kept as alias for any stray callers. */
 function qbfCurrentGameNumber() {
-  let d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
+  return qbfViewTournament().gameNumber;
 }
 function qbfSecondsLeftInMinute() {
-  let d = new Date();
-  return Math.max(0, 60 - d.getSeconds() - d.getMilliseconds() / 1000);
+  /** Seconds remaining in the open signup epoch, or full duration when idle. */
+  if (!Lively || Lively.qbfEpochStartMs == null) return qbfEpochDurationMs() / 1000;
+  let left = (qbfEpochDurationMs() - (Date.now() - Lively.qbfEpochStartMs)) / 1000;
+  return Math.max(0, left);
 }
 function qbfSpeedRank(caption) {
   // Fastest first when sorting recent results.
@@ -1648,7 +1799,7 @@ function findQBFGame() {
 
 function openQBFPlaying(optsIfAny) {
   /**
-   * Open or reuse a QBF board for a tournament minute.
+   * Open or reuse a QBF board for a tournament game #.
    * opts: { levelCaption, gameNumber, letterQueue, topLeft }
    */
   let opts = optsIfAny || {};
@@ -1951,7 +2102,6 @@ function qbfPostLevelScore(playerName, levelCaption, record) {
    * Used by QBFMorph at game over. Answers true if the store accepted an update.
    */
   if (!playerName || !levelCaption || !record) return false;
-  qbfPruneOldScores();
   let store = qbfScoresStore();
   let priorMap = store.getPlayerScores(playerName);
   let prior = priorMap ? priorMap[levelCaption] : null;
@@ -1974,7 +2124,7 @@ function qbfScoreAgeMs(timeVal) {
 function qbfPruneOldScores() {
   /**
    * Drop high-score entries older than 30 days (by their stored time / gameDate).
-   * Safe to call often; no-ops when nothing is stale.
+   * Called only when an epoch ends, just before Game # advances.
    */
   let maxAge = 30 * 24 * 60 * 60 * 1000;
   let store = qbfScoresStore();
@@ -2283,7 +2433,7 @@ class QBFScoresMorph extends Morph {
     let innerW = w - 2 * pad;
 
     // --- Top: Game # + countdown (left), speed buttons at same Y (right) ---
-    // Width sized for a typical "Game #2345" at 16px (minutes-since-midnight is ≤4 digits).
+    // Width sized for "Game #999" at 16px (numbers run 100..999).
     let labelW = 100;
     let labelH = 22;
     let labelY = 8;
@@ -2297,23 +2447,24 @@ class QBFScoresMorph extends Morph {
       textColor: Color.white,
     });
     // Thin horizontal countdown, only as wide as the Game # text.
-    // Fill width is per-replica ($fillFrac) so the 1Hz clock does not write Automerge.
+    // Fill is derived from shared epochStartMs at paint time (no Automerge writes).
     let trackY = labelY + labelH + 2;
     let trackH = 8;
     this.minuteTrack = this.addMorph(new QBFDecorMorph(rect(pad, trackY, labelW, trackH)));
     this.minuteTrack.setStyles(Color.white, 1, Color.black);
-    this.minuteTrack.$fillFrac = 0;
     this.minuteTrack.renderOn = function (ctx) {
       let b = this.shape.getBounds();
-      // Track background + border.
       if (this.shape.renderOn) this.shape.renderOn(ctx);
-      let frac = this.$fillFrac != null ? this.$fillFrac : 0;
-      let fw = Math.max(1, Math.round(b.width() * Math.max(0, Math.min(1, frac))));
-      ctx.fillStyle = Color.gray.darker().fillStyle;
-      ctx.fillRect(b.topLeft.x, b.topLeft.y, fw, b.height());
+      let view = qbfViewTournament();
+      let frac = view.open ? view.frac : 0;
+      let fw = Math.max(0, Math.round(b.width() * Math.max(0, Math.min(1, frac))));
+      if (fw > 0) {
+        ctx.fillStyle = Color.gray.darker().fillStyle;
+        ctx.fillRect(b.topLeft.x, b.topLeft.y, fw, b.height());
+      }
     };
     this.minuteFill = null;
-    this.updateMinuteCountdown();
+    this.applyTournamentView(qbfViewTournament());
     // Speed buttons share the Game # row's top Y, stacked to the right.
     let btnH = 22;
     let btnGap = 3;
@@ -2394,13 +2545,13 @@ class QBFScoresMorph extends Morph {
     if (actionName === 'finishTiles') this.finishTiles();
   }
   launchLevel(caption) {
-    this.syncGameClock(true);
-    let n = this.$shownGameNumber != null ? this.$shownGameNumber : qbfCurrentGameNumber();
-    let queue = this.$tileQueue || qbfTileQueueForGame(n);
+    let join = qbfJoinOrStartTournamentGame();
+    this.applyTournamentView(qbfViewTournament());
+    this.ensureGameClockStepping();
     openQBFPlaying({
       levelCaption: caption,
-      gameNumber: n,
-      letterQueue: queue,
+      gameNumber: join.gameNumber,
+      letterQueue: join.queue,
     });
   }
   finishTiles() {
@@ -2417,31 +2568,66 @@ class QBFScoresMorph extends Morph {
     game.letterQueue = bangInFlight ? [] : ['!'];
     if (game.nLeftBox) game.nLeftBox.setText(String(game.letterQueue.length));
   }
-  syncGameClock(forceIfAny) {
-    /** Refresh Game # when the minute rolls; countdown fill is ephemeral (no doc writes). */
-    let n = qbfCurrentGameNumber();
-    if (!forceIfAny && n === this.$shownGameNumber) {
-      this.updateMinuteCountdown();
-      return;
+  applyTournamentView(viewIfAny) {
+    /** Update Game # label when the displayed number changes; tile queue follows. */
+    let view = viewIfAny || qbfViewTournament();
+    this.$shownGameNumber = view.gameNumber;
+    this.$tileQueue = qbfTileQueueForGame(view.gameNumber);
+    if (this.gameNumberLabel) {
+      let label = 'Game #' + view.gameNumber;
+      if (this.gameNumberLabel.shape.string !== label) {
+        this.gameNumberLabel.setText(label);
+      }
     }
-    this.$shownGameNumber = n;
-    this.$tileQueue = qbfTileQueueForGame(n);
-    if (this.gameNumberLabel) this.gameNumberLabel.setText('Game #' + n);
-    this.updateMinuteCountdown();
+  }
+  syncGameClock(forceIfAny) {
+    /**
+     * Refresh display from shared tournament state. Commits an expired epoch
+     * (advances Game #) when force or when we notice expiry while stepping.
+     * Idle: no stepping, no writes.
+     */
+    if (forceIfAny) qbfCommitExpiredTournament();
+    let view = qbfViewTournament();
+    if (view.expired) qbfCommitExpiredTournament();
+    view = qbfViewTournament();
+    this.applyTournamentView(view);
+    if (view.open) this.ensureGameClockStepping();
+    else this.stopGameClockStepping();
   }
   updateMinuteCountdown() {
-    /** Elapsed fraction of the current minute — stored on $fillFrac (per-replica). */
-    if (!this.minuteTrack) return;
-    let frac = 1 - qbfSecondsLeftInMinute() / 60;
-    this.minuteTrack.$fillFrac = Math.max(0, Math.min(1, frac));
+    /** Countdown is painted from epochStartMs in minuteTrack.renderOn — nothing to store. */
   }
   tickGameClock() {
-    this.syncGameClock(false);
+    /**
+     * Only armed while a signup epoch is open. Repaints the countdown bar (local
+     * damage, no Automerge write). On expiry: advance Game # once, then stop.
+     */
+    if (qbfFinishExpiredTournament()) return;
+    let view = qbfViewTournament();
+    if (view.open) {
+      if (this.minuteTrack && this.minuteTrack.changed) this.minuteTrack.changed();
+      return;
+    }
+    this.applyTournamentView(view);
+    this.stopGameClockStepping();
+  }
+  worldOrNull() {
+    // Morph.world() answers `this` for an unowned morph, which is no world at all.
+    let world = this.world();
+    return world && world.startSteppingSpec ? world : null;
+  }
+  ensureGameClockStepping() {
+    if (!this.worldOrNull()) return;
+    if (this.isStepping && this.isStepping('tickGameClock')) return;
+    this.startStepping('tickGameClock', null, 1000);
+  }
+  stopGameClockStepping() {
+    if (!this.worldOrNull()) return;
+    if (this.stopStepping) this.stopStepping('tickGameClock');
   }
   startGameClock() {
-    if (!this.world || !this.world()) return;
-    // 1 Hz: Game # text updates at most once a minute; the bar is ephemeral.
-    this.startStepping('tickGameClock', null, 1000);
+    /** Begin expiry-watch only if a signup epoch is currently open. */
+    this.syncGameClock(false);
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
@@ -2469,7 +2655,6 @@ class QBFScoresMorph extends Morph {
   }
   refresh() {
     this.syncGameClock(false);
-    qbfPruneOldScores();
     this.refreshRecentGames();
     this.setScoreListText(this.scoresScroll, 'Looking for scores...');
     try {
@@ -2490,7 +2675,7 @@ class QBFScoresMorph extends Morph {
     if (!list || list.length === 0) {
       this.setScoreListText(
         this.recentScroll,
-        '(no recent games yet)\n\nWait for a new Game #, then all players\nhit their chosen speed button.',
+        '(no recent games yet)\n\nSomeone hits a speed to open Game #N;\nothers joining within a minute share it.',
       );
       return;
     }

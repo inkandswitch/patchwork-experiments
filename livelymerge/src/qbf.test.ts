@@ -427,4 +427,55 @@ true`);
     rt.eval(`qbfScores.finishTiles()`);
     expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe('!');
   }, 60_000);
+
+  it('starts a Game # epoch on first speed click and shares the queue for a minute', () => {
+    const { rt } = makeGame();
+    // Idle: no tournament clock yet, display waits at 100, clock not stepping.
+    expect(rt.eval(`Lively.qbfEpochStartMs == null`)).toBe(true);
+    expect(rt.eval(`qbfScores.gameNumberLabel.shape.string`)).toBe('Game #100');
+    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(false);
+
+    rt.eval(`qbfScores.launchLevel('quick')`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
+    expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
+    expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
+    const queue1 = rt.eval(`qbfGame.tournamentLetterQueue.join('')`) as string;
+    expect(queue1.length).toBeGreaterThan(10);
+    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(true);
+    expect(rt.eval(`Lively.$qbfEpochEndTimer != null`)).toBe(true);
+
+    // A second signup in the same epoch joins the same number and letters.
+    rt.eval(`
+qbfJoin2 = qbfJoinOrStartTournamentGame();
+true`);
+    expect(rt.eval(`qbfJoin2.gameNumber`)).toBe(100);
+    expect(rt.eval(`qbfJoin2.started`)).toBe(false);
+    expect(rt.eval(`qbfJoin2.queue.join('')`)).toBe(queue1);
+
+    // After the minute: number advances, epoch clears, clock stops until next signup.
+    rt.eval(`
+Lively.qbfEpochStartMs = Date.now() - 61000;
+qbfScores.tickGameClock();
+true`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
+    expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
+    expect(rt.eval(`qbfScores.gameNumberLabel.shape.string`)).toBe('Game #101');
+    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(false);
+
+    // Next signup opens 101; wrap 999 → 100.
+    rt.eval(`qbfScores.launchLevel('super quick')`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
+    expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(101);
+    expect(rt.eval(`qbfGame.tournamentLetterQueue.join('')`)).not.toBe(queue1);
+
+    rt.eval(`
+Lively.qbfGameNumber = 999;
+Lively.qbfEpochStartMs = Date.now() - 61000;
+qbfScores.tickGameClock();
+true`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
+    expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
+    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(false);
+    rt.eval(`qbfClearEpochEndTimer()`);
+  }, 60_000);
 });
