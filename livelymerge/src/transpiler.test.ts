@@ -338,6 +338,87 @@ $global.f()`);
 }`);
     });
 
+    it('rewrites free vars in top-level brace-less for bodies', () => {
+      expect(transpile(`for (let i = 0; i < 5; i++) foo.bar(i);`)).toBe(
+        `for (let i = 0; i < 5; i++) $global.foo.bar(i);`,
+      );
+    });
+
+    it('keeps brace-less for-loop let variables local in cond, update, and body', () => {
+      expect(transpile(`for (let i = 0; i < lim; i += step) log(i);`)).toBe(
+        `for (let i = 0; i < $global.lim; i += $global.step) $global.log(i);`,
+      );
+    });
+
+    it('rewrites free vars in top-level brace-less for-of and for-in bodies', () => {
+      expect(transpile(`for (const e of xs) foo(e);`)).toBe(
+        `for (const e of $global.xs) $global.foo(e);`,
+      );
+      expect(transpile(`for (const k in obj) foo(k);`)).toBe(
+        `for (const k in $global.obj) $global.foo(k);`,
+      );
+    });
+
+    it('keeps loop variables local across nested brace-less for loops', () => {
+      expect(transpile(`for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) foo(i, j);`)).toBe(
+        `for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) $global.foo(i, j);`,
+      );
+    });
+
+    it('promotes captured brace-less loop variables to a hoisted scope object', () => {
+      expect(transpile(`for (let i = 0; i < 3; i++) f = () => i;`)).toBe(
+        `const $scope2 = $obj({});
+for ($scope2.i = 0; $scope2.i < 3; $scope2.i++) f = $fun("() => i", "($scope2) => () => $scope2.i", [$scope2]);`,
+      );
+    });
+
+    it('rewrites direct and closure refs to a captured brace-less loop variable', () => {
+      expect(transpile(`for (let i = 0; i < 3; i++) g(i, () => i);`)).toBe(
+        `const $scope2 = $obj({});
+for ($scope2.i = 0; $scope2.i < 3; $scope2.i++) $global.g($scope2.i, $fun("() => i", "($scope2) => () => $scope2.i", [$scope2]));`,
+      );
+    });
+
+    it('promotes captured brace-less loop variables inside functions', () => {
+      const result = transpile(`function g() {
+  let fns = [];
+  for (let i = 0; i < 3; i++) fns.push(() => i);
+  return fns;
+}`);
+      expect(result).toMatch(/const \$scope\d+ = \$obj\(\{\}\);\\n\s*for \(\$scope\d+\.i = 0; \$scope\d+\.i < 3; \$scope\d+\.i\+\+\)/);
+      expect(result).toMatch(/fns\.push\(\$fun\(\\"\(\) => i\\", \\"\(\$scope\d+\) => \(\) => \$scope\d+\.i\\", \[\$scope\d+\]\)\)/);
+    });
+
+    it('rewrites captured for-of bindings into scope-member targets', () => {
+      // Braced and brace-less alike: `const e` has no VariableDeclaration wrapper, so
+      // the keyword + name become a scope-member assignment target.
+      expect(transpile(`for (const e of xs) f = () => e;`)).toBe(
+        `const $scope2 = $obj({});
+for ($scope2.e of $global.xs) f = $fun("() => e", "($scope2) => () => $scope2.e", [$scope2]);`,
+      );
+      expect(transpile(`{
+  for (const e of xs) {
+    f = () => e;
+  }
+}`)).toBe(`{
+  const $scope3 = $obj({});
+  for ($scope3.e of $global.xs) {
+    f = $fun("() => e", "($scope3) => () => $scope3.e", [$scope3]);
+  }
+}`);
+    });
+
+    it('hoists the scope object past enclosing brace-less statement chains', () => {
+      expect(transpile(`for (x of xs) for (let i = 0; i < 2; i++) f = () => i;`)).toBe(
+        `const $scope3 = $obj({});
+for ($global.x of $global.xs) for ($scope3.i = 0; $scope3.i < 2; $scope3.i++) f = $fun("() => i", "($scope3) => () => $scope3.i", [$scope3]);`,
+      );
+      expect(transpile(`if (ready) for (let i = 0; i < 2; i++) f = () => i;`)).toBe(
+        `const $scope2 = $obj({});
+if ($global.ready) for ($scope2.i = 0; $scope2.i < 2; $scope2.i++) f = $fun("() => i", "($scope2) => () => $scope2.i", [$scope2]);`,
+      );
+    });
+
     it('promotes for-loop let variables to scope object when captured by closures', () => {
       expect(transpile(`{
   for (let i = 0; i < 5; i++) {

@@ -387,12 +387,13 @@ function buildScopesInBlock(node: SyntaxNode, builder: ScopeBuilder, currentScop
   }
 
   if (node.name === 'ForStatement') {
-    const loopScope = builder.createScope(currentScope, node.getChild('Block'));
+    // The body (Block or brace-less statement) keys the loop scope, so captured spec
+    // bindings can be promoted onto a scope object either way.
+    const body = forLoopBodyStatement(node);
+    const loopScope = builder.createScope(currentScope, body);
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
     if (spec) registerForSpec(spec, builder, loopScope);
-    // The loop body is the last child: a Block, or a single brace-less statement.
-    const body = node.lastChild;
-    if (body && body !== spec) {
+    if (body) {
       if (body.name === 'Block') {
         for (let child = body.firstChild; child; child = child.nextSibling) {
           if (child.name === '{' || child.name === '}') continue;
@@ -475,7 +476,12 @@ function registerForSpec(spec: SyntaxNode, builder: ScopeBuilder, loopScope: Lex
     if (child.name === 'VariableDeclaration') registerDeclaration(child, builder, loopScope);
     else if (child.name === 'VariableDefinition') builder.addBinding(loopScope, nodeText(child, builder.source), 'block');
     else if (child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
-      addPatternBindings(child, builder, loopScope, 'block');
+      // Only a declared pattern (`for (const { x } of …)`) binds names on the loop
+      // scope; an assignment-form pattern (`for ({ x } of …)`) writes existing ones.
+      const prev = child.prevSibling;
+      if (prev && (prev.name === 'const' || prev.name === 'let' || prev.name === 'var')) {
+        addPatternBindings(child, builder, loopScope, 'block');
+      }
     }
   }
 }
@@ -731,8 +737,10 @@ function walkFunctionBodyNode(
   }
 
   if (node.name === 'ForStatement') {
-    const loopBlock = node.getChild('Block');
-    const loopScope = loopBlock ? blockScopeForAnalysis(builder, loopBlock, currentScope) : currentScope;
+    // The body (Block or brace-less statement) keys the loop scope, so captured spec
+    // bindings get promoted onto a for-loop scope object either way.
+    const body = forLoopBodyStatement(node);
+    const loopScope = body ? blockScopeForAnalysis(builder, body, currentScope) : currentScope;
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
     if (spec) {
       registerForSpec(spec, builder, loopScope);
@@ -740,10 +748,7 @@ function walkFunctionBodyNode(
         walkFreeVarNode(builder, expr, funcNode, loopScope, funcScope, enclosingScope, freeVarUses, []),
       );
     }
-    // The loop body is the last child: a Block, or a single brace-less statement
-    // (which must be walked too — free vars in it need the $global rewrite).
-    const body = node.lastChild;
-    if (body && body !== spec) {
+    if (body) {
       if (body.name === 'Block') {
         walkFunctionBody(builder, body, funcNode, loopScope, funcScope, enclosingScope, freeVarUses);
       } else {
@@ -1229,6 +1234,16 @@ function forStatementForLoopBodyScope(scope: LexicalScope): SyntaxNode | null {
   return block.parent;
 }
 
+/** The loop body node: a Block, or the single brace-less body statement. Either one
+ * keys the loop's scope, so captured spec bindings can be promoted onto a scope
+ * object (which is hoisted above the loop — no braces needed). */
+function forLoopBodyStatement(node: SyntaxNode): SyntaxNode | null {
+  const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
+  const body = node.lastChild;
+  if (!body || (spec && body.from === spec.from && body.to === spec.to)) return null;
+  return body;
+}
+
 function findForSpecBindingDeclaration(forStmt: SyntaxNode, source: string, bindingName: string): SyntaxNode | null {
   const spec = forStmt.getChild('ForSpec') ?? forStmt.getChild('ForInSpec') ?? forStmt.getChild('ForOfSpec');
   if (!spec) return null;
@@ -1238,6 +1253,36 @@ function findForSpecBindingDeclaration(forStmt: SyntaxNode, source: string, bind
     }
   }
   return null;
+}
+
+/** A captured for-of/for-in binding (`for (const e of xs)`) has no VariableDeclaration
+ * wrapper to transform into a scope assignment, so rewrite the keyword + name into a
+ * scope-member assignment target instead: `for ($scopeN.e of xs)`. Same
+ * per-iteration-sharing concession as the `let i = 0` → `$scopeN.i = 0` transform.
+ * (Destructuring targets are left alone — they aren't supported here.) */
+function pushForSpecBareBindingEdit(
+  builder: ScopeBuilder,
+  forStmt: SyntaxNode,
+  bindingName: string,
+  scopeName: string,
+  edits: Edit[],
+): void {
+  const spec = forStmt.getChild('ForInSpec') ?? forStmt.getChild('ForOfSpec');
+  if (!spec) return;
+  for (let child = spec.firstChild; child; child = child.nextSibling) {
+    if (child.name !== 'VariableDefinition' || nodeText(child, builder.source) !== bindingName) {
+      continue;
+    }
+    const prev = child.prevSibling;
+    const hasKeyword = prev && (prev.name === 'const' || prev.name === 'let' || prev.name === 'var');
+    edits.push({
+      kind: 'replace',
+      from: hasKeyword ? prev.from : child.from,
+      to: child.to,
+      text: `${scopeName}.${bindingName}`,
+    });
+    return;
+  }
 }
 
 function lineIndent(source: string, pos: number): string {
@@ -1289,6 +1334,12 @@ function collectBlockScopedRefEdits(
   scopedNames: Set<string>,
   edits: Edit[],
 ): void {
+  // A brace-less loop-body scope's blockNode is the body statement itself; walk it
+  // whole so e.g. a nested for statement goes through the ForStatement case.
+  if (blockNode.name !== 'Block') {
+    walkBlockScopedRefs(builder, blockNode, scope, scope, scopedNames, edits);
+    return;
+  }
   for (let child = blockNode.firstChild; child; child = child.nextSibling) {
     if (child.name === '{' || child.name === '}') continue;
     walkBlockScopedRefs(builder, child, scope, scope, scopedNames, edits);
@@ -1339,18 +1390,25 @@ function walkBlockScopedRefs(
   }
 
   if (node.name === 'ForStatement') {
-    const loopBlock = node.getChild('Block');
-    const loopScope = loopBlock ? blockScopeForAnalysis(builder, loopBlock, currentScope) : currentScope;
+    const body = forLoopBodyStatement(node);
+    const loopScope = body ? blockScopeForAnalysis(builder, body, currentScope) : currentScope;
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
     if (spec) {
+      // Register the spec bindings so a loop variable that shadows a captured outer
+      // name resolves to this loop's scope instead of the outer scoped binding.
+      registerForSpec(spec, builder, loopScope);
       forEachForSpecExpression(spec, (expr) =>
         walkScopedBindingRefs(builder, expr, loopScope, targetScope, scopedNames, edits),
       );
     }
-    if (loopBlock) {
-      for (let child = loopBlock.firstChild; child; child = child.nextSibling) {
-        if (child.name === '{' || child.name === '}') continue;
-        walkBlockScopedRefs(builder, child, loopScope, targetScope, scopedNames, edits);
+    if (body) {
+      if (body.name === 'Block') {
+        for (let child = body.firstChild; child; child = child.nextSibling) {
+          if (child.name === '{' || child.name === '}') continue;
+          walkBlockScopedRefs(builder, child, loopScope, targetScope, scopedNames, edits);
+        }
+      } else {
+        walkBlockScopedRefs(builder, body, loopScope, targetScope, scopedNames, edits);
       }
     }
     return;
@@ -1904,6 +1962,11 @@ function transformTopLevelDeclaration(source: string, declNode: SyntaxNode): str
   const keyword = declarationKeyword(declNode, source);
   if (!keyword || keyword === 'var') return null;
 
+  // Transpiler-generated scope objects (hoisted above top-level loops with captured
+  // bindings) must stay plain consts: their `$scopeN` references are not rewritten.
+  const soleDef = declNode.getChild('VariableDefinition');
+  if (soleDef && /^\$scope\d+$/.test(nodeText(soleDef, source))) return null;
+
   let pending: SyntaxNode | null = null;
   const statements: string[] = [];
   const hasTrailingSemicolon = source[declNode.to - 1] === ';';
@@ -2097,8 +2160,13 @@ function walkForWorldRefs(
   }
 
   if (node.name === 'ForStatement') {
-    const loopBlock = node.getChild('Block');
-    const loopScope = loopBlock ? blockScopeForAnalysis(builder, loopBlock, currentScope) : currentScope;
+    // The body (Block or brace-less statement) keys the loop scope for the spec
+    // bindings: registering them on currentScope — the root scope at top level —
+    // would give the loop variable itself the $global rewrite.
+    const body = forLoopBodyStatement(node);
+    const loopScope = body
+      ? blockScopeForAnalysis(builder, body, currentScope)
+      : builder.createScope(currentScope, null);
     const spec = node.getChild('ForSpec') ?? node.getChild('ForInSpec') ?? node.getChild('ForOfSpec');
     if (spec) {
       registerForSpec(spec, builder, loopScope);
@@ -2108,7 +2176,13 @@ function walkForWorldRefs(
     }
     // Pass funcScope through unchanged (like the Block case): at top level it must
     // stay null so unbound names in the loop body still get the $global rewrite.
-    if (loopBlock) walkBlockForWorldRefs(builder, loopBlock, loopScope, funcScope, rootScope, freeVarUses, edits);
+    if (body) {
+      if (body.name === 'Block') {
+        walkBlockForWorldRefs(builder, body, loopScope, funcScope, rootScope, freeVarUses, edits);
+      } else {
+        walkForWorldRefsInBlock(builder, body, loopScope, funcScope, rootScope, freeVarUses, edits);
+      }
+    }
     return;
   }
 
@@ -2545,10 +2619,17 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
 
     const forStmt = forStatementForLoopBodyScope(scope);
     if (forStmt) {
-      const indent = lineIndent(builder.source, forStmt.from);
+      // A for that is itself a brace-less body (of another loop, or an if/while)
+      // can't have a declaration inserted directly before it; hoist to the enclosing
+      // statement that sits in a real statement list (a Block or the top level).
+      let anchor = forStmt;
+      while (anchor.parent && anchor.parent.name !== 'Block' && anchor.parent.parent) {
+        anchor = anchor.parent;
+      }
+      const indent = lineIndent(builder.source, anchor.from);
       edits.push({
         kind: 'insert',
-        pos: forStmt.from,
+        pos: anchor.from,
         text: `const ${scope.name} = $obj({});\n${indent}`,
       });
     } else {
@@ -2591,6 +2672,13 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
       let declNode = findBindingDeclaration(scope.blockNode, builder.source, bindingName);
       if (!declNode && forStmt) {
         declNode = findForSpecBindingDeclaration(forStmt, builder.source, bindingName);
+        if (!declNode) {
+          // for-of/for-in bindings (`const e`) have no VariableDeclaration wrapper to
+          // transform; rewrite the keyword + name into a scope-member assignment
+          // target instead: `for ($scopeN.e of …)`.
+          pushForSpecBareBindingEdit(builder, forStmt, bindingName, scope.name, edits);
+          continue;
+        }
       }
       if (!declNode) continue;
       const declKey = `${declNode.from}:${declNode.to}`;
