@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { compileClassFragment, spliceMemberIntoClassSource } from './classTranspiler';
 import { transpile } from './transpiler';
 
 function funCodes(result: string): string[] {
@@ -214,7 +215,7 @@ class D extends C {
       show: JSON.parse(`"${m[1]}"`),
       code: JSON.parse(`"${m[2]}"`),
     }));
-    const method = funStrings.find((f) => f.show.includes('function m()'))!;
+    const method = funStrings.find((f) => f.show.startsWith('m()'))!;
     expect(method.show).toContain('return this.x + this.y');
     expect(method.show).not.toContain("this['@x']");
     expect(method.code).toContain("this['@x']");
@@ -236,5 +237,90 @@ class D extends C {
     const ctor = funStrings[0]!;
     expect(ctor.show).toBe(source);
     expect(ctor.code).toContain("this['@x'] = x");
+  });
+});
+
+describe('compileClassFragment', () => {
+  const opts = { className: 'B', superGlobal: '$global.A' };
+
+  it('compiles a plain method: fragment show, rewritten code', () => {
+    const c = compileClassFragment('m(x) { return this.y + x; }', opts);
+    expect(c).toMatchObject({ name: 'm', kind: 'method', isStatic: false });
+    expect(c.funExpr).toContain(JSON.stringify('m(x) { return this.y + x; }'));
+    expect(c.funExpr).toContain("this['@y']");
+  });
+
+  it('rewrites super-sends in methods but not in the show', () => {
+    const c = compileClassFragment('m(x) { return super.m(x) + 1; }', opts);
+    expect(c.funExpr).toContain('$global.A.m.call(this, x)');
+    expect(c.funExpr).toContain(JSON.stringify('m(x) { return super.m(x) + 1; }'));
+  });
+
+  it('compiles getters and setters', () => {
+    const g = compileClassFragment('get foo() { return this._foo; }', opts);
+    expect(g).toMatchObject({ name: 'foo', kind: 'get', isStatic: false });
+    const s = compileClassFragment('set foo(v) { this._foo = v; }', opts);
+    expect(s).toMatchObject({ name: 'foo', kind: 'set', isStatic: false });
+    expect(s.funExpr).toContain("this['@_foo'] = v");
+  });
+
+  it('compiles static methods with static super context', () => {
+    const c = compileClassFragment('static make(x) { return super.make(x); }', opts);
+    expect(c).toMatchObject({ name: 'make', kind: 'method', isStatic: true });
+    expect(c.funExpr).toContain('$global.A.make(x)');
+  });
+
+  it('compiles a constructor: renamed function, super() rewritten, show overridable', () => {
+    const c = compileClassFragment('constructor(x) { super(x); this.y = 1; }', {
+      ...opts,
+      showSource: 'class B extends A { }',
+    });
+    expect(c).toMatchObject({ name: 'constructor', kind: 'constructor' });
+    expect(c.funExpr).toContain('function B(x)');
+    expect(c.funExpr).toContain('$global.A.call(this, x)');
+    expect(c.funExpr).toContain(JSON.stringify('class B extends A { }'));
+  });
+
+  it('rejects parse errors, fields, static accessors, and multiple members', () => {
+    expect(() => compileClassFragment('m() { return', opts)).toThrow(/does not parse/);
+    expect(() => compileClassFragment('x = 5;', opts)).toThrow(/exactly one/);
+    expect(() => compileClassFragment('m() {} n() {}', opts)).toThrow(/exactly one/);
+    expect(() => compileClassFragment('static get x() { return 1; }', opts)).toThrow(
+      /static accessors/,
+    );
+  });
+});
+
+describe('spliceMemberIntoClassSource', () => {
+  const source = `class B extends A {
+  constructor(x) {
+    this.x = x;
+  }
+  m() { return 1; }
+  get foo() { return 2; }
+}`;
+
+  it('replaces the constructor in place', () => {
+    const out = spliceMemberIntoClassSource(source, 'constructor(x, y) { this.x = x + y; }');
+    expect(out).toContain('constructor(x, y) { this.x = x + y; }');
+    expect(out).not.toContain('this.x = x;\n');
+    expect(out).toContain('m() { return 1; }');
+  });
+
+  it('replaces a same-name member of the same kind only', () => {
+    const out = spliceMemberIntoClassSource(source, 'get foo() { return 3; }');
+    expect(out).toContain('get foo() { return 3; }');
+    expect(out).not.toContain('get foo() { return 2; }');
+    // A setter with the same name is an addition, not a replacement of the getter.
+    const out2 = spliceMemberIntoClassSource(source, 'set foo(v) { this._foo = v; }');
+    expect(out2).toContain('get foo() { return 2; }');
+    expect(out2).toContain('set foo(v) { this._foo = v; }');
+  });
+
+  it('inserts before the closing brace when the member is absent', () => {
+    const out = spliceMemberIntoClassSource(source, 'n() { return 9; }');
+    expect(out).toContain('n() { return 9; }');
+    expect(out.trimEnd().endsWith('}')).toBe(true);
+    expect(out).toContain('m() { return 1; }');
   });
 });

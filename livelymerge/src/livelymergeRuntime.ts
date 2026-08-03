@@ -1,4 +1,5 @@
 import { transpile } from './transpiler';
+import { compileClassFragment, spliceMemberIntoClassSource } from './classTranspiler';
 import { wrapForCompletionValue } from './completionValue';
 import {
   getJsGlobalTarget,
@@ -14,6 +15,8 @@ import {
   lmFindSlotForWrite,
   lmGetOwn,
   lmGetWithDelegation,
+  lmHeapGet,
+  lmHeapHasOwn,
   lmHeapPropertyNames,
   lmIsEphemeralKey,
   lmIsReservedKey,
@@ -1410,6 +1413,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
           case 'apply':
             return (thisArg: unknown, args: unknown[]) => fn().apply(thisArg, args);
         }
+        if (prop === Symbol.hasInstance) {
+          // Proxy invariant: the target's Symbol.hasInstance is a non-configurable
+          // data property, so the trap must return it verbatim — this is the path
+          // by which `x instanceof Cls` reaches lmInstanceOf.
+          return Reflect.get(target, Symbol.hasInstance);
+        }
         if (lmIsEphemeralKey(prop)) return readEphemeralProp(id, prop as string);
         if (lmIsReservedKey(prop)) return undefined;
         const own = lmGetOwn(live, prop);
@@ -1812,6 +1821,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     entries(obj: unknown): Proxy;
     hasOwn(obj: unknown, prop: PropertyKey): boolean;
     getOwnPropertyNames(obj: unknown): Proxy;
+    getOwnPropertyDescriptor(obj: unknown, prop: PropertyKey): Proxy | undefined;
     getPrototypeOf(obj: unknown): Proxy | null;
   }
 
@@ -1884,6 +1894,27 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const funUnwrapped = unwrapLmFun(obj);
     if (funUnwrapped) return $arr(lmOwnUserPropertyKeys(liveHeapFun(funUnwrapped)));
     return $arr(Object.getOwnPropertyNames(obj as object));
+  };
+
+  /** Raw own-slot inspection: `{ value }` for a data slot, `{ get, set }` for an
+   * accessor slot — without invoking the getter. This is how the browser reads a
+   * getter/setter's source for display (reading `proto[name]` would invoke it). */
+  $Object.getOwnPropertyDescriptor = function (obj: unknown, prop: PropertyKey) {
+    if (typeof prop !== 'string') return undefined;
+    const target = unwrapLmObj(obj) ?? unwrapLmFun(obj);
+    if (!target) return undefined;
+    if (isObj(target) && isJsGlobalObj(target)) return undefined;
+    const entry = lookupHeapEntryRead(target.$id) ?? target;
+    const key = lmUserKey(prop);
+    if (!lmHeapHasOwn(entry as Record<string, unknown>, key)) return undefined;
+    const raw = lmHeapGet(entry as Record<string, unknown>, key);
+    if (isAccessorVal(raw)) {
+      return $obj({
+        get: (raw.$get ? deserialize(raw.$get) : null) as unknown as Val,
+        set: (raw.$set ? deserialize(raw.$set) : null) as unknown as Val,
+      });
+    }
+    return $obj({ value: deserialize(raw) as unknown as Val });
   };
 
   $Object.getPrototypeOf = function (obj: unknown) {
@@ -2010,6 +2041,150 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     return evaluateSource(source, this);
   }
 
+  function isClassFun(fun: Fun): boolean {
+    return /^\s*class\s/.test(fun.$codeForShow);
+  }
+
+  /** The transpiled superclass reference (e.g. `$global.Morph`) for a class Fun,
+   * recovered from the prototype chain: `$obj({...}, Super.prototype)` made the
+   * delegation real, so the class's prototype entry's $protoId is the superclass's
+   * prototype — scan $global for the class Fun that owns it. 'Object' (the class
+   * transpiler's implicit super) for base classes. */
+  function findSuperGlobalRef(clsFun: Fun): string {
+    const protoId = liveHeapFunRead(clsFun).$prototypeId;
+    const protoEntry = protoId ? lookupHeapEntryRead(protoId) : undefined;
+    const superProtoId = protoEntry && isObj(protoEntry) ? protoEntry.$protoId : undefined;
+    if (superProtoId && superProtoId !== 'object-prototype') {
+      const globalEntry = lookupHeapEntryRead('global');
+      if (globalEntry) {
+        for (const key of lmHeapPropertyNames(globalEntry as unknown as Record<string, unknown>)) {
+          if (!key.startsWith('@') || !/^[A-Za-z_$][\w$]*$/.test(key.slice(1))) continue;
+          const v = (globalEntry as unknown as Record<string, unknown>)[key];
+          if (!isRef(v) || v.$id === clsFun.$id) continue;
+          const entry = lookupHeapEntryRead(v.$id);
+          if (entry && isFun(entry) && entry.$prototypeId === superProtoId) {
+            return `$global.${key.slice(1)}`;
+          }
+        }
+      }
+    }
+    return 'Object';
+  }
+
+  /** Write a raw stored value onto an entry's own '@name' slot, with the same
+   * bookkeeping as the obj-proxy set path. Used where a proxy set would be wrong:
+   * installing a method or accessor record over an existing accessor slot (the set
+   * trap would invoke the setter instead). */
+  function setRawSlotValue(id: string, name: string, stored: Val | AccessorVal): void {
+    const entry = lookupHeapEntry(id);
+    if (!entry) throw new Error(`Livelymerge: no heap entry ${id}`);
+    const key = lmUserKey(name);
+    const oldV = lmHeapGet(entry as Record<string, unknown>, key);
+    (entry as Record<string, unknown>)[key] = stored;
+    matWriteThrough(id, key, stored);
+    markEdgeDirtyIfRefs(id, oldV, stored);
+  }
+
+  /** Replace (or add) a class member from a class-fragment source string:
+   *   replaceMethod('Ellipse', 'copyMorph() { ... }')
+   *   replaceMethod('Morph', 'constructor(bounds) { ... }')
+   *   replaceMethod('Morph', 'get transform() { ... }')
+   *   replaceMethod('Color', 'static gray() { ... }')
+   * Super-sends are rewritten against the class's actual superclass (recovered from
+   * the prototype chain); the stored $codeForShow keeps the fragment as written.
+   * Replacing the constructor keeps the live prototype (instances stay valid),
+   * carries the statics over, updates the class source, and rebinds the global. */
+  function $replaceMethod(className: unknown, fragmentSource: unknown): boolean {
+    if (typeof className !== 'string' || typeof fragmentSource !== 'string') {
+      throw new TypeError('replaceMethod(className, classFragment) takes two strings');
+    }
+    return change(() => {
+      const clsProxy = ($global as Record<string, unknown>)[className];
+      const clsFun = unwrapLmFun(clsProxy);
+      if (!clsFun || !isClassFun(liveHeapFunRead(clsFun))) {
+        throw new TypeError(`replaceMethod: ${className} is not a class`);
+      }
+      const superGlobal = findSuperGlobalRef(clsFun);
+      let compiled = compileClassFragment(fragmentSource, { className, superGlobal });
+      if (compiled.kind === 'constructor') {
+        // The constructor Fun's show is the full class source; splice the new
+        // constructor into it so toString() / isClass() stay current.
+        const newClassSource = spliceMemberIntoClassSource(
+          liveHeapFunRead(clsFun).$codeForShow,
+          fragmentSource,
+        );
+        compiled = compileClassFragment(fragmentSource, {
+          className,
+          superGlobal,
+          showSource: newClassSource,
+        });
+      }
+
+      const runtimeParams = getRuntimeParams();
+      const funProxy = new Function(...Object.keys(runtimeParams), `return (${compiled.funExpr});`)(
+        ...Object.values(runtimeParams),
+      ) as Proxy;
+
+      if (compiled.kind === 'constructor') {
+        // A new Fun is required — proxies memoize their compiled function, so the
+        // old Fun's $code cannot change in place. Keep the live prototype object
+        // (instances stay valid), copy the statics, rebind the global.
+        const newFunEntry = funProxy.$unwrapped as Fun;
+        const oldFunEntry = liveHeapFun(clsFun);
+        for (const key of lmHeapPropertyNames(oldFunEntry)) {
+          if (!key.startsWith('@')) continue;
+          (newFunEntry as Record<string, unknown>)[key] = materializeStoredVal(
+            (oldFunEntry as Record<string, unknown>)[key],
+          );
+        }
+        newFunEntry.$prototypeId = oldFunEntry.$prototypeId;
+        markEdgeDirty(newFunEntry.$id);
+        if (newFunEntry.$prototypeId) {
+          setRawSlotValue(newFunEntry.$prototypeId, 'constructor', toRef(funProxy));
+        }
+        ($global as Record<string, unknown>)[className] = funProxy;
+        return true;
+      }
+
+      if (compiled.isStatic) {
+        // Statics are own user props of the class Fun (no accessor interception there).
+        (clsProxy as Record<string, unknown>)[compiled.name] = funProxy;
+        return true;
+      }
+
+      const protoId = liveHeapFunRead(clsFun).$prototypeId;
+      if (!protoId) {
+        throw new Error(`replaceMethod: class ${className} has no prototype`);
+      }
+      if (compiled.kind === 'method') {
+        setRawSlotValue(protoId, compiled.name, toRef(funProxy));
+        // Keep the class-Fun mirror in sync: the class transpiler stores instance
+        // methods on the class object too, and subclass super-sends resolve through
+        // it ($global.Super.m.call(this, ...)); classStaticNames also relies on
+        // mirror === prototype slot to tell mirrors from real statics.
+        (clsProxy as Record<string, unknown>)[compiled.name] = funProxy;
+        return true;
+      }
+      // Getter/setter: merge the new half with the other half of any existing
+      // accessor record on the same slot.
+      const protoEntry = lookupHeapEntryRead(protoId);
+      const raw = protoEntry
+        ? lmHeapGet(protoEntry as unknown as Record<string, unknown>, lmUserKey(compiled.name))
+        : undefined;
+      const existing = isAccessorVal(raw) ? raw : undefined;
+      const acc: AccessorVal = { $type: 'accessor' };
+      const newRef = toRef(funProxy);
+      const keepRef = (ref: Ref | undefined): Ref | undefined =>
+        ref ? { $type: 'ref', $id: ref.$id } : undefined;
+      const getRef = compiled.kind === 'get' ? newRef : keepRef(existing?.$get);
+      const setRef = compiled.kind === 'set' ? newRef : keepRef(existing?.$set);
+      if (getRef) acc.$get = getRef;
+      if (setRef) acc.$set = setRef;
+      setRawSlotValue(protoId, compiled.name, acc);
+      return true;
+    });
+  }
+
   function getRuntimeParams(): Record<string, unknown> {
     return {
       $global,
@@ -2018,6 +2193,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       $fun,
       $accessor,
       $eval,
+      replaceMethod: $replaceMethod,
       Object: $Object,
       Array: $Array,
       console: $console,

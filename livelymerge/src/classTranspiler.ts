@@ -5,7 +5,16 @@ import { transpileCore } from './transpiler';
 type ClassMember =
   | { kind: 'field'; name: string; init: string }
   | { kind: 'staticField'; name: string; init: string }
-  | { kind: 'method'; name: string; funcSource: string; static: boolean; accessor: 'method' | 'get' | 'set' }
+  | {
+      kind: 'method';
+      name: string;
+      funcSource: string;
+      /** The member's exact class-fragment text (e.g. `get foo() {...}`), super intact.
+       * Stored as the Fun's $codeForShow so the browser displays what the user wrote. */
+      fragmentSource: string;
+      static: boolean;
+      accessor: 'method' | 'get' | 'set';
+    }
   | { kind: 'staticBlock'; body: string };
 
 type ClassTarget = {
@@ -104,6 +113,25 @@ function blockInner(block: SyntaxNode, source: string): string {
   return nodeText(block, source);
 }
 
+function methodDeclFlags(
+  methodNode: SyntaxNode,
+  source: string,
+): { name: string | null; isStatic: boolean; accessor: 'method' | 'get' | 'set' } {
+  let cursor = methodNode.firstChild;
+  let isStatic = false;
+  let accessor: 'method' | 'get' | 'set' = 'method';
+  while (cursor) {
+    if (cursor.name === 'PropertyDefinition') break;
+    const text = nodeText(cursor, source);
+    if (text === 'static') isStatic = true;
+    else if (text === 'get') accessor = 'get';
+    else if (text === 'set') accessor = 'set';
+    cursor = cursor.nextSibling;
+  }
+  const nameNode = methodNode.getChild('PropertyDefinition');
+  return { name: nameNode ? nodeText(nameNode, source) : null, isStatic, accessor };
+}
+
 function parseClassBody(classBody: SyntaxNode, source: string): ClassMember[] {
   const members: ClassMember[] = [];
   for (let child = classBody.firstChild; child; child = child.nextSibling) {
@@ -138,27 +166,15 @@ function parseClassBody(classBody: SyntaxNode, source: string): ClassMember[] {
 
     if (child.name !== 'MethodDeclaration') continue;
 
-    let cursor = child.firstChild;
-    let isStatic = false;
-    let accessor: 'method' | 'get' | 'set' = 'method';
-    while (cursor) {
-      if (cursor.name === 'PropertyDefinition') break;
-      const text = nodeText(cursor, source);
-      if (text === 'static') isStatic = true;
-      else if (text === 'get') accessor = 'get';
-      else if (text === 'set') accessor = 'set';
-      cursor = cursor.nextSibling;
-    }
-
-    const nameNode = child.getChild('PropertyDefinition');
-    if (!nameNode) continue;
-    const name = nodeText(nameNode, source);
+    const { name, isStatic, accessor } = methodDeclFlags(child, source);
+    if (name == null) continue;
 
     if (isStatic && accessor === 'method' && name !== 'constructor') {
       members.push({
         kind: 'method',
         name,
         funcSource: methodFuncSource(child, source, name),
+        fragmentSource: nodeText(child, source),
         static: true,
         accessor: 'method',
       });
@@ -169,6 +185,7 @@ function parseClassBody(classBody: SyntaxNode, source: string): ClassMember[] {
       kind: 'method',
       name,
       funcSource: methodFuncSource(child, source, name),
+      fragmentSource: nodeText(child, source),
       static: isStatic,
       accessor,
     });
@@ -360,9 +377,12 @@ function transpileFunctionSource(codeSource: string, showSource?: string): strin
   const wrapped = transpileCore(`(${codeSource})`).trim().replace(/;$/, '');
   let result = wrapped.startsWith('(') && wrapped.endsWith(')') ? wrapped.slice(1, -1) : wrapped;
   if (showSource && showSource !== codeSource) {
-    const showArg = showSource.trimStart().startsWith('class ')
-      ? JSON.stringify(showSource)
-      : JSON.stringify(extractFunShowArg(transpileCore(`(${showSource})`)));
+    // Function-form shows round-trip through the transpiler for its normalization;
+    // class sources and class fragments (`get foo() {...}`) aren't parseable as
+    // expressions and are stored verbatim.
+    const showArg = /^(async\s+)?function\b/.test(showSource.trimStart())
+      ? JSON.stringify(extractFunShowArg(transpileCore(`(${showSource})`)))
+      : JSON.stringify(showSource);
     result = result.replace(/\$fun\("((?:\\.|[^"\\])*)"/, `$fun(${showArg}`);
   }
   return result;
@@ -379,8 +399,8 @@ function renderAccessorEntries(
   const byName = new Map<string, { get?: string; set?: string }>();
   for (const a of accessors) {
     const pair = byName.get(a.name) ?? {};
-    const showSource = rewriteSuperCalls(a.funcSource, superGlobal, 'instance');
-    const rendered = transpileFunctionSource(rewriteThisMemberAccess(showSource), showSource);
+    const codeSource = rewriteThisMemberAccess(rewriteSuperCalls(a.funcSource, superGlobal, 'instance'));
+    const rendered = transpileFunctionSource(codeSource, a.fragmentSource);
     if (a.accessor === 'get') pair.get = rendered;
     else pair.set = rendered;
     byName.set(a.name, pair);
@@ -407,7 +427,7 @@ function renderStaticInit(member: ClassMember, ref: string, superGlobal: string)
     // rather than misinstalling the getter as a plain static method.
     if (member.accessor !== 'method') return '';
     let funcSource = rewriteSuperCalls(member.funcSource, superGlobal, 'static');
-    return `${ref}.${member.name} = ${transpileFunctionSource(funcSource)};`;
+    return `${ref}.${member.name} = ${transpileFunctionSource(funcSource, member.fragmentSource)};`;
   }
   return '';
 }
@@ -437,9 +457,8 @@ function renderClassSetup(
   );
 
   for (const method of instanceMethods) {
-    const showSource = rewriteSuperCalls(method.funcSource, superGlobal, 'instance');
-    const codeSource = rewriteThisMemberAccess(showSource);
-    lines.push(`${memberRef(ref, method.name)} = ${transpileFunctionSource(codeSource, showSource)};`);
+    const codeSource = rewriteThisMemberAccess(rewriteSuperCalls(method.funcSource, superGlobal, 'instance'));
+    lines.push(`${memberRef(ref, method.name)} = ${transpileFunctionSource(codeSource, method.fragmentSource)};`);
   }
 
   // Instances answer `className` via prototype delegation (the classic classProto
@@ -500,6 +519,112 @@ function collectClassTargets(node: SyntaxNode, source: string, parent: SyntaxNod
   for (let child = node.firstChild; child; child = child.nextSibling) {
     collectClassTargets(child, source, node, out);
   }
+}
+
+function hasParseError(node: SyntaxNode): boolean {
+  if (node.type.isError) return true;
+  for (let child = node.firstChild; child; child = child.nextSibling) {
+    if (hasParseError(child)) return true;
+  }
+  return false;
+}
+
+/** Parse a single class fragment (`foo(x) {...}`, `get foo() {...}`, `set foo(v) {...}`,
+ * `static foo() {...}`, `constructor(...) {...}`) into its ClassMember. Throws on
+ * anything else: parse errors, fields, static blocks, zero or multiple members. */
+function parseSingleFragmentMember(fragmentSource: string): Extract<ClassMember, { kind: 'method' }> {
+  const wrapped = `class __C {\n${fragmentSource}\n}`;
+  const tree = parser.parse(wrapped);
+  if (hasParseError(tree.topNode)) {
+    throw new SyntaxError(`class fragment does not parse:\n${fragmentSource}`);
+  }
+  const classNode = tree.topNode.firstChild;
+  const classBody =
+    classNode?.name === 'ClassDeclaration' && classNode.nextSibling == null
+      ? classNode.getChild('ClassBody')
+      : null;
+  if (!classBody) {
+    throw new SyntaxError(`class fragment does not parse:\n${fragmentSource}`);
+  }
+  const members = parseClassBody(classBody, wrapped);
+  const member = members[0];
+  if (members.length !== 1 || member == null || member.kind !== 'method') {
+    throw new SyntaxError(
+      'class fragment must contain exactly one method, getter, setter, or constructor',
+    );
+  }
+  if (member.static && member.accessor !== 'method') {
+    throw new SyntaxError('static accessors are not supported');
+  }
+  return member;
+}
+
+export type CompiledClassFragment = {
+  name: string;
+  kind: 'constructor' | 'method' | 'get' | 'set';
+  isStatic: boolean;
+  /** `$fun("<show>", "<code>")` expression source; evaluate with the runtime params in
+   * scope to get the Fun. Super-sends are rewritten in the code, intact in the show. */
+  funExpr: string;
+};
+
+/** Compile a class fragment for replaceMethod. `superGlobal` is the transpiled
+ * superclass reference (e.g. `$global.Morph`), as produced for `extends` clauses;
+ * pass 'Object' for base classes. `showSource` overrides the stored $codeForShow
+ * (used for constructors, whose show is the full class source). */
+export function compileClassFragment(
+  fragmentSource: string,
+  opts: { className: string; superGlobal: string; showSource?: string },
+): CompiledClassFragment {
+  const member = parseSingleFragmentMember(fragmentSource);
+  const show = opts.showSource ?? fragmentSource.trim();
+  if (member.name === 'constructor' && !member.static) {
+    if (!/^[A-Za-z_$][\w$]*$/.test(opts.className)) {
+      throw new SyntaxError(`invalid class name: ${opts.className}`);
+    }
+    let ctorSource = member.funcSource.replace(/^function constructor/, `function ${opts.className}`);
+    ctorSource = rewriteSuperCalls(ctorSource, opts.superGlobal, 'constructor');
+    return {
+      name: 'constructor',
+      kind: 'constructor',
+      isStatic: false,
+      funExpr: transpileFunctionSource(rewriteThisMemberAccess(ctorSource), show),
+    };
+  }
+  let funcSource = rewriteSuperCalls(member.funcSource, opts.superGlobal, member.static ? 'static' : 'instance');
+  if (!member.static) funcSource = rewriteThisMemberAccess(funcSource);
+  return {
+    name: member.name,
+    kind: member.accessor === 'method' ? 'method' : member.accessor,
+    isStatic: member.static,
+    funExpr: transpileFunctionSource(funcSource, show),
+  };
+}
+
+/** Splice a member fragment into a class source string, replacing the member with the
+ * same name/staticness/accessor kind, or inserting before the class body's closing
+ * brace when absent. Keeps a class's $codeForShow current across replaceMethod edits. */
+export function spliceMemberIntoClassSource(classSource: string, fragmentSource: string): string {
+  const member = parseSingleFragmentMember(fragmentSource);
+  const fragment = fragmentSource.trim();
+  const tree = parser.parse(classSource);
+  const targets: ClassTarget[] = [];
+  collectClassTargets(tree.topNode, classSource, null, targets);
+  const classBody = targets.length > 0 ? targets[0].node.getChild('ClassBody') : null;
+  if (!classBody) return classSource;
+  for (let child = classBody.firstChild; child; child = child.nextSibling) {
+    if (child.name !== 'MethodDeclaration') continue;
+    const { name, isStatic, accessor } = methodDeclFlags(child, classSource);
+    if (name === member.name && isStatic === member.static && accessor === member.accessor) {
+      return classSource.slice(0, child.from) + fragment + classSource.slice(child.to);
+    }
+  }
+  const close = classBody.lastChild;
+  if (!close || close.name !== '}') return classSource;
+  const indented = '  ' + fragment.replace(/\n/g, '\n  ') + '\n';
+  const beforeClose = classSource.slice(0, close.from);
+  const needsNewline = !/\n\s*$/.test(beforeClose);
+  return beforeClose + (needsNewline ? '\n' : '') + indented + classSource.slice(close.from);
 }
 
 export function expandClasses(source: string): string {

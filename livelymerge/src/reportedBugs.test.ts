@@ -286,7 +286,8 @@ Lively.addMorph(new BrowserPanel());
 })()
 `) as string;
     expect(browse).toContain('msgListOk=true');
-    expect(browse).toContain('Morph.prototype.moveBy = ');
+    // Methods display as class fragments (saved back via replaceMethod).
+    expect(browse).toContain('srcStartsWith=moveBy(');
   }, 120_000);
 
   it('methods named after reserved words (Map.delete, Class.new) are callable', () => {

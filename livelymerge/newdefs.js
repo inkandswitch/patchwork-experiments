@@ -183,71 +183,6 @@ function constructorBodyOf(cls) {
   if (!isClass(cls)) return null;
   return constructorBodyFromSource(cls.toString());
 }
-function constructorFunctionSource(cls) {
-  // constructorFunctionSource(Point) ==> "function constructor(x, y) {\n    ...\n  }"
-  // Form shown / accepted in the system browser as: Point.constructor = <this>
-  let body = constructorBodyOf(cls);
-  if (!body) return null;
-  return 'function ' + body;
-}
-function constructorMethodFromFunction(fn) {
-  // Normalize a function's toString() into "constructor(...) { ... }".
-  if (typeof fn !== 'function') return null;
-  let s = fn.toString();
-  let m = s.match(/^function\s*(?:[A-Za-z_$][\w$]*)?\s*\(/);
-  if (m) return 'constructor' + s.slice(s.indexOf('('));
-  // Arrow or other — wrap as no-arg body if we can find a block.
-  let brace = s.indexOf('{');
-  if (brace >= 0) return 'constructor()' + s.slice(brace);
-  return 'constructor() { return (' + s + ').apply(this, arguments); }';
-}
-function replaceConstructorInClassSource(classSource, newCtorMethod) {
-  // Splice newCtorMethod ("constructor(...) { ... }") into a class source string.
-  if (!classSource || !newCtorMethod) return classSource;
-  let match = classSource.match(/(^|\n)[ \t]*constructor[ \t]*\(/);
-  if (!match) {
-    // No explicit constructor — insert before the class closing brace.
-    let close = classSource.lastIndexOf('}');
-    if (close < 0) return classSource;
-    let indented = '\n  ' + newCtorMethod.replace(/\n/g, '\n  ') + '\n';
-    return classSource.slice(0, close) + indented + classSource.slice(close);
-  }
-  let oldCtor = constructorBodyFromSource(classSource);
-  if (!oldCtor) return classSource;
-  let ctorStart = match.index + match[1].length;
-  while (ctorStart < classSource.length && /[ \t]/.test(classSource[ctorStart])) ctorStart++;
-  return classSource.slice(0, ctorStart) + newCtorMethod + classSource.slice(ctorStart + oldCtor.length);
-}
-function installClassConstructor(className, ctorFn, ctorMethodForShowIfAny) {
-  // Replace the constructor Fun for className while keeping the existing prototype
-  // (so live instances stay valid) and copying statics onto the new Fun.
-  // Also rewrites $codeForShow to an updated class { constructor... } source so
-  // isClass() / toString() / the browser keep working.
-  // ctorMethodForShowIfAny: optional "constructor(...) { ... }" with super() kept for display.
-  let oldCls = $global[className];
-  if (!isClass(oldCls) || typeof ctorFn !== 'function') return false;
-  let oldProto = oldCls.prototype;
-  if (!oldProto) return false;
-  let newCtorMethod = ctorMethodForShowIfAny || constructorMethodFromFunction(ctorFn);
-  if (!newCtorMethod) return false;
-  let newClassSource = replaceConstructorInClassSource(oldCls.toString(), newCtorMethod);
-  let staticNames = classStaticNames(oldCls);
-  let staticVals = {};
-  for (let i = 0; i < staticNames.length; i++) {
-    staticVals[staticNames[i]] = oldCls[staticNames[i]];
-  }
-  // Rebind global to the accepted function; keep the live prototype object.
-  $global[className] = ctorFn;
-  ctorFn.prototype = oldProto;
-  oldProto.constructor = ctorFn;
-  for (let i = 0; i < staticNames.length; i++) {
-    ctorFn[staticNames[i]] = staticVals[staticNames[i]];
-  }
-  // Keep class identity in toString / isClass (constructor $codeForShow is full class text).
-  let live = ctorFn.$unwrapped;
-  if (live && live.$codeForShow !== undefined) live.$codeForShow = newClassSource;
-  return true;
-}
 function nameOfClass(cls) {
   if (!cls) return null;
   let names = allClassNames();
@@ -256,43 +191,94 @@ function nameOfClass(cls) {
   }
   return null;
 }
-function rewriteSuperInConstructorSource(fnSource, superName) {
-  // Standalone `function constructor(){ super(...) }` is not class-syntax, so rewrite
-  // super like the class transpiler before eval. Keeps display source with super() intact.
-  if (!fnSource) return fnSource;
-  let sName = superName || 'Object';
-  let s = fnSource;
-  // super.method(args) -> Super.method.call(this, args)
-  s = s.replace(/\bsuper\.([A-Za-z_$][\w$]*)\s*\(/g, sName + '.$1.call(this, ');
-  // super(args) -> Super.call(this, args)
-  s = s.replace(/\bsuper\s*\(/g, sName + '.call(this, ');
-  // Normalize empty arg lists: .call(this, ) -> .call(this)
-  s = s.replace(/\.call\(this,\s*\)/g, '.call(this)');
-  return s;
+function isLegacyFunctionShow(methodString) {
+  // Pre-fragment Funs stored 'function foo(...) {...}' show sources (with super-sends
+  // already transpiled). Fragments start with the member name / get / set / static.
+  return /^(async\s+)?function[\s(]/.test(methodString);
 }
-function acceptClassConstructorAssignment(evalString) {
-  // acceptClassConstructorAssignment('Point.constructor = function constructor(x, y) { ... }')
-  // Handles browser save / do-it of the synthetic Class.constructor = form.
-  if (!evalString || typeof evalString !== 'string') return false;
-  let src = dropNewline(evalString.trim());
-  let m = src.match(/^([A-Za-z_$][\w$]*)\.constructor\s*=\s*(function[\s\S]*)$/);
-  if (!m) return false;
-  let className = m[1];
-  if (!isClass($global[className])) return false;
-  let rhs = m[2].replace(/;\s*$/, '');
-  let showMethod = constructorMethodFromFunction({ toString: () => rhs });
-  let superCls = findSuperclassOf($global[className]);
-  let superName = nameOfClass(superCls) || 'Object';
-  let evalRhs = rewriteSuperInConstructorSource(rhs, superName);
-  let ctorFn;
-  try {
-    ctorFn = eval('(' + evalRhs + ')');
-  } catch (e) {
-    console.log('constructor accept failed to eval function:', e);
-    return false;
+function looksLikeLegacyMethodText(str) {
+  // Old-format method-pane text: '<spec> = function ...' assignments (the globals
+  // pane and legacy-doc members). Class fragments never start with '<name> ='.
+  return /^[A-Za-z_$][\w$.]*\s*=/.test(str.trim());
+}
+function replaceMethodCallString(className, fragmentText) {
+  // Self-contained, evaluable-anywhere form of a class-fragment edit; used for
+  // method copies, recent changes, and exports. The browser method pane shows the
+  // bare fragment and wraps it in this form on save.
+  let escaped = fragmentText.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+  return "replaceMethod('" + className + "', `" + escaped + "`)";
+}
+function classMemberRows(cls) {
+  // Message-pane rows for a class's prototype: methods as 'name', accessor halves as
+  // 'get name' / 'set name'. Uses descriptors so getters are never invoked.
+  let rows = [];
+  classInstanceMemberNames(cls).forEach((name) => {
+    let desc = Object.getOwnPropertyDescriptor(cls.prototype, name);
+    if (desc && (desc.get || desc.set)) {
+      if (desc.get) rows.push('get ' + name);
+      if (desc.set) rows.push('set ' + name);
+    } else {
+      rows.push(name);
+    }
+  });
+  return rows;
+}
+function memberRowSortKey(row) {
+  // Sort 'get height' / 'set height' next to where 'height' would appear, not under g/s.
+  let m = row.match(/^(get|set) (.*)$/);
+  return m ? m[2] + ' ' + m[1] : row;
+}
+function accessorForRow(cls, row) {
+  // accessorForRow(Morph, 'get transform') ==> the getter Fun (or null)
+  let m = row.match(/^(get|set) (.*)$/);
+  if (!m || !cls || !cls.prototype) return null;
+  let desc = Object.getOwnPropertyDescriptor(cls.prototype, m[2]);
+  if (!desc) return null;
+  return (m[1] == 'get' ? desc.get : desc.set) || null;
+}
+function fragmentChangeSpec(className, fragmentText) {
+  // Recent-changes spec for a fragment edit, matching the browser's row formats:
+  // 'Cls.prototype.foo', 'Cls.prototype.get foo', 'Cls.foo' (static), 'Cls.constructor'.
+  let m = fragmentText.trim().match(/^(static\s+|get\s+|set\s+)?([A-Za-z_$][\w$]*)/);
+  if (!m) return className + '.?';
+  let prefix = (m[1] || '').trim();
+  let name = m[2];
+  if (prefix == 'static') return className + '.' + name;
+  if (prefix == 'get' || prefix == 'set') return className + '.prototype.' + prefix + ' ' + name;
+  if (name == 'constructor') return className + '.constructor';
+  return className + '.prototype.' + name;
+}
+function fragmentForSpec(spec) {
+  // The class-fragment text for a method spec, or null when the member is
+  // legacy-format (or a global function) and must keep the assignment form.
+  let parts = methodSpecKey(spec).split('.');
+  if (parts.length < 2) return null;
+  let cls = $global[parts[0]];
+  if (!isClass(cls)) return null;
+  if (parts.length == 2 && parts[1] === 'constructor') return constructorBodyOf(cls);
+  let method = methodFromSpec(spec);
+  if (typeof method != 'function') return null;
+  let src = method.toString();
+  return isLegacyFunctionShow(src) ? null : src;
+}
+function deleteAccessorHalf(className, kind, name) {
+  // Delete one half of an accessor slot ('get'/'set'); the surviving half is
+  // re-installed from its fragment source.
+  let cls = $global[className];
+  if (!cls || !cls.prototype) return false;
+  let desc = Object.getOwnPropertyDescriptor(cls.prototype, name);
+  if (!desc || (!desc.get && !desc.set)) return false;
+  let keep = kind == 'get' ? desc.set : desc.get;
+  delete cls.prototype[name];
+  if (keep) {
+    let src = keep.toString();
+    if (isLegacyFunctionShow(src)) {
+      console.log('deleteAccessorHalf: dropped legacy-format other half of ' + name);
+    } else {
+      replaceMethod(className, src);
+    }
   }
-  if (typeof ctorFn !== 'function') return false;
-  return installClassConstructor(className, ctorFn, showMethod);
+  return true;
 }
 function allClassNamesWithStatics() {
   // allClassNamesWithStatics()
@@ -2675,8 +2661,16 @@ class TextBox extends Shape {
       if (this.localStorageKey) {
         storageSetItem(this.localStorageKey, this.string);
       } else {
-        noteMethodChanges(this.string);
-        this.wsEval.call(this.workspaceObj, this.string);
+        // The browser method pane shows bare class fragments; wrap them in a
+        // self-contained replaceMethod(...) call for eval and change tracking.
+        let fragmentClassName =
+          typeof this.fragmentSaveClassName == 'function' ? this.fragmentSaveClassName() : null;
+        let str = this.string;
+        if (fragmentClassName && !looksLikeLegacyMethodText(str)) {
+          str = replaceMethodCallString(fragmentClassName, str);
+        }
+        noteMethodChanges(str);
+        this.wsEval.call(this.workspaceObj, str);
       }
       if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
     }
@@ -3115,17 +3109,6 @@ class TextBox extends Shape {
   wsEval(str) {
     _lastEvalSource = str;
     let label = 'evaluate: ' + truncateString(str, 80);
-    // Class.constructor = function constructor(...) { ... } — keep live instances.
-    if (
-      typeof str === 'string' &&
-      /^[A-Za-z_$][\w$]*\.constructor\s*=\s*function/.test(str.trim())
-    ) {
-      return evaluateWithErrorRecovery(() => {
-        if (!acceptClassConstructorAssignment(str))
-          throw new Error('constructor accept failed');
-        return true;
-      }, label);
-    }
     if (this.evalContext)
       return evaluateWithErrorRecovery(() => this.evalContext.evalInMe(str), label);
     return evaluateWithErrorRecovery(() => eval(str), label);
@@ -6772,29 +6755,26 @@ class BrowserPanel extends PanelMorph {
         this.selectedMethod = methodSelection;
         this.updateBrowserTitle();
         let methodString = null;
-        let headerString = null;
+        let headerString = '';
+        let cls = this.selectedClassName() ? $global[this.selectedClassName()] : null;
         if (this.selectedClass == 'globals') {           // Global methods
           methodString = $global[this.selectedMethod].toString();
           headerString = this.selectedMethod + ' = ';
         } else if (this.selectedMethod === 'constructor') {
-          // Synthetic assignable form; accept via installClassConstructor (keeps prototype).
-          methodString = constructorFunctionSource($global[this.selectedClass]);
-          headerString = this.selectedClass + '.constructor = ';
+          // Class fragment; save installs it via replaceMethod (keeps the prototype).
+          methodString = constructorBodyOf(cls);
+        } else if (/^(get|set) /.test(this.selectedMethod)) { // Accessor halves
+          let fn = accessorForRow(cls, this.selectedMethod);
+          methodString = fn ? fn.toString() : '// missing accessor ' + this.selectedMethod;
         } else if (this.selectedMethod.endsWith('*')) {  // Class methods
-          methodString = $global[this.selectedClass][this.selectedMethod.slice(0,-1)].toString();
-          headerString = this.selectedClass + '.' + this.selectedMethod.slice(0,-1) + ' = ';
+          let name = this.selectedMethod.slice(0, -1);
+          methodString = cls[name].toString();
+          // Legacy-format statics keep the assignment form; fragments stand alone.
+          if (isLegacyFunctionShow(methodString)) headerString = this.selectedClass + '.' + name + ' = ';
         } else {                                         // Proto methods
-          let member = $global[this.selectedClass].prototype[this.selectedMethod];
-          if (typeof member == 'function') {
-            methodString = $global[this.selectedClass].prototype[this.selectedMethod].toString();
+          methodString = cls.prototype[this.selectedMethod].toString();
+          if (isLegacyFunctionShow(methodString))
             headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
-          } else {
-            // A getter/setter: reading it through the prototype yields a value, not a
-            // function. Its source lives in the class definition.
-            methodString =
-              '// ' + this.selectedMethod + ' is a getter/setter — edit it in the class definition';
-            headerString = '';
-          }
         }
         this.methodPane.setText(headerString + methodString, { force: true });
       };
@@ -6818,11 +6798,18 @@ class BrowserPanel extends PanelMorph {
     let panelBounds = this.paneLayoutBounds();
     this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
     this.methodPane.setText('Method text');
+    // Class fragments in this pane save via replaceMethod (see the ctrl-S handler);
+    // the globals pane and legacy '<spec> = function ...' text keep plain eval.
+    this.methodPane.contentPane.shape.fragmentSaveClassName = () => this.selectedClassName();
   }
   methodCopyText() {
     if (!this.methodPane || !this.methodPane.contentPane) return null;
     let text = this.methodPane.contentPane.shape.string;
     if (!text || text === 'Method text') return null;
+    // Fragments only make sense with their class; copies get the self-contained form.
+    let className = this.selectedClassName();
+    if (className && !looksLikeLegacyMethodText(text))
+      return replaceMethodCallString(className, text);
     return text;
   }
   methodCopyTitle() {
@@ -6852,12 +6839,18 @@ class BrowserPanel extends PanelMorph {
         .sort()
         .filter((msg) => msg[0] == msg[0].toLowerCase());
     }
-    // Pin constructor at the top; other names sorted (statics marked with '*').
-    return ['constructor'].concat(
-      classInstanceMemberNames($global[classSelection])
-        .concat(classStaticNames($global[classSelection]).map((each) => each + '*'))
-        .sort(),
-    );
+    // Pin constructor at the top; methods, accessor halves ('get foo' / 'set foo'),
+    // and statics (marked with '*') sorted by member name.
+    let cls = $global[classSelection.endsWith('.class') ? classSelection.split('.')[0] : classSelection];
+    let rows = classSelection.endsWith('.class')
+      ? classStaticNames(cls).map((each) => each + '*')
+      : classMemberRows(cls).concat(classStaticNames(cls).map((each) => each + '*'));
+    rows.sort((a, b) => {
+      let ka = memberRowSortKey(a);
+      let kb = memberRowSortKey(b);
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+    return classSelection.endsWith('.class') ? rows : ['constructor'].concat(rows);
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -6872,6 +6865,8 @@ class BrowserPanel extends PanelMorph {
     if (!this.selectedMethod) return null;
     if (this.selectedClass == 'globals') return this.selectedMethod;
     if (this.selectedMethod === 'constructor') return this.selectedClass + '.constructor';
+    if (this.selectedMethod.endsWith('*'))
+      return this.selectedClassName() + '.' + this.selectedMethod.slice(0, -1);
     if (this.selectedClass && this.selectedClass.endsWith('.class'))
       return this.selectedClass.split('.')[0] + '.' + this.selectedMethod;
     if (this.selectedClass) return this.selectedClass + '.prototype.' + this.selectedMethod;
@@ -7226,10 +7221,21 @@ class MethodListPanel extends PanelMorph {
         let preamble = null;
         if (spec.includes('[')) {
           methodString = this.methodFromRecentSpec(spec);
-          preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+          preamble =
+            ('' + methodString).startsWith('replaceMethod(')
+              ? ''
+              : spec.slice(0, spec.indexOf('[') - 1) + ' = ';
         } else {
-          methodString = methodFromSpec(spec);
-          preamble = spec + ' = ';
+          // Fragment members display (and re-save) as self-contained replaceMethod
+          // calls; globals and legacy-format members keep the assignment form.
+          let fragment = fragmentForSpec(spec);
+          if (fragment != null) {
+            methodString = replaceMethodCallString(methodSpecKey(spec).split('.')[0], fragment);
+            preamble = '';
+          } else {
+            methodString = methodFromSpec(spec);
+            preamble = spec + ' = ';
+          }
         }
         this.printPane.setText(preamble + methodString, { force: true });
         this._occurrenceLastSpec = spec;
@@ -9197,21 +9203,34 @@ function exportPartsForSelection(selection, optsIfAny) {
     let classOnly = classSelection.split('.')[0];
     let cls = $global[classOnly];
     if (!cls) return null;
-    let names = classStaticNames(cls)
+    let lines = classStaticNames(cls)
       .filter((name) => typeof cls[name] == 'function')
-      .filter((name) => !exportMethodShouldOmit(name));
-    let lines = names.map((name) => classOnly + '.' + name + ' = ' + cls[name].toString());
+      .filter((name) => !exportMethodShouldOmit(name))
+      .map((name) => {
+        let src = cls[name].toString();
+        return isLegacyFunctionShow(src)
+          ? classOnly + '.' + name + ' = ' + src
+          : replaceMethodCallString(classOnly, src);
+      });
     return { header, classDef, lines };
   }
   let cls = $global[classSelection];
   if (!cls || !cls.prototype) return null;
   if (includeClassDef && isClass(cls)) classDef = cls.toString();
-  let names = classInstanceMemberNames(cls)
-    .filter((name) => typeof cls.prototype[name] == 'function')
-    .filter((name) => !exportMethodShouldOmit(name));
-  let lines = names.map(
-    (name) => classSelection + '.prototype.' + name + ' = ' + cls.prototype[name].toString(),
-  );
+  let lines = classMemberRows(cls)
+    .map((row) => {
+      let isAccessor = /^(get|set) /.test(row);
+      let name = isAccessor ? row.slice(4) : row;
+      if (exportMethodShouldOmit(name)) return null;
+      let fn = isAccessor ? accessorForRow(cls, row) : cls.prototype[row];
+      if (typeof fn != 'function') return null;
+      let src = fn.toString();
+      if (!isLegacyFunctionShow(src)) return replaceMethodCallString(classSelection, src);
+      if (!isAccessor) return classSelection + '.prototype.' + row + ' = ' + src;
+      // Legacy accessor Funs (pre-fragment shows) have no evaluable standalone form.
+      return '// (legacy accessor ' + row + ' of ' + classSelection + ' not exported)';
+    })
+    .filter((line) => line != null);
   return { header, classDef, lines };
 }
 function exportStringForSelection(selection, optsIfAny) {
@@ -9234,18 +9253,21 @@ function exportSelectionsForEntireSystem() {
   return selections;
 }
 function methodFromSpec(spec) {
-  // methodFromSpec('rect')                     — a global function
-  // methodFromSpec('Color.gray')               — a class static
-  // methodFromSpec('Color.prototype.copy')     — an instance method
-  // methodFromSpec('Point.constructor')        — the class constructor Fun itself
+  // methodFromSpec('rect')                        — a global function
+  // methodFromSpec('Color.gray')                  — a class static
+  // methodFromSpec('Color.prototype.copy')        — an instance method
+  // methodFromSpec('Morph.prototype.get transform') — an accessor half
+  // methodFromSpec('Point.constructor')           — the class constructor Fun itself
   let parts = spec.split('.');
   if (parts.length == 1) return $global[parts[0]];
   let cls = $global[parts[0]];
   if (cls == null) return null;
   if (parts.length == 2 && parts[1] === 'constructor' && isClass(cls)) return cls;
   if (parts.length == 2) return cls[parts[1]];
-  if (parts.length == 3 && parts[1] == 'prototype' && cls.prototype)
+  if (parts.length == 3 && parts[1] == 'prototype' && cls.prototype) {
+    if (/^(get|set) /.test(parts[2])) return accessorForRow(cls, parts[2]);
     return cls.prototype[parts[2]];
+  }
   return null;
 }
 function methodSpecKey(spec) {
@@ -9264,9 +9286,15 @@ function deleteMethodWithSpec(spec) {
   try {
     if (parts.length == 1) delete $global[parts[0]];
     else if (parts.length == 2) delete $global[parts[0]][parts[1]];
-    else if (parts.length == 3 && parts[1] == 'prototype')
-      delete $global[parts[0]].prototype[parts[2]];
-    else return false;
+    else if (parts.length == 3 && parts[1] == 'prototype' && /^(get|set) /.test(parts[2]))
+      return deleteAccessorHalf(parts[0], parts[2].slice(0, 3), parts[2].slice(4));
+    else if (parts.length == 3 && parts[1] == 'prototype') {
+      // Also drop the class-Fun mirror (the transpiler stores instance methods on
+      // the class object too); otherwise the name would resurface as a bogus static.
+      let cls = $global[parts[0]];
+      if (cls[parts[2]] === cls.prototype[parts[2]]) delete cls[parts[2]];
+      delete cls.prototype[parts[2]];
+    } else return false;
     return true;
   } catch (e) {
     console.log('delete failed: ' + key, e);
@@ -9316,13 +9344,24 @@ function noteMethodChanges(evalString) {
   /* recentChanges is an array of triples as in the last line here
   spec, eg, 'TextBox.prototype.render'
   date string - see recentDateStr
-  the method string beginning with 'function' */
+  the method source: a string beginning with 'function' (legacy '<spec> = ...'
+  saves) or a self-contained replaceMethod(...) call (class-fragment saves) */
   if (!recentChanges) recentChanges = [];
-  let ix1 = evalString.indexOf(' =');
-  if (ix1 < 0) return;
-  let ix2 = evalString.indexOf('function', ix1);
-  if ((ix2, 0)) return;
-  let spec = evalString.slice(0, ix1);
+  let spec = null;
+  let sourceStr = null;
+  let m = evalString.match(/^replaceMethod\('([A-Za-z_$][\w$]*)',\s*`([\s\S]*)`\)$/);
+  if (m) {
+    let fragment = m[2].replace(/\\\$\{/g, '${').replace(/\\`/g, '`').replace(/\\\\/g, '\\');
+    spec = fragmentChangeSpec(m[1], fragment);
+    sourceStr = evalString;
+  } else {
+    let ix1 = evalString.indexOf(' =');
+    if (ix1 < 0) return;
+    let ix2 = evalString.indexOf('function', ix1);
+    if ((ix2, 0)) return;
+    spec = evalString.slice(0, ix1);
+    sourceStr = evalString.slice(ix2);
+  }
   // If method already exists, but no change, add current def for revert
   let noChange = true;
   recentChanges.forEach((tuple) => {
@@ -9330,9 +9369,14 @@ function noteMethodChanges(evalString) {
   });
   if (noChange && methodFromSpec(spec) !== null) {
     let priorTime = new Date(new Date().getTime() - 60000); // a minute ago
-    recentChanges.push([spec, recentDateStr(priorTime), methodFromSpec(spec)]);
+    let priorFragment = fragmentForSpec(spec);
+    let priorSource =
+      priorFragment != null
+        ? replaceMethodCallString(methodSpecKey(spec).split('.')[0], priorFragment)
+        : methodFromSpec(spec);
+    recentChanges.push([spec, recentDateStr(priorTime), priorSource]);
   }
-  recentChanges.push([spec, recentDateStr(new Date()), evalString.slice(ix2)]);
+  recentChanges.push([spec, recentDateStr(new Date()), sourceStr]);
 }
 function browseRecentChanges() {
   // browseRecentChanges()
@@ -9400,8 +9444,8 @@ function allMethodSpecs() {
     });
   allClassNamesInSuperclassOrder().forEach((className) => {
     let cls = $global[className];
-    classInstanceMemberNames(cls).forEach((methodName) => {
-      methodSpecs.push(className + '.prototype.' + methodName);
+    classMemberRows(cls).forEach((row) => {
+      methodSpecs.push(className + '.prototype.' + row);
     });
     // Here we allow, eg, class constants such as Color.red
     classStaticNames(cls).forEach((methodName) => {

@@ -14,6 +14,7 @@ const INJECTED_NAMES = new Set([
   '$fun',
   '$accessor',
   '$eval',
+  'replaceMethod',
   'Object',
   'Array',
   'console',
