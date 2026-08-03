@@ -503,6 +503,75 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
     });
   });
 
+  describe('object-literal shorthand properties', () => {
+    it('expands a shorthand read of a scoped binding in the declaring block', () => {
+      expect(transpile(`{
+  let lines = [];
+  ['b'].forEach((row) => { lines.push(row); });
+  return { lines };
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  $scope2.lines = $arr([]);
+  $arr(['b']).forEach($fun("(row) => { lines.push(row); }", "($scope2) => (row) => { $scope2.lines.push(row); }", [$scope2]));
+  return $obj({ lines: $scope2.lines });
+}`);
+    });
+
+    it('captures a binding whose only closure use is shorthand', () => {
+      expect(transpile(`{
+  let x = 0;
+  return () => ({ x });
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  $scope2.x = 0;
+  return $fun("() => ({ x })", "($scope2) => () => ($obj({ x: $scope2.x }))", [$scope2]);
+}`);
+    });
+
+    it('captures a param whose closure use is shorthand', () => {
+      expect(transpile(`function f(p) {
+  return () => ({ p });
+}`)).toBe(
+        `$global.f = $fun("function f(p) {\\n  return () => ({ p });\\n}", "() => function(p) {\\n  const $scope2 = $obj({});\\n  $scope2.p = p;\\n  return $fun(\\"() => ({ p })\\", \\"($scope2) => () => ($obj({ p: $scope2.p }))\\", [$scope2]);\\n}");`,
+      );
+    });
+
+    it('expands a shorthand use of a global to $global', () => {
+      expect(transpile(`function f() {
+  return { rect };
+}`)).toBe(
+        `$global.f = $fun("function f() {\\n  return { rect };\\n}", "() => function() {\\n  return $obj({ rect: $global.rect });\\n}");`,
+      );
+    });
+
+    it('expands shorthand inside a wholesale-transformed declaration initializer', () => {
+      expect(transpile(`{
+  let x = 0;
+  let box = { x };
+  [1].forEach(() => { x++; box = null; });
+}`)).toBe(`{
+  const $scope2 = $obj({});
+  $scope2.x = 0;
+  $scope2.box = $obj({ x: $scope2.x });
+  $arr([1]).forEach($fun("() => { x++; box = null; }", "($scope2) => () => { $scope2.x++; $scope2.box = null; }", [$scope2]));
+}`);
+    });
+
+    it('leaves uncaptured locals and injected names alone', () => {
+      expect(transpile(`function f() {
+  let x = 0;
+  return { x };
+}`)).toBe(
+        `$global.f = $fun("function f() {\\n  let x = 0;\\n  return { x };\\n}", "() => function() {\\n  let x = 0;\\n  return $obj({ x });\\n}");`,
+      );
+      expect(transpile(`function f() {
+  return { console };
+}`)).toBe(
+        `$global.f = $fun("function f() {\\n  return { console };\\n}", "() => function() {\\n  return $obj({ console });\\n}");`,
+      );
+    });
+  });
+
   describe('this in closures', () => {
     it('threads `this` into a nested closure via the owning scope object', () => {
       const result = transpile(`class M {
@@ -768,5 +837,20 @@ function initUI() {
 }`),
       ).toContain('Object.entries($global.Pt)');
     });
+  });
+});
+
+describe('shorthand-capture end to end (real runtime)', () => {
+  it('an accumulator captured by a closure and returned via shorthand round-trips', async () => {
+    const { createLivelymergeRuntime } = await import('./livelymergeRuntime');
+    const { createAutomergeTestDocHandle } = await import('./testDocHandle');
+    const rt = createLivelymergeRuntime(createAutomergeTestDocHandle());
+    rt.eval(`function collect() {
+  let lines = [];
+  ['a', 'b'].forEach((row) => { lines.push(row); });
+  return { lines };
+}`);
+    expect(rt.eval(`collect().lines.length`)).toBe(2);
+    expect(rt.eval(`collect().lines[1]`)).toBe('b');
   });
 });

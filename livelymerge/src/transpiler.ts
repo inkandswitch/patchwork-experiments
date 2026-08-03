@@ -41,6 +41,9 @@ type FreeVarUse = {
   to: number;
   funcNode: SyntaxNode;
   world?: boolean;
+  /** The use is an object-literal shorthand property (`{ lines }`); a rewrite must
+   * expand it (`lines: $scope2.lines`) rather than substitute the span in place. */
+  shorthand?: boolean;
 };
 
 class LexicalScope {
@@ -89,6 +92,18 @@ type Edit =
 
 function nodeText(node: SyntaxNode, source: string): string {
   return source.slice(node.from, node.to);
+}
+
+/** The identifier of an object-literal shorthand property (`{ lines }`): a Property
+ * whose only child is its PropertyDefinition. It reads a variable but is not a
+ * VariableName node, so every reference walker must handle it explicitly — and a
+ * rewrite must expand the shorthand (`lines: $scope2.lines`), never substitute the
+ * name in place. */
+function shorthandPropertyNode(node: SyntaxNode): SyntaxNode | null {
+  if (node.name !== 'Property') return null;
+  const first = node.firstChild;
+  if (!first || first.name !== 'PropertyDefinition' || first.nextSibling) return null;
+  return first;
 }
 
 function firstBlockStatement(block: SyntaxNode): SyntaxNode | null {
@@ -908,103 +923,14 @@ function walkFreeVarNode(
   }
 
   if (node.name === 'VariableName') {
-    const name = nodeText(node, builder.source);
-    if (!shouldRewriteToWorld(name)) return;
-    const binding = resolveInFunction(builder, name, currentScope, funcScope);
-    if (
-      binding &&
-      isGlobalFunctionSelfRef(name, binding, funcNode, funcScope, enclosingScope, builder.source)
-    ) {
-      freeVarUses.push({
-        name,
-        scope: binding.scope,
-        from: node.from,
-        to: node.to,
-        funcNode,
-        world: true,
-      });
-      return;
-    }
-    if (
-      binding?.kind === 'function' &&
-      binding.scope === funcScope &&
-      isOwnFunctionNameMemberAccess(node, funcNode, builder.source)
-    ) {
-      freeVarUses.push({
-        name,
-        scope: binding.scope,
-        from: node.from,
-        to: node.to,
-        funcNode,
-        world: true,
-      });
-      return;
-    }
-    if (
-      binding?.kind === 'function' &&
-      functionDeclaredName(funcNode, builder.source) === name &&
-      !isRootScope(binding.scope)
-    ) {
-      return;
-    }
-    if (binding?.kind === 'function' && binding.scope === funcScope) {
-      return;
-    }
-    if (binding?.kind === 'function' && binding.scope === currentScope) {
-      return;
-    }
-    if (
-      binding?.kind === 'function' &&
-      !isRootScope(binding.scope) &&
-      binding.scope !== funcScope
-    ) {
-      binding.scope.freeVarBindings.add(name);
-      freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode });
-      return;
-    }
-    if (binding && (binding.scope === funcScope || isAncestorScope(funcScope, binding.scope))) return;
-    // A binding declared lexically inside the current function is a local, not a
-    // captured free variable, even when the reference sits in a deeper block (e.g.
-    // a for-loop body). The current function's body scope is parented to the
-    // enclosing scope rather than funcScope, so isAncestorScope above misses it.
-    if (binding && scopeIsCreatedInFunction(binding.scope, funcNode)) return;
+    recordFreeVarNameUse(builder, node, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, false);
+    return;
+  }
 
-    // A parameter of an enclosing function referenced inside this closure is a captured
-    // free variable. Promote it onto the owner function's body scope object and seed it
-    // there, so the closure reads it through `$scopeN.p` rather than relying on JS
-    // lexical scoping (which serialized closures don't have).
-    const paramOwner = enclosingFunctionParamOwner(name, node, funcNode, builder.source);
-    if (paramOwner) {
-      const ownerBlock = paramOwner.getChild('Block');
-      const ownerScope = ownerBlock ? findScopeByBlockNode(builder, ownerBlock) : null;
-      if (ownerScope) {
-        if (!ownerScope.bindings.has(name)) builder.addBinding(ownerScope, name, 'block');
-        ownerScope.freeVarBindings.add(name);
-        ownerScope.capturedParams.add(name);
-        freeVarUses.push({ name, scope: ownerScope, from: node.from, to: node.to, funcNode });
-      }
-      // Owner has no block body (e.g. expression-bodied arrow); leave the reference bare.
-      return;
-    }
-
-    if (binding?.kind === 'param') return;
-    if (isClosedOverByEnclosingFunction(name, node, funcNode, builder.source)) return;
-
-    if (binding?.kind === 'block' && !isRootScope(binding.scope) && binding.scope !== currentScope) {
-      binding.scope.freeVarBindings.add(name);
-      freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode });
-    } else if (!binding || isRootScope(binding.scope)) {
-      freeVarUses.push({
-        name,
-        scope: binding?.scope ?? currentScope,
-        from: node.from,
-        to: node.to,
-        funcNode,
-        world: shouldRewriteToWorld(name),
-      });
-    } else {
-      freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode });
-    }
+  const shorthand = shorthandPropertyNode(node);
+  if (shorthand) {
+    // `{ lines }` reads `lines` exactly like a VariableName reference would.
+    recordFreeVarNameUse(builder, shorthand, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, true);
     return;
   }
 
@@ -1031,6 +957,120 @@ function walkFreeVarNode(
   const nextAncestors = [...ancestors, node];
   for (let child = node.firstChild; child; child = child.nextSibling) {
     walkFreeVarNode(builder, child, funcNode, currentScope, funcScope, enclosingScope, freeVarUses, nextAncestors);
+  }
+}
+
+// The identifier-reference half of walkFreeVarNode: `node` is the referencing node —
+// a VariableName or a shorthand property's PropertyDefinition (same span semantics).
+function recordFreeVarNameUse(
+  builder: ScopeBuilder,
+  node: SyntaxNode,
+  funcNode: SyntaxNode,
+  currentScope: LexicalScope,
+  funcScope: LexicalScope,
+  enclosingScope: LexicalScope,
+  freeVarUses: FreeVarUse[],
+  shorthand: boolean,
+): void {
+  const name = nodeText(node, builder.source);
+  if (!shouldRewriteToWorld(name)) return;
+  const binding = resolveInFunction(builder, name, currentScope, funcScope);
+  if (
+    binding &&
+    isGlobalFunctionSelfRef(name, binding, funcNode, funcScope, enclosingScope, builder.source)
+  ) {
+    freeVarUses.push({
+      name,
+      scope: binding.scope,
+      from: node.from,
+      to: node.to,
+      funcNode,
+      world: true,
+      shorthand,
+    });
+    return;
+  }
+  if (
+    binding?.kind === 'function' &&
+    binding.scope === funcScope &&
+    isOwnFunctionNameMemberAccess(node, funcNode, builder.source)
+  ) {
+    freeVarUses.push({
+      name,
+      scope: binding.scope,
+      from: node.from,
+      to: node.to,
+      funcNode,
+      world: true,
+      shorthand,
+    });
+    return;
+  }
+  if (
+    binding?.kind === 'function' &&
+    functionDeclaredName(funcNode, builder.source) === name &&
+    !isRootScope(binding.scope)
+  ) {
+    return;
+  }
+  if (binding?.kind === 'function' && binding.scope === funcScope) {
+    return;
+  }
+  if (binding?.kind === 'function' && binding.scope === currentScope) {
+    return;
+  }
+  if (
+    binding?.kind === 'function' &&
+    !isRootScope(binding.scope) &&
+    binding.scope !== funcScope
+  ) {
+    binding.scope.freeVarBindings.add(name);
+    freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode, shorthand });
+    return;
+  }
+  if (binding && (binding.scope === funcScope || isAncestorScope(funcScope, binding.scope))) return;
+  // A binding declared lexically inside the current function is a local, not a
+  // captured free variable, even when the reference sits in a deeper block (e.g.
+  // a for-loop body). The current function's body scope is parented to the
+  // enclosing scope rather than funcScope, so isAncestorScope above misses it.
+  if (binding && scopeIsCreatedInFunction(binding.scope, funcNode)) return;
+
+  // A parameter of an enclosing function referenced inside this closure is a captured
+  // free variable. Promote it onto the owner function's body scope object and seed it
+  // there, so the closure reads it through `$scopeN.p` rather than relying on JS
+  // lexical scoping (which serialized closures don't have).
+  const paramOwner = enclosingFunctionParamOwner(name, node, funcNode, builder.source);
+  if (paramOwner) {
+    const ownerBlock = paramOwner.getChild('Block');
+    const ownerScope = ownerBlock ? findScopeByBlockNode(builder, ownerBlock) : null;
+    if (ownerScope) {
+      if (!ownerScope.bindings.has(name)) builder.addBinding(ownerScope, name, 'block');
+      ownerScope.freeVarBindings.add(name);
+      ownerScope.capturedParams.add(name);
+      freeVarUses.push({ name, scope: ownerScope, from: node.from, to: node.to, funcNode, shorthand });
+    }
+    // Owner has no block body (e.g. expression-bodied arrow); leave the reference bare.
+    return;
+  }
+
+  if (binding?.kind === 'param') return;
+  if (isClosedOverByEnclosingFunction(name, node, funcNode, builder.source)) return;
+
+  if (binding?.kind === 'block' && !isRootScope(binding.scope) && binding.scope !== currentScope) {
+    binding.scope.freeVarBindings.add(name);
+    freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode, shorthand });
+  } else if (!binding || isRootScope(binding.scope)) {
+    freeVarUses.push({
+      name,
+      scope: binding?.scope ?? currentScope,
+      from: node.from,
+      to: node.to,
+      funcNode,
+      world: shouldRewriteToWorld(name),
+      shorthand,
+    });
+  } else {
+    freeVarUses.push({ name, scope: binding.scope, from: node.from, to: node.to, funcNode, shorthand });
   }
 }
 
@@ -1349,6 +1389,20 @@ function walkScopedBindingRefs(
     return;
   }
 
+  const shorthand = shorthandPropertyNode(node);
+  if (shorthand) {
+    const name = nodeText(shorthand, builder.source);
+    if (bindingResolvesToScopedName(builder, name, currentScope, targetScope, scopedNames)) {
+      edits.push({
+        kind: 'replace',
+        from: shorthand.from,
+        to: shorthand.to,
+        text: `${name}: ${targetScope.name}.${name}`,
+      });
+    }
+    return;
+  }
+
   for (let child = node.firstChild; child; child = child.nextSibling) {
     walkScopedBindingRefs(builder, child, currentScope, targetScope, scopedNames, edits);
   }
@@ -1412,6 +1466,29 @@ function walkInitExprGlobalRefs(
     const binding = builder.resolve(name, declBlockScope);
     if (binding && isRootScope(binding.scope)) {
       edits.push({ kind: 'replace', from: node.from, to: node.to, text: `$global.${name}` });
+    }
+    return;
+  }
+  const shorthand = shorthandPropertyNode(node);
+  if (shorthand) {
+    const name = nodeText(shorthand, builder.source);
+    if (!shouldRewriteToWorld(name)) return;
+    if (bindingResolvesToScopedName(builder, name, declBlockScope, declBlockScope, scopedNames)) {
+      edits.push({
+        kind: 'replace',
+        from: shorthand.from,
+        to: shorthand.to,
+        text: `${name}: ${scopeName}.${name}`,
+      });
+      return;
+    }
+    if (isWorldFreeVarRef(freeVarUses, shorthand.from, shorthand.to)) {
+      edits.push({ kind: 'replace', from: shorthand.from, to: shorthand.to, text: `${name}: $global.${name}` });
+      return;
+    }
+    const binding = builder.resolve(name, declBlockScope);
+    if (binding && isRootScope(binding.scope)) {
+      edits.push({ kind: 'replace', from: shorthand.from, to: shorthand.to, text: `${name}: $global.${name}` });
     }
     return;
   }
@@ -1860,6 +1937,38 @@ function walkForWorldRefs(
     if (binding && !isRootScope(binding.scope)) return;
     edits.push({ kind: 'replace', from: node.from, to: node.to, text: `$global.${name}` });
     return;
+  }
+
+  {
+    // Same resolution as the VariableName case, expanding the shorthand on rewrite.
+    const shorthand = shorthandPropertyNode(node);
+    if (shorthand) {
+      const name = nodeText(shorthand, builder.source);
+      if (!shouldRewriteToWorld(name)) return;
+      if (freeVarUses.some((use) => use.from === shorthand.from && use.to === shorthand.to && !use.world)) return;
+      const expandToWorld = () =>
+        edits.push({
+          kind: 'replace',
+          from: shorthand.from,
+          to: shorthand.to,
+          text: `${name}: $global.${name}`,
+        });
+      const binding = funcScope
+        ? resolveInFunction(builder, name, currentScope, funcScope)
+        : builder.resolve(name, currentScope);
+      if (funcScope) {
+        if (isWorldFreeVarRef(freeVarUses, shorthand.from, shorthand.to)) {
+          expandToWorld();
+          return;
+        }
+        if (binding && !isRootScope(binding.scope)) return;
+        if (binding && isRootScope(binding.scope)) expandToWorld();
+        return;
+      }
+      if (binding && !isRootScope(binding.scope)) return;
+      expandToWorld();
+      return;
+    }
   }
 
   if (node.name === 'Block') {
@@ -2428,7 +2537,7 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
         kind: 'replace',
         from: use.from,
         to: use.to,
-        text: `$global.${use.name}`,
+        text: use.shorthand ? `${use.name}: $global.${use.name}` : `$global.${use.name}`,
       });
     } else if (use.scope.needsObject()) {
       const member = `${use.scope.name}.${use.name}`;
@@ -2436,7 +2545,11 @@ function collectScopeEdits(builder: ScopeBuilder, freeVarUses: FreeVarUse[], edi
         kind: 'replace',
         from: use.from,
         to: use.to,
-        text: isReferenceUsedAsCallCallee(builder.source, use.from, use.to) ? `(${member})` : member,
+        text: use.shorthand
+          ? `${use.name}: ${member}`
+          : isReferenceUsedAsCallCallee(builder.source, use.from, use.to)
+            ? `(${member})`
+            : member,
       });
     }
   }
@@ -2560,6 +2673,16 @@ function rewriteClosureScopedRefsInNode(
         to: node.to,
         text: scopedMemberRef(source, node.from, node.to, name, scopeName),
       });
+    }
+    return;
+  }
+
+  const shorthand = shorthandPropertyNode(node);
+  if (shorthand) {
+    const name = nodeText(shorthand, source);
+    const scopeName = captured.get(name);
+    if (scopeName) {
+      edits.push({ from: shorthand.from, to: shorthand.to, text: `${name}: ${scopeName}.${name}` });
     }
     return;
   }
