@@ -2011,7 +2011,8 @@ class Ellipse extends Shape {
 
 //  PolyLine
 // ----------
-// Vertex list, optional curve/close/fill; line hit tolerance.
+// Vertex list, optional curve/close/fill; hit test = painted fill (when filled
+// or closed) plus a tolerance band around the outline.
 class PolyLine extends Shape {
   constructor(verts, width, color) {
     const bounds = PolyLine.boundsForVertices(verts, width);
@@ -2045,6 +2046,23 @@ class PolyLine extends Shape {
     copy.closed = this.closed;
     copy.arrowheads = this.arrowheads;
     return copy;
+  }
+  containsPointInFill(p) {
+    /** Nonzero-winding point-in-polygon on straight chords (curve approximation),
+     * with an implicit last→first closing segment — matching what ctx.fill() paints. */
+    let verts = this.vertices;
+    if (!verts || verts.length < 3) return false;
+    let winding = 0;
+    let n = verts.length;
+    for (let i = 0; i < n; i++) {
+      let a = verts[i];
+      let b = verts[(i + 1) % n];
+      let cross = (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y);
+      if (a.y <= p.y) {
+        if (b.y > p.y && cross > 0) winding++;
+      } else if (b.y <= p.y && cross < 0) winding--;
+    }
+    return winding !== 0;
   }
   distanceFromPoint(vertices, closed, pt) {
     /** Shortest distance from `pt` to straight segments between vertices (chord approximation when curved). */
@@ -2107,7 +2125,7 @@ class PolyLine extends Shape {
   }
   includesPt(pt) {
     if (!Rectangle.prototype.includesPt.call(this, pt)) return false;
-    if (this.closed) return true;
+    if ((this.fillColor !== null || this.closed) && this.containsPointInFill(pt)) return true;
     let tol = this.hitTolerance(this.borderWidth);
     return this.distanceFromPoint(this.vertices, this.closed, pt) <= tol;
   }
