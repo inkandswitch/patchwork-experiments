@@ -11,7 +11,8 @@
 // Invalid (??) or repeated (xx) words score against you, as do letters that fall off.
 //
 // Load this file the way newdefs.js is loaded -- evaluate it in a LivelyMerge workspace --
-// then runQBF() to put a game and the high-scores viewer in the world. Sounds, the
+// then runQBF() to put a game in the world. Use "show scores" on the board for the
+// scores viewer. Sounds, the
 // tournament word list, and the high-scores viewer/store are included in this file.
 //
 // Differences from the original, all deliberate:
@@ -471,7 +472,12 @@ class QBFMorph extends Morph {
     let label = this.addMorph(
       new QBFTextMorph(rect(r.topLeft.x + 3, r.topLeft.y - 16, r.width(), 16), labelStr),
     );
-    qbfStyleText(label, { fontSize: 11, boxColor: null, borderWidth: 0 });
+    qbfStyleText(label, {
+      fontSize: 11,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
     let box = this.addMorph(new QBFTextMorph(r, '0'));
     let fontSize = fontSizeIfAny != null ? fontSizeIfAny : 15;
     qbfStyleText(box, { fontSize: fontSize, noBreak: true, center: fontSize > 20 });
@@ -503,7 +509,13 @@ class QBFMorph extends Morph {
     let m = this.addMorph(
       new QBFTextMorph(rect(scoreRect.topLeft.x, scoreRect.bottom(), scoreRect.width(), 18), ' '),
     );
-    qbfStyleText(m, { fontSize: 12, noBreak: true });
+    qbfStyleText(m, {
+      fontSize: 12,
+      noBreak: true,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
     return m;
   }
   appendLog(entry) {
@@ -542,6 +554,12 @@ class QBFMorph extends Morph {
     if (actionName === 'level') this.doChooseLevel();
     if (actionName === 'rules') this.doShowRules();
     if (actionName === 'name') this.doChoosePlayerName();
+    if (actionName === 'scores') this.doOpenScores();
+    if (actionName === 'launchSuperQuick') this.launchLevel('super quick');
+    if (actionName === 'launchQuick') this.launchLevel('quick');
+    if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
+    if (actionName === 'finishTiles') this.finishTiles();
+    if (actionName === 'autoPlay') this.toggleAutoPlay();
     this.focusKeyboard();
   }
   chooseLevelNamed(caption) {
@@ -589,14 +607,19 @@ class QBFMorph extends Morph {
     let scoreX = rackX + rackW + 30;
     let scoreY = outboxY - 30;
     let scoreW = 2 * lw;
-    let hSpacing = 110;
+    let hSpacing = 120;
     let vSpacing = 48;
-    let gameButtonsY = scoreY + 4 * vSpacing + 26;
+    let launchW = 110;
+    // Score column is 4 rows (letter / word / game / top word); launch+epoch sit
+    // in the right column under the multiplier and need room below the top-word row.
+    let gameButtonsY = scoreY + 4 * vSpacing + 90;
     // Ledge sits ~30px above the name button — the fall distance that reads well with
     // the scream timing. Keep it clear of that button (which used to cover a pile at y=430).
     let pileY = gameButtonsY - 30;
     let pileX = 30;
     let pileW = rackX - 60;
+    let boardW = scoreX + hSpacing + Math.max(scoreW, launchW) + 24;
+    let boardH = gameButtonsY + 70;
     return {
       rack: rect(rackX, rackY, rackW, 5),
       outbox: rect(rackX, outboxY, rackW, 5),
@@ -610,10 +633,12 @@ class QBFMorph extends Morph {
       keyButtons: rect(rackX + 20, rackY - lh - 59, rackW - 40, 42),
       gameButtons: rect(scoreX, gameButtonsY, 100, 24),
       nameButton: rect(rackX - 110, gameButtonsY, 100, 24),
+      scoresButton: rect(rackX - 110, gameButtonsY + 30, 100, 24),
+      launch: rect(scoreX + hSpacing, scoreY + 2 * vSpacing, launchW, 24),
       fox: rect(28, 24, 64, 64),
       hSpacing: hSpacing,
       vSpacing: vSpacing,
-      boardExtent: pt(scoreX + hSpacing + scoreW + 16, 504),
+      boardExtent: pt(boardW, boardH),
     };
   }
   doChooseLevel() {
@@ -647,6 +672,17 @@ class QBFMorph extends Morph {
       game.focusKeyboard();
       if (resume) resume.call(game);
     });
+  }
+  doOpenScores() {
+    /** Open (or raise) the ephemeral scores viewer beside this board. */
+    let panel = this.panelMorph();
+    let tl = null;
+    if (panel) {
+      let gtl = panel.topLeftInWorld ? panel.topLeftInWorld() : panel.getBounds().topLeft;
+      tl = pt(gtl.x + panel.getBounds().width() + 20, gtl.y);
+    }
+    openQBFScores(tl);
+    this.focusKeyboard();
   }
   doClear() {
     // Esc key or clear button: take all the tiles back out of the outbox.
@@ -708,6 +744,7 @@ class QBFMorph extends Morph {
   doPause(val) {
     this.paused = !!val;
     this.pauseButton.setLabel(this.paused ? 'resume' : 'pause');
+    if (this.paused) this.cancelAutoPlayTyping();
     // Blank the tiles in motion while paused, so that pausing is no way to study the rack.
     let inBin = this.letterInBin ? [this.letterInBin] : [];
     inBin
@@ -836,13 +873,17 @@ to LivelyMerge.`,
       this.lettersSlideOnRack();
       letter.loc = 'rack';
     }
-    if (!this.letterInBin) return;
+    if (!this.letterInBin) {
+      if (this.autoPlay) this.maybeAutoPlayFromRack();
+      return;
+    }
     let newLetter = this.letterInBin;
     newLetter.loc = 'belt';
     this.placeBottomRight(newLetter, this.belt.getBounds().topRight());
     this.activeLetters.unshift(newLetter);
     this.letterInBin = this.nextTile();
     this.nLeftBox.setText(String(this.letterQueue.length));
+    if (this.autoPlay) this.maybeAutoPlayFromRack();
   }
   letterExtent() {
     return pt(this.letterW, this.letterH);
@@ -868,6 +909,9 @@ to LivelyMerge.`,
       // before posting the final score.
       this.gameOver = true;
       this._finalScorePosted = false;
+      this.cancelAutoPlayTyping();
+      this.autoPlay = false;
+      this.updateAutoPlayButton();
       this.postLevelStats();
       this.appendLog('-- game over --');
       letter.remove();
@@ -1044,11 +1088,7 @@ to LivelyMerge.`,
     }
     let when = new Date().toISOString();
     let gameNo = this.tournamentGameNumber;
-    if (gameNo == null) {
-      // Casual boards still sit beside the game server — use its current Game #.
-      let viewer = findQBFScoresViewer();
-      if (viewer && viewer.$shownGameNumber != null) gameNo = viewer.$shownGameNumber;
-    }
+    if (gameNo == null) gameNo = qbfStoredGameNumber();
     if (gameNo == null) gameNo = '';
     qbfPostLevelScore(this.playerName, this.level.caption, {
       bestGame: this.totalScore,
@@ -1101,6 +1141,7 @@ to LivelyMerge.`,
   setup() {
     /** (Re)build the board for a fresh game at the current level. */
     if (this.worldOrNull()) this.stopStepping('tick'); // setup also runs before we are in a world
+    this.cancelAutoPlayTyping();
 
     (this.submorphs || []).slice().forEach((m) => this.removeMorph(m));
     if (!this.levels) this.levels = this.freshLevels();
@@ -1109,6 +1150,9 @@ to LivelyMerge.`,
     this.gameOver = false;
     this._finalScorePosted = false;
     this.noCheck = false; // set true to score unrecognized words anyway
+    this.autoPlay = false;
+    this.$autoPlayBusy = false;
+    this.$autoPlayTimer = null;
     this.rackSize = this.level.rackSize;
     this.beltSize = this.level.beltSize;
     this.letterScore = 0;
@@ -1145,11 +1189,12 @@ to LivelyMerge.`,
     this.postLevelStats();
     this.resizeOwningPanel();
     this.startTicking();
+    this.startGameClock();
     this.focusKeyboard();
   }
   applyTournamentQueue() {
     /**
-     * If this board was launched from the game server, reuse that minute's seeded
+     * If this board was launched into a tournament game #, reuse that epoch's seeded
      * tile list so every player of Game #N gets the same letters.
      */
     if (this.tournamentLetterQueue && this.tournamentLetterQueue.length > 0) {
@@ -1184,9 +1229,10 @@ to LivelyMerge.`,
       ' multiplier',
       30,
     );
-    // Top word sits where "best game" used to be (right column, game-score row).
-    this.topWordBox = this.addReadout(s.translatedBy(pt(h, 2 * v)), 'top word');
-    this.topWordLetters = this.addWordLabel(s.translatedBy(pt(h, 2 * v)));
+    // Top word sits under game score (left column), freeing the right column for launch.
+    this.topWordBox = this.addReadout(s.translatedBy(pt(0, 3 * v)), 'top word');
+    this.topWordLetters = this.addWordLabel(s.translatedBy(pt(0, 3 * v)));
+    this.setupEpochAndLaunch(lay);
     // White plate under the outbox for the scrolling word history (like the original).
     this.logPlate = this.addMorph(new QBFDecorMorph(lay.log));
     this.logPlate.setStyles(Color.white, 1, Color.gray);
@@ -1203,7 +1249,13 @@ to LivelyMerge.`,
     });
     let c = this.bin.getBounds().center();
     this.nLeftBox = this.addMorph(new QBFTextMorph(rect(c.x - 30, c.y - 7, 60, 22), '0'));
-    qbfStyleText(this.nLeftBox, { fontSize: 15, center: true, boxColor: null, borderWidth: 0 });
+    qbfStyleText(this.nLeftBox, {
+      fontSize: 15,
+      center: true,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.black,
+    });
     let mp = lay.missedPoints;
     this.missedPointsBox = this.addMorph(new QBFTextMorph(mp, '0'));
     qbfStyleText(this.missedPointsBox, {
@@ -1211,7 +1263,64 @@ to LivelyMerge.`,
       center: true,
       boxColor: null,
       borderWidth: 0,
+      textColor: Color.white,
     });
+  }
+  setupEpochAndLaunch(lay) {
+    /**
+     * Game # + signup countdown + three speed buttons, right of the score column.
+     * A filling bar and short status line show when a multiplayer epoch is open.
+     */
+    let L = lay.launch;
+    let x = L.topLeft.x;
+    let y = L.topLeft.y;
+    let w = L.width();
+    this.gameNumberLabel = this.addMorph(new QBFTextMorph(rect(x, y, w, 20), 'Game #100'));
+    qbfStyleText(this.gameNumberLabel, {
+      fontSize: 14,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
+    this.minuteTrack = this.addMorph(new QBFDecorMorph(rect(x, y + 22, w, 8)));
+    this.minuteTrack.setStyles(Color.white, 1, Color.black);
+    this.minuteTrack.renderOn = function (ctx) {
+      let b = this.shape.getBounds();
+      if (this.shape.renderOn) this.shape.renderOn(ctx);
+      let view = qbfViewTournament();
+      let frac = view.open ? view.frac : 0;
+      let fw = Math.max(0, Math.round(b.width() * Math.max(0, Math.min(1, frac))));
+      if (fw > 0) {
+        ctx.fillStyle = Color.gray.darker().fillStyle;
+        ctx.fillRect(b.topLeft.x, b.topLeft.y, fw, b.height());
+      }
+    };
+    this.epochStatus = this.addMorph(new QBFTextMorph(rect(x, y + 32, w, 16), 'ready'));
+    qbfStyleText(this.epochStatus, {
+      fontSize: 11,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
+    let btnY = y + 52;
+    let btnH = 22;
+    let btnGap = 3;
+    this.superQuickButton = this.addButton(
+      rect(x, btnY, w, btnH),
+      'super quick',
+      'launchSuperQuick',
+    );
+    this.quickButton = this.addButton(
+      rect(x, btnY + btnH + btnGap, w, btnH),
+      'quick',
+      'launchQuick',
+    );
+    this.notSoQuickButton = this.addButton(
+      rect(x, btnY + 2 * (btnH + btnGap), w, btnH),
+      'not so quick',
+      'launchNotSoQuick',
+    );
+    this.applyTournamentView(qbfViewTournament());
   }
   setupButtons(lay) {
     let k = lay.keyButtons;
@@ -1232,25 +1341,26 @@ to LivelyMerge.`,
       'enter',
     );
     let g = lay.gameButtons;
+    let h = lay.hSpacing;
     this.pauseButton = this.addButton(g, 'pause', 'pause');
-    this.levelButton = this.addButton(
-      g.translatedBy(pt(lay.hSpacing, 0)),
-      this.level.caption,
-      'level',
+    // Right column: auto play above finish; how to play beside restart.
+    this.autoPlayButton = this.addButton(
+      g.translatedBy(pt(h, -30)),
+      'auto play',
+      'autoPlay',
     );
+    this.finishButton = this.addButton(g.translatedBy(pt(h, 0)), 'finish', 'finishTiles');
     this.restartButton = this.addButton(g.translatedBy(pt(0, 30)), 'restart', 'restart');
     this.updateRestartButton();
-    this.infoButton = this.addButton(
-      g.translatedBy(pt(lay.hSpacing, 30)),
-      'how to play',
-      'rules',
-    );
-    // Name sits to the left of the score column, below the pile ledge.
+    this.infoButton = this.addButton(g.translatedBy(pt(h, 30)), 'how to play', 'rules');
+    this.updateAutoPlayButton();
+    // Name + show scores stack to the left of the score column, below the pile ledge.
     this.nameButton = this.addButton(
       lay.nameButton,
       this.playerName ? this.playerName : 'choose name',
       'name',
     );
+    this.scoresButton = this.addButton(lay.scoresButton, 'show scores', 'scores');
   }
   setupFox(lay) {
     // The fox himself -- painted directly via EmojiMorph.fillText (no canvas bake).
@@ -1347,7 +1457,7 @@ to LivelyMerge.`,
     this.startStepping('tick', null, Math.round(1000 / this.ticksPerSec));
   }
   tick() {
-    // Close a finished signup epoch even if the game-server stepper is idle.
+    // Close a finished signup epoch even if the dedicated clock stepper is idle.
     if (Lively && Lively.qbfEpochStartMs != null) qbfFinishExpiredTournament();
     let panel = this.panelMorph();
     if (panel && panel.collapsed) return; // a collapsed window pauses the game
@@ -1397,6 +1507,198 @@ to LivelyMerge.`,
     this.wordScore = this.letterScore * this.multipliers[nLetters];
     this.letterScoreBox.setText(String(this.letterScore));
     this.wordScoreBox.setText(String(this.wordScore));
+  }
+  launchLevel(caption) {
+    /** Join or open a tournament epoch at the chosen speed, then (re)start this board. */
+    let join = qbfJoinOrStartTournamentGame();
+    this.applyTournamentView(qbfViewTournament());
+    this.ensureGameClockStepping();
+    openQBFPlaying({
+      levelCaption: caption,
+      gameNumber: join.gameNumber,
+      letterQueue: join.queue,
+    });
+  }
+  finishTiles() {
+    /**
+     * Cut off the remaining letter supply so the board ends soon.
+     * Tiles already on the belt/rack still play out; then "!" arrives (if needed).
+     */
+    if (this.gameOver) return;
+    let bangInFlight =
+      (this.letterInBin && this.letterInBin.shape.string === '!') ||
+      (this.activeLetters || []).some((l) => l && l.shape.string === '!');
+    this.letterQueue = bangInFlight ? [] : ['!'];
+    if (this.nLeftBox) this.nLeftBox.setText(String(this.letterQueue.length));
+  }
+  toggleAutoPlay() {
+    /** Toggle hands-free play: type the leftmost 4-letter lexicon word when tiles land. */
+    this.autoPlay = !this.autoPlay;
+    this.updateAutoPlayButton();
+    if (!this.autoPlay) {
+      this.cancelAutoPlayTyping();
+      return;
+    }
+    this.maybeAutoPlayFromRack();
+  }
+  updateAutoPlayButton() {
+    if (!this.autoPlayButton) return;
+    this.autoPlayButton.setLabel(this.autoPlay ? 'auto: on' : 'auto play');
+    let s = this.autoPlayButton.shape;
+    if (!s) return;
+    s.boxColor = this.autoPlay ? Color.green.lighter() : Color.lightGray;
+    s.fill = s.boxColor;
+    s.compose();
+  }
+  cancelAutoPlayTyping() {
+    if (this.$autoPlayTimer != null) {
+      clearTimeout(this.$autoPlayTimer);
+      this.$autoPlayTimer = null;
+    }
+    this.$autoPlayBusy = false;
+  }
+  rackTilesLeftToRight() {
+    /** Playable rack tiles (not already in the outbox), leftmost first. */
+    let tiles = (this.activeLetters || []).filter(
+      (l) => l && l.loc === 'rack' && !l.copyInOutbox && l.shape.string !== '!',
+    );
+    tiles.sort((a, b) => a.getBounds().topLeft.x - b.getBounds().topLeft.x);
+    return tiles;
+  }
+  findAutoPlayWord() {
+    /**
+     * Left-to-right scan for a playable 4-letter lexicon word:
+     *   - contiguous 4 tiles (forward or reverse)
+     *   - contiguous 5 tiles with any one letter dropped (forward or reverse of the 4)
+     * Skips words already scored this game. Answers { word, letters } in type order.
+     */
+    let tiles = this.rackTilesLeftToRight();
+    let game = this;
+    let tryFour = function (fourTiles) {
+      let word = '';
+      for (let k = 0; k < fourTiles.length; k++) word += fourTiles[k].shape.string;
+      let rev = '';
+      for (let k = word.length - 1; k >= 0; k--) rev += word.charAt(k);
+      let revTiles = [];
+      for (let k = fourTiles.length - 1; k >= 0; k--) revTiles.push(fourTiles[k]);
+      let used = game.usedWords || [];
+      if (!used.includes(word) && qbfLookupWord(word.toLowerCase())) {
+        return { word: word, letters: fourTiles };
+      }
+      if (!used.includes(rev) && qbfLookupWord(rev.toLowerCase())) {
+        return { word: rev, letters: revTiles };
+      }
+      return null;
+    };
+    for (let i = 0; i < tiles.length; i++) {
+      if (i + 4 <= tiles.length) {
+        let four = [];
+        for (let j = 0; j < 4; j++) four.push(tiles[i + j]);
+        let hit = tryFour(four);
+        if (hit) return hit;
+      }
+      if (i + 5 <= tiles.length) {
+        let five = [];
+        for (let j = 0; j < 5; j++) five.push(tiles[i + j]);
+        for (let drop = 0; drop < 5; drop++) {
+          let four = [];
+          for (let j = 0; j < 5; j++) {
+            if (j !== drop) four.push(five[j]);
+          }
+          let hit = tryFour(four);
+          if (hit) return hit;
+        }
+      }
+    }
+    return null;
+  }
+  maybeAutoPlayFromRack() {
+    if (!this.autoPlay || this.$autoPlayBusy || this.paused || this.gameOver) return;
+    if (this.outboxLetters && this.outboxLetters.length > 0) return;
+    let match = this.findAutoPlayWord();
+    if (!match) return;
+    this.autoPlayTypeWord(match.letters);
+  }
+  autoPlayTypeWord(letters) {
+    /** Type each letter at 500ms, then Enter; then look for another word. */
+    let game = this;
+    let i = 0;
+    this.$autoPlayBusy = true;
+    let step = function () {
+      game.$autoPlayTimer = null;
+      if (!game.autoPlay || game.paused || game.gameOver) {
+        game.cancelAutoPlayTyping();
+        return;
+      }
+      if (i < letters.length) {
+        let letter = letters[i++];
+        if (letter && letter.loc === 'rack' && !letter.copyInOutbox) {
+          game.addToOutbox(letter);
+        }
+        game.$autoPlayTimer = setTimeout(step, 500);
+        return;
+      }
+      game.doEnter();
+      game.$autoPlayBusy = false;
+      // Brief pause so the commit settles, then try another word still on the rack.
+      game.$autoPlayTimer = setTimeout(function () {
+        game.$autoPlayTimer = null;
+        game.maybeAutoPlayFromRack();
+      }, 500);
+    };
+    step();
+  }
+  applyTournamentView(viewIfAny) {
+    /** Refresh Game # label, status line, and local tile-queue cache from shared state. */
+    let view = viewIfAny || qbfViewTournament();
+    this.$shownGameNumber = view.gameNumber;
+    this.$tileQueue = qbfTileQueueForGame(view.gameNumber);
+    if (this.gameNumberLabel) {
+      let label = 'Game #' + view.gameNumber;
+      if (this.gameNumberLabel.shape.string !== label) this.gameNumberLabel.setText(label);
+    }
+    if (this.epochStatus) {
+      let status;
+      if (view.open) {
+        let secs = Math.max(0, Math.ceil(qbfSecondsLeftInMinute()));
+        status = 'open · join ' + secs + 's';
+      } else {
+        status = 'ready';
+      }
+      if (this.epochStatus.shape.string !== status) this.epochStatus.setText(status);
+    }
+    if (this.minuteTrack && this.minuteTrack.changed) this.minuteTrack.changed();
+  }
+  syncGameClock(forceIfAny) {
+    if (forceIfAny) qbfCommitExpiredTournament();
+    let view = qbfViewTournament();
+    if (view.expired) qbfCommitExpiredTournament();
+    view = qbfViewTournament();
+    this.applyTournamentView(view);
+    if (view.open) this.ensureGameClockStepping();
+    else this.stopGameClockStepping();
+  }
+  tickGameClock() {
+    if (qbfFinishExpiredTournament()) return;
+    let view = qbfViewTournament();
+    if (view.open) {
+      this.applyTournamentView(view);
+      return;
+    }
+    this.applyTournamentView(view);
+    this.stopGameClockStepping();
+  }
+  ensureGameClockStepping() {
+    if (!this.worldOrNull()) return;
+    if (this.isStepping && this.isStepping('tickGameClock')) return;
+    this.startStepping('tickGameClock', null, 1000);
+  }
+  stopGameClockStepping() {
+    if (!this.worldOrNull()) return;
+    if (this.stopStepping) this.stopStepping('tickGameClock');
+  }
+  startGameClock() {
+    this.syncGameClock(false);
   }
   static new(...args) {
     return new this(...args);
@@ -1470,8 +1772,8 @@ QBFMorph.prototype.ticksPerSec = 20;
 
 function openQBF(topLeftIfAny) {
   /**
-   * Put a Quick Brown Fox in a panel in the world, and open the game server
-   * 20px to its right. Answers the game panel.
+   * Put a Quick Brown Fox in a panel in the world. Answers the game panel.
+   * Scores open on demand via the board's "show scores" button.
    */
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(10, 40);
   let game = new QBFMorph();
@@ -1484,9 +1786,9 @@ function openQBF(topLeftIfAny) {
   panel.addMorph(game);
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
-  openQBFScores(pt(tl.x + panel.getBounds().width() + 20, tl.y));
   if (panel.beTopMorph) panel.beTopMorph();
   game.startTicking();
+  game.startGameClock();
   game.focusKeyboard();
   return panel;
 }
@@ -1594,14 +1896,15 @@ function qbfArmEpochEndTimer() {
   }, delay + 25);
 }
 function qbfFinishExpiredTournament() {
-  /** Commit an expired epoch (if any) and refresh the open game-server UI. */
+  /** Commit an expired epoch (if any) and refresh the open board's epoch chrome. */
   if (!qbfCommitExpiredTournament()) return false;
-  let viewer = findQBFScoresViewer();
-  if (viewer) {
-    viewer.applyTournamentView(qbfViewTournament());
-    viewer.stopGameClockStepping();
-    if (viewer.minuteTrack && viewer.minuteTrack.changed) viewer.minuteTrack.changed();
+  let game = findQBFGame();
+  if (game) {
+    if (game.applyTournamentView) game.applyTournamentView(qbfViewTournament());
+    if (game.stopGameClockStepping) game.stopGameClockStepping();
   }
+  let viewer = findQBFScoresViewer();
+  if (viewer && viewer.refresh) viewer.refresh();
   return true;
 }
 function qbfCommitExpiredTournament() {
@@ -1838,9 +2141,9 @@ function openQBFPlaying(optsIfAny) {
   panel.addMorph(game);
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
-  openQBFScores(pt(tl.x + panel.getBounds().width() + 20, tl.y));
   if (panel.beTopMorph) panel.beTopMorph();
   game.startTicking();
+  game.startGameClock();
   game.focusKeyboard();
   return panel;
 }
@@ -1849,7 +2152,7 @@ function openQBFPlaying(optsIfAny) {
 // ---------------------------------------------------------------------------
 // Port of the original QBFScoresViewer (Lively Kernel / QBFScoresServer).
 // Included in QBF.js (no separate file to evaluate).
-// Now also the "game server": launch pane + recent games + high scores.
+// Ephemeral scores panel: recent tournament games + high scores (opened from the board).
 //
 // Score records keep the original shape, keyed by player then by level caption:
 //   {
@@ -2404,18 +2707,15 @@ class QBFMemoryScoresStore {
   }
 }
 
-//  QBFScoresMorph  (QBF Game Server)
-// -----------------------------------
-// Three panes in one panel (same width as before, taller):
-//   top ~20%  — current Game # + launch buttons (super quick / quick / not so quick)
-//   mid ~50%  — recent tournament games (last ~5)
-//   bot ~30%  — classic high-scores table
+//  QBFScoresMorph  (scores viewer)
+// --------------------------------
+// Ephemeral two-pane scores panel (opened from the board's "show scores"):
+//   top ~55%  — recent tournament games (last ~5)
+//   bot ~45%  — classic high-scores table
 class QBFScoresMorph extends Morph {
   constructor() {
-    super(rect(0, 0, 520, 560));
+    super(rect(0, 0, 520, 480));
     this.setStyles(Color.orange.darker(), 1, Color.black);
-    this.$shownGameNumber = null;
-    this.$tileQueue = null;
     this.build();
     this._onScoresChanged = () => {
       this.refresh();
@@ -2423,7 +2723,6 @@ class QBFScoresMorph extends Morph {
     let store = qbfScoresStore();
     if (store.subscribe) store.subscribe(this._onScoresChanged);
     this.refresh();
-    this.syncGameClock(true);
   }
   build() {
     (this.submorphs || []).slice().forEach((m) => this.removeMorph(m));
@@ -2431,78 +2730,10 @@ class QBFScoresMorph extends Morph {
     let h = this.getBounds().height();
     let pad = 10;
     let innerW = w - 2 * pad;
-
-    // --- Top: Game # + countdown (left), speed buttons at same Y (right) ---
-    // Width sized for "Game #999" at 16px (numbers run 100..999).
-    let labelW = 100;
-    let labelH = 22;
-    let labelY = 8;
-    this.gameNumberLabel = this.addMorph(
-      new QBFTextMorph(rect(pad, labelY, labelW, labelH), 'Game #0'),
-    );
-    qbfStyleText(this.gameNumberLabel, {
-      fontSize: 16,
-      boxColor: null,
-      borderWidth: 0,
-      textColor: Color.white,
-    });
-    // Thin horizontal countdown, only as wide as the Game # text.
-    // Fill is derived from shared epochStartMs at paint time (no Automerge writes).
-    let trackY = labelY + labelH + 2;
-    let trackH = 8;
-    this.minuteTrack = this.addMorph(new QBFDecorMorph(rect(pad, trackY, labelW, trackH)));
-    this.minuteTrack.setStyles(Color.white, 1, Color.black);
-    this.minuteTrack.renderOn = function (ctx) {
-      let b = this.shape.getBounds();
-      if (this.shape.renderOn) this.shape.renderOn(ctx);
-      let view = qbfViewTournament();
-      let frac = view.open ? view.frac : 0;
-      let fw = Math.max(0, Math.round(b.width() * Math.max(0, Math.min(1, frac))));
-      if (fw > 0) {
-        ctx.fillStyle = Color.gray.darker().fillStyle;
-        ctx.fillRect(b.topLeft.x, b.topLeft.y, fw, b.height());
-      }
-    };
-    this.minuteFill = null;
-    this.applyTournamentView(qbfViewTournament());
-    // Speed buttons share the Game # row's top Y, stacked to the right.
-    let btnH = 22;
-    let btnGap = 3;
-    let btnW = Math.floor(Math.min(200, innerW - 40) * 0.6);
-    let btnX = pad + labelW + 16;
-    let btnY = labelY;
-    this.superQuickButton = this.addMorph(
-      new QBFButtonMorph(rect(btnX, btnY, btnW, btnH), 'super quick', 'launchSuperQuick'),
-    );
-    this.quickButton = this.addMorph(
-      new QBFButtonMorph(
-        rect(btnX, btnY + btnH + btnGap, btnW, btnH),
-        'quick',
-        'launchQuick',
-      ),
-    );
-    this.notSoQuickButton = this.addMorph(
-      new QBFButtonMorph(
-        rect(btnX, btnY + 2 * (btnH + btnGap), btnW, btnH),
-        'not so quick',
-        'launchNotSoQuick',
-      ),
-    );
-    this.finishButton = this.addMorph(
-      new QBFButtonMorph(
-        rect(btnX, btnY + 3 * (btnH + btnGap), btnW, btnH),
-        'finish',
-        'finishTiles',
-      ),
-    );
-    let btnBottom = btnY + 4 * btnH + 3 * btnGap;
-    // Same orange strip above "Recent games" as between middle and bottom panes.
     let paneGap = 10;
-
-    // --- Middle: recent games ---
-    let midTop = btnBottom + paneGap;
+    let midTop = pad;
     let lowerH = h - midTop - pad;
-    let midBlock = Math.floor(lowerH * (50 / 80));
+    let midBlock = Math.floor(lowerH * 0.55);
     let botBlock = lowerH - midBlock;
     this.recentLabel = this.addMorph(
       new QBFTextMorph(rect(pad, midTop, innerW, 16), 'Recent games'),
@@ -2520,8 +2751,7 @@ class QBFScoresMorph extends Morph {
     this.recentText = this.recentScroll.contentPane;
     qbfStyleScoreListText(this.recentText);
 
-    // --- Bottom: high scores ---
-    let botTop = midTop + midBlock;
+    let botTop = midTop + midBlock + paneGap;
     this.highScoresLabel = this.addMorph(
       new QBFTextMorph(rect(pad, botTop, innerW - 90, 16), 'High scores'),
     );
@@ -2532,102 +2762,11 @@ class QBFScoresMorph extends Morph {
       textColor: Color.white,
     });
     this.scoresScroll = this.addMorph(
-      new TextPane(rect(pad, botTop + 18, innerW, botBlock - 28), rect(0, 0, 1, 1)),
+      new TextPane(rect(pad, botTop + 18, innerW, botBlock - 28 - paneGap), rect(0, 0, 1, 1)),
     );
     this.scoresScroll.setPaneMenu({ items: [], onSelect: function () {} });
     this.scoresText = this.scoresScroll.contentPane;
     qbfStyleScoreListText(this.scoresText);
-  }
-  buttonFired(actionName) {
-    if (actionName === 'launchSuperQuick') this.launchLevel('super quick');
-    if (actionName === 'launchQuick') this.launchLevel('quick');
-    if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
-    if (actionName === 'finishTiles') this.finishTiles();
-  }
-  launchLevel(caption) {
-    let join = qbfJoinOrStartTournamentGame();
-    this.applyTournamentView(qbfViewTournament());
-    this.ensureGameClockStepping();
-    openQBFPlaying({
-      levelCaption: caption,
-      gameNumber: join.gameNumber,
-      letterQueue: join.queue,
-    });
-  }
-  finishTiles() {
-    /**
-     * Cut off the remaining letter supply so the open board ends soon.
-     * Tiles already on the belt/rack still play out; then "!" arrives (if needed)
-     * and the game wraps up — handy when checking score reporting.
-     */
-    let game = findQBFGame();
-    if (!game || game.gameOver) return;
-    let bangInFlight =
-      (game.letterInBin && game.letterInBin.shape.string === '!') ||
-      (game.activeLetters || []).some((l) => l && l.shape.string === '!');
-    game.letterQueue = bangInFlight ? [] : ['!'];
-    if (game.nLeftBox) game.nLeftBox.setText(String(game.letterQueue.length));
-  }
-  applyTournamentView(viewIfAny) {
-    /** Update Game # label when the displayed number changes; tile queue follows. */
-    let view = viewIfAny || qbfViewTournament();
-    this.$shownGameNumber = view.gameNumber;
-    this.$tileQueue = qbfTileQueueForGame(view.gameNumber);
-    if (this.gameNumberLabel) {
-      let label = 'Game #' + view.gameNumber;
-      if (this.gameNumberLabel.shape.string !== label) {
-        this.gameNumberLabel.setText(label);
-      }
-    }
-  }
-  syncGameClock(forceIfAny) {
-    /**
-     * Refresh display from shared tournament state. Commits an expired epoch
-     * (advances Game #) when force or when we notice expiry while stepping.
-     * Idle: no stepping, no writes.
-     */
-    if (forceIfAny) qbfCommitExpiredTournament();
-    let view = qbfViewTournament();
-    if (view.expired) qbfCommitExpiredTournament();
-    view = qbfViewTournament();
-    this.applyTournamentView(view);
-    if (view.open) this.ensureGameClockStepping();
-    else this.stopGameClockStepping();
-  }
-  updateMinuteCountdown() {
-    /** Countdown is painted from epochStartMs in minuteTrack.renderOn — nothing to store. */
-  }
-  tickGameClock() {
-    /**
-     * Only armed while a signup epoch is open. Repaints the countdown bar (local
-     * damage, no Automerge write). On expiry: advance Game # once, then stop.
-     */
-    if (qbfFinishExpiredTournament()) return;
-    let view = qbfViewTournament();
-    if (view.open) {
-      if (this.minuteTrack && this.minuteTrack.changed) this.minuteTrack.changed();
-      return;
-    }
-    this.applyTournamentView(view);
-    this.stopGameClockStepping();
-  }
-  worldOrNull() {
-    // Morph.world() answers `this` for an unowned morph, which is no world at all.
-    let world = this.world();
-    return world && world.startSteppingSpec ? world : null;
-  }
-  ensureGameClockStepping() {
-    if (!this.worldOrNull()) return;
-    if (this.isStepping && this.isStepping('tickGameClock')) return;
-    this.startStepping('tickGameClock', null, 1000);
-  }
-  stopGameClockStepping() {
-    if (!this.worldOrNull()) return;
-    if (this.stopStepping) this.stopStepping('tickGameClock');
-  }
-  startGameClock() {
-    /** Begin expiry-watch only if a signup epoch is currently open. */
-    this.syncGameClock(false);
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
@@ -2654,7 +2793,6 @@ class QBFScoresMorph extends Morph {
     return m;
   }
   refresh() {
-    this.syncGameClock(false);
     this.refreshRecentGames();
     this.setScoreListText(this.scoresScroll, 'Looking for scores...');
     try {
@@ -2711,7 +2849,7 @@ class QBFScoresMorph extends Morph {
   }
   showScoreEntries(entries) {
     let scores = [];
-    for (let i = 0; i < entries.length; i++) {
+    for (let i = 0; i < (entries || []).length; i++) {
       let e = entries[i];
       if (!e) continue;
       let gs = QBFGameScore.fromAny(e);
@@ -2786,7 +2924,6 @@ class QBFScoresMorph extends Morph {
     if (scrollPane.scrollToTop) scrollPane.scrollToTop();
   }
   restoreTextHeight(st) {
-    // Kept for callers; score lists now live in TextPanes.
     if (st && st.owner && st.owner.className === 'TextPane') {
       this.afterScoreListText(st.owner);
       return;
@@ -2808,7 +2945,6 @@ class QBFScoresMorph extends Morph {
     this.afterScoreListText(this.scoresScroll);
   }
   remove() {
-    this.stopStepping('tickGameClock');
     let store = qbfScoresStore();
     if (store.unsubscribe && this._onScoresChanged) {
       store.unsubscribe(this._onScoresChanged);
@@ -2817,17 +2953,8 @@ class QBFScoresMorph extends Morph {
   }
   setPaneBoundsIn(newBounds) {
     Morph.prototype.setBounds.call(this, newBounds);
-    // Rebuild layout from the new extent so the 20/50/30 split stays honest.
-    let keepGame = this.$shownGameNumber;
-    let keepQueue = this.$tileQueue;
     this.build();
-    this.$shownGameNumber = keepGame;
-    this.$tileQueue = keepQueue;
-    if (this.gameNumberLabel && keepGame != null) {
-      this.gameNumberLabel.setText('Game #' + keepGame);
-    }
     this.refresh();
-    this.startGameClock();
   }
   static new(...args) {
     return new this(...args);
@@ -2835,7 +2962,7 @@ class QBFScoresMorph extends Morph {
 }
 
 function findQBFScoresViewer() {
-  /** The open QBFScoresMorph (game server) in the world, if any. */
+  /** The open QBFScoresMorph in the world, if any (including ephemeral panels). */
   if (!Lively) return null;
   let found = null;
   Lively.eachSubmorph((m) => {
@@ -2844,8 +2971,9 @@ function findQBFScoresViewer() {
       found = m;
       return;
     }
-    if (m.submorphs) {
-      m.submorphs.forEach((sub) => {
+    let kids = m.allSubmorphs ? m.allSubmorphs() : m.submorphs;
+    if (kids) {
+      kids.forEach((sub) => {
         if (!found && sub.className === 'QBFScoresMorph') found = sub;
       });
     }
@@ -2854,7 +2982,7 @@ function findQBFScoresViewer() {
 }
 
 function openQBFScores(topLeftIfAny) {
-  /** Put the QBF game server in a panel; answers the panel. */
+  /** Put the ephemeral QBF scores viewer in a panel; answers the panel. */
   let existing = findQBFScoresViewer();
   if (existing) {
     let panel = existing.panelMorph();
@@ -2863,10 +2991,8 @@ function openQBFScores(topLeftIfAny) {
       panel.beTopMorph && panel.beTopMorph();
     }
     existing.refresh();
-    existing.startGameClock();
     return panel || existing;
   }
-  // Prefer 20px to the right of an open QBF game; else the caller tip or a default.
   let tl = topLeftIfAny;
   if (tl == null) {
     let game = findQBFGame();
@@ -2883,18 +3009,16 @@ function openQBFScores(topLeftIfAny) {
   let panel = new PanelMorph(
     rect(tl.x, tl.y, ext.x, ext.y + PanelTitleBar.prototype.HEIGHT),
   );
-  panel.setPanelTitle('QBF Game Server');
-  // Persistent: survives document save/load (not ephemeral UI).
-  Lively.addMorph(panel);
+  panel.setPanelTitle('QBF Scores');
+  Lively.addEphemeralMorph(panel);
   panel.addMorph(viewer);
   viewer.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
-  viewer.startGameClock();
   return panel;
 }
 
 function runQBFScores() {
-  /** Open (or raise) the QBF game server. */
+  /** Open (or raise) the QBF scores viewer. */
   return openQBFScores();
 }
 
@@ -2906,6 +3030,9 @@ function qbfPromptPlayerName(initialName, onDone) {
   let start = initialName != null && initialName !== '' ? String(initialName) : 'anonymous';
   let panel = new PanelMorph(rect(200, 160, 320, 120));
   panel.setPanelTitle('player name');
+  // Same pale green as the letter bin.
+  let binGreen = Color.green.lighter().lighter();
+  panel.setColor(binGreen);
   Lively.addEphemeralMorph(panel);
   let inner = panel.paneLayoutBounds();
   let field = new TextMorph(
@@ -2914,8 +3041,7 @@ function qbfPromptPlayerName(initialName, onDone) {
   );
   panel.addMorph(field);
   field.shape.font = '14px sans-serif';
-  // Same pale green as the letter bin.
-  field.shape.boxColor = Color.green.lighter().lighter();
+  field.shape.boxColor = binGreen;
   field.shape.fill = field.shape.boxColor;
   field.shape.setBorderWidth(1);
   field.shape.setBorderColor(Color.gray);

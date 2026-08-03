@@ -121,6 +121,7 @@ initLively();
 qbfSetScoresStore(new QBFMemoryScoresStore());
 qbfPanel = openQBF(pt(10, 10));
 qbfGame = qbfPanel.submorphs.find((m) => m.className == 'QBFMorph');
+qbfScoresPanel = openQBFScores();
 qbfScores = findQBFScoresViewer();
 `);
   // Hold the game morph once: each rt.eval is an Automerge.change (~0.5s), so

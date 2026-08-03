@@ -21,15 +21,36 @@ describe('QBF', () => {
     expect(rt.eval(`qbfGame.getBounds().width() == qbfPanel.getBounds().width()`)).toBe(true);
     expect(rt.eval(`qbfGame.getBounds().topLeft.y`)).toBe(rt.eval(`qbfPanel.titleBarHeight`));
     expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('choose name');
-    expect(rt.eval(`!!qbfGame.scoresButton`)).toBe(false);
+    expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
     expect(rt.eval(`!!qbfGame.bestGameBox`)).toBe(false);
     expect(rt.eval(`!!qbfGame.topWordBox && qbfGame.topWordBox.shape.string`)).toBe('0');
-    expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
-    expect(rt.eval(`String(qbfScores.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
-    expect(rt.eval(`!!qbfScores.quickButton && !!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(
+    expect(rt.eval(`!!qbfGame.quickButton && !!qbfGame.superQuickButton && !!qbfGame.notSoQuickButton`)).toBe(
       true,
     );
-    expect(rt.eval(`qbfScores.finishButton.shape.string`)).toBe('finish');
+    expect(rt.eval(`qbfGame.finishButton.shape.string`)).toBe('finish');
+    expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('auto play');
+    expect(rt.eval(`qbfGame.infoButton.shape.string`)).toBe('how to play');
+    // finish sits where how-to-play used to (beside pause); how-to-play beside restart.
+    expect(
+      rt.eval(
+        `qbfGame.finishButton.getBounds().topLeft.y == qbfGame.pauseButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.infoButton.getBounds().topLeft.y == qbfGame.restartButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.autoPlayButton.getBounds().topLeft.y < qbfGame.finishButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(rt.eval(`String(qbfGame.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
+    expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/ready|open/);
+    expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
+    expect(rt.eval(`!!qbfScores.quickButton`)).toBe(false);
+    expect(rt.eval(`!!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(true);
     expect(rt.eval(`!!qbfScores.recentScroll && qbfScores.recentScroll.className`)).toBe('TextPane');
     expect(rt.eval(`!!qbfScores.scoresScroll && qbfScores.scoresScroll.className`)).toBe('TextPane');
   }, 60_000);
@@ -235,7 +256,7 @@ true`);
     expect(rt.eval(`qbfGame.level.caption`)).toBe('not so quick');
     expect(rt.eval(`qbfGame.rackSize`)).toBe(9);
     expect(rt.eval(`qbfGame.multBoxes.length`)).toBe(9);
-    expect(rt.eval(`qbfGame.levelButton.shape.string`)).toBe('not so quick');
+    expect(rt.eval(`!!qbfGame.levelButton`)).toBe(false);
     expect(rt.eval(`qbfGame.getBounds().width()`)).toBeGreaterThan(width);
     expect(rt.eval(`qbfPanel.getBounds().width()`)).toBe(rt.eval(`qbfGame.getBounds().width()`));
     expect(rt.eval(`qbfGame.gameOver`)).toBe(false); // a fresh game
@@ -420,29 +441,94 @@ true`);
   it('finish button cuts the tile queue down to a terminal "!"', () => {
     const { rt } = makeGame();
     expect(rt.eval(`qbfGame.letterQueue.length`)).toBeGreaterThan(1);
-    rt.eval(`qbfScores.finishTiles()`);
+    rt.eval(`qbfGame.finishTiles()`);
     expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe('!');
     expect(rt.eval(`Number(qbfGame.nLeftBox.shape.string)`)).toBe(1);
     // Second finish while "!" is still queued stays a single bang.
-    rt.eval(`qbfScores.finishTiles()`);
+    rt.eval(`qbfGame.finishTiles()`);
     expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe('!');
+  }, 60_000);
+
+  it('auto play finds the leftmost 4-letter lexicon word on the rack', () => {
+    const { rt, game } = makeGame();
+    rt.change(() => {
+      while (game.activeLetters.length > 0) {
+        (game.activeLetters as any).pop().remove();
+      }
+      if ((game as any).letterInBin) {
+        (game as any).letterInBin.remove();
+        (game as any).letterInBin = null;
+      }
+    });
+    rt.eval(`
+qbfSetWordList(['able','test','word']);
+qbfGame.activeLetters = [];
+['X','A','B','L','E','Z'].forEach((ch, i) => {
+  let L = new QBFLetterMorph(ch, 1, qbfGame.letterExtent(), 24);
+  qbfGame.addMorph(L);
+  L.loc = 'rack';
+  L.setBounds(rect(130 + i * 45, 100, 45, 50));
+  qbfGame.activeLetters.push(L);
+});
+qbfMatch = qbfGame.findAutoPlayWord();
+true`);
+    expect(rt.eval(`qbfMatch.word`)).toBe('ABLE');
+    expect(rt.eval(`qbfMatch.letters.map((l) => l.shape.string).join('')`)).toBe('ABLE');
+
+    // Reverse of a contiguous 4: ELBA on the rack, lexicon has able.
+    rt.eval(`
+qbfGame.activeLetters.slice().forEach((l) => l.remove());
+qbfGame.activeLetters = [];
+['E','L','B','A'].forEach((ch, i) => {
+  let L = new QBFLetterMorph(ch, 1, qbfGame.letterExtent(), 24);
+  qbfGame.addMorph(L);
+  L.loc = 'rack';
+  L.setBounds(rect(130 + i * 45, 100, 45, 50));
+  qbfGame.activeLetters.push(L);
+});
+qbfMatch = qbfGame.findAutoPlayWord();
+true`);
+    expect(rt.eval(`qbfMatch.word`)).toBe('ABLE');
+    expect(rt.eval(`qbfMatch.letters.map((l) => l.shape.string).join('')`)).toBe('ABLE');
+
+    // Five tiles with one spare: A X B L E → drop X → ABLE.
+    rt.eval(`
+qbfGame.activeLetters.slice().forEach((l) => l.remove());
+qbfGame.activeLetters = [];
+['A','X','B','L','E'].forEach((ch, i) => {
+  let L = new QBFLetterMorph(ch, 1, qbfGame.letterExtent(), 24);
+  qbfGame.addMorph(L);
+  L.loc = 'rack';
+  L.setBounds(rect(130 + i * 45, 100, 45, 50));
+  qbfGame.activeLetters.push(L);
+});
+qbfMatch = qbfGame.findAutoPlayWord();
+true`);
+    expect(rt.eval(`qbfMatch.word`)).toBe('ABLE');
+    expect(rt.eval(`qbfMatch.letters.map((l) => l.shape.string).join('')`)).toBe('ABLE');
+
+    rt.eval(`qbfGame.toggleAutoPlay()`);
+    expect(rt.eval(`qbfGame.autoPlay`)).toBe(true);
+    expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('auto: on');
   }, 60_000);
 
   it('starts a Game # epoch on first speed click and shares the queue for a minute', () => {
     const { rt } = makeGame();
     // Idle: no tournament clock yet, display waits at 100, clock not stepping.
     expect(rt.eval(`Lively.qbfEpochStartMs == null`)).toBe(true);
-    expect(rt.eval(`qbfScores.gameNumberLabel.shape.string`)).toBe('Game #100');
-    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(false);
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
+    expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
+    expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
 
-    rt.eval(`qbfScores.launchLevel('quick')`);
+    rt.eval(`qbfGame.launchLevel('quick')`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
     expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
     const queue1 = rt.eval(`qbfGame.tournamentLetterQueue.join('')`) as string;
     expect(queue1.length).toBeGreaterThan(10);
-    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(true);
+    expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(true);
     expect(rt.eval(`Lively.$qbfEpochEndTimer != null`)).toBe(true);
+    expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/^open/);
 
     // A second signup in the same epoch joins the same number and letters.
     rt.eval(`
@@ -455,15 +541,16 @@ true`);
     // After the minute: number advances, epoch clears, clock stops until next signup.
     rt.eval(`
 Lively.qbfEpochStartMs = Date.now() - 61000;
-qbfScores.tickGameClock();
+qbfGame.tickGameClock();
 true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
     expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
-    expect(rt.eval(`qbfScores.gameNumberLabel.shape.string`)).toBe('Game #101');
-    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(false);
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #101');
+    expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
+    expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
 
     // Next signup opens 101; wrap 999 → 100.
-    rt.eval(`qbfScores.launchLevel('super quick')`);
+    rt.eval(`qbfGame.launchLevel('super quick')`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(101);
     expect(rt.eval(`qbfGame.tournamentLetterQueue.join('')`)).not.toBe(queue1);
@@ -471,11 +558,11 @@ true`);
     rt.eval(`
 Lively.qbfGameNumber = 999;
 Lively.qbfEpochStartMs = Date.now() - 61000;
-qbfScores.tickGameClock();
+qbfGame.tickGameClock();
 true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
     expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
-    expect(rt.eval(`qbfScores.isStepping('tickGameClock')`)).toBe(false);
+    expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
     rt.eval(`qbfClearEpochEndTimer()`);
   }, 60_000);
 });
