@@ -234,7 +234,7 @@ function $fun($codeForShow: string, $code: string, scopes: Proxy[] = []): Proxy 
 }
 
 function evalInChange(source: string): unknown {
-  const runtime = { $global, $obj, $fun, Object, Array: { isArray: Array.isArray }, console };
+  const runtime = { $global, $obj, $fun, Object, Array: { isArray: Array.isArray } };
   return new Function(...Object.keys(runtime), source)(...Object.values(runtime));
 }
 

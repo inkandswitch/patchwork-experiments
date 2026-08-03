@@ -299,7 +299,6 @@ function runtimeParams(): Record<string, unknown> {
     $accessor,
     Object: $Object,
     Array: { isArray: Array.isArray },
-    console,
   };
 }
 

@@ -31,7 +31,9 @@ export function toJsValue(value: unknown): unknown {
 
 export function readJsGlobalProperty(target: object, prop: PropertyKey): unknown {
   const value = Reflect.get(target, prop);
-  if (typeof value === 'function') {
+  // LM fun proxies (e.g. assigned onto the console wrapper by newdefs' transcript
+  // mirror) don't expose `bind`; only native functions need the receiver pinned.
+  if (typeof value === 'function' && !(value as { $isProxy?: boolean }).$isProxy) {
     return value.bind(target);
   }
   return value;

@@ -43,11 +43,13 @@ import {
 
 /**
  * Late-bound values: per-replica stand-ins for JS globals. Serialized as a symbolic
- * reference; each replica resolves them against its own globalThis at access time.
- * (Old documents are upgraded lazily by ensureHeapRoots.)
+ * reference; each replica resolves them at access time — against its own globalThis,
+ * except `console`, which binds to the runtime's formatting wrapper (see
+ * resolveJsGlobal). (Old documents are upgraded lazily by ensureHeapRoots.)
  */
 export const JS_GLOBAL_IDS = [
   'canvas',
+  'console',
   'ctx',
   'document',
   'window',
@@ -832,11 +834,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     };
 
     const jsTarget = () => {
-      const target = getJsGlobalTarget(liveHeapObjRead(obj));
+      const target = resolveJsGlobal(liveHeapObjRead(obj));
       return isJsGlobalTarget(target) ? target : null;
     };
 
-    const nativeTarget = getJsGlobalTarget(liveHeapObjRead(obj));
+    const nativeTarget = resolveJsGlobal(liveHeapObjRead(obj));
     const target =
       typeof nativeTarget === 'function' ? (function () { }) as (...args: never[]) => unknown : Object.create(null);
     p = new Proxy(target, {
@@ -1293,10 +1295,22 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     info(...args: unknown[]) {
       console.info(...consoleFormatArgs(args));
     },
+    warn(...args: unknown[]) {
+      console.warn(...consoleFormatArgs(args));
+    },
     error(...args: unknown[]) {
       console.error(...consoleFormatArgs(args));
     },
   };
+
+  /** Resolve a late-bound global to this replica's binding. Most names resolve against
+   * globalThis, but `console` binds to the runtime's formatting wrapper: LM values print
+   * readably, and code that patches console methods (e.g. newdefs' transcript mirror)
+   * patches the wrapper rather than the page's real console. */
+  function resolveJsGlobal(obj: Obj): unknown {
+    if (obj.$jsGlobal === 'console') return $console;
+    return getJsGlobalTarget(obj);
+  }
 
   function isConstructibleFun(fun: Fun): boolean {
     return /=>\s*(async\s+)?function\b/.test(fun.$code);
@@ -2196,7 +2210,6 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       replaceMethod: $replaceMethod,
       Object: $Object,
       Array: $Array,
-      console: $console,
       setTimeout: $setTimeout,
       clearTimeout: $clearTimeout,
       setInterval: $setInterval,

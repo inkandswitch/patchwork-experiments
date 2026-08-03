@@ -17,7 +17,6 @@ const INJECTED_NAMES = new Set([
   'replaceMethod',
   'Object',
   'Array',
-  'console',
   'setTimeout',
   'clearTimeout',
   'setInterval',
@@ -2107,7 +2106,9 @@ function walkForWorldRefs(
         walkForWorldRefs(builder, expr, loopScope, funcScope, rootScope, freeVarUses, edits),
       );
     }
-    if (loopBlock) walkBlockForWorldRefs(builder, loopBlock, loopScope, funcScope ?? loopScope, rootScope, freeVarUses, edits);
+    // Pass funcScope through unchanged (like the Block case): at top level it must
+    // stay null so unbound names in the loop body still get the $global rewrite.
+    if (loopBlock) walkBlockForWorldRefs(builder, loopBlock, loopScope, funcScope, rootScope, freeVarUses, edits);
     return;
   }
 
@@ -2120,7 +2121,7 @@ function walkForWorldRefs(
       } else if (child.name === 'ObjectPattern' || child.name === 'ArrayPattern') {
         addPatternBindings(child, builder, catchScope, 'block');
       } else if (child.name === 'Block') {
-        walkBlockForWorldRefs(builder, child, catchScope, funcScope ?? catchScope, rootScope, freeVarUses, edits);
+        walkBlockForWorldRefs(builder, child, catchScope, funcScope, rootScope, freeVarUses, edits);
       }
     }
     return;
@@ -2205,7 +2206,7 @@ function walkBlockForWorldRefs(
   builder: ScopeBuilder,
   block: SyntaxNode,
   currentScope: LexicalScope,
-  funcScope: LexicalScope,
+  funcScope: LexicalScope | null,
   rootScope: LexicalScope,
   freeVarUses: FreeVarUse[],
   edits: Edit[],

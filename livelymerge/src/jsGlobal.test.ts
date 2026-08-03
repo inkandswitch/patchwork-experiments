@@ -80,4 +80,49 @@ describe('jsGlobal proxies', () => {
     expect(rt.eval('$global.Math.PI > 3')).toBe(true);
     expect(rt.eval('$global.Math.floor(3.7)')).toBe(3);
   });
+
+  describe('late-bound console', () => {
+    it('resolves console on $global to the formatting wrapper', () => {
+      expect(rt.eval('typeof $global.console.log')).toBe('function');
+      expect(() => rt.eval(`console.log('late-bound console works')`)).not.toThrow();
+    });
+
+    it('formats LM values before handing them to the native console', () => {
+      rt.eval(`class Pt {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  toString() {
+    return \`(\${this.x}, \${this.y})\`;
+  }
+}
+
+const p1 = new Pt(1, 2);`);
+      const expected = rt.formatEvalResult(rt.eval('p1'));
+      const logged: unknown[] = [];
+      const origLog = console.log;
+      console.log = (...args: unknown[]) => {
+        logged.push(...args);
+      };
+      try {
+        rt.eval('console.log(p1)');
+      } finally {
+        console.log = origLog;
+      }
+      expect(logged).toEqual([expected]);
+    });
+
+    it('lets LM code replace console methods without touching the real console', () => {
+      // The transcript mirror in newdefs.js does exactly this: it swaps console.log
+      // for an LM function and escapes to the page console via window.console.log.
+      const origLog = console.log;
+      rt.eval('f = (msg) => { captured = msg; }');
+      rt.eval('console.log = f');
+      expect(console.log).toBe(origLog);
+      rt.eval(`console.log('mirrored')`);
+      expect(rt.eval('captured')).toBe('mirrored');
+    });
+  });
 });

@@ -88,7 +88,7 @@ function g() {
 
 g();`)).toBe(`$global.f = $fun("function f() { return 5; }", "() => function() { return 5; }");
 
-$global.g = $fun("function g() {\\n  console.log(f);\\n}", "() => function() {\\n  console.log($global.f);\\n}");
+$global.g = $fun("function g() {\\n  console.log(f);\\n}", "() => function() {\\n  $global.console.log($global.f);\\n}");
 
 $global.g();`);
     });
@@ -214,7 +214,7 @@ $global.f()`);
     return a + 1;
   }
   let y = f(x);
-  console.log(y);
+  $global.console.log(y);
 }`);
     });
 
@@ -333,7 +333,7 @@ $global.f()`);
   }
 }`)).toBe(`{
   for (let i = 0; i < 5; i++) {
-    console.log(i);
+    $global.console.log(i);
   }
 }`);
     });
@@ -557,7 +557,7 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
 }`);
     });
 
-    it('leaves uncaptured locals and injected names alone', () => {
+    it('leaves uncaptured locals alone and expands late-bound global shorthands', () => {
       expect(transpile(`function f() {
   let x = 0;
   return { x };
@@ -567,7 +567,7 @@ $global.f = $fun("() => x + y", "() => () => $global.x + $global.y");`);
       expect(transpile(`function f() {
   return { console };
 }`)).toBe(
-        `$global.f = $fun("function f() {\\n  return { console };\\n}", "() => function() {\\n  return $obj({ console });\\n}");`,
+        `$global.f = $fun("function f() {\\n  return { console };\\n}", "() => function() {\\n  return $obj({ console: $global.console });\\n}");`,
       );
     });
   });
@@ -749,10 +749,10 @@ $global.y = $tmp2;`,
 x = 2;`)).toThrow("cannot assign to const-declared variable 'x'");
     });
 
-    it('leaves injected console references bare', () => {
-      expect(transpile(`console.log(x);`)).toBe(`console.log($global.x);`);
+    it('rewrites console references to the late-bound global', () => {
+      expect(transpile(`console.log(x);`)).toBe(`$global.console.log($global.x);`);
       expect(transpile(`f = () => console.info(y);`)).toBe(
-        `$global.f = $fun("() => console.info(y)", "() => () => console.info($global.y)");`,
+        `$global.f = $fun("() => console.info(y)", "() => () => $global.console.info($global.y)");`,
       );
     });
 
@@ -851,9 +851,8 @@ function initUI() {
       expect(result).toMatch(/\$scope\d+\.canvasEvents = \$arr\(\[\]\)/);
     });
 
-    it('leaves injected console bare inside scoped nested functions', () => {
-      expect(
-        transpile(`function initUI() {
+    it('rewrites console to $global inside scoped nested functions', () => {
+      const result = transpile(`function initUI() {
   let canvasEvents = [];
   function processEvents() {
     for (const e of canvasEvents) {
@@ -865,38 +864,10 @@ function initUI() {
     canvasEvents = [];
   }
   console.log('initUI loaded');
-}`),
-      ).toContain("console.error('unsupported event type', e.type)");
-      expect(
-        transpile(`function initUI() {
-  let canvasEvents = [];
-  function processEvents() {
-    for (const e of canvasEvents) {
-      switch (e.type) {
-        default:
-          console.error('unsupported event type', e.type);
-      }
-    }
-    canvasEvents = [];
-  }
-  console.log('initUI loaded');
-}`),
-      ).toContain("console.log('initUI loaded')");
-      expect(
-        transpile(`function initUI() {
-  let canvasEvents = [];
-  function processEvents() {
-    for (const e of canvasEvents) {
-      switch (e.type) {
-        default:
-          console.error('unsupported event type', e.type);
-      }
-    }
-    canvasEvents = [];
-  }
-  console.log('initUI loaded');
-}`),
-      ).not.toMatch(/\$scope\d+\.console/);
+}`);
+      expect(result).toContain("$global.console.error('unsupported event type', e.type)");
+      expect(result).toContain("$global.console.log('initUI loaded')");
+      expect(result).not.toMatch(/\$scope\d+\.console/);
     });
 
     it('rewrites world refs in for-of iterable expressions', () => {
