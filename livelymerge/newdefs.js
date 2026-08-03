@@ -976,6 +976,7 @@ function initUI() {
         : $uiState.lastFrameTime + $FRAME_INTERVAL_MS;
     try {
       window.runtime.change(() => {
+        maybeRepairAfterMerge();
         processEvents();
         processEphemeralInbound();
         flushEphemeralStream();
@@ -997,6 +998,22 @@ function initUI() {
   $uiState.onFrame = onFrame;
   if (window._uiRafId != null) window.cancelAnimationFrame(window._uiRafId);
   window._uiRafId = window.requestAnimationFrame(onFrame);
+
+  function maybeRepairAfterMerge() {
+    /** Run the scene-graph merge repair ({@link Morph#repairSubmorphOwnership})
+     * once per batch of external (remote-replica) changes — detected via the
+     * runtime's externalChangeCount — plus once on the first frame, so a document
+     * corrupted by a merge in an earlier session heals on load. Runs before event
+     * processing so hit-testing and rendering never see a duplicated entry. */
+    if (!topLevelMorph || !topLevelMorph.repairSubmorphOwnership) return;
+    let n =
+      window.runtime && window.runtime.externalChangeCount
+        ? window.runtime.externalChangeCount()
+        : 0;
+    if ($uiState.externalChangeCountSeen === n) return;
+    $uiState.externalChangeCountSeen = n;
+    topLevelMorph.repairSubmorphOwnership();
+  }
 
   function processEvents() {
     const seen = new window.Set(); // native Set; holds raw DOM events
@@ -3904,6 +3921,41 @@ try {
       each.renderOn(ctx);
       ctx.restore();
     });
+  }
+  repairSubmorphOwnership() {
+    /**
+     * Heal the scene graph after concurrent edits from another replica merge in.
+     * Automerge lists merge remove+reinsert patterns additively: a z-order promote
+     * of a morph on one replica (splice out + reinsert — see promote/beTopMorph,
+     * which runs on every pointer-down) merged with a reparent of the same morph
+     * on another replica (splice out + insert into the new owner's list) leaves
+     * the morph's ref in BOTH lists, so it renders twice — once inside its new
+     * owner and once from the old list with the new owner-local transform (e.g.
+     * near the world's top-left). The owner back-pointer is a plain register that
+     * converges to a single value, so treat it as the truth: drop list entries
+     * whose morph belongs to someone else, and collapse repeats within a list
+     * (two concurrent promotes of the same morph). Only the persistent list needs
+     * this — $submorphs is per-user and never merged. Called from the frame loop
+     * (see maybeRepairAfterMerge in initUI) after external changes arrive, and
+     * once on boot to heal documents corrupted by earlier sessions.
+     */
+    let subs = this.submorphs;
+    if (subs && subs.length > 0) {
+      let stale = null;
+      for (let i = 0; i < subs.length; i++) {
+        let s = subs.at(i);
+        // Dangling ref, foreign-owned entry, or repeat of an earlier entry.
+        if (s == null || s.owner !== this || subs.indexOf(s) < i) {
+          if (stale == null) stale = [];
+          stale.push(i);
+        }
+      }
+      if (stale != null) {
+        for (let i = stale.length - 1; i >= 0; i--) subs.splice(stale.at(i), 1);
+        this.changed();
+      }
+    }
+    this.eachSubmorph((sub) => sub.repairSubmorphOwnership());
   }
   reparentToOwnerPreservingWorldAnchor(newOwner, anchorLocal) {
     /** Reparent under newOwner while keeping anchorLocal at same world point. */

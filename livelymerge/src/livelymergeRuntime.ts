@@ -95,6 +95,9 @@ export interface LivelymergeRuntime {
    * force a full re-traversal on the next transaction. Wired automatically when the
    * doc handle exposes change events. */
   noteExternalChanges(ids?: string[]): void;
+  /** Monotonic count of noteExternalChanges calls. LM code (e.g. newdefs' frame
+   * loop) polls this to run merge-repair passes only when remote changes arrived. */
+  externalChangeCount(): number;
 }
 
 export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): LivelymergeRuntime {
@@ -157,7 +160,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   /** External (e.g. remote-replica) changes bypass the local write barrier. Call with
    * the affected objectTable ids to mark them edge-dirty, or with no argument to
    * invalidate all incremental GC state (full re-traversal on the next transaction). */
+  let externalChangeCount = 0;
+
   function noteExternalChanges(ids?: string[]): void {
+    externalChangeCount++;
     if (!ids) {
       persistentReachable = null;
       matCache.clear();
@@ -2326,5 +2332,8 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       return doc;
     },
     noteExternalChanges,
+    externalChangeCount() {
+      return externalChangeCount;
+    },
   };
 }

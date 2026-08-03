@@ -13,6 +13,10 @@ export type TestDocHandle = LivelymergeDocHandle & {
   /** Deliver an inbound ephemeral message to this handle's listeners, as if a peer
    * had broadcast it (production: the repo's network subsystem). */
   deliverEphemeral(message: unknown, senderId?: string): void;
+  /** Merge a concurrent remote doc into this handle's doc, as if a peer's changes
+   * had synced in (production: the repo's sync subsystem). Pair with the runtime's
+   * noteExternalChanges() so cached reads are invalidated. */
+  mergeRemote(remote: LivelymergeDoc): void;
 };
 
 /** Automerge doc handle matching production: every mutation goes through Automerge.change. */
@@ -49,6 +53,9 @@ export function createAutomergeTestDocHandle(): TestDocHandle {
       for (const fn of listeners.get('ephemeral-message') ?? []) {
         fn({ handle, senderId, message });
       }
+    },
+    mergeRemote(remote: LivelymergeDoc) {
+      doc = Automerge.merge<LivelymergeDoc>(doc as Automerge.Doc<LivelymergeDoc>, remote as Automerge.Doc<LivelymergeDoc>);
     },
   };
   return handle;
