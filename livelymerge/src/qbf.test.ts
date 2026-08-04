@@ -30,20 +30,23 @@ describe('QBF', () => {
     expect(rt.eval(`qbfGame.finishButton.shape.string`)).toBe('finish');
     expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('auto play');
     expect(rt.eval(`qbfGame.infoButton.shape.string`)).toBe('how to play');
-    // finish sits where how-to-play used to (beside pause); how-to-play beside restart.
+    expect(rt.eval(`!!qbfGame.multiplierBox`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.soloModeButton && !!qbfGame.socialModeButton`)).toBe(true);
+    expect(rt.eval(`qbfGame.playMode`)).toBe('solo');
+    // pause up with autoplay's old row; finish where pause was; autoplay where finish was.
     expect(
       rt.eval(
-        `qbfGame.finishButton.getBounds().topLeft.y == qbfGame.pauseButton.getBounds().topLeft.y`,
+        `qbfGame.pauseButton.getBounds().topLeft.y < qbfGame.finishButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.finishButton.getBounds().topLeft.y == qbfGame.autoPlayButton.getBounds().topLeft.y`,
       ),
     ).toBe(true);
     expect(
       rt.eval(
         `qbfGame.infoButton.getBounds().topLeft.y == qbfGame.restartButton.getBounds().topLeft.y`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.autoPlayButton.getBounds().topLeft.y < qbfGame.finishButton.getBounds().topLeft.y`,
       ),
     ).toBe(true);
     expect(rt.eval(`String(qbfGame.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
@@ -514,11 +517,17 @@ true`);
 
   it('starts a Game # epoch on first speed click and shares the queue for a minute', () => {
     const { rt } = makeGame();
+    // Reset to idle social board: tournament starts only from social speed launch.
+    rt.eval(`
+qbfGame.setPlayMode('social');
+qbfGame.setup({ idle: true });
+true`);
     // Idle: no tournament clock yet, display waits at 100, clock not stepping.
     expect(rt.eval(`Lively.qbfEpochStartMs == null`)).toBe(true);
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
+    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('Start a game at your chosen speed');
 
     rt.eval(`qbfGame.launchLevel('quick')`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
@@ -529,6 +538,10 @@ true`);
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(true);
     expect(rt.eval(`Lively.$qbfEpochEndTimer != null`)).toBe(true);
     expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/^open/);
+    // After starting, idle help is hidden; re-idle social board shows the join message.
+    rt.eval(`qbfGame.setup({ idle: true })`);
+    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('A game has been started');
+    rt.eval(`qbfGame.launchLevel('quick')`);
 
     // A second signup in the same epoch joins the same number and letters.
     rt.eval(`

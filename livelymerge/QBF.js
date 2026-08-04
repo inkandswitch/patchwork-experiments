@@ -450,7 +450,7 @@ class QBFLetterMorph extends TextMorph {
 class QBFMorph extends Morph {
   constructor() {
     super(rect(0, 0, 100, 100));
-    this.setup();
+    this.setup({ idle: true });
   }
   addButton(r, label, actionName) {
     return this.addMorph(new QBFButtonMorph(r, label, actionName));
@@ -506,16 +506,11 @@ class QBFMorph extends Morph {
     qbfSound('letterDrop', this.outboxLetters.length);
   }
   addWordLabel(scoreRect) {
+    /** Black text in a light box, parked just under the top-word score readout. */
     let m = this.addMorph(
       new QBFTextMorph(rect(scoreRect.topLeft.x, scoreRect.bottom(), scoreRect.width(), 18), ' '),
     );
-    qbfStyleText(m, {
-      fontSize: 12,
-      noBreak: true,
-      boxColor: null,
-      borderWidth: 0,
-      textColor: Color.white,
-    });
+    qbfStyleText(m, { fontSize: 12, noBreak: true, center: true });
     return m;
   }
   appendLog(entry) {
@@ -549,8 +544,14 @@ class QBFMorph extends Morph {
     if (actionName === 'clear') this.doClear();
     if (actionName === 'delete') this.doDelete();
     if (actionName === 'enter') this.doEnter();
-    if (actionName === 'pause') this.doPause(!this.paused);
-    if (actionName === 'restart') this.doRestart();
+    if (actionName === 'pause') {
+      if (this.isSocialMode()) return;
+      this.doPause(!this.paused);
+    }
+    if (actionName === 'restart') {
+      if (this.isSocialMode()) return;
+      this.doRestart();
+    }
     if (actionName === 'level') this.doChooseLevel();
     if (actionName === 'rules') this.doShowRules();
     if (actionName === 'name') this.doChoosePlayerName();
@@ -558,8 +559,13 @@ class QBFMorph extends Morph {
     if (actionName === 'launchSuperQuick') this.launchLevel('super quick');
     if (actionName === 'launchQuick') this.launchLevel('quick');
     if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
-    if (actionName === 'finishTiles') this.finishTiles();
+    if (actionName === 'finishTiles') {
+      if (this.isSocialMode()) return;
+      this.finishTiles();
+    }
     if (actionName === 'autoPlay') this.toggleAutoPlay();
+    if (actionName === 'playSolo') this.setPlayMode('solo');
+    if (actionName === 'playSocial') this.setPlayMode('social');
     this.focusKeyboard();
   }
   chooseLevelNamed(caption) {
@@ -611,7 +617,7 @@ class QBFMorph extends Morph {
     let vSpacing = 48;
     let launchW = 110;
     // Score column is 4 rows (letter / word / game / top word); launch+epoch sit
-    // in the right column under the multiplier and need room below the top-word row.
+    // in the right column under the solo/social switch and need room below.
     let gameButtonsY = scoreY + 4 * vSpacing + 90;
     // Ledge sits ~30px above the name button — the fall distance that reads well with
     // the scream timing. Keep it clear of that button (which used to cover a pile at y=430).
@@ -631,6 +637,7 @@ class QBFMorph extends Morph {
       log: rect(rackX + 5, outboxY + 66, 8 * lw, 206),
       score: rect(scoreX, scoreY, scoreW, 30),
       keyButtons: rect(rackX + 20, rackY - lh - 59, rackW - 40, 42),
+      idleHelp: rect(rackX, rackY - 72, rackW, 56),
       gameButtons: rect(scoreX, gameButtonsY, 100, 24),
       nameButton: rect(rackX - 110, gameButtonsY, 100, 24),
       scoresButton: rect(rackX - 110, gameButtonsY + 30, 100, 24),
@@ -724,9 +731,7 @@ class QBFMorph extends Morph {
     this.appendLog(scoreLine);
     if (valid || this.noCheck) this.totalScore += this.wordScore;
     if (!valid && !this.noCheck) this.totalScore -= this.letterScore;
-    this.pointsUsed += this.letterScore;
     this.totalScoreBox.setText(String(this.totalScore));
-    this.showMultiplier();
     if ((valid || this.noCheck) && this.wordScore > this.bestWordScore) {
       this.bestWordScore = this.wordScore;
       this.bestWord = word;
@@ -799,8 +804,10 @@ to score that word.
 Words are scored by the sum of the point values of their letters. Scores for long words
 are multiplied by a further bonus factor, shown in the row of x0 x0 x1 x2 ... boxes
 under the outbox. Invalid (??) or repeated (xx) words are scored against you, as are
-unused letters that fall off to the left. The multiplier readout shows your score so
-far divided by all the points you have been given to play with.
+unused letters that fall off to the left.
+
+The solo / social switch chooses how you play: solo keeps pause, finish, and restart
+available; social locks those controls for fair multiplayer.
 
 You get ${this.numLetters} letters, and then a "!" tile arrives to end the game.
 
@@ -810,8 +817,7 @@ You get ${this.numLetters} letters, and then a "!" tile arrives to end the game.
     Clicking the last letter you used also takes it back.
     Collapsing the game's window pauses the game; expanding it resumes.
 
-Use the level button (it reads "${this.level.caption}" just now) to choose your speed,
-and thus the difficulty, of play...
+Use the speed buttons (super quick / quick / not so quick) to start or join a game...
     Not-so-quick has a longer rack, and so one more letter to work with.
     Super-quick has a shorter conveyor, so the letters come faster.
 High scores are tallied for each speed of play.
@@ -961,7 +967,6 @@ to LivelyMerge.`,
     this.missedPointsBox.setText(String(-this.pointsMissed));
     this.totalScore -= value;
     this.totalScoreBox.setText(String(this.totalScore));
-    this.showMultiplier();
   }
   lettersSlideOnRack() {
     // Leftward motion propagates along the rack wherever tiles touch.
@@ -1138,8 +1143,10 @@ to LivelyMerge.`,
     // The board has a fixed layout: take the pane's top left, but keep our own extent.
     Morph.prototype.setBounds.call(this, newBounds.topLeft.extent(this.getBounds().extent));
   }
-  setup() {
-    /** (Re)build the board for a fresh game at the current level. */
+  setup(optsIfAny) {
+    /** (Re)build the board. opts.idle = waiting for a speed button (empty tray). */
+    let opts = optsIfAny || {};
+    let asIdle = !!opts.idle;
     if (this.worldOrNull()) this.stopStepping('tick'); // setup also runs before we are in a world
     this.cancelAutoPlayTyping();
 
@@ -1150,6 +1157,8 @@ to LivelyMerge.`,
     this.gameOver = false;
     this._finalScorePosted = false;
     this.noCheck = false; // set true to score unrecognized words anyway
+    if (this.playMode !== 'solo' && this.playMode !== 'social') this.playMode = 'solo';
+    this.idle = asIdle;
     this.autoPlay = false;
     this.$autoPlayBusy = false;
     this.$autoPlayTimer = null;
@@ -1162,7 +1171,6 @@ to LivelyMerge.`,
     this.bestWordScore = 0;
     this.nMissed = 0;
     this.pointsMissed = 0;
-    this.pointsUsed = 0;
     this.usedWords = [];
     this.logLines = [];
     this.activeLetters = [];
@@ -1174,6 +1182,18 @@ to LivelyMerge.`,
     this.setBounds(this.getBounds().topLeft.extent(lay.boardExtent));
     this.setStyles(Color.orange.darker(), 1, Color.black);
     this.buildBoard(lay);
+    if (asIdle) {
+      this.letterQueue = [];
+      this.nLeftBox.setText('0');
+      this.missedPointsBox.setText('0');
+      this.updateOutbox();
+      this.postLevelStats();
+      this.resizeOwningPanel();
+      this.updateIdleInstructions();
+      this.startGameClock();
+      this.focusKeyboard();
+      return;
+    }
     if (!this.applyTournamentQueue()) {
       this.letterQueue = this.shuffledLetters(this.letterSet(this.numLetters)).concat(['!']);
     }
@@ -1188,6 +1208,7 @@ to LivelyMerge.`,
     this.updateOutbox();
     this.postLevelStats();
     this.resizeOwningPanel();
+    this.updateIdleInstructions();
     this.startTicking();
     this.startGameClock();
     this.focusKeyboard();
@@ -1204,35 +1225,77 @@ to LivelyMerge.`,
     return false;
   }
   updateRestartButton() {
-    /** Gray out restart for tournament games; restore for casual play. */
-    if (!this.restartButton) return;
-    let tourney = this.tournamentGameNumber != null;
-    let s = this.restartButton.shape;
-    s.boxColor = tourney ? Color.veryLightGray : Color.lightGray;
+    /** Kept for callers; solo/social + tournament gating lives in updateModeControls. */
+    this.updateModeControls();
+  }
+  isSocialMode() {
+    return this.playMode === 'social';
+  }
+  setPlayMode(mode) {
+    /** 'solo' = local controls active; 'social' = pause/finish/restart locked. */
+    if (mode !== 'solo' && mode !== 'social') return;
+    if (this.playMode === mode) {
+      this.updateModeControls();
+      this.updateIdleInstructions();
+      return;
+    }
+    this.playMode = mode;
+    if (mode === 'social' && this.paused) this.doPause(false);
+    this.updateModeControls();
+    this.updateIdleInstructions();
+  }
+  styleModeButton(btn, active) {
+    if (!btn || !btn.shape) return;
+    let s = btn.shape;
+    s.boxColor = active ? Color.white : Color.darkGray;
     s.fill = s.boxColor;
-    s.textColor = tourney ? Color.gray : Color.black;
-    s.setBorderColor(tourney ? Color.lightGray : Color.gray);
+    s.textColor = active ? Color.black : Color.lightGray;
+    s.setBorderColor(active ? Color.black : Color.gray);
+    s.setBorderWidth(active ? 2 : 1);
     s.compose();
+  }
+  styleControlButton(btn, enabled) {
+    if (!btn || !btn.shape) return;
+    let s = btn.shape;
+    s.boxColor = enabled ? Color.lightGray : Color.veryLightGray;
+    s.fill = s.boxColor;
+    s.textColor = enabled ? Color.black : Color.gray;
+    s.setBorderColor(enabled ? Color.gray : Color.lightGray);
+    s.compose();
+  }
+  updateModeControls() {
+    /**
+     * Wall-switch chrome + idle social locks.
+     * Social (and tournament restart): pause / finish / restart grayed and inactive.
+     */
+    let social = this.isSocialMode();
+    this.styleModeButton(this.soloModeButton, !social);
+    this.styleModeButton(this.socialModeButton, social);
+    let controlsOn = !social;
+    this.styleControlButton(this.pauseButton, controlsOn);
+    this.styleControlButton(this.finishButton, controlsOn);
+    // Restart stays off for tournament boards even in solo.
+    let restartOn = controlsOn && this.tournamentGameNumber == null;
+    this.styleControlButton(this.restartButton, restartOn);
   }
   setupBoxes(lay) {
     // Copy — TextBox construction mutates the extent Point it is given, and must
-    // not corrupt the layout table used for later readouts / the multiplier union.
+    // not corrupt the layout table used for later readouts.
     let s = lay.score.copy();
     let h = lay.hSpacing;
     let v = lay.vSpacing;
     this.letterScoreBox = this.addReadout(s, 'letter score');
     this.wordScoreBox = this.addReadout(s.translatedBy(pt(0, v)), 'word score');
     this.totalScoreBox = this.addReadout(s.translatedBy(pt(0, 2 * v)), 'game score');
-    // Original: letter∪word score bounds, shifted right by hSpacing; large centered digits.
-    this.multiplierBox = this.addReadout(
+    // Solo / social wall switch takes the old tall multiplier slot.
+    this.setupPlayModeSwitch(
       this.letterScoreBox.getBounds().union(this.wordScoreBox.getBounds()).translatedBy(pt(h, 0)),
-      ' multiplier',
-      30,
     );
-    // Top word sits under game score (left column), freeing the right column for launch.
+    // Top word score + black text box for the word itself underneath.
     this.topWordBox = this.addReadout(s.translatedBy(pt(0, 3 * v)), 'top word');
     this.topWordLetters = this.addWordLabel(s.translatedBy(pt(0, 3 * v)));
     this.setupEpochAndLaunch(lay);
+    this.setupIdleInstructions(lay);
     // White plate under the outbox for the scrolling word history (like the original).
     this.logPlate = this.addMorph(new QBFDecorMorph(lay.log));
     this.logPlate.setStyles(Color.white, 1, Color.gray);
@@ -1265,6 +1328,36 @@ to LivelyMerge.`,
       borderWidth: 0,
       textColor: Color.white,
     });
+  }
+  setupPlayModeSwitch(bounds) {
+    /**
+     * Vertical wall-switch chooser: solo (top) / social (bottom).
+     * Social locks pause, finish, and restart (fair multiplayer).
+     */
+    let pad = 4;
+    let inner = rect(
+      bounds.topLeft.x + pad,
+      bounds.topLeft.y + pad,
+      bounds.width() - 2 * pad,
+      bounds.height() - 2 * pad,
+    );
+    let plate = this.addMorph(new QBFDecorMorph(bounds.copy()));
+    plate.setStyles(Color.darkGray, 1, Color.black);
+    this.playModePlate = plate;
+    let halfH = Math.floor((inner.height() - 6) / 2);
+    let gap = 6;
+    this.soloModeButton = this.addButton(
+      rect(inner.topLeft.x, inner.topLeft.y, inner.width(), halfH),
+      'solo',
+      'playSolo',
+    );
+    this.socialModeButton = this.addButton(
+      rect(inner.topLeft.x, inner.topLeft.y + halfH + gap, inner.width(), halfH),
+      'social',
+      'playSocial',
+    );
+    if (this.playMode == null) this.playMode = 'solo';
+    this.updateModeControls();
   }
   setupEpochAndLaunch(lay) {
     /**
@@ -1322,6 +1415,49 @@ to LivelyMerge.`,
     );
     this.applyTournamentView(qbfViewTournament());
   }
+  setupIdleInstructions(lay) {
+    /** Help text above the rack while waiting for a speed button. */
+    let r = lay.idleHelp;
+    this.idleHelpPlate = this.addMorph(new QBFDecorMorph(r.copy()));
+    this.idleHelpPlate.setStyles(Color.white, 1, Color.gray);
+    this.idleHelpText = this.addMorph(new QBFTextMorph(r.copy(), ' '));
+    qbfStyleText(this.idleHelpText, {
+      fontSize: 13,
+      fontFamily: 'sans-serif',
+      lineHeight: 16,
+      hang: 4,
+      insetX: 8,
+      noBreak: false,
+      boxColor: Color.white,
+      borderWidth: 0,
+      textColor: Color.black,
+    });
+    this.updateIdleInstructions();
+  }
+  idleHelpMessage() {
+    let startMsg = 'Start a game at your chosen speed by pressing a speed button below';
+    if (!this.isSocialMode()) return startMsg;
+    let view = qbfViewTournament();
+    if (view.open) {
+      return 'A game has been started; join the competition at your chosen speed any time that the game is still open';
+    }
+    return startMsg;
+  }
+  updateIdleInstructions() {
+    if (!this.idleHelpText || !this.idleHelpPlate) return;
+    let show = !!this.idle;
+    let lay = this.computeLayout();
+    let r = show ? lay.idleHelp : rect(0, 0, 0, 0);
+    this.idleHelpPlate.setBounds(r.copy());
+    this.idleHelpText.setBounds(r.copy());
+    if (!show) {
+      this.idleHelpText.setText(' ');
+      return;
+    }
+    this.idleHelpPlate.setStyles(Color.white, 1, Color.gray);
+    let msg = this.idleHelpMessage();
+    if (this.idleHelpText.shape.string !== msg) this.idleHelpText.setText(msg);
+  }
   setupButtons(lay) {
     let k = lay.keyButtons;
     let w = Math.floor((k.width() - 20) / 3);
@@ -1342,18 +1478,14 @@ to LivelyMerge.`,
     );
     let g = lay.gameButtons;
     let h = lay.hSpacing;
-    this.pauseButton = this.addButton(g, 'pause', 'pause');
-    // Right column: auto play above finish; how to play beside restart.
-    this.autoPlayButton = this.addButton(
-      g.translatedBy(pt(h, -30)),
-      'auto play',
-      'autoPlay',
-    );
-    this.finishButton = this.addButton(g.translatedBy(pt(h, 0)), 'finish', 'finishTiles');
+    // pause up beside the old autoplay row; finish takes pause's slot; autoplay takes finish's.
+    this.pauseButton = this.addButton(g.translatedBy(pt(0, -30)), 'pause', 'pause');
+    this.finishButton = this.addButton(g, 'finish', 'finishTiles');
+    this.autoPlayButton = this.addButton(g.translatedBy(pt(h, 0)), 'auto play', 'autoPlay');
     this.restartButton = this.addButton(g.translatedBy(pt(0, 30)), 'restart', 'restart');
-    this.updateRestartButton();
     this.infoButton = this.addButton(g.translatedBy(pt(h, 30)), 'how to play', 'rules');
     this.updateAutoPlayButton();
+    this.updateModeControls();
     // Name + show scores stack to the left of the score column, below the pile ledge.
     this.nameButton = this.addButton(
       lay.nameButton,
@@ -1407,15 +1539,6 @@ to LivelyMerge.`,
     this.bin.shape.closed = true;
     this.bin.shape.fillColor = Color.green.lighter().lighter();
   }
-  showMultiplier() {
-    // The mean multiplier: what all the points you were given have earned you.
-    let pointsSoFar = this.pointsMissed + this.pointsUsed;
-    let mult = pointsSoFar > 0 ? this.totalScore / pointsSoFar : 0;
-    let str = mult.toPrecision(2);
-    if (mult < 1) str = mult.toPrecision(1);
-    if (mult < 0.1) str = '-';
-    this.multiplierBox.setText(str);
-  }
   shuffle(inp, randIfAny) {
     // Optional rand() in [0,1) for seeded tournament tile queues.
     let rand = randIfAny || Math.random;
@@ -1459,6 +1582,10 @@ to LivelyMerge.`,
   tick() {
     // Close a finished signup epoch even if the dedicated clock stepper is idle.
     if (Lively && Lively.qbfEpochStartMs != null) qbfFinishExpiredTournament();
+    if (this.idle) {
+      this.applyTournamentView(qbfViewTournament());
+      return;
+    }
     let panel = this.panelMorph();
     if (panel && panel.collapsed) return; // a collapsed window pauses the game
     if (this.paused || (this.gameOver && this.fallingLetters.length === 0)) return;
@@ -1509,15 +1636,26 @@ to LivelyMerge.`,
     this.wordScoreBox.setText(String(this.wordScore));
   }
   launchLevel(caption) {
-    /** Join or open a tournament epoch at the chosen speed, then (re)start this board. */
-    let join = qbfJoinOrStartTournamentGame();
-    this.applyTournamentView(qbfViewTournament());
-    this.ensureGameClockStepping();
-    openQBFPlaying({
-      levelCaption: caption,
-      gameNumber: join.gameNumber,
-      letterQueue: join.queue,
-    });
+    /**
+     * Start (or join) a game at the chosen speed. Works in solo and social —
+     * social also opens/joins the shared tournament epoch.
+     */
+    if (this.isSocialMode()) {
+      let join = qbfJoinOrStartTournamentGame();
+      this.applyTournamentView(qbfViewTournament());
+      this.ensureGameClockStepping();
+      openQBFPlaying({
+        levelCaption: caption,
+        gameNumber: join.gameNumber,
+        letterQueue: join.queue,
+      });
+    } else {
+      openQBFPlaying({
+        levelCaption: caption,
+        gameNumber: null,
+        letterQueue: null,
+      });
+    }
   }
   finishTiles() {
     /**
@@ -1658,16 +1796,18 @@ to LivelyMerge.`,
       if (this.gameNumberLabel.shape.string !== label) this.gameNumberLabel.setText(label);
     }
     if (this.epochStatus) {
+      // "ready" until someone starts a game; then "open" (with countdown while joining).
       let status;
       if (view.open) {
         let secs = Math.max(0, Math.ceil(qbfSecondsLeftInMinute()));
-        status = 'open · join ' + secs + 's';
+        status = 'open · ' + secs + 's';
       } else {
         status = 'ready';
       }
       if (this.epochStatus.shape.string !== status) this.epochStatus.setText(status);
     }
     if (this.minuteTrack && this.minuteTrack.changed) this.minuteTrack.changed();
+    this.updateIdleInstructions();
   }
   syncGameClock(forceIfAny) {
     if (forceIfAny) qbfCommitExpiredTournament();
@@ -1787,6 +1927,7 @@ function openQBF(topLeftIfAny) {
   game.setPaneBoundsIn(panel.paneLayoutBounds());
   panel.layoutChrome();
   if (panel.beTopMorph) panel.beTopMorph();
+  // Idle boards tick only to refresh Game # / join status; play starts on a speed button.
   game.startTicking();
   game.startGameClock();
   game.focusKeyboard();

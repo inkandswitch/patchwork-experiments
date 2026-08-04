@@ -121,6 +121,8 @@ initLively();
 qbfSetScoresStore(new QBFMemoryScoresStore());
 qbfPanel = openQBF(pt(10, 10));
 qbfGame = qbfPanel.submorphs.find((m) => m.className == 'QBFMorph');
+// openQBF starts idle (empty tray); harness tests need an active local game.
+qbfGame.setup();
 qbfScoresPanel = openQBFScores();
 qbfScores = findQBFScoresViewer();
 `);
