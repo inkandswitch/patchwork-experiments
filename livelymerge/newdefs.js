@@ -3461,9 +3461,11 @@ class Morph {
      * document and never seen by other users. Halos and their handles live here.
      * Note it is the attachment EDGE that is ephemeral: `morph`'s own subtree (regular
      * submorphs, shape, etc.) stays ephemeral automatically because it is only
-     * reachable through this $-edge. Only meant for freshly created per-user morphs —
-     * attaching an already-persistent morph here would orphan it on reload (its owner
-     * back-pointer would survive but this list would not).
+     * reachable through this $-edge. Meant for freshly created per-user morphs and for
+     * reparenting morphs that are already ephemeral (drags preserve edge kind — see
+     * reparentToOwnerPreservingWorldAnchor). Attaching an already-persistent morph here
+     * would orphan it on reload (its owner back-pointer would survive but this list
+     * would not); use bePersistent for the opposite promotion.
      */
     if (morph.owner) morph.owner.removeMorph(morph);
     this.ephemeralSubmorphs().push(morph);
@@ -3476,6 +3478,35 @@ class Morph {
     /** This morph's per-user submorph list; lazily created (after a reload, persistent morphs come back without one). */
     if (!this.$submorphs) this.$submorphs = [];
     return this.$submorphs;
+  }
+  isEphemeralSubmorph() {
+    /** True when my attachment EDGE is per-user: I am in my owner's $submorphs. */
+    return !!(this.owner && this.owner.$submorphs && this.owner.$submorphs.includes(this));
+  }
+  canBePersisted() {
+    /**
+     * True when persisting my attachment edge (see bePersistent) would truly persist
+     * me: my own edge is ephemeral and every ancestor edge up to the world is
+     * persistent. A morph inside an ephemeral panel fails this — its whole subtree
+     * hangs off a $-edge higher up, so flipping its own edge would change nothing.
+     */
+    if (!this.isEphemeralSubmorph()) return false;
+    let m = this.owner;
+    while (m && m.owner) {
+      if (m.isEphemeralSubmorph()) return false;
+      m = m.owner;
+    }
+    return m != null && (m.className === 'WorldMorph' || (m.instanceOf && m.instanceOf(WorldMorph)));
+  }
+  bePersistent() {
+    /**
+     * Promote my attachment edge from per-user to shared: move me from my owner's
+     * $submorphs to its submorphs. Same owner, same transform, so I stay put on
+     * screen; entering the persistent list is what promotes me (and my subtree)
+     * into the Automerge document, making me visible to other users.
+     */
+    if (!this.isEphemeralSubmorph()) return;
+    this.owner.addMorphFront(this);
   }
   allSubmorphs() {
     /** Persistent + ephemeral submorphs in DRAW order: persistent first, ephemeral on top. */
@@ -3617,10 +3648,13 @@ try {
     if (!world) return;
     // Find deepest accepting owner at drop point (front-most path), not just world children.
     let dropped = this;
+    // Mid-drag the morph sits in the world's list of its original kind, so this reads
+    // the status it had when picked up.
+    let droppedIsEphemeral = this.isEphemeralSubmorph();
     let walk = (ownerMorph, worldPt) => {
-      let subs = ownerMorph.submorphs || [];
-      for (let i = subs.length - 1; i >= 0; i--) {
-        let sub = subs[i];
+      let candidates = ownerMorph.allSubmorphsTopFirst();
+      for (let i = 0; i < candidates.length; i++) {
+        let sub = candidates[i];
         if (sub === dropped) continue;
         if (
           sub.className == 'HaloMorph' ||
@@ -3628,6 +3662,15 @@ try {
           sub.className == 'HandMorph' ||
           sub.className == 'LineVertexHandle' ||
           sub.className == 'LineMidpointHandle'
+        )
+          continue;
+        // A persistent morph must not land in the per-user layer (its subtree would
+        // only be reachable through a $-edge, i.e. lost on reload): ephemeral
+        // candidates don't accept it, so the drop falls through to what's behind.
+        if (
+          !droppedIsEphemeral &&
+          ownerMorph.$submorphs &&
+          ownerMorph.$submorphs.includes(sub)
         )
           continue;
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
@@ -3797,8 +3840,12 @@ try {
     clearKeyboardFocusUnlessTypingOrOsk(this);
     this.beTopMorph();
     if (effectiveShiftKey(evt)) {
-      // shift drag means copy: the copy takes over as the pointer-focused dragee
-      let copy = this.world().addMorph(this.morphCopy());
+      // shift drag means copy: the copy takes over as the pointer-focused dragee.
+      // The copy keeps the original's edge kind — copying an ephemeral morph
+      // yields an ephemeral copy, never a silently-promoted persistent one.
+      let copy = this.morphCopy();
+      if (this.isEphemeralSubmorph()) this.world().addEphemeralMorph(copy);
+      else this.world().addMorph(copy);
       return copy.beginPointerDrag(p, evt);
     }
     // For nested morphs, plain drag should pick up to world on first real move.
@@ -3975,15 +4022,26 @@ try {
     }
     this.eachSubmorph((sub) => sub.repairSubmorphOwnership());
   }
-  reparentToOwnerPreservingWorldAnchor(newOwner, anchorLocal) {
-    /** Reparent under newOwner while keeping anchorLocal at same world point. */
+  reparentToOwnerPreservingWorldAnchor(newOwner, anchorLocal, ephemeralEdge) {
+    /**
+     * Reparent under newOwner while keeping anchorLocal at same world point.
+     * The attachment edge keeps its kind — an ephemeral submorph stays in
+     * $submorphs lists, a persistent one in submorphs lists — so a drag never
+     * silently promotes an ephemeral morph into the document. Pass ephemeralEdge
+     * to force a kind (e.g. a fresh morphCopy is in no list yet, so it should
+     * inherit its original's kind explicitly).
+     */
     if (!newOwner) return;
-    // morphCopy() sets owner without addMorph; only skip if this morph is actually in newOwner's tree.
-    if (this.owner === newOwner && newOwner.submorphs && newOwner.submorphs.indexOf(this) >= 0)
-      return;
+    let wantEphemeral = ephemeralEdge != null ? !!ephemeralEdge : this.isEphemeralSubmorph();
+    // morphCopy() sets owner without addMorph; only skip if this morph is actually in
+    // newOwner's tree, attached by the right kind of edge.
+    let targetList = wantEphemeral ? newOwner.$submorphs : newOwner.submorphs;
+    if (this.owner === newOwner && targetList && targetList.indexOf(this) >= 0) return;
     let p = anchorLocal == null ? this.shape.getBounds().topLeft : anchorLocal;
     let anchorWorld = this.globalize(p);
-    newOwner.addMorph(this); // removes from previous owner
+    // both removers take this morph out of the previous owner's lists
+    if (wantEphemeral) newOwner.addEphemeralMorph(this);
+    else newOwner.addMorph(this);
     let ownerPt = newOwner.localize(anchorWorld);
     let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
     this.transform.translation = ownerPt.subPt(rotScale);
@@ -7504,13 +7562,19 @@ class HaloHandle extends Morph {
   onPointerDown(pt, evt) {
     if (!this.includesPt(pt)) return false;
     this.$hitPoint = pt; // set for pointerDownOnHandle (e.g. Rotate) and for drag handles
-    if (['Menu', 'Style', 'Browse', 'Inspect', 'Delete'].includes(this.handleName))
+    if (['Menu', 'Style', 'Browse', 'Inspect', 'Delete', 'Persist'].includes(this.handleName))
       return this.halo.pointerDownOnHandle(this, pt, evt);
     // These handles become active handles on the target
     this.target = this.halo.target;
     if (this.handleName == 'Copy') {
+      // The fresh copy is in no submorph list yet, so it can't infer its edge
+      // kind — pass the original's so ephemeral morphs copy as ephemeral.
       let copy = this.target.morphCopy();
-      copy.reparentToOwnerPreservingWorldAnchor(this.world(), null);
+      copy.reparentToOwnerPreservingWorldAnchor(
+        this.world(),
+        null,
+        this.target.isEphemeralSubmorph(),
+      );
       this.target = copy;
     }
     if (this.handleName == 'Grab') {
@@ -7692,6 +7756,7 @@ class HaloMorph extends Morph {
       this.codeHandle = this.addMorph(new HaloHandle(8, 'B', 'Browse', this));
       this.inspectHandle = this.addMorph(new HaloHandle(9, 'I', 'Inspect', this));
       this.resizeHandle = null;
+      this.persistHandle = null;
     } else {
       this.rotateHandle = this.addMorph(new HaloHandle(1, 'R', 'Rotate', this));
       this.styleHandle = this.addMorph(new HaloHandle(2, 'S', 'Style', this));
@@ -7703,10 +7768,15 @@ class HaloMorph extends Morph {
       this.codeHandle = this.addMorph(new HaloHandle(8, 'B', 'Browse', this));
       this.inspectHandle = this.addMorph(new HaloHandle(9, 'I', 'Inspect', this));
       this.resizeHandle = this.addMorph(new HaloHandle(10, 'Z', 'Scale', this));
+      // Only for morphs whose own edge is ephemeral (and whose ancestors are all
+      // persistent, so flipping the edge truly persists them) — see canBePersisted.
+      this.persistHandle = targetMorph.canBePersisted()
+        ? this.addMorph(new HaloHandle(11, 'P', 'Persist', this))
+        : null;
     }
   }
   handleCenterForIndex(index) {
-    /** Center of handle ellipse `index` (1–10) in halo-local coordinates. */
+    /** Center of handle ellipse `index` (1–11) in halo-local coordinates. */
     let wid = 20;
     let haloBounds = this.shape.getBounds();
     let frame = rect(-wid, -wid, haloBounds.width() + 2 * wid, haloBounds.height() + 2 * wid);
@@ -7723,10 +7793,15 @@ class HaloMorph extends Morph {
       c1 = p2;
       c2 = p3;
       d = (7 - index) / 3;
-    } else {
+    } else if (index <= 10) {
       c1 = p3;
       c2 = p4;
       d = (10 - index) / 3;
+    } else {
+      // 11+ continue around the bottom edge (unused by the standard ten)
+      c1 = p4;
+      c2 = p1;
+      d = (13 - index) / 3;
     }
     let handleLoc = c2.addPt(c1.subPt(c2).scaleBy(d));
     let radius = wid / 2;
@@ -7837,6 +7912,9 @@ class HaloMorph extends Morph {
       case 'Delete':
         this.target.remove();
         break;
+      case 'Persist':
+        this.target.bePersistent();
+        break;
       default:
         console.log('Invalid halo handle name??');
     }
@@ -7867,7 +7945,9 @@ class HandMorph extends Morph {
   }
   dropMorph(p, evt) {
     let worldPt = p ? p : this.location();
-    this.submorphs.slice().forEach((morphToDrop) => {
+    // Cargo can sit in either list: grabs preserve the morph's edge kind, so an
+    // ephemeral morph rides in the hand's $submorphs. (allSubmorphs is a fresh array.)
+    this.allSubmorphs().forEach((morphToDrop) => {
       let anchorLocal = morphToDrop.$handGrabAnchorLocal;
       if (!anchorLocal) anchorLocal = morphToDrop.shape.getBounds().topLeft;
       morphToDrop.dropOnTopMorphAt(worldPt, anchorLocal);
