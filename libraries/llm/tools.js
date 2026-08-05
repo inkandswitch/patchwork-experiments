@@ -262,6 +262,123 @@ export function parseToolCalls(text) {
 		}
 		calls.push({name, args: args || {}})
 	}
+	const thinkingEnd = text.lastIndexOf("</think>")
+	const lfmRegionStart = thinkingEnd === -1 ? 0 : thinkingEnd + "</think>".length
+	const lfmMatch = text
+		.slice(lfmRegionStart)
+		.search(/\[\s*[a-zA-Z_][a-zA-Z0-9_]*\s*\(/)
+	const lfmStart = lfmMatch === -1 ? -1 : lfmRegionStart + lfmMatch
+	if (lfmStart !== -1) {
+		let depth = 0
+		let quote = ""
+		let escaped = false
+		let lfmEnd = -1
+		for (let i = lfmStart; i < text.length; i++) {
+			const ch = text[i]
+			if (escaped) {
+				escaped = false
+				continue
+			}
+			if (quote) {
+				if (ch === "\\") escaped = true
+				else if (ch === quote) quote = ""
+				continue
+			}
+			if (ch === "'" || ch === '"') {
+				quote = ch
+				continue
+			}
+			if (ch === "[" || ch === "(" || ch === "{") depth++
+			else if (ch === "]" || ch === ")" || ch === "}") {
+				depth--
+				if (depth === 0) {
+					lfmEnd = i
+					break
+				}
+			}
+		}
+		if (lfmEnd !== -1) {
+			const split = (source = "") => {
+				const parts = []
+				let start = 0
+				let nested = 0
+				let string = ""
+				let slash = false
+				for (let i = 0; i < source.length; i++) {
+					const ch = source[i]
+					if (slash) {
+						slash = false
+						continue
+					}
+					if (string) {
+						if (ch === "\\") slash = true
+						else if (ch === string) string = ""
+						continue
+					}
+					if (ch === "'" || ch === '"') string = ch
+					else if (ch === "[" || ch === "(" || ch === "{") nested++
+					else if (ch === "]" || ch === ")" || ch === "}") nested--
+					else if (ch === "," && nested === 0) {
+						parts.push(source.slice(start, i).trim())
+						start = i + 1
+					}
+				}
+				const last = source.slice(start).trim()
+				if (last) parts.push(last)
+				return parts
+			}
+			const literal = (source = "") => {
+				let json = ""
+				for (let i = 0; i < source.length; i++) {
+					const ch = source[i]
+					if (ch !== "'" && ch !== '"') {
+						json += ch
+						continue
+					}
+					let value = ""
+					for (i++; i < source.length; i++) {
+						const next = source[i]
+						if (next === ch) break
+						if (next !== "\\") {
+							value += next
+							continue
+						}
+						const escaped = source[++i]
+						value +=
+							escaped === "n"
+								? "\n"
+								: escaped === "r"
+									? "\r"
+									: escaped === "t"
+										? "\t"
+										: escaped
+					}
+					json += JSON.stringify(value)
+				}
+				try {
+					return JSON.parse(
+						json.replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false").replace(/\bNone\b/g, "null")
+					)
+				} catch {
+					return source
+				}
+			}
+			for (const expression of split(text.slice(lfmStart + 1, lfmEnd))) {
+				const match = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([\s\S]*)\)$/.exec(expression)
+				if (!match) continue
+				const args = Object.fromEntries([])
+				for (const arg of split(match[2])) {
+					const eq = arg.indexOf("=")
+					if (eq < 1) continue
+					const name = arg.slice(0, eq).trim()
+					if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) continue
+					args[name] = literal(arg.slice(eq + 1).trim())
+				}
+				calls.push({name: match[1], args})
+			}
+			if (calls.length) return calls
+		}
+	}
 	let m
 	const xml = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g
 	let sawXml = false

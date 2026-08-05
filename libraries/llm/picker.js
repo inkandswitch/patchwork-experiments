@@ -25,6 +25,12 @@ import {
 	describeConfig,
 	fetchOpenRouterModels,
 	fetchOllamaModels,
+	fetchGenerationConfig,
+	generationConfigFromFiles,
+	suggestedParams,
+	suggestedParamsFromOpenRouter,
+	generationStops,
+	capNote,
 } from "./config.js"
 import {registerLocalModel, generateWithTools} from "./client.js"
 import {builtinSupported, builtinAvailability} from "./builtin.js"
@@ -150,6 +156,9 @@ const CSS = `
 .llmp-explain { font-style: italic; color: #aaa3ae; }
 .llmp-disabled { opacity: 0.45; }
 .llmp-locked { font-style: italic; }
+.llmp-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.llmp-reset-one { padding: 1px 7px; font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--dim); }
+.llmp-reset-one:hover { color: var(--ink); }
 
 /* saved-prompt manager: an inline-editable list */
 .llmp-pp-list { display: flex; flex-direction: column; gap: 6px; }
@@ -481,11 +490,41 @@ function fmtCtx(n) {
 	return n >= 1000 ? Math.round(n / 1000) + "K" : String(n)
 }
 
+// generation_config.json parsed out of an uploaded folder, keyed by
+// "local/<folder>". Session-only, like the registration itself.
+/** @type {Map<string, any>} */
+const localGenConfig = new Map()
+
+const PARAM_LABELS = {
+	temperature: "temp",
+	topP: "top-p",
+	topK: "top-k",
+	minP: "min-p",
+	repetitionPenalty: "rep",
+	frequencyPenalty: "freq",
+	presencePenalty: "presence",
+	maxTokens: "max out",
+}
+
+/** @param {{path:string, blob:Blob}[]} files */
+async function hasChatTemplate(files) {
+	const at = (/** @type {string} */ n) =>
+		files.find((f) => f.path.split("/").pop() === n)
+	if (at("chat_template.jinja")) return true
+	const tc = at("tokenizer_config.json")
+	if (!tc) return false
+	try {
+		return !!JSON.parse(await tc.blob.text()).chat_template
+	} catch {
+		return false
+	}
+}
+
 // Ask the HuggingFace API whether a model exists and ships an ONNX export —
 // that's the requirement for transformers.js to run it in the browser.
 /**
  * @param {string} id
- * @returns {Promise<{exists?: boolean, error?: boolean, hasOnnx?: boolean, params?: number, gated?: boolean}>}
+ * @returns {Promise<{exists?: boolean, error?: boolean, hasOnnx?: boolean, canUseTool?: boolean, params?: number, gated?: boolean}>}
  */
 async function fetchModelInfo(id) {
 	const res = await fetch("https://huggingface.co/api/models/" + id)
@@ -495,9 +534,29 @@ async function fetchModelInfo(id) {
 	const hasOnnx = (data.siblings || []).some((/** @type {any} */ s) =>
 		/(^|\/)onnx\/.+\.onnx$|^.+\.onnx$/.test(s.rfilename || "")
 	)
+	const chatTemplate =
+		data.config?.tokenizer_config?.chat_template || data.config?.chat_template_jinja
+	const templates =
+		typeof chatTemplate === "string"
+			? [chatTemplate]
+			: chatTemplate && typeof chatTemplate === "object"
+				? Object.values(chatTemplate)
+				: []
+	let canUseTool = false
+	for (const template of templates) {
+		if (
+			typeof template === "string" &&
+			/\btools\b/.test(template) &&
+			/tool[_ ]?calls?|tool_response|role\s*==\s*["']tool["']/.test(template)
+		) {
+			canUseTool = true
+			break
+		}
+	}
 	return {
 		exists: true,
 		hasOnnx,
+		canUseTool,
 		params: data.safetensors?.total,
 		gated: !!data.gated,
 	}
@@ -666,6 +725,45 @@ function buildPickerInto(host, opts) {
 		renderSection() // re-render the Parameters section with the defaults
 	}
 
+	/**
+	 * The "the people who made this model suggest…" row, shared by the Browser and
+	 * OpenRouter model pickers. `params` is already in picker-config keys; a param
+	 * the current provider can't do is shown struck through and not applied.
+	 * @param {Record<string, number>} params
+	 * @param {string} source  where the numbers came from, for the pill
+	 * @returns {(HTMLElement|null)[]}
+	 */
+	function suggestedRow(params, source) {
+		const usable = Object.fromEntries(
+			Object.entries(params).filter(([k]) => !capNote(cfg.provider, k))
+		)
+		const keys = Object.keys(params)
+		if (!keys.length) return []
+		const label = keys
+			.map((k) => {
+				const name = /** @type {any} */ (PARAM_LABELS)[k] || k
+				return k in usable ? `${name} ${params[k]}` : `${name} n/a`
+			})
+			.join(" · ")
+		const apply = el("button", {
+			class: "llmp-btn",
+			text: "Use these",
+			disabled: Object.keys(usable).length ? null : "",
+			onClick: () => {
+				// The Parameters section is a different section and rebuilds when
+				// navigated to, so don't renderSection() here — it would tear down
+				// this very row.
+				Object.assign(cfg, usable)
+				apply.textContent = "✓ applied"
+				apply.disabled = true
+			},
+		})
+		return [
+			pill(`suggested by ${source || "the model"}: ${label}`, "muted"),
+			apply,
+		]
+	}
+
 	const isBrowser = () =>
 		cfg.provider === "local" ||
 		cfg.provider === "webllm" ||
@@ -701,12 +799,32 @@ function buildPickerInto(host, opts) {
 		renderRecent() // keep the active chip in sync with the current provider
 	}
 
+	// A "↺ default" affordance beside a param that's been moved off DEFAULTS —
+	// so applying a model's suggestions (or fiddling) is always one click from
+	// undone, per param, without resetting the whole section.
+	/** @param {string|undefined} key */
+	function resetOne(key) {
+		if (!key) return null
+		const def = /** @type {Record<string, any>} */ (DEFAULTS)[key]
+		if ((cfg[key] ?? null) === (def ?? null)) return null
+		return el("button", {
+			class: "llmp-btn llmp-reset-one",
+			text: `↺ ${def == null ? "auto" : def}`,
+			title: `Reset to the default (${def == null ? "auto" : def})`,
+			onClick: (/** @type {any} */ e) => {
+				e.preventDefault()
+				cfg[key] = def
+				renderSection()
+			},
+		})
+	}
+
 	/**
 	 * @param {string} label
 	 * @param {number} value
-	 * @param {{min?: any, max?: any, step?: any, onInput: (v: number) => void, note?: string, disabled?: string|null}} cfg2
+	 * @param {{min?: any, max?: any, step?: any, onInput: (v: number) => void, note?: string, disabled?: string|null, key?: string}} cfg2
 	 */
-	function slider(label, value, {min, max, step, onInput, note, disabled}) {
+	function slider(label, value, {min, max, step, onInput, note, disabled, key}) {
 		const out = el("b", {text: (+value).toFixed(2)})
 		const range = el("input", {
 			type: "range",
@@ -722,7 +840,7 @@ function buildPickerInto(host, opts) {
 		})
 		if (disabled) range.disabled = true
 		const wrapper = el("label", {class: "llmp-label" + (disabled ? " llmp-disabled" : "")}, [
-			label,
+			el("span", {class: "llmp-label-row"}, [label, disabled ? null : resetOne(key)]),
 			el("div", {class: "llmp-temp"}, [range, out]),
 			note ? el("p", {class: "llmp-note", text: note}) : null,
 		])
@@ -733,10 +851,10 @@ function buildPickerInto(host, opts) {
 	/**
 	 * @param {string} label
 	 * @param {number|null} value
-	 * @param {{min?: any, step?: any, placeholder?: string, onInput: (v: number|null) => void, note?: string, disabled?: string|null}} [cfg2]
+	 * @param {{min?: any, step?: any, placeholder?: string, onInput: (v: number|null) => void, note?: string, disabled?: string|null, key?: string}} [cfg2]
 	 */
 	function numberField(label, value, cfg2 = /** @type {any} */ ({})) {
-		const {min, step, placeholder, onInput, note, disabled} = cfg2
+		const {min, step, placeholder, onInput, note, disabled, key} = cfg2
 		const input = el("input", {
 			class: "llmp-input",
 			type: "number",
@@ -751,7 +869,7 @@ function buildPickerInto(host, opts) {
 		if (value != null) input.value = String(value)
 		if (disabled) input.disabled = true
 		const wrapper = el("label", {class: "llmp-label" + (disabled ? " llmp-disabled" : "")}, [
-			label,
+			el("span", {class: "llmp-label-row"}, [label, disabled ? null : resetOne(key)]),
 			input,
 			note ? el("p", {class: "llmp-note", text: note}) : null,
 		])
@@ -764,12 +882,14 @@ function buildPickerInto(host, opts) {
 		const wrap = el("div", {class: "llmp-body"})
 		content.append(wrap)
 
-		const caps = /** @type {Record<string, any>} */ (PROVIDER_CAPS)[cfg.provider] || {}
 		const locked = opts.locked || []
+		// Greying a control out without saying why is a small cruelty. Two reasons
+		// exist: the host tool passes this per call (so your value is overwritten),
+		// or the provider's runtime has nowhere to put it (see CAP_NOTES).
 		function paramState(/** @type {string} */ key) {
-			if (locked.includes(key)) return "controlled by tool"
-			if (caps[key] === false) return "not supported by this provider"
-			return null
+			if (locked.includes(key))
+				return `Set by the tool you're in — it passes this with every request, so a value here wouldn't reach the model.`
+			return capNote(cfg.provider, key)
 		}
 
 		const atDefaults = PARAM_KEYS.every((k) => (cfg[k] ?? null) === (/** @type {Record<string, any>} */ (DEFAULTS)[k] ?? null))
@@ -791,6 +911,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.temperature = v),
 				note: "Randomness of each pick. 0 = always the top token (deterministic); ~0.7 balanced; past ~1.5 it tips into incoherence.",
 				disabled: paramState("temperature"),
+				key: "temperature",
 			}),
 			slider("Top-p (nucleus)", cfg.topP, {
 				min: "0",
@@ -799,6 +920,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.topP = v),
 				note: "Sample from the smallest set of tokens whose probabilities sum to p. 1 = off.",
 				disabled: paramState("topP"),
+				key: "topP",
 			}),
 			numberField("Top-k", cfg.topK, {
 				min: "0",
@@ -806,6 +928,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.topK = v || 0),
 				note: "Sample only from the k most likely tokens. 0 = off.",
 				disabled: paramState("topK"),
+				key: "topK",
 			}),
 			slider("Min-p", cfg.minP, {
 				min: "0",
@@ -814,6 +937,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.minP = v),
 				note: "Drop tokens below this fraction of the top token's probability. 0 = off.",
 				disabled: paramState("minP"),
+				key: "minP",
 			}),
 			slider("Repetition penalty", cfg.repetitionPenalty, {
 				min: "1",
@@ -822,6 +946,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.repetitionPenalty = v),
 				note: "Penalise tokens already used. 1 = off. (transformers · Ollama · OpenRouter)",
 				disabled: paramState("repetitionPenalty"),
+				key: "repetitionPenalty",
 			}),
 			slider("Frequency penalty", cfg.frequencyPenalty, {
 				min: "-2",
@@ -830,6 +955,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.frequencyPenalty = v),
 				note: "Penalise tokens by how often they've appeared. 0 = off. (OpenRouter · Ollama · WebLLM)",
 				disabled: paramState("frequencyPenalty"),
+				key: "frequencyPenalty",
 			}),
 			slider("Presence penalty", cfg.presencePenalty, {
 				min: "-2",
@@ -838,12 +964,14 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.presencePenalty = v),
 				note: "Penalise tokens that have appeared at all. 0 = off.",
 				disabled: paramState("presencePenalty"),
+				key: "presencePenalty",
 			}),
 			numberField("Max output tokens", cfg.maxTokens, {
 				min: "1",
 				placeholder: "model default",
 				onInput: (v) => (cfg.maxTokens = v),
 				disabled: paramState("maxTokens"),
+				key: "maxTokens",
 			}),
 			numberField("Seed", cfg.seed, {
 				min: "0",
@@ -852,6 +980,7 @@ function buildPickerInto(host, opts) {
 				onInput: (v) => (cfg.seed = v),
 				note: "Fix the seed for reproducible output where supported. Blank = random.",
 				disabled: paramState("seed"),
+				key: "seed",
 			})
 		)
 	}
@@ -999,6 +1128,7 @@ function buildPickerInto(host, opts) {
 		}
 		const pills = el("div", {class: "llmp-pills"})
 		const warn = el("p", {class: "llmp-warn"})
+		const suggested = el("div", {class: "llmp-pills"})
 		const c = combo({
 			value: cfg.local.model,
 			placeholder: "onnx-community/… or any ONNX HuggingFace id",
@@ -1006,6 +1136,7 @@ function buildPickerInto(host, opts) {
 			onChange: (v) => {
 				cfg.local.model = v
 				refreshPills() // light: catalogue pills only, no network
+				refreshSuggested()
 			},
 			// On a *committed* id (pick / Enter / blur): record it and validate it
 			// against the HF API — never per-keystroke (that spammed HF with partial
@@ -1029,6 +1160,38 @@ function buildPickerInto(host, opts) {
 			const cat = LOCAL_MODELS.find((m) => m.id === id)
 			if (cat?.canUseTool) pills.append(pill("supports tool calling"))
 		}
+		// The model authors' own sampling settings, from the repo's
+		// `generation_config.json` (or the uploaded folder's copy). Prefills the
+		// Parameters section instead of leaving everyone on our generic 0.7/0.9,
+		// which is far too hot for most small local models.
+		/** @type {any} */
+		let suggestTimer = null
+		function refreshSuggested() {
+			clearTimeout(suggestTimer)
+			suggested.replaceChildren()
+			const id = cfg.local.model
+			if (!id || cfg.provider !== "local") return
+			if (id.startsWith("local/")) return showSuggested(localGenConfig.get(id))
+			if (!/^[^/\s]+\/[^/\s]{2,}$/.test(id)) return // must look like org/repo
+			suggestTimer = setTimeout(() => {
+				suggested.replaceChildren(pill("⟳ reading generation_config.json…", "muted"))
+				fetchGenerationConfig(id).then((gc) => {
+					if (id === cfg.local.model) showSuggested(gc)
+				})
+			}, 500)
+		}
+		/** @param {any} gc parsed generation_config.json, or null/undefined */
+		function showSuggested(gc) {
+			const params = suggestedParams(gc)
+			const {hasEos, greedy} = generationStops(gc)
+			suggested.replaceChildren(...suggestedRow(params, "generation_config.json"))
+			if (gc && !hasEos)
+				suggested.append(
+					pill("⚠ no eos_token_id — generation only stops at the token cap", "warn")
+				)
+			if (greedy) suggested.append(pill("authors want greedy decoding", "muted"))
+		}
+
 		function scheduleValidate() {
 			clearTimeout(validateTimer)
 			const id = cfg.local.model
@@ -1055,6 +1218,7 @@ function buildPickerInto(host, opts) {
 				return
 			}
 			if (info.params) pills.append(pill(/** @type {string} */ (fmtParams(info.params)), "muted"))
+			if (info.canUseTool) pills.append(pill("supports tool calling"))
 			if (info.hasOnnx) pills.append(pill("✓ ONNX"))
 			else {
 				pills.append(pill("no ONNX", "warn"))
@@ -1098,6 +1262,18 @@ function buildPickerInto(host, opts) {
 			c.setOptions(localOptions())
 			refreshPills()
 			note.textContent = `Loaded ${files.length} files as ${id} (dtype ${dtypeSel.value}). It will load on first use.`
+			generationConfigFromFiles(files).then((gc) => {
+				localGenConfig.set(id, gc)
+				if (cfg.local.model === id) showSuggested(gc)
+			})
+			// A model with no chat template can only be prompted as ChatML, which is
+			// wrong for anything that isn't Qwen-family — say so at upload time
+			// rather than letting it surface as garbage output.
+			hasChatTemplate(files).then((ok) => {
+				if (!ok && cfg.local.model === id)
+					warn.textContent =
+						"⚠ No chat template in this folder (tokenizer_config.json / chat_template.jinja) — chat prompts fall back to ChatML, which produces garbage on non-Qwen models."
+			})
 		})
 		const loadBtn = el("button", {
 			class: "llmp-btn",
@@ -1118,10 +1294,12 @@ function buildPickerInto(host, opts) {
 
 		refreshPills()
 		scheduleValidate() // validate a pre-set custom id once on open
+		refreshSuggested()
 		body.append(
 			el("label", {class: "llmp-label"}, ["Model", c.field]),
 			pills,
 			warn,
+			suggested,
 			el("label", {class: "llmp-label"}, [
 				"Quantization",
 				el("div", {class: "llmp-row"}, [modelDtypeSel]),
@@ -1146,8 +1324,18 @@ function buildPickerInto(host, opts) {
 		})
 		const orOptions = () => orModels.map((m) => ({value: m.id, label: m.name}))
 		const pills = el("div", {class: "llmp-pills"})
+		// OpenRouter's answer to generation_config.json: `default_parameters` on
+		// each catalogue entry, already in hand from the models fetch.
+		const suggested = el("div", {class: "llmp-pills"})
+		function refreshSuggested() {
+			const m = orModels.find((x) => x.id === cfg.openrouter.model)
+			suggested.replaceChildren(
+				...suggestedRow(suggestedParamsFromOpenRouter(m?.default_parameters), "OpenRouter")
+			)
+		}
 		function refreshPills() {
 			pills.replaceChildren()
+			refreshSuggested()
 			const m = orModels.find((x) => x.id === cfg.openrouter.model)
 			if (!m) return
 			const sp = m.supported_parameters || []
@@ -1200,7 +1388,8 @@ function buildPickerInto(host, opts) {
 				"Model",
 				el("div", {class: "llmp-row"}, [c.field, refresh]),
 			]),
-			pills
+			pills,
+			suggested
 		)
 	}
 

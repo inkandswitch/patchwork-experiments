@@ -181,6 +181,7 @@ self.addEventListener("unhandledrejection", (e) =>
 // ---------------------------------------------------------------------------
 
 const LOCAL_MODELS = [
+	{id: "LiquidAI/LFM2.5-2.6B-ONNX", name: "LFM2.5 2.6B", dtype: "q4f16"},
 	{id: "onnx-community/Qwen3-4B-ONNX", name: "Qwen3 4B (best)", dtype: "q4f16"},
 	{id: "onnx-community/Qwen3-1.7B-ONNX", name: "Qwen3 1.7B", dtype: "q4f16"},
 	{id: "onnx-community/Qwen3-0.6B-ONNX", name: "Qwen3 0.6B (fast)", dtype: "q4f16"},
@@ -188,7 +189,7 @@ const LOCAL_MODELS = [
 	{id: "onnx-community/Phi-3.5-mini-instruct-onnx-web", name: "Phi 3.5 Mini", dtype: "q4f16"},
 	{id: "onnx-community/SmolLM2-1.7B-Instruct-ONNX", name: "SmolLM2 1.7B", dtype: "q4f16"},
 ]
-const DEFAULT_MODEL_ID = LOCAL_MODELS[2].id
+const DEFAULT_MODEL_ID = "onnx-community/Qwen3-0.6B-ONNX"
 const PREDICTION_CAP = 256 // cap per-step prediction events so a long gen can't flood
 
 /** @type {any} */
@@ -309,6 +310,27 @@ const compiledModels = new Set()
 /** @type {Map<string, {files: Map<string, Blob>, dtype: string}>} */
 const localModelFiles = new Map() // id -> { files: Map<relpath, Blob>, dtype }
 
+// Drop anything transformers.js already cached under a local model's id, so a
+// re-upload of the same folder name can't be served stale bytes from an earlier
+// (possibly broken, possibly different) export.
+/** @param {string} id */
+async function purgeCachedModel(id) {
+	try {
+		const cache = await caches.open("transformers-cache")
+		const keys = await cache.keys()
+		let n = 0
+		for (const req of keys) {
+			if (req.url.includes(id + "/")) {
+				await cache.delete(req)
+				n++
+			}
+		}
+		if (n) log("purged cached entries for local model", {id, n})
+	} catch (/** @type {any} */ e) {
+		log("purgeCachedModel failed", {id, message: e?.message || String(e)})
+	}
+}
+
 function ensureLocalFetchPatch() {
 	const sg = /** @type {any} */ (self)
 	if (sg.__llmFetchPatched) return
@@ -325,7 +347,18 @@ function ensureLocalFetchPatch() {
 				const rel = after.substring(after.indexOf("/") + 1)
 				const file =
 					entry.files.get(rel) || entry.files.get(rel.split("/").pop() || "")
-				if (file) return Promise.resolve(new Response(file, {status: 200}))
+				if (file)
+					return Promise.resolve(
+						new Response(file, {
+							status: 200,
+							headers: {"content-length": String(file.size)},
+						})
+					)
+				// transformers.js treats several of these as optional and swallows the
+				// 404 into `{}` — a missing generation_config.json costs you
+				// eos_token_id, a missing tokenizer_config.json costs you the chat
+				// template. Both produce garbage rather than an error, so say so.
+				log("local model: 404", {id, rel, have: [...entry.files.keys()]})
 				return Promise.resolve(
 					new Response("local model file not found: " + rel, {status: 404})
 				)
@@ -364,7 +397,7 @@ async function loadModel(modelId, dtypeOverride) {
 	loadingPromise = new Promise((r) => (resolveLoading = r))
 	lastLoadError = null
 	const reg = localModelFiles.get(modelId)
-	if (reg) ensureLocalFetchPatch()
+	ensureLocalFetchPatch()
 	// dtype precedence: explicit override (picker) > registered upload > catalogue
 	// entry > q4f16. Lets you pick the quantization suffix for any HF id.
 	const baseDef = reg
@@ -378,8 +411,19 @@ async function loadModel(modelId, dtypeOverride) {
 		broadcast({type: "status", message: "Loading transformers.js…"})
 		TF = await import(/* @vite-ignore */ CDN)
 		TF.env.allowLocalModels = false
-		TF.env.useBrowserCache = true
 		installWeightsProgress() // byte-level progress for the external-data weights blob
+		// transformers.js routes ALL of its I/O through `env.fetch`, which it binds
+		// from `globalThis.fetch` once, at module-eval time. Anything we patch onto
+		// `self.fetch` after the import is therefore invisible to it. Delegate to
+		// the live `self.fetch` so patch order stops mattering.
+		TF.env.fetch = (/** @type {any} */ input, /** @type {any} */ init) =>
+			self.fetch(input, init)
+		// A local upload is a fake repo: transformers.js caches it under
+		// `local/<folder>/<file>` and reads the cache BEFORE calling fetch. Re-upload
+		// a corrected (or entirely different) folder under the same name and you get
+		// the first upload's bytes forever — often a tokenizer from one model beside
+		// weights from another, which reads as fluent gibberish.
+		TF.env.useBrowserCache = !reg
 		if (navigator.storage?.persist) await navigator.storage.persist()
 	} catch (/** @type {any} */ err) {
 		lastLoadError = err
@@ -589,13 +633,58 @@ async function doGenerateLocal(gen, input, config) {
 	// The text-generation pipeline applies the chat template itself when handed a
 	// messages array. If the model has no template, do it ourselves and pass a
 	// plain string instead (a string input skips templating entirely).
-	const genInput = !isText && !tokenizer.chat_template ? messagesToPrompt(input) : input
+	const usedChatFallback = !isText && !tokenizer.chat_template
+	let genInput = usedChatFallback ? messagesToPrompt(input) : input
+	let templateTools = !isText && config.tools?.length ? config.tools : undefined
+	if (templateTools && tokenizer.chat_template) {
+		const rendered = tokenizer.apply_chat_template(genInput, {
+			tools: templateTools,
+			tokenize: false,
+			add_generation_prompt: true,
+		})
+		let exposesTools = false
+		for (const tool of templateTools) {
+			const name = tool?.function?.name || tool?.name
+			if (name && rendered.includes(name)) {
+				exposesTools = true
+				break
+			}
+		}
+		if (!exposesTools) {
+			const system = config.toolSystem
+			if (system) {
+				genInput = [...genInput]
+				if (genInput[0]?.role === "system")
+					genInput[0] = {
+						...genInput[0],
+						content: [system, genInput[0].content].filter(Boolean).join("\n\n"),
+					}
+				else genInput.unshift({role: "system", content: system})
+			}
+			templateTools = undefined
+		}
+	}
+	// ChatML is Qwen's format, not a universal one. Handing it to a Llama / Gemma /
+	// LFM2 checkpoint produces confident nonsense, so this fallback is a last
+	// resort and must be visible — most often it means tokenizer_config.json (or
+	// chat_template.jinja) never loaded, which transformers.js swallows into `{}`.
+	if (usedChatFallback) {
+		log("doGenerateLocal: NO CHAT TEMPLATE — falling back to ChatML", {
+			model: currentModelId,
+			warning:
+				"output will be garbage unless this model is ChatML-native; check that tokenizer_config.json / chat_template.jinja loaded",
+		})
+		broadcast({
+			type: "status",
+			message: `⚠️ ${currentModelId} has no chat template — using ChatML. Output may be garbage.`,
+		})
+	}
 
 	// On the no-template fallback a base model may not stop at the turn boundary
 	// and keeps going, role-playing further <|im_start|> turns — which surface as
 	// repeated text. For such models these aren't special tokens, so they stream
 	// as literal text and we can cut the output there.
-	const stopMarkers = genInput !== input ? ["<|im_end|>", "<|im_start|>"] : []
+	const stopMarkers = usedChatFallback ? ["<|im_end|>", "<|im_start|>"] : []
 
 	let promptTokens = 0
 	try {
@@ -605,13 +694,14 @@ async function doGenerateLocal(gen, input, config) {
 				: tokenizer.apply_chat_template(genInput, {
 						tokenize: false,
 						add_generation_prompt: true,
+						...(templateTools ? {tools: templateTools} : {}),
 				  })
 		promptTokens = tokenizer.encode(prompt).length
 	} catch (/** @type {any} */ e) {
 		log("doGenerateLocal: prompt build/encode failed (continuing)", {
 			model: currentModelId,
 			hasChatTemplate: !!tokenizer.chat_template,
-			usedFallback: genInput !== input,
+			usedFallback: usedChatFallback,
 			message: e?.message || String(e),
 		})
 	}
@@ -713,6 +803,7 @@ async function doGenerateLocal(gen, input, config) {
 	let output
 	try {
 		output = await generator(genInput, {
+			...(templateTools ? {tools: templateTools} : {}),
 			max_new_tokens: maxNewTokens,
 			do_sample: temperature > 0,
 			temperature,
@@ -757,7 +848,7 @@ async function doGenerateLocal(gen, input, config) {
 	})
 	// Local has no native tool API; the client parses the model's text (XML/JSON)
 	// when tools were requested via the system prompt.
-	return {text, toolCalls: null}
+	return {text, toolCalls: null, toolMode: templateTools ? "template" : "text"}
 }
 
 // ---------------------------------------------------------------------------
@@ -1602,12 +1693,12 @@ function post(gen, msg) {
 	} catch {}
 }
 
-/** @param {any} sessionKey @param {Gen} gen @param {string} text @param {any} [toolCalls] */
-function finalize(sessionKey, gen, text, toolCalls) {
+/** @param {any} sessionKey @param {Gen} gen @param {string} text @param {any} [toolCalls] @param {string} [toolMode] */
+function finalize(sessionKey, gen, text, toolCalls, toolMode) {
 	gen.done = true
 	gen.finalText = text
 	try {
-		gen.port.postMessage({type: "result", id: gen.id, text, toolCalls: toolCalls || null})
+		gen.port.postMessage({type: "result", id: gen.id, text, toolCalls: toolCalls || null, toolMode})
 	} catch {}
 	broadcast({type: "status", message: ""})
 	if (sessionKey) setTimeout(() => activeGenerations.delete(sessionKey), 5000)
@@ -1640,7 +1731,13 @@ async function runGeneration(sessionKey, gen, provider, input, config) {
 		else if (provider === "webllm") out = await doGenerateWebLLM(gen, input, config)
 		else out = await doGenerateLocal(gen, input, config)
 		log("runGeneration: done", {provider, chars: out.text?.length || 0})
-		finalize(sessionKey, gen, out.text, out.toolCalls)
+		finalize(
+			sessionKey,
+			gen,
+			out.text,
+			out.toolCalls,
+			"toolMode" in out && typeof out.toolMode === "string" ? out.toolMode : undefined
+		)
 	} catch (/** @type {any} */ err) {
 		if (gen.abortController.signal.aborted) {
 			log("runGeneration: aborted", {provider, chars: gen.fullText?.length || 0})
@@ -1989,7 +2086,9 @@ function handleMessage(port, data) {
 		localModelFiles.set(data.id, {files, dtype: data.dtype || "q4f16"})
 		ensureLocalFetchPatch()
 		if (currentModelId === data.id) releaseGenerator() // force a reload (dispose old session)
-		port.postMessage({type: "local-model-registered", id: data.id, count: files.size})
+		purgeCachedModel(data.id).then(() =>
+			port.postMessage({type: "local-model-registered", id: data.id, count: files.size})
+		)
 		return
 	}
 	if (type === "preload") {

@@ -61,12 +61,13 @@ import {resolveTools, toToolSchemas, buildToolsSystem, parseToolCalls, runTool, 
  * @property {number} total
  * @property {any} strings
  * @property {any[]|null} toolCalls
+ * @property {string} [toolMode]
  */
 
 /** @typedef {{post: (m:any)=>void}} Connection */
 
 /** CallConfig plus the extra mutable fields the client tacks on per-call.
- * @typedef {import("./config.js").CallConfig & {tools?:any, continuation?:boolean}} CallConfigExt */
+ * @typedef {import("./config.js").CallConfig & {tools?:any, toolSystem?:string, continuation?:boolean}} CallConfigExt */
 
 /** @typedef {{type:string, id:string, sessionKey:string, provider:import("./config.js").ProviderId, config:import("./config.js").CallConfig, text?:string, messages?:any}} GeneratePayload */
 
@@ -74,6 +75,7 @@ import {resolveTools, toToolSchemas, buildToolsSystem, parseToolCalls, runTool, 
 // parses structured tool_calls). Everything else (local transformers, Chrome
 // built-in) uses the <tool_call> XML prompt convention, parsed from the text.
 const NATIVE_TOOL_PROVIDERS = new Set(["openrouter", "ollama", "webllm"])
+const TEMPLATE_TOOL_PROVIDERS = new Set(["local"])
 
 /** @type {Connection|null} */
 let connection = null
@@ -191,7 +193,7 @@ function getConnection() {
  *
  * @param {Array<any>|string} messages  chat messages, or a string
  * @param {GenOpts} [opts]
- * @returns {Promise<{text:string, toolCalls:object[]|null, stats:object|null}>}
+ * @returns {Promise<{text:string, toolCalls:object[]|null, toolMode?:string, stats:object|null}>}
  */
 export async function generate(messages, opts = {}) {
 	const cfg0 = opts.config ?? (await ensureConfig(opts.scope))
@@ -205,9 +207,11 @@ export async function generate(messages, opts = {}) {
 	// <tool_call> XML convention prepended to the system prompt (parsed from text).
 	const hasTools = Array.isArray(opts.tools) && opts.tools.length > 0
 	const native = hasTools && NATIVE_TOOL_PROVIDERS.has(config.provider)
-	if (native) config.tools = toToolSchemas(opts.tools)
+	const templated = hasTools && TEMPLATE_TOOL_PROVIDERS.has(config.provider)
+	if (native || templated) config.tools = toToolSchemas(opts.tools)
+	if (templated) config.toolSystem = buildToolsSystem(opts.tools)
 	const extraSystem =
-		hasTools && !native
+		hasTools && !native && !templated
 			? [buildToolsSystem(opts.tools), opts.system].filter(Boolean).join("\n\n")
 			: opts.system
 
@@ -278,7 +282,7 @@ export async function generate(messages, opts = {}) {
 					break
 				case "result":
 					cleanup()
-					resolve({text: msg.text, toolCalls: msg.toolCalls || null, stats})
+					resolve({text: msg.text, toolCalls: msg.toolCalls || null, toolMode: msg.toolMode, stats})
 					break
 				case "error":
 					clog("generate: worker error", msg.message)
@@ -729,7 +733,9 @@ export async function generateWithTools(messages, opts = {}) {
 	// Whether to use native tool schemas vs text-based XML convention.
 	// Starts true for native providers, falls back to false on error.
 	const provider = (callConfig(/** @type {any} */ (cfg), /** @type {any} */ (opts))).provider
-	let useNative = tools.length > 0 && NATIVE_TOOL_PROVIDERS.has(provider)
+	let useNative =
+		tools.length > 0 &&
+		(NATIVE_TOOL_PROVIDERS.has(provider) || TEMPLATE_TOOL_PROVIDERS.has(provider))
 	// Text-based tool system prompt, built once and reused across rounds.
 	const textToolSystem = tools.length
 		? [buildToolsSystem(tools), opts.system].filter(Boolean).join("\n\n") || undefined
@@ -800,6 +806,18 @@ export async function generateWithTools(messages, opts = {}) {
 				const call = calls[i]
 				const callId = call.id || "call_" + round + "_" + i
 				convo.push({role: "tool", tool_call_id: callId, content: await execTool(call)})
+			}
+		} else if (res.toolMode === "template") {
+			convo.push({
+				role: "assistant",
+				content: "",
+				tool_calls: calls.map((call) => ({
+					type: "function",
+					function: {name: call.name, arguments: call.args || {}},
+				})),
+			})
+			for (const call of calls) {
+				convo.push({role: "tool", content: await execTool(call)})
 			}
 		} else {
 			// Text-based fallback: assistant text + user message with results.

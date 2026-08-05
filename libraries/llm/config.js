@@ -137,11 +137,62 @@ export const PARAM_KEYS = [
 ]
 
 export const PROVIDER_CAPS = {
-	local:      { logprobs: true,  attention: true,  topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: true  },
+	local:      { logprobs: true,  attention: true,  topP: true,  topK: true,  minP: false, repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: true  },
 	openrouter: { logprobs: true,  attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
 	ollama:     { logprobs: false, attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: true,  maxTokens: true  },
 	webllm:     { logprobs: true,  attention: false, topP: true,  topK: false, minP: false, repetitionPenalty: false, frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
 	builtin:    { logprobs: false, attention: false, topP: false, topK: true,  minP: false, repetitionPenalty: false, frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: false },
+}
+
+// Why a param is greyed out, per provider. "Not supported" is true but useless;
+// these say what the underlying runtime actually does with the value.
+const TRANSFORMERS_NO_FIELD =
+	"transformers.js's GenerationConfig has no field for this — it drops the value silently, so the slider would lie to you."
+export const CAP_NOTES = {
+	local: {
+		minP: TRANSFORMERS_NO_FIELD,
+		frequencyPenalty: TRANSFORMERS_NO_FIELD + " Use repetition penalty instead.",
+		presencePenalty: TRANSFORMERS_NO_FIELD + " Use repetition penalty instead.",
+		seed: "transformers.js samples from the global RNG and exposes no seed, so runs can't be made reproducible.",
+	},
+	webllm: {
+		topK: "WebLLM's MLC runtime exposes only temperature, top_p and the two OpenAI-style penalties.",
+		minP: "WebLLM's MLC runtime exposes only temperature, top_p and the two OpenAI-style penalties.",
+		repetitionPenalty:
+			"WebLLM takes frequency/presence penalties instead of a multiplicative repetition penalty.",
+	},
+	builtin: {
+		topP: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		minP: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		repetitionPenalty: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		frequencyPenalty: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		presencePenalty: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		seed: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		maxTokens: "Chrome's built-in Gemini Nano API caps output itself and takes no limit.",
+	},
+	ollama: {
+		logprobs: "Ollama's API returns no per-token logprobs, so there are no next-token predictions to show.",
+		frequencyPenalty: "Ollama takes a single repeat_penalty rather than the OpenAI-style pair.",
+		presencePenalty: "Ollama takes a single repeat_penalty rather than the OpenAI-style pair.",
+	},
+	openrouter: {
+		attention: "Attention scores need the raw model; a hosted API only returns text.",
+	},
+}
+
+/**
+ * Why `key` is unavailable under `provider`, or null if it is available.
+ * @param {string} provider
+ * @param {string} key
+ * @returns {string|null}
+ */
+export function capNote(provider, key) {
+	const caps = /** @type {Record<string, any>} */ (PROVIDER_CAPS)[provider] || {}
+	if (caps[key] !== false) return null
+	return (
+		/** @type {Record<string, any>} */ (CAP_NOTES)[provider]?.[key] ||
+		"Not supported by this provider."
+	)
 }
 
 function repoRef() {
@@ -631,6 +682,7 @@ export function callConfig(cfg, overrides = {}) {
 
 /** In-browser (WebGPU/WASM) models, mirroring chat's catalogue. */
 export const LOCAL_MODELS = [
+	{id: "LiquidAI/LFM2.5-2.6B-ONNX", name: "LFM2.5 2.6B", canUseTool: true},
 	{id: "onnx-community/Qwen3-4B-ONNX", name: "Qwen3 4B", canUseTool: true},
 	{id: "onnx-community/Qwen3-1.7B-ONNX", name: "Qwen3 1.7B", canUseTool: true},
 	{id: "onnx-community/Qwen3-0.6B-ONNX", name: "Qwen3 0.6B", canUseTool: true},
@@ -708,12 +760,134 @@ export async function fetchOpenRouterModels() {
 			context_length: m.context_length || m.top_provider?.context_length,
 			max_completion_tokens: m.top_provider?.max_completion_tokens,
 			supported_parameters: m.supported_parameters || [],
+			default_parameters: m.default_parameters || null,
 			input_modalities: m.architecture?.input_modalities || [],
 			pricing: m.pricing || null,
 		}))
 		.sort((/** @type {{name:string}} */ a, /** @type {{name:string}} */ b) =>
 			a.name.localeCompare(b.name)
 		)
+}
+
+// A model's `generation_config.json` carries the sampling settings its authors
+// actually recommend — the same numbers a model card quotes. transformers.js
+// merges that file over its own defaults, so a value equal to a default tells us
+// nothing; only fields that differ are a real suggestion.
+const GEN_CONFIG_DEFAULTS = {
+	temperature: 1,
+	top_p: 1,
+	top_k: 50,
+	repetition_penalty: 1,
+	min_p: 0,
+}
+
+/** @type {Record<string, string>} */
+const GEN_CONFIG_KEYS = {
+	temperature: "temperature",
+	top_p: "topP",
+	top_k: "topK",
+	repetition_penalty: "repetitionPenalty",
+	min_p: "minP",
+	max_new_tokens: "maxTokens",
+	max_length: "maxTokens", // older files spell the output cap this way
+}
+
+/**
+ * Pick the author-set sampling params out of a parsed `generation_config.json`,
+ * as picker-config keys. Returns `{}` when the file is all defaults.
+ * @param {any} gc
+ * @returns {Record<string, number>}
+ */
+export function suggestedParams(gc) {
+	/** @type {Record<string, number>} */
+	const out = {}
+	if (!gc || typeof gc !== "object") return out
+	// `do_sample: false` means the authors want greedy decoding, whatever else
+	// the file says — express that as temperature 0, which is how the rest of
+	// this config represents it.
+	if (gc.do_sample === false) return {temperature: 0}
+	for (const [src, dest] of Object.entries(GEN_CONFIG_KEYS)) {
+		const v = gc[src]
+		if (typeof v !== "number") continue
+		if (v === /** @type {Record<string, number>} */ (GEN_CONFIG_DEFAULTS)[src]) continue
+		// max_length defaults to 20 in transformers and means prompt+output, not
+		// output — a value that small is boilerplate, not a recommendation.
+		if (dest === "maxTokens" && (v <= 20 || out.maxTokens != null)) continue
+		out[dest] = v
+	}
+	return out
+}
+
+/**
+ * The non-sampling half of a `generation_config.json` — the stop tokens. Not a
+ * user knob, but the thing to look at when a model won't shut up: no
+ * `eos_token_id` means nothing ever ends generation but the token cap.
+ * @param {any} gc
+ * @returns {{eos: number[], hasEos: boolean, greedy: boolean}}
+ */
+export function generationStops(gc) {
+	const raw = gc?.eos_token_id
+	const eos = raw == null ? [] : Array.isArray(raw) ? raw : [raw]
+	return {eos, hasEos: eos.length > 0, greedy: gc?.do_sample === false}
+}
+
+// OpenRouter publishes the same idea under `default_parameters` on each model in
+// the catalogue (populated for a couple hundred of them; null-filled otherwise).
+/** @type {Record<string, string>} */
+const OR_PARAM_KEYS = {
+	temperature: "temperature",
+	top_p: "topP",
+	top_k: "topK",
+	min_p: "minP",
+	repetition_penalty: "repetitionPenalty",
+	frequency_penalty: "frequencyPenalty",
+	presence_penalty: "presencePenalty",
+}
+
+/**
+ * @param {any} dp a model's `default_parameters`
+ * @returns {Record<string, number>}
+ */
+export function suggestedParamsFromOpenRouter(dp) {
+	/** @type {Record<string, number>} */
+	const out = {}
+	if (!dp || typeof dp !== "object") return out
+	for (const [src, dest] of Object.entries(OR_PARAM_KEYS)) {
+		if (typeof dp[src] === "number") out[dest] = dp[src]
+	}
+	return out
+}
+
+/**
+ * Fetch a HuggingFace model's `generation_config.json`. Null when the repo
+ * doesn't ship one (or the request fails — this is best-effort decoration).
+ * @param {string} id
+ * @returns {Promise<any>}
+ */
+export async function fetchGenerationConfig(id) {
+	try {
+		const res = await fetch(
+			`https://huggingface.co/${id}/resolve/main/generation_config.json`
+		)
+		return res.ok ? await res.json() : null
+	} catch {
+		return null
+	}
+}
+
+/**
+ * Same, for a local ONNX folder picked from disk — read the file we already hold.
+ * @param {{path:string, blob:Blob}[]} files
+ * @returns {Promise<any>}
+ */
+export async function generationConfigFromFiles(files) {
+	const f = files.find((x) => x.path.split("/").pop() === "generation_config.json")
+	if (!f) return null
+	try {
+		return JSON.parse(await f.blob.text())
+	} catch {
+		return null
+	}
 }
 
 /**
