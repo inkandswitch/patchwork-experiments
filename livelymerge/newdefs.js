@@ -499,7 +499,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     // fresh initLively()); there is no spiral to animate then.
     if (!Lively || !Lively.spiral) return;
     Lively.spiral.startStepping('animatedSpiral',
-      { goDist: 2, turnAngle: 60, nSteps: 14 }, 50); // was 26
+      { goDist: 2, turnAngle: 60, nSteps: 26 }, 50); // was 26
   }, 2000);
 
 }
@@ -938,13 +938,20 @@ function initUI() {
 
   canvas.style.touchAction = 'none';
   addEventListener(canvas, 'pointerdown', (e) => window._canvasEvents.push(e));
-  addEventListener(canvas, 'pointerup', (e) => window._canvasEvents.push(e));
+  // pointerup / keydown(c,x): may run sync via $uiState hooks (clipboard needs user gesture).
+  addEventListener(canvas, 'pointerup', (e) => {
+    if ($uiState && $uiState.$onCanvasPointerUp) $uiState.$onCanvasPointerUp(e);
+    else window._canvasEvents.push(e);
+  });
   addEventListener(canvas, 'pointermove', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'pointercancel', (ev) => {
     if (ev && ev.pointerId != null) $uiState.longClickDisarmPointer(ev.pointerId);
   });
   canvas.tabIndex = 1;
-  addEventListener(canvas, 'keydown', (e) => window._canvasEvents.push(e));
+  addEventListener(canvas, 'keydown', (e) => {
+    if ($uiState && $uiState.$onCanvasKeyDown) $uiState.$onCanvasKeyDown(e);
+    else window._canvasEvents.push(e);
+  });
   addEventListener(canvas, 'keypress', (e) => window._canvasEvents.push(e));
   addEventListener(canvas, 'keyup', (e) => window._canvasEvents.push(e));
   // Wheel must preventDefault synchronously (too late inside rAF processEvents).
@@ -1059,6 +1066,56 @@ function initUI() {
     }
     window._canvasEvents = new window.Array();
   }
+
+  function eventTargetsMenuMorph(worldPt) {
+    if (!topLevelMorph || !topLevelMorph.topMorphAt) return false;
+    let hit = topLevelMorph.topMorphAt(worldPt);
+    while (hit) {
+      if (hit.className === 'MenuMorph') return true;
+      hit = hit.owner;
+    }
+    return false;
+  }
+
+  // Clipboard API needs transient user activation. Normal canvas events are deferred
+  // to rAF inside runtime.change(), which drops that activation — so Ctrl/Cmd-C/X and
+  // menu copy/export must run on the real gesture turn.
+  $uiState.$onCanvasKeyDown = (e) => {
+    let k = e.key && e.key.length === 1 ? e.key.toLowerCase() : '';
+    if ((e.metaKey || e.ctrlKey) && (k === 'c' || k === 'x')) {
+      e.preventDefault();
+      try {
+        window.runtime.change(() => {
+          processEvents(); // apply any pending selection updates first
+          e.actorID = $actorID;
+          onKeyDown(e);
+        });
+      } catch (err) {
+        if (handleRuntimeError) handleRuntimeError(err, 'sync clipboard keydown');
+        else console.log(err);
+      }
+      return;
+    }
+    window._canvasEvents.push(e);
+  };
+  $uiState.$onCanvasPointerUp = (e) => {
+    let handled = false;
+    try {
+      window.runtime.change(() => {
+        let localPt = pointerEventCanvasLocalPt(canvas, e);
+        if (!eventTargetsMenuMorph(localPt)) return;
+        processEvents(); // pending pointerdown on the menu item first
+        e.actorID = $actorID;
+        onPointerUp(localPt, e);
+        handled = true;
+      });
+    } catch (err) {
+      if (handleRuntimeError) handleRuntimeError(err, 'sync menu pointerup');
+      else console.log(err);
+    }
+    if (!handled) window._canvasEvents.push(e);
+  };
+
   console.log('initUI loaded');
   ensureAlldefsSourceLines();
 }
@@ -2660,14 +2717,15 @@ class TextBox extends Shape {
       // COPY
       let copied = this.selectedTextString();
       addPasteBufferItem(copied);
-      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-        navigator.clipboard.writeText(copied).catch(() => {});
+      copyTextToOSClipboard(copied);
       evt.preventDefault();
       evt.stopPropagation();
       return;
     }
     if (k == 'x') {
-      addPasteBufferItem(this.selectedTextString()); // Cut
+      let cut = this.selectedTextString();
+      addPasteBufferItem(cut); // Cut
+      copyTextToOSClipboard(cut);
       this.paste('');
     }
     if (k == 'v') {
@@ -3521,6 +3579,24 @@ class Morph {
     if (this.$submorphs) for (let i = this.$submorphs.length - 1; i >= 0; i--) all.push(this.$submorphs.at(i));
     if (this.submorphs) for (let i = this.submorphs.length - 1; i >= 0; i--) all.push(this.submorphs.at(i));
     return all;
+  }
+  find(aFunction) {
+    /**
+     * First direct submorph for which aFunction(morph) is true, else null.
+     * Ephemeral ($submorphs) are tested before persistent submorphs; within each
+     * list, frontmost first (same order as {@link allSubmorphsTopFirst}).
+     */
+    if (typeof aFunction !== 'function') return null;
+    let list = this.allSubmorphsTopFirst();
+    for (let i = 0; i < list.length; i++) {
+      if (aFunction(list[i])) return list[i];
+    }
+    return null;
+  }
+  findA(className) {
+    /** First direct submorph whose className equals className (ephemeral before persistent). */
+    let name = '' + className;
+    return this.find((m) => m && m.className === name);
   }
   eachSubmorph(fn) {
     /** Iterate persistent then ephemeral submorphs (draw order) without allocating a combined list. */
@@ -4820,6 +4896,42 @@ function latestPasteBufferItem() {
   if (!pasteBufferItems || pasteBufferItems.length === 0) return 'nothing to paste';
   return pasteBufferItems[pasteBufferItems.length - 1];
 }
+function copyTextToOSClipboard(text) {
+  /**
+   * Push text to the system pasteboard. Uses execCommand('copy') synchronously
+   * (needs a real user-gesture turn — see sync keydown/menu pointerup in initUI),
+   * and also nudges navigator.clipboard.writeText when available.
+   */
+  let txt = text == null ? '' : '' + text;
+  copyTextToOSClipboardExecCommand(txt);
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      navigator.clipboard.writeText(txt).catch(() => {});
+    } catch (err) {
+      /* ignore */
+    }
+  }
+}
+function copyTextToOSClipboardExecCommand(text) {
+  try {
+    let doc = typeof document !== 'undefined' ? document : null;
+    if (!doc || !doc.body) return;
+    let ta = doc.createElement('textarea');
+    ta.value = '' + text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    doc.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    doc.execCommand('copy');
+    doc.body.removeChild(ta);
+  } catch (err) {
+    console.log('OS clipboard copy failed: ' + err);
+  }
+}
 function addPasteBufferItem(item) {
   if (!pasteBufferItems || !Array.isArray(pasteBufferItems))
     pasteBufferItems = ['nothing to paste'];
@@ -5068,6 +5180,71 @@ function isMenuSeparator(item) {
 function menuSeparatorDisplay() {
   return '———';
 }
+/**
+ * Build a menu entry with its label beside its action — easier to read and to
+ * edit live (findItem / addItemBefore / removeItem) than a string list + switch.
+ * Prefer: menuItem('Open Transcript', () => { Transcript = openTranscript(); })
+ * Also accepted by MenuMorph: ['label', action] tuples.
+ *
+ * Note: MenuMorph expands these into plain string labels in itemList plus a
+ * parallel $-prefixed $menuActions table (functions must not live in Automerge).
+ */
+function menuItem(label, action) {
+  return { label: '' + label, action: action };
+}
+function isMenuItemSpec(item) {
+  return (
+    item != null &&
+    typeof item === 'object' &&
+    !Array.isArray(item) &&
+    item !== menuSeparator &&
+    item.label != null
+  );
+}
+function menuItemLabel(item) {
+  /** Display / match string for any menu list entry (spec, tuple, string, separator). */
+  if (isMenuSeparator(item)) return menuSeparatorDisplay();
+  if (typeof item === 'string') return item;
+  if (isMenuItemSpec(item)) return '' + item.label;
+  if (Array.isArray(item) && item.length > 0) return '' + item[0];
+  return '' + item;
+}
+function menuItemAction(item) {
+  if (isMenuItemSpec(item) && typeof item.action === 'function') return item.action;
+  if (Array.isArray(item) && typeof item[1] === 'function') return item[1];
+  return null;
+}
+function expandMenuItemEntry(item) {
+  /** Split a constructor/edit entry into { label, action } for install into MenuMorph. */
+  if (isMenuSeparator(item)) return { label: menuSeparator, action: null };
+  if (typeof item === 'string') return { label: item, action: null };
+  if (Array.isArray(item))
+    return {
+      label: '' + item[0],
+      action: typeof item[1] === 'function' ? item[1] : null,
+    };
+  if (isMenuItemSpec(item))
+    return {
+      label: '' + item.label,
+      action: typeof item.action === 'function' ? item.action : null,
+    };
+  return { label: '' + item, action: null };
+}
+function menuItemFrom(labelOrItem, actionIfAny) {
+  /**
+   * Coerce addItem / addItemBefore arguments into a list entry.
+   * menuItemFrom('Hi', fn) | menuItemFrom(menuItem(...)) | menuItemFrom(['Hi', fn]) | menuItemFrom(fn)
+   */
+  if (actionIfAny !== undefined) return menuItem('' + labelOrItem, actionIfAny);
+  if (isMenuSeparator(labelOrItem) || typeof labelOrItem === 'string') return labelOrItem;
+  if (isMenuItemSpec(labelOrItem)) return labelOrItem;
+  if (Array.isArray(labelOrItem)) return menuItem('' + labelOrItem[0], labelOrItem[1]);
+  if (typeof labelOrItem === 'function') {
+    let n = labelOrItem.name;
+    return menuItem(n && n !== '' ? n : 'item', labelOrItem);
+  }
+  return labelOrItem;
+}
 function methodSelectorPaneMenuSpec(panel) {
   /** Pane menu for method-selector list panes (browser message list, method-list panel, …). */
   return {
@@ -5108,22 +5285,24 @@ function menuToggleLabel(caption, on) {
 }
 function menuItemCaption(item) {
   /** Strip `[X] ` / `[ ] ` prefix; also accepts a bare caption or truncated display line. */
-  let s = '' + item;
+  let s = menuItemLabel(item);
   if (s.startsWith('[X] ')) return s.slice(4);
   if (s.startsWith('[ ] ')) return s.slice(4);
   return s;
 }
 function refreshWorldMenuItems(menuMorph) {
-  let refreshed = [];
-  menuMorph.itemList.forEach((line) => {
-    let cap = menuItemCaption(line);
+  /** Refresh toggle labels in place; keep $menuActions aligned by index. */
+  let list = menuMorph.itemList || [];
+  for (let i = 0; i < list.length; i++) {
+    let cap = menuItemCaption(list[i]);
     if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel))
-      refreshed.push(menuToggleLabel(longClickForHalosLabel, $longClickForHalos));
+      list[i] = menuToggleLabel(longClickForHalosLabel, $longClickForHalos);
     else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
-      refreshed.push(menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd));
-    else refreshed.push(line);
-  });
-  menuMorph.setList(refreshed);
+      list[i] = menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd);
+  }
+  // Relayout labels only — do not reinstall (would drop $menuActions).
+  if (menuMorph.relayoutItemList) menuMorph.relayoutItemList();
+  else ListMorph.prototype.setList.call(menuMorph, list);
 }
 //  ListMorph
 // -----------
@@ -5188,7 +5367,7 @@ class ListMorph extends Morph {
     let lim = menuItemMaxChars != null ? menuItemMaxChars : 15;
     if (this.className === 'MenuMorph') lim = Math.max(lim, 48);
     this.displayItems = this.itemList.map((item) =>
-      isMenuSeparator(item) ? menuSeparatorDisplay() : truncateString('' + item, lim),
+      isMenuSeparator(item) ? menuSeparatorDisplay() : truncateString(menuItemLabel(item), lim),
     );
     let itemText = '';
     this.displayItems.forEach((item) => (itemText += item + '\n'));
@@ -5221,7 +5400,11 @@ class ListMorph extends Morph {
   }
   setSelectionString(str, suppressAction) {
     let idx = -1;
-    if (this.itemList) idx = this.itemList.findIndex((item) => item === str);
+    if (this.itemList) {
+      idx = this.itemList.findIndex(
+        (item) => item === str || menuItemLabel(item) === str,
+      );
+    }
     if (idx < 0 && this.displayItems) idx = this.displayItems.findIndex((item) => item === str);
     let probe = idx >= 0 && this.displayItems ? this.displayItems[idx] : str;
     let selectionIndex = this.shape.setSelectedTextString(probe);
@@ -5238,7 +5421,125 @@ class ListMorph extends Morph {
 //  MenuMorph
 // -----------
 // Fleeting or persistent menu built on ListMorph.
+// Source may use menuItem(label, action) / [label, action] so name and code stay
+// together; at install time labels become plain strings in itemList and actions
+// live in $menuActions ($-prefixed: replica-local, can hold functions).
 class MenuMorph extends ListMorph {
+  constructor(initialBounds, list, actionFn) {
+    super(initialBounds, [], null);
+    // $-prefixed: must hold functions; Automerge cannot store them on itemList entries.
+    this.$legacyActionFn = actionFn || null;
+    this.$menuActions = [];
+    this.setSelectFn(function (item, shiftKey) {
+      if (isMenuSeparator(item)) return;
+      let idx = this.shape && this.shape.$selectedLineIndex > 0 ? this.shape.$selectedLineIndex - 1 : -1;
+      if (idx < 0 && this.itemList) idx = this.itemList.indexOf(item);
+      let act = this.$menuActions && idx >= 0 ? this.$menuActions[idx] : null;
+      if (typeof act === 'function') {
+        act.call(this, item, shiftKey);
+        return;
+      }
+      if (this.$legacyActionFn) this.$legacyActionFn.call(this, item, shiftKey);
+    });
+    this.setList(list);
+  }
+  setList(list) {
+    /** Replace all items. Accepts strings, separators, menuItem specs, or [label, action]. */
+    let labels = [];
+    let actions = [];
+    (list || []).forEach((item) => {
+      let e = expandMenuItemEntry(item);
+      labels.push(e.label);
+      actions.push(e.action);
+    });
+    this.$menuActions = actions;
+    super.setList(labels);
+  }
+  relayoutItemList() {
+    /** Refresh text/width/height from current string itemList without touching $menuActions. */
+    let n = (this.itemList || []).length;
+    let b = this.getBounds();
+    let h = Math.max(24, 24 + n * 20);
+    if (Math.abs(b.height() - h) > 0.5)
+      this.setBounds(rect(b.topLeft.x, b.topLeft.y, b.width(), h));
+    ListMorph.prototype.setList.call(this, this.itemList || []);
+    return this;
+  }
+  findItem(s) {
+    /**
+     * Index of the first item whose label includes s (case-insensitive), or -1.
+     * Separators are skipped. Example: wm.findItem('todo') → index of "ToDo List".
+     */
+    let needle = ('' + (s != null ? s : '')).toLowerCase();
+    if (!needle) return -1;
+    let list = this.itemList || [];
+    for (let i = 0; i < list.length; i++) {
+      if (isMenuSeparator(list[i])) continue;
+      if (menuItemLabel(list[i]).toLowerCase().indexOf(needle) >= 0) return i;
+    }
+    return -1;
+  }
+  resolveItemIndex(indexOrNeedle) {
+    if (typeof indexOrNeedle === 'number') return indexOrNeedle;
+    return this.findItem(indexOrNeedle);
+  }
+  ensureActionList() {
+    if (!this.$menuActions) this.$menuActions = [];
+    while (this.$menuActions.length < (this.itemList || []).length) this.$menuActions.push(null);
+    if (this.$menuActions.length > (this.itemList || []).length)
+      this.$menuActions.length = (this.itemList || []).length;
+    return this.$menuActions;
+  }
+  addItem(labelOrItem, actionIfAny) {
+    /** Append an item. addItem('Hi', fn) or addItem(menuItem('Hi', fn)). */
+    if (!this.itemList) this.itemList = [];
+    if (!this.$menuActions) this.$menuActions = [];
+    let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
+    this.itemList.push(e.label);
+    this.$menuActions.push(e.action);
+    return this.relayoutItemList();
+  }
+  addItemBefore(before, labelOrItem, actionIfAny) {
+    /**
+     * Insert before a label needle or index.
+     *   wm.addItemBefore('transcript', 'Quick Brown Fox', () => openQBF())
+     *   wm.addItemBefore('transcript', menuItem('Quick Brown Fox', () => openQBF()))
+     */
+    if (!this.itemList) this.itemList = [];
+    this.ensureActionList();
+    let idx = this.resolveItemIndex(before);
+    if (idx < 0) idx = this.itemList.length;
+    let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
+    this.itemList.splice(idx, 0, e.label);
+    this.$menuActions.splice(idx, 0, e.action);
+    return this.relayoutItemList();
+  }
+  addItemAfter(after, labelOrItem, actionIfAny) {
+    /** Insert after a label needle or index; appends if not found. */
+    if (!this.itemList) this.itemList = [];
+    this.ensureActionList();
+    let idx = this.resolveItemIndex(after);
+    if (idx < 0) idx = this.itemList.length - 1;
+    let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
+    this.itemList.splice(idx + 1, 0, e.label);
+    this.$menuActions.splice(idx + 1, 0, e.action);
+    return this.relayoutItemList();
+  }
+  removeItem(indexOrNeedle) {
+    /**
+     * Remove by index or label needle. Returns the removed label, or null.
+     *   wm.removeItem('todo')
+     *   wm.removeItem(wm.findItem('todo'))
+     */
+    if (!this.itemList) return null;
+    let idx = this.resolveItemIndex(indexOrNeedle);
+    if (idx < 0 || idx >= this.itemList.length) return null;
+    let removed = this.itemList.splice(idx, 1)[0];
+    this.ensureActionList();
+    if (idx < this.$menuActions.length) this.$menuActions.splice(idx, 1);
+    this.relayoutItemList();
+    return removed;
+  }
   static new(...args) {
     return new this(...args);
   }
@@ -6823,8 +7124,7 @@ class BrowserPanel extends PanelMorph {
     let exportText = this.methodCopyText();
     if (!exportText) return;
     addPasteBufferItem(exportText);
-    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-      navigator.clipboard.writeText(exportText).catch(() => {});
+    copyTextToOSClipboard(exportText);
   }
   exportThisClassToOSPaste() {
     if (!this.selectedClass) return;
@@ -6836,8 +7136,7 @@ class BrowserPanel extends PanelMorph {
     });
     if (!exportText) return;
     addPasteBufferItem(exportText);
-    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-      navigator.clipboard.writeText(exportText).catch(() => {});
+    copyTextToOSClipboard(exportText);
   }
   initClassPane() {
     /** Class list (upper-left) in the system browser. */
@@ -7334,8 +7633,7 @@ class MethodListPanel extends PanelMorph {
     let exportText = this.methodCopyText();
     if (!exportText) return;
     addPasteBufferItem(exportText);
-    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText)
-      navigator.clipboard.writeText(exportText).catch(() => {});
+    copyTextToOSClipboard(exportText);
   }
   initMethodsPane() {
     /** Method-spec list (upper) for search results and recent changes. */
@@ -9208,56 +9506,75 @@ class WorldMorph extends Morph {
     );
   }
   showWorldMenuAt(pos, optsIfAny) {
+    /**
+     * World menu with label+action items (editable live via findItem / addItem* / removeItem).
+     * Answers the menu morph — e.g. wm = Lively.showWorldMenuAt(pt(130, 40))
+     *   wm.removeItem(wm.findItem('todo'))
+     *   wm.addItemBefore('transcript', 'Quick Brown Fox', () => openQBF())
+     */
     let opts = optsIfAny || {};
     let items = [
-      'ToDo List',
-      'System browser',
-      'Recent changes',
-      'Morphic help',
-      'Halo help',
-      'Text help',
-      'Init hand',
-      'Open Transcript',
-      'Open Console',
-      'Restart Console',
-      menuToggleLabel(longClickForHalosLabel, $longClickForHalos),
-      menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd),
-    ];
-    // Use a normal function so MenuMorph's actionFn.call(this, ...) supplies the menu as `this`
-    // (avoids referencing outer `theMenu` before assignment / TDZ in the arrow closure).
-    let menu = new MenuMorph(pos.extent(pt(220, 24 + items.length * 20)), items, function (item) {
-      let wld = this.world();
-      let cap = menuItemCaption(item);
-      if (item == 'ToDo List') storageEditItem('ToDoList');
-      if (item == 'System browser') wld.addEphemeralMorph(new BrowserPanel());
-      if (item == 'Recent changes') browseRecentChanges();
-      if (item == 'Morphic help') wld.showMorphicHelp();
-      if (item == 'Halo help') wld.showHaloHelp();
-      if (item == 'Text help') wld.showTextHelp();
-      if (item == 'Init hand') this.world().initHand(true);
-      if (item == 'Open Transcript') Transcript = openTranscript();
-      if (item == 'Open Console') {
+      menuItem('ToDo List', () => storageEditItem('ToDoList')),
+      menuItem('System browser', function () {
+        this.world().addEphemeralMorph(new BrowserPanel());
+      }),
+      menuItem('Recent changes', () => browseRecentChanges()),
+      menuItem('Morphic help', function () {
+        this.world().showMorphicHelp();
+      }),
+      menuItem('Halo help', function () {
+        this.world().showHaloHelp();
+      }),
+      menuItem('Text help', function () {
+        this.world().showTextHelp();
+      }),
+      menuItem('Init hand', function () {
+        this.world().initHand(true);
+      }),
+      menuItem('Open Transcript', () => {
+        Transcript = openTranscript();
+      }),
+      menuItem('Open Console', () => {
         let p = openTranscript();
         p.setPanelTitle('Console');
         p.transcriptPane.setConsoleMirror(true);
         Console = p;
         log('Console ready — use log(msg) or console.log(msg); errors also appear.');
-      }
-      if (item == 'Restart Console') {
+      }),
+      menuItem('Restart Console', () => {
         let con = Console;
         if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
-      }
-      if (cap === longClickForHalosLabel || cap.endsWith(longClickForHalosLabel)) {
+      }),
+      menuItem(menuToggleLabel(longClickForHalosLabel, $longClickForHalos), function () {
         $longClickForHalos = !$longClickForHalos;
-        refreshWorldMenuItems(this); }
-      if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel)) {
+        refreshWorldMenuItems(this);
+        this.shape.selectLineAt(0);
+      }),
+      menuItem(menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd), function () {
         $useOnScreenKbd = !$useOnScreenKbd;
         syncOnScreenKeyboardWithFocus(this.world());
-        refreshWorldMenuItems(this); }
-      this.shape.selectLineAt(0); // deselect after actions
+        refreshWorldMenuItems(this);
+        this.shape.selectLineAt(0);
+      }),
+    ];
+    let menu = new MenuMorph(pos.extent(pt(220, 24 + items.length * 20)), items);
+    // Deselect after non-toggle actions (toggles refresh the list themselves).
+    let priorSelect = menu.actionFn;
+    menu.setSelectFn(function (item, shiftKey) {
+      priorSelect.call(this, item, shiftKey);
+      let cap = menuItemCaption(item);
+      if (
+        cap === longClickForHalosLabel ||
+        cap.endsWith(longClickForHalosLabel) ||
+        cap === onScreenKeyboardLabel ||
+        cap.endsWith(onScreenKeyboardLabel)
+      )
+        return;
+      this.shape.selectLineAt(0);
     });
     menu.isFleetingMenu = !!opts.fleeting;
     Lively.addEphemeralMorph(menu);
+    return menu;
   }
   activeStepList() {
     /** Lazily created: worlds restored from older documents have no $stepList yet. */
