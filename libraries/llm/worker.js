@@ -802,15 +802,20 @@ async function doGenerateLocal(gen, input, config) {
 
 	let output
 	try {
+		// Only what transformers.js actually reads: its multinomial sampler consults
+		// `top_k` alone. `top_p` and `typical_p` are declared on GenerationConfig and
+		// never looked at; `min_p` isn't even a field. Passing them would just make
+		// the decode stats below lie about what ran. See PROVIDER_CAPS.local.
 		output = await generator(genInput, {
 			...(templateTools ? {tools: templateTools} : {}),
 			max_new_tokens: maxNewTokens,
 			do_sample: temperature > 0,
 			temperature,
-			top_p: config.topP ?? 0.9,
 			...(config.topK > 0 ? {top_k: config.topK} : {}),
-			...(config.minP > 0 ? {min_p: config.minP} : {}),
 			repetition_penalty: config.repetitionPenalty ?? 1.1,
+			...(config.noRepeatNgramSize > 0
+				? {no_repeat_ngram_size: config.noRepeatNgramSize}
+				: {}),
 			streamer,
 			logits_processor,
 		})
@@ -841,8 +846,9 @@ async function doGenerateLocal(gen, input, config) {
 		decode: {
 			greedy: !(temperature > 0),
 			temperature,
-			top_p: config.topP ?? 0.9,
+			top_k: config.topK > 0 ? config.topK : null, // null = the model's own generation_config
 			repetition_penalty: config.repetitionPenalty ?? 1.1,
+			no_repeat_ngram_size: config.noRepeatNgramSize || 0,
 			maxNewTokens,
 		},
 	})
@@ -1023,6 +1029,9 @@ async function doGenerateOllama(gen, input, config) {
 			...(config.topP != null ? {top_p: config.topP} : {}),
 			...(config.topK > 0 ? {top_k: config.topK} : {}),
 			...(config.minP > 0 ? {min_p: config.minP} : {}),
+			...(config.typicalP != null && config.typicalP < 1
+				? {typical_p: config.typicalP}
+				: {}),
 			...(config.repetitionPenalty && config.repetitionPenalty !== 1
 				? {repeat_penalty: config.repetitionPenalty}
 				: {}),

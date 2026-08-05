@@ -136,47 +136,67 @@ export const PARAM_KEYS = [
 	"outputAttentions",
 ]
 
+// What each provider's runtime actually READS, not what it accepts. transformers.js
+// in particular declares `top_p`/`typical_p` on its GenerationConfig and then never
+// looks at them again — its multinomial sampler consults `top_k` and nothing else —
+// so those read `false` here even though passing them throws no error.
 export const PROVIDER_CAPS = {
-	local:      { logprobs: true,  attention: true,  topP: true,  topK: true,  minP: false, repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: true  },
-	openrouter: { logprobs: true,  attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
-	ollama:     { logprobs: false, attention: false, topP: true,  topK: true,  minP: true,  repetitionPenalty: true,  frequencyPenalty: false, presencePenalty: false, seed: true,  maxTokens: true  },
-	webllm:     { logprobs: true,  attention: false, topP: true,  topK: false, minP: false, repetitionPenalty: false, frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
-	builtin:    { logprobs: false, attention: false, topP: false, topK: true,  minP: false, repetitionPenalty: false, frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: false },
+	local:      { logprobs: true,  attention: true,  topP: false, topK: true,  minP: false, typicalP: false, repetitionPenalty: true,  noRepeatNgramSize: true,  frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: true  },
+	openrouter: { logprobs: true,  attention: false, topP: true,  topK: true,  minP: true,  typicalP: false, repetitionPenalty: true,  noRepeatNgramSize: false, frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
+	ollama:     { logprobs: false, attention: false, topP: true,  topK: true,  minP: true,  typicalP: true,  repetitionPenalty: true,  noRepeatNgramSize: false, frequencyPenalty: false, presencePenalty: false, seed: true,  maxTokens: true  },
+	webllm:     { logprobs: true,  attention: false, topP: true,  topK: false, minP: false, typicalP: false, repetitionPenalty: false, noRepeatNgramSize: false, frequencyPenalty: true,  presencePenalty: true,  seed: true,  maxTokens: true  },
+	builtin:    { logprobs: false, attention: false, topP: false, topK: true,  minP: false, typicalP: false, repetitionPenalty: false, noRepeatNgramSize: false, frequencyPenalty: false, presencePenalty: false, seed: false, maxTokens: false },
 }
 
 // Why a param is greyed out, per provider. "Not supported" is true but useless;
 // these say what the underlying runtime actually does with the value.
 const TRANSFORMERS_NO_FIELD =
 	"transformers.js's GenerationConfig has no field for this — it drops the value silently, so the slider would lie to you."
+const TRANSFORMERS_DEAD_FIELD =
+	"transformers.js declares this on its GenerationConfig but never reads it: its sampler filters by top-k and nothing else. Passing a value is a no-op."
+const WEBLLM_MINIMAL =
+	"WebLLM's MLC runtime exposes only temperature, top_p and the two OpenAI-style penalties."
+const NANO_MINIMAL = "Chrome's built-in Gemini Nano API exposes temperature and topK only."
 export const CAP_NOTES = {
 	local: {
+		topP: TRANSFORMERS_DEAD_FIELD + " Use top-k and temperature to shape the tail.",
+		typicalP: TRANSFORMERS_DEAD_FIELD,
 		minP: TRANSFORMERS_NO_FIELD,
 		frequencyPenalty: TRANSFORMERS_NO_FIELD + " Use repetition penalty instead.",
 		presencePenalty: TRANSFORMERS_NO_FIELD + " Use repetition penalty instead.",
 		seed: "transformers.js samples from the global RNG and exposes no seed, so runs can't be made reproducible.",
 	},
 	webllm: {
-		topK: "WebLLM's MLC runtime exposes only temperature, top_p and the two OpenAI-style penalties.",
-		minP: "WebLLM's MLC runtime exposes only temperature, top_p and the two OpenAI-style penalties.",
+		topK: WEBLLM_MINIMAL,
+		minP: WEBLLM_MINIMAL,
+		typicalP: WEBLLM_MINIMAL,
+		noRepeatNgramSize: WEBLLM_MINIMAL,
 		repetitionPenalty:
 			"WebLLM takes frequency/presence penalties instead of a multiplicative repetition penalty.",
 	},
 	builtin: {
-		topP: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
-		minP: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
-		repetitionPenalty: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
-		frequencyPenalty: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
-		presencePenalty: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
-		seed: "Chrome's built-in Gemini Nano API exposes temperature and topK only.",
+		topP: NANO_MINIMAL,
+		minP: NANO_MINIMAL,
+		typicalP: NANO_MINIMAL,
+		repetitionPenalty: NANO_MINIMAL,
+		noRepeatNgramSize: NANO_MINIMAL,
+		frequencyPenalty: NANO_MINIMAL,
+		presencePenalty: NANO_MINIMAL,
+		seed: NANO_MINIMAL,
 		maxTokens: "Chrome's built-in Gemini Nano API caps output itself and takes no limit.",
 	},
 	ollama: {
 		logprobs: "Ollama's API returns no per-token logprobs, so there are no next-token predictions to show.",
 		frequencyPenalty: "Ollama takes a single repeat_penalty rather than the OpenAI-style pair.",
 		presencePenalty: "Ollama takes a single repeat_penalty rather than the OpenAI-style pair.",
+		noRepeatNgramSize:
+			"Ollama has no n-gram ban; its repeat_penalty (with repeat_last_n) is the nearest thing.",
 	},
 	openrouter: {
 		attention: "Attention scores need the raw model; a hosted API only returns text.",
+		typicalP: "No provider behind OpenRouter accepts typical_p — it isn't in any model's supported_parameters.",
+		noRepeatNgramSize:
+			"OpenAI-shaped APIs have no n-gram ban; repetition/frequency penalties are the nearest thing.",
 	},
 }
 
@@ -779,6 +799,8 @@ const GEN_CONFIG_DEFAULTS = {
 	top_k: 50,
 	repetition_penalty: 1,
 	min_p: 0,
+	typical_p: 1,
+	no_repeat_ngram_size: 0,
 }
 
 /** @type {Record<string, string>} */
@@ -788,6 +810,8 @@ const GEN_CONFIG_KEYS = {
 	top_k: "topK",
 	repetition_penalty: "repetitionPenalty",
 	min_p: "minP",
+	typical_p: "typicalP",
+	no_repeat_ngram_size: "noRepeatNgramSize",
 	max_new_tokens: "maxTokens",
 	max_length: "maxTokens", // older files spell the output cap this way
 }
