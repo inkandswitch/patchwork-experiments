@@ -519,6 +519,9 @@ true`);
     const { rt } = makeGame();
     // Reset to idle social board: tournament starts only from social speed launch.
     rt.eval(`
+Lively.qbfGameNumber = null;
+Lively.qbfEpochStartMs = null;
+qbfClearEpochEndTimer();
 qbfGame.setPlayMode('social');
 qbfGame.setup({ idle: true });
 true`);
@@ -527,9 +530,12 @@ true`);
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
-    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('Start a game at your chosen speed');
+    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain(
+      'Start a new game at your chosen speed',
+    );
 
     rt.eval(`qbfGame.launchLevel('quick')`);
+    // Game # is assigned/bumped at start (first ever → 100).
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
     expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
@@ -541,6 +547,7 @@ true`);
     // After starting, idle help is hidden; re-idle social board shows the join message.
     rt.eval(`qbfGame.setup({ idle: true })`);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('A game has been started');
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
     rt.eval(`qbfGame.launchLevel('quick')`);
 
     // A second signup in the same epoch joins the same number and letters.
@@ -551,18 +558,18 @@ true`);
     expect(rt.eval(`qbfJoin2.started`)).toBe(false);
     expect(rt.eval(`qbfJoin2.queue.join('')`)).toBe(queue1);
 
-    // After the minute: number advances, epoch clears, clock stops until next signup.
+    // After the minute: epoch clears, Game # stays (bump happens on next start).
     rt.eval(`
 Lively.qbfEpochStartMs = Date.now() - 61000;
 qbfGame.tickGameClock();
 true`);
-    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
     expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
-    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #101');
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
 
-    // Next signup opens 101; wrap 999 → 100.
+    // Next signup bumps to 101; wrap 999 → 100.
     rt.eval(`qbfGame.launchLevel('super quick')`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(101);
@@ -573,9 +580,58 @@ Lively.qbfGameNumber = 999;
 Lively.qbfEpochStartMs = Date.now() - 61000;
 qbfGame.tickGameClock();
 true`);
-    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(999);
     expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
+    rt.eval(`qbfGame.launchLevel('quick')`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
     rt.eval(`qbfClearEpochEndTimer()`);
+  }, 60_000);
+
+  it('solo start bumps Game # and soft-idles after game over without clearing the board', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfGameNumber = null;
+Lively.qbfEpochStartMs = null;
+qbfClearEpochEndTimer();
+qbfGame.setPlayMode('solo');
+qbfGame.setup({ idle: true });
+qbfGame.launchLevel('quick');
+true`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
+    expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
+    expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
+    expect(rt.eval(`qbfGame.idle`)).toBe(false);
+
+    rt.eval(`
+qbfGame.playerName = 'Soloist';
+qbfGame.gameOver = true;
+qbfGame._finalScorePosted = false;
+qbfGame.fallingLetters = [];
+qbfKeepLog = qbfGame.wordLog.shape.string;
+qbfGame.maybePostFinalScore();
+true`);
+    expect(rt.eval(`qbfGame.idle`)).toBe(true);
+    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('Start a new game');
+    // Finished board left in place (log morph still present with prior text).
+    expect(rt.eval(`qbfGame.wordLog.shape.string`)).toBe(rt.eval(`qbfKeepLog`));
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
+  }, 60_000);
+
+  it('switching solo/social abandons the board with no score and resets to idle', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfHighScoreList = [];
+qbfGame.setPlayMode('solo');
+qbfGame.playerName = 'Switcher';
+qbfGame.totalScore = 99;
+qbfGame.gameOver = false;
+qbfGame._finalScorePosted = false;
+qbfGame.setPlayMode('social');
+true`);
+    expect(rt.eval(`qbfGame.idle`)).toBe(true);
+    expect(rt.eval(`qbfGame.playMode`)).toBe('social');
+    expect(rt.eval(`(qbfGame.activeLetters || []).length`)).toBe(0);
+    expect(rt.eval(`(Lively.qbfHighScoreList || []).length`)).toBe(0);
   }, 60_000);
 });

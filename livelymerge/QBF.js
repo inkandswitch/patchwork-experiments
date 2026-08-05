@@ -766,8 +766,8 @@ class QBFMorph extends Morph {
     this.focusKeyboard();
   }
   doRestart() {
-    // Tournament games (launched from the game server) cannot be restarted.
-    if (this.tournamentGameNumber != null) return;
+    // Social games cannot be restarted; solo may restart the same game # / queue.
+    if (this.isSocialMode()) return;
     let panel = this.panelMorph();
     if (this.gameOver || !panel || !panel.promptConfirm) {
       this.setup();
@@ -1073,20 +1073,50 @@ to LivelyMerge.`,
     /**
      * Publish scores only after game over *and* every falling tile has landed
      * (miss penalties applied). Otherwise the posted score is too high.
+     * Then show the start-new-game prompt without clearing the finished board.
      */
     if (!this.gameOver || this._finalScorePosted) return;
     if ((this.fallingLetters || []).length > 0) return;
     this._finalScorePosted = true;
     this.postScoresToStore();
+    this.enterAwaitingNewGame();
+  }
+  enterAwaitingNewGame() {
+    /**
+     * Soft idle after a finished game: show the speed-launch instructions, but
+     * leave tiles / scores / log in place until the next speed button.
+     */
+    this.idle = true;
+    this.cancelAutoPlayTyping();
+    this.autoPlay = false;
+    this.updateAutoPlayButton();
+    this.updateIdleInstructions();
+    this.updateModeControls();
+  }
+  abandonGameAndReset() {
+    /**
+     * End the current board with no score report and rebuild as an empty idle tray.
+     * Used when switching solo ↔ social mid-game (or after a finished board).
+     */
+    this.cancelAutoPlayTyping();
+    this.$playSession = (this.$playSession || 0) + 1;
+    this._suppressScorePost = true;
+    this._finalScorePosted = true;
+    this.tournamentGameNumber = null;
+    this.tournamentLetterQueue = null;
+    this.setup({ idle: true });
   }
   postScoresToStore() {
     /**
      * Publish this game's score through the pluggable scores store.
      * If the player has no name yet, ask first and retry.
      */
+    if (this._suppressScorePost) return;
+    let session = this.$playSession || 0;
     if (!this.playerName) {
       let game = this;
       this.doChoosePlayerName(function () {
+        if (game.$playSession !== session || game._suppressScorePost) return;
         game.postScoresToStore();
       });
       return;
@@ -1156,6 +1186,8 @@ to LivelyMerge.`,
     this.paused = false;
     this.gameOver = false;
     this._finalScorePosted = false;
+    this._suppressScorePost = false;
+    this.$playSession = (this.$playSession || 0) + 1;
     this.noCheck = false; // set true to score unrecognized words anyway
     if (this.playMode !== 'solo' && this.playMode !== 'social') this.playMode = 'solo';
     this.idle = asIdle;
@@ -1232,13 +1264,17 @@ to LivelyMerge.`,
     return this.playMode === 'social';
   }
   setPlayMode(mode) {
-    /** 'solo' = local controls active; 'social' = pause/finish/restart locked. */
+    /**
+     * 'solo' = local controls active; 'social' = pause/finish/restart locked.
+     * Switching modes abandons the current board with no score and resets to idle.
+     */
     if (mode !== 'solo' && mode !== 'social') return;
     if (this.playMode === mode) {
       this.updateModeControls();
       this.updateIdleInstructions();
       return;
     }
+    this.abandonGameAndReset();
     this.playMode = mode;
     if (mode === 'social' && this.paused) this.doPause(false);
     this.updateModeControls();
@@ -1274,9 +1310,7 @@ to LivelyMerge.`,
     let controlsOn = !social;
     this.styleControlButton(this.pauseButton, controlsOn);
     this.styleControlButton(this.finishButton, controlsOn);
-    // Restart stays off for tournament boards even in solo.
-    let restartOn = controlsOn && this.tournamentGameNumber == null;
-    this.styleControlButton(this.restartButton, restartOn);
+    this.styleControlButton(this.restartButton, controlsOn);
   }
   setupBoxes(lay) {
     // Copy — TextBox construction mutates the extent Point it is given, and must
@@ -1435,7 +1469,7 @@ to LivelyMerge.`,
     this.updateIdleInstructions();
   }
   idleHelpMessage() {
-    let startMsg = 'Start a game at your chosen speed by pressing a speed button below';
+    let startMsg = 'Start a new game at your chosen speed by pressing a speed button below';
     if (!this.isSocialMode()) return startMsg;
     let view = qbfViewTournament();
     if (view.open) {
@@ -1637,8 +1671,8 @@ to LivelyMerge.`,
   }
   launchLevel(caption) {
     /**
-     * Start (or join) a game at the chosen speed. Works in solo and social —
-     * social also opens/joins the shared tournament epoch.
+     * Start (or join) a game at the chosen speed. Solo and social both bump the
+     * shared Game # at start; social also opens/joins the signup epoch.
      */
     if (this.isSocialMode()) {
       let join = qbfJoinOrStartTournamentGame();
@@ -1650,10 +1684,12 @@ to LivelyMerge.`,
         letterQueue: join.queue,
       });
     } else {
+      let solo = qbfStartSoloGame();
+      this.applyTournamentView(qbfViewTournament());
       openQBFPlaying({
         levelCaption: caption,
-        gameNumber: null,
-        letterQueue: null,
+        gameNumber: solo.gameNumber,
+        letterQueue: solo.queue,
       });
     }
   }
@@ -1787,12 +1823,20 @@ to LivelyMerge.`,
     step();
   }
   applyTournamentView(viewIfAny) {
-    /** Refresh Game # label, status line, and local tile-queue cache from shared state. */
+    /**
+     * Refresh Game # label, status line, and local tile-queue cache from shared state.
+     * Mid-game boards keep their own Game #; idle / awaiting-new-game panels follow
+     * the shared number (so social joiners see the open game).
+     */
     let view = viewIfAny || qbfViewTournament();
-    this.$shownGameNumber = view.gameNumber;
-    this.$tileQueue = qbfTileQueueForGame(view.gameNumber);
+    let displayNum = view.gameNumber;
+    if (!this.idle && this.tournamentGameNumber != null) {
+      displayNum = this.tournamentGameNumber;
+    }
+    this.$shownGameNumber = displayNum;
+    this.$tileQueue = qbfTileQueueForGame(displayNum);
     if (this.gameNumberLabel) {
-      let label = 'Game #' + view.gameNumber;
+      let label = 'Game #' + displayNum;
       if (this.gameNumberLabel.shape.string !== label) this.gameNumberLabel.setText(label);
     }
     if (this.epochStatus) {
@@ -1950,11 +1994,12 @@ function runQBF() {
 // ---------------------------------------------------------------------------
 // Game-server clock and seeded tile queues
 // ---------------------------------------------------------------------------
-// Game numbers run 100..999 (then wrap to 100). An epoch begins when someone
-// first hits a speed button; anyone else joining within 60s gets the same Game #
-// and the same seeded tile queue. When the minute ends the number advances and
-// the server goes idle (countdown stopped) until the next signup. Idle = no
-// stepping and no Automerge writes.
+// Game numbers run 100..999 (then wrap to 100). Starting a new game (solo or
+// social) increments the shared Game # immediately; social also opens a 60s
+// join window so others get the same # and seeded tile queue. When the minute
+// ends the window closes but the number stays (idle panels keep showing it)
+// until the next start bumps again. Idle = no signup clock stepping and no
+// Automerge writes from the countdown.
 //
 // Tournament clock is stored as flat scalars on Lively (qbfGameNumber /
 // qbfEpochStartMs). Nested maps are easy to get wrong if an object literal is
@@ -1989,6 +2034,13 @@ function qbfStoredGameNumber() {
   if (n == null || n < 100 || n > 999 || isNaN(Number(n))) return 100;
   return Number(n);
 }
+function qbfBumpGameNumber() {
+  /** Assign the next shared Game # (100 on first ever start). */
+  if (!Lively) return 100;
+  if (Lively.qbfGameNumber == null) Lively.qbfGameNumber = 100;
+  else Lively.qbfGameNumber = qbfNextGameNumber(qbfStoredGameNumber());
+  return qbfStoredGameNumber();
+}
 function qbfTournamentEpochOpen(nowMs) {
   if (!Lively || Lively.qbfEpochStartMs == null) return false;
   return nowMs - Lively.qbfEpochStartMs < qbfEpochDurationMs();
@@ -1996,7 +2048,7 @@ function qbfTournamentEpochOpen(nowMs) {
 function qbfViewTournament(nowMsIfAny) {
   /**
    * Read-only view of the tournament clock for UI. Does not write the document.
-   * If an epoch has expired, answers the next Game # as idle (frac 0).
+   * After an epoch expires, keeps the same Game # and reports idle (not open).
    */
   let nowMs = nowMsIfAny != null ? nowMsIfAny : Date.now();
   if (Lively) qbfEnsureTournamentState();
@@ -2015,7 +2067,7 @@ function qbfViewTournament(nowMsIfAny) {
       expired: false,
     };
   }
-  return { gameNumber: qbfNextGameNumber(n), open: false, frac: 0, expired: true };
+  return { gameNumber: n, open: false, frac: 0, expired: true };
 }
 function qbfClearEpochEndTimer() {
   if (!Lively || Lively.$qbfEpochEndTimer == null) return;
@@ -2049,16 +2101,16 @@ function qbfFinishExpiredTournament() {
   return true;
 }
 function qbfCommitExpiredTournament() {
-  /** If the open epoch is past its minute, prune stale scores, advance Game #, clear epoch. */
+  /** If the open epoch is past its minute, prune stale scores and close the window. */
   if (!Lively || Lively.qbfEpochStartMs == null) return false;
   if (Date.now() - Lively.qbfEpochStartMs < qbfEpochDurationMs()) return false;
-  qbfEndTournamentEpoch();
+  qbfCloseTournamentEpoch();
   return true;
 }
-function qbfEndTournamentEpoch() {
+function qbfCloseTournamentEpoch() {
   /**
-   * Close a finished epoch: drop scores older than 30 days, then advance Game #.
-   * Idle afterward (epochStartMs null) until the next signup.
+   * Close a finished signup window: drop scores older than 30 days, clear the
+   * epoch clock. Game # stays at the value assigned when the game started.
    */
   if (!Lively) return;
   qbfClearEpochEndTimer();
@@ -2067,14 +2119,36 @@ function qbfEndTournamentEpoch() {
   } catch (err) {
     console.log('QBF prune scores error: ' + err);
   }
-  Lively.qbfGameNumber = qbfNextGameNumber(qbfStoredGameNumber());
   Lively.qbfEpochStartMs = null;
   qbfScoresNotify();
 }
+/** @deprecated alias — epoch close no longer advances Game # (bump is at start). */
+function qbfEndTournamentEpoch() {
+  qbfCloseTournamentEpoch();
+}
+function qbfPrepareNewGameNumber() {
+  /**
+   * Close any join window (open or expired), then bump the shared Game #.
+   * Does not open a social epoch (caller decides).
+   */
+  qbfEnsureTournamentState();
+  if (Lively && Lively.qbfEpochStartMs != null) qbfCloseTournamentEpoch();
+  return qbfBumpGameNumber();
+}
+function qbfStartSoloGame() {
+  /** Solo speed launch: bump Game # and use its seeded tile queue (no join window). */
+  let n = qbfPrepareNewGameNumber();
+  qbfScoresNotify();
+  return {
+    gameNumber: n,
+    queue: qbfTileQueueForGame(n),
+    started: true,
+  };
+}
 function qbfJoinOrStartTournamentGame() {
   /**
-   * First speed-button signup opens a 60s epoch for the waiting Game #.
-   * Later signups in that window join the same number and tile queue.
+   * Social speed launch. If a join window is open, join that Game # / queue.
+   * Otherwise bump Game #, open a 60s window, and start.
    */
   qbfEnsureTournamentState();
   let now = Date.now();
@@ -2086,15 +2160,10 @@ function qbfJoinOrStartTournamentGame() {
       started: false,
     };
   }
-  // Idle or expired: close a finished epoch (prune + advance), then open a fresh one.
-  if (Lively.qbfEpochStartMs != null) {
-    qbfEndTournamentEpoch();
-  }
-  if (Lively.qbfGameNumber == null) Lively.qbfGameNumber = 100;
+  let n = qbfPrepareNewGameNumber();
   Lively.qbfEpochStartMs = now;
   qbfArmEpochEndTimer();
   qbfScoresNotify();
-  let n = qbfStoredGameNumber();
   return {
     gameNumber: n,
     queue: qbfTileQueueForGame(n),
