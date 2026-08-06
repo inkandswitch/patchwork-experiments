@@ -402,7 +402,7 @@ true`);
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('score');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('speed');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain(
-      'Top 3 per speed, retained 30 days',
+      'Scores are only retained for 30 days',
     );
     // A worse score does not overwrite.
     rt.eval(`

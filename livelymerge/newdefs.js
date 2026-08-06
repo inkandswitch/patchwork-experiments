@@ -309,6 +309,9 @@ class Color {
     this.fillStyle = this.computeFillStyle(this.r, this.g, this.b);
     //console.log('new color fillStyle = ', this.fillStyle);
   }
+  asString() {
+    return this.toString();
+  }
   computeFillStyle(r, g, b) {
     let s = '#';
     s += Math.floor(r * 255.999)
@@ -447,8 +450,7 @@ function populateLively() {
   Lively.demoLine = Lively.addMorph(
     new LineMorph(plmVerts, { borderWidth: 2, borderColor: Color.black, arrowheads: 'end' }),
   );
-  // Handle stepping starts on hover/drag (see LineMorph) — do not leave a forever
-  // stepHoverHandles poll running after init.
+  Lively.demoLine.startHandleStepping();
 
   Lively.addMorph(
     new MethodPanel(
@@ -469,45 +471,35 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
-  // Cute bug drawing a spiral. Animation scratch state is $-prefixed / ephemeral so
-  // the short demo does not leave ongoing Automerge writes after it finishes.
+  // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug)...
   Lively.spiral = Lively.addMorph(new Morph(rect(50, 210, 1, 1)));
-  Lively.spiral.$pen = new Pen(pt(60, 210)).withBug();
+  Lively.spiral.pen = new Pen(pt(60, 210)).withBug();
   Lively.spiral.animatedSpiral = function (argsObj) {
-    let pen = this.$pen;
-    if (!pen) return;
-    if (!this.$spiralArgs) {
-      this.$spiralArgs = argsObj;
-      pen.setPenColor(Color.red);
-      this.$spiralI = 0;
+    if (!this.args) {
+      this.args = argsObj;
+      this.pen.setPenColor(Color.red);
+      this.spiralI = 0;
     }
-    this.$spiralI++;
-    if (this.$spiralI > this.$spiralArgs.nSteps) {
+    this.spiralI++;
+    if (this.spiralI > this.args.nSteps) {
       this.stopStepping();
-      if (pen.bug) pen.bug.moveTo(pen.location.addPt(pt(0, 20)));
+      this.pen.bug.moveTo(this.pen.location.addPt(pt(0, 20)));
+      this.world().changed();
       return;
     }
-    pen.go(this.$spiralArgs.goDist * this.$spiralI);
-    pen.turn(this.$spiralArgs.turnAngle);
-    if (this.$trail) this.$trail.remove();
-    // World-owned ephemeral trail: pen vertices are in world coords (same as before).
-    this.$trail = this.owner.addEphemeralMorph(new Morph(null, pen.polyLine()));
+    this.pen.go(this.args.goDist * this.spiralI);
+    this.pen.turn(this.args.turnAngle);
+    if (this.trail) this.trail.remove();
+    this.trail = this.owner.addMorph(new Morph(null, this.pen.polyLine()));
+    this.world().changed();
   };
 
-  if (Lively.$spiralTimeout != null) {
-    clearTimeout(Lively.$spiralTimeout);
-    Lively.$spiralTimeout = null;
-  }
-  Lively.$spiralTimeout = setTimeout(() => {
+  setTimeout(() => {
     // The world may have been re-initialized since this was scheduled (e.g. a
     // fresh initLively()); there is no spiral to animate then.
-    Lively.$spiralTimeout = null;
     if (!Lively || !Lively.spiral) return;
-    Lively.spiral.startStepping(
-      'animatedSpiral',
-      { goDist: 2, turnAngle: 60, nSteps: 26 },
-      50,
-    ); // was 26
+    Lively.spiral.startStepping('animatedSpiral',
+      { goDist: 2, turnAngle: 60, nSteps: 26 }, 50); // was 26
   }, 2000);
 
 }
@@ -860,12 +852,6 @@ function initUI() {
     ephStreamMorphs: [],
   };
   // Raw side-tables (plain JS on the real window; never touch the LM heap):
-  // Clear any prior long-click timers before dropping the table (re-initUI).
-  if (window._lcTimers) {
-    for (let pid in window._lcTimers) {
-      if (window._lcTimers[pid] != null) clearTimeout(window._lcTimers[pid]);
-    }
-  }
   window._canvasEvents = new window.Array(); // DOM events queued between frames
   window._lcEvts = new window.Object(); // pointerId → raw pointerdown event
   window._lcTimers = new window.Object(); // pointerId → raw timer handle (a host object in Node)
@@ -1034,25 +1020,6 @@ function initUI() {
     if ($uiState.externalChangeCountSeen === n) return;
     $uiState.externalChangeCountSeen = n;
     topLevelMorph.repairSubmorphOwnership();
-    // Persistent world menu syncs labels; $-actions do not. After another replica
-    // inits/rebuilds the menu, this replica gets new itemList text but empty
-    // $menuActions / $actionFn — rebind locally ($-only; setSelectFn must not
-    // write Funs into Automerge or this becomes an op storm again).
-    if (typeof rebindPersistentWorldMenu === 'function') {
-      try {
-        rebindPersistentWorldMenu();
-      } catch (err) {
-        console.log('rebindPersistentWorldMenu error: ' + err);
-      }
-    }
-    // Neighbor score posts (etc.) land as external Automerge changes — refresh QBF viewers.
-    if (typeof qbfRefreshAllScoreViewers === 'function') {
-      try {
-        qbfRefreshAllScoreViewers();
-      } catch (err) {
-        console.log('qbfRefreshAllScoreViewers error: ' + err);
-      }
-    }
   }
 
   function processEvents() {
@@ -1336,7 +1303,7 @@ class Point {
       Math.min(Math.max(this.y, rect.topLeft.y), br.y),
     );
   }
-  toString() {
+  asString() {
     return `pt(${this.x.toFixed(2)}, ${this.y.toFixed(2)})`;
   }
   boundsWithRadius(r) {
@@ -1430,6 +1397,9 @@ class Point {
   subPt(p) {
     return pt(this.x - p.x, this.y - p.y);
   }
+  toString() {
+    return this.asString();
+  }
   translatedBy(p) {
     return this.addPt(p);
   }
@@ -1446,8 +1416,8 @@ class Rectangle {
     this.topLeft = p;
     this.extent = ext;
   }
-  toString() {
-    return `${this.topLeft.toString()}.extent(${this.extent.toString()})`;
+  asString() {
+    return `${this.topLeft.asString()}.extent(${this.extent.asString()})`;
   }
   bottom() {
     return this.topLeft.y + this.extent.y;
@@ -1598,6 +1568,9 @@ class Rectangle {
   topRight() {
     return this.topLeft.addPt(pt(this.width(), 0));
   }
+  toString() {
+    return this.asString();
+  }
   translatedBy(p) {
     // Synonym of movedBy
     return this.topLeft.addPt(p).extent(this.extent.copy());
@@ -1634,13 +1607,13 @@ class SimpleTransform {
     this.rotation = rot; // radians
     this.scale = scale; // a point
   }
-  toString() {
+  asString() {
     let deg = ((this.rotation * 180) / Math.PI).toFixed(1);
-    let s = 'trans: ' + this.translation.toString() + '; rot: ' + deg + '°';
+    let s = 'trans: ' + this.translation.asString() + '; rot: ' + deg + '°';
     let sx = this.scale && this.scale.x !== undefined ? this.scale.x : 1;
     let sy = this.scale && this.scale.y !== undefined ? this.scale.y : 1;
     if (Math.abs(sx - 1) > 1e-6 || Math.abs(sy - 1) > 1e-6) {
-      s += '; scale: ' + this.scale.toString();
+      s += '; scale: ' + this.scale.asString();
     }
     return s;
   }
@@ -1694,7 +1667,7 @@ class StepSpec {
     this.stepPeriod = msTime;
     this.nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
   }
-  toString() {
+  asString() {
     return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.stepPeriod}ms)`;
   }
   copyForMorph(morph) {
@@ -1783,10 +1756,8 @@ class Pen {
   }
   withBug(emoji) {
     let morph;
-    // Prefer a local template if present; do not require a persistent global bugImage.
-    let template = typeof $bugImage !== 'undefined' && $bugImage ? $bugImage : bugImage;
-    if (template && template.instanceOf && template.instanceOf(EmojiMorph)) {
-      morph = new EmojiMorph(template._emojiName, template._emojiSize);
+    if (bugImage && bugImage.instanceOf && bugImage.instanceOf(EmojiMorph)) {
+      morph = new EmojiMorph(bugImage._emojiName, bugImage._emojiSize);
       //morph.transform.scale = pt(0.5, 0.5);
     } else {
       morph = new EmojiMorph(emoji || 'LADYBUG', 32);
@@ -1794,8 +1765,7 @@ class Pen {
     }
     morph.moveTo(this.location);
     morph.setHeading(this.heading);
-    // Ephemeral: demos move the bug every tick — must not sync into Automerge.
-    Lively.addEphemeralMorph(morph);
+    Lively.addMorph(morph);
     this.bug = morph;
     return this;
   }
@@ -1991,7 +1961,7 @@ class TextCharSpec {
     this.charX = charX;
     this.strIx = strIx;
   }
-  toString() {
+  asString() {
     return `spec: lineNo=${this.lineNo}, lineY=${this.lineY}, charX=${this.charX}, strIx = ${this.strIx}`;
   }
   static new(...args) {
@@ -2031,9 +2001,9 @@ class Shape extends Rectangle {
     this.morphOrigin = bounds.topLeft.copy(); // default for, eg, rectangles
     this.setStyles(color, borderWidth, borderColor);
   }
-  toString() {
+  asString() {
     return (
-      'a ' + this.className + ' (' + this.shapeType + ' at ' + this.getBounds().toString() + ')'
+      'a ' + this.className + ' (' + this.shapeType + ' at ' + this.getBounds().asString() + ')'
     );
   }
   copy(color) {
@@ -2092,8 +2062,8 @@ class Ellipse extends Shape {
     this.morphOrigin = center.copy();
     if (!this.fillColor) this.fillColor = Color.blue;
   }
-  toString() {
-    return `Ellipse at ${this.p.toString()} with radius ${this.r}`;
+  asString() {
+    return `Ellipse at ${this.p.asString()} with radius ${this.r}`;
   }
   copy() {
     let copy = new Ellipse(this.p, this.r);
@@ -2155,8 +2125,8 @@ class PolyLine extends Shape {
     this.arrowheads = 'none';
     this.morphOrigin = pt(0, 0);
   }
-  toString() {
-    return `PolyLine at ${this.topLeft.toString()} with size ${this.extent}`;
+  asString() {
+    return `PolyLine at ${this.topLeft.asString()} with size ${this.extent}`;
   }
   boundsForVertices(vertices, borderWidth) {
     return PolyLine.boundsForVertices(vertices, borderWidth);
@@ -2522,8 +2492,8 @@ class TextBox extends Shape {
     }
     this.paste(evt.key);
   }
-  toString() {
-    return `TextBox[${this.string.slice(0, 4) + '...'}] at ${this.getBounds().toString()}`;
+  asString() {
+    return `TextBox[${this.string.slice(0, 4) + '...'}] at ${this.getBounds().asString()}`;
   }
   boxPath(ctx) {
     let x = this.topLeft.x;
@@ -2711,7 +2681,7 @@ class TextBox extends Shape {
     } else {
       this.$selStop = spec;
     }
-    // console.log("After extendSelectionTo" + spec.toString());
+    // console.log("After extendSelectionTo" + spec.asString());
   }
   finSelection() {
     this.ensureSelectionSpecs();
@@ -2861,7 +2831,7 @@ class TextBox extends Shape {
         let at = getPointerLocation() ? getPointerLocation().copy() : pt(120, 120);
         showFindNoMatchesMenu(Lively, at, term);
       } else {
-        Lively.addEphemeralMorph(
+        Lively.addMorph(
           new MethodListPanel(null, hits, null, 'Occurrences of "' + term + '"', term),
         );
       }
@@ -2955,6 +2925,7 @@ class TextBox extends Shape {
     if (obj === undefined) return 'undefined';
     if (obj === null) return 'null';
     if (obj.toString && obj.toString !== Object.prototype.toString) return obj.toString();
+    if (obj.asString) return obj.asString();
     return '' + obj;
   }
   redoReplacement(str) {
@@ -3287,7 +3258,7 @@ class TextBox extends Shape {
     let spec = this.charSpecForPt(p);
     this.$selStart = this.$selStop = spec;
     this.$shiftAnchorIx = null;
-    // console.log("After startSelectionAt" + spec.toString());
+    // console.log("After startSelectionAt" + spec.asString());
   }
   textDrawOriginX(lineNo) {
     let padL = this.inset != null ? this.inset.x : 2;
@@ -3433,9 +3404,6 @@ class Morph {
     // without the copy, _bounds would track the shape's local coords forever.
     this._bounds = this.shape.getBounds().copy(); //a Rectangle in owner coordinates; see the `bounds` getter
     this.origin = this.shape.morphOrigin.copy();
-    // NOTE (rebase of "Shared world menu, purged asString"): discarded our side,
-    // which used getBounds()/morphOrigin without .copy() and a toString() log.
-    // Kept repo (immutable-strings) copy() semantics.
     this._transform = this.nullTransformation(); // persistent transform (trans/rot/scale); see the `transform` getter
     this._transform.translateBy(this.origin);
     this.shape.setBounds(this.shape.getBounds().translatedBy(this.origin.negated()));
@@ -3849,8 +3817,8 @@ class Morph {
     if (list == null) list = this.drawList();
     list.forEach(fn);
   }
-  toString() {
-    return 'a ' + this.className + ' (' + this.shape.toString() + ')';
+  asString() {
+    return 'a ' + this.className + ' (' + this.shape.asString() + ')';
   }
   beTopMorph() {
     // Promote my top-level ancestor to the front of its zBand in the world.
@@ -3909,10 +3877,7 @@ class Morph {
     return false;
   }
   changed() {
-    // Means we have to redraw due to altered content.
-    // Only write once: hasChanged is never cleared, and re-assigning true every
-    // frame (spiral, line handles, etc.) was flooding Automerge with no-op ops.
-    if (this.hasChanged) return;
+    // Means we have to redraw due to altered content
     this.hasChanged = true;
   }
   clippedBounds() {
@@ -4039,7 +4004,7 @@ class Morph {
   inspect() {
     // Lively.submorphs.first().inspect()
     let p = new InspectorPanel(rect(500, 100, 300, 300), this);
-    Lively.addEphemeralMorph(p);
+    Lively.addMorph(p);
     p.startStepping('showSelectedValue', false, 500);
     return p;
   }
@@ -4389,7 +4354,7 @@ class Morph {
     if (!world) return;
     let anchor = this.clippedBoundsInWorld ? this.clippedBoundsInWorld() : this.getBounds();
     let r = anchor.topRight().addPt(pt(12, 0)).extent(pt(280, 340));
-    world.addEphemeralMorph(new StylePanel(r, this));
+    world.addMorph(new StylePanel(r, this));
   }
   rotateBy(angle) {
     this.setRotation(this.transform.rotation + angle);
@@ -4465,7 +4430,7 @@ class Morph {
       },
     );
     this.menu.isFleetingMenu = !!opts.fleeting;
-    world.addEphemeralMorph(this.menu);
+    world.addMorph(this.menu);
     return true;
   }
   startStepping(method, argIfAny, msTime, nextStepTimeIfAny) {
@@ -4523,6 +4488,9 @@ class Morph {
     if (this.owner.owner == null) return this;
     return this.owner.topMorph();
   }
+  toString() {
+    return this.asString();
+  }
   translateBy(pt) {
     this.transform.translation.moveBy(pt);
   }
@@ -4536,9 +4504,9 @@ class Morph {
     let str =
       '\n' +
       '  '.repeat(level) +
-      this.toString() +
+      this.asString() +
       ' [' +
-      this.localize(pt(100, 100)).toString() +
+      this.localize(pt(100, 100)).asString() +
       ']';
     this.submorphs.forEach((morph) => {
       if (!morph.owner)
@@ -4773,21 +4741,11 @@ class LineMorph extends Morph {
     this.clearMidpointHandles();
   }
   clearMidpointHandles() {
-    let hs = this.$midpointHandles;
-    if (!hs || hs.length === 0) {
-      if (!hs) this.$midpointHandles = [];
-      return;
-    }
-    hs.forEach((h) => h.remove());
+    (this.$midpointHandles || []).forEach((h) => h.remove());
     this.$midpointHandles = [];
   }
   clearVertexHandles() {
-    let hs = this.$vertexHandles;
-    if (!hs || hs.length === 0) {
-      if (!hs) this.$vertexHandles = [];
-      return;
-    }
-    hs.forEach((h) => h.remove());
+    (this.$vertexHandles || []).forEach((h) => h.remove());
     this.$vertexHandles = [];
   }
   ensureMidpointHandles() {
@@ -4968,23 +4926,11 @@ class LineMorph extends Morph {
     return this;
   }
   startHandleStepping() {
-    if (this.isStepping('stepHoverHandles')) return;
     super.startStepping('stepHoverHandles', null, 200);
   }
-  stopHandleStepping() {
-    this.stopStepping('stepHoverHandles');
-  }
   stepHoverHandles() {
-    /**
-     * Hover/drag UI for vertex handles. Stops itself when idle so it cannot leave a
-     * forever Automerge-touching poll in $stepList after init or after the pointer leaves.
-     */
     let world = this.world();
-    if (!world) {
-      this.clearAllHandles();
-      this.stopHandleStepping();
-      return;
-    }
+    if (!world) return;
     if (this.$vertexDragActive) {
       this.ensureVertexHandles();
       this.clearMidpointHandles();
@@ -4998,26 +4944,15 @@ class LineMorph extends Morph {
     }
     if (!getPointerLocation()) {
       this.clearAllHandles();
-      this.stopHandleStepping();
       return;
     }
     let localP = this.localize(getPointerLocation());
-    if (!this.hoverHitBounds().includesPt(localP)) {
+    if (!this.shape.includesPt(localP)) {
       this.clearAllHandles();
-      this.stopHandleStepping();
       return;
     }
     this.ensureVertexHandles();
     this.ensureMidpointHandles();
-  }
-  onPointerMove(p, evt) {
-    // Restart the (idle-stopping) hover stepper when the pointer is over the line.
-    if (this.includesPt(p)) this.startHandleStepping();
-    return super.onPointerMove(p, evt);
-  }
-  onPointerDown(p, evt) {
-    if (this.includesPt(p)) this.startHandleStepping();
-    return super.onPointerDown(p, evt);
   }
   syncGeometryFromVertices() {
     /** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
@@ -5067,7 +5002,6 @@ class LineVertexHandle extends Morph {
     lm.$vertexDragActive = true;
     lm.$dragVertexIndex = this.vertexIndex;
     lm.$mergeNeighborIx = null;
-    lm.startHandleStepping();
     this.$hitPoint = p;
     this.$dragActorID = evt.actorID;
     lm.clearMidpointHandles();
@@ -5141,7 +5075,6 @@ class LineMidpointHandle extends Morph {
     if (!this.includesPt(p)) return false;
     let lm = this.lineMorph;
     lm.$vertexDragActive = true;
-    lm.startHandleStepping();
     this.$hitPoint = p;
     this.$dragActorID = evt.actorID;
     let newIx = lm.insertVertexOnSegment(this.segmentIndex, p);
@@ -5604,139 +5537,6 @@ function refreshWorldMenuItems(menuMorph) {
   if (menuMorph.relayoutItemList) menuMorph.relayoutItemList();
   else ListMorph.prototype.setList.call(menuMorph, list);
 }
-function worldMenuItemSpecs() {
-  /** Standard world-menu entries (label + action). Used to build and to rebind after reload. */
-  return [
-    menuItem('ToDo List', () => storageEditItem('ToDoList')),
-    menuItem('System browser', function () {
-      this.world().addEphemeralMorph(new BrowserPanel());
-    }),
-    menuItem('Recent changes', () => browseRecentChanges()),
-    menuItem('Morphic help', function () {
-      this.world().showMorphicHelp();
-    }),
-    menuItem('Halo help', function () {
-      this.world().showHaloHelp();
-    }),
-    menuItem('Text help', function () {
-      this.world().showTextHelp();
-    }),
-    menuItem('Init hand', function () {
-      this.world().initHand(true);
-    }),
-    menuItem('Open Transcript', () => {
-      Transcript = openTranscript();
-    }),
-    menuItem('Open Console', () => {
-      let p = openTranscript();
-      p.setPanelTitle('Console');
-      p.transcriptPane.setConsoleMirror(true);
-      Console = p;
-      log('Console ready — use log(msg) or console.log(msg); errors also appear.');
-    }),
-    menuItem('Restart Console', () => {
-      let con = Console;
-      if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
-    }),
-    menuItem(menuToggleLabel(longClickForHalosLabel, $longClickForHalos), function () {
-      $longClickForHalos = !$longClickForHalos;
-      refreshWorldMenuItems(this);
-      this.shape.selectLineAt(0);
-    }),
-    menuItem(menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd), function () {
-      $useOnScreenKbd = !$useOnScreenKbd;
-      syncOnScreenKeyboardWithFocus(this.world());
-      refreshWorldMenuItems(this);
-      this.shape.selectLineAt(0);
-    }),
-  ];
-}
-function findPersistentWorldMenu() {
-  /** Non-fleeting MenuMorph on the world (the shared world menu), if any. */
-  if (!Lively || !Lively.submorphs) return null;
-  let found = null;
-  let list = Lively.submorphs;
-  for (let i = 0; i < list.length; i++) {
-    let m = list.at ? list.at(i) : list[i];
-    if (m && m.className === 'MenuMorph' && !m.isFleetingMenu) found = m;
-  }
-  return found;
-}
-function bindWorldMenuSelectFn(menu) {
-  /** Per-item $menuActions dispatcher, then deselect (except toggle rows). */
-  if (!menu || !menu.setSelectFn) return;
-  menu.setSelectFn(function (item, shiftKey) {
-    if (isMenuSeparator(item)) return;
-    let idx =
-      this.shape && this.shape.$selectedLineIndex > 0 ? this.shape.$selectedLineIndex - 1 : -1;
-    if (idx < 0 && this.itemList) idx = this.itemList.indexOf(item);
-    let act = this.$menuActions && idx >= 0 ? this.$menuActions[idx] : null;
-    if (typeof act === 'function') act.call(this, item, shiftKey);
-    else if (this.$legacyActionFn) this.$legacyActionFn.call(this, item, shiftKey);
-    let cap = menuItemCaption(item);
-    if (
-      cap === longClickForHalosLabel ||
-      cap.endsWith(longClickForHalosLabel) ||
-      cap === onScreenKeyboardLabel ||
-      cap.endsWith(onScreenKeyboardLabel)
-    )
-      return;
-    if (this.shape && this.shape.selectLineAt) this.shape.selectLineAt(0);
-  });
-}
-function installWorldMenuContent(menu, itemsIfAny) {
-  /** Full rebuild of labels+actions (writes Automerge). Use only when creating a new menu. */
-  if (!menu) return menu;
-  menu.setList(itemsIfAny || worldMenuItemSpecs());
-  bindWorldMenuSelectFn(menu);
-  if (menu.relayoutItemList) menu.relayoutItemList();
-  if (typeof qbfEnsureWorldMenuItem === 'function') {
-    try {
-      qbfEnsureWorldMenuItem(menu);
-    } catch (err) {
-      console.log('qbfEnsureWorldMenuItem error: ' + err);
-    }
-  }
-  return menu;
-}
-function rebindWorldMenuActions(menu) {
-  /**
-   * Restore $menuActions from stock specs by matching labels — no Automerge writes.
-   * Call after reload/merge; never setList here (that rewrote the whole menu text).
-   */
-  if (!menu) return menu;
-  let specs = worldMenuItemSpecs();
-  let byKey = {};
-  for (let i = 0; i < specs.length; i++) {
-    let lab = menuItemLabel(specs[i]);
-    let cap = menuItemCaption(specs[i]);
-    byKey[lab] = specs[i].action;
-    byKey[cap] = specs[i].action;
-  }
-  menu.ensureActionList();
-  let list = menu.itemList || [];
-  for (let i = 0; i < list.length; i++) {
-    let lab = menuItemLabel(list[i]);
-    let cap = menuItemCaption(list[i]);
-    menu.$menuActions[i] = byKey[lab] || byKey[cap] || menu.$menuActions[i] || null;
-  }
-  bindWorldMenuSelectFn(menu);
-  if (typeof qbfEnsureWorldMenuItem === 'function') {
-    try {
-      // actionsOnly: never addItemBefore during merge rebind (no Automerge writes).
-      qbfEnsureWorldMenuItem(menu, { actionsOnly: true });
-    } catch (err) {
-      console.log('qbfEnsureWorldMenuItem error: ' + err);
-    }
-  }
-  return menu;
-}
-function rebindPersistentWorldMenu() {
-  /** After load/merge: restore actions on the persisted world menu ($-actions do not sync). */
-  let menu = findPersistentWorldMenu();
-  if (menu) rebindWorldMenuActions(menu);
-  return menu;
-}
 //  ListMorph
 // -----------
 // Vertical list of strings; line selection.
@@ -5789,8 +5589,8 @@ class ListMorph extends Morph {
     this.world().setPointerFocus(null);
     if (selectionIndex > 0) {
       let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
-      let fn = this.$actionFn || this.actionFn;
-      if (fn && !isMenuSeparator(rawItem)) fn.call(this, rawItem, evt.shiftKey);
+      if (this.actionFn && !isMenuSeparator(rawItem))
+        this.actionFn.call(this, rawItem, evt.shiftKey);
     }
     // Retain visible selection after choice (e.g. in ListPanes / class browser)
     return true;
@@ -5829,11 +5629,7 @@ class ListMorph extends Morph {
     }
   }
   setSelectFn(actionFn) {
-    // $-only: never assign a Fun to non-$ actionFn. On a persistent MenuMorph (world
-    // menu) that wrote the function into Automerge — huge op traffic — and rebinding
-    // after every remote merge turned it into a continuous merge storm.
-    this.$actionFn = actionFn;
-    if (this.actionFn != null) this.actionFn = null;
+    this.actionFn = actionFn;
   }
   setSelectionString(str, suppressAction) {
     let idx = -1;
@@ -5847,8 +5643,7 @@ class ListMorph extends Morph {
     let selectionIndex = this.shape.setSelectedTextString(probe);
     if (selectionIndex > 0 && !suppressAction) {
       let rawItem = this.itemList ? this.itemList[selectionIndex - 1] : null;
-      let fn = this.$actionFn || this.actionFn;
-      if (fn && !isMenuSeparator(rawItem)) fn.call(this, rawItem);
+      if (!isMenuSeparator(rawItem)) this.actionFn.call(this, rawItem);
     }
   }
   static new(...args) {
@@ -7426,8 +7221,6 @@ class PanelMorph extends Morph {
       if (this.lastLocationExpanded) this.lastLocationExpanded.setToRect(r);
       else this.lastLocationExpanded = r.copy();
     }
-    // NOTE (rebase of "Shared world menu, purged asString"): discarded our side,
-    // which mutated topLeft.x/y and extent.x/y in place. Kept repo setToRect().
   }
   setBounds(newBounds) {
     super.setBounds(newBounds);
@@ -7738,7 +7531,7 @@ class BrowserPanel extends PanelMorph {
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
     if (!text) return;
-    Lively.addEphemeralMorph(
+    Lively.addMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
     );
   }
@@ -7749,7 +7542,7 @@ class BrowserPanel extends PanelMorph {
       includeClassDef: true,
     });
     if (!text) return;
-    Lively.addEphemeralMorph(
+    Lively.addMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.selectedClass),
     );
   }
@@ -7986,7 +7779,7 @@ class InspectorPanel extends PanelMorph {
     /** Print-it and eval panes (right / bottom) in the inspector. */
     let panelBounds = this.paneLayoutBounds();
     this.printPane = this.addMorph(new TextPane(panelBounds, rect(0.3, 0.0, 0.7, 0.6)));
-    this.printPane.setText('Var value toString()');
+    this.printPane.setText('Var value asString()');
     this.evalPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.6, 1.0, 0.4)));
     this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
     this.evalPane.contentPane.setWorkspaceObj(this.target);
@@ -8104,7 +7897,7 @@ class MethodListPanel extends PanelMorph {
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
         if (shiftKey) {
-          Lively.addEphemeralMorph(
+          Lively.addMorph(
             new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), preamble + methodString, spec),
           );
         }
@@ -8165,7 +7958,7 @@ class MethodListPanel extends PanelMorph {
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
     if (!text) return;
-    Lively.addEphemeralMorph(
+    Lively.addMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
     );
   }
@@ -8199,7 +7992,7 @@ class ErrorStackPanel extends MethodListPanel {
       if (idx >= 0) self.showStackFrame(idx);
       if (shiftKey && idx >= 0 && self.printPane) {
         let text = self.printPane.contentPane.shape.string;
-        Lively.addEphemeralMorph(new MethodPanel(self.rectForSpawnedPanel(28, 320, 220), text, label));
+        Lively.addMorph(new MethodPanel(self.rectForSpawnedPanel(28, 320, 220), text, label));
       }
     });
     if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodSpecs[0]);
@@ -9381,7 +9174,7 @@ function openTranscript() {
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
   let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
-  Lively.addEphemeralMorph(panel);
+  Lively.addMorph(panel);
   panel.beTopMorph();
   return panel;
 }
@@ -9553,9 +9346,9 @@ class WorldMorph extends Morph {
       let d = pt.dist(morph.getBounds().center());
       if (d < minDist) {
         minDist = d; hitMorph = morph;
-        console.log('hitMorph at dist ' + minDist + ': ' + hitMorph.toString()) }
+        console.log('hitMorph at dist ' + minDist + ': ' + hitMorph.asString()) }
     });
-    console.log('hitMorph ' + hitMorph.toString() + '/n at ' + pt.toString());
+    console.log('hitMorph ' + hitMorph.asString() + '/n at ' + pt.asString());
     return hitMorph; */
   }
   initHand(start) {
@@ -9877,7 +9670,7 @@ class WorldMorph extends Morph {
     this.$pointerFocus = morphOrNull;
   }
   showHaloHelp() {
-    Lively.addEphemeralMorph(
+    Lively.addMorph(
       new MethodPanel(
         null,
         `HALOS
@@ -9903,7 +9696,7 @@ class WorldMorph extends Morph {
     );
   }
   showMorphicHelp() {
-    Lively.addEphemeralMorph(
+    Lively.addMorph(
       new MethodPanel(
         null,
         `MORPHIC
@@ -9917,7 +9710,7 @@ class WorldMorph extends Morph {
     );
   }
   showTextHelp() {
-    Lively.addEphemeralMorph(
+    Lively.addMorph(
       new MethodPanel(
         null,
         `Text editing in this system is very simple - there are no automatic pop-ups or type-aheads.  The following command-keys provide basic edits:
@@ -9947,30 +9740,72 @@ class WorldMorph extends Morph {
   showWorldMenuAt(pos, optsIfAny) {
     /**
      * World menu with label+action items (editable live via findItem / addItem* / removeItem).
-     * Persistent by default (survives reload); pass { fleeting: true } for halo Menu copies.
      * Answers the menu morph — e.g. wm = Lively.showWorldMenuAt(pt(130, 40))
      *   wm.removeItem(wm.findItem('todo'))
      *   wm.addItemBefore('transcript', 'Quick Brown Fox', () => openQBF())
      */
     let opts = optsIfAny || {};
-    let fleeting = !!opts.fleeting;
-    let items = worldMenuItemSpecs();
-    if (!fleeting) {
-      let existing = findPersistentWorldMenu();
-      if (existing) return rebindWorldMenuActions(existing);
-    }
+    let items = [
+      menuItem('ToDo List', () => storageEditItem('ToDoList')),
+      menuItem('System browser', function () {
+        this.world().addEphemeralMorph(new BrowserPanel());
+      }),
+      menuItem('Recent changes', () => browseRecentChanges()),
+      menuItem('Morphic help', function () {
+        this.world().showMorphicHelp();
+      }),
+      menuItem('Halo help', function () {
+        this.world().showHaloHelp();
+      }),
+      menuItem('Text help', function () {
+        this.world().showTextHelp();
+      }),
+      menuItem('Init hand', function () {
+        this.world().initHand(true);
+      }),
+      menuItem('Open Transcript', () => {
+        Transcript = openTranscript();
+      }),
+      menuItem('Open Console', () => {
+        let p = openTranscript();
+        p.setPanelTitle('Console');
+        p.transcriptPane.setConsoleMirror(true);
+        Console = p;
+        log('Console ready — use log(msg) or console.log(msg); errors also appear.');
+      }),
+      menuItem('Restart Console', () => {
+        let con = Console;
+        if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
+      }),
+      menuItem(menuToggleLabel(longClickForHalosLabel, $longClickForHalos), function () {
+        $longClickForHalos = !$longClickForHalos;
+        refreshWorldMenuItems(this);
+        this.shape.selectLineAt(0);
+      }),
+      menuItem(menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd), function () {
+        $useOnScreenKbd = !$useOnScreenKbd;
+        syncOnScreenKeyboardWithFocus(this.world());
+        refreshWorldMenuItems(this);
+        this.shape.selectLineAt(0);
+      }),
+    ];
     let menu = new MenuMorph(pos.extent(pt(220, 24 + items.length * 20)), items);
-    bindWorldMenuSelectFn(menu);
-    menu.isFleetingMenu = fleeting;
-    if (fleeting) Lively.addEphemeralMorph(menu);
-    else Lively.addMorph(menu);
-    if (typeof qbfEnsureWorldMenuItem === 'function') {
-      try {
-        qbfEnsureWorldMenuItem(menu);
-      } catch (err) {
-        console.log('qbfEnsureWorldMenuItem error: ' + err);
-      }
-    }
+    // Deselect after non-toggle actions (toggles refresh the list themselves).
+    let priorSelect = menu.actionFn;
+    menu.setSelectFn(function (item, shiftKey) {
+      priorSelect.call(this, item, shiftKey);
+      let cap = menuItemCaption(item);
+      if (
+        cap === longClickForHalosLabel ||
+        cap.endsWith(longClickForHalosLabel) ||
+        cap === onScreenKeyboardLabel ||
+        cap.endsWith(onScreenKeyboardLabel)
+      )
+        return;
+      this.shape.selectLineAt(0);
+    });
+    menu.isFleetingMenu = !!opts.fleeting;
+    Lively.addEphemeralMorph(menu);
     return menu;
   }
   activeStepList() {
@@ -10245,7 +10080,7 @@ function noteMethodChanges(evalString) {
 function browseRecentChanges() {
   // browseRecentChanges()
   let changes = recentChanges ?? [];
-  let panel = Lively.addEphemeralMorph(
+  let panel = Lively.addMorph(
     new MethodListPanel(
       null,
       changes.map((tuple) => tuple[0] + tuple[1]),
@@ -10258,7 +10093,7 @@ function browseRecentChanges() {
 function browseSavedChanges() {
   // browseSavedChanges()
   let changes = JSON.parse(storageGetItem('recentChanges'));
-  let panel = Lively.addEphemeralMorph(
+  let panel = Lively.addMorph(
     new MethodListPanel(
       null,
       changes.map((tuple) => tuple[0] + tuple[1]),
@@ -10334,7 +10169,7 @@ function viewExportedSystem() {
   let ts =
     storageGetItem('system.export.timestamp') || storageGetItem('system.methods.timestamp') || '';
   let title = ts ? 'alldefs export (' + ts + ')' : 'alldefs export';
-  Lively.addEphemeralMorph(new MethodPanel(null, text, title));
+  Lively.addMorph(new MethodPanel(null, text, title));
   return text.length;
 }
 function exportMethodShouldOmit(name) {
@@ -10630,14 +10465,14 @@ function errorReportPanelBounds() {
   return rect(24, 24, wdt, ht);
 }
 function openErrorStackPanel(err, contextIfAny, titleIfAny) {
-  if (!Lively || !Lively.addEphemeralMorph) return null;
+  if (!Lively || !Lively.addMorph) return null;
   let panel = new ErrorStackPanel(
     errorReportPanelBounds(),
     err,
     contextIfAny,
     titleIfAny || errorPanelTitle(err),
   );
-  Lively.addEphemeralMorph(panel);
+  Lively.addMorph(panel);
   panel.beTopMorph();
   return panel;
 }
@@ -10716,7 +10551,7 @@ function storageSetItem(key, value) {
 }
 function storageEditItem(key) {
   //storageEditItem('ToDoList')
-  Lively.addEphemeralMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
+  Lively.addMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
 }
 function saveRecentChanges() {
   // saveRecentChanges();
@@ -10796,7 +10631,7 @@ function inspect(obj, optionalBounds) {
     r = rect(500, 100, 300, 300);
   }
   let p = new InspectorPanel(r, obj);
-  Lively.addEphemeralMorph(p);
+  Lively.addMorph(p);
   p.startStepping('showSelectedValue', false, 500);
   return p;
 }
@@ -10811,10 +10646,10 @@ function inspectString(obj) {
     return 'array: [' + parts.join(', ') + ']';
   }
   if (obj && obj.instanceOf) {
-    if (obj.instanceOf(Point)) return obj.toString();
-    if (obj.instanceOf(Rectangle)) return obj.toString();
-    if (obj.instanceOf(SimpleTransform)) return obj.toString();
-    if (obj.instanceOf(StepSpec)) return obj.toString();
+    if (obj.instanceOf(Point)) return obj.asString();
+    if (obj.instanceOf(Rectangle)) return obj.asString();
+    if (obj.instanceOf(SimpleTransform)) return obj.asString();
+    if (obj.instanceOf(StepSpec)) return obj.asString();
   }
   try {
     let vowely = 'aeiou'.includes(obj.className[0].toLowerCase());
