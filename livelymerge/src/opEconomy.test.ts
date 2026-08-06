@@ -215,5 +215,31 @@ Lively.testPanel = Lively.addMorph(new MethodPanel(rect(300, 100, 300, 200), 'he
       collapseCycle.count,
       `steady-state collapse/expand cycle generated ${collapseCycle.count} ops:\n  ${collapseCycle.keys.join('\n  ')}`,
     ).toBeLessThanOrEqual(220);
+
+    // Programmatic moveBy (steppers, scripts): moves translation + cached
+    // bounds in place — 4 value writes per move, no fresh Points (replacing
+    // the points allocated a doc object per call and orphaned the old one).
+    rt.eval('Lively.testBox.moveBy(pt(1, 1))'); // warm-up: one-time keys
+    pumpFrame();
+    const moves = opsDuring(() => {
+      for (let i = 0; i < 10; i++) {
+        rt.eval('Lively.testBox.moveBy(pt(1, 1))');
+        pumpFrame();
+      }
+    });
+    expect(
+      moves.count,
+      `10 programmatic moveBy generated ${moves.count} ops:\n  ${moves.keys.join('\n  ')}`,
+    ).toBeLessThanOrEqual(40);
+
+    // morphCopy independence: transforms are deep-copied (translation/scale
+    // are mutated in place now, so a shared point would move both morphs).
+    const positions = rt.eval(`
+Lively.boxCopy = Lively.addMorph(Lively.testBox.morphCopy());
+Lively.boxCopy.moveBy(pt(50, 0));
+Lively.testBox.getBounds().topLeft.asString() + ' / ' + Lively.boxCopy.getBounds().topLeft.asString()
+`) as string;
+    const [origPos, copyPos] = positions.split(' / ');
+    expect(copyPos).not.toBe(origPos);
   }, 120_000);
 });

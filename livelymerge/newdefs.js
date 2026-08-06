@@ -1459,8 +1459,10 @@ class Rectangle {
     return rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
   }
   moveBy(p) {
-    //NOTE: this does not return a copy, but *changes this rect*
-    this.topLeft = this.topLeft.addPt(p);
+    //NOTE: this does not return a copy, but *changes this rect* — and moves
+    // topLeft in place (replacing it allocated a fresh doc Point per call and
+    // orphaned the old one, e.g. once per step for stepper-driven morphs).
+    this.topLeft.moveBy(p);
   }
   setToRect(r) {
     //NOTE: this does not return a copy, but *changes this rect* — value writes
@@ -1616,7 +1618,13 @@ class SimpleTransform {
     return s;
   }
   copy() {
-    return new SimpleTransform(this.translation, this.rotation, this.scale);
+    // Deep: translation/scale are mutated in place (moveBy/scaleBy), so a
+    // shallow copy would leave the copy and the original moving together.
+    return new SimpleTransform(
+      this.translation.copy(),
+      this.rotation,
+      this.scale ? this.scale.copy() : this.scale,
+    );
   }
   // NOTE: Point.rotatedBy(r) turns the OPPOSITE way from ctx.rotate(r)
   // (polarAngle is measured from +y, so rotatedBy(r) is the canvas rotation
@@ -1641,7 +1649,7 @@ class SimpleTransform {
     return q.addPt(this.translation); // then translate
   }
   translateBy(delta) {
-    this.translation = this.translation.addPt(delta);
+    this.translation.moveBy(delta);
   }
   static new(...args) {
     return new this(...args);
@@ -2023,7 +2031,9 @@ class Shape extends Rectangle {
     this.fillColor = color;
   }
   setMorphOrigin(p) {
-    this.morphOrigin = p;
+    // Copy: moveBy shifts morphOrigin in place, and the callers pass points
+    // they keep using (e.g. Pen.spiral passes the pen's first vertex).
+    this.morphOrigin = p.copy();
     return this;
   }
   setStyles(color, borderWidth, borderColor) {
@@ -2067,7 +2077,7 @@ class Ellipse extends Shape {
   }
   moveBy(delta) {
     super.moveBy(delta);
-    this.p = this.p.addPt(delta);
+    this.p.moveBy(delta);
   }
   render(ctx) {
     ctx.beginPath();
@@ -2106,7 +2116,10 @@ class PolyLine extends Shape {
   constructor(verts, width, color) {
     const bounds = PolyLine.boundsForVertices(verts, width);
     super('PolyLine', bounds, null, width, color);
-    this.vertices = verts;
+    // Copies, not the caller's points: moveBy shifts vertices in place, so
+    // adopting them would tie this polyline to the caller's points (Pen keeps
+    // drawing with its vertex list; copy() reuses the original's).
+    this.vertices = verts.map((v) => v.copy());
     this.curved = false;
     this.closed = false;
     this.arrowheads = 'none';
@@ -2220,8 +2233,10 @@ class PolyLine extends Shape {
   }
   moveBy(d) {
     super.moveBy(d); // moves the bounds
-    this.vertices = this.vertices.map((vert) => vert.addPt(d));
-    this.morphOrigin = this.morphOrigin.translatedBy(d);
+    // In place: remapping allocated a fresh doc list + Points per call, and
+    // orphaned any vertex refs held elsewhere (e.g. line handles).
+    this.vertices.forEach((vert) => vert.moveBy(d));
+    this.morphOrigin.moveBy(d);
   }
   onPointerMove(p) {
     if (this.$hitPoint) {
@@ -4049,7 +4064,10 @@ class Morph {
     return null;
   }
   moveBy(delta) {
-    this.transform.translation = this.transform.translation.addPt(delta);
+    // In place, like commitEphemeralTransform: replacing translation allocated
+    // a fresh doc Point per call outside interactions (steppers, programmatic
+    // moves) and orphaned the old one.
+    this.transform.translation.moveBy(delta);
     if (this.bounds) this.bounds.moveBy(delta);
   }
   myOwningHand() {
@@ -4318,7 +4336,7 @@ class Morph {
     else newOwner.addMorph(this);
     let ownerPt = newOwner.localize(anchorWorld);
     let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
-    this.transform.translation = ownerPt.subPt(rotScale);
+    this.transform.translation.setToPt(ownerPt.subPt(rotScale));
     this.syncBoundsFromGeometry();
     this.changed();
   }
@@ -4350,7 +4368,7 @@ class Morph {
     this.transform.rotation = rot;
     let after = this.transform.transformPt(c);
     let delta = before.subPt(after);
-    this.transform.translation = this.transform.translation.addPt(delta);
+    this.transform.translation.moveBy(delta);
     // Update the cached bounds in place, like moveBy (replacing this.bounds
     // would orphan a rect another same-frame mutation may have written to).
     if (this.bounds) this.bounds.moveBy(delta);
@@ -4358,7 +4376,8 @@ class Morph {
   }
   scaleBy(scale) {
     const scalePt = typeof scale === 'number' ? pt(scale, scale) : scale;
-    this.transform.scale = this.transform.scale.scaleBy(scalePt);
+    let s = this.transform.scale;
+    s.setToPt(s.scaleBy(scalePt));
   }
   setBorderColor(color) {
     this.shape.setBorderColor(color);
@@ -4473,7 +4492,7 @@ class Morph {
     return this.asString();
   }
   translateBy(pt) {
-    this.transform.translation = this.transform.translation.addPt(pt);
+    this.transform.translation.moveBy(pt);
   }
   translation() {
     return this.transform.translation;
@@ -4564,7 +4583,7 @@ class ImageMorph extends Morph {
     return copy;
   }
   moveTo(pos) {
-    this.transform.translation = pt(pos.x, pos.y);
+    this.transform.translation.setToPt(pos);
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
