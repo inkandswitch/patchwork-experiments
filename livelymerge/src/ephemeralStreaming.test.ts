@@ -99,6 +99,14 @@ function installBrowserStubs(harness: Harness) {
 function makeWorld() {
   const harness: Harness = { listeners: new Map(), rafCallbacks: new Map() };
   installBrowserStubs(harness);
+  // Each makeWorld is a fresh page load, but the stubs share one globalThis:
+  // clear the window side-tables that production initUI deliberately preserves
+  // across same-session re-inits (each world also restarts its frame clock, so
+  // leaked timestamps/leases would poison later tests).
+  const g0 = globalThis as any;
+  delete g0._ephOverlays;
+  delete g0._ephemeralMessages;
+  delete g0._ephLastSyncNudge;
   const handle = createAutomergeTestDocHandle();
   const rt = createLivelymergeRuntime(handle);
   const g = globalThis as any;
@@ -147,10 +155,16 @@ Lively.testBox = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
   return { handle, rt, dispatch, runFrame };
 }
 
-const boxOverlayMessage = (id: string, x: number, y: number, opts: { end?: boolean } = {}) => ({
+const boxOverlayMessage = (
+  id: string,
+  x: number,
+  y: number,
+  opts: { end?: boolean; actor?: string; sid?: string } = {},
+) => ({
   type: 'lm-eph',
   v: 1,
-  actor: 'actor-remote',
+  actor: opts.actor ?? 'actor-remote',
+  ...(opts.sid ? { sid: opts.sid } : {}),
   ...(opts.end ? { end: true } : {}),
   objects: [
     {
@@ -204,6 +218,9 @@ describe('ephemeral interaction streaming: sender', () => {
     runFrame();
     const last: any = handle.sentEphemeral[handle.sentEphemeral.length - 1];
     expect(last.end).toBe(true);
+    // Every message carries the per-session replica id for echo suppression.
+    expect(last.sid).toBe(rt.eval(`$ephSessionID`));
+    expect(typeof last.sid).toBe('string');
     // The end message is sent after the commit, so it carries the document's values.
     const tlId = rt.eval(`Lively.testBox._transform.translation.$id`) as string;
     const docTl = handle.doc().objectTable[tlId] as any;
@@ -240,15 +257,87 @@ describe('ephemeral interaction streaming: receiver', () => {
     expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBe(30); // back to committed
   }, 60_000);
 
-  it('an end:true message gets the short deadline', () => {
+  it('an end:true overlay is held past its deadline until the commit syncs in, then lapses invisibly', () => {
     const { rt, handle, runFrame } = makeWorld();
     const boxId = rt.eval(`Lively.testBox.$id`) as string;
 
     handle.deliverEphemeral(boxOverlayMessage(boxId, 120, 90, { end: true }));
     runFrame();
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
+
+    // ~340ms > the 250ms end deadline, but the document still has the pre-drag
+    // position (sync is not prompt now that idle replicas make no doc writes):
+    // dropping the overlay here would snap the morph back. It must be held.
+    for (let i = 0; i < 10; i++) runFrame();
+    expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
+
+    // The sender's commit syncs in (same values the end message carried) — the
+    // overlay lapses on the next sweep, and its removal is invisible.
+    rt.eval(`
+      Lively.testBox._transform.translation.setToPt(pt(120, 90));
+      Lively.testBox._bounds.topLeft.setToPt(pt(120, 90));
+    `);
+    runFrame();
+    expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
+    expect(rt.eval(`Lively.testBox.getBounds().topLeft.y`)).toBe(90);
+  }, 60_000);
+
+  it('an end:true overlay whose values already match the document lapses at the short deadline (elided commit)', () => {
+    const { rt, handle, runFrame } = makeWorld();
+    const boxId = rt.eval(`Lively.testBox.$id`) as string;
+
+    // A drag that ended where it started: the sender's commit was elided, so the
+    // end message carries the document's current values (box at 30,20).
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 30, 20, { end: true }));
+    runFrame();
+    expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
     for (let i = 0; i < 10; i++) runFrame(); // ~340ms > 250ms end deadline
     expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(30);
+  }, 60_000);
+
+  it('gives up on an end:true overlay after $EPH_OVERLAY_COMMIT_WAIT_MS if the commit never arrives', () => {
+    const { rt, handle, runFrame } = makeWorld();
+    const boxId = rt.eval(`Lively.testBox.$id`) as string;
+    rt.eval(`$EPH_OVERLAY_COMMIT_WAIT_MS = 300`);
+
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 120, 90, { end: true }));
+    runFrame();
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
+    for (let i = 0; i < 20; i++) runFrame(); // ~680ms > 250ms deadline + 300ms wait
+    expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(30); // back to committed
+  }, 60_000);
+
+  it('starting a local drag on a leased morph adopts the overlay (lease dropped, remote messages ignored)', () => {
+    const { rt, handle, dispatch, runFrame } = makeWorld();
+    const boxId = rt.eval(`Lively.testBox.$id`) as string;
+
+    // A remote end overlay is being held while its commit syncs in...
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 120, 90, { end: true }));
+    runFrame();
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
+
+    // ...when this user grabs the morph where it is now rendered. The lease is
+    // dropped, so the sweep can never clear $transform out from under the drag,
+    // and remote messages no longer apply.
+    dispatch('pointerdown', 130, 100);
+    runFrame();
+    expect(rt.eval(`window._ephOverlays['${boxId}'] == null`)).toBe(true);
+    dispatch('pointermove', 150, 120);
+    runFrame();
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBeCloseTo(140, 4);
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 400, 400));
+    for (let i = 0; i < 12; i++) runFrame(); // well past the end deadline
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBeCloseTo(140, 4);
+
+    // Releasing commits the drag position into the document.
+    dispatch('pointerup', 150, 120);
+    runFrame();
+    expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox._transform.translation.x`)).toBeCloseTo(140, 4);
   }, 60_000);
 
   it('rejects malformed values and never touches persistent props', () => {
@@ -261,6 +350,51 @@ describe('ephemeral interaction streaming: receiver', () => {
     runFrame();
     expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(30);
+  }, 60_000);
+
+  it('applies a message whose actor collides with ours but whose sid is foreign (shared-hand actor ids)', () => {
+    // The multi-hand feature can leave two users holding the SAME $actorID
+    // (initHand hands out 0, 1, 2...; clicking a hand adopts its persisted id).
+    // Echo suppression must key on the session id, not the actor.
+    const { rt, handle, runFrame } = makeWorld();
+    const boxId = rt.eval(`Lively.testBox.$id`) as string;
+    const myActor = rt.eval(`$actorID`) as string;
+
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 200, 150, { actor: myActor, sid: 'eph-other-session' }));
+    runFrame();
+    expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(200);
+  }, 60_000);
+
+  it('drops a true echo: a message carrying our own session id', () => {
+    const { rt, handle, runFrame } = makeWorld();
+    const boxId = rt.eval(`Lively.testBox.$id`) as string;
+    const mySid = rt.eval(`$ephSessionID`) as string;
+
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 200, 150, { sid: mySid }));
+    runFrame();
+    expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
+    expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(30);
+  }, 60_000);
+
+  it('nudges a sync round (one tiny doc write) while an end overlay waits for its commit', () => {
+    const { rt, handle, runFrame } = makeWorld();
+    const boxId = rt.eval(`Lively.testBox.$id`) as string;
+    expect(rt.eval(`typeof lmSyncNudgeCounter`)).toBe('undefined');
+
+    handle.deliverEphemeral(boxOverlayMessage(boxId, 120, 90, { end: true }));
+    runFrame();
+    for (let i = 0; i < 10; i++) runFrame(); // past the 250ms end deadline → holding + nudging
+    expect(rt.eval(`typeof lmSyncNudgeCounter`)).toBe('number');
+    const first = rt.eval(`lmSyncNudgeCounter`) as number;
+
+    // Throttled: no second nudge within $EPH_SYNC_NUDGE_MS.
+    for (let i = 0; i < 10; i++) runFrame();
+    expect(rt.eval(`lmSyncNudgeCounter`)).toBe(first);
+
+    // ...but another one fires once the interval has passed (34ms frames → ~5s = 148 frames).
+    for (let i = 0; i < 150; i++) runFrame();
+    expect(rt.eval(`lmSyncNudgeCounter`)).toBe(first + 1);
   }, 60_000);
 
   it('a local drag wins over remote overlays for the same morph', () => {

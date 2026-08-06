@@ -635,19 +635,32 @@ class Set {
 // Wire format — plain JSON, and deliberately NO $-prefixed keys: LM reads/writes of
 // $-names on HOST objects route to the ephemeral-property sidecar, not the object,
 // so $-keys on a message would be invisible from LM code.
-//   { type: 'lm-eph', v: 1, actor, end?, objects: [{ id, props: { transform, bounds } }] }
+//   { type: 'lm-eph', v: 1, actor, sid, end?, objects: [{ id, props: { transform, bounds } }] }
 // Values are className-tagged trees ({ c: 'Point', x, y }, ...). Receivers decode by
 // prototype delegation (Object.create($global[c].prototype) + fields), validate
 // every number, and may ONLY write the whitelisted $-props (see
 // ephApplyOverlayEntry) — a malformed or malicious message can never touch the
 // document, because $-props never persist by construction.
 //
+// Echo suppression uses `sid`, a random per-SESSION replica id ($ephSessionID),
+// NOT `actor`: $actorID is the acting-USER id and the multi-hand feature rebinds
+// it to small shared integers (initHand gives hands ids 0, 1, 2, ... and clicking
+// a hand adopts its id via activateHand — hands are persisted, so two users can
+// easily hold the SAME $actorID). Comparing on actor made such replicas drop every
+// message from each other as an "echo". `actor` is still sent for attribution;
+// receivers fall back to it only for messages from pre-`sid` senders.
+//
 // Timing policy is entirely receiver-side: an overlay lapses $EPH_OVERLAY_MS after
 // the last message about it, so a sender that dies mid-drag self-heals. The final
 // message (sent from finishPointerDrag AFTER the commit, so it carries exactly the
 // committed values) is flagged end:true; the receiver gives it the short
-// $EPH_OVERLAY_END_MS deadline, and by the time it lapses the synced document says
-// the same thing — the overlay's removal is invisible.
+// $EPH_OVERLAY_END_MS deadline — but does NOT drop the overlay at that deadline
+// unless this replica's document already shows the committed values. Document sync
+// is not prompt: now that idle replicas make no doc writes (op economy), a commit
+// can take arbitrarily long to sync in, and dropping the overlay early would snap
+// the morph back to its stale pre-drag position until then. So the sweep holds an
+// end overlay (which already shows the committed values) until the document catches
+// up, giving up after $EPH_OVERLAY_COMMIT_WAIT_MS if the commit never arrives.
 //
 // GC note: decoded overlays are shadow objects reachable only through $-props
 // (ephemeral-live, swept once the lease cleanup nulls them), and window._ephOverlays
@@ -697,6 +710,7 @@ function ephBroadcast(objs, isEnd) {
   msg.type = 'lm-eph';
   msg.v = 1;
   msg.actor = $actorID;
+  msg.sid = $ephSessionID; // replica identity for echo suppression (see above)
   if (isEnd) msg.end = true;
   msg.objects = objs;
   window.handle.broadcast(msg);
@@ -779,7 +793,10 @@ function processEphemeralInbound() {
 }
 function ephApplyMessage(m, now) {
   if (!m || m.type !== 'lm-eph' || m.v !== 1) return;
-  if (m.actor === $actorID) return; // echo safety
+  // Echo safety on the per-session replica id — NEVER on actor alone: two users
+  // can legitimately hold the same $actorID (see the comment block above). The
+  // actor comparison remains only for messages from pre-`sid` senders.
+  if (m.sid != null ? m.sid === $ephSessionID : m.actor === $actorID) return;
   let objs = m.objects;
   if (!objs) return;
   let n = Math.min(objs.length, 32);
@@ -807,9 +824,51 @@ function ephApplyOverlayEntry(entry, isEnd, now) {
   }
   morph.$transform = tfm;
   morph.$bounds = bnds;
-  window._ephOverlays[entry.id] =
-    now + (isEnd ? $EPH_OVERLAY_END_MS || 250 : $EPH_OVERLAY_MS || 1000);
+  // The lease record: a host object of numbers only (never LM heap objects — see
+  // the GC note above).
+  let lease = new window.Object();
+  lease.deadline = now + (isEnd ? $EPH_OVERLAY_END_MS || 250 : $EPH_OVERLAY_MS || 1000);
+  if (isEnd) {
+    // The end message carries exactly the values the sender committed. Record them
+    // so the sweep can hold the overlay until this replica's document has caught
+    // up — sync can lag long behind the 250ms end deadline (see the timing-policy
+    // comment above).
+    lease.tx = tfm.translation.x;
+    lease.ty = tfm.translation.y;
+    lease.rot = tfm.rotation;
+    lease.sx = tfm.scale.x;
+    lease.sy = tfm.scale.y;
+    if (bnds != null) {
+      lease.hasBounds = true;
+      lease.bx = bnds.topLeft.x;
+      lease.by = bnds.topLeft.y;
+      lease.bw = bnds.extent.x;
+      lease.bh = bnds.extent.y;
+    }
+  }
+  window._ephOverlays[entry.id] = lease;
   morph.changed();
+}
+function ephCommitLanded(morph, lease) {
+  /** True once the persistent (document) transform/bounds show exactly the values
+   * the sender's end message said it committed. Values travel verbatim (doubles
+   * survive JSON and Automerge exactly), so equality is exact — and the
+   * elided-commit case (a drag that ended where it started, so the sender wrote
+   * nothing) matches immediately. */
+  let t = morph._transform;
+  if (t == null || t.translation == null) return false;
+  if (t.translation.x !== lease.tx || t.translation.y !== lease.ty) return false;
+  if ((t.rotation || 0) !== lease.rot) return false;
+  let sx = t.scale != null ? t.scale.x : 1;
+  let sy = t.scale != null ? t.scale.y : 1;
+  if (sx !== lease.sx || sy !== lease.sy) return false;
+  if (lease.hasBounds) {
+    let b = morph._bounds;
+    if (b == null || b.topLeft == null || b.extent == null) return false;
+    if (b.topLeft.x !== lease.bx || b.topLeft.y !== lease.by) return false;
+    if (b.extent.x !== lease.bw || b.extent.y !== lease.bh) return false;
+  }
+  return true;
 }
 function ephSweepOverlays(now) {
   // LM's Object.keys (handles host objects); window.Object.keys does not exist —
@@ -817,14 +876,56 @@ function ephSweepOverlays(now) {
   let ids = Object.keys(window._ephOverlays);
   for (let i = 0; i < ids.length; i++) {
     let id = ids.at(i);
-    if (window._ephOverlays[id] > now) continue;
-    delete window._ephOverlays[id];
+    let lease = window._ephOverlays[id];
     let morph = topLevelMorph ? morphWithId(topLevelMorph, id) : null;
-    if (!morph) continue;
+    if (!morph) {
+      // Morph not reachable right now (still syncing in, or deleted). Keep the
+      // lease: dropping it while the morph may still carry $-overlays would orphan
+      // them, and the local-wins guard in ephApplyOverlayEntry would then read
+      // every later remote message as a local interaction — masking the morph's
+      // document state for good. Give up only long after any overlay would have
+      // lapsed anyway (a stale lease is just an id and a few numbers).
+      if (now > lease.deadline + ($EPH_OVERLAY_ABANDON_MS || 60000))
+        delete window._ephOverlays[id];
+      continue;
+    }
+    if (morph.$transform == null && morph.$bounds == null) {
+      // Overlay already cleared elsewhere (e.g. this user dragged the morph and
+      // finishPointerDrag committed it) — just drop the lease.
+      delete window._ephOverlays[id];
+      continue;
+    }
+    if (lease.deadline > now) continue;
+    if (lease.tx != null && !ephCommitLanded(morph, lease)) {
+      // End-of-drag overlay whose committed values haven't synced into this
+      // replica's document yet: hold it (it already shows the right position)
+      // rather than snapping back to the stale pre-drag position. Give up after
+      // $EPH_OVERLAY_COMMIT_WAIT_MS in case the sender's commit never arrives.
+      if (now <= lease.deadline + ($EPH_OVERLAY_COMMIT_WAIT_MS || 30000)) {
+        ephNudgeSync(now);
+        continue;
+      }
+    }
+    delete window._ephOverlays[id];
     morph.$transform = null;
     morph.$bounds = null;
     morph.changed();
   }
+}
+function ephNudgeSync(now) {
+  /** Called while an end overlay is waiting for its commit to sync in — i.e. we
+   * KNOW a remote commit exists that this replica doesn't have. The sync layer
+   * runs a round when this replica commits something, so an idle watcher can lag
+   * behind indefinitely (the "my drags only show up after my partner does
+   * something" bug). Bump a tiny shared counter — one register write, throttled
+   * to one per $EPH_SYNC_NUDGE_MS — purely so this replica commits a change and
+   * the sync layer goes and fetches what we're missing. Set $EPH_SYNC_NUDGE_MS
+   * to 0 to disable. */
+  let interval = $EPH_SYNC_NUDGE_MS != null ? $EPH_SYNC_NUDGE_MS : 5000;
+  if (interval <= 0) return;
+  if (window._ephLastSyncNudge != null && now - window._ephLastSyncNudge < interval) return;
+  window._ephLastSyncNudge = now;
+  lmSyncNudgeCounter = typeof lmSyncNudgeCounter === 'number' ? (lmSyncNudgeCounter + 1) % 1000000 : 0;
 }
 function morphWithId(root, id) {
   if (root.$id === id) return root;
@@ -856,7 +957,11 @@ function initUI() {
   window._lcEvts = new window.Object(); // pointerId → raw pointerdown event
   window._lcTimers = new window.Object(); // pointerId → raw timer handle (a host object in Node)
   window._ephemeralMessages = new window.Array(); // inbound lm-eph payloads queued between frames
-  window._ephOverlays = new window.Object(); // morphId → deadline (frame-clock ms) for remote-owned overlays
+  // morphId → lease {deadline, committed values...} for remote-owned overlays.
+  // PRESERVED across re-inits: morphs may still carry $-overlays from before, and
+  // resetting the table would orphan them (the local-wins guard would then block
+  // every later remote message for those morphs).
+  if (window._ephOverlays == null) window._ephOverlays = new window.Object();
 
   function addEventListener(source, type, listener, optsIfAny) {
     // prevents GC from collecting the listener
@@ -912,6 +1017,18 @@ function initUI() {
   // this much silence about an ongoing interaction / after its end:true message.
   $EPH_OVERLAY_MS = 1000;
   $EPH_OVERLAY_END_MS = 250;
+  // How long past its deadline an end overlay may wait for the sender's committed
+  // values to sync into this replica's document, and how long an unreachable
+  // morph's lease is kept before it's abandoned. See ephSweepOverlays.
+  $EPH_OVERLAY_COMMIT_WAIT_MS = 30000;
+  $EPH_OVERLAY_ABANDON_MS = 60000;
+  // Minimum spacing between sync nudges (see ephNudgeSync); <= 0 disables nudging.
+  $EPH_SYNC_NUDGE_MS = 5000;
+  // Per-session replica id for ephemeral-message echo suppression. Session-unique
+  // and never persisted; preserved across re-inits (like the overlay table) so a
+  // mid-session initUI can't make this replica re-apply its own in-flight messages.
+  if ($ephSessionID == null)
+    $ephSessionID = 'eph-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
   // Inbound ephemeral messages: like the canvas listeners below, the callback runs
   // OUTSIDE the frame transaction, so it may only touch window side-tables; the
   // queue is drained inside the frame by processEphemeralInbound. The listener is
@@ -3449,6 +3566,11 @@ class Morph {
      * already in progress. Points are copied too — in-place point mutation must
      * never leak into the persistent objects.
      */
+    // Adopt any remote-streamed overlay: this interaction owns it now. Dropping the
+    // lease keeps the overlay-sweep from clearing $transform mid-drag (leases can
+    // outlive their deadline waiting for a commit to sync — see ephSweepOverlays)
+    // and makes the local-wins guard ignore remote messages until we commit.
+    if (window._ephOverlays != null && this.$id != null) delete window._ephOverlays[this.$id];
     if (this.$transform != null) return;
     let t = this.transform;
     let eph = new SimpleTransform(
