@@ -1,0 +1,10 @@
+# Every top-level folder here is its own package, installed on its own.
+# pnpm 11 reads its settings from this file, so each one carries the settings
+# it needs rather than inheriting them from a root workspace (there is none).
+minimumReleaseAge: 0
+verifyDepsBeforeRun: false
+allowBuilds:
+  "@swc/core": true
+  cbor-extract: true
+  core-js: true
+  esbuild: true
