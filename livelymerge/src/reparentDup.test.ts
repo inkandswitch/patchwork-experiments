@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as Automerge from '@automerge/automerge';
+import { strVal, typeTag, wrapStoredVal } from './docStrings';
 import { createAutomergeTestDocHandle } from './testDocHandle';
 import { createLivelymergeRuntime } from './livelymergeRuntime';
 
@@ -144,7 +145,9 @@ Lively.childBox = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
   return { rt, docHandle, dispatch, runFrame, getFrameError: () => frameError };
 }
 
-/** Count occurrences of `childId` refs in each doc-level submorph list, by walking the raw doc. */
+/** Count occurrences of `childId` refs in each doc-level submorph list, by walking the
+ * raw doc. Raw reads go through typeTag/strVal: stored strings use the immutable-string
+ * encoding (see docStrings.ts). */
 function docListCounts(docHandle: any, rt: any) {
   const childId = rt.eval(`Lively.childBox.$id`) as string;
   const parentId = rt.eval(`Lively.parentBox.$id`) as string;
@@ -155,12 +158,14 @@ function docListCounts(docHandle: any, rt: any) {
     const entry = table[ownerId];
     if (!entry) return null;
     const subsRef = (entry as any)['@submorphs'];
-    if (!subsRef || subsRef.$type !== 'ref') return null;
-    const arr = table[subsRef.$id];
+    if (!subsRef || typeTag(subsRef) !== 'ref') return null;
+    const arr = table[strVal(subsRef.$id)];
     return arr ? (arr as any).$values : null;
   };
   const countIn = (vals: any[] | null) =>
-    vals ? vals.filter((v) => v && v.$type === 'ref' && v.$id === childId).length : 0;
+    vals
+      ? vals.filter((v) => v && typeTag(v) === 'ref' && strVal(v.$id) === childId).length
+      : 0;
   return {
     docWorldCount: countIn(listFor(worldId)),
     docParentCount: countIn(listFor(parentId)),
@@ -272,12 +277,14 @@ describe('reparent duplication repro', () => {
     // ref from the world list and reinsert it at the end (frontmost).
     const forked = Automerge.clone(docHandle.doc());
     const forkedB = Automerge.change(forked, (d: any) => {
-      const arrId = d.objectTable[worldId]['@submorphs'].$id;
+      const arrId = strVal(d.objectTable[worldId]['@submorphs'].$id);
       const vals = d.objectTable[arrId].$values;
-      const idx = vals.findIndex((v: any) => v && v.$type === 'ref' && v.$id === childId);
+      const idx = vals.findIndex(
+        (v: any) => v && typeTag(v) === 'ref' && strVal(v.$id) === childId,
+      );
       expect(idx).toBeGreaterThanOrEqual(0);
       vals.splice(idx, 1);
-      vals.push({ $type: 'ref', $id: childId });
+      vals.push(wrapStoredVal({ $type: 'ref', $id: childId }));
     });
 
     // Meanwhile replica A (this runtime) reparents the child into the parent.

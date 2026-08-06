@@ -12,14 +12,19 @@ export const objectPrototypeToStringFun: Fun = {
   $scopes: [],
 };
 
+/** `storeEntry`/`storeVal` encode writes for their destination: the runtime
+ * passes the immutable-string wrappers for the Automerge table (docStrings.ts);
+ * the test harness's plain-JS table stores as-is. */
 export function ensureObjectPrototypeDefaults(
   objectTable: Record<string, Obj | Arr | Fun>,
+  storeEntry: (entry: Fun) => Fun = (entry) => entry,
+  storeVal: (value: any) => any = (value) => value,
 ): void {
   if (!objectTable[OBJECT_PROTOTYPE_TO_STRING_FUN_ID]) {
-    objectTable[OBJECT_PROTOTYPE_TO_STRING_FUN_ID] = objectPrototypeToStringFun;
+    objectTable[OBJECT_PROTOTYPE_TO_STRING_FUN_ID] = storeEntry(objectPrototypeToStringFun);
   }
   const proto = objectTable['object-prototype'];
   if (isObj(proto) && !lmHeapHasOwn(proto, '@toString')) {
-    proto['@toString'] = { $type: 'ref', $id: OBJECT_PROTOTYPE_TO_STRING_FUN_ID };
+    proto['@toString'] = storeVal({ $type: 'ref', $id: OBJECT_PROTOTYPE_TO_STRING_FUN_ID });
   }
 }

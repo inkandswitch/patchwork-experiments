@@ -1,12 +1,16 @@
+import { strVal } from './docStrings';
 import type { Obj } from './types';
 
+// $jsGlobal reads go through strVal: `obj` may be a raw document entry, where
+// the name is an immutable-string wrapper (see docStrings.ts).
 export function isJsGlobalObj(obj: Obj): boolean {
-  return typeof obj.$jsGlobal === 'string';
+  return typeof strVal(obj.$jsGlobal) === 'string';
 }
 
 export function getJsGlobalTarget(obj: Obj): unknown {
-  if (!obj.$jsGlobal) return undefined;
-  return (globalThis as Record<string, unknown>)[obj.$jsGlobal];
+  const name = strVal(obj.$jsGlobal);
+  if (!name) return undefined;
+  return (globalThis as Record<string, unknown>)[name];
 }
 
 /** True when a native global value can be proxied (objects and functions). */

@@ -1,3 +1,4 @@
+import { strVal, typeTag } from './docStrings';
 import { isAccessorVal, type AccessorVal } from './types';
 
 /** Plain keys that Automerge materializations may spuriously expose — never delegate on these. */
@@ -65,13 +66,19 @@ export function lmGetOwn(entry: Record<string, any>, prop: PropertyKey): unknown
  * list identity matters). Note the CRDT nuance: an elided same-value write no longer
  * asserts LWW recency; Livelymerge accepts that trade for op economy. */
 export function lmSameStoredVal(cur: unknown, next: unknown): boolean {
+  // Compare in the plain encoding: `cur` may be a raw document read where
+  // strings (and ref internals) are immutable-string wrappers.
+  cur = strVal(cur);
+  next = strVal(next);
   if (cur === next) return typeof next !== 'object' || next === null;
   if (cur == null || next == null) return false;
   const c = cur as any;
   const n = next as any;
-  if (c.$type === 'ref' && n.$type === 'ref') return c.$id === n.$id;
-  if (c.$type === 'accessor' && n.$type === 'accessor') {
-    return c.$get?.$id === n.$get?.$id && c.$set?.$id === n.$set?.$id;
+  if (typeTag(c) === 'ref' && typeTag(n) === 'ref') return strVal(c.$id) === strVal(n.$id);
+  if (typeTag(c) === 'accessor' && typeTag(n) === 'accessor') {
+    return (
+      strVal(c.$get?.$id) === strVal(n.$get?.$id) && strVal(c.$set?.$id) === strVal(n.$set?.$id)
+    );
   }
   if (cur instanceof Date && next instanceof Date) return cur.getTime() === next.getTime();
   return false;
@@ -84,6 +91,7 @@ export function lmSetOwn(
   serialize: (value: unknown) => unknown,
   onMutate?: (oldValue: unknown, newValue: unknown) => void,
   writeEntry?: () => Record<string, any>,
+  storeVal?: (value: unknown) => unknown,
 ): boolean {
   if (typeof prop === 'symbol' || lmIsReservedKey(prop)) return false;
   const key = lmUserKey(prop);
@@ -99,8 +107,9 @@ export function lmSetOwn(
   onMutate?.(cur, next);
   // `entry` may be a cheap read view (a materialized copy of a doc entry); the store
   // must hit the real document, so callers pass `writeEntry` to resolve it — lazily,
-  // so fully-elided writes never touch the Automerge document at all.
-  (writeEntry ? writeEntry() : entry)[key] = next;
+  // so fully-elided writes never touch the Automerge document at all. `storeVal`
+  // encodes the value for its destination (doc writes wrap strings, see docStrings).
+  (writeEntry ? writeEntry() : entry)[key] = storeVal ? storeVal(next) : next;
   return true;
 }
 
@@ -120,9 +129,10 @@ export function lmObjDelegatesTo(
 ): boolean {
   let current: LmHeapEntry | undefined = obj;
   while (current) {
-    if (current.$id === proto.$id) return true;
-    if (!current.$protoId) return false;
-    current = lookup(current.$protoId);
+    if (strVal(current.$id) === strVal(proto.$id)) return true;
+    const protoId = strVal(current.$protoId);
+    if (!protoId) return false;
+    current = lookup(protoId);
   }
   return false;
 }
@@ -153,7 +163,8 @@ export function lmGetWithDelegation(
     if (lmIsDelegatablePlainKey(plain) && Object.hasOwn(current, plain)) {
       return deserialize(current[plain]);
     }
-    if (current.$protoId) current = lookup(current.$protoId);
+    const protoId = strVal(current.$protoId);
+    if (protoId) current = lookup(protoId);
     else break;
   }
   return undefined;
@@ -180,7 +191,8 @@ export function lmFindSlotForWrite(
       return isAccessorVal(raw) ? { accessor: raw } : { data: true };
     }
     if (lmIsDelegatablePlainKey(plain) && Object.hasOwn(current, plain)) return { data: true };
-    if (current.$protoId) current = lookup(current.$protoId);
+    const protoId = strVal(current.$protoId);
+    if (protoId) current = lookup(protoId);
     else break;
   }
   return undefined;

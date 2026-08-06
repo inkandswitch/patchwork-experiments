@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { wrapForCompletionValue } from './completionValue';
+import { typeTag } from './docStrings';
 import { evalTranspiled } from './evalHarness';
 import { createLivelymergeRuntime } from './livelymergeRuntime';
 import { createAutomergeTestDocHandle, roundTripDocHandle } from './testDocHandle';
@@ -121,11 +122,12 @@ b = new Box(10);
     expect(rt.eval('b._width')).toBe(11);
 
     // The prototype's doc entry stores an accessor record, not a flattened value.
+    // (Raw stored strings use the immutable-string encoding — read via typeTag.)
     const protoId = rt.eval('Box.prototype.$id') as string;
     const protoEntry = handle.doc().objectTable[protoId] as Record<string, any>;
-    expect(protoEntry['@width'].$type).toBe('accessor');
-    expect(protoEntry['@width'].$get.$type).toBe('ref');
-    expect(protoEntry['@width'].$set.$type).toBe('ref');
+    expect(typeTag(protoEntry['@width'])).toBe('accessor');
+    expect(typeTag(protoEntry['@width'].$get)).toBe('ref');
+    expect(typeTag(protoEntry['@width'].$set)).toBe('ref');
 
     // Reload into a fresh runtime: the accessor still works, and the ephemeral
     // override starts out clear (it was never in the document).

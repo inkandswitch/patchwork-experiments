@@ -1,15 +1,16 @@
 import type { DatatypeImplementation } from '@inkandswitch/patchwork-plugins';
+import { wrapEntryForDoc } from './docStrings';
 import {
   OBJECT_PROTOTYPE_TO_STRING_FUN_ID,
   objectPrototypeToStringFun,
 } from './objectPrototypeDefaults';
-import type { LivelymergeDoc } from './types';
+import type { LivelymergeDoc, Obj, Arr, Fun } from './types';
 
 export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
   init(doc: LivelymergeDoc) {
     doc['@patchwork'] = { type: 'livelymerge' };
     doc.title = 'Untitled Livelymerge';
-    doc.objectTable = {
+    const objectTable: Record<string, Obj | Arr | Fun> = {
       [OBJECT_PROTOTYPE_TO_STRING_FUN_ID]: objectPrototypeToStringFun,
       "object-prototype": {
         $type: "obj",
@@ -70,6 +71,11 @@ export const LivelymergeDatatype: DatatypeImplementation<LivelymergeDoc> = {
       "timeout-fns": { $type: "obj", $id: "timeout-fns" },
       "interval-fns": { $type: "obj", $id: "interval-fns" },
     };
+    // Strings are stored in the immutable-string encoding (see docStrings.ts).
+    doc.objectTable = {};
+    for (const [id, entry] of Object.entries(objectTable)) {
+      doc.objectTable[id] = wrapEntryForDoc(entry);
+    }
   },
   getTitle(doc: LivelymergeDoc) {
     return doc.title?.trim() || 'Livelymerge';
