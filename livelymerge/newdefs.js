@@ -3959,7 +3959,11 @@ class Morph {
     copy.transform = this.transform.copy(); // may not need to copy
     if (this.zIndex != null) copy.zIndex = this.zIndex; // keeps submorph stacking on recursive copies
     this.restartSteppingOnCopy(copy);
-    copy.submorphs = this.submorphs.map((m) => m.morphCopy());
+    copy.submorphs = this.submorphs.map((m) => {
+      let sub = m.morphCopy();
+      sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
+      return sub;
+    });
     return copy;
   }
   morphMenu() {
@@ -4471,7 +4475,11 @@ class ImageMorph extends Morph {
     copy.transform = this.transform.copy();
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
-    copy.submorphs = this.submorphs.map((m) => m.morphCopy());
+    copy.submorphs = this.submorphs.map((m) => {
+      let sub = m.morphCopy();
+      sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
+      return sub;
+    });
     return copy;
   }
   moveTo(pos) {
@@ -4530,7 +4538,11 @@ class EmojiMorph extends ImageMorph {
     copy.transform = this.transform.copy();
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
-    copy.submorphs = this.submorphs.map((m) => m.morphCopy());
+    copy.submorphs = this.submorphs.map((m) => {
+      let sub = m.morphCopy();
+      sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
+      return sub;
+    });
     return copy;
   }
   renderMeOn(ctx) {
