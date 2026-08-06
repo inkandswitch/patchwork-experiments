@@ -1,6 +1,5 @@
-# Every top-level folder here is its own package, installed on its own.
-# pnpm 11 reads its settings from this file, so each one carries the settings
-# it needs rather than inheriting them from a root workspace (there is none).
+# pnpm 11 reads its settings from this file. There is no root workspace, so
+# every package carries the settings it needs rather than inheriting them.
 minimumReleaseAge: 0
 verifyDepsBeforeRun: false
 allowBuilds:
