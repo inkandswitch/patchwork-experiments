@@ -193,5 +193,27 @@ Lively.testPanel = Lively.addMorph(new MethodPanel(rect(300, 100, 300, 200), 'he
       panelDrag.count,
       `panel title-bar drag:\n  ${panelDrag.keys.join('\n  ')}`,
     ).toBeLessThanOrEqual(8);
+
+    // Collapse/expand cycle: geometry and text layout update doc objects in
+    // place (was ~8.6k ops/cycle when every setBounds/compose allocated fresh
+    // Rectangles/Points/TextLineSpecs into the doc). What remains is the
+    // membership churn of stashing/unstashing content (list splices + ref
+    // wrappers), the collapse-glyph string, and the values that genuinely
+    // differ between the two layouts.
+    const toggle = () => {
+      rt.eval('Lively.testPanel.toggleCollapse()');
+      pumpFrame();
+    };
+    // First cycle pays one-time allocations (lastLocation rects, gesture keys).
+    toggle();
+    toggle();
+    const collapseCycle = opsDuring(() => {
+      toggle();
+      toggle();
+    });
+    expect(
+      collapseCycle.count,
+      `steady-state collapse/expand cycle generated ${collapseCycle.count} ops:\n  ${collapseCycle.keys.join('\n  ')}`,
+    ).toBeLessThanOrEqual(220);
   }, 120_000);
 });

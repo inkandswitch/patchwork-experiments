@@ -1386,6 +1386,14 @@ class Point {
     const sp = typeof s === 'number' ? pt(s, s) : s;
     return pt(this.x * sp.x, this.y * sp.y);
   }
+  setToPt(p) {
+    //NOTE: this does not return a copy, but *changes this point* — value writes
+    // only, so a doc-backed point can be updated in place (doc entries are
+    // immortal; replacing the point wholesale would orphan it).
+    this.x = p.x;
+    this.y = p.y;
+    return this;
+  }
   subPt(p) {
     return pt(this.x - p.x, this.y - p.y);
   }
@@ -1544,8 +1552,13 @@ class Rectangle {
     return topLeft.extent(extent);
   }
   setBounds(rect) {
-    this.topLeft = rect.topLeft;
-    this.extent = rect.extent;
+    // In-place when possible: doc-backed shapes get cheap value writes instead
+    // of adopting the caller's points (which would allocate fresh doc objects
+    // and orphan the old ones on every relayout).
+    if (this.topLeft) this.topLeft.setToPt(rect.topLeft);
+    else this.topLeft = rect.topLeft;
+    if (this.extent) this.extent.setToPt(rect.extent);
+    else this.extent = rect.extent;
   }
   top() {
     return this.topLeft.y;
@@ -1972,9 +1985,12 @@ class TextLineSpec {
 // Rectangle-backed drawable with border and fill.
 class Shape extends Rectangle {
   constructor(shapeType, bounds, color, borderWidth, borderColor) {
-    super(bounds.topLeft, bounds.extent);
+    // Copies, not the caller's points: setBounds updates topLeft/extent in
+    // place, so adopting them would let this shape mutate the caller's rect
+    // (callers reuse one rect to lay out several morphs).
+    super(bounds.topLeft.copy(), bounds.extent.copy());
     this.shapeType = shapeType;
-    this.morphOrigin = bounds.topLeft; // default for, eg, rectangles
+    this.morphOrigin = bounds.topLeft.copy(); // default for, eg, rectangles
     this.setStyles(color, borderWidth, borderColor);
   }
   asString() {
@@ -2025,12 +2041,15 @@ class Shape extends Rectangle {
 // Ellipse shape; used for line handles and round hit targets.
 class Ellipse extends Shape {
   constructor(center, rn) {
-    const p = center;
-    const r = typeof rn === 'number' ? pt(rn, rn) : rn;
+    // Copies, not the caller's points: setBounds updates p/r in place (see
+    // Shape's constructor note) — adopting them would tie this ellipse to the
+    // caller's points and to its own morphOrigin.
+    const p = center.copy();
+    const r = typeof rn === 'number' ? pt(rn, rn) : rn.copy();
     super('Ellipse', rect(p.x - r.x, p.y - r.y, r.x * 2, r.y * 2));
     this.p = p;
     this.r = r;
-    this.morphOrigin = center;
+    this.morphOrigin = center.copy();
     if (!this.fillColor) this.fillColor = Color.blue;
   }
   asString() {
@@ -2067,8 +2086,11 @@ class Ellipse extends Shape {
     this.render(ctx);
   }
   setBounds(bnds) {
-    this.p = bnds.center();
-    this.r = bnds.extent.scaleBy(0.5).maxPt(pt(0, 0));
+    if (this.p) this.p.setToPt(bnds.center());
+    else this.p = bnds.center();
+    let r = bnds.extent.scaleBy(0.5).maxPt(pt(0, 0));
+    if (this.r) this.r.setToPt(r);
+    else this.r = r;
     super.setBounds(bnds); // keep Rectangle topLeft/extent in sync so getBounds() is correct
   }
   static new(...args) {
@@ -2528,58 +2550,98 @@ class TextBox extends Shape {
     this.$duringTyping = false;
   }
   compose() {
-    this.lines = [];
-    this.lineStarts = [];
+    // Build the new layout in locals, then reconcile into the persisted
+    // lines/lineStarts in place — wholesale `this.lines = []` allocated a fresh
+    // doc array + TextLineSpec graph on every relayout and orphaned the old one.
+    let newLines = [];
+    let newLineStarts = [];
     let ctx = this.getTextContext(this.font);
     let str = this.string != null ? String(this.string) : '';
     let lineStart = 0;
     let lineTopLeft = this.topLeft.addPt(this.inset);
     let lineNo = 0;
+    let bottomY = null;
     if (str.length === 0) {
       // Empty text still occupies one line of height so caret/selection are visible.
-      this.lines.push(new TextLineSpec(lineTopLeft, pt(this.extent.x, this.lineHeight), ''));
-      this.lineStarts.push(0);
-      return lineTopLeft.y + this.lineHeight + 2;
-    }
-    let inAlpha = false;
-    let alphaBreak = 0;
-    for (let idx = 0; idx < str.length; idx++) {
-      let c = str[idx];
-      let isAlpha = /^[a-zA-Z0-9]*$/.test(c);
-      if (c == '\n' || c == '\r' || idx == str.length - 1) {
-        let thisLine = new TextLineSpec(
-          lineTopLeft,
-          pt(this.extent.x, this.lineHeight),
-          str.slice(lineStart, idx + 1),
-        );
-        this.lines.push(thisLine);
-        this.lineStarts.push(lineStart);
-        lineNo++;
-        lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
-        lineStart = idx + 1;
-      } else if (!this.noBreak) {
-        let maybeLine = str.slice(lineStart, idx + 1);
-        let metrics = ctx.measureText(maybeLine);
-        if (metrics.width >= this.extent.x) {
+      newLines.push(new TextLineSpec(lineTopLeft, pt(this.extent.x, this.lineHeight), ''));
+      newLineStarts.push(0);
+      bottomY = lineTopLeft.y + this.lineHeight + 2;
+    } else {
+      let inAlpha = false;
+      let alphaBreak = 0;
+      for (let idx = 0; idx < str.length; idx++) {
+        let c = str[idx];
+        let isAlpha = /^[a-zA-Z0-9]*$/.test(c);
+        if (c == '\n' || c == '\r' || idx == str.length - 1) {
           let thisLine = new TextLineSpec(
             lineTopLeft,
             pt(this.extent.x, this.lineHeight),
-            str.slice(lineStart, alphaBreak),
+            str.slice(lineStart, idx + 1),
           );
-          this.lines.push(thisLine);
-          this.lineStarts.push(lineStart);
+          newLines.push(thisLine);
+          newLineStarts.push(lineStart);
           lineNo++;
           lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
-          lineStart = alphaBreak;
+          lineStart = idx + 1;
+        } else if (!this.noBreak) {
+          let maybeLine = str.slice(lineStart, idx + 1);
+          let metrics = ctx.measureText(maybeLine);
+          if (metrics.width >= this.extent.x) {
+            let thisLine = new TextLineSpec(
+              lineTopLeft,
+              pt(this.extent.x, this.lineHeight),
+              str.slice(lineStart, alphaBreak),
+            );
+            newLines.push(thisLine);
+            newLineStarts.push(lineStart);
+            lineNo++;
+            lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
+            lineStart = alphaBreak;
+          }
+          if (!inAlpha && isAlpha) {
+            alphaBreak = idx;
+            inAlpha = true;
+          }
+          inAlpha = isAlpha;
         }
-        if (!inAlpha && isAlpha) {
-          alphaBreak = idx;
-          inAlpha = true;
-        }
-        inAlpha = isAlpha;
+      }
+      bottomY = lineTopLeft.y + 2;
+    }
+    this.reconcileComposedLines(newLines, newLineStarts);
+    return bottomY;
+  }
+  reconcileComposedLines(newLines, newLineStarts) {
+    /** Update lines/lineStarts to match the freshly composed layout with value
+     * writes into the existing doc objects; unchanged lines cost nothing
+     * (same-value writes are elided at the storage layer). New/removed lines
+     * push/pop at the tail. */
+    let lines = this.lines;
+    let starts = this.lineStarts;
+    if (lines == null || starts == null) {
+      this.lines = newLines;
+      this.lineStarts = newLineStarts;
+      return;
+    }
+    for (let i = 0; i < newLines.length; i++) {
+      let n = newLines[i];
+      if (i < lines.length) {
+        let line = lines[i];
+        line.topLeft.setToPt(n.topLeft);
+        line.extent.setToPt(n.extent);
+        if (line.string !== n.string) line.string = n.string;
+      } else {
+        lines.push(n);
       }
     }
-    return lineTopLeft.y + 2;
+    while (lines.length > newLines.length) lines.pop();
+    for (let i = 0; i < newLineStarts.length; i++) {
+      if (i < starts.length) {
+        if (starts[i] !== newLineStarts[i]) starts[i] = newLineStarts[i];
+      } else {
+        starts.push(newLineStarts[i]);
+      }
+    }
+    while (starts.length > newLineStarts.length) starts.pop();
   }
   copy() {
     let copy = new TextBox(
@@ -3138,7 +3200,10 @@ class TextBox extends Shape {
     this.$priorNullSelection = -1;
   }
   setText(str) {
-    this.string = str != null ? String(str) : '';
+    let s = str != null ? String(str) : '';
+    // Doc strings are Text objects, replaced wholesale on assignment — skip the
+    // write when nothing changed.
+    if (this.string !== s) this.string = s;
     let bottomY = this.compose();
     this.extent.y = bottomY - this.topLeft.y;
     this.setNullSelection();
@@ -3319,8 +3384,11 @@ class Morph {
     this.shape = shape ? shape : new Shape('Rectangle', bounds, Color.green, 1, Color.black);
     this.shape.morph = this;
     //console.log('shape = ', this.shape.asString());
-    this._bounds = this.shape.getBounds(); //a Rectangle in owner coordinates; see the `bounds` getter
-    this.origin = this.shape.morphOrigin;
+    // Copies, not live views: getBounds()/morphOrigin alias the shape's own
+    // points, and shape.setBounds below now updates those points in place —
+    // without the copy, _bounds would track the shape's local coords forever.
+    this._bounds = this.shape.getBounds().copy(); //a Rectangle in owner coordinates; see the `bounds` getter
+    this.origin = this.shape.morphOrigin.copy();
     this._transform = this.nullTransformation(); // persistent transform (trans/rot/scale); see the `transform` getter
     this._transform.translateBy(this.origin);
     this.shape.setBounds(this.shape.getBounds().translatedBy(this.origin.negated()));
@@ -4299,9 +4367,16 @@ class Morph {
     this.shape.setBorderWidth(width);
   }
   setBounds(rect) {
-    this.transform.translation = rect.topLeft.copy();
+    // In-place updates keep the doc's translation/bounds objects stable across
+    // relayouts (a collapse/expand cycle was ~8.6k ops when every setBounds
+    // allocated fresh Points/Rectangles into the doc).
+    let t = this.transform;
+    if (t.translation) t.translation.setToPt(rect.topLeft);
+    else t.translation = rect.topLeft.copy();
     this.shape.setBounds(rect.movedBy(rect.topLeft.negated()));
-    this.bounds = rect.copy();
+    let b = this.bounds;
+    if (b != null) b.setToRect(rect);
+    else this.bounds = rect.copy();
   }
   setColor(color) {
     this.shape.setColor(color);
@@ -4367,12 +4442,8 @@ class Morph {
     // that a same-frame in-place mutation (e.g. Morph.moveBy) already wrote a fresh
     // point into, baking a dangling ref into the document.
     let b = this.getBounds();
-    if (this.bounds) {
-      this.bounds.topLeft = b.topLeft.copy();
-      this.bounds.extent = b.extent.copy();
-    } else {
-      this.bounds = b.copy();
-    }
+    if (this.bounds) this.bounds.setToRect(b);
+    else this.bounds = b.copy();
   }
   testTransform(whenDone) {
     // Spin a bit, then reset and optionally run next. Driven by stepping (not
@@ -6742,8 +6813,8 @@ class PanelTitleBar extends Morph {
     let b = this.shape.getBounds();
     this.collapseBtn = this.addMorph(new SimpleButtonMorph(rect(0, 0, bw, th), '▼'));
     this.closeBtn = this.addMorph(new SimpleButtonMorph(rect(0, 0, bw, th), 'X'));
-    this.configureChromeButton(this.collapseBtn, Color.green.lighter().lighter(), '▼');
-    this.configureChromeButton(this.closeBtn, Color.red.lighter().lighter(), 'X');
+    this.configureChromeButton(this.collapseBtn, this.COLLAPSE_FILL, '▼');
+    this.configureChromeButton(this.closeBtn, this.CLOSE_FILL, 'X');
     this.titleMorph = this.addMorph(
       new TextMorph(rect(bw, 0, Math.max(1, b.width() - bw), th), 'A panel'),
     );
@@ -6816,8 +6887,8 @@ class PanelTitleBar extends Morph {
     let bw = this.BUTTON_WIDTH;
     let panel = this.panel;
     this.titleMorph.shape.composeBottomPad = 0;
-    this.configureChromeButton(this.collapseBtn, Color.green.lighter().lighter(), null);
-    this.configureChromeButton(this.closeBtn, Color.red.lighter().lighter(), 'X');
+    this.configureChromeButton(this.collapseBtn, this.COLLAPSE_FILL, null);
+    this.configureChromeButton(this.closeBtn, this.CLOSE_FILL, 'X');
     this.collapseBtn.setBounds(rect(b.topLeft.x, b.topLeft.y, bw, th));
     let hasCloseBtn = this.hasVisibleCloseBtn();
     if (panel.collapsed) {
@@ -6873,6 +6944,11 @@ class PanelTitleBar extends Morph {
 
 PanelTitleBar.prototype.HEIGHT = 24;
 PanelTitleBar.prototype.BUTTON_WIDTH = 28;
+// Shared instances: chrome colors are re-assigned on every layout(), and a stable
+// identity makes those writes same-value no-ops in the doc (fresh Colors per call
+// allocated a new doc object each relayout).
+PanelTitleBar.prototype.COLLAPSE_FILL = Color.green.lighter().lighter();
+PanelTitleBar.prototype.CLOSE_FILL = Color.red.lighter().lighter();
 
 //  PanelMorph
 // ------------
