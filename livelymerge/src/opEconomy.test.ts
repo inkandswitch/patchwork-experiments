@@ -98,6 +98,7 @@ describe('op economy: quiescent transactions generate no Automerge ops', () => {
 initUI();
 initLively();
 Lively.testBox = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
+Lively.testPanel = Lively.addMorph(new MethodPanel(rect(300, 100, 300, 200), 'hello', 'Test Panel'));
 `);
 
     const pumpFrame = () => {
@@ -167,5 +168,30 @@ Lively.testBox = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
     expectOpFree('second click', click);
     expectOpFree('third click', click);
     expectOpFree('idle frame after clicks', () => pumpFrame());
+
+    // Panel title-bar drag: as cheap as a plain morph drag. The panel at
+    // (300,100) has chrome buttons in the bar's left/right 28px, so press the
+    // middle (450,110). Was ~200 ops/drag when savePanelLocation assigned a
+    // fresh rect copy (new doc object graph per drag) instead of updating
+    // lastLocationExpanded in place.
+    const drag = (x0: number, y0: number, x1: number, y1: number) => () => {
+      dispatch('pointerdown', { type: 'pointerdown', pointerId: 1, button: 0, offsetX: x0, offsetY: y0, pointerType: 'mouse' });
+      pumpFrame();
+      for (let i = 1; i <= 10; i++) {
+        move(x0 + ((x1 - x0) * i) / 10, y0 + ((y1 - y0) * i) / 10)();
+      }
+      dispatch('pointerup', { type: 'pointerup', pointerId: 1, button: 0, offsetX: x1, offsetY: y1, pointerType: 'mouse' });
+      pumpFrame();
+    };
+    // First title-bar drag pays one-time costs (gesture-state keys, zIndex raise,
+    // the lastLocationExpanded rect allocation)...
+    drag(450, 110, 470, 160)();
+    pumpFrame();
+    // ...steady-state drags write only translation + bounds + saved-location values.
+    const panelDrag = opsDuring(drag(470, 160, 450, 110));
+    expect(
+      panelDrag.count,
+      `panel title-bar drag:\n  ${panelDrag.keys.join('\n  ')}`,
+    ).toBeLessThanOrEqual(8);
   }, 120_000);
 });

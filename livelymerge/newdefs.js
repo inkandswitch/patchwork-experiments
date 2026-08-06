@@ -1454,6 +1454,16 @@ class Rectangle {
     //NOTE: this does not return a copy, but *changes this rect*
     this.topLeft = this.topLeft.addPt(p);
   }
+  setToRect(r) {
+    //NOTE: this does not return a copy, but *changes this rect* — value writes
+    // only, no new Points, so a doc-backed rect can be updated in place (doc
+    // entries are immortal; replacing the rect wholesale would orphan it).
+    this.topLeft.x = r.topLeft.x;
+    this.topLeft.y = r.topLeft.y;
+    this.extent.x = r.extent.x;
+    this.extent.y = r.extent.y;
+    return this;
+  }
   movedBy(p) {
     //NOTE: this *does* return a copy, and doesnt change this rect
     return this.topLeft.addPt(p).extent(this.extent.copy());
@@ -7106,9 +7116,17 @@ class PanelMorph extends Morph {
     walk(this);
   }
   savePanelLocation() {
-    let r = this.getBounds().copy();
-    if (this.collapsed) this.lastLocationCollapsed = r;
-    else this.lastLocationExpanded = r;
+    // In-place update: this runs on every title-bar drag end, and assigning a
+    // fresh rect copy each time allocates a whole new object graph in the doc
+    // (~200 ops/drag) and orphans the old one.
+    let r = this.getBounds();
+    if (this.collapsed) {
+      if (this.lastLocationCollapsed) this.lastLocationCollapsed.setToRect(r);
+      else this.lastLocationCollapsed = r.copy();
+    } else {
+      if (this.lastLocationExpanded) this.lastLocationExpanded.setToRect(r);
+      else this.lastLocationExpanded = r.copy();
+    }
   }
   setBounds(newBounds) {
     super.setBounds(newBounds);
@@ -7135,7 +7153,8 @@ class PanelMorph extends Morph {
   }
   toggleCollapse() {
     if (this.collapsed) {
-      this.lastLocationCollapsed = this.getBounds().copy();
+      if (this.lastLocationCollapsed) this.lastLocationCollapsed.setToRect(this.getBounds());
+      else this.lastLocationCollapsed = this.getBounds().copy();
       this.collapsed = false;
       this._stashedContent.forEach((m) => this.addMorph(m));
       clearArray(this._stashedContent);
@@ -7148,7 +7167,8 @@ class PanelMorph extends Morph {
       this.$stickyDragCollapsedBar = false;
     } else {
       let hasSavedCollapsedLocation = !!this.lastLocationCollapsed;
-      this.lastLocationExpanded = this.getBounds().copy();
+      if (this.lastLocationExpanded) this.lastLocationExpanded.setToRect(this.getBounds());
+      else this.lastLocationExpanded = this.getBounds().copy();
       this._savedBounds = this.getBounds().copy();
       this.contentMorphs().forEach((m) => {
         this._stashedContent.push(m);
