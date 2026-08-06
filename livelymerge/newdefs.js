@@ -6883,7 +6883,6 @@ class PanelMorph extends Morph {
     this.titleBarHeight = PanelTitleBar.prototype.HEIGHT;
     this.titleButtonWidth = PanelTitleBar.prototype.BUTTON_WIDTH;
     this.collapsed = false;
-    this._savedBounds = null;
     this._stashedContent = [];
     this.lastLocationExpanded = null;
     this.lastLocationCollapsed = null;
@@ -7158,32 +7157,24 @@ class PanelMorph extends Morph {
       this.collapsed = false;
       this._stashedContent.forEach((m) => this.addMorph(m));
       clearArray(this._stashedContent);
-      let r = null;
-      if (this.lastLocationExpanded) r = this.lastLocationExpanded.copy();
-      else if (this._savedBounds) r = this._savedBounds;
-      if (r) this.setBounds(r);
-      this._savedBounds = null;
+      if (this.lastLocationExpanded) this.setBounds(this.lastLocationExpanded.copy());
       this.titleBar.setCollapseGlyph(false);
       this.$stickyDragCollapsedBar = false;
     } else {
       let hasSavedCollapsedLocation = !!this.lastLocationCollapsed;
       if (this.lastLocationExpanded) this.lastLocationExpanded.setToRect(this.getBounds());
       else this.lastLocationExpanded = this.getBounds().copy();
-      this._savedBounds = this.getBounds().copy();
       this.contentMorphs().forEach((m) => {
         this._stashedContent.push(m);
         this.removeMorph(m);
       });
       this.collapsed = true;
-      let b = this._savedBounds;
       let cw = this.collapsedTitleBarWidth();
-      let cr = null;
-      if (this.lastLocationCollapsed) {
-        cr = this.lastLocationCollapsed.topLeft.extent(pt(cw, this.titleBarHeight));
-      } else {
-        cr = b.topLeft.extent(pt(cw, this.titleBarHeight));
-      }
-      super.setBounds(cr);
+      // (setBounds copies its argument, so aliasing a doc point into cr is fine)
+      let barTopLeft = this.lastLocationCollapsed
+        ? this.lastLocationCollapsed.topLeft
+        : this.lastLocationExpanded.topLeft;
+      super.setBounds(barTopLeft.extent(pt(cw, this.titleBarHeight)));
       this.titleBar.setCollapseGlyph(true);
       this.$stickyDragCollapsedBar = !hasSavedCollapsedLocation;
     }
