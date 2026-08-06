@@ -239,8 +239,9 @@ Lively.panel.contentMorphs(); // must not mutate submorphs
       return px;
     };
     // First press raises the buried panel; the second press drags it.
+    // (Raising is a zIndex write, not a list reorder — check the draw order.)
     dragPanelBy(0, 0);
-    expect(rt.eval(`Lively.submorphs.at(-1) === Lively.thePanel`)).toBe(true);
+    expect(rt.eval(`Lively.frontmostInBand(0) === Lively.thePanel`)).toBe(true);
     const beforeX = dragPanelBy(40, 30);
     const afterX = rt.eval(`Lively.thePanel.getBounds().topLeft.x`);
     expect(afterX).toBeCloseTo(beforeX + 40, 6);

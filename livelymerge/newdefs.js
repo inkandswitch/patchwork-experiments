@@ -3236,8 +3236,8 @@ class TextBox extends Shape {
 
 function paneMenuIsFrontmostForPanel(world, panelMorph) {
   /** True when the world's front morph is a selection pane menu owned by a scroll pane in `panelMorph`. */
-  if (!world || !panelMorph || !world.submorphs || world.submorphs.length === 0) return false;
-  let front = world.submorphs.at(-1);
+  if (!world || !panelMorph || !world.frontmostSubmorph) return false;
+  let front = world.frontmostSubmorph();
   if (!front || front.className !== 'MenuMorph' || !front.isFleetingMenu) return false;
   let pane = front._paneMenuOwnerScrollPane;
   if (!pane) return false;
@@ -3314,7 +3314,8 @@ class Morph {
     this._transform = this.nullTransformation(); // persistent transform (trans/rot/scale); see the `transform` getter
     this._transform.translateBy(this.origin);
     this.shape.setBounds(this.shape.getBounds().translatedBy(this.origin.negated()));
-    this.submorphs = []; // array of Morphs in Z-order -- first is frontmost
+    this.submorphs = []; // membership only; stacking comes from each child's zIndex (see drawList)
+    this.zIndex = 0; // stacking position among my siblings; reassigned by addMorph*/promote
     this.$steppingSpecs = [];
     this.hasChanged = true; //some call on changed() says we need to rerender
     if (traceMe) console.log('log ', 2);
@@ -3497,26 +3498,33 @@ class Morph {
   addMorphBack(morph) {
     if (morph.owner) morph.owner.removeMorph(morph);
     if (this.submorphs == null) this.submorphs = [];
-    this.submorphs.unshift(morph);
+    let bottom = this.bottomZIndexInBand(morph.zBand ? morph.zBand() : 0);
+    morph.zIndex = bottom == null ? 0 : bottom - 1;
+    this.submorphs.push(morph);
     morph.owner = this;
     morph.changed();
+    this.zOrderChanged();
     this.layoutChanged();
     return morph;
   }
   addMorphFront(morph) {
     if (morph.owner) morph.owner.removeMorph(morph);
     if (this.submorphs == null) this.submorphs = [];
+    let top = this.topZIndexInBand(morph.zBand ? morph.zBand() : 0);
+    morph.zIndex = top == null ? 0 : top + 1;
     this.submorphs.push(morph);
     morph.owner = this;
     morph.changed();
+    this.zOrderChanged();
     this.layoutChanged();
     return morph;
   }
   addEphemeralMorph(morph) {
     /**
      * Attach `morph` as a PER-USER (ephemeral) submorph: rendered and hit-tested like
-     * any submorph, drawn above the persistent ones, but never stored in the Automerge
-     * document and never seen by other users. Halos and their handles live here.
+     * any submorph, but never stored in the Automerge document and never seen by other
+     * users. Halos and their handles live here. Starts frontmost within its zBand and
+     * from then on interleaves with persistent siblings by zIndex like any other morph.
      * Note it is the attachment EDGE that is ephemeral: `morph`'s own subtree (regular
      * submorphs, shape, etc.) stays ephemeral automatically because it is only
      * reachable through this $-edge. Meant for freshly created per-user morphs and for
@@ -3526,9 +3534,12 @@ class Morph {
      * would not); use bePersistent for the opposite promotion.
      */
     if (morph.owner) morph.owner.removeMorph(morph);
+    let top = this.topZIndexInBand(morph.zBand ? morph.zBand() : 0);
+    morph.zIndex = top == null ? 0 : top + 1;
     this.ephemeralSubmorphs().push(morph);
     morph.owner = this;
     morph.changed();
+    this.zOrderChanged();
     this.layoutChanged();
     return morph;
   }
@@ -3559,32 +3570,137 @@ class Morph {
   bePersistent() {
     /**
      * Promote my attachment edge from per-user to shared: move me from my owner's
-     * $submorphs to its submorphs. Same owner, same transform, so I stay put on
-     * screen; entering the persistent list is what promotes me (and my subtree)
-     * into the Automerge document, making me visible to other users.
+     * $submorphs to its submorphs. Same owner, same transform, same zIndex, so I
+     * stay put on screen (and in the stacking order); entering the persistent list
+     * is what promotes me (and my subtree, zIndex included) into the Automerge
+     * document, making me visible to other users.
      */
     if (!this.isEphemeralSubmorph()) return;
-    this.owner.addMorphFront(this);
+    let o = this.owner;
+    deleteFromArray(o.$submorphs, this);
+    if (o.submorphs == null) o.submorphs = [];
+    o.submorphs.push(this);
+    o.zOrderChanged();
+  }
+  zBand() {
+    /**
+     * Coarse stacking layer, compared before zIndex: 0 = ordinary morphs
+     * (persistent and ephemeral interleave freely here), 1 = per-user
+     * always-on-top UI ($alwaysOnTop: halos, halo handles, line handles, the
+     * on-screen keyboard), 2 = fleeting menus and confirm dialogs, which must
+     * never be buried (see promote). zIndex only competes within a band.
+     */
+    if (this.isFleetingMenu) return 2;
+    if (this.$alwaysOnTop) return 1;
+    return 0;
+  }
+  drawList() {
+    /**
+     * My submorphs — persistent AND ephemeral — in DRAW order (backmost first).
+     * Order is (zBand, zIndex, $id): bands keep overlays and fleeting menus on
+     * top, zIndex interleaves persistent and per-user morphs freely within a
+     * band, and $id breaks zIndex ties deterministically (doc-resident morphs
+     * have the same $id on every replica, so ties render identically everywhere).
+     * Cached in $drawList (per-user, plain array — iterating it costs no document
+     * reads); every mutation that can affect stacking invalidates the cache via
+     * zOrderChanged, and repairSubmorphOwnership invalidates after every batch of
+     * remote changes (a remote promote is just a zIndex register write, invisible
+     * to the lists). Treat the result as read-only — it IS the cache.
+     */
+    let cached = this.$drawList;
+    if (cached) return cached;
+    let entries = [];
+    let collect = (m) => {
+      if (m == null) return; // dangling ref from an unrepaired merge; skip
+      entries.push({
+        m,
+        band: m.zBand ? m.zBand() : 0,
+        z: m.zIndex != null ? m.zIndex : 0,
+        id: '' + m.$id,
+      });
+    };
+    if (this.submorphs) this.submorphs.forEach(collect);
+    if (this.$submorphs) this.$submorphs.forEach(collect);
+    entries.sort(
+      (a, b) => a.band - b.band || a.z - b.z || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    // Fast path: no ephemeral children and the persistent list happens to sit in
+    // draw order already (true for every leaf and for most owners — migration
+    // assigns zIndex in list order, and reordering only drifts on promotes).
+    // Cache the doc list ITSELF: iterating it per frame goes through the
+    // runtime's materialized read-cache, which ad-hoc per-user arrays never hit,
+    // so rendering leaves costs the same as before zIndex existed.
+    let subs = this.submorphs;
+    if (subs && (this.$submorphs == null || this.$submorphs.length === 0)) {
+      let inListOrder = entries.length === subs.length;
+      for (let i = 0; inListOrder && i < entries.length; i++) {
+        if (entries.at(i).m !== subs.at(i)) inListOrder = false;
+      }
+      if (inListOrder) {
+        this.$drawList = subs;
+        return subs;
+      }
+    }
+    let list = entries.map((e) => e.m);
+    this.$drawList = list;
+    return list;
+  }
+  zOrderChanged() {
+    /** Invalidate my cached draw order; call after any add/remove of a submorph or change to a child's zIndex. */
+    this.$drawList = null;
+    this.changed();
+  }
+  topZIndexInBand(band) {
+    /** Highest zIndex among my children (both lists) in `band`, or null when the band is empty. */
+    let top = null;
+    let scan = (m) => {
+      if (m == null || (m.zBand ? m.zBand() : 0) !== band) return;
+      let z = m.zIndex != null ? m.zIndex : 0;
+      if (top == null || z > top) top = z;
+    };
+    if (this.submorphs) this.submorphs.forEach(scan);
+    if (this.$submorphs) this.$submorphs.forEach(scan);
+    return top;
+  }
+  bottomZIndexInBand(band) {
+    /** Lowest zIndex among my children (both lists) in `band`, or null when the band is empty. */
+    let bottom = null;
+    let scan = (m) => {
+      if (m == null || (m.zBand ? m.zBand() : 0) !== band) return;
+      let z = m.zIndex != null ? m.zIndex : 0;
+      if (bottom == null || z < bottom) bottom = z;
+    };
+    if (this.submorphs) this.submorphs.forEach(scan);
+    if (this.$submorphs) this.$submorphs.forEach(scan);
+    return bottom;
+  }
+  frontmostInBand(band) {
+    /** My frontmost child in `band` (per draw order), or null. */
+    let list = this.drawList();
+    for (let i = list.length - 1; i >= 0; i--) {
+      let m = list.at(i);
+      if ((m.zBand ? m.zBand() : 0) === band) return m;
+    }
+    return null;
+  }
+  frontmostSubmorph() {
+    /** My frontmost child across all bands, or null. */
+    let list = this.drawList();
+    return list.length > 0 ? list.at(-1) : null;
   }
   allSubmorphs() {
-    /** Persistent + ephemeral submorphs in DRAW order: persistent first, ephemeral on top. */
-    let all = [];
-    if (this.submorphs) this.submorphs.forEach((m) => all.push(m));
-    if (this.$submorphs) this.$submorphs.forEach((m) => all.push(m));
-    return all;
+    /** Persistent + ephemeral submorphs in DRAW order (backmost first), as a fresh array. */
+    return this.drawList().slice();
   }
   allSubmorphsTopFirst() {
-    /** Persistent + ephemeral submorphs in HIT-TEST order (reverse draw order): ephemeral frontmost-first, then persistent frontmost-first. */
-    let all = [];
-    if (this.$submorphs) for (let i = this.$submorphs.length - 1; i >= 0; i--) all.push(this.$submorphs.at(i));
-    if (this.submorphs) for (let i = this.submorphs.length - 1; i >= 0; i--) all.push(this.submorphs.at(i));
-    return all;
+    /** Persistent + ephemeral submorphs in HIT-TEST order (frontmost first — the exact reverse of draw order), as a fresh array. */
+    return this.drawList().toReversed();
   }
   find(aFunction) {
     /**
      * First direct submorph for which aFunction(morph) is true, else null.
-     * Ephemeral ($submorphs) are tested before persistent submorphs; within each
-     * list, frontmost first (same order as {@link allSubmorphsTopFirst}).
+     * Tests frontmost first (same order as {@link allSubmorphsTopFirst}),
+     * persistent and ephemeral submorphs interleaved by zIndex.
      */
     if (typeof aFunction !== 'function') return null;
     let list = this.allSubmorphsTopFirst();
@@ -3594,49 +3710,31 @@ class Morph {
     return null;
   }
   findA(className) {
-    /** First direct submorph whose className equals className (ephemeral before persistent). */
+    /** First direct submorph whose className equals className (frontmost first). */
     let name = '' + className;
     return this.find((m) => m && m.className === name);
   }
   eachSubmorph(fn) {
-    /** Iterate persistent then ephemeral submorphs (draw order) without allocating a combined list. */
-try {
-    if (this.submorphs) this.submorphs.forEach(fn);
-} catch (e) {
-  console.log('boom! while iterating over persistent submorphs');
-  debugger;
-}
-try {
-    if (this.$submorphs) this.$submorphs.forEach(fn);
-} catch (e) {
-  console.log('boom! while iterating over local submorphs');
-  debugger;
-}
+    /**
+     * Iterate my submorphs (persistent + ephemeral) in DRAW order — backmost
+     * first. Runs on every morph every frame (see renderOn), so the warm case
+     * reads the $drawList cache directly instead of paying a drawList() call.
+     */
+    let list = this.$drawList;
+    if (list == null) list = this.drawList();
+    list.forEach(fn);
   }
   asString() {
     return 'a ' + this.className + ' (' + this.shape.asString() + ')';
   }
   beTopMorph() {
-    // Promote my top-level ancestor to be the frontmost morph in the world
+    // Promote my top-level ancestor to the front of its zBand in the world.
+    // promote() is a no-op (and op-free) when it is already frontmost there,
+    // and bands keep fleeting menus / halos above it regardless.
     let worldMorph = this.world();
     let m = this;
     while (m.owner && m.owner !== worldMorph) m = m.owner;
     if (m.owner !== worldMorph) return;
-    // Ephemeral panels live in $submorphs; check the list that actually holds m.
-    let list =
-      worldMorph.$submorphs && worldMorph.$submorphs.includes(m)
-        ? worldMorph.$submorphs
-        : worldMorph.submorphs;
-    if (!list || list.at(-1) === m) return;
-    // Already frontmost among non-fleeting siblings?
-    let frontNonFleeting = null;
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (!list.at(i).isFleetingMenu) {
-        frontNonFleeting = list.at(i);
-        break;
-      }
-    }
-    if (frontNonFleeting === m) return;
     worldMorph.promote(m);
   }
   boundsInOwnerAfterTransform() {
@@ -3673,15 +3771,11 @@ try {
     let topLevel = this;
     while (topLevel.owner && topLevel.owner !== world) topLevel = topLevel.owner;
     if (topLevel.className != 'PanelMorph' || topLevel.owner !== world) return false;
-    // Simpler/stronger policy: if the panel is not globally frontmost, first click
-    // only raises it; second click can act on inner controls.
-    // Frontmost within the panel's own layer: an ephemeral panel draws above all
-    // persistent morphs, so being last in $submorphs makes it globally frontmost.
-    let siblings =
-      world.$submorphs && world.$submorphs.includes(topLevel)
-        ? world.$submorphs
-        : world.submorphs;
-    if (siblings.at(-1) !== topLevel) {
+    // Simpler/stronger policy: if the panel is not frontmost, first click only
+    // raises it; second click can act on inner controls. Frontmost within the
+    // panel's zBand: persistent and ephemeral siblings interleave by zIndex, and
+    // fleeting menus / halos above it don't count as burying it.
+    if (world.frontmostInBand(topLevel.zBand ? topLevel.zBand() : 0) !== topLevel) {
       // A pane menu sitting above this panel must not eat the first text click.
       if (paneMenuIsFrontmostForPanel && paneMenuIsFrontmostForPanel(world, topLevel)) return false;
       topLevel.beTopMorph();
@@ -3863,6 +3957,7 @@ try {
     let copy = new Morph(this.bounds, this.shape.copy());
     copy.owner = this.owner;
     copy.transform = this.transform.copy(); // may not need to copy
+    if (this.zIndex != null) copy.zIndex = this.zIndex; // keeps submorph stacking on recursive copies
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => m.morphCopy());
     return copy;
@@ -3909,7 +4004,7 @@ try {
     let eventConsumed = false;
     this.eachSubmorph((sub) => {
       // localP is in this morph's local coords, i.e. owner coords for submorphs
-      // (ephemeral submorphs come last, so as the topmost layer they win the dispatch)
+      // (draw order: frontmost submorphs are visited last, so they win the dispatch)
       if (sub.fullBounds().includesPt(localP)) eventConsumed = sub.onPointerDown(localP, evt);
     });
     if (eventConsumed) return true;
@@ -3977,27 +4072,24 @@ try {
     return this.getBounds().topLeft;
   }
   promote(submorph) {
-    // Reorder to frontmost within whichever list holds it (persistent or ephemeral).
-    // Fleeting menus stay above ordinary morphs so confirms are not buried by beTopMorph.
-    let list = this.submorphs;
-    let idx = list ? list.indexOf(submorph) : -1;
-    if (idx < 0 && this.$submorphs) {
-      list = this.$submorphs;
-      idx = list.indexOf(submorph);
-    }
-    if (idx < 0) return;
-    list.splice(idx, 1);
-    if (submorph.isFleetingMenu) {
-      list.push(submorph);
-    } else {
-      let insertAt = list.length;
-      for (let i = list.length - 1; i >= 0; i--) {
-        if (list.at(i).isFleetingMenu) insertAt = i;
-        else break;
-      }
-      list.splice(insertAt, 0, submorph);
-    }
-    this.changed();
+    /**
+     * Raise `submorph` to frontmost within its zBand: one zIndex register write,
+     * never a list splice. Registers converge under concurrent edits (LWW), so a
+     * promote merged with a concurrent reparent or promote on another replica
+     * can no longer duplicate list entries (see repairSubmorphOwnership for the
+     * legacy splice-vs-splice damage this used to cause). Bands keep fleeting
+     * menus above ordinary morphs so confirms are not buried by beTopMorph.
+     * Already-frontmost is a no-op, keeping every pointer-down op-free.
+     */
+    let held =
+      (this.submorphs && this.submorphs.includes(submorph)) ||
+      (this.$submorphs && this.$submorphs.includes(submorph));
+    if (!held) return;
+    let band = submorph.zBand ? submorph.zBand() : 0;
+    if (this.frontmostInBand(band) === submorph) return;
+    let top = this.topZIndexInBand(band);
+    submorph.zIndex = top == null ? 0 : top + 1;
+    this.zOrderChanged();
   }
   relativize(p) {
     // owner coordinates -> local
@@ -4014,7 +4106,7 @@ try {
   removeMorph(submorph) {
     deleteFromArray(this.submorphs, submorph);
     if (this.$submorphs) deleteFromArray(this.$submorphs, submorph);
-    this.changed();
+    this.zOrderChanged();
   }
   renderMeOn(ctx) {
     if (!this.hasChanged) return;
@@ -4065,21 +4157,29 @@ try {
   }
   repairSubmorphOwnership() {
     /**
-     * Heal the scene graph after concurrent edits from another replica merge in.
-     * Automerge lists merge remove+reinsert patterns additively: a z-order promote
-     * of a morph on one replica (splice out + reinsert — see promote/beTopMorph,
-     * which runs on every pointer-down) merged with a reparent of the same morph
-     * on another replica (splice out + insert into the new owner's list) leaves
-     * the morph's ref in BOTH lists, so it renders twice — once inside its new
-     * owner and once from the old list with the new owner-local transform (e.g.
-     * near the world's top-left). The owner back-pointer is a plain register that
-     * converges to a single value, so treat it as the truth: drop list entries
-     * whose morph belongs to someone else, and collapse repeats within a list
-     * (two concurrent promotes of the same morph). Only the persistent list needs
-     * this — $submorphs is per-user and never merged. Called from the frame loop
-     * (see maybeRepairAfterMerge in initUI) after external changes arrive, and
-     * once on boot to heal documents corrupted by earlier sessions.
+     * Heal the scene graph after a batch of external (remote-replica) changes
+     * merges in; called from the frame loop (see maybeRepairAfterMerge in initUI)
+     * once per batch, plus once on boot. Three jobs:
+     *
+     * 1. Invalidate the cached draw order ($drawList) unconditionally — a remote
+     *    promote is just a zIndex register write, invisible to the lists, so any
+     *    external batch may have reordered my children.
+     * 2. Deduplicate the persistent list. Automerge lists merge remove+reinsert
+     *    patterns additively: two replicas concurrently splicing the same morph
+     *    (e.g. a reparent racing another reparent — promotes no longer splice)
+     *    leave its ref in both/twice, so it renders twice. The owner back-pointer
+     *    is a register that converges to one value, so treat it as the truth:
+     *    drop entries whose morph belongs to someone else, and collapse repeats.
+     *    Also heals documents corrupted by pre-zIndex sessions, whose promotes
+     *    DID splice on every pointer-down. Only the persistent list needs this —
+     *    $submorphs is per-user and never merged.
+     * 3. Migrate zIndex: any child without one (a pre-zIndex document, or a morph
+     *    created by a replica running old code) gets slotted above the current
+     *    max, in list order — for a wholly unmigrated document this preserves the
+     *    legacy list-position stacking exactly. Replicas booting the same old
+     *    document concurrently compute identical values, so the writes converge.
      */
+    this.$drawList = null;
     let subs = this.submorphs;
     if (subs && subs.length > 0) {
       let stale = null;
@@ -4093,6 +4193,22 @@ try {
       }
       if (stale != null) {
         for (let i = stale.length - 1; i >= 0; i--) subs.splice(stale.at(i), 1);
+        this.changed();
+      }
+      let maxZ = null;
+      let missing = null;
+      for (let i = 0; i < subs.length; i++) {
+        let s = subs.at(i);
+        if (s.zIndex == null) {
+          if (missing == null) missing = [];
+          missing.push(s);
+        } else if (maxZ == null || s.zIndex > maxZ) {
+          maxZ = s.zIndex;
+        }
+      }
+      if (missing != null) {
+        let z = maxZ == null ? 0 : maxZ + 1;
+        missing.forEach((s) => (s.zIndex = z++));
         this.changed();
       }
     }
@@ -4353,6 +4469,7 @@ class ImageMorph extends Morph {
     let copy = new ImageMorph(this.shape.copy());
     copy.owner = this.owner;
     copy.transform = this.transform.copy();
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => m.morphCopy());
     return copy;
@@ -4411,6 +4528,7 @@ class EmojiMorph extends ImageMorph {
     let copy = new EmojiMorph(this._emojiName, this._emojiSize);
     copy.owner = this.owner;
     copy.transform = this.transform.copy();
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => m.morphCopy());
     return copy;
@@ -4611,6 +4729,7 @@ class LineMorph extends Morph {
       handleRadius: this.handleRadius,
     });
     copy.owner = this.owner;
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy, (spec, c) => {
       if (spec.methodName === 'stepHoverHandles') {
         c.startHandleStepping();
@@ -4760,6 +4879,7 @@ class LineVertexHandle extends Morph {
     this.lineMorph = lineMorph;
     this.vertexIndex = vertexIndex;
     this.handleRadius = handleRadius;
+    this.$alwaysOnTop = true; // hover UI: draw above the line's other submorphs (see zBand)
   }
   acceptsDroppingMorphs() {
     return false;
@@ -4834,6 +4954,7 @@ class LineMidpointHandle extends Morph {
     this.segmentIndex = segmentIndex;
     this.handleRadius = handleRadius;
     this.$dragVertexIndex = null;
+    this.$alwaysOnTop = true; // hover UI: draw above the line's other submorphs (see zBand)
   }
   acceptsDroppingMorphs() {
     return false;
@@ -5590,9 +5711,9 @@ function hitScrollPaneMenuButtonAt(world, worldPt) {
   return null;
 }
 function fleetingPaneMenuForScrollPane(world, scrollPane) {
-  /** Fleeting pane menu owned by a scroll pane, if any. */
+  /** Fleeting pane menu owned by a scroll pane, if any (searches both submorph layers). */
   if (!world || !scrollPane) return null;
-  return world.submorphs.find(
+  return world.find(
     (sub) =>
       sub.className === 'MenuMorph' &&
       sub.isFleetingMenu &&
@@ -6567,9 +6688,8 @@ function promptConfirmMenu(world, pt, titleLine, yesLine, noLine, onResult) {
   menu.shape.boxColor = bg;
   menu.shape.fill = bg;
   menu.isFleetingMenu = true;
-  // Ephemeral: must draw above per-user panels (e.g. QBF), which live in $submorphs.
+  // isFleetingMenu puts it in the top zBand, so no beTopMorph can bury this dialog.
   world.addEphemeralMorph(menu);
-  // Re-assert frontmost: a later beTopMorph on the panel must not bury this dialog.
   if (world.promote) world.promote(menu);
 }
 function promptOkToCancelEditsMenu(world, pt, onResult) {
@@ -6829,20 +6949,11 @@ class PanelMorph extends Morph {
     if (!this.includesPt(p)) return false;
     // first click only raises a buried panel,
     // except chrome buttons (collapse/delete) should act immediately.
-    // Frontmost check uses the panel's own world layer (persistent or ephemeral).
+    // Frontmost check is within the panel's zBand: persistent and ephemeral
+    // siblings interleave by zIndex; fleeting menus/halos above don't bury it.
     let world = this.world();
-    let siblings =
-      world.$submorphs && world.$submorphs.includes(this) ? world.$submorphs : world.submorphs;
-    let frontNonFleeting = null;
-    if (siblings) {
-      for (let i = siblings.length - 1; i >= 0; i--) {
-        if (!siblings.at(i).isFleetingMenu) {
-          frontNonFleeting = siblings.at(i);
-          break;
-        }
-      }
-    }
-    if (frontNonFleeting !== this) {
+    let frontInBand = world.frontmostInBand ? world.frontmostInBand(this.zBand ? this.zBand() : 0) : null;
+    if (frontInBand !== this) {
       let localP = this.relativize(p);
       let hitInfo = this.titleBarHitInfo(localP);
       let onCollapse = hitInfo && hitInfo.onCollapse;
@@ -7834,6 +7945,7 @@ class HaloHandle extends Morph {
     super(null, this.makeHandleShape(index, iconLetter, halo));
     this.halo = halo;
     this.handleName = handleName;
+    this.$alwaysOnTop = true; // stays in the overlay zBand even when reparented to the world mid-drag
     let m = halo.handleLetterMetrics();
     let localBounds = this.shape.getBounds();
     let c = localBounds.center();
@@ -8041,6 +8153,7 @@ class HaloMorph extends Morph {
       : targetMorph.clippedBoundsInWorld().insetBy(-10);
     super(haloBounds);
     this.target = targetMorph;
+    this.$alwaysOnTop = true; // per-user overlay: never buried by beTopMorph (see zBand)
     this.shape.setStyles(null, 1, Color.green);
     this.layoutTitleMorph();
     if (isWorld) {
@@ -8446,6 +8559,7 @@ class OnScreenKeyboardMorph extends Morph {
       ),
     );
     this.transform.translation = ib.topLeft.copy();
+    this.$alwaysOnTop = true; // per-user overlay: never buried by beTopMorph (see zBand)
     this.keyMorphs = [];
     this._kbdRowSpecs = OnScreenKeyboardMorph.prototype.defaultRowSpecs();
     this.buildKeys();
@@ -9336,7 +9450,7 @@ class WorldMorph extends Morph {
     let hit = false; // return of true stops at top morph
     this.allSubmorphsTopFirst().forEach((morph) => {
       // Pass world/owner coords into child; it will localize as needed.
-      // Top-first order means ephemeral morphs (halos, per-user UI) see the event first.
+      // Top-first order means overlay-band morphs (halos, fleeting menus) see the event first.
       if (!hit) hit = morph.onPointerDown(p, evt);
     });
     if (!hit) {
@@ -9597,7 +9711,7 @@ class WorldMorph extends Morph {
     // Deepest morph under pt; among overlapping siblings, frontmost wins.
     // pt is world coordinates.
     let walk = (ownerMorph, worldPt) => {
-      let subs = ownerMorph.allSubmorphsTopFirst(); // ephemeral layer is frontmost
+      let subs = ownerMorph.allSubmorphsTopFirst(); // frontmost first, both layers interleaved by zIndex
       for (let i = 0; i < subs.length; i++) {
         let sub = subs.at(i);
         let pInOwner = sub.owner ? sub.owner.localize(worldPt) : worldPt;
