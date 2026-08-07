@@ -237,7 +237,7 @@ Lively.testPanel = Lively.addMorph(new MethodPanel(rect(300, 100, 300, 200), 'he
     const positions = rt.eval(`
 Lively.boxCopy = Lively.addMorph(Lively.testBox.morphCopy());
 Lively.boxCopy.moveBy(pt(50, 0));
-Lively.testBox.getBounds().topLeft.asString() + ' / ' + Lively.boxCopy.getBounds().topLeft.asString()
+Lively.testBox.getBounds().topLeft.toString() + ' / ' + Lively.boxCopy.getBounds().topLeft.toString()
 `) as string;
     const [origPos, copyPos] = positions.split(' / ');
     expect(copyPos).not.toBe(origPos);
