@@ -634,4 +634,46 @@ true`);
     expect(rt.eval(`(qbfGame.activeLetters || []).length`)).toBe(0);
     expect(rt.eval(`(Lively.qbfHighScoreList || []).length`)).toBe(0);
   }, 60_000);
+
+  it('reinstalls the embedded word list when a game opens on a fresh replica', () => {
+    const { rt } = makeGame();
+    // A page reload clears per-replica state: no list means every word is accepted.
+    rt.eval(`qbfSetWordList(null)`);
+    expect(rt.eval(`qbfLookupWord('qqq')`)).toBe(true);
+    rt.eval(`openQBFPlaying({ levelCaption: 'quick' })`);
+    expect(rt.eval(`!!$qbfWordList`)).toBe(true);
+    expect(rt.eval(`qbfLookupWord('qqq')`)).toBe(false);
+    expect(rt.eval(`qbfLookupWord('aardvark')`)).toBe(true);
+    // openQBF (idle board) reinstalls too, and a loaded list is left alone.
+    rt.eval(`qbfSetWordList(null); openQBF(pt(300, 10))`);
+    expect(rt.eval(`qbfLookupWord('qqq')`)).toBe(false);
+    rt.eval(`qbfSetWordList(['zzq'])`);
+    expect(rt.eval(`qbfEnsureWordList()`)).toBe('word list already loaded');
+    expect(rt.eval(`qbfLookupWord('zzq')`)).toBe(true);
+  }, 60_000);
+
+  it('scores viewer polls so scores that arrive by sync (no local notify) show up', () => {
+    const { rt } = makeGame();
+    // openQBFScores registered the 1s poll step with the world.
+    expect(
+      rt.eval(
+        `Lively.activeStepList().some((s) => s.stepMorph === qbfScores && s.methodName === 'pollRemoteScores')`,
+      ),
+    ).toBe(true);
+    // Seed the change counter, then mutate the store silently (as a synced remote
+    // write would): with the counter unchanged, the poll leaves the pane alone.
+    rt.eval(`
+qbfScores.pollRemoteScores();
+qbfScoresStore().entries.push({
+  player: 'Remoter', level: 'quick', bestGame: 321,
+  bestWord: 'synced', bestWordScore: 32, time: Date.now(), gameNo: 555,
+});
+qbfScores.pollRemoteScores();
+true`);
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).not.toContain('Remoter');
+    // Once the counter moves (a remote change arrived), the poll refreshes.
+    rt.eval(`qbfScores._externalChangesSeen = -1; qbfScores.pollRemoteScores(); true`);
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('Remoter');
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('321');
+  }, 60_000);
 });
