@@ -360,17 +360,15 @@ true`);
     expect(rt.eval(`qbfLookupWord('nope')`)).toBe(true);
   }, 60_000);
 
-  it('loads QBFWords.txt, lowercases it, and skips words over nine characters', async () => {
+  it('installs QBFWords.txt text lowercased, skipping words over nine characters', () => {
+    // qbfInstallWordListText is the regeneration path for the embedded list, so its
+    // parse rules must keep matching what qbfEmbeddedWordList was built with.
     const source = readQBFWordsText();
     expect(source.split(/\r?\n/).slice(0, 5)).toEqual(['AA', 'AAH', 'AAHED', 'AAHING', 'AAHS']);
 
-    (globalThis as any).fetch = async () => ({
-      ok: true,
-      status: 200,
-      text: async () => source,
-    });
     const { rt } = makeGame();
-    const result = (await rt.eval(`qbfLoadWordListFromUrl('QBFWords.txt')`)) as string;
+    rt.eval(`qbfWordsSource = ${JSON.stringify(source)}`);
+    const result = rt.eval(`qbfInstallWordListText(qbfWordsSource)`) as string;
 
     expect(result).toMatch(/^\d+ words loaded$/);
     expect(rt.eval(`qbfCompactStringToArray($qbfWordList).slice(0, 5).join(',')`)).toBe(
@@ -381,6 +379,8 @@ true`);
     expect(
       rt.eval(`qbfCompactStringToArray($qbfWordList).every((word) => word.length <= 9)`),
     ).toBe(true);
+    // Regenerating from today's QBFWords.txt reproduces the embedded list exactly.
+    expect(rt.eval(`$qbfWordList === qbfEmbeddedWordList()`)).toBe(true);
   }, 60_000);
 
   it('posts high scores through the pluggable store and refreshes the viewer', () => {

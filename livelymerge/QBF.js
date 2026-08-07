@@ -142,7 +142,11 @@ function qbfWordsFromText(text) {
   return words;
 }
 function qbfInstallWordListText(text) {
-  /** Parse and compact the text form before installing it as per-user state. */
+  /**
+   * Parse and compact the text form before installing it as per-user state.
+   * This is how the embedded list is regenerated when QBFWords.txt changes:
+   * install the new text, then paste $qbfWordList into qbfEmbeddedWordList.
+   */
   let words = qbfWordsFromText(text);
   qbfSetWordList(qbfCompactStringFromArray(words));
   return words.length + ' words loaded';
@@ -182,59 +186,6 @@ function qbfEnsureWordList() {
   let msg = qbfSetWordList(qbfEmbeddedWordList());
   console.log('QBF: embedded word list installed');
   return msg;
-}
-function qbfInstallFetchedWordList(text) {
-  /**
-   * Install text fetched off-thread. Promise callbacks run outside Automerge.change
-   * (unlike setTimeout), so wrap the install when a runtime is available.
-   * Keep this a top-level function: LM promise callbacks must not close over outer
-   * locals (nested free-var capture is unreliable).
-   */
-  let rt = window.runtime;
-  let msg =
-    rt && typeof rt.change === 'function'
-      ? rt.change(() => qbfInstallWordListText(text))
-      : qbfInstallWordListText(text);
-  console.log('QBF: ' + msg);
-  return msg;
-}
-function qbfLoadWordListFromUrl(urlIfAny) {
-  /**
-   * Try to fetch a word-list text file (one uppercase word per line), discard words
-   * longer than nine characters, lowercase and compact the remainder, then enable
-   * word checking. Usually unnecessary: QBF.js already installs the embedded list.
-   * Relative fetch of QBFWords.txt usually 404s under Patchwork.
-   *
-   * Note: .then callbacks here only call top-level functions / use their parameters.
-   * Do not close over locals from this function -- LM free-var capture in nested
-   * promise callbacks is unreliable.
-   */
-  let url = urlIfAny != null ? urlIfAny : 'QBFWords.txt';
-  try {
-    return fetch(url)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('HTTP ' + response.status);
-        }
-        return response.text();
-      })
-      .then((text) => qbfInstallFetchedWordList(text))
-      .catch((err) => {
-        console.log(
-          'QBF: no word list via fetch (' +
-            err +
-            '); qbfEnsureWordList() installs the embedded list',
-        );
-        return null;
-      });
-  } catch (err) {
-    console.log(
-      'QBF: cannot fetch a word list here (' +
-        err +
-        '); qbfEnsureWordList() installs the embedded list',
-    );
-    return null;
-  }
 }
 function qbfPad(str, width) {
   /** Right-pad for the monospaced word log. */
@@ -844,11 +795,9 @@ Use the speed buttons (super quick / quick / not so quick) to start or join a ga
     Super-quick has a shorter conveyor, so the letters come faster.
 High scores are tallied for each speed of play.
 
-Words are checked against the tournament list embedded in this file
-(or when QBFWords.txt can be fetched). The loader lowercases the words and, as in the
-original game, ignores entries longer than nine letters. Without a loaded dictionary,
-any string of letters counts as a word. To (re)load it, re-evaluate QBF.js, or
-    qbfLoadWordListFromUrl()
+Words are checked against the tournament list embedded in this file. The list
+lowercases the words and, as in the original game, ignores entries longer than
+nine letters.
 
 The Quick Brown Fox was written by Dan Ingalls for the Lively Kernel; this is its port
 to LivelyMerge.`,
