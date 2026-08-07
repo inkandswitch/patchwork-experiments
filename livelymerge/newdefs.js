@@ -1277,6 +1277,11 @@ function initUI() {
       }
       return;
     }
+    // The deferred path preventDefaults inside rAF processEvents — too late to
+    // stop browser defaults like Cmd-P (print), Cmd-D (bookmark), Cmd-S (save
+    // page), Cmd-F (find bar). Block those now, on the real gesture turn; the
+    // event still goes through the normal deferred processing.
+    if ((e.metaKey || e.ctrlKey) && 'dacxvzgspf'.indexOf(k) >= 0) e.preventDefault();
     window._canvasEvents.push(e);
   };
   $uiState.$onCanvasPointerUp = (e) => {
