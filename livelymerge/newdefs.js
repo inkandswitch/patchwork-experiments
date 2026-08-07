@@ -63,6 +63,7 @@ let Lively = null;
 let topLevelMorph = null;
 let recentChanges = null;
 let bugImage = null;
+let $bouncers = null;
 let $onScreenKeyboardMorph = null;
 let $oskSavedChrome = null;
 let _transcriptConsoleTargets = [];
@@ -1931,7 +1932,8 @@ class Pen {
     }
     morph.moveTo(this.location);
     morph.setHeading(this.heading);
-    Lively.addMorph(morph);
+    // Ephemeral: demo bugs move every tick — must not sync into Automerge.
+    Lively.addEphemeralMorph(morph);
     this.bug = morph;
     return this;
   }
@@ -4797,11 +4799,61 @@ class ImageMorph extends Morph {
   }
   syncRotationToVelocity() {
     /** Match {@link ImageMorph#dragMovedBy} drag convention: sprite “forward” aligns with velocity. */
-    if (!this.velocity) return;
-    let vx = this.velocity.x;
-    let vy = this.velocity.y;
+    let v = this.$velocity || this.velocity;
+    if (!v) return;
+    let vx = v.x;
+    let vy = v.y;
     if (vx === 0 && vy === 0) return;
     this.transform.rotation = Math.atan2(vy, vx) + Math.PI / 2;
+  }
+  bouncerStep() {
+    /**
+     * Step for {@link WorldMorph#makeBouncer}. Uses $-local pen/velocity; only
+     * moveTo/setRotation touch the shared document when the bug is persistent.
+     */
+    let world = this.world();
+    let pen = this.$pen;
+    let vel = this.$velocity;
+    if (!world || !pen || !vel) return;
+
+    let prevBounds = this.collisionBounds();
+    pen.location = pen.location.addPt(vel);
+    this.moveTo(pen.location);
+
+    let worldBounds = world.getBounds();
+    let bounds = this.collisionBounds();
+    let nudge = (dx, dy) => {
+      pen.location = pen.location.addPt(pt(dx, dy));
+      this.moveTo(pen.location);
+    };
+    let bounceX = () => {
+      this.$velocity = this.$velocity.flipX();
+      nudge(Math.sign(this.$velocity.x), 0);
+    };
+    let bounceY = () => {
+      this.$velocity = this.$velocity.flipY();
+      nudge(0, Math.sign(this.$velocity.y));
+    };
+
+    if (bounds.topLeft.y < worldBounds.topLeft.y && this.$velocity.y < 0) bounceY();
+    if (bounds.bottomRight().y > worldBounds.bottomRight().y && this.$velocity.y > 0) bounceY();
+    if (bounds.topLeft.x < worldBounds.topLeft.x && this.$velocity.x < 0) bounceX();
+    if (bounds.bottomRight().x > worldBounds.bottomRight().x && this.$velocity.x > 0) bounceX();
+
+    bounds = this.collisionBounds();
+    let subs = world.submorphs || [];
+    for (let i = 0; i < subs.length; i++) {
+      let other = subs.at ? subs.at(i) : subs[i];
+      if (other === this) continue;
+      let otherBounds = other.getBounds();
+      if (!bounds.overlapsRect(otherBounds)) continue;
+      if (prevBounds.overlapsRect(otherBounds)) continue;
+      let axis = bounds.overlapBounceAxis(otherBounds, this.$velocity);
+      if (axis === 'x') bounceX();
+      else if (axis === 'y') bounceY();
+      break;
+    }
+    this.syncRotationToVelocity();
   }
   static new(...args) {
     return new this(...args);
@@ -9666,74 +9718,34 @@ class WorldMorph extends Morph {
     return false;
   }
   makeBouncer() {
-    // Lively.makeBouncer()
-    // Lively.startStepping("makeBouncer", , 250)
-    if (!bouncers) bouncers = [];
+    /**
+     * Wandering-bug demo. Spawn is local; the bug is then made persistent so
+     * other replicas see it move (each moveTo writes Automerge — intentional
+     * for multi-screen demos / op-cost experiments). Step state stays $-local.
+       Lively.makeBouncer() 
+       Lively.unMakeBouncer()
+     */
+    if (!$bouncers) $bouncers = [];
     let world = Lively;
     if (!world) return null;
-    let wb = world.getBounds();
-    let start = wb.center().copy();
-    let pen = new Pen(start);
-    pen.withBug();
+
+    let pen = new Pen(world.getBounds().center().copy()).withBug();
     let bug = pen.bug;
-    bug.pen = pen;
-    bug.velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
+    if (!bug) return null;
+
+    // withBug attaches ephemerally (cheap for spiral); 
+    // if (bug.bePersistent) bug.bePersistent();  // *uncomment for shared bugs*
+    
+    bug.$pen = pen;
+    bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
     bug.syncRotationToVelocity();
-    bug.bouncerStep = function () {
-      let prevGb = this.collisionBounds();
-      let p = this.pen.location.addPt(this.velocity);
-      this.pen.location = p;
-      this.moveTo(p);
-      let b = world.getBounds();
-      let gb = this.collisionBounds();
-      let eps = 1;
-      let wallNudged = false;
-      if (gb.topLeft.y < b.topLeft.y && this.velocity.y < 0) {
-        this.velocity = this.velocity.flipY();
-        this.pen.location = this.pen.location.addPt(pt(0, Math.sign(this.velocity.y) * eps));
-        wallNudged = true;
-      }
-      if (gb.bottomRight().y > b.bottomRight().y && this.velocity.y > 0) {
-        this.velocity = this.velocity.flipY();
-        this.pen.location = this.pen.location.addPt(pt(0, Math.sign(this.velocity.y) * eps));
-        wallNudged = true;
-      }
-      if (gb.topLeft.x < b.topLeft.x && this.velocity.x < 0) {
-        this.velocity = this.velocity.flipX();
-        this.pen.location = this.pen.location.addPt(pt(Math.sign(this.velocity.x) * eps, 0));
-        wallNudged = true;
-      }
-      if (gb.bottomRight().x > b.bottomRight().x && this.velocity.x > 0) {
-        this.velocity = this.velocity.flipX();
-        this.pen.location = this.pen.location.addPt(pt(Math.sign(this.velocity.x) * eps, 0));
-        wallNudged = true;
-      }
-      if (wallNudged) this.moveTo(this.pen.location);
-      gb = this.collisionBounds();
-      for (let i = 0; i < world.submorphs.length; i++) {
-        let sub = world.submorphs[i];
-        if (sub === this) continue;
-        let sb = sub.getBounds();
-        if (!gb.overlapsRect(sb)) continue;
-        if (prevGb.overlapsRect(sb)) continue;
-        let axis = gb.overlapBounceAxis(sb, this.velocity);
-        if (axis === 'x') {
-          this.velocity = this.velocity.flipX();
-          this.pen.location = this.pen.location.addPt(pt(Math.sign(this.velocity.x) * eps, 0));
-        } else if (axis === 'y') {
-          this.velocity = this.velocity.flipY();
-          this.pen.location = this.pen.location.addPt(pt(0, Math.sign(this.velocity.y) * eps));
-        }
-        this.moveTo(this.pen.location);
-        gb = this.collisionBounds();
-        break;
-      }
-      this.syncRotationToVelocity();
-      world.changed();
-    };
-    bouncers.push(bug);
+    $bouncers.push(bug);
     bug.startStepping('bouncerStep', null, 50);
     return bug;
+  }
+  unMakeBouncer() {
+    if (!$bouncers || $bouncers.length === 0) return;
+    $bouncers.pop().remove();
   }
   morphsAtPointInDepthOrder(pt) {
     // Return deepest hit morph first, then owner chain up toward world.
