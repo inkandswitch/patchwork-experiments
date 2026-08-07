@@ -468,7 +468,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function $obj(obj: Record<string, Val>, proto?: Proxy | null) {
-    const $id = Math.random().toString();
+    const $id = crypto.randomUUID();
     const entry: Obj = {
       $type: 'obj',
       $id,
@@ -489,7 +489,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function $arr(values: any) {
-    const $id = Math.random().toString();
+    const $id = crypto.randomUUID();
     const entry: Arr = {
       $type: 'arr',
       $id,
@@ -510,7 +510,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function $fun($codeForShow: string, $code: string, scopes: Proxy[] = []) {
-    const $id = Math.random().toString();
+    const $id = crypto.randomUUID();
     const entry: Fun = {
       $type: 'fun',
       $id,
