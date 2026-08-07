@@ -427,6 +427,15 @@ function getBounds() {
 function truncateString(str, num) {
   return str.length > num ? str.slice(0, num) + '...' : str;
 }
+async function getUserName() {
+  /** Display name from the user's Patchwork account (contact doc), or null. */
+  if (!window.repo || !window.accountDocHandle) return null;
+  let contactUrl = window.accountDocHandle.doc().contactUrl;
+  if (contactUrl == null) return null;
+  let contactHandle = await window.repo.find(contactUrl);
+  let name = contactHandle.doc().name;
+  return name != null ? name : null;
+}
 function init() {
   // init()
   console.log('init!');
