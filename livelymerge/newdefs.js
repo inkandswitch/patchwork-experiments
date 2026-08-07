@@ -456,7 +456,6 @@ function populateLively() {
   Lively.demoLine = Lively.addMorph(
     new LineMorph(plmVerts, { borderWidth: 2, borderColor: Color.black, arrowheads: 'end' }),
   );
-  Lively.demoLine.startHandleStepping();
 
   Lively.addMorph(
     new MethodPanel(
@@ -5146,12 +5145,7 @@ class LineMorph extends Morph {
     });
     copy.owner = this.owner;
     if (this.zIndex != null) copy.zIndex = this.zIndex;
-    this.restartSteppingOnCopy(copy, (spec, c) => {
-      if (spec.methodName === 'stepHoverHandles') {
-        c.startHandleStepping();
-        return true;
-      }
-    });
+    this.restartSteppingOnCopy(copy);
     return copy;
   }
   morphMenu() {
@@ -5229,35 +5223,6 @@ class LineMorph extends Morph {
     if (world && world.changed) world.changed();
     return this;
   }
-  startHandleStepping() {
-    super.startStepping('stepHoverHandles', null, 200);
-  }
-  stepHoverHandles() {
-    let world = this.world();
-    if (!world) return;
-    if (this.$vertexDragActive) {
-      this.ensureVertexHandles();
-      this.clearMidpointHandles();
-      return;
-    }
-    let pf = world.$pointerFocus;
-    if (pf && this.isLineHandle(pf)) {
-      this.ensureVertexHandles();
-      if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
-      return;
-    }
-    if (!getPointerLocation()) {
-      this.clearAllHandles();
-      return;
-    }
-    let localP = this.localize(getPointerLocation());
-    if (!this.shape.includesPt(localP)) {
-      this.clearAllHandles();
-      return;
-    }
-    this.ensureVertexHandles();
-    this.ensureMidpointHandles();
-  }
   syncGeometryFromVertices() {
     /** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
     let sh = this.shape;
@@ -5288,6 +5253,42 @@ class LineMorph extends Morph {
       else this.layoutMidpointHandles();
     }
     this.changed();
+  }
+  updateHoverHandles(worldP) {
+    /**
+     * Show handles while the pointer is over the line (or mid-reshape), hide them
+     * when it leaves. Driven by the local user's pointer moves (see
+     * {@link WorldMorph#updateHoverUI}); handles are per-user ephemeral submorphs.
+     */
+    if (this.$vertexDragActive) {
+      this.ensureVertexHandles();
+      this.clearMidpointHandles();
+      return;
+    }
+    let world = this.world();
+    if (!world) return;
+    let pf = world.$pointerFocus;
+    if (pf && this.isLineHandle(pf)) {
+      this.ensureVertexHandles();
+      if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
+      return;
+    }
+    if (!worldP) {
+      this.clearAllHandles();
+      return;
+    }
+    let localP = this.localize(worldP);
+    // Handles poke past the stroke's hit tolerance: keep them alive while the
+    // pointer is on one, or its far rim would vanish before it can be clicked.
+    let onHandle =
+      (this.$vertexHandles || []).some((h) => h.includesPt(localP)) ||
+      (this.$midpointHandles || []).some((h) => h.includesPt(localP));
+    if (!onHandle && !this.shape.includesPt(localP)) {
+      this.clearAllHandles();
+      return;
+    }
+    this.ensureVertexHandles();
+    this.ensureMidpointHandles();
   }
   static new(...args) {
     return new this(...args);
@@ -9896,10 +9897,13 @@ class WorldMorph extends Morph {
       // pointerLocation only after the hand has moved.
       hand.onPointerMove(p, evt);
       setPointerLocation(p);
-      if (hand.hasSubmorphs()) return true;
     } else {
       setPointerLocation(p);
     }
+    // Hover UI must track every move — including mid-drag ($pointerFocus set) and
+    // while a hand carries morphs — so it runs before the early returns below.
+    this.updateHoverUI(p);
+    if (hand && hand.hasSubmorphs()) return true;
     if (this.$pointerFocus) {
       // pointerFocus expects pt in its owner's coords (e.g. SliderMorph in ListPane)
       let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
@@ -9923,6 +9927,21 @@ class WorldMorph extends Morph {
       this.eachSubmorph((morph) => morph.onPointerUp(p, evt));
     }
     return result;
+  }
+  updateHoverUI(p) {
+    /**
+     * Give every morph that has hover UI (e.g. {@link LineMorph#updateHoverHandles})
+     * a chance to show or hide it for the pointer at world-pt `p`. Event-driven from
+     * {@link WorldMorph#onPointerMove}: each user's own moves drive their own runtime,
+     * so hover UI works on every replica — a stepping schedule lives only in the
+     * runtime that started it, which is why the old stepHoverHandles polling showed
+     * handles only to the user who evaluated populateLively().
+     */
+    let walk = (m) => {
+      if (m.updateHoverHandles) m.updateHoverHandles(p);
+      m.eachSubmorph(walk);
+    };
+    this.eachSubmorph(walk);
   }
   removeExistingHalos() {
     // Halos are per-user: they live in $submorphs. Collect first, then remove, so we

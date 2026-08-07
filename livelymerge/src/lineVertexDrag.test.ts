@@ -114,7 +114,7 @@ function makeWorld() {
   g.runtime = rt;
   const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
   // Strip the trailing top-level init(): it boots a demo world (including its own
-  // demo line with hover-handle stepping) that would fight this test's world.
+  // demo line) that would fight this test's world.
   rt.eval(src.replace(/\binit\(\)\s*$/, ''));
   // World-coord vertices (30,330) → (90,330): line origin lands at (30,330), so
   // line-local coords are world − (30,330) and vertex 0 sits at local (0,0).
@@ -125,7 +125,6 @@ let plmVerts = [pt(30, 330), pt(90, 330)];
 Lively.demoLine = Lively.addMorph(
   new LineMorph(plmVerts, { borderWidth: 2, borderColor: Color.black, arrowheads: 'end' }),
 );
-Lively.demoLine.startHandleStepping();
 `);
 
   const makeNativeEvt = (type: string, x: number, y: number) => ({
@@ -180,15 +179,9 @@ Lively.demoLine.startHandleStepping();
     }
     return { count, keys };
   };
-  /**
-   * Hover over the line, then run its hover stepper by hand: the 200ms stepper is
-   * scheduled against real Date.now(), which barely advances across this test's
-   * fast frame loop, so waiting frames would never fire it.
-   */
+  /** Hover over the line: the world's pointer-move hover pass materializes the handles. */
   const materializeHandles = () => {
     dispatch('pointermove', 60, 330);
-    runFrame();
-    rt.eval(`Lively.demoLine.stepHoverHandles()`);
     runFrame();
     expect(rt.eval(`(Lively.demoLine.$vertexHandles || []).length`)).toBe(2);
     expect(rt.eval(`(Lively.demoLine.$midpointHandles || []).length`)).toBe(1);
