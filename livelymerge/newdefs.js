@@ -5684,7 +5684,7 @@ function menuSeparatorDisplay() {
  * Also accepted by MenuMorph: ['label', action] tuples.
  *
  * Note: MenuMorph expands these into plain string labels in itemList plus a
- * parallel $-prefixed $menuActions table (functions must not live in Automerge).
+ * parallel menuActions table.
  */
 function menuItem(label, action) {
   return { label: '' + label, action: action };
@@ -5788,7 +5788,7 @@ function menuItemCaption(item) {
   return s;
 }
 function refreshWorldMenuItems(menuMorph) {
-  /** Refresh toggle labels in place; keep $menuActions aligned by index. */
+  /** Refresh toggle labels in place; keep menuActions aligned by index. */
   let list = menuMorph.itemList || [];
   for (let i = 0; i < list.length; i++) {
     let cap = menuItemCaption(list[i]);
@@ -5797,7 +5797,7 @@ function refreshWorldMenuItems(menuMorph) {
     else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
       list[i] = menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd);
   }
-  // Relayout labels only — do not reinstall (would drop $menuActions).
+  // Relayout labels only — do not reinstall (would drop menuActions).
   if (menuMorph.relayoutItemList) menuMorph.relayoutItemList();
   else ListMorph.prototype.setList.call(menuMorph, list);
 }
@@ -5920,18 +5920,18 @@ class ListMorph extends Morph {
 // Fleeting or persistent menu built on ListMorph.
 // Source may use menuItem(label, action) / [label, action] so name and code stay
 // together; at install time labels become plain strings in itemList and actions
-// live in $menuActions ($-prefixed: replica-local, can hold functions).
+// live in menuActions.
 class MenuMorph extends ListMorph {
   constructor(initialBounds, list, actionFn) {
     super(initialBounds, [], null);
     // $-prefixed: must hold functions; Automerge cannot store them on itemList entries.
     this.$legacyActionFn = actionFn || null;
-    this.$menuActions = [];
+    this.menuActions = [];
     this.setSelectFn(function (item, shiftKey) {
       if (isMenuSeparator(item)) return;
       let idx = this.shape && this.shape.$selectedLineIndex > 0 ? this.shape.$selectedLineIndex - 1 : -1;
       if (idx < 0 && this.itemList) idx = this.itemList.indexOf(item);
-      let act = this.$menuActions && idx >= 0 ? this.$menuActions[idx] : null;
+      let act = this.menuActions && idx >= 0 ? this.menuActions[idx] : null;
       if (typeof act === 'function') {
         act.call(this, item, shiftKey);
         return;
@@ -5949,11 +5949,11 @@ class MenuMorph extends ListMorph {
       labels.push(e.label);
       actions.push(e.action);
     });
-    this.$menuActions = actions;
+    this.menuActions = actions;
     super.setList(labels);
   }
   relayoutItemList() {
-    /** Refresh text/width/height from current string itemList without touching $menuActions. */
+    /** Refresh text/width/height from current string itemList without touching menuActions. */
     let n = (this.itemList || []).length;
     let b = this.getBounds();
     let h = Math.max(24, 24 + n * 20);
@@ -5981,19 +5981,19 @@ class MenuMorph extends ListMorph {
     return this.findItem(indexOrNeedle);
   }
   ensureActionList() {
-    if (!this.$menuActions) this.$menuActions = [];
-    while (this.$menuActions.length < (this.itemList || []).length) this.$menuActions.push(null);
-    if (this.$menuActions.length > (this.itemList || []).length)
-      this.$menuActions.length = (this.itemList || []).length;
-    return this.$menuActions;
+    if (!this.menuActions) this.menuActions = [];
+    while (this.menuActions.length < (this.itemList || []).length) this.menuActions.push(null);
+    if (this.menuActions.length > (this.itemList || []).length)
+      this.menuActions.length = (this.itemList || []).length;
+    return this.menuActions;
   }
   addItem(labelOrItem, actionIfAny) {
     /** Append an item. addItem('Hi', fn) or addItem(menuItem('Hi', fn)). */
     if (!this.itemList) this.itemList = [];
-    if (!this.$menuActions) this.$menuActions = [];
+    if (!this.menuActions) this.menuActions = [];
     let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
     this.itemList.push(e.label);
-    this.$menuActions.push(e.action);
+    this.menuActions.push(e.action);
     return this.relayoutItemList();
   }
   addItemBefore(before, labelOrItem, actionIfAny) {
@@ -6008,7 +6008,7 @@ class MenuMorph extends ListMorph {
     if (idx < 0) idx = this.itemList.length;
     let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
     this.itemList.splice(idx, 0, e.label);
-    this.$menuActions.splice(idx, 0, e.action);
+    this.menuActions.splice(idx, 0, e.action);
     return this.relayoutItemList();
   }
   addItemAfter(after, labelOrItem, actionIfAny) {
@@ -6019,7 +6019,7 @@ class MenuMorph extends ListMorph {
     if (idx < 0) idx = this.itemList.length - 1;
     let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
     this.itemList.splice(idx + 1, 0, e.label);
-    this.$menuActions.splice(idx + 1, 0, e.action);
+    this.menuActions.splice(idx + 1, 0, e.action);
     return this.relayoutItemList();
   }
   removeItem(indexOrNeedle) {
@@ -6033,7 +6033,7 @@ class MenuMorph extends ListMorph {
     if (idx < 0 || idx >= this.itemList.length) return null;
     let removed = this.itemList.splice(idx, 1)[0];
     this.ensureActionList();
-    if (idx < this.$menuActions.length) this.$menuActions.splice(idx, 1);
+    if (idx < this.menuActions.length) this.menuActions.splice(idx, 1);
     this.relayoutItemList();
     return removed;
   }
