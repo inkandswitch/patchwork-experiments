@@ -9750,14 +9750,14 @@ class WorldMorph extends Morph {
     }
     return false;
   }
-  makeBouncer() {
-    /**
-     * Wandering-bug demo. Spawn is local; the bug is then made persistent so
-     * other replicas see it move (each moveTo writes Automerge — intentional
-     * for multi-screen demos / op-cost experiments). Step state stays $-local.
-       Lively.makeBouncer() 
-       Lively.unMakeBouncer()
-     */
+  makeBouncer(shared) {
+    // Wandering-bug demo. Spawn is local; the bug is then made persistent so
+    // other replicas see it move (each moveTo writes Automerge — intentional
+    // for multi-screen demos / op-cost experiments). Step state stays $-local.
+    //  Lively.makeBouncer(true) 
+    //  Lively.makeBouncer(false) 
+    //  Lively.unMakeBouncer()
+
     if (!$bouncers) $bouncers = [];
     let world = Lively;
     if (!world) return null;
@@ -9767,7 +9767,7 @@ class WorldMorph extends Morph {
     if (!bug) return null;
 
     // withBug attaches ephemerally (cheap for spiral); 
-    // if (bug.bePersistent) bug.bePersistent();  // *uncomment for shared bugs*
+    if (shared && bug.bePersistent) bug.bePersistent();  // bug gets shared here
     
     bug.$pen = pen;
     bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
