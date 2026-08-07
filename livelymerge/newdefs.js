@@ -10069,7 +10069,8 @@ class WorldMorph extends Morph {
       this.shape.selectLineAt(0);
     });
     menu.isFleetingMenu = !!opts.fleeting;
-    Lively.addEphemeralMorph(menu);
+    if (opts.fleeting) Lively.addEphemeralMorph(menu);
+    else Lively.addMorph(menu);
     return menu;
   }
   activeStepList() {
