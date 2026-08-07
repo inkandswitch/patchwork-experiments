@@ -309,9 +309,6 @@ class Color {
     this.fillStyle = this.computeFillStyle(this.r, this.g, this.b);
     //console.log('new color fillStyle = ', this.fillStyle);
   }
-  asString() {
-    return this.toString();
-  }
   computeFillStyle(r, g, b) {
     let s = '#';
     s += Math.floor(r * 255.999)
@@ -1478,7 +1475,7 @@ class Point {
       Math.min(Math.max(this.y, rect.topLeft.y), br.y),
     );
   }
-  asString() {
+  toString() {
     return `pt(${this.x.toFixed(2)}, ${this.y.toFixed(2)})`;
   }
   boundsWithRadius(r) {
@@ -1572,9 +1569,6 @@ class Point {
   subPt(p) {
     return pt(this.x - p.x, this.y - p.y);
   }
-  toString() {
-    return this.asString();
-  }
   translatedBy(p) {
     return this.addPt(p);
   }
@@ -1591,8 +1585,8 @@ class Rectangle {
     this.topLeft = p;
     this.extent = ext;
   }
-  asString() {
-    return `${this.topLeft.asString()}.extent(${this.extent.asString()})`;
+  toString() {
+    return `${this.topLeft.toString()}.extent(${this.extent.toString()})`;
   }
   bottom() {
     return this.topLeft.y + this.extent.y;
@@ -1743,9 +1737,6 @@ class Rectangle {
   topRight() {
     return this.topLeft.addPt(pt(this.width(), 0));
   }
-  toString() {
-    return this.asString();
-  }
   translatedBy(p) {
     // Synonym of movedBy
     return this.topLeft.addPt(p).extent(this.extent.copy());
@@ -1782,13 +1773,13 @@ class SimpleTransform {
     this.rotation = rot; // radians
     this.scale = scale; // a point
   }
-  asString() {
+  toString() {
     let deg = ((this.rotation * 180) / Math.PI).toFixed(1);
-    let s = 'trans: ' + this.translation.asString() + '; rot: ' + deg + '°';
+    let s = 'trans: ' + this.translation.toString() + '; rot: ' + deg + '°';
     let sx = this.scale && this.scale.x !== undefined ? this.scale.x : 1;
     let sy = this.scale && this.scale.y !== undefined ? this.scale.y : 1;
     if (Math.abs(sx - 1) > 1e-6 || Math.abs(sy - 1) > 1e-6) {
-      s += '; scale: ' + this.scale.asString();
+      s += '; scale: ' + this.scale.toString();
     }
     return s;
   }
@@ -1842,7 +1833,7 @@ class StepSpec {
     this.stepPeriod = msTime;
     this.nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
   }
-  asString() {
+  toString() {
     return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.stepPeriod}ms)`;
   }
   copyForMorph(morph) {
@@ -2136,7 +2127,7 @@ class TextCharSpec {
     this.charX = charX;
     this.strIx = strIx;
   }
-  asString() {
+  toString() {
     return `spec: lineNo=${this.lineNo}, lineY=${this.lineY}, charX=${this.charX}, strIx = ${this.strIx}`;
   }
   static new(...args) {
@@ -2176,9 +2167,9 @@ class Shape extends Rectangle {
     this.morphOrigin = bounds.topLeft.copy(); // default for, eg, rectangles
     this.setStyles(color, borderWidth, borderColor);
   }
-  asString() {
+  toString() {
     return (
-      'a ' + this.className + ' (' + this.shapeType + ' at ' + this.getBounds().asString() + ')'
+      'a ' + this.className + ' (' + this.shapeType + ' at ' + this.getBounds().toString() + ')'
     );
   }
   copy(color) {
@@ -2237,8 +2228,8 @@ class Ellipse extends Shape {
     this.morphOrigin = center.copy();
     if (!this.fillColor) this.fillColor = Color.blue;
   }
-  asString() {
-    return `Ellipse at ${this.p.asString()} with radius ${this.r}`;
+  toString() {
+    return `Ellipse at ${this.p.toString()} with radius ${this.r}`;
   }
   copy() {
     let copy = new Ellipse(this.p, this.r);
@@ -2318,8 +2309,8 @@ class PolyLine extends Shape {
     if (this.$vertices != null) this.$vertices = verts;
     else this._vertices = verts;
   }
-  asString() {
-    return `PolyLine at ${this.topLeft.asString()} with size ${this.extent}`;
+  toString() {
+    return `PolyLine at ${this.topLeft.toString()} with size ${this.extent}`;
   }
   boundsForVertices(vertices, borderWidth) {
     return PolyLine.boundsForVertices(vertices, borderWidth);
@@ -2689,8 +2680,8 @@ class TextBox extends Shape {
     }
     this.paste(evt.key);
   }
-  asString() {
-    return `TextBox[${this.string.slice(0, 4) + '...'}] at ${this.getBounds().asString()}`;
+  toString() {
+    return `TextBox[${this.string.slice(0, 4) + '...'}] at ${this.getBounds().toString()}`;
   }
   boxPath(ctx) {
     let x = this.topLeft.x;
@@ -2878,7 +2869,7 @@ class TextBox extends Shape {
     } else {
       this.$selStop = spec;
     }
-    // console.log("After extendSelectionTo" + spec.asString());
+    // console.log("After extendSelectionTo" + spec.toString());
   }
   finSelection() {
     this.ensureSelectionSpecs();
@@ -3122,7 +3113,6 @@ class TextBox extends Shape {
     if (obj === undefined) return 'undefined';
     if (obj === null) return 'null';
     if (obj.toString && obj.toString !== Object.prototype.toString) return obj.toString();
-    if (obj.asString) return obj.asString();
     return '' + obj;
   }
   redoReplacement(str) {
@@ -3455,7 +3445,7 @@ class TextBox extends Shape {
     let spec = this.charSpecForPt(p);
     this.$selStart = this.$selStop = spec;
     this.$shiftAnchorIx = null;
-    // console.log("After startSelectionAt" + spec.asString());
+    // console.log("After startSelectionAt" + spec.toString());
   }
   textDrawOriginX(lineNo) {
     let padL = this.inset != null ? this.inset.x : 2;
@@ -3595,7 +3585,7 @@ class Morph {
     this.owner = null; //another morph (or null in the case of a root Morph)
     this.shape = shape ? shape : new Shape('Rectangle', bounds, Color.green, 1, Color.black);
     this.shape.morph = this;
-    //console.log('shape = ', this.shape.asString());
+    //console.log('shape = ', this.shape.toString());
     // Copies, not live views: getBounds()/morphOrigin alias the shape's own
     // points, and shape.setBounds below now updates those points in place —
     // without the copy, _bounds would track the shape's local coords forever.
@@ -4019,8 +4009,8 @@ class Morph {
     if (list == null) list = this.drawList();
     list.forEach(fn);
   }
-  asString() {
-    return 'a ' + this.className + ' (' + this.shape.asString() + ')';
+  toString() {
+    return 'a ' + this.className + ' (' + this.shape.toString() + ')';
   }
   beTopMorph() {
     // Promote my top-level ancestor to the front of its zBand in the world.
@@ -4690,9 +4680,6 @@ class Morph {
     if (this.owner.owner == null) return this;
     return this.owner.topMorph();
   }
-  toString() {
-    return this.asString();
-  }
   translateBy(pt) {
     this.transform.translation.moveBy(pt);
   }
@@ -4706,9 +4693,9 @@ class Morph {
     let str =
       '\n' +
       '  '.repeat(level) +
-      this.asString() +
+      this.toString() +
       ' [' +
-      this.localize(pt(100, 100)).asString() +
+      this.localize(pt(100, 100)).toString() +
       ']';
     this.submorphs.forEach((morph) => {
       if (!morph.owner)
@@ -8056,7 +8043,7 @@ class InspectorPanel extends PanelMorph {
     /** Print-it and eval panes (right / bottom) in the inspector. */
     let panelBounds = this.paneLayoutBounds();
     this.printPane = this.addMorph(new TextPane(panelBounds, rect(0.3, 0.0, 0.7, 0.6)));
-    this.printPane.setText('Var value asString()');
+    this.printPane.setText('Var value toString()');
     this.evalPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.6, 1.0, 0.4)));
     this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
     this.evalPane.contentPane.setWorkspaceObj(this.target);
@@ -9623,9 +9610,9 @@ class WorldMorph extends Morph {
       let d = pt.dist(morph.getBounds().center());
       if (d < minDist) {
         minDist = d; hitMorph = morph;
-        console.log('hitMorph at dist ' + minDist + ': ' + hitMorph.asString()) }
+        console.log('hitMorph at dist ' + minDist + ': ' + hitMorph.toString()) }
     });
-    console.log('hitMorph ' + hitMorph.asString() + '/n at ' + pt.asString());
+    console.log('hitMorph ' + hitMorph.toString() + '/n at ' + pt.toString());
     return hitMorph; */
   }
   initHand(start) {
@@ -10923,10 +10910,10 @@ function inspectString(obj) {
     return 'array: [' + parts.join(', ') + ']';
   }
   if (obj && obj.instanceOf) {
-    if (obj.instanceOf(Point)) return obj.asString();
-    if (obj.instanceOf(Rectangle)) return obj.asString();
-    if (obj.instanceOf(SimpleTransform)) return obj.asString();
-    if (obj.instanceOf(StepSpec)) return obj.asString();
+    if (obj.instanceOf(Point)) return obj.toString();
+    if (obj.instanceOf(Rectangle)) return obj.toString();
+    if (obj.instanceOf(SimpleTransform)) return obj.toString();
+    if (obj.instanceOf(StepSpec)) return obj.toString();
   }
   try {
     let vowely = 'aeiou'.includes(obj.className[0].toLowerCase());
