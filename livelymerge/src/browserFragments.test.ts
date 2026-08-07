@@ -243,6 +243,59 @@ describe('system browser class fragments', () => {
     expect(result).toContain('setKept=true');
   }, 120_000);
 
+  it('the occurrences panel shows fragments bare and saves them via replaceMethod', () => {
+    const { rt } = setup();
+    rt.eval(`initUI(); initLively();`);
+    const result = rt.eval(`
+(() => {
+  let hits = methodsContaining('bottom');
+  let panel = Lively.addMorph(
+    new MethodListPanel(null, hits, null, 'Occurrences of "bottom"', 'bottom'),
+  );
+  panel.methodsPane.contentPane.actionFn('Rectangle.prototype.bottom');
+  let tb = panel.printPane.contentPane.shape;
+  let shown = tb.string;
+  let copyText = panel.methodCopyText();
+  tb.string = 'bottom() { return -2; }';
+  tb.handleKeyboardShortcuts(${keyEvt('s')});
+  let changed = rect(0, 0, 3, 4).bottom();
+  let recent = recentChanges.at(-1);
+  return 'shown=' + shown.slice(0, 9) +
+    ' copyIsCall=' + ('' + copyText).startsWith("replaceMethod('Rectangle'") +
+    ' changed=' + changed +
+    ' recentSpec=' + recent[0] +
+    ' recentIsCall=' + ('' + recent[2]).startsWith("replaceMethod('Rectangle'");
+})()
+`) as string;
+    expect(result).toContain('shown=bottom() ');
+    expect(result).toContain('copyIsCall=true');
+    expect(result).toContain('changed=-2');
+    expect(result).toContain('recentSpec=Rectangle.prototype.bottom');
+    expect(result).toContain('recentIsCall=true');
+  }, 120_000);
+
+  it('the recent-changes panel shows fragment saves bare and re-saves via replaceMethod', () => {
+    const { rt } = setup();
+    rt.eval(`initUI(); initLively();`);
+    const result = rt.eval(`
+(() => {
+  replaceMethod('Rectangle', 'bottom() { return -3; }');
+  noteMethodChanges(replaceMethodCallString('Rectangle', 'bottom() { return -3; }'));
+  let panel = browseRecentChanges();
+  let spec = recentChanges.at(-1)[0] + recentChanges.at(-1)[1];
+  panel.methodsPane.contentPane.actionFn(spec);
+  let tb = panel.printPane.contentPane.shape;
+  let shown = tb.string;
+  tb.string = 'bottom() { return -4; }';
+  tb.handleKeyboardShortcuts(${keyEvt('s')});
+  let changed = rect(0, 0, 3, 4).bottom();
+  return 'shown=' + shown + ' changed=' + changed;
+})()
+`) as string;
+    expect(result).toContain('shown=bottom() { return -3; }');
+    expect(result).toContain('changed=-4');
+  }, 120_000);
+
   it('exports fragment members as self-contained replaceMethod calls', () => {
     const { rt } = setup();
     const out = rt.eval(

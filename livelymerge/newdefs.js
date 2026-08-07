@@ -209,6 +209,14 @@ function replaceMethodCallString(className, fragmentText) {
   let escaped = fragmentText.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
   return "replaceMethod('" + className + "', `" + escaped + "`)";
 }
+function parseReplaceMethodCallString(str) {
+  // Inverse of replaceMethodCallString: {className, fragmentText} when str is a
+  // self-contained replaceMethod(...) call, else null.
+  let m = ('' + str).match(/^replaceMethod\('([A-Za-z_$][\w$]*)',\s*`([\s\S]*)`\)$/);
+  if (!m) return null;
+  let fragmentText = m[2].replace(/\\\$\{/g, '${').replace(/\\`/g, '`').replace(/\\\\/g, '\\');
+  return { className: m[1], fragmentText };
+}
 function classMemberRows(cls) {
   // Message-pane rows for a class's prototype: methods as 'name', accessor halves as
   // 'get name' / 'set name'. Uses descriptors so getters are never invoked.
@@ -8157,6 +8165,7 @@ class MethodListPanel extends PanelMorph {
     this.recents = recentMethodsIfAny;
     this.searchString = searchStringIfAny || null;
     this._occurrenceLastSpec = null;
+    this._fragmentClassName = null;
     this.initMethodsPane();
     this.initPrintPane();
     this.setPanelTitle(optionalTitle || 'Method list');
@@ -8173,6 +8182,7 @@ class MethodListPanel extends PanelMorph {
     }
     if (this.printPane) this.printPane.setText('Selected method', { force: true });
     this._occurrenceLastSpec = null;
+    this._fragmentClassName = null;
   }
   exportMethodCopyToOSPaste() {
     let exportText = this.methodCopyText();
@@ -8188,33 +8198,45 @@ class MethodListPanel extends PanelMorph {
     this.methodsPane.setPaneMenu(methodSelectorPaneMenuSpec(this));
     this.methodsPane.onSelect((spec, shiftKey) => {
       let applySpec = () => {
+        // Fragment members display as bare class fragments (like the browser's
+        // method pane) and re-save via replaceMethod through fragmentSaveClassName;
+        // globals and legacy-format members keep the assignment form.
         let methodString = null;
         let preamble = null;
+        let fragmentClassName = null;
         if (spec.includes('[')) {
           methodString = this.methodFromRecentSpec(spec);
-          preamble =
-            ('' + methodString).startsWith('replaceMethod(')
-              ? ''
-              : spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+          let parsed = parseReplaceMethodCallString(methodString);
+          if (parsed) {
+            methodString = parsed.fragmentText;
+            fragmentClassName = parsed.className;
+            preamble = '';
+          } else {
+            preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+          }
         } else {
-          // Fragment members display (and re-save) as self-contained replaceMethod
-          // calls; globals and legacy-format members keep the assignment form.
           let fragment = fragmentForSpec(spec);
           if (fragment != null) {
-            methodString = replaceMethodCallString(methodSpecKey(spec).split('.')[0], fragment);
+            methodString = fragment;
+            fragmentClassName = methodSpecKey(spec).split('.')[0];
             preamble = '';
           } else {
             methodString = methodFromSpec(spec);
             preamble = spec + ' = ';
           }
         }
+        this._fragmentClassName = fragmentClassName;
         this.printPane.setText(preamble + methodString, { force: true });
         this._occurrenceLastSpec = spec;
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
         if (shiftKey) {
+          // A spawned panel has no owning class, so it gets the self-contained form.
+          let spawnText = fragmentClassName
+            ? replaceMethodCallString(fragmentClassName, '' + methodString)
+            : preamble + methodString;
           Lively.addMorph(
-            new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), preamble + methodString, spec),
+            new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), spawnText, spec),
           );
         }
       };
@@ -8238,11 +8260,17 @@ class MethodListPanel extends PanelMorph {
     let panelBounds = this.paneLayoutBounds();
     this.printPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
     this.printPane.setText('Selected method');
+    // Class fragments in this pane save via replaceMethod, exactly like the
+    // system browser's method pane (see the ctrl-S handler).
+    this.printPane.contentPane.shape.fragmentSaveClassName = () => this._fragmentClassName;
   }
   methodCopyText() {
     if (!this.printPane || !this.printPane.contentPane) return null;
     let text = this.printPane.contentPane.shape.string;
     if (!text || text === 'Selected method') return null;
+    // Fragments only make sense with their class; copies get the self-contained form.
+    if (this._fragmentClassName && !looksLikeLegacyMethodText(text))
+      return replaceMethodCallString(this._fragmentClassName, text);
     return text;
   }
   methodCopyTitle() {
@@ -10325,10 +10353,9 @@ function noteMethodChanges(evalString) {
   if (!recentChanges) recentChanges = [];
   let spec = null;
   let sourceStr = null;
-  let m = evalString.match(/^replaceMethod\('([A-Za-z_$][\w$]*)',\s*`([\s\S]*)`\)$/);
-  if (m) {
-    let fragment = m[2].replace(/\\\$\{/g, '${').replace(/\\`/g, '`').replace(/\\\\/g, '\\');
-    spec = fragmentChangeSpec(m[1], fragment);
+  let parsed = parseReplaceMethodCallString(evalString);
+  if (parsed) {
+    spec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
     sourceStr = evalString;
   } else {
     let ix1 = evalString.indexOf(' =');
