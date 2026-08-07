@@ -61,14 +61,14 @@ So, just like in JS, it is possible for the heap of a LM program to contain cycl
 ```
 {
   objectTable: {
-    '0.237823': <<state of object w/ id 0.237823>>,
-    '0.419':    <<state of object w/ id 0.419>>,
+    '84f2…': <<state of object w/ id 84f2…>>,
+    'd9c0…': <<state of object w/ id d9c0…>>,
     ...
   }
 }
 ```
 
-As you can see, we have an _object table_ that maps object ids to their state. Note that object ids can't be sequential as this would result in clashes (think multi-user!) so we use random numbers. **(Honest question: how safe is this? The JS standard is very vague re: [Math.random](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math.random).)**
+As you can see, we have an _object table_ that maps object ids to their state. Note that object ids can't be sequential as this would result in clashes (think multi-user!) so we use UUIDs. (I've truncated them in the examples to keep things readable.)
 
 Here's what the state of an object in the object table looks like:
 
@@ -76,8 +76,8 @@ Here's what the state of an object in the object table looks like:
 {
   // the names of special properties are prefixed with a $
   $type: 'obj',
-  $id: '0.237823',   // id of this object
-  $protoId: '0.419', // id of the object that this object delegates to
+  $id: '84f2…',      // id of this object
+  $protoId: 'd9c0…', // id of the object that this object delegates to
 
   // user properties are prefixed with a @ (this sidesteps an Automerge
   // bug involving property names like `toString` that collide with
@@ -88,7 +88,7 @@ Here's what the state of an object in the object table looks like:
   // object references (like the value of the `next` property below)
   // are represented as objects with `$type = 'ref'` and the id of
   // the referent:
-  '@next': { $type: 'ref', $id: '0.12345' },
+  '@next': { $type: 'ref', $id: '52aa…' },
 }
 ```
 
@@ -97,10 +97,10 @@ Functions get their own entries in the object table, too — they're first-class
 ```
 {
   $type: 'fun',
-  $id: '0.5551',
+  $id: '7e1b…',
   $code: '($scope1) => (x) => x + $scope1.y',  // what we evaluate
   $codeForShow: '(x) => x + y',                // what we show the user
-  $scopes: [{ $type: 'ref', $id: '0.5550' }],  // captured environment
+  $scopes: [{ $type: 'ref', $id: '05fd…' }],   // captured environment
 }
 ```
 
@@ -204,7 +204,7 @@ Now, here's the thing: even if we collected fresh garbage promptly, installing i
 
 So new objects are not installed in the AM document's object table right away. Instead, they live in a _shadow document_ — a plain, local JS structure with the same shape as the AM document. At the end of each `change`, the GC _promotes_ into the object table only the fresh objects that have become reachable from the root of the heap; the rest are reclaimed without the AM document ever knowing they existed.
 
-This lets us create lots of (temporary) fresh garbage like points and bounding boxes during rendering without accumulating useless operations in the AM document. (We push this "op economy" further in other ways, too — e.g., writes that would store an identical value are elided — to the point where an idle frame generates zero Automerge operations, as a runtime guarantee.)
+This lets us create lots of (temporary) fresh garbage like points and bounding boxes during rendering without accumulating useless operations in the AM document. (We push this "op economy" further in other ways, too — e.g., writes that would store an identical value are elided — to the point where an idle frame generates zero Automerge operations, as a runtime guarantee. Our op economy work, along with several other optimizations that we found to make a big difference, will be discussed in an upcoming lab note.)
 
 One more thing our GC does that may surprise you: objects that have made it into the AM document are **never collected**. Reachability is a _global_ property in a local-first system — an offline collaborator may still hold or re-link an object that looks unreachable from where I'm standing, and a local sweep would silently destroy their work at merge time. So the policy is: once persistent, immortal. (This costs nothing in terms of the document's _history_, which only ever grows anyway; it only grows the current-state snapshot.)
 
@@ -216,15 +216,15 @@ We may some day **design a programming language** specifically for Livelymerge �
 
 Not all of a program's state should be shared: in a multi-user system, things like _my_ halo, _my_ keyboard focus, and _my_ animations belong to me, not to the document. We've recently added support for **local (per-user) state** to the object model, and it turned out to fall out of the fresh-object machinery described above almost for free. That's the subject of the next lab note.
 
-Long-running programs remain an open question. Our op-economy work means an idle system no longer accumulates operations, but a system that's actually being _used_ still grows its AM document's history without bound, and that history is never compacted. We are optimistic that changes/optimizations to AM could help here. (Let's talk!)
+Long-running programs remain an open question. Our op-economy work means an idle system no longer accumulates operations, but a system that's actually being _used_ still grows its AM document's history unbounded. We are optimistic that changes/optimizations to AM could help here.
 
-One of the aspects of the system that we're most excited about is _hands_: objects in Morphic that represent the user. By rendering each user's hand, we can see where they're pointing, what objects they're picking up or manipulating, etc. Hands are also an interesting design puzzle: they should be _visible to_ other users but not _persisted_ — a third category of state (shared-but-ephemeral, likely delivered over a presence channel) that we haven't built yet.
+One of the aspects of the system that we're most excited about is _hands_: objects in Morphic that represent the user. By rendering each user's hand, we can see where they're pointing, what objects they're picking up or manipulating, etc. Hands are also an interesting design puzzle: they should be _visible to_ other users but not _persisted_ — a third category of state, **shared-but-ephemeral**. We've recently devised a mechanism that supports this kind of state (it's built on Automerge-repo's ephemeral channels) — that will be the topic of an upcoming lab note.
 
 ## Related Work
 
 The _Beckett_ project at Ink & Switch is exploring the use of Automerge to enable collaborative editing/authoring of [Godot](<https://en.wikipedia.org/wiki/Godot_(game_engine)>) games. LM is similar in the sense that it enables multiple users to collaborate on the same program. As in _Beckett_, LM's use of AM makes it easy to duplicate everything ("poor man's _fork_) in order to try out different ideas, etc. Of course LM doesn't have a very rich set of objects and multimedia capabilities yet, but it also doesn't suffer from the "real world" obstacles that sometimes limit what is feasible in _Beckett_. The fact that both of these projects going on at the same time enables the lab to work on this problem from two very different angles, which I think is exciting.
 
-Gilad Bracha is currently experimenting with a Croquet-based model of collaboration for his Newspeak that is based on Croquet. As Yoshiki Ohshima likes to say, Croquet is "network-first" (as opposed to Automerge, which is local-first) so there are different tradeoffs. We are planning on meeting with Gilad soon to compare and contrast the two approaches.
+Gilad Bracha is currently experimenting with a Croquet-based model of collaboration for his Newspeak. As Yoshiki Ohshima likes to say, Croquet is "network-first" (as opposed to Automerge, which is local-first) so there are different tradeoffs.
 
 ## Appendix I: `gc` (promotion phase)
 
@@ -295,4 +295,6 @@ const myPoint3D = new Point3D(1, 2, 3);
 ```
 
 Since classes and their methods are objects in the heap like everything else, redefining a method (say, from the system browser) takes effect immediately for every collaborator — which is the whole point.
+
+(Classes can also declare getters and setters; a `get`/`set` pair is stored on the prototype as a property whose value is `{ $type: 'accessor', $get: <ref>, $set: <ref> }`, and the proxy invokes the referenced functions on reads and writes instead of handing you the record itself.)
 
