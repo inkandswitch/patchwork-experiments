@@ -329,7 +329,7 @@ initLively();
     expect(() => rt.eval(`openErrorStackPanel(${fakeErr}, 'test context')`)).not.toThrow();
   }, 120_000);
 
-  it('handleRuntimeError presents a real host error and survives promotion', () => {
+  it('handleRuntimeError presents a real host error as a per-user (ephemeral) panel', () => {
     const { rt } = setup();
     rt.eval(`
 initUI();
@@ -344,7 +344,14 @@ initLively();
 })()
 `),
     ).not.toThrow();
-    expect(rt.eval(`!!Lively.submorphs.find((m) => m.className === 'ErrorStackPanel')`)).toBe(true);
+    // System windows open on the ephemeral edge (never in the shared document) —
+    // the user can promote one via the halo's P handle.
+    expect(
+      rt.eval(`!!Lively.ephemeralSubmorphs().find((m) => m.className === 'ErrorStackPanel')`),
+    ).toBe(true);
+    expect(rt.eval(`!!Lively.submorphs.find((m) => m.className === 'ErrorStackPanel')`)).toBe(
+      false,
+    );
   }, 120_000);
 });
 

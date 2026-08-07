@@ -3034,7 +3034,8 @@ class TextBox extends Shape {
         let at = getPointerLocation() ? getPointerLocation().copy() : pt(120, 120);
         showFindNoMatchesMenu(Lively, at, term);
       } else {
-        Lively.addMorph(
+        // Per-user tool window; promote via the halo's P handle to share it.
+        Lively.addEphemeralMorph(
           new MethodListPanel(null, hits, null, 'Occurrences of "' + term + '"', term),
         );
       }
@@ -4211,7 +4212,7 @@ class Morph {
   inspect() {
     // Lively.submorphs.first().inspect()
     let p = new InspectorPanel(rect(500, 100, 300, 300), this);
-    Lively.addMorph(p);
+    Lively.addEphemeralMorph(p);
     p.startStepping('showSelectedValue', false, 500);
     return p;
   }
@@ -4561,7 +4562,7 @@ class Morph {
     if (!world) return;
     let anchor = this.clippedBoundsInWorld ? this.clippedBoundsInWorld() : this.getBounds();
     let r = anchor.topRight().addPt(pt(12, 0)).extent(pt(280, 340));
-    world.addMorph(new StylePanel(r, this));
+    world.addEphemeralMorph(new StylePanel(r, this));
   }
   rotateBy(angle) {
     this.setRotation(this.transform.rotation + angle);
@@ -7860,7 +7861,7 @@ class BrowserPanel extends PanelMorph {
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
     if (!text) return;
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
     );
   }
@@ -7871,7 +7872,7 @@ class BrowserPanel extends PanelMorph {
       includeClassDef: true,
     });
     if (!text) return;
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.selectedClass),
     );
   }
@@ -8240,7 +8241,7 @@ class MethodListPanel extends PanelMorph {
           let spawnText = fragmentClassName
             ? replaceMethodCallString(fragmentClassName, '' + methodString)
             : preamble + methodString;
-          Lively.addMorph(
+          Lively.addEphemeralMorph(
             new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), spawnText, spec),
           );
         }
@@ -8307,7 +8308,7 @@ class MethodListPanel extends PanelMorph {
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
     if (!text) return;
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
     );
   }
@@ -8341,7 +8342,9 @@ class ErrorStackPanel extends MethodListPanel {
       if (idx >= 0) self.showStackFrame(idx);
       if (shiftKey && idx >= 0 && self.printPane) {
         let text = self.printPane.contentPane.shape.string;
-        Lively.addMorph(new MethodPanel(self.rectForSpawnedPanel(28, 320, 220), text, label));
+        Lively.addEphemeralMorph(
+          new MethodPanel(self.rectForSpawnedPanel(28, 320, 220), text, label),
+        );
       }
     });
     if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodSpecs[0]);
@@ -9523,7 +9526,7 @@ function openTranscript() {
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
   let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
-  Lively.addMorph(panel);
+  Lively.addEphemeralMorph(panel);
   panel.beTopMorph();
   return panel;
 }
@@ -9979,7 +9982,7 @@ class WorldMorph extends Morph {
     this.$pointerFocus = morphOrNull;
   }
   showHaloHelp() {
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         null,
         `HALOS
@@ -10005,7 +10008,7 @@ class WorldMorph extends Morph {
     );
   }
   showMorphicHelp() {
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         null,
         `MORPHIC
@@ -10019,7 +10022,7 @@ class WorldMorph extends Morph {
     );
   }
   showTextHelp() {
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         null,
         `Text editing in this system is very simple - there are no automatic pop-ups or type-aheads.  The following command-keys provide basic edits:
@@ -10389,7 +10392,7 @@ function noteMethodChanges(evalString) {
 function browseRecentChanges() {
   // browseRecentChanges()
   let changes = recentChanges ?? [];
-  let panel = Lively.addMorph(
+  let panel = Lively.addEphemeralMorph(
     new MethodListPanel(
       null,
       changes.map((tuple) => tuple[0] + tuple[1]),
@@ -10402,7 +10405,7 @@ function browseRecentChanges() {
 function browseSavedChanges() {
   // browseSavedChanges()
   let changes = JSON.parse(storageGetItem('recentChanges'));
-  let panel = Lively.addMorph(
+  let panel = Lively.addEphemeralMorph(
     new MethodListPanel(
       null,
       changes.map((tuple) => tuple[0] + tuple[1]),
@@ -10478,7 +10481,7 @@ function viewExportedSystem() {
   let ts =
     storageGetItem('system.export.timestamp') || storageGetItem('system.methods.timestamp') || '';
   let title = ts ? 'alldefs export (' + ts + ')' : 'alldefs export';
-  Lively.addMorph(new MethodPanel(null, text, title));
+  Lively.addEphemeralMorph(new MethodPanel(null, text, title));
   return text.length;
 }
 function exportMethodShouldOmit(name) {
@@ -10781,7 +10784,7 @@ function openErrorStackPanel(err, contextIfAny, titleIfAny) {
     contextIfAny,
     titleIfAny || errorPanelTitle(err),
   );
-  Lively.addMorph(panel);
+  Lively.addEphemeralMorph(panel);
   panel.beTopMorph();
   return panel;
 }
@@ -10860,7 +10863,7 @@ function storageSetItem(key, value) {
 }
 function storageEditItem(key) {
   //storageEditItem('ToDoList')
-  Lively.addMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
+  Lively.addEphemeralMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
 }
 function saveRecentChanges() {
   // saveRecentChanges();
@@ -10940,7 +10943,7 @@ function inspect(obj, optionalBounds) {
     r = rect(500, 100, 300, 300);
   }
   let p = new InspectorPanel(r, obj);
-  Lively.addMorph(p);
+  Lively.addEphemeralMorph(p);
   p.startStepping('showSelectedValue', false, 500);
   return p;
 }
