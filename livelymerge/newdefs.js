@@ -635,12 +635,15 @@ class Set {
 // Wire format — plain JSON, and deliberately NO $-prefixed keys: LM reads/writes of
 // $-names on HOST objects route to the ephemeral-property sidecar, not the object,
 // so $-keys on a message would be invisible from LM code.
-//   { type: 'lm-eph', v: 1, actor, sid, end?, objects: [{ id, props: { transform, bounds } }] }
+//   { type: 'lm-eph', v: 1, actor, sid, end?, objects: [{ id, props: { transform, bounds, vertices? } }] }
 // Values are className-tagged trees ({ c: 'Point', x, y }, ...). Receivers decode by
 // prototype delegation (Object.create($global[c].prototype) + fields), validate
 // every number, and may ONLY write the whitelisted $-props (see
 // ephApplyOverlayEntry) — a malformed or malicious message can never touch the
 // document, because $-props never persist by construction.
+// `vertices` (line reshapes only, gated on $vertexDragActive) is a flat
+// [x0, y0, x1, y1, ...] number array — NOT the class-tagged codec, whose v1
+// deliberately carries no arrays; it has its own validator (ephValidVerticesValue).
 //
 // Echo suppression uses `sid`, a random per-SESSION replica id ($ephSessionID),
 // NOT `actor`: $actorID is the acting-USER id and the multi-hand feature rebinds
@@ -702,6 +705,21 @@ function ephOverlayEntryFor(morph) {
   let props = new window.Object();
   props.transform = ephEncodeValue(morph.transform, 0);
   if (morph.bounds != null) props.bounds = ephEncodeValue(morph.bounds, 0);
+  // A vertex-handle drag reshapes the line, so peers need the vertex list too.
+  // Gated on $vertexDragActive (NOT on having vertices) so whole-morph drags of
+  // vertex-heavy shapes (pen trails) never ship vertex lists. Reads through the
+  // getter: mid-drag frames carry the ephemeral list, and the end message — sent
+  // after the commit, while the flag is still up — carries exactly the committed
+  // values.
+  if (morph.$vertexDragActive && morph.shape != null && morph.shape.vertices != null) {
+    let vs = morph.shape.vertices;
+    let arr = new window.Array();
+    for (let i = 0; i < vs.length; i++) {
+      arr.push(vs[i].x);
+      arr.push(vs[i].y);
+    }
+    props.vertices = arr;
+  }
   entry.props = props;
   return entry;
 }
@@ -781,6 +799,14 @@ function ephValidBoundsValue(b) {
     ephValidPointValue(b.extent)
   );
 }
+function ephValidVerticesValue(arr) {
+  /** Flat [x0, y0, x1, y1, ...]: even length, every number finite, capped well
+   * above any hand-edited line (reshapes come from vertex handles, not pens). */
+  if (arr == null || typeof arr.length !== 'number') return false;
+  if (arr.length % 2 !== 0 || arr.length === 0 || arr.length > 1024) return false;
+  for (let i = 0; i < arr.length; i++) if (!ephFiniteNumber(arr[i])) return false;
+  return true;
+}
 function processEphemeralInbound() {
   /** Once per frame (see onFrame): drain the inbound queue, then sweep lapsed overlays. */
   if (!window._ephemeralMessages || !window._ephOverlays) return;
@@ -812,9 +838,9 @@ function ephApplyOverlayEntry(entry, isEnd, now) {
   // when the existing overlay is remote-owned (i.e. tracked in _ephOverlays).
   // Locally-initiated overlays are never in that table.
   if (morph.$transform != null && window._ephOverlays[entry.id] == null) return;
-  // THE WHITELIST: these two ephemeral props, validated, applied as a pair —
-  // hit-testing and fullBounds assume transform and bounds agree. Extend here
-  // (with a validator) to stream more ephemeral state.
+  // THE WHITELIST: these ephemeral props, validated, applied as a group —
+  // hit-testing and fullBounds assume transform, bounds, and vertices agree.
+  // Extend here (with a validator) to stream more ephemeral state.
   let tfm = ephDecodeValue(entry.props.transform, 0);
   if (!ephValidTransformValue(tfm)) return;
   let bnds = null;
@@ -822,8 +848,19 @@ function ephApplyOverlayEntry(entry, isEnd, now) {
     bnds = ephDecodeValue(entry.props.bounds, 0);
     if (!ephValidBoundsValue(bnds)) return;
   }
+  let vertsFlat = entry.props.vertices != null ? entry.props.vertices : null;
+  if (vertsFlat != null && !ephValidVerticesValue(vertsFlat)) return;
   morph.$transform = tfm;
   morph.$bounds = bnds;
+  // Vertices apply only to a shape on the accessor path (_vertices present) —
+  // a pre-getter shape's own `vertices` property shadows the getter, so the
+  // overlay would be invisible there and could later be mistaken for local
+  // ephemeral state by a commit.
+  if (vertsFlat != null && morph.shape != null && morph.shape._vertices != null) {
+    let vs = [];
+    for (let i = 0; i < vertsFlat.length; i += 2) vs.push(pt(vertsFlat[i], vertsFlat[i + 1]));
+    morph.shape.$vertices = vs;
+  }
   // The lease record: a host object of numbers only (never LM heap objects — see
   // the GC note above).
   let lease = new window.Object();
@@ -844,6 +881,13 @@ function ephApplyOverlayEntry(entry, isEnd, now) {
       lease.by = bnds.topLeft.y;
       lease.bw = bnds.extent.x;
       lease.bh = bnds.extent.y;
+    }
+    if (vertsFlat != null) {
+      // Numbers only, copied out of the message (leases must never pin LM heap
+      // objects or alias inbound payloads — see the GC note above).
+      let lv = new window.Array();
+      for (let i = 0; i < vertsFlat.length; i++) lv.push(vertsFlat[i]);
+      lease.verts = lv;
     }
   }
   window._ephOverlays[entry.id] = lease;
@@ -868,6 +912,16 @@ function ephCommitLanded(morph, lease) {
     if (b.topLeft.x !== lease.bx || b.topLeft.y !== lease.by) return false;
     if (b.extent.x !== lease.bw || b.extent.y !== lease.bh) return false;
   }
+  if (lease.verts != null) {
+    let sh = morph.shape;
+    // The persistent list even while $vertices is applied: _vertices on
+    // accessor-path shapes, the own `vertices` property on pre-getter ones.
+    let pv = sh != null ? (sh._vertices != null ? sh._vertices : sh.vertices) : null;
+    if (pv == null || pv.length * 2 !== lease.verts.length) return false;
+    for (let i = 0; i < pv.length; i++) {
+      if (pv[i].x !== lease.verts[2 * i] || pv[i].y !== lease.verts[2 * i + 1]) return false;
+    }
+  }
   return true;
 }
 function ephSweepOverlays(now) {
@@ -891,7 +945,10 @@ function ephSweepOverlays(now) {
     }
     if (morph.$transform == null && morph.$bounds == null) {
       // Overlay already cleared elsewhere (e.g. this user dragged the morph and
-      // finishPointerDrag committed it) — just drop the lease.
+      // finishPointerDrag committed it) — just drop the lease. $vertices is
+      // cleared alongside the others everywhere, but sweep it defensively so a
+      // dropped lease can never strand a vertex overlay.
+      if (morph.shape != null && morph.shape.$vertices != null) morph.shape.$vertices = null;
       delete window._ephOverlays[id];
       continue;
     }
@@ -909,6 +966,7 @@ function ephSweepOverlays(now) {
     delete window._ephOverlays[id];
     morph.$transform = null;
     morph.$bounds = null;
+    if (morph.shape != null && morph.shape.$vertices != null) morph.shape.$vertices = null;
     morph.changed();
   }
 }
@@ -2242,6 +2300,24 @@ class PolyLine extends Shape {
     this.arrowheads = 'none';
     this.morphOrigin = pt(0, 0);
   }
+  get vertices() {
+    /**
+     * The vertex list to use for rendering, hit-testing, and mutation. During a
+     * direct-manipulation reshape (vertex/midpoint handle drag) this is $vertices,
+     * a PER-USER ephemeral copy, so per-frame vertex edits never touch the
+     * Automerge document; it is promoted into the persistent _vertices once, on
+     * pointer-up. Same idiom as {@link Morph#transform} — see
+     * {@link LineMorph#beginEphemeralTransform} and
+     * {@link LineMorph#commitEphemeralTransform}.
+     */
+    return this.$vertices != null ? this.$vertices : this._vertices;
+  }
+  set vertices(verts) {
+    // Mid-interaction, a wholesale assignment replaces the ephemeral view (commit
+    // then persists its values); otherwise it lands on the persistent slot.
+    if (this.$vertices != null) this.$vertices = verts;
+    else this._vertices = verts;
+  }
   asString() {
     return `PolyLine at ${this.topLeft.asString()} with size ${this.extent}`;
   }
@@ -2362,9 +2438,13 @@ class PolyLine extends Shape {
     }
   }
   recomputeBounds() {
+    // In place, like Rectangle.setBounds: adopting b's points allocated fresh doc
+    // Points and orphaned the old ones on every reshape.
     let b = this.boundsForVertices(this.vertices, this.borderWidth);
-    this.topLeft = b.topLeft;
-    this.extent = b.extent;
+    if (this.topLeft) this.topLeft.setToPt(b.topLeft);
+    else this.topLeft = b.topLeft;
+    if (this.extent) this.extent.setToPt(b.extent);
+    else this.extent = b.extent;
   }
   render(ctx) {
     let verts = this.vertices;
@@ -4858,6 +4938,24 @@ class LineMorph extends Morph {
     if (world && world.changed) world.changed();
     return this;
   }
+  beginEphemeralTransform() {
+    /**
+     * Vertex geometry joins the ephemeral scheme: a reshape (vertex/midpoint
+     * handle drag) must stay out of the shared document until the one commit on
+     * pointer-up, exactly like transform/bounds. See {@link PolyLine}'s vertices
+     * getter and {@link LineMorph#commitEphemeralTransform}.
+     */
+    super.beginEphemeralTransform();
+    if (this.$transform == null) return; // legacy/shadowed morph: stay on the direct path
+    let sh = this.shape;
+    if (sh == null || sh.$vertices != null) return; // no shape, or adopted remote overlay
+    let eph = sh.vertices.map((v) => v.copy());
+    sh.$vertices = eph;
+    // A shape from a pre-getter document carries an own `vertices` data property
+    // that shadows the prototype accessors; leave it on its old direct-mutation
+    // path (the commit skips it too — see the _vertices check there).
+    if (sh.vertices !== eph) sh.$vertices = null;
+  }
   clearAllHandles() {
     this.clearVertexHandles();
     this.clearMidpointHandles();
@@ -4869,6 +4967,37 @@ class LineMorph extends Morph {
   clearVertexHandles() {
     (this.$vertexHandles || []).forEach((h) => h.remove());
     this.$vertexHandles = [];
+  }
+  commitEphemeralTransform() {
+    /**
+     * End of an interaction: promote the ephemeral vertices into the persistent
+     * (document) list, then let the base class commit transform/bounds. Value
+     * writes only — same-value writes are elided at the storage layer, so a
+     * whole-line drag (which never edits vertices) or a reshape that ends where
+     * it started costs no vertex ops; count changes (midpoint insert, merge)
+     * push/splice.
+     */
+    let sh = this.shape;
+    let eph = sh != null ? sh.$vertices : null;
+    if (eph != null) {
+      sh.$vertices = null;
+      // _vertices == null means a pre-getter shape whose own `vertices` property
+      // shadows the accessors: it was never ephemeral (begin backs out), so any
+      // $vertices here came from a remote overlay — drop it, never commit it.
+      if (sh._vertices != null) {
+        let verts = sh._vertices;
+        let n = Math.min(verts.length, eph.length);
+        for (let i = 0; i < n; i++) verts[i].setToPt(eph[i]);
+        for (let i = verts.length; i < eph.length; i++) verts.push(eph[i]);
+        if (verts.length > eph.length) verts.splice(eph.length, verts.length - eph.length);
+        sh.recomputeBounds();
+      } else {
+        eph = null;
+      }
+    }
+    super.commitEphemeralTransform();
+    // After the base commit so the persistent bounds pick up the final geometry.
+    if (eph != null) this.syncBoundsFromGeometry();
   }
   ensureMidpointHandles() {
     let mids = this.segmentMidpoints();
@@ -5078,7 +5207,20 @@ class LineMorph extends Morph {
   }
   syncGeometryFromVertices() {
     /** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
-    this.shape.recomputeBounds();
+    let sh = this.shape;
+    if (sh.$vertices != null) {
+      // Mid-reshape: the shape's document rect stays frozen (like the halo Scale
+      // preview) and only the morph's ephemeral bounds track the geometry, so
+      // per-frame moves make no document writes. The real shape bounds are
+      // recomputed once, in the commit.
+      let b = sh
+        .boundsForVertices(sh.vertices, sh.borderWidth)
+        .translatedBy(this.transform.translation);
+      if (this.bounds != null) this.bounds.setToRect(b);
+      else this.bounds = b;
+      return;
+    }
+    sh.recomputeBounds();
     this.syncBoundsFromGeometry();
   }
   syncShapeFromVertices() {
@@ -5124,35 +5266,41 @@ class LineVertexHandle extends Morph {
     lm.$vertexDragActive = true;
     lm.$dragVertexIndex = this.vertexIndex;
     lm.$mergeNeighborIx = null;
-    this.$hitPoint = p;
-    this.$dragActorID = evt.actorID;
     lm.clearMidpointHandles();
-    this.world().setPointerFocus(this);
-    return true;
+    // Shared drag protocol with the line as drag target: per-move reshapes land
+    // on ephemeral vertices/bounds (streamed live to peers), one document commit
+    // on pointer-up — same as plain morph drags.
+    return this.beginPointerDrag(p, evt, lm);
   }
   onPointerMove(p, evt) {
-    if (!this.$hitPoint) return false;
+    return this.continuePointerDrag(p, evt);
+  }
+  dragMovedBy(delta, p, evt) {
     let lm = this.lineMorph;
-    let verts = lm.shape.vertices;
+    let verts = lm.shape.vertices; // the ephemeral list during the drag
     let i = lm.$dragVertexIndex != null ? lm.$dragVertexIndex : this.vertexIndex;
-    if (i < 0 || i >= verts.length) return true;
+    if (i < 0 || i >= verts.length) return;
     verts[i] = pt(p.x, p.y);
     lm.syncGeometryFromVertices();
     lm.layoutVertexHandles();
     lm.refreshMergeHighlight();
     lm.changed();
-    return true;
+  }
+  dragEnded(p, evt, wasDrag) {
+    // Merge before finishPointerDrag's commit, so the whole reshape (including
+    // the removed vertex) lands in the document as a single write.
+    let lm = this.lineMorph;
+    if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
   }
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
-    if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
-    this.$hitPoint = null;
-    this.$dragActorID = null;
+    // endPointerDrag: merge (dragEnded), commit, then the end-of-stream message —
+    // which reads vertices while $vertexDragActive is still set, so clear after.
+    this.endPointerDrag(p, evt);
     lm.$vertexDragActive = false;
     lm.$dragVertexIndex = null;
     lm.$mergeNeighborIx = null;
     lm.syncShapeFromVertices();
-    this.world().setPointerFocus(null);
     return true;
   }
   positionAtVertex(v) {
@@ -5197,41 +5345,48 @@ class LineMidpointHandle extends Morph {
     if (!this.includesPt(p)) return false;
     let lm = this.lineMorph;
     lm.$vertexDragActive = true;
-    this.$hitPoint = p;
-    this.$dragActorID = evt.actorID;
+    // Begin the shared drag protocol BEFORE inserting: the new vertex then lands
+    // on the ephemeral list, so even the insert reaches the document only via the
+    // one commit on pointer-up.
+    this.beginPointerDrag(p, evt, lm);
     let newIx = lm.insertVertexOnSegment(this.segmentIndex, p);
     lm.$dragVertexIndex = newIx;
     lm.$mergeNeighborIx = null;
     this.$dragVertexIndex = newIx;
     lm.ensureVertexHandles();
     lm.clearMidpointHandles();
-    this.world().setPointerFocus(this);
     return true;
   }
   onPointerMove(p, evt) {
-    if (!this.$hitPoint || this.$dragVertexIndex == null) return false;
+    if (this.$dragVertexIndex == null) return false;
+    return this.continuePointerDrag(p, evt);
+  }
+  dragMovedBy(delta, p, evt) {
     let lm = this.lineMorph;
-    let verts = lm.shape.vertices;
+    let verts = lm.shape.vertices; // the ephemeral list during the drag
     let i = lm.$dragVertexIndex;
-    if (i < 0 || i >= verts.length) return true;
+    if (i == null || i < 0 || i >= verts.length) return;
     verts[i] = pt(p.x, p.y);
     lm.syncGeometryFromVertices();
     lm.layoutVertexHandles();
     lm.refreshMergeHighlight();
     lm.changed();
-    return true;
+  }
+  dragEnded(p, evt, wasDrag) {
+    // Merge before finishPointerDrag's commit — see LineVertexHandle.dragEnded.
+    let lm = this.lineMorph;
+    if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
   }
   onPointerUp(p, evt) {
     let lm = this.lineMorph;
-    if (lm.$mergeNeighborIx != null) lm.mergeDraggedVertexWithNeighbor();
-    this.$hitPoint = null;
-    this.$dragActorID = null;
+    // Commit + end-of-stream first; $vertexDragActive must still be set for the
+    // final broadcast (see LineVertexHandle.onPointerUp).
+    this.endPointerDrag(p, evt);
     this.$dragVertexIndex = null;
     lm.$vertexDragActive = false;
     lm.$dragVertexIndex = null;
     lm.$mergeNeighborIx = null;
     lm.syncShapeFromVertices();
-    this.world().setPointerFocus(null);
     return true;
   }
   positionAt(v) {
