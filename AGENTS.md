@@ -15,3 +15,6 @@ multiplayer/ephemeral messaging, the importmap, and the common gotchas.
 House style: small, simple tools in plain vanilla JavaScript. TypeScript, npm deps,
 and a bundled build are all fine (pushwork handles them). If a reactive framework is
 needed, use Solid — never React.
+
+Tailwind is not supported in Patchwork. If a tool is using it, remove it and write
+plain CSS instead.
