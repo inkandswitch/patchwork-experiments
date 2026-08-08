@@ -20,8 +20,20 @@ describe('QBF', () => {
     // The board fills its panel, just under the title bar (panel-local coordinates).
     expect(rt.eval(`qbfGame.getBounds().width() == qbfPanel.getBounds().width()`)).toBe(true);
     expect(rt.eval(`qbfGame.getBounds().topLeft.y`)).toBe(rt.eval(`qbfPanel.titleBarHeight`));
-    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('choose name');
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Anonymous');
+    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Anonymous');
+    expect(
+      rt.eval(
+        `qbfGame.nameButton.getBounds().center().x == qbfGame.computeLayout().fox.center().x`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.nameButton.getBounds().topLeft.y == qbfGame.computeLayout().fox.bottom() + 20`,
+      ),
+    ).toBe(true);
     expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
+    expect(rt.eval(`qbfGame.finishButton.shape.textColor === Color.gray`)).toBe(true);
     expect(rt.eval(`!!qbfGame.bestGameBox`)).toBe(false);
     expect(rt.eval(`!!qbfGame.topWordBox && qbfGame.topWordBox.shape.string`)).toBe('0');
     expect(rt.eval(`!!qbfGame.quickButton && !!qbfGame.superQuickButton && !!qbfGame.notSoQuickButton`)).toBe(
@@ -31,9 +43,37 @@ describe('QBF', () => {
     expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('auto play');
     expect(rt.eval(`qbfGame.infoButton.shape.string`)).toBe('how to play');
     expect(rt.eval(`!!qbfGame.multiplierBox`)).toBe(false);
-    expect(rt.eval(`!!qbfGame.soloModeButton && !!qbfGame.socialModeButton`)).toBe(true);
-    expect(rt.eval(`qbfGame.playMode`)).toBe('solo');
-    // pause up with autoplay's old row; finish where pause was; autoplay where finish was.
+    expect(rt.eval(`!!qbfGame.soloModeButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.socialModeButton`)).toBe(false);
+    expect(rt.eval(`qbfGame.clearButton.getBounds().height()`)).toBe(22);
+    expect(rt.eval(`qbfGame.quickButton.getBounds().height()`)).toBe(22);
+    // Launch column aligns with the letter-score row.
+    expect(
+      rt.eval(
+        `qbfGame.gameNumberLabel.getBounds().topLeft.y == qbfGame.letterScoreBox.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    // Left column: pause / finish / restart. Right: autoplay / how to play / show scores.
+    expect(
+      rt.eval(
+        `qbfGame.pauseButton.getBounds().topLeft.y == qbfGame.autoPlayButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.finishButton.getBounds().topLeft.y == qbfGame.infoButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.restartButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.autoPlayButton.getBounds().topLeft.x > qbfGame.pauseButton.getBounds().topLeft.x`,
+      ),
+    ).toBe(true);
     expect(
       rt.eval(
         `qbfGame.pauseButton.getBounds().topLeft.y < qbfGame.finishButton.getBounds().topLeft.y`,
@@ -41,16 +81,11 @@ describe('QBF', () => {
     ).toBe(true);
     expect(
       rt.eval(
-        `qbfGame.finishButton.getBounds().topLeft.y == qbfGame.autoPlayButton.getBounds().topLeft.y`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.infoButton.getBounds().topLeft.y == qbfGame.restartButton.getBounds().topLeft.y`,
+        `qbfGame.finishButton.getBounds().topLeft.y < qbfGame.restartButton.getBounds().topLeft.y`,
       ),
     ).toBe(true);
     expect(rt.eval(`String(qbfGame.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
-    expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/ready|open/);
+    expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/ready|open|playing/);
     expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
     expect(rt.eval(`!!qbfScores.quickButton`)).toBe(false);
     expect(rt.eval(`!!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(true);
@@ -114,7 +149,7 @@ describe('QBF', () => {
     ticks(5); // and the game keeps running afterwards
   }, 60_000);
 
-  it('checks words against a loaded list, scoring bad and repeated words against you', () => {
+  it('checks words against a loaded list, scoring bad words against you', () => {
     const { rt, ticksUntil, type } = makeGame();
     rt.eval(`qbfSetWordList(['at', 'to'])`);
     ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 4`);
@@ -184,46 +219,55 @@ true`);
     rt.eval(`qbfGame.doPause(false)`);
     ticks(10);
     expect(rt.eval(`qbfTrack.getBounds().topLeft.x`)).toBeLessThan(pausedX);
-    // Collapsing the window is a pause too. Re-grab the current belt letter so we are
-    // still watching a tile that tick will move.
+    // Collapse drops steppers (board leaves the world). Expand must restart them.
     rt.eval(`qbfTrack = qbfGame.activeLetters[0]`);
+    expect(rt.eval(`qbfGame.isStepping('tick')`)).toBe(true);
     rt.eval(`qbfPanel.toggleCollapse()`);
-    const collapsedX = rt.eval(`qbfTrack.getBounds().topLeft.x`) as number;
-    ticks(20);
-    expect(rt.eval(`qbfTrack.getBounds().topLeft.x`)).toBe(collapsedX);
+    expect(rt.eval(`qbfPanel.collapsed`)).toBe(true);
+    expect(rt.eval(`qbfGame.isInWorld()`)).toBe(false);
     rt.eval(`qbfPanel.toggleCollapse()`);
+    expect(rt.eval(`qbfPanel.collapsed`)).toBe(false);
+    expect(rt.eval(`qbfGame.isStepping('tick')`)).toBe(true);
+    const expandedX = rt.eval(`qbfTrack.getBounds().topLeft.x`) as number;
     ticks(10);
-    expect(rt.eval(`qbfTrack.getBounds().topLeft.x`)).toBeLessThan(collapsedX);
+    expect(rt.eval(`qbfTrack.getBounds().topLeft.x`)).toBeLessThan(expandedX);
   }, 60_000);
 
   it('runs its buttons and clicks through the real event pipeline', () => {
     const { rt, dispatch, runFrame } = makeGame();
-    rt.eval(`qbfGame.buttonFired('pause'); true`);
-    expect(rt.eval(`qbfGame.paused`)).toBe(true);
-    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
+    // Pause / finish are locked in social play; the buttons fire but do nothing.
     rt.eval(`qbfGame.buttonFired('pause'); true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(false);
+    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('pause');
+    rt.eval(`
+qbfBeforeFinish = qbfGame.letterQueue.join('');
+qbfGame.buttonFired('finishTiles');
+true`);
+    expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe(rt.eval(`qbfBeforeFinish`));
 
-    // Pointer press/release on the button itself (owner coords). Catches the
+    // Pointer press/release on a live button (owner coords). Catches the
     // $hitPoint vs hitPoint regression that left every QBF button dead.
     // $hitPoint is ephemeral — check it in the same eval that sets it.
     rt.eval(`
-qbfBtn = qbfGame.pauseButton;
+qbfBtn = qbfGame.autoPlayButton;
 qbfP = qbfBtn.getBounds().center();
 qbfBtn.onPointerDown(qbfP, { actorID: 'test' });
 qbfHitOk = qbfBtn.$hitPoint != null;
 qbfBtn.onPointerUp(qbfP, { actorID: 'test' });
 true`);
     expect(rt.eval(`qbfHitOk`)).toBe(true);
-    expect(rt.eval(`qbfGame.paused`)).toBe(true);
-    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
+    expect(rt.eval(`qbfGame.autoPlay`)).toBe(true);
+    expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('Otto');
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Otto');
 
     // World canvas pipeline: ephemeral panels must count as frontmost or every
     // click is eaten by bringTopLevelPanelToFrontIfNeeded.
-    rt.eval(`qbfGame.buttonFired('pause'); true`); // unpause
+    rt.eval(`qbfGame.buttonFired('autoPlay'); true`); // toggle off
+    expect(rt.eval(`qbfGame.autoPlay`)).toBe(false);
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Anonymous');
     rt.eval(`qbfPanel.beTopMorph(); true`);
     rt.eval(`
-qbfBtn = qbfGame.pauseButton;
+qbfBtn = qbfGame.autoPlayButton;
 qbfC = qbfBtn.owner.globalize(qbfBtn.getBounds().center());
 true`);
     const cx = rt.eval(`qbfC.x`) as number;
@@ -232,7 +276,9 @@ true`);
     runFrame();
     dispatch('pointerup', cx, cy);
     runFrame();
-    expect(rt.eval(`qbfGame.paused`)).toBe(true);
+    expect(rt.eval(`qbfGame.autoPlay`)).toBe(true);
+    expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('Otto');
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Otto');
 
     rt.eval(`qbfGame.buttonFired('scores'); true`);
     expect(rt.eval(`!!findQBFScoresViewer()`)).toBe(true);
@@ -294,7 +340,10 @@ true`);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(42);
     expect(rt.eval(`qbfGame.logLines.pop()`)).toContain('game over');
     expect(rt.eval(`!!qbfGame._finalScorePosted`)).toBe(true);
-    rt.eval(`qbfGame.doRestart()`);
+    // Restart is locked in social play; a fresh setup rebuilds the board.
+    rt.eval(`qbfGame.doRestart(); true`);
+    expect(rt.eval(`qbfGame.gameOver`)).toBe(true);
+    rt.eval(`qbfGame.setup(); true`);
     expect(rt.eval(`qbfGame.gameOver`)).toBe(false);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(0);
     expect(rt.eval(`Number(qbfGame.topWordBox.shape.string)`)).toBe(0);
@@ -360,6 +409,24 @@ true`);
     expect(rt.eval(`qbfLookupWord('nope')`)).toBe(true);
   }, 60_000);
 
+  it('adds words into a compact list, keeping sort and encoding', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+      qbfBase = qbfCompactStringFromArray(['able', 'acid', 'zebra']);
+      qbfAdded = qbfAddWordsToCompactString(qbfBase, ['vape', 'ABLE', 'toolongword', 'evite']);
+    `);
+    expect(rt.eval(`qbfAdded.added.slice().sort().join(',')`)).toBe('evite,vape');
+    expect(rt.eval(`qbfAdded.words.join(',')`)).toBe('able,acid,evite,vape,zebra');
+    expect(rt.eval(`qbfCompactStringToArray(qbfAdded.compact).join(',')`)).toBe(
+      'able,acid,evite,vape,zebra',
+    );
+    // Embedded list should include the test additions from regeneration.
+    expect(rt.eval(`qbfLookupWord('vape')`)).toBe(true);
+    expect(rt.eval(`qbfLookupWord('vapes')`)).toBe(true);
+    expect(rt.eval(`qbfLookupWord('evite')`)).toBe(true);
+    expect(rt.eval(`qbfLookupWord('evites')`)).toBe(true);
+  }, 60_000);
+
   it('installs QBFWords.txt text lowercased, skipping words over nine characters', () => {
     // qbfInstallWordListText is the regeneration path for the embedded list, so its
     // parse rules must keep matching what qbfEmbeddedWordList was built with.
@@ -379,8 +446,9 @@ true`);
     expect(
       rt.eval(`qbfCompactStringToArray($qbfWordList).every((word) => word.length <= 9)`),
     ).toBe(true);
-    // Regenerating from today's QBFWords.txt reproduces the embedded list exactly.
-    expect(rt.eval(`$qbfWordList === qbfEmbeddedWordList()`)).toBe(true);
+    // Embedded list may include extra hand-added words beyond QBFWords.txt
+    // (see qbfAddWordsToEmbeddedList in QBFWordList.js); do not require byte-equality.
+    expect(rt.eval(`$qbfWordList.length < qbfEmbeddedWordList().length`)).toBe(true);
   }, 60_000);
 
   it('posts high scores through the pluggable store and refreshes the viewer', () => {
@@ -439,6 +507,87 @@ true`);
     const header = rt.eval(`QBFGameScore.headerRow().join(',')`) as string;
     expect(header).toBe('score,player,speed,best word,pts,game #,date');
     expect(rt.eval(`qbfFormatScoreTime('2026-07-25T15:30:00Z')`)).not.toContain('2026');
+  }, 60_000);
+
+  it('shows top 5 high scores per speed and keeps recent games height fixed', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+qbfAlt = new QBFMemoryScoresStore();
+qbfSetScoresStore(qbfAlt);
+// 6 quick scores from different players — only top 5 should appear.
+[90,80,70,60,50,40].forEach((sc, i) => {
+  qbfPostLevelScore('P'+i, 'quick', {
+    bestGame: sc, bestWord: 'W', bestWordScore: 1, time: Date.now(), gameNo: 100+i,
+  });
+});
+// Same player, 6 more quick games — each Game # is kept; top 5 still by score.
+[95,85,75,65,55,45].forEach((sc, i) => {
+  qbfPostLevelScore('Repeat', 'quick', {
+    bestGame: sc, bestWord: 'R', bestWordScore: 1, time: Date.now(), gameNo: 400+i,
+  });
+});
+qbfPostLevelScore('Fast', 'super quick', {
+  bestGame: 120, bestWord: 'Z', bestWordScore: 2, time: Date.now(), gameNo: 200,
+});
+qbfPostLevelScore('Slow', 'not so quick', {
+  bestGame: 30, bestWord: 'A', bestWordScore: 1, time: Date.now(), gameNo: 300,
+});
+qbfScores.refresh();
+qbfRecentH = qbfScores.recentScroll.getBounds().height();
+qbfHighH = qbfScores.scoresScroll.getBounds().height();
+qbfText = qbfScores.scoresText.shape.string;
+qbfQuickRows = qbfTopScoresPerLevel(
+  qbfAlt.getScoreEntries().map((e) => QBFGameScore.fromAny(e)),
+  5,
+).filter((s) => s.speed === 'quick');
+true`);
+    expect(rt.eval(`qbfRecentH`)).toBe(220);
+    // High-scores pane tall enough for header + 15 rows + footer at 14px line height.
+    expect(rt.eval(`qbfHighH >= 17 * 14`)).toBe(true);
+    expect(rt.eval(`qbfText`)).toContain('Fast');
+    expect(rt.eval(`qbfText`)).toContain('Slow');
+    expect(rt.eval(`qbfText`)).toContain('Repeat'); // multi-game player
+    expect(rt.eval(`qbfText`)).toContain('P0'); // 90 still in mix if high enough
+    expect(rt.eval(`qbfQuickRows.length`)).toBe(5);
+    expect(rt.eval(`qbfQuickRows[0].score`)).toBe(95);
+    expect(rt.eval(`qbfQuickRows.filter((s) => s.player === 'Repeat').length >= 2`)).toBe(true);
+    expect(rt.eval(`qbfTopScoresPerLevel([
+      new QBFGameScore(1,'a','quick','',0,1,''),
+      new QBFGameScore(2,'b','quick','',0,2,''),
+      new QBFGameScore(3,'c','quick','',0,3,''),
+      new QBFGameScore(4,'d','quick','',0,4,''),
+      new QBFGameScore(5,'e','quick','',0,5,''),
+      new QBFGameScore(6,'f','quick','',0,6,''),
+    ], 5).map((s) => s.player).join(',')`)).toBe('f,e,d,c,b');
+  }, 60_000);
+
+  it('omits high scores older than 30 days from the top-scores pane', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+qbfAlt = new QBFMemoryScoresStore();
+qbfSetScoresStore(qbfAlt);
+let now = Date.now();
+let old = new Date(now - 31 * 24 * 60 * 60 * 1000).toISOString();
+let recent = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
+qbfPostLevelScore('Oldie', 'quick', {
+  bestGame: 999, bestWord: 'OLD', bestWordScore: 9, time: old, gameNo: 501,
+});
+qbfPostLevelScore('Newbie', 'quick', {
+  bestGame: 50, bestWord: 'NEW', bestWordScore: 5, time: recent, gameNo: 502,
+});
+// Refresh prunes expired rows and must not display them.
+qbfScores.refresh();
+qbfText = qbfScores.scoresText.shape.string;
+qbfAfter = qbfAlt.getScoreEntries().length;
+qbfFreshOk = qbfScoreIsFresh(recent);
+qbfOldBad = !qbfScoreIsFresh(old);
+true`);
+    expect(rt.eval(`qbfFreshOk`)).toBe(true);
+    expect(rt.eval(`qbfOldBad`)).toBe(true);
+    expect(rt.eval(`qbfAfter`)).toBe(1);
+    expect(rt.eval(`qbfText`)).toContain('Newbie');
+    expect(rt.eval(`qbfText`)).not.toContain('Oldie');
+    expect(rt.eval(`qbfText`)).not.toContain('999');
   }, 60_000);
 
   it('finish button cuts the tile queue down to a terminal "!"', () => {
@@ -512,61 +661,89 @@ true`);
 
     rt.eval(`qbfGame.toggleAutoPlay()`);
     expect(rt.eval(`qbfGame.autoPlay`)).toBe(true);
-    expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('auto: on');
+    expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('Otto');
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Otto');
   }, 60_000);
 
-  it('starts a Game # epoch on first speed click and shares the queue for a minute', () => {
+  it('starts a Game # epoch on first speed click and shares the queue for 30 seconds', () => {
     const { rt } = makeGame();
-    // Reset to idle social board: tournament starts only from social speed launch.
+    // Reset to idle board: tournament starts from speed launch.
     rt.eval(`
 Lively.qbfGameNumber = null;
 Lively.qbfEpochStartMs = null;
+Lively.qbfEpochSpeed = null;
 qbfClearEpochEndTimer();
-qbfGame.setPlayMode('social');
 qbfGame.setup({ idle: true });
 true`);
-    // Idle: no tournament clock yet, display waits at 100, clock not stepping.
+    // Idle: no tournament clock yet, display waits without a fake #100.
     expect(rt.eval(`Lively.qbfEpochStartMs == null`)).toBe(true);
-    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #—');
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain(
       'Start a new game at your chosen speed',
     );
+    // Idle startup hides the four score boxes/captions (brown board only).
+    expect(rt.eval(`qbfGame.letterScoreBox.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.letterScoreBox.$scoreLabel.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.topWordBox.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.topWordLetters.getBounds().width()`)).toBe(0);
+    // Idle help sits 4px above the rack rail.
+    expect(
+      rt.eval(
+        `qbfGame.idleHelpPlate.getBounds().bottom() == qbfGame.rack.getBounds().topLeft.y - 4`,
+      ),
+    ).toBe(true);
 
-    rt.eval(`qbfGame.launchLevel('quick')`);
-    // Game # is assigned/bumped at start (first ever → 100).
+    // First ever start is Game #100 (not random).
+    rt.eval(`qbfGame.launchLevel('quick'); true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
+    expect(rt.eval(`Lively.qbfShuffleGen`)).toBe(1);
     expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
+    expect(rt.eval(`Lively.qbfEpochSpeed`)).toBe('quick');
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
+    // Playing board shows score captions again.
+    expect(rt.eval(`qbfGame.letterScoreBox.$scoreLabel.shape.string`)).toBe('letter score');
     const queue1 = rt.eval(`qbfGame.tournamentLetterQueue.join('')`) as string;
     expect(queue1.length).toBeGreaterThan(10);
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(true);
     expect(rt.eval(`Lively.$qbfEpochEndTimer != null`)).toBe(true);
-    expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/^open/);
-    // After starting, idle help is hidden; re-idle social board shows the join message.
+    expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
+    // Only the current speed is shown while playing.
+    expect(rt.eval(`qbfGame.quickButton.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.notSoQuickButton.getBounds().width()`)).toBe(0);
+    // After starting, idle help is hidden; re-idle board shows the join message.
     rt.eval(`qbfGame.setup({ idle: true })`);
-    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('A game has been started');
+    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('A game is open');
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
+    expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/^open/);
+    expect(rt.eval(`qbfGame.quickButton.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBe(0);
     rt.eval(`qbfGame.launchLevel('quick')`);
+    expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
 
     // A second signup in the same epoch joins the same number and letters.
     rt.eval(`
-qbfJoin2 = qbfJoinOrStartTournamentGame();
+qbfJoin2 = qbfJoinOrStartTournamentGame('quick');
 true`);
     expect(rt.eval(`qbfJoin2.gameNumber`)).toBe(100);
     expect(rt.eval(`qbfJoin2.started`)).toBe(false);
     expect(rt.eval(`qbfJoin2.queue.join('')`)).toBe(queue1);
+    // Wrong speed is rejected while the window is open.
+    expect(rt.eval(`qbfJoinOrStartTournamentGame('super quick').rejected`)).toBe(true);
 
-    // After the minute: epoch clears, Game # stays (bump happens on next start).
+    // After 30s: epoch clears, Game # stays (bump happens on next start).
     rt.eval(`
-Lively.qbfEpochStartMs = Date.now() - 61000;
+Lively.qbfEpochStartMs = Date.now() - 31000;
 qbfGame.tickGameClock();
 true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
     expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
+    expect(rt.eval(`Lively.qbfEpochSpeed`)).toBe(null);
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
-    expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('ready');
+    // Epoch closed, but this panel is still mid-game → stay on "playing".
+    expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
 
     // Next signup bumps to 101; wrap 999 → 100.
@@ -577,34 +754,41 @@ true`);
 
     rt.eval(`
 Lively.qbfGameNumber = 999;
-Lively.qbfEpochStartMs = Date.now() - 61000;
+Lively.qbfEpochStartMs = Date.now() - 31000;
+Lively.qbfEpochSpeed = 'quick';
 qbfGame.tickGameClock();
 true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(999);
     expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
-    rt.eval(`qbfGame.launchLevel('quick')`);
-    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
-    rt.eval(`qbfClearEpochEndTimer()`);
-  }, 60_000);
-
-  it('solo start bumps Game # and soft-idles after game over without clearing the board', () => {
-    const { rt } = makeGame();
     rt.eval(`
-Lively.qbfGameNumber = null;
-Lively.qbfEpochStartMs = null;
-qbfClearEpochEndTimer();
-qbfGame.setPlayMode('solo');
-qbfGame.setup({ idle: true });
+qbfGenBeforeWrap = Lively.qbfShuffleGen;
 qbfGame.launchLevel('quick');
 true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
-    expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
-    expect(rt.eval(`Lively.qbfEpochStartMs`)).toBe(null);
+    expect(rt.eval(`Lively.qbfShuffleGen`)).toBe(rt.eval(`qbfGenBeforeWrap + 1`));
+    // Wrapped Game #100 must not reuse the first visit's letter queue.
+    expect(rt.eval(`qbfGame.tournamentLetterQueue.join('')`)).not.toBe(queue1);
+    rt.eval(`qbfClearEpochEndTimer()`);
+  }, 60_000);
+
+  it('soft-idles after game over without clearing the board', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfGameNumber = 100;
+Lively.qbfEpochStartMs = null;
+Lively.qbfEpochSpeed = null;
+qbfClearEpochEndTimer();
+qbfGame.setup({ idle: true });
+qbfGame.launchLevel('quick');
+true`);
+    expect(rt.eval(`Lively.qbfGameNumber`)).toBe(101);
+    expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(101);
+    expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
     expect(rt.eval(`qbfGame.idle`)).toBe(false);
 
     rt.eval(`
-qbfGame.playerName = 'Soloist';
+qbfGame.playerName = 'Player';
 qbfGame.gameOver = true;
 qbfGame._finalScorePosted = false;
 qbfGame.fallingLetters = [];
@@ -612,27 +796,103 @@ qbfKeepLog = qbfGame.wordLog.shape.string;
 qbfGame.maybePostFinalScore();
 true`);
     expect(rt.eval(`qbfGame.idle`)).toBe(true);
-    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('Start a new game');
+    expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toMatch(/Start a new game|A game is open/);
     // Finished board left in place (log morph still present with prior text).
     expect(rt.eval(`qbfGame.wordLog.shape.string`)).toBe(rt.eval(`qbfKeepLog`));
-    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
+    expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #101');
   }, 60_000);
 
-  it('switching solo/social abandons the board with no score and resets to idle', () => {
+  it('advances shuffle generation so wrapped Game #s get fresh letter queues', () => {
     const { rt } = makeGame();
     rt.eval(`
-Lively.qbfHighScoreList = [];
-qbfGame.setPlayMode('solo');
-qbfGame.playerName = 'Switcher';
-qbfGame.totalScore = 99;
-qbfGame.gameOver = false;
-qbfGame._finalScorePosted = false;
-qbfGame.setPlayMode('social');
+qbfClearEpochEndTimer();
+Lively.qbfGameNumber = null;
+Lively.qbfShuffleGen = 0;
+qbfQ100a = qbfTileQueueForGame(100, 1).join('');
+qbfQ100b = qbfTileQueueForGame(100, 2).join('');
+qbfN1 = qbfBumpGameNumber();
+qbfG1 = Lively.qbfShuffleGen;
+qbfN2 = qbfBumpGameNumber();
 true`);
-    expect(rt.eval(`qbfGame.idle`)).toBe(true);
-    expect(rt.eval(`qbfGame.playMode`)).toBe('social');
-    expect(rt.eval(`(qbfGame.activeLetters || []).length`)).toBe(0);
-    expect(rt.eval(`(Lively.qbfHighScoreList || []).length`)).toBe(0);
+    expect(rt.eval(`qbfN1`)).toBe(100);
+    expect(rt.eval(`qbfG1`)).toBe(1);
+    expect(rt.eval(`qbfN2`)).toBe(101);
+    expect(rt.eval(`Lively.qbfShuffleGen`)).toBe(2);
+    expect(rt.eval(`qbfQ100a === qbfQ100b`)).toBe(false);
+  }, 60_000);
+
+  it('Otto tries 5 then 4, and uses the Otto player name', () => {
+    const { rt, game } = makeGame();
+    rt.change(() => {
+      while (game.activeLetters.length > 0) {
+        (game.activeLetters as any).pop().remove();
+      }
+      if ((game as any).letterInBin) {
+        (game as any).letterInBin.remove();
+        (game as any).letterInBin = null;
+      }
+    });
+    // Prefers 5 when available.
+    rt.eval(`
+qbfSetWordList(['able', 'ables']);
+qbfGame.activeLetters.slice().forEach((l) => l.remove());
+qbfGame.activeLetters = [];
+['A','B','L','E','S'].forEach((ch, i) => {
+  let L = new QBFLetterMorph(ch, qbfGame.letterValue(ch), qbfGame.letterExtent(), 24);
+  qbfGame.addMorph(L);
+  L.loc = 'rack';
+  L.setBounds(rect(130 + i * 45, 100, 45, 50));
+  qbfGame.activeLetters.push(L);
+});
+qbfOtto = qbfGame.findAutoPlayWord();
+true`);
+    expect(rt.eval(`qbfOtto.word`)).toBe('ABLES');
+
+    // Six available, but Otto still prefers 5.
+    rt.eval(`
+qbfSetWordList(['able', 'ables', 'ablest']);
+qbfGame.activeLetters.slice().forEach((l) => l.remove());
+qbfGame.activeLetters = [];
+['A','B','L','E','S','T'].forEach((ch, i) => {
+  let L = new QBFLetterMorph(ch, qbfGame.letterValue(ch), qbfGame.letterExtent(), 24);
+  qbfGame.addMorph(L);
+  L.loc = 'rack';
+  L.setBounds(rect(130 + i * 45, 100, 45, 50));
+  qbfGame.activeLetters.push(L);
+});
+qbfO5 = qbfGame.findAutoPlayWord();
+true`);
+    expect(rt.eval(`qbfO5.word`)).toBe('ABLES');
+
+    // No 5: fall back to 4. Ignore 3-letter words.
+    rt.eval(`
+qbfSetWordList(['max', 'able']);
+qbfGame.activeLetters.slice().forEach((l) => l.remove());
+qbfGame.activeLetters = [];
+['M','A','X','A','B','L','E'].forEach((ch, i) => {
+  let L = new QBFLetterMorph(ch, qbfGame.letterValue(ch), qbfGame.letterExtent(), 24);
+  qbfGame.addMorph(L);
+  L.loc = 'rack';
+  L.setBounds(rect(130 + i * 45, 100, 45, 50));
+  qbfGame.activeLetters.push(L);
+});
+qbfO4 = qbfGame.findAutoPlayWord();
+true`);
+    expect(rt.eval(`qbfO4.word`)).toBe('ABLE');
+
+    rt.eval(`
+qbfGame.playerName = 'Anonymous';
+qbfGame.toggleAutoPlay();
+qbfOnName = qbfGame.playerName;
+qbfOnBtn = qbfGame.autoPlayButton.shape.string;
+qbfNameBtn = qbfGame.nameButton.shape.string;
+qbfGame.toggleAutoPlay();
+qbfOffName = qbfGame.playerName;
+true`);
+    expect(rt.eval(`qbfOnName`)).toBe('Otto');
+    expect(rt.eval(`qbfOnBtn`)).toBe('Otto');
+    expect(rt.eval(`qbfNameBtn`)).toBe('Otto');
+    expect(rt.eval(`qbfOffName`)).toBe('Anonymous');
   }, 60_000);
 
   it('reinstalls the embedded word list when a game opens on a fresh replica', () => {
@@ -652,27 +912,22 @@ true`);
     expect(rt.eval(`qbfLookupWord('zzq')`)).toBe(true);
   }, 60_000);
 
-  it('scores viewer polls so scores that arrive by sync (no local notify) show up', () => {
+  it('scores viewer ticks once a second so posted results show up on their own', () => {
     const { rt } = makeGame();
-    // openQBFScores registered the 1s poll step with the world.
+    // openQBFScores registered the 1s tick with the world.
     expect(
       rt.eval(
-        `Lively.activeStepList().some((s) => s.stepMorph === qbfScores && s.methodName === 'pollRemoteScores')`,
+        `Lively.activeStepList().some((s) => s.stepMorph === qbfScores && s.methodName === 'tickScores')`,
       ),
     ).toBe(true);
-    // Seed the change counter, then mutate the store silently (as a synced remote
-    // write would): with the counter unchanged, the poll leaves the pane alone.
+    // Silent store write (as a synced remote write would): the next tick refreshes.
     rt.eval(`
-qbfScores.pollRemoteScores();
 qbfScoresStore().entries.push({
   player: 'Remoter', level: 'quick', bestGame: 321,
   bestWord: 'synced', bestWordScore: 32, time: Date.now(), gameNo: 555,
 });
-qbfScores.pollRemoteScores();
+qbfScores.tickScores();
 true`);
-    expect(rt.eval(`qbfScores.scoresText.shape.string`)).not.toContain('Remoter');
-    // Once the counter moves (a remote change arrived), the poll refreshes.
-    rt.eval(`qbfScores._externalChangesSeen = -1; qbfScores.pollRemoteScores(); true`);
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('Remoter');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('321');
   }, 60_000);
