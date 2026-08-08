@@ -63,28 +63,27 @@ function BarEndSchematic({
   unit: WeightUnit;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <div className="flex w-max items-center gap-0 py-1">
+    <div className="st-bar-scroll">
+      <div className="st-bar">
         {/* bar shaft (toward center of barbell) */}
-        <div className="h-2 w-10 shrink-0 rounded-l-full bg-gradient-to-l from-slate-400 to-slate-300" />
+        <div className="st-bar__shaft" />
 
         {/* plates, loaded largest-first toward center */}
-        <div className="flex shrink-0 items-center">
+        <div className="st-bar__plates">
           {plates.map((plate, i) => {
             const vis = PLATE_VISUAL[unit][plate] ?? DEFAULT_PLATE_VISUAL;
             return (
               <div
                 key={`${plate}-${i}`}
-                className="flex w-7 shrink-0 flex-col items-center justify-center rounded-[2px] border border-slate-600/25 shadow-sm"
+                className="st-plate"
                 style={{
                   height: vis.height,
                   backgroundColor: vis.color,
                 }}
               >
                 <span
-                  className={`text-[9px] font-bold leading-none ${
-                    vis.labelLight ? "text-white" : "text-slate-800"
-                  }`}
+                  className="st-plate__label"
+                  data-light={vis.labelLight || undefined}
                 >
                   {formatPlate(plate)}
                 </span>
@@ -94,7 +93,7 @@ function BarEndSchematic({
         </div>
 
         {/* collar clamp on the outer end */}
-        <div className="ml-0.5 flex h-6 w-2.5 shrink-0 items-center rounded-sm bg-slate-500 shadow-sm" />
+        <div className="st-bar__collar" />
       </div>
     </div>
   );
@@ -144,20 +143,17 @@ export function PlatesCalculator({
     targetWeight > 0 && targetWeight >= barWeight;
 
   return (
-    <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-slate-500">Bar</span>
-        <div className="flex gap-1">
+    <div className="st-plates">
+      <div className="st-plates__row">
+        <span className="st-plates__label">Bar</span>
+        <div className="st-plates__options">
           {BAR_OPTIONS[unit].map((option) => (
             <button
               key={option}
               type="button"
               onClick={() => setBarWeight(option)}
-              className={`rounded px-2 py-1 ${
-                barWeight === option
-                  ? "bg-emerald-600 text-white"
-                  : "border border-slate-200 bg-white text-slate-600"
-              }`}
+              className="st-plates__option"
+              data-active={barWeight === option || undefined}
             >
               {option}
             </button>
@@ -167,30 +163,30 @@ export function PlatesCalculator({
             inputMode="decimal"
             value={barWeight}
             onChange={(e) => setBarWeight(Number(e.target.value) || 0)}
-            className="w-14 rounded border border-slate-200 px-1.5 py-1 text-center outline-none focus:border-emerald-400"
+            className="st-plates__input"
           />
-          <span className="self-center text-slate-400">{unit}</span>
+          <span className="st-plates__unit">{unit}</span>
         </div>
       </div>
 
-      <div className="mt-2">
+      <div className="st-plates__result">
         {targetWeight <= 0 ? (
-          <span className="text-slate-400">Enter a weight to see plates.</span>
+          <span className="st-plates__hint">Enter a weight to see plates.</span>
         ) : targetWeight < barWeight ? (
-          <span className="text-amber-700">
+          <span className="st-plates__warn">
             Target is below the bar weight.
           </span>
         ) : showSchematic ? (
           <div>
-            <span className="font-medium text-slate-500">Per side</span>
+            <span className="st-plates__label">Per side</span>
             <BarEndSchematic plates={platesOnSide} unit={unit} />
             {breakdown.length === 0 ? (
-              <span className="text-slate-500">Empty bar.</span>
+              <span className="st-plates__hint">Empty bar.</span>
             ) : null}
           </div>
         ) : null}
         {remainder > 0.01 && targetWeight >= barWeight ? (
-          <div className="mt-1 text-amber-700">
+          <div className="st-plates__warn">
             Closest load: {Math.round(loadedWeight * 100) / 100} {unit} (
             {Math.round(remainder * 2 * 100) / 100} {unit} short)
           </div>

@@ -224,11 +224,8 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
   }) => (
     <button
       onClick={onToggle}
-      className={`p-0.5 rounded text-sm transition-colors ${
-        value
-          ? "bg-success/20 text-success hover:bg-success/30"
-          : "bg-base-200 text-base-content/40 hover:bg-base-300"
-      }`}
+      className="lp-toggle"
+      data-on={value || undefined}
       title={value ? trueLabel : falseLabel}
     >
       {value ? trueIcon : falseIcon}
@@ -243,7 +240,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
     const total = data.reduce((sum, item) => sum + item.totalWeight, 0);
     if (total === 0)
       return (
-        <div className="w-64 h-64 rounded-full border-2 border-base-300"></div>
+        <div className="lp-pie-empty"></div>
       );
 
     let cumulativePercentage = 0;
@@ -264,19 +261,19 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
           key={item.name}
           d={`M 128 128 L ${x1} ${y1} A 120 120 0 ${largeArcFlag} 1 ${x2} ${y2} Z`}
           fill={item.color}
-          className="stroke-base-100"
+          className="lp-pie__slice"
           strokeWidth="2"
         />
       );
     });
 
     return (
-      <svg width="256" height="256" className="mx-auto">
+      <svg width="256" height="256" className="lp-pie">
         <circle
           cx="128"
           cy="128"
           r="60"
-          className="fill-base-100 stroke-base-300"
+          className="lp-pie__hole"
           strokeWidth="2"
         />
         {slices}
@@ -285,51 +282,51 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-base-100">
-      <div className="max-w-7xl mx-auto p-6">
+    <div className="lighterpack">
+      <div className="lp-sheet">
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-4">
+        <div className="lp-overview">
           {/* Pie Chart */}
-          <div className="flex justify-center">
+          <div className="lp-overview__chart">
             <PieChart data={categoryWeights} />
           </div>
 
           {/* Weight Summary */}
-          <div className="space-y-2">
-            <div className="space-y-1">
+          <div className="lp-overview__totals">
+            <div className="lp-legend">
               {categoryWeights.map((category) => (
                 <div
                   key={category.name}
-                  className="flex justify-between items-center"
+                  className="lp-legend__row"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="lp-legend__label">
                     <div
-                      className="w-4 h-4 rounded-sm"
+                      className="lp-legend__swatch"
                       style={{ backgroundColor: category.color }}
                     />
-                    <span className="text-sm text-base-content">{category.name}</span>
+                    <span>{category.name}</span>
                   </div>
-                  <div className="text-sm font-medium text-base-content">
+                  <div className="lp-legend__value">
                     {formatWeightLb(category.totalWeight)}
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="border-t border-base-300 pt-2 space-y-1">
-              <div className="flex justify-between font-bold text-base-content">
+            <div className="lp-totals">
+              <div className="lp-totals__row lp-totals__row--grand">
                 <span>Total</span>
                 <span>{formatWeightLb(totalWeight)}</span>
               </div>
-              <div className="flex justify-between text-base-content">
+              <div className="lp-totals__row">
                 <span>Consumable</span>
                 <span>{formatWeightLb(consumableWeight)}</span>
               </div>
-              <div className="flex justify-between text-base-content">
+              <div className="lp-totals__row">
                 <span>Worn</span>
                 <span>{formatWeightLb(wornWeight)}</span>
               </div>
-              <div className="flex justify-between font-semibold text-base-content">
+              <div className="lp-totals__row lp-totals__row--strong">
                 <span>Base Weight</span>
                 <span>{formatWeightLb(baseWeight)}</span>
               </div>
@@ -338,8 +335,8 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
         </div>
 
         {/* Category Management & Import */}
-        <div className="mb-3 flex gap-4 items-center flex-wrap">
-          <div className="flex gap-2 items-center">
+        <div className="lp-toolbar">
+          <div className="lp-toolbar__group">
             <Input
               placeholder="New category name..."
               value={newCategoryName}
@@ -349,12 +346,12 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                   addCategory();
                 }
               }}
-              className="w-48 text-sm h-8"
+              className="lp-input lp-input--category"
             />
             <Button
               onClick={addCategory}
               disabled={!newCategoryName.trim()}
-              className="btn btn-primary text-sm h-8 px-3"
+              className="lp-button lp-button--primary"
             >
               + Add Category
             </Button>
@@ -363,7 +360,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
           <Button
             onClick={triggerCSVImport}
             variant="outline"
-            className="btn btn-outline btn-success text-sm h-8"
+            className="lp-button lp-button--accent"
           >
             📁 Import CSV
           </Button>
@@ -378,7 +375,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
         </div>
 
         {/* Items by Category */}
-        <div className="space-y-3">
+        <div className="lp-categories">
           {Object.entries(groupedItems).map(([category, items]) => {
             const categoryWeight = items.reduce(
               (sum, item) => sum + item.weight * item.quantity,
@@ -386,39 +383,39 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
             );
             return (
               <div key={category}>
-                <h3 className="text-base font-semibold mb-1 text-base-content sticky top-0 bg-base-100 py-1 border-b border-base-300 flex justify-between items-center">
+                <h3 className="lp-category__head">
                   <span>{category}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-base-content/60">
+                  <div className="lp-category__meta">
+                    <span className="lp-category__weight">
                       {formatWeightLb(categoryWeight)}
                     </span>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => deleteCategory(category)}
-                      className="text-error hover:text-error/80 hover:bg-error/10 p-1 h-6 w-6 text-xs"
+                      className="lp-icon-button lp-icon-button--danger"
                       title={`Delete ${category} category`}
                     >
                       🗑️
                     </Button>
                   </div>
                 </h3>
-                <div className="space-y-0">
+                <div className="lp-rows">
                   {/* Header Row */}
-                  <div className="grid grid-cols-[2fr_2fr_60px_80px_60px_60px_60px_40px] gap-2 items-center py-1 text-xs font-medium text-base-content/60 border-b border-base-300 bg-base-200 sticky top-12">
+                  <div className="lp-row lp-row--head">
                     <div>Item</div>
                     <div>Description</div>
-                    <div className="text-center">Qty</div>
-                    <div className="text-center">Weight</div>
-                    <div className="text-center">-</div>
-                    <div className="text-center">👔</div>
-                    <div className="text-center">🍎</div>
-                    <div className="text-center"></div>
+                    <div className="lp-cell lp-cell--center">Qty</div>
+                    <div className="lp-cell lp-cell--center">Weight</div>
+                    <div className="lp-cell lp-cell--center">-</div>
+                    <div className="lp-cell lp-cell--center">👔</div>
+                    <div className="lp-cell lp-cell--center">🍎</div>
+                    <div className="lp-cell lp-cell--center"></div>
                   </div>
                   {items.map((item) => (
                     <div
                       key={item.id}
-                      className="grid grid-cols-[2fr_2fr_60px_80px_60px_60px_60px_40px] gap-2 items-center py-0.5 border-b border-base-200"
+                      className="lp-row"
                     >
                       <div>
                         {editingItem?.id === item.id &&
@@ -435,11 +432,11 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                               }
                             }}
                             autoFocus
-                            className="w-full text-xs h-6 px-1"
+                            className="lp-input"
                           />
                         ) : (
                           <span
-                            className="cursor-pointer hover:bg-base-200 p-1 rounded text-base-content"
+                            className="lp-editable"
                             onClick={() =>
                               setEditingItem({ id: item.id, field: "name" })
                             }
@@ -449,7 +446,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-base-content/60 truncate">
+                      <div className="lp-cell lp-cell--description">
                         {editingItem?.id === item.id &&
                         editingItem?.field === "description" ? (
                           <Input
@@ -466,11 +463,11 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                               }
                             }}
                             autoFocus
-                            className="w-full text-xs h-6 px-1"
+                            className="lp-input"
                           />
                         ) : (
                           <span
-                            className="cursor-pointer hover:bg-base-200 p-1 rounded block"
+                            className="lp-editable lp-editable--block"
                             onClick={() =>
                               setEditingItem({
                                 id: item.id,
@@ -483,7 +480,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                           </span>
                         )}
                       </div>
-                      <div className="text-center">
+                      <div className="lp-cell lp-cell--center">
                         <Input
                           type="number"
                           value={item.quantity}
@@ -492,11 +489,11 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                               quantity: parseInt(e.target.value) || 1,
                             })
                           }
-                          className="w-full text-center text-xs h-6 px-1"
+                          className="lp-input lp-input--center"
                         />
                       </div>
-                      <div className="text-center">
-                        <div className="flex items-center justify-center">
+                      <div className="lp-cell lp-cell--center">
+                        <div className="lp-unit">
                           <Input
                             type="number"
                             step="0.1"
@@ -515,7 +512,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                                 ),
                               });
                             }}
-                            className="w-12 text-center text-xs h-6 px-1 rounded-r-none border-r-0"
+                            className="lp-input lp-input--weight"
                           />
                           <button
                             onClick={() => {
@@ -525,17 +522,17 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                                 units[(currentIndex + 1) % units.length];
                               updateItem(item.id, { unit: nextUnit });
                             }}
-                            className="h-6 px-1 text-xs bg-base-200 hover:bg-base-300 border border-l-0 rounded-l-none text-base-content min-w-[24px]"
+                            className="lp-unit__button"
                             title="Click to change unit"
                           >
                             {item.unit === "gram" ? "g" : item.unit}
                           </button>
                         </div>
                       </div>
-                      <div className="text-center text-xs text-transparent">
+                      <div className="lp-cell lp-cell--spacer">
                         -
                       </div>
-                      <div className="text-center">
+                      <div className="lp-cell lp-cell--center">
                         <CyclingToggle
                           value={item.worn}
                           onToggle={() =>
@@ -547,7 +544,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                           falseLabel="Not worn"
                         />
                       </div>
-                      <div className="text-center">
+                      <div className="lp-cell lp-cell--center">
                         <CyclingToggle
                           value={item.consumable}
                           onToggle={() =>
@@ -561,12 +558,12 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                           falseLabel="Not consumable"
                         />
                       </div>
-                      <div className="text-center">
+                      <div className="lp-cell lp-cell--center">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => deleteItem(item.id)}
-                          className="text-error hover:text-error/80 p-0 w-6 h-6 text-sm"
+                          className="lp-icon-button lp-icon-button--danger"
                         >
                           ×
                         </Button>
@@ -575,7 +572,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                   ))}
 
                   {/* Add New Item Row */}
-                  <div className="grid grid-cols-[2fr_2fr_60px_80px_60px_60px_60px_40px] gap-2 items-center py-0.5 border-t border-base-300 bg-success/10">
+                  <div className="lp-row lp-row--new">
                     <div>
                       <Input
                         placeholder="New item name..."
@@ -588,7 +585,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                             addItem(category);
                           }
                         }}
-                        className="w-full text-xs h-6 px-1 bg-base-100"
+                        className="lp-input"
                       />
                     </div>
                     <div>
@@ -605,10 +602,10 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                             addItem(category);
                           }
                         }}
-                        className="w-full text-xs h-6 px-1 bg-base-100"
+                        className="lp-input"
                       />
                     </div>
-                    <div className="text-center">
+                    <div className="lp-cell lp-cell--center">
                       <Input
                         type="number"
                         placeholder="1"
@@ -623,11 +620,11 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                             addItem(category);
                           }
                         }}
-                        className="w-full text-center text-xs h-6 px-1 bg-base-100"
+                        className="lp-input lp-input--center"
                       />
                     </div>
-                    <div className="text-center">
-                      <div className="flex items-center justify-center">
+                    <div className="lp-cell lp-cell--center">
+                      <div className="lp-unit">
                         <Input
                           type="number"
                           step="0.1"
@@ -643,7 +640,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                               addItem(category);
                             }
                           }}
-                          className="w-12 text-center text-xs h-6 px-1 bg-base-100 rounded-r-none border-r-0"
+                          className="lp-input lp-input--weight"
                         />
                         <button
                           onClick={() => {
@@ -655,7 +652,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                               units[(currentIndex + 1) % units.length];
                             updateNewItem(category, { unit: nextUnit });
                           }}
-                          className="h-6 px-1 text-xs bg-base-200 hover:bg-base-300 border border-l-0 rounded-l-none text-base-content min-w-[24px]"
+                          className="lp-unit__button"
                           title="Click to change unit"
                         >
                           {(newItems[category]?.unit || "gram") === "gram"
@@ -664,10 +661,10 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                         </button>
                       </div>
                     </div>
-                    <div className="text-center text-xs text-transparent">
+                    <div className="lp-cell lp-cell--spacer">
                       -
                     </div>
-                    <div className="text-center">
+                    <div className="lp-cell lp-cell--center">
                       <CyclingToggle
                         value={newItems[category]?.worn || false}
                         onToggle={() =>
@@ -681,7 +678,7 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                         falseLabel="Not worn"
                       />
                     </div>
-                    <div className="text-center">
+                    <div className="lp-cell lp-cell--center">
                       <CyclingToggle
                         value={newItems[category]?.consumable || false}
                         onToggle={() =>
@@ -697,12 +694,12 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                         falseLabel="Not consumable"
                       />
                     </div>
-                    <div className="text-center">
+                    <div className="lp-cell lp-cell--center">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => addItem(category)}
-                        className="text-success hover:text-success/80 p-0 w-6 h-6 text-sm"
+                        className="lp-icon-button lp-icon-button--accent"
                         disabled={!newItems[category]?.name}
                       >
                         +
@@ -710,13 +707,13 @@ function LighterpackView({ docUrl }: { docUrl: AutomergeUrl }) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-[2fr_2fr_60px_80px_60px_60px_60px_40px] gap-2 items-center py-1 text-xs font-medium border-t border-base-300 text-base-content">
+                  <div className="lp-row lp-row--total">
                     <div></div>
                     <div></div>
-                    <div className="text-center">
+                    <div className="lp-cell lp-cell--center">
                       {items.reduce((sum, item) => sum + item.quantity, 0)}
                     </div>
-                    <div className="text-center">
+                    <div className="lp-cell lp-cell--center">
                       {formatWeightLb(
                         items.reduce(
                           (sum, item) => sum + item.weight * item.quantity,

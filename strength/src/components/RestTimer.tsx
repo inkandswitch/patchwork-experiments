@@ -77,20 +77,20 @@ export function RestTimer({
 
   if (ready) {
     return (
-      <div className="strength-rest-ready rounded-lg border-2 border-emerald-400 bg-emerald-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="strength-rest-ready st-rest st-rest--ready">
+        <div className="st-rest__row">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            <div className="st-rest__eyebrow">
               Rest complete
             </div>
-            <div className="text-2xl font-bold text-emerald-900">
+            <div className="st-rest__clock">
               Time to work
             </div>
           </div>
           <button
             type="button"
             onClick={onGo}
-            className="strength-rest-go rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+            className="strength-rest-go st-rest__go"
           >
             Go
           </button>
@@ -100,25 +100,22 @@ export function RestTimer({
   }
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="st-rest">
+      <div className="st-rest__row">
         <div>
-          <div className="text-xs font-medium text-amber-800">Rest</div>
-          <div className="text-2xl font-bold tabular-nums text-amber-900">
+          <div className="st-rest__eyebrow">Rest</div>
+          <div className="st-rest__clock st-rest__clock--num">
             {formatDuration(remaining)}
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="st-rest__buttons">
           {PRESETS.map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => applyPreset(preset)}
-              className={`rounded-md border px-2 py-1 text-xs ${
-                seconds === preset
-                  ? "border-amber-500 bg-amber-100 font-medium text-amber-900"
-                  : "border-amber-300 text-amber-800 hover:bg-amber-100"
-              }`}
+              className="st-rest__button"
+              data-active={seconds === preset || undefined}
             >
               {formatPreset(preset)}
             </button>
@@ -126,29 +123,29 @@ export function RestTimer({
           <button
             type="button"
             onClick={() => restartWith(Math.max(0, remaining - 15))}
-            className="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100"
+            className="st-rest__button"
           >
             −15s
           </button>
           <button
             type="button"
             onClick={() => restartWith(remaining + 15)}
-            className="rounded-md border border-amber-300 px-2 py-1 text-xs text-amber-800 hover:bg-amber-100"
+            className="st-rest__button"
           >
             +15s
           </button>
           <button
             type="button"
             onClick={onSkip}
-            className="rounded-md border border-amber-300 px-3 py-1 text-xs text-amber-800 hover:bg-amber-100"
+            className="st-rest__button"
           >
             Skip
           </button>
         </div>
       </div>
-      <div className="strength-rest-track mt-3 h-2 overflow-hidden rounded-full bg-amber-200">
+      <div className="strength-rest-track st-rest__track">
         <div
-          className="strength-rest-fill h-full rounded-full bg-amber-500"
+          className="strength-rest-fill st-rest__fill"
           style={{ width: `${progress}%` }}
         />
       </div>

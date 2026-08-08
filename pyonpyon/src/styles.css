@@ -1,9 +1,183 @@
-@import 'tailwindcss';
-@plugin 'daisyui';
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --pyon-fill: var(--editor-fill, white);
+    --pyon-fg: var(--editor-line, black);
+    --pyon-chrome: var(--editor-fill-offset-10, #f4f4f5);
+    --pyon-border: var(--editor-fill-offset-20, #d4d4d8);
+    --pyon-busy: var(--editor-fill-offset-20, #d4d4d8);
+    --pyon-grab: var(--editor-line-offset-50, #a1a1aa);
+    --pyon-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 8%);
+    --pyon-success: var(--studio-added, #16a34a);
+    --pyon-success-ink: var(--studio-added-line, white);
+    --pyon-shadow: 0 -4px 24px color-mix(in oklch, var(--editor-line), transparent 92%);
+    --pyon-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+.pyonpyon {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pyon-fill);
+  color: var(--pyon-fg);
+  font-family: var(--pyon-family);
+}
 
 .pyonpyon-canvas {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.pyonpyon .canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.pyonpyon .toast-slot {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.pyonpyon .toast {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--pyon-success-ink);
+  background: var(--pyon-success);
+  border-radius: var(--studio-radius-md, 6px);
+  box-shadow: var(--studio-shadow-sm, 0 1px 2px color-mix(in oklch, black, transparent 92%));
+  opacity: 0;
+  transition: opacity var(--studio-transition-slow, 0.2s ease);
+}
+
+.pyonpyon .toast[data-visible] {
+  opacity: 1;
+}
+
+.pyonpyon .drawer-launcher {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--studio-space-xs, 0.5rem);
+  padding-bottom: var(--studio-space-xs, 0.5rem);
+  pointer-events: none;
+}
+
+.pyonpyon .drawer-launcher > * {
+  pointer-events: auto;
+}
+
+.pyonpyon .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.75rem;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--pyon-fg);
+  background: var(--pyon-fill);
+  border: 1px solid var(--pyon-border);
+  border-radius: var(--studio-radius-md, 8px);
+  box-shadow: var(--studio-shadow-sm, 0 1px 2px color-mix(in oklch, black, transparent 92%));
+  cursor: pointer;
+}
+
+.pyonpyon .button[data-busy] {
+  background: var(--pyon-busy);
+  cursor: progress;
+}
+
+.pyonpyon .button--ghost {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.pyonpyon .button--ghost:hover:not([data-busy]) {
+  background: var(--pyon-hover);
+}
+
+.pyonpyon .glyph {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.pyonpyon .glyph--sm {
+  font-size: 0.875rem;
+}
+
+.pyonpyon .drawer {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--pyon-chrome);
+  border-top: 1px solid var(--pyon-border);
+  box-shadow: var(--pyon-shadow);
+}
+
+.pyonpyon .drawer-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pyonpyon .drawer-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  height: 2.25rem;
+  padding-right: 0.25rem;
+  background: var(--pyon-chrome);
+  border-bottom: 1px solid var(--pyon-border);
+}
+
+.pyonpyon .drawer-grab {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding-block: var(--studio-space-xs, 0.5rem);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.pyonpyon .drawer-grab__pill {
+  width: 3rem;
+  height: 0.25rem;
+  background: var(--pyon-grab);
+  border-radius: var(--studio-radius-round, 9999px);
+}
+
+.pyonpyon .drawer-editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 0.25rem 0.25rem;
 }

@@ -15,10 +15,10 @@ import { makeTool } from "./make-tool";
  */
 function SetView({ docUrl }: { docUrl: AutomergeUrl }) {
   return (
-    <div className="strength p-1">
+    <div className="strength st-set-tool">
       <Suspense
         fallback={
-          <p className="text-center text-xs text-slate-400">Loading…</p>
+          <p className="st-loading">Loading…</p>
         }
       >
         <SingleSet setUrl={docUrl} />

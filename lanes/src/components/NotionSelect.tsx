@@ -123,23 +123,23 @@ export const NotionSelect: React.FC<NotionSelectProps> = ({
   }, [open]);
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
+    <div ref={containerRef} className={cn("notion-select", className)}>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between rounded-md border border-base-300 bg-base-100 px-3 py-2 text-sm text-base-content focus:outline-none focus:ring-2 focus:ring-primary"
+        className="notion-select__trigger"
       >
-        <span className="truncate">{displayValue}</span>
-        <Icon type="ChevronsUpDown" className="h-4 w-4 opacity-50" />
+        <span className="notion-select__value">{displayValue}</span>
+        <Icon type="ChevronsUpDown" className="icon--dim" />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-base-300 bg-base-100 text-base-content shadow-md outline-none">
+        <div className="notion-select__panel">
           <Command
             ref={commandRef}
-            className="overflow-hidden rounded-t-none border border-base-300 bg-transparent"
+            className="notion-select__command"
           >
-            <div className="flex items-center border-b border-base-300 px-3">
+            <div className="notion-select__searchrow">
               <Command.Input
                 placeholder="Search or create..."
                 value={searchValue}
@@ -150,18 +150,18 @@ export const NotionSelect: React.FC<NotionSelectProps> = ({
                     handleCreate();
                   }
                 }}
-                className="flex h-11 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-base-content/50"
+                className="notion-select__search"
               />
             </div>
-            <Command.List className="max-h-[300px] overflow-y-auto overflow-x-hidden">
+            <Command.List className="notion-select__list">
               {!multiple && (
                 <Command.Item
                   key="__none__"
                   value=""
                   onSelect={() => onChange("")}
-                  className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-base-200"
+                  className="notion-select__item"
                 >
-                  <Icon type="X" className="mr-2 h-4 w-4" />
+                  <Icon type="X" className="icon--lead" />
                   None
                 </Command.Item>
               )}
@@ -170,15 +170,13 @@ export const NotionSelect: React.FC<NotionSelectProps> = ({
                   key={option}
                   value={option}
                   onSelect={() => handleSelect(option)}
-                  className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-base-200"
+                  className="notion-select__item"
                 >
                   <Icon
                     type="Check"
                     className={cn(
-                      "mr-2 h-4 w-4",
-                      selectedValues.includes(option)
-                        ? "opacity-100"
-                        : "opacity-0",
+                      "icon--lead",
+                      !selectedValues.includes(option) && "icon--hidden",
                     )}
                   />
                   {option}
@@ -188,9 +186,9 @@ export const NotionSelect: React.FC<NotionSelectProps> = ({
                 <Command.Item
                   value={searchValue.trim()}
                   onSelect={handleCreate}
-                  className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-base-200"
+                  className="notion-select__item"
                 >
-                  <Icon type="Plus" className="mr-2 h-4 w-4" />
+                  <Icon type="Plus" className="icon--lead" />
                   Create "{searchValue.trim()}"
                 </Command.Item>
               )}

@@ -1,2 +1,20 @@
-@import "tailwindcss";
-@plugin "daisyui";
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --workspace-muted: var(--editor-line-offset-40, #6b7280);
+  }
+}
+
+.workspace-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 1rem;
+}
+
+.workspace-placeholder p {
+  margin: 0;
+  color: var(--workspace-muted);
+}

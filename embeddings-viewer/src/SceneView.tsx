@@ -89,10 +89,10 @@ function PointSphere({ point, color, isHovered, onHover }: PointSphereProps) {
       />
       {isHovered && (
         <Html distanceFactor={10} style={{ pointerEvents: 'none' }}>
-          <div className="bg-base-300 text-base-content text-xs rounded px-2 py-1 shadow-lg whitespace-nowrap">
-            <div className="font-semibold">{point.leaf.doc.name}</div>
+          <div className="eview-tip">
+            <div className="eview-tip__name">{point.leaf.doc.name}</div>
             {point.leaf.path.length > 0 && (
-              <div className="text-base-content/60">
+              <div className="eview-tip__path">
                 {point.leaf.path.join('/')}
               </div>
             )}
@@ -157,13 +157,13 @@ export function SceneView({ points, onBack }: SceneViewProps) {
   const [hoveredUrl, setHoveredUrl] = useState<AutomergeUrl | null>(null);
 
   return (
-    <div className="h-full w-full relative">
+    <div className="eview">
       {/* Top-left controls overlay */}
-      <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-        <button className="btn btn-sm btn-ghost bg-base-100/80 backdrop-blur" onClick={onBack}>
+      <div className="eview__controls">
+        <button className="eview__button" onClick={onBack}>
           Back to table
         </button>
-        <span className="badge badge-ghost bg-base-100/80 backdrop-blur">{points.length} points</span>
+        <span className="eview__badge">{points.length} points</span>
       </div>
 
       {/* 3D Canvas — fills entire area */}

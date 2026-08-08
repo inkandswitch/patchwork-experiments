@@ -70,7 +70,7 @@ function ClipNameEditor({
     <input
       ref={inputRef}
       type="text"
-      className="absolute z-10 border-0 bg-base-100/90 p-0 font-sans text-[11px] text-base-content outline-none ring-1 ring-primary"
+      className="timeline-label-editor"
       style={{
         left: clip.x + 10,
         top: clip.y,
@@ -941,12 +941,12 @@ export function Timeline({
     <div
       ref={rootRef}
       tabIndex={-1}
-      className="sequence-timeline relative min-h-[180px] flex-1 overflow-hidden outline-none"
+      className="sequence-timeline"
       onKeyDown={onTimelineKeyDown}
     >
       <canvas
         ref={canvasRef}
-        className="block h-full w-full touch-none"
+        className="sequence-timeline__canvas"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

@@ -61,31 +61,31 @@ function PackingChecklistView({ docUrl }: { docUrl: AutomergeUrl }) {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto p-6 bg-white">
+    <div className="lp-checklist">
+      <div className="lp-checklist__sheet">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <div className="lp-checklist__header">
+          <h1>
             Packing Checklist
           </h1>
-          <div className="flex items-center justify-between">
-            <div className="text-lg">
-              <span className="font-semibold text-green-600">
+          <div className="lp-checklist__summary">
+            <div className="lp-checklist__count">
+              <span className="lp-checklist__packed">
                 {packedCount}
               </span>
-              <span className="text-gray-600"> of </span>
-              <span className="font-semibold">{totalItems}</span>
-              <span className="text-gray-600">
+              <span className="lp-muted"> of </span>
+              <span className="lp-strong">{totalItems}</span>
+              <span className="lp-muted">
                 {" "}
                 items packed ({progressPercent}%)
               </span>
             </div>
-            <div className="flex gap-2">
+            <div className="lp-checklist__actions">
               <Button
                 onClick={clearAll}
                 variant="outline"
                 size="sm"
-                className="text-sm"
+                className="lp-button"
               >
                 Clear All
               </Button>
@@ -93,7 +93,7 @@ function PackingChecklistView({ docUrl }: { docUrl: AutomergeUrl }) {
                 onClick={checkAll}
                 variant="outline"
                 size="sm"
-                className="text-sm"
+                className="lp-button"
               >
                 Check All
               </Button>
@@ -101,16 +101,16 @@ function PackingChecklistView({ docUrl }: { docUrl: AutomergeUrl }) {
           </div>
 
           {/* Progress bar */}
-          <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
+          <div className="lp-progress">
             <div
-              className="bg-green-600 h-2 rounded-full transition-all duration-300"
+              className="lp-progress__bar"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
         </div>
 
         {/* Items by Category */}
-        <div className="space-y-6">
+        <div className="lp-checklist__groups">
           {Object.entries(groupedItems).map(([category, categoryItems]) => {
             if (categoryItems.length === 0) return null;
 
@@ -124,74 +124,53 @@ function PackingChecklistView({ docUrl }: { docUrl: AutomergeUrl }) {
             );
 
             return (
-              <div key={category} className="border rounded-lg p-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900">
+              <div key={category} className="lp-group">
+                <div className="lp-group__head">
+                  <h3>
                     {category}
                   </h3>
-                  <div className="text-sm text-gray-600">
-                    <span className="font-medium">
+                  <div className="lp-group__meta">
+                    <span className="lp-strong">
                       {categoryPacked}/{categoryTotal}
                     </span>
-                    <span className="ml-2">
+                    <span className="lp-gap">
                       ({formatWeightLb(categoryWeight)})
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="lp-group__items">
                   {categoryItems.map((item) => (
                     <label
                       key={item.id}
-                      className={`flex items-center p-2 rounded cursor-pointer transition-colors ${
-                        packedItems.has(item.id)
-                          ? "bg-green-50 text-green-900"
-                          : "hover:bg-gray-50"
-                      }`}
+                      className="lp-item"
+                      data-packed={packedItems.has(item.id) || undefined}
                     >
                       <input
                         type="checkbox"
                         checked={packedItems.has(item.id)}
                         onChange={() => togglePacked(item.id)}
-                        className="mr-3 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                        className="lp-item__check"
                       />
-                      <div className="flex-1 min-w-0">
-                        <div
-                          className={`font-medium ${
-                            packedItems.has(item.id)
-                              ? "line-through text-green-700"
-                              : "text-gray-900"
-                          }`}
-                        >
+                      <div className="lp-item__body">
+                        <div className="lp-item__name">
                           {item.name}
                           {item.quantity > 1 && (
-                            <span className="text-sm text-gray-500 ml-1">
+                            <span className="lp-item__qty">
                               (×{item.quantity})
                             </span>
                           )}
                         </div>
                         {item.description && (
-                          <div
-                            className={`text-sm ${
-                              packedItems.has(item.id)
-                                ? "text-green-600"
-                                : "text-gray-600"
-                            }`}
-                          >
+                          <div className="lp-item__description">
                             {item.description}
                           </div>
                         )}
                       </div>
-                      <div
-                        className={`text-sm font-medium ${
-                          packedItems.has(item.id)
-                            ? "text-green-700"
-                            : "text-gray-500"
-                        }`}
-                      >
+                      <div className="lp-item__weight">
                         {formatWeightLb(item.weight * item.quantity)}
-                        {item.worn && <span className="ml-1">👔</span>}
-                        {item.consumable && <span className="ml-1">🍎</span>}
+                        {item.worn && <span className="lp-gap-sm">👔</span>}
+                        {item.consumable && <span className="lp-gap-sm">🍎</span>}
                       </div>
                     </label>
                   ))}
@@ -202,9 +181,9 @@ function PackingChecklistView({ docUrl }: { docUrl: AutomergeUrl }) {
         </div>
 
         {totalItems === 0 && (
-          <div className="text-center py-12 text-gray-500">
-            <p className="text-lg">No items to pack yet.</p>
-            <p className="text-sm mt-1">Add items to your gear list first.</p>
+          <div className="lp-empty">
+            <p className="lp-empty__title">No items to pack yet.</p>
+            <p className="lp-empty__hint">Add items to your gear list first.</p>
           </div>
         )}
       </div>

@@ -619,13 +619,13 @@ export function MapView({
     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: '#1a1a2e', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#191e24', borderBottom: '1px solid #2a323c', flexShrink: 0, zIndex: 10, flexWrap: 'wrap' }}>
-        <button className="btn btn-sm btn-ghost" onClick={onBack}>&larr; Back</button>
+        <button className="emap-map__button emap-map__button--ghost" onClick={onBack}>&larr; Back</button>
         <Separator />
         <span style={{ fontSize: 13, opacity: 0.6 }}>{points.length} pts &middot; {nonNoiseClusters.length} clusters</span>
         <Separator />
-        <button className="btn btn-xs btn-outline" onClick={handleFit}>Fit</button>
-        <button className={`btn btn-xs ${showLabels ? 'btn-primary' : 'btn-outline'}`} onClick={() => setShowLabels((v) => !v)}>Labels</button>
-        <button className={`btn btn-xs ${showDensity ? 'btn-primary' : 'btn-outline'}`} onClick={() => setShowDensity((v) => !v)}>Density</button>
+        <button className="emap-map__button" onClick={handleFit}>Fit</button>
+        <button className="emap-map__button" data-active={showLabels || undefined} onClick={() => setShowLabels((v) => !v)}>Labels</button>
+        <button className="emap-map__button" data-active={showDensity || undefined} onClick={() => setShowDensity((v) => !v)}>Density</button>
         <Separator />
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
           <input
@@ -639,7 +639,7 @@ export function MapView({
           />
           {searchLoading && (
             <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}>
-              <span className="loading loading-spinner" style={{ width: 12, height: 12 }} />
+              <span className="emap-map__spinner" />
             </span>
           )}
           {/* Inline dropdown results */}

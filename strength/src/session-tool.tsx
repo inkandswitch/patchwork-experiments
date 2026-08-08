@@ -227,9 +227,9 @@ function WorkoutSessionEditor({
     activeExerciseId !== firstIncomplete.exerciseId;
 
   return (
-    <div className="strength flex h-full flex-col bg-slate-50">
+    <div className="strength st-shell">
       {restTimer && executing ? (
-        <div className="shrink-0 border-b border-slate-200 px-4 py-3">
+        <div className="st-header">
           <RestTimer
             seconds={restTimer.seconds}
             onReady={() =>
@@ -250,17 +250,17 @@ function WorkoutSessionEditor({
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">
+      <div className="st-main st-main--tight">
         {showCurrentBanner ? (
-          <div className="mb-4">
+          <div className="st-mb">
             <Suspense fallback={null}>
               <CurrentSetBanner sessionUrl={docUrl} label="Current set" />
             </Suspense>
           </div>
         ) : null}
 
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="flex flex-1 flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+        <div className="st-row st-row--wrap st-mb">
+          <div className="st-summary">
             <span>{formatDateTime(session.startedAt)}</span>
             {executing ? <span>{formatDuration(elapsed)}</span> : null}
             {session.status === "completed" ? (
@@ -271,18 +271,18 @@ function WorkoutSessionEditor({
             {session.templateUrl ? <span>From template</span> : null}
             <span>
               Volume:{" "}
-              <strong className="text-slate-700">
+              <strong className="st-strong">
                 {totalVolume} {sessionUnit}
               </strong>
             </span>
             <span>
               Sets:{" "}
-              <strong className="text-slate-700">
+              <strong className="st-strong">
                 {allSets.filter((s) => s.completed).length}/{allSets.length}
               </strong>
             </span>
             {executing ? (
-              <label className="inline-flex items-center gap-1">
+              <label className="st-inline">
                 Rest
                 <input
                   type="number"
@@ -292,7 +292,7 @@ function WorkoutSessionEditor({
                   onChange={(e) =>
                     updateDefaultRest(Math.max(0, Number(e.target.value) || 0))
                   }
-                  className="w-14 rounded border border-slate-200 px-1 py-0.5 text-xs"
+                  className="st-field st-field--tiny"
                 />
                 s
               </label>
@@ -302,20 +302,20 @@ function WorkoutSessionEditor({
             <button
               type="button"
               onClick={completeSession}
-              className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              className="st-button st-button--primary st-button--lg"
             >
               Finish workout
             </button>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800">
+            <div className="st-row">
+              <span className="st-pill">
                 Completed
               </span>
               <button
                 type="button"
                 onClick={saveAsTemplate}
                 disabled={savingTemplate}
-                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="st-button"
               >
                 {savingTemplate ? "Saving…" : "Save as template"}
               </button>
@@ -323,7 +323,7 @@ function WorkoutSessionEditor({
           )}
         </div>
 
-        <div className="space-y-4">
+        <div className="st-stack">
           {(session.exercises ?? []).map((exercise, exIndex) => {
             const expanded = activeExerciseId === exercise.id;
             const exUnit: WeightUnit = exercise.unit ?? sessionUnit;
@@ -344,9 +344,9 @@ function WorkoutSessionEditor({
             return (
               <div
                 key={exercise.id}
-                className="rounded-lg border border-slate-200 bg-white"
+                className="st-card st-card--flush"
               >
-                <div className="flex items-center justify-between gap-2 px-4 py-3">
+                <div className="st-item-head">
                   <button
                     type="button"
                     onClick={() =>
@@ -354,12 +354,12 @@ function WorkoutSessionEditor({
                         cur === exercise.id ? null : exercise.id,
                       )
                     }
-                    className="flex-1 text-left"
+                    className="st-flex-button"
                   >
-                    <span className="mr-2 text-xs text-slate-400">
+                    <span className="st-index">
                       {exIndex + 1}.
                     </span>
-                    <span className="font-medium text-slate-900">
+                    <span className="st-title">
                       {exercise.exerciseName}
                     </span>
                     <SupersetBadge
@@ -369,14 +369,14 @@ function WorkoutSessionEditor({
                           : undefined
                       }
                     />
-                    <span className="ml-2 text-xs text-slate-500">
+                    <span className="st-suffix">
                       {exerciseSets.filter((s) => s.completed).length}/
                       {exerciseSets.length} sets
                     </span>
                   </button>
-                  <div className="flex items-center gap-2">
+                  <div className="st-row">
                     {best1Rm > 0 ? (
-                      <span className="text-xs text-emerald-700">
+                      <span className="st-meta st-meta--accent">
                         ~{Math.round(best1Rm)} {exUnit} 1RM
                       </span>
                     ) : null}
@@ -394,7 +394,7 @@ function WorkoutSessionEditor({
                             "strength-exercise-logger",
                           )
                         }
-                        className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                        className="st-button st-button--sm"
                         title="Open just this exercise (focus mode)"
                       >
                         Focus
@@ -404,7 +404,7 @@ function WorkoutSessionEditor({
                 </div>
 
                 {expanded ? (
-                  <div className="border-t border-slate-100 px-2 py-3 sm:px-4">
+                  <div className="st-item-body st-item-body--flush">
                     {/* Each set row is a strength-set tool embed; toggles
                         reach us through the doc-watching effect above. */}
                     <ExerciseLogger
@@ -420,8 +420,8 @@ function WorkoutSessionEditor({
           })}
         </div>
 
-        <div className="mt-4 space-y-1">
-          <label className="text-xs font-medium text-slate-500">
+        <div className="st-notes">
+          <label className="st-label">
             Session notes
           </label>
           <textarea
@@ -437,22 +437,22 @@ function WorkoutSessionEditor({
               })
             }
             rows={2}
-            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400 disabled:opacity-80"
+            className="st-field"
           />
         </div>
       </div>
 
       {executing ? (
-        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-3">
+        <div className="st-footer">
           <button
             type="button"
             onClick={goToNextSet}
             disabled={allSetsDone && !restTimer}
-            className={`w-full rounded-lg px-4 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+            className={
               restTimer?.phase === "ready"
-                ? "strength-rest-go bg-emerald-600 hover:bg-emerald-700"
-                : "bg-emerald-600 hover:bg-emerald-700"
-            }`}
+                ? "st-primary-action strength-rest-go"
+                : "st-primary-action"
+            }
           >
             {allSetsDone && !restTimer
               ? "All sets done"

@@ -1,7 +1,6 @@
 import type { BuildOptions } from "esbuild";
 import externals from "@inkandswitch/patchwork-bootloader/externals";
 import process from "node:process";
-import tailwind from "esbuild-plugin-tailwindcss";
 
 import pushworkSync from "./plugin-pushwork-sync.ts";
 import pkgJSON from "../package.json" with { type: "json" };
@@ -22,7 +21,7 @@ export default {
   jsx: "automatic",
   jsxImportSource: "react",
   external: externals,
-  plugins: [tailwind()].concat(pushworking ? [pushworkSync()] : []),
+  plugins: pushworking ? [pushworkSync()] : [],
   loader: { ".ttf": "dataurl", ".css": "file" },
   conditions: ["style", "browser", "import"],
 } satisfies BuildOptions;

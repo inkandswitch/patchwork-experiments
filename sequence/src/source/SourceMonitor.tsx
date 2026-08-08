@@ -198,44 +198,43 @@ export function SourceMonitor({
   const pct = (value: number) => (duration > 0 ? `${(value / duration) * 100}%` : '0%');
 
   return (
-    <div className="source-monitor flex flex-col gap-2 border-b border-base-300 p-3">
-      <div className="text-xs font-medium uppercase tracking-wide text-base-content/60">
+    <div className="source-monitor">
+      <div className="source-monitor__label">
         Source monitor
       </div>
 
       <div
-        className={`relative flex aspect-video w-full items-center justify-center overflow-hidden rounded bg-neutral ${
-          ready && sourceId ? 'cursor-grab active:cursor-grabbing' : ''
-        }`}
+        className="source-monitor__screen"
+        data-draggable={(ready && sourceId) || undefined}
         onPointerDown={beginClipDrag}
         title={ready && sourceId ? 'Drag to timeline to create a clip' : undefined}
       >
-        <div ref={mountRef} className="origin-center" />
+        <div ref={mountRef} className="source-monitor__mount" />
         {!source && (
-          <span className="absolute text-xs text-neutral-content/60">No source selected</span>
+          <span className="source-monitor__hint">No source selected</span>
         )}
         {playerState.status === 'loading' && (
-          <span className="absolute text-xs text-white/80">Loading…</span>
+          <span className="source-monitor__hint source-monitor__hint--light">Loading…</span>
         )}
         {playerState.status === 'error' && (
-          <span className="absolute px-3 text-center text-xs text-error">
+          <span className="source-monitor__hint source-monitor__hint--error">
             {playerState.message}
           </span>
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs tabular-nums text-base-content/70">
+      <div className="source-monitor__row">
+        <span className="source-monitor__time">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
-        <span className="ml-auto font-mono text-[10px] tabular-nums text-base-content/50">
+        <span className="source-monitor__time source-monitor__time--total">
           in {formatTime(inPoint)} · out {formatTime(resolvedOut)}
         </span>
       </div>
 
       <div
         ref={barRef}
-        className="source-scrubber relative h-12 w-full touch-none rounded bg-base-300/60"
+        className="source-scrubber"
         style={{ cursor: scrubberCursor }}
         onPointerDown={onBarPointerDown}
         onPointerMove={onBarPointerMove}
@@ -245,22 +244,22 @@ export function SourceMonitor({
         {ready && duration > 0 && (
           <>
             <div
-              className="source-clip absolute inset-y-2 z-10 flex items-center overflow-hidden rounded"
+              className="source-clip"
               style={{ left: pct(inPoint), width: pct(selectionDuration()) }}
             >
               <div className="source-clip-handle source-clip-handle-left" />
-              <span className="source-clip-label truncate px-2 text-[11px]">{label}</span>
+              <span className="source-clip-label">{label}</span>
               <div className="source-clip-handle source-clip-handle-right" />
             </div>
             <div
-              className="source-playhead absolute bottom-0 top-0 z-30 w-0.5 -translate-x-1/2"
+              className="source-playhead"
               style={{ left: pct(currentTime) }}
             />
           </>
         )}
       </div>
 
-      <p className="text-[10px] text-base-content/45">
+      <p className="source-monitor__tip">
         Trim with the clip handles, then drag the preview to the timeline.
       </p>
     </div>

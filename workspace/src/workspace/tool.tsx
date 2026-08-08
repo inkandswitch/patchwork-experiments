@@ -9,8 +9,8 @@ export const WorkspaceTool: ToolRender = (handle, element) => {
 
 function Workspace() {
   return (
-    <div class="p-4 h-full flex items-center justify-center">
-      <p class="text-base-content/60">Workspace tool</p>
+    <div class="workspace-placeholder">
+      <p>Workspace tool</p>
     </div>
   );
 }

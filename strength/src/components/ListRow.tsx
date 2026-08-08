@@ -19,11 +19,10 @@ export function ListRow({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full border-b border-slate-100 px-4 py-3 text-left hover:bg-white ${
-        selected ? "bg-emerald-50" : ""
-      }`}
+      className="st-list-row"
+      data-selected={selected || undefined}
     >
-      <div className="font-medium text-slate-900">{title}</div>
+      <div className="st-list-row__title">{title}</div>
       {children}
     </button>
   );

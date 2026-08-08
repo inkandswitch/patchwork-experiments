@@ -80,35 +80,35 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   };
 
   return (
-    <div className="sequence-editor relative flex h-full min-h-0 flex-1 flex-row overflow-hidden bg-base-100">
+    <div className="sequence-editor">
       <SourcePanel doc={doc} changeDoc={changeDoc} onStartClipDrag={startClipDrag} />
 
       <div
         ref={rootRef}
         tabIndex={-1}
-        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none"
+        className="seq-main"
         onPointerDownCapture={onSequencePointerDownCapture}
         onKeyDown={onSequenceKeyDown}
       >
         {playerState.status === 'error' && (
-          <div className="border-b border-error/30 bg-error/10 px-4 py-2 text-sm text-error">
+          <div className="seq-error">
             {playerState.message}
           </div>
         )}
 
-        <div className="relative flex min-h-0 w-full flex-2 items-center justify-center overflow-hidden bg-neutral">
-          <div ref={mountRef} className="origin-center" />
+        <div className="seq-program">
+          <div ref={mountRef} className="seq-mount" />
           {playerState.status === 'loading' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-sm text-white">
+            <div className="seq-veil">
               Loading sequence…
             </div>
           )}
           {isSequenceEmpty(doc) && playerState.status !== 'loading' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
-              <p className="text-sm text-neutral-content/80">This sequence has no clips yet.</p>
+            <div className="seq-empty">
+              <p>This sequence has no clips yet.</p>
               <button
                 type="button"
-                className="btn btn-sm btn-outline"
+                className="seq-button"
                 onClick={() => changeDoc(turnIntoSampleSequence)}
               >
                 Load sample video
@@ -117,8 +117,8 @@ export const SequenceEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
           )}
         </div>
 
-        <div className="flex items-center border-t border-base-300 px-4 py-2">
-          <span className="font-mono text-sm tabular-nums text-base-content/70">{timeLabel}</span>
+        <div className="seq-statusbar">
+          <span className="seq-timecode">{timeLabel}</span>
         </div>
 
         <Timeline

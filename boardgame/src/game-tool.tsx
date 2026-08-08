@@ -17,7 +17,7 @@ function BoardGameView({ docUrl }: { docUrl: AutomergeUrl }) {
   if (!game) return null;
 
   return (
-    <div className="boardgame-collection h-full overflow-y-auto bg-slate-50 p-4">
+    <div className="boardgame-collection bg-single">
       <GameDetail
         game={game}
         onUpdateComment={(comment) => {

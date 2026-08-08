@@ -41,10 +41,10 @@ export function ProgressChart({
   const latest = points[points.length - 1];
 
   return (
-    <div className="space-y-1">
+    <div className="st-chart">
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="w-full text-emerald-600"
+        className="st-chart__svg"
         role="img"
         aria-label="Progress chart"
       >
@@ -74,14 +74,14 @@ export function ProgressChart({
           />
         ))}
       </svg>
-      <div className="flex justify-between text-xs text-slate-500">
+      <div className="st-chart__axis">
         <span>
           {new Date(points[0].date).toLocaleDateString(undefined, {
             month: "short",
             day: "numeric",
           })}
         </span>
-        <span className="font-medium text-emerald-700">
+        <span className="st-chart__peak">
           {Math.round(latest[valueKey])}
           {unit && valueKey !== "volume" ? ` ${unit}` : ""}
         </span>

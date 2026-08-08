@@ -25,7 +25,7 @@ function SelectedEntryPanel({
   onClose: () => void;
 }) {
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="st-aside-stack">
       {entry.imageUrls?.length ? (
         <ExerciseImages urls={entry.imageUrls} />
       ) : null}
@@ -101,16 +101,16 @@ function ExerciseLibraryDocEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   if (!library) return null;
 
   return (
-    <div className="strength flex h-full flex-col bg-slate-50">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
+    <div className="strength st-shell">
+      <div className="st-toolbar">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search exercises..."
-          className="min-w-[180px] flex-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-emerald-400"
+          className="st-field st-field--search st-field--grow"
         />
-        <span className="text-xs text-slate-500">{exercises.length} loaded</span>
-        <label className="flex items-center gap-1 text-xs text-slate-600">
+        <span className="st-meta">{exercises.length} loaded</span>
+        <label className="st-inline st-meta">
           <input
             type="checkbox"
             checked={includeImages}
@@ -123,14 +123,14 @@ function ExerciseLibraryDocEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           type="button"
           onClick={runImport}
           disabled={importing}
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="st-button st-button--primary"
         >
           {importing ? "Importing…" : "Import from free-exercise-db"}
         </button>
       </div>
 
       {importing || progress ? (
-        <div className="border-b border-slate-100 bg-slate-100/60 px-4 py-1.5 text-xs text-slate-600">
+        <div className="st-notice-bar">
           {progress
             ? `Imported ${progress.done}/${progress.total} — ${progress.imagesImported} images — ${progress.current}`
             : "Fetching catalog…"}
@@ -138,26 +138,26 @@ function ExerciseLibraryDocEditor({ docUrl }: { docUrl: AutomergeUrl }) {
       ) : null}
 
       {error ? (
-        <div className="border-b border-red-100 bg-red-50 px-4 py-1.5 text-xs text-red-700">
+        <div className="st-notice-bar st-notice-bar--error">
           {error}
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="st-split">
+        <div className="st-main st-main--flush">
           {filtered.length === 0 ? (
-            <p className="p-8 text-center text-sm text-slate-500">
+            <p className="st-empty-text st-empty-text--pad">
               {exercises.length === 0
                 ? "No exercises yet. Import from free-exercise-db to populate the library."
                 : "No exercises match your search."}
             </p>
           ) : (
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-slate-100 text-xs text-slate-500">
+            <table className="st-table">
+              <thead className="st-table__head">
                 <tr>
-                  <th className="px-4 py-2 font-medium">Name</th>
-                  <th className="px-4 py-2 font-medium">Muscles</th>
-                  <th className="px-4 py-2 font-medium">Equipment</th>
+                  <th className="st-table__th">Name</th>
+                  <th className="st-table__th">Muscles</th>
+                  <th className="st-table__th">Equipment</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,17 +167,16 @@ function ExerciseLibraryDocEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                     onClick={() =>
                       setSelectedId((cur) => (cur === ex.id ? null : ex.id))
                     }
-                    className={`cursor-pointer border-t border-slate-100 hover:bg-white ${
-                      selectedId === ex.id ? "bg-emerald-50" : ""
-                    }`}
+                    className="st-table__row"
+                    data-selected={selectedId === ex.id || undefined}
                   >
-                    <td className="px-4 py-2.5 font-medium text-slate-900">
+                    <td className="st-table__td st-table__td--name">
                       {ex.name}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-600">
+                    <td className="st-table__td">
                       {(ex.muscleGroups ?? []).join(", ") || "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-slate-600">
+                    <td className="st-table__td">
                       {(ex.equipment ?? []).join(", ") || "—"}
                     </td>
                   </tr>
@@ -188,7 +187,7 @@ function ExerciseLibraryDocEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         </div>
 
         {selected ? (
-          <div className="w-[min(380px,42%)] shrink-0 overflow-y-auto border-l border-slate-200 p-3">
+          <div className="st-aside">
             <SelectedEntryPanel
               libraryHandle={libraryHandle}
               entry={selected}

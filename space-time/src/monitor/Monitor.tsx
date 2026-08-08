@@ -626,9 +626,8 @@ export function Monitor({ mountRef, loading, error, docUrl }: MonitorProps) {
       onPointerLeave={() => {
         if (!resizing) setHovered(false);
       }}
-      className={`st-monitor pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center overflow-hidden rounded-lg border border-base-300 bg-black leading-[0] ${
-        lifted ? 'cursor-grabbing shadow-2xl' : 'cursor-grab shadow-lg'
-      }`}
+      className="st-monitor"
+      data-lifted={lifted || undefined}
       style={{
         touchAction: 'none',
         willChange: 'transform',
@@ -637,14 +636,14 @@ export function Monitor({ mountRef, loading, error, docUrl }: MonitorProps) {
         height: size.h,
       }}
     >
-      <div ref={mountRef} className="pointer-events-none block origin-center [&_canvas]:block" />
+      <div ref={mountRef} className="st-monitor__mount" />
       {loading && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/40 text-xs text-white">
+        <div className="st-monitor__veil">
           Loading…
         </div>
       )}
       {error && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-error/10 p-3 text-center text-xs text-error">
+        <div className="st-monitor__veil st-monitor__veil--error">
           {error}
         </div>
       )}
@@ -652,20 +651,19 @@ export function Monitor({ mountRef, loading, error, docUrl }: MonitorProps) {
         role="separator"
         aria-label="Resize monitor"
         onPointerDown={onResizePointerDown}
-        className={`absolute z-10 flex items-center justify-center ${
-          isEdge ? 'h-4 w-12' : 'h-5 w-5'
-        }`}
+        className="st-monitor__resize"
+        data-kind={isEdge ? 'edge' : 'corner'}
         style={handlePosition}
       >
         {isEdge ? (
           // Free-edge grip: short capsule with a centered ridge.
-          <div className="flex h-1.5 w-8 items-center justify-center rounded-full bg-white/85 shadow-sm ring-1 ring-black/25">
-            <div className="h-0.5 w-3.5 rounded-full bg-black/40" />
+          <div className="st-monitor__grip">
+            <div className="st-monitor__grip-ridge" />
           </div>
         ) : (
           // Corner L-bracket — reads clearly as a window resize affordance.
           <div
-            className="h-3 w-3 border-white/90"
+            className="st-monitor__bracket"
             style={{
               borderBottomWidth: 2.5,
               borderRightWidth: 2.5,

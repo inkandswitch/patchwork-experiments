@@ -1,5 +1,24 @@
-@import "tailwindcss";
-@plugin "daisyui";
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --tile-fill: var(--studio-fill, oklch(1 0 0));
+    --tile-fill-offset: var(--studio-fill-offset-10, oklch(0.96 0.005 270));
+    --tile-fill-sunk: var(--studio-fill-offset-20, oklch(0.93 0.01 270));
+    --tile-border: var(--studio-fill-offset-20, oklch(0.9 0.01 270));
+    --tile-fg: var(--studio-line, oklch(0.2 0.02 270));
+    --tile-accent: var(--studio-primary-fill, oklch(0.6 0.18 250));
+    --tile-accent-ink: var(--studio-primary-line, oklch(0.98 0 0));
+    --tile-accent-wash: color-mix(in oklch, var(--studio-primary-fill, oklch(0.6 0.18 250)) 22%, transparent);
+    --tile-marker: var(--studio-secondary-fill, oklch(0.72 0.15 160));
+    --tile-marker-text: var(--studio-secondary-text, oklch(0.55 0.15 160));
+    --tile-danger-wash: color-mix(in oklch, var(--studio-danger-fill, oklch(0.62 0.22 25)) 15%, transparent);
+    --tile-danger-text: var(--studio-danger-text, oklch(0.55 0.22 25));
+    --tile-shadow-sm: var(--studio-shadow-sm, 0 1px 2px oklch(0 0 0 / 0.04));
+    --tile-shadow-md: var(--studio-shadow-md, 0 6px 20px oklch(0 0 0 / 0.12));
+    --tile-shadow-lg: var(--studio-shadow-lg, 0 8px 24px oklch(0 0 0 / 0.12));
+  }
+}
 
 patchwork-view {
   display: block;
@@ -15,8 +34,8 @@ patchwork-view {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--color-base-200, oklch(0.96 0.005 270));
-  color: var(--color-base-content, oklch(0.2 0.02 270));
+  background: var(--tile-fill-offset);
+  color: var(--tile-fg);
   overflow: hidden;
 }
 
@@ -25,8 +44,8 @@ patchwork-view {
   min-height: 0;
   width: 100%;
   display: flex;
-  background: var(--color-base-200, oklch(0.96 0.005 270));
-  color: var(--color-base-content, oklch(0.2 0.02 270));
+  background: var(--tile-fill-offset);
+  color: var(--tile-fg);
   overflow: hidden;
 }
 
@@ -38,8 +57,8 @@ patchwork-view {
   gap: 0.5rem;
   height: 44px;
   padding: 0 0.5rem;
-  background: var(--color-base-100, oklch(1 0 0));
-  border-bottom: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  background: var(--tile-fill);
+  border-bottom: 1px solid var(--tile-border);
   user-select: none;
 }
 
@@ -79,14 +98,14 @@ patchwork-view {
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--color-base-content, oklch(0.4 0.02 270));
+  color: var(--tile-fg);
   opacity: 0.8;
   cursor: pointer;
   transition: background 0.12s ease, opacity 0.12s ease, color 0.12s ease;
 }
 
 .tile-topbar__btn:hover:not(:disabled) {
-  background: var(--color-base-200, oklch(0.95 0.005 270));
+  background: var(--tile-fill-offset);
   opacity: 1;
 }
 
@@ -105,14 +124,14 @@ patchwork-view {
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--color-base-content, oklch(0.4 0.02 270));
+  color: var(--tile-fg);
   cursor: pointer;
   overflow: hidden;
   transition: box-shadow 0.12s ease;
 }
 
 .tile-topbar__avatar-btn:hover {
-  box-shadow: 0 0 0 2px var(--color-primary, oklch(0.6 0.18 250));
+  box-shadow: 0 0 0 2px var(--tile-accent);
 }
 
 .tile-topbar__avatar-btn patchwork-view {
@@ -130,10 +149,10 @@ patchwork-view {
   width: 16rem;
   display: flex;
   flex-direction: column;
-  background: var(--color-base-100, oklch(1 0 0));
-  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px oklch(0 0 0 / 0.12);
+  box-shadow: var(--tile-shadow-lg);
   overflow: hidden;
 }
 
@@ -143,9 +162,9 @@ patchwork-view {
   padding: 0 0.6rem;
   font-size: 0.8125rem;
   border: 0;
-  border-bottom: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
-  background: var(--color-base-100, oklch(1 0 0));
-  color: var(--color-base-content, oklch(0.2 0.02 270));
+  border-bottom: 1px solid var(--tile-border);
+  background: var(--tile-fill);
+  color: var(--tile-fg);
   outline: none;
 }
 
@@ -168,13 +187,13 @@ patchwork-view {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--color-base-content, oklch(0.2 0.02 270));
+  color: var(--tile-fg);
   cursor: pointer;
 }
 
 .tile-topbar__item:hover {
-  background: var(--color-primary, oklch(0.6 0.18 250));
-  color: var(--color-primary-content, oklch(0.98 0 0));
+  background: var(--tile-accent);
+  color: var(--tile-accent-ink);
 }
 
 .tile-topbar__empty {
@@ -213,28 +232,28 @@ patchwork-view {
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: var(--color-base-100, oklch(1 0 0));
-  border: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
+  box-shadow: var(--tile-shadow-sm);
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .tile-panel--active {
-  border-color: var(--color-primary, oklch(0.6 0.18 250));
-  box-shadow: 0 0 0 1px var(--color-primary, oklch(0.6 0.18 250));
+  border-color: var(--tile-accent);
+  box-shadow: 0 0 0 1px var(--tile-accent);
 }
 
 /* The current "selected document" gets an accent rail along the top of its
    header so context panels visibly point back to it. */
 .tile-panel--selected .tile-panel__header {
-  box-shadow: inset 0 2px 0 var(--color-accent, oklch(0.72 0.15 160));
+  box-shadow: inset 0 2px 0 var(--tile-marker);
 }
 
 /* Context panels read as secondary chrome rather than primary content. */
 .tile-panel--context .tile-panel__header {
-  background: var(--color-base-300, oklch(0.93 0.01 270));
+  background: var(--tile-fill-sunk);
 }
 
 .tile-panel--context .tile-panel__title {
@@ -248,8 +267,8 @@ patchwork-view {
   gap: 0.25rem;
   height: 34px;
   padding: 0 0.4rem;
-  background: var(--color-base-200, oklch(0.96 0.005 270));
-  border-bottom: 1px solid var(--color-base-300, oklch(0.9 0.01 270));
+  background: var(--tile-fill-offset);
+  border-bottom: 1px solid var(--tile-border);
   user-select: none;
 }
 
@@ -277,9 +296,9 @@ patchwork-view {
   margin-right: 0.25rem;
   padding: 0 0.4rem;
   font-size: 0.75rem;
-  color: var(--color-base-content, oklch(0.35 0.02 270));
-  background: var(--color-base-100, oklch(1 0 0));
-  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
   border-radius: 5px;
   cursor: pointer;
   outline: none;
@@ -287,12 +306,12 @@ patchwork-view {
 }
 
 .tile-panel__tool-picker:hover {
-  border-color: var(--color-primary, oklch(0.6 0.18 250));
+  border-color: var(--tile-accent);
 }
 
 .tile-panel__tool-picker:focus-visible {
-  border-color: var(--color-primary, oklch(0.6 0.18 250));
-  box-shadow: 0 0 0 1px var(--color-primary, oklch(0.6 0.18 250));
+  border-color: var(--tile-accent);
+  box-shadow: 0 0 0 1px var(--tile-accent);
 }
 
 .tile-panel__icon-btn {
@@ -304,14 +323,14 @@ patchwork-view {
   border: 0;
   border-radius: 5px;
   background: transparent;
-  color: var(--color-base-content, oklch(0.45 0.02 270));
+  color: var(--tile-fg);
   opacity: 0.7;
   cursor: pointer;
   transition: background 0.12s ease, opacity 0.12s ease, color 0.12s ease;
 }
 
 .tile-panel__icon-btn:hover:not(:disabled) {
-  background: var(--color-base-300, oklch(0.9 0.01 270));
+  background: var(--tile-fill-sunk);
   opacity: 1;
 }
 
@@ -321,8 +340,8 @@ patchwork-view {
 }
 
 .tile-panel__icon-btn--close:hover:not(:disabled) {
-  background: oklch(0.62 0.22 25 / 0.15);
-  color: oklch(0.55 0.22 25);
+  background: var(--tile-danger-wash);
+  color: var(--tile-danger-text);
 }
 
 /* Subject chip on a context panel: names + reveals the document it describes. */
@@ -336,17 +355,17 @@ patchwork-view {
   height: 22px;
   padding: 0 0.45rem;
   font-size: 0.7rem;
-  color: var(--color-base-content, oklch(0.4 0.02 270));
-  background: var(--color-base-100, oklch(1 0 0));
-  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  color: var(--tile-fg);
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
   border-radius: 999px;
   cursor: pointer;
   transition: border-color 0.12s ease, color 0.12s ease;
 }
 
 .tile-panel__subject:hover {
-  border-color: var(--color-accent, oklch(0.72 0.15 160));
-  color: var(--color-accent, oklch(0.55 0.15 160));
+  border-color: var(--tile-marker);
+  color: var(--tile-marker-text);
 }
 
 .tile-panel__subject-label {
@@ -371,10 +390,10 @@ patchwork-view {
   display: flex;
   flex-direction: column;
   padding: 0.25rem;
-  background: var(--color-base-100, oklch(1 0 0));
-  border: 1px solid var(--color-base-300, oklch(0.88 0.01 270));
+  background: var(--tile-fill);
+  border: 1px solid var(--tile-border);
   border-radius: 8px;
-  box-shadow: 0 6px 20px oklch(0 0 0 / 0.12);
+  box-shadow: var(--tile-shadow-md);
 }
 
 .tile-context-launcher__item {
@@ -384,7 +403,7 @@ patchwork-view {
   padding: 0.35rem 0.5rem;
   font-size: 0.8rem;
   text-align: left;
-  color: var(--color-base-content, oklch(0.3 0.02 270));
+  color: var(--tile-fg);
   background: transparent;
   border: 0;
   border-radius: 5px;
@@ -392,7 +411,7 @@ patchwork-view {
 }
 
 .tile-context-launcher__item:hover {
-  background: var(--color-base-200, oklch(0.96 0.005 270));
+  background: var(--tile-fill-offset);
 }
 
 .tile-panel__body {
@@ -444,7 +463,7 @@ patchwork-view {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
-  color: var(--color-base-content, oklch(0.45 0.02 270));
+  color: var(--tile-fg);
   opacity: 0.45;
   cursor: grab;
   border-radius: 5px;
@@ -453,7 +472,7 @@ patchwork-view {
 
 .tile-panel__grip:hover {
   opacity: 0.9;
-  background: var(--color-base-300, oklch(0.9 0.01 270));
+  background: var(--tile-fill-sunk);
 }
 
 .tile-panel__grip:active {
@@ -475,13 +494,8 @@ patchwork-view {
 /* Edge preview: a translucent slab on the half the drop will land in. */
 .tile-dropzone__preview {
   position: absolute;
-  background: oklch(0.6 0.18 250 / 0.2);
-  background: color-mix(
-    in oklch,
-    var(--color-primary, oklch(0.6 0.18 250)) 22%,
-    transparent
-  );
-  outline: 2px solid var(--color-primary, oklch(0.6 0.18 250));
+  background: var(--tile-accent-wash);
+  outline: 2px solid var(--tile-accent);
   outline-offset: -2px;
   border-radius: 4px;
   pointer-events: none;
@@ -522,7 +536,7 @@ patchwork-view {
 .tile-resize-handle::after {
   content: "";
   position: absolute;
-  background: var(--color-base-300, oklch(0.86 0.01 270));
+  background: var(--tile-border);
   border-radius: 2px;
   transition: background 0.12s ease;
 }
@@ -545,5 +559,5 @@ patchwork-view {
 
 .tile-resize-handle:hover::after,
 .tile-resize-handle[data-resize-handle-active]::after {
-  background: var(--color-primary, oklch(0.6 0.18 250));
+  background: var(--tile-accent);
 }

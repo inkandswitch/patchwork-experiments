@@ -21,9 +21,6 @@
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.0.3",
-    "@tailwindcss/vite": "^4.1.18",
-    "daisyui": "^5.5.13",
-    "tailwindcss": "^4.1.18",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vite-plugin-css-injected-by-js": "^3.5.2",

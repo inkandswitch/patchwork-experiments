@@ -50,19 +50,19 @@ export function ExerciseImages({
 
   return (
     <>
-      <div className={`flex flex-wrap gap-2 ${className ?? ""}`}>
+      <div className={`st-images ${className ?? ""}`}>
         {objectUrls.map((src, i) => (
           <button
             key={i}
             type="button"
             onClick={() => setZoomed(i)}
-            className="overflow-hidden rounded-md border border-slate-200 transition hover:border-emerald-400 hover:shadow-sm"
+            className="st-images__thumb"
             title="Click to enlarge"
           >
             <img
               src={src}
               alt=""
-              className="h-32 w-32 object-cover"
+              className="st-images__img"
             />
           </button>
         ))}
@@ -70,7 +70,7 @@ export function ExerciseImages({
 
       {zoomed !== null ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="st-lightbox"
           onClick={() => setZoomed(null)}
           role="dialog"
           aria-modal="true"
@@ -78,13 +78,13 @@ export function ExerciseImages({
           <img
             src={objectUrls[zoomed]}
             alt=""
-            className="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+            className="st-lightbox__img"
             onClick={(e) => e.stopPropagation()}
           />
           <button
             type="button"
             onClick={() => setZoomed(null)}
-            className="absolute right-4 top-4 rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-white"
+            className="st-lightbox__close"
           >
             ✕
           </button>

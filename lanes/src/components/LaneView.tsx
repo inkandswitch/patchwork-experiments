@@ -265,19 +265,19 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   };
 
   if (!folderDoc) {
-    return <div className="lanes p-4 text-base-content">Loading folder...</div>;
+    return <div className="lanes lanes--message">Loading folder...</div>;
   }
 
   return (
-    <div className="lanes flex h-full flex-col text-base-content">
-      <div className="flex items-center justify-between border-b border-base-300 p-2">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">Group by:</label>
+    <div className="lanes lane-view">
+      <div className="lane-view__bar">
+        <div className="lane-view__controls">
+          <div className="field-row">
+            <label>Group by:</label>
             <select
               value={selectedField || ""}
               onChange={(e) => setSelectedField(e.target.value)}
-              className="select select-bordered select-sm"
+              className="select"
             >
               <option value="">Select a field</option>
               {fields.map((field) => (
@@ -288,15 +288,15 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
             </select>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">Filter by:</label>
+          <div className="field-row">
+            <label>Filter by:</label>
             <select
               value={filterField || ""}
               onChange={(e) => {
                 setFilterField(e.target.value || null);
                 setFilterValue(null);
               }}
-              className="select select-bordered select-sm"
+              className="select"
             >
               <option value="">No filter</option>
               {fields.map((field) => (
@@ -310,7 +310,7 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               <select
                 value={filterValue || ""}
                 onChange={(e) => setFilterValue(e.target.value || null)}
-                className="select select-bordered select-sm"
+                className="select"
               >
                 <option value="">All values</option>
                 {Array.from(filterAvailableValues).map((value) => (
@@ -323,7 +323,7 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="field-row">
           {fieldConfigDoc && (
             <ConfigMenu
               fieldConfigUrl={fieldConfigUrl}
@@ -344,14 +344,14 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           <button
             type="button"
             onClick={() => void handleCreateCard()}
-            className="btn btn-primary btn-sm"
+            className="btn btn--primary btn--sm"
           >
             Create Card
           </button>
         </div>
       </div>
 
-      <div className="flex flex-1 gap-4 overflow-x-auto p-4">
+      <div className="lane-board">
         {Object.entries(groupedCards).map(([value, cards]) => {
           const filteredCards =
             filterField && filterValue
@@ -368,9 +368,8 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           return (
             <div
               key={value}
-              className={`flex h-full w-[300px] flex-col rounded-lg p-4 ${
-                dragOverColumn === value ? "bg-base-300" : "bg-base-200"
-              }`}
+              className="lane"
+              data-drop-target={dragOverColumn === value || undefined}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOverColumn(value);
@@ -399,10 +398,10 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                 });
               }}
             >
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-medium">{value || "No Value"}</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-base-content/60">
+              <div className="lane__head">
+                <h3>{value || "No Value"}</h3>
+                <div className="field-row">
+                  <span className="lane__count">
                     {filteredCards.length}{" "}
                     {filteredCards.length === 1 ? "card" : "cards"}
                   </span>
@@ -418,28 +417,28 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                           void handleArchiveColumn(value);
                         }
                       }}
-                      className="text-base-content/50 hover:text-base-content/70"
+                      className="icon-button"
                       title="Archive all cards in this column"
                     >
-                      <Icon type="Archive" className="h-4 w-4" />
+                      <Icon type="Archive" />
                     </button>
                   )}
                 </div>
               </div>
-              <div className="flex-1 space-y-2 overflow-y-auto">
+              <div className="lane__cards">
                 {filteredCards.map(({ url }) => (
                   <div
                     key={url}
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData("text/plain", url);
-                      e.currentTarget.classList.add("opacity-50");
+                      e.currentTarget.dataset.dragging = "true";
                     }}
                     onDragEnd={(e) => {
-                      e.currentTarget.classList.remove("opacity-50");
+                      delete e.currentTarget.dataset.dragging;
                     }}
                     onClick={() => setSelectedCardUrl(url)}
-                    className="group relative cursor-pointer rounded bg-base-100 p-2 shadow-sm transition-shadow hover:shadow-md"
+                    className="lane-card"
                   >
                     <button
                       type="button"
@@ -460,9 +459,9 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                           });
                         }
                       }}
-                      className="absolute right-2 top-2 p-1 text-base-content/50 opacity-0 transition-opacity hover:text-error group-hover:opacity-100"
+                      className="lane-card__delete"
                     >
-                      <Icon type="Trash" className="h-4 w-4" />
+                      <Icon type="Trash" />
                     </button>
                     <patchwork-view
                       doc-url={url}
@@ -505,9 +504,9 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
 
                   setSelectedCardUrl(newCard.url);
                 }}
-                className="btn btn-ghost btn-sm mt-4 w-full gap-2"
+                className="btn btn--ghost btn--sm btn--block lane__add"
               >
-                <span className="text-base-content/60">+</span>
+                <span className="lane__add-glyph">+</span>
                 <span>New Card</span>
               </button>
             </div>
@@ -519,13 +518,13 @@ export function LaneViewEditor({ docUrl }: { docUrl: AutomergeUrl }) {
         open={!!selectedCardUrl}
         onOpenChange={(open) => !open && setSelectedCardUrl(null)}
       >
-        <DialogContent className="h-[min(90vh,800px)]">
-          <div className="h-full min-h-0">
+        <DialogContent className="dialog--tall">
+          <div className="dialog__pane">
             {selectedCardUrl && (
               <patchwork-view
                 doc-url={selectedCardUrl}
                 tool-id="project-card"
-                className="block h-full"
+                className="dialog__view"
               />
             )}
           </div>

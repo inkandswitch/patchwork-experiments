@@ -23,16 +23,16 @@ function FocusedExercise({ docUrl }: { docUrl: AutomergeUrl }) {
 
   if (!exercise) {
     return (
-      <p className="text-center text-xs text-slate-400">
+      <p className="st-loading">
         This exercise is no longer part of the session.
       </p>
     );
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-3">
-      <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">
+    <div className="st-column">
+      <div className="st-row">
+        <h2 className="st-heading">
           {exercise.exerciseName}
         </h2>
         <ExerciseInfoButton
@@ -51,10 +51,10 @@ function FocusedExercise({ docUrl }: { docUrl: AutomergeUrl }) {
 
 function ExerciseLoggerView({ docUrl }: { docUrl: AutomergeUrl }) {
   return (
-    <div className="strength h-full overflow-y-auto bg-slate-50 p-4">
+    <div className="strength st-page">
       <Suspense
         fallback={
-          <p className="text-center text-xs text-slate-400">Loading…</p>
+          <p className="st-loading">Loading…</p>
         }
       >
         <FocusedExercise docUrl={docUrl} />

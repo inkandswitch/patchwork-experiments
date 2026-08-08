@@ -585,7 +585,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
     <div
       ref={rootRef}
       tabIndex={-1}
-      className="space-time-editor relative flex h-full min-h-0 flex-col overflow-hidden bg-base-100 outline-none"
+      className="space-time-editor"
       onPointerDownCapture={(e) => {
         if (
           e.target instanceof HTMLElement &&
@@ -597,7 +597,7 @@ export const SpaceTimeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       }}
       onKeyDown={onKeyDown}
     >
-      <div className="relative flex min-h-0 flex-1">
+      <div className="st-stage">
         <Canvas
           docUrl={docUrl}
           doc={doc}

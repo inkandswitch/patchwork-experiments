@@ -20,13 +20,10 @@
   },
   "devDependencies": {
     "@inkandswitch/patchwork-bootloader": "^0.1.0",
-    "@tailwindcss/vite": "^4.3.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^5.2.0",
-    "daisyui": "^5.5.19",
     "externals": "link:@inkandswitch/patchwork-bootloader/externals",
-    "tailwindcss": "^4.3.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.3",
     "vite-plugin-css-injected-by-js": "^3.5.2"

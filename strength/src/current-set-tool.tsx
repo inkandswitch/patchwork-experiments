@@ -10,13 +10,13 @@ import { makeTool } from "./make-tool";
  */
 function CurrentSetView({ docUrl }: { docUrl: AutomergeUrl }) {
   return (
-    <div className="strength h-full overflow-y-auto bg-slate-50 p-4">
+    <div className="strength st-page">
       <Suspense
         fallback={
-          <p className="text-center text-xs text-slate-400">Loading…</p>
+          <p className="st-loading">Loading…</p>
         }
       >
-        <div className="mx-auto max-w-xl">
+        <div className="st-column">
           <CurrentSet sessionUrl={docUrl} />
         </div>
       </Suspense>

@@ -60,7 +60,7 @@ export function SingleSet({ setUrl }: { setUrl: AutomergeUrl }) {
 
   if (!set) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500">
+      <div className="st-empty-card">
         No set at this address — it may be done or removed.
       </div>
     );

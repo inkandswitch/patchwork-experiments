@@ -61,28 +61,24 @@ export const TodoEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   };
 
   return (
-    <div className="p-4  h-full overflow-auto">
-      <div className="max-w-[400px] mx-auto flex flex-col gap-2 dark:bg-base-300 bg-base-100 rounded-md p-4">
-        <div className="text-2xl font-bold">
+    <div className="todo">
+      <div className="sheet">
+        <div className="title">
           <input
             type="text"
             value={doc.title}
-            className="w-full"
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Untitled"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="compose">
           <input
             type="text"
-            className="border-2 border-gray-300 rounded-md p-2 flex-1"
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Add a new todo"
           />
-          <button className="bg-blue-500 text-white rounded-md p-2" onClick={addTodo}>
-            Add
-          </button>
+          <button onClick={addTodo}>Add</button>
         </div>
         {doc.todos.map((todo, index) => (
           <TodoItem
@@ -103,7 +99,6 @@ type TodoItemProps = {
 
 const TodoItem = ({ todoRef, selectionAnnotations }: TodoItemProps) => {
   const todo = todoRef.value();
-  const [isHovered, setIsHovered] = useState(false);
 
   const onToggle = () => {
     todoRef.change((t) => {
@@ -166,46 +161,31 @@ const TodoItem = ({ todoRef, selectionAnnotations }: TodoItemProps) => {
     }
   };
 
-  // Visual diff indicators
-  const diffStyles: Record<string, string> = {
-    added: 'bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500',
-    changed: 'bg-amber-100 dark:bg-amber-900/30 border-l-4 border-amber-500',
-    deleted: 'bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 line-through opacity-60',
-  };
-
-  const diffClass = diffType ? diffStyles[diffType] : '';
-
   if (!todo) return null;
 
   return (
     <div
-      className={
-        `group flex gap-2 items-center px-2 py-1 rounded ${diffClass}` +
-        (todo.done ? ' line-through' : '') +
-        (isThisSelected ? ' outline-2 outline-blue-500' : '')
-      }
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      className="item"
+      data-diff={diffType}
+      data-done={todo.done || undefined}
+      data-selected={isThisSelected || undefined}
     >
       <input type="checkbox" checked={todo.done} onChange={onToggle} />
       <input
-        className="flex-1"
+        type="text"
         value={todo.description}
         onChange={(e) => onChangeDescription(e.target.value)}
       />
       <button
+        className="comment-button"
+        data-has-comments={hasComments || undefined}
         onClick={handleCommentClick}
-        className={`
-          flex items-center gap-1 p-1 rounded transition-opacity duration-150
-          hover:bg-gray-200 dark:hover:bg-gray-700
-          ${hasComments ? 'opacity-100 text-blue-500' : isHovered ? 'opacity-60' : 'opacity-0'}
-        `}
         title={
           hasComments ? `${commentCount} comment${commentCount > 1 ? 's' : ''}` : 'Add comment'
         }
       >
         <MessageCircle size={16} />
-        {hasComments && <span className="text-xs font-medium">{commentCount}</span>}
+        {hasComments && <span className="comment-count">{commentCount}</span>}
       </button>
     </div>
   );
