@@ -1,9 +1,9 @@
 //  QBFWordList -- compact tournament word-list helpers
 // ----------------------------------------------------
-// Load beside QBF.js when you need to inspect, regenerate, or extend the
-// embedded word list. QBF.js keeps only qbfEmbeddedWordList() (the huge
-// compact string) plus qbfEnsureWordList(); everything that expands,
-// compresses, installs, looks up, or edits the list lives here.
+// Optional companion to QBF.js. Runtime install/lookup ($qbfWordList,
+// qbfSetWordList, qbfLookupWord, qbfCompactStringForEach, qbfEnsureWordList)
+// already live in QBF.js so that file can be evaluated alone. This file adds
+// expand/compress/edit helpers for regenerating the embedded list.
 //
 // Compact encoding (from the original Lively Kernel QBF): a sorted lowercase
 // list is stored as the tail of each word preceded by a stop code giving how
@@ -18,9 +18,8 @@
 // Add a few words to the embedded list and get paste-ready method source:
 //   qbfAddWordsToEmbeddedList(['vape', 'vapes', 'evite', 'evites'])
 
-// PER-USER: the loaded list (~113k words). Empty after reload until
-// qbfEnsureWordList (in QBF.js) reinstalls qbfEmbeddedWordList().
-$qbfWordList = null;
+// Do not clear a list already installed by QBF.js.
+if (typeof $qbfWordList === 'undefined') $qbfWordList = null;
 
 function qbfCompactStringForEach(str, func) {
   /**
@@ -109,23 +108,30 @@ function qbfInstallWordListText(text) {
 function qbfSetWordList(listOrCompactString) {
   /** Give the game a word list: either an array of words or a compact string. */
   $qbfWordList = listOrCompactString;
-  return $qbfWordList
-    ? Array.isArray($qbfWordList)
-      ? $qbfWordList.length + ' words loaded'
-      : 'compact word list loaded'
-    : 'word checking off';
+  $qbfWordLookup = null;
+  if (!$qbfWordList) return 'word checking off';
+  $qbfWordLookup = {};
+  if (Array.isArray($qbfWordList)) {
+    for (let i = 0; i < $qbfWordList.length; i++) {
+      $qbfWordLookup[$qbfWordList[i]] = true;
+    }
+    return $qbfWordList.length + ' words loaded';
+  }
+  qbfCompactStringForEach($qbfWordList, (w) => {
+    $qbfWordLookup[w] = true;
+  });
+  return 'compact word list loaded';
 }
 function qbfLookupWord(word) {
   /** Is word in the loaded list? With no list loaded, anything goes (as in the original). */
-  let list = $qbfWordList;
-  if (!list) return true;
-  if (Array.isArray(list)) return list.includes(word);
+  if (!$qbfWordList) return true;
+  if ($qbfWordLookup) return !!$qbfWordLookup[word];
+  if (Array.isArray($qbfWordList)) return $qbfWordList.includes(word);
   let found = false;
-  qbfCompactStringForEach(list, (each) => {
+  qbfCompactStringForEach($qbfWordList, (each) => {
     if (each === word) {
       found = true;
     }
-    // The list is sorted, so we are past it once we reach a longer/later word.
     return !found && each <= word;
   });
   return found;

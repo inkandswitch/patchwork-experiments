@@ -20,8 +20,22 @@ describe('QBF', () => {
     // The board fills its panel, just under the title bar (panel-local coordinates).
     expect(rt.eval(`qbfGame.getBounds().width() == qbfPanel.getBounds().width()`)).toBe(true);
     expect(rt.eval(`qbfGame.getBounds().topLeft.y`)).toBe(rt.eval(`qbfPanel.titleBarHeight`));
-    expect(rt.eval(`qbfGame.playerName`)).toBe('Anonymous');
-    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Anonymous');
+    expect(rt.eval(`!!qbfGame.wordLog1 && !!qbfGame.wordLog2 && !!qbfGame.liveScoresLog`)).toBe(
+      true,
+    );
+    expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain('-- my words --');
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('-- active games --');
+    expect(
+      rt.eval(
+        `Math.abs(qbfGame.wordLog1.getBounds().width() - qbfGame.wordLog2.getBounds().width()) <= 1`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `Math.abs(qbfGame.wordLog2.getBounds().width() - qbfGame.liveScoresLog.getBounds().width()) <= 1`,
+      ),
+    ).toBe(true);
+    expect(rt.eval(`qbfGame.wordLog === qbfGame.wordLog1`)).toBe(true);
     expect(
       rt.eval(
         `qbfGame.nameButton.getBounds().center().x == qbfGame.computeLayout().fox.center().x`,
@@ -143,10 +157,141 @@ describe('QBF', () => {
     const word = chars.slice(0, 2);
     type('Enter');
     expect(rt.eval(`qbfGame.activeLetters.length`)).toBe(nRackBefore - 2);
-    expect(rt.eval(`qbfGame.logLines.length`)).toBe(1);
-    expect(rt.eval(`qbfGame.logLines[0]`)).toContain(word);
+    expect(rt.eval(`qbfGame.$logLines.length`)).toBe(1);
+    expect(rt.eval(`qbfGame.$logLines[0]`)).toContain(word);
     expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(0);
+    expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain(word);
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toMatch(/\d/);
     ticks(5); // and the game keeps running afterwards
+  }, 60_000);
+
+  it('tracks live active-player scores for the current Game # in column 3', () => {
+    const { rt, ticksUntil, type } = makeGame();
+    rt.eval(`
+Lively.qbfLiveScores = [];
+Lively.qbfLiveGameNumber = null;
+Lively.qbfGameNumber = 100;
+Lively.qbfEpochStartMs = Date.now();
+Lively.qbfEpochSpeed = 'quick';
+qbfGame.playerName = 'Ada';
+qbfGame.tournamentGameNumber = 100;
+qbfGame.reportLiveScore();
+true`);
+    expect(rt.eval(`qbfLiveScoreRowsForGame(100).length`)).toBe(1);
+    expect(rt.eval(`qbfLiveScoreRowsForGame(100)[0].player`)).toBe('Ada');
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('Ada');
+
+    ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
+    rt.eval(`
+qbfGame.activeLetters.filter((l) => l.loc == 'rack').slice(0, 2).forEach((l, i) => {
+  l.shape.setText(i == 0 ? 'A' : 'T');
+});
+true`);
+    type('A');
+    type('T');
+    type('Enter');
+    expect(rt.eval(`qbfLiveScoreRowsForGame(100)[0].score`)).toBe(
+      rt.eval(`qbfGame.totalScore`),
+    );
+
+    rt.eval(`
+qbfPostLiveScore('Bea', 40, 100);
+qbfGame.refreshLiveScoresPane();
+true`);
+    expect(rt.eval(`qbfLiveScoreRowsForGame(100).length`)).toBe(2);
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('Bea');
+    // Column 2 only fills after column 1 is full (height-based).
+    rt.eval(`
+qbfGame.resetWordLog();
+for (let i = 0; i < qbfGame.logColumnMaxRows() + 2; i++) qbfGame.appendLog('x' + i);
+true`);
+    expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain('-- my words --');
+    expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain('x0');
+    expect(rt.eval(`qbfGame.wordLog2.shape.string`)).toContain('x');
+    // Column 2 starts only after column 1 is full (header counts as a row).
+    expect(
+      rt.eval(
+        `qbfGame.wordLog1.shape.string.split('\\n').length == qbfGame.logColumnMaxRows()`,
+      ),
+    ).toBe(true);
+  }, 60_000);
+
+  it('assigns Dan 2 when a second board joins with the same player name', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfLiveScores = [];
+Lively.qbfLiveGameNumber = null;
+Lively.qbfGameNumber = 100;
+Lively.qbfEpochStartMs = Date.now();
+Lively.qbfEpochSpeed = 'quick';
+qbfPostLiveScore('Dan', 0, 100);
+qbfA = qbfClaimUniqueLiveName('Dan', 100);
+qbfB = qbfClaimUniqueLiveName('Bea', 100);
+true`);
+    expect(rt.eval(`qbfA`)).toBe('Dan 2');
+    expect(rt.eval(`qbfB`)).toBe('Bea');
+  }, 60_000);
+
+  it('claims Otto 2 when a second board enables autoplay', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfLiveScores = [];
+Lively.qbfLiveGameNumber = null;
+Lively.qbfGameNumber = 100;
+Lively.qbfEpochStartMs = Date.now();
+Lively.qbfEpochSpeed = 'quick';
+qbfGame.tournamentGameNumber = 100;
+qbfGame.idle = false;
+qbfGame.playerName = 'Ada';
+qbfGame.$livePlayerName = null;
+qbfGame.$liveNameForGame = null;
+qbfGame.reportLiveScore();
+qbfGame.toggleAutoPlay();
+qbfFirst = qbfGame.playerName;
+// Simulate another board already named Otto, then a second claim.
+qbfSecond = qbfClaimUniqueLiveName('Otto', 100);
+true`);
+    expect(rt.eval(`qbfFirst`)).toBe('Otto');
+    expect(rt.eval(`qbfSecond`)).toBe('Otto 2');
+    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Otto');
+  }, 60_000);
+
+  it('keeps active games after the epoch ends, and flips to final scores when all finish', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfGameNumber = 100;
+Lively.qbfEpochStartMs = Date.now();
+Lively.qbfEpochSpeed = 'quick';
+Lively.qbfLiveScores = [
+  { player: 'Ada', score: 10, gameNo: 100, finished: false },
+  { player: 'Bea', score: 20, gameNo: 100, finished: false },
+];
+Lively.qbfLiveGameNumber = 100;
+qbfGame.tournamentGameNumber = 100;
+qbfGame.refreshLiveScoresPane();
+qbfActive = qbfGame.liveScoresLog.shape.string;
+Lively.qbfEpochStartMs = Date.now() - 31000;
+qbfCloseTournamentEpoch();
+qbfAfterEpoch = qbfGame.liveScoresLog.shape.string;
+qbfLen = Lively.qbfLiveScores.length;
+qbfPostLiveScore('Ada', 99, 100);
+qbfAdaScore = qbfLiveScoreRowsForGame(100).find((r) => r.player === 'Ada').score;
+qbfPostLiveScore('Ada', 99, 100, { finished: true });
+qbfMid = qbfLiveScoresHeaderFor(100);
+qbfPostLiveScore('Bea', 40, 100, { finished: true });
+qbfGame.refreshLiveScoresPane();
+qbfFinal = qbfGame.liveScoresLog.shape.string;
+qbfHeader = qbfLiveScoresHeaderFor(100);
+true`);
+    expect(rt.eval(`qbfActive`)).toContain('-- active games --');
+    expect(rt.eval(`qbfLen`)).toBe(2);
+    expect(rt.eval(`qbfAfterEpoch`)).toContain('Ada');
+    expect(rt.eval(`qbfAdaScore`)).toBe(99);
+    expect(rt.eval(`qbfMid`)).toBe('-- active games --');
+    expect(rt.eval(`qbfHeader`)).toBe('-- final scores --');
+    expect(rt.eval(`qbfFinal`)).toContain('-- final scores --');
+    expect(rt.eval(`qbfFinal`)).toContain('Ada');
+    expect(rt.eval(`qbfFinal`)).toContain('Bea');
   }, 60_000);
 
   it('checks words against a loaded list, scoring bad words against you', () => {
@@ -164,8 +309,8 @@ true`);
     const letterScore = rt.eval(`qbfGame.letterScore`) as number;
     type('Enter');
     // 'at' is in the list, but two-letter words earn a x0 multiplier: no gain, no loss.
-    expect(rt.eval(`qbfGame.logLines[0]`)).toContain('at'.toUpperCase());
-    expect(rt.eval(`qbfGame.logLines[0]`)).not.toContain('??');
+    expect(rt.eval(`qbfGame.$logLines[0]`)).toContain('at'.toUpperCase());
+    expect(rt.eval(`qbfGame.$logLines[0]`)).not.toContain('??');
     expect(rt.eval(`qbfGame.totalScore`)).toBe(0);
     // A word that is not in the list is marked ?? and costs its letter score.
     ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
@@ -178,7 +323,7 @@ true`);
     type('Z');
     const badScore = rt.eval(`qbfGame.letterScore`) as number;
     type('Enter');
-    expect(rt.eval(`qbfGame.logLines[1]`)).toContain('??');
+    expect(rt.eval(`qbfGame.$logLines[1]`)).toContain('??');
     expect(rt.eval(`qbfGame.totalScore`)).toBe(-badScore);
     expect(letterScore).toBeGreaterThan(0);
   }, 60_000);
@@ -338,7 +483,7 @@ qbfGame.playerName = 'Tester';
 true`);
     ticksUntil(`qbfGame.gameOver`);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(42);
-    expect(rt.eval(`qbfGame.logLines.pop()`)).toContain('game over');
+    expect(rt.eval(`qbfGame.$logLines.pop()`)).toContain('game over');
     expect(rt.eval(`!!qbfGame._finalScorePosted`)).toBe(true);
     // Restart is locked in social play; a fresh setup rebuilds the board.
     rt.eval(`qbfGame.doRestart(); true`);
@@ -799,6 +944,9 @@ true`);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toMatch(/Start a new game|A game is open/);
     // Finished board left in place (log morph still present with prior text).
     expect(rt.eval(`qbfGame.wordLog.shape.string`)).toBe(rt.eval(`qbfKeepLog`));
+    // Score readouts hidden so the board looks ready for another game.
+    expect(rt.eval(`qbfGame.letterScoreBox.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.totalScoreBox.getBounds().width()`)).toBe(0);
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #101');
   }, 60_000);
 
