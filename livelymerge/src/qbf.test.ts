@@ -154,6 +154,58 @@ qbfGame.gameNumberLabel.getBounds().topLeft.y == lay.launch.topLeft.y
     expect(rt.eval(`qbfScores.scoresScroll.getBounds().width()`)).toBe(558);
   }, 60_000);
 
+  it('adopts getUserName into the player name after the promise settles', async () => {
+    const { rt, game } = makeGame();
+    const g = globalThis as any;
+    g.accountDocHandle = {
+      doc: () => ({ contactUrl: 'automerge:test-contact' }),
+    };
+    g.repo = {
+      find: async () => ({
+        doc: () => ({ type: 'registered', name: 'Daniel Ingalls' }),
+      }),
+    };
+    rt.eval(`
+qbfGame.playerName = 'Anonymous';
+qbfGame.nameButton.setLabel('Anonymous');
+qbfResolvePlayerNameFromAccount(qbfGame);
+true`);
+    // getUserName settles on a microtask and stashes the name on window; the
+    // board tick (inside Automerge change) applies it.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(g.qbfPendingAccountName).toBe('Daniel Ingalls');
+    rt.change(() => {
+      game.tick();
+    });
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Daniel');
+    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Daniel');
+    expect(g.qbfPendingAccountName == null || g.qbfPendingAccountName === null).toBe(true);
+    delete g.accountDocHandle;
+    delete g.repo;
+  }, 60_000);
+
+  it('leaves Anonymous when getUserName fails', async () => {
+    const { rt } = makeGame();
+    const g = globalThis as any;
+    g.accountDocHandle = {
+      doc: () => ({ contactUrl: 'automerge:test-contact' }),
+    };
+    g.repo = {
+      find: async () => {
+        throw new Error('no contact');
+      },
+    };
+    rt.eval(`
+qbfGame.playerName = 'Anonymous';
+qbfGame.nameButton.setLabel('Anonymous');
+qbfResolvePlayerNameFromAccount(qbfGame);
+true`);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Anonymous');
+    delete g.accountDocHandle;
+    delete g.repo;
+  }, 60_000);
+
   it('carries tiles in on the belt and drops them onto the rack', () => {
     const { rt, ticks } = makeGame();
     expect(rt.eval(`qbfGame.activeLetters[0].loc`)).toBe('belt');

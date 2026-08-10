@@ -1970,6 +1970,8 @@ class QBFMorph extends Morph {
   tick() {
     // Close a finished signup epoch even if the dedicated clock stepper is idle.
     if (Lively && Lively.qbfEpochStartMs != null) qbfFinishExpiredTournament();
+    // Adopt Patchwork account name if getUserName resolved between ticks.
+    qbfFlushPendingAccountName();
     // Pick up live scores synced from other boards.
     this.refreshLiveScoresPane();
     if (this.idle) {
@@ -2924,16 +2926,20 @@ function findAllQBFGames() {
   /** Every QBFMorph currently in the world (supports several concurrent boards). */
   let found = [];
   if (!Lively) return found;
+  let seen = {};
+  let consider = function (m) {
+    if (!m || m.className !== 'QBFMorph') return;
+    let id = m.$id != null ? m.$id : m;
+    if (seen[id]) return;
+    seen[id] = true;
+    found.push(m);
+  };
   Lively.eachSubmorph((m) => {
-    if (m.className === 'QBFMorph') {
-      found.push(m);
-      return;
-    }
-    if (m.submorphs) {
-      m.submorphs.forEach((sub) => {
-        if (sub.className === 'QBFMorph') found.push(sub);
-      });
-    }
+    consider(m);
+    // Panels (often ephemeral) hold the board as a regular or ephemeral child.
+    if (m.submorphs) m.submorphs.forEach(consider);
+    if (m.$submorphs) m.$submorphs.forEach(consider);
+    if (m.eachSubmorph) m.eachSubmorph(consider);
   });
   return found;
 }
@@ -2947,6 +2953,25 @@ function qbfShortPlayerName(fullName) {
 function qbfNameButtonLabel(playerName) {
   return playerName && String(playerName).trim() ? String(playerName).trim() : 'Anonymous';
 }
+function qbfNotePendingAccountName(fullName) {
+  /**
+   * Stash a Patchwork account name on the host window (not the LM heap) so a
+   * Promise callback that settles outside Automerge change can still hand it off.
+   * Use a non-$ property so the write goes to the real window ($-names are
+   * ephemeral LM slots on the window stand-in).
+   */
+  if (fullName == null || fullName === '') return;
+  if (!window) return;
+  window.qbfPendingAccountName = String(fullName);
+}
+function qbfFlushPendingAccountName() {
+  /** Apply any stashed account name to Anonymous boards. Safe inside a change. */
+  if (!window || window.qbfPendingAccountName == null || window.qbfPendingAccountName === '')
+    return;
+  let name = window.qbfPendingAccountName;
+  window.qbfPendingAccountName = null;
+  qbfApplyAccountNameToAnonymousBoards(name);
+}
 function qbfApplyAccountNameToAnonymousBoards(fullName) {
   let short = qbfShortPlayerName(fullName);
   if (!short) return;
@@ -2954,7 +2979,7 @@ function qbfApplyAccountNameToAnonymousBoards(fullName) {
     if (!g || g.autoPlay) return;
     if (g.playerName === 'Anonymous') {
       g.playerName = short;
-      if (g.nameButton) g.nameButton.setLabel(short);
+      if (g.nameButton) g.nameButton.setLabel(qbfNameButtonLabel(short));
     }
   });
 }
@@ -2967,21 +2992,18 @@ function qbfResolvePlayerNameFromAccount(game) {
    * Prefer getUserName() (Patchwork account contact). On success, adopt the
    * first word as this board's name if it is still the default Anonymous.
    * Failures leave the existing default in place.
+   *
+   * The promise settles outside an Automerge change, and LM heap writes from
+   * that callback are unreliable. Stash the name on window; the next game
+   * tick (inside a real change) applies it via qbfFlushPendingAccountName.
    */
   if (!game) return;
-  let apply = function (fullName) {
-    let short = qbfShortPlayerName(fullName);
-    if (!short) return;
-    if (game.autoPlay) return;
-    if (game.playerName && game.playerName !== 'Anonymous') return;
-    game.playerName = short;
-    if (game.nameButton) game.nameButton.setLabel(short);
-  };
   try {
     if (typeof getUserName === 'function') {
-      Promise.resolve(getUserName())
+      // Do not store the Promise in an LM local — Promises are not heap-representable.
+      getUserName()
         .then(function (name) {
-          if (name) apply(name);
+          if (name) qbfNotePendingAccountName(name);
         })
         .catch(function () {});
       return;
@@ -2989,13 +3011,16 @@ function qbfResolvePlayerNameFromAccount(game) {
   } catch (_e) {}
   // Legacy sync path if getUserName is missing.
   try {
-    let acct =
-      (typeof window !== 'undefined' && window.accountDocHandle) ||
-      (typeof globalThis !== 'undefined' && globalThis.accountDocHandle) ||
-      null;
+    let acct = window && window.accountDocHandle;
     if (acct && typeof acct.doc === 'function') {
       let doc = acct.doc();
-      if (doc && doc.name) apply(doc.name);
+      if (doc && doc.name) {
+        let short = qbfShortPlayerName(doc.name);
+        if (short && !game.autoPlay && (!game.playerName || game.playerName === 'Anonymous')) {
+          game.playerName = short;
+          if (game.nameButton) game.nameButton.setLabel(qbfNameButtonLabel(short));
+        }
+      }
     }
   } catch (_e2) {}
 }

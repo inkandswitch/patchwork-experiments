@@ -427,14 +427,39 @@ function getBounds() {
 function truncateString(str, num) {
   return str.length > num ? str.slice(0, num) + '...' : str;
 }
-async function getUserName() {
-  /** Display name from the user's Patchwork account (contact doc), or null. */
-  if (!window.repo || !window.accountDocHandle) return null;
-  let contactUrl = window.accountDocHandle.doc().contactUrl;
-  if (contactUrl == null) return null;
-  let contactHandle = await window.repo.find(contactUrl);
-  let name = contactHandle.doc().name;
-  return name != null ? name : null;
+function getUserName() {
+  /**
+   * Display name from the user's Patchwork account contact doc, or null.
+   * Returns a native Promise (not an async function — LM cannot store Promises
+   * on the heap, and async/await would try to).
+   * Reads window.repo / window.accountDocHandle (host globals).
+   */
+  try {
+    if (!window || !window.repo || !window.accountDocHandle) {
+      return Promise.resolve(null);
+    }
+    let account = window.accountDocHandle.doc
+      ? window.accountDocHandle.doc()
+      : null;
+    if (!account || account.contactUrl == null || account.contactUrl === '') {
+      return Promise.resolve(null);
+    }
+    return window.repo
+      .find(account.contactUrl)
+      .then(function (contactHandle) {
+        if (!contactHandle || !contactHandle.doc) return null;
+        let contact = contactHandle.doc();
+        if (!contact) return null;
+        // Registered contacts carry .name; anonymous contacts have no display name.
+        if (contact.name == null || contact.name === '') return null;
+        return String(contact.name);
+      })
+      .catch(function () {
+        return null;
+      });
+  } catch (_err) {
+    return Promise.resolve(null);
+  }
 }
 function init() {
   // init()
