@@ -12,14 +12,14 @@
 //
 // Load this file the way newdefs.js is loaded -- evaluate it in a LivelyMerge
 // workspace -- then runQBF() to put a game in the world. Use "show scores" on
-// the board for the scores viewer. Sounds and the high-scores viewer/store are
-// included here. Optional QBFWordList.js adds compact/expand/edit helpers for
-// regenerating the embedded tournament list.
+// the board for the scores viewer. Sounds, high scores, and word-list helpers
+// (compact/expand/edit) are all included here.
 //
 // Differences from the original, all deliberate:
 //   - High scores use a pluggable store (default: Lively.qbfHighScores in the document)
 //     instead of the Node QBFScoresServer. See qbfSetScoresStore.
-//   - The word log is three monospaced columns (history ×2 + live scores).
+//   - Word history is two monospaced columns; live / final scores sit under the
+//     speed buttons with a white-on-brown caption (like the score boxes).
 //   - Tiles are made as they enter the hopper rather than all 104 at once, which keeps the
 //     document (and the op traffic) small.
 //
@@ -88,6 +88,70 @@ function qbfCompactStringForEach(str, func) {
   }
   func(word);
 }
+function qbfCompactStringToArray(str) {
+  /** Expand a compact word list to a sorted array of lowercase words. */
+  let words = [];
+  qbfCompactStringForEach(str, (w) => {
+    words.push(w);
+  });
+  return words;
+}
+function qbfCompactStringFromArray(words) {
+  /** Encode a sorted word array for compact in-memory lookup. */
+  let charOffset = 'A'.charCodeAt(0);
+  let matchLength = (a, b) => {
+    let lim = Math.min(a.length, b.length);
+    for (let i = 0; i < lim; i++) {
+      if (a[i] !== b[i]) return i;
+    }
+    return lim;
+  };
+  let str = '';
+  let prev = null;
+  words.forEach((each) => {
+    let word = each.toLowerCase();
+    let nSame = 0;
+    if (prev !== null) {
+      nSame = matchLength(word, prev);
+      str += String.fromCharCode(nSame + charOffset);
+    }
+    str += word.slice(nSame);
+    prev = word;
+  });
+  return str;
+}
+function qbfNormalizeWordForList(word) {
+  /** Lowercase trim; null if empty or longer than nine (QBF rack limit). */
+  let w = String(word != null ? word : '')
+    .trim()
+    .toLowerCase();
+  if (!w || w.length > 9) return null;
+  return w;
+}
+function qbfWordsFromText(text) {
+  /**
+   * Parse QBFWords.txt: one uppercase word per line in the source distribution.
+   * Ignore words longer than nine letters; install lowercase. Empty lines ignored.
+   */
+  let words = [];
+  String(text)
+    .split(/\r?\n/)
+    .forEach((line) => {
+      let word = qbfNormalizeWordForList(line);
+      if (word) words.push(word);
+    });
+  return words;
+}
+function qbfInstallWordListText(text) {
+  /**
+   * Parse and compact the text form before installing it as per-user state.
+   * Regeneration path when QBFWords.txt changes: install, then paste via
+   * qbfAddWordsToEmbeddedList / qbfInstallEmbeddedCompact.
+   */
+  let words = qbfWordsFromText(text);
+  qbfSetWordList(qbfCompactStringFromArray(words));
+  return words.length + ' words loaded';
+}
 function qbfSetWordList(listOrCompactString) {
   /**
    * Give the game a word list: either an array of words or a compact string.
@@ -123,6 +187,80 @@ function qbfLookupWord(word) {
   });
   return found;
 }
+function qbfAddWordsToArray(words, wordsToAdd) {
+  /**
+   * Merge wordsToAdd into a sorted unique lowercase array (length <= 9).
+   * Answers { words, added, skipped }.
+   */
+  let set = {};
+  (words || []).forEach((w) => {
+    let n = qbfNormalizeWordForList(w);
+    if (n) set[n] = true;
+  });
+  let added = [];
+  let skipped = [];
+  (wordsToAdd || []).forEach((raw) => {
+    let n = qbfNormalizeWordForList(raw);
+    if (!n) {
+      skipped.push(raw);
+      return;
+    }
+    if (set[n]) {
+      skipped.push(n);
+      return;
+    }
+    set[n] = true;
+    added.push(n);
+  });
+  let next = Object.keys(set);
+  next.sort();
+  return { words: next, added: added, skipped: skipped };
+}
+function qbfAddWordsToCompactString(compact, wordsToAdd) {
+  /**
+   * Expand compact → add words → sort → compress.
+   * Answers { compact, words, added, skipped }.
+   */
+  let prior = compact ? qbfCompactStringToArray(compact) : [];
+  let result = qbfAddWordsToArray(prior, wordsToAdd);
+  result.compact = qbfCompactStringFromArray(result.words);
+  return result;
+}
+function qbfEmbeddedCompactInstallSource(compact) {
+  /** Paste-ready call to reinstall the embedded compact list in this file. */
+  let body = compact != null ? String(compact) : '';
+  if (body.indexOf("'") >= 0 || body.indexOf('\\') >= 0) {
+    throw new Error('compact string contains quote/backslash; refuse to embed in single quotes');
+  }
+  return "qbfInstallEmbeddedCompact('" + body + "');";
+}
+function qbfAddWordsToEmbeddedList(wordsToAdd) {
+  /**
+   * Expand the embedded list, add words, recompress, install into $qbfWordList,
+   * and answer paste-ready source for replacing the qbfInstallEmbeddedCompact call.
+   *
+   *   qbfAddWordsToEmbeddedList(['vape', 'vapes', 'evite', 'evites'])
+   */
+  let prior =
+    typeof qbfEmbeddedWordList === 'function' ? qbfEmbeddedWordList() : $qbfEmbeddedCompact;
+  let result = qbfAddWordsToCompactString(prior, wordsToAdd);
+  qbfSetWordList(result.compact);
+  if (typeof qbfInstallEmbeddedCompact === 'function') {
+    qbfInstallEmbeddedCompact(result.compact);
+  }
+  result.source = qbfEmbeddedCompactInstallSource(result.compact);
+  result.message =
+    'added ' +
+    result.added.length +
+    ' word(s)' +
+    (result.skipped.length ? '; skipped ' + result.skipped.length : '') +
+    '; list now ' +
+    result.words.length +
+    ' words. Replace qbfInstallEmbeddedCompact(...) in QBF.js with result.source.';
+  console.log('QBF: ' + result.message);
+  if (result.added.length) console.log('QBF: added ' + result.added.join(', '));
+  return result;
+}
 function qbfEnsureWordList() {
   /**
    * Install the embedded tournament list if this replica has none loaded.
@@ -139,23 +277,44 @@ function qbfPad(str, width) {
   while (s.length < width) s += ' ';
   return s;
 }
+function qbfTruncateName(name, maxLenIfAny) {
+  /** Clip a player name for score / live-list columns (default 12 chars). */
+  let max = maxLenIfAny != null ? maxLenIfAny : 12;
+  let s = name != null ? String(name) : '';
+  if (s.length <= max) return s;
+  return s.slice(0, max);
+}
+function qbfWordLogCaption() {
+  return 'words played';
+}
+/** @deprecated — word-log body no longer carries an in-list header line. */
 function qbfWordLogHeader() {
-  return '-- my words --';
+  return qbfWordLogCaption();
 }
-function qbfLiveScoresHeader() {
-  return '-- active games --';
+function qbfLiveScoresCaption() {
+  return 'active games';
 }
-function qbfFinalScoresHeader() {
-  return '-- final scores --';
+function qbfFinalScoresCaption() {
+  return 'final scores';
 }
-function qbfLiveScoresHeaderFor(gameNoIfAny) {
+function qbfLiveScoresCaptionFor(gameNoIfAny) {
   /**
-   * "-- active games --" while anyone is still playing; "-- final scores --"
-   * once every listed player for this Game # has finished.
+   * White-on-brown caption above the live-scores panel: "active games" while
+   * anyone is still playing; "final scores" once every listed player has finished.
    */
   let rows = qbfLiveScoreRowsForGame(gameNoIfAny);
-  if (rows.length > 0 && rows.every((r) => r.finished)) return qbfFinalScoresHeader();
-  return qbfLiveScoresHeader();
+  if (rows.length > 0 && rows.every((r) => r.finished)) return qbfFinalScoresCaption();
+  return qbfLiveScoresCaption();
+}
+/** @deprecated alias — caption helpers replaced the old "-- … --" text headers. */
+function qbfLiveScoresHeader() {
+  return qbfLiveScoresCaption();
+}
+function qbfFinalScoresHeader() {
+  return qbfFinalScoresCaption();
+}
+function qbfLiveScoresHeaderFor(gameNoIfAny) {
+  return qbfLiveScoresCaptionFor(gameNoIfAny);
 }
 function qbfGameFor(morph) {
   /** The QBFMorph owning morph, if any. */
@@ -387,9 +546,9 @@ class QBFMorph extends Morph {
     } else {
       this.allGameScores = [];
     }
-    this.playerName =
-      typeof qbfDefaultPlayerName === 'function' ? qbfDefaultPlayerName() : 'Anonymous';
+    this.playerName = 'Anonymous';
     this.setup({ idle: true });
+    qbfResolvePlayerNameFromAccount(this);
   }
   addButton(r, label, actionName) {
     return this.addMorph(new QBFButtonMorph(r, label, actionName));
@@ -463,15 +622,13 @@ class QBFMorph extends Morph {
      * Per-replica ($logLines) so other players' boards never appear here.
      * Fills column 1 top-to-bottom, then rolls over into column 2.
      */
-    if (!this.$logLines || this.$logLines.length === 0) {
-      this.$logLines = [qbfWordLogHeader()];
-    }
+    if (!this.$logLines) this.$logLines = [];
     this.$logLines.push(entry);
     this.refreshWordLogs();
   }
   resetWordLog() {
-    /** Clear history and restore the column-1 header. */
-    this.$logLines = [qbfWordLogHeader()];
+    /** Clear history (caption lives above the plate, not in the list). */
+    this.$logLines = [];
     this.refreshWordLogs();
   }
   logColumnMaxRows() {
@@ -493,20 +650,12 @@ class QBFMorph extends Morph {
     /**
      * Paint this panel's word history into columns 1 and 2.
      * Column-major: fill col 1 downward, then col 2; drop oldest when both are full.
-     * The "-- my words --" header always stays at the top of column 1.
      */
     if (!this.wordLog1 && !this.wordLog2) return;
-    let header = qbfWordLogHeader();
     let maxRows = this.logColumnMaxRows();
     let cap = 2 * maxRows;
     let lines = this.$logLines || [];
-    if (lines.length === 0 || lines[0] !== header) {
-      lines = [header].concat(lines.filter((l) => l !== header));
-    }
-    while (lines.length > cap) {
-      if (lines.length <= 1) break;
-      lines.splice(1, 1); // drop oldest word; keep header
-    }
+    while (lines.length > cap) lines.shift();
     this.$logLines = lines;
     let col1 = [];
     let col2 = [];
@@ -514,28 +663,30 @@ class QBFMorph extends Morph {
       if (i < maxRows) col1.push(lines[i]);
       else col2.push(lines[i]);
     }
-    if (this.wordLog1) this.wordLog1.setText(col1.length ? col1.join('\n') : header);
+    if (this.wordLog1) this.wordLog1.setText(col1.length ? col1.join('\n') : ' ');
     if (this.wordLog2) this.wordLog2.setText(col2.length ? col2.join('\n') : ' ');
   }
   refreshLiveScoresPane() {
     /**
-     * Paint shared in-game / final scores into column 3.
-     * Header is "-- active games --" until every listed player has finished,
-     * then "-- final scores --". The list stays up after this board finishes
-     * (same as the word history), and is only cleared for a new Game #.
+     * Paint shared in-game / final scores into the right-hand panel under the
+     * speed buttons. Caption is white-on-brown "active games" until every
+     * listed player has finished, then "final scores". Body has no header line.
+     * Cleared only when a new Game # starts (or on a fresh idle openQBF).
      */
     if (!this.liveScoresLog) return;
     let gameNo = this.tournamentGameNumber;
     if (gameNo == null) gameNo = qbfStoredGameNumber();
-    let header = qbfLiveScoresHeaderFor(gameNo);
-    let rows = qbfLiveScoreRowsForGame(gameNo);
-    let text = header;
-    if (rows.length > 0) {
-      text =
-        header +
-        '\n' +
-        rows.map((r) => qbfPadLeft(String(r.score), 4) + ' ' + r.player).join('\n');
+    let caption = qbfLiveScoresCaptionFor(gameNo);
+    if (this.liveScoresLabel && this.liveScoresLabel.shape.string !== caption) {
+      this.liveScoresLabel.setText(caption);
     }
+    let rows = qbfLiveScoreRowsForGame(gameNo);
+    let text =
+      rows.length > 0
+        ? rows
+            .map((r) => qbfPadLeft(String(r.score), 4) + ' ' + qbfTruncateName(r.player, 12))
+            .join('\n')
+        : ' ';
     if (this.liveScoresLog.shape && this.liveScoresLog.shape.string === text) return;
     this.liveScoresLog.setText(text);
   }
@@ -652,47 +803,68 @@ class QBFMorph extends Morph {
     let rackX = 130;
     let rackY = 150;
     let rackW = this.rackSize * lw + 6;
+    let rackRight = rackX + rackW;
     let outboxY = rackY + 70;
     let beltX = rackX + rackW + 7;
     let beltW = this.beltSize * lw;
-    let scoreX = rackX + rackW + 30;
+    let beltY = rackY - 5;
+    let beltBottom = beltY + 16 + 2; // lower belt rail
+    let scoreX = rackRight + 30;
     let scoreY = outboxY - 30;
     let scoreW = 2 * lw;
     let hSpacing = 120;
     let vSpacing = 48;
     let launchW = 110;
-    // Score column is 4 rows (letter / word / game / best word); launch+epoch sit
-    // in the right column and need room below for Game # / bar / three speeds.
-    let gameButtonsY = scoreY + 4 * vSpacing + 90;
-    // Ledge sits ~30px above the name button — the fall distance that reads well with
-    // the scream timing. Keep it clear of that button (which used to cover a pile at y=430).
-    let pileY = gameButtonsY - 30;
+    let speedBtnH = 22;
+    let speedRow = 30;
+    let fox = rect(28, 24, 64, 64);
+    // Name centered under the fox; gap to the rack mirrors left-side spacing.
+    let nameButton = rect(fox.center().x - 50, fox.bottom() + 20, 100, 24);
+    // Points tile: letter-tile size, left edge ~2 tile widths left of the outbox;
+    // Y matches outbox tiles (outbox.top + 1 - letterH).
+    let wordScore = rect(rackX - 2 * lw, outboxY + 1 - lh, lw, lh);
+    // Word history under the multipliers; caption sits above the plate.
+    let log = rect(rackX + 5, outboxY + 66, 8 * lw, 206);
+    // Game # … active games: ~30px below the belt, ~20px + one tile right of the
+    // word-list plate (extra tile so not-so-quick's wider rack clears the column).
+    let launchX = log.topLeft.x + log.width() + 20 + lw;
+    let launchY = beltBottom + 30;
+    let launch = rect(launchX, launchY, launchW, 24);
+    let launchChromeH = 52;
+    let speedsBottom = launchY + launchChromeH + 2 * speedRow + speedBtnH;
+    let liveScores = rect(launch.topLeft.x, speedsBottom + 20, launchW, 160);
+    // Autoplays / how to play / show scores — one horizontal row under the word list.
+    let gameButtons = rect(rackX + 20, log.bottom() + 12, rackW - 40, 22);
+    // Ledge sits above the name button's fall zone on the left.
+    let pileY = Math.max(nameButton.bottom() + 40, liveScores.bottom() - 80);
     let pileX = 30;
     let pileW = rackX - 60;
-    let boardW = scoreX + hSpacing + Math.max(scoreW, launchW) + 24;
-    // Three control rows (pause/finish/restart | autoplay/how to play/show scores).
-    let boardH = gameButtonsY + 100;
+    let boardW = Math.max(scoreX + hSpacing, launchX + launchW) + 24;
+    let boardH = Math.max(gameButtons.bottom(), liveScores.bottom(), pileY + 40) + 24;
+    // Title centered on the rack, fox-height band. Wider than the rack so the
+    // first/last glyphs of the playful title are not clipped.
+    let titleW = Math.max(rackW + 160, 520);
+    let title = rect(rackX + rackW / 2 - titleW / 2, fox.topLeft.y, titleW, fox.height());
     return {
       rack: rect(rackX, rackY, rackW, 5),
       outbox: rect(rackX, outboxY, rackW, 5),
-      belt: rect(beltX, rackY - 5, beltW, 2),
+      belt: rect(beltX, beltY, beltW, 2),
       binTopRight: pt(beltX + beltW + 23, 24),
       pile: rect(pileX, pileY, pileW, 6),
-      // Slim enough to sit between the ledge and the name button without overlap.
       missedPoints: rect(pileX, pileY + 9, pileW, 18),
-      // Word history + live scores sit under the multipliers (three equal columns).
-      log: rect(rackX + 5, outboxY + 66, 8 * lw, 206),
+      log: log,
       score: rect(scoreX, scoreY, scoreW, 30),
-      // Same vertical size as the speed buttons (22); sit just above the rack tiles.
+      wordScore: wordScore,
       keyButtons: rect(rackX + 20, rackY - lh - 39, rackW - 40, 22),
-      // Idle help sits 4px above the rack rail (raised 2px from the prior layout).
       idleHelp: rect(rackX, rackY - 4 - 54, rackW, 54),
-      gameButtons: rect(scoreX, gameButtonsY, 100, 24),
-      // Name centered under the fox; tap it to choose another name.
-      nameButton: rect(28 + 32 - 50, 24 + 64 + 20, 100, 24),
-      // Game # / status / speeds align with the letter-score row.
-      launch: rect(scoreX + hSpacing, scoreY, launchW, 24),
-      fox: rect(28, 24, 64, 64),
+      gameButtons: gameButtons,
+      nameButton: nameButton,
+      launch: launch,
+      liveScores: liveScores,
+      speedBtnH: speedBtnH,
+      speedRow: speedRow,
+      fox: fox,
+      title: title,
       hSpacing: hSpacing,
       vSpacing: vSpacing,
       boardExtent: pt(boardW, boardH),
@@ -786,12 +958,12 @@ class QBFMorph extends Morph {
     this.appendLog(scoreLine);
     if (valid || this.noCheck) this.totalScore += this.wordScore;
     if (!valid && !this.noCheck) this.totalScore -= this.letterScore;
-    this.totalScoreBox.setText(String(this.totalScore));
+    if (this.totalScoreBox) this.totalScoreBox.setText(String(this.totalScore));
     if ((valid || this.noCheck) && this.wordScore > this.bestWordScore) {
       this.bestWordScore = this.wordScore;
       this.bestWord = word;
-      this.topWordBox.setText(String(this.bestWordScore));
-      this.topWordLetters.setText(this.bestWord);
+      if (this.topWordBox) this.topWordBox.setText(String(this.bestWordScore));
+      if (this.topWordLetters) this.topWordLetters.setText(this.bestWord);
     }
     this.outboxLetters = [];
     this.updateOutbox();
@@ -805,7 +977,7 @@ class QBFMorph extends Morph {
   }
   doPause(val) {
     this.paused = !!val;
-    this.pauseButton.setLabel(this.paused ? 'resume' : 'pause');
+    if (this.pauseButton) this.pauseButton.setLabel(this.paused ? 'resume' : 'pause');
     if (this.paused) this.cancelAutoPlayTyping();
     // Blank the tiles in motion while paused, so that pausing is no way to study the rack.
     let inBin = this.letterInBin ? [this.letterInBin] : [];
@@ -998,7 +1170,7 @@ class QBFMorph extends Morph {
     this.pointsMissed += value;
     this.missedPointsBox.setText(String(-this.pointsMissed));
     this.totalScore -= value;
-    this.totalScoreBox.setText(String(this.totalScore));
+    if (this.totalScoreBox) this.totalScoreBox.setText(String(this.totalScore));
   }
   lettersSlideOnRack() {
     // Leftward motion propagates along the rack wherever tiles touch.
@@ -1110,8 +1282,8 @@ class QBFMorph extends Morph {
     if (!this.gameOver || this._finalScorePosted) return;
     if ((this.fallingLetters || []).length > 0) return;
     this._finalScorePosted = true;
-    // Mark this board finished in the shared list; header flips to
-    // "-- final scores --" only when every listed player is done.
+    // Mark this board finished in the shared list; caption flips to
+    // "final scores" only when every listed player is done.
     this.reportLiveScore({ finished: true, force: true });
     this.postScoresToStore();
     this.enterAwaitingNewGame();
@@ -1186,8 +1358,8 @@ class QBFMorph extends Morph {
     }
   }
   postLevelStats() {
-    this.topWordBox.setText(String(this.bestWordScore));
-    this.topWordLetters.setText(this.bestWord || ' ');
+    if (this.topWordBox) this.topWordBox.setText(String(this.bestWordScore));
+    if (this.topWordLetters) this.topWordLetters.setText(this.bestWord || ' ');
   }
   removeFromOutbox(letter) {
     if (letter.original) {
@@ -1293,8 +1465,9 @@ class QBFMorph extends Morph {
   }
   blankScoreReadouts(blank) {
     /**
-     * Hide the four score boxes, captions, and best-word label (zero bounds →
-     * brown board only). Used for cold idle and soft-idle after game over.
+     * Hide/show score boxes when present. Right-column readouts stay commented
+     * out; the tile-sized word-score box left of the outbox is shown while
+     * playing and hidden on idle trays.
      */
     let boxes = [
       this.letterScoreBox,
@@ -1343,27 +1516,32 @@ class QBFMorph extends Morph {
   }
   updateModeControls() {
     /**
-     * Social locks: pause / finish / restart grayed until single-vs-multi
-     * behavior is decided. Autoplays keeps its own chrome via updateAutoPlayButton.
+     * Social locks: pause / finish / restart stay commented out of the chrome.
+     * Autoplays keeps its own chrome via updateAutoPlayButton.
      */
-    this.styleControlButton(this.pauseButton, false);
-    this.styleControlButton(this.finishButton, false);
-    this.styleControlButton(this.restartButton, false);
+    // this.styleControlButton(this.pauseButton, false);
+    // this.styleControlButton(this.finishButton, false);
+    // this.styleControlButton(this.restartButton, false);
     this.updateAutoPlayButton();
     this.updateLaunchButtons();
   }
   setupBoxes(lay) {
     // Copy — TextBox construction mutates the extent Point it is given, and must
     // not corrupt the layout table used for later readouts.
-    let s = lay.score.copy();
-    let h = lay.hSpacing;
-    let v = lay.vSpacing;
-    this.letterScoreBox = this.addReadout(s, 'letter score');
-    this.wordScoreBox = this.addReadout(s.translatedBy(pt(0, v)), 'word score');
-    this.totalScoreBox = this.addReadout(s.translatedBy(pt(0, 2 * v)), 'game score');
-    // Best-word score + black text box for the word itself underneath.
-    this.topWordBox = this.addReadout(s.translatedBy(pt(0, 3 * v)), 'best word');
-    this.topWordLetters = this.addWordLabel(s.translatedBy(pt(0, 3 * v)));
+    // Right-column letter/game/best-word readouts conflict with the active-
+    // games block — commented out for now. Word score is a tile-sized box left
+    // of the outbox (see setupWordScoreBox).
+    // let s = lay.score.copy();
+    // let v = lay.vSpacing;
+    // this.letterScoreBox = this.addReadout(s, 'letter score');
+    // this.totalScoreBox = this.addReadout(s.translatedBy(pt(0, 2 * v)), 'game score');
+    // this.topWordBox = this.addReadout(s.translatedBy(pt(0, 3 * v)), 'best word');
+    // this.topWordLetters = this.addWordLabel(s.translatedBy(pt(0, 3 * v)));
+    this.letterScoreBox = null;
+    this.totalScoreBox = null;
+    this.topWordBox = null;
+    this.topWordLetters = null;
+    this.setupWordScoreBox(lay);
     this.setupEpochAndLaunch(lay);
     this.setupIdleInstructions(lay);
     this.setupWordLogs(lay);
@@ -1386,15 +1564,48 @@ class QBFMorph extends Morph {
       textColor: Color.white,
     });
   }
+  setupWordScoreBox(lay) {
+    /**
+     * Tile-sized current-word points left of the outbox. Caption is white-on-brown
+     * "points"; chrome matches outbox letter tiles (24px type, 2px black border).
+     * Y is the same as outbox tiles: outbox.top + 1 - letterH.
+     */
+    let out = lay.outbox;
+    let R = lay.wordScore;
+    if (!out || !R) {
+      this.wordScoreBox = null;
+      return;
+    }
+    let tileY = out.topLeft.y + 1 - this.letterH;
+    let boxR = rect(R.topLeft.x, tileY, this.letterW, this.letterH);
+    this.wordScoreBox = this.addReadout(boxR, 'points', 24);
+    // Match QBFLetterMorph outbox-tile border / fill defaults.
+    qbfStyleText(this.wordScoreBox, {
+      fontSize: 24,
+      center: true,
+      noBreak: true,
+      borderWidth: 2,
+      borderColor: Color.black,
+    });
+    this.wordScoreBox.$scoreBounds = boxR.copy();
+    let label = this.wordScoreBox.$scoreLabel;
+    if (label) {
+      let lr = rect(boxR.topLeft.x + 3, boxR.topLeft.y - 16, boxR.width(), 16);
+      label.setBounds(lr);
+      label.$scoreBounds = lr.copy();
+    }
+  }
   setupEpochAndLaunch(lay) {
     /**
-     * Game # + signup countdown + three speed buttons, right of the score column.
-     * A filling bar and short status line show when a multiplayer epoch is open.
+     * Game # + signup countdown + three speed buttons, right of the rack
+     * (~30px below the belt). Speed buttons keep 30px top-to-top spacing.
      */
     let L = lay.launch;
     let x = L.topLeft.x;
     let y = L.topLeft.y;
     let w = L.width();
+    let btnH = lay.speedBtnH != null ? lay.speedBtnH : 22;
+    let row = lay.speedRow != null ? lay.speedRow : 30;
     this.gameNumberLabel = this.addMorph(new QBFTextMorph(rect(x, y, w, 20), 'Game #—'));
     qbfStyleText(this.gameNumberLabel, {
       fontSize: 14,
@@ -1415,7 +1626,8 @@ class QBFMorph extends Morph {
         ctx.fillRect(b.topLeft.x, b.topLeft.y, fw, b.height());
       }
     };
-    this.epochStatus = this.addMorph(new QBFTextMorph(rect(x, y + 32, w, 16), 'ready'));
+    // Minor caption indent (+3) matches live-scores / score-readout labels.
+    this.epochStatus = this.addMorph(new QBFTextMorph(rect(x + 3, y + 32, w - 3, 16), 'ready'));
     qbfStyleText(this.epochStatus, {
       fontSize: 11,
       boxColor: null,
@@ -1423,12 +1635,9 @@ class QBFMorph extends Morph {
       textColor: Color.white,
     });
     let btnY = y + 52;
-    let btnH = 22;
-    let btnGap = 3;
     let sq = rect(x, btnY, w, btnH);
-    let q = rect(x, btnY + btnH + btnGap, w, btnH);
-    let nsq = rect(x, btnY + 2 * (btnH + btnGap), w, btnH);
-    this.$launchBtnSlot = sq.copy();
+    let q = rect(x, btnY + row, w, btnH);
+    let nsq = rect(x, btnY + 2 * row, w, btnH);
     this.$launchBtnHomes = {
       'super quick': sq.copy(),
       quick: q.copy(),
@@ -1460,25 +1669,32 @@ class QBFMorph extends Morph {
   }
   setupWordLogs(lay) {
     /**
-     * Three equal columns under the multipliers:
-     *   1–2  this panel's word history (col1, then rollover to col2)
-     *   3    live scores for players active on this Game #
-     * Each text column is inset 2px down and 2px right from its cell.
+     * Two equal columns under the multipliers for this panel's word history.
+     * White-on-brown "words played" caption above the plate (no in-list header).
+     * Live / final scores live under the speed buttons (setupLiveScores).
      */
     let R = lay.log;
     let gap = 3;
-    let colW = Math.floor((R.width() - 2 * gap) / 3);
+    let colW = Math.floor((R.width() - gap) / 2);
     let h = R.height();
     let x0 = R.topLeft.x;
     let y0 = R.topLeft.y;
     let insetX = 2;
-    let insetY = 4; // was 2; nudged down another 2px
+    let insetY = 4;
     let colH = h - insetY;
     let colInnerW = colW - insetX;
     this.$logColHeight = colH;
     let c1 = rect(x0 + insetX, y0 + insetY, colInnerW, colH);
     let c2 = rect(x0 + colW + gap + insetX, y0 + insetY, colInnerW, colH);
-    let c3 = rect(x0 + 2 * (colW + gap) + insetX, y0 + insetY, colInnerW, colH);
+    this.wordLogLabel = this.addMorph(
+      new QBFTextMorph(rect(R.topLeft.x + 3, R.topLeft.y - 16, R.width(), 16), qbfWordLogCaption()),
+    );
+    qbfStyleText(this.wordLogLabel, {
+      fontSize: 11,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
     this.logPlate = this.addMorph(new QBFDecorMorph(R.copy()));
     this.logPlate.setStyles(Color.white, 1, Color.gray);
     let styleLog = (m) => {
@@ -1497,11 +1713,39 @@ class QBFMorph extends Morph {
     styleLog(this.wordLog1);
     this.wordLog2 = this.addMorph(new QBFTextMorph(c2, ' '));
     styleLog(this.wordLog2);
-    this.liveScoresLog = this.addMorph(new QBFTextMorph(c3, ' '));
-    styleLog(this.liveScoresLog);
     // Alias for older callers/tests that still look at wordLog.
     this.wordLog = this.wordLog1;
     this.resetWordLog();
+    this.setupLiveScores(lay);
+  }
+  setupLiveScores(lay) {
+    /**
+     * Live / final scores under the speed column: white-on-brown caption
+     * (like "letter score") and a white plate for the rows.
+     */
+    let R = lay.liveScores || lay.launch;
+    let labelR = rect(R.topLeft.x + 3, R.topLeft.y - 16, R.width(), 16);
+    this.liveScoresLabel = this.addMorph(new QBFTextMorph(labelR, qbfLiveScoresCaption()));
+    qbfStyleText(this.liveScoresLabel, {
+      fontSize: 11,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+    });
+    this.liveScoresPlate = this.addMorph(new QBFDecorMorph(R.copy()));
+    this.liveScoresPlate.setStyles(Color.white, 1, Color.gray);
+    // List starts ~2px lower than the plate top; text inset starts 4px left of prior.
+    this.liveScoresLog = this.addMorph(new QBFTextMorph(R.copy(), ' '));
+    qbfStyleText(this.liveScoresLog, {
+      fontSize: 12,
+      fontFamily: 'monospace',
+      lineHeight: 14,
+      hang: 4,
+      insetX: -2,
+      noBreak: true,
+      boxColor: Color.white,
+      borderWidth: 0,
+    });
     this.refreshLiveScoresPane();
   }
   idleHelpMessage() {
@@ -1551,31 +1795,51 @@ class QBFMorph extends Morph {
   setupButtons(lay) {
     let k = lay.keyButtons;
     let w = Math.floor((k.width() - 20) / 3);
-    this.clearButton = this.addButton(
-      rect(k.topLeft.x, k.topLeft.y, w, k.height()),
-      'clear (esc)',
-      'clear',
-    );
-    this.backButton = this.addButton(
-      rect(k.topLeft.x + w + 10, k.topLeft.y, w, k.height()),
-      'delete (del)',
-      'delete',
-    );
-    this.enterButton = this.addButton(
-      rect(k.topLeft.x + 2 * (w + 10), k.topLeft.y, w, k.height()),
-      'enter (retn)',
-      'enter',
-    );
+    // Clear / delete / enter sit under the title and collide with it — hide for now.
+    // this.clearButton = this.addButton(
+    //   rect(k.topLeft.x, k.topLeft.y, w, k.height()),
+    //   'clear (esc)',
+    //   'clear',
+    // );
+    // this.backButton = this.addButton(
+    //   rect(k.topLeft.x + w + 10, k.topLeft.y, w, k.height()),
+    //   'delete (del)',
+    //   'delete',
+    // );
+    // this.enterButton = this.addButton(
+    //   rect(k.topLeft.x + 2 * (w + 10), k.topLeft.y, w, k.height()),
+    //   'enter (retn)',
+    //   'enter',
+    // );
+    this.clearButton = null;
+    this.backButton = null;
+    this.enterButton = null;
+    // Autoplays / how to play / show scores — horizontal row under "words played",
+    // echoing clear / delete / enter above the rack.
     let g = lay.gameButtons;
-    let h = lay.hSpacing;
-    let row = 30;
-    // Left column (locked): pause / finish / restart. Right: autoplay / how to play / show scores.
-    this.pauseButton = this.addButton(g, 'pause', 'pause');
-    this.finishButton = this.addButton(g.translatedBy(pt(0, row)), 'finish', 'finishTiles');
-    this.restartButton = this.addButton(g.translatedBy(pt(0, 2 * row)), 'restart', 'restart');
-    this.autoPlayButton = this.addButton(g.translatedBy(pt(h, 0)), 'auto play', 'autoPlay');
-    this.infoButton = this.addButton(g.translatedBy(pt(h, row)), 'how to play', 'rules');
-    this.scoresButton = this.addButton(g.translatedBy(pt(h, 2 * row)), 'show scores', 'scores');
+    let gw = Math.floor((g.width() - 20) / 3);
+    this.autoPlayButton = this.addButton(
+      rect(g.topLeft.x, g.topLeft.y, gw, g.height()),
+      'auto play',
+      'autoPlay',
+    );
+    this.infoButton = this.addButton(
+      rect(g.topLeft.x + gw + 10, g.topLeft.y, gw, g.height()),
+      'how to play',
+      'rules',
+    );
+    this.scoresButton = this.addButton(
+      rect(g.topLeft.x + 2 * (gw + 10), g.topLeft.y, gw, g.height()),
+      'show scores',
+      'scores',
+    );
+    // Social locks deferred — pause / finish / restart stay out of the chrome for now.
+    // this.pauseButton = this.addButton(g, 'pause', 'pause');
+    // this.finishButton = this.addButton(g.translatedBy(pt(0, 30)), 'finish', 'finishTiles');
+    // this.restartButton = this.addButton(g.translatedBy(pt(0, 60)), 'restart', 'restart');
+    this.pauseButton = null;
+    this.finishButton = null;
+    this.restartButton = null;
     this.updateAutoPlayButton();
     this.updateModeControls();
     this.nameButton = this.addButton(
@@ -1589,6 +1853,30 @@ class QBFMorph extends Morph {
     let fox = this.addMorph(new EmojiMorph('FOX FACE', 56));
     fox.setBounds(lay.fox);
     fox.onPointerDown = function () {
+      return false;
+    };
+    this.setupTitle(lay);
+  }
+  setupTitle(lay) {
+    /**
+     * Board title: playful orange type at fox height/Y, centered on the rack.
+     */
+    let R = lay.title || lay.fox;
+    this.titleText = this.addMorph(new QBFTextMorph(R.copy(), 'The Quick  Brow Fox'));
+    qbfStyleText(this.titleText, {
+      fontSize: 42,
+      fontFamily: 'Comic Sans MS, Chalkboard SE, Marker Felt, cursive',
+      lineHeight: Math.max(48, R.height() - 8),
+      hang: 8,
+      insetX: 4,
+      noBreak: true,
+      center: true,
+      boxColor: null,
+      borderWidth: 0,
+      // Fox-forehead orange (brighter / more saturated than Color.orange).
+      textColor: new Color(1, 0.45, 0.05),
+    });
+    this.titleText.onPointerDown = function () {
       return false;
     };
   }
@@ -1741,8 +2029,8 @@ class QBFMorph extends Morph {
     }
     if (nLetters > 0) this.fillLetter(this.multBoxes[nLetters - 1], Color.blue);
     this.wordScore = this.letterScore * this.multipliers[nLetters];
-    this.letterScoreBox.setText(String(this.letterScore));
-    this.wordScoreBox.setText(String(this.wordScore));
+    if (this.letterScoreBox) this.letterScoreBox.setText(String(this.letterScore));
+    if (this.wordScoreBox) this.wordScoreBox.setText(String(this.wordScore));
   }
   launchLevel(caption) {
     /**
@@ -1976,8 +2264,9 @@ class QBFMorph extends Morph {
   }
   updateLaunchButtons(viewIfAny) {
     /**
-     * Ready: show all three speeds. Once a game is open or this panel is playing,
-     * only the current speed is visible (parked in the top launch slot).
+     * Keep all three speed buttons in their home slots. While a game is open or
+     * this panel is playing, non-current speeds stay visible but disabled so the
+     * chosen speed is obvious without relocating buttons.
      */
     let view = viewIfAny || qbfViewTournament();
     let active = null;
@@ -1987,7 +2276,6 @@ class QBFMorph extends Morph {
       active = view.speed;
     }
     let homes = this.$launchBtnHomes || {};
-    let slot = this.$launchBtnSlot;
     let buttons = [
       { btn: this.superQuickButton, caption: 'super quick' },
       { btn: this.quickButton, caption: 'quick' },
@@ -1997,16 +2285,9 @@ class QBFMorph extends Morph {
       let each = buttons[i];
       if (!each.btn) continue;
       let home = homes[each.caption];
-      if (!active) {
-        if (home) each.btn.setBounds(home.copy());
-        this.styleControlButton(each.btn, true);
-      } else if (active === each.caption) {
-        let r = slot || home;
-        if (r) each.btn.setBounds(r.copy());
-        this.styleControlButton(each.btn, true);
-      } else {
-        each.btn.setBounds(rect(0, 0, 0, 0));
-      }
+      if (home) each.btn.setBounds(home.copy());
+      let enabled = !active || active === each.caption;
+      this.styleControlButton(each.btn, enabled);
     }
   }
   syncGameClock(forceIfAny) {
@@ -2117,6 +2398,8 @@ function openQBF(topLeftIfAny) {
    */
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(10, 40);
   qbfEnsureWordList();
+  // Fresh idle tray: clear any leftover active-games rows from a prior session.
+  qbfClearLiveScores();
   let game = new QBFMorph();
   let ext = game.getBounds().extent;
   let panel = new PanelMorph(
@@ -2676,10 +2959,35 @@ function qbfApplyAccountNameToAnonymousBoards(fullName) {
   });
 }
 function qbfDefaultPlayerName() {
+  /** Sync fallback while getUserName() is pending or unavailable. */
+  return 'Anonymous';
+}
+function qbfResolvePlayerNameFromAccount(game) {
   /**
-   * Prefer the Patchwork account contact name (first word); else Anonymous.
-   * If the contact doc is not ready yet, resolve async and update idle boards.
+   * Prefer getUserName() (Patchwork account contact). On success, adopt the
+   * first word as this board's name if it is still the default Anonymous.
+   * Failures leave the existing default in place.
    */
+  if (!game) return;
+  let apply = function (fullName) {
+    let short = qbfShortPlayerName(fullName);
+    if (!short) return;
+    if (game.autoPlay) return;
+    if (game.playerName && game.playerName !== 'Anonymous') return;
+    game.playerName = short;
+    if (game.nameButton) game.nameButton.setLabel(short);
+  };
+  try {
+    if (typeof getUserName === 'function') {
+      Promise.resolve(getUserName())
+        .then(function (name) {
+          if (name) apply(name);
+        })
+        .catch(function () {});
+      return;
+    }
+  } catch (_e) {}
+  // Legacy sync path if getUserName is missing.
   try {
     let acct =
       (typeof window !== 'undefined' && window.accountDocHandle) ||
@@ -2687,44 +2995,9 @@ function qbfDefaultPlayerName() {
       null;
     if (acct && typeof acct.doc === 'function') {
       let doc = acct.doc();
-      if (doc && doc.name) {
-        let short = qbfShortPlayerName(doc.name);
-        if (short) return short;
-      }
-      let contactUrl = doc && doc.contactUrl;
-      let repo =
-        (typeof window !== 'undefined' && window.repo) ||
-        (typeof globalThis !== 'undefined' && globalThis.repo) ||
-        null;
-      if (contactUrl && repo && typeof repo.find === 'function') {
-        let handles = repo.handles;
-        let h = null;
-        if (handles) {
-          if (typeof handles.get === 'function') h = handles.get(contactUrl);
-          else h = handles[contactUrl];
-        }
-        if (h && typeof h.doc === 'function') {
-          let n = h.doc().name;
-          let short = qbfShortPlayerName(n);
-          if (short) return short;
-        }
-        if (!qbfDefaultPlayerName._lookup) {
-          qbfDefaultPlayerName._lookup = true;
-          Promise.resolve(repo.find(contactUrl))
-            .then(function (ch) {
-              qbfDefaultPlayerName._lookup = false;
-              if (!ch || typeof ch.doc !== 'function') return;
-              let n = ch.doc().name;
-              if (n) qbfApplyAccountNameToAnonymousBoards(n);
-            })
-            .catch(function () {
-              qbfDefaultPlayerName._lookup = false;
-            });
-        }
-      }
+      if (doc && doc.name) apply(doc.name);
     }
-  } catch (_e) {}
-  return 'Anonymous';
+  } catch (_e2) {}
 }
 
 function qbfWirePanelCollapse(panel, game) {
@@ -2967,7 +3240,7 @@ class QBFGameScore {
     let gameCol = this.gameNo !== '' && this.gameNo != null ? '#' + this.gameNo : '';
     return [
       String(this.score),
-      this.player,
+      qbfTruncateName(this.player, 12),
       this.speed,
       bestWord,
       String(this.BWPoints),
@@ -3503,8 +3776,17 @@ class QBFScoresMorph extends Morph {
   }
   static preferredExtent() {
     /** Size that fits fixed recent games + high scores for 15 rows + header + footer. */
-    let lay = QBFScoresMorph.layoutMetrics(520, 0);
+    let lay = QBFScoresMorph.layoutMetrics(QBFScoresMorph.preferredWidth(), 0);
     return pt(lay.width, lay.minHeight);
+  }
+  static preferredWidth() {
+    /**
+     * Wide enough for a full monospace score row including the date column
+     * ("Jul 25 12:00") at 11px Courier, plus pane insets and scrollbar gut.
+     * Trimmed by 6 character advances from the original 620 fit.
+     */
+    let charW = 7; // ~advance of 11px Courier
+    return 620 - 6 * charW;
   }
   static layoutMetrics(widthIfAny, heightIfAny) {
     /**
@@ -3519,7 +3801,8 @@ class QBFScoresMorph extends Morph {
     let highLines = 1 + 15 + 1; // header + top5×3 speeds + footer
     let recentScrollH = 220; // fixed
     let highNeeded = highLines * lineH + 24; // content + inset/padding
-    let w = widthIfAny != null && widthIfAny > 0 ? widthIfAny : 520;
+    let prefW = QBFScoresMorph.preferredWidth();
+    let w = widthIfAny != null && widthIfAny > 0 ? Math.max(widthIfAny, prefW) : prefW;
     let minH = pad + labelGap + recentScrollH + paneGap + labelGap + highNeeded + pad;
     let h = heightIfAny != null && heightIfAny > minH ? heightIfAny : minH;
     let highScrollH = h - (pad + labelGap + recentScrollH + paneGap + labelGap + pad);

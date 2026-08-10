@@ -23,19 +23,59 @@ describe('QBF', () => {
     expect(rt.eval(`!!qbfGame.wordLog1 && !!qbfGame.wordLog2 && !!qbfGame.liveScoresLog`)).toBe(
       true,
     );
-    expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain('-- my words --');
-    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('-- active games --');
+    expect(rt.eval(`qbfGame.wordLogLabel.shape.string`)).toBe('words played');
+    expect(rt.eval(`qbfGame.wordLog1.shape.string.trim()`)).toBe('');
+    expect(rt.eval(`qbfGame.liveScoresLabel.shape.string`)).toBe('active games');
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string.trim()`)).toBe('');
     expect(
       rt.eval(
         `Math.abs(qbfGame.wordLog1.getBounds().width() - qbfGame.wordLog2.getBounds().width()) <= 1`,
       ),
     ).toBe(true);
+    // Live scores sit under the speed column.
+    expect(
+      rt.eval(`
+lay = qbfGame.computeLayout();
+qbfGame.liveScoresLog.getBounds().topLeft.x == lay.launch.topLeft.x &&
+qbfGame.liveScoresLog.getBounds().topLeft.y == lay.liveScores.topLeft.y &&
+lay.liveScores.topLeft.y >= lay.launch.topLeft.y + 52 + 2 * lay.speedRow + lay.speedBtnH + 15
+`),
+    ).toBe(true);
+    // Game # / speeds / active games start ~30px below the belt, ~20px right of the word list.
+    expect(
+      rt.eval(`
+lay = qbfGame.computeLayout();
+beltBottom = lay.belt.topLeft.y + 16 + 2;
+Math.abs(lay.launch.topLeft.y - (beltBottom + 30)) <= 2 &&
+Math.abs(lay.launch.topLeft.x - (lay.log.topLeft.x + lay.log.width() + 20 + qbfGame.letterW)) <= 2
+`),
+    ).toBe(true);
+    // Autoplays / how to play / show scores share one horizontal row under the word list.
     expect(
       rt.eval(
-        `Math.abs(qbfGame.wordLog2.getBounds().width() - qbfGame.liveScoresLog.getBounds().width()) <= 1`,
+        `qbfGame.autoPlayButton.getBounds().topLeft.y == qbfGame.infoButton.getBounds().topLeft.y &&
+qbfGame.infoButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().topLeft.y`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.autoPlayButton.getBounds().topLeft.y > qbfGame.wordLog1.getBounds().bottom() - 4`,
       ),
     ).toBe(true);
     expect(rt.eval(`qbfGame.wordLog === qbfGame.wordLog1`)).toBe(true);
+    expect(rt.eval(`!!qbfGame.titleText && qbfGame.titleText.shape.string`)).toBe(
+      'The Quick  Brow Fox',
+    );
+    expect(
+      rt.eval(
+        `Math.abs(qbfGame.titleText.getBounds().center().x - qbfGame.computeLayout().rack.center().x) <= 2`,
+      ),
+    ).toBe(true);
+    expect(
+      rt.eval(
+        `qbfGame.titleText.getBounds().topLeft.y == qbfGame.computeLayout().fox.topLeft.y`,
+      ),
+    ).toBe(true);
     expect(
       rt.eval(
         `qbfGame.nameButton.getBounds().center().x == qbfGame.computeLayout().fox.center().x`,
@@ -47,64 +87,71 @@ describe('QBF', () => {
       ),
     ).toBe(true);
     expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
-    expect(rt.eval(`qbfGame.finishButton.shape.textColor === Color.gray`)).toBe(true);
+    expect(rt.eval(`!!qbfGame.pauseButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.finishButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.restartButton`)).toBe(false);
     expect(rt.eval(`!!qbfGame.bestGameBox`)).toBe(false);
-    expect(rt.eval(`!!qbfGame.topWordBox && qbfGame.topWordBox.shape.string`)).toBe('0');
+    // Right-column score readouts are off (conflict with active-games block).
+    expect(rt.eval(`!!qbfGame.letterScoreBox`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.totalScoreBox`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.topWordBox`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.topWordLetters`)).toBe(false);
+    // Word-score tile sits left of the outbox while a board is playing.
+    expect(rt.eval(`!!qbfGame.wordScoreBox && qbfGame.wordScoreBox.getBounds().width() > 0`)).toBe(
+      true,
+    );
+    expect(
+      rt.eval(
+        `qbfGame.titleText.getBounds().width() >= qbfGame.computeLayout().rack.width() + 160`,
+      ),
+    ).toBe(true);
     expect(rt.eval(`!!qbfGame.quickButton && !!qbfGame.superQuickButton && !!qbfGame.notSoQuickButton`)).toBe(
       true,
     );
-    expect(rt.eval(`qbfGame.finishButton.shape.string`)).toBe('finish');
     expect(rt.eval(`qbfGame.autoPlayButton.shape.string`)).toBe('auto play');
     expect(rt.eval(`qbfGame.infoButton.shape.string`)).toBe('how to play');
     expect(rt.eval(`!!qbfGame.multiplierBox`)).toBe(false);
     expect(rt.eval(`!!qbfGame.soloModeButton`)).toBe(false);
     expect(rt.eval(`!!qbfGame.socialModeButton`)).toBe(false);
-    expect(rt.eval(`qbfGame.clearButton.getBounds().height()`)).toBe(22);
+    expect(rt.eval(`!!qbfGame.clearButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.backButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.enterButton`)).toBe(false);
     expect(rt.eval(`qbfGame.quickButton.getBounds().height()`)).toBe(22);
-    // Launch column aligns with the letter-score row.
+    // Game # sits in the launch column (with the speed buttons).
     expect(
-      rt.eval(
-        `qbfGame.gameNumberLabel.getBounds().topLeft.y == qbfGame.letterScoreBox.getBounds().topLeft.y`,
-      ),
+      rt.eval(`
+lay = qbfGame.computeLayout();
+qbfGame.gameNumberLabel.getBounds().topLeft.x == lay.launch.topLeft.x &&
+qbfGame.gameNumberLabel.getBounds().topLeft.y == lay.launch.topLeft.y
+`),
     ).toBe(true);
-    // Left column: pause / finish / restart. Right: autoplay / how to play / show scores.
+    // Horizontal control row: autoplay left of how-to-play left of show-scores.
     expect(
       rt.eval(
-        `qbfGame.pauseButton.getBounds().topLeft.y == qbfGame.autoPlayButton.getBounds().topLeft.y`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.finishButton.getBounds().topLeft.y == qbfGame.infoButton.getBounds().topLeft.y`,
+        `qbfGame.autoPlayButton.getBounds().topLeft.x < qbfGame.infoButton.getBounds().topLeft.x`,
       ),
     ).toBe(true);
     expect(
       rt.eval(
-        `qbfGame.restartButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().topLeft.y`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.autoPlayButton.getBounds().topLeft.x > qbfGame.pauseButton.getBounds().topLeft.x`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.pauseButton.getBounds().topLeft.y < qbfGame.finishButton.getBounds().topLeft.y`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.finishButton.getBounds().topLeft.y < qbfGame.restartButton.getBounds().topLeft.y`,
+        `qbfGame.infoButton.getBounds().topLeft.x < qbfGame.scoresButton.getBounds().topLeft.x`,
       ),
     ).toBe(true);
     expect(rt.eval(`String(qbfGame.gameNumberLabel.shape.string)`)).toMatch(/^Game #/);
     expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/ready|open|playing/);
+    expect(
+      rt.eval(
+        `qbfGame.epochStatus.getBounds().topLeft.x === qbfGame.computeLayout().launch.topLeft.x + 3`,
+      ),
+    ).toBe(true);
     expect(rt.eval(`!!qbfScores && qbfScores.className`)).toBe('QBFScoresMorph');
     expect(rt.eval(`!!qbfScores.quickButton`)).toBe(false);
     expect(rt.eval(`!!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(true);
     expect(rt.eval(`!!qbfScores.recentScroll && qbfScores.recentScroll.className`)).toBe('TextPane');
     expect(rt.eval(`!!qbfScores.scoresScroll && qbfScores.scoresScroll.className`)).toBe('TextPane');
+    // Wide enough that the date column ("Jul 25 12:00") is not clipped.
+    expect(rt.eval(`qbfScores.getBounds().width()`)).toBe(578);
+    expect(rt.eval(`qbfScores.recentScroll.getBounds().width()`)).toBe(558);
+    expect(rt.eval(`qbfScores.scoresScroll.getBounds().width()`)).toBe(558);
   }, 60_000);
 
   it('carries tiles in on the belt and drops them onto the rack', () => {
@@ -161,7 +208,12 @@ describe('QBF', () => {
     expect(rt.eval(`qbfGame.$logLines[0]`)).toContain(word);
     expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(0);
     expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain(word);
-    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toMatch(/\d/);
+    // Live scores only fill once a Game # is claimed (tournament launch).
+    expect(
+      rt.eval(
+        `qbfGame.tournamentGameNumber == null || /\\d/.test(qbfGame.liveScoresLog.shape.string)`,
+      ),
+    ).toBe(true);
     ticks(5); // and the game keeps running afterwards
   }, 60_000);
 
@@ -180,6 +232,7 @@ true`);
     expect(rt.eval(`qbfLiveScoreRowsForGame(100).length`)).toBe(1);
     expect(rt.eval(`qbfLiveScoreRowsForGame(100)[0].player`)).toBe('Ada');
     expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('Ada');
+    expect(rt.eval(`Number(qbfGame.liveScoresLog.shape.font.replace(/px.*/, ''))`)).toBe(12);
 
     ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
     rt.eval(`
@@ -196,19 +249,24 @@ true`);
 
     rt.eval(`
 qbfPostLiveScore('Bea', 40, 100);
+qbfPostLiveScore('VeryLongPlayerNameXYZ', 7, 100);
 qbfGame.refreshLiveScoresPane();
 true`);
-    expect(rt.eval(`qbfLiveScoreRowsForGame(100).length`)).toBe(2);
+    expect(rt.eval(`qbfLiveScoreRowsForGame(100).length`)).toBe(3);
     expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('Bea');
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string`)).toContain('VeryLongPlay');
+    expect(rt.eval(`qbfGame.liveScoresLog.shape.string.indexOf('VeryLongPlayerNameXYZ') < 0`)).toBe(
+      true,
+    );
     // Column 2 only fills after column 1 is full (height-based).
     rt.eval(`
 qbfGame.resetWordLog();
 for (let i = 0; i < qbfGame.logColumnMaxRows() + 2; i++) qbfGame.appendLog('x' + i);
 true`);
-    expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain('-- my words --');
+    expect(rt.eval(`qbfGame.wordLogLabel.shape.string`)).toBe('words played');
     expect(rt.eval(`qbfGame.wordLog1.shape.string`)).toContain('x0');
     expect(rt.eval(`qbfGame.wordLog2.shape.string`)).toContain('x');
-    // Column 2 starts only after column 1 is full (header counts as a row).
+    // Column 2 starts only after column 1 is full.
     expect(
       rt.eval(
         `qbfGame.wordLog1.shape.string.split('\\n').length == qbfGame.logColumnMaxRows()`,
@@ -283,15 +341,15 @@ qbfGame.refreshLiveScoresPane();
 qbfFinal = qbfGame.liveScoresLog.shape.string;
 qbfHeader = qbfLiveScoresHeaderFor(100);
 true`);
-    expect(rt.eval(`qbfActive`)).toContain('-- active games --');
+    expect(rt.eval(`qbfActive`)).toContain('Ada');
     expect(rt.eval(`qbfLen`)).toBe(2);
     expect(rt.eval(`qbfAfterEpoch`)).toContain('Ada');
     expect(rt.eval(`qbfAdaScore`)).toBe(99);
-    expect(rt.eval(`qbfMid`)).toBe('-- active games --');
-    expect(rt.eval(`qbfHeader`)).toBe('-- final scores --');
-    expect(rt.eval(`qbfFinal`)).toContain('-- final scores --');
+    expect(rt.eval(`qbfMid`)).toBe('active games');
+    expect(rt.eval(`qbfHeader`)).toBe('final scores');
     expect(rt.eval(`qbfFinal`)).toContain('Ada');
     expect(rt.eval(`qbfFinal`)).toContain('Bea');
+    expect(rt.eval(`qbfGame.liveScoresLabel.shape.string`)).toBe('final scores');
   }, 60_000);
 
   it('checks words against a loaded list, scoring bad words against you', () => {
@@ -357,7 +415,6 @@ true`);
     rt.eval(`qbfTrack = qbfGame.activeLetters[0]`);
     rt.eval(`qbfGame.doPause(true)`);
     expect(rt.eval(`qbfGame.paused`)).toBe(true);
-    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('resume');
     const pausedX = rt.eval(`qbfTrack.getBounds().topLeft.x`) as number;
     ticks(20);
     expect(rt.eval(`qbfTrack.getBounds().topLeft.x`)).toBe(pausedX);
@@ -380,15 +437,16 @@ true`);
 
   it('runs its buttons and clicks through the real event pipeline', () => {
     const { rt, dispatch, runFrame } = makeGame();
-    // Pause / finish are locked in social play; the buttons fire but do nothing.
+    // Pause / finish are locked (and currently hidden); firing them is a no-op.
     rt.eval(`qbfGame.buttonFired('pause'); true`);
     expect(rt.eval(`qbfGame.paused`)).toBe(false);
-    expect(rt.eval(`qbfGame.pauseButton.shape.string`)).toBe('pause');
+    expect(rt.eval(`!!qbfGame.pauseButton`)).toBe(false);
     rt.eval(`
 qbfBeforeFinish = qbfGame.letterQueue.join('');
 qbfGame.buttonFired('finishTiles');
 true`);
     expect(rt.eval(`qbfGame.letterQueue.join('')`)).toBe(rt.eval(`qbfBeforeFinish`));
+    expect(rt.eval(`!!qbfGame.finishButton`)).toBe(false);
 
     // Pointer press/release on a live button (owner coords). Catches the
     // $hitPoint vs hitPoint regression that left every QBF button dead.
@@ -478,7 +536,6 @@ qbfBang.loc = 'rack';
 qbfGame.placeBottomRight(qbfBang, qbfGame.rack.getBounds().topLeft.addPt(pt(0, 1)));
 qbfGame.activeLetters = [qbfBang];
 qbfGame.totalScore = 42;
-qbfGame.totalScoreBox.setText('42');
 qbfGame.playerName = 'Tester';
 true`);
     ticksUntil(`qbfGame.gameOver`);
@@ -491,7 +548,6 @@ true`);
     rt.eval(`qbfGame.setup(); true`);
     expect(rt.eval(`qbfGame.gameOver`)).toBe(false);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(0);
-    expect(rt.eval(`Number(qbfGame.topWordBox.shape.string)`)).toBe(0);
   }, 60_000);
 
   it('waits for falling tiles to land before posting the final score', () => {
@@ -592,7 +648,7 @@ true`);
       rt.eval(`qbfCompactStringToArray($qbfWordList).every((word) => word.length <= 9)`),
     ).toBe(true);
     // Embedded list may include extra hand-added words beyond QBFWords.txt
-    // (see qbfAddWordsToEmbeddedList in QBFWordList.js); do not require byte-equality.
+    // (see qbfAddWordsToEmbeddedList in QBF.js); do not require byte-equality.
     expect(rt.eval(`$qbfWordList.length < qbfEmbeddedWordList().length`)).toBe(true);
   }, 60_000);
 
@@ -640,18 +696,22 @@ true`);
     const { rt } = makeGame();
     rt.eval(`
 qbfPostRecentGameResult(new QBFGameScore(42, 'Ada', 'quick', 'FOX', 18, 100, '2026-07-25T12:00:00Z'));
+qbfPostRecentGameResult(new QBFGameScore(9, 'VeryLongPlayerNameXYZ', 'quick', 'HI', 2, 101, '2026-07-25T12:01:00Z'));
 qbfScores.refresh();
 true`);
     const recent = rt.eval(`qbfScores.recentText.shape.string`) as string;
     expect(recent).toContain('score');
     expect(recent).toContain('player');
     expect(recent).toContain('Ada');
+    expect(recent).toContain('VeryLongPlay');
+    expect(recent).not.toContain('VeryLongPlayerNameXYZ');
     expect(recent).toContain('FOX');
     expect(recent).toContain('#100');
     expect(recent).not.toContain('2026');
     const header = rt.eval(`QBFGameScore.headerRow().join(',')`) as string;
     expect(header).toBe('score,player,speed,best word,pts,game #,date');
     expect(rt.eval(`qbfFormatScoreTime('2026-07-25T15:30:00Z')`)).not.toContain('2026');
+    expect(rt.eval(`qbfTruncateName('VeryLongPlayerNameXYZ', 12)`)).toBe('VeryLongPlay');
   }, 60_000);
 
   it('shows top 5 high scores per speed and keeps recent games height fixed', () => {
@@ -828,11 +888,12 @@ true`);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain(
       'Start a new game at your chosen speed',
     );
-    // Idle startup hides the four score boxes/captions (brown board only).
-    expect(rt.eval(`qbfGame.letterScoreBox.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.letterScoreBox.$scoreLabel.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.topWordBox.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.topWordLetters.getBounds().width()`)).toBe(0);
+    // Idle startup: no right-column scores; word-score tile hidden until play.
+    expect(rt.eval(`!!qbfGame.letterScoreBox`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.topWordBox`)).toBe(false);
+    expect(
+      rt.eval(`!!qbfGame.wordScoreBox && qbfGame.wordScoreBox.getBounds().width() === 0`),
+    ).toBe(true);
     // Idle help sits 4px above the rack rail.
     expect(
       rt.eval(
@@ -847,24 +908,46 @@ true`);
     expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
     expect(rt.eval(`Lively.qbfEpochSpeed`)).toBe('quick');
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
-    // Playing board shows score captions again.
-    expect(rt.eval(`qbfGame.letterScoreBox.$scoreLabel.shape.string`)).toBe('letter score');
+    // Speeds stay in home slots; word score is a tile left of the outbox.
+    expect(
+      rt.eval(`
+qbfGame.quickButton.getBounds().topLeft.y === qbfGame.$launchBtnHomes.quick.topLeft.y &&
+qbfGame.superQuickButton.getBounds().width() > 0 &&
+qbfGame.notSoQuickButton.getBounds().width() > 0
+`),
+    ).toBe(true);
+    expect(rt.eval(`!!qbfGame.wordScoreBox`)).toBe(true);
+    expect(
+      rt.eval(`
+lay = qbfGame.computeLayout();
+ws = qbfGame.wordScoreBox.getBounds();
+outY = lay.outbox.topLeft.y + 1 - qbfGame.letterH;
+ws.width() === qbfGame.letterW &&
+ws.height() === qbfGame.letterH &&
+Math.abs(ws.topLeft.x - (lay.outbox.topLeft.x - 2 * qbfGame.letterW)) <= 1 &&
+ws.topLeft.y === outY &&
+Number(qbfGame.wordScoreBox.shape.font.replace(/px.*/, '')) === 24 &&
+qbfGame.wordScoreBox.shape.borderWidth === 2 &&
+!!qbfGame.wordScoreBox.$scoreLabel &&
+qbfGame.wordScoreBox.$scoreLabel.shape.string === 'points'
+`),
+    ).toBe(true);
     const queue1 = rt.eval(`qbfGame.tournamentLetterQueue.join('')`) as string;
     expect(queue1.length).toBeGreaterThan(10);
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(true);
     expect(rt.eval(`Lively.$qbfEpochEndTimer != null`)).toBe(true);
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
-    // Only the current speed is shown while playing.
+    // All speeds remain visible while playing (chosen one stays enabled).
     expect(rt.eval(`qbfGame.quickButton.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.notSoQuickButton.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.notSoQuickButton.getBounds().width()`)).toBeGreaterThan(0);
     // After starting, idle help is hidden; re-idle board shows the join message.
     rt.eval(`qbfGame.setup({ idle: true })`);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('A game is open');
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
     expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/^open/);
     expect(rt.eval(`qbfGame.quickButton.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBeGreaterThan(0);
     rt.eval(`qbfGame.launchLevel('quick')`);
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
 
@@ -944,9 +1027,10 @@ true`);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toMatch(/Start a new game|A game is open/);
     // Finished board left in place (log morph still present with prior text).
     expect(rt.eval(`qbfGame.wordLog.shape.string`)).toBe(rt.eval(`qbfKeepLog`));
-    // Score readouts hidden so the board looks ready for another game.
-    expect(rt.eval(`qbfGame.letterScoreBox.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.totalScoreBox.getBounds().width()`)).toBe(0);
+    // Word-score tile hidden so the board looks ready for another game.
+    expect(
+      rt.eval(`!!qbfGame.wordScoreBox && qbfGame.wordScoreBox.getBounds().width() === 0`),
+    ).toBe(true);
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #101');
   }, 60_000);
 
