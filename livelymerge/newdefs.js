@@ -3620,7 +3620,6 @@ class Morph {
     this.shape.setBounds(this.shape.getBounds().translatedBy(this.origin.negated()));
     this.submorphs = []; // membership only; stacking comes from each child's zIndex (see drawList)
     this.zIndex = 0; // stacking position among my siblings; reassigned by addMorph*/promote
-    this.$steppingSpecs = [];
     this.hasChanged = true; //some call on changed() says we need to rerender
     if (traceMe) console.log('log ', 2);
   }
@@ -4649,20 +4648,23 @@ class Morph {
     world.addMorph(this.menu);
     return true;
   }
+  steppingSpecs() {
+    /** My local stepping schedule; lazily created, like {@link Morph#ephemeralSubmorphs} ($-props never survive a reload, and remote morphs arrive without them). */
+    if (!this.$steppingSpecs) this.$steppingSpecs = [];
+    return this.$steppingSpecs;
+  }
   startStepping(method, argIfAny, msTime, nextStepTimeIfAny) {
     // Replace any existing step with the same method name on this morph
     this.stopStepping(method);
-    let spec = new StepSpec(this, method, argIfAny, msTime, nextStepTimeIfAny);
-    if (!this.$steppingSpecs) this.$steppingSpecs = [];
-    this.$steppingSpecs.push(spec);
+    const spec = new StepSpec(this, method, argIfAny, msTime, nextStepTimeIfAny);
+    this.steppingSpecs().push(spec);
     this.world().startSteppingSpec(spec);
   }
   stopStepping(methodName) {
-    if (!this.$steppingSpecs) this.$steppingSpecs = [];
     if (methodName) {
-      deleteFromArrayPred(this.$steppingSpecs, (spec) => spec.methodName == methodName);
+      deleteFromArrayPred(this.steppingSpecs(), (spec) => spec.methodName == methodName);
     } else {
-      clearArray(this.$steppingSpecs);
+      clearArray(this.steppingSpecs());
     }
     this.world().stopSteppingMorph(this, methodName);
   }

@@ -196,13 +196,23 @@ describe('per-user stepping', () => {
     // $stepList as text (so no raw-JSON substring checks), and method refs like
     // @handleStepList/@activeStepList are persistent class structure by design (so
     // exact state-key matches only). @nextStepTime/@stepPeriod anywhere would betray
-    // a promoted StepSpec.
-    const stateKeys = new Set(['@stepList', '@steppingSpecs', '@nextStepTime', '@stepPeriod']);
+    // a promoted StepSpec. @steppingSpecs is special-cased: Morph.steppingSpecs (the
+    // lazy accessor) is class structure, so a ref to a fun is fine — anything else
+    // there (e.g. a promoted schedule array) is a leak.
+    const stateKeys = new Set(['@stepList', '@nextStepTime', '@stepPeriod']);
     const table = handle.doc().objectTable as Record<string, Record<string, unknown>>;
     const offendingKeys: string[] = [];
+    // NB: strings in the raw doc are ImmutableStrings (see docStrings.ts), so compare via String().
+    const isFunRef = (v: unknown): boolean => {
+      const ref = v as { $type?: unknown; $id?: unknown } | null;
+      if (!ref || String(ref.$type) !== 'ref' || !ref.$id) return false;
+      const referent = table[String(ref.$id)] as { $type?: unknown } | undefined;
+      return referent != null && String(referent.$type) === 'fun';
+    };
     for (const [id, entry] of Object.entries(table)) {
       for (const k of Object.keys(entry)) {
         if (stateKeys.has(k)) offendingKeys.push(`${id}.${k}`);
+        if (k === '@steppingSpecs' && !isFunRef(entry[k])) offendingKeys.push(`${id}.${k}`);
       }
     }
     expect(offendingKeys, `stepping schedule leaked into the document:\n  ${offendingKeys.join('\n  ')}`).toEqual([]);
