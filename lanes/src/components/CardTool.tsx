@@ -102,8 +102,8 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   if (!card || !doc) return null;
 
   return (
-    <div className="lanes flex h-full flex-col overflow-y-auto p-4 text-base-content">
-      <div className="relative flex h-full flex-col space-y-4">
+    <div className="lanes card-tool">
+      <div className="card-tool__stack">
         <div>
           <input
             ref={firstFieldRef}
@@ -112,12 +112,12 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
             onChange={(e) =>
               changeDoc((d) => updateText(d, ["title"], e.target.value))
             }
-            className="mb-2 w-full border-b border-base-300 bg-transparent px-1 py-1 text-xl font-semibold focus:border-primary focus:outline-none"
+            className="card-tool__title"
             placeholder="Title"
           />
         </div>
 
-        <div className="relative mt-2 rounded-md border border-base-300 bg-base-100 p-4">
+        <div className="card-fields">
           <ConfigMenu
             fieldConfigUrl={doc?.fieldConfigUrl || undefined}
             onConfigChange={(url) => {
@@ -128,7 +128,7 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
             dialogTrigger={
               fieldConfigDoc?.title ? (
                 <span
-                  className="absolute -top-3 left-3 z-10 -ml-1 -mr-1 cursor-pointer rounded border border-base-300 bg-base-100 px-1 py-0.5 text-[11px] font-medium text-base-content/70 shadow-sm hover:bg-base-200 focus:outline-none"
+                  className="card-fields__tag"
                   style={{ lineHeight: 1, minHeight: "1.5em" }}
                   title="Change field configuration"
                 >
@@ -137,10 +137,10 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
               ) : null
             }
           />
-          <div className="grid grid-cols-[max-content_1fr] items-center gap-x-2 gap-y-2">
+          <div className="card-fields__grid">
             {fields.map((field) => (
               <React.Fragment key={field.id}>
-                <label className="whitespace-nowrap pr-2 text-right text-xs font-medium text-base-content">
+                <label className="card-fields__label">
                   {field.name}
                 </label>
                 {field.type === "text" && (
@@ -148,7 +148,7 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                     type="text"
                     value={(getFieldValue(field.id) as string) || ""}
                     onChange={(e) => updateFieldValue(field.id, e.target.value)}
-                    className="input input-bordered input-sm w-full"
+                    className="input input--sm"
                   />
                 )}
                 {field.type === "number" && (
@@ -158,7 +158,7 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                     onChange={(e) =>
                       updateFieldValue(field.id, Number(e.target.value))
                     }
-                    className="input input-bordered input-sm w-full"
+                    className="input input--sm"
                   />
                 )}
                 {field.type === "date" && (
@@ -166,20 +166,20 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                     type="date"
                     value={(getFieldValue(field.id) as string) || ""}
                     onChange={(e) => updateFieldValue(field.id, e.target.value)}
-                    className="input input-bordered input-sm w-full"
+                    className="input input--sm"
                   />
                 )}
                 {field.type === "checkbox" && (
-                  <span className="flex items-center">
+                  <span className="card-fields__checkbox">
                     <input
                       type="checkbox"
                       checked={(getFieldValue(field.id) as boolean) || false}
                       onChange={(e) =>
                         updateFieldValue(field.id, e.target.checked)
                       }
-                      className="checkbox checkbox-sm mr-1"
+                      className="checkbox"
                     />
-                    <span className="text-xs text-base-content/60">Enable</span>
+                    <span className="card-fields__hint">Enable</span>
                   </span>
                 )}
                 {(field.type === "select" || field.type === "multiselect") && (
@@ -192,7 +192,7 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                     multiple={field.multiple}
                     fieldConfigDocUrl={doc.fieldConfigUrl}
                     fieldId={field.id}
-                    className="w-full text-sm"
+                    className="card-fields__select"
                   />
                 )}
               </React.Fragment>
@@ -200,26 +200,26 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           </div>
         </div>
 
-        <div className="flex grow flex-col">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="relative" ref={createMenuRef}>
+        <div className="card-body">
+          <div className="card-body__bar">
+            <div className="menu-anchor" ref={createMenuRef}>
               <button
                 type="button"
                 onClick={() => setIsCreateMenuOpen(!isCreateMenuOpen)}
-                className="btn btn-ghost btn-sm gap-2"
+                className="btn btn--ghost btn--sm"
               >
-                <Icon type="Plus" className="h-4 w-4" />
+                <Icon type="Plus" />
                 {doc.bodyDocUrl ? "Change Document" : "Add Document"}
               </button>
               {isCreateMenuOpen && (
-                <div className="absolute left-0 z-10 mt-1 w-64 rounded-lg border border-base-300 bg-base-100 shadow-lg">
-                  <div className="p-2">
+                <div className="menu">
+                  <div className="menu__inner">
                     <input
                       type="text"
                       placeholder="Paste document URL"
                       value={newBodyUrl || ""}
                       onChange={(e) => setNewBodyUrl(e.target.value)}
-                      className="input input-bordered mb-2 w-full"
+                      className="input menu__input"
                     />
                     <button
                       type="button"
@@ -232,14 +232,14 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                           setIsCreateMenuOpen(false);
                         }
                       }}
-                      className="btn btn-primary w-full"
+                      className="btn btn--primary btn--block"
                     >
                       Apply Document
                     </button>
-                    <div className="mt-2 text-sm text-base-content/60">
+                    <div className="menu__label">
                       Or create new:
                     </div>
-                    <div className="mt-2 space-y-1">
+                    <div className="menu__items">
                       {dataTypes
                         .filter(
                           (dt) =>
@@ -253,9 +253,9 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
                             onClick={() =>
                               handleCreateNewDocument(dataType.id)
                             }
-                            className="flex w-full items-center gap-2 rounded px-3 py-2 text-left hover:bg-base-200"
+                            className="menu__item"
                           >
-                            <Icon type={dataType.icon || "File"} className="h-4 w-4" />
+                            <Icon type={dataType.icon || "File"} />
                             {dataType.name}
                           </button>
                         ))}
@@ -266,10 +266,10 @@ export function CardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
             </div>
           </div>
           {doc.bodyDocUrl && (
-            <div className="grow overflow-hidden rounded-lg border border-base-300">
+            <div className="card-body__doc">
               <patchwork-view
                 doc-url={doc.bodyDocUrl}
-                className="h-full"
+                className="card-body__view"
               />
             </div>
           )}
@@ -288,9 +288,9 @@ export function CompactCardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
   const fields = fieldConfigDoc?.fields || [];
 
   return (
-    <div className="lanes rounded bg-base-100 p-2 text-base-content shadow-sm transition-shadow hover:shadow-md">
-      <h3 className="mb-1 truncate text-sm font-medium text-base-content">{doc.title}</h3>
-      <div className="flex flex-wrap gap-1">
+    <div className="lanes compact-card">
+      <h3 className="compact-card__title">{doc.title}</h3>
+      <div className="compact-card__chips">
         {fields.map((field) => {
           const value = doc.values.find((v) => v.fieldId === field.id)?.value;
           if (!value) return null;
@@ -304,7 +304,7 @@ export function CompactCardEditor({ docUrl }: { docUrl: AutomergeUrl }) {
           return (
             <span
               key={field.id}
-              className="rounded-full bg-base-200 px-1.5 py-0.5 text-xs text-base-content/70"
+              className="chip"
             >
               {field.name}: {displayValue}
             </span>

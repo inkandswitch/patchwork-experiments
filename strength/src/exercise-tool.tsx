@@ -12,7 +12,7 @@ function ExerciseView({ docUrl }: { docUrl: AutomergeUrl }) {
   if (!exercise) return null;
 
   return (
-    <div className="strength h-full overflow-y-auto bg-slate-50 p-4">
+    <div className="strength st-page">
       <ExerciseDetail
         exercise={exercise}
         onUpdate={(patch) => {

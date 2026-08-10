@@ -22,23 +22,23 @@ const FilterBar: React.FC<FilterBarProps> = ({
 }) => {
   return (
     <>
-      <div className="flex-shrink-0 border-b border-base-300 bg-base-100 px-4 py-3">
-        <div className="relative">
-          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-            <Icon type="Search" size={16} className="text-base-content/50" />
+      <div className="filterbar">
+        <div className="filterbar__search">
+          <div className="filterbar__icon">
+            <Icon type="Search" size={16} />
           </div>
           <input
             type="text"
             placeholder={placeholder}
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input input-bordered w-full pl-10"
+            className="input filterbar__input"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange("")}
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-base-content/50 hover:text-base-content/70"
+              className="filterbar__clear"
             >
               <Icon type="X" size={14} />
             </button>
@@ -47,21 +47,18 @@ const FilterBar: React.FC<FilterBarProps> = ({
       </div>
 
       {filterValues.length > 0 && (
-        <div className="flex-shrink-0 border-b border-base-300 bg-base-200 px-4 py-2">
-          <div className="mb-2 flex items-center">
-            <span className="text-xs font-medium uppercase tracking-wider text-base-content/60">
+        <div className="filterbar filterbar--values">
+          <div className="filterbar__labelrow">
+            <span className="filterbar__label">
               {filterLabel}
             </span>
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className="filterbar__chips">
             <button
               type="button"
               onClick={() => onFilterValueChange(null)}
-              className={`rounded-md px-2 py-1 text-xs ${
-                selectedValue === null
-                  ? "bg-primary font-medium text-primary-content shadow-sm"
-                  : "border border-base-300 bg-base-100 text-base-content hover:bg-base-200"
-              }`}
+              className="filter-chip"
+              data-active={selectedValue === null || undefined}
             >
               All
             </button>
@@ -70,11 +67,8 @@ const FilterBar: React.FC<FilterBarProps> = ({
                 key={value}
                 type="button"
                 onClick={() => onFilterValueChange(value)}
-                className={`rounded-md px-2 py-1 text-xs ${
-                  selectedValue === value
-                    ? "bg-primary font-medium text-primary-content shadow-sm"
-                    : "border border-base-300 bg-base-100 text-base-content hover:bg-base-200"
-                }`}
+                className="filter-chip"
+                data-active={selectedValue === value || undefined}
               >
                 {value}
               </button>

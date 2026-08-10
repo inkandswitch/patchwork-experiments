@@ -17,13 +17,13 @@ export function ContactChip({ contactUrl }: { contactUrl: AutomergeUrl }) {
 
   return createElement(
     "span",
-    { className: "inline-flex items-center gap-1.5 shrink-0" },
+    { className: "contact-chip" },
     createElement("patchwork-view", {
-      className: "!w-6 !h-6 !overflow-hidden !rounded-full !flex",
+      className: "contact-chip__avatar",
       "doc-url": contactUrl,
       "tool-id": "contact-avatar",
     }),
     name !== null &&
-      createElement("span", { className: "text-sm" }, name || "…")
+      createElement("span", { className: "contact-chip__name" }, name || "…")
   );
 }

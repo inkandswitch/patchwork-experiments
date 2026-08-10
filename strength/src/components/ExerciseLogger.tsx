@@ -49,7 +49,7 @@ export function ExerciseLogger({
   const exercise = session ? exerciseById(session, exerciseId) : undefined;
   if (!session || !exercise) {
     return (
-      <p className="text-center text-xs text-slate-400">
+      <p className="st-loading">
         This exercise is no longer part of the session.
       </p>
     );
@@ -59,9 +59,9 @@ export function ExerciseLogger({
   const unit: WeightUnit = exercise.unit ?? fallbackUnit;
 
   return (
-    <div className="space-y-1">
+    <div className="st-logger">
       {executing ? (
-        <div className="mb-1 flex justify-end">
+        <div className="st-logger__toolbar">
           <UnitToggle
             value={unit}
             onChange={(u) =>
@@ -81,7 +81,7 @@ export function ExerciseLogger({
           <patchwork-view
             doc-url={sessionHandle.sub("sets", { id: set.id }).url}
             tool-id="strength-set"
-            class="block"
+            class="st-embed-inline"
           />
         </div>
       ))}
@@ -93,7 +93,7 @@ export function ExerciseLogger({
               pushSetForExercise(draft, exerciseId, newLoggedSet(exerciseId));
             })
           }
-          className="text-xs text-emerald-700 hover:underline"
+          className="st-link"
         >
           + Add set
         </button>

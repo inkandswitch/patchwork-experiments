@@ -16,7 +16,7 @@ Some challenges:
   - When multiple users are present, who is in charge of running what "processes"? E.g., if the program implements a simulation and more than one user is running the code, it's possible that some side effects will run two or more times which is undesirable.
   - Is it possible to represent the program's state in such a way that its invariants will be preserved when automatic merges happen as a result of multiple users' interactions with overlapping sets of objects?
 - **Performance:** Can we get programs to run fast enough for authentic use?
-- **Support for long-running programs:** We'd like to be able to support programs that we can "live in" -- the kind of system Dan is known for, like [Squeak](https://squeak.org/) and the [Lively Kernel](https://www.lively-kernel.org/). But these programs run for an unbounded amount of time, and so their corresponding Automerge documents will accumulate a very large number of changes. Can we pull this off? If not (given the current implementation of Automerge) are there changes to AM (planned or otherwise) that could make this work?
+- **Support for long-running programs:** We'd like to be able to support programs that we can "live in" — the kind of system Dan is known for, like [Squeak](https://squeak.org/) and the [Lively Kernel](https://www.lively-kernel.org/). But these programs run for an unbounded amount of time, and so their corresponding Automerge documents will accumulate a very large number of changes. Can we pull this off? If not (given the current implementation of Automerge) are there changes to AM (planned or otherwise) that could make this work?
 
 This note describes the object model we designed and implemented for this project. It automatically serializes and deserializes data from/to the program's Automerge document. You'll see what this means and why it's needed soon. But first...
 
@@ -28,16 +28,16 @@ Dan's Lively Kernel (LK) is a Squeak-like system that was written entirely in Ja
 
 As part of the Livelymerge project, Dan has written a new LK-like system whose heap is represented as an Automerge document. It includes a graphical user interface based on [Morphic](https://rmod-files.lille.inria.fr/FreeBooks/CollectiveNBlueBook/morphic.final.pdf), editable text areas, and even a Smalltalk-style browser. Everything in the system is written from scratch (the graphics bottom out at the HTML canvas) and the code can be viewed and edited from inside the system. This means that the user can make fundamental changes to the system, and in a multi-user context, those changes apply to all of the participants.
 
-(Sidebar: for a long time, I've wanted my colleagues at Ink & Switch to experience this kind of self-sustaining system firsthand, and this project was a nice excuse to make that happen.)
+(Sidebar: for a long time, I've wanted my colleagues at Ink & Switch to experience this kind of self-sustaining system firsthand, and this project was a good excuse to make that happen.)
 
 ## LM's Object Model
 
-LM programs are written in (mostly) ordinary JavaScript: object and array literals, top-level declarations, closures, even ES `class` syntax all work the way you'd expect. The difference is where the objects live: their state is represented in the program's associated Automerge document instead of the JS heap. This means that our objects are persistent and support collaboration right out of the box.
+LM programs are written in ordinary JavaScript: object and array literals, top-level declarations, closures, even `class` syntax all work the way you'd expect. The difference is where the objects live: their state is represented in the program's associated Automerge document instead of the JS heap. This means that our objects are persistent and support collaboration right out of the box.
 
-Two pieces make this work:
+The implementation has two main ingredients:
 
-- An **object model** — the subject of this note — consisting of the _global object_ (the equivalent of JavaScript's `globalThis`, and the root of the heap — our object model performs automatic garbage collection, so this is important!) plus a small set of primitives for creating new objects, arrays, and functions in the heap.
-- A thin **transpiler** that routes plain-JavaScript syntax onto those primitives, so you never call them yourself. (The transpiler probably deserves its own lab note; here I'll stick to the object model underneath it.)
+- An **object model** — the subject of this note — consisting of the _global object_ (the equivalent of JavaScript's `globalThis`, and the root of the heap) plus a small set of primitives for creating new objects, arrays, and functions in the heap.
+- A **transpiler** that rewrites plain JavaScript to use those primitives, so you never call them yourself. (The transpiler probably deserves its own lab note; here I'll stick to the object model underneath it.)
 
 Here's a simple example to get us going:
 
@@ -48,6 +48,20 @@ f(5, 8); // evaluates to 42
 
 This looks pretty "vanilla" so far, but there's something interesting going on. Because `f` is a global, it lives in the program's heap — i.e., in the Automerge document. For example, suppose you and I are both working on this program, but from different computers. If I evaluate the first statement, `f` is stored in _our_ heap. This means that if you evaluate the second statement **without having evaluated the first**, you will still get the expected result (`42`).
 
+Here's another example — this one usually gets an "oooohhh" when we demo it:
+
+```
+makeCounter = () => {
+  let count = 0;
+  return () => ++count;
+};
+counter = makeCounter();
+counter(); // evaluates to 1
+counter(); // evaluates to 2
+```
+
+So far, so JavaScript: `counter` is a closure, and each call bumps the `count` variable it captured. Now for the "oooohhh" part: if _you_ evaluate `counter()` on your computer, you'll get `3`. The captured `count` isn't sitting in *my* JS heap — it lives in *our* Automerge document, like everything else. In other words, the state of a closure's free variables is persistent and shared, too. We'll see how this works soon.
+
 ## Representing Objects in the AM Document
 
 In our object model, a property of an object can hold any value, including a reference to another object or even the object itself:
@@ -56,19 +70,19 @@ In our object model, a property of an object can hold any value, including a ref
 obj.self = obj;
 ```
 
-So, just like in JS, it is possible for the heap of a LM program to contain cycles. But as we explained earlier, entire heap is represented as an AM document, which is JSON-like and must be tree-shaped. This means that our object model's implementation must **serialize** values to an AM-compatible format. (We discuss **deserialization** later in this note.) Here's what our serialized heap looks like:
+So, just like in JS, it is possible for the heap of a LM program to contain cycles. But as we explained earlier, the entire heap is represented as an AM document, which is JSON-like and must be tree-shaped. This means that our object model's implementation must **serialize** values to an AM-compatible format. Here's what our serialized heap looks like:
 
 ```
 {
   objectTable: {
-    '0.237823': <<state of object w/ id 0.237823>>,
-    '0.419':    <<state of object w/ id 0.419>>,
+    '84f2…': <<state of object w/ id 84f2…>>,
+    'd9c0…': <<state of object w/ id d9c0…>>,
     ...
   }
 }
 ```
 
-As you can see, we have an _object table_ that maps object ids to their state. Note that object ids can't be sequential as this would result in clashes (think multi-user!) so we use random numbers. **(Honest question: how safe is this? The JS standard is very vague re: [Math.random](https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-math.random).)**
+As you can see, we have an _object table_ that maps object ids to their state. Note that object ids can't be sequential as this would result in clashes (think multi-user!) so we use UUIDs.
 
 Here's what the state of an object in the object table looks like:
 
@@ -76,8 +90,8 @@ Here's what the state of an object in the object table looks like:
 {
   // the names of special properties are prefixed with a $
   $type: 'obj',
-  $id: '0.237823',   // id of this object
-  $protoId: '0.419', // id of the object that this object delegates to
+  $id: '84f2…',      // id of this object
+  $protoId: 'd9c0…', // id of the object that this object delegates to
 
   // user properties are prefixed with a @ (this sidesteps an Automerge
   // bug involving property names like `toString` that collide with
@@ -88,7 +102,7 @@ Here's what the state of an object in the object table looks like:
   // object references (like the value of the `next` property below)
   // are represented as objects with `$type = 'ref'` and the id of
   // the referent:
-  '@next': { $type: 'ref', $id: '0.12345' },
+  '@next': { $type: 'ref', $id: '52aa…' },
 }
 ```
 
@@ -97,18 +111,18 @@ Functions get their own entries in the object table, too — they're first-class
 ```
 {
   $type: 'fun',
-  $id: '0.5551',
+  $id: '7e1b…',
   $code: '($scope1) => (x) => x + $scope1.y',  // what we evaluate
   $codeForShow: '(x) => x + y',                // what we show the user
-  $scopes: [{ $type: 'ref', $id: '0.5550' }],  // captured environment
+  $scopes: [{ $type: 'ref', $id: '05fd…' }],   // captured environment
 }
 ```
 
-Note the `$scopes` property: closures work. The transpiler analyzes each function for free variables, moves captured bindings onto _scope objects_ (which are ordinary heap objects), and serializes the function together with references to its scopes. This means a closure's captured state is persistent and collaborative like everything else — if I make a counter with `let count = 0` captured in a closure and you call it, we're incrementing the same `count`.
+Note the `$scopes` property: the transpiler analyzes each function for free variables, moves captured bindings onto _scope objects_ (which are ordinary heap objects), and serializes the function together with references to its scopes. This is what made the counter example work: `count` lives in a scope object in the heap, so when you called `counter()`, you and I were incrementing the same `count`.
 
 ### Arrays
 
-Note that an array value can't just be represented as an array of serialized values. This is because it must have an id in order for other objects to be able to reference (alias!) it. So each array in LM has an entry in the object table, with `$type = 'arr'` and a `$values` property that holds its (serialized) elements. This representation enables arrays in our object model to benefit from the array merge semantics in AM: if you push onto an array while I splice something out of it, both edits survive the merge.
+An array value can't just be represented as an array of serialized values. This is because it needs an id in order for other objects to be able to reference (alias!) it. So each array in LM has an entry in the object table, with `$type = 'arr'` and a `$values` property that holds its (serialized) elements. This representation enables arrays in our object model to benefit from the array merge semantics in AM: if you push onto an array while I splice something out of it, both edits survive the merge.
 
 ## The interface to LM's object model
 
@@ -116,10 +130,10 @@ Now that we know how objects are represented, we can discuss the interface in mo
 
 ### The global object
 
-The _global object_ is the root of LM's heap, and it is represented in the object table as the object with id `global`. When your code refers to a global (e.g., `f(5, 8)` above), the transpiler routes that reference to a _proxy_ for the global object. This proxy intercepts reads from and writes to the object's properties:
+The _global object_ is the root of LM's heap, and it is represented in the object table as the object with id `global`. When your code refers to a global (e.g., `f(5, 8)` above), the transpiler rewrites that reference into a property access on a _proxy_ for the global object. This proxy intercepts reads from and writes to the object's properties:
 
-- On a _write_ (e.g., `p = someValue` at the top level) the proxy will _serialize_ the value that's being written to the property and store it in the appropriate place in the program's AM document.
-- On a _read_ (e.g., `p`) the proxy will find the corresponding serialized value in the program's AM document. It will then return the result of _deserializing_ that value.
+- On a _write_, the proxy will _serialize_ the value that's being written to the property and store it in the appropriate place in the program's AM document.
+- On a _read_, the proxy will find the corresponding serialized value in the program's AM document. It will then return the result of _deserializing_ that value.
 
 #### Serializing values
 
@@ -135,21 +149,23 @@ The sample object table in the previous section includes examples of each of the
 Here's how deserialization works:
 
 - A serialized primitive value deserializes to itself.
-- A serialized reference deserializes to a _proxy_ for the referent. (For a function, calling the proxy evaluates the function's `$code` — memoized, so we always get the same underlying function for the same code — against its deserialized `$scopes`.)
+- A serialized reference deserializes to a _proxy_ for the referent. (For a function, calling the proxy evaluates the function's `$code` against its deserialized `$scopes`.)
 
-That's right! The global object is not special in this respect: in LM, every time we interact with an object, we're really interacting with a proxy that knows which object it's for. One detail that matters in practice: proxies are cached per object id, so deserializing the same object twice gives you _the same_ proxy — which means `===`, `Map` keys, and `Set` membership work the way you'd expect.
+The global object is not special in this respect: in LM, every time we interact with an object, we're really interacting with a proxy that knows which object it's for. One detail that matters in practice: proxies are cached per object id, so deserializing the same object twice gives you _the same_ proxy — which means `===`, `Map` keys, and `Set` membership work the way you'd expect.
 
 ### Creating objects
 
-When your code says `{ x: 5 }`, `[1, 2, 3]`, or `function (…) {…}`, the transpiler wraps the literal in a call to the corresponding object-model primitive, which builds the serialized entry and returns a proxy for it.
+When your code contains an object, array, or function literal — `{ x: 5 }`, `[1, 2, 3]`, `(x) => x + 1` — the transpiler rewrites it into a call to the corresponding creation primitive. That call does two things: it adds a new (serialized) entry to the object table, and it returns a proxy for the new object.
 
-The use of proxies in LM's object model is all about _ergonomics_. It makes interacting with our objects feel natural — you just write JavaScript — and takes care of all of the serialization and deserialization that's required to operate on an AM-backed heap.
+Class declarations get the same treatment: the class becomes a constructor function in the heap, and its methods live on a prototype object that instances delegate to (via `$protoId`). And since classes and methods are heap objects like everything else, redefining a method — say, from the system browser — takes effect immediately for every collaborator.
+
+Together, the transpiler and the proxies are what make LM code feel like plain JavaScript — and the work is split cleanly between them. The transpiler rewrites the syntax that gets things _into_ the heap: literals, global references, the local variables captured by closures. Everything you subsequently _do_ with the objects in the heap — reading and writing properties, calling methods — goes through their proxies, which take care of all of the serialization and deserialization involved.
 
 ## The LM tool
 
-We have implemented a Livelymerge tool for Patchwork. Here's what a freshly-created LM document looks like when viewed through this tool:
+We have implemented Livelymerge as a tool for Patchwork. Here's what a freshly-created LM document looks like when viewed through this tool:
 
-![_A freshly-created Livelymerge document. The canvas is still blank; the panel in the top-right corner shows the state of the underlying Automerge document (its number of operations and current heads); and the workspace is open at the bottom, where we've just evaluated `3+4` with print-it._](lm-fresh.png)
+![_A freshly-created Livelymerge document. The canvas is still blank; the panel in the top-right corner shows the state of the underlying Automerge document (its number of operations and current heads); and the workspace is open at the bottom, where we've just evaluated `3+4` with a print-it._](lm-fresh.png)
 
 At the bottom of the page there is a large text area that works like a Smalltalk workspace. If the user selects some of the code inside the workspace and invokes "print it" (Cmd-P), that code will be evaluated by LM and the result will be displayed (by appending its stringified value to the workspace). "Do it" (Cmd-D) evaluates the selected code but doesn't display the result.
 
@@ -163,7 +179,7 @@ Dan is working on a lab note about the system depicted above, so stay tuned! In 
 
 ### The `change` function
 
-Our LM tool has a `DocHandle` for the program's AM document, and it makes changes to the document via the handle's `change` method. But we don't call that method directly from the UI -- instead, we wrap it in our own `change` function:
+Our LM tool has a `DocHandle` for the program's AM document, and it makes changes to the document via the handle's `change` method. But we don't call that method directly from the UI — instead, we wrap it in our own `change` function:
 
 ```
 function change(fn) {
@@ -188,7 +204,7 @@ function change(fn) {
 }
 ```
 
-(This is lightly simplified — the real version also handles nested calls and some bookkeeping that's out of scope for this note.)
+(This is slightly simplified — the real version also handles nested calls and some bookkeeping that's out of scope for this note.)
 
 The argument to this function (`fn`) is the code that we want to execute in LM. Usually it's a function that is created from the code that the user selected in the workspace. But we also use it in the event processing and rendering loop. (More on this in the next section.)
 
@@ -204,95 +220,23 @@ Now, here's the thing: even if we collected fresh garbage promptly, installing i
 
 So new objects are not installed in the AM document's object table right away. Instead, they live in a _shadow document_ — a plain, local JS structure with the same shape as the AM document. At the end of each `change`, the GC _promotes_ into the object table only the fresh objects that have become reachable from the root of the heap; the rest are reclaimed without the AM document ever knowing they existed.
 
-This lets us create lots of (temporary) fresh garbage like points and bounding boxes during rendering without accumulating useless operations in the AM document. (We push this "op economy" further in other ways, too — e.g., writes that would store an identical value are elided — to the point where an idle frame generates zero Automerge operations, as a runtime guarantee.)
+This lets us create lots of (temporary) fresh garbage like points and bounding boxes during rendering without accumulating useless operations in the AM document. (We push this "op economy" further in other ways, too — e.g., writes that would store an identical value are elided — to the point where an idle frame generates zero Automerge operations, as a runtime guarantee. Our op economy work, along with several other optimizations that we found to make a big difference, will be discussed in an upcoming lab note.)
 
-One more thing our GC does that may surprise you: objects that have made it into the AM document are **never collected**. Reachability is a _global_ property in a local-first system — an offline collaborator may still hold or re-link an object that looks unreachable from where I'm standing, and a local sweep would silently destroy their work at merge time. So the policy is: once persistent, immortal. (This costs nothing in terms of the document's _history_, which only ever grows anyway; it only grows the current-state snapshot.)
-
-I've included the source code for the promotion phase of our `gc` function in Appendix I.
-
-## Future Work
-
-We may some day **design a programming language** specifically for Livelymerge — there are ideas (about merging, about local vs. shared state) that probably deserve first-class syntax. For now, the transpiler keeps the pressure off: writing (mostly) ordinary JavaScript has been good enough to build everything you've seen here. (The transpiler — and what it took to make closures merge — will be the subject of a future lab note.)
-
-Not all of a program's state should be shared: in a multi-user system, things like _my_ halo, _my_ keyboard focus, and _my_ animations belong to me, not to the document. We've recently added support for **local (per-user) state** to the object model, and it turned out to fall out of the fresh-object machinery described above almost for free. That's the subject of the next lab note.
-
-Long-running programs remain an open question. Our op-economy work means an idle system no longer accumulates operations, but a system that's actually being _used_ still grows its AM document's history without bound, and that history is never compacted. We are optimistic that changes/optimizations to AM could help here. (Let's talk!)
-
-One of the aspects of the system that we're most excited about is _hands_: objects in Morphic that represent the user. By rendering each user's hand, we can see where they're pointing, what objects they're picking up or manipulating, etc. Hands are also an interesting design puzzle: they should be _visible to_ other users but not _persisted_ — a third category of state (shared-but-ephemeral, likely delivered over a presence channel) that we haven't built yet.
+One more thing our GC does that may surprise you: objects that have made it into the AM document are **never collected**. Reachability is a _global_ property in a local-first system — an offline collaborator may still hold or re-link an object that looks unreachable from where I'm standing, and a local sweep would silently destroy their work at merge time. So our policy is: *once persistent, immortal*. (This costs nothing in terms of the document's _history_, which only ever grows anyway; but it does grow the current-state snapshot.)
 
 ## Related Work
 
-The _Beckett_ project at Ink & Switch is exploring the use of Automerge to enable collaborative editing/authoring of [Godot](<https://en.wikipedia.org/wiki/Godot_(game_engine)>) games. LM is similar in the sense that it enables multiple users to collaborate on the same program. As in _Beckett_, LM's use of AM makes it easy to duplicate everything ("poor man's _fork_) in order to try out different ideas, etc. Of course LM doesn't have a very rich set of objects and multimedia capabilities yet, but it also doesn't suffer from the "real world" obstacles that sometimes limit what is feasible in _Beckett_. The fact that both of these projects going on at the same time enables the lab to work on this problem from two very different angles, which I think is exciting.
+The [Backstitch](https://www.inkandswitch.com/project/backstitch/) project at Ink & Switch is exploring the use of Automerge to enable collaborative editing/authoring of [Godot](<https://en.wikipedia.org/wiki/Godot_(game_engine)>) games. LM is similar in the sense that it enables multiple users to collaborate on the same program. As in Backstitch, LM's use of AM makes it easy to duplicate everything ("poor man's _fork_") in order to try out different ideas, etc. Of course LM doesn't have a very rich set of objects and multimedia capabilities yet, but it also doesn't suffer from the "real world" obstacles that sometimes limit what is feasible in Backstitch. The fact that both of these projects are going on at the same time enables the lab to work on this problem from two very different angles, which I think is exciting.
 
-Gilad Bracha is currently experimenting with a Croquet-based model of collaboration for his Newspeak that is based on Croquet. As Yoshiki Ohshima likes to say, Croquet is "network-first" (as opposed to Automerge, which is local-first) so there are different tradeoffs. We are planning on meeting with Gilad soon to compare and contrast the two approaches.
+Gilad Bracha is currently experimenting with a [Croquet](https://en.wikipedia.org/wiki/Croquet_Project)-based model of collaboration for his [Newspeak](<https://en.wikipedia.org/wiki/Newspeak_(programming_language)>). As Yoshiki Ohshima likes to say, Croquet is "network-first" (as opposed to Automerge, which is local-first) so there are different tradeoffs.
 
-## Appendix I: `gc` (promotion phase)
+## Coming Up
 
-Here is a simplified version of the marking/promotion phase of our garbage collector. `shadowTable` holds the fresh objects created during this `change`; anything reachable from the root graduates into the AM document's object table, id unchanged. (Remember: entries that are already in the object table are immortal, so there is no persistent sweep.)
+We have a lot more to say about Livelymerge. A few threads I'm planning to pull on in upcoming notes in this series:
 
-```
-function gc() {
-  const live = new Set();
+**Local state.** In a multi-user system, not everything should be shared: things like _my_ halo (a ring of command handles that appears around a morph) and _my_ keyboard focus belong to me, not to the document. We've recently added support for local (per-user) state to the object model — it fell out of the fresh-object machinery described above almost for free — and it's the subject of the next note.
 
-  visit('global');
+**Shared-but-ephemeral state.** One of the things we're most excited about is _hands_: objects in Morphic that represent the users, so you can see where I'm pointing and what I'm picking up. Hands pose a fun design puzzle: they should be _visible to_ other users, but not _persisted_ — a third category of state. We've recently devised a mechanism that supports it (built on Automerge Repo's ephemeral channels); more on that soon.
 
-  // fresh objects that were never reached are reclaimed here,
-  // without the AM document ever knowing they existed
-  for (const id of Object.keys(shadowTable)) {
-    if (!live.has(id)) {
-      delete shadowTable[id];
-    }
-  }
-
-  // helpers
-
-  function visit(id) {
-    if (live.has(id)) {
-      return;
-    }
-
-    live.add(id);
-
-    // a fresh object that's reachable from the root gets promoted
-    if (shadowTable[id]) {
-      doc.objectTable[id] = shadowTable[id];
-      delete shadowTable[id];
-    }
-
-    const entry = doc.objectTable[id];
-    for (const v of Object.values(entry)) {
-      if (isRef(v)) {
-        visit(v.$id);
-      }
-    }
-  }
-}
-```
-
-## Appendix II: Classes
-
-LM programs use ordinary ES `class` syntax, which the transpiler lowers onto the delegation-based object model: the class becomes a constructor function in the heap, and its methods live on a prototype object that instances delegate to.
-
-```
-class Point {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-  }
-  add(p) {
-    return new Point(this.x + p.x, this.y + p.y);
-  }
-}
-
-class Point3D extends Point {
-  constructor(x, y, z) {
-    super(x, y);
-    this.z = z;
-  }
-}
-
-const myPoint3D = new Point3D(1, 2, 3);
-```
-
-Since classes and their methods are objects in the heap like everything else, redefining a method (say, from the system browser) takes effect immediately for every collaborator — which is the whole point.
+**Performance.** Remember the challenge from the introduction — can these programs run fast enough for authentic use? Getting to "yes" took some doing: the op-economy work you saw in the GC section, plus several other optimizations that made a big difference. That story will get a note of its own.
 

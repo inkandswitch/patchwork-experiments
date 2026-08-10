@@ -8,9 +8,8 @@ import {
 } from "../constants";
 import type { Equipment, ExerciseDoc, MuscleGroup, WeightUnit } from "../types";
 
-const inputClass =
-  "w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-emerald-400";
-const labelClass = "text-xs font-medium text-slate-500";
+const inputClass = "st-field";
+const labelClass = "st-field-label";
 
 function TagPicker<T extends string>({
   options,
@@ -32,9 +31,9 @@ function TagPicker<T extends string>({
   };
 
   return (
-    <div className="space-y-1.5">
+    <div className="st-tagpicker">
       <span className={labelClass}>{label}</span>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="st-tagpicker__options">
         {options.map((option) => {
           const active = selected.includes(option);
           return (
@@ -42,11 +41,8 @@ function TagPicker<T extends string>({
               key={option}
               type="button"
               onClick={() => toggle(option)}
-              className={`rounded-full border px-2.5 py-0.5 text-xs ${
-                active
-                  ? "border-emerald-400 bg-emerald-50 text-emerald-800"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-              }`}
+              className="st-tag"
+              data-active={active || undefined}
             >
               {option.includes(" ")
                 ? option
@@ -74,10 +70,10 @@ export function ExerciseDetail({
   const editable = Boolean(onUpdate);
 
   const content = (
-    <div className="space-y-4">
+    <div className="st-detail">
       {editable && editing ? (
         <>
-          <div className="space-y-1">
+          <div className="st-detail__field">
             <label className={labelClass}>Name</label>
             <input
               value={exercise.name}
@@ -100,7 +96,7 @@ export function ExerciseDetail({
             onChange={(equipment) => onUpdate?.({ equipment })}
           />
 
-          <div className="space-y-1">
+          <div className="st-detail__field">
             <label className={labelClass}>Category</label>
             <select
               value={exercise.category}
@@ -119,19 +115,16 @@ export function ExerciseDetail({
             </select>
           </div>
 
-          <div className="space-y-1">
+          <div className="st-detail__field">
             <label className={labelClass}>Default unit</label>
-            <div className="flex gap-1.5">
+            <div className="st-detail__units">
               {(["kg", "lb"] as WeightUnit[]).map((u) => (
                 <button
                   key={u}
                   type="button"
                   onClick={() => onUpdate?.({ defaultUnit: u })}
-                  className={`rounded-md border px-3 py-1 text-sm ${
-                    exercise.defaultUnit === u
-                      ? "border-emerald-400 bg-emerald-50 font-medium text-emerald-800"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                  }`}
+                  className="st-unit-option"
+                  data-active={exercise.defaultUnit === u || undefined}
                 >
                   {u}
                 </button>
@@ -139,7 +132,7 @@ export function ExerciseDetail({
             </div>
           </div>
 
-          <div className="space-y-1">
+          <div className="st-detail__field">
             <label className={labelClass}>Instructions</label>
             <textarea
               value={exercise.instructions ?? ""}
@@ -149,7 +142,7 @@ export function ExerciseDetail({
             />
           </div>
 
-          <div className="space-y-1">
+          <div className="st-detail__field">
             <label className={labelClass}>Notes</label>
             <textarea
               value={exercise.notes ?? ""}
@@ -162,18 +155,18 @@ export function ExerciseDetail({
           <button
             type="button"
             onClick={() => setEditing(false)}
-            className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
+            className="st-button st-button--primary"
           >
             Done editing
           </button>
         </>
       ) : (
         <>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="st-detail__tags">
             {(exercise.muscleGroups ?? []).map((group) => (
               <span
                 key={group}
-                className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs text-sky-800"
+                className="st-tag" data-tone="muscle"
               >
                 {muscleGroupLabel(group)}
               </span>
@@ -181,34 +174,34 @@ export function ExerciseDetail({
             {(exercise.equipment ?? []).map((eq) => (
               <span
                 key={eq}
-                className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-xs text-violet-800"
+                className="st-tag" data-tone="equipment"
               >
                 {equipmentLabel(eq)}
               </span>
             ))}
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600">
+            <span className="st-tag">
               {exercise.category}
             </span>
             {exercise.defaultUnit ? (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+              <span className="st-tag" data-tone="level">
                 {exercise.defaultUnit}
               </span>
             ) : null}
           </div>
 
           {exercise.instructions ? (
-            <div className="space-y-1">
+            <div className="st-detail__field">
               <span className={labelClass}>Instructions</span>
-              <p className="text-sm text-slate-700 whitespace-pre-wrap">
+              <p className="st-prose">
                 {exercise.instructions}
               </p>
             </div>
           ) : null}
 
           {exercise.notes ? (
-            <div className="space-y-1">
+            <div className="st-detail__field">
               <span className={labelClass}>Notes</span>
-              <p className="text-sm text-slate-600 whitespace-pre-wrap">
+              <p className="st-prose st-prose--muted">
                 {exercise.notes}
               </p>
             </div>
@@ -218,7 +211,7 @@ export function ExerciseDetail({
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              className="st-button"
             >
               Edit exercise
             </button>
@@ -230,23 +223,23 @@ export function ExerciseDetail({
 
   if (compact) {
     return (
-      <div className="flex h-full flex-col rounded-lg border border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h3 className="font-semibold text-slate-900">{exercise.name}</h3>
+      <div className="st-panel">
+        <div className="st-panel__head">
+          <h3 className="st-panel__title">{exercise.name}</h3>
           {onClose ? (
             <button
               type="button"
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600"
+              className="st-close"
             >
               ✕
             </button>
           ) : null}
         </div>
-        <div className="flex-1 overflow-y-auto p-4">{content}</div>
+        <div className="st-panel__body">{content}</div>
       </div>
     );
   }
 
-  return <div className="space-y-3">{content}</div>;
+  return <div className="st-detail-plain">{content}</div>;
 }

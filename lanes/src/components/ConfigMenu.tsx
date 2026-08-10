@@ -57,35 +57,35 @@ export const ConfigMenu: React.FC<ConfigMenuProps> = ({
         ) : (
           <button
             type="button"
-            className="btn btn-ghost btn-sm gap-2"
+            className="btn btn--ghost btn--sm"
           >
-            <Icon type="Settings" className="h-4 w-4" />
+            <Icon type="Settings" />
             {fieldConfigDoc ? fieldConfigDoc.title : "Select Configuration"}
           </button>
         )}
       </DialogTrigger>
-      <DialogContent className="flex h-full flex-col">
-        <div className="flex-none border-b border-base-300 p-4">
-          <h2 className="mb-4 text-lg font-medium">Select Field Configuration</h2>
-          <div className="space-y-2">
-            <label className="block text-sm font-medium">Configuration URL</label>
+      <DialogContent className="dialog--full">
+        <div className="config__head">
+          <h2 className="config__title">Select Field Configuration</h2>
+          <div className="config__field">
+            <label>Configuration URL</label>
             <input
               type="text"
               value={fieldConfigUrl || ""}
               onChange={(e) =>
                 handleConfigChange(e.target.value as AutomergeUrl)
               }
-              className="input input-bordered w-full"
+              className="input"
               placeholder="Enter configuration URL"
             />
           </div>
         </div>
         {fieldConfigDoc && (
-          <div className="min-h-0 flex-1">
+          <div className="config__preview">
             <patchwork-view
               doc-url={fieldConfigUrl?.toString() || ""}
               tool-id="field-configuration"
-              className="h-full"
+              className="config__view"
             />
           </div>
         )}

@@ -128,42 +128,36 @@ function SessionsBrowser({
   }
 
   return (
-    <div className="strength flex h-full flex-col bg-slate-50">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
-        <div className="flex rounded-lg border border-slate-200 p-0.5 text-sm">
+    <div className="strength st-shell">
+      <div className="st-toolbar">
+        <div className="st-segmented">
           <button
             type="button"
             onClick={() => setTab("history")}
-            className={`rounded-md px-3 py-1 ${
-              tab === "history"
-                ? "bg-emerald-600 text-white"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
+            className="st-segmented__option"
+            data-active={tab === "history" || undefined}
           >
             History
           </button>
           <button
             type="button"
             onClick={() => setTab("progress")}
-            className={`rounded-md px-3 py-1 ${
-              tab === "progress"
-                ? "bg-emerald-600 text-white"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
+            className="st-segmented__option"
+            data-active={tab === "progress" || undefined}
           >
             Progress
           </button>
         </div>
-        <div className="flex-1" />
-        <span className="text-xs text-slate-500">
+        <div className="st-spacer" />
+        <span className="st-meta">
           {completedSessions.length} completed
           {inProgress.length ? ` · ${inProgress.length} active` : ""}
         </span>
       </div>
 
       {inProgress.length > 0 ? (
-        <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-2">
-          <span className="text-xs font-medium text-emerald-800">
+        <div className="st-notice-bar st-notice-bar--accent">
+          <span className="st-eyebrow st-eyebrow--plain">
             In progress:{" "}
           </span>
           {inProgress.map(({ url, doc }) => (
@@ -177,7 +171,7 @@ function SessionsBrowser({
                   "strength-workout-session",
                 )
               }
-              className="mr-2 text-xs text-emerald-700 underline"
+              className="st-link st-link--lead"
             >
               {doc.title}
             </button>
@@ -185,12 +179,12 @@ function SessionsBrowser({
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="st-split">
         {tab === "history" ? (
           <>
-            <div className="min-h-0 w-[min(320px,35%)] shrink-0 overflow-y-auto border-r border-slate-200">
+            <div className="st-sidebar">
               {loadedSessions.length === 0 ? (
-                <p className="p-6 text-center text-sm text-slate-500">
+                <p className="st-empty-text st-empty-text--pad">
                   No sessions yet. Start one from a template.
                 </p>
               ) : (
@@ -208,7 +202,7 @@ function SessionsBrowser({
                           selected={selectedSessionUrl === url}
                           onClick={() => setSelectedSessionUrl(url)}
                         >
-                          <div className="text-xs text-slate-500">
+                          <div className="st-meta">
                             {formatDate(doc.completedAt ?? doc.startedAt)}
                             {doc.durationSeconds
                               ? ` · ${formatDuration(doc.durationSeconds)}`
@@ -222,11 +216,11 @@ function SessionsBrowser({
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="st-main">
               {selectedSession ? (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <p className="flex-1 text-sm text-slate-500">
+                <div className="st-stack">
+                  <div className="st-row st-row--wrap">
+                    <p className="st-flex-note">
                       {formatDateTime(
                         selectedSession.doc.completedAt ??
                           selectedSession.doc.startedAt,
@@ -244,7 +238,7 @@ function SessionsBrowser({
                           "strength-workout-session",
                         )
                       }
-                      className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700"
+                      className="st-button st-button--primary"
                     >
                       Open session
                     </button>
@@ -252,22 +246,22 @@ function SessionsBrowser({
                       type="button"
                       onClick={saveAsTemplate}
                       disabled={savingTemplate}
-                      className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      className="st-button"
                     >
                       {savingTemplate ? "Saving…" : "Save as template"}
                     </button>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="st-stack st-stack--sm">
                     {(selectedSession.doc.exercises ?? []).map((exercise) => (
                       <div
                         key={exercise.id}
-                        className="rounded-lg border border-slate-200 bg-white p-3"
+                        className="st-card"
                       >
-                        <div className="font-medium text-slate-900">
+                        <div className="st-title">
                           {exercise.exerciseName}
                         </div>
-                        <div className="mt-1 flex flex-wrap gap-2">
+                        <div className="st-chips">
                           {setsForExercise(selectedSession.doc, exercise.id)
                             .filter((s) => s.completed)
                             .map((set) => (
@@ -287,7 +281,7 @@ function SessionsBrowser({
                   </div>
                 </div>
               ) : (
-                <p className="text-center text-sm text-slate-500">
+                <p className="st-empty-text">
                   Select a session to view details.
                 </p>
               )}
@@ -295,9 +289,9 @@ function SessionsBrowser({
           </>
         ) : (
           <>
-            <div className="min-h-0 w-[min(280px,32%)] shrink-0 overflow-y-auto border-r border-slate-200">
+            <div className="st-sidebar st-sidebar--narrow">
               {loadedExercises.length === 0 ? (
-                <p className="p-6 text-center text-xs text-slate-500">
+                <p className="st-empty-text st-empty-text--pad">
                   Link an exercises folder to view progress.
                 </p>
               ) : (
@@ -317,7 +311,7 @@ function SessionsBrowser({
                           onClick={() => setSelectedExerciseUrl(url)}
                         >
                           {latest ? (
-                            <div className="text-xs text-emerald-700">
+                            <div className="st-meta st-meta--accent">
                               1RM:{" "}
                               {formatWeight(
                                 Math.round(latest.estimated1Rm),
@@ -325,7 +319,7 @@ function SessionsBrowser({
                               )}
                             </div>
                           ) : (
-                            <div className="text-xs text-slate-400">
+                            <div className="st-meta st-meta--faint">
                               No data
                             </div>
                           )}
@@ -337,7 +331,7 @@ function SessionsBrowser({
               )}
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="st-main">
               {selectedExerciseUrl ? (
                 <>
                   <HistoryPanel
@@ -351,8 +345,8 @@ function SessionsBrowser({
                     unit={unit}
                   />
                   {exerciseProgress.length >= 2 ? (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                      <div className="mb-2 text-xs font-medium text-slate-500">
+                    <div className="st-card st-card--roomy">
+                      <div className="st-label st-label--block">
                         Volume over time
                       </div>
                       <ProgressChart
@@ -363,7 +357,7 @@ function SessionsBrowser({
                   ) : null}
                 </>
               ) : (
-                <p className="text-center text-sm text-slate-500">
+                <p className="st-empty-text">
                   Select an exercise to view progress.
                 </p>
               )}

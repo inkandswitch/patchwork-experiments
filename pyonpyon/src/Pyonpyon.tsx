@@ -531,99 +531,80 @@ export const PyonpyonEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   }, []);
 
   const drawerShellHeight = drawerInDom && drawerExpanded ? drawerHeight : 0;
-  const collapsedSaveButtonClass = `btn btn-sm border-base-300 text-black shadow-sm ${
-    isSaving ? 'bg-base-300 hover:bg-base-300' : 'bg-white hover:bg-white'
-  }`;
-  const expandedSaveButtonClass = `btn btn-ghost btn-xs shrink-0 ${
-    isSaving ? 'bg-base-300 hover:bg-base-300' : ''
-  }`;
-
   return (
-    <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
-      <canvas ref={canvasRef} className="pyonpyon-canvas absolute inset-0 block h-full w-full" />
-      <div className="pointer-events-none absolute bottom-3 right-3 z-30">
-        <div
-          className={`rounded-md bg-success px-2 py-1 text-xs font-medium text-success-content shadow-sm transition-opacity duration-200 ${
-            showSaveSuccess ? 'opacity-100' : 'opacity-0'
-          }`}
-          role="status"
-          aria-live="polite"
-        >
+    <div className="pyonpyon">
+      <canvas ref={canvasRef} className="pyonpyon-canvas canvas" />
+      <div className="toast-slot">
+        <div className="toast" data-visible={showSaveSuccess || undefined} role="status" aria-live="polite">
           Save succeeded
         </div>
       </div>
 
       {!drawerInDom && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
-          <div className="pointer-events-auto flex items-center gap-2">
-            <button
-              type="button"
-              className="btn btn-sm gap-1 border-base-300 bg-white text-black shadow-sm hover:bg-white"
-              onClick={openDrawer}
-            >
-              <span className="text-base leading-none">▲</span>
-              Workspace
-            </button>
-            <button
-              type="button"
-              className={collapsedSaveButtonClass}
-              onClick={handleSave}
-              disabled={isSaving}
-              aria-busy={isSaving}
-            >
-              Save
-            </button>
-          </div>
+        <div className="drawer-launcher">
+          <button type="button" className="button" onClick={openDrawer}>
+            <span className="glyph">▲</span>
+            Workspace
+          </button>
+          <button
+            type="button"
+            className="button"
+            data-busy={isSaving || undefined}
+            onClick={handleSave}
+            disabled={isSaving}
+            aria-busy={isSaving}
+          >
+            Save
+          </button>
         </div>
       )}
 
       {drawerInDom && (
         <div
-          className="absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
+          className="drawer"
           style={{
             height: drawerShellHeight,
             transition: dragging ? 'none' : 'height 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
           }}
           onTransitionEnd={onDrawerTransitionEnd}
         >
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="flex h-9 shrink-0 items-center gap-1 border-b border-base-300/60 bg-base-200 pr-1">
+          <div className="drawer-body">
+            <div className="drawer-bar">
               <div
                 role="separator"
                 aria-orientation="horizontal"
                 aria-label="Resize editor panel"
-                className="flex min-h-0 min-w-0 flex-1 cursor-ns-resize touch-none select-none items-center justify-center py-2"
+                className="drawer-grab"
                 onPointerDown={onHandlePointerDown}
                 onPointerMove={onHandlePointerMove}
                 onPointerUp={onHandlePointerUp}
                 onPointerCancel={onHandlePointerUp}
               >
-                <span className="h-1 w-12 rounded-full bg-base-content/25" />
+                <span className="drawer-grab__pill" />
               </div>
-              <div className="ml-auto flex shrink-0 items-center gap-1">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs shrink-0 gap-0.5"
-                  aria-label="Collapse workspace"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={closeDrawer}
-                >
-                  <span className="text-sm leading-none">▼</span>
-                  Close
-                </button>
-                <button
-                  type="button"
-                  className={expandedSaveButtonClass}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={handleSave}
-                  disabled={isSaving}
-                  aria-busy={isSaving}
-                >
-                  Save
-                </button>
-              </div>
+              <button
+                type="button"
+                className="button button--ghost"
+                aria-label="Collapse workspace"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={closeDrawer}
+              >
+                <span className="glyph glyph--sm">▼</span>
+                Close
+              </button>
+              <button
+                type="button"
+                className="button button--ghost"
+                data-busy={isSaving || undefined}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={handleSave}
+                disabled={isSaving}
+                aria-busy={isSaving}
+              >
+                Save
+              </button>
             </div>
-            <div ref={editorMountRef} className="min-h-0 flex-1 overflow-hidden px-1 pb-1" />
+            <div ref={editorMountRef} className="drawer-editor" />
           </div>
         </div>
       )}

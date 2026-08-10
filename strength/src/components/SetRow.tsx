@@ -4,8 +4,7 @@ import { formatTargetReps } from "../calculations";
 import type { LoggedSet, SetKind, TemplateSet, WeightUnit } from "../types";
 import { PlatesCalculator } from "./PlatesCalculator";
 
-const inputClass =
-  "w-full rounded border border-slate-200 px-2 py-1 text-sm outline-none focus:border-emerald-400";
+const inputClass = "st-input";
 
 function roundValue(value: number): number {
   return Math.round(value * 100) / 100;
@@ -17,11 +16,7 @@ function nextSetKind(kind: SetKind | undefined): SetKind | null {
   return null;
 }
 
-const setKindStyles: Record<SetKind | "normal", string> = {
-  normal: "text-slate-400",
-  warmup: "bg-amber-100 font-semibold text-amber-700",
-  failure: "bg-red-100 font-semibold text-red-700",
-};
+
 
 function setKindLabel(kind: SetKind | undefined, index: number): string {
   if (kind === "warmup") return "W";
@@ -47,14 +42,11 @@ export function SetKindBadge({
   onCycle?: (next: SetKind | null) => void;
   size?: "sm" | "lg";
 }) {
-  const sizeClass = size === "lg" ? "h-9 w-9 text-sm" : "h-6 w-6 text-xs";
-  const style = setKindStyles[kind ?? "normal"];
+  const kindName = kind ?? "normal";
 
   if (!onCycle) {
     return (
-      <span
-        className={`flex ${sizeClass} items-center justify-center rounded-full ${style}`}
-      >
+      <span className="st-kind" data-size={size} data-kind={kindName}>
         {setKindLabel(kind, index)}
       </span>
     );
@@ -65,9 +57,9 @@ export function SetKindBadge({
       type="button"
       onClick={() => onCycle(nextSetKind(kind))}
       title={setKindTitle(kind)}
-      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full ${style} ${
-        kind == null ? "border border-dashed border-slate-200 hover:border-slate-400" : ""
-      }`}
+      className="st-kind"
+      data-size={size}
+      data-kind={kindName}
     >
       {setKindLabel(kind, index)}
     </button>
@@ -97,16 +89,16 @@ export function Stepper({
   };
 
   return (
-    <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border border-slate-200 bg-white sm:max-w-44">
+    <div className="st-stepper">
       <button
         type="button"
         onClick={() => apply((value ?? 0) - step)}
-        className="h-11 w-7 shrink-0 text-lg font-medium text-slate-500 active:bg-slate-100 sm:w-10"
+        className="st-stepper__button"
         aria-label={`Decrease ${label}`}
       >
         −
       </button>
-      <div className="flex min-w-0 flex-1 flex-col items-center justify-center border-x border-slate-100">
+      <div className="st-stepper__field">
         <input
           type="number"
           inputMode="decimal"
@@ -115,16 +107,16 @@ export function Stepper({
           onChange={(e) =>
             onChange(e.target.value ? Number(e.target.value) : undefined)
           }
-          className="w-full min-w-0 bg-transparent text-center text-sm font-semibold text-slate-900 outline-none"
+          className="st-stepper__input"
         />
-        <span className="pb-0.5 text-[10px] leading-none text-slate-400">
+        <span className="st-stepper__label">
           {label}
         </span>
       </div>
       <button
         type="button"
         onClick={() => apply((value ?? 0) + step)}
-        className="h-11 w-7 shrink-0 text-lg font-medium text-slate-500 active:bg-slate-100 sm:w-10"
+        className="st-stepper__button"
         aria-label={`Increase ${label}`}
       >
         +
@@ -147,8 +139,8 @@ export function PlannedSetRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="grid grid-cols-[2rem_1fr_1fr_1fr_1fr_auto] items-center gap-2 text-sm">
-      <div className="flex justify-center">
+    <div className="st-planned-row">
+      <div className="st-planned-row__badge">
         <SetKindBadge
           kind={set.kind}
           index={index}
@@ -211,7 +203,7 @@ export function PlannedSetRow({
       <button
         type="button"
         onClick={onRemove}
-        className="rounded px-1.5 py-1 text-xs text-slate-400 hover:bg-red-50 hover:text-red-600"
+        className="st-remove"
         title="Remove set"
       >
         ✕
@@ -222,7 +214,7 @@ export function PlannedSetRow({
 
 export function PlannedSetDisplay({ set, unit }: { set: TemplateSet; unit: string }) {
   return (
-    <span className="text-xs text-slate-600">
+    <span className="st-planned-summary">
       {formatTargetReps(set)} reps
       {set.targetWeight != null ? ` @ ${set.targetWeight} ${unit}` : ""}
       {set.targetRpe != null ? ` RPE ${set.targetRpe}` : ""}
@@ -257,18 +249,14 @@ export function LoggedSetRow({
     return (
       <div
         id={rowId}
-        className={`grid grid-cols-[2rem_1fr_1fr_1fr_auto] items-center gap-2 rounded px-1 py-1 text-sm ${
-          set.completed ? "bg-emerald-50/60" : ""
-        }`}
+        className="st-logged-row"
+        data-completed={set.completed || undefined}
       >
         <button
           type="button"
           onClick={onToggleComplete}
-          className={`flex h-6 w-6 items-center justify-center rounded-full border text-xs ${
-            set.completed
-              ? "border-emerald-500 bg-emerald-500 text-white"
-              : "border-slate-300 text-transparent"
-          }`}
+          className="st-check st-check--sm"
+          data-completed={set.completed || undefined}
           title={set.completed ? "Mark incomplete" : "Complete set"}
         >
           ✓
@@ -294,7 +282,7 @@ export function LoggedSetRow({
           disabled
           className={inputClass}
         />
-        <div className="flex w-6 justify-center">
+        <div className="st-logged-row__badge">
           <SetKindBadge kind={set.kind} index={index} />
         </div>
       </div>
@@ -306,34 +294,24 @@ export function LoggedSetRow({
   return (
     <div
       id={rowId}
-      className={`rounded-lg px-1.5 py-2 sm:px-2 ${
-        isCurrent
-          ? "bg-emerald-50 ring-2 ring-emerald-400 ring-offset-1"
-          : set.completed
-            ? "bg-emerald-50/60"
-            : ""
-      }`}
+      className="st-active-row"
+      data-current={isCurrent || undefined}
+      data-completed={set.completed || undefined}
     >
       {/* Main row is sized to fit a ~300px pane (iPhone) without wrapping:
           fixed badge + check, two flexing steppers in between. RPE, set
           kind, and the plates calculator live in the details disclosure. */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
+      <div className="st-active-row__main">
         <button
           type="button"
           onClick={() => setShowDetails((cur) => !cur)}
           title="Set details (RPE, set type, plates)"
-          className={`flex h-11 w-8 shrink-0 flex-col items-center justify-center rounded-lg sm:w-9 ${
-            setKindStyles[set.kind ?? "normal"]
-          } ${set.kind == null ? "border border-dashed border-slate-200" : ""} ${
-            showDetails ? "ring-1 ring-slate-300" : ""
-          }`}
+          className="st-disclosure"
+          data-kind={set.kind ?? "normal"}
+          data-open={showDetails || undefined}
         >
-          <span className="text-sm">{setKindLabel(set.kind, index)}</span>
-          <span
-            className={`text-[8px] leading-none text-slate-400 transition-transform ${
-              showDetails ? "rotate-180" : ""
-            }`}
-          >
+          <span className="st-disclosure__label">{setKindLabel(set.kind, index)}</span>
+          <span className="st-disclosure__caret">
             ▼
           </span>
         </button>
@@ -352,20 +330,17 @@ export function LoggedSetRow({
         <button
           type="button"
           onClick={onToggleComplete}
-          className={`ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg ${
-            set.completed
-              ? "border-emerald-500 bg-emerald-500 text-white"
-              : "border-slate-300 text-transparent hover:border-emerald-400"
-          }`}
+          className="st-check"
+          data-completed={set.completed || undefined}
           title={set.completed ? "Mark incomplete" : "Complete set"}
         >
           ✓
         </button>
       </div>
       {showDetails ? (
-        <div className="mt-2 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex overflow-hidden rounded-md border border-slate-200 text-xs">
+        <div className="st-details">
+          <div className="st-details__row">
+            <div className="st-segmented">
               {(
                 [
                   ["normal", "Working"],
@@ -379,17 +354,14 @@ export function LoggedSetRow({
                   onClick={() =>
                     onChange({ kind: value === "normal" ? null : value })
                   }
-                  className={`px-2.5 py-1.5 ${
-                    (set.kind ?? "normal") === value
-                      ? "bg-emerald-600 font-medium text-white"
-                      : "bg-white text-slate-500 hover:bg-slate-50"
-                  }`}
+                  className="st-segmented__option"
+                  data-active={(set.kind ?? "normal") === value || undefined}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <div className="flex w-36">
+            <div className="st-details__rpe">
               <Stepper
                 label="RPE"
                 value={set.rpe}

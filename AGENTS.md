@@ -9,6 +9,9 @@ How to build a tool is covered by the `writing-patchwork-tools` skill from
 reuse — folder, embed, codemirror-base, file, … — look at
 [patchwork-pkg-base](https://github.com/inkandswitch/patchwork-pkg-base).
 
+Tailwind is not supported in Patchwork. If a tool here is still using it, remove it and
+write plain CSS instead.
+
 ## Good reference examples in this repo
 
 **Bundleless (hand-written `.js`, no build):**

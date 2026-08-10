@@ -358,12 +358,12 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   const showInputOverlay = !audioReady;
 
   return (
-    <div className="relative h-full min-h-0 flex-1 overflow-hidden bg-base-100">
+    <div className="looper">
       <canvas
         ref={canvasRef}
         tabIndex={0}
         aria-label="Looper"
-        className="absolute inset-0 block h-full w-full touch-none outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-base-100"
+        className="canvas"
         onKeyDown={onCanvasKeyDown}
         onKeyUp={onCanvasKeyUp}
         onPointerDown={onCanvasPointerDown}
@@ -372,12 +372,12 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
       />
 
       {showInputOverlay ? (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/85 p-4 backdrop-blur-md">
-          <div className="card border-base-300 bg-base-100 w-full max-w-lg border shadow-2xl">
-            <div className="card-body gap-4">
+        <div className="overlay">
+          <div className="card">
+            <div className="card-body">
               <div>
-                <h2 className="card-title text-lg">Audio input</h2>
-                <p className="text-base-content/70 text-sm">
+                <h2 className="card-title">Audio input</h2>
+                <p className="muted">
                   Choose the microphone for this looper. Your choice is saved in this browser.
                   Opening the mic still needs a click here once per visit — that satisfies the
                   browser&apos;s security rules for microphone and audio playback.
@@ -385,18 +385,18 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
               </div>
 
               {inputPhase.kind === 'loading' ? (
-                <span className="loading loading-spinner loading-md text-primary" />
+                <span className="spinner spinner--lg" />
               ) : null}
 
               {inputPhase.kind === 'need-permission' ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm">
+                <div className="stack">
+                  <p>
                     Allow microphone access so we can list your inputs by name. We only use this
                     prompt to discover devices; you pick the exact input next.
                   </p>
                   <button
                     type="button"
-                    className="btn btn-primary"
+                    className="button button--primary"
                     disabled={connecting}
                     onClick={() => {
                       void (async () => {
@@ -422,17 +422,17 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                       })();
                     }}
                   >
-                    {connecting ? <span className="loading loading-spinner loading-sm" /> : null}
+                    {connecting ? <span className="spinner" /> : null}
                     Allow microphone access
                   </button>
                 </div>
               ) : null}
 
               {inputPhase.kind === 'pick' ? (
-                <div className="flex flex-col gap-3">
+                <div className="stack">
                   {inputPhase.storedId &&
                   inputPhase.devices.some((d) => d.deviceId === inputPhase.storedId) ? (
-                    <p className="text-base-content/80 text-sm">
+                    <p className="muted">
                       Using your saved input (
                       {deviceLabel(
                         inputPhase.devices.find((d) => d.deviceId === inputPhase.storedId)!,
@@ -443,46 +443,36 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                   ) : null}
 
                   <ul
-                    className="border-base-300 bg-base-200/60 max-h-52 space-y-1 overflow-y-auto rounded-box border p-2"
+                    className="device-list"
                     role="listbox"
                     aria-label="Audio input devices"
                   >
                     {inputPhase.devices.map((d, i) => {
                       const selected = selectedDeviceId === d.deviceId;
                       return (
-                        <li key={d.deviceId} className="list-none">
+                        <li key={d.deviceId}>
                           <button
                             type="button"
                             role="option"
                             aria-selected={selected}
-                            className={
-                              selected
-                                ? 'flex w-full items-center gap-3 rounded-lg border-2 border-primary bg-primary px-3 py-2.5 text-left text-sm font-semibold text-primary-content shadow-sm outline-none ring-2 ring-primary/40 ring-offset-2 ring-offset-base-100'
-                                : 'flex w-full items-center gap-3 rounded-lg border-2 border-transparent px-3 py-2.5 text-left text-sm text-base-content hover:border-base-300 hover:bg-base-300'
-                            }
+                            className="device"
+                            data-selected={selected || undefined}
                             onClick={() => setSelectedDeviceId(d.deviceId)}
                           >
-                            <span
-                              className={
-                                selected
-                                  ? 'flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-content/25 text-base leading-none text-primary-content'
-                                  : 'border-base-300 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-dashed bg-base-100 text-base-content/30'
-                              }
-                              aria-hidden
-                            >
+                            <span className="device__tick" aria-hidden>
                               {selected ? '✓' : ''}
                             </span>
-                            <span className="min-w-0 flex-1 truncate">{deviceLabel(d, i)}</span>
+                            <span className="device__label">{deviceLabel(d, i)}</span>
                           </button>
                         </li>
                       );
                     })}
                   </ul>
 
-                  <div className="card-actions flex-wrap justify-end gap-2">
+                  <div className="card-actions">
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm"
+                      className="button button--ghost button--sm"
                       disabled={connecting || !inputPhase.storedId}
                       onClick={() => {
                         clearStoredInputDeviceId();
@@ -493,7 +483,7 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                     </button>
                     <button
                       type="button"
-                      className="btn btn-primary"
+                      className="button button--primary"
                       disabled={connecting || !selectedDeviceId}
                       onClick={() => {
                         if (selectedDeviceId) {
@@ -501,7 +491,7 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
                         }
                       }}
                     >
-                      {connecting ? <span className="loading loading-spinner loading-sm" /> : null}
+                      {connecting ? <span className="spinner" /> : null}
                       Start looper
                     </button>
                   </div>
@@ -509,7 +499,7 @@ export const LooperEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
               ) : null}
 
               {connectError ? (
-                <div role="alert" className="alert alert-warning text-sm">
+                <div role="alert" className="alert">
                   {connectError}
                 </div>
               ) : null}

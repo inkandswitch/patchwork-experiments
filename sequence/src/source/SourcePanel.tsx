@@ -33,7 +33,7 @@ function SourceNameInput({ id, source, index, onSelect, onRename }: SourceNameIn
   return (
     <input
       type="text"
-      className="min-w-0 flex-1 truncate bg-transparent p-0 text-sm outline-none placeholder:text-base-content/50"
+      className="source-name-input"
       value={value}
       placeholder={placeholder}
       onClick={(event) => event.stopPropagation()}
@@ -167,7 +167,7 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
     <aside
       ref={panelRef}
       tabIndex={-1}
-      className="source-panel flex h-full w-80 min-w-72 flex-col border-r border-base-300 bg-base-200 outline-none"
+      className="source-panel"
       onPointerDownCapture={onPanelPointerDownCapture}
       onKeyDown={onPanelKeyDown}
     >
@@ -179,25 +179,22 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
         bindTogglePlay={toggleSourcePlayRef}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-base-content/60">
+      <div className="source-panel__body">
+        <div className="source-panel__scroll">
+          <div className="source-panel__label">
             Sources
           </div>
           {sourceEntries.length === 0 ? (
-            <p className="text-xs text-base-content/50">No sources in this sequence yet.</p>
+            <p className="source-panel__empty">No sources in this sequence yet.</p>
           ) : (
-            <ul className="flex flex-col gap-1">
+            <ul className="source-list">
               {sourceEntries.map(([id, source], index) => (
                 <li key={id}>
                   <div
                     role="button"
                     tabIndex={0}
-                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
-                      id === selectedId
-                        ? 'bg-primary/20 text-base-content'
-                        : 'hover:bg-base-300/60 text-base-content/80'
-                    }`}
+                    className="source-list__item"
+                    data-selected={id === selectedId || undefined}
                     onClick={() => setSelectedId(id)}
                     onKeyDown={(event) => {
                       if (event.target instanceof HTMLInputElement) return;
@@ -207,7 +204,7 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
                       }
                     }}
                   >
-                    <span className="badge badge-xs badge-neutral shrink-0">{source.type}</span>
+                    <span className="source-list__type">{source.type}</span>
                     <SourceNameInput
                       id={id}
                       source={source}
@@ -218,7 +215,7 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
                     {!usedSourceIds.has(id) && (
                       <button
                         type="button"
-                        className="btn btn-ghost btn-xs btn-square shrink-0 text-base-content/50 hover:text-base-content"
+                        className="source-list__remove"
                         aria-label={`Remove ${sourceDisplayName(source, index)}`}
                         title="Remove unused source"
                         onClick={(event) => {
@@ -237,13 +234,13 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
           )}
         </div>
 
-        <div className="border-t border-base-300 p-3">
-          <div className="flex gap-2">
+        <div className="source-panel__footer">
+          <div className="source-panel__add">
             <input
               type="url"
               value={sourceUrl}
               placeholder="https://…"
-              className="input input-sm input-bordered min-w-0 flex-1"
+              className="source-url-input"
               onChange={(event) => {
                 setSourceUrl(event.target.value);
                 if (sourceUrlError) setSourceUrlError(null);
@@ -255,11 +252,11 @@ export function SourcePanel({ doc, changeDoc, onStartClipDrag }: SourcePanelProp
                 }
               }}
             />
-            <button type="button" className="source-add-button btn btn-sm shrink-0" onClick={addSource}>
+            <button type="button" className="source-add-button" onClick={addSource}>
               + source
             </button>
           </div>
-          {sourceUrlError && <p className="mt-1 text-xs text-error">{sourceUrlError}</p>}
+          {sourceUrlError && <p className="source-panel__error">{sourceUrlError}</p>}
         </div>
       </div>
     </aside>

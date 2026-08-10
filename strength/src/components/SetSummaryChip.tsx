@@ -9,7 +9,7 @@ export function SetSummaryChip({ set, unit }: { set: LoggedSet; unit: string }) 
       ? Math.round(estimate1Rm(set.weight, set.reps))
       : null;
   return (
-    <span className="rounded bg-slate-50 px-1.5 py-0.5 text-xs text-slate-700">
+    <span className="st-set-chip">
       {summarizeSet(set, unit)}
       {oneRm ? ` (~${oneRm} 1RM)` : ""}
     </span>

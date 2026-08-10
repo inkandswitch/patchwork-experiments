@@ -63,6 +63,7 @@ let Lively = null;
 let topLevelMorph = null;
 let recentChanges = null;
 let bugImage = null;
+let $bouncers = null;
 let $onScreenKeyboardMorph = null;
 let $oskSavedChrome = null;
 let _transcriptConsoleTargets = [];
@@ -207,6 +208,14 @@ function replaceMethodCallString(className, fragmentText) {
   // bare fragment and wraps it in this form on save.
   let escaped = fragmentText.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
   return "replaceMethod('" + className + "', `" + escaped + "`)";
+}
+function parseReplaceMethodCallString(str) {
+  // Inverse of replaceMethodCallString: {className, fragmentText} when str is a
+  // self-contained replaceMethod(...) call, else null.
+  let m = ('' + str).match(/^replaceMethod\('([A-Za-z_$][\w$]*)',\s*`([\s\S]*)`\)$/);
+  if (!m) return null;
+  let fragmentText = m[2].replace(/\\\$\{/g, '${').replace(/\\`/g, '`').replace(/\\\\/g, '\\');
+  return { className: m[1], fragmentText };
 }
 function classMemberRows(cls) {
   // Message-pane rows for a class's prototype: methods as 'name', accessor halves as
@@ -418,6 +427,15 @@ function getBounds() {
 function truncateString(str, num) {
   return str.length > num ? str.slice(0, num) + '...' : str;
 }
+async function getUserName() {
+  /** Display name from the user's Patchwork account (contact doc), or null. */
+  if (!window.repo || !window.accountDocHandle) return null;
+  let contactUrl = window.accountDocHandle.doc().contactUrl;
+  if (contactUrl == null) return null;
+  let contactHandle = await window.repo.find(contactUrl);
+  let name = contactHandle.doc().name;
+  return name != null ? name : null;
+}
 function init() {
   // init()
   console.log('init!');
@@ -447,7 +465,6 @@ function populateLively() {
   Lively.demoLine = Lively.addMorph(
     new LineMorph(plmVerts, { borderWidth: 2, borderColor: Color.black, arrowheads: 'end' }),
   );
-  Lively.demoLine.startHandleStepping();
 
   Lively.addMorph(
     new MethodPanel(
@@ -1268,6 +1285,11 @@ function initUI() {
       }
       return;
     }
+    // The deferred path preventDefaults inside rAF processEvents — too late to
+    // stop browser defaults like Cmd-P (print), Cmd-D (bookmark), Cmd-S (save
+    // page), Cmd-F (find bar). Block those now, on the real gesture turn; the
+    // event still goes through the normal deferred processing.
+    if ((e.metaKey || e.ctrlKey) && 'dacxvzgspf'.indexOf(k) >= 0) e.preventDefault();
     window._canvasEvents.push(e);
   };
   $uiState.$onCanvasPointerUp = (e) => {
@@ -1931,7 +1953,8 @@ class Pen {
     }
     morph.moveTo(this.location);
     morph.setHeading(this.heading);
-    Lively.addMorph(morph);
+    // Ephemeral: demo bugs move every tick — must not sync into Automerge.
+    Lively.addEphemeralMorph(morph);
     this.bug = morph;
     return this;
   }
@@ -3019,7 +3042,8 @@ class TextBox extends Shape {
         let at = getPointerLocation() ? getPointerLocation().copy() : pt(120, 120);
         showFindNoMatchesMenu(Lively, at, term);
       } else {
-        Lively.addMorph(
+        // Per-user tool window; promote via the halo's P handle to share it.
+        Lively.addEphemeralMorph(
           new MethodListPanel(null, hits, null, 'Occurrences of "' + term + '"', term),
         );
       }
@@ -4196,7 +4220,7 @@ class Morph {
   inspect() {
     // Lively.submorphs.first().inspect()
     let p = new InspectorPanel(rect(500, 100, 300, 300), this);
-    Lively.addMorph(p);
+    Lively.addEphemeralMorph(p);
     p.startStepping('showSelectedValue', false, 500);
     return p;
   }
@@ -4546,7 +4570,7 @@ class Morph {
     if (!world) return;
     let anchor = this.clippedBoundsInWorld ? this.clippedBoundsInWorld() : this.getBounds();
     let r = anchor.topRight().addPt(pt(12, 0)).extent(pt(280, 340));
-    world.addMorph(new StylePanel(r, this));
+    world.addEphemeralMorph(new StylePanel(r, this));
   }
   rotateBy(angle) {
     this.setRotation(this.transform.rotation + angle);
@@ -4797,11 +4821,61 @@ class ImageMorph extends Morph {
   }
   syncRotationToVelocity() {
     /** Match {@link ImageMorph#dragMovedBy} drag convention: sprite “forward” aligns with velocity. */
-    if (!this.velocity) return;
-    let vx = this.velocity.x;
-    let vy = this.velocity.y;
+    let v = this.$velocity || this.velocity;
+    if (!v) return;
+    let vx = v.x;
+    let vy = v.y;
     if (vx === 0 && vy === 0) return;
     this.transform.rotation = Math.atan2(vy, vx) + Math.PI / 2;
+  }
+  bouncerStep() {
+    /**
+     * Step for {@link WorldMorph#makeBouncer}. Uses $-local pen/velocity; only
+     * moveTo/setRotation touch the shared document when the bug is persistent.
+     */
+    let world = this.world();
+    let pen = this.$pen;
+    let vel = this.$velocity;
+    if (!world || !pen || !vel) return;
+
+    let prevBounds = this.collisionBounds();
+    pen.location = pen.location.addPt(vel);
+    this.moveTo(pen.location);
+
+    let worldBounds = world.getBounds();
+    let bounds = this.collisionBounds();
+    let nudge = (dx, dy) => {
+      pen.location = pen.location.addPt(pt(dx, dy));
+      this.moveTo(pen.location);
+    };
+    let bounceX = () => {
+      this.$velocity = this.$velocity.flipX();
+      nudge(Math.sign(this.$velocity.x), 0);
+    };
+    let bounceY = () => {
+      this.$velocity = this.$velocity.flipY();
+      nudge(0, Math.sign(this.$velocity.y));
+    };
+
+    if (bounds.topLeft.y < worldBounds.topLeft.y && this.$velocity.y < 0) bounceY();
+    if (bounds.bottomRight().y > worldBounds.bottomRight().y && this.$velocity.y > 0) bounceY();
+    if (bounds.topLeft.x < worldBounds.topLeft.x && this.$velocity.x < 0) bounceX();
+    if (bounds.bottomRight().x > worldBounds.bottomRight().x && this.$velocity.x > 0) bounceX();
+
+    bounds = this.collisionBounds();
+    let subs = world.submorphs || [];
+    for (let i = 0; i < subs.length; i++) {
+      let other = subs.at ? subs.at(i) : subs[i];
+      if (other === this) continue;
+      let otherBounds = other.getBounds();
+      if (!bounds.overlapsRect(otherBounds)) continue;
+      if (prevBounds.overlapsRect(otherBounds)) continue;
+      let axis = bounds.overlapBounceAxis(otherBounds, this.$velocity);
+      if (axis === 'x') bounceX();
+      else if (axis === 'y') bounceY();
+      break;
+    }
+    this.syncRotationToVelocity();
   }
   static new(...args) {
     return new this(...args);
@@ -5080,12 +5154,7 @@ class LineMorph extends Morph {
     });
     copy.owner = this.owner;
     if (this.zIndex != null) copy.zIndex = this.zIndex;
-    this.restartSteppingOnCopy(copy, (spec, c) => {
-      if (spec.methodName === 'stepHoverHandles') {
-        c.startHandleStepping();
-        return true;
-      }
-    });
+    this.restartSteppingOnCopy(copy);
     return copy;
   }
   morphMenu() {
@@ -5163,35 +5232,6 @@ class LineMorph extends Morph {
     if (world && world.changed) world.changed();
     return this;
   }
-  startHandleStepping() {
-    super.startStepping('stepHoverHandles', null, 200);
-  }
-  stepHoverHandles() {
-    let world = this.world();
-    if (!world) return;
-    if (this.$vertexDragActive) {
-      this.ensureVertexHandles();
-      this.clearMidpointHandles();
-      return;
-    }
-    let pf = world.$pointerFocus;
-    if (pf && this.isLineHandle(pf)) {
-      this.ensureVertexHandles();
-      if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
-      return;
-    }
-    if (!getPointerLocation()) {
-      this.clearAllHandles();
-      return;
-    }
-    let localP = this.localize(getPointerLocation());
-    if (!this.shape.includesPt(localP)) {
-      this.clearAllHandles();
-      return;
-    }
-    this.ensureVertexHandles();
-    this.ensureMidpointHandles();
-  }
   syncGeometryFromVertices() {
     /** Refresh shape/morph bounds from current vertices (hover region, hit testing). */
     let sh = this.shape;
@@ -5222,6 +5262,42 @@ class LineMorph extends Morph {
       else this.layoutMidpointHandles();
     }
     this.changed();
+  }
+  updateHoverHandles(worldP) {
+    /**
+     * Show handles while the pointer is over the line (or mid-reshape), hide them
+     * when it leaves. Driven by the local user's pointer moves (see
+     * {@link WorldMorph#updateHoverUI}); handles are per-user ephemeral submorphs.
+     */
+    if (this.$vertexDragActive) {
+      this.ensureVertexHandles();
+      this.clearMidpointHandles();
+      return;
+    }
+    let world = this.world();
+    if (!world) return;
+    let pf = world.$pointerFocus;
+    if (pf && this.isLineHandle(pf)) {
+      this.ensureVertexHandles();
+      if (!this.isMidpointHandle(pf)) this.ensureMidpointHandles();
+      return;
+    }
+    if (!worldP) {
+      this.clearAllHandles();
+      return;
+    }
+    let localP = this.localize(worldP);
+    // Handles poke past the stroke's hit tolerance: keep them alive while the
+    // pointer is on one, or its far rim would vanish before it can be clicked.
+    let onHandle =
+      (this.$vertexHandles || []).some((h) => h.includesPt(localP)) ||
+      (this.$midpointHandles || []).some((h) => h.includesPt(localP));
+    if (!onHandle && !this.shape.includesPt(localP)) {
+      this.clearAllHandles();
+      return;
+    }
+    this.ensureVertexHandles();
+    this.ensureMidpointHandles();
   }
   static new(...args) {
     return new this(...args);
@@ -5684,7 +5760,7 @@ function menuSeparatorDisplay() {
  * Also accepted by MenuMorph: ['label', action] tuples.
  *
  * Note: MenuMorph expands these into plain string labels in itemList plus a
- * parallel $-prefixed $menuActions table (functions must not live in Automerge).
+ * parallel menuActions table.
  */
 function menuItem(label, action) {
   return { label: '' + label, action: action };
@@ -5788,7 +5864,7 @@ function menuItemCaption(item) {
   return s;
 }
 function refreshWorldMenuItems(menuMorph) {
-  /** Refresh toggle labels in place; keep $menuActions aligned by index. */
+  /** Refresh toggle labels in place; keep menuActions aligned by index. */
   let list = menuMorph.itemList || [];
   for (let i = 0; i < list.length; i++) {
     let cap = menuItemCaption(list[i]);
@@ -5797,7 +5873,7 @@ function refreshWorldMenuItems(menuMorph) {
     else if (cap === onScreenKeyboardLabel || cap.endsWith(onScreenKeyboardLabel))
       list[i] = menuToggleLabel(onScreenKeyboardLabel, $useOnScreenKbd);
   }
-  // Relayout labels only — do not reinstall (would drop $menuActions).
+  // Relayout labels only — do not reinstall (would drop menuActions).
   if (menuMorph.relayoutItemList) menuMorph.relayoutItemList();
   else ListMorph.prototype.setList.call(menuMorph, list);
 }
@@ -5920,18 +5996,18 @@ class ListMorph extends Morph {
 // Fleeting or persistent menu built on ListMorph.
 // Source may use menuItem(label, action) / [label, action] so name and code stay
 // together; at install time labels become plain strings in itemList and actions
-// live in $menuActions ($-prefixed: replica-local, can hold functions).
+// live in menuActions.
 class MenuMorph extends ListMorph {
   constructor(initialBounds, list, actionFn) {
     super(initialBounds, [], null);
     // $-prefixed: must hold functions; Automerge cannot store them on itemList entries.
     this.$legacyActionFn = actionFn || null;
-    this.$menuActions = [];
+    this.menuActions = [];
     this.setSelectFn(function (item, shiftKey) {
       if (isMenuSeparator(item)) return;
       let idx = this.shape && this.shape.$selectedLineIndex > 0 ? this.shape.$selectedLineIndex - 1 : -1;
       if (idx < 0 && this.itemList) idx = this.itemList.indexOf(item);
-      let act = this.$menuActions && idx >= 0 ? this.$menuActions[idx] : null;
+      let act = this.menuActions && idx >= 0 ? this.menuActions[idx] : null;
       if (typeof act === 'function') {
         act.call(this, item, shiftKey);
         return;
@@ -5949,11 +6025,11 @@ class MenuMorph extends ListMorph {
       labels.push(e.label);
       actions.push(e.action);
     });
-    this.$menuActions = actions;
+    this.menuActions = actions;
     super.setList(labels);
   }
   relayoutItemList() {
-    /** Refresh text/width/height from current string itemList without touching $menuActions. */
+    /** Refresh text/width/height from current string itemList without touching menuActions. */
     let n = (this.itemList || []).length;
     let b = this.getBounds();
     let h = Math.max(24, 24 + n * 20);
@@ -5981,19 +6057,19 @@ class MenuMorph extends ListMorph {
     return this.findItem(indexOrNeedle);
   }
   ensureActionList() {
-    if (!this.$menuActions) this.$menuActions = [];
-    while (this.$menuActions.length < (this.itemList || []).length) this.$menuActions.push(null);
-    if (this.$menuActions.length > (this.itemList || []).length)
-      this.$menuActions.length = (this.itemList || []).length;
-    return this.$menuActions;
+    if (!this.menuActions) this.menuActions = [];
+    while (this.menuActions.length < (this.itemList || []).length) this.menuActions.push(null);
+    if (this.menuActions.length > (this.itemList || []).length)
+      this.menuActions.length = (this.itemList || []).length;
+    return this.menuActions;
   }
   addItem(labelOrItem, actionIfAny) {
     /** Append an item. addItem('Hi', fn) or addItem(menuItem('Hi', fn)). */
     if (!this.itemList) this.itemList = [];
-    if (!this.$menuActions) this.$menuActions = [];
+    if (!this.menuActions) this.menuActions = [];
     let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
     this.itemList.push(e.label);
-    this.$menuActions.push(e.action);
+    this.menuActions.push(e.action);
     return this.relayoutItemList();
   }
   addItemBefore(before, labelOrItem, actionIfAny) {
@@ -6008,7 +6084,7 @@ class MenuMorph extends ListMorph {
     if (idx < 0) idx = this.itemList.length;
     let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
     this.itemList.splice(idx, 0, e.label);
-    this.$menuActions.splice(idx, 0, e.action);
+    this.menuActions.splice(idx, 0, e.action);
     return this.relayoutItemList();
   }
   addItemAfter(after, labelOrItem, actionIfAny) {
@@ -6019,7 +6095,7 @@ class MenuMorph extends ListMorph {
     if (idx < 0) idx = this.itemList.length - 1;
     let e = expandMenuItemEntry(menuItemFrom(labelOrItem, actionIfAny));
     this.itemList.splice(idx + 1, 0, e.label);
-    this.$menuActions.splice(idx + 1, 0, e.action);
+    this.menuActions.splice(idx + 1, 0, e.action);
     return this.relayoutItemList();
   }
   removeItem(indexOrNeedle) {
@@ -6033,7 +6109,7 @@ class MenuMorph extends ListMorph {
     if (idx < 0 || idx >= this.itemList.length) return null;
     let removed = this.itemList.splice(idx, 1)[0];
     this.ensureActionList();
-    if (idx < this.$menuActions.length) this.$menuActions.splice(idx, 1);
+    if (idx < this.menuActions.length) this.menuActions.splice(idx, 1);
     this.relayoutItemList();
     return removed;
   }
@@ -7795,7 +7871,7 @@ class BrowserPanel extends PanelMorph {
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
     if (!text) return;
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
     );
   }
@@ -7806,7 +7882,7 @@ class BrowserPanel extends PanelMorph {
       includeClassDef: true,
     });
     if (!text) return;
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.selectedClass),
     );
   }
@@ -8105,6 +8181,7 @@ class MethodListPanel extends PanelMorph {
     this.recents = recentMethodsIfAny;
     this.searchString = searchStringIfAny || null;
     this._occurrenceLastSpec = null;
+    this._fragmentClassName = null;
     this.initMethodsPane();
     this.initPrintPane();
     this.setPanelTitle(optionalTitle || 'Method list');
@@ -8121,6 +8198,7 @@ class MethodListPanel extends PanelMorph {
     }
     if (this.printPane) this.printPane.setText('Selected method', { force: true });
     this._occurrenceLastSpec = null;
+    this._fragmentClassName = null;
   }
   exportMethodCopyToOSPaste() {
     let exportText = this.methodCopyText();
@@ -8136,33 +8214,45 @@ class MethodListPanel extends PanelMorph {
     this.methodsPane.setPaneMenu(methodSelectorPaneMenuSpec(this));
     this.methodsPane.onSelect((spec, shiftKey) => {
       let applySpec = () => {
+        // Fragment members display as bare class fragments (like the browser's
+        // method pane) and re-save via replaceMethod through fragmentSaveClassName;
+        // globals and legacy-format members keep the assignment form.
         let methodString = null;
         let preamble = null;
+        let fragmentClassName = null;
         if (spec.includes('[')) {
           methodString = this.methodFromRecentSpec(spec);
-          preamble =
-            ('' + methodString).startsWith('replaceMethod(')
-              ? ''
-              : spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+          let parsed = parseReplaceMethodCallString(methodString);
+          if (parsed) {
+            methodString = parsed.fragmentText;
+            fragmentClassName = parsed.className;
+            preamble = '';
+          } else {
+            preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+          }
         } else {
-          // Fragment members display (and re-save) as self-contained replaceMethod
-          // calls; globals and legacy-format members keep the assignment form.
           let fragment = fragmentForSpec(spec);
           if (fragment != null) {
-            methodString = replaceMethodCallString(methodSpecKey(spec).split('.')[0], fragment);
+            methodString = fragment;
+            fragmentClassName = methodSpecKey(spec).split('.')[0];
             preamble = '';
           } else {
             methodString = methodFromSpec(spec);
             preamble = spec + ' = ';
           }
         }
+        this._fragmentClassName = fragmentClassName;
         this.printPane.setText(preamble + methodString, { force: true });
         this._occurrenceLastSpec = spec;
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
         if (shiftKey) {
-          Lively.addMorph(
-            new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), preamble + methodString, spec),
+          // A spawned panel has no owning class, so it gets the self-contained form.
+          let spawnText = fragmentClassName
+            ? replaceMethodCallString(fragmentClassName, '' + methodString)
+            : preamble + methodString;
+          Lively.addEphemeralMorph(
+            new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), spawnText, spec),
           );
         }
       };
@@ -8186,11 +8276,17 @@ class MethodListPanel extends PanelMorph {
     let panelBounds = this.paneLayoutBounds();
     this.printPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
     this.printPane.setText('Selected method');
+    // Class fragments in this pane save via replaceMethod, exactly like the
+    // system browser's method pane (see the ctrl-S handler).
+    this.printPane.contentPane.shape.fragmentSaveClassName = () => this._fragmentClassName;
   }
   methodCopyText() {
     if (!this.printPane || !this.printPane.contentPane) return null;
     let text = this.printPane.contentPane.shape.string;
     if (!text || text === 'Selected method') return null;
+    // Fragments only make sense with their class; copies get the self-contained form.
+    if (this._fragmentClassName && !looksLikeLegacyMethodText(text))
+      return replaceMethodCallString(this._fragmentClassName, text);
     return text;
   }
   methodCopyTitle() {
@@ -8222,7 +8318,7 @@ class MethodListPanel extends PanelMorph {
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
     if (!text) return;
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.methodCopyTitle()),
     );
   }
@@ -8256,7 +8352,9 @@ class ErrorStackPanel extends MethodListPanel {
       if (idx >= 0) self.showStackFrame(idx);
       if (shiftKey && idx >= 0 && self.printPane) {
         let text = self.printPane.contentPane.shape.string;
-        Lively.addMorph(new MethodPanel(self.rectForSpawnedPanel(28, 320, 220), text, label));
+        Lively.addEphemeralMorph(
+          new MethodPanel(self.rectForSpawnedPanel(28, 320, 220), text, label),
+        );
       }
     });
     if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodSpecs[0]);
@@ -9438,7 +9536,7 @@ function openTranscript() {
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
   let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
-  Lively.addMorph(panel);
+  Lively.addEphemeralMorph(panel);
   panel.beTopMorph();
   return panel;
 }
@@ -9665,75 +9763,35 @@ class WorldMorph extends Morph {
     }
     return false;
   }
-  makeBouncer() {
-    // Lively.makeBouncer()
-    // Lively.startStepping("makeBouncer", , 250)
-    if (!bouncers) bouncers = [];
+  makeBouncer(shared) {
+    // Wandering-bug demo. Spawn is local; the bug is then made persistent so
+    // other replicas see it move (each moveTo writes Automerge — intentional
+    // for multi-screen demos / op-cost experiments). Step state stays $-local.
+    //  Lively.makeBouncer(true) 
+    //  Lively.makeBouncer(false) 
+    //  Lively.unMakeBouncer()
+
+    if (!$bouncers) $bouncers = [];
     let world = Lively;
     if (!world) return null;
-    let wb = world.getBounds();
-    let start = wb.center().copy();
-    let pen = new Pen(start);
-    pen.withBug();
+
+    let pen = new Pen(world.getBounds().center().copy()).withBug();
     let bug = pen.bug;
-    bug.pen = pen;
-    bug.velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
+    if (!bug) return null;
+
+    // withBug attaches ephemerally (cheap for spiral); 
+    if (shared && bug.bePersistent) bug.bePersistent();  // bug gets shared here
+    
+    bug.$pen = pen;
+    bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
     bug.syncRotationToVelocity();
-    bug.bouncerStep = function () {
-      let prevGb = this.collisionBounds();
-      let p = this.pen.location.addPt(this.velocity);
-      this.pen.location = p;
-      this.moveTo(p);
-      let b = world.getBounds();
-      let gb = this.collisionBounds();
-      let eps = 1;
-      let wallNudged = false;
-      if (gb.topLeft.y < b.topLeft.y && this.velocity.y < 0) {
-        this.velocity = this.velocity.flipY();
-        this.pen.location = this.pen.location.addPt(pt(0, Math.sign(this.velocity.y) * eps));
-        wallNudged = true;
-      }
-      if (gb.bottomRight().y > b.bottomRight().y && this.velocity.y > 0) {
-        this.velocity = this.velocity.flipY();
-        this.pen.location = this.pen.location.addPt(pt(0, Math.sign(this.velocity.y) * eps));
-        wallNudged = true;
-      }
-      if (gb.topLeft.x < b.topLeft.x && this.velocity.x < 0) {
-        this.velocity = this.velocity.flipX();
-        this.pen.location = this.pen.location.addPt(pt(Math.sign(this.velocity.x) * eps, 0));
-        wallNudged = true;
-      }
-      if (gb.bottomRight().x > b.bottomRight().x && this.velocity.x > 0) {
-        this.velocity = this.velocity.flipX();
-        this.pen.location = this.pen.location.addPt(pt(Math.sign(this.velocity.x) * eps, 0));
-        wallNudged = true;
-      }
-      if (wallNudged) this.moveTo(this.pen.location);
-      gb = this.collisionBounds();
-      for (let i = 0; i < world.submorphs.length; i++) {
-        let sub = world.submorphs[i];
-        if (sub === this) continue;
-        let sb = sub.getBounds();
-        if (!gb.overlapsRect(sb)) continue;
-        if (prevGb.overlapsRect(sb)) continue;
-        let axis = gb.overlapBounceAxis(sb, this.velocity);
-        if (axis === 'x') {
-          this.velocity = this.velocity.flipX();
-          this.pen.location = this.pen.location.addPt(pt(Math.sign(this.velocity.x) * eps, 0));
-        } else if (axis === 'y') {
-          this.velocity = this.velocity.flipY();
-          this.pen.location = this.pen.location.addPt(pt(0, Math.sign(this.velocity.y) * eps));
-        }
-        this.moveTo(this.pen.location);
-        gb = this.collisionBounds();
-        break;
-      }
-      this.syncRotationToVelocity();
-      world.changed();
-    };
-    bouncers.push(bug);
+    $bouncers.push(bug);
     bug.startStepping('bouncerStep', null, 50);
     return bug;
+  }
+  unMakeBouncer() {
+    if (!$bouncers || $bouncers.length === 0) return;
+    $bouncers.pop().remove();
   }
   morphsAtPointInDepthOrder(pt) {
     // Return deepest hit morph first, then owner chain up toward world.
@@ -9848,10 +9906,13 @@ class WorldMorph extends Morph {
       // pointerLocation only after the hand has moved.
       hand.onPointerMove(p, evt);
       setPointerLocation(p);
-      if (hand.hasSubmorphs()) return true;
     } else {
       setPointerLocation(p);
     }
+    // Hover UI must track every move — including mid-drag ($pointerFocus set) and
+    // while a hand carries morphs — so it runs before the early returns below.
+    this.updateHoverUI(p);
+    if (hand && hand.hasSubmorphs()) return true;
     if (this.$pointerFocus) {
       // pointerFocus expects pt in its owner's coords (e.g. SliderMorph in ListPane)
       let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
@@ -9875,6 +9936,21 @@ class WorldMorph extends Morph {
       this.eachSubmorph((morph) => morph.onPointerUp(p, evt));
     }
     return result;
+  }
+  updateHoverUI(p) {
+    /**
+     * Give every morph that has hover UI (e.g. {@link LineMorph#updateHoverHandles})
+     * a chance to show or hide it for the pointer at world-pt `p`. Event-driven from
+     * {@link WorldMorph#onPointerMove}: each user's own moves drive their own runtime,
+     * so hover UI works on every replica — a stepping schedule lives only in the
+     * runtime that started it, which is why the old stepHoverHandles polling showed
+     * handles only to the user who evaluated populateLively().
+     */
+    let walk = (m) => {
+      if (m.updateHoverHandles) m.updateHoverHandles(p);
+      m.eachSubmorph(walk);
+    };
+    this.eachSubmorph(walk);
   }
   removeExistingHalos() {
     // Halos are per-user: they live in $submorphs. Collect first, then remove, so we
@@ -9934,7 +10010,7 @@ class WorldMorph extends Morph {
     this.$pointerFocus = morphOrNull;
   }
   showHaloHelp() {
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         null,
         `HALOS
@@ -9960,7 +10036,7 @@ class WorldMorph extends Morph {
     );
   }
   showMorphicHelp() {
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         null,
         `MORPHIC
@@ -9974,7 +10050,7 @@ class WorldMorph extends Morph {
     );
   }
   showTextHelp() {
-    Lively.addMorph(
+    Lively.addEphemeralMorph(
       new MethodPanel(
         null,
         `Text editing in this system is very simple - there are no automatic pop-ups or type-aheads.  The following command-keys provide basic edits:
@@ -10313,10 +10389,9 @@ function noteMethodChanges(evalString) {
   if (!recentChanges) recentChanges = [];
   let spec = null;
   let sourceStr = null;
-  let m = evalString.match(/^replaceMethod\('([A-Za-z_$][\w$]*)',\s*`([\s\S]*)`\)$/);
-  if (m) {
-    let fragment = m[2].replace(/\\\$\{/g, '${').replace(/\\`/g, '`').replace(/\\\\/g, '\\');
-    spec = fragmentChangeSpec(m[1], fragment);
+  let parsed = parseReplaceMethodCallString(evalString);
+  if (parsed) {
+    spec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
     sourceStr = evalString;
   } else {
     let ix1 = evalString.indexOf(' =');
@@ -10345,7 +10420,7 @@ function noteMethodChanges(evalString) {
 function browseRecentChanges() {
   // browseRecentChanges()
   let changes = recentChanges ?? [];
-  let panel = Lively.addMorph(
+  let panel = Lively.addEphemeralMorph(
     new MethodListPanel(
       null,
       changes.map((tuple) => tuple[0] + tuple[1]),
@@ -10358,7 +10433,7 @@ function browseRecentChanges() {
 function browseSavedChanges() {
   // browseSavedChanges()
   let changes = JSON.parse(storageGetItem('recentChanges'));
-  let panel = Lively.addMorph(
+  let panel = Lively.addEphemeralMorph(
     new MethodListPanel(
       null,
       changes.map((tuple) => tuple[0] + tuple[1]),
@@ -10434,7 +10509,7 @@ function viewExportedSystem() {
   let ts =
     storageGetItem('system.export.timestamp') || storageGetItem('system.methods.timestamp') || '';
   let title = ts ? 'alldefs export (' + ts + ')' : 'alldefs export';
-  Lively.addMorph(new MethodPanel(null, text, title));
+  Lively.addEphemeralMorph(new MethodPanel(null, text, title));
   return text.length;
 }
 function exportMethodShouldOmit(name) {
@@ -10737,7 +10812,7 @@ function openErrorStackPanel(err, contextIfAny, titleIfAny) {
     contextIfAny,
     titleIfAny || errorPanelTitle(err),
   );
-  Lively.addMorph(panel);
+  Lively.addEphemeralMorph(panel);
   panel.beTopMorph();
   return panel;
 }
@@ -10816,7 +10891,7 @@ function storageSetItem(key, value) {
 }
 function storageEditItem(key) {
   //storageEditItem('ToDoList')
-  Lively.addMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
+  Lively.addEphemeralMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
 }
 function saveRecentChanges() {
   // saveRecentChanges();
@@ -10896,7 +10971,7 @@ function inspect(obj, optionalBounds) {
     r = rect(500, 100, 300, 300);
   }
   let p = new InspectorPanel(r, obj);
-  Lively.addMorph(p);
+  Lively.addEphemeralMorph(p);
   p.startStepping('showSelectedValue', false, 500);
   return p;
 }

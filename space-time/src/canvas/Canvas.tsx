@@ -271,7 +271,7 @@ function PostItEditor({
   return (
     <textarea
       ref={textareaRef}
-      className="st-post-it-editor absolute z-10 resize-none border-0 bg-[var(--st-post-it-selected-fill)] text-[var(--st-text)] outline-none"
+      className="st-post-it-editor"
       style={{
         left,
         top,
@@ -338,7 +338,7 @@ function ClipNameEditor({
     <input
       ref={inputRef}
       type="text"
-      className="absolute z-10 border-0 bg-base-100/90 p-0 font-sans text-[11px] text-base-content outline-none ring-1 ring-primary"
+      className="st-label-editor"
       style={{
         left,
         top,
@@ -4250,20 +4250,20 @@ export function Canvas({
   return (
     <div
       ref={rootRef}
-      className="st-canvas-root relative min-h-0 min-w-0 flex-1 overflow-hidden"
+      className="st-canvas-root"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <canvas ref={rulerRef} className="st-ruler block w-full" />
+      <canvas ref={rulerRef} className="st-ruler" />
       {isFileDropTarget && (
-        <div className="st-file-drop-overlay pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+        <div className="st-file-drop-overlay">
           <span className="st-file-drop-label">Drop media or documents</span>
         </div>
       )}
       <canvas
         ref={canvasRef}
-        className="st-canvas block w-full cursor-crosshair"
+        className="st-canvas"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

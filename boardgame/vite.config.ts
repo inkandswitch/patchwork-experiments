@@ -3,7 +3,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import cssInjectedByJsPlugin from "vite-plugin-css-injected-by-js";
-import tailwindcss from "@tailwindcss/vite";
 import external from "@inkandswitch/patchwork-bootloader/externals";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,7 +13,7 @@ const moduleExternals = external.filter(
 
 export default defineConfig({
   base: "./",
-  plugins: [react(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
+  plugins: [react(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
     alias: {

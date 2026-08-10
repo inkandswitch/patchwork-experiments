@@ -48,8 +48,7 @@ type LoadedGame = {
   doc: BoardGameDoc;
 };
 
-const filterSelectClass =
-  "rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700";
+const filterSelectClass = "bg-select";
 
 function FilterBar({
   filters,
@@ -69,20 +68,20 @@ function FilterBar({
   const activeCount = activeFilterCount(filters);
 
   return (
-    <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="bg-filters">
+      <div className="bg-filters__row">
         <input
           value={filters.query}
           onChange={(event) => onFiltersChange({ query: event.target.value })}
           placeholder="Search name, designer, mechanic, category..."
-          className="min-w-[200px] flex-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-sm outline-none focus:border-amber-400"
+          className="bg-search"
         />
-        <span className="text-xs text-slate-500">
+        <span className="bg-count">
           {resultCount} of {totalCount}
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="bg-filters__row">
         <select
           value={filters.itemType}
           onChange={(event) =>
@@ -161,7 +160,7 @@ function FilterBar({
           <button
             type="button"
             onClick={onClearFilters}
-            className="rounded-md px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-100"
+            className="bg-button bg-button--quiet"
           >
             Clear filters
           </button>
@@ -378,17 +377,17 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
   const loadingGames = gameUrls.length > loadedGames.length;
 
   return (
-    <div className="boardgame-collection flex h-full flex-col overflow-hidden bg-slate-50">
-      <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-3 p-3">
-        <header className="shrink-0 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
+    <div className="boardgame-collection">
+      <div className="bg-shell">
+        <header className="bg-header">
+          <div className="bg-header__row">
+            <div className="bg-header__title">
               <input
                 value={doc.title}
                 onChange={(event) => updateTitle(event.target.value)}
-                className="w-full border-none bg-transparent text-xl font-semibold text-slate-900 outline-none"
+                className="bg-title-input"
               />
-              <p className="mt-0.5 text-xs text-slate-600">
+              <p className="bg-stats">
                 {stats.count} games
                 {loadingGames
                   ? ` · loading ${stats.loaded}/${stats.count}`
@@ -400,19 +399,19 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-1.5">
+            <div className="bg-actions">
               <input
                 ref={fileInputRef}
                 type="file"
                 accept=".csv,text/csv"
-                className="hidden"
+                className="bg-hidden"
                 onChange={handleCsvImport}
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={importing}
-                className="rounded-md bg-amber-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                className="bg-button bg-button--primary"
               >
                 {importing ? "Importing..." : "Import CSV"}
               </button>
@@ -425,7 +424,7 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
                   loadedGames.length === 0 ||
                   importing
                 }
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="bg-button"
               >
                 {kaggleImporting ? "Importing..." : "Kaggle metadata"}
               </button>
@@ -438,14 +437,14 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
                   importing ||
                   kaggleImporting
                 }
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="bg-button"
               >
                 BGG enrich
               </button>
               <button
                 type="button"
                 onClick={() => setShowSettings((value) => !value)}
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="bg-button"
               >
                 Settings
               </button>
@@ -453,8 +452,8 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
           </div>
 
           {showSettings ? (
-            <div className="mt-3 rounded-md border border-slate-100 bg-slate-50 p-2.5">
-              <label className="block text-xs font-medium text-slate-700">
+            <div className="bg-settings">
+              <label className="bg-settings__label">
                 BGG API token (optional)
               </label>
               <input
@@ -462,22 +461,22 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
                 value={doc.bggApiToken ?? ""}
                 onChange={(event) => updateApiToken(event.target.value)}
                 placeholder="Bearer token from boardgamegeek.com/applications"
-                className="mt-1 w-full rounded-md border border-slate-200 px-2.5 py-1.5 text-sm"
+                className="bg-settings__input"
               />
             </div>
           ) : null}
 
           {importMessage ? (
-            <p className="mt-2 text-xs text-emerald-700">{importMessage}</p>
+            <p className="bg-message bg-message--ok">{importMessage}</p>
           ) : null}
           {kaggleMessage ? (
-            <p className="mt-2 text-xs text-slate-600">{kaggleMessage}</p>
+            <p className="bg-message">{kaggleMessage}</p>
           ) : null}
           {enrichMessage ? (
-            <p className="mt-2 text-xs text-slate-600">{enrichMessage}</p>
+            <p className="bg-message">{enrichMessage}</p>
           ) : null}
           {enrichProgress ? (
-            <p className="mt-2 text-xs text-slate-600">
+            <p className="bg-message">
               Enriching {enrichProgress.completed}/{enrichProgress.total}
               {enrichProgress.currentName
                 ? ` · ${enrichProgress.currentName}`
@@ -487,18 +486,18 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
         </header>
 
         {gameUrls.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center">
+          <div className="bg-empty">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">
+              <h2 className="bg-empty__title">
                 No games yet
               </h2>
-              <p className="mt-2 max-w-md text-sm text-slate-600">
+              <p className="bg-empty__hint">
                 Import your BoardGameGeek collection CSV to get started.
               </p>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-3 rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700"
+                className="bg-button bg-button--primary bg-button--lg"
               >
                 Import BGG CSV
               </button>
@@ -517,10 +516,10 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
               onClearFilters={() => setFilters(defaultFilters)}
             />
 
-            <div className="flex min-h-0 flex-1 gap-3">
-              <div className="min-h-0 min-w-0 flex-1 overflow-auto rounded-lg border border-slate-200 bg-white">
-              <table className="w-full min-w-[960px] border-collapse text-left">
-                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-xs">
+            <div className="bg-body">
+              <div className="bg-table-scroll">
+              <table className="bg-table">
+                <thead>
                   <tr>
                     <SortableHeader
                       label="Name"
@@ -617,14 +616,14 @@ function CollectionBrowser({ docUrl }: { docUrl: AutomergeUrl }) {
                 </tbody>
               </table>
               {filteredGames.length === 0 ? (
-                <p className="p-6 text-center text-sm text-slate-500">
+                <p className="bg-table-empty">
                   No games match these filters.
                 </p>
               ) : null}
               </div>
 
               {selectedGame ? (
-                <div className="flex w-[min(380px,38%)] min-h-0 shrink-0 flex-col">
+                <div className="bg-detail-pane">
                   <GameDetail
                     game={selectedGame.doc}
                     compact

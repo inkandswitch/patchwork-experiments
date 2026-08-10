@@ -295,7 +295,7 @@ function UnconferenceToolInner({
   );
 
   if (!doc) {
-    return <div className="unconference p-4 text-base-content">Loading…</div>;
+    return <div className="unconference unconference--message">Loading…</div>;
   }
 
   const timeSlots = doc.timeSlots ?? [];
@@ -321,13 +321,12 @@ function UnconferenceToolInner({
   const isBreakSlot = (i: number) => slotBreakLabels[i] !== "";
 
   return (
-    <div className="unconference h-full min-h-0 overflow-y-auto p-4 flex flex-col gap-6 text-base-content max-w-4xl mx-auto">
+    <div className="unconference">
       <section>
-        <h2 className="text-lg font-semibold mb-2">Proposed sessions</h2>
+        <h2>Proposed sessions</h2>
         <ul
-          className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 list-none p-0 m-0 max-w-3xl min-h-[7rem] rounded-lg transition-colors ${
-            dragOverProposed ? "bg-primary/10 ring-1 ring-primary/30" : ""
-          }`}
+          className="postit-grid"
+          data-drop-target={dragOverProposed || undefined}
           onDragOver={handleProposedDragOver}
           onDragLeave={(e) => {
             const ul = e.currentTarget;
@@ -358,7 +357,7 @@ function UnconferenceToolInner({
           )}
         </ul>
         {!currentContactUrl && (
-          <p className="text-base-content/70 text-sm mt-2">
+          <p className="note">
             Sign in with a contact to propose sessions.
           </p>
         )}
@@ -366,16 +365,16 @@ function UnconferenceToolInner({
 
       {/* Schedule for the day */}
       <section>
-        <h2 className="text-lg font-semibold mb-2">Schedule for the day</h2>
-        <p className="text-sm text-base-content/70 mb-3">
+        <h2>Schedule for the day</h2>
+        <p className="note">
           Drag session post-its from above into a time slot. Anyone can edit the
           schedule.
         </p>
-        <div className="overflow-x-auto">
-          <table className="table table-sm">
+        <div className="schedule-scroll">
+          <table className="schedule">
             <thead>
               <tr>
-                <th className="w-20">Time</th>
+                <th className="schedule__time">Time</th>
                 <th>Sessions</th>
               </tr>
             </thead>
@@ -386,13 +385,13 @@ function UnconferenceToolInner({
                 const breakLabel = slotBreakLabels[slotIndex];
                 return (
                   <tr key={slotIndex}>
-                    <td className="font-mono text-sm align-top pt-2 w-20">
-                      <div className="flex flex-col gap-0.5">
+                    <td className="schedule__time">
+                      <div className="schedule__time-stack">
                         {editingTimeSlotIndex === slotIndex ? (
                           <input
                             ref={timeInputRef}
                             type="text"
-                            className="input input-sm input-bordered w-full font-mono"
+                            className="field field--mono"
                             value={editingTimeDraft}
                             onChange={(e) =>
                               setEditingTimeDraft(e.target.value)
@@ -413,7 +412,7 @@ function UnconferenceToolInner({
                         ) : (
                           <button
                             type="button"
-                            className="text-left hover:bg-base-200 rounded px-1 -mx-1 py-1 min-h-[2rem] cursor-pointer w-full border-0 bg-transparent"
+                            className="inline-edit inline-edit--block"
                             onClick={(e) => {
                               e.stopPropagation();
                               startEditingTime(slotIndex, time);
@@ -426,7 +425,7 @@ function UnconferenceToolInner({
                         {!isBreak && (
                           <button
                             type="button"
-                            className="text-xs opacity-70 hover:opacity-100 text-left px-1 -mx-1 py-0.5"
+                            className="mini-action"
                             onClick={(e) => {
                               e.stopPropagation();
                               setSlotAsBreak(slotIndex, "Break");
@@ -439,13 +438,9 @@ function UnconferenceToolInner({
                       </div>
                     </td>
                     <td
-                      className={`align-top ${
-                        !isBreak && dragOverSlotIndex === slotIndex
-                          ? "bg-primary/10 ring-1 ring-primary/30 transition-colors"
-                          : isBreak
-                            ? "text-base-content/80"
-                            : "transition-colors"
-                      }`}
+                      className="schedule__cell"
+                      data-break={isBreak || undefined}
+                      data-drop-target={(!isBreak && dragOverSlotIndex === slotIndex) || undefined}
                       {...(isBreak
                         ? {}
                         : {
@@ -462,12 +457,12 @@ function UnconferenceToolInner({
                           })}
                     >
                       {isBreak ? (
-                        <div className="flex flex-col gap-1">
+                        <div className="break-editor">
                           {editingBreakSlotIndex === slotIndex ? (
                             <input
                               ref={breakInputRef}
                               type="text"
-                              className="input input-sm input-bordered w-full max-w-xs"
+                              className="field"
                               value={editingBreakDraft}
                               onChange={(e) =>
                                 setEditingBreakDraft(e.target.value)
@@ -487,10 +482,10 @@ function UnconferenceToolInner({
                               placeholder="e.g. Lunch, Coffee"
                             />
                           ) : (
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="break-editor__row">
                               <button
                                 type="button"
-                                className="text-left hover:bg-base-200 rounded px-1 -mx-1 py-0.5 cursor-pointer border-0 bg-transparent font-medium"
+                                className="inline-edit"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   startEditingBreak(slotIndex, breakLabel);
@@ -501,7 +496,7 @@ function UnconferenceToolInner({
                               </button>
                               <button
                                 type="button"
-                                className="text-xs opacity-70 hover:opacity-100"
+                                className="mini-action"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSlotAsSession(slotIndex);
@@ -514,7 +509,7 @@ function UnconferenceToolInner({
                           )}
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-w-3xl min-h-[7rem]">
+                        <div className="postit-grid postit-grid--slot">
                           {slotSessionIds.map((sessionId, sessionIndex) => {
                             const session = sessions.find(
                               (s) => s.id === sessionId,
@@ -575,7 +570,6 @@ export function renderUnconferenceTool(
   return () => root.unmount();
 }
 
-const POSTIT_SIZE = "w-full aspect-square min-h-0";
 
 function ScheduledSessionPostit({
   session,
@@ -607,7 +601,7 @@ function ScheduledSessionPostit({
   const tint = tints[hash % tints.length];
   return (
     <div
-      className={`postit ${tint} ${POSTIT_SIZE} p-3 flex flex-col relative cursor-grab active:cursor-grabbing`}
+      className={`postit ${tint}`}
       style={{ transform: `rotate(${tilt * 0.4}deg)` }}
       draggable
       onMouseDown={(e) => {
@@ -638,16 +632,16 @@ function ScheduledSessionPostit({
     >
       <button
         type="button"
-        className="btn btn-ghost btn-xs absolute top-1 right-1 shrink-0 z-10"
+        className="postit__remove"
         onClick={onRemove}
         aria-label="Remove from slot"
       >
         ✕
       </button>
-      <div className="font-medium text-base-content/90 text-sm line-clamp-2 break-words pr-6">
+      <div className="postit__title postit__title--inset">
         {session.title}
       </div>
-      <div className="text-xs text-base-content/60 mt-0.5 flex items-center gap-1 flex-wrap shrink-0">
+      <div className="postit__byline">
         {session.proposerContactUrl ? (
           <ContactChip contactUrl={session.proposerContactUrl} />
         ) : (
@@ -655,14 +649,14 @@ function ScheduledSessionPostit({
         )}
       </div>
       {session.description ? (
-        <p className="text-xs text-base-content/80 mt-1 line-clamp-3 flex-1 min-h-0 overflow-hidden break-words">
+        <p className="postit__description">
           {session.description}
         </p>
       ) : (
-        <div className="flex-1 min-h-0" />
+        <div className="postit__spacer" />
       )}
       {interestedUrls.length > 0 && (
-        <div className="text-xs text-base-content/60 mt-1 shrink-0">
+        <div className="postit__meta">
           {interestedUrls.length} interested
         </div>
       )}
@@ -686,16 +680,16 @@ function NewSessionPostit({
   canAdd: boolean;
 }) {
   return (
-    <li className={`postit ${POSTIT_SIZE} p-3 flex flex-col gap-2`}>
+    <li className="postit postit--new">
       <input
         type="text"
-        className="bg-transparent border-none outline-none font-medium text-base-content/90 placeholder-base-content/40 w-full text-sm"
+        className="postit__field postit__field--title"
         placeholder="Session title…"
         value={proposeTitle}
         onChange={(e) => setProposeTitle(e.target.value)}
       />
       <textarea
-        className="bg-transparent border-none outline-none text-sm text-base-content/80 placeholder-base-content/40 resize-none flex-1 min-h-0 w-full"
+        className="postit__field postit__field--description"
         placeholder="Description…"
         value={proposeDescription}
         onChange={(e) => setProposeDescription(e.target.value)}
@@ -703,7 +697,7 @@ function NewSessionPostit({
       />
       <button
         type="button"
-        className="btn btn-sm btn-primary mt-auto self-start"
+        className="button button--primary"
         onClick={onAdd}
         disabled={!canAdd}
       >
@@ -740,7 +734,7 @@ function SessionCard({
   const tint = tints[hash % tints.length];
   return (
     <li
-      className={`postit ${tint} ${POSTIT_SIZE} p-3 flex flex-col cursor-grab active:cursor-grabbing`}
+      className={`postit ${tint}`}
       style={{ transform: `rotate(${tilt * 0.4}deg)` }}
       draggable
       onMouseDown={(e) => {
@@ -759,10 +753,10 @@ function SessionCard({
       }}
       onDragEnd={onDragEnd}
     >
-      <div className="font-medium text-base-content/90 text-sm line-clamp-2 break-words">
+      <div className="postit__title">
         {session.title}
       </div>
-      <div className="text-xs text-base-content/60 mt-0.5 flex items-center gap-1 flex-wrap shrink-0">
+      <div className="postit__byline">
         {session.proposerContactUrl ? (
           <ContactChip contactUrl={session.proposerContactUrl} />
         ) : (
@@ -770,20 +764,21 @@ function SessionCard({
         )}
       </div>
       {session.description ? (
-        <p className="text-xs text-base-content/80 mt-1 line-clamp-3 flex-1 min-h-0 overflow-hidden break-words">
+        <p className="postit__description">
           {session.description}
         </p>
       ) : (
-        <div className="flex-1 min-h-0" />
+        <div className="postit__spacer" />
       )}
       {interestedUrls.length > 0 && (
-        <div className="text-xs text-base-content/60 mt-1 flex flex-wrap items-center gap-x-1 gap-y-0.5 shrink-0">
+        <div className="postit__meta">
           <span>{interestedUrls.length} interested</span>
         </div>
       )}
       <button
         type="button"
-        className={`btn btn-sm mt-auto self-start ${isInterested ? "btn-primary" : "btn-outline"}`}
+        className="button"
+        data-active={isInterested || undefined}
         onClick={onToggleInterest}
         disabled={!currentContactUrl}
         title={

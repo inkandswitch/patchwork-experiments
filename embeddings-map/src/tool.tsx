@@ -429,9 +429,9 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
 
   if (!folder || loadingDocs) {
     return (
-      <div className="flex items-center justify-center h-full p-4 gap-3">
-        <span className="loading loading-spinner loading-md" />
-        <span className="text-base-content/60">Loading folder contents...</span>
+      <div className="emap emap--loading">
+        <span className="spinner" />
+        <span className="muted">Loading folder contents...</span>
       </div>
     );
   }
@@ -455,39 +455,40 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
   const progress = isEmbedding ? view.progress : null;
 
   return (
-    <div className="p-4 h-full overflow-hidden flex flex-col gap-3">
+    <div className="emap">
       {error && (
-        <div className="alert alert-error text-sm">
+        <div className="alert" data-tone="error">
           <span>{error}</span>
-          <button className="btn btn-ghost btn-xs" onClick={() => setError(null)}>Dismiss</button>
+          <button className="button button--ghost button--xs" onClick={() => setError(null)}>Dismiss</button>
         </div>
       )}
 
       {longDocs.length > 0 && (
-        <div className="alert alert-warning text-sm">
+        <div className="alert" data-tone="warning">
           <span>
             {longDocs.length} doc(s) exceed ~6 000 words and may be truncated:
             {' '}{longDocs.slice(0, 5).join(', ')}
             {longDocs.length > 5 ? ` (+${longDocs.length - 5} more)` : ''}
           </span>
-          <button className="btn btn-ghost btn-xs" onClick={() => setLongDocs([])}>Dismiss</button>
+          <button className="button button--ghost button--xs" onClick={() => setLongDocs([])}>Dismiss</button>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex justify-between items-center border-b border-base-300 pb-2">
-        <h2 className="text-lg font-semibold">Embeddings Map</h2>
-        <div className="flex items-center gap-3">
-          <span className="badge badge-ghost">{includedCount}/{rows.length} included</span>
+      <div className="header">
+        <h2>Embeddings Map</h2>
+        <div className="header__actions">
+          <span className="badge">{includedCount}/{rows.length} included</span>
           <button
-            className={`btn btn-xs ${showRulesEditor ? 'btn-primary' : 'btn-outline'}`}
+            className="button button--xs"
+            data-active={showRulesEditor || undefined}
             onClick={() => setShowRulesEditor((v) => !v)}
             disabled={isEmbedding}
           >
             Extraction Rules
           </button>
           <button
-            className="btn btn-sm btn-primary"
+            className="button button--primary"
             disabled={isEmbedding || includedCount === 0}
             onClick={startEmbedding}
           >
@@ -498,10 +499,10 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
 
       {/* Extraction rules editor */}
       {showRulesEditor && (
-        <div className="border border-base-300 rounded-lg p-3 flex flex-col gap-2 bg-base-200/50">
-          <div className="flex items-center gap-2 text-xs text-base-content/60">
-            <span className="font-semibold">Per-type JSONPath extraction</span>
-            <a href="https://goessner.net/articles/JsonPath/" target="_blank" rel="noopener noreferrer" className="link link-primary">
+        <div className="rules">
+          <div className="rules__head">
+            <span className="rules__title">Per-type JSONPath extraction</span>
+            <a href="https://goessner.net/articles/JsonPath/" target="_blank" rel="noopener noreferrer" className="link">
               Syntax reference
             </a>
           </div>
@@ -512,30 +513,30 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
             const preview = previewResults.get(type);
             const placeholder = JSONPATH_EXAMPLES[type] ?? '$.content';
             return (
-              <div key={type} className="flex items-center gap-2">
-                <span className="badge badge-xs badge-outline w-20 shrink-0 justify-center">
-                  {type}<span className="ml-1 opacity-50">({count})</span>
+              <div key={type} className="rule">
+                <span className="badge badge--type">
+                  {type}<span className="badge__count">({count})</span>
                 </span>
                 <input
                   type="text"
-                  className="input input-xs input-bordered flex-1 font-mono"
+                  className="input input--mono"
                   placeholder={placeholder}
                   value={currentRule}
                   onChange={(e) => updateRule(type, e.target.value)}
                   disabled={isEmbedding}
                 />
                 {preview && (
-                  <span className={`text-xs whitespace-nowrap ${preview.failed ? 'text-warning' : 'text-success'}`}>
+                  <span className="preview" data-tone={preview.failed ? 'warning' : 'success'}>
                     {preview.failed ? 'fallback: ' : ''}{preview.charCount} chars
                   </span>
                 )}
                 {!preview && currentRule && (
-                  <button className="btn btn-xs btn-ghost" onClick={() => runPreview(type, currentRule)}>Preview</button>
+                  <button className="button button--ghost button--xs" onClick={() => runPreview(type, currentRule)}>Preview</button>
                 )}
               </div>
             );
           })}
-          <div className="text-xs text-base-content/40 mt-1">
+          <div className="rules__hint">
             Leave empty to use recursive string extraction (universal fallback). Comma-separate multiple JSONPath expressions.
           </div>
         </div>
@@ -543,18 +544,19 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
 
       {/* Type filters */}
       {uniqueTypes.length > 1 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-base-content/50 mr-1">Types:</span>
+        <div className="type-filters">
+          <span className="type-filters__label">Types:</span>
           {uniqueTypes.map(([type, count]) => {
             const enabled = typeFilters.get(type) ?? DEFAULT_INCLUDED_TYPES.has(type);
             return (
               <button
                 key={type}
-                className={`btn btn-xs ${enabled ? 'btn-outline btn-primary' : 'btn-ghost opacity-50'}`}
+                className="button button--xs"
+                data-active={enabled || undefined}
                 disabled={isEmbedding}
                 onClick={() => toggleTypeFilter(type)}
               >
-                {type}<span className="badge badge-xs ml-1">{count}</span>
+                {type}<span className="badge badge--count">{count}</span>
               </button>
             );
           })}
@@ -563,24 +565,24 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
 
       {/* Progress */}
       {progress && (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between text-xs text-base-content/60">
+        <div className="progress-block">
+          <div className="progress-block__row">
             <span>{progressLabel(progress)}</span>
             <span>{Math.round((progress.current / Math.max(progress.total, 1)) * 100)}%</span>
           </div>
-          <progress className="progress progress-primary w-full" value={progress.current} max={progress.total} />
+          <progress className="progress" value={progress.current} max={progress.total} />
         </div>
       )}
 
       {/* Table */}
-      <div className="overflow-y-auto flex-1">
+      <div className="table-scroll">
         {rows.length === 0 ? (
-          <div className="text-center text-base-content/60 py-8">No documents found</div>
+          <div className="empty">No documents found</div>
         ) : (
-          <table className="table table-xs table-pin-rows w-full">
+          <table className="table">
             <thead>
               <tr>
-                <th className="w-8" />
+                <th className="table__tick" />
                 <th>Path</th>
                 <th>Name</th>
                 <th>Type</th>
@@ -588,21 +590,21 @@ const EmbeddingsMap = ({ docUrl, hostElement }: { docUrl: AutomergeUrl; hostElem
             </thead>
             <tbody>
               {rows.map((row, i) => (
-                <tr key={`${row.leaf.doc.url}-${i}`} className={row.included ? '' : 'opacity-40'}>
+                <tr key={`${row.leaf.doc.url}-${i}`} data-excluded={row.included ? undefined : true}>
                   <td>
                     <input
                       type="checkbox"
-                      className="checkbox checkbox-xs"
+                      className="checkbox"
                       checked={row.included}
                       disabled={isEmbedding}
                       onChange={() => toggleOverride(row.leaf.doc.url, row.included)}
                     />
                   </td>
-                  <td className="font-mono text-base-content/50 truncate max-w-[200px]">
+                  <td className="table__path">
                     {row.leaf.path.length > 0 ? row.leaf.path.join('/') + '/' : ''}
                   </td>
-                  <td className="truncate max-w-[250px]">{row.leaf.doc.name}</td>
-                  <td><span className="badge badge-xs badge-outline">{row.leaf.doc.type}</span></td>
+                  <td className="table__name">{row.leaf.doc.name}</td>
+                  <td><span className="badge badge--type">{row.leaf.doc.type}</span></td>
                 </tr>
               ))}
             </tbody>

@@ -17,11 +17,7 @@ const tagGroupLabels: Record<TagGroup, string> = {
   designer: "Designers",
 };
 
-const tagGroupChipClass: Record<TagGroup, string> = {
-  category: "border-sky-200 bg-sky-50 text-sky-800",
-  mechanic: "border-violet-200 bg-violet-50 text-violet-800",
-  designer: "border-emerald-200 bg-emerald-50 text-emerald-800",
-};
+
 
 export function GameArt({ game }: { game: BoardGameDoc }) {
   const [failed, setFailed] = useState(false);
@@ -36,14 +32,14 @@ export function GameArt({ game }: { game: BoardGameDoc }) {
 
     return (
       <div
-        className="flex h-full w-full flex-col items-center justify-center gap-1 p-3 text-center text-white"
+        className="bg-art-placeholder"
         style={{
           background: `linear-gradient(145deg, ${placeholderColor(game.bggId)}, ${placeholderColor(game.bggId + 17)})`,
         }}
       >
-        <span className="text-2xl font-semibold">{initials || "?"}</span>
+        <span className="bg-art-placeholder__initials">{initials || "?"}</span>
         {game.yearPublished ? (
-          <span className="text-xs font-medium text-white/80">
+          <span className="bg-art-placeholder__year">
             {game.yearPublished}
           </span>
         ) : null}
@@ -55,7 +51,7 @@ export function GameArt({ game }: { game: BoardGameDoc }) {
     <img
       src={imageUrl}
       alt={game.name}
-      className="h-full w-full object-cover"
+      className="bg-art"
       loading="lazy"
       onError={() => setFailed(true)}
     />
@@ -96,16 +92,16 @@ export function TagMultiPicker({
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="bg-tagpicker">
+      <div className="bg-tagpicker__row">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          className="bg-button"
         >
           {open ? "Hide tags" : "Filter tags"}
           {selected.length ? (
-            <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+            <span className="bg-button__count">
               {selected.length}
             </span>
           ) : null}
@@ -118,7 +114,8 @@ export function TagMultiPicker({
               key={tag}
               type="button"
               onClick={() => toggleTag(tag)}
-              className={`rounded-full border px-2 py-0.5 text-xs ${tagGroupChipClass[group]}`}
+              className="bg-chip"
+              data-group={group}
             >
               {tag} ×
             </button>
@@ -127,21 +124,21 @@ export function TagMultiPicker({
       </div>
 
       {open ? (
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-2">
+        <div className="bg-tagpicker__panel">
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search tags..."
-            className="mb-2 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-400"
+            className="bg-tagpicker__search"
           />
-          <div className="max-h-40 space-y-2 overflow-y-auto">
+          <div className="bg-tagpicker__groups">
             {grouped.map(({ group, options: groupOptions }) =>
               groupOptions.length ? (
                 <div key={group}>
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  <div className="bg-tagpicker__grouplabel">
                     {tagGroupLabels[group]}
                   </div>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="bg-tagpicker__chips">
                     {groupOptions.map((option) => {
                       const active = selectedSet.has(option.label);
                       return (
@@ -149,11 +146,8 @@ export function TagMultiPicker({
                           key={`${option.group}:${option.label}`}
                           type="button"
                           onClick={() => toggleTag(option.label)}
-                          className={`rounded-full border px-2 py-0.5 text-xs transition ${
-                            active
-                              ? tagGroupChipClass[option.group]
-                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                          }`}
+                          className="bg-chip"
+                          data-group={active ? option.group : undefined}
                         >
                           {option.label}
                         </button>
@@ -164,7 +158,7 @@ export function TagMultiPicker({
               ) : null,
             )}
             {!visibleOptions.length ? (
-              <p className="text-xs text-slate-500">No tags match your search.</p>
+              <p className="bg-tagpicker__none">No tags match your search.</p>
             ) : null}
           </div>
         </div>
@@ -176,11 +170,11 @@ export function TagMultiPicker({
 export function TagList({ tags }: { tags: string[] }) {
   if (!tags.length) return null;
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="bg-taglist">
       {tags.map((tag) => (
         <span
           key={tag}
-          className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-600"
+          className="bg-chip"
         >
           {tag}
         </span>
@@ -191,7 +185,7 @@ export function TagList({ tags }: { tags: string[] }) {
 
 function Cell({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <td className={`px-2 py-1.5 text-sm text-slate-700 ${className}`}>
+    <td className={`bg-cell ${className}`}>
       {children}
     </td>
   );
@@ -216,17 +210,16 @@ export function SortableHeader({
   const indicator = active ? (direction === "asc" ? " ▲" : " ▼") : "";
 
   return (
-    <th className={`px-2 py-2 ${className}`}>
+    <th className={`bg-th ${className}`}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-0.5 uppercase tracking-wide transition hover:text-slate-800 ${
-          active ? "font-semibold text-slate-800" : "font-medium text-slate-500"
-        }`}
+        className="bg-sort"
+        data-active={active || undefined}
       >
         {label}
         {indicator ? (
-          <span className="text-[10px] text-amber-700">{indicator}</span>
+          <span className="bg-sort__arrow">{indicator}</span>
         ) : null}
       </button>
     </th>
@@ -252,33 +245,32 @@ export function GameListRow({
   return (
     <tr
       onClick={onSelect}
-      className={`cursor-pointer border-b border-slate-100 transition hover:bg-amber-50/60 ${
-        selected ? "bg-amber-50" : "bg-white"
-      }`}
+      className="bg-row"
+      data-selected={selected || undefined}
     >
-      <Cell className="max-w-[280px] truncate font-medium text-slate-900">
+      <Cell className="bg-cell--name">
         {game.name}
       </Cell>
-      <Cell className="tabular-nums text-slate-500">
+      <Cell className="bg-cell--num bg-cell--muted">
         {game.yearPublished ?? "—"}
       </Cell>
-      <Cell className="tabular-nums">{formatPlayerCount(game)}</Cell>
-      <Cell className="tabular-nums">{formatPlayTime(game)}</Cell>
-      <Cell className="tabular-nums">{formatRating(game.bggWeight)}</Cell>
-      <Cell className="max-w-[120px] truncate text-xs text-slate-500">
+      <Cell className="bg-cell--num">{formatPlayerCount(game)}</Cell>
+      <Cell className="bg-cell--num">{formatPlayTime(game)}</Cell>
+      <Cell className="bg-cell--num">{formatRating(game.bggWeight)}</Cell>
+      <Cell className="bg-cell--tag">
         {game.categories?.[0] ?? "—"}
       </Cell>
-      <Cell className="max-w-[120px] truncate text-xs text-slate-500">
+      <Cell className="bg-cell--tag">
         {game.mechanics?.[0] ?? "—"}
       </Cell>
-      <Cell className="max-w-[120px] truncate text-xs text-slate-500">
+      <Cell className="bg-cell--tag">
         {game.designers?.[0] ?? "—"}
       </Cell>
-      <Cell className="tabular-nums font-medium text-amber-800">
+      <Cell className="bg-cell--num bg-cell--rating">
         {formatRating(game.rating)}
       </Cell>
-      <Cell className="tabular-nums">{formatBggRank(game.bggRank)}</Cell>
-      <Cell className="text-xs uppercase tracking-wide text-slate-500">
+      <Cell className="bg-cell--num">{formatBggRank(game.bggRank)}</Cell>
+      <Cell className="bg-cell--type">
         {typeLabel}
       </Cell>
     </tr>
@@ -300,18 +292,17 @@ export function GameDetail({
 
   return (
     <div
-      className={`flex min-h-0 flex-col overflow-hidden border border-slate-200 bg-white ${
-        compact ? "h-full rounded-lg" : "h-full rounded-xl shadow-sm"
-      }`}
+      className="bg-detail"
+      data-compact={compact || undefined}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
+      <div className="bg-detail__head">
         <div>
-          <h2 className="text-base font-semibold text-slate-900">{game.name}</h2>
+          <h2 className="bg-detail__title">{game.name}</h2>
           <a
             href={bggGameUrl(game.bggId)}
             target="_blank"
             rel="noreferrer"
-            className="text-xs text-amber-700 hover:underline"
+            className="bg-detail__link"
           >
             View on BoardGameGeek
           </a>
@@ -320,56 +311,56 @@ export function GameDetail({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100"
+            className="bg-button bg-button--quiet"
           >
             Close
           </button>
         ) : null}
       </div>
 
-      <div className={`flex-1 space-y-4 overflow-y-auto p-4 ${compact ? "" : ""}`}>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-lg bg-slate-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
+      <div className="bg-detail__body">
+          <div className="bg-stat-grid">
+            <div className="bg-stat">
+              <div className="bg-stat__label">
                 Players
               </div>
-              <div className="text-lg font-semibold text-slate-900">
+              <div className="bg-stat__value">
                 {formatPlayerCount(game)}
               </div>
               {game.bestPlayers ? (
-                <div className="text-xs text-slate-500">
+                <div className="bg-stat__note">
                   Best: {game.bestPlayers}
                 </div>
               ) : null}
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
+            <div className="bg-stat">
+              <div className="bg-stat__label">
                 Play Time
               </div>
-              <div className="text-lg font-semibold text-slate-900">
+              <div className="bg-stat__value">
                 {formatPlayTime(game)}
               </div>
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
+            <div className="bg-stat">
+              <div className="bg-stat__label">
                 BGG Rating
               </div>
-              <div className="text-lg font-semibold text-slate-900">
+              <div className="bg-stat__value">
                 {formatRating(game.bggRating)}
               </div>
               {game.bggRank ? (
-                <div className="text-xs text-slate-500">Rank #{game.bggRank}</div>
+                <div className="bg-stat__note">Rank #{game.bggRank}</div>
               ) : null}
             </div>
-            <div className="rounded-lg bg-slate-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
+            <div className="bg-stat">
+              <div className="bg-stat__label">
                 Weight
               </div>
-              <div className="text-lg font-semibold text-slate-900">
+              <div className="bg-stat__value">
                 {formatRating(game.bggWeight)}
               </div>
               {game.rating != null && game.rating > 0 ? (
-                <div className="text-xs text-slate-500">
+                <div className="bg-stat__note">
                   Your rating: {formatRating(game.rating)}
                 </div>
               ) : null}
@@ -380,7 +371,7 @@ export function GameDetail({
 
           {game.mechanics?.length ? (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              <h3 className="bg-detail__section">
                 Mechanics
               </h3>
               <TagList tags={game.mechanics} />
@@ -389,7 +380,7 @@ export function GameDetail({
 
           {game.categories?.length ? (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              <h3 className="bg-detail__section">
                 Categories
               </h3>
               <TagList tags={game.categories} />
@@ -397,7 +388,7 @@ export function GameDetail({
           ) : null}
 
           {!game.mechanics?.length && !game.categories?.length ? (
-            <p className="text-sm text-slate-500">
+            <p className="bg-detail__hint">
               Use Kaggle metadata for mechanics and categories, or BGG enrich
               for descriptions and cover art. CSV import already includes
               player counts, weight, ratings, and your notes.
@@ -406,10 +397,10 @@ export function GameDetail({
 
           {game.designers?.length ? (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              <h3 className="bg-detail__section">
                 Designers
               </h3>
-              <p className="text-sm text-slate-700">
+              <p className="bg-detail__text">
                 {game.designers.join(", ")}
               </p>
             </section>
@@ -417,28 +408,28 @@ export function GameDetail({
 
           {game.description ? (
             <section>
-              <h3 className="mb-2 text-sm font-semibold text-slate-900">
+              <h3 className="bg-detail__section">
                 Description
               </h3>
-              <p className="text-sm leading-6 text-slate-700">
+              <p className="bg-detail__text">
                 {game.description}
               </p>
             </section>
           ) : null}
 
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">
+            <h3 className="bg-detail__section">
               My Notes
             </h3>
             <textarea
               value={game.comment ?? ""}
               onChange={(event) => onUpdateComment(event.target.value)}
               placeholder="Add notes about this game..."
-              className="min-h-24 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-amber-400"
+              className="bg-notes"
             />
           </section>
 
-        <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+        <div className="bg-detail__facts">
           {game.numPlays != null ? <div>Plays: {game.numPlays}</div> : null}
           {game.invLocation ? <div>Location: {game.invLocation}</div> : null}
           {game.acquiredFrom ? (

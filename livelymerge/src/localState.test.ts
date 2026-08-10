@@ -123,12 +123,14 @@ describe('promotion', () => {
 
   it('is transitive over non-$ edges, including arrays', () => {
     const { handle, rt } = makeRuntime();
-    rt.eval(`hub = {}; hub.$batch = { items: [{ tag: 'aa' }, { tag: 'bb' }] };`);
-    expect(JSON.stringify(handle.doc().objectTable)).not.toContain('aa');
+    // 'xx'/'yy' are not hex, so a random uuid object id can never contain them
+    // (tags of 'aa'/'bb' made this flake whenever an id happened to contain 'aa').
+    rt.eval(`hub = {}; hub.$batch = { items: [{ tag: 'xx' }, { tag: 'yy' }] };`);
+    expect(JSON.stringify(handle.doc().objectTable)).not.toContain('xx');
     rt.eval(`hub.saved = hub.$batch;`);
     const json = JSON.stringify(handle.doc().objectTable);
-    expect(json).toContain('aa');
-    expect(json).toContain('bb');
+    expect(json).toContain('xx');
+    expect(json).toContain('yy');
   });
 
   it('promotes closure environments (captured scopes) along with functions', () => {

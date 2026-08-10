@@ -218,7 +218,7 @@ function proxifyFun(fun: Fun): TestProxy {
 }
 
 export function $obj(obj: Record<string, Val>, proto?: TestProxy | null): TestProxy {
-  const $id = Math.random().toString();
+  const $id = crypto.randomUUID();
   const entry: Obj = { $type: 'obj', $id };
   if (proto !== null && proto !== undefined) {
     entry.$protoId = proto.$id;
@@ -240,7 +240,7 @@ export function commitEvalObjects() {
 }
 
 export function $fun($codeForShow: string, $code: string, scopes: TestProxy[] = []): TestProxy {
-  const $id = Math.random().toString();
+  const $id = crypto.randomUUID();
   const entry: Fun = {
     $type: 'fun',
     $id,

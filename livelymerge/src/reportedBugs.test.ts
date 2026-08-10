@@ -171,8 +171,8 @@ const makeNativeEvt = (type: string, x: number, y: number) => ({
   stopPropagation() {},
 });
 
-describe('idle op growth (LineMorph hover-handle stepping)', () => {
-  it('repeated stepHoverHandles with no pointer generates no ops', () => {
+describe('idle op growth (LineMorph hover-handle updates)', () => {
+  it('repeated updateHoverHandles with no pointer generates no ops', () => {
     const { handle, rt } = setup();
     rt.eval(`
 initUI();
@@ -181,12 +181,12 @@ Lively.demoLine = Lively.addMorph(
   new LineMorph([pt(30, 300), pt(90, 300)], { borderWidth: 2, borderColor: Color.black, arrowheads: 'end' }),
 );
 `);
-    // settle: the first step may create one-time keys
-    rt.eval(`Lively.demoLine.stepHoverHandles()`);
-    const second = opsDuring(handle, () => rt.eval(`Lively.demoLine.stepHoverHandles()`));
-    const third = opsDuring(handle, () => rt.eval(`Lively.demoLine.stepHoverHandles()`));
-    expect(second.count, `2nd step ops:\n  ${second.keys.join('\n  ')}`).toBe(0);
-    expect(third.count, `3rd step ops:\n  ${third.keys.join('\n  ')}`).toBe(0);
+    // settle: the first update may create one-time keys
+    rt.eval(`Lively.updateHoverUI(getPointerLocation())`);
+    const second = opsDuring(handle, () => rt.eval(`Lively.updateHoverUI(getPointerLocation())`));
+    const third = opsDuring(handle, () => rt.eval(`Lively.updateHoverUI(getPointerLocation())`));
+    expect(second.count, `2nd update ops:\n  ${second.keys.join('\n  ')}`).toBe(0);
+    expect(third.count, `3rd update ops:\n  ${third.keys.join('\n  ')}`).toBe(0);
   }, 120_000);
 });
 
@@ -329,7 +329,7 @@ initLively();
     expect(() => rt.eval(`openErrorStackPanel(${fakeErr}, 'test context')`)).not.toThrow();
   }, 120_000);
 
-  it('handleRuntimeError presents a real host error and survives promotion', () => {
+  it('handleRuntimeError presents a real host error as a per-user (ephemeral) panel', () => {
     const { rt } = setup();
     rt.eval(`
 initUI();
@@ -344,7 +344,14 @@ initLively();
 })()
 `),
     ).not.toThrow();
-    expect(rt.eval(`!!Lively.submorphs.find((m) => m.className === 'ErrorStackPanel')`)).toBe(true);
+    // System windows open on the ephemeral edge (never in the shared document) —
+    // the user can promote one via the halo's P handle.
+    expect(
+      rt.eval(`!!Lively.ephemeralSubmorphs().find((m) => m.className === 'ErrorStackPanel')`),
+    ).toBe(true);
+    expect(rt.eval(`!!Lively.submorphs.find((m) => m.className === 'ErrorStackPanel')`)).toBe(
+      false,
+    );
   }, 120_000);
 });
 

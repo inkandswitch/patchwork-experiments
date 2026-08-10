@@ -37,7 +37,7 @@ export function CurrentSet({ sessionUrl }: { sessionUrl: AutomergeUrl }) {
 
   if (!currentSet) {
     return (
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+      <div className="st-done-card">
         {session.status === "completed"
           ? "Workout complete."
           : "All sets done — time to finish your workout!"}
@@ -56,13 +56,13 @@ export function CurrentSet({ sessionUrl }: { sessionUrl: AutomergeUrl }) {
   const setNumber = exerciseSets.findIndex((s) => s.id === currentSet.id);
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-sm font-medium text-slate-900">
+    <div className="st-current-set">
+      <div className="st-current-set__head">
+        <span className="st-current-set__name">
           {exercise?.exerciseName ?? "Unknown exercise"}
         </span>
         {setNumber >= 0 ? (
-          <span className="shrink-0 text-xs text-slate-500">
+          <span className="st-current-set__meta">
             Set {setNumber + 1} of {exerciseSets.length}
           </span>
         ) : null}
@@ -71,7 +71,7 @@ export function CurrentSet({ sessionUrl }: { sessionUrl: AutomergeUrl }) {
         key={currentSetUrl}
         doc-url={currentSetUrl}
         tool-id="strength-set"
-        class="block"
+        class="st-embed-inline"
       />
     </div>
   );

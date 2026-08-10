@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 import external from '@inkandswitch/patchwork-bootloader/externals';
@@ -7,7 +6,7 @@ import path from 'path';
 
 export default defineConfig({
   base: './',
-  plugins: [react(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
+  plugins: [react(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
     alias: {

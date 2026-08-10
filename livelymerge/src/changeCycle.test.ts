@@ -215,7 +215,7 @@ function installHeapEntry(id: string, entry: Obj | Arr | Fun): void {
 }
 
 function $obj(obj: Record<string, Val>, proto?: Proxy | null): Proxy {
-  const $id = Math.random().toString();
+  const $id = crypto.randomUUID();
   const entry: Obj = { $type: 'obj', $id };
   if (proto !== null && proto !== undefined) entry.$protoId = proto.$id;
   else if (proto === undefined) entry.$protoId = 'object-prototype';
@@ -227,7 +227,7 @@ function $obj(obj: Record<string, Val>, proto?: Proxy | null): Proxy {
 }
 
 function $fun($codeForShow: string, $code: string, scopes: Proxy[] = []): Proxy {
-  const $id = Math.random().toString();
+  const $id = crypto.randomUUID();
   const entry: Fun = { $type: 'fun', $id, $codeForShow, $code, $scopes: scopes.map((s) => ({ $type: 'ref', $id: s.$id })) };
   installHeapEntry($id, entry);
   return proxifyFun(entry);

@@ -89,24 +89,21 @@ export function DialogContent({
   }, [ctx]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral/50 p-4">
+    <div className="lanes dialog-backdrop">
       <div
-        className={cn(
-          "relative flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg border border-base-300 bg-base-100 text-base-content shadow-xl",
-          className,
-        )}
+        className={cn("dialog", className)}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-end border-b border-base-300 px-3 py-2">
+        <div className="dialog__head">
           <button
             type="button"
-            className="btn btn-ghost btn-sm text-base-content/60"
+            className="btn btn--ghost btn--sm"
             onClick={() => ctx.setOpen(false)}
           >
             Close
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+        <div className="dialog__body">{children}</div>
       </div>
     </div>
   );

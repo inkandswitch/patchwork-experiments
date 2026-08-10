@@ -20,7 +20,7 @@ export const Input = React.forwardRef<
   return (
     <input
       ref={ref}
-      className={`border border-base-300 bg-base-100 text-base-content ${className}`}
+      className={`lp-field ${className}`}
       {...props}
     />
   );

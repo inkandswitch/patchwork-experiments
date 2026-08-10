@@ -3,7 +3,6 @@ import { defineConfig } from 'vite';
 import topLevelAwait from 'vite-plugin-top-level-await';
 import wasm from 'vite-plugin-wasm';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
-import tailwindcss from '@tailwindcss/vite';
 
 import external from '@inkandswitch/patchwork-bootloader/externals';
 import workspaceSnapshot from './.pushwork/snapshot.json';
@@ -16,7 +15,7 @@ function findDirectoryUrl(snapshot: typeof workspaceSnapshot, dirPath: string): 
 
 export default defineConfig({
   base: './',
-  plugins: [topLevelAwait(), wasm(), solid(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
+  plugins: [topLevelAwait(), wasm(), solid(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   define: {
     __SPEC_AGENT_FOLDER_URL__: JSON.stringify(

@@ -185,32 +185,29 @@ function WorkoutTemplateEditor({
   if (!template) return null;
 
   return (
-    <div className="strength flex h-full flex-col bg-slate-50">
+    <div className="strength st-shell">
       {!exerciseLibraryUrl || !sessionsFolderUrl ? (
-        <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="st-notice-bar st-notice-bar--warn">
           This template isn&apos;t linked to a gym. Create templates from the
           Templates folder so exercises and sessions resolve automatically.
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="st-split">
+        <div className="st-main">
           {!template.exercises?.length ? (
-            <p className="text-center text-sm text-slate-500">
+            <p className="st-empty-text">
               Add exercises to build this template.
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="st-stack st-stack--sm">
               {template.exercises.map((exercise, index) => (
                 <div
                   key={exercise.id}
-                  className={`rounded-lg border bg-white ${
-                    selectedExerciseId === exercise.id
-                      ? "border-emerald-300 ring-1 ring-emerald-200"
-                      : "border-slate-200"
-                  }`}
+                  className="st-card st-card--flush"
+                  data-selected={selectedExerciseId === exercise.id || undefined}
                 >
-                  <div className="flex items-center justify-between px-4 py-3">
+                  <div className="st-item-head">
                     <button
                       type="button"
                       onClick={() =>
@@ -218,12 +215,12 @@ function WorkoutTemplateEditor({
                           cur === exercise.id ? null : exercise.id,
                         )
                       }
-                      className="flex flex-1 items-center text-left"
+                      className="st-flex-button st-flex-button--row"
                     >
-                      <span className="mr-2 text-xs text-slate-400">
+                      <span className="st-index">
                         {index + 1}.
                       </span>
-                      <span className="font-medium text-slate-900">
+                      <span className="st-title">
                         {exercise.exerciseName}
                       </span>
                       <SupersetBadge
@@ -233,11 +230,11 @@ function WorkoutTemplateEditor({
                             : undefined
                         }
                       />
-                      <span className="ml-2 text-xs text-slate-500">
+                      <span className="st-suffix">
                         {exercise.sets.length} sets
                       </span>
                     </button>
-                    <div className="flex items-center gap-2">
+                    <div className="st-row">
                       <ExerciseInfoButton
                         exerciseUrl={exercise.exerciseUrl}
                         exerciseName={exercise.exerciseName}
@@ -245,7 +242,7 @@ function WorkoutTemplateEditor({
                       <button
                         type="button"
                         onClick={() => removeExercise(exercise.id)}
-                        className="text-xs text-slate-400 hover:text-red-600"
+                        className="st-remove"
                       >
                         Remove
                       </button>
@@ -253,14 +250,14 @@ function WorkoutTemplateEditor({
                   </div>
 
                   {selectedExerciseId === exercise.id ? (
-                    <div className="space-y-2 border-t border-slate-100 px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-xs">
+                    <div className="st-item-body">
+                      <div className="st-row st-row--between">
+                        <div className="st-meta">
                           {exercise.supersetGroup ? (
                             <button
                               type="button"
                               onClick={() => unlinkExercise(exercise.id)}
-                              className="text-violet-700 hover:underline"
+                              className="st-link st-link--alt"
                             >
                               Unlink superset{" "}
                               {ssLabels.get(exercise.supersetGroup) ?? ""}
@@ -269,7 +266,7 @@ function WorkoutTemplateEditor({
                             <button
                               type="button"
                               onClick={() => linkWithPrevious(exercise.id)}
-                              className="text-slate-500 hover:text-violet-700 hover:underline"
+                              className="st-link st-link--quiet"
                             >
                               ⇄ Superset with previous
                             </button>
@@ -284,7 +281,7 @@ function WorkoutTemplateEditor({
                           }
                         />
                       </div>
-                      <div className="grid grid-cols-[2rem_1fr_1fr_1fr_1fr_auto] gap-2 text-xs font-medium text-slate-400">
+                      <div className="st-planned-head">
                         <span>#</span>
                         <span>Reps</span>
                         <span>Weight ({exercise.unit ?? unit})</span>
@@ -317,7 +314,7 @@ function WorkoutTemplateEditor({
                             ex.sets.push({ targetReps: 8, restSeconds: 90 });
                           })
                         }
-                        className="text-xs text-emerald-700 hover:underline"
+                        className="st-link"
                       >
                         + Add set
                       </button>
@@ -328,12 +325,12 @@ function WorkoutTemplateEditor({
             </div>
           )}
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="st-actions">
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
               disabled={!exerciseLibraryUrl}
-              className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="st-button"
             >
               + Exercise
             </button>
@@ -343,14 +340,14 @@ function WorkoutTemplateEditor({
               disabled={
                 starting || !template.exercises?.length || !sessionsFolderUrl
               }
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="st-button st-button--primary"
             >
               {starting ? "Starting…" : "Start session"}
             </button>
           </div>
 
-          <div className="mt-4 space-y-1">
-            <label className="text-xs font-medium text-slate-500">Notes</label>
+          <div className="st-notes">
+            <label className="st-label">Notes</label>
             <textarea
               value={template.notes ?? ""}
               onChange={(e) =>
@@ -363,15 +360,15 @@ function WorkoutTemplateEditor({
                 })
               }
               rows={3}
-              className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+              className="st-field"
               placeholder="Template notes…"
             />
           </div>
         </div>
 
         {selectedExercise ? (
-          <div className="w-[min(380px,40%)] shrink-0 overflow-y-auto border-l border-slate-200 p-4">
-            <h3 className="mb-3 text-sm font-semibold text-slate-800">
+          <div className="st-aside">
+            <h3 className="st-aside-title">
               History — {selectedExercise.exerciseName}
             </h3>
             <HistoryPanel

@@ -21,7 +21,7 @@ function SvgIcon({
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={className ? `inline-block shrink-0 ${className}` : "inline-block shrink-0"}
+      className={className ? `icon ${className}` : "icon"}
       aria-hidden
     >
       {children}

@@ -133,7 +133,6 @@ let plmVerts = [pt(boxB.topLeft.x, lineY), pt(boxB.topLeft.x + boxB.width(), lin
 Lively.demoLine = Lively.addMorph(
   new LineMorph(plmVerts, { borderWidth: 2, borderColor: Color.black, arrowheads: 'end' }),
 );
-Lively.demoLine.startHandleStepping();
 `);
 
     const makeNativeEvt = (type: string, x: number, y: number) => ({
@@ -182,14 +181,16 @@ Lively.demoLine.startHandleStepping();
     runFrame();
     audit('hover over line');
 
-    // drag the line from its middle
-    dispatch('pointerdown', 60, 330);
+    // Drag the whole line. Not from its exact middle: the hover above materialized
+    // the handles, and (60,330) is the midpoint handle — grabbing it would insert a
+    // vertex and reshape instead of dragging.
+    dispatch('pointerdown', 45, 330);
     runFrame();
     for (let i = 1; i <= 10; i++) {
-      dispatch('pointermove', 60 + i * 3, 330 + i * 2);
+      dispatch('pointermove', 45 + i * 3, 330 + i * 2);
       runFrame();
     }
-    dispatch('pointerup', 90, 350);
+    dispatch('pointerup', 75, 350);
     runFrame();
     runFrame();
     const n = audit('after line drag');

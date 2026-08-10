@@ -119,34 +119,34 @@ function ScheduleViewToolInner({
   }, [now, dayStart, totalHeightPx]);
 
   if (!doc) {
-    return <div className="unconference p-4 text-base-content">Loading…</div>;
+    return <div className="unconference unconference--message">Loading…</div>;
   }
 
   if (timeSlots.length === 0) {
     return (
-      <div className="unconference p-4 text-base-content">
+      <div className="unconference unconference--message">
         No time slots defined. Add times in the main Unconference view.
       </div>
     );
   }
 
   return (
-    <div className="unconference h-full min-h-0 overflow-auto p-4 text-base-content max-w-2xl mx-auto">
-      <h2 className="text-lg font-semibold mb-3">Schedule for the day</h2>
-      <div className="relative" style={{ minHeight: totalHeightPx + 24 }}>
+    <div className="unconference unconference--schedule">
+      <h2>Schedule for the day</h2>
+      <div className="daygrid" style={{ minHeight: totalHeightPx + 24 }}>
         {/* Red "now" line */}
         {nowY >= 0 && (
           <div
-            className="absolute left-0 right-0 z-10 pointer-events-none flex items-center gap-2"
+            className="nowline"
             style={{
               top: nowY - NOW_LINE_HEIGHT / 2,
               height: NOW_LINE_HEIGHT,
             }}
           >
-            <div className="flex-none w-14 font-mono text-xs text-red-600 font-medium tabular-nums">
+            <div className="nowline__time">
               {Math.floor(now / 60)}:{(now % 60).toString().padStart(2, "0")}
             </div>
-            <div className="flex-1 h-full bg-red-500 rounded-full" />
+            <div className="nowline__bar" />
           </div>
         )}
 
@@ -163,11 +163,8 @@ function ScheduleViewToolInner({
           return (
             <div
               key={slotIndex}
-              className={`absolute left-0 right-0 flex gap-3 pr-2 ${
-                isCurrentSlot
-                  ? "bg-red-500/10 ring-1 ring-red-500/30 rounded"
-                  : ""
-              }`}
+              className="dayslot"
+              data-current={isCurrentSlot || undefined}
               style={{
                 top: topPx,
                 minHeight: heightPx,
@@ -177,24 +174,24 @@ function ScheduleViewToolInner({
               }}
             >
               <div
-                className="flex-none font-mono text-sm text-base-content/80 w-14 shrink-0"
+                className="dayslot__time"
                 style={{ paddingTop: 2 }}
               >
                 {time}
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="dayslot__body">
                 {isBreak ? (
-                  <span className="text-base-content/70 italic">
+                  <span className="dayslot__break">
                     {breakLabel || "Break"}
                   </span>
                 ) : (
-                  <ul className="list-none p-0 m-0 space-y-1">
+                  <ul className="dayslot__list">
                     {slotSessionIds.map((id) => {
                       const session = sessionsById.get(id);
                       return (
                         <li
                           key={id}
-                          className="text-sm truncate"
+                          className="dayslot__session"
                           title={session?.description}
                         >
                           {session?.title ?? id}
@@ -202,7 +199,7 @@ function ScheduleViewToolInner({
                       );
                     })}
                     {slotSessionIds.length === 0 && (
-                      <li className="text-base-content/50 text-sm italic">—</li>
+                      <li className="dayslot__empty">—</li>
                     )}
                   </ul>
                 )}

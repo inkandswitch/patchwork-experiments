@@ -14,11 +14,11 @@ export function CurrentSetBanner({
   label?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-emerald-200 bg-white">
-      <div className="border-b border-emerald-100 bg-emerald-50/60 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+    <div className="st-banner">
+      <div className="st-banner__label">
         {label}
       </div>
-      <div className="p-3">
+      <div className="st-banner__body">
         <CurrentSet sessionUrl={sessionUrl} />
       </div>
     </div>

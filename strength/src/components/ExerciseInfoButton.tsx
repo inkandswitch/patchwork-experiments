@@ -35,34 +35,34 @@ function ExerciseInfoModal({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
+      className="st-modal st-modal--dim"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="flex max-h-[85vh] w-[min(540px,100%)] flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="st-modal__panel st-modal__panel--info"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-          <h3 className="font-semibold text-slate-900">
+        <div className="st-panel__head">
+          <h3 className="st-panel__title">
             {exercise?.name ?? exerciseName}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600"
+            className="st-close"
             aria-label="Close"
           >
             ✕
           </button>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+        <div className="st-info__body">
           {!exercise ? (
-            <p className="text-center text-sm text-slate-400">Loading…</p>
+            <p className="st-loading">Loading…</p>
           ) : !hasDetails ? (
-            <p className="text-center text-sm text-slate-500">
+            <p className="st-loading st-loading--strong">
               No reference details for this exercise yet. Add instructions or
               images in the Exercise Library.
             </p>
@@ -106,10 +106,7 @@ export function ExerciseInfoButton({
           e.stopPropagation();
           setOpen(true);
         }}
-        className={
-          className ??
-          "flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 hover:border-emerald-400 hover:text-emerald-700"
-        }
+        className={className ?? "st-info-button"}
         title={`How to: ${exerciseName}`}
         aria-label={`How to perform ${exerciseName}`}
       >

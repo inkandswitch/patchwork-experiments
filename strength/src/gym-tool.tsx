@@ -248,12 +248,12 @@ function GymHub({
 
   if (openDoc) {
     return (
-      <div className="strength flex h-full flex-col bg-slate-50">
-        <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-2">
+      <div className="strength st-shell">
+        <div className="st-toolbar">
           <button
             type="button"
             onClick={() => setOpenDoc(null)}
-            className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            className="st-button"
           >
             ← Back to gym
           </button>
@@ -262,22 +262,21 @@ function GymHub({
           key={openDoc.url}
           doc-url={openDoc.url}
           tool-id={openDoc.toolId}
-          class="block min-h-0 flex-1"
+          class="st-embed st-embed--fill"
         />
       </div>
     );
   }
 
-  const navButton =
-    "rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50";
+  const navButton = "st-button";
 
   return (
-    <div className="strength flex h-full flex-col bg-slate-50">
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 px-4 py-2">
+    <div className="strength st-shell">
+      <div className="st-toolbar">
         {bootstrapping ? (
-          <span className="text-xs text-slate-500">Setting up folders…</span>
+          <span className="st-meta">Setting up folders…</span>
         ) : null}
-        <div className="flex-1" />
+        <div className="st-spacer" />
         <button
           type="button"
           disabled={!gym.exerciseLibraryUrl}
@@ -308,7 +307,7 @@ function GymHub({
           ref={fileInputRef}
           type="file"
           accept=".csv,text/csv"
-          className="hidden"
+          className="st-hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void handleHevyImport(file);
@@ -326,35 +325,36 @@ function GymHub({
 
       {importMessage ? (
         <div
-          className={`border-b px-4 py-2 text-sm ${
+          className="st-notice-bar"
+          data-tone={
             importMessage.includes("failed") ||
             importMessage.includes("missing") ||
             importMessage.includes("Not a Hevy")
-              ? "border-red-100 bg-red-50 text-red-800"
-              : "border-emerald-100 bg-emerald-50 text-emerald-800"
-          }`}
+              ? "error"
+              : "accent"
+          }
         >
           {importMessage}
         </div>
       ) : null}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="mx-auto max-w-3xl space-y-6">
+      <div className="st-main">
+        <div className="st-column st-column--wide">
           {inProgress.length > 0 ? (
-            <section className="rounded-lg border-2 border-emerald-400 bg-emerald-50 p-4">
+            <section className="st-highlight">
               {inProgress.map(({ url, doc }) => (
                 <div
                   key={url}
-                  className="flex flex-wrap items-center justify-between gap-3"
+                  className="st-row st-row--between st-row--wrap"
                 >
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                    <div className="st-eyebrow">
                       Workout in progress
                     </div>
-                    <div className="text-lg font-semibold text-emerald-900">
+                    <div className="st-heading st-heading--accent">
                       {doc.title}
                     </div>
-                    <div className="text-xs text-emerald-800">
+                    <div className="st-meta st-meta--accent">
                       Started {formatDate(doc.startedAt)} ·{" "}
                       {sessionSets(doc).filter((s) => s.completed).length}/
                       {sessionSets(doc).length} sets done
@@ -363,7 +363,7 @@ function GymHub({
                   <button
                     type="button"
                     onClick={() => openInGym(url, "strength-workout-session")}
-                    className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
+                    className="st-button st-button--primary st-button--xl"
                   >
                     Resume
                   </button>
@@ -372,7 +372,7 @@ function GymHub({
               {/* Live preview of the single next set, rendered by the
                   strength-set tool against the session's
                   sets/{"completed":false} live-query address. */}
-              <div className="mt-3">
+              <div className="st-mt">
                 <Suspense fallback={null}>
                   <CurrentSetBanner
                     sessionUrl={inProgress[0].url}
@@ -384,34 +384,34 @@ function GymHub({
           ) : null}
 
           <section>
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            <div className="st-section-head">
+              <h2 className="st-section-title">
                 Start a workout
               </h2>
               <button
                 type="button"
                 onClick={newTemplate}
                 disabled={!ready}
-                className="text-xs text-emerald-700 hover:underline disabled:opacity-50"
+                className="st-link"
               >
                 + New template
               </button>
             </div>
             {quickStartTemplates.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
+              <div className="st-empty-dashed">
                 No templates yet.{" "}
                 <button
                   type="button"
                   onClick={newTemplate}
                   disabled={!ready}
-                  className="text-emerald-700 underline"
+                  className="st-link"
                 >
                   Create your first template
                 </button>{" "}
                 to plan a workout, or import your Hevy history above.
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="st-tiles">
                 {quickStartTemplates.map(({ url, doc }) => {
                   const lastTime = lastPerformedByTemplate.get(url);
                   const totalSets = (doc.exercises ?? []).reduce(
@@ -421,19 +421,19 @@ function GymHub({
                   return (
                     <div
                       key={url}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4"
+                      className="st-tile"
                     >
                       <button
                         type="button"
                         onClick={() =>
                           openInGym(url, "strength-workout-template")
                         }
-                        className="min-w-0 flex-1 text-left"
+                        className="st-flex-button st-flex-button--min"
                       >
-                        <div className="truncate font-medium text-slate-900">
+                        <div className="st-title st-title--truncate">
                           {doc.title}
                         </div>
-                        <div className="text-xs text-slate-500">
+                        <div className="st-meta">
                           {doc.exercises?.length ?? 0} exercise
                           {(doc.exercises?.length ?? 0) === 1 ? "" : "s"}
                           {totalSets ? ` · ${totalSets} sets` : ""}
@@ -446,7 +446,7 @@ function GymHub({
                         type="button"
                         onClick={() => startFromTemplate(url, doc)}
                         disabled={startingUrl != null || !ready}
-                        className="shrink-0 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                        className="st-button st-button--primary st-button--lg"
                       >
                         {startingUrl === url ? "Starting…" : "Start"}
                       </button>
@@ -457,33 +457,33 @@ function GymHub({
             )}
           </section>
 
-          <section className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-              <div className="text-2xl font-bold text-slate-900">
+          <section className="st-stats">
+            <div className="st-stat">
+              <div className="st-stat__value">
                 {weekStats.workouts}
               </div>
-              <div className="text-xs text-slate-500">
+              <div className="st-meta">
                 workout{weekStats.workouts === 1 ? "" : "s"} this week
               </div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-              <div className="text-2xl font-bold text-slate-900">
+            <div className="st-stat">
+              <div className="st-stat__value">
                 {weekStats.sets}
               </div>
-              <div className="text-xs text-slate-500">sets this week</div>
+              <div className="st-meta">sets this week</div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-              <div className="text-2xl font-bold text-slate-900">
+            <div className="st-stat">
+              <div className="st-stat__value">
                 {Math.round(weekStats.volume).toLocaleString()}
               </div>
-              <div className="text-xs text-slate-500">{unit} this week</div>
+              <div className="st-meta">{unit} this week</div>
             </div>
           </section>
 
           {recentSessions.length > 0 ? (
             <section>
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              <div className="st-section-head">
+                <h2 className="st-section-title">
                   Recent workouts
                 </h2>
                 <button
@@ -492,12 +492,12 @@ function GymHub({
                     gym.sessionsFolderUrl &&
                     openInGym(gym.sessionsFolderUrl, "strength-sessions")
                   }
-                  className="text-xs text-emerald-700 hover:underline"
+                  className="st-link"
                 >
                   View all
                 </button>
               </div>
-              <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+              <ul className="st-list">
                 {recentSessions.map(({ url, doc }) => {
                   const setsDone = sessionSets(doc).filter(
                     (s) => s.completed,
@@ -509,13 +509,13 @@ function GymHub({
                         onClick={() =>
                           openInGym(url, "strength-workout-session")
                         }
-                        className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-slate-50"
+                        className="st-list__item"
                       >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-slate-800">
+                        <div className="st-min">
+                          <div className="st-title st-title--sm">
                             {doc.title}
                           </div>
-                          <div className="text-xs text-slate-500">
+                          <div className="st-meta">
                             {formatDate(doc.completedAt ?? doc.startedAt)}
                             {doc.durationSeconds
                               ? ` · ${formatDuration(doc.durationSeconds)}`
@@ -523,7 +523,7 @@ function GymHub({
                             {setsDone ? ` · ${setsDone} sets` : ""}
                           </div>
                         </div>
-                        <span className="text-xs text-slate-400">→</span>
+                        <span className="st-meta st-meta--faint">→</span>
                       </button>
                     </li>
                   );

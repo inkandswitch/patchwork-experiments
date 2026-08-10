@@ -1,1 +1,154 @@
-@import 'tailwindcss';
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --todo-fill: var(--editor-fill, white);
+    --todo-fg: var(--editor-line, black);
+    --todo-card: var(--editor-fill-offset-10, #f4f4f5);
+    --todo-border: var(--editor-fill-offset-20, #d4d4d8);
+    --todo-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 8%);
+    --todo-accent: var(--studio-primary-fill, #3b82f6);
+    --todo-accent-ink: var(--studio-primary-line, white);
+    --todo-accent-text: var(--editor-primary-text, var(--studio-primary-text, #3b82f6));
+    --todo-added: var(--studio-added, #22c55e);
+    --todo-added-wash: color-mix(in oklch, var(--studio-added, #22c55e), var(--editor-fill) 82%);
+    --todo-modified: var(--studio-modified, #f59e0b);
+    --todo-modified-wash: color-mix(in oklch, var(--studio-modified, #f59e0b), var(--editor-fill) 82%);
+    --todo-deleted: var(--studio-deleted, #ef4444);
+    --todo-deleted-wash: color-mix(in oklch, var(--studio-deleted, #ef4444), var(--editor-fill) 82%);
+    --todo-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+.todo {
+  height: 100%;
+  overflow: auto;
+  padding: var(--studio-space, 1rem);
+  font-family: var(--todo-family);
+  color: var(--todo-fg);
+  background: var(--todo-fill);
+}
+
+.todo .sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-sm, 0.5rem);
+  max-width: 400px;
+  margin-inline: auto;
+  padding: var(--studio-space, 1rem);
+  background: var(--todo-card);
+  border-radius: var(--studio-radius-md, 6px);
+}
+
+.todo .title {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.todo .title input {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.todo .compose {
+  display: flex;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+.todo .compose input {
+  flex: 1;
+  padding: var(--studio-space-sm, 0.5rem);
+  font: inherit;
+  color: inherit;
+  background: var(--todo-fill);
+  border: 2px solid var(--todo-border);
+  border-radius: var(--studio-radius-md, 6px);
+}
+
+.todo .compose button {
+  padding: var(--studio-space-sm, 0.5rem);
+  font: inherit;
+  color: var(--todo-accent-ink);
+  background: var(--todo-accent);
+  border: 0;
+  border-radius: var(--studio-radius-md, 6px);
+  cursor: pointer;
+}
+
+.todo .item {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-sm, 0.5rem);
+  padding: 0.25rem var(--studio-space-xs, 0.5rem);
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.todo .item input[type="text"] {
+  flex: 1;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.todo .item[data-done] {
+  text-decoration: line-through;
+}
+
+.todo .item[data-selected] {
+  outline: 2px solid var(--todo-accent);
+}
+
+.todo .item[data-diff="added"] {
+  background: var(--todo-added-wash);
+  border-left: 4px solid var(--todo-added);
+}
+
+.todo .item[data-diff="changed"] {
+  background: var(--todo-modified-wash);
+  border-left: 4px solid var(--todo-modified);
+}
+
+.todo .item[data-diff="deleted"] {
+  background: var(--todo-deleted-wash);
+  border-left: 4px solid var(--todo-deleted);
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.todo .comment-button {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--studio-radius-sm, 4px);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--studio-transition-fast, 0.15s ease);
+}
+
+.todo .comment-button:hover {
+  background: var(--todo-hover);
+}
+
+.todo .item:hover .comment-button {
+  opacity: 0.6;
+}
+
+.todo .comment-button[data-has-comments] {
+  opacity: 1;
+  color: var(--todo-accent-text);
+}
+
+.todo .comment-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+}

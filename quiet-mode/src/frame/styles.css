@@ -1,10 +1,10 @@
-@import "tailwindcss";
-
-@theme {
-  --color-base-100: #ffffff;
-  --color-base-200: #f2f2f2;
-  --color-base-300: #e5e6e6;
-  --color-base-content: #1f2937;
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --quiet-fill: var(--studio-fill, #ffffff);
+    --quiet-line: var(--studio-line, #1f2937);
+  }
 }
 
 /* Debug Registry Toast */
@@ -153,11 +153,11 @@
 }
 
 .sidebar[data-side="left"] {
-  background: var(--color-base-100);
+  background: var(--quiet-fill);
 }
 
 .sidebar[data-side="right"] {
-  background: var(--color-base-100);
+  background: var(--quiet-fill);
 }
 
 .main-area {
@@ -192,7 +192,7 @@
     margin-left: -10px;
   }
   &:hover {
-    background: var(--color-base-content);
+    background: var(--quiet-line);
   }
 }
 
@@ -247,4 +247,18 @@
 
 .sidebar-resize-handle--left {
   left: 0;
+}
+
+.main-document-view {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+.main-document-view__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--quiet-line);
 }

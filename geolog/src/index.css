@@ -1,5 +1,28 @@
-@import "tailwindcss";
-@plugin "daisyui";
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --geolog-fill: var(--editor-fill, white);
+    --geolog-fg: var(--editor-line, black);
+    --geolog-muted: var(--editor-line-offset-50, #6b7280);
+    --geolog-border: var(--editor-fill-offset-20, #d1d5db);
+    --geolog-border-soft: var(--editor-fill-offset-10, #e5e7eb);
+    --geolog-inset: color-mix(in oklch, var(--editor-fill), var(--editor-line) 3%);
+    --geolog-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 5%);
+    --geolog-accent: var(--studio-primary-fill, #4f46e5);
+    --geolog-accent-ink: var(--studio-primary-line, white);
+    --geolog-accent-hover: var(--studio-primary-fill-offset-20, #4338ca);
+    --geolog-entity: var(--studio-secondary-fill, #3b82f6);
+    --geolog-entity-ink: var(--studio-secondary-line, white);
+    --geolog-danger: var(--studio-danger-fill, #dc2626);
+    --geolog-danger-text: var(--editor-danger-text, var(--studio-danger-text, #dc2626));
+    --geolog-danger-soft: color-mix(in oklch, var(--studio-danger-fill, #dc2626), var(--editor-fill) 88%);
+    --geolog-danger-border: color-mix(in oklch, var(--studio-danger-fill, #dc2626), var(--editor-fill) 65%);
+    --geolog-ok-text: var(--editor-added-text, var(--studio-added, #22c55e));
+    --geolog-family: var(--editor-family-sans, system-ui, sans-serif);
+    --geolog-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
 
 /* ============================================================
    Geolog tool layout
@@ -10,12 +33,14 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  font-family: inherit;
+  font-family: var(--geolog-family);
+  background: var(--geolog-fill);
+  color: var(--geolog-fg);
 }
 
 /* Theory panel */
 .theory-panel {
-  border-bottom: 1px solid var(--color-base-300, #d1d5db);
+  border-bottom: 1px solid var(--geolog-border);
   flex-shrink: 0;
 }
 
@@ -64,14 +89,14 @@
 }
 
 .schema-editor-header .description {
-  color: var(--color-base-content, #374151);
+  color: var(--geolog-fg);
   opacity: 0.6;
   margin: 0;
   font-size: 0.875rem;
 }
 
 .schema-editor-cm {
-  border: 1px solid var(--color-base-300, #d1d5db);
+  border: 1px solid var(--geolog-border);
   border-radius: 8px;
   overflow: hidden;
   min-height: 200px;
@@ -91,15 +116,15 @@
 
 .schema-error {
   flex: 1;
-  color: #ef4444;
+  color: var(--geolog-danger-text);
   font-size: 0.85rem;
-  font-family: monospace;
+  font-family: var(--geolog-family-code);
   white-space: pre-wrap;
 }
 
 .schema-valid {
   flex: 1;
-  color: #22c55e;
+  color: var(--geolog-ok-text);
   font-size: 0.85rem;
 }
 
@@ -110,13 +135,13 @@
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  background: #4f46e5;
-  color: white;
+  background: var(--geolog-accent);
+  color: var(--geolog-accent-ink);
   transition: background 0.15s;
 }
 
 .create-db-btn:hover:not(:disabled) {
-  background: #4338ca;
+  background: var(--geolog-accent-hover);
 }
 
 .create-db-btn:disabled {
@@ -132,7 +157,7 @@
   padding: 0.35rem 0.85rem;
   font-size: 0.8rem;
   font-weight: 500;
-  border: 1px solid var(--color-base-300, #d1d5db);
+  border: 1px solid var(--geolog-border);
   border-radius: 6px;
   cursor: pointer;
   background: transparent;
@@ -141,8 +166,8 @@
 }
 
 .edit-schema-btn:hover {
-  border-color: #6b7280;
-  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--geolog-muted);
+  background: var(--geolog-hover);
 }
 
 /* ============================================================
@@ -157,7 +182,7 @@
 .generic-rel-section {
   margin-bottom: 1.25rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--color-base-200, #e5e7eb);
+  border-bottom: 1px solid var(--geolog-border-soft);
 }
 
 .generic-sort-section:last-child,
@@ -182,11 +207,11 @@
 }
 
 .entity-badge {
-  background: #3b82f6;
-  color: white;
+  background: var(--geolog-entity);
+  color: var(--geolog-entity-ink);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
-  font-family: monospace;
+  font-family: var(--geolog-family-code);
   font-size: 0.8rem;
 }
 
@@ -204,10 +229,10 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
-  font-family: monospace;
+  font-family: var(--geolog-family-code);
   font-size: 0.8rem;
   padding: 0.3rem 0.5rem;
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--geolog-inset);
   border-radius: 4px;
 }
 
@@ -246,8 +271,8 @@
 .rel-field input {
   padding: 0.35rem 0.5rem;
   border-radius: 4px;
-  border: 1px solid var(--color-base-300, #d1d5db);
-  background: var(--color-base-100, #fff);
+  border: 1px solid var(--geolog-border);
+  background: var(--geolog-fill);
   color: inherit;
   min-width: 80px;
   font-size: 0.85rem;
@@ -270,8 +295,8 @@
 
 .add-btn {
   padding: 0.4rem 0.85rem;
-  background: #4f46e5;
-  color: white;
+  background: var(--geolog-accent);
+  color: var(--geolog-accent-ink);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -280,7 +305,7 @@
 }
 
 .add-btn:hover {
-  background: #4338ca;
+  background: var(--geolog-accent-hover);
 }
 
 .hint {
@@ -290,12 +315,12 @@
 }
 
 .error {
-  background: #fef2f2;
-  color: #dc2626;
+  background: var(--geolog-danger-soft);
+  color: var(--geolog-danger-text);
   padding: 0.6rem 0.85rem;
   border-radius: 6px;
   margin-bottom: 0.75rem;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--geolog-danger-border);
   font-size: 0.85rem;
 }
 
@@ -306,4 +331,12 @@
   height: 100%;
   opacity: 0.5;
   font-size: 0.95rem;
+}
+
+.loading-spinner {
+  color: var(--geolog-muted);
+}
+
+.tuple-value {
+  font-family: var(--geolog-family-code);
 }

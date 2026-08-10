@@ -164,7 +164,7 @@ export function EmbedWindows({
 
   return (
     <div
-      className="st-embed-layer pointer-events-none absolute left-0 right-0 bottom-0 overflow-hidden"
+      className="st-embed-layer"
       style={{ top: rulerHeight }}
     >
       {embeds.map((embed) => {
@@ -248,7 +248,7 @@ function EmbedWindow({
 
   return (
     <div
-      className="st-embed-window pointer-events-auto absolute flex flex-col"
+      className="st-embed-window"
       style={{ left: topLeft.x, top: topLeft.y, width: screenW, height: screenH }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -256,16 +256,16 @@ function EmbedWindow({
       onKeyUp={stopKeys}
     >
       <div
-        className="st-embed-titlebar flex shrink-0 items-center gap-1"
+        className="st-embed-titlebar"
         onPointerDown={(e) => onMovePointerDown(e, embed)}
       >
         <span className="st-embed-grip" aria-hidden>
           ⠿
         </span>
-        <span className="st-embed-title min-w-0 flex-1 truncate" title={title}>
+        <span className="st-embed-title" title={title}>
           {title}
         </span>
-        <div className="st-embed-controls flex shrink-0 items-center">
+        <div className="st-embed-controls">
           <button
             type="button"
             className="st-embed-btn"
@@ -315,9 +315,9 @@ function EmbedWindow({
           </button>
         </div>
       </div>
-      <div className="st-embed-body relative min-h-0 flex-1 overflow-hidden">
+      <div className="st-embed-body">
         <div
-          className="st-embed-content absolute left-0 top-0"
+          className="st-embed-content"
           style={{
             width: logicalW,
             height: logicalH,
