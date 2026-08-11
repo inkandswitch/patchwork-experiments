@@ -89,6 +89,8 @@ $uiState = {
 
 ## The mechanism
 
+![_A Livelymerge world with three morphs and a halo summoned on the star (left), and how it's represented in the heap (right)._](dollar-properties.png)
+
 Recall from the previous note that freshly-created objects don't go straight into the Automerge document: they live in a local _shadow document_, and at the end of each transaction the GC _promotes_ the ones that have become reachable from the root. Local state turned out to be a small extension of that same machinery. The whole design reduces to one rule:
 
 > **An object is persistent iff it is reachable from the persistent root without passing through a `$`-property.**
