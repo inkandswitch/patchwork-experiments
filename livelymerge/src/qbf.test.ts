@@ -959,12 +959,23 @@ true`);
     expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
     expect(rt.eval(`Lively.qbfEpochSpeed`)).toBe('quick');
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
-    // Speeds stay in home slots; word score is a tile left of the outbox.
+    // Compact-chrome frill: snap layout (tests skip the timed slide).
+    rt.eval(`qbfGame.syncChromeSlide(false); true`);
+    // Chosen speed sits in the super-quick slot; other speeds park off-board.
     expect(
       rt.eval(`
-qbfGame.quickButton.getBounds().topLeft.y === qbfGame.$launchBtnHomes.quick.topLeft.y &&
-qbfGame.superQuickButton.getBounds().width() > 0 &&
-qbfGame.notSoQuickButton.getBounds().width() > 0
+Math.abs(qbfGame.quickButton.getBounds().topLeft.y - qbfGame.$launchBtnHomes['super quick'].topLeft.y) <= 1 &&
+qbfGame.quickButton.getBounds().width() > 0 &&
+qbfGame.superQuickButton.getBounds().topLeft.x < -1000 &&
+qbfGame.notSoQuickButton.getBounds().topLeft.x < -1000
+`),
+    ).toBe(true);
+    // Active games rise to match the words-played plate / caption Y.
+    expect(
+      rt.eval(`
+lay = qbfGame.computeLayout();
+Math.abs(qbfGame.liveScoresPlate.getBounds().topLeft.y - lay.log.topLeft.y) <= 1 &&
+Math.abs(qbfGame.liveScoresLabel.getBounds().topLeft.y - (lay.log.topLeft.y - 16)) <= 1
 `),
     ).toBe(true);
     expect(rt.eval(`!!qbfGame.wordScoreBox`)).toBe(true);
@@ -988,17 +999,39 @@ qbfGame.wordScoreBox.$scoreLabel.shape.string === 'points'
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(true);
     expect(rt.eval(`Lively.$qbfEpochEndTimer != null`)).toBe(true);
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
-    // All speeds remain visible while playing (chosen one stays enabled).
+    // Compact frill: only the chosen speed remains on-board; frozen while join is open.
     expect(rt.eval(`qbfGame.quickButton.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.notSoQuickButton.getBounds().width()`)).toBeGreaterThan(0);
-    // After starting, idle help is hidden; re-idle board shows the join message.
+    expect(rt.eval(`qbfGame.superQuickButton.getBounds().topLeft.x < -1000`)).toBe(true);
+    expect(rt.eval(`qbfGame.notSoQuickButton.getBounds().topLeft.x < -1000`)).toBe(true);
+    expect(rt.eval(`qbfGame.quickButton.shape.textColor.r === Color.gray.r`)).toBe(true);
+    // Re-clicking the chosen speed during the join window must not restart.
+    rt.eval(`
+qbfScoreBefore = qbfGame.totalScore;
+qbfGame.launchLevel('quick');
+qbfIgnored = qbfGame.totalScore === qbfScoreBefore && qbfGame.tournamentGameNumber === 100;
+true`);
+    expect(rt.eval(`qbfIgnored`)).toBe(true);
+    // After starting, idle help is hidden; re-idle board shows the join message
+    // and the same compact chrome (chosen speed only) that players see.
     rt.eval(`qbfGame.setup({ idle: true })`);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toContain('A game is open');
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #100');
     expect(rt.eval(`String(qbfGame.epochStatus.shape.string)`)).toMatch(/^open/);
+    rt.eval(`qbfGame.syncChromeSlide(false); true`);
     expect(rt.eval(`qbfGame.quickButton.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.superQuickButton.getBounds().width()`)).toBeGreaterThan(0);
+    expect(
+      rt.eval(`
+Math.abs(qbfGame.quickButton.getBounds().topLeft.y - qbfGame.$launchBtnHomes['super quick'].topLeft.y) <= 1 &&
+qbfGame.superQuickButton.getBounds().topLeft.x < -1000 &&
+qbfGame.notSoQuickButton.getBounds().topLeft.x < -1000
+`),
+    ).toBe(true);
+    expect(
+      rt.eval(`
+lay = qbfGame.computeLayout();
+Math.abs(qbfGame.liveScoresPlate.getBounds().topLeft.y - lay.log.topLeft.y) <= 1
+`),
+    ).toBe(true);
     rt.eval(`qbfGame.launchLevel('quick')`);
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
 
@@ -1024,6 +1057,8 @@ true`);
     // Epoch closed, but this panel is still mid-game → stay on "playing".
     expect(rt.eval(`qbfGame.epochStatus.shape.string`)).toBe('playing');
     expect(rt.eval(`qbfGame.isStepping('tickGameClock')`)).toBe(false);
+    // Join window closed: chosen speed is clickable again (others stay dimmed).
+    expect(rt.eval(`qbfGame.quickButton.shape.textColor.r === Color.black.r`)).toBe(true);
 
     // Next signup bumps to 101; wrap 999 → 100.
     rt.eval(`qbfGame.launchLevel('super quick')`);
@@ -1076,6 +1111,16 @@ qbfGame.maybePostFinalScore();
 true`);
     expect(rt.eval(`qbfGame.idle`)).toBe(true);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toMatch(/Start a new game|A game is open/);
+    // Compact-chrome frill drops speeds + active games back to home slots.
+    rt.eval(`qbfGame.syncChromeSlide(false); true`);
+    expect(
+      rt.eval(`
+qbfGame.quickButton.getBounds().width() > 0 &&
+qbfGame.superQuickButton.getBounds().width() > 0 &&
+qbfGame.notSoQuickButton.getBounds().width() > 0 &&
+Math.abs(qbfGame.liveScoresPlate.getBounds().topLeft.y - qbfGame.computeLayout().liveScores.topLeft.y) <= 1
+`),
+    ).toBe(true);
     // Finished board left in place (log morph still present with prior text).
     expect(rt.eval(`qbfGame.wordLog.shape.string`)).toBe(rt.eval(`qbfKeepLog`));
     // Word-score tile hidden so the board looks ready for another game.
@@ -1168,13 +1213,11 @@ qbfGame.playerName = 'Anonymous';
 qbfGame.toggleAutoPlay();
 qbfOnName = qbfGame.playerName;
 qbfOnBtn = qbfGame.autoPlayButton.shape.string;
-qbfNameBtn = qbfGame.nameButton.shape.string;
 qbfGame.toggleAutoPlay();
 qbfOffName = qbfGame.playerName;
 true`);
     expect(rt.eval(`qbfOnName`)).toBe('Otto');
     expect(rt.eval(`qbfOnBtn`)).toBe('Otto');
-    expect(rt.eval(`qbfNameBtn`)).toBe('Otto');
     expect(rt.eval(`qbfOffName`)).toBe('Anonymous');
   }, 60_000);
 

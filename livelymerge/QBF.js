@@ -37,6 +37,11 @@ $qbfWordLookup = null;
 // fallSoundPending flag was causing screams with no local tumble).
 $qbfPendingFallSounds = null;
 
+/** Easy revert for the compact-chrome slide frill: set to false. */
+function qbfChromeSlideFrill() {
+  return true;
+}
+
 function qbfArmFallSound(letter) {
   if (!$qbfPendingFallSounds) $qbfPendingFallSounds = [];
   $qbfPendingFallSounds.push(letter);
@@ -1495,6 +1500,9 @@ class QBFMorph extends Morph {
     this.autoPlay = false;
     this.$autoPlayBusy = false;
     this.$autoPlayTimer = null;
+    // Compact-chrome frill: rebuild starts from home slots.
+    this.$chromeCompact = null;
+    this.$chromeActiveCap = null;
     this.rackSize = this.level.rackSize;
     this.beltSize = this.level.beltSize;
     this.letterScore = 0;
@@ -1606,7 +1614,8 @@ class QBFMorph extends Morph {
     s.textColor = enabled ? Color.black : Color.gray;
     // Bevel is drawn by qbfInstallBevel; keep the flat stroke off.
     s.setBorderWidth(0);
-    s.compose();
+    // Skip compose when parked off-board for the chrome-slide hide.
+    if (btn.getBounds().topLeft.x > -1000) s.compose();
   }
   updateModeControls() {
     /**
@@ -1852,6 +1861,12 @@ class QBFMorph extends Morph {
       boxColor: Color.white,
       borderWidth: 0,
     });
+    // Homes for the compact-chrome slide frill (easy revert via qbfChromeSlideFrill).
+    this.$liveScoresHomes = {
+      label: labelR.copy(),
+      plate: R.copy(),
+      log: logR.copy(),
+    };
     this.refreshLiveScoresPane();
   }
   idleHelpMessage() {
@@ -1864,7 +1879,7 @@ class QBFMorph extends Morph {
         '; join while it is still open to play the same letters'
       );
     }
-    return 'Start a new game at your chosen speed by pressing a speed button below';
+    return 'Start a new game at your chosen speed by pressing a speed button at the right';
   }
   updateIdleInstructions() {
     if (!this.idleHelpText || !this.idleHelpPlate) return;
@@ -2148,6 +2163,9 @@ class QBFMorph extends Morph {
      * signup epoch so everyone on Game #N gets the same letter queue.
      */
     let view = qbfViewTournament();
+    // Already playing this Game # while the join window is still open — ignore
+    // further speed clicks until the progress bar finishes.
+    if (!this.idle && view.open) return;
     if (view.open && view.speed && view.speed !== caption) return;
     let join = qbfJoinOrStartTournamentGame(caption);
     if (join.rejected) return;
@@ -2374,9 +2392,8 @@ class QBFMorph extends Morph {
   }
   updateLaunchButtons(viewIfAny) {
     /**
-     * Keep all three speed buttons in their home slots. While a game is open or
-     * this panel is playing, non-current speeds stay visible but disabled so the
-     * chosen speed is obvious without relocating buttons.
+     * Style (and, without the slide frill, park) the three speed buttons.
+     * With qbfChromeSlideFrill(), positions come from syncChromeSlide instead.
      */
     let view = viewIfAny || qbfViewTournament();
     let active = null;
@@ -2391,14 +2408,242 @@ class QBFMorph extends Morph {
       { btn: this.quickButton, caption: 'quick' },
       { btn: this.notSoQuickButton, caption: 'not so quick' },
     ];
+    let freezeWhileJoined = !this.idle && view.open;
+    let frill = qbfChromeSlideFrill();
+    for (let i = 0; i < buttons.length; i++) {
+      let each = buttons[i];
+      if (!each.btn) continue;
+      if (!frill) {
+        let home = homes[each.caption];
+        if (home) each.btn.setBounds(home.copy());
+      }
+      let enabled = !freezeWhileJoined && (!active || active === each.caption);
+      this.styleControlButton(each.btn, enabled);
+    }
+    if (frill) this.syncChromeSlide(true);
+  }
+  chromeActiveCaption(viewIfAny) {
+    let view = viewIfAny || qbfViewTournament();
+    if (!this.idle && !this.gameOver && this.level) return this.level.caption;
+    if (view.open) return view.speed;
+    return null;
+  }
+  chromeWantsCompact() {
+    /**
+     * Collapse speeds + lift active games while this board is playing, or while a
+     * join window is open (so idle spectators see the same chrome as the host).
+     * When the window closes (or soft-idle with no open game), expand back home.
+     */
+    if (!qbfChromeSlideFrill()) return false;
+    if (!this.idle && !this.gameOver) return true;
+    let view = qbfViewTournament();
+    return !!(view && view.open && view.speed);
+  }
+  chromeLayoutTargets(compact, activeCaption) {
+    /**
+     * Expanded = idle homes. Compact = chosen speed at super-quick slot; other
+     * speeds parked off-board; active-games block lifted to match words-played Y.
+     */
+    let lay = this.computeLayout();
+    let homes = this.$launchBtnHomes || {};
+    let sqHome = homes['super quick'];
+    let buttons = [
+      { btn: this.superQuickButton, caption: 'super quick' },
+      { btn: this.quickButton, caption: 'quick' },
+      { btn: this.notSoQuickButton, caption: 'not so quick' },
+    ];
+    let out = { keep: null, hide: [], live: null };
     for (let i = 0; i < buttons.length; i++) {
       let each = buttons[i];
       if (!each.btn) continue;
       let home = homes[each.caption];
-      if (home) each.btn.setBounds(home.copy());
-      let enabled = !active || active === each.caption;
-      this.styleControlButton(each.btn, enabled);
+      if (!home) continue;
+      if (compact) {
+        if (activeCaption && each.caption === activeCaption) {
+          out.keep = {
+            morph: each.btn,
+            to: sqHome ? sqHome.copy() : home.copy(),
+          };
+        } else {
+          // Park off-board at full size. Collapsing to 0×0 is unsafe: TextBox.setBounds
+          // restores text height, and the raised bevel then paints a ~2px white strip.
+          out.hide.push({
+            morph: each.btn,
+            to: rect(-5000, home.topLeft.y, home.width(), home.height()),
+          });
+        }
+      } else {
+        out.hide.push({ morph: each.btn, to: home.copy() }); // restore all three
+      }
     }
+    // When expanding, every button is in `hide` as a restore target; rename mentally:
+    if (!compact) {
+      out.show = out.hide;
+      out.hide = [];
+    }
+    let R = lay.liveScores || lay.launch;
+    let bevel = 2;
+    let plateHome = R.copy();
+    let labelHome = rect(R.topLeft.x + 3, R.topLeft.y - 16, R.width(), 16);
+    let logHome = rect(
+      R.topLeft.x + bevel,
+      R.topLeft.y + bevel,
+      Math.max(0, R.width() - 2 * bevel),
+      Math.max(0, R.height() - 2 * bevel),
+    );
+    let plate = plateHome.copy();
+    let label = labelHome.copy();
+    let log = logHome.copy();
+    if (compact) {
+      // Match words-played plate / caption Y so the two columns line up when slid up.
+      let wordsPlateY = lay.log ? lay.log.topLeft.y : plateHome.topLeft.y;
+      let wordsLabelY = wordsPlateY - 16;
+      let dy = wordsPlateY - plateHome.topLeft.y;
+      plate = plateHome.translatedBy(pt(0, dy));
+      label = rect(labelHome.topLeft.x, wordsLabelY, labelHome.width(), labelHome.height());
+      log = logHome.translatedBy(pt(0, dy));
+    }
+    if (this.liveScoresPlate) {
+      out.live = [
+        { morph: this.liveScoresLabel, to: label },
+        { morph: this.liveScoresPlate, to: plate },
+        { morph: this.liveScoresLog, to: log },
+      ];
+    }
+    return out;
+  }
+  syncChromeSlide(animateIfAny) {
+    if (!qbfChromeSlideFrill()) return;
+    let wantCompact = this.chromeWantsCompact();
+    let active = this.chromeActiveCaption();
+    let targets = this.chromeLayoutTargets(wantCompact, active);
+    let animate = !!animateIfAny && !!this.worldOrNull();
+    let nSteps = 15;
+    let msPerStep = 25;
+    let near = (morph, to) => {
+      if (!morph || !to) return true;
+      let b = morph.getBounds();
+      return (
+        Math.abs(b.topLeft.x - to.topLeft.x) <= 0.5 &&
+        Math.abs(b.topLeft.y - to.topLeft.y) <= 0.5 &&
+        Math.abs(b.width() - to.width()) <= 0.5 &&
+        Math.abs(b.height() - to.height()) <= 0.5
+      );
+    };
+    let snap = (morph, to) => {
+      if (!morph || !to) return;
+      if (morph.stopStepping) morph.stopStepping('animateFromToStep');
+      morph.$animateFromToWhenDone = null;
+      morph.setBounds(to.copy());
+    };
+    let slide = (morph, to, whenDoneIfAny) => {
+      if (!morph || !to) {
+        if (whenDoneIfAny) whenDoneIfAny();
+        return;
+      }
+      if (near(morph, to)) {
+        if (whenDoneIfAny) whenDoneIfAny();
+        return;
+      }
+      if (morph.stopStepping) morph.stopStepping('animateFromToStep');
+      morph.$animateFromToWhenDone = null;
+      if (animate && morph.animateFromTo) {
+        morph.animateFromTo(
+          morph.getBounds().copy(),
+          to.copy(),
+          nSteps,
+          msPerStep,
+          whenDoneIfAny || null,
+        );
+      } else {
+        morph.setBounds(to.copy());
+        if (whenDoneIfAny) whenDoneIfAny();
+      }
+    };
+    let restoreButtons = () => {
+      let show = targets.show || [];
+      for (let i = 0; i < show.length; i++) snap(show[i].morph, show[i].to);
+      this.$chromeRestorePending = false;
+    };
+    let buttonsHome = () => {
+      let show = targets.show || [];
+      for (let i = 0; i < show.length; i++) {
+        if (!near(show[i].morph, show[i].to)) return false;
+      }
+      return true;
+    };
+    // Compact: unused speeds vanish immediately. Expand: leave speeds alone
+    // until the active-games list has finished sliding home.
+    let hide = targets.hide || [];
+    for (let i = 0; i < hide.length; i++) snap(hide[i].morph, hide[i].to);
+
+    let keep = targets.keep;
+    let live = targets.live || [];
+    let keepDone = !keep || near(keep.morph, keep.to);
+    let liveDone = true;
+    for (let i = 0; i < live.length; i++) {
+      if (!near(live[i].morph, live[i].to)) liveDone = false;
+    }
+    let keepBusy =
+      keep && keep.morph && keep.morph.isStepping && keep.morph.isStepping('animateFromToStep');
+    let liveBusy = false;
+    for (let i = 0; i < live.length; i++) {
+      let m = live[i].morph;
+      if (m && m.isStepping && m.isStepping('animateFromToStep')) liveBusy = true;
+    }
+
+    if (!wantCompact) {
+      // End of play: list slides down first; buttons restore only after.
+      if (
+        this.$chromeCompact === false &&
+        this.$chromeActiveCap === active &&
+        (liveDone || liveBusy)
+      ) {
+        if (liveDone && !buttonsHome()) restoreButtons();
+        return;
+      }
+      this.$chromeCompact = false;
+      this.$chromeActiveCap = active;
+      if (liveDone || !animate) {
+        for (let i = 0; i < live.length; i++) snap(live[i].morph, live[i].to);
+        restoreButtons();
+        return;
+      }
+      this.$chromeRestorePending = true;
+      let left = 0;
+      for (let i = 0; i < live.length; i++) {
+        if (!near(live[i].morph, live[i].to)) left += 1;
+      }
+      if (left === 0) {
+        restoreButtons();
+        return;
+      }
+      let onLiveDone = () => {
+        left -= 1;
+        if (left <= 0) restoreButtons();
+      };
+      for (let i = 0; i < live.length; i++) {
+        if (near(live[i].morph, live[i].to)) continue;
+        slide(live[i].morph, live[i].to, onLiveDone);
+      }
+      return;
+    }
+
+    // Compact: hide already snapped; slide chosen speed + live list up.
+    // Restoring `show` is unused on this path.
+    if (
+      this.$chromeCompact === true &&
+      this.$chromeActiveCap === active &&
+      (keepDone || keepBusy) &&
+      (liveDone || liveBusy)
+    ) {
+      return;
+    }
+    this.$chromeCompact = true;
+    this.$chromeActiveCap = active;
+    this.$chromeRestorePending = false;
+    if (keep) slide(keep.morph, keep.to);
+    for (let i = 0; i < live.length; i++) slide(live[i].morph, live[i].to);
   }
   syncGameClock(forceIfAny) {
     if (forceIfAny) qbfCommitExpiredTournament();

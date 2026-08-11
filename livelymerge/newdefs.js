@@ -4268,7 +4268,9 @@ class Morph {
     return m.className === 'WorldMorph';
   }
   isStepping(methodName) {
-    return this.world().isSteppingMorph(this, methodName);
+    let world = this.world();
+    if (!world || !world.isSteppingMorph) return false;
+    return world.isSteppingMorph(this, methodName);
   }
   layoutChanged(submorph) {
     // ** code goes here
@@ -4683,7 +4685,9 @@ class Morph {
     this.stopStepping(method);
     const spec = new StepSpec(this, method, argIfAny, msTime, nextStepTimeIfAny);
     this.steppingSpecs().push(spec);
-    this.world().startSteppingSpec(spec);
+    // Morph.world() returns `this` when unowned — only a real WorldMorph can schedule.
+    let world = this.world();
+    if (world && world.startSteppingSpec) world.startSteppingSpec(spec);
   }
   stopStepping(methodName) {
     if (methodName) {
@@ -4691,7 +4695,8 @@ class Morph {
     } else {
       clearArray(this.steppingSpecs());
     }
-    this.world().stopSteppingMorph(this, methodName);
+    let world = this.world();
+    if (world && world.stopSteppingMorph) world.stopSteppingMorph(this, methodName);
   }
   subBounds(paneSpec) {
     // returns a subrectangle of bounds for, eg, subPanes
@@ -4706,6 +4711,93 @@ class Morph {
     let b = this.getBounds();
     if (this.bounds) this.bounds.setToRect(b);
     else this.bounds = b.copy();
+  }
+  animateFromTo(startPos, stopPos, nSteps, msPerStep, whenDoneIfAny) {
+    /**
+     * Step this morph from start to stop using morphic stepping.
+     * start/stop may be Points (topLeft only; extent unchanged) or Rectangles
+     * (full bounds, including size — useful for collapse/expand).
+     * Endpoints are snapshotted as plain numbers so proxies/shared points cannot
+     * corrupt the lerp mid-flight.
+     * Optional whenDoneIfAny runs once the animation finishes (or immediately
+     * if there is no stepping world).
+     */
+    let n = nSteps > 0 ? nSteps : 1;
+    let ms = msPerStep > 0 ? msPerStep : 25;
+    let cur = this.getBounds();
+    let start = this.animateFromToSnapshot(startPos, cur);
+    let stop = this.animateFromToSnapshot(stopPos, cur);
+    this.$animateFromToWhenDone = whenDoneIfAny || null;
+    this.$animateFromTo = {
+      x0: start.x,
+      y0: start.y,
+      w0: start.w,
+      h0: start.h,
+      x1: stop.x,
+      y1: stop.y,
+      w1: stop.w,
+      h1: stop.h,
+      nSteps: n,
+      step: 0,
+    };
+    this.animateFromToApply(0);
+    let world = this.world();
+    if (!world || !world.startSteppingSpec) {
+      this.animateFromToApply(1);
+      this.$animateFromTo = null;
+      let done = this.$animateFromToWhenDone;
+      this.$animateFromToWhenDone = null;
+      if (done) done();
+      return;
+    }
+    this.startStepping('animateFromToStep', null, ms);
+  }
+  animateFromToSnapshot(pos, fallbackBounds) {
+    /** Plain {x,y,w,h} from a Point or Rectangle; never aliases live morph geometry. */
+    let fb = fallbackBounds || this.getBounds();
+    if (pos && pos.topLeft && typeof pos.width === 'function') {
+      return {
+        x: pos.topLeft.x,
+        y: pos.topLeft.y,
+        w: pos.width(),
+        h: pos.height(),
+      };
+    }
+    if (pos && pos.x != null && pos.y != null) {
+      return { x: pos.x, y: pos.y, w: fb.width(), h: fb.height() };
+    }
+    return { x: fb.topLeft.x, y: fb.topLeft.y, w: fb.width(), h: fb.height() };
+  }
+  animateFromToApply(u) {
+    let anim = this.$animateFromTo;
+    if (!anim) return;
+    let t = u < 0 ? 0 : u > 1 ? 1 : u;
+    this.setBounds(
+      rect(
+        anim.x0 + (anim.x1 - anim.x0) * t,
+        anim.y0 + (anim.y1 - anim.y0) * t,
+        anim.w0 + (anim.w1 - anim.w0) * t,
+        anim.h0 + (anim.h1 - anim.h0) * t,
+      ),
+    );
+  }
+  animateFromToStep() {
+    let anim = this.$animateFromTo;
+    if (!anim) {
+      this.stopStepping('animateFromToStep');
+      return;
+    }
+    anim.step += 1;
+    let u = anim.step / anim.nSteps;
+    if (u > 1) u = 1;
+    this.animateFromToApply(u);
+    if (anim.step >= anim.nSteps) {
+      this.$animateFromTo = null;
+      this.stopStepping('animateFromToStep');
+      let done = this.$animateFromToWhenDone;
+      this.$animateFromToWhenDone = null;
+      if (done) done();
+    }
   }
   testTransform(whenDone) {
     // Spin a bit, then reset and optionally run next. Driven by stepping (not
