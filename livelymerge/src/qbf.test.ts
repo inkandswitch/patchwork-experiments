@@ -77,16 +77,7 @@ qbfGame.infoButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().top
         `qbfGame.titleText.getBounds().topLeft.y == qbfGame.computeLayout().fox.topLeft.y`,
       ),
     ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.nameButton.getBounds().center().x == qbfGame.computeLayout().fox.center().x`,
-      ),
-    ).toBe(true);
-    expect(
-      rt.eval(
-        `qbfGame.nameButton.getBounds().topLeft.y == qbfGame.computeLayout().fox.bottom() + 20`,
-      ),
-    ).toBe(true);
+    expect(rt.eval(`!!qbfGame.nameButton`)).toBe(false);
     expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
     expect(rt.eval(`!!qbfGame.pauseButton`)).toBe(false);
     expect(rt.eval(`!!qbfGame.finishButton`)).toBe(false);
@@ -170,7 +161,6 @@ qbfGame.gameNumberLabel.getBounds().topLeft.y == lay.launch.topLeft.y
     };
     rt.eval(`
 qbfGame.playerName = 'Anonymous';
-qbfGame.nameButton.setLabel('Anonymous');
 qbfResolvePlayerNameFromAccount(qbfGame);
 true`);
     // getUserName settles on a microtask and stashes the name on window; the
@@ -181,7 +171,6 @@ true`);
       game.tick();
     });
     expect(rt.eval(`qbfGame.playerName`)).toBe('Daniel');
-    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Daniel');
     expect(g.qbfPendingAccountName == null || g.qbfPendingAccountName === null).toBe(true);
     delete g.accountDocHandle;
     delete g.repo;
@@ -200,7 +189,6 @@ true`);
     };
     rt.eval(`
 qbfGame.playerName = 'Anonymous';
-qbfGame.nameButton.setLabel('Anonymous');
 qbfResolvePlayerNameFromAccount(qbfGame);
 true`);
     await new Promise((r) => setTimeout(r, 50));
@@ -366,7 +354,7 @@ qbfSecond = qbfClaimUniqueLiveName('Otto', 100);
 true`);
     expect(rt.eval(`qbfFirst`)).toBe('Otto');
     expect(rt.eval(`qbfSecond`)).toBe('Otto 2');
-    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Otto');
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Otto');
   }, 60_000);
 
   it('keeps active games after the epoch ends, and flips to final scores when all finish', () => {
@@ -595,7 +583,8 @@ qbfGame.playerName = 'Tester';
 true`);
     ticksUntil(`qbfGame.gameOver`);
     expect(rt.eval(`qbfGame.totalScore`)).toBe(42);
-    expect(rt.eval(`qbfGame.$logLines.pop()`)).toContain('game over');
+    // '-- game over --' log line is commented out for now.
+    expect(rt.eval(`(qbfGame.$logLines || []).join('\\n')`)).not.toContain('game over');
     expect(rt.eval(`!!qbfGame._finalScorePosted`)).toBe(true);
     // Restart is locked in social play; a fresh setup rebuilds the board.
     rt.eval(`qbfGame.doRestart(); true`);
@@ -723,8 +712,9 @@ true`);
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('Ada');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('QUICK');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('#321');
-    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('score');
-    expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('speed');
+    // Column header omitted on top scores (blank line instead).
+    expect(rt.eval(`qbfScores.scoresText.shape.string`)).not.toContain('best word');
+    expect(rt.eval(`qbfScores.scoresText.shape.string.charAt(0)`)).toBe('\n');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain(
       'High scores are only retained for 7 days',
     );
@@ -780,7 +770,7 @@ qbfSetScoresStore(qbfAlt);
     bestGame: sc, bestWord: 'W', bestWordScore: 1, time: Date.now(), gameNo: 100+i,
   });
 });
-// Same player, 6 more quick games — each Game # is kept; top 3 still by score.
+// Same player, 6 more quick games — only their best should appear in highs.
 [95,85,75,65,55,45].forEach((sc, i) => {
   qbfPostLevelScore('Repeat', 'quick', {
     bestGame: sc, bestWord: 'R', bestWordScore: 1, time: Date.now(), gameNo: 400+i,
@@ -807,13 +797,15 @@ true`);
     expect(rt.eval(`qbfHighH >= 13 * 14`)).toBe(true);
     expect(rt.eval(`qbfText`)).toContain('Fast');
     expect(rt.eval(`qbfText`)).toContain('Slow');
-    expect(rt.eval(`qbfText`)).toContain('Repeat'); // multi-game player
+    expect(rt.eval(`qbfText`)).toContain('Repeat'); // best game only
     expect(rt.eval(`qbfText`)).toContain('P0'); // 90 still in mix if high enough
     expect(rt.eval(`qbfQuickRows.length`)).toBe(3);
     expect(rt.eval(`qbfQuickRows[0].score`)).toBe(95);
-    expect(rt.eval(`qbfQuickRows.filter((s) => s.player === 'Repeat').length >= 2`)).toBe(true);
+    expect(rt.eval(`qbfQuickRows.filter((s) => s.player === 'Repeat').length`)).toBe(1);
     // Blank line between speed groups in the printed high-score table.
     expect(rt.eval(`qbfText.includes('super quick') && qbfText.includes('\\n\\n')`)).toBe(true);
+    // Pipe separators temporarily replaced with spaces.
+    expect(rt.eval(`qbfText.includes('|')`)).toBe(false);
     expect(rt.eval(`qbfTopScoresPerLevel([
       new QBFGameScore(1,'a','quick','',0,1,''),
       new QBFGameScore(2,'b','quick','',0,2,''),
@@ -821,7 +813,8 @@ true`);
       new QBFGameScore(4,'d','quick','',0,4,''),
       new QBFGameScore(5,'e','quick','',0,5,''),
       new QBFGameScore(6,'f','quick','',0,6,''),
-    ], 3).map((s) => s.player).join(',')`)).toBe('f,e,d');
+      new QBFGameScore(99,'a','quick','',0,7,''),
+    ], 3).map((s) => s.player).join(',')`)).toBe('a,f,e');
   }, 60_000);
 
   it('omits high scores older than 7 days from the top-scores pane', () => {

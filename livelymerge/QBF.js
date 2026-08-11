@@ -1216,7 +1216,7 @@ class QBFMorph extends Morph {
       this.autoPlay = false;
       this.updateAutoPlayButton();
       this.postLevelStats();
-      this.appendLog('-- game over --');
+      // this.appendLog('-- game over --');
       letter.remove();
       this.maybePostFinalScore();
       return;
@@ -1363,7 +1363,7 @@ class QBFMorph extends Morph {
     this._finalScorePosted = false;
     this.gameOver = true;
     this.postLevelStats();
-    this.appendLog('-- game over --');
+    // this.appendLog('-- game over --');
     this.maybePostFinalScore();
   }
   maybePostFinalScore() {
@@ -1800,8 +1800,8 @@ class QBFMorph extends Morph {
         fontSize: 10,
         fontFamily: 'monospace',
         lineHeight: 12,
-        hang: 2,
-        insetX: 2,
+        hang: 6, // was 2; nudge text down 4px
+        insetX: 6, // was 2; nudge text right 4px
         noBreak: true,
         boxColor: Color.white,
         borderWidth: 0,
@@ -1948,11 +1948,13 @@ class QBFMorph extends Morph {
     this.restartButton = null;
     this.updateAutoPlayButton();
     this.updateModeControls();
-    this.nameButton = this.addButton(
-      lay.nameButton,
-      qbfNameButtonLabel(this.playerName),
-      'name',
-    );
+    // Player name under the fox — hidden for now (playerName still tracked).
+    // this.nameButton = this.addButton(
+    //   lay.nameButton,
+    //   qbfNameButtonLabel(this.playerName),
+    //   'name',
+    // );
+    this.nameButton = null;
   }
   setupFox(lay) {
     // The fox himself -- painted directly via EmojiMorph.fillText (no canvas bake).
@@ -3297,6 +3299,8 @@ function qbfPrintScoreTable(grid) {
     }
     widths.push(w);
   }
+  // Temporarily spaces instead of pipes — revert to ' | ' when wanted.
+  let colSep = '   '; // was: ' | '
   let lines = [];
   for (let r = 0; r < grid.length; r++) {
     if (grid[r] == null) {
@@ -3307,7 +3311,7 @@ function qbfPrintScoreTable(grid) {
     for (let c = 0; c < widths.length; c++) {
       parts.push(qbfPadRight(grid[r][c] != null ? String(grid[r][c]) : '', widths[c]));
     }
-    lines.push(parts.join(' | '));
+    lines.push(parts.join(colSep));
   }
   return lines.join('\n');
 }
@@ -3394,7 +3398,10 @@ class QBFGameScore {
   }
   static printTable(scores, optsIfAny) {
     let opts = optsIfAny || {};
-    let grid = [QBFGameScore.headerRow()];
+    // Top-scores pane: omit the column header but keep a blank first line.
+    // let grid = [QBFGameScore.headerRow()];
+    let grid = opts.omitHeader ? [null] : [QBFGameScore.headerRow()];
+    if (!opts.omitHeader) grid.push(null); // blank line after header (recent games)
     let prevSpeed = null;
     for (let i = 0; i < (scores || []).length; i++) {
       let gs = scores[i];
@@ -3559,9 +3566,9 @@ function qbfLookupGameNoFromRecent(player, speed, score) {
 
 function qbfTopScoresPerLevel(scores, nPerLevelIfAny) {
   /**
-   * Keep the best nPerLevel (default 3) *games* scores for each speed, ordered by
+   * Keep the best nPerLevel (default 3) scores for each speed, ordered by
    * speed rank (super quick → quick → not so quick) then score descending.
-   * The same player may appear more than once. At most 3×3 = 9 rows.
+   * Only one row per player per speed (their best). At most 3×3 = 9 rows.
    */
   let nPer = nPerLevelIfAny != null ? nPerLevelIfAny : 3;
   let byLevel = {};
@@ -3577,6 +3584,16 @@ function qbfTopScoresPerLevel(scores, nPerLevelIfAny) {
   let out = [];
   for (let li = 0; li < levels.length; li++) {
     let list = byLevel[levels[li]];
+    // One entry per player: keep their best score in this speed.
+    let bestByPlayer = {};
+    for (let i = 0; i < list.length; i++) {
+      let gs = list[i];
+      let p = gs.player != null ? String(gs.player) : '';
+      let prior = bestByPlayer[p];
+      if (!prior || gs.score > prior.score) bestByPlayer[p] = gs;
+    }
+    list = [];
+    Object.keys(bestByPlayer).forEach((p) => list.push(bestByPlayer[p]));
     list.sort((a, b) => {
       if (a.score < b.score) return 1;
       if (a.score > b.score) return -1;
@@ -4174,16 +4191,16 @@ class QBFScoresMorph extends Morph {
       fresh.push(gs);
     }
     let top = qbfTopScoresPerLevel(fresh, 3);
-    let footer = '\n      -- High scores are only retained for 7 days --';
+    let footer = '\n\n      -- High scores are only retained for 7 days --';
     if (top.length === 0) {
       this.setScoreListText(
         this.scoresScroll,
-        QBFGameScore.printTable([]) + '\n(no scores yet)' + footer,
+        QBFGameScore.printTable([], { omitHeader: true }) + '\n(no scores yet)' + footer,
       );
     } else {
       this.setScoreListText(
         this.scoresScroll,
-        QBFGameScore.printTable(top, { blankBetweenSpeeds: true }) + footer,
+        QBFGameScore.printTable(top, { blankBetweenSpeeds: true, omitHeader: true }) + footer,
       );
     }
   }
