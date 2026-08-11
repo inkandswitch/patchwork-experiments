@@ -32,12 +32,13 @@ describe('QBF', () => {
         `Math.abs(qbfGame.wordLog1.getBounds().width() - qbfGame.wordLog2.getBounds().width()) <= 1`,
       ),
     ).toBe(true);
-    // Live scores sit under the speed column.
+    // Live scores sit under the speed column (list inset 2px for the plate bevel).
     expect(
       rt.eval(`
 lay = qbfGame.computeLayout();
-qbfGame.liveScoresLog.getBounds().topLeft.x == lay.launch.topLeft.x &&
-qbfGame.liveScoresLog.getBounds().topLeft.y == lay.liveScores.topLeft.y &&
+logB = qbfGame.liveScoresLog.getBounds();
+logB.topLeft.x == lay.liveScores.topLeft.x + 2 &&
+logB.topLeft.y == lay.liveScores.topLeft.y + 2 &&
 lay.liveScores.topLeft.y >= lay.launch.topLeft.y + 52 + 2 * lay.speedRow + lay.speedBtnH + 15
 `),
     ).toBe(true);
@@ -64,7 +65,7 @@ qbfGame.infoButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().top
     ).toBe(true);
     expect(rt.eval(`qbfGame.wordLog === qbfGame.wordLog1`)).toBe(true);
     expect(rt.eval(`!!qbfGame.titleText && qbfGame.titleText.shape.string`)).toBe(
-      'The Quick  Brow Fox',
+      'The Quick Brown Fox',
     );
     expect(
       rt.eval(
@@ -148,10 +149,12 @@ qbfGame.gameNumberLabel.getBounds().topLeft.y == lay.launch.topLeft.y
     expect(rt.eval(`!!qbfScores.recentText && !!qbfScores.scoresText`)).toBe(true);
     expect(rt.eval(`!!qbfScores.recentScroll && qbfScores.recentScroll.className`)).toBe('TextPane');
     expect(rt.eval(`!!qbfScores.scoresScroll && qbfScores.scoresScroll.className`)).toBe('TextPane');
-    // Wide enough that the date column ("Jul 25 12:00") is not clipped.
-    expect(rt.eval(`qbfScores.getBounds().width()`)).toBe(578);
-    expect(rt.eval(`qbfScores.recentScroll.getBounds().width()`)).toBe(558);
-    expect(rt.eval(`qbfScores.scoresScroll.getBounds().width()`)).toBe(558);
+    // Wide enough that the date column ("Jul 25 12:00") is not clipped; panes −60px.
+    expect(rt.eval(`qbfScores.getBounds().width()`)).toBe(518);
+    expect(rt.eval(`qbfScores.recentScroll.getBounds().width()`)).toBe(498);
+    expect(rt.eval(`qbfScores.scoresScroll.getBounds().width()`)).toBe(498);
+    expect(rt.eval(`qbfScores.recentScroll.scrollBar.getBounds().width()`)).toBe(8);
+    expect(rt.eval(`qbfScores.scoresScroll.scrollBar.getBounds().width()`)).toBe(8);
   }, 60_000);
 
   it('adopts getUserName into the player name after the promise settles', async () => {
@@ -723,7 +726,7 @@ true`);
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('score');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain('speed');
     expect(rt.eval(`qbfScores.scoresText.shape.string`)).toContain(
-      'Scores are only retained for 30 days',
+      'High scores are only retained for 7 days',
     );
     // A worse score does not overwrite.
     rt.eval(`
@@ -766,18 +769,18 @@ true`);
     expect(rt.eval(`qbfTruncateName('VeryLongPlayerNameXYZ', 12)`)).toBe('VeryLongPlay');
   }, 60_000);
 
-  it('shows top 5 high scores per speed and keeps recent games height fixed', () => {
+  it('shows top 3 high scores per speed and grows recent games with freed lines', () => {
     const { rt } = makeGame();
     rt.eval(`
 qbfAlt = new QBFMemoryScoresStore();
 qbfSetScoresStore(qbfAlt);
-// 6 quick scores from different players — only top 5 should appear.
+// 6 quick scores from different players — only top 3 should appear.
 [90,80,70,60,50,40].forEach((sc, i) => {
   qbfPostLevelScore('P'+i, 'quick', {
     bestGame: sc, bestWord: 'W', bestWordScore: 1, time: Date.now(), gameNo: 100+i,
   });
 });
-// Same player, 6 more quick games — each Game # is kept; top 5 still by score.
+// Same player, 6 more quick games — each Game # is kept; top 3 still by score.
 [95,85,75,65,55,45].forEach((sc, i) => {
   qbfPostLevelScore('Repeat', 'quick', {
     bestGame: sc, bestWord: 'R', bestWordScore: 1, time: Date.now(), gameNo: 400+i,
@@ -795,19 +798,22 @@ qbfHighH = qbfScores.scoresScroll.getBounds().height();
 qbfText = qbfScores.scoresText.shape.string;
 qbfQuickRows = qbfTopScoresPerLevel(
   qbfAlt.getScoreEntries().map((e) => QBFGameScore.fromAny(e)),
-  5,
+  3,
 ).filter((s) => s.speed === 'quick');
 true`);
-    expect(rt.eval(`qbfRecentH`)).toBe(220);
-    // High-scores pane tall enough for header + 15 rows + footer at 14px line height.
-    expect(rt.eval(`qbfHighH >= 17 * 14`)).toBe(true);
+    // Old recent was 220; 4 lines freed from high scores (17→13) × 14px = +56.
+    expect(rt.eval(`qbfRecentH`)).toBe(276);
+    // High-scores pane tall enough for header + 9 rows + 2 blanks + footer.
+    expect(rt.eval(`qbfHighH >= 13 * 14`)).toBe(true);
     expect(rt.eval(`qbfText`)).toContain('Fast');
     expect(rt.eval(`qbfText`)).toContain('Slow');
     expect(rt.eval(`qbfText`)).toContain('Repeat'); // multi-game player
     expect(rt.eval(`qbfText`)).toContain('P0'); // 90 still in mix if high enough
-    expect(rt.eval(`qbfQuickRows.length`)).toBe(5);
+    expect(rt.eval(`qbfQuickRows.length`)).toBe(3);
     expect(rt.eval(`qbfQuickRows[0].score`)).toBe(95);
     expect(rt.eval(`qbfQuickRows.filter((s) => s.player === 'Repeat').length >= 2`)).toBe(true);
+    // Blank line between speed groups in the printed high-score table.
+    expect(rt.eval(`qbfText.includes('super quick') && qbfText.includes('\\n\\n')`)).toBe(true);
     expect(rt.eval(`qbfTopScoresPerLevel([
       new QBFGameScore(1,'a','quick','',0,1,''),
       new QBFGameScore(2,'b','quick','',0,2,''),
@@ -815,16 +821,16 @@ true`);
       new QBFGameScore(4,'d','quick','',0,4,''),
       new QBFGameScore(5,'e','quick','',0,5,''),
       new QBFGameScore(6,'f','quick','',0,6,''),
-    ], 5).map((s) => s.player).join(',')`)).toBe('f,e,d,c,b');
+    ], 3).map((s) => s.player).join(',')`)).toBe('f,e,d');
   }, 60_000);
 
-  it('omits high scores older than 30 days from the top-scores pane', () => {
+  it('omits high scores older than 7 days from the top-scores pane', () => {
     const { rt } = makeGame();
     rt.eval(`
 qbfAlt = new QBFMemoryScoresStore();
 qbfSetScoresStore(qbfAlt);
 let now = Date.now();
-let old = new Date(now - 31 * 24 * 60 * 60 * 1000).toISOString();
+let old = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString();
 let recent = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
 qbfPostLevelScore('Oldie', 'quick', {
   bestGame: 999, bestWord: 'OLD', bestWordScore: 9, time: old, gameNo: 501,

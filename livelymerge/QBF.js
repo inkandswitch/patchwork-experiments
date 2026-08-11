@@ -350,8 +350,8 @@ function qbfStyleText(morph, opts) {
   s.boxColor = o.boxColor !== undefined ? o.boxColor : Color.veryLightGray;
   s.fill = s.boxColor;
   s.textColor = o.textColor != null ? o.textColor : Color.black;
-  s.setBorderWidth(o.borderWidth != null ? o.borderWidth : 1);
-  s.setBorderColor(o.borderColor != null ? o.borderColor : Color.gray);
+  s.setBorderWidth(o.borderWidth != null ? o.borderWidth : 2);
+  s.setBorderColor(o.borderColor != null ? o.borderColor : qbfDarkBrown());
   // Chrome, not an editor: no selection, no menu highlight, no keyboard focus.
   s.disableSelectionRendering = true;
   s.noMenuLineHighlight = true;
@@ -360,6 +360,97 @@ function qbfStyleText(morph, opts) {
   let b = morph.getBounds();
   morph.setBounds(rect(b.topLeft.x, b.topLeft.y, b.width(), hgt));
   s.compose();
+  return morph;
+}
+
+function qbfDarkBrown() {
+  /** Border / bevel “dark” for QBF chrome — a step darker than the orange board. */
+  return Color.orange.darker().darker();
+}
+
+function qbfPaintBevel(ctx, x, y, w, h, borderWidth, raised) {
+  /**
+   * Classic 3-D edge: raised = light top/left + dark bottom/right;
+   * depressed = the reverse. Drawn as filled strips (not stroke) so corners nest.
+   * Coordinates are integerized so the bottom/right edges sit flush with the morph.
+   */
+  let bw = borderWidth > 0 ? borderWidth : 2;
+  let xi = Math.round(x);
+  let yi = Math.round(y);
+  let wi = Math.round(w);
+  let hi = Math.round(h);
+  let light = Color.white;
+  let dark = qbfDarkBrown();
+  let hiC = raised ? light : dark;
+  let loC = raised ? dark : light;
+  ctx.fillStyle = hiC.fillStyle;
+  ctx.fillRect(xi, yi, wi, bw);
+  ctx.fillRect(xi, yi, bw, hi);
+  ctx.fillStyle = loC.fillStyle;
+  ctx.fillRect(xi, yi + hi - bw, wi, bw);
+  ctx.fillRect(xi + wi - bw, yi, bw, hi);
+}
+
+function qbfInstallBevel(morph, raised) {
+  /**
+   * Replace the morph’s flat stroke with a 2-wide raised or depressed bevel.
+   * Interior fill is inset so the bevel frames the white; bevel is painted after
+   * submorphs so it is not covered by child content.
+   */
+  if (!morph) return morph;
+  morph.$qbfBevelRaised = !!raised;
+  morph.$qbfBevelWidth = 2;
+  if (morph.shape) {
+    if (morph.shape.setBorderWidth) morph.shape.setBorderWidth(0);
+    else morph.shape.borderWidth = 0;
+  }
+  if (morph.$qbfBevelWrapped) return morph;
+  morph.$qbfBevelWrapped = true;
+  morph.renderMeOn = function (ctx) {
+    if (!this.hasChanged) return;
+    let s = this.shape;
+    let bw = this.$qbfBevelWidth || 2;
+    let b = s.getBounds();
+    let ox = b.topLeft.x;
+    let oy = b.topLeft.y;
+    let w = b.width();
+    let h = b.height();
+    let fill = s.boxColor !== undefined && s.boxColor !== null ? s.boxColor : s.fillColor;
+    let savedBox = s.boxColor;
+    let savedFill = s.fillColor;
+    let savedW = s.borderWidth;
+    if (s.setBorderWidth) s.setBorderWidth(0);
+    else s.borderWidth = 0;
+    // Paint the interior first (inset), then content with fill suppressed.
+    if (fill && w > 2 * bw && h > 2 * bw) {
+      ctx.fillStyle = fill.fillStyle;
+      ctx.fillRect(ox + bw, oy + bw, w - 2 * bw, h - 2 * bw);
+    }
+    s.boxColor = null;
+    s.fillColor = null;
+    ctx.beginPath();
+    s.renderOn(ctx);
+    ctx.closePath();
+    if (savedBox !== undefined) s.boxColor = savedBox;
+    if (savedFill !== undefined) s.fillColor = savedFill;
+    if (s.setBorderWidth) s.setBorderWidth(savedW);
+    else s.borderWidth = savedW;
+  };
+  morph.renderOn = function (ctx) {
+    Morph.prototype.renderOn.call(this, ctx);
+    let s = this.shape;
+    if (!s) return;
+    let b = s.getBounds();
+    qbfPaintBevel(
+      ctx,
+      b.topLeft.x,
+      b.topLeft.y,
+      b.width(),
+      b.height(),
+      this.$qbfBevelWidth || 2,
+      this.$qbfBevelRaised,
+    );
+  };
   return morph;
 }
 
@@ -446,6 +537,8 @@ class QBFButtonMorph extends SimpleButtonMorph {
     this.shape.verticalNudge = Math.max(0, Math.round((hgt - 14) / 2) - 1);
     this.setBounds(bounds);
     this.shape.compose();
+    // Raised bevel (light TL / dark BR) instead of a flat gray stroke.
+    qbfInstallBevel(this, true);
   }
   onPointerUp(p, evt) {
     // SimpleButtonMorph (and Morph) keep the press in $hitPoint.
@@ -488,7 +581,7 @@ class QBFLetterMorph extends TextMorph {
       center: true,
       noBreak: true,
       borderWidth: 2,
-      borderColor: Color.black,
+      borderColor: qbfDarkBrown(),
     });
     if (value > 0) {
       this.valueBox = this.addMorph(
@@ -1511,7 +1604,8 @@ class QBFMorph extends Morph {
     s.boxColor = enabled ? Color.lightGray : Color.veryLightGray;
     s.fill = s.boxColor;
     s.textColor = enabled ? Color.black : Color.gray;
-    s.setBorderColor(enabled ? Color.gray : Color.lightGray);
+    // Bevel is drawn by qbfInstallBevel; keep the flat stroke off.
+    s.setBorderWidth(0);
     s.compose();
   }
   updateModeControls() {
@@ -1585,7 +1679,7 @@ class QBFMorph extends Morph {
       center: true,
       noBreak: true,
       borderWidth: 2,
-      borderColor: Color.black,
+      borderColor: qbfDarkBrown(),
     });
     this.wordScoreBox.$scoreBounds = boxR.copy();
     let label = this.wordScoreBox.$scoreLabel;
@@ -1679,9 +1773,12 @@ class QBFMorph extends Morph {
     let h = R.height();
     let x0 = R.topLeft.x;
     let y0 = R.topLeft.y;
-    let insetX = 2;
+    // Leave the plate's 2px bevel uncovered on all sides (plus a little top pad for text).
+    let bevel = 2;
+    let insetX = bevel;
     let insetY = 4;
-    let colH = h - insetY;
+    let insetBottom = bevel;
+    let colH = h - insetY - insetBottom;
     let colInnerW = colW - insetX;
     this.$logColHeight = colH;
     let c1 = rect(x0 + insetX, y0 + insetY, colInnerW, colH);
@@ -1696,7 +1793,8 @@ class QBFMorph extends Morph {
       textColor: Color.white,
     });
     this.logPlate = this.addMorph(new QBFDecorMorph(R.copy()));
-    this.logPlate.setStyles(Color.white, 1, Color.gray);
+    this.logPlate.setStyles(Color.white, 0, null);
+    qbfInstallBevel(this.logPlate, false); // depressed well for the word list
     let styleLog = (m) => {
       qbfStyleText(m, {
         fontSize: 10,
@@ -1733,9 +1831,17 @@ class QBFMorph extends Morph {
       textColor: Color.white,
     });
     this.liveScoresPlate = this.addMorph(new QBFDecorMorph(R.copy()));
-    this.liveScoresPlate.setStyles(Color.white, 1, Color.gray);
-    // List starts ~2px lower than the plate top; text inset starts 4px left of prior.
-    this.liveScoresLog = this.addMorph(new QBFTextMorph(R.copy(), ' '));
+    this.liveScoresPlate.setStyles(Color.white, 0, null);
+    qbfInstallBevel(this.liveScoresPlate, false); // depressed well for active games
+    // Inset so the plate's 2px bevel stays visible around the list.
+    let bevel = 2;
+    let logR = rect(
+      R.topLeft.x + bevel,
+      R.topLeft.y + bevel,
+      R.width() - 2 * bevel,
+      R.height() - 2 * bevel,
+    );
+    this.liveScoresLog = this.addMorph(new QBFTextMorph(logR, ' '));
     qbfStyleText(this.liveScoresLog, {
       fontSize: 12,
       fontFamily: 'monospace',
@@ -1862,7 +1968,7 @@ class QBFMorph extends Morph {
      * Board title: playful orange type at fox height/Y, centered on the rack.
      */
     let R = lay.title || lay.fox;
-    this.titleText = this.addMorph(new QBFTextMorph(R.copy(), 'The Quick  Brow Fox'));
+    this.titleText = this.addMorph(new QBFTextMorph(R.copy(), 'The Quick Brown Fox'));
     qbfStyleText(this.titleText, {
       fontSize: 42,
       fontFamily: 'Comic Sans MS, Chalkboard SE, Marker Felt, cursive',
@@ -2563,7 +2669,7 @@ function qbfCommitExpiredTournament() {
 }
 function qbfCloseTournamentEpoch() {
   /**
-   * Close a finished signup window: drop scores older than 30 days, clear the
+   * Close a finished signup window: drop scores older than 7 days, clear the
    * epoch clock. Game # stays at the value assigned when the game started.
    */
   if (!Lively) return;
@@ -3175,9 +3281,15 @@ function qbfPrintScoreTable(grid) {
   /** Monospaced table like the original Strings.printTable(..., {separator:' | '}). */
   if (!grid || grid.length === 0) return '';
   let widths = [];
-  for (let c = 0; c < grid[0].length; c++) {
+  let colCount = 0;
+  for (let r = 0; r < grid.length; r++) {
+    if (!grid[r]) continue;
+    if (grid[r].length > colCount) colCount = grid[r].length;
+  }
+  for (let c = 0; c < colCount; c++) {
     let w = 0;
     for (let r = 0; r < grid.length; r++) {
+      if (!grid[r]) continue;
       let cell = grid[r][c] != null ? String(grid[r][c]) : '';
       if (cell.length > w) {
         w = cell.length;
@@ -3187,6 +3299,10 @@ function qbfPrintScoreTable(grid) {
   }
   let lines = [];
   for (let r = 0; r < grid.length; r++) {
+    if (grid[r] == null) {
+      lines.push('');
+      continue;
+    }
     let parts = [];
     for (let c = 0; c < widths.length; c++) {
       parts.push(qbfPadRight(grid[r][c] != null ? String(grid[r][c]) : '', widths[c]));
@@ -3276,10 +3392,18 @@ class QBFGameScore {
   static headerRow() {
     return ['score', 'player', 'speed', 'best word', 'pts', 'game #', 'date'];
   }
-  static printTable(scores) {
+  static printTable(scores, optsIfAny) {
+    let opts = optsIfAny || {};
     let grid = [QBFGameScore.headerRow()];
+    let prevSpeed = null;
     for (let i = 0; i < (scores || []).length; i++) {
-      grid.push(scores[i].asRow());
+      let gs = scores[i];
+      if (!gs) continue;
+      if (opts.blankBetweenSpeeds && prevSpeed != null && gs.speed !== prevSpeed) {
+        grid.push(null);
+      }
+      grid.push(gs.asRow());
+      prevSpeed = gs.speed;
     }
     return qbfPrintScoreTable(grid);
   }
@@ -3347,7 +3471,7 @@ function qbfPostLevelScore(playerName, levelCaption, record) {
   /**
    * Record one finished game in the high-score store.
    * Each Game # is its own row (same player can appear more than once per speed).
-   * The viewer then shows the top 5 games per speed.
+   * The viewer then shows the top 3 games per speed.
    */
   if (!playerName || !levelCaption || !record) return false;
   let store = qbfScoresStore();
@@ -3367,7 +3491,7 @@ function qbfScoreAgeMs(timeVal) {
 
 function qbfScoreRetentionMs() {
   /** High scores older than this are dropped from the store and the top-scores pane. */
-  return 30 * 24 * 60 * 60 * 1000;
+  return 7 * 24 * 60 * 60 * 1000;
 }
 
 function qbfScoreIsFresh(timeVal) {
@@ -3379,7 +3503,7 @@ function qbfScoreIsFresh(timeVal) {
 
 function qbfPruneOldScores() {
   /**
-   * Drop high-score entries older than 30 days (by their stored time / gameDate).
+   * Drop high-score entries older than 7 days (by their stored time / gameDate).
    * Called when an epoch ends and whenever the scores viewer refreshes.
    */
   let store = qbfScoresStore();
@@ -3435,11 +3559,11 @@ function qbfLookupGameNoFromRecent(player, speed, score) {
 
 function qbfTopScoresPerLevel(scores, nPerLevelIfAny) {
   /**
-   * Keep the best nPerLevel (default 5) *games* scores for each speed, ordered by
+   * Keep the best nPerLevel (default 3) *games* scores for each speed, ordered by
    * speed rank (super quick → quick → not so quick) then score descending.
-   * The same player may appear more than once. At most 3×5 = 15 rows.
+   * The same player may appear more than once. At most 3×3 = 9 rows.
    */
-  let nPer = nPerLevelIfAny != null ? nPerLevelIfAny : 5;
+  let nPer = nPerLevelIfAny != null ? nPerLevelIfAny : 3;
   let byLevel = {};
   for (let i = 0; i < (scores || []).length; i++) {
     let gs = scores[i];
@@ -3546,7 +3670,7 @@ class QBFDocScoresStore {
   putPlayerLevelScore(playerName, levelCaption, record) {
     /**
      * Upsert one finished game. When gameNo is set, match player+level+gameNo so
-     * each tournament game is retained (top-5-per-speed can list the same player
+     * each tournament game is retained (top-3-per-speed can list the same player
      * more than once). With no gameNo, keep a single personal-best row (legacy).
      */
     let list = this.list();
@@ -3785,7 +3909,7 @@ class QBFMemoryScoresStore {
 // --------------------------------
 // Ephemeral two-pane scores panel (opened from the board's "show scores"):
 //   top — recent tournament games (fixed height; never shrinks for high scores)
-//   bot — high scores: top 5 per speed (3×5 = 15) + header + footer; grows as needed
+//   bot — high scores: top 3 per speed (3×3 = 9) + blank between speeds + header + footer
 class QBFScoresMorph extends Morph {
   constructor() {
     let ext = QBFScoresMorph.preferredExtent();
@@ -3800,7 +3924,7 @@ class QBFScoresMorph extends Morph {
     this.refresh();
   }
   static preferredExtent() {
-    /** Size that fits fixed recent games + high scores for 15 rows + header + footer. */
+    /** Size that fits fixed recent games + high scores for 9 rows + blanks + header + footer. */
     let lay = QBFScoresMorph.layoutMetrics(QBFScoresMorph.preferredWidth(), 0);
     return pt(lay.width, lay.minHeight);
   }
@@ -3808,23 +3932,26 @@ class QBFScoresMorph extends Morph {
     /**
      * Wide enough for a full monospace score row including the date column
      * ("Jul 25 12:00") at 11px Courier, plus pane insets and scrollbar gut.
-     * Trimmed by 6 character advances from the original 620 fit.
+     * Trimmed by 6 character advances from the original 620 fit, then 60px
+     * so the two text panes sit narrower in the scores panel.
      */
     let charW = 7; // ~advance of 11px Courier
-    return 620 - 6 * charW;
+    return 620 - 6 * charW - 60;
   }
   static layoutMetrics(widthIfAny, heightIfAny) {
     /**
      * Fixed recent-games block; high-scores viewport at least tall enough for
-     * header + 15 data rows + footer (lineHeight 14). If the given height is
-     * larger, high scores absorbs the extra — recent never shrinks.
+     * header + 9 data rows + 2 blanks between speeds + footer (lineHeight 14).
+     * Lines freed from the old top-5 layout are added to recent games.
      */
     let pad = 10;
     let labelGap = 18; // label row + gap before scroll
     let paneGap = 10;
     let lineH = 14;
-    let highLines = 1 + 15 + 1; // header + top5×3 speeds + footer
-    let recentScrollH = 220; // fixed
+    // Was 1+15+1=17 (top 5×3); now 1+9+2+1=13 (top 3×3 + blanks between groups).
+    let highLines = 1 + 9 + 2 + 1;
+    let linesFreed = 17 - highLines; // 4 → grow recent games by this many lines
+    let recentScrollH = 220 + linesFreed * lineH;
     let highNeeded = highLines * lineH + 24; // content + inset/padding
     let prefW = QBFScoresMorph.preferredWidth();
     let w = widthIfAny != null && widthIfAny > 0 ? Math.max(widthIfAny, prefW) : prefW;
@@ -3867,13 +3994,15 @@ class QBFScoresMorph extends Morph {
     this.recentScroll = this.addMorph(
       new TextPane(rect(pad, midTop + lay.labelGap, lay.innerW, lay.recentScrollH), rect(0, 0, 1, 1)),
     );
+    this.recentScroll.scrollBarWidth = 8; // half of ScrollPane's default 15 (~half-width gut)
+    this.recentScroll.setBounds(this.recentScroll.getBounds());
     this.recentScroll.setPaneMenu({ items: [], onSelect: function () {} });
     this.recentText = this.recentScroll.contentPane;
     qbfStyleScoreListText(this.recentText);
 
     let botTop = midTop + lay.labelGap + lay.recentScrollH + lay.paneGap;
     this.highScoresLabel = this.addMorph(
-      new QBFTextMorph(rect(pad, botTop, lay.innerW, 16), 'High scores (top 5 games per speed)'),
+      new QBFTextMorph(rect(pad, botTop, lay.innerW, 16), 'High scores (top 3 games per speed)'),
     );
     qbfStyleText(this.highScoresLabel, {
       fontSize: 12,
@@ -3884,6 +4013,8 @@ class QBFScoresMorph extends Morph {
     this.scoresScroll = this.addMorph(
       new TextPane(rect(pad, botTop + lay.labelGap, lay.innerW, lay.highScrollH), rect(0, 0, 1, 1)),
     );
+    this.scoresScroll.scrollBarWidth = 8;
+    this.scoresScroll.setBounds(this.scoresScroll.getBounds());
     this.scoresScroll.setPaneMenu({ items: [], onSelect: function () {} });
     this.scoresText = this.scoresScroll.contentPane;
     qbfStyleScoreListText(this.scoresText);
@@ -3964,7 +4095,7 @@ class QBFScoresMorph extends Morph {
     if (!list || list.length === 0) {
       this.setScoreListText(
         this.recentScroll,
-        '(no recent games yet)\n\nSomeone hits a speed to open Game #N;\nothers joining within 30 seconds share it.',
+        '(no recent games yet)\n\nSomeone hits a speed button to open Game #N;\nothers joining within 30 seconds share it.',
       );
       return;
     }
@@ -4033,7 +4164,7 @@ class QBFScoresMorph extends Morph {
     this.renderScoreLines(scores);
   }
   renderScoreLines(scores) {
-    // Defense in depth: never show rows older than the 30-day retention window,
+    // Defense in depth: never show rows older than the 7-day retention window,
     // even if prune has not run yet.
     let fresh = [];
     for (let i = 0; i < (scores || []).length; i++) {
@@ -4042,15 +4173,18 @@ class QBFScoresMorph extends Morph {
       if (!qbfScoreIsFresh(gs.gameDate)) continue;
       fresh.push(gs);
     }
-    let top = qbfTopScoresPerLevel(fresh, 5);
-    let footer = '\n      -- Scores are only retained for 30 days --';
+    let top = qbfTopScoresPerLevel(fresh, 3);
+    let footer = '\n      -- High scores are only retained for 7 days --';
     if (top.length === 0) {
       this.setScoreListText(
         this.scoresScroll,
         QBFGameScore.printTable([]) + '\n(no scores yet)' + footer,
       );
     } else {
-      this.setScoreListText(this.scoresScroll, QBFGameScore.printTable(top) + footer);
+      this.setScoreListText(
+        this.scoresScroll,
+        QBFGameScore.printTable(top, { blankBetweenSpeeds: true }) + footer,
+      );
     }
   }
   setScoreListText(scrollPane, text) {
@@ -4069,7 +4203,8 @@ class QBFScoresMorph extends Morph {
     let s = cp.shape;
     if (!s || !s.setText) return;
     let str = s.string != null ? s.string : '';
-    let w = Math.max(40, scrollPane.getBounds().width() - 15);
+    let barW = scrollPane.scrollBarWidth != null ? scrollPane.scrollBarWidth : 15;
+    let w = Math.max(40, scrollPane.getBounds().width() - barW);
     let minH = scrollPane.getBounds().height();
     cp.setBounds(rect(0, 0, w, minH));
     s.setText(str);

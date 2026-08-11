@@ -6365,7 +6365,8 @@ class ScrollPane extends Morph {
     let priorScrollPos = null;
     if (this.contentPane && this.scrollBar) priorScrollPos = this.getScrollPosition();
     super.setBounds(paneBounds);
-    let scrollW = 15;
+    // Default 15; panes may set scrollBarWidth (e.g. QBF scores uses half).
+    let scrollW = this.scrollBarWidth != null ? this.scrollBarWidth : 15;
     let contentW = paneBounds.width() - scrollW;
     let ht = paneBounds.height();
     // contentPane and scrollBar are children; bounds must be in pane-local coords
