@@ -72,7 +72,7 @@ startStepping(method, argIfAny, msTime) {
 }
 ```
 
-Only the replica that called `startStepping` runs the step methods — everyone else sees the results through the document. As a bonus, the per-step bookkeeping (each spec's `nextStepTime`, rewritten on every tick) lives on a local object, so it never generates a single Automerge operation.
+Only the replica that called `startStepping` runs the step methods — everyone else sees the results through the document. Keeping the schedule local also keeps its churn out of the document: each spec's `nextStepTime` is rewritten on every tick, but since the specs live behind a `$`-edge, those writes never become Automerge operations.
 
 **Per-session UI state.** Assigning to a `$`-name at the top level creates a local property _of the global object_ — a per-user global. We use one to root the session's UI state:
 
@@ -87,7 +87,7 @@ $uiState = {
 
 `$uiState` is re-created by `initUI()` at the start of every session, which is exactly the lifetime it should have. The world's `$keyboardFocus` and `$pointerFocus` work the same way.
 
-## The mechanism, briefly
+## The mechanism
 
 Recall from the previous note that freshly-created objects don't go straight into the Automerge document: they live in a local _shadow document_, and at the end of each transaction the GC _promotes_ the ones that have become reachable from the root. Local state turned out to be a small extension of that same machinery. The whole design reduces to one rule:
 
@@ -96,20 +96,19 @@ Recall from the previous note that freshly-created objects don't go straight int
 The GC's traversal is blind to `$`-edges — local property values are stored in a sidecar (`objectId × propertyName → value`), never in the heap entries it walks, so they can't leak into the Automerge document even by accident. At the end of each transaction, every shadow object is classified:
 
 - **Promote** — reachable from the root through ordinary edges only: it graduates into the Automerge document (persistent from now on — promotion is one-way, and it's transitive: promoting an object promotes everything it references through ordinary edges).
-- **Retain** — not persistently reachable, but reachable from someone's `$`-properties: it stays in the shadow document. This is a halo between frames.
+- **Retain** — not persistently reachable, but reachable from someone's `$`-properties: it stays in the shadow document. (E.g., a halo between frames.)
 - **Collect** — reachable from neither: reclaimed.
 
-Seen this way, a _fresh_ object is just an object whose persistence hasn't been established yet, and an _ephemeral_ object is one whose persistence never will be. They're the same kind of thing, handled by the same traversal — which is why local state fell out of the fresh-object optimization almost for free.
-
-One implementation detail worth calling out: object ids are shared across the document and the shadow document, and promotion preserves them. So references never need rewriting when an object is promoted, proxies remain valid, and — pleasingly — a promoted object _keeps its local properties_. A shared morph can have a `$halo`.
+One implementation detail worth calling out: object ids are shared across the document and the shadow document, and promotion preserves them. So when an object is promoted, references never need rewriting, proxies remain valid, and — conveniently — it _keeps its local properties_. (Indeed, the world itself is a shared, persistent morph — and my halo hangs off its `$submorphs`.)
 
 ## Gotchas
 
-- **Ephemerality is only as strong as the weakest incoming edge.** If any persistent, non-`$` property points at your per-user morph, the next GC will dutifully promote it into the shared document. We learned this the hard way: the world's `pointerFocus` property (which can point at a halo handle mid-drag) had to become `$pointerFocus`, or halos leaked into the document one drag at a time.
-- **Local state doesn't survive a reload** — that's by design, but it means anything rooted in `$`-properties needs a session-start initializer (`initUI()` in our system) or a create-on-first-use accessor (like `ephemeralSubmorphs()` above) to re-create it.
-- Writes to `$`-properties are **non-transactional**: they take effect immediately and don't roll back if the enclosing transaction fails. We haven't been bitten by this yet, but it's a seam we're keeping an eye on.
-- `$` was already a legal identifier character in JavaScript, so we've effectively taken it over. (We considered a more principled Symbol-keyed alternative, but the syntax was too heavy to live with.)
+- **The programmer must be careful to avoid accidentally promoting ephemeral objects.** If any persistent, non-`$` property references your local, ephemeral morph, the next GC will dutifully promote it into the shared document. This bit us early on: the world's `pointerFocus` property (which may reference a halo handle mid-drag) had to become `$pointerFocus`, or halos leaked into the document one drag at a time.
+- **Local state doesn't survive a reload** — that's by design, but it means anything rooted in `$`-properties must be initialized lazily (like `ephemeralSubmorphs()` above) or at the start of a session (via `initUI()`).
+- Writes to `$`-properties are **non-transactional**: they take effect immediately and don't roll back if the enclosing transaction fails. We haven't been bitten by this yet, but it's something we're keeping an eye on.
 
-## Future Work
+## Coming Up
 
-There's a third category of state hiding in this design. A user's _hand_ (the Morphic object that represents their cursor) should be **visible to others but persisted by no one** — you want to see where I'm pointing, but nobody wants 60 updates per second in the document, or my hand fossilized in it after I leave. Shared-but-ephemeral state wants a _presence channel_ rather than the Automerge document — and it turns out that local state is half of the solution. We've recently built this mechanism on top of Automerge Repo's ephemeral channels: while I drag a morph, my replica broadcasts the interaction's in-flight state to the other replicas, and each of them applies what it receives to the very same `$`-properties described in this note — so you can watch my drag live, even though the document only sees a single write (when I let go). More on that in an upcoming note.
+There's a third category of state hiding in this design: a user's _hand_ — the Morphic object that represents their cursor — should be **visible to others but persisted by no one**. You want to see where I'm pointing, but nobody needs my hand fossilized in the document after I leave. We've built a mechanism for this shared-but-ephemeral state (local state turned out to be half of the solution), and it deserves a note of its own.
+
+Next up, though: **performance**. Everything in LM — every morph, class, method, and captured closure variable — lives in an Automerge document, and a read from that document costs roughly a hundred times what a plain JavaScript property read costs. Can a system built this way run fast enough for authentic use? For a while the honest answer was no. The next note is about the optimizations that changed that.
