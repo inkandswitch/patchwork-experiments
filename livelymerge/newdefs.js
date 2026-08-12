@@ -4721,12 +4721,28 @@ class Morph {
      * corrupt the lerp mid-flight.
      * Optional whenDoneIfAny runs once the animation finishes (or immediately
      * if there is no stepping world).
+     *
+     * Translation-only flights (same width/height) use the ephemeral-transform
+     * overlay: per-step moves touch $transform/$bounds only; one
+     * commitEphemeralTransform at the end writes the document. Size-changing
+     * flights still go through setBounds (shape local bounds must update).
      */
+    this.animateFromToCancel();
     let n = nSteps > 0 ? nSteps : 1;
     let ms = msPerStep > 0 ? msPerStep : 25;
     let cur = this.getBounds();
     let start = this.animateFromToSnapshot(startPos, cur);
     let stop = this.animateFromToSnapshot(stopPos, cur);
+    let translationOnly =
+      Math.abs(start.w - stop.w) <= 0.5 && Math.abs(start.h - stop.h) <= 0.5;
+    let eph = false;
+    if (translationOnly && this.beginEphemeralTransform) {
+      // Drop any stale overlay so begin can install a fresh copy.
+      this.$transform = null;
+      this.$bounds = null;
+      this.beginEphemeralTransform();
+      eph = this.$transform != null;
+    }
     this.$animateFromToWhenDone = whenDoneIfAny || null;
     this.$animateFromTo = {
       x0: start.x,
@@ -4739,11 +4755,13 @@ class Morph {
       h1: stop.h,
       nSteps: n,
       step: 0,
+      eph: eph,
     };
     this.animateFromToApply(0);
     let world = this.world();
     if (!world || !world.startSteppingSpec) {
       this.animateFromToApply(1);
+      this.animateFromToCommitEph();
       this.$animateFromTo = null;
       let done = this.$animateFromToWhenDone;
       this.$animateFromToWhenDone = null;
@@ -4751,6 +4769,31 @@ class Morph {
       return;
     }
     this.startStepping('animateFromToStep', null, ms);
+  }
+  animateFromToCancel() {
+    /**
+     * Stop an in-flight animateFromTo and drop ephemeral overlays without
+     * committing (caller typically setBounds to the interrupt target next).
+     */
+    if (this.stopStepping) this.stopStepping('animateFromToStep');
+    let anim = this.$animateFromTo;
+    this.$animateFromTo = null;
+    this.$animateFromToWhenDone = null;
+    if (anim && anim.eph) {
+      this.$transform = null;
+      this.$bounds = null;
+    }
+  }
+  animateFromToCommitEph() {
+    /** Promote translation-only flight overlays into the document (one write). */
+    let anim = this.$animateFromTo;
+    if (!anim || !anim.eph) return;
+    anim.eph = false;
+    if (this.commitEphemeralTransform) this.commitEphemeralTransform();
+    else {
+      this.$transform = null;
+      this.$bounds = null;
+    }
   }
   animateFromToSnapshot(pos, fallbackBounds) {
     /** Plain {x,y,w,h} from a Point or Rectangle; never aliases live morph geometry. */
@@ -4772,14 +4815,25 @@ class Morph {
     let anim = this.$animateFromTo;
     if (!anim) return;
     let t = u < 0 ? 0 : u > 1 ? 1 : u;
-    this.setBounds(
-      rect(
-        anim.x0 + (anim.x1 - anim.x0) * t,
-        anim.y0 + (anim.y1 - anim.y0) * t,
-        anim.w0 + (anim.w1 - anim.w0) * t,
-        anim.h0 + (anim.h1 - anim.h0) * t,
-      ),
-    );
+    let x = anim.x0 + (anim.x1 - anim.x0) * t;
+    let y = anim.y0 + (anim.y1 - anim.y0) * t;
+    let w = anim.w0 + (anim.w1 - anim.w0) * t;
+    let h = anim.h0 + (anim.h1 - anim.h0) * t;
+    if (anim.eph) {
+      // Ephemeral during flight: translation + cached bounds only — no shape writes.
+      let tr = this.transform && this.transform.translation;
+      if (tr) {
+        tr.x = x;
+        tr.y = y;
+      }
+      let b = this.bounds;
+      if (b && b.topLeft) {
+        b.topLeft.x = x;
+        b.topLeft.y = y;
+      }
+      return;
+    }
+    this.setBounds(rect(x, y, w, h));
   }
   animateFromToStep() {
     let anim = this.$animateFromTo;
@@ -4792,6 +4846,7 @@ class Morph {
     if (u > 1) u = 1;
     this.animateFromToApply(u);
     if (anim.step >= anim.nSteps) {
+      this.animateFromToCommitEph();
       this.$animateFromTo = null;
       this.stopStepping('animateFromToStep');
       let done = this.$animateFromToWhenDone;

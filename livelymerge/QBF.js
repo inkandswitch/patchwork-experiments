@@ -1269,6 +1269,7 @@ class QBFMorph extends Morph {
     this.missedPointsBox.setText(String(-this.pointsMissed));
     this.totalScore -= value;
     if (this.totalScoreBox) this.totalScoreBox.setText(String(this.totalScore));
+    this.reportLiveScore();
   }
   lettersSlideOnRack() {
     // Leftward motion propagates along the rack wherever tiles touch.
@@ -2532,8 +2533,12 @@ class QBFMorph extends Morph {
     };
     let snap = (morph, to) => {
       if (!morph || !to) return;
-      if (morph.stopStepping) morph.stopStepping('animateFromToStep');
-      morph.$animateFromToWhenDone = null;
+      // Abandon mid-flight ephemeral overlays, then one document write.
+      if (morph.animateFromToCancel) morph.animateFromToCancel();
+      else {
+        if (morph.stopStepping) morph.stopStepping('animateFromToStep');
+        morph.$animateFromToWhenDone = null;
+      }
       morph.setBounds(to.copy());
     };
     let slide = (morph, to, whenDoneIfAny) => {
@@ -2545,9 +2550,14 @@ class QBFMorph extends Morph {
         if (whenDoneIfAny) whenDoneIfAny();
         return;
       }
-      if (morph.stopStepping) morph.stopStepping('animateFromToStep');
-      morph.$animateFromToWhenDone = null;
+      if (morph.animateFromToCancel) morph.animateFromToCancel();
+      else {
+        if (morph.stopStepping) morph.stopStepping('animateFromToStep');
+        morph.$animateFromToWhenDone = null;
+      }
       if (animate && morph.animateFromTo) {
+        // Translation-only: animateFromTo keeps flight on $transform/$bounds and
+        // commits once at the end (see Morph.animateFromTo).
         morph.animateFromTo(
           morph.getBounds().copy(),
           to.copy(),
@@ -2572,10 +2582,12 @@ class QBFMorph extends Morph {
       }
       return true;
     };
-    // Compact: unused speeds vanish immediately. Expand: leave speeds alone
-    // until the active-games list has finished sliding home.
+    // Compact: unused speeds park off-board (skip if already there — idle ticks
+    // re-enter sync often and must not re-setBounds every second).
     let hide = targets.hide || [];
-    for (let i = 0; i < hide.length; i++) snap(hide[i].morph, hide[i].to);
+    for (let i = 0; i < hide.length; i++) {
+      if (!near(hide[i].morph, hide[i].to)) snap(hide[i].morph, hide[i].to);
+    }
 
     let keep = targets.keep;
     let live = targets.live || [];
