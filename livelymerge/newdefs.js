@@ -10,10 +10,34 @@ $uiState = null;
 
 function setPointerLocation(p) {
   // Last known pointer position for THIS user (per-replica; never shared or persisted).
-  if ($uiState) $uiState.pointerLocation = p;
+  // Snapshot numbers into both $uiState and the world morph (when present) — confirms
+  // and fleeting menus read the world copy, which survives list-click → prompt flows.
+  if (p == null || p.x == null || p.y == null) return;
+  let x = p.x;
+  let y = p.y;
+  if ($uiState) {
+    $uiState.pointerX = x;
+    $uiState.pointerY = y;
+    $uiState.hasPointer = true;
+  }
+  let world =
+    typeof topLevelMorph !== 'undefined' && topLevelMorph
+      ? topLevelMorph
+      : typeof Lively !== 'undefined'
+        ? Lively
+        : null;
+  if (world && world.className === 'WorldMorph') world.$pointerLocation = pt(x, y);
 }
 function getPointerLocation() {
-  return $uiState ? $uiState.pointerLocation : null;
+  let world =
+    typeof topLevelMorph !== 'undefined' && topLevelMorph
+      ? topLevelMorph
+      : typeof Lively !== 'undefined'
+        ? Lively
+        : null;
+  if (world && world.$pointerLocation) return world.$pointerLocation;
+  if ($uiState && $uiState.hasPointer) return pt($uiState.pointerX, $uiState.pointerY);
+  return null;
 }
 
 // +-----------------------+
@@ -1043,7 +1067,9 @@ function initUI() {
     /** pointerId → { timer, pressPt, startPt, longClickMoveCancelPx? }; raw DOM events
      *  are not representable in the heap, so they live in window._lcEvts instead. */
     longClickByPointerId: {},
-    pointerLocation: null,
+    pointerX: 0,
+    pointerY: 0,
+    hasPointer: false,
     lastFrameTime: null,
     /** Morphs whose interaction overlays this user is broadcasting (see the
      *  "Ephemeral interaction streaming" section). */
@@ -3055,7 +3081,12 @@ class TextBox extends Shape {
       this.paste(latestPasteBufferItem()); // Paste
     }
     if (k == 'z') this.undoReplacement(); // Undo
-    if (k == 'g') this.redoReplacement(); // aGain
+    if (k == 'g') {
+      // aGain: continue a replace session when one is active; otherwise advance
+      // to the next occurrence of the find string (search browsers / selection).
+      if (this.$stringTakenOut != null && this.$stringPutIn != null) this.redoReplacement();
+      else this.findNextOccurrence();
+    }
     if (k == 'f') {
       // FIND — avoid an empty throwaway panel when there are no hits
       let term = this.selectedTextString();
@@ -3176,6 +3207,35 @@ class TextBox extends Shape {
     this.$selStop = this.charSpecForIndex(nextIx + this.$stringTakenOut.length);
     this.$duringTyping = false; // so we don't grow $stringPutIn
     this.paste(this.$stringPutIn);
+  }
+  findNextOccurrence() {
+    /**
+     * Select the next case-insensitive match of $findString (or the current
+     * selection, which becomes $findString). Used by ctrl-G when no replace
+     * session is active — e.g. advancing through hits in a search method pane.
+     */
+    this.ensureSelectionSpecs();
+    let needle = this.$findString;
+    if (needle == null || needle === '') {
+      needle = this.selectedTextString();
+      if (!needle) return;
+      this.$findString = needle;
+    }
+    let from = this.$selStop != null ? this.$selStop.strIx : 0;
+    let hay = ('' + this.string).toLowerCase();
+    let key = ('' + needle).toLowerCase();
+    let ix = hay.indexOf(key, from);
+    if (ix < 0) return;
+    this.setSelectionRange([ix, ix + needle.length - 1]);
+    this.revealSelectionInPane();
+  }
+  revealSelectionInPane() {
+    /** Scroll an owning TextPane so the current selection is visible. */
+    let morph = this.owner;
+    let pane = morph && morph.owner;
+    if (pane && typeof pane.onTextContentBoundsChanged === 'function') {
+      pane.onTextContentBoundsChanged(null);
+    }
   }
   render(ctx) {
     ctx.save();
@@ -3309,10 +3369,18 @@ class TextBox extends Shape {
     this.$selectedLineIndex = Math.floor((p.y - (this.topLeft.y + this.hang)) / this.lineHeight + 1);
   }
   selectSearchString(str) {
-    // Private method for use in search browsers
-    let ix = this.string.toLowerCase().indexOf(str.toLowerCase());
+    // Private method for use in search browsers — remembers the term for ctrl-G.
+    if (str == null || str === '') return;
+    this.$findString = '' + str;
+    // A find highlight is not a replace session; drop any prior edit's aGain state
+    // so ctrl-G advances search hits instead of replaying an old substitution.
+    this.$stringTakenOut = null;
+    this.$stringPutIn = null;
+    this.$duringTyping = false;
+    let ix = ('' + this.string).toLowerCase().indexOf(this.$findString.toLowerCase());
     if (ix < 0) return;
-    this.setSelectionRange([ix, ix + str.length - 1]);
+    this.setSelectionRange([ix, ix + this.$findString.length - 1]);
+    this.revealSelectionInPane();
   }
   selectWord(str, i1) {
     // Selection caret before char i1
@@ -3445,6 +3513,7 @@ class TextBox extends Shape {
     return (this.$selectedLineIndex = idx + 1);
   }
   setSelectionRange(pair) {
+    this.$selectedLineIndex = 0; // char selection, not list/menu line mode
     this.$selStart = this.charSpecForIndex(pair[0]);
     this.$selStop = this.charSpecForIndex(pair[1] + 1);
     // console.log('setSelectionRange() = ' + pair)
@@ -7294,17 +7363,20 @@ StylePane.prototype.CONTROL_INSET = 3;
 
 function fleetingMenuAnchorPt(fallbackPtIfAny) {
   /**
-   * World point for fleeting menus / confirms: prefer the pointer, nudged right
-   * so the same click that opened the menu does not hit the first item.
+   * World point for fleeting menus / confirms: prefer the pointer (WorldMorph
+   * `$pointerLocation`), nudged a couple of pixels right so the opening click
+   * does not land on the first item.
    */
   let pos = getPointerLocation();
-  if (pos) return pos.addPt(pt(28, 4));
-  return fallbackPtIfAny != null ? fallbackPtIfAny : pt(120, 120);
+  if (pos) return pt(pos.x + 3, pos.y + 2);
+  if (fallbackPtIfAny != null) return pt(fallbackPtIfAny.x, fallbackPtIfAny.y);
+  return pt(120, 120);
 }
-function promptConfirmMenu(world, pt, titleLine, yesLine, noLine, onResult) {
+function promptConfirmMenu(world, atPt, titleLine, yesLine, noLine, onResult) {
   /** Fleeting yes/no confirm; title line is not selectable. */
+  let anchor = fleetingMenuAnchorPt(atPt);
   let menu = new MenuMorph(
-    rect(pt.x, pt.y, Math.max(200, titleLine.length * 7), 112),
+    rect(anchor.x, anchor.y, Math.max(200, titleLine.length * 7), 112),
     [titleLine, yesLine, noLine],
     (item) => {
       menu.remove();
@@ -7317,22 +7389,34 @@ function promptConfirmMenu(world, pt, titleLine, yesLine, noLine, onResult) {
   menu.isFleetingMenu = true;
   // isFleetingMenu puts it in the top zBand, so no beTopMorph can bury this dialog.
   world.addEphemeralMorph(menu);
+  // setList during construction can disturb bounds; pin to the anchor in world space.
+  menu.setBounds(
+    rect(anchor.x, anchor.y, menu.getBounds().width(), menu.getBounds().height()),
+  );
   if (world.promote) world.promote(menu);
 }
-function promptOkToCancelEditsMenu(world, pt, onResult) {
+function promptOkToCancelEditsMenu(world, atPt, onResult) {
   /** Menu: yes; cancel = discard edits & continue; NO = keep edits (abort). Title line acts like NO. */
   let titleLine = 'OK to cancel edits?';
   let okLine = '  yes; cancel';
   let keepLine = '  NO; keep the changes';
-  let menu = new MenuMorph(rect(pt.x, pt.y, 160, 112), [titleLine, okLine, keepLine], (item) => {
-    menu.remove();
-    onResult(item === okLine);
-  });
+  let anchor = fleetingMenuAnchorPt(atPt);
+  let menu = new MenuMorph(
+    rect(anchor.x, anchor.y, 160, 112),
+    [titleLine, okLine, keepLine],
+    (item) => {
+      menu.remove();
+      onResult(item === okLine);
+    },
+  );
   let bg = Color.yellow;
   menu.shape.boxColor = bg;
   menu.shape.fill = bg;
   menu.isFleetingMenu = true;
   world.addEphemeralMorph(menu);
+  menu.setBounds(
+    rect(anchor.x, anchor.y, menu.getBounds().width(), menu.getBounds().height()),
+  );
   if (world.promote) world.promote(menu);
 }
 //  PanelTitleBar
@@ -8421,6 +8505,12 @@ class MethodListPanel extends PanelMorph {
         this._occurrenceLastSpec = spec;
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
+        // List click leaves keyboard focus on the methods list (which ignores
+        // ctrl-G). Put focus on the method text so find-next / edits work.
+        let world = this.world();
+        if (world && this.printPane.contentPane) {
+          world.setKeyboardFocus(this.printPane.contentPane);
+        }
         if (shiftKey) {
           // A spawned panel has no owning class, so it gets the self-contained form.
           let spawnText = fragmentClassName
@@ -8549,6 +8639,10 @@ class ErrorStackPanel extends MethodListPanel {
     if (index > 0 && this.printPane.contentPane && this.printPane.contentPane.shape) {
       let hl = stackFrameHighlightName(this.stackFrames[index - 1]);
       if (hl) this.printPane.contentPane.shape.selectSearchString(hl);
+    }
+    let world = this.world();
+    if (world && this.printPane.contentPane) {
+      world.setKeyboardFocus(this.printPane.contentPane);
     }
   }
   static new(...args) {
@@ -9007,7 +9101,7 @@ class HandMorph extends Morph {
     // Per-hand last point for move deltas — must not share the world pointerLocation
     // (WorldMorph updates that before/after hand moves).
     this.$handPointerLocation = location ? location.copy() : this.location();
-    setPointerLocation(this.$handPointerLocation);
+    // Do not seed global pointerLocation from hand construction (often world origin).
   }
   dropMorph(p, evt) {
     let worldPt = p ? p : this.location();
@@ -9731,9 +9825,9 @@ class WorldMorph extends Morph {
     this.$stepList = [];
     this.$pointerFocus = null;
     this.$keyboardFocus = null;
+    this.$pointerLocation = null; // last pointer in world coords; see setPointerLocation
     this.$shiftKeyDown = false; // maintained here
     this.hands = null;
-    setPointerLocation(bounds.topLeft);
   }
   addHand(handMorph) {
     // maybe should check for duplicate adds
@@ -10239,7 +10333,7 @@ class WorldMorph extends Morph {
     ctrl-D: evaluate the current selection (more about scope etc)
     ctrl-P: paste the result of evaluating the current selection
     ctrl-F: search for the current selection and browse occurrences
-    ctrl-G: (think 'aGain') do another similar replacement
+    ctrl-G: (think 'aGain') next search hit in this text, or another similar replacement
     ctrl-P: paste the result of evaluating the current selection
     ctrl-S: evaluate the entire string (ie 'save' in browser method pane)
     ctrl-Z: should undo most edits, and even a ctrl-P
