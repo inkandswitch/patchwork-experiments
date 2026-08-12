@@ -263,6 +263,12 @@ export function $accessor(get: TestProxy | null, set: TestProxy | null): Accesso
   return acc;
 }
 
+function ownUserPropertyKeys(obj: TestProxy): string[] {
+  const entry = obj.$unwrapped as Obj;
+  const ephemeral = ephemeralProps.get(entry.$id);
+  return [...lmOwnUserPropertyKeys(entry), ...(ephemeral ? Object.keys(ephemeral) : [])];
+}
+
 const $Object = Object.assign(function Object() {
   return $obj({});
 }, {
@@ -270,14 +276,14 @@ const $Object = Object.assign(function Object() {
     return $obj({}, proto);
   },
   keys(obj: TestProxy) {
-    return $arr(lmOwnUserPropertyKeys(obj.$unwrapped as Obj));
+    return $arr(ownUserPropertyKeys(obj));
   },
   getPrototypeOf(obj: TestProxy) {
     const o = obj.$unwrapped as Obj;
     return o.$protoId ? (deserialize(objectTable[o.$protoId]) as TestProxy) : null;
   },
   getOwnPropertyNames(obj: TestProxy) {
-    return $arr(lmOwnUserPropertyKeys(obj.$unwrapped as Obj));
+    return $arr(ownUserPropertyKeys(obj));
   },
 });
 

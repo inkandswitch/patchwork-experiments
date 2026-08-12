@@ -400,7 +400,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   }
 
   function ownUserPropertyKeys(obj: Obj): Proxy {
-    return $arr(lmOwnUserPropertyKeys(obj));
+    return $arr([...lmOwnUserPropertyKeys(obj), ...ephemeralPropKeys(strVal(obj.$id))]);
   }
 
   function lmHasOwn(obj: Obj, prop: string): boolean {
@@ -554,6 +554,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       if (Object.keys(props).length === 0) ephemeralProps.delete(id);
     }
     return true;
+  }
+
+  function hasEphemeralProp(id: string, prop: string): boolean {
+    const props = ephemeralProps.get(id);
+    return props !== undefined && Object.hasOwn(props, prop);
+  }
+
+  function ephemeralPropKeys(id: string): string[] {
+    const props = ephemeralProps.get(id);
+    return props ? Object.keys(props) : [];
   }
 
   // -- Serialization / write barrier --
@@ -1902,14 +1912,27 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (objUnwrapped) {
       if (isJsGlobalObj(objUnwrapped)) {
         const target = getJsGlobalTarget(liveHeapObjRead(objUnwrapped));
-        return $arr(isJsGlobalTarget(target) ? Object.keys(target) : []);
+        return $arr([
+          ...(isJsGlobalTarget(target) ? Object.keys(target) : []),
+          ...ephemeralPropKeys(strVal(objUnwrapped.$id)),
+        ]);
       }
       return ownUserPropertyKeys(objUnwrapped);
     }
     const arrUnwrapped = unwrapLmArr(obj);
-    if (arrUnwrapped) return $arr(lmArrayIndexKeys(arrUnwrapped));
+    if (arrUnwrapped) {
+      return $arr([
+        ...lmArrayIndexKeys(arrUnwrapped),
+        ...ephemeralPropKeys(strVal(arrUnwrapped.$id)),
+      ]);
+    }
     const funUnwrapped = unwrapLmFun(obj);
-    if (funUnwrapped) return $arr(lmOwnUserPropertyKeys(liveHeapFunRead(funUnwrapped)));
+    if (funUnwrapped) {
+      return $arr([
+        ...lmOwnUserPropertyKeys(liveHeapFunRead(funUnwrapped)),
+        ...ephemeralPropKeys(strVal(funUnwrapped.$id)),
+      ]);
+    }
     return $arr(Object.keys(obj as object));
   };
 
@@ -1925,14 +1948,20 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     const unwrapped = unwrapLmObj(obj);
     if (unwrapped) {
       if (typeof prop !== 'string') return false;
+      if (lmIsEphemeralKey(prop)) return hasEphemeralProp(strVal(unwrapped.$id), prop);
       if (isJsGlobalObj(unwrapped)) {
         const target = getJsGlobalTarget(liveHeapObjRead(unwrapped));
         return isJsGlobalTarget(target) && Object.hasOwn(target, prop);
       }
       return lmHasOwn(unwrapped, prop);
     }
+    const arrUnwrapped = unwrapLmArr(obj);
+    if (arrUnwrapped && typeof prop === 'string' && lmIsEphemeralKey(prop)) {
+      return hasEphemeralProp(strVal(arrUnwrapped.$id), prop);
+    }
     const funUnwrapped = unwrapLmFun(obj);
     if (funUnwrapped && typeof prop === 'string') {
+      if (lmIsEphemeralKey(prop)) return hasEphemeralProp(strVal(funUnwrapped.$id), prop);
       return lmHasOwn(liveHeapFunRead(funUnwrapped) as unknown as Obj, prop);
     }
     return Object.hasOwn(obj as object, prop);
@@ -1943,14 +1972,28 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (objUnwrapped) {
       if (isJsGlobalObj(objUnwrapped)) {
         const target = getJsGlobalTarget(liveHeapObjRead(objUnwrapped));
-        return $arr(isJsGlobalTarget(target) ? Object.getOwnPropertyNames(target) : []);
+        return $arr([
+          ...(isJsGlobalTarget(target) ? Object.getOwnPropertyNames(target) : []),
+          ...ephemeralPropKeys(strVal(objUnwrapped.$id)),
+        ]);
       }
       return ownUserPropertyKeys(objUnwrapped);
     }
     const arrUnwrapped = unwrapLmArr(obj);
-    if (arrUnwrapped) return $arr([...lmArrayIndexKeys(arrUnwrapped), 'length']);
+    if (arrUnwrapped) {
+      return $arr([
+        ...lmArrayIndexKeys(arrUnwrapped),
+        'length',
+        ...ephemeralPropKeys(strVal(arrUnwrapped.$id)),
+      ]);
+    }
     const funUnwrapped = unwrapLmFun(obj);
-    if (funUnwrapped) return $arr(lmOwnUserPropertyKeys(liveHeapFunRead(funUnwrapped)));
+    if (funUnwrapped) {
+      return $arr([
+        ...lmOwnUserPropertyKeys(liveHeapFunRead(funUnwrapped)),
+        ...ephemeralPropKeys(strVal(funUnwrapped.$id)),
+      ]);
+    }
     return $arr(Object.getOwnPropertyNames(obj as object));
   };
 
@@ -1959,8 +2002,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
    * getter/setter's source for display (reading `proto[name]` would invoke it). */
   $Object.getOwnPropertyDescriptor = function (obj: unknown, prop: PropertyKey) {
     if (typeof prop !== 'string') return undefined;
-    const target = unwrapLmObj(obj) ?? unwrapLmFun(obj);
+    const target = unwrapLmObj(obj) ?? unwrapLmArr(obj) ?? unwrapLmFun(obj);
     if (!target) return undefined;
+    if (lmIsEphemeralKey(prop)) {
+      const id = strVal(target.$id);
+      if (!hasEphemeralProp(id, prop)) return undefined;
+      return $obj({ value: readEphemeralProp(id, prop) as unknown as Val });
+    }
+    if (isArr(target)) return undefined;
     if (isObj(target) && isJsGlobalObj(target)) return undefined;
     const entry = lookupHeapEntryRead(target.$id) ?? target;
     const key = lmUserKey(prop);

@@ -65,10 +65,10 @@ describe('ephemeral ($-prefixed) properties', () => {
     expect(rt.eval(`p.$tmp`)).toBe(undefined);
   });
 
-  it('are invisible to Object.keys', () => {
+  it('are visible to Object.keys, after the persistent keys', () => {
     const { rt } = makeRuntime();
     const keys = rt.eval(`o = { a: 1, $b: 2 }; Object.keys(o).join(',')`);
-    expect(keys).toBe('a');
+    expect(keys).toBe('a,$b');
   });
 });
 

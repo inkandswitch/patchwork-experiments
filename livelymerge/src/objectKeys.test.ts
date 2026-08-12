@@ -74,6 +74,88 @@ describe('Object.keys / values / entries', () => {
     expect(arrayElements(rt, 'Object.keys(Object.keys({ x: 1 }))')).toEqual(['0']);
   });
 
+  it('Object.keys includes ephemeral $-properties, after persistent keys', () => {
+    const code = `
+      const o = { x: 1, y: 2 };
+      o.$halo = 42;
+      return Object.keys(o);
+    `;
+    const arr = rt.eval(code) as { length: number; [i: number]: unknown };
+    expect([arr[0], arr[1], arr[2]]).toEqual(['x', 'y', '$halo']);
+  });
+
+  it('Object.values / entries include ephemeral $-property values', () => {
+    const code = `
+      const o = { x: 1 };
+      o.$halo = 42;
+      return Object.values(o);
+    `;
+    const arr = rt.eval(code) as { length: number; [i: number]: unknown };
+    expect([arr[0], arr[1]]).toEqual([1, 42]);
+    const entry = rt.eval(`
+      const o = { x: 1 };
+      o.$halo = 42;
+      return Object.entries(o)[1];
+    `) as { [i: number]: unknown };
+    expect([entry[0], entry[1]]).toEqual(['$halo', 42]);
+  });
+
+  it('Object.keys on the global object includes top-level $-vars', () => {
+    rt.eval('$inspectorScratch = 7');
+    const keys = arrayElements(rt, 'Object.keys($global)');
+    expect(keys).toContain('$inspectorScratch');
+  });
+
+  it('Object.keys / getOwnPropertyNames on an array include $-properties', () => {
+    const keys = rt.eval(`
+      const a = [10, 20];
+      a.$sel = true;
+      return Object.keys(a);
+    `) as { length: number; [i: number]: unknown };
+    expect([keys[0], keys[1], keys[2]]).toEqual(['0', '1', '$sel']);
+    const names = rt.eval(`
+      const a = [10, 20];
+      a.$sel = true;
+      return Object.getOwnPropertyNames(a);
+    `) as { length: number; [i: number]: unknown };
+    expect([names[0], names[1], names[2], names[3]]).toEqual(['0', '1', 'length', '$sel']);
+  });
+
+  it('Object.keys on a function includes $-properties', () => {
+    const keys = rt.eval(`
+      const f = () => 1;
+      f.$meta = 'm';
+      return Object.keys(f);
+    `) as { length: number; [i: number]: unknown };
+    expect(keys[keys.length - 1]).toBe('$meta');
+  });
+
+  it('Object.hasOwn sees ephemeral $-properties', () => {
+    expect(
+      rt.eval(`
+        const o = {};
+        o.$halo = 1;
+        return Object.hasOwn(o, '$halo');
+      `),
+    ).toBe(true);
+    expect(rt.eval(`return Object.hasOwn({}, '$halo');`)).toBe(false);
+  });
+
+  it('Object.getOwnPropertyDescriptor reports ephemeral $-properties as data slots', () => {
+    expect(
+      rt.eval(`
+        const o = {};
+        o.$x = 7;
+        return Object.getOwnPropertyDescriptor(o, '$x').value;
+      `),
+    ).toBe(7);
+    expect(rt.eval(`return Object.getOwnPropertyDescriptor({}, '$x');`)).toBe(undefined);
+  });
+
+  it('proxy-protocol keys never show up in Object.keys', () => {
+    expect(arrayElements(rt, 'Object.keys({})')).toEqual([]);
+  });
+
   it('for..of over Object.entries on an object works', () => {
     const code = `
       const out = [];
