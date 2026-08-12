@@ -294,6 +294,98 @@ function fragmentForSpec(spec) {
   let src = method.toString();
   return isLegacyFunctionShow(src) ? null : src;
 }
+function isWatchableMethodSpec(spec) {
+  // True for method specs we can poll for remote edits (not bare class names).
+  let key = methodSpecKey(spec);
+  if (!key || key.includes('[')) return false;
+  let parts = key.split('.');
+  if (parts.length == 1) {
+    let v = $global[parts[0]];
+    return typeof v == 'function' && !isClass(v);
+  }
+  if (parts.length == 2 && parts[1] === 'constructor') return isClass($global[parts[0]]);
+  if (parts.length == 2) return typeof methodFromSpec(key) == 'function';
+  if (parts.length == 3 && parts[1] == 'prototype') return methodFromSpec(key) != null;
+  return false;
+}
+function liveMethodPaneTextForSpec(spec) {
+  // Pane text the system browser / method-list would load for `spec` right now.
+  let key = methodSpecKey(spec);
+  if (!key) return null;
+  let fragment = fragmentForSpec(key);
+  if (fragment != null) return fragment;
+  let method = methodFromSpec(key);
+  if (typeof method != 'function') return null;
+  return key + ' = ' + method.toString();
+}
+function liveMethodPaneTextForWatchedSpec(spec, asReplaceMethodCall) {
+  let text = liveMethodPaneTextForSpec(spec);
+  if (text == null) return null;
+  if (asReplaceMethodCall && !looksLikeLegacyMethodText(text)) {
+    let className = methodSpecKey(spec).split('.')[0];
+    return replaceMethodCallString(className, text);
+  }
+  return text;
+}
+function fragmentSaveClassNameOf(textBox) {
+  /** Class name used to wrap a method-pane fragment for save, or null. */
+  if (!textBox) return null;
+  // Prefer a stored getter when present (system browser / method-list set this).
+  // Check both spellings: older panes used the non-$ slot (like menuActions);
+  // a brief experiment also wrote the $-prefixed form.
+  let fn = textBox.fragmentSaveClassName || textBox.$fragmentSaveClassName;
+  if (typeof fn == 'function') {
+    let name = fn();
+    if (name) return name;
+  }
+  // Fallback: walk TextBox → TextMorph → TextPane → owning panel.
+  let m = textBox.morph;
+  while (m) {
+    if (typeof m.selectedClassName == 'function') {
+      let n = m.selectedClassName();
+      if (n) return n;
+    }
+    if (m._fragmentClassName) return m._fragmentClassName;
+    m = m.owner;
+  }
+  return null;
+}
+function scheduleFragmentMethodSave(textBox, className, savedFragment) {
+  /**
+   * Install a class-fragment save in a *fresh* Automerge change (via setTimeout),
+   * not inside the animation-frame change that handled the key/menu event.
+   *
+   * Why: ctrl-S runs during onFrame's runtime.change(). If that frame later aborts
+   * (GC promotion / other work), document writes from replaceMethod roll back, but
+   * ephemeral UI state such as TextPane._savedTextSnapshot can survive — so the
+   * pane looks "saved" (or conflict-red) while live code is unchanged. Doing the
+   * install alone in a follow-up change keeps method installs off that risk path.
+   */
+  let expected = savedFragment != null ? String(savedFragment) : '';
+  let callStr = replaceMethodCallString(className, expected);
+  let spec = fragmentChangeSpec(className, expected);
+  setTimeout(() => {
+    try {
+      if (!textBox || textBox.string !== expected) return; // user edited again
+      noteMethodChanges(callStr);
+      evaluateWithErrorRecovery(
+        () => replaceMethod(className, expected),
+        'save method ' + className,
+      );
+      if (_evalJustFailed) return;
+      let live = liveMethodPaneTextForSpec(spec);
+      if (live !== expected) {
+        console.log(
+          'method save did not stick: ' + spec + ' (dirty left set; live source unchanged)',
+        );
+        return;
+      }
+      if (typeof textBox.onTextSaved === 'function') textBox.onTextSaved(textBox);
+    } catch (e) {
+      console.log('method save failed', e);
+    }
+  }, 0);
+}
 function deleteAccessorHalf(className, kind, name) {
   // Delete one half of an accessor slot ('get'/'set'); the surviving half is
   // re-installed from its fragment source.
@@ -3108,19 +3200,21 @@ class TextBox extends Shape {
       // SAVE (eval all)
       if (this.localStorageKey) {
         storageSetItem(this.localStorageKey, this.string);
+        if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
       } else {
-        // The browser method pane shows bare class fragments; wrap them in a
-        // self-contained replaceMethod(...) call for eval and change tracking.
-        let fragmentClassName =
-          typeof this.fragmentSaveClassName == 'function' ? this.fragmentSaveClassName() : null;
+        // Browser method panes show bare class fragments. Defer replaceMethod to a
+        // fresh change (see scheduleFragmentMethodSave) so an animation-frame abort
+        // cannot roll back the install while ephemeral dirty/snapshot state sticks.
+        let fragmentClassName = fragmentSaveClassNameOf(this);
         let str = this.string;
         if (fragmentClassName && !looksLikeLegacyMethodText(str)) {
-          str = replaceMethodCallString(fragmentClassName, str);
+          scheduleFragmentMethodSave(this, fragmentClassName, str);
+        } else {
+          noteMethodChanges(str);
+          this.wsEval.call(this.workspaceObj, str);
+          if (!_evalJustFailed && typeof this.onTextSaved === 'function') this.onTextSaved(this);
         }
-        noteMethodChanges(str);
-        this.wsEval.call(this.workspaceObj, str);
       }
-      if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
     }
     if (k == 'd') {
       // DO IT
@@ -6779,6 +6873,22 @@ class TextPane extends ScrollPane {
   onTextBoundsChanged(priorScrollPos) {
     this.onTextContentBoundsChanged(priorScrollPos, false);
   }
+  renderOn(ctx) {
+    // ScrollPane clips content; draw the conflict frame after so it isn't clipped away.
+    super.renderOn(ctx);
+    if (!this.$methodConflictHighlight) return;
+    let bnds = this.shape.getBounds();
+    ctx.save();
+    ctx.strokeStyle = Color.red.fillStyle;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(
+      bnds.topLeft.x + 2,
+      bnds.topLeft.y + 2,
+      Math.max(0, bnds.extent.x - 4),
+      Math.max(0, bnds.extent.y - 4),
+    );
+    ctx.restore();
+  }
   setLocalStorageKey(key) {
     this.contentPane.shape.setLocalStorageKey(key);
   }
@@ -7783,6 +7893,85 @@ class PanelMorph extends Morph {
   promptOkToCancelEdits(onResult) {
     promptOkToCancelEditsMenu(this.world(), fleetingMenuAnchorPt(this.menuAnchorPt(150)), onResult);
   }
+  ifValueChanges(valueExpression, compareTo, funcToDo) {
+    /**
+     * Every 2s, compute the current value and compare it to `compareTo`.
+     * `valueExpression` / `compareTo` may each be a string (eval'd in LM scope)
+     * or a zero-arg function. Calls `funcToDo(differs)` each tick.
+     * Comparing a method pane against its `_savedTextSnapshot` means a
+     * successful ctrl-S clears the diff with no save-path hooks.
+     */
+    this.stopValueChangeWatch();
+    this.$valueWatchExpr = valueExpression;
+    this.$valueWatchCompare = compareTo;
+    this.$valueWatchFn = funcToDo;
+    this.ensureValueChangeStepping();
+    this.tickValueChangeWatch();
+  }
+  stopValueChangeWatch() {
+    this.$valueWatchExpr = null;
+    this.$valueWatchCompare = null;
+    this.$valueWatchFn = null;
+    if (this.$valueWatchPane) {
+      this.highlightMethodConflict(this.$valueWatchPane, false);
+      this.$valueWatchPane = null;
+    }
+    if (this.isStepping && this.isStepping('tickValueChangeWatch'))
+      this.stopStepping('tickValueChangeWatch');
+  }
+  ensureValueChangeStepping() {
+    if (this.$valueWatchExpr == null) return;
+    if (this.isStepping && this.isStepping('tickValueChangeWatch')) return;
+    let world = this.world();
+    if (!world || !world.startSteppingSpec) {
+      let self = this;
+      if (!self.$valueWatchStepRetry) {
+        self.$valueWatchStepRetry = true;
+        setTimeout(() => {
+          self.$valueWatchStepRetry = false;
+          self.ensureValueChangeStepping();
+        }, 0);
+      }
+      return;
+    }
+    this.startStepping('tickValueChangeWatch', null, 2000);
+  }
+  tickValueChangeWatch() {
+    if (this.$valueWatchExpr == null || typeof this.$valueWatchFn != 'function') return;
+    let live = this.valueWatchEval(this.$valueWatchExpr);
+    let compare = this.valueWatchEval(this.$valueWatchCompare);
+    this.$valueWatchFn.call(this, compare != null && live !== compare);
+  }
+  valueWatchEval(exprOrFn) {
+    try {
+      if (typeof exprOrFn == 'function') return exprOrFn.call(this);
+      if (typeof exprOrFn == 'string') return eval(exprOrFn);
+    } catch (e) {
+      return null;
+    }
+    return exprOrFn;
+  }
+  watchMethodAgainstPane(spec, textPane, asReplaceMethodCall) {
+    /** Convenience: red-frame `textPane` when live method text ≠ its saved snapshot. */
+    this.stopValueChangeWatch();
+    if (!textPane || !spec || !isWatchableMethodSpec(spec)) return;
+    let key = methodSpecKey(spec);
+    let asCall = !!asReplaceMethodCall;
+    let pane = textPane;
+    this.ifValueChanges(
+      () => liveMethodPaneTextForWatchedSpec(key, asCall),
+      () => pane._savedTextSnapshot,
+      (differs) => this.highlightMethodConflict(pane, differs),
+    );
+    this.$valueWatchPane = pane;
+  }
+  highlightMethodConflict(pane, on) {
+    if (!pane) return;
+    let want = !!on;
+    if (!!pane.$methodConflictHighlight === want) return;
+    pane.$methodConflictHighlight = want;
+    pane.changed();
+  }
   rectForSpawnedPanel(insetPx, minW, minH) {
     /** Bounds for a new world-level panel offset from this one (uses world coords; works when nested). */
     let ins = insetPx != null ? insetPx : 28;
@@ -7901,11 +8090,24 @@ class MethodPanel extends PanelMorph {
     let panelBounds = this.paneLayoutBounds();
     this.textPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.0, 1.0, 1.0)));
     this.textPane.setText(string);
-    if (optionalTitle.startsWith('localStorage.'))
+    if (optionalTitle && optionalTitle.startsWith('localStorage.'))
       this.textPane.setLocalStorageKey(optionalTitle.slice(13));
     this.setPanelTitle(optionalTitle ? optionalTitle : 'Text Panel');
     this.layoutChrome();
     this.relayoutContentPanes();
+    this.maybeWatchMethodConflict(string, optionalTitle);
+  }
+  maybeWatchMethodConflict(string, optionalTitle) {
+    if (optionalTitle && String(optionalTitle).startsWith('localStorage.')) return;
+    let text = string != null ? String(string) : '';
+    let watchSpec = null;
+    let asCall = !!parseReplaceMethodCallString(text);
+    if (optionalTitle && isWatchableMethodSpec(optionalTitle)) watchSpec = methodSpecKey(optionalTitle);
+    else if (asCall) {
+      let parsed = parseReplaceMethodCallString(text);
+      if (parsed) watchSpec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
+    }
+    if (watchSpec) this.watchMethodAgainstPane(watchSpec, this.textPane, asCall);
   }
   static new(...args) {
     return new this(...args);
@@ -7945,6 +8147,7 @@ class BrowserPanel extends PanelMorph {
     if (!deleteMethodWithSpec(spec)) return;
     this.selectedMethod = null;
     if (this.methodPane) this.methodPane.setText('Method text', { force: true });
+    this.stopValueChangeWatch();
     this.refreshMessageListForSelectedClass();
     this.updateBrowserTitle();
   }
@@ -7979,6 +8182,7 @@ class BrowserPanel extends PanelMorph {
         this.selectedMethod = null;
         this.updateBrowserTitle();
         this.messagePane.setList(this.messageListForSelection(classSelection));
+        this.stopValueChangeWatch();
       };
       if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
         if (this.selectedClass != null && classSelection === this.selectedClass) return;
@@ -8032,6 +8236,7 @@ class BrowserPanel extends PanelMorph {
             headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
         }
         this.methodPane.setText(headerString + methodString, { force: true });
+        this.watchMethodAgainstPane(this.selectedMethodSpec(), this.methodPane);
       };
       if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
         if (this.selectedMethod != null && methodSelection === this.selectedMethod) return;
@@ -8055,6 +8260,8 @@ class BrowserPanel extends PanelMorph {
     this.methodPane.setText('Method text');
     // Class fragments in this pane save via replaceMethod (see the ctrl-S handler);
     // the globals pane and legacy '<spec> = function ...' text keep plain eval.
+    // Non-$ slot: same pattern as MenuMorph.menuActions — functions on ephemeral
+    // panes live in the shadow heap and must not ride the $-prop sidecar alone.
     this.methodPane.contentPane.shape.fragmentSaveClassName = () => this.selectedClassName();
   }
   methodCopyText() {
@@ -8458,6 +8665,7 @@ class MethodListPanel extends PanelMorph {
     if (this.printPane) this.printPane.setText('Selected method', { force: true });
     this._occurrenceLastSpec = null;
     this._fragmentClassName = null;
+    this.stopValueChangeWatch();
   }
   exportMethodCopyToOSPaste() {
     let exportText = this.methodCopyText();
@@ -8501,8 +8709,13 @@ class MethodListPanel extends PanelMorph {
           }
         }
         this._fragmentClassName = fragmentClassName;
-        this.printPane.setText(preamble + methodString, { force: true });
+        let loaded = preamble + methodString;
+        this.printPane.setText(loaded, { force: true });
         this._occurrenceLastSpec = spec;
+        // Search / occurrence lists only — not recent-changes (dated specs) or stacks.
+        if (!this.recents && this.className !== 'ErrorStackPanel' && !spec.includes('['))
+          this.watchMethodAgainstPane(spec, this.printPane);
+        else this.stopValueChangeWatch();
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
         // List click leaves keyboard focus on the methods list (which ignores
