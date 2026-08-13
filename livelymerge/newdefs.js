@@ -2041,11 +2041,11 @@ class Pen {
   withBug(emoji) {
     let morph;
     if (bugImage && bugImage.className === 'EmojiMorph') {
+      // bugImage is authored at 64px; half-scale matches the old on-screen size.
       morph = new EmojiMorph(bugImage._emojiName, bugImage._emojiSize);
-      //morph.transform.scale = pt(0.5, 0.5);
+      morph.transform.scale = pt(0.5, 0.5);
     } else {
       morph = new EmojiMorph(emoji || 'LADYBUG', 32);
-      //morph.transform.scale = pt(0.5, 0.5);
     }
     morph.moveTo(this.location);
     morph.setHeading(this.heading);
@@ -4227,23 +4227,36 @@ class Morph {
     return unionPts(corners.map((c) => this.globalize(c)));
   }
   bringTopLevelPanelToFrontIfNeeded(p) {
-    // If this morph is inside a buried top-level PanelMorph, bring that panel
-    // to front and consume the click (caller should return true).
+    /**
+     * If this morph is inside a buried top-level PanelMorph, bring that panel
+     * to front. Only a title-bar press consumes the click (caller returns true
+     * and skips content). Content presses still raise the panel but return
+     * false so tiles, buttons, and readouts act on the same tap — needed for
+     * touch / iPad play and for any control that is not on the title bar.
+     * p is in this morph's owner coordinates.
+     */
     let world = this.world();
+    if (!world) return false;
     let topLevel = this;
     while (topLevel.owner && topLevel.owner !== world) topLevel = topLevel.owner;
     if (topLevel.className != 'PanelMorph' || topLevel.owner !== world) return false;
-    // Simpler/stronger policy: if the panel is not frontmost, first click only
-    // raises it; second click can act on inner controls. Frontmost within the
-    // panel's zBand: persistent and ephemeral siblings interleave by zIndex, and
-    // fleeting menus / halos above it don't count as burying it.
-    if (world.frontmostInBand(topLevel.zBand ? topLevel.zBand() : 0) !== topLevel) {
-      // A pane menu sitting above this panel must not eat the first text click.
-      if (paneMenuIsFrontmostForPanel && paneMenuIsFrontmostForPanel(world, topLevel)) return false;
-      topLevel.beTopMorph();
-      return true;
+    // Frontmost within the panel's zBand: persistent and ephemeral siblings
+    // interleave by zIndex; fleeting menus / halos above don't count as burying it.
+    if (world.frontmostInBand(topLevel.zBand ? topLevel.zBand() : 0) === topLevel) {
+      return false;
     }
-    return false;
+    // A pane menu sitting above this panel must not eat the first text click.
+    if (paneMenuIsFrontmostForPanel && paneMenuIsFrontmostForPanel(world, topLevel)) {
+      return false;
+    }
+    topLevel.beTopMorph();
+    // Convert p (owner coords of `this`) to panel-local for title-bar hit testing.
+    let worldPt = this.owner ? this.owner.globalize(p) : p;
+    let panelLocal = topLevel.relativize(worldPt);
+    let hitInfo = topLevel.titleBarHitInfo ? topLevel.titleBarHitInfo(panelLocal) : null;
+    // Title bar (incl. collapse/close): consume so chrome handles the press.
+    // Content: already raised; let the click fall through to tiles/buttons.
+    return !!hitInfo;
   }
   changed() {
     // Means we have to redraw due to altered content

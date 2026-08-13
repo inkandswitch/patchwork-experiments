@@ -511,6 +511,13 @@ class QBFTextMorph extends TextMorph {
     this.qbfBoxHeight = intendedH;
   }
   onPointerDown(p, evt) {
+    // Readouts ignore pointer; optional qbfActionName kept for any legacy callers.
+    if (!this.includesPt(p)) return false;
+    if (this.qbfActionName) {
+      let host = qbfButtonHostFor(this);
+      if (host) host.buttonFired(this.qbfActionName);
+      return true;
+    }
     return false;
   }
   onPointerMove(p, evt) {
@@ -538,6 +545,7 @@ class QBFButtonMorph extends SimpleButtonMorph {
     // SimpleButtonMorph insets its text by (0,0), so height = lineHeight + 2. Restore the
     // bounds setText shrank, and centre the label in them.
     let hgt = bounds.height();
+    this.qbfBoxHeight = hgt;
     this.shape.lineHeight = Math.max(8, hgt - 2);
     this.shape.verticalNudge = Math.max(0, Math.round((hgt - 14) / 2) - 1);
     this.setBounds(bounds);
@@ -545,9 +553,28 @@ class QBFButtonMorph extends SimpleButtonMorph {
     // Raised bevel (light TL / dark BR) instead of a flat gray stroke.
     qbfInstallBevel(this, true);
   }
+  onPointerDown(p, evt) {
+    // Prefer fullBounds so styled/score tiles stay hittable after setText.
+    if (!this.fullBounds().includesPt(p) && !this.includesPt(p)) return false;
+    this.$hitPoint = p;
+    this.$dragActorID = evt.actorID;
+    let world = this.world();
+    if (world && world.setPointerFocus) world.setPointerFocus(this);
+    // Submit / retract fire on down (touch-friendly); other buttons wait for up.
+    if (this.$qbfTapFiresOnDown) {
+      let host = qbfButtonHostFor(this);
+      if (host) host.buttonFired(this.actionName);
+    }
+    return true;
+  }
   onPointerUp(p, evt) {
     // SimpleButtonMorph (and Morph) keep the press in $hitPoint.
-    let pressed = this.$hitPoint != null && this.includesPt(p);
+    let pressed = this.$hitPoint != null;
+    if (pressed && !this.$qbfTapFiresOnDown) {
+      pressed = this.fullBounds().includesPt(p) || this.includesPt(p);
+    } else if (this.$qbfTapFiresOnDown) {
+      pressed = false; // already fired on down
+    }
     super.onPointerUp(p, evt);
     if (!pressed) return true;
     let host = qbfButtonHostFor(this);
@@ -769,7 +796,7 @@ class QBFMorph extends Morph {
      * Paint shared in-game / final scores into the right-hand panel under the
      * speed buttons. Caption is white-on-brown "active games" until every
      * listed player has finished, then "final scores". Body has no header line.
-     * Cleared only when a new Game # starts (or on a fresh idle openQBF).
+     * Rows are filtered to this board's Game # so overlapping games coexist.
      */
     if (!this.liveScoresLog) return;
     let gameNo = this.tournamentGameNumber;
@@ -790,11 +817,10 @@ class QBFMorph extends Morph {
   }
   reportLiveScore(optsIfAny) {
     /**
-     * Publish this board's running total for the current Game # so every open
-     * board can show active players in column 3. First report claims a unique
+     * Publish this board's running total for its Game # so boards on that same
+     * # can show active players in column 3. First report claims a unique
      * display name (Dan, Dan 2, Otto, Otto 2, …). Keeps posting after the
-     * signup epoch closes until a new Game # starts; pass { finished: true }
-     * when this board's game is over.
+     * signup epoch closes; pass { finished: true } when this board's game is over.
      */
     let opts = optsIfAny || {};
     // Soft-idle after finish still needs one last finished post / pane refresh.
@@ -860,6 +886,7 @@ class QBFMorph extends Morph {
     if (actionName === 'launchQuick') this.launchLevel('quick');
     if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
     if (actionName === 'autoPlay') this.toggleAutoPlay();
+    if (actionName === 'touch') this.toggleTouchMode();
     this.focusKeyboard();
   }
   chooseLevelNamed(caption) {
@@ -918,11 +945,23 @@ class QBFMorph extends Morph {
     let fox = rect(28, 24, 64, 64);
     // Name centered under the fox; gap to the rack mirrors left-side spacing.
     let nameButton = rect(fox.center().x - 50, fox.bottom() + 20, 100, 24);
-    // Points tile: letter-tile size, left edge ~2 tile widths left of the outbox;
-    // Y matches outbox tiles (outbox.top + 1 - letterH).
-    let wordScore = rect(rackX - 2 * lw, outboxY + 1 - lh, lw, lh);
-    // Word history under the multipliers; caption sits above the plate.
-    let log = rect(rackX + 5, outboxY + 66, 8 * lw, 206);
+    // Submit / retract: multiplier-tile size, same Y as the multiplier row,
+    // ~15px left of the first multiplier. Retract sits below with room for its
+    // own caption line between the two tiles.
+    let multExt = pt(lw - 5, lh - 18);
+    let multY = outboxY + 6;
+    let firstMultX = rackX + 5;
+    let submitX = firstMultX - 15 - multExt.x;
+    let wordScore = rect(submitX, multY, multExt.x, multExt.y);
+    let retractCaptionH = 16;
+    let retract = rect(
+      submitX,
+      wordScore.bottom() + 4 + retractCaptionH,
+      multExt.x,
+      multExt.y,
+    );
+    // Word history under the submit/retract stack; caption sits above the plate.
+    let log = rect(rackX + 5, retract.bottom() + 12, 8 * lw, 206);
     // Game # … active games: ~30px below the belt, ~20px + one tile right of the
     // word-list plate (extra tile so not-so-quick's wider rack clears the column).
     let launchX = log.topLeft.x + log.width() + 20 + lw;
@@ -931,14 +970,24 @@ class QBFMorph extends Morph {
     let launchChromeH = 52;
     let speedsBottom = launchY + launchChromeH + 2 * speedRow + speedBtnH;
     let liveScores = rect(launch.topLeft.x, speedsBottom + 20, launchW, 160);
-    // Autoplays / how to play / show scores — one horizontal row under the word list.
-    let gameButtons = rect(rackX + 20, log.bottom() + 12, rackW - 40, 22);
+    // Autoplays / how to play / show scores — fixed width (8-tile rack) so
+    // not-so-quick's wider rack does not shift this row.
+    let gameBtnRowW = 8 * lw + 6 - 40;
+    let gameButtons = rect(rackX + 20, log.bottom() + 12, gameBtnRowW, 22);
     // Ledge sits above the name button's fall zone on the left.
     let pileY = Math.max(nameButton.bottom() + 40, liveScores.bottom() - 80);
     let pileX = 30;
     let pileW = rackX - 60;
+    // Touch toggle: multiplier-tile size, centered on the grave (pile), aligned
+    // with the autoplay / how-to / scores row.
+    let touch = rect(
+      Math.round(pileX + pileW / 2 - multExt.x / 2),
+      gameButtons.topLeft.y + Math.round((gameButtons.height() - multExt.y) / 2),
+      multExt.x,
+      multExt.y,
+    );
     let boardW = Math.max(scoreX + hSpacing, launchX + launchW) + 24;
-    let boardH = Math.max(gameButtons.bottom(), liveScores.bottom(), pileY + 40) + 24;
+    let boardH = Math.max(gameButtons.bottom(), liveScores.bottom(), pileY + 40, touch.bottom()) + 24;
     // Title centered on the rack, fox-height band. Wider than the rack so the
     // first/last glyphs of the playful title are not clipped.
     let titleW = Math.max(rackW + 160, 520);
@@ -953,6 +1002,8 @@ class QBFMorph extends Morph {
       log: log,
       score: rect(scoreX, scoreY, scoreW, 30),
       wordScore: wordScore,
+      retract: retract,
+      touch: touch,
       keyButtons: rect(rackX + 20, rackY - lh - 39, rackW - 40, 22),
       idleHelp: rect(rackX, rackY - 4 - 54, rackW, 54),
       gameButtons: gameButtons,
@@ -1336,9 +1387,10 @@ class QBFMorph extends Morph {
   }
   onPointerDown(p, evt) {
     if (!this.includesPt(p)) return false;
-    if (this.bringTopLevelPanelToFrontIfNeeded(p)) return true;
     if (effectiveMetaKey(evt)) return super.onPointerDown(p, evt); // let meta-click raise a halo
     // Typing goes to the game from now on, wherever in the board you clicked.
+    // Do not consume on raise-to-front — Morph.bringTopLevelPanelToFrontIfNeeded
+    // only eats title-bar presses now, so tiles/buttons get the same tap.
     this.focusKeyboard();
     let localP = this.relativize(p);
     let consumed = false;
@@ -1498,6 +1550,12 @@ class QBFMorph extends Morph {
     this.$playSession = (this.$playSession || 0) + 1;
     this.noCheck = false; // set true to score unrecognized words anyway
     this.idle = asIdle;
+    // Touch chrome preference survives board rebuilds (per-replica on Lively).
+    // Default off: keyboard play without submit/retract until touch is enabled.
+    if (this.touchMode == null) {
+      this.touchMode =
+        Lively && Lively.$qbfTouchMode != null ? !!Lively.$qbfTouchMode : false;
+    }
     this.autoPlay = false;
     this.$autoPlayBusy = false;
     this.$autoPlayTimer = null;
@@ -1568,12 +1626,14 @@ class QBFMorph extends Morph {
   blankScoreReadouts(blank) {
     /**
      * Hide/show score boxes when present. Right-column readouts stay commented
-     * out; the tile-sized word-score box left of the outbox is shown while
-     * playing and hidden on idle trays.
+     * out. Submit / retract follow touch mode only: when touch is on they stay
+     * visible even on an idle tray; when off they stay hidden while playing.
      */
+    let hideSubmitRetract = !this.touchMode;
     let boxes = [
       this.letterScoreBox,
       this.wordScoreBox,
+      this.retractButton,
       this.totalScoreBox,
       this.topWordBox,
     ];
@@ -1581,15 +1641,24 @@ class QBFMorph extends Morph {
     for (let i = 0; i < boxes.length; i++) {
       let box = boxes[i];
       if (!box) continue;
-      let label = box.$scoreLabel;
-      if (blank) {
+      let isTouchChrome = box === this.wordScoreBox || box === this.retractButton;
+      let label = isTouchChrome
+        ? box === this.wordScoreBox
+          ? this.submitCaption
+          : this.retractCaption
+        : box.$scoreLabel;
+      let hide = isTouchChrome ? hideSubmitRetract : blank;
+      if (hide) {
         box.setBounds(gone.copy());
         if (label) label.setBounds(gone.copy());
       } else {
         if (box.$scoreBounds) box.setBounds(box.$scoreBounds.copy());
         if (label && label.$scoreBounds) label.setBounds(label.$scoreBounds.copy());
         if (box.$scoreCaption && label) label.setText(box.$scoreCaption);
-        if (box.shape.string === ' ' || box.shape.string === '') box.setText('0');
+        if (box === this.retractButton) box.setText('X');
+        else if (box.shape.string === ' ' || box.shape.string === '') box.setText('0');
+        if (box.$scoreBounds) box.setBounds(box.$scoreBounds.copy());
+        if (isTouchChrome) this.styleActiveMultiplierChrome(box);
       }
     }
     if (this.topWordLetters) {
@@ -1602,6 +1671,19 @@ class QBFMorph extends Morph {
         this.topWordLetters.setText(this.bestWord || ' ');
       }
     }
+    this.updateTouchButtonChrome();
+  }
+  toggleTouchMode() {
+    /** Show or hide submit/retract; blue outline on the touch tile when on. */
+    this.touchMode = !this.touchMode;
+    if (Lively) Lively.$qbfTouchMode = this.touchMode;
+    // Touch chrome ignores idle blanking — pass idle only for legacy readouts.
+    this.blankScoreReadouts(!!this.idle);
+  }
+  updateTouchButtonChrome() {
+    if (!this.touchButton) return;
+    if (this.touchMode) this.styleActiveMultiplierChrome(this.touchButton);
+    else this.styleInactiveMultiplierChrome(this.touchButton);
   }
   updateRestartButton() {
     /** Kept for callers; social control chrome lives in updateModeControls. */
@@ -1668,35 +1750,119 @@ class QBFMorph extends Morph {
       textColor: Color.white,
     });
   }
-  setupWordScoreBox(lay) {
+  styleAsMultiplierTile(btn, boundsIfAny) {
     /**
-     * Tile-sized current-word points left of the outbox. Caption is white-on-brown
-     * "points"; chrome matches outbox letter tiles (24px type, 2px black border).
-     * Y is the same as outbox tiles: outbox.top + 1 - letterH.
+     * Match the active multiplier tile: same size, light fill, blue border and
+     * blue type (as when a multiplier lights up). Used for submit and retract.
+     * Always restore bounds afterward — setText / qbfStyleText can shrink the
+     * morph and leave it nearly unhittable.
      */
-    let out = lay.outbox;
-    let R = lay.wordScore;
-    if (!out || !R) {
-      this.wordScoreBox = null;
-      return;
+    if (!btn) return;
+    let b = boundsIfAny || (btn.$scoreBounds ? btn.$scoreBounds.copy() : btn.getBounds().copy());
+    btn.qbfBoxHeight = b.height();
+    // Drop the raised button bevel so the blue stroke paints like mult tiles.
+    btn.$qbfBevelWidth = 0;
+    btn.$qbfBevelRaised = null;
+    if (btn.$qbfBevelWrapped) {
+      btn.renderMeOn = Morph.prototype.renderMeOn;
+      btn.renderOn = Morph.prototype.renderOn;
+      btn.$qbfBevelWrapped = false;
     }
-    let tileY = out.topLeft.y + 1 - this.letterH;
-    let boxR = rect(R.topLeft.x, tileY, this.letterW, this.letterH);
-    this.wordScoreBox = this.addReadout(boxR, 'points', 24);
-    // Match QBFLetterMorph outbox-tile border / fill defaults.
-    qbfStyleText(this.wordScoreBox, {
-      fontSize: 24,
+    qbfStyleText(btn, {
+      fontSize: 16,
       center: true,
       noBreak: true,
       borderWidth: 2,
-      borderColor: qbfDarkBrown(),
+      borderColor: Color.blue,
+      boxColor: Color.veryLightGray,
+      textColor: Color.blue,
     });
-    this.wordScoreBox.$scoreBounds = boxR.copy();
-    let label = this.wordScoreBox.$scoreLabel;
-    if (label) {
-      let lr = rect(boxR.topLeft.x + 3, boxR.topLeft.y - 16, boxR.width(), 16);
-      label.setBounds(lr);
-      label.$scoreBounds = lr.copy();
+    this.styleActiveMultiplierChrome(btn);
+    btn.setBounds(b.copy());
+    btn.$scoreBounds = b.copy();
+  }
+  styleActiveMultiplierChrome(btn) {
+    /** Blue border + glyph, same as fillLetter(..., Color.blue) on a mult tile. */
+    if (!btn || !btn.shape) return;
+    btn.shape.setBorderWidth(2);
+    btn.shape.setBorderColor(Color.blue);
+    btn.shape.textColor = Color.blue;
+    if (btn.changed) btn.changed();
+  }
+  styleInactiveMultiplierChrome(btn) {
+    /** Gray border + glyph, same as an unlit multiplier tile. */
+    if (!btn || !btn.shape) return;
+    btn.shape.setBorderWidth(2);
+    btn.shape.setBorderColor(Color.gray);
+    btn.shape.textColor = Color.gray;
+    if (btn.changed) btn.changed();
+  }
+  placeCenteredCaption(str, buttonR) {
+    /**
+     * White-on-brown caption centered horizontally over buttonR.
+     * Morph width is at least the tile width so centerGlyph lines up with the button.
+     */
+    let capH = 16;
+    let capW = Math.max(buttonR.width(), Math.ceil(String(str).length * 7), 48);
+    let r = rect(
+      Math.round(buttonR.center().x - capW / 2),
+      buttonR.topLeft.y - capH,
+      capW,
+      capH,
+    );
+    let label = this.addMorph(new QBFTextMorph(r, str));
+    qbfStyleText(label, {
+      fontSize: 11,
+      boxColor: null,
+      borderWidth: 0,
+      textColor: Color.white,
+      center: true,
+      noBreak: true,
+    });
+    label.$scoreBounds = label.getBounds().copy();
+    return label;
+  }
+  setupWordScoreBox(lay) {
+    /**
+     * Submit (current word score) and retract (Esc / clear outbox), as
+     * multiplier-sized buttons left of the multiplier row for touch play.
+     * Captions are board IVs (not $-refs on the buttons) so blank/restore stays
+     * reliable. Touch toggle on the grave shows or hides this pair.
+     */
+    let R = lay.wordScore;
+    let retractR = lay.retract;
+    let touchR = lay.touch;
+    this.submitCaption = null;
+    this.retractCaption = null;
+    this.touchCaption = null;
+    this.wordScoreBox = null;
+    this.retractButton = null;
+    this.touchButton = null;
+    if (R) {
+      this.wordScoreBox = this.addButton(R.copy(), '0', 'enter');
+      this.styleAsMultiplierTile(this.wordScoreBox, R);
+      this.wordScoreBox.$scoreCaption = 'submit';
+      this.wordScoreBox.$qbfTapFiresOnDown = true;
+      // Caption after the button so it paints above any overlapping chrome.
+      this.submitCaption = this.placeCenteredCaption('submit', R);
+      this.wordScoreBox.$scoreLabel = this.submitCaption;
+      if (retractR) {
+        this.retractButton = this.addButton(retractR.copy(), 'X', 'clear');
+        this.styleAsMultiplierTile(this.retractButton, retractR);
+        this.retractButton.$scoreCaption = 'retract';
+        this.retractButton.$qbfTapFiresOnDown = true;
+        this.retractCaption = this.placeCenteredCaption('retract', retractR);
+        this.retractButton.$scoreLabel = this.retractCaption;
+      }
+    }
+    if (touchR) {
+      this.touchButton = this.addButton(touchR.copy(), 'o', 'touch');
+      this.styleAsMultiplierTile(this.touchButton, touchR);
+      this.touchButton.$scoreCaption = 'touch';
+      this.touchButton.$qbfTapFiresOnDown = true;
+      this.touchCaption = this.placeCenteredCaption('touch', touchR);
+      this.touchButton.$scoreLabel = this.touchCaption;
+      this.updateTouchButtonChrome();
     }
   }
   setupEpochAndLaunch(lay) {
@@ -2156,7 +2322,15 @@ class QBFMorph extends Morph {
     if (nLetters > 0) this.fillLetter(this.multBoxes[nLetters - 1], Color.blue);
     this.wordScore = this.letterScore * this.multipliers[nLetters];
     if (this.letterScoreBox) this.letterScoreBox.setText(String(this.letterScore));
-    if (this.wordScoreBox) this.wordScoreBox.setText(String(this.wordScore));
+    if (this.wordScoreBox) {
+      this.wordScoreBox.setText(String(this.wordScore));
+      // Keep the laid-out tile bounds — setText can shrink the morph.
+      // Only while touch chrome is showing; otherwise leave it blanked.
+      if (this.touchMode && this.wordScoreBox.$scoreBounds) {
+        this.wordScoreBox.setBounds(this.wordScoreBox.$scoreBounds.copy());
+        this.styleActiveMultiplierChrome(this.wordScoreBox);
+      }
+    }
   }
   launchLevel(caption) {
     /**
@@ -2649,7 +2823,9 @@ class QBFMorph extends Morph {
       (keepDone || keepBusy) &&
       (liveDone || liveBusy)
     ) {
-      return;
+      // Already compact — skip re-animating. Still fall through when the caller
+      // asked for an immediate snap (animate=false), e.g. tests / catch-up.
+      if (animate) return;
     }
     this.$chromeCompact = true;
     this.$chromeActiveCap = active;
@@ -2765,8 +2941,8 @@ function openQBF(topLeftIfAny) {
    */
   let tl = topLeftIfAny != null ? topLeftIfAny : pt(10, 40);
   qbfEnsureWordList();
-  // Fresh idle tray: clear any leftover active-games rows from a prior session.
-  qbfClearLiveScores();
+  // Do not clear Lively.qbfLiveScores here — other boards may still be mid-game
+  // on a different Game #, and the shared list must keep their rows.
   let game = new QBFMorph();
   let ext = game.getBounds().extent;
   let panel = new PanelMorph(
@@ -2940,8 +3116,8 @@ function qbfCloseTournamentEpoch() {
   }
   Lively.qbfEpochStartMs = null;
   Lively.qbfEpochSpeed = null;
-  // Keep the active-games / final-scores list until a new Game # starts (or every
-  // player has finished — the header flips then). Do not clear here.
+  // Keep active-games / final-scores rows for this Game # (and any overlapping
+  // Game #s). Boards filter by tournamentGameNumber; do not clear here.
   qbfScoresNotify();
 }
 /** @deprecated alias — epoch close no longer advances Game # (bump is at start). */
@@ -2951,17 +3127,18 @@ function qbfEndTournamentEpoch() {
 function qbfPrepareNewGameNumber() {
   /**
    * Close any join window (open or expired), then bump the shared Game #.
-   * Does not open an epoch (caller decides).
+   * Does not open an epoch (caller decides). Does not clear live scores — an
+   * earlier Game # may still be in progress on other boards.
    */
   qbfEnsureTournamentState();
   if (Lively && Lively.qbfEpochStartMs != null) qbfCloseTournamentEpoch();
-  qbfClearLiveScores();
   return qbfBumpGameNumber();
 }
 function qbfJoinOrStartTournamentGame(speedCaptionIfAny) {
   /**
    * Speed launch. If a join window is open, join that Game # / queue (same speed
    * only). Otherwise bump Game #, open a 30s window at the chosen speed, and start.
+   * Live scores for other concurrent Game #s are left intact.
    */
   qbfEnsureTournamentState();
   let now = Date.now();
@@ -2984,9 +3161,6 @@ function qbfJoinOrStartTournamentGame(speedCaptionIfAny) {
     };
   }
   let n = qbfPrepareNewGameNumber();
-  // Fresh epoch: active-games list starts empty (prepare already cleared; do it again
-  // here so a new window never inherits rows from a prior Game #).
-  qbfClearLiveScores();
   Lively.qbfEpochStartMs = now;
   Lively.qbfEpochSpeed = caption;
   qbfArmEpochEndTimer();
@@ -3096,8 +3270,9 @@ function qbfRecentGamesList() {
 }
 function qbfLiveScoresList() {
   /**
-   * Shared running totals for players active on the current Game #.
+   * Shared running totals for players across concurrent Game #s.
    * Flat array of { player, score, gameNo } on Lively so Automerge can sync it.
+   * Each board paints only rows matching its tournamentGameNumber.
    */
   if (!Lively || !Lively.qbfLiveScores) {
     if (Lively) Lively.qbfLiveScores = [];
@@ -3105,19 +3280,30 @@ function qbfLiveScoresList() {
   }
   return Lively.qbfLiveScores;
 }
-function qbfClearLiveScores() {
+function qbfClearLiveScores(gameNoIfAny) {
   /**
-   * Empty the shared active-games table and refresh every open board's column 3.
-   * Used when a new Game # starts — not when the signup epoch ends, and not when
-   * an individual board finishes (those stay as final scores).
+   * Clear active-games rows. With gameNoIfAny, only that Game #; otherwise all.
+   * Prefer scoped clears — a full wipe would drop overlapping Game # cohorts.
+   * Does not run when a signup epoch ends or when one board finishes.
    */
   if (!Lively) return;
-  Lively.qbfLiveScores = [];
-  Lively.qbfLiveGameNumber = null;
+  if (gameNoIfAny != null && gameNoIfAny !== '') {
+    let list = qbfLiveScoresList();
+    for (let i = (list || []).length - 1; i >= 0; i--) {
+      let e = list[i];
+      if (e && e.gameNo === gameNoIfAny) list.splice(i, 1);
+    }
+    if (Lively.qbfLiveGameNumber === gameNoIfAny) Lively.qbfLiveGameNumber = null;
+  } else {
+    Lively.qbfLiveScores = [];
+    Lively.qbfLiveGameNumber = null;
+  }
   findAllQBFGames().forEach((g) => {
     if (!g) return;
-    g.$livePlayerName = null;
-    g.$liveNameForGame = null;
+    if (gameNoIfAny == null || gameNoIfAny === '' || g.tournamentGameNumber === gameNoIfAny) {
+      g.$livePlayerName = null;
+      g.$liveNameForGame = null;
+    }
     if (g.refreshLiveScoresPane) g.refreshLiveScoresPane();
   });
 }
@@ -3173,13 +3359,13 @@ function qbfPostLiveScore(playerName, score, gameNo, optsIfAny) {
    * Upsert one player's running total for Game #gameNo. Keeps updating after the
    * signup epoch closes so the list stays live until everyone finishes. Pass
    * { finished: true } when that player's board is game-over.
+   * Concurrent Game #s share the same array; rows are keyed by gameNo and must
+   * not wipe each other when a different Game # posts.
    */
   if (!Lively || !playerName || gameNo == null || gameNo === '') return;
   let opts = optsIfAny || {};
   let no = gameNo;
-  if (Lively.qbfLiveGameNumber != null && Lively.qbfLiveGameNumber !== no) {
-    Lively.qbfLiveScores = [];
-  }
+  // Hint for callers that omit gameNo; never clears other Game # rows.
   Lively.qbfLiveGameNumber = no;
   let list = qbfLiveScoresList();
   let found = false;
@@ -3203,7 +3389,7 @@ function qbfPostLiveScore(playerName, score, gameNo, optsIfAny) {
   qbfNotifyLiveScores();
 }
 function qbfLiveScoreRowsForGame(gameNoIfAny) {
-  /** Players for gameNo (or the current live Game #), score-descending. */
+  /** Players for gameNo (or the most recently posted Game #), score-descending. */
   let list = qbfLiveScoresList();
   let want =
     gameNoIfAny != null && gameNoIfAny !== ''

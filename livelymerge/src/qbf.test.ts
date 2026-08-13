@@ -88,10 +88,18 @@ qbfGame.infoButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().top
     expect(rt.eval(`!!qbfGame.totalScoreBox`)).toBe(false);
     expect(rt.eval(`!!qbfGame.topWordBox`)).toBe(false);
     expect(rt.eval(`!!qbfGame.topWordLetters`)).toBe(false);
-    // Word-score tile sits left of the outbox while a board is playing.
-    expect(rt.eval(`!!qbfGame.wordScoreBox && qbfGame.wordScoreBox.getBounds().width() > 0`)).toBe(
-      true,
+    // Word-score tile exists but stays hidden until touch mode is on.
+    expect(rt.eval(`!!qbfGame.wordScoreBox`)).toBe(true);
+    expect(rt.eval(`!!qbfGame.retractButton && qbfGame.retractButton.actionName`)).toBe('clear');
+    expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`!!qbfGame.submitCaption && qbfGame.submitCaption.shape.string`)).toBe(
+      'submit',
     );
+    expect(rt.eval(`!!qbfGame.retractCaption && qbfGame.retractCaption.shape.string`)).toBe(
+      'retract',
+    );
+    expect(rt.eval(`!!qbfGame.touchButton && qbfGame.touchButton.shape.string`)).toBe('o');
     expect(
       rt.eval(
         `qbfGame.titleText.getBounds().width() >= qbfGame.computeLayout().rack.width() + 160`,
@@ -260,6 +268,112 @@ true`);
     ticks(5); // and the game keeps running afterwards
   }, 60_000);
 
+  it('submits the outbox word when the submit box is tapped', () => {
+    const { rt, ticksUntil, type, dispatch, runFrame } = makeGame();
+    rt.eval(`qbfGame.toggleTouchMode(); true`);
+    ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
+    const chars = rt.eval(
+      `qbfGame.activeLetters.filter((l) => l.loc == 'rack').slice(0, 2).map((l) => l.shape.string)`,
+    ) as string[];
+    type(chars[0]);
+    type(chars[1]);
+    expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(2);
+    expect(rt.eval(`qbfGame.wordScoreBox.actionName`)).toBe('enter');
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
+    // Same path as letter tiles: pointer down fires submit/retract immediately.
+    rt.eval(`
+qbfBtn = qbfGame.wordScoreBox;
+qbfP = qbfBtn.getBounds().center();
+qbfBtn.onPointerDown(qbfP, { actorID: 'test' });
+true`);
+    expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(0);
+    expect(rt.eval(`qbfGame.$logLines.length`)).toBe(1);
+    expect(rt.eval(`qbfGame.$logLines[0]`)).toContain(chars.join(''));
+
+    // Buried panel: first content tap must still Enter (raise must not consume).
+    ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
+    const chars2 = rt.eval(
+      `qbfGame.activeLetters.filter((l) => l.loc == 'rack').slice(0, 2).map((l) => l.shape.string)`,
+    ) as string[];
+    type(chars2[0]);
+    type(chars2[1]);
+    expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(2);
+    rt.eval(`
+Lively.addMorph(new Morph(rect(0, 0, 40, 40)));
+qbfPanel.beTopMorph();
+Lively.submorphs[Lively.submorphs.length - 1].beTopMorph();
+qbfBuried = Lively.frontmostInBand(0) !== qbfPanel;
+true`);
+    expect(rt.eval(`qbfBuried`)).toBe(true);
+    rt.eval(`
+qbfC = qbfGame.wordScoreBox.owner.globalize(qbfGame.wordScoreBox.getBounds().center());
+true`);
+    const cx = rt.eval(`qbfC.x`) as number;
+    const cy = rt.eval(`qbfC.y`) as number;
+    dispatch('pointerdown', cx, cy);
+    runFrame();
+    dispatch('pointerup', cx, cy);
+    runFrame();
+    expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(0);
+  }, 60_000);
+
+  it('retracts the outbox when the retract button is tapped', () => {
+    const { rt, ticksUntil, type } = makeGame();
+    rt.eval(`qbfGame.toggleTouchMode(); true`);
+    ticksUntil(`qbfGame.activeLetters.filter((l) => l.loc == 'rack').length >= 2`);
+    const chars = rt.eval(
+      `qbfGame.activeLetters.filter((l) => l.loc == 'rack').slice(0, 2).map((l) => l.shape.string)`,
+    ) as string[];
+    type(chars[0]);
+    type(chars[1]);
+    expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(2);
+    expect(rt.eval(`qbfGame.retractButton.actionName`)).toBe('clear');
+    expect(rt.eval(`qbfGame.retractButton.shape.string`)).toBe('X');
+    expect(rt.eval(`qbfGame.retractCaption.shape.string`)).toBe('retract');
+    rt.eval(`
+qbfBtn = qbfGame.retractButton;
+qbfP = qbfBtn.getBounds().center();
+qbfBtn.onPointerDown(qbfP, { actorID: 'test' });
+true`);
+    expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(0);
+    expect(rt.eval(`qbfGame.activeLetters.every((l) => l.copyInOutbox == null)`)).toBe(true);
+  }, 60_000);
+
+  it('toggles submit/retract visibility from the touch button on the grave', () => {
+    const { rt } = makeGame();
+    expect(rt.eval(`!!qbfGame.touchButton && qbfGame.touchButton.shape.string`)).toBe('o');
+    expect(rt.eval(`qbfGame.touchCaption.shape.string`)).toBe('touch');
+    expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.submitCaption.getBounds().width()`)).toBe(0);
+    expect(
+      rt.eval(`
+lay = qbfGame.computeLayout();
+pile = lay.pile;
+tb = qbfGame.touchButton.getBounds();
+Math.abs(tb.center().x - pile.center().x) <= 2 &&
+Math.abs(tb.topLeft.y - lay.gameButtons.topLeft.y) <= 8
+`),
+    ).toBe(true);
+    rt.eval(`
+qbfGame.touchButton.onPointerDown(qbfGame.touchButton.getBounds().center(), { actorID: 'test' });
+true`);
+    expect(rt.eval(`qbfGame.touchMode`)).toBe(true);
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.retractButton.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.submitCaption.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.retractCaption.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.touchButton.shape.borderColor.b === Color.blue.b`)).toBe(true);
+    // Still visible while idle when touch is on.
+    rt.eval(`qbfGame.idle = true; qbfGame.blankScoreReadouts(true); true`);
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.retractButton.getBounds().width()`)).toBeGreaterThan(0);
+    rt.eval(`qbfGame.toggleTouchMode(); true`);
+    expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBe(0);
+    expect(rt.eval(`qbfGame.touchButton.shape.borderColor.b === Color.gray.b`)).toBe(true);
+  }, 60_000);
+
   it('tracks live active-player scores for the current Game # in column 3', () => {
     const { rt, ticksUntil, type } = makeGame();
     rt.eval(`
@@ -393,6 +507,30 @@ true`);
     expect(rt.eval(`qbfFinal`)).toContain('Ada');
     expect(rt.eval(`qbfFinal`)).toContain('Bea');
     expect(rt.eval(`qbfGame.liveScoresLabel.shape.string`)).toBe('final scores');
+  }, 60_000);
+
+  it('keeps concurrent Game # live scores when a newer game starts and posts', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfLiveScores = [];
+Lively.qbfLiveGameNumber = null;
+Lively.qbfGameNumber = 100;
+Lively.qbfEpochStartMs = Date.now() - 31000;
+Lively.qbfEpochSpeed = null;
+qbfPostLiveScore('Ada', 10, 100);
+qbfPostLiveScore('Bea', 20, 100);
+qbfJoin = qbfJoinOrStartTournamentGame('quick');
+qbfN = qbfJoin.gameNumber;
+qbfPostLiveScore('Carl', 5, qbfN);
+qbfPostLiveScore('Ada', 30, 100);
+qbf100 = qbfLiveScoreRowsForGame(100).map((r) => r.player + ':' + r.score).sort().join(',');
+qbfNew = qbfLiveScoreRowsForGame(qbfN).map((r) => r.player + ':' + r.score).sort().join(',');
+qbfLen = Lively.qbfLiveScores.length;
+true`);
+    expect(rt.eval(`qbfN`)).toBe(101);
+    expect(rt.eval(`qbf100`)).toBe('Ada:30,Bea:20');
+    expect(rt.eval(`qbfNew`)).toBe('Carl:5');
+    expect(rt.eval(`qbfLen`)).toBe(3);
   }, 60_000);
 
   it('checks words against a loaded list, scoring bad words against you', () => {
@@ -547,6 +685,11 @@ true`);
   it('switches levels, rebuilding the board and resizing the panel', () => {
     const { rt } = makeGame();
     const width = rt.eval(`qbfGame.getBounds().width()`) as number;
+    rt.eval(`
+qbfAutoX = qbfGame.autoPlayButton.getBounds().topLeft.x;
+qbfInfoX = qbfGame.infoButton.getBounds().topLeft.x;
+qbfScoresX = qbfGame.scoresButton.getBounds().topLeft.x;
+true`);
     rt.eval(`qbfGame.gameOver = true; qbfGame.chooseLevelNamed('not so quick')`);
     expect(rt.eval(`qbfGame.level.caption`)).toBe('not so quick');
     expect(rt.eval(`qbfGame.rackSize`)).toBe(9);
@@ -556,6 +699,10 @@ true`);
     expect(rt.eval(`qbfPanel.getBounds().width()`)).toBe(rt.eval(`qbfGame.getBounds().width()`));
     expect(rt.eval(`qbfGame.gameOver`)).toBe(false); // a fresh game
     expect(rt.eval(`qbfGame.paused`)).toBe(false);
+    // Bottom chrome stays put when the rack grows for not-so-quick.
+    expect(rt.eval(`qbfGame.autoPlayButton.getBounds().topLeft.x`)).toBe(rt.eval(`qbfAutoX`));
+    expect(rt.eval(`qbfGame.infoButton.getBounds().topLeft.x`)).toBe(rt.eval(`qbfInfoX`));
+    expect(rt.eval(`qbfGame.scoresButton.getBounds().topLeft.x`)).toBe(rt.eval(`qbfScoresX`));
   }, 60_000);
 
   it('ends the game when the "!" tile falls off, and records the best game for the level', () => {
@@ -979,19 +1126,26 @@ Math.abs(qbfGame.liveScoresLabel.getBounds().topLeft.y - (lay.log.topLeft.y - 16
 `),
     ).toBe(true);
     expect(rt.eval(`!!qbfGame.wordScoreBox`)).toBe(true);
+    rt.eval(`qbfGame.toggleTouchMode(); true`);
     expect(
       rt.eval(`
 lay = qbfGame.computeLayout();
 ws = qbfGame.wordScoreBox.getBounds();
-outY = lay.outbox.topLeft.y + 1 - qbfGame.letterH;
-ws.width() === qbfGame.letterW &&
-ws.height() === qbfGame.letterH &&
-Math.abs(ws.topLeft.x - (lay.outbox.topLeft.x - 2 * qbfGame.letterW)) <= 1 &&
-ws.topLeft.y === outY &&
-Number(qbfGame.wordScoreBox.shape.font.replace(/px.*/, '')) === 24 &&
-qbfGame.wordScoreBox.shape.borderWidth === 2 &&
-!!qbfGame.wordScoreBox.$scoreLabel &&
-qbfGame.wordScoreBox.$scoreLabel.shape.string === 'points'
+rb = qbfGame.retractButton.getBounds();
+mult = qbfGame.multBoxes[0].getBounds();
+multBoard = qbfGame.outbox.getBounds().topLeft.addPt(mult.topLeft);
+ws.width() === lay.wordScore.width() &&
+ws.height() === lay.wordScore.height() &&
+Math.abs(ws.topLeft.y - multBoard.y) <= 1 &&
+Math.abs(ws.topLeft.x + ws.width() + 15 - multBoard.x) <= 2 &&
+Math.abs(rb.topLeft.x - ws.topLeft.x) <= 1 &&
+rb.topLeft.y >= ws.bottom() + 16 &&
+Number(qbfGame.wordScoreBox.shape.font.replace(/px.*/, '')) === 16 &&
+!!qbfGame.submitCaption &&
+qbfGame.submitCaption.shape.string === 'submit' &&
+!!qbfGame.retractCaption &&
+qbfGame.retractCaption.shape.string === 'retract' &&
+qbfGame.retractButton.shape.string === 'X'
 `),
     ).toBe(true);
     const queue1 = rt.eval(`qbfGame.tournamentLetterQueue.join('')`) as string;
