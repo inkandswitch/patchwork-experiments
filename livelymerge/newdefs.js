@@ -547,6 +547,10 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug)...
   Lively.spiral = Lively.addMorph(new Morph(rect(50, 210, 1, 1)));
   Lively.spiral.pen = new Pen(pt(60, 210)).withBug();
+  // withBug adds the emoji ephemerally (cheap while stepping); promote so other
+  // replicas see the demo bug. Short one-shot spiral — sync cost is fine.
+  if (Lively.spiral.pen.bug && Lively.spiral.pen.bug.bePersistent)
+    Lively.spiral.pen.bug.bePersistent();
   Lively.spiral.animatedSpiral = function (argsObj) {
     if (!this.args) {
       this.args = argsObj;
@@ -2036,7 +2040,7 @@ class Pen {
   }
   withBug(emoji) {
     let morph;
-    if (bugImage && bugImage.instanceOf && bugImage.instanceOf(EmojiMorph)) {
+    if (bugImage && bugImage.className === 'EmojiMorph') {
       morph = new EmojiMorph(bugImage._emojiName, bugImage._emojiSize);
       //morph.transform.scale = pt(0.5, 0.5);
     } else {
@@ -3717,7 +3721,7 @@ function textPaneWithKeyboardFocus(world) {
   if (!f) return null;
   let m = f;
   while (m && m !== world) {
-    if (m.instanceOf && m.instanceOf(TextPane)) return m;
+    if (m.className === 'TextPane' || m.className === 'TranscriptTextPane') return m;
     m = m.owner;
   }
   return null;
@@ -4023,7 +4027,7 @@ class Morph {
       if (m.isEphemeralSubmorph()) return false;
       m = m.owner;
     }
-    return m != null && (m.className === 'WorldMorph' || (m.instanceOf && m.instanceOf(WorldMorph)));
+    return m != null && m.className === 'WorldMorph';
   }
   bePersistent() {
     /**
@@ -4248,7 +4252,7 @@ class Morph {
   clippedBounds() {
     /** Visible bounds for halos etc.; includes transform scale/rotation. Clipped when inside a {@link ScrollPane}. */
     let b = this.boundsInOwnerAfterTransform().copy();
-    if (this.owner && this.owner.instanceOf && this.owner.instanceOf(ScrollPane)) {
+    if (isScrollPaneMorph(this.owner)) {
       b = b.intersection(this.owner.shape.getBounds());
     }
     return b;
@@ -4258,7 +4262,7 @@ class Morph {
     let b = this.boundsInWorld();
     let o = this.owner;
     while (o) {
-      if (o.instanceOf && o.instanceOf(ScrollPane)) {
+      if (isScrollPaneMorph(o)) {
         b = b.intersection(o.boundsInWorld());
       }
       o = o.owner;
@@ -5049,7 +5053,7 @@ class Morph {
 class ImageMorph extends Morph {
   constructor(imageOrSize) {
     let shape =
-      imageOrSize && imageOrSize.instanceOf && imageOrSize.instanceOf(ImageShape)
+      imageOrSize && imageOrSize.className === 'ImageShape'
         ? imageOrSize
         : new ImageShape(imageOrSize);
     let b = shape.getBounds();
@@ -6423,9 +6427,8 @@ class MenuMorph extends ListMorph {
 // Scroll panes, text editors, transcripts, sliders, hue picker.
 
 function isScrollPaneMorph(m) {
-  /** ScrollPane or a subclass (instanceOf is unavailable in the LM class system). */
+  /** ScrollPane or a subclass (use className — LM objects have no instanceOf). */
   if (!m) return false;
-  if (m.instanceOf && typeof ScrollPane !== 'undefined' && m.instanceOf(ScrollPane)) return true;
   let n = m.className;
   return (
     n === 'ScrollPane' ||
@@ -6706,7 +6709,8 @@ class ScrollPane extends Morph {
       fleeting: true,
       fromSelection: true,
     });
-    if (this.instanceOf && this.instanceOf(TextPane)) syncOnScreenKeyboardWithFocus(this.world());
+    if (this.className === 'TextPane' || this.className === 'TranscriptTextPane')
+      syncOnScreenKeyboardWithFocus(this.world());
     return menu;
   }
   syncScrollBar(scrollPos, quiet) {
@@ -9034,9 +9038,7 @@ class HaloHandle extends Morph {
 // Meta-click halo ring around a morph.
 class HaloMorph extends Morph {
   constructor(targetMorph) {
-    const isWorld =
-      targetMorph.className === 'WorldMorph' ||
-      (targetMorph.instanceOf && targetMorph.instanceOf(WorldMorph));
+    const isWorld = targetMorph.className === 'WorldMorph';
     const haloBounds = isWorld
       ? targetMorph.clippedBoundsInWorld().insetBy(20)
       : targetMorph.clippedBoundsInWorld().insetBy(-10);
@@ -10018,10 +10020,9 @@ class WorldMorph extends Morph {
       let pinContent = morph._paneMenuPinWhileInContent;
       let ownerPane = morph._paneMenuOwnerScrollPane;
       if (pinContent && ownerPane && worldPtHitsMorphOrSubmorphs(world, p, pinContent)) {
-        if (ownerPane.instanceOf && ownerPane.instanceOf(ListPane)) return;
+        if (ownerPane.className === 'ListPane') return;
         if (
-          ownerPane.instanceOf &&
-          ownerPane.instanceOf(TextPane) &&
+          (ownerPane.className === 'TextPane' || ownerPane.className === 'TranscriptTextPane') &&
           keyboardFocusBelongsToScrollPane(world, ownerPane)
         )
           return;
@@ -10163,7 +10164,7 @@ class WorldMorph extends Morph {
         cn === 'KbdKeyMorph'
       )
         return true;
-      if (m.instanceOf && m.instanceOf(PanelMorph)) {
+      if (typeof m.titleBarHitInfo == 'function') {
         let localP = m.localize(worldPt);
         let hitInfo = m.titleBarHitInfo(localP);
         if (hitInfo && (hitInfo.onCollapse || hitInfo.onClose)) return true;
