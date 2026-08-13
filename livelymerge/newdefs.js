@@ -294,20 +294,6 @@ function fragmentForSpec(spec) {
   let src = method.toString();
   return isLegacyFunctionShow(src) ? null : src;
 }
-function isWatchableMethodSpec(spec) {
-  // True for method specs we can poll for remote edits (not bare class names).
-  let key = methodSpecKey(spec);
-  if (!key || key.includes('[')) return false;
-  let parts = key.split('.');
-  if (parts.length == 1) {
-    let v = $global[parts[0]];
-    return typeof v == 'function' && !isClass(v);
-  }
-  if (parts.length == 2 && parts[1] === 'constructor') return isClass($global[parts[0]]);
-  if (parts.length == 2) return typeof methodFromSpec(key) == 'function';
-  if (parts.length == 3 && parts[1] == 'prototype') return methodFromSpec(key) != null;
-  return false;
-}
 function liveMethodPaneTextForSpec(spec) {
   // Pane text the system browser / method-list would load for `spec` right now.
   let key = methodSpecKey(spec);
@@ -317,74 +303,6 @@ function liveMethodPaneTextForSpec(spec) {
   let method = methodFromSpec(key);
   if (typeof method != 'function') return null;
   return key + ' = ' + method.toString();
-}
-function liveMethodPaneTextForWatchedSpec(spec, asReplaceMethodCall) {
-  let text = liveMethodPaneTextForSpec(spec);
-  if (text == null) return null;
-  if (asReplaceMethodCall && !looksLikeLegacyMethodText(text)) {
-    let className = methodSpecKey(spec).split('.')[0];
-    return replaceMethodCallString(className, text);
-  }
-  return text;
-}
-function fragmentSaveClassNameOf(textBox) {
-  /** Class name used to wrap a method-pane fragment for save, or null. */
-  if (!textBox) return null;
-  // Prefer a stored getter when present (system browser / method-list set this).
-  // Check both spellings: older panes used the non-$ slot (like menuActions);
-  // a brief experiment also wrote the $-prefixed form.
-  let fn = textBox.fragmentSaveClassName || textBox.$fragmentSaveClassName;
-  if (typeof fn == 'function') {
-    let name = fn();
-    if (name) return name;
-  }
-  // Fallback: walk TextBox → TextMorph → TextPane → owning panel.
-  let m = textBox.morph;
-  while (m) {
-    if (typeof m.selectedClassName == 'function') {
-      let n = m.selectedClassName();
-      if (n) return n;
-    }
-    if (m._fragmentClassName) return m._fragmentClassName;
-    m = m.owner;
-  }
-  return null;
-}
-function scheduleFragmentMethodSave(textBox, className, savedFragment) {
-  /**
-   * Install a class-fragment save in a *fresh* Automerge change (via setTimeout),
-   * not inside the animation-frame change that handled the key/menu event.
-   *
-   * Why: ctrl-S runs during onFrame's runtime.change(). If that frame later aborts
-   * (GC promotion / other work), document writes from replaceMethod roll back, but
-   * ephemeral UI state such as TextPane._savedTextSnapshot can survive — so the
-   * pane looks "saved" (or conflict-red) while live code is unchanged. Doing the
-   * install alone in a follow-up change keeps method installs off that risk path.
-   */
-  let expected = savedFragment != null ? String(savedFragment) : '';
-  let callStr = replaceMethodCallString(className, expected);
-  let spec = fragmentChangeSpec(className, expected);
-  setTimeout(() => {
-    try {
-      if (!textBox || textBox.string !== expected) return; // user edited again
-      noteMethodChanges(callStr);
-      evaluateWithErrorRecovery(
-        () => replaceMethod(className, expected),
-        'save method ' + className,
-      );
-      if (_evalJustFailed) return;
-      let live = liveMethodPaneTextForSpec(spec);
-      if (live !== expected) {
-        console.log(
-          'method save did not stick: ' + spec + ' (dirty left set; live source unchanged)',
-        );
-        return;
-      }
-      if (typeof textBox.onTextSaved === 'function') textBox.onTextSaved(textBox);
-    } catch (e) {
-      console.log('method save failed', e);
-    }
-  }, 0);
 }
 function deleteAccessorHalf(className, kind, name) {
   // Delete one half of an accessor slot ('get'/'set'); the surviving half is
@@ -1929,6 +1847,37 @@ class Rectangle {
   }
 }
 
+// Cascading default placement for tool panels (system browser, help, inspector, …).
+// `panelLocation` is the origin (and wrap-back Y); `$nextPanelLocation` is the
+// per-user cursor advanced by newPanelLocation().
+let panelLocation = pt(400, 60);
+let panelLocationDelta = pt(20, 20);
+let $nextPanelLocation = null;
+function newPanelLocation(extentIfAny) {
+  /**
+   * Next top-left for a panel of `extent` (default 400×300), then advances the
+   * cascade by panelLocationDelta. If the next slot's bottom would fall past the
+   * world bottom, wrap to panelLocation.y and shift X by ~300.
+   */
+  let extent = extentIfAny != null ? extentIfAny : pt(400, 300);
+  if ($nextPanelLocation == null) $nextPanelLocation = panelLocation.copy();
+  let worldB = Lively && Lively.getBounds ? Lively.getBounds() : getBounds();
+  let worldBottom = worldB.bottom();
+  if ($nextPanelLocation.y + extent.y > worldBottom)
+    $nextPanelLocation = pt($nextPanelLocation.x + 300, panelLocation.y);
+  let loc = $nextPanelLocation.copy();
+  let next = loc.addPt(panelLocationDelta);
+  if (next.y + extent.y > worldBottom) next = pt(loc.x + 300, panelLocation.y);
+  $nextPanelLocation = next;
+  return loc;
+}
+function newPanelRect(widthIfAny, heightIfAny) {
+  /** Bounds for a new cascaded panel (default 400×300). */
+  let w = widthIfAny != null ? widthIfAny : 400;
+  let h = heightIfAny != null ? heightIfAny : 300;
+  return newPanelLocation(pt(w, h)).extent(pt(w, h));
+}
+
 //  SimpleTransform
 // -----------------
 // Translation, rotation, scale — local ↔ owner coords.
@@ -3202,13 +3151,26 @@ class TextBox extends Shape {
         storageSetItem(this.localStorageKey, this.string);
         if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
       } else {
-        // Browser method panes show bare class fragments. Defer replaceMethod to a
-        // fresh change (see scheduleFragmentMethodSave) so an animation-frame abort
-        // cannot roll back the install while ephemeral dirty/snapshot state sticks.
-        let fragmentClassName = fragmentSaveClassNameOf(this);
+        // The browser method pane shows bare class fragments; wrap them in a
+        // self-contained replaceMethod(...) call for eval and change tracking.
+        let fragmentClassName =
+          typeof this.fragmentSaveClassName == 'function' ? this.fragmentSaveClassName() : null;
         let str = this.string;
         if (fragmentClassName && !looksLikeLegacyMethodText(str)) {
-          scheduleFragmentMethodSave(this, fragmentClassName, str);
+          // Defer the install to a fresh change. Ctrl-S runs inside onFrame's
+          // change(); if that frame aborts, document writes roll back while
+          // ephemeral _savedTextSnapshot can survive — save looks done, isn't.
+          let callStr = replaceMethodCallString(fragmentClassName, str);
+          let tb = this;
+          setTimeout(() => {
+            if (tb.string !== str) return;
+            noteMethodChanges(callStr);
+            evaluateWithErrorRecovery(
+              () => replaceMethod(fragmentClassName, str),
+              'save method ' + fragmentClassName,
+            );
+            if (!_evalJustFailed && typeof tb.onTextSaved === 'function') tb.onTextSaved(tb);
+          }, 0);
         } else {
           noteMethodChanges(str);
           this.wsEval.call(this.workspaceObj, str);
@@ -4406,7 +4368,7 @@ class Morph {
   }
   inspect() {
     // Lively.submorphs.first().inspect()
-    let p = new InspectorPanel(rect(500, 100, 300, 300), this);
+    let p = new InspectorPanel(null, this);
     Lively.addEphemeralMorph(p);
     p.startStepping('showSelectedValue', false, 500);
     return p;
@@ -7740,7 +7702,7 @@ class PanelMorph extends Morph {
     return this.submorphs.filter((m) => m !== this.titleBar);
   }
   defaultRect() {
-    return rect(400, 60, 400, 300);
+    return newPanelRect(400, 300);
   }
   finishStickyCollapsedTitleBarDrag(p, evt) {
     /** End first-collapse sticky drag: drop on pointerDown (not pointerUp). */
@@ -7893,81 +7855,45 @@ class PanelMorph extends Morph {
   promptOkToCancelEdits(onResult) {
     promptOkToCancelEditsMenu(this.world(), fleetingMenuAnchorPt(this.menuAnchorPt(150)), onResult);
   }
-  ifValueChanges(valueExpression, compareTo, funcToDo) {
-    /**
-     * Every 2s, compute the current value and compare it to `compareTo`.
-     * `valueExpression` / `compareTo` may each be a string (eval'd in LM scope)
-     * or a zero-arg function. Calls `funcToDo(differs)` each tick.
-     * Comparing a method pane against its `_savedTextSnapshot` means a
-     * successful ctrl-S clears the diff with no save-path hooks.
-     */
-    this.stopValueChangeWatch();
-    this.$valueWatchExpr = valueExpression;
-    this.$valueWatchCompare = compareTo;
-    this.$valueWatchFn = funcToDo;
-    this.ensureValueChangeStepping();
-    this.tickValueChangeWatch();
-  }
-  stopValueChangeWatch() {
-    this.$valueWatchExpr = null;
-    this.$valueWatchCompare = null;
-    this.$valueWatchFn = null;
-    if (this.$valueWatchPane) {
-      this.highlightMethodConflict(this.$valueWatchPane, false);
-      this.$valueWatchPane = null;
-    }
-    if (this.isStepping && this.isStepping('tickValueChangeWatch'))
-      this.stopStepping('tickValueChangeWatch');
-  }
-  ensureValueChangeStepping() {
-    if (this.$valueWatchExpr == null) return;
-    if (this.isStepping && this.isStepping('tickValueChangeWatch')) return;
-    let world = this.world();
-    if (!world || !world.startSteppingSpec) {
-      let self = this;
-      if (!self.$valueWatchStepRetry) {
-        self.$valueWatchStepRetry = true;
-        setTimeout(() => {
-          self.$valueWatchStepRetry = false;
-          self.ensureValueChangeStepping();
-        }, 0);
-      }
-      return;
-    }
-    this.startStepping('tickValueChangeWatch', null, 2000);
-  }
-  tickValueChangeWatch() {
-    if (this.$valueWatchExpr == null || typeof this.$valueWatchFn != 'function') return;
-    let live = this.valueWatchEval(this.$valueWatchExpr);
-    let compare = this.valueWatchEval(this.$valueWatchCompare);
-    this.$valueWatchFn.call(this, compare != null && live !== compare);
-  }
-  valueWatchEval(exprOrFn) {
-    try {
-      if (typeof exprOrFn == 'function') return exprOrFn.call(this);
-      if (typeof exprOrFn == 'string') return eval(exprOrFn);
-    } catch (e) {
-      return null;
-    }
-    return exprOrFn;
-  }
   watchMethodAgainstPane(spec, textPane, asReplaceMethodCall) {
-    /** Convenience: red-frame `textPane` when live method text ≠ its saved snapshot. */
-    this.stopValueChangeWatch();
-    if (!textPane || !spec || !isWatchableMethodSpec(spec)) return;
+    /** Red-frame `textPane` when live method text ≠ its `_savedTextSnapshot`. */
+    this.stopMethodConflictWatch();
+    if (!textPane || !spec) return;
     let key = methodSpecKey(spec);
-    let asCall = !!asReplaceMethodCall;
-    let pane = textPane;
-    this.ifValueChanges(
-      () => liveMethodPaneTextForWatchedSpec(key, asCall),
-      () => pane._savedTextSnapshot,
-      (differs) => this.highlightMethodConflict(pane, differs),
-    );
-    this.$valueWatchPane = pane;
+    if (!key || key.includes('[')) return;
+    this.$watchSpec = key;
+    this.$watchPane = textPane;
+    this.$watchAsCall = !!asReplaceMethodCall;
+    // MethodPanel may call this from its constructor before addMorph — defer stepping.
+    if (this.world() && this.world().startSteppingSpec)
+      this.startStepping('tickMethodConflict', null, 2000);
+    else setTimeout(() => {
+      if (this.$watchSpec == null) return;
+      if (this.isStepping && this.isStepping('tickMethodConflict')) return;
+      if (this.world() && this.world().startSteppingSpec)
+        this.startStepping('tickMethodConflict', null, 2000);
+    }, 0);
+    this.tickMethodConflict();
   }
-  highlightMethodConflict(pane, on) {
-    if (!pane) return;
-    let want = !!on;
+  stopMethodConflictWatch() {
+    if (this.$watchPane) {
+      if (this.$watchPane.$methodConflictHighlight) {
+        this.$watchPane.$methodConflictHighlight = false;
+        this.$watchPane.changed();
+      }
+      this.$watchPane = null;
+    }
+    this.$watchSpec = null;
+    if (this.isStepping && this.isStepping('tickMethodConflict'))
+      this.stopStepping('tickMethodConflict');
+  }
+  tickMethodConflict() {
+    let pane = this.$watchPane;
+    if (!pane || this.$watchSpec == null) return;
+    let live = liveMethodPaneTextForSpec(this.$watchSpec);
+    if (live != null && this.$watchAsCall && !looksLikeLegacyMethodText(live))
+      live = replaceMethodCallString(this.$watchSpec.split('.')[0], live);
+    let want = live != null && pane._savedTextSnapshot != null && live !== pane._savedTextSnapshot;
     if (!!pane.$methodConflictHighlight === want) return;
     pane.$methodConflictHighlight = want;
     pane.changed();
@@ -8082,7 +8008,7 @@ class MethodPanel extends PanelMorph {
     // Hack to read from localStorage...
     if (optionalTitle && optionalTitle.startsWith('localStorage.'))
       text = localStorage.getItem(optionalTitle.slice(13));
-    const bounds = initialBounds != null ? initialBounds : rect(400, 60, 400, 300);
+    const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
     this.initTextPane(text != null ? text : '', optionalTitle);
   }
@@ -8102,7 +8028,8 @@ class MethodPanel extends PanelMorph {
     let text = string != null ? String(string) : '';
     let watchSpec = null;
     let asCall = !!parseReplaceMethodCallString(text);
-    if (optionalTitle && isWatchableMethodSpec(optionalTitle)) watchSpec = methodSpecKey(optionalTitle);
+    if (optionalTitle && methodSpecKey(optionalTitle) && !String(optionalTitle).includes('['))
+      watchSpec = methodSpecKey(optionalTitle);
     else if (asCall) {
       let parsed = parseReplaceMethodCallString(text);
       if (parsed) watchSpec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
@@ -8119,7 +8046,7 @@ class MethodPanel extends PanelMorph {
 // Class + method browser with list panes.
 class BrowserPanel extends PanelMorph {
   constructor(initialBounds) {
-    const bounds = initialBounds != null ? initialBounds : rect(400, 60, 400, 300);
+    const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
     this.selectedClass = null;
     this.selectedMethod = null;
@@ -8147,7 +8074,7 @@ class BrowserPanel extends PanelMorph {
     if (!deleteMethodWithSpec(spec)) return;
     this.selectedMethod = null;
     if (this.methodPane) this.methodPane.setText('Method text', { force: true });
-    this.stopValueChangeWatch();
+    this.stopMethodConflictWatch();
     this.refreshMessageListForSelectedClass();
     this.updateBrowserTitle();
   }
@@ -8182,7 +8109,7 @@ class BrowserPanel extends PanelMorph {
         this.selectedMethod = null;
         this.updateBrowserTitle();
         this.messagePane.setList(this.messageListForSelection(classSelection));
-        this.stopValueChangeWatch();
+        this.stopMethodConflictWatch();
       };
       if (this.methodPane && this.methodPane.hasUnsavedChanges()) {
         if (this.selectedClass != null && classSelection === this.selectedClass) return;
@@ -8368,7 +8295,7 @@ class BrowserPanel extends PanelMorph {
 // Live style editor (fill, stroke, width) for a morph.
 class StylePanel extends PanelMorph {
   constructor(initialBounds, target) {
-    const bounds = initialBounds != null ? initialBounds : rect(400, 80, 280, 340);
+    const bounds = initialBounds != null ? initialBounds : newPanelRect(280, 340);
     const styleSnapshot = copyStyleSnapshot(styleSnapshotFromMorph(target));
     super(bounds);
     this.target = target;
@@ -8385,7 +8312,7 @@ class StylePanel extends PanelMorph {
     applyStyleSnapshotToMorph(this.target, this.styleState);
   }
   defaultRect() {
-    return rect(400, 80, 280, 340);
+    return newPanelRect(280, 340);
   }
   ensureLineWidthForColor() {
     if (this.styleState.borderColor && this.styleState.borderWidth === 0)
@@ -8567,7 +8494,7 @@ class StylePanel extends PanelMorph {
 // Variable list + print-it pane for one object.
 class InspectorPanel extends PanelMorph {
   constructor(initialBounds, target) {
-    const bounds = initialBounds != null ? initialBounds : rect(500, 100, 300, 300);
+    const bounds = initialBounds != null ? initialBounds : newPanelRect(300, 300);
     super(bounds);
     this.target = target;
     this.varValue = null;
@@ -8579,7 +8506,7 @@ class InspectorPanel extends PanelMorph {
     this.relayoutContentPanes();
   }
   defaultRect() {
-    return rect(500, 100, 300, 300);
+    return newPanelRect(300, 300);
   }
   initPrintAndEvalPanes() {
     /** Print-it and eval panes (right / bottom) in the inspector. */
@@ -8641,7 +8568,7 @@ class InspectorPanel extends PanelMorph {
 // Search hits or recent changes as a method list.
 class MethodListPanel extends PanelMorph {
   constructor(initialBounds, methodSpecs, recentMethodsIfAny, optionalTitle, searchStringIfAny) {
-    const bounds = initialBounds != null ? initialBounds : rect(400, 60, 400, 300);
+    const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
     this.methodSpecs = methodSpecs;
     this.recents = recentMethodsIfAny;
@@ -8665,7 +8592,7 @@ class MethodListPanel extends PanelMorph {
     if (this.printPane) this.printPane.setText('Selected method', { force: true });
     this._occurrenceLastSpec = null;
     this._fragmentClassName = null;
-    this.stopValueChangeWatch();
+    this.stopMethodConflictWatch();
   }
   exportMethodCopyToOSPaste() {
     let exportText = this.methodCopyText();
@@ -8715,7 +8642,7 @@ class MethodListPanel extends PanelMorph {
         // Search / occurrence lists only — not recent-changes (dated specs) or stacks.
         if (!this.recents && this.className !== 'ErrorStackPanel' && !spec.includes('['))
           this.watchMethodAgainstPane(spec, this.printPane);
-        else this.stopValueChangeWatch();
+        else this.stopMethodConflictWatch();
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
         // List click leaves keyboard focus on the methods list (which ignores
@@ -11450,7 +11377,7 @@ function inspect(obj, optionalBounds) {
     let o = optionalBounds;
     r = rect(o.topLeft.x, o.topLeft.y, o.width(), o.height());
   } else {
-    r = rect(500, 100, 300, 300);
+    r = newPanelRect(300, 300);
   }
   let p = new InspectorPanel(r, obj);
   Lively.addEphemeralMorph(p);
@@ -11458,27 +11385,78 @@ function inspect(obj, optionalBounds) {
   return p;
 }
 function inspectString(obj) {
+  /**
+   * Compact display for the inspector print pane. Prefer each type's toString();
+   * do not use instanceOf — LM objects don't have it (use className instead).
+   */
+  if (obj === undefined) return 'undefined';
   if (obj === null) return 'null';
-  let typeStr = typeof obj;
-  if (typeStr == 'number') return typeStr + ': ' + obj.toString();
-  if (typeStr == 'boolean') return typeStr + ': ' + obj.toString();
-  if (typeStr == 'string') return typeStr + ': ' + obj.toString();
-  if (Array.isArray(obj)) {
-    let parts = obj.map((el) => inspectString(el));
-    return 'array: [' + parts.join(', ') + ']';
+  let t = typeof obj;
+  if (t == 'number' || t == 'boolean') return String(obj);
+  if (t == 'string') return obj;
+  if (t == 'function') {
+    let n = obj.name;
+    return n ? 'function ' + n : 'function';
   }
-  if (obj && obj.instanceOf) {
-    if (obj.instanceOf(Point)) return obj.toString();
-    if (obj.instanceOf(Rectangle)) return obj.toString();
-    if (obj.instanceOf(SimpleTransform)) return obj.toString();
-    if (obj.instanceOf(StepSpec)) return obj.toString();
+  if (Array.isArray(obj)) {
+    let parts = [];
+    let lim = Math.min(obj.length, 40);
+    for (let i = 0; i < lim; i++) parts.push(inspectString(obj[i]));
+    return '[' + parts.join(', ') + (obj.length > lim ? ', …' : '') + ']';
+  }
+  if (t != 'object') return String(obj);
+  let cn = obj.className;
+  // Geometry / paint / shapes — their toString() is the useful form.
+  if (
+    cn == 'Point' ||
+    cn == 'Rectangle' ||
+    cn == 'SimpleTransform' ||
+    cn == 'StepSpec' ||
+    cn == 'Color' ||
+    cn == 'Shape' ||
+    cn == 'Ellipse' ||
+    cn == 'PolyLine' ||
+    cn == 'ImageShape' ||
+    cn == 'TextBox'
+  ) {
+    try {
+      return obj.toString();
+    } catch (e) {}
+  }
+  // Duck-types if className is missing for any reason.
+  if (obj.x != null && obj.y != null && typeof obj.addPt == 'function' && obj.extent == null) {
+    try {
+      return obj.toString();
+    } catch (e) {
+      return 'pt(' + obj.x + ', ' + obj.y + ')';
+    }
+  }
+  if (obj.topLeft && obj.extent && typeof obj.width == 'function') {
+    try {
+      return obj.toString();
+    } catch (e) {
+      return String(obj.topLeft) + '.extent(' + String(obj.extent) + ')';
+    }
+  }
+  if (obj.translation != null && obj.rotation != null) {
+    try {
+      return obj.toString();
+    } catch (e) {
+      return 'transform';
+    }
+  }
+  if (obj.shapeType != null) {
+    try {
+      return obj.toString();
+    } catch (e) {
+      return 'a Shape (' + obj.shapeType + ')';
+    }
   }
   try {
-    let vowely = 'aeiou'.includes(obj.className[0].toLowerCase());
-    typeStr = typeStr + (vowely ? ': an ' : ': a ') + obj.className;
+    let vowely = cn && 'aeiou'.includes(String(cn)[0].toLowerCase());
+    return t + (vowely ? ': an ' : ': a ') + (cn || 'object');
   } catch (err) {
-    typeStr = typeStr + ': ' + err;
+    return t + ': object';
   }
-  return typeStr;
-};
+}
 init()

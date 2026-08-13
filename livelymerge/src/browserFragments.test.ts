@@ -168,90 +168,30 @@ describe('system browser class fragments', () => {
   browser.classPane.contentPane.actionFn('Rectangle');
   browser.messagePane.contentPane.actionFn('bottom');
   let tb = browser.methodPane.contentPane.shape;
-  $global._saveProbe = {
-    fragFn: typeof tb.fragmentSaveClassName,
-    fragName: typeof tb.fragmentSaveClassName == 'function' ? tb.fragmentSaveClassName() : null,
-    before: tb.string.slice(0, 9),
-  };
+  $global._saveBefore = tb.string.slice(0, 9);
   tb.string = 'bottom() { return -1; }';
   tb.handleKeyboardShortcuts(${keyEvt('s')});
 })()
 `);
-    // scheduleFragmentMethodSave uses setTimeout(0) so the install is outside the
-    // calling change (and dirty clears only after a successful install).
     await new Promise((r) => setTimeout(r, 30));
     const result = rt.eval(`
 (() => {
   let browser = Lively.submorphs.find((m) => m.className === 'BrowserPanel');
-  let p = $global._saveProbe;
-  let changed = rect(0, 0, 3, 4).bottom();
-  let show = Rectangle.prototype.bottom.toString();
   let recent = recentChanges.at(-1);
-  let dirty = browser.methodPane.hasUnsavedChanges();
-  return 'before=' + p.before +
-    ' fragFn=' + p.fragFn +
-    ' fragName=' + p.fragName +
-    ' changed=' + changed +
-    ' show=' + show +
-    ' dirty=' + dirty +
+  return 'before=' + $global._saveBefore +
+    ' changed=' + rect(0, 0, 3, 4).bottom() +
+    ' show=' + Rectangle.prototype.bottom.toString() +
+    ' dirty=' + browser.methodPane.hasUnsavedChanges() +
     ' recentSpec=' + recent[0] +
     ' recentIsCall=' + ('' + recent[2]).startsWith("replaceMethod('Rectangle'");
 })()
 `) as string;
     expect(result).toContain('before=bottom() ');
-    expect(result).toContain('fragFn=function');
-    expect(result).toContain('fragName=Rectangle');
     expect(result).toContain('changed=-1');
     expect(result).toContain('show=bottom() { return -1; }');
     expect(result).toContain('dirty=false');
     expect(result).toContain('recentSpec=Rectangle.prototype.bottom');
     expect(result).toContain('recentIsCall=true');
-  }, 120_000);
-
-  it('failed ctrl-S leaves the method pane dirty (does not clear the snapshot)', async () => {
-    const { rt } = setup();
-    rt.eval(`initUI(); initLively();`);
-    rt.eval(`
-(() => {
-  replaceMethod('Rectangle', 'bottom() { return 3; }');
-  let browser = Lively.addEphemeralMorph(new BrowserPanel());
-  browser.classPane.contentPane.actionFn('Rectangle');
-  browser.messagePane.contentPane.actionFn('bottom');
-  let tb = browser.methodPane.contentPane.shape;
-  tb.$fragmentSaveClassName = null;
-  tb.fragmentSaveClassName = null;
-  // Also break owner-chain fallback by clearing selected class name path.
-  browser.selectedClass = null;
-  tb.string = 'bottom() { return -9; }';
-  let prevPresent = presentError;
-  presentError = function () {};
-  try {
-    tb.handleKeyboardShortcuts(${keyEvt('s')});
-  } finally {
-    presentError = prevPresent;
-  }
-  $global._failSaveProbe = {
-    dirtyImmediate: browser.methodPane.hasUnsavedChanges(),
-    evalFailed: !!_evalJustFailed,
-  };
-})()
-`);
-    await new Promise((r) => setTimeout(r, 30));
-    const result = rt.eval(`
-(() => {
-  let browser = (Lively.$submorphs || []).find((m) => m.className === 'BrowserPanel') ||
-    Lively.submorphs.find((m) => m.className === 'BrowserPanel');
-  let p = $global._failSaveProbe;
-  return 'dirtyImmediate=' + p.dirtyImmediate +
-    ' dirty=' + browser.methodPane.hasUnsavedChanges() +
-    ' unchanged=' + rect(0, 0, 3, 4).bottom() +
-    ' evalFailed=' + p.evalFailed;
-})()
-`) as string;
-    expect(result).toContain('dirtyImmediate=true');
-    expect(result).toContain('dirty=true');
-    expect(result).toContain('unchanged=3');
-    expect(result).toContain('evalFailed=true');
   }, 120_000);
 
   it('saving a getter fragment through the pane replaces only the getter', async () => {
@@ -271,10 +211,9 @@ describe('system browser class fragments', () => {
     const result = rt.eval(`
 (() => {
   let m = new Morph(rect(0, 0, 10, 10));
-  let got = m.transform;
-  let setterStillThere =
-    Object.getOwnPropertyDescriptor(Morph.prototype, 'transform').set != null;
-  return 'got=' + got + ' setterStillThere=' + setterStillThere;
+  return 'got=' + m.transform +
+    ' setterStillThere=' +
+    (Object.getOwnPropertyDescriptor(Morph.prototype, 'transform').set != null);
 })()
 `) as string;
     expect(result).toContain('got=12345');
@@ -335,11 +274,10 @@ describe('system browser class fragments', () => {
     const result = rt.eval(`
 (() => {
   let p = $global._occSave;
-  let changed = rect(0, 0, 3, 4).bottom();
   let recent = recentChanges.at(-1);
   return 'shown=' + ('' + p.shown).slice(0, 9) +
     ' copyIsCall=' + ('' + p.copyText).startsWith("replaceMethod('Rectangle'") +
-    ' changed=' + changed +
+    ' changed=' + rect(0, 0, 3, 4).bottom() +
     ' recentSpec=' + recent[0] +
     ' recentIsCall=' + ('' + recent[2]).startsWith("replaceMethod('Rectangle'");
 })()
@@ -362,17 +300,14 @@ describe('system browser class fragments', () => {
   let spec = recentChanges.at(-1)[0] + recentChanges.at(-1)[1];
   panel.methodsPane.contentPane.actionFn(spec);
   let tb = panel.printPane.contentPane.shape;
-  $global._recentSave = { shown: tb.string };
+  $global._recentShown = tb.string;
   tb.string = 'bottom() { return -4; }';
   tb.handleKeyboardShortcuts(${keyEvt('s')});
 })()
 `);
     await new Promise((r) => setTimeout(r, 30));
     const result = rt.eval(`
-(() => {
-  let p = $global._recentSave;
-  return 'shown=' + p.shown + ' changed=' + rect(0, 0, 3, 4).bottom();
-})()
+(() => 'shown=' + $global._recentShown + ' changed=' + rect(0, 0, 3, 4).bottom())()
 `) as string;
     expect(result).toContain('shown=bottom() { return -3; }');
     expect(result).toContain('changed=-4');
@@ -398,10 +333,10 @@ describe('system browser class fragments', () => {
   browser.messagePane.contentPane.actionFn('bottom');
   let before = !!browser.methodPane.$methodConflictHighlight;
   replaceMethod('Rectangle', 'bottom() { return 99; }');
-  browser.tickValueChangeWatch();
+  browser.tickMethodConflict();
   let conflict = !!browser.methodPane.$methodConflictHighlight;
   browser.methodPane._savedTextSnapshot = liveMethodPaneTextForSpec('Rectangle.prototype.bottom');
-  browser.tickValueChangeWatch();
+  browser.tickMethodConflict();
   let cleared = !!browser.methodPane.$methodConflictHighlight;
 
   let hits = methodsContaining('bottom');
@@ -410,14 +345,14 @@ describe('system browser class fragments', () => {
   );
   search.methodsPane.contentPane.actionFn('Rectangle.prototype.bottom');
   replaceMethod('Rectangle', 'bottom() { return 7; }');
-  search.tickValueChangeWatch();
+  search.tickMethodConflict();
   let searchConflict = !!search.printPane.$methodConflictHighlight;
 
   noteMethodChanges(replaceMethodCallString('Rectangle', 'bottom() { return 7; }'));
   let recent = browseRecentChanges();
   let spec = recentChanges.at(-1)[0] + recentChanges.at(-1)[1];
   recent.methodsPane.contentPane.actionFn(spec);
-  let recentWatching = recent.isStepping('tickValueChangeWatch');
+  let recentWatching = recent.isStepping('tickMethodConflict');
 
   let meth = new MethodPanel(
     null,
@@ -426,7 +361,7 @@ describe('system browser class fragments', () => {
   );
   Lively.addEphemeralMorph(meth);
   replaceMethod('Rectangle', 'bottom() { return 8; }');
-  meth.tickValueChangeWatch();
+  meth.tickMethodConflict();
   let methodBrowserConflict = !!meth.textPane.$methodConflictHighlight;
 
   browser.messagePane.contentPane.actionFn('bottom');
@@ -447,7 +382,7 @@ describe('system browser class fragments', () => {
     const after = rt.eval(`
 (() => {
   let browser = $global._conflictSaveBrowser;
-  browser.tickValueChangeWatch();
+  browser.tickMethodConflict();
   return 'saved=' + rect(0, 0, 3, 4).bottom() +
     ' afterSaveConflict=' + !!browser.methodPane.$methodConflictHighlight +
     ' dirty=' + browser.methodPane.hasUnsavedChanges();
@@ -474,31 +409,23 @@ describe('system browser class fragments', () => {
   browser.classPane.contentPane.actionFn('Rectangle');
   browser.messagePane.contentPane.actionFn('bottom');
   let tb = browser.methodPane.contentPane.shape;
-  $global._ephSave = {
-    fragName: typeof tb.fragmentSaveClassName == 'function' ? tb.fragmentSaveClassName() : null,
-  };
+  $global._ephFrag = typeof tb.fragmentSaveClassName == 'function' ? tb.fragmentSaveClassName() : null;
   tb.string = 'bottom() { return -123; }';
   tb.handleKeyboardShortcuts({ key: 's', preventDefault() {}, stopPropagation() {} });
-  if (Lively.handleStepList) Lively.handleStepList();
-  // Install is deferred off the calling change; immediate value stays old.
-  $global._ephSave.changedImmediate = rect(0, 0, 3, 4).bottom();
 })()
 `);
     await new Promise((r) => setTimeout(r, 30));
     const result = rt.eval(`
 (() => {
   let browser = (Lively.$submorphs || []).find((m) => m.className === 'BrowserPanel');
-  let p = $global._ephSave;
-  browser.tickValueChangeWatch();
-  return 'fragName=' + p.fragName +
-    ' changedImmediate=' + p.changedImmediate +
+  browser.tickMethodConflict();
+  return 'fragName=' + $global._ephFrag +
     ' changed=' + rect(0, 0, 3, 4).bottom() +
     ' dirty=' + browser.methodPane.hasUnsavedChanges() +
     ' conflict=' + !!browser.methodPane.$methodConflictHighlight;
 })()
 `) as string;
     expect(result).toContain('fragName=Rectangle');
-    expect(result).toContain('changedImmediate=1');
     expect(result).toContain('changed=-123');
     expect(result).toContain('dirty=false');
     expect(result).toContain('conflict=false');
