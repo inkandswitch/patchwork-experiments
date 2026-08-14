@@ -37,9 +37,40 @@ $qbfWordLookup = null;
 // fallSoundPending flag was causing screams with no local tumble).
 $qbfPendingFallSounds = null;
 
+// PER-USER: optional override for qbfIsTouchDevice (tests). null = auto-detect.
+$qbfForceTouchMode = null;
+
 /** Easy revert for the compact-chrome slide frill: set to false. */
 function qbfChromeSlideFrill() {
   return true;
+}
+
+function qbfIsTouchDevice() {
+  /**
+   * True when this replica should show enter/clear (touch chrome).
+   * Goes through `window` (LM jsGlobal escape hatch): free `navigator` /
+   * `matchMedia` are not on $global, and `'ontouchstart' in window` is always
+   * false on the LM window proxy (no `has` trap — checks the empty proxy
+   * target, not the real Window). Property reads do reach the host.
+   * Tests may set $qbfForceTouchMode to true/false to override detection.
+   */
+  if (typeof $qbfForceTouchMode === 'boolean') return $qbfForceTouchMode;
+  try {
+    let w = typeof window !== 'undefined' ? window : null;
+    if (!w) return false;
+    let nav = w.navigator;
+    if (nav && Number(nav.maxTouchPoints) > 0) return true;
+    // Present on touch browsers even when the handler is null.
+    if (w.ontouchstart !== undefined) return true;
+    let mm = w.matchMedia;
+    if (typeof mm === 'function') {
+      let m = mm('(pointer: coarse)');
+      if (m && m.matches) return true;
+    }
+  } catch (err) {
+    /* headless tests / restricted hosts */
+  }
+  return false;
 }
 
 function qbfArmFallSound(letter) {
@@ -886,7 +917,6 @@ class QBFMorph extends Morph {
     if (actionName === 'launchQuick') this.launchLevel('quick');
     if (actionName === 'launchNotSoQuick') this.launchLevel('not so quick');
     if (actionName === 'autoPlay') this.toggleAutoPlay();
-    if (actionName === 'touch') this.toggleTouchMode();
     this.focusKeyboard();
   }
   chooseLevelNamed(caption) {
@@ -945,22 +975,16 @@ class QBFMorph extends Morph {
     let fox = rect(28, 24, 64, 64);
     // Name centered under the fox; gap to the rack mirrors left-side spacing.
     let nameButton = rect(fox.center().x - 50, fox.bottom() + 20, 100, 24);
-    // Submit / retract: multiplier-tile size, same Y as the multiplier row,
-    // ~15px left of the first multiplier. Retract sits below with room for its
-    // own caption line between the two tiles.
+    // Enter / clear (touch chrome): 1.5× multiplier-tile size, same top Y as the
+    // multiplier row, ~15px left of the first multiplier, 10px between the two.
     let multExt = pt(lw - 5, lh - 18);
+    let enterExt = pt(Math.round(multExt.x * 1.5), Math.round(multExt.y * 1.5));
     let multY = outboxY + 6;
     let firstMultX = rackX + 5;
-    let submitX = firstMultX - 15 - multExt.x;
-    let wordScore = rect(submitX, multY, multExt.x, multExt.y);
-    let retractCaptionH = 16;
-    let retract = rect(
-      submitX,
-      wordScore.bottom() + 4 + retractCaptionH,
-      multExt.x,
-      multExt.y,
-    );
-    // Word history under the submit/retract stack; caption sits above the plate.
+    let submitX = firstMultX - 15 - enterExt.x;
+    let wordScore = rect(submitX, multY, enterExt.x, enterExt.y);
+    let retract = rect(submitX, wordScore.bottom() + 10, enterExt.x, enterExt.y);
+    // Word history under the enter/clear stack; caption sits above the plate.
     let log = rect(rackX + 5, retract.bottom() + 12, 8 * lw, 206);
     // Game # … active games: ~30px below the belt, ~20px + one tile right of the
     // word-list plate (extra tile so not-so-quick's wider rack clears the column).
@@ -978,16 +1002,8 @@ class QBFMorph extends Morph {
     let pileY = Math.max(nameButton.bottom() + 40, liveScores.bottom() - 80);
     let pileX = 30;
     let pileW = rackX - 60;
-    // Touch toggle: multiplier-tile size, centered on the grave (pile), aligned
-    // with the autoplay / how-to / scores row.
-    let touch = rect(
-      Math.round(pileX + pileW / 2 - multExt.x / 2),
-      gameButtons.topLeft.y + Math.round((gameButtons.height() - multExt.y) / 2),
-      multExt.x,
-      multExt.y,
-    );
     let boardW = Math.max(scoreX + hSpacing, launchX + launchW) + 24;
-    let boardH = Math.max(gameButtons.bottom(), liveScores.bottom(), pileY + 40, touch.bottom()) + 24;
+    let boardH = Math.max(gameButtons.bottom(), liveScores.bottom(), pileY + 40) + 24;
     // Title centered on the rack, fox-height band. Wider than the rack so the
     // first/last glyphs of the playful title are not clipped.
     let titleW = Math.max(rackW + 160, 520);
@@ -1003,7 +1019,6 @@ class QBFMorph extends Morph {
       score: rect(scoreX, scoreY, scoreW, 30),
       wordScore: wordScore,
       retract: retract,
-      touch: touch,
       keyButtons: rect(rackX + 20, rackY - lh - 39, rackW - 40, 22),
       idleHelp: rect(rackX, rackY - 4 - 54, rackW, 54),
       gameButtons: gameButtons,
@@ -1391,6 +1406,7 @@ class QBFMorph extends Morph {
     // Typing goes to the game from now on, wherever in the board you clicked.
     // Do not consume on raise-to-front — Morph.bringTopLevelPanelToFrontIfNeeded
     // only eats title-bar presses now, so tiles/buttons get the same tap.
+    this.ensureTouchChromeFromPointer(evt);
     this.focusKeyboard();
     let localP = this.relativize(p);
     let consumed = false;
@@ -1550,12 +1566,8 @@ class QBFMorph extends Morph {
     this.$playSession = (this.$playSession || 0) + 1;
     this.noCheck = false; // set true to score unrecognized words anyway
     this.idle = asIdle;
-    // Touch chrome preference survives board rebuilds (per-replica on Lively).
-    // Default off: keyboard play without submit/retract until touch is enabled.
-    if (this.touchMode == null) {
-      this.touchMode =
-        Lively && Lively.$qbfTouchMode != null ? !!Lively.$qbfTouchMode : false;
-    }
+    // Enter/clear chrome when this replica looks like a touch device (no toggle).
+    this.touchMode = qbfIsTouchDevice();
     this.autoPlay = false;
     this.$autoPlayBusy = false;
     this.$autoPlayTimer = null;
@@ -1626,8 +1638,8 @@ class QBFMorph extends Morph {
   blankScoreReadouts(blank) {
     /**
      * Hide/show score boxes when present. Right-column readouts stay commented
-     * out. Submit / retract follow touch mode only: when touch is on they stay
-     * visible even on an idle tray; when off they stay hidden while playing.
+     * out. Enter / clear follow touch mode only: when on they stay visible even
+     * on an idle tray; when off they stay hidden while playing.
      */
     let hideSubmitRetract = !this.touchMode;
     let boxes = [
@@ -1642,11 +1654,7 @@ class QBFMorph extends Morph {
       let box = boxes[i];
       if (!box) continue;
       let isTouchChrome = box === this.wordScoreBox || box === this.retractButton;
-      let label = isTouchChrome
-        ? box === this.wordScoreBox
-          ? this.submitCaption
-          : this.retractCaption
-        : box.$scoreLabel;
+      let label = isTouchChrome ? null : box.$scoreLabel;
       let hide = isTouchChrome ? hideSubmitRetract : blank;
       if (hide) {
         box.setBounds(gone.copy());
@@ -1655,10 +1663,12 @@ class QBFMorph extends Morph {
         if (box.$scoreBounds) box.setBounds(box.$scoreBounds.copy());
         if (label && label.$scoreBounds) label.setBounds(label.$scoreBounds.copy());
         if (box.$scoreCaption && label) label.setText(box.$scoreCaption);
-        if (box === this.retractButton) box.setText('X');
+        if (box === this.wordScoreBox) box.setText('enter');
+        else if (box === this.retractButton) box.setText('clear');
         else if (box.shape.string === ' ' || box.shape.string === '') box.setText('0');
         if (box.$scoreBounds) box.setBounds(box.$scoreBounds.copy());
-        if (isTouchChrome) this.styleActiveMultiplierChrome(box);
+        // Blue border like a lit multiplier; gray type as requested.
+        if (isTouchChrome) this.styleEnterClearChrome(box);
       }
     }
     if (this.topWordLetters) {
@@ -1671,19 +1681,22 @@ class QBFMorph extends Morph {
         this.topWordLetters.setText(this.bestWord || ' ');
       }
     }
-    this.updateTouchButtonChrome();
   }
   toggleTouchMode() {
-    /** Show or hide submit/retract; blue outline on the touch tile when on. */
+    /** Test/helper: flip enter/clear visibility (no UI toggle anymore). */
     this.touchMode = !this.touchMode;
-    if (Lively) Lively.$qbfTouchMode = this.touchMode;
-    // Touch chrome ignores idle blanking — pass idle only for legacy readouts.
     this.blankScoreReadouts(!!this.idle);
   }
-  updateTouchButtonChrome() {
-    if (!this.touchButton) return;
-    if (this.touchMode) this.styleActiveMultiplierChrome(this.touchButton);
-    else this.styleInactiveMultiplierChrome(this.touchButton);
+  ensureTouchChromeFromPointer(evt) {
+    /**
+     * If static detection missed (or the board was built before touch was
+     * known), enable enter/clear on the first real touch/pen press.
+     */
+    if (this.touchMode) return;
+    let t = evt && evt.pointerType;
+    if (t !== 'touch' && t !== 'pen') return;
+    this.touchMode = true;
+    this.blankScoreReadouts(!!this.idle);
   }
   updateRestartButton() {
     /** Kept for callers; social control chrome lives in updateModeControls. */
@@ -1750,17 +1763,17 @@ class QBFMorph extends Morph {
       textColor: Color.white,
     });
   }
-  styleAsMultiplierTile(btn, boundsIfAny) {
+  styleAsMultiplierTile(btn, boundsIfAny, fontSizeIfAny) {
     /**
-     * Match the active multiplier tile: same size, light fill, blue border and
-     * blue type (as when a multiplier lights up). Used for submit and retract.
+     * Enter / clear tile look: light fill, blue border, gray type.
+     * fontSizeIfAny defaults to 16 (mult size); larger enter/clear use a bigger face.
      * Always restore bounds afterward — setText / qbfStyleText can shrink the
      * morph and leave it nearly unhittable.
      */
     if (!btn) return;
     let b = boundsIfAny || (btn.$scoreBounds ? btn.$scoreBounds.copy() : btn.getBounds().copy());
     btn.qbfBoxHeight = b.height();
-    // Drop the raised button bevel so the blue stroke paints like mult tiles.
+    // Drop the raised button bevel so the stroke paints like mult tiles.
     btn.$qbfBevelWidth = 0;
     btn.$qbfBevelRaised = null;
     if (btn.$qbfBevelWrapped) {
@@ -1768,18 +1781,27 @@ class QBFMorph extends Morph {
       btn.renderOn = Morph.prototype.renderOn;
       btn.$qbfBevelWrapped = false;
     }
+    let fontSize = fontSizeIfAny != null ? fontSizeIfAny : 16;
     qbfStyleText(btn, {
-      fontSize: 16,
+      fontSize: fontSize,
       center: true,
       noBreak: true,
       borderWidth: 2,
       borderColor: Color.blue,
       boxColor: Color.veryLightGray,
-      textColor: Color.blue,
+      textColor: Color.gray,
     });
-    this.styleActiveMultiplierChrome(btn);
+    this.styleEnterClearChrome(btn);
     btn.setBounds(b.copy());
     btn.$scoreBounds = b.copy();
+  }
+  styleEnterClearChrome(btn) {
+    /** Blue border (like a lit multiplier) with gray face text. */
+    if (!btn || !btn.shape) return;
+    btn.shape.setBorderWidth(2);
+    btn.shape.setBorderColor(Color.blue);
+    btn.shape.textColor = Color.gray;
+    if (btn.changed) btn.changed();
   }
   styleActiveMultiplierChrome(btn) {
     /** Blue border + glyph, same as fillLetter(..., Color.blue) on a mult tile. */
@@ -1824,45 +1846,29 @@ class QBFMorph extends Morph {
   }
   setupWordScoreBox(lay) {
     /**
-     * Submit (current word score) and retract (Esc / clear outbox), as
-     * multiplier-sized buttons left of the multiplier row for touch play.
-     * Captions are board IVs (not $-refs on the buttons) so blank/restore stays
-     * reliable. Touch toggle on the grave shows or hides this pair.
+     * Enter / clear touch buttons left of the multiplier row (1.5× mult size,
+     * gray type like resting multipliers, labels on the face). Visibility
+     * follows qbfIsTouchDevice() — no manual touch toggle on the grave.
      */
     let R = lay.wordScore;
     let retractR = lay.retract;
-    let touchR = lay.touch;
     this.submitCaption = null;
     this.retractCaption = null;
     this.touchCaption = null;
     this.wordScoreBox = null;
     this.retractButton = null;
     this.touchButton = null;
+    // Face type ~1.5× the old 16px mult glyph so "enter" / "clear" fit.
+    let enterFont = 18;
     if (R) {
-      this.wordScoreBox = this.addButton(R.copy(), '0', 'enter');
-      this.styleAsMultiplierTile(this.wordScoreBox, R);
-      this.wordScoreBox.$scoreCaption = 'submit';
+      this.wordScoreBox = this.addButton(R.copy(), 'enter', 'enter');
+      this.styleAsMultiplierTile(this.wordScoreBox, R, enterFont);
       this.wordScoreBox.$qbfTapFiresOnDown = true;
-      // Caption after the button so it paints above any overlapping chrome.
-      this.submitCaption = this.placeCenteredCaption('submit', R);
-      this.wordScoreBox.$scoreLabel = this.submitCaption;
       if (retractR) {
-        this.retractButton = this.addButton(retractR.copy(), 'X', 'clear');
-        this.styleAsMultiplierTile(this.retractButton, retractR);
-        this.retractButton.$scoreCaption = 'retract';
+        this.retractButton = this.addButton(retractR.copy(), 'clear', 'clear');
+        this.styleAsMultiplierTile(this.retractButton, retractR, enterFont);
         this.retractButton.$qbfTapFiresOnDown = true;
-        this.retractCaption = this.placeCenteredCaption('retract', retractR);
-        this.retractButton.$scoreLabel = this.retractCaption;
       }
-    }
-    if (touchR) {
-      this.touchButton = this.addButton(touchR.copy(), 'o', 'touch');
-      this.styleAsMultiplierTile(this.touchButton, touchR);
-      this.touchButton.$scoreCaption = 'touch';
-      this.touchButton.$qbfTapFiresOnDown = true;
-      this.touchCaption = this.placeCenteredCaption('touch', touchR);
-      this.touchButton.$scoreLabel = this.touchCaption;
-      this.updateTouchButtonChrome();
     }
   }
   setupEpochAndLaunch(lay) {
@@ -2322,15 +2328,7 @@ class QBFMorph extends Morph {
     if (nLetters > 0) this.fillLetter(this.multBoxes[nLetters - 1], Color.blue);
     this.wordScore = this.letterScore * this.multipliers[nLetters];
     if (this.letterScoreBox) this.letterScoreBox.setText(String(this.letterScore));
-    if (this.wordScoreBox) {
-      this.wordScoreBox.setText(String(this.wordScore));
-      // Keep the laid-out tile bounds — setText can shrink the morph.
-      // Only while touch chrome is showing; otherwise leave it blanked.
-      if (this.touchMode && this.wordScoreBox.$scoreBounds) {
-        this.wordScoreBox.setBounds(this.wordScoreBox.$scoreBounds.copy());
-        this.styleActiveMultiplierChrome(this.wordScoreBox);
-      }
-    }
+    // Enter button keeps its "enter" label — no longer a live score readout.
   }
   launchLevel(caption) {
     /**

@@ -93,13 +93,13 @@ qbfGame.infoButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().top
     expect(rt.eval(`!!qbfGame.retractButton && qbfGame.retractButton.actionName`)).toBe('clear');
     expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
     expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`!!qbfGame.submitCaption && qbfGame.submitCaption.shape.string`)).toBe(
-      'submit',
+    expect(rt.eval(`!!qbfGame.submitCaption`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.retractCaption`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.touchButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.touchCaption`)).toBe(false);
+    expect(rt.eval(`typeof qbfIsTouchDevice === 'function' && qbfIsTouchDevice() === false`)).toBe(
+      true,
     );
-    expect(rt.eval(`!!qbfGame.retractCaption && qbfGame.retractCaption.shape.string`)).toBe(
-      'retract',
-    );
-    expect(rt.eval(`!!qbfGame.touchButton && qbfGame.touchButton.shape.string`)).toBe('o');
     expect(
       rt.eval(
         `qbfGame.titleText.getBounds().width() >= qbfGame.computeLayout().rack.width() + 160`,
@@ -328,8 +328,7 @@ true`);
     type(chars[1]);
     expect(rt.eval(`qbfGame.outboxLetters.length`)).toBe(2);
     expect(rt.eval(`qbfGame.retractButton.actionName`)).toBe('clear');
-    expect(rt.eval(`qbfGame.retractButton.shape.string`)).toBe('X');
-    expect(rt.eval(`qbfGame.retractCaption.shape.string`)).toBe('retract');
+    expect(rt.eval(`qbfGame.retractButton.shape.string`)).toBe('clear');
     rt.eval(`
 qbfBtn = qbfGame.retractButton;
 qbfP = qbfBtn.getBounds().center();
@@ -339,39 +338,74 @@ true`);
     expect(rt.eval(`qbfGame.activeLetters.every((l) => l.copyInOutbox == null)`)).toBe(true);
   }, 60_000);
 
-  it('toggles submit/retract visibility from the touch button on the grave', () => {
+  it('shows enter/clear on touch devices and hides them on keyboard ones', () => {
     const { rt } = makeGame();
-    expect(rt.eval(`!!qbfGame.touchButton && qbfGame.touchButton.shape.string`)).toBe('o');
-    expect(rt.eval(`qbfGame.touchCaption.shape.string`)).toBe('touch');
+    expect(rt.eval(`!!qbfGame.touchButton`)).toBe(false);
+    expect(rt.eval(`qbfIsTouchDevice()`)).toBe(false);
     expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
     expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.submitCaption.getBounds().width()`)).toBe(0);
-    expect(
-      rt.eval(`
-lay = qbfGame.computeLayout();
-pile = lay.pile;
-tb = qbfGame.touchButton.getBounds();
-Math.abs(tb.center().x - pile.center().x) <= 2 &&
-Math.abs(tb.topLeft.y - lay.gameButtons.topLeft.y) <= 8
-`),
-    ).toBe(true);
+    // Force touch detection (same path as iPad maxTouchPoints > 0).
     rt.eval(`
-qbfGame.touchButton.onPointerDown(qbfGame.touchButton.getBounds().center(), { actorID: 'test' });
+$qbfForceTouchMode = true;
+qbfGame.setup({ idle: true });
 true`);
+    expect(rt.eval(`qbfIsTouchDevice()`)).toBe(true);
     expect(rt.eval(`qbfGame.touchMode`)).toBe(true);
     expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
     expect(rt.eval(`qbfGame.retractButton.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.submitCaption.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.retractCaption.getBounds().width()`)).toBeGreaterThan(0);
-    expect(rt.eval(`qbfGame.touchButton.shape.borderColor.b === Color.blue.b`)).toBe(true);
+    expect(rt.eval(`qbfGame.wordScoreBox.shape.string`)).toBe('enter');
+    expect(rt.eval(`qbfGame.retractButton.shape.string`)).toBe('clear');
+    expect(rt.eval(`qbfGame.wordScoreBox.shape.textColor.r === Color.gray.r`)).toBe(true);
+    expect(rt.eval(`qbfGame.retractButton.shape.textColor.r === Color.gray.r`)).toBe(true);
+    expect(rt.eval(`qbfGame.wordScoreBox.shape.borderColor.b === Color.blue.b`)).toBe(true);
+    expect(rt.eval(`qbfGame.retractButton.shape.borderColor.b === Color.blue.b`)).toBe(true);
     // Still visible while idle when touch is on.
     rt.eval(`qbfGame.idle = true; qbfGame.blankScoreReadouts(true); true`);
     expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
     expect(rt.eval(`qbfGame.retractButton.getBounds().width()`)).toBeGreaterThan(0);
-    rt.eval(`qbfGame.toggleTouchMode(); true`);
+    rt.eval(`
+$qbfForceTouchMode = false;
+qbfGame.setup({ idle: true });
+true`);
     expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
     expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBe(0);
-    expect(rt.eval(`qbfGame.touchButton.shape.borderColor.b === Color.gray.b`)).toBe(true);
+    rt.eval(`$qbfForceTouchMode = null; true`);
+  }, 60_000);
+
+  it('detects touch via window.navigator.maxTouchPoints (LM has no free navigator)', () => {
+    const { rt } = makeGame();
+    // Regression: free `navigator` is undefined in LM; `'x' in window` is false
+    // on the window proxy. Detection must use window.navigator property reads.
+    expect(rt.eval(`typeof navigator`)).toBe('undefined');
+    expect(rt.eval(`'ontouchstart' in window`)).toBe(false);
+    const nav = (globalThis as any).navigator;
+    const desc = Object.getOwnPropertyDescriptor(nav, 'maxTouchPoints');
+    Object.defineProperty(nav, 'maxTouchPoints', {
+      configurable: true,
+      enumerable: true,
+      get: () => 5,
+    });
+    try {
+      expect(rt.eval(`Number(window.navigator.maxTouchPoints)`)).toBe(5);
+      expect(rt.eval(`qbfIsTouchDevice()`)).toBe(true);
+      rt.eval(`qbfGame.setup({ idle: true }); true`);
+      expect(rt.eval(`qbfGame.touchMode`)).toBe(true);
+      expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
+    } finally {
+      if (desc) Object.defineProperty(nav, 'maxTouchPoints', desc);
+      else delete (nav as any).maxTouchPoints;
+    }
+  }, 60_000);
+
+  it('enables enter/clear on the first touch pointer if detection was off', () => {
+    const { rt } = makeGame();
+    expect(rt.eval(`qbfGame.touchMode`)).toBe(false);
+    rt.eval(`
+qbfGame.onPointerDown(qbfGame.getBounds().center(), { actorID: 'test', pointerType: 'touch' });
+true`);
+    expect(rt.eval(`qbfGame.touchMode`)).toBe(true);
+    expect(rt.eval(`qbfGame.wordScoreBox.getBounds().width()`)).toBeGreaterThan(0);
+    expect(rt.eval(`qbfGame.retractButton.getBounds().width()`)).toBeGreaterThan(0);
   }, 60_000);
 
   it('tracks live active-player scores for the current Game # in column 3', () => {
@@ -1139,13 +1173,16 @@ ws.height() === lay.wordScore.height() &&
 Math.abs(ws.topLeft.y - multBoard.y) <= 1 &&
 Math.abs(ws.topLeft.x + ws.width() + 15 - multBoard.x) <= 2 &&
 Math.abs(rb.topLeft.x - ws.topLeft.x) <= 1 &&
-rb.topLeft.y >= ws.bottom() + 16 &&
-Number(qbfGame.wordScoreBox.shape.font.replace(/px.*/, '')) === 16 &&
-!!qbfGame.submitCaption &&
-qbfGame.submitCaption.shape.string === 'submit' &&
-!!qbfGame.retractCaption &&
-qbfGame.retractCaption.shape.string === 'retract' &&
-qbfGame.retractButton.shape.string === 'X'
+Math.abs(rb.topLeft.y - (ws.bottom() + 10)) <= 1 &&
+qbfGame.wordScoreBox.shape.string === 'enter' &&
+qbfGame.retractButton.shape.string === 'clear' &&
+qbfGame.wordScoreBox.shape.textColor.r === Color.gray.r &&
+qbfGame.retractButton.shape.textColor.r === Color.gray.r &&
+qbfGame.wordScoreBox.shape.borderColor.b === Color.blue.b &&
+qbfGame.retractButton.shape.borderColor.b === Color.blue.b &&
+!qbfGame.submitCaption &&
+!qbfGame.retractCaption &&
+!qbfGame.touchButton
 `),
     ).toBe(true);
     const queue1 = rt.eval(`qbfGame.tournamentLetterQueue.join('')`) as string;
