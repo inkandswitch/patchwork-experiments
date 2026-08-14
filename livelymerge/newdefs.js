@@ -8771,8 +8771,11 @@ class MethodListPanel extends PanelMorph {
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
         // List click leaves keyboard focus on the methods list (which ignores
         // ctrl-G). Put focus on the method text so find-next / edits work.
+        // world() returns the root morph, which is the panel itself until it
+        // has been added to a world (e.g. during construction) — guard on the
+        // method like the other world() call sites do.
         let world = this.world();
-        if (world && this.printPane.contentPane) {
+        if (world && world.setKeyboardFocus && this.printPane.contentPane) {
           world.setKeyboardFocus(this.printPane.contentPane);
         }
         if (shiftKey) {
@@ -8904,8 +8907,11 @@ class ErrorStackPanel extends MethodListPanel {
       let hl = stackFrameHighlightName(this.stackFrames[index - 1]);
       if (hl) this.printPane.contentPane.shape.selectSearchString(hl);
     }
+    // The first frame is shown from the constructor, before the panel is in a
+    // world — world() then returns the panel itself, which has no
+    // setKeyboardFocus. Guard on the method like the other world() call sites.
     let world = this.world();
-    if (world && this.printPane.contentPane) {
+    if (world && world.setKeyboardFocus && this.printPane.contentPane) {
       world.setKeyboardFocus(this.printPane.contentPane);
     }
   }
