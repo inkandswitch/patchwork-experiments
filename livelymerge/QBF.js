@@ -1308,8 +1308,10 @@ class QBFMorph extends Morph {
     qbfArmFallSound(letter);
     letter.moveBy(pt(-8, 0));
     this.fillLetter(letter, Color.gray);
-    letter.vel = pt(-2 + Math.random() * 0.5, 0);
-    letter.rot = -0.05 - Math.random() * 0.1;
+    // Per-tick fall constants tuned at 20 ticks/sec (see tick's `k`).
+    let k = 20 / this.ticksPerSec;
+    letter.vel = pt((-2 + Math.random() * 0.5) * k, 0);
+    letter.rot = (-0.05 - Math.random() * 0.1) * k;
     this.fallingLetters.push(letter);
     this.promote(letter); // frontmost, so we watch it land
   }
@@ -1317,7 +1319,10 @@ class QBFMorph extends Morph {
     // One frame of an accelerating, tumbling fall onto the pile ledge.
     if (qbfConsumeFallSound(letter)) qbfSound('letterFall');
     letter.moveBy(letter.vel);
-    letter.vel = letter.vel.addPt(pt(0, 1));
+    // Gravity is px/tick², so it scales with the SQUARE of the tick-rate change
+    // (1 px/tick² as tuned at 20 ticks/sec).
+    let g = 20 / this.ticksPerSec;
+    letter.vel = letter.vel.addPt(pt(0, g * g));
     letter.rotateBy(letter.rot);
     letter.$fallFrames = (letter.$fallFrames || 0) + 1;
     let landY = this.pile ? this.pile.getBounds().topLeft.y : null;
@@ -1606,7 +1611,8 @@ class QBFMorph extends Morph {
     this.outboxLetters = [];
     this.fallingLetters = [];
     this.letterInBin = null;
-    this.xStep = -this.letterW / 4; // brisk at first; normal pace from the 5th tile on
+    // Brisk at first (tuned at 20 ticks/sec); normal pace from the 5th tile on.
+    this.xStep = (-this.letterW / 4) * (20 / this.ticksPerSec);
     let lay = this.computeLayout();
     this.setBounds(this.getBounds().topLeft.extent(lay.boardExtent));
     this.setStyles(Color.orange.darker(), 1, Color.black);
@@ -2269,7 +2275,9 @@ class QBFMorph extends Morph {
   }
   startTicking() {
     if (!this.worldOrNull()) return; // openQBF starts us once we are in the world
-    this.startStepping('tick', null, Math.round(1000 / this.ticksPerSec));
+    // No rounding: at 30 ticks/sec the 33.33ms period lines up exactly with the
+    // 30Hz frame grid; a rounded 33ms would sneak in a catch-up tick every ~3s.
+    this.startStepping('tick', null, 1000 / this.ticksPerSec);
   }
   onPanelCollapseChanged() {
     /**
@@ -2305,12 +2313,15 @@ class QBFMorph extends Morph {
       this.maybePostFinalScore();
       return;
     }
+    // Per-tick motion constants below were tuned at the original 20 ticks/sec;
+    // scale them so wall-clock speeds are unchanged at other tick rates.
+    let k = 20 / this.ticksPerSec;
     // Decorative spin: bump rotation directly. Morph.rotateBy -> setRotation does
     // center-fix math + changed() and was ~40% of tick time for no gameplay gain.
-    this.pulley.transform.rotation += -Math.PI / 15;
-    this.pulley2.transform.rotation += -Math.PI / 15;
+    this.pulley.transform.rotation += (-Math.PI / 15) * k;
+    this.pulley2.transform.rotation += (-Math.PI / 15) * k;
     if (this.activeLetters.length === 4) this.xStep = -this.letterW / this.ticksPerSec;
-    if (this.letterInBin) this.letterInBin.moveBy(pt(0, 0.3)); // the next tile creeps down
+    if (this.letterInBin) this.letterInBin.moveBy(pt(0, 0.3 * k)); // the next tile creeps down
     if (this.fallingLetters.length > 0)
       this.fallingLetters.slice().forEach((each) => this.letterFallToPile(each));
     if (this.activeLetters.length === 0) return;
@@ -2954,7 +2965,10 @@ QBFMorph.prototype.multipliers = [0, 0, 0, 1, 2, 3, 4, 5, 6, 7];
 QBFMorph.prototype.letterW = 45;
 QBFMorph.prototype.letterH = 50;
 QBFMorph.prototype.numLetters = 103;
-QBFMorph.prototype.ticksPerSec = 20;
+// 30 matches the 30Hz frame gate exactly: one tick per rendered frame. Motion
+// constants are expressed relative to the original 20 (see tick's `k`), so the
+// game plays at the same wall-clock speed at any rate.
+QBFMorph.prototype.ticksPerSec = 30;
 
 function openQBF(topLeftIfAny) {
   /**
