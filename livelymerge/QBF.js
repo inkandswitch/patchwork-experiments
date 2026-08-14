@@ -1319,13 +1319,19 @@ class QBFMorph extends Morph {
     letter.moveBy(letter.vel);
     letter.vel = letter.vel.addPt(pt(0, 1));
     letter.rotateBy(letter.rot);
-    if (!this.pile) return;
-    let landY = this.pile.getBounds().topLeft.y;
-    // Rotated AABB so a tumbling tile rests on the ledge, not buried in it.
-    let foot = letter.boundsInOwnerAfterTransform();
-    if (foot.bottom() <= landY) return;
+    letter.$fallFrames = (letter.$fallFrames || 0) + 1;
+    let landY = this.pile ? this.pile.getBounds().topLeft.y : null;
+    let foot = letter.boundsInOwnerAfterTransform ? letter.boundsInOwnerAfterTransform() : null;
+    let footBottom = foot && foot.bottom ? foot.bottom() : null;
+    // Land when the tile crosses the ledge — or force-settle if there is no pile,
+    // bounds are unusable, or the tumble runs too long (blocks game-over posting).
+    let crossed = landY != null && footBottom != null && !(footBottom <= landY);
+    let forceSettle = landY == null || footBottom == null || letter.$fallFrames > 90;
+    if (!crossed && !forceSettle) return;
     deleteFromArray(this.fallingLetters, letter);
-    letter.moveBy(pt(0, landY - foot.bottom()));
+    if (crossed && isFinite(landY) && isFinite(footBottom)) {
+      letter.moveBy(pt(0, landY - footBottom));
+    }
     qbfSound('wordReject');
     this.registerMissedLetter(letter);
     this.maybePostFinalScore();
@@ -1449,16 +1455,23 @@ class QBFMorph extends Morph {
     /**
      * Publish scores only after game over *and* every falling tile has landed
      * (miss penalties applied). Otherwise the posted score is too high.
-     * Then show the start-new-game prompt without clearing the finished board.
+     * Then soft-idle for a new game without clearing the finished board.
+     * Always enter soft-idle once falls are done — a post failure must not
+     * leave the board stuck in gameOver with no idle chrome.
      */
     if (!this.gameOver || this._finalScorePosted) return;
     if ((this.fallingLetters || []).length > 0) return;
     this._finalScorePosted = true;
-    // Mark this board finished in the shared list; caption flips to
-    // "final scores" only when every listed player is done.
-    this.reportLiveScore({ finished: true, force: true });
-    this.postScoresToStore();
-    this.enterAwaitingNewGame();
+    try {
+      // Mark this board finished in the shared list; caption flips to
+      // "final scores" only when every listed player is done.
+      this.reportLiveScore({ finished: true, force: true });
+      this.postScoresToStore();
+    } catch (err) {
+      console.log('QBF final score post failed: ' + err);
+    } finally {
+      this.enterAwaitingNewGame();
+    }
   }
   enterAwaitingNewGame() {
     /**
@@ -2281,7 +2294,17 @@ class QBFMorph extends Morph {
     }
     let panel = this.panelMorph();
     if (panel && panel.collapsed) return; // defensive: expand restarts via onPanelCollapseChanged
-    if (this.paused || (this.gameOver && this.fallingLetters.length === 0)) return;
+    if (this.paused) return;
+    // Game-over drain: keep settling falls, and always retry final post/idle.
+    // (A prior early-return when fallingLetters was empty skipped maybePostFinalScore
+    // forever if the first post path was missed — boards looked finished but stuck.)
+    if (this.gameOver) {
+      if ((this.fallingLetters || []).length > 0) {
+        this.fallingLetters.slice().forEach((each) => this.letterFallToPile(each));
+      }
+      this.maybePostFinalScore();
+      return;
+    }
     // Decorative spin: bump rotation directly. Morph.rotateBy -> setRotation does
     // center-fix math + changed() and was ~40% of tick time for no gameplay gain.
     this.pulley.transform.rotation += -Math.PI / 15;
@@ -2290,10 +2313,6 @@ class QBFMorph extends Morph {
     if (this.letterInBin) this.letterInBin.moveBy(pt(0, 0.3)); // the next tile creeps down
     if (this.fallingLetters.length > 0)
       this.fallingLetters.slice().forEach((each) => this.letterFallToPile(each));
-    if (this.gameOver) {
-      this.maybePostFinalScore();
-      return;
-    }
     if (this.activeLetters.length === 0) return;
     // activeLetters[0] is the belt tile while supply lasts. After the hopper empties
     // it is the rightmost rack tile — still drift it left so the rack empties, but do

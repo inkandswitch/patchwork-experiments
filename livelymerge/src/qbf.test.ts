@@ -1327,6 +1327,64 @@ Math.abs(qbfGame.liveScoresPlate.getBounds().topLeft.y - qbfGame.computeLayout()
     expect(rt.eval(`qbfGame.gameNumberLabel.shape.string`)).toBe('Game #101');
   }, 60_000);
 
+  it('tick retries final score post when gameOver with no falling tiles', () => {
+    // Regression: tick used to return early when gameOver && fallingLetters empty,
+    // so a missed first maybePostFinalScore left the board finished but not idle.
+    const { rt } = makeGame();
+    rt.eval(`
+Lively.qbfHighScoreList = [];
+Lively.qbfRecentGames = [];
+Lively.qbfLiveScores = [];
+qbfGame.playerName = 'Retry';
+qbfGame.tournamentGameNumber = 4242;
+qbfGame.totalScore = 33;
+qbfGame.bestWord = 'HI';
+qbfGame.bestWordScore = 5;
+qbfGame.idle = false;
+qbfGame.gameOver = true;
+qbfGame._finalScorePosted = false;
+qbfGame.fallingLetters = [];
+qbfGame.activeLetters = [];
+qbfGame.tick();
+true`);
+    expect(rt.eval(`qbfGame._finalScorePosted`)).toBe(true);
+    expect(rt.eval(`qbfGame.idle`)).toBe(true);
+    expect(rt.eval(`qbfScoresStore().getScoreEntries().some((e) => e.player === 'Retry' && e.bestGame === 33)`)).toBe(
+      true,
+    );
+    expect(
+      rt.eval(
+        `Lively.qbfLiveScores.some((e) => e.player === 'Retry' && e.gameNo === 4242 && e.finished)`,
+      ),
+    ).toBe(true);
+  }, 60_000);
+
+  it('force-settles a stuck falling tile so game-over can finish', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+qbfGame.playerName = 'Stuck';
+qbfGame.tournamentGameNumber = 7;
+qbfGame.totalScore = 20;
+qbfGame.idle = false;
+qbfGame.gameOver = true;
+qbfGame._finalScorePosted = false;
+qbfStuck = new QBFLetterMorph('Q', 10, qbfGame.letterExtent(), 24);
+qbfGame.addMorph(qbfStuck);
+qbfStuck.loc = 'falling';
+qbfStuck.pendingMissValue = 10;
+qbfStuck.vel = pt(0, 0);
+qbfStuck.rot = 0;
+qbfStuck.$fallFrames = 91;
+qbfGame.fallingLetters = [qbfStuck];
+qbfGame.placeBottomRight(qbfStuck, qbfGame.pile.getBounds().topLeft.addPt(pt(40, -200)));
+qbfGame.tick();
+true`);
+    expect(rt.eval(`qbfGame.fallingLetters.length`)).toBe(0);
+    expect(rt.eval(`qbfGame._finalScorePosted`)).toBe(true);
+    expect(rt.eval(`qbfGame.idle`)).toBe(true);
+    expect(rt.eval(`qbfGame.totalScore`)).toBe(10);
+  }, 60_000);
+
   it('advances shuffle generation so wrapped Game #s get fresh letter queues', () => {
     const { rt } = makeGame();
     rt.eval(`
