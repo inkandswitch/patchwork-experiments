@@ -1302,6 +1302,12 @@ qbfGame.maybePostFinalScore();
 true`);
     expect(rt.eval(`qbfGame.idle`)).toBe(true);
     expect(rt.eval(`qbfGame.idleHelpText.shape.string`)).toMatch(/Start a new game|A game is open/);
+    // While the join window is still open, soft-idle keeps the compact chrome
+    // (spectators see the same chrome as the host), so close the window first.
+    rt.eval(`
+Lively.qbfEpochStartMs = Date.now() - 31000;
+qbfGame.tickGameClock();
+true`);
     // Compact-chrome frill drops speeds + active games back to home slots.
     rt.eval(`qbfGame.syncChromeSlide(false); true`);
     expect(
