@@ -144,8 +144,19 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
   const edgeCache = new Map<string, string[]>();
   const edgeDirtyIds = new Set<string>();
 
+  // Phase-2 (ephemeral marking) companion to edgeCache: outgoing ref-targets per
+  // entry the ephemeral trace visits. Unlike edgeCache it holds SHADOW entries too —
+  // most ephemeral-live objects are shadow-resident — so a large per-replica
+  // structure (e.g. a word-lookup table with one property per word) is enumerated
+  // once, not re-enumerated by every transaction's trace. Rows are invalidated by
+  // the write barrier the moment an edge may have changed, dropped when their entry
+  // leaves the shadow table, and cleared wholesale whenever phase 1 falls back to a
+  // full rebuild (aborts, external changes of unknown shape).
+  const ephTraceEdgeCache = new Map<string, string[]>();
+
   function markEdgeDirty(id: string): void {
     edgeDirtyIds.add(id);
+    ephTraceEdgeCache.delete(id);
   }
 
   /** Barrier helper: an edge changed iff a ref was stored or displaced. Leaf values
@@ -154,7 +165,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
    * accessor record's $get/$set. */
   function markEdgeDirtyIfRefs(id: string, oldValue: unknown, newValue?: unknown): void {
     if (isRef(oldValue) || isRef(newValue) || isAccessorVal(oldValue) || isAccessorVal(newValue)) {
-      edgeDirtyIds.add(id);
+      markEdgeDirty(id);
     }
   }
 
@@ -172,7 +183,7 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       return;
     }
     for (const id of ids) {
-      edgeDirtyIds.add(id);
+      markEdgeDirty(id);
       invalidateMat(id);
     }
   }
@@ -1567,6 +1578,10 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
     if (commit) {
       for (const id of pendingShadowDeletes) {
         delete shadowTable[id];
+        // Promoted entries' rows would still be valid, but neither promoted nor
+        // swept ids are traced ephemerally again (promoted ids are reachable), so
+        // keep the cache to live ephemeral entries only.
+        ephTraceEdgeCache.delete(id);
       }
       if (pendingReachable) persistentReachable = pendingReachable;
       edgeDirtyIds.clear();
@@ -1574,8 +1589,11 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
       // Aborted change: the document rolled back (promotions included), so the
       // traced set and any edge lists refreshed this transaction are invalid. Aborts
       // are rare (promotion validation failures) — rebuild from scratch next time.
+      // Shadow-entry writes made during the aborted change do NOT roll back, and
+      // edgeDirtyIds is cleared below, so the ephemeral trace's rows go too.
       persistentReachable = null;
       edgeCache.clear();
+      ephTraceEdgeCache.clear();
       edgeDirtyIds.clear();
     }
     pendingShadowDeletes = [];
@@ -1723,8 +1741,12 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
 
     if (persistentReachable === null) {
       // Full traversal from the persistent root: the global object (everything else
-      // hangs off it). Rebuilds the edge cache as it goes.
+      // hangs off it). Rebuilds the edge cache as it goes. The ephemeral trace's
+      // cache is dropped too: full rebuilds happen exactly when edges may have
+      // changed in ways the barrier didn't see (aborts, unknown-shape external
+      // changes), and those invalidate phase 2's rows just as surely as phase 1's.
       edgeCache.clear();
+      ephTraceEdgeCache.clear();
       reachable = new Set();
       visitPersistent('global');
     } else {
@@ -1828,13 +1850,24 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         continue;
       }
       ephemeralLive.add(id);
-      const val = lookupHeapEntryRead(id);
-      if (!val) {
-        // Dangling ephemeral reference (e.g. the referent was collected by another
-        // replica, or the row outlived its target). Reads yield undefined.
-        continue;
+      // Trace over cached edge lists (phase 1's trick, applied to the ephemeral
+      // graph): this loop runs to a fixpoint EVERY transaction, and re-enumerating
+      // each live entry's properties made big per-replica objects a per-frame tax.
+      // The write barrier drops a row the moment its entry's edges may change.
+      let edges = ephTraceEdgeCache.get(id);
+      if (edges === undefined) {
+        const val = lookupHeapEntryRead(id);
+        if (!val) {
+          // Dangling ephemeral reference (e.g. the referent was collected by another
+          // replica, or the row outlived its target). Reads yield undefined.
+          continue;
+        }
+        const found: string[] = [];
+        traverse(val, (refId) => found.push(refId));
+        ephTraceEdgeCache.set(id, found);
+        edges = found;
       }
-      traverse(val, (refId) => worklist.push(refId));
+      for (const refId of edges) worklist.push(refId);
       enqueueEphemeralPropsOf(id);
     }
 

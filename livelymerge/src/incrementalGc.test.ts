@@ -157,6 +157,27 @@ describe('incremental precise gc', () => {
     expect(runtime.doc().objectTable[child.$id]).toBeDefined();
   });
 
+  it('retains objects linked into a WARM ephemeral graph (phase-2 edge cache invalidation)', () => {
+    const { runtime } = makeRuntime();
+    runtime.eval('$box = { inner: {} }');
+    runtime.eval('1'); // the ephemeral trace caches inner's (empty) edge list
+    runtime.eval('2');
+    runtime.eval('$box.inner.leaf = { v: 3 }'); // new edge on an already-cached shadow entry
+    runtime.eval('3'); // a stale cached row would sweep leaf here
+    runtime.eval('4');
+    expect(runtime.eval('$box.inner.leaf.v')).toBe(3);
+  });
+
+  it('retains objects pushed onto a WARM ephemeral array (phase-2 edge cache invalidation)', () => {
+    const { runtime } = makeRuntime();
+    runtime.eval('$list = []');
+    runtime.eval('1'); // trace caches the empty array's edge list
+    runtime.eval('2');
+    runtime.eval('$list.push({ v: 4 })');
+    runtime.eval('3');
+    expect(runtime.eval('$list[0].v')).toBe(4);
+  });
+
   it('ephemeral props of persistent objects keep their referents alive without promoting them', () => {
     const { runtime } = makeRuntime();
     runtime.eval('x = { a: 1 }');

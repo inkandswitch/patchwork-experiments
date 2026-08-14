@@ -193,6 +193,11 @@ function qbfSetWordList(listOrCompactString) {
    * Give the game a word list: either an array of words or a compact string.
    * Also builds an O(1) lookup map — compact binary-search walks were freezing
    * the board whenever Otto (or enter) checked many candidate words.
+   *
+   * The lookup must stay a plain object: `Set` here is newdefs' LM shim, whose
+   * add() linear-scans an entries array — building one from ~179k words is
+   * O(n^2) and takes hours. The GC's ephemeral trace caches this object's
+   * (empty) edge list, so its size no longer taxes the frame rate.
    */
   $qbfWordList = listOrCompactString;
   $qbfWordLookup = null;
