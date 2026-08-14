@@ -34,7 +34,7 @@ export function readQBFWordsText() {
   return readFileSync(join(__dirname, '..', 'QBFWords.txt'), 'utf8');
 }
 
-function installBrowserStubs(harness: Harness) {
+export function installBrowserStubs(harness: Harness) {
   const ctx = makeCtxStub();
   const canvas: any = {
     width: 1000,

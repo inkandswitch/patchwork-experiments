@@ -581,48 +581,128 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
 }
 
+// These Map/Set shims shadow the host classes for ALL LM code — callers cannot
+// opt into the native ones. `entries` (an LM array of [k, v] tuples) is the sole
+// persisted, synced truth; scanning it pays a per-element deserialization through
+// the object model, so every instance also keeps `$index`, an EPHEMERAL ($-props
+// are per-replica and never persist — see lmStorage.ts) plain object mapping
+// collectionIndexKey(k) -> position in entries. That makes add/set/get/has O(1)
+// for primitive keys instead of an O(n) scan (building a set of n items used to
+// be O(n^2): a 179k-word install took hours). Identity-compared keys (objects,
+// functions, symbols) still take the scan. delete splices, which shifts
+// positions, so it drops the index (rebuilt lazily) — O(n), same as before.
+//
+// Staleness: the index is rebuilt whenever $indexLen disagrees with
+// entries.length, which covers entries synced in from other replicas. Not
+// covered: a remote add + delete that nets out to the same length between two
+// local reads (positions shift undetected). Shared instances mutated
+// concurrently from several replicas should not lean on these shims.
+
+function collectionIndexKey(k) {
+  // Type-tagged index key ('string:foo', 'number:42', ...) so 1, '1', and true
+  // get distinct slots. null for identity-compared values -> caller must scan.
+  if (k === null) return 'null:';
+  const t = typeof k;
+  if (t === 'object' || t === 'function' || t === 'symbol') return null;
+  return t + ':' + k;
+}
+function ensureCollectionIndex(coll) {
+  if (coll.$index && coll.$indexLen === coll.entries.length) return;
+  const index = {};
+  const entries = coll.entries;
+  for (let i = 0; i < entries.length; i++) {
+    const key = collectionIndexKey(entries[i][0]);
+    // First match wins, matching the old scan semantics for duplicate keys
+    // (possible after a concurrent-add merge).
+    if (key !== null && index[key] === undefined) index[key] = i;
+  }
+  coll.$index = index;
+  coll.$indexLen = entries.length;
+}
+
 // comment this out if you want to run in pyonpyon
 class Map {
   entries = [];
 
   set(key, value) {
-    for (const e of this.entries) {
-      if (e[0] === key) {
-        e[1] = value;
-        return;
+    const ik = collectionIndexKey(key);
+    if (ik === null) {
+      for (const e of this.entries) {
+        if (e[0] === key) {
+          e[1] = value;
+          return;
+        }
       }
+      this.entries.push([key, value]);
+      // The new entry is not indexable, but positions didn't shift: keep the
+      // index valid rather than forcing a rebuild on the next lookup.
+      if (this.$index) this.$indexLen = this.entries.length;
+      return;
     }
-    this.entries.push([key, value]);
+    ensureCollectionIndex(this);
+    const pos = this.$index[ik];
+    if (pos === undefined) {
+      this.entries.push([key, value]);
+      this.$index[ik] = this.entries.length - 1;
+      this.$indexLen = this.entries.length;
+    } else {
+      this.entries[pos][1] = value;
+    }
   }
 
   get(key) {
-    for (const [k, v] of this.entries) {
-      if (k === key) {
-        return v;
+    const ik = collectionIndexKey(key);
+    if (ik === null) {
+      for (const [k, v] of this.entries) {
+        if (k === key) {
+          return v;
+        }
       }
+      return undefined;
     }
-    return undefined;
+    ensureCollectionIndex(this);
+    const pos = this.$index[ik];
+    // Read through entries (not a cached value) so a value synced in from
+    // another replica is seen even when the index itself is untouched.
+    return pos === undefined ? undefined : this.entries[pos][1];
   }
 
   delete(key) {
+    const ik = collectionIndexKey(key);
+    if (ik !== null) {
+      ensureCollectionIndex(this);
+      const pos = this.$index[ik];
+      if (pos === undefined) return;
+      this.entries.splice(pos, 1);
+      this.$index = null; // positions after pos shifted
+      return;
+    }
     for (let i = 0; i < this.entries.length; i++) {
       if (this.entries[i][0] === key) {
         this.entries.splice(i, 1);
+        this.$index = null;
         return;
       }
     }
   }
 
   has(key) {
-    for (const [k, v] of this.entries) {
-      if (k === key) {
-        return true;
+    const ik = collectionIndexKey(key);
+    if (ik === null) {
+      for (const [k, v] of this.entries) {
+        if (k === key) {
+          return true;
+        }
       }
+      return false;
     }
+    ensureCollectionIndex(this);
+    return this.$index[ik] !== undefined;
   }
 
   clear() {
     clearArray(this.entries);
+    this.$index = null;
   }
 
   forEach(callback) {
@@ -649,35 +729,62 @@ class Set {
   entries = [];
 
   add(value) {
-    for (const [k, v] of this.entries) {
-      if (v === value) {
-        return this;
+    const ik = collectionIndexKey(value);
+    if (ik === null) {
+      for (const [k, v] of this.entries) {
+        if (v === value) {
+          return this;
+        }
       }
+      this.entries.push([value, value]);
+      if (this.$index) this.$indexLen = this.entries.length;
+      return this;
     }
-    this.entries.push([value, value]);
+    ensureCollectionIndex(this);
+    if (this.$index[ik] === undefined) {
+      this.entries.push([value, value]);
+      this.$index[ik] = this.entries.length - 1;
+      this.$indexLen = this.entries.length;
+    }
     return this;
   }
 
   delete(value) {
+    const ik = collectionIndexKey(value);
+    if (ik !== null) {
+      ensureCollectionIndex(this);
+      const pos = this.$index[ik];
+      if (pos === undefined) return;
+      this.entries.splice(pos, 1);
+      this.$index = null; // positions after pos shifted
+      return;
+    }
     for (let i = 0; i < this.entries.length; i++) {
       if (this.entries[i][1] === value) {
         this.entries.splice(i, 1);
+        this.$index = null;
         return;
       }
     }
   }
 
   has(value) {
-    for (const [k, v] of this.entries) {
-      if (v === value) {
-        return true;
+    const ik = collectionIndexKey(value);
+    if (ik === null) {
+      for (const [k, v] of this.entries) {
+        if (v === value) {
+          return true;
+        }
       }
+      return false;
     }
-    return false;
+    ensureCollectionIndex(this);
+    return this.$index[ik] !== undefined;
   }
 
   clear() {
     this.entries = [];
+    this.$index = null;
   }
 
   forEach(callback) {
