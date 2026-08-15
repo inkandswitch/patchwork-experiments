@@ -2160,13 +2160,13 @@ class QBFMorph extends Morph {
     this.restartButton = null;
     this.updateAutoPlayButton();
     this.updateModeControls();
-    // Player name under the fox — hidden for now (playerName still tracked).
-    // this.nameButton = this.addButton(
-    //   lay.nameButton,
-    //   qbfNameButtonLabel(this.playerName),
-    //   'name',
-    // );
-    this.nameButton = null;
+    // Name under the fox: starts as Anonymous; Patchwork getUserName may replace it.
+    // Click to enter/edit a name when account lookup fails or the player wants another.
+    this.nameButton = this.addButton(
+      lay.nameButton,
+      qbfNameButtonLabel(this.playerName),
+      'name',
+    );
   }
   setupFox(lay) {
     // The fox himself -- painted directly via EmojiMorph.fillText (no canvas bake).

@@ -77,7 +77,9 @@ qbfGame.infoButton.getBounds().topLeft.y == qbfGame.scoresButton.getBounds().top
         `qbfGame.titleText.getBounds().topLeft.y == qbfGame.computeLayout().fox.topLeft.y`,
       ),
     ).toBe(true);
-    expect(rt.eval(`!!qbfGame.nameButton`)).toBe(false);
+    expect(rt.eval(`!!qbfGame.nameButton && qbfGame.nameButton.actionName`)).toBe('name');
+    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Anonymous');
+    expect(rt.eval(`qbfGame.playerName`)).toBe('Anonymous');
     expect(rt.eval(`qbfGame.scoresButton.shape.string`)).toBe('show scores');
     expect(rt.eval(`!!qbfGame.pauseButton`)).toBe(false);
     expect(rt.eval(`!!qbfGame.finishButton`)).toBe(false);
@@ -179,6 +181,7 @@ true`);
       game.tick();
     });
     expect(rt.eval(`qbfGame.playerName`)).toBe('Daniel');
+    expect(rt.eval(`qbfGame.nameButton.shape.string`)).toBe('Daniel');
     expect(g.qbfPendingAccountName == null || g.qbfPendingAccountName === null).toBe(true);
     delete g.accountDocHandle;
     delete g.repo;
@@ -197,10 +200,21 @@ true`);
     };
     rt.eval(`
 qbfGame.playerName = 'Anonymous';
+if (qbfGame.nameButton) qbfGame.nameButton.setLabel('Anonymous');
 qbfResolvePlayerNameFromAccount(qbfGame);
 true`);
     await new Promise((r) => setTimeout(r, 50));
     expect(rt.eval(`qbfGame.playerName`)).toBe('Anonymous');
+    expect(rt.eval(`!!qbfGame.nameButton && qbfGame.nameButton.shape.string`)).toBe('Anonymous');
+    // Name button opens the player-name prompt (Patchwork left Anonymous).
+    rt.eval(`
+qbfGame.buttonFired('name');
+qbfNamePromptOpen = (Lively.$submorphs || []).some(function (m) {
+  let t = m.titleBar && m.titleBar.titleMorph && m.titleBar.titleMorph.shape;
+  return m.className === 'PanelMorph' && t && t.string === 'player name';
+});
+true`);
+    expect(rt.eval(`qbfNamePromptOpen`)).toBe(true);
     delete g.accountDocHandle;
     delete g.repo;
   }, 60_000);
