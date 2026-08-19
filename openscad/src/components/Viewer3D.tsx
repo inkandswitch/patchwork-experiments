@@ -10,6 +10,11 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 	onMount(() => {
 		const scene = new THREE.Scene()
 		const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000)
+		// OpenSCAD is Z-up, and OrbitControls captures the orbit axis from
+		// camera.up in its constructor — so this has to be set first.
+		camera.up.set(0, 0, 1)
+		camera.position.set(60, -90, 70)
+		camera.lookAt(0, 0, 0)
 
 		const renderer = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true})
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -17,6 +22,8 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 		const controls = new OrbitControls(camera, renderer.domElement)
 		controls.enableDamping = true
 		controls.dampingFactor = 0.08
+		controls.target.set(0, 0, 0)
+		controls.update()
 
 		scene.add(new THREE.HemisphereLight(0xffffff, 0x33333a, 2.2))
 		const key = new THREE.DirectionalLight(0xffffff, 1.6)
@@ -38,12 +45,6 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 			side: THREE.DoubleSide,
 		})
 		let mesh: THREE.Mesh | null = null
-
-		camera.position.set(60, -90, 70)
-		camera.up.set(0, 0, 1)
-		camera.lookAt(0, 0, 0)
-		controls.target.set(0, 0, 0)
-		controls.update()
 
 		function resize() {
 			const w = container.clientWidth || 1

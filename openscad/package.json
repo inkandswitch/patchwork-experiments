@@ -1,6 +1,6 @@
 {
   "name": "@patchwork/openscad",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "OpenSCAD editor and 3D viewer for Patchwork, running entirely in the browser via openscad-wasm.",
   "type": "module",
   "main": "src/index.ts",
