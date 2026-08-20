@@ -12,7 +12,7 @@ your coding agent's skills directory:
 npx @inkandswitch/patchwork-skills install <dir>   # e.g. .claude/skills or .cursor/skills
 ```
 
-The skill teaches the agent the whole workflow — plugin registration, the render
+The skill teaches the agent the whole workflow — package registration, the render
 contract, build & sync — and ships reference checkouts of patchwork-base and this repo.
 
 ## Guidance
