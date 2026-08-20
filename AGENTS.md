@@ -9,6 +9,10 @@ How to build a tool is covered by the `writing-patchwork-tools` skill from
 reuse — folder, embed, codemirror-base, file, … — look at
 [patchwork-pkg-base](https://github.com/inkandswitch/patchwork-pkg-base).
 
+House style: small, simple tools in plain vanilla JavaScript. TypeScript, npm deps, and a
+bundled build are all fine (pushwork handles them). If a reactive framework is needed, use
+Solid — never React.
+
 Tailwind is not supported in Patchwork. If a tool here is still using it, remove it and
 write plain CSS instead.
 
@@ -22,7 +26,7 @@ write plain CSS instead.
 - `writing` — live-preview markdown editor; hand-rolled CodeMirror⇄Automerge splicing with
   a minimal-diff reconcile
 
-**Solid + TypeScript, vite-bundled (the house style):**
+**Solid + TypeScript, vite-bundled:**
 
 - `editable-llm-chat` — compact, complete datatype + tool in one module (~400 lines)
 - `openscad` — mid-size package with a clean `index`/`datatype`/`tool` layout (wasm +
@@ -31,7 +35,8 @@ write plain CSS instead.
 **Specialties:**
 
 - `inspector` — title-bar tool that opens on ANY document (`supportedDatatypes: "*"`)
-- `codemirror-latex` — a `codemirror:extension` plugin (KaTeX live preview), not a full tool
+- `codemirror-latex` — a `codemirror:extension` plugin (KaTeX live preview) that extends the
+  `codemirror-base` package
 - `call` — ephemeral multiplayer via `handle.broadcast` (WebRTC signaling); advanced, large
 - `themes` — bundleless `patchwork:theme` plugins
 - `actions` — headless `patchwork:action` plugins with a zod `argsSchema`
