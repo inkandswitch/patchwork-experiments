@@ -121,6 +121,10 @@ function deleteFromArrayPred(xs, pred) {
   }
 }
 function isClass(fn) {
+  // Runtime Object is the implicit root of every LM class prototype chain
+  // (see $obj → object-prototype). Treat it as a class so the system browser
+  // can list Object.prototype methods (e.g. inspect).
+  if (fn === Object) return true;
   return typeof fn === 'function' && /^\s*class\s+/.test(fn.toString());
 }
 function findSuperclassOf(sub) {
@@ -129,7 +133,7 @@ function findSuperclassOf(sub) {
   let superProto = Object.getPrototypeOf(sub.prototype);
   if (!superProto) return null;
   for (const cName of allClassNames()) {
-    let cls = $global[cName];
+    let cls = classNamed(cName);
     if (cls !== sub && cls.prototype === superProto) return cls;
   }
   return null;
@@ -146,22 +150,38 @@ function subclassDepth(cls) {
 }
 function allClassNames() {
   // allClassNames().length ==> 27
-  return Object.getOwnPropertyNames($global)
+  // Object is the runtime root (not stored on $global — see getRuntimeParams);
+  // include it so the system browser can show Object.prototype methods.
+  let names = Object.getOwnPropertyNames($global)
     .sort()
-    .filter((name) => isClass($global[name]));
+    .filter((name) => name !== 'Object' && isClass($global[name]));
+  names.push('Object');
+  return names.sort();
+}
+function classNamed(name) {
+  // Resolve a class by browser/list name. Object lives in the eval scope, not $global.
+  if (name === 'Object') return Object;
+  return $global[name];
 }
 function allClassNamesInSuperclassOrder() {
   // allClassNamesInSuperclassOrder()
   return allClassNames().sort(function (a, b) {
-    return subclassDepth($global[a]) - subclassDepth($global[b]);
+    return subclassDepth(classNamed(a)) - subclassDepth(classNamed(b));
   });
 }
 function classStaticNames(cls) {
   // Statics only. The class transpiler also mirrors instance methods onto the class
   // object (the prototype literal reads them back); those are not statics.
+  // Hide the ubiquitous `static new(...)` factory (browsers show statics with a
+  // trailing '*', e.g. 'new*') — not other statics whose names merely start with
+  // "new".
+  // Runtime Object's host statics (keys, create, …) are not LM class members —
+  // don't list them as Object.class.* in the browser.
+  if (cls === Object) return [];
   let proto = cls.prototype;
   return Object.getOwnPropertyNames(cls)
     .filter((name) => !(proto && proto[name] === cls[name]))
+    .filter((name) => name !== 'new')
     .sort();
 }
 function classInstanceMemberNames(cls) {
@@ -212,7 +232,7 @@ function nameOfClass(cls) {
   if (!cls) return null;
   let names = allClassNames();
   for (let i = 0; i < names.length; i++) {
-    if ($global[names[i]] === cls) return names[i];
+    if (classNamed(names[i]) === cls) return names[i];
   }
   return null;
 }
@@ -286,7 +306,7 @@ function fragmentForSpec(spec) {
   // legacy-format (or a global function) and must keep the assignment form.
   let parts = methodSpecKey(spec).split('.');
   if (parts.length < 2) return null;
-  let cls = $global[parts[0]];
+  let cls = classNamed(parts[0]);
   if (!isClass(cls)) return null;
   if (parts.length == 2 && parts[1] === 'constructor') return constructorBodyOf(cls);
   let method = methodFromSpec(spec);
@@ -307,7 +327,7 @@ function liveMethodPaneTextForSpec(spec) {
 function deleteAccessorHalf(className, kind, name) {
   // Delete one half of an accessor slot ('get'/'set'); the surviving half is
   // re-installed from its fragment source.
-  let cls = $global[className];
+  let cls = classNamed(className);
   if (!cls || !cls.prototype) return false;
   let desc = Object.getOwnPropertyDescriptor(cls.prototype, name);
   if (!desc || (!desc.get && !desc.set)) return false;
@@ -331,7 +351,7 @@ function allClassNamesWithStatics() {
   let classNames = [];
   for (const name of allClassNames()) {
     classNames.push(name);
-    if (classStaticNames($global[name]).length > 0) classNames.push(name + '.class');
+    if (classStaticNames(classNamed(name)).length > 0) classNames.push(name + '.class');
   }
   return classNames;
 }
@@ -4490,13 +4510,6 @@ class Morph {
     // p is in owner (or world for root children) coordinates; convert to local
     return this.shape.includesPt(this.relativize(p));
   }
-  inspect() {
-    // Lively.submorphs.first().inspect()
-    let p = new InspectorPanel(null, this);
-    Lively.addEphemeralMorph(p);
-    p.startStepping('showSelectedValue', false, 500);
-    return p;
-  }
   isaHand() {
     return false;
   }
@@ -6179,7 +6192,7 @@ function menuSeparatorDisplay() {
 /**
  * Build a menu entry with its label beside its action — easier to read and to
  * edit live (findItem / addItemBefore / removeItem) than a string list + switch.
- * Prefer: menuItem('Open Transcript', () => { Transcript = openTranscript(); })
+ * Prefer: menuItem('Open transcript', () => { Transcript = openTranscript(); })
  * Also accepted by MenuMorph: ['label', action] tuples.
  *
  * Note: MenuMorph expands these into plain string labels in itemList plus a
@@ -6360,16 +6373,20 @@ class ListMorph extends Morph {
   }
   setList(list) {
     this.itemList = list || [];
+    // ListPanes already clip long lines visually; ellipsis truncation only hides
+    // useful name text. Free-floating menus still truncate so they don't grow huge.
+    let inListPane = this.owner && this.owner.className === 'ListPane';
     let lim = menuItemMaxChars != null ? menuItemMaxChars : 15;
     if (this.className === 'MenuMorph') lim = Math.max(lim, 48);
-    this.displayItems = this.itemList.map((item) =>
-      isMenuSeparator(item) ? menuSeparatorDisplay() : truncateString(menuItemLabel(item), lim),
-    );
+    this.displayItems = this.itemList.map((item) => {
+      if (isMenuSeparator(item)) return menuSeparatorDisplay();
+      let label = menuItemLabel(item);
+      return inListPane ? label : truncateString(label, lim);
+    });
     let itemText = '';
     this.displayItems.forEach((item) => (itemText += item + '\n'));
     this.shape.setText(itemText);
     let ctx = this.shape.getTextContext(this.shape.font);
-    let inListPane = this.owner && this.owner.className === 'ListPane';
     if (ctx && !inListPane) {
       let maxW = 0;
       this.displayItems.forEach((item) => {
@@ -6897,16 +6914,16 @@ class TextPane extends ScrollPane {
   defaultPaneMenuSpec() {
     return {
       items: [
-        'cut',
-        'copy',
-        'paste',
+        'cut(x)',
+        'copy(c)',
+        'paste(v)',
         'paste...',
-        'do it',
-        'printit',
-        'find',
-        'undo',
+        'do it(d)',
+        'printit(p)',
+        'find(f)',
+        'undo(z)',
         menuSeparator,
-        'save',
+        'save(s)',
         'cancel',
       ],
       onSelect: function (item, pane) {
@@ -8152,9 +8169,16 @@ class MethodPanel extends PanelMorph {
     let text = string != null ? String(string) : '';
     let watchSpec = null;
     let asCall = !!parseReplaceMethodCallString(text);
-    if (optionalTitle && methodSpecKey(optionalTitle) && !String(optionalTitle).includes('['))
-      watchSpec = methodSpecKey(optionalTitle);
-    else if (asCall) {
+    if (optionalTitle && methodSpecKey(optionalTitle) && !String(optionalTitle).includes('[')) {
+      let key = methodSpecKey(optionalTitle);
+      // Titles may be browser-style labels ('Rectangle bottom', 'Color blue*').
+      watchSpec = key.includes('.') ? key : methodSpecFromListLabel(key);
+    }
+    if (!watchSpec && asCall) {
+      let parsed = parseReplaceMethodCallString(text);
+      if (parsed) watchSpec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
+    } else if (asCall && watchSpec && methodFromSpec(watchSpec) == null) {
+      // Friendly title didn't resolve; fall back to the replaceMethod text.
       let parsed = parseReplaceMethodCallString(text);
       if (parsed) watchSpec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
     }
@@ -8266,7 +8290,7 @@ class BrowserPanel extends PanelMorph {
         this.updateBrowserTitle();
         let methodString = null;
         let headerString = '';
-        let cls = this.selectedClassName() ? $global[this.selectedClassName()] : null;
+        let cls = this.selectedClassName() ? classNamed(this.selectedClassName()) : null;
         if (this.selectedClass == 'globals') {           // Global methods
           methodString = $global[this.selectedMethod].toString();
           headerString = this.selectedMethod + ' = ';
@@ -8354,7 +8378,9 @@ class BrowserPanel extends PanelMorph {
     }
     // Pin constructor at the top; methods, accessor halves ('get foo' / 'set foo'),
     // and statics (marked with '*') sorted by member name.
-    let cls = $global[classSelection.endsWith('.class') ? classSelection.split('.')[0] : classSelection];
+    let cls = classNamed(
+      classSelection.endsWith('.class') ? classSelection.split('.')[0] : classSelection,
+    );
     let rows = classSelection.endsWith('.class')
       ? classStaticNames(cls).map((each) => each + '*')
       : classMemberRows(cls).concat(classStaticNames(cls).map((each) => each + '*'));
@@ -8363,7 +8389,9 @@ class BrowserPanel extends PanelMorph {
       let kb = memberRowSortKey(b);
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
-    return classSelection.endsWith('.class') ? rows : ['constructor'].concat(rows);
+    // Runtime Object is not an ES class Fun — no editable constructor fragment.
+    if (classSelection === 'Object' || classSelection.endsWith('.class')) return rows;
+    return ['constructor'].concat(rows);
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -8694,6 +8722,8 @@ class MethodListPanel extends PanelMorph {
   constructor(initialBounds, methodSpecs, recentMethodsIfAny, optionalTitle, searchStringIfAny) {
     const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
+    // Canonical specs (`Class.prototype.foo`, `Color.blue`, …). The list pane
+    // shows browser-style labels (`Class foo`, `Color blue*`); selection maps back.
     this.methodSpecs = methodSpecs;
     this.recents = recentMethodsIfAny;
     this.searchString = searchStringIfAny || null;
@@ -8711,7 +8741,7 @@ class MethodListPanel extends PanelMorph {
     if (!deleteMethodWithSpec(spec)) return;
     if (this.methodSpecs) {
       this.methodSpecs = this.methodSpecs.filter((s) => methodSpecKey(s) !== spec);
-      this.methodsPane.setList(this.methodSpecs);
+      this.refreshMethodsList();
     }
     if (this.printPane) this.printPane.setText('Selected method', { force: true });
     this._occurrenceLastSpec = null;
@@ -8728,9 +8758,10 @@ class MethodListPanel extends PanelMorph {
     /** Method-spec list (upper) for search results and recent changes. */
     let panelBounds = this.paneLayoutBounds();
     this.methodsPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 1.0, 0.4)));
-    this.methodsPane.setList(this.methodSpecs);
+    this.refreshMethodsList();
     this.methodsPane.setPaneMenu(methodSelectorPaneMenuSpec(this));
-    this.methodsPane.onSelect((spec, shiftKey) => {
+    this.methodsPane.onSelect((label, shiftKey) => {
+      let spec = this.specForListLabel(label);
       let applySpec = () => {
         // Fragment members display as bare class fragments (like the browser's
         // method pane) and re-save via replaceMethod through fragmentSaveClassName;
@@ -8746,7 +8777,7 @@ class MethodListPanel extends PanelMorph {
             fragmentClassName = parsed.className;
             preamble = '';
           } else {
-            preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+            preamble = methodSpecKey(spec) + ' = ';
           }
         } else {
           let fragment = fragmentForSpec(spec);
@@ -8756,7 +8787,7 @@ class MethodListPanel extends PanelMorph {
             preamble = '';
           } else {
             methodString = methodFromSpec(spec);
-            preamble = spec + ' = ';
+            preamble = methodSpecKey(spec) + ' = ';
           }
         }
         this._fragmentClassName = fragmentClassName;
@@ -8765,7 +8796,7 @@ class MethodListPanel extends PanelMorph {
         this._occurrenceLastSpec = spec;
         // Search / occurrence lists only — not recent-changes (dated specs) or stacks.
         if (!this.recents && this.className !== 'ErrorStackPanel' && !spec.includes('['))
-          this.watchMethodAgainstPane(spec, this.printPane);
+          this.watchMethodAgainstPane(methodSpecKey(spec), this.printPane);
         else this.stopMethodConflictWatch();
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
@@ -8784,7 +8815,11 @@ class MethodListPanel extends PanelMorph {
             ? replaceMethodCallString(fragmentClassName, '' + methodString)
             : preamble + methodString;
           Lively.addEphemeralMorph(
-            new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), spawnText, spec),
+            new MethodPanel(
+              this.rectForSpawnedPanel(28, 320, 220),
+              spawnText,
+              methodListLabelForSpec(spec),
+            ),
           );
         }
       };
@@ -8793,7 +8828,10 @@ class MethodListPanel extends PanelMorph {
         this.promptOkToCancelEdits((okToCancel) => {
           if (!okToCancel) {
             if (this._occurrenceLastSpec != null)
-              this.methodsPane.setSelectionString(this._occurrenceLastSpec, true);
+              this.methodsPane.setSelectionString(
+                methodListLabelForSpec(this._occurrenceLastSpec),
+                true,
+              );
             return;
           }
           applySpec();
@@ -8822,7 +8860,9 @@ class MethodListPanel extends PanelMorph {
     return text;
   }
   methodCopyTitle() {
-    return this._occurrenceLastSpec || 'Method copy';
+    return this._occurrenceLastSpec
+      ? methodListLabelForSpec(this._occurrenceLastSpec)
+      : 'Method copy';
   }
   methodFromRecentSpec(spec) {
     let found = null;
@@ -8832,12 +8872,19 @@ class MethodListPanel extends PanelMorph {
     });
     return found;
   }
+  methodListLabels() {
+    return (this.methodSpecs || []).map((s) => methodListLabelForSpec(s));
+  }
   promptDeleteThisMethod() {
     let spec = this.selectedMethodSpec();
     if (!spec) return;
-    this.promptConfirm('Do you really want to delete ' + spec + '?', ' yes', ' NO', (ok) => {
+    let shown = methodListLabelForSpec(spec);
+    this.promptConfirm('Do you really want to delete ' + shown + '?', ' yes', ' NO', (ok) => {
       if (ok) this.deleteThisMethod();
     });
+  }
+  refreshMethodsList() {
+    if (this.methodsPane) this.methodsPane.setList(this.methodListLabels());
   }
   selectedMethodSpec() {
     if (this._occurrenceLastSpec) return methodSpecKey(this._occurrenceLastSpec);
@@ -8846,6 +8893,12 @@ class MethodListPanel extends PanelMorph {
     let ix = text.indexOf(' =');
     if (ix < 0) return null;
     return text.slice(0, ix).trim();
+  }
+  specForListLabel(label) {
+    let labels = this.methodListLabels();
+    let idx = labels.indexOf(label);
+    if (idx >= 0) return this.methodSpecs[idx];
+    return methodSpecFromListLabel(label);
   }
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
@@ -8880,7 +8933,8 @@ class ErrorStackPanel extends MethodListPanel {
       );
     let self = this;
     this.methodsPane.onSelect(function (label, shiftKey) {
-      let idx = self.methodSpecs.indexOf(label);
+      let idx = self.methodListLabels().indexOf(label);
+      if (idx < 0) idx = self.methodSpecs.indexOf(label);
       if (idx >= 0) self.showStackFrame(idx);
       if (shiftKey && idx >= 0 && self.printPane) {
         let text = self.printPane.contentPane.shape.string;
@@ -8889,10 +8943,12 @@ class ErrorStackPanel extends MethodListPanel {
         );
       }
     });
-    if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodSpecs[0]);
+    if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodListLabels()[0]);
   }
   refreshStackSources() {
-    let idx = this.methodSpecs.indexOf(this._occurrenceLastSpec);
+    let labels = this.methodListLabels();
+    let idx = labels.indexOf(methodListLabelForSpec(this._occurrenceLastSpec));
+    if (idx < 0) idx = this.methodSpecs.indexOf(this._occurrenceLastSpec);
     if (idx < 0 && this.stackFrames.length) idx = 0;
     if (idx >= 0) this.showStackFrame(idx);
   }
@@ -8945,6 +9001,18 @@ class TranscriptPanelMorph extends PanelMorph {
   }
   setConsoleMirror(on) {
     if (this.transcriptPane) this.transcriptPane.setConsoleMirror(on);
+  }
+  remove() {
+    /**
+     * Title-bar close only removes the panel morph — it does not cascade
+     * remove() to the transcript pane — so disconnect mirroring here. Otherwise
+     * a closed console stays in `_transcriptConsoleTargets` and a later
+     * Open console cannot cleanly own the mirror alone.
+     */
+    if (this.transcriptPane) this.transcriptPane.setConsoleMirror(false);
+    if (typeof Console !== 'undefined' && Console === this) Console = null;
+    if (typeof Transcript !== 'undefined' && Transcript === this) Transcript = null;
+    return Morph.prototype.remove.call(this);
   }
   static new(...args) {
     return new this(...args);
@@ -10639,19 +10707,19 @@ class WorldMorph extends Morph {
       menuItem('Init hand', function () {
         this.world().initHand(true);
       }),
-      menuItem('Open Transcript', () => {
+      menuItem('Open transcript', () => {
         Transcript = openTranscript();
       }),
-      menuItem('Open Console', () => {
+      menuItem('Open console', () => {
         let p = openTranscript();
         p.setPanelTitle('Console');
         p.transcriptPane.setConsoleMirror(true);
         Console = p;
         log('Console ready — use log(msg) or console.log(msg); errors also appear.');
       }),
-      menuItem('Restart Console', () => {
+      menuItem('Clear console', () => {
         let con = Console;
-        if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
+        if (con && con.clear) con.clear();
       }),
       menuItem(menuToggleLabel(longClickForHalosLabel, $longClickForHalos), function () {
         $longClickForHalos = !$longClickForHalos;
@@ -10790,9 +10858,9 @@ function exportPartsForSelection(selection, optsIfAny) {
       });
     return { header, classDef, lines };
   }
-  let cls = $global[classSelection];
+  let cls = classNamed(classSelection);
   if (!cls || !cls.prototype) return null;
-  if (includeClassDef && isClass(cls)) classDef = cls.toString();
+  if (includeClassDef && isClass(cls) && cls !== Object) classDef = cls.toString();
   let lines = classMemberRows(cls)
     .map((row) => {
       let isAccessor = /^(get|set) /.test(row);
@@ -10824,7 +10892,7 @@ function exportSelectionsForEntireSystem() {
   let selections = ['globals'];
   allClassNamesInSuperclassOrder().forEach((className) => {
     selections.push(className);
-    if (classStaticNames($global[className]).length > 0) selections.push(className + '.class');
+    if (classStaticNames(classNamed(className)).length > 0) selections.push(className + '.class');
   });
   return selections;
 }
@@ -10836,7 +10904,7 @@ function methodFromSpec(spec) {
   // methodFromSpec('Point.constructor')           — the class constructor Fun itself
   let parts = spec.split('.');
   if (parts.length == 1) return $global[parts[0]];
-  let cls = $global[parts[0]];
+  let cls = classNamed(parts[0]);
   if (cls == null) return null;
   if (parts.length == 2 && parts[1] === 'constructor' && isClass(cls)) return cls;
   if (parts.length == 2) return cls[parts[1]];
@@ -10851,6 +10919,64 @@ function methodSpecKey(spec) {
   if (!spec) return spec;
   if (spec.includes('[')) return spec.slice(0, spec.indexOf('[') - 1).trim();
   return spec;
+}
+function methodListLabelForSpec(spec) {
+  /**
+   * Display label for method-list / search panels — matches system-browser title style:
+   *   'Rectangle.prototype.bottom'      -> 'Rectangle bottom'
+   *   'Morph.prototype.get transform'   -> 'Morph get transform'
+   *   'Color.blue'                      -> 'Color blue*'
+   *   'Point.constructor'               -> 'Point constructor'
+   *   'rect'                            -> 'rect'
+   * Recent-changes keep their date suffix: 'Rectangle bottom [10:15 …]'.
+   * Already-friendly labels (no dots / space form) are returned unchanged.
+   */
+  if (!spec) return spec;
+  let key = methodSpecKey(spec);
+  let dateSuffix = '';
+  if (spec !== key && String(spec).includes('[')) {
+    dateSuffix = String(spec).slice(String(spec).indexOf('[') - 1);
+  }
+  let parts = key.split('.');
+  let label;
+  if (parts.length === 1) {
+    label = key;
+  } else if (parts.length === 2 && parts[1] === 'constructor') {
+    label = parts[0] + ' constructor';
+  } else if (parts.length === 2) {
+    // Class.staticName — browsers mark statics with a trailing '*'.
+    label = parts[0] + ' ' + parts[1] + '*';
+  } else if (parts.length >= 3 && parts[1] === 'prototype') {
+    // Class.prototype.member — member may be 'get foo' / 'set foo'.
+    label = parts[0] + ' ' + parts.slice(2).join('.');
+  } else if (parts.length >= 3 && (parts[1] === 'proto' || parts[1] === 'class')) {
+    // Legacy alldefs-style specs.
+    label = parts[0] + ' ' + parts.slice(2).join('.') + (parts[1] === 'class' ? '*' : '');
+  } else {
+    label = key;
+  }
+  return label + dateSuffix;
+}
+function methodSpecFromListLabel(label) {
+  /**
+   * Reverse of methodListLabelForSpec (without a date suffix). Prefer looking up
+   * via MethodListPanel.methodSpecs when available — this is a fallback.
+   */
+  if (!label) return label;
+  let base = String(label);
+  if (base.includes('[')) base = base.slice(0, base.indexOf('[') - 1).trim();
+  if (base.endsWith('*')) {
+    let body = base.slice(0, -1);
+    let sp = body.indexOf(' ');
+    if (sp < 0) return body;
+    return body.slice(0, sp) + '.' + body.slice(sp + 1);
+  }
+  let sp = base.indexOf(' ');
+  if (sp < 0) return base;
+  let className = base.slice(0, sp);
+  let member = base.slice(sp + 1);
+  if (member === 'constructor') return className + '.constructor';
+  return className + '.prototype.' + member;
 }
 function deleteMethodWithSpec(spec) {
   /** Remove a live method by spec (`Morph.prototype.foo`, `Color.gray`, `init`, …). */
@@ -10867,7 +10993,7 @@ function deleteMethodWithSpec(spec) {
     else if (parts.length == 3 && parts[1] == 'prototype') {
       // Also drop the class-Fun mirror (the transpiler stores instance methods on
       // the class object too); otherwise the name would resurface as a bogus static.
-      let cls = $global[parts[0]];
+      let cls = classNamed(parts[0]);
       if (cls[parts[2]] === cls.prototype[parts[2]]) delete cls[parts[2]];
       delete cls.prototype[parts[2]];
     } else return false;
@@ -10878,7 +11004,8 @@ function deleteMethodWithSpec(spec) {
   }
 }
 function deleteClassNamed(className) {
-  if (!className || className == 'globals' || !$global[className]) return false;
+  if (!className || className == 'globals' || className == 'Object' || !$global[className])
+    return false;
   try {
     delete $global[className];
     return true;
@@ -10889,14 +11016,21 @@ function deleteClassNamed(className) {
 }
 function methodsContaining(searchString) {
   // methodsContaining('Pane').length
+  // methodsContaining('blue') includes Color.blue (class constants / non-fn statics)
   let lcKey = searchString.toLowerCase(); //For case-insensitive compare
   let found = [];
   allMethodSpecs().forEach((spec) => {
+    let specLc = spec.toLowerCase();
+    // Spec names always count — allMethodSpecs includes class constants such as
+    // Color.blue, which are not functions and have no searchable method body.
+    if (specLc.indexOf(lcKey) >= 0) {
+      found.push(spec);
+      return;
+    }
     let method = methodFromSpec(spec);
     if (typeof method !== 'function') return;
     let bodyLc = method.toString().toLowerCase();
-    let specLc = spec.toLowerCase();
-    if (bodyLc.indexOf(lcKey) >= 0 || specLc.indexOf(lcKey) >= 0) found.push(spec);
+    if (bodyLc.indexOf(lcKey) >= 0) found.push(spec);
   });
   return found;
 }
@@ -11018,7 +11152,7 @@ function allMethodSpecs() {
       if (typeof $global[name] == 'function' && !isClass($global[name])) methodSpecs.push(name);
     });
   allClassNamesInSuperclassOrder().forEach((className) => {
-    let cls = $global[className];
+    let cls = classNamed(className);
     classMemberRows(cls).forEach((row) => {
       methodSpecs.push(className + '.prototype.' + row);
     });
@@ -11204,7 +11338,7 @@ function stackFrameSourceText(frame) {
   return null;
 }
 function stackFrameListLabel(frame) {
-  if (frame.methodSpec) return frame.methodSpec;
+  if (frame.methodSpec) return methodListLabelForSpec(frame.methodSpec);
   if (frame.name === 'eval' || frame.name === '<anonymous>') {
     if (_lastEvalSource)
       return 'eval: ' + truncateString(_lastEvalSource.replace(/\s+/g, ' ').trim(), 52);
@@ -11499,6 +11633,7 @@ function msToRun(fn) {
 
 function inspect(obj, optionalBounds) {
   // inspect(pt(3, 5));
+  // Also: pt(3, 5).inspect() — see Object.prototype.inspect below.
   let r;
   if (optionalBounds != null) {
     let o = optionalBounds;
@@ -11511,6 +11646,12 @@ function inspect(obj, optionalBounds) {
   p.startStepping('showSelectedValue', false, 500);
   return p;
 }
+// OO entry point for every LM object (Point, Morph, …). Morph no longer defines
+// its own inspect — it inherits this. Primitives still need the global inspect().
+Object.prototype.inspect = function (optionalBounds) {
+  // pt(3, 4).inspect();  Lively.submorphs.first().inspect();
+  return inspect(this, optionalBounds);
+};
 function inspectString(obj) {
   /**
    * Compact display for the inspector print pane. Prefer each type's toString();

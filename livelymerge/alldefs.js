@@ -1204,14 +1204,21 @@ w.deleteClassNamed = function (className) {
 };
 w.methodsContaining = function (searchString) {
   // w.methodsContaining('Pane').length
+  // w.methodsContaining('blue') includes Color.class.blue (class constants / non-fn statics)
   let lcKey = searchString.toLowerCase(); //For case-insensitive compare
   let found = [];
   w.allMethodSpecs().forEach((spec) => {
+    let specLc = spec.toLowerCase();
+    // Spec names always count — allMethodSpecs includes class constants such as
+    // Color.class.blue, which are not functions and have no searchable method body.
+    if (specLc.indexOf(lcKey) >= 0) {
+      found.push(spec);
+      return;
+    }
     let method = w.methodFromSpec(spec);
     if (typeof method !== 'function') return;
     let bodyLc = method.toString().toLowerCase();
-    let specLc = spec.toLowerCase();
-    if (bodyLc.indexOf(lcKey) >= 0 || specLc.indexOf(lcKey) >= 0) found.push(spec);
+    if (bodyLc.indexOf(lcKey) >= 0) found.push(spec);
   });
   return found;
 };
@@ -6601,9 +6608,9 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
     'Halo help',
     'Text help',
     'Init hand',
-    'Open Transcript',
-    'Open Console',
-    'Restart Console',
+    'Open transcript',
+    'Open console',
+    'Clear console',
     w.menuToggleLabel(w.longClickForHalosLabel, window.longClickForHalos),
     w.menuToggleLabel(w.onScreenKeyboardLabel, w.useOnScreenKbd),
   ];
@@ -6628,14 +6635,14 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
       w.refreshWorldMenuItems(this);
     }
     if (item == 'Init hand') this.world().initHand(true);
-    if (item == 'Open Transcript') {
+    if (item == 'Open transcript') {
       let p = w.openTranscript();
       if (p) {
         p.setPanelTitle('Transcript');
         w.Transcript = p;
       }
     }
-    if (item == 'Open Console') {
+    if (item == 'Open console') {
       let p = w.openTranscript();
       if (p) {
         p.setPanelTitle('Console');
@@ -6643,9 +6650,9 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
         if (p.transcriptPane) p.transcriptPane.setConsoleMirror(true);
       }
     }
-    if (item == 'Restart Console') {
+    if (item == 'Clear console') {
       let con = w.Console;
-      if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
+      if (con && con.clear) con.clear();
     }
     this.shape.selectLineAt(0); // deselect after actions
   });
@@ -8462,6 +8469,14 @@ w.TranscriptPanelMorph.proto.setConsoleMirror = function (on) {
 };
 w.TranscriptPanelMorph.proto.receivesConsoleOutput = function () {
   return this.transcriptPane && this.transcriptPane.receivesConsoleOutput();
+};
+w.TranscriptPanelMorph.proto.remove = function () {
+  // Title-bar close only removes the panel — disconnect console mirror here so a
+  // later Open console reconnects cleanly (see newdefs TranscriptPanelMorph.remove).
+  if (this.transcriptPane) this.transcriptPane.setConsoleMirror(false);
+  if (w.Console === this) w.Console = null;
+  if (w.Transcript === this) w.Transcript = null;
+  return w.PanelMorph.proto.remove.call(this);
 };
 
 w.openTranscript = function () {

@@ -263,7 +263,7 @@ describe('system browser class fragments', () => {
   let panel = Lively.addMorph(
     new MethodListPanel(null, hits, null, 'Occurrences of "bottom"', 'bottom'),
   );
-  panel.methodsPane.contentPane.actionFn('Rectangle.prototype.bottom');
+  panel.methodsPane.contentPane.actionFn('Rectangle bottom');
   let tb = panel.printPane.contentPane.shape;
   $global._occSave = { shown: tb.string, copyText: panel.methodCopyText() };
   tb.string = 'bottom() { return -2; }';
@@ -279,7 +279,9 @@ describe('system browser class fragments', () => {
     ' copyIsCall=' + ('' + p.copyText).startsWith("replaceMethod('Rectangle'") +
     ' changed=' + rect(0, 0, 3, 4).bottom() +
     ' recentSpec=' + recent[0] +
-    ' recentIsCall=' + ('' + recent[2]).startsWith("replaceMethod('Rectangle'");
+    ' recentIsCall=' + ('' + recent[2]).startsWith("replaceMethod('Rectangle'") +
+    ' listLabel=' + methodListLabelForSpec('Rectangle.prototype.bottom') +
+    ' staticLabel=' + methodListLabelForSpec('Color.blue');
 })()
 `) as string;
     expect(result).toContain('shown=bottom() ');
@@ -287,6 +289,8 @@ describe('system browser class fragments', () => {
     expect(result).toContain('changed=-2');
     expect(result).toContain('recentSpec=Rectangle.prototype.bottom');
     expect(result).toContain('recentIsCall=true');
+    expect(result).toContain('listLabel=Rectangle bottom');
+    expect(result).toContain('staticLabel=Color blue*');
   }, 120_000);
 
   it('the recent-changes panel shows fragment saves bare and re-saves via replaceMethod', async () => {
@@ -298,7 +302,7 @@ describe('system browser class fragments', () => {
   noteMethodChanges(replaceMethodCallString('Rectangle', 'bottom() { return -3; }'));
   let panel = browseRecentChanges();
   let spec = recentChanges.at(-1)[0] + recentChanges.at(-1)[1];
-  panel.methodsPane.contentPane.actionFn(spec);
+  panel.methodsPane.contentPane.actionFn(methodListLabelForSpec(spec));
   let tb = panel.printPane.contentPane.shape;
   $global._recentShown = tb.string;
   tb.string = 'bottom() { return -4; }';
@@ -343,7 +347,7 @@ describe('system browser class fragments', () => {
   let search = Lively.addEphemeralMorph(
     new MethodListPanel(null, hits, null, 'Occurrences of "bottom"', 'bottom'),
   );
-  search.methodsPane.contentPane.actionFn('Rectangle.prototype.bottom');
+  search.methodsPane.contentPane.actionFn('Rectangle bottom');
   replaceMethod('Rectangle', 'bottom() { return 7; }');
   search.tickMethodConflict();
   let searchConflict = !!search.printPane.$methodConflictHighlight;
@@ -351,13 +355,13 @@ describe('system browser class fragments', () => {
   noteMethodChanges(replaceMethodCallString('Rectangle', 'bottom() { return 7; }'));
   let recent = browseRecentChanges();
   let spec = recentChanges.at(-1)[0] + recentChanges.at(-1)[1];
-  recent.methodsPane.contentPane.actionFn(spec);
+  recent.methodsPane.contentPane.actionFn(methodListLabelForSpec(spec));
   let recentWatching = recent.isStepping('tickMethodConflict');
 
   let meth = new MethodPanel(
     null,
     replaceMethodCallString('Rectangle', 'bottom() { return 7; }'),
-    'Rectangle.prototype.bottom',
+    'Rectangle bottom',
   );
   Lively.addEphemeralMorph(meth);
   replaceMethod('Rectangle', 'bottom() { return 8; }');

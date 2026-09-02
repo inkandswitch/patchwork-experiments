@@ -270,7 +270,7 @@ Lively.addMorph(new BrowserPanel());
 `) as string;
     expect(info).toContain('hasMorph=true');
     expect(info).toContain('morphHasMoveBy=true');
-    expect(info).toContain('staticsHasNew=true');
+    expect(info).toContain('staticsHasNew=false');
     expect(info).toContain('staticsHasMoveBy=false');
     expect(info).toContain('specWorks=true');
     expect(info).toContain('globalSpecWorks=true');
@@ -304,6 +304,22 @@ Lively.addMorph(new BrowserPanel());
 })()
 `),
     ).toBe(true);
+  }, 120_000);
+
+  it('methodsContaining finds non-function class statics by name (Color.blue)', () => {
+    const { rt } = setup();
+    const info = rt.eval(`
+(() => {
+  let specs = allMethodSpecs();
+  let hits = methodsContaining('blue');
+  return 'inSpecs=' + specs.includes('Color.blue') +
+    ' inHits=' + hits.includes('Color.blue') +
+    ' staticsHasBlue=' + classStaticNames(Color).includes('blue');
+})()
+`) as string;
+    expect(info).toContain('inSpecs=true');
+    expect(info).toContain('staticsHasBlue=true');
+    expect(info).toContain('inHits=true');
   }, 120_000);
 });
 
@@ -437,5 +453,104 @@ describe('document integrity', () => {
       }
     }
     expect(missing, `dangling refs:\n  ${missing.slice(0, 10).join('\n  ')}`).toEqual([]);
+  }, 120_000);
+
+  it('disconnects console mirror when the console panel is closed, and reconnects on reopen', () => {
+    const { rt } = setup();
+    rt.eval(`
+initUI();
+initLively();
+true`);
+    expect(
+      rt.eval(`
+Console = openTranscript();
+Console.setPanelTitle('Console');
+Console.transcriptPane.setConsoleMirror(true);
+_transcriptConsoleTargets.indexOf(Console.transcriptPane) >= 0 &&
+Console.receivesConsoleOutput() === true
+`),
+    ).toBe(true);
+    // Title-bar close path is PanelMorph.remove(); same disconnect must run.
+    expect(
+      rt.eval(`
+Console.remove();
+(_transcriptConsoleTargets.indexOf(Console && Console.transcriptPane) < 0) &&
+Console == null
+`),
+    ).toBe(true);
+    expect(
+      rt.eval(`
+Console = openTranscript();
+Console.setPanelTitle('Console');
+Console.transcriptPane.setConsoleMirror(true);
+_transcriptConsoleTargets.length === 1 &&
+_transcriptConsoleTargets[0] === Console.transcriptPane
+`),
+    ).toBe(true);
+  }, 60_000);
+});
+
+describe('Object.prototype.inspect', () => {
+  it('pt(3,4).inspect opens InspectorPanel; Morph inherits it; Object is browsable', () => {
+    const { rt } = setup();
+    rt.eval(`initUI(); initLively();`);
+    const info = rt.eval(`
+(() => {
+  let p = pt(3, 4);
+  let panel = p.inspect();
+  let m = new Morph(rect(0,0,10,10));
+  let mPanel = m.inspect();
+  let browser = Lively.addEphemeralMorph(new BrowserPanel());
+  browser.classPane.contentPane.actionFn('Object');
+  let msgs = browser.messagePane.contentPane.itemList;
+  browser.messagePane.contentPane.actionFn('inspect');
+  let shown = browser.methodPane.contentPane.shape.string;
+  return 'ptOk=' + (panel && panel.className === 'InspectorPanel' && panel.target === p) +
+    ' morphOk=' + (mPanel && mPanel.className === 'InspectorPanel' && mPanel.target === m) +
+    ' morphOwn=' + Object.getOwnPropertyNames(Morph.prototype).includes('inspect') +
+    ' objHas=' + (typeof Object.prototype.inspect === 'function') +
+    ' namesHasObject=' + allClassNames().includes('Object') +
+    ' msgsHasInspect=' + msgs.includes('inspect') +
+    ' msgsHasCtor=' + msgs.includes('constructor') +
+    ' shownAssign=' + shown.startsWith('Object.prototype.inspect =');
+})()
+`) as string;
+    expect(info).toContain('ptOk=true');
+    expect(info).toContain('morphOk=true');
+    expect(info).toContain('morphOwn=false');
+    expect(info).toContain('objHas=true');
+    expect(info).toContain('namesHasObject=true');
+    expect(info).toContain('msgsHasInspect=true');
+    expect(info).toContain('msgsHasCtor=false');
+    expect(info).toContain('shownAssign=true');
+  }, 120_000);
+
+  it('Object.prototype.inspect can be re-saved via assignment eval from the browser', async () => {
+    const { rt } = setup();
+    rt.eval(`initUI(); initLively();`);
+    rt.eval(`
+(() => {
+  let browser = Lively.addEphemeralMorph(new BrowserPanel());
+  browser.classPane.contentPane.actionFn('Object');
+  browser.messagePane.contentPane.actionFn('inspect');
+  let tb = browser.methodPane.contentPane.shape;
+  tb.string =
+    "Object.prototype.inspect = function (optionalBounds) {\\n" +
+    "  let p = inspect(this, optionalBounds);\\n" +
+    "  p.setPanelTitle('Inspected');\\n" +
+    "  return p;\\n" +
+    "};";
+  tb.handleKeyboardShortcuts({ key: 's', preventDefault() {}, stopPropagation() {} });
+})()
+`);
+    await new Promise((r) => setTimeout(r, 30));
+    const info = rt.eval(`
+(() => {
+  let panel = pt(1, 2).inspect();
+  let t = panel.titleBar.titleMorph.shape.string;
+  return 'titled=' + (t.indexOf('Inspected') >= 0);
+})()
+`) as string;
+    expect(info).toContain('titled=true');
   }, 120_000);
 });
