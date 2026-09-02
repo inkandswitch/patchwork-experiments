@@ -553,7 +553,7 @@ function populateLively() {
 Everywhere you see text, you can edit it, search, and evaluate JavaScript expressions as in 'Text help' also in the screen menu.
   355/113 -- select this and press ctrl-P
   demo -- select this and press ctrl-F
-         look for executable comments
+              look for executable comments
 `,
       'Welcome to Livelymerge! (' + new Date().toLocaleString() + ')',
     ),
@@ -5280,8 +5280,10 @@ class ImageMorph extends Morph {
   }
   bouncerStep() {
     /**
-     * Step for {@link WorldMorph#makeBouncer}. Uses $-local pen/velocity; only
-     * moveTo/setRotation touch the shared document when the bug is persistent.
+     * Step for {@link WorldMorph#makeBouncer}. Velocity/pen are $-local. Position
+     * and rotation go through {@link Morph#transform}, which is `$transform` after
+     * makeBouncer installs the ephemeral overlay — so per-tick motion stays out of
+     * Automerge even when the bug itself is persistent (`makeBouncer(true)`).
      */
     let world = this.world();
     let pen = this.$pen;
@@ -5313,11 +5315,18 @@ class ImageMorph extends Morph {
     if (bounds.bottomRight().x > worldBounds.bottomRight().x && this.$velocity.x > 0) bounceX();
 
     bounds = this.collisionBounds();
-    let subs = world.submorphs || [];
+    // withBug attaches ephemerally ($submorphs); persistent world morphs live in
+    // submorphs. allSubmorphs() covers both so bugs bounce off boxes and each other.
+    let subs = world.allSubmorphs ? world.allSubmorphs() : world.submorphs || [];
     for (let i = 0; i < subs.length; i++) {
       let other = subs.at ? subs.at(i) : subs[i];
       if (other === this) continue;
-      let otherBounds = other.getBounds();
+      if (other.isaHand && other.isaHand()) continue;
+      if (other.className === 'HaloMorph' || other.className === 'HaloHandle') continue;
+      let otherBounds =
+        other.collisionBounds && typeof other.collisionBounds === 'function'
+          ? other.collisionBounds()
+          : other.getBounds();
       if (!bounds.overlapsRect(otherBounds)) continue;
       if (prevBounds.overlapsRect(otherBounds)) continue;
       let axis = bounds.overlapBounceAxis(otherBounds, this.$velocity);
@@ -10389,11 +10398,15 @@ class WorldMorph extends Morph {
     return false;
   }
   makeBouncer(shared) {
-    // Wandering-bug demo. Spawn is local; the bug is then made persistent so
-    // other replicas see it move (each moveTo writes Automerge — intentional
-    // for multi-screen demos / op-cost experiments). Step state stays $-local.
-    //  Lively.makeBouncer(true) 
-    //  Lively.unMakeBouncer()
+    // Wandering-bug demo — UX viz of lean ephemeral motion in both modes.
+    //   Lively.makeBouncer()       — local only (ephemeral attach); motion is Automerge-free
+    //   Lively.makeBouncer(true)   — persistent morph so peers see it; motion still uses
+    //                                $transform + ephemeral streaming (not per-tick doc writes)
+    //   Lively.unMakeBouncer()     - recall the bugs one by one
+    //
+    // Attachment ephemerality alone is not enough for a *shared* bug: moveTo would
+    // rewrite _transform every tick. beginEphemeralTransform installs the same
+    // overlay drags use, so ticks stay $-local; ephStreamRegister lets peers watch.
 
     if (!$bouncers) $bouncers = [];
     let world = Lively;
@@ -10403,19 +10416,26 @@ class WorldMorph extends Morph {
     let bug = pen.bug;
     if (!bug) return null;
 
-    // withBug attaches ephemerally (cheap for spiral); 
-    if (shared && bug.bePersistent) bug.bePersistent();  // bug gets shared here
-    
+    // withBug attaches ephemerally; promote only when sharing across replicas.
+    if (shared && bug.bePersistent) bug.bePersistent();
+
     bug.$pen = pen;
     bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
+    // Install $transform/$bounds before the first step so moveTo/rotation never
+    // touch _transform (critical for shared bugs; harmless for local ones).
+    if (bug.beginEphemeralTransform) bug.beginEphemeralTransform();
     bug.syncRotationToVelocity();
+    if (typeof ephStreamRegister === 'function') ephStreamRegister(bug);
     $bouncers.push(bug);
     bug.startStepping(50, 'bouncerStep');
     return bug;
   }
   unMakeBouncer() {
     if (!$bouncers || $bouncers.length === 0) return;
-    $bouncers.pop().remove();
+    let bug = $bouncers.pop();
+    if (typeof ephStreamEnd === 'function') ephStreamEnd(bug);
+    if (bug.commitEphemeralTransform) bug.commitEphemeralTransform();
+    bug.remove();
   }
   morphsAtPointInDepthOrder(pt) {
     // Return deepest hit morph first, then owner chain up toward world.
