@@ -552,8 +552,8 @@ function populateLively() {
 
 Everywhere you see text, you can edit it, search, and evaluate JavaScript expressions as in 'Text help' also in the screen menu.
   355/113 -- select this and press ctrl-P
-  help -- select this and press ctrl-F
-
+  demo -- select this and press ctrl-F
+         look for executable comments
 `,
       'Welcome to Livelymerge! (' + new Date().toLocaleString() + ')',
     ),
@@ -595,8 +595,11 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     // The world may have been re-initialized since this was scheduled (e.g. a
     // fresh initLively()); there is no spiral to animate then.
     if (!Lively || !Lively.spiral) return;
-    Lively.spiral.startStepping('animatedSpiral',
-      { goDist: 2, turnAngle: 60, nSteps: 26 }, 50); // was 26
+    Lively.spiral.startStepping(
+      'animatedSpiral',
+      50,
+      { goDist: 2, turnAngle: 60, nSteps: 26 },
+    ); // was 26
   }, 2000);
 
 }
@@ -2070,19 +2073,27 @@ class SimpleTransform {
 //  StepSpec
 // ----------
 // One entry in a morph stepping schedule.
+// Schedule bookkeeping ($args / $stepPeriod / $nextStepTime) is ephemeral so
+// per-tick rewrites never become Automerge ops; only the owning morph's
+// $steppingSpecs / world's $stepList keep the StepSpec reachable (and local).
 class StepSpec {
-  constructor(morph, method, argIfAny, msTime, nextStepTimeIfAny) {
+  constructor(morph, method, msTime, nextStepTimeIfAny) {
     this.stepMorph = morph;
     this.methodName = method;
-    this.arg = argIfAny;
-    this.stepPeriod = msTime;
-    this.nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
+    // Always an LM array (built by startStepping via .push). Never assign a host
+    // array literal containing LM values — that throws / double-wraps args.
+    this.$args = [];
+    this.$stepPeriod = msTime;
+    this.$nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
   }
   toString() {
-    return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.stepPeriod}ms)`;
+    return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.$stepPeriod}ms)`;
   }
   copyForMorph(morph) {
-    return new StepSpec(morph, this.methodName, this.arg, this.stepPeriod, this.nextStepTime);
+    let copy = new StepSpec(morph, this.methodName, this.$stepPeriod, this.$nextStepTime);
+    let src = this.$args || [];
+    for (let i = 0; i < src.length; i++) copy.$args.push(src[i]);
+    return copy;
   }
   static new(...args) {
     return new this(...args);
@@ -4849,7 +4860,10 @@ class Morph {
     copy.$steppingSpecs.forEach((spec) => {
       if (!this.isStepping(spec.methodName)) return;
       if (specHook && specHook(spec, copy)) return;
-      copy.startStepping(spec.methodName, spec.arg, spec.stepPeriod, spec.nextStepTime);
+      // New order: method, msPerTick, ...args. Preserve nextStepTime on the new spec.
+      let args = spec.$args != null ? spec.$args : [];
+      let fresh = copy.startStepping(spec.methodName, spec.$stepPeriod, ...args);
+      if (fresh) fresh.$nextStepTime = spec.$nextStepTime;
     });
   }
   restyle() {
@@ -4942,14 +4956,21 @@ class Morph {
     if (!this.$steppingSpecs) this.$steppingSpecs = [];
     return this.$steppingSpecs;
   }
-  startStepping(method, argIfAny, msTime, nextStepTimeIfAny) {
-    // Replace any existing step with the same method name on this morph
+  startStepping(method, msTime, ...args) {
+    // startStepping(methodName, msPerTick)
+    // startStepping(methodName, msPerTick, arg)
+    // startStepping(methodName, msPerTick, arg1, arg2, ...)
+    // Replace any existing step with the same method name on this morph.
     this.stopStepping(method);
-    const spec = new StepSpec(this, method, argIfAny, msTime, nextStepTimeIfAny);
+    const spec = new StepSpec(this, method, msTime);
+    // Rest `args` may be a host Array (LM Array.isArray is false for those).
+    // Push element-wise into the LM $args array — never `this.$args = [lmValue]`.
+    for (let i = 0; i < args.length; i++) spec.$args.push(args[i]);
     this.steppingSpecs().push(spec);
     // Morph.world() returns `this` when unowned — only a real WorldMorph can schedule.
     let world = this.world();
     if (world && world.startSteppingSpec) world.startSteppingSpec(spec);
+    return spec;
   }
   stopStepping(methodName) {
     if (methodName) {
@@ -5030,7 +5051,7 @@ class Morph {
       if (done) done();
       return;
     }
-    this.startStepping('animateFromToStep', null, ms);
+    this.startStepping('animateFromToStep', ms);
   }
   animateFromToCancel() {
     /**
@@ -5122,7 +5143,7 @@ class Morph {
     // loop's runtime.change transaction.
     this.$testTransformStepsLeft = 20; // ~500ms at 25ms/step
     this.$testTransformWhenDone = whenDone;
-    this.startStepping('testTransformStep', null, 25);
+    this.startStepping('testTransformStep', 25);
   }
   testTransformStep() {
     this.rotateBy(Math.PI / 10);
@@ -5210,13 +5231,6 @@ class ImageMorph extends Morph {
     let tfm = this.transform;
     let ownerPts = corners.map((c) => tfm.transformPt(c));
     return unionPts(ownerPts);
-  }
-  demo() {
-    // Demo: ladybug emoji drawn directly (no canvas bake — see EmojiMorph).
-    let morph = new EmojiMorph('LADYBUG', 64);
-    morph.transform.translation = pt(280, 120);
-    Lively.addMorph(morph);
-    return morph;
   }
   morphCopy() {
     let copy = new ImageMorph(this.shape.copy());
@@ -5330,6 +5344,12 @@ class EmojiMorph extends ImageMorph {
     this._emojiName = emojiName;
     this._emojiSize = size;
     this._emojiChar = EmojiMorph.prototype.resolveChar(emojiName);
+  }
+  demo() {
+    // new EmojiMorph('LADYBUG', 64).demo()
+    // drag it around - it's fun
+    this.transform.translation = pt(280, 120);
+    Lively.addMorph(this);
   }
   morphCopy() {
     let copy = new EmojiMorph(this._emojiName, this._emojiSize);
@@ -8007,12 +8027,12 @@ class PanelMorph extends Morph {
     this.$watchAsCall = !!asReplaceMethodCall;
     // MethodPanel may call this from its constructor before addMorph — defer stepping.
     if (this.world() && this.world().startSteppingSpec)
-      this.startStepping('tickMethodConflict', null, 2000);
+      this.startStepping('tickMethodConflict', 2000);
     else setTimeout(() => {
       if (this.$watchSpec == null) return;
       if (this.isStepping && this.isStepping('tickMethodConflict')) return;
       if (this.world() && this.world().startSteppingSpec)
-        this.startStepping('tickMethodConflict', null, 2000);
+        this.startStepping('tickMethodConflict', 2000);
     }, 0);
     this.tickMethodConflict();
   }
@@ -8666,7 +8686,7 @@ class InspectorPanel extends PanelMorph {
     this.printPane = this.addMorph(new TextPane(panelBounds, rect(0.3, 0.0, 0.7, 0.6)));
     this.printPane.setText('Var value toString()');
     this.evalPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.6, 1.0, 0.4)));
-    this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
+    this.evalPane.setText("Eval here with 'this' bound to this " + this.target.className);
     this.evalPane.contentPane.setWorkspaceObj(this.target);
   }
   initVarsPane() {
@@ -9560,7 +9580,7 @@ function syncOnScreenKeyboardWithFocus(worldIfAny) {
   kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
   world.addEphemeralMorph(kb); // OSK is per-user UI
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping('stepRefreshLockLabels', 200);
   $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
 }
@@ -9581,7 +9601,7 @@ function toggleOnScreenKeyboard(worldIfAny) {
   let kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
   world.addEphemeralMorph(kb); // OSK is per-user UI
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping('stepRefreshLockLabels', 200);
   $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
   return kb;
@@ -10261,7 +10281,7 @@ class WorldMorph extends Morph {
     // This avoids stepping corruption when other code calls stopStepping/removeMorph
     // while we're processing due steps.
     let now = Date.now();
-    let due = this.activeStepList().filter((spec) => spec.nextStepTime < now);
+    let due = this.activeStepList().filter((spec) => spec.$nextStepTime < now);
     due.forEach((spec) => {
       // If spec was removed during earlier step processing, skip it.
       if (!this.activeStepList().includes(spec)) return;
@@ -10280,17 +10300,18 @@ class WorldMorph extends Morph {
       // and the spec re-anchors at `now`.
       let maxCatchUpSteps = 4;
       let runs = 1;
-      spec.nextStepTime += spec.stepPeriod;
-      while (spec.stepPeriod > 0 && spec.nextStepTime < now && runs < maxCatchUpSteps) {
-        spec.nextStepTime += spec.stepPeriod;
+      spec.$nextStepTime += spec.$stepPeriod;
+      while (spec.$stepPeriod > 0 && spec.$nextStepTime < now && runs < maxCatchUpSteps) {
+        spec.$nextStepTime += spec.$stepPeriod;
         runs++;
       }
-      if (spec.nextStepTime < now) spec.nextStepTime = now + spec.stepPeriod;
+      if (spec.$nextStepTime < now) spec.$nextStepTime = now + spec.$stepPeriod;
       for (let i = 0; i < runs; i++) {
         // The step itself may stop or remove the stepper; don't run it again.
         if (i > 0 && !this.activeStepList().includes(spec)) return;
         try {
-          if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+          let args = spec.$args != null ? spec.$args : [];
+          if (args.length > 0) spec.stepMorph[spec.methodName](...args);
           else spec.stepMorph[spec.methodName]();
         } catch (err) {
           let morphName = spec.stepMorph.className || 'Morph';
@@ -10372,7 +10393,6 @@ class WorldMorph extends Morph {
     // other replicas see it move (each moveTo writes Automerge — intentional
     // for multi-screen demos / op-cost experiments). Step state stays $-local.
     //  Lively.makeBouncer(true) 
-    //  Lively.makeBouncer(false) 
     //  Lively.unMakeBouncer()
 
     if (!$bouncers) $bouncers = [];
@@ -10390,7 +10410,7 @@ class WorldMorph extends Morph {
     bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
     bug.syncRotationToVelocity();
     $bouncers.push(bug);
-    bug.startStepping('bouncerStep', null, 50);
+    bug.startStepping('bouncerStep', 50);
     return bug;
   }
   unMakeBouncer() {
@@ -11643,7 +11663,7 @@ function inspect(obj, optionalBounds) {
   }
   let p = new InspectorPanel(r, obj);
   Lively.addEphemeralMorph(p);
-  p.startStepping('showSelectedValue', false, 500);
+  p.startStepping('showSelectedValue', 500, false);
   return p;
 }
 // OO entry point for every LM object (Point, Morph, …). Morph no longer defines

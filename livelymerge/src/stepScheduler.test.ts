@@ -111,7 +111,7 @@ stepper.countStep = function () { stepCount = stepCount + 1; };
   /** Reset the count and (re-)arm the 50ms stepper with nextStepTime = `start`. */
   function armStepperAt(start: number) {
     (globalThis as any).__fakeNow = start;
-    rt.eval(`stepCount = 0; stepper.startStepping('countStep', null, 50)`);
+    rt.eval(`stepCount = 0; stepper.startStepping('countStep', 50)`);
   }
 
   /** Run a frame sequence in ONE eval (each eval is an Automerge change, so

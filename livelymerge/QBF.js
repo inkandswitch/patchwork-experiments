@@ -2277,7 +2277,7 @@ class QBFMorph extends Morph {
     if (!this.worldOrNull()) return; // openQBF starts us once we are in the world
     // No rounding: at 30 ticks/sec the 33.33ms period lines up exactly with the
     // 30Hz frame grid; a rounded 33ms would sneak in a catch-up tick every ~3s.
-    this.startStepping('tick', null, 1000 / this.ticksPerSec);
+    this.startStepping('tick', 1000 / this.ticksPerSec);
   }
   onPanelCollapseChanged() {
     /**
@@ -2888,7 +2888,7 @@ class QBFMorph extends Morph {
   ensureGameClockStepping() {
     if (!this.worldOrNull()) return;
     if (this.isStepping && this.isStepping('tickGameClock')) return;
-    this.startStepping('tickGameClock', null, 1000);
+    this.startStepping('tickGameClock', 1000);
   }
   stopGameClockStepping() {
     if (!this.worldOrNull()) return;
@@ -4559,7 +4559,7 @@ class QBFScoresMorph extends Morph {
      */
     let world = this.world();
     if (!world || !world.startSteppingSpec) return; // openQBFScores starts us once in the world
-    this.startStepping('tickScores', null, 1000);
+    this.startStepping('tickScores', 1000);
   }
   tickScores() {
     this.refresh();

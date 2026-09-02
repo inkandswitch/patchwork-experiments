@@ -64,11 +64,13 @@ Rendering and hit-testing treat the two lists uniformly: a morph's submorphs —
 **The stepping schedule.** `Morph`'s `startStepping` registers a step method to be called periodically — it's how you implement animations, simulations, and other autonomous behaviors. Who should run these steps in a multi-user system? If the schedule were shared, _every_ replica would run _every_ step — side effects times N users. (This is the "who runs the processes?" consistency question from the previous note, showing up in practice.) So the schedule is local:
 
 ```
-startStepping(method, argIfAny, msTime) {
+startStepping(method, msTime, ...args) {
   this.stopStepping(method);
-  const spec = new StepSpec(this, method, argIfAny, msTime);
+  const spec = new StepSpec(this, method, msTime);
+  for (let i = 0; i < args.length; i++) spec.$args.push(args[i]);
   this.steppingSpecs().push(spec); // lazily-created, à la ephemeralSubmorphs
   this.world().startSteppingSpec(spec); // adds to the world's $stepList
+  return spec;
 }
 ```
 

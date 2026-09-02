@@ -1116,7 +1116,7 @@ w.inspect = function (obj, optionalBounds) {
   }
   let p = w.InspectorPanel.new(r, obj);
   w.Lively.addMorph(p);
-  p.startStepping('showSelectedValue', false, 500);
+  p.startStepping('showSelectedValue', 500, false);
   return p;
 };
 w.inspectString = function (obj) {
@@ -1376,7 +1376,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.world().changed();
   };
   setTimeout(() => {
-    w.Lively.spiral.startStepping('animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 }, 50);
+    w.Lively.spiral.startStepping('animatedSpiral', 50, { goDist: 2, turnAngle: 60, nSteps: 26 });
   }, 2000);
 };
 
@@ -2017,7 +2017,7 @@ w.Morph.proto.inspect = function () {
   // w.Lively.submorphs.first().inspect()
   let p = w.InspectorPanel.new(w.rect(500, 100, 300, 300), this);
   w.Lively.addMorph(p);
-  p.startStepping('showSelectedValue', false, 500);
+  p.startStepping('showSelectedValue', 500, false);
   return p;
 };
 w.Morph.proto.morphMenu = function () {
@@ -2064,7 +2064,9 @@ w.Morph.proto.restartSteppingOnCopy = function (copy, specHook) {
   copy.steppingSpecs.forEach((spec) => {
     if (!this.isStepping(spec.methodName)) return;
     if (specHook && specHook(spec, copy)) return;
-    copy.startStepping(spec.methodName, spec.arg, spec.stepPeriod, spec.nextStepTime);
+    let args = spec.$args != null ? spec.$args : [];
+    let fresh = copy.startStepping(spec.methodName, spec.$stepPeriod, ...args);
+    if (fresh) fresh.$nextStepTime = spec.$nextStepTime;
   });
 };
 w.Morph.proto.moveBy = function (delta) {
@@ -2381,13 +2383,19 @@ w.Morph.proto.showHalo = function () {
   // console.log('showHalo() on ' + this.asString());
   this.world().addMorph(w.HaloMorph.new(this));
 };
-w.Morph.proto.startStepping = function (method, argIfAny, msTime, nextStepTimeIfAny) {
+w.Morph.proto.startStepping = function (method, msTime, ...args) {
+  // startStepping(methodName, msPerTick)
+  // startStepping(methodName, msPerTick, arg)
+  // startStepping(methodName, msPerTick, arg1, arg2, ...)
   // Replace any existing step with the same method name on this morph
   this.stopStepping(method);
-  let spec = w.StepSpec.new(this, method, argIfAny, msTime, nextStepTimeIfAny);
+  let spec = w.StepSpec.new(this, method, msTime);
+  // Rest `args` may be a host Array; push into the LM $args array element-wise.
+  for (let i = 0; i < args.length; i++) spec.$args.push(args[i]);
   if (!this.steppingSpecs) this.steppingSpecs = [];
   this.steppingSpecs.push(spec);
   this.world().startSteppingSpec(spec);
+  return spec;
 };
 w.Morph.proto.stopStepping = function (methodName) {
   if (!this.steppingSpecs) this.steppingSpecs = [];
@@ -2408,7 +2416,7 @@ w.Morph.proto.subBounds = function (paneSpec) {
 };
 w.Morph.proto.testTransform = function (whenDone) {
   // Spin a bit, then reset and optionally run next
-  this.startStepping('rotateBy', Math.PI / 10, 25);
+  this.startStepping('rotateBy', 25, Math.PI / 10);
   w.setTimeout(() => {
     this.stopStepping();
     this.transform.rotation = 0;
@@ -2898,17 +2906,20 @@ w.SimpleTransform.proto.invertPt = function (p) {
 
 w.StepSpec = w.newClass('StepSpec');
 w.StepSpec.proto.asString = function () {
-  return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.stepPeriod}ms)`;
+  return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.$stepPeriod}ms)`;
 };
 w.StepSpec.proto.copyForMorph = function (morph) {
-  return w.StepSpec.new(morph, this.methodName, this.arg, this.stepPeriod, this.nextStepTime);
+  let copy = w.StepSpec.new(morph, this.methodName, this.$stepPeriod, this.$nextStepTime);
+  let src = this.$args || [];
+  for (let i = 0; i < src.length; i++) copy.$args.push(src[i]);
+  return copy;
 };
-w.StepSpec.proto.initialize = function (morph, method, argIfAny, msTime, nextStepTimeIfAny) {
+w.StepSpec.proto.initialize = function (morph, method, msTime, nextStepTimeIfAny) {
   this.stepMorph = morph;
   this.methodName = method;
-  this.arg = argIfAny;
-  this.stepPeriod = msTime;
-  this.nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
+  this.$args = [];
+  this.$stepPeriod = msTime;
+  this.$nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
 };
 
 w.TextCharSpec = w.newClass('TextCharSpec');
@@ -4498,7 +4509,7 @@ w.InspectorPanel.proto.initPrintAndEvalPanes = function () {
   this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.3, 0.0, 0.7, 0.6)));
   this.printPane.setText('Var value asString()');
   this.evalPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.6, 1.0, 0.4)));
-  this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
+  this.evalPane.setText("Eval here with 'this' bound to this " + this.target.className);
   this.evalPane.contentPane.setWorkspaceObj(this.target);
 };
 w.InspectorPanel.proto.initialize = function (initialBounds, target) {
@@ -6048,7 +6059,7 @@ w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
   kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
   world.addMorph(kb);
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping('stepRefreshLockLabels', 200);
   w._onScreenKeyboardMorph = kb;
   w._refreshPadModifierStyles();
 };
@@ -6069,7 +6080,7 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
   let kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
   world.addMorph(kb);
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping('stepRefreshLockLabels', 200);
   w._onScreenKeyboardMorph = kb;
   w._refreshPadModifierStyles();
   return kb;
@@ -6107,7 +6118,7 @@ w.WorldMorph.proto.addHand = function (handMorph) {
 };
 w.WorldMorph.proto.makeBouncer = function () {
   // w.Lively.makeBouncer()
-  // w.Lively.startStepping("makeBouncer", , 250)
+  // w.Lively.startStepping("makeBouncer", 250)
   if (!w.bouncers) w.bouncers = [];
   let world = w.Lively;
   if (!world) return null;
@@ -6172,7 +6183,7 @@ w.WorldMorph.proto.makeBouncer = function () {
     world.changed();
   };
   w.bouncers.push(bug);
-  bug.startStepping('bouncerStep', null, 50);
+  bug.startStepping('bouncerStep', 50);
   return bug;
 };
 w.WorldMorph.proto.handleStepList = function () {
@@ -6180,13 +6191,14 @@ w.WorldMorph.proto.handleStepList = function () {
   // This avoids stepping corruption when other code calls stopStepping/removeMorph
   // while we're processing due steps.
   let now = Date.now();
-  let due = this.stepList.filter((spec) => spec.nextStepTime < now);
+  let due = this.stepList.filter((spec) => spec.$nextStepTime < now);
   due.forEach((spec) => {
     // If spec was removed during earlier step processing, skip it.
     if (!this.stepList.includes(spec)) return;
-    spec.nextStepTime = now + spec.stepPeriod;
+    spec.$nextStepTime = now + spec.$stepPeriod;
     try {
-      if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+      let args = spec.$args != null ? spec.$args : [];
+      if (args.length > 0) spec.stepMorph[spec.methodName](...args);
       else spec.stepMorph[spec.methodName]();
     } catch (err) {
       let morphName = spec.stepMorph.className || 'Morph';
@@ -7041,7 +7053,7 @@ w.LineMorph.proto.beClosed = function (on) {
   return this;
 };
 w.LineMorph.proto.startHandleStepping = function () {
-  w.Morph.proto.startStepping.call(this, 'stepHoverHandles', null, 200);
+  w.Morph.proto.startStepping.call(this, 'stepHoverHandles', 200);
 };
 w.LineMorph.proto.morphCopy = function () {
   let worldVerts = this.shape.vertices.map((v) => this.globalize(v));

@@ -182,7 +182,8 @@ describe('per-user stepping', () => {
     const { handle, rt } = makeWorld();
     rt.eval(`
       Lively.testBox.wiggle = function () { this.moveBy(pt(2, 0)); };
-      Lively.testBox.startStepping('wiggle', null, 0, Date.now() - 5);
+      let s = Lively.testBox.startStepping('wiggle', 0);
+      s.$nextStepTime = Date.now() - 5;
     `);
     const x0 = rt.eval(`Lively.testBox.getBounds().topLeft.x`) as number;
     rt.eval(`Lively.handleStepList();`);
