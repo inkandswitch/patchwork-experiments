@@ -1150,7 +1150,7 @@ true`);
     // First ever start is Game #100 (not random).
     rt.eval(`qbfGame.launchLevel('quick'); true`);
     expect(rt.eval(`Lively.qbfGameNumber`)).toBe(100);
-    expect(rt.eval(`Lively.qbfShuffleGen`)).toBe(1);
+    expect(rt.eval(`Lively.qbfShuffleGen != null && Lively.qbfShuffleGen !== 0`)).toBe(true);
     expect(rt.eval(`Lively.qbfEpochStartMs != null`)).toBe(true);
     expect(rt.eval(`Lively.qbfEpochSpeed`)).toBe('quick');
     expect(rt.eval(`qbfGame.tournamentGameNumber`)).toBe(100);
@@ -1416,6 +1416,29 @@ true`);
     expect(rt.eval(`qbfN2`)).toBe(101);
     expect(rt.eval(`Lively.qbfShuffleGen`)).toBe(2);
     expect(rt.eval(`qbfQ100a === qbfQ100b`)).toBe(false);
+  }, 60_000);
+
+  it('randomizes the first shuffle gen on a fresh document', () => {
+    const { rt } = makeGame();
+    rt.eval(`
+qbfClearEpochEndTimer();
+Lively.qbfGameNumber = null;
+Lively.qbfShuffleGen = null;
+Lively.qbfEpochStartMs = null;
+qbfA = qbfBumpGameNumber();
+qbfGenA = Lively.qbfShuffleGen;
+qbfQueueA = qbfTileQueueForGame(qbfA, qbfGenA).join('');
+Lively.qbfGameNumber = null;
+Lively.qbfShuffleGen = null;
+qbfB = qbfBumpGameNumber();
+qbfGenB = Lively.qbfShuffleGen;
+qbfQueueB = qbfTileQueueForGame(qbfB, qbfGenB).join('');
+true`);
+    expect(rt.eval(`qbfA`)).toBe(100);
+    expect(rt.eval(`qbfB`)).toBe(100);
+    // Extremely unlikely to collide; if Math.random were stuck we'd fail.
+    expect(rt.eval(`qbfGenA === qbfGenB`)).toBe(false);
+    expect(rt.eval(`qbfQueueA === qbfQueueB`)).toBe(false);
   }, 60_000);
 
   it('Otto tries 5 then 4, and uses the Otto player name', () => {

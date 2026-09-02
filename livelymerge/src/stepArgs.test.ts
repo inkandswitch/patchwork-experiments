@@ -29,7 +29,7 @@ describe('startStepping arg packing', () => {
   initUI(); initLively();
   let m = new Morph(rect(0,0,10,10));
   Lively.addMorph(m);
-  m.startStepping('toString', 50, { goDist: 2, turnAngle: 60, nSteps: 26 });
+  m.startStepping(50, 'toString', { goDist: 2, turnAngle: 60, nSteps: 26 });
   let s = m.steppingSpecs()[0];
   let a0 = s.\$args[0];
   return 'len=' + s.\$args.length +

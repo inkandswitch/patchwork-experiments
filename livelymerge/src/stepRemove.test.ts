@@ -112,7 +112,7 @@ ${opts.inContainer
 stepper = container.addMorph(new Morph(rect(0, 0, 10, 10)));`
     : `stepper = Lively.addMorph(new Morph(rect(0, 0, 10, 10)));`}
 stepper.countStep = function () { stepCount = stepCount + 1; };
-stepper.startStepping('countStep', 50);
+stepper.startStepping(50, 'countStep');
 `);
     frame(60);
     const n = count();

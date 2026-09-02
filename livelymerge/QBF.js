@@ -2277,7 +2277,7 @@ class QBFMorph extends Morph {
     if (!this.worldOrNull()) return; // openQBF starts us once we are in the world
     // No rounding: at 30 ticks/sec the 33.33ms period lines up exactly with the
     // 30Hz frame grid; a rounded 33ms would sneak in a catch-up tick every ~3s.
-    this.startStepping('tick', 1000 / this.ticksPerSec);
+    this.startStepping(1000 / this.ticksPerSec, 'tick');
   }
   onPanelCollapseChanged() {
     /**
@@ -2888,7 +2888,7 @@ class QBFMorph extends Morph {
   ensureGameClockStepping() {
     if (!this.worldOrNull()) return;
     if (this.isStepping && this.isStepping('tickGameClock')) return;
-    this.startStepping('tickGameClock', 1000);
+    this.startStepping(1000, 'tickGameClock');
   }
   stopGameClockStepping() {
     if (!this.worldOrNull()) return;
@@ -3015,7 +3015,9 @@ function runQBF() {
 // 100. Starting a game bumps the shared Game # and opens a 30s join window so
 // others get the same # and seeded tile queue. A separate shuffle generation
 // counter increments on every new game so wrapping back to an earlier Game #
-// still yields a fresh letter shuffle. When the window ends it closes but the
+// still yields a fresh letter shuffle. On a fresh document the first generation
+// is randomized (then synced) so Game #100 is not the same bag every cold start.
+// When the window ends it closes but the
 // number stays (idle panels keep showing it) until the next start bumps again.
 // Idle = no signup clock stepping and no Automerge writes from the countdown.
 //
@@ -3068,8 +3070,15 @@ function qbfBumpGameNumber() {
   if (!Lively) return 100;
   if (Lively.qbfGameNumber == null) Lively.qbfGameNumber = 100;
   else Lively.qbfGameNumber = qbfNextGameNumber(qbfStoredGameNumber());
-  // Generation advances every new game so a wrapped Game # still gets a new shuffle.
-  Lively.qbfShuffleGen = qbfStoredShuffleGen() + 1;
+  if (Lively.qbfShuffleGen == null) {
+    // Fresh document: don't always start at gen 1 (same letters for every Game #100).
+    // Once written, joiners share this value via Automerge like the Game #.
+    Lively.qbfShuffleGen =
+      ((Date.now() >>> 0) ^ Math.floor(Math.random() * 0x100000000)) >>> 0 || 1;
+  } else {
+    // Generation advances every new game so a wrapped Game # still gets a new shuffle.
+    Lively.qbfShuffleGen = qbfStoredShuffleGen() + 1;
+  }
   return qbfStoredGameNumber();
 }
 function qbfTournamentEpochOpen(nowMs) {
@@ -4559,7 +4568,7 @@ class QBFScoresMorph extends Morph {
      */
     let world = this.world();
     if (!world || !world.startSteppingSpec) return; // openQBFScores starts us once in the world
-    this.startStepping('tickScores', 1000);
+    this.startStepping(1000, 'tickScores');
   }
   tickScores() {
     this.refresh();

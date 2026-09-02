@@ -1116,7 +1116,7 @@ w.inspect = function (obj, optionalBounds) {
   }
   let p = w.InspectorPanel.new(r, obj);
   w.Lively.addMorph(p);
-  p.startStepping('showSelectedValue', 500, false);
+  p.startStepping(500, 'showSelectedValue', false);
   return p;
 };
 w.inspectString = function (obj) {
@@ -1376,7 +1376,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.world().changed();
   };
   setTimeout(() => {
-    w.Lively.spiral.startStepping('animatedSpiral', 50, { goDist: 2, turnAngle: 60, nSteps: 26 });
+    w.Lively.spiral.startStepping(50, 'animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 });
   }, 2000);
 };
 
@@ -2017,7 +2017,7 @@ w.Morph.proto.inspect = function () {
   // w.Lively.submorphs.first().inspect()
   let p = w.InspectorPanel.new(w.rect(500, 100, 300, 300), this);
   w.Lively.addMorph(p);
-  p.startStepping('showSelectedValue', 500, false);
+  p.startStepping(500, 'showSelectedValue', false);
   return p;
 };
 w.Morph.proto.morphMenu = function () {
@@ -2065,7 +2065,7 @@ w.Morph.proto.restartSteppingOnCopy = function (copy, specHook) {
     if (!this.isStepping(spec.methodName)) return;
     if (specHook && specHook(spec, copy)) return;
     let args = spec.$args != null ? spec.$args : [];
-    let fresh = copy.startStepping(spec.methodName, spec.$stepPeriod, ...args);
+    let fresh = copy.startStepping(spec.$stepPeriod, spec.methodName, ...args);
     if (fresh) fresh.$nextStepTime = spec.$nextStepTime;
   });
 };
@@ -2383,10 +2383,10 @@ w.Morph.proto.showHalo = function () {
   // console.log('showHalo() on ' + this.asString());
   this.world().addMorph(w.HaloMorph.new(this));
 };
-w.Morph.proto.startStepping = function (method, msTime, ...args) {
-  // startStepping(methodName, msPerTick)
-  // startStepping(methodName, msPerTick, arg)
-  // startStepping(methodName, msPerTick, arg1, arg2, ...)
+w.Morph.proto.startStepping = function (msTime, method, ...args) {
+  // startStepping(msPerTick, methodName)
+  // startStepping(msPerTick, methodName, arg)
+  // startStepping(msPerTick, methodName, arg1, arg2, ...)
   // Replace any existing step with the same method name on this morph
   this.stopStepping(method);
   let spec = w.StepSpec.new(this, method, msTime);
@@ -2416,7 +2416,7 @@ w.Morph.proto.subBounds = function (paneSpec) {
 };
 w.Morph.proto.testTransform = function (whenDone) {
   // Spin a bit, then reset and optionally run next
-  this.startStepping('rotateBy', 25, Math.PI / 10);
+  this.startStepping(25, 'rotateBy', Math.PI / 10);
   w.setTimeout(() => {
     this.stopStepping();
     this.transform.rotation = 0;
@@ -6059,7 +6059,7 @@ w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
   kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
   world.addMorph(kb);
-  kb.startStepping('stepRefreshLockLabels', 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   w._onScreenKeyboardMorph = kb;
   w._refreshPadModifierStyles();
 };
@@ -6080,7 +6080,7 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
   let kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
   world.addMorph(kb);
-  kb.startStepping('stepRefreshLockLabels', 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   w._onScreenKeyboardMorph = kb;
   w._refreshPadModifierStyles();
   return kb;
@@ -6118,7 +6118,7 @@ w.WorldMorph.proto.addHand = function (handMorph) {
 };
 w.WorldMorph.proto.makeBouncer = function () {
   // w.Lively.makeBouncer()
-  // w.Lively.startStepping("makeBouncer", 250)
+  // w.Lively.startStepping(250, "makeBouncer")
   if (!w.bouncers) w.bouncers = [];
   let world = w.Lively;
   if (!world) return null;
@@ -6183,7 +6183,7 @@ w.WorldMorph.proto.makeBouncer = function () {
     world.changed();
   };
   w.bouncers.push(bug);
-  bug.startStepping('bouncerStep', 50);
+  bug.startStepping(50, 'bouncerStep');
   return bug;
 };
 w.WorldMorph.proto.handleStepList = function () {
@@ -7053,7 +7053,7 @@ w.LineMorph.proto.beClosed = function (on) {
   return this;
 };
 w.LineMorph.proto.startHandleStepping = function () {
-  w.Morph.proto.startStepping.call(this, 'stepHoverHandles', 200);
+  w.Morph.proto.startStepping.call(this, 200, 'stepHoverHandles');
 };
 w.LineMorph.proto.morphCopy = function () {
   let worldVerts = this.shape.vertices.map((v) => this.globalize(v));

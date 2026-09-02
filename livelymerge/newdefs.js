@@ -595,11 +595,11 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     // The world may have been re-initialized since this was scheduled (e.g. a
     // fresh initLively()); there is no spiral to animate then.
     if (!Lively || !Lively.spiral) return;
-    Lively.spiral.startStepping(
-      'animatedSpiral',
-      50,
-      { goDist: 2, turnAngle: 60, nSteps: 26 },
-    ); // was 26
+    Lively.spiral.startStepping(50, 'animatedSpiral', {
+      goDist: 2,
+      turnAngle: 60,
+      nSteps: 26,
+    }); // was 26
   }, 2000);
 
 }
@@ -4860,9 +4860,9 @@ class Morph {
     copy.$steppingSpecs.forEach((spec) => {
       if (!this.isStepping(spec.methodName)) return;
       if (specHook && specHook(spec, copy)) return;
-      // New order: method, msPerTick, ...args. Preserve nextStepTime on the new spec.
+      // Order: msPerTick, method, ...args. Preserve nextStepTime on the new spec.
       let args = spec.$args != null ? spec.$args : [];
-      let fresh = copy.startStepping(spec.methodName, spec.$stepPeriod, ...args);
+      let fresh = copy.startStepping(spec.$stepPeriod, spec.methodName, ...args);
       if (fresh) fresh.$nextStepTime = spec.$nextStepTime;
     });
   }
@@ -4956,10 +4956,10 @@ class Morph {
     if (!this.$steppingSpecs) this.$steppingSpecs = [];
     return this.$steppingSpecs;
   }
-  startStepping(method, msTime, ...args) {
-    // startStepping(methodName, msPerTick)
-    // startStepping(methodName, msPerTick, arg)
-    // startStepping(methodName, msPerTick, arg1, arg2, ...)
+  startStepping(msTime, method, ...args) {
+    // startStepping(msPerTick, methodName)
+    // startStepping(msPerTick, methodName, arg)
+    // startStepping(msPerTick, methodName, arg1, arg2, ...)
     // Replace any existing step with the same method name on this morph.
     this.stopStepping(method);
     const spec = new StepSpec(this, method, msTime);
@@ -5051,7 +5051,7 @@ class Morph {
       if (done) done();
       return;
     }
-    this.startStepping('animateFromToStep', ms);
+    this.startStepping(ms, 'animateFromToStep');
   }
   animateFromToCancel() {
     /**
@@ -5143,7 +5143,7 @@ class Morph {
     // loop's runtime.change transaction.
     this.$testTransformStepsLeft = 20; // ~500ms at 25ms/step
     this.$testTransformWhenDone = whenDone;
-    this.startStepping('testTransformStep', 25);
+    this.startStepping(25, 'testTransformStep');
   }
   testTransformStep() {
     this.rotateBy(Math.PI / 10);
@@ -8027,12 +8027,12 @@ class PanelMorph extends Morph {
     this.$watchAsCall = !!asReplaceMethodCall;
     // MethodPanel may call this from its constructor before addMorph — defer stepping.
     if (this.world() && this.world().startSteppingSpec)
-      this.startStepping('tickMethodConflict', 2000);
+      this.startStepping(2000, 'tickMethodConflict');
     else setTimeout(() => {
       if (this.$watchSpec == null) return;
       if (this.isStepping && this.isStepping('tickMethodConflict')) return;
       if (this.world() && this.world().startSteppingSpec)
-        this.startStepping('tickMethodConflict', 2000);
+        this.startStepping(2000, 'tickMethodConflict');
     }, 0);
     this.tickMethodConflict();
   }
@@ -9580,7 +9580,7 @@ function syncOnScreenKeyboardWithFocus(worldIfAny) {
   kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
   world.addEphemeralMorph(kb); // OSK is per-user UI
-  kb.startStepping('stepRefreshLockLabels', 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
 }
@@ -9601,7 +9601,7 @@ function toggleOnScreenKeyboard(worldIfAny) {
   let kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
   world.addEphemeralMorph(kb); // OSK is per-user UI
-  kb.startStepping('stepRefreshLockLabels', 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
   return kb;
@@ -10410,7 +10410,7 @@ class WorldMorph extends Morph {
     bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
     bug.syncRotationToVelocity();
     $bouncers.push(bug);
-    bug.startStepping('bouncerStep', 50);
+    bug.startStepping(50, 'bouncerStep');
     return bug;
   }
   unMakeBouncer() {
@@ -11663,7 +11663,7 @@ function inspect(obj, optionalBounds) {
   }
   let p = new InspectorPanel(r, obj);
   Lively.addEphemeralMorph(p);
-  p.startStepping('showSelectedValue', 500, false);
+  p.startStepping(500, 'showSelectedValue', false);
   return p;
 }
 // OO entry point for every LM object (Point, Morph, …). Morph no longer defines
