@@ -186,6 +186,11 @@ const boxOverlayMessage = (
   ],
 });
 
+/** The messages that carry interaction overlays (hand-only messages — my hand's
+ *  position/heartbeat — ride the same channel; see handPresence.test.ts). */
+const objectMessages = (handle: { sentEphemeral: unknown[] }) =>
+  handle.sentEphemeral.filter((m: any) => m && m.objects && m.objects.length > 0);
+
 describe('ephemeral interaction streaming: sender', () => {
   it('broadcasts overlays per frame while dragging, then a final end message with the committed values', () => {
     const { handle, rt, dispatch, runFrame } = makeWorld();
@@ -193,14 +198,16 @@ describe('ephemeral interaction streaming: sender', () => {
 
     dispatch('pointerdown', 50, 30);
     runFrame();
-    expect(handle.sentEphemeral.length).toBe(0); // no motion yet — clicks don't stream
+    expect(objectMessages(handle).length).toBe(0); // no motion yet — clicks don't stream
 
     dispatch('pointermove', 60, 40);
     runFrame();
     dispatch('pointermove', 70, 50);
     runFrame();
-    const midCount = handle.sentEphemeral.length;
+    const midCount = objectMessages(handle).length;
     expect(midCount).toBeGreaterThanOrEqual(2); // one batched message per move frame
+    // ... and exactly one message per frame: the hand rides on the overlay message.
+    expect(handle.sentEphemeral.length).toBe(3); // pointerdown frame (hand announce) + 2 move frames
 
     const mid: any = handle.sentEphemeral[handle.sentEphemeral.length - 1];
     expect(mid.type).toBe('lm-eph');
@@ -353,9 +360,9 @@ describe('ephemeral interaction streaming: receiver', () => {
   }, 60_000);
 
   it('applies a message whose actor collides with ours but whose sid is foreign (shared-hand actor ids)', () => {
-    // The multi-hand feature can leave two users holding the SAME $actorID
-    // (initHand hands out 0, 1, 2...; clicking a hand adopts its persisted id).
-    // Echo suppression must key on the session id, not the actor.
+    // Two sessions can in principle hold the SAME actor id (the old multi-hand
+    // feature made this routine); echo suppression must key on the session id,
+    // not the actor.
     const { rt, handle, runFrame } = makeWorld();
     const boxId = rt.eval(`Lively.testBox.$id`) as string;
     const myActor = rt.eval(`$actorID`) as string;

@@ -287,8 +287,16 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         cancelAnimationFrame(uiRafId);
         (window as any)._uiRafId = null;
       }
+      // Tell peers this session's hand is gone (see newdefs.js "Hands"): switching
+      // documents inside Patchwork unmounts the tool without a pagehide.
+      try {
+        const bye = (window as any)._ephByeMsg;
+        if (bye) docHandle.broadcast(bye);
+      } catch {
+        /* best effort */
+      }
     };
-  }, []);
+  }, [docHandle]);
 
   useEffect(() => {
     if (!alreadyInitialized) {

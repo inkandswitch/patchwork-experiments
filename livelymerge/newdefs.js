@@ -839,10 +839,19 @@ class Set {
 // messages (peer-to-peer through the sync server, never persisted), and applies
 // incoming ones to the same $-overlays on its side.
 //
+// The same channel carries HANDS (see the "Hands" section): every user's hand is
+// visible to everyone but persisted by no one. A hand message goes out whenever my
+// hand moved, riding on the frame's overlay message when there is one (one message
+// per frame per user, drag or no drag), plus a heartbeat every $HAND_HEARTBEAT_MS
+// while idle; receivers drop a peer's hand after $HAND_TTL_MS of silence or on its
+// `bye` (sent from pagehide / tool unmount). Hands are keyed by `sid`.
+//
 // Wire format — plain JSON, and deliberately NO $-prefixed keys: LM reads/writes of
 // $-names on HOST objects route to the ephemeral-property sidecar, not the object,
 // so $-keys on a message would be invisible from LM code.
-//   { type: 'lm-eph', v: 1, actor, sid, end?, objects: [{ id, props: { transform, bounds, vertices? } }] }
+//   { type: 'lm-eph', v: 1, actor, sid, end?,
+//     objects: [{ id, props: { transform, bounds, vertices? } }],
+//     hand?: { x, y, ci, name?, carrying?: [morphId, ...] } | { bye: true } }
 // Values are className-tagged trees ({ c: 'Point', x, y }, ...). Receivers decode by
 // prototype delegation (Object.create($global[c].prototype) + fields), validate
 // every number, and may ONLY write the whitelisted $-props (see
@@ -851,14 +860,17 @@ class Set {
 // `vertices` (line reshapes only, gated on $vertexDragActive) is a flat
 // [x0, y0, x1, y1, ...] number array — NOT the class-tagged codec, whose v1
 // deliberately carries no arrays; it has its own validator (ephValidVerticesValue).
+// `hand` is plain numbers/strings (x, y = the hand's hotspot in world coords; ci =
+// palette index; carrying = ids of the doc morphs the hand is carrying, for the
+// drag-shadow tint) with its own validator (ephValidHandPayload).
 //
 // Echo suppression uses `sid`, a random per-SESSION replica id ($ephSessionID),
-// NOT `actor`: $actorID is the acting-USER id and the multi-hand feature rebinds
-// it to small shared integers (initHand gives hands ids 0, 1, 2, ... and clicking
-// a hand adopts its id via activateHand — hands are persisted, so two users can
-// easily hold the SAME $actorID). Comparing on actor made such replicas drop every
-// message from each other as an "echo". `actor` is still sent for attribution;
-// receivers fall back to it only for messages from pre-`sid` senders.
+// NOT `actor`. `actor` ($actorID, the Automerge actor id) is sent for attribution
+// (hand colors on drag shadows and unsaved-text borders); receivers fall back to it
+// for echo suppression only for messages from pre-`sid` senders. (Historically the
+// multi-hand testing feature rebound $actorID to small shared integers, so two
+// users could hold the same actor — that feature is gone, but sid stays the
+// identity: it is what a hand IS.)
 //
 // Timing policy is entirely receiver-side: an overlay lapses $EPH_OVERLAY_MS after
 // the last message about it, so a sender that dies mid-drag self-heals. The final
@@ -895,14 +907,63 @@ function ephStreamEnd(morph) {
   ephBroadcast(objs, true);
 }
 function flushEphemeralStream() {
-  /** Once per frame (see onFrame): one batched message for all active overlays. */
-  if (!$uiState || !$uiState.ephStreamMorphs || $uiState.ephStreamMorphs.length === 0) return;
+  /** Once per frame (see onFrame): one batched message for all active overlays —
+   * plus my hand, which rides on that message, or gets one of its own when it moved
+   * or its heartbeat is due (see ephHandDue). */
+  if (!$uiState) return;
   if (!window.handle || !window.handle.broadcast) return;
   let objs = new window.Array();
-  $uiState.ephStreamMorphs.forEach((m) => {
-    if (m.$transform != null) objs.push(ephOverlayEntryFor(m));
-  });
-  if (objs.length > 0) ephBroadcast(objs, false);
+  if ($uiState.ephStreamMorphs)
+    $uiState.ephStreamMorphs.forEach((m) => {
+      if (m.$transform != null) objs.push(ephOverlayEntryFor(m));
+    });
+  if (objs.length > 0 || ephHandDue(ephFrameNow())) ephBroadcast(objs, false);
+}
+function ephFrameNow() {
+  /** The frame clock (rAF timestamp of the current frame) — what leases and hand
+   * heartbeats are measured against. */
+  return $uiState && $uiState.lastFrameTime != null ? $uiState.lastFrameTime : 0;
+}
+function ephHandDue(now) {
+  /** Does my hand need to go on the wire this frame? Yes if it was never sent,
+   * moved since the last send, or the heartbeat interval elapsed. */
+  if (!$uiState || !topLevelMorph || !topLevelMorph.myHand) return false;
+  let hand = topLevelMorph.myHand();
+  if (!hand) return false;
+  if ($uiState.handSentAt == null) return true;
+  let loc = hand.hotspot();
+  if (loc.x !== $uiState.handSentX || loc.y !== $uiState.handSentY) return true;
+  let hb = $HAND_HEARTBEAT_MS != null ? $HAND_HEARTBEAT_MS : 1000;
+  return now - $uiState.handSentAt >= hb;
+}
+function ephHandPayload(now) {
+  /** My hand as a host object for the wire (see the format comment above), or null
+   * when this session has no hand yet (no pointer event so far). Records what was
+   * sent so ephHandDue can tell motion from idleness. */
+  if (!topLevelMorph || !topLevelMorph.myHand) return null;
+  let hand = topLevelMorph.myHand();
+  if (!hand) return null;
+  let loc = hand.hotspot();
+  let h = new window.Object();
+  h.x = loc.x;
+  h.y = loc.y;
+  h.ci = hand.$colorIndex != null ? hand.$colorIndex : 0;
+  let name = window._lmUserName;
+  if (typeof name === 'string' && name.length > 0) h.name = name;
+  if (hand.isLaden()) {
+    // Only doc morphs: peers can't resolve an ephemeral morph's id anyway.
+    let ids = new window.Array();
+    hand.$carrying.forEach((m) => {
+      if (ids.length < 32 && m.$id != null && !m.isEphemeralSubmorph()) ids.push(m.$id);
+    });
+    if (ids.length > 0) h.carrying = ids;
+  }
+  if ($uiState) {
+    $uiState.handSentX = loc.x;
+    $uiState.handSentY = loc.y;
+    $uiState.handSentAt = now;
+  }
+  return h;
 }
 function ephOverlayEntryFor(morph) {
   // Host objects throughout (new window.Object/Array): handle.broadcast needs plain
@@ -938,6 +999,10 @@ function ephBroadcast(objs, isEnd) {
   msg.sid = $ephSessionID; // replica identity for echo suppression (see above)
   if (isEnd) msg.end = true;
   msg.objects = objs;
+  // My hand rides on every message (so a drag's end message from ephStreamEnd
+  // carries it too, and the same frame's flush won't send it again).
+  let hand = ephHandPayload(ephFrameNow());
+  if (hand != null) msg.hand = hand;
   window.handle.broadcast(msg);
 }
 function ephEncodeValue(v, depth) {
@@ -1014,6 +1079,21 @@ function ephValidVerticesValue(arr) {
   for (let i = 0; i < arr.length; i++) if (!ephFiniteNumber(arr[i])) return false;
   return true;
 }
+function ephValidHandPayload(h) {
+  /** `hand`: either { bye: true } or a finite hotspot with an optional small
+   * palette index, short name, and a short list of morph-id strings. */
+  if (h == null || typeof h !== 'object') return false;
+  if (h.bye === true) return true;
+  if (!ephFiniteNumber(h.x) || !ephFiniteNumber(h.y)) return false;
+  if (h.ci != null && !(Number.isInteger(h.ci) && h.ci >= 0 && h.ci < 1024)) return false;
+  if (h.name != null && !(typeof h.name === 'string' && h.name.length <= 32)) return false;
+  if (h.carrying != null) {
+    let ids = h.carrying;
+    if (typeof ids.length !== 'number' || ids.length > 32) return false;
+    for (let i = 0; i < ids.length; i++) if (typeof ids[i] !== 'string') return false;
+  }
+  return true;
+}
 function processEphemeralInbound() {
   /** Once per frame (see onFrame): drain the inbound queue, then sweep lapsed overlays. */
   if (!window._ephemeralMessages || !window._ephOverlays) return;
@@ -1023,6 +1103,7 @@ function processEphemeralInbound() {
     window._ephemeralMessages = new window.Array();
   }
   ephSweepOverlays(now);
+  ephSweepHands(now);
 }
 function ephApplyMessage(m, now) {
   if (!m || m.type !== 'lm-eph' || m.v !== 1) return;
@@ -1030,10 +1111,59 @@ function ephApplyMessage(m, now) {
   // can legitimately hold the same $actorID (see the comment block above). The
   // actor comparison remains only for messages from pre-`sid` senders.
   if (m.sid != null ? m.sid === $ephSessionID : m.actor === $actorID) return;
+  if (m.hand != null) ephApplyHand(m, now);
   let objs = m.objects;
   if (!objs) return;
   let n = Math.min(objs.length, 32);
   for (let i = 0; i < n; i++) ephApplyOverlayEntry(objs[i], !!m.end, now);
+}
+function ephApplyHand(m, now) {
+  /** A peer's hand: create it on first sight (per-user, reachable only through the
+   * world's $hands, so it never enters the document), move it, stamp $lastSeen for
+   * ephSweepHands, and note what it carries so the drag-shadow tint can show its
+   * color. Keyed by sid — a hand IS a session. */
+  let world = topLevelMorph;
+  if (!world || !world.handForSid) return;
+  let h = m.hand;
+  if (!ephValidHandPayload(h)) return;
+  if (typeof m.sid !== 'string' || m.sid.length === 0) return;
+  let hand = world.handForSid(m.sid);
+  if (hand && hand.$isLocal) return; // can't happen (echoes are dropped above); be safe
+  if (h.bye === true) {
+    if (hand) world.removeHand(hand);
+    return;
+  }
+  let p = pt(h.x, h.y);
+  if (!hand) {
+    let cap = $HAND_MAX_REMOTE != null ? $HAND_MAX_REMOTE : 64;
+    if (world.remoteHandCount() >= cap) return;
+    let ci = h.ci != null ? h.ci : 0;
+    hand = new HandMorph(typeof m.actor === 'string' ? m.actor : null, p, handColorForIndex(ci));
+    hand.$sid = m.sid;
+    hand.$isLocal = false;
+    hand.$colorIndex = ci;
+    world.addHand(hand);
+  }
+  hand.moveHotspotTo(p);
+  hand.$lastSeen = now;
+  hand.$name = typeof h.name === 'string' && h.name.length > 0 ? h.name : null;
+  hand.setCarryingIds(h.carrying);
+  hand.changed();
+}
+function ephSweepHands(now) {
+  /** Drop peers' hands that have gone quiet for $HAND_TTL_MS. A jump in the frame
+   * clock means THIS tab was hidden (rAF paused) — that says nothing about the
+   * peers, so such a frame skips expiry rather than blinking every hand off. */
+  let world = topLevelMorph;
+  if (!world || !world.$hands || world.$hands.length === 0 || !$uiState) return;
+  let ttl = $HAND_TTL_MS != null ? $HAND_TTL_MS : 4000;
+  let last = $uiState.handSweepAt;
+  $uiState.handSweepAt = now;
+  if (last != null && now - last > ttl) return;
+  let stale = world.$hands.filter(
+    (hand) => !hand.$isLocal && hand.$lastSeen != null && now - hand.$lastSeen > ttl,
+  );
+  stale.forEach((hand) => world.removeHand(hand));
 }
 function ephApplyOverlayEntry(entry, isEnd, now) {
   if (!entry || typeof entry.id !== 'string' || !entry.props) return;
@@ -1291,6 +1421,26 @@ function initUI() {
   $EPH_OVERLAY_ABANDON_MS = 60000;
   // Minimum spacing between sync nudges (see ephNudgeSync); <= 0 disables nudging.
   $EPH_SYNC_NUDGE_MS = 5000;
+  // Hands (see the "Hands" section): my own hand is drawn in place of the OS cursor
+  // when $DRAW_LOCAL_HAND is true; peers' hands are kept alive by heartbeats
+  // ($HAND_HEARTBEAT_MS between hand messages while idle) and dropped after
+  // $HAND_TTL_MS of silence — receiver-side, like the overlay leases above.
+  $DRAW_LOCAL_HAND = true;
+  $HAND_HEARTBEAT_MS = 1000;
+  $HAND_TTL_MS = 4000;
+  $HAND_MAX_REMOTE = 64;
+  // Hand colors, indexed by the `ci` a sender picks from a hash of its session id
+  // (so my hand looks the same on every screen). Per-user: never in the document.
+  $HAND_PALETTE = [
+    Color.green,
+    Color.blue,
+    Color.red,
+    Color.orange,
+    Color.cyan,
+    Color.yellow,
+    new Color(0.8, 0, 0.8),
+    Color.darkGray,
+  ];
   // Per-session replica id for ephemeral-message echo suppression. Session-unique
   // and never persisted; preserved across re-inits (like the overlay table) so a
   // mid-session initUI can't make this replica re-apply its own in-flight messages.
@@ -1310,6 +1460,31 @@ function initUI() {
     };
     window.handle.on('ephemeral-message', $lmEphListener);
   }
+  // Goodbye for my hand (see ephApplyHand): prebuilt here, INSIDE the transaction,
+  // because the pagehide listener below runs outside one and must not touch the LM
+  // heap (same rule as the canvas listeners). Rebuilt on every re-init — same sid.
+  let ephByeMsg = new window.Object();
+  ephByeMsg.type = 'lm-eph';
+  ephByeMsg.v = 1;
+  ephByeMsg.actor = $actorID;
+  ephByeMsg.sid = $ephSessionID;
+  ephByeMsg.objects = new window.Array();
+  let ephByeHand = new window.Object();
+  ephByeHand.bye = true;
+  ephByeMsg.hand = ephByeHand;
+  window._ephByeMsg = ephByeMsg;
+  // Display name for the label peers draw next to my hand: resolved asynchronously
+  // from the Patchwork account's contact doc into a window slot (the promise settles
+  // outside any transaction; ephHandPayload reads the slot inside one).
+  try {
+    getUserName()
+      .then(function (name) {
+        window._lmUserName = name ? String(name).slice(0, 24) : null;
+      })
+      .catch(function () {});
+  } catch (_nameErr) {
+    /* ignore */
+  }
   // Fresh UI init must not inherit stale soft-shift state.
   $shiftKeyPressedFlag = false; // per-user soft-shift resets on session start
   if (topLevelMorph) topLevelMorph.$shiftKeyDown = false;
@@ -1319,6 +1494,22 @@ function initUI() {
 
   if (window._uiAbortController) window._uiAbortController.abort();
   window._uiAbortController = new window.AbortController();
+
+  // Tell peers my hand is gone when this page goes away (TTL is the backstop for
+  // crashes and hidden tabs). Tied to the abort signal so re-inits don't stack
+  // listeners; guarded for the headless test harness (no window.addEventListener).
+  if (typeof window.addEventListener === 'function') {
+    let byeSignal = window._uiAbortController.signal;
+    addEventListener(
+      window,
+      'pagehide',
+      () => {
+        if (window.handle && window.handle.broadcast && window._ephByeMsg)
+          window.handle.broadcast(window._ephByeMsg);
+      },
+      byeSignal ? { signal: byeSignal } : null,
+    );
+  }
 
   canvas.style.touchAction = 'none';
   addEventListener(canvas, 'pointerdown', (e) => window._canvasEvents.push(e));
@@ -1403,6 +1594,7 @@ function initUI() {
         : 0;
     if ($uiState.externalChangeCountSeen === n) return;
     $uiState.externalChangeCountSeen = n;
+    if (topLevelMorph.migrateLegacyHands) topLevelMorph.migrateLegacyHands();
     topLevelMorph.repairSubmorphOwnership();
   }
 
@@ -4512,11 +4704,6 @@ class Morph {
     if (this.submorphs != null && this.submorphs.length > 0) return true;
     return this.$submorphs != null && this.$submorphs.length > 0;
   }
-  inaHand() {
-    if (this.owner == null) return false;
-    if (this.owner.isaHand()) return true;
-    return this.owner.inaHand();
-  }
   includesPt(p) {
     // p is in owner (or world for root children) coordinates; convert to local
     return this.shape.includesPt(this.relativize(p));
@@ -4525,16 +4712,16 @@ class Morph {
     return false;
   }
   isInWorld() {
-    /** True while this morph is attached to the world, including riding in a hand.
-     * remove()/removeMorph leave the owner back-pointer set (see remove), so walk
-     * the chain checking real membership in each owner's submorph/hand lists. */
+    /** True while this morph is attached to the world. remove()/removeMorph leave
+     * the owner back-pointer set (see remove), so walk the chain checking real
+     * membership in each owner's submorph lists. (A morph a hand carries stays a
+     * world child — see HandMorph#carry — so hands need no case here.) */
     let m = this;
     while (m.owner != null) {
       let o = m.owner;
       let attached =
         (o.submorphs != null && o.submorphs.includes(m)) ||
-        (o.$submorphs != null && o.$submorphs.includes(m)) ||
-        (o.hands != null && o.hands.includes(m));
+        (o.$submorphs != null && o.$submorphs.includes(m));
       if (!attached) return false;
       m = o;
     }
@@ -4584,14 +4771,6 @@ class Morph {
     // moves) and orphaned the old one.
     this.transform.translation.moveBy(delta);
     if (this.bounds) this.bounds.moveBy(delta);
-  }
-  myOwningHand() {
-    let m = this.owner;
-    while (m) {
-      if (m.className === 'HandMorph') return m;
-      m = m.owner;
-    }
-    return null;
   }
   nullTransformation() {
     return new SimpleTransform(pt(0, 0), 0, pt(1, 1));
@@ -4734,19 +4913,19 @@ class Morph {
     this.eachSubmorph((each) => {
       ctx.save();
       let pf = this.world().$pointerFocus;
-      let inHand = each.inaHand();
+      // Carried by a hand (mine, or a peer's — see HandMorph#setCarryingIds).
+      let carrier = each.$carriedBy != null ? each.$carriedBy : null;
       let haloGrabOrCopyShadow =
         pf &&
         pf.className === 'HaloHandle' &&
         ['Grab', 'Copy'].includes(pf.handleName) &&
         pf.target === each;
-      if (inHand || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
-        let owningHand = each.myOwningHand ? each.myOwningHand() : null;
+      if (carrier || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
         let world = this.world ? this.world() : null;
         let focusActorID = each.$dragActorID != null ? each.$dragActorID : $actorID;
         let focusHand =
-          !owningHand && world && world.handForID ? world.handForID(focusActorID) : null;
-        let handForShadow = owningHand || focusHand;
+          !carrier && world && world.handForID ? world.handForID(focusActorID) : null;
+        let handForShadow = carrier || focusHand;
         let handColor = handForShadow && handForShadow.handColor ? handForShadow.handColor() : null;
         if (handColor && handColor.r != null && handColor.g != null && handColor.b != null) {
           let rr = Math.floor(handColor.r * 255.999);
@@ -9454,39 +9633,157 @@ class HaloMorph extends Morph {
 // +---------+
 // |  Hands  |
 // +---------+
-// Alt-drag hand morph for submorph pickup.
+// A hand is a user's cursor in the world: visible to everyone, persisted by no one.
+// Each session has exactly one, created on its first pointer event and kept in the
+// world's per-user $hands list (never the document); peers see it through the
+// ephemeral-message channel (see "Ephemeral interaction streaming"), which also
+// removes it when the user leaves. Alt-click picks up the morph under the hand,
+// Alt-click again drops it, Alt+Shift-click picks up a copy.
+
+function handColorIndexForSid(sid) {
+  /** Stable palette index for a session id, so a hand has the same color on every
+   * screen (the sender picks it and sends it as `ci`). */
+  let s = sid == null ? '' : String(sid);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  let n = $HAND_PALETTE && $HAND_PALETTE.length > 0 ? $HAND_PALETTE.length : 1;
+  return ((h % n) + n) % n;
+}
+function handColorForIndex(ci) {
+  let palette = $HAND_PALETTE;
+  if (!palette || palette.length === 0) return Color.red;
+  let n = palette.length;
+  let i = typeof ci === 'number' && Number.isInteger(ci) ? ((ci % n) + n) % n : 0;
+  return palette[i];
+}
 
 //  HandMorph
 // -----------
-// Alt-drag hand for picking up submorph trees.
+// Per-user object (a shadow, never promoted): every ordinary property write on it —
+// its transform included, once per pointer move — is free. The one rule: nothing
+// persistent may point at a hand through an ordinary property (`owner` above all),
+// or the GC would promote the hand into the document. So a hand never OWNS what it
+// carries; see carry().
 class HandMorph extends Morph {
   constructor(id, location, color) {
     super(null, new Pen().makeHandShape(location, color));
-    this.actorID = id;
-    // Per-hand last point for move deltas — must not share the world pointerLocation
-    // (WorldMorph updates that before/after hand moves).
+    this.actorID = id; // the user's Automerge actor id, for attribution lookups (handForID)
+    // The hotspot: where the pointer is. The hand's geometry keeps a fixed offset
+    // from it (moves are deltas), so this — not the bounds — is what goes on the wire.
+    // Must not share the world pointerLocation (WorldMorph updates that before/after
+    // hand moves), and never seeds it (construction is often at the world origin).
     this.$handPointerLocation = location ? location.copy() : this.location();
-    // Do not seed global pointerLocation from hand construction (often world origin).
+  }
+  hotspot() {
+    return this.$handPointerLocation ? this.$handPointerLocation : this.location();
+  }
+  moveHotspotTo(p) {
+    /** Put the hotspot at world-pt `p` by moving the whole hand (its geometry keeps
+     * its offset). Returns the delta moved. Used for my own pointer moves and for
+     * peers' hand messages alike. */
+    let d = p.subPt(this.hotspot());
+    this.$handPointerLocation = p;
+    if (d.x !== 0 || d.y !== 0) this.moveBy(d);
+    return d;
+  }
+  carrying() {
+    /** Morphs this (local) hand is carrying; lazily created, per-user. */
+    if (!this.$carrying) this.$carrying = [];
+    return this.$carrying;
+  }
+  isLaden() {
+    return this.$carrying != null && this.$carrying.length > 0;
+  }
+  carry(morph, anchorLocal) {
+    /**
+     * Pick `morph` up. It does NOT become my submorph: a persistent morph's `owner`
+     * edge would promote this per-user hand into the document, and peers (who have
+     * no copy of my hand) would watch the morph vanish. Instead it works like the
+     * halo's Grab handle: the morph becomes a world child at its current place,
+     * rides along on its ephemeral $transform (moveBy in onPointerMove), streams
+     * live to peers, and the document sees one write when it is dropped.
+     */
+    let world = this.world();
+    morph.reparentToOwnerPreservingWorldAnchor(world, anchorLocal);
+    morph.beTopMorph(); // above its siblings while in the air (op-free if already there)
+    morph.$handGrabAnchorLocal = anchorLocal;
+    morph.beginEphemeralTransform();
+    morph.$dragActorID = this.actorID; // drag-shadow tint (see Morph#renderOn)
+    morph.$carriedBy = this;
+    this.carrying().push(morph);
+    if (!morph.isEphemeralSubmorph()) ephStreamRegister(morph); // peers can't resolve ephemeral ids
   }
   dropMorph(p, evt) {
-    let worldPt = p ? p : this.location();
-    // Cargo can sit in either list: grabs preserve the morph's edge kind, so an
-    // ephemeral morph rides in the hand's $submorphs. (allSubmorphs is a fresh array.)
-    this.allSubmorphs().forEach((morphToDrop) => {
-      let anchorLocal = morphToDrop.$handGrabAnchorLocal;
-      if (!anchorLocal) anchorLocal = morphToDrop.shape.getBounds().topLeft;
-      morphToDrop.dropOnTopMorphAt(worldPt, anchorLocal);
-      morphToDrop.$handGrabAnchorLocal = null;
+    let worldPt = p ? p : this.hotspot();
+    let cargo = this.$carrying ? this.$carrying.slice() : [];
+    this.$carrying = [];
+    cargo.forEach((m) => {
+      let anchorLocal = m.$handGrabAnchorLocal;
+      if (!anchorLocal) anchorLocal = m.shape.getBounds().topLeft;
+      // Same order as the pointer-drag protocol (dragEnded, then finishPointerDrag):
+      // the drop reparents through the still-ephemeral transform, the commit lands
+      // it in the document, and the end message then carries the committed values.
+      m.dropOnTopMorphAt(worldPt, anchorLocal);
+      m.commitEphemeralTransform();
+      ephStreamEnd(m);
+      m.$handGrabAnchorLocal = null;
+      m.$dragActorID = null;
+      m.$carriedBy = null;
     });
   }
   grabMorph(p, evt) {
-    let worldPt = p ? p : this.location();
+    let worldPt = p ? p : this.hotspot();
     let morphUnder = this.world().topMorphAt(worldPt);
     if (!morphUnder || morphUnder === this || morphUnder.className == 'WorldMorph') return false;
-    let anchorLocal = morphUnder.localize(worldPt);
-    morphUnder.$handGrabAnchorLocal = anchorLocal;
-    morphUnder.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
+    this.carry(morphUnder, morphUnder.localize(worldPt));
     return true;
+  }
+  setCarryingIds(ids) {
+    /** Peers' hands only: the doc morphs (by id) the peer says it is carrying, so
+     * Morph#renderOn can tint their drag shadows with this hand's color. Ids that
+     * don't resolve yet (the morph hasn't synced in) are simply retried next time. */
+    let world = this.world();
+    let next = [];
+    if (ids != null) for (let i = 0; i < ids.length; i++) next.push(ids[i]);
+    let prev = this.$carryingIds;
+    if (prev && world)
+      prev.forEach((id) => {
+        if (next.includes(id)) return;
+        let m = morphWithId(world, id);
+        if (m && m.$carriedBy === this) m.$carriedBy = null;
+      });
+    if (world)
+      next.forEach((id) => {
+        let m = morphWithId(world, id);
+        if (m && (m.$carriedBy == null || m.$carriedBy === this)) m.$carriedBy = this;
+      });
+    this.$carryingIds = next.length > 0 ? next : null;
+  }
+  releaseCargo() {
+    /** This hand is going away: drop the tint edges it holds (both kinds). */
+    if (this.$carryingIds) this.setCarryingIds(null);
+    if (this.$carrying) {
+      this.$carrying.forEach((m) => {
+        if (m.$carriedBy === this) m.$carriedBy = null;
+      });
+      this.$carrying = [];
+    }
+  }
+  renderNameLabelOn(ctx) {
+    /** Small name tag beside a peer's hand, in the hand's color. World coords. */
+    let name = this.$name;
+    if (!name) return;
+    let loc = this.hotspot();
+    let color = this.handColor();
+    ctx.save();
+    ctx.font = '12px sans-serif';
+    ctx.textBaseline = 'top';
+    let w = ctx.measureText(name).width;
+    ctx.fillStyle = color && color.fillStyle ? color.fillStyle : 'black';
+    ctx.fillRect(loc.x + 12, loc.y + 22, w + 8, 16);
+    ctx.fillStyle = 'white';
+    ctx.fillText(name, loc.x + 16, loc.y + 24);
+    ctx.restore();
   }
   handColor() {
     if (!this.shape) return null;
@@ -9503,40 +9800,42 @@ class HandMorph extends Morph {
   }
   onPointerDown(p, evt) {
     this.$hitPoint = p;
-    this.$handPointerLocation = p;
+    this.moveHotspotTo(p);
     setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
-    // Switching active hand when clicking another is handled in WorldMorph.onPointerDown
-    // (hands live in world.hands, not the submorph tree, so inactive hands never get events).
     if (!evt.altKey) return false;
     if (evt.shiftKey) {
-      // Alt+Shift click means copy target into hand.
-      if (this.hasSubmorphs()) return false; // no sense to copy if laden
+      // Alt+Shift click means pick up a copy of the target.
+      if (this.isLaden()) return false; // no sense to copy if laden
       let morphUnder = this.world().topMorphAt(p);
       if (!morphUnder || morphUnder.className == 'WorldMorph' || morphUnder === this) return false;
       let copy = morphUnder.morphCopy();
       let anchorLocal = copy.localize(p);
-      copy.$handGrabAnchorLocal = anchorLocal;
-      copy.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
+      // The fresh copy is in no submorph list yet, so it can't infer its edge kind —
+      // pass the original's, so ephemeral morphs copy as ephemeral (cf. HaloHandle Copy).
+      copy.reparentToOwnerPreservingWorldAnchor(
+        this.world(),
+        anchorLocal,
+        morphUnder.isEphemeralSubmorph(),
+      );
+      this.carry(copy, anchorLocal);
       return true;
     }
-    if (this.hasSubmorphs()) this.dropMorph(p, evt);
+    if (this.isLaden()) this.dropMorph(p, evt);
     else this.grabMorph(p, evt);
     return true;
   }
   onPointerMove(p, evt) {
-    let prev = this.$handPointerLocation ? this.$handPointerLocation : this.location();
-    let d = p.subPt(prev);
-    this.$handPointerLocation = p;
+    let d = this.moveHotspotTo(p);
     setPointerLocation(p);
-    this.moveBy(d);
-    // Submorphs ride under transform; do not move them separately.
+    // Cargo is not under my transform (see carry): move it by the same world delta.
+    if (this.$carrying && (d.x !== 0 || d.y !== 0)) this.$carrying.forEach((m) => m.moveBy(d));
   }
   onPointerUp(p, evt) {
-    this.$handPointerLocation = p;
+    this.moveHotspotTo(p);
     setPointerLocation(p);
     // $hitPoint is per-replica; it can be missing (e.g. after a reload while laden) — treat that as a drop.
-    if (this.hasSubmorphs() && (!this.$hitPoint || this.$hitPoint.dist(p) > 2)) this.dropMorph();
+    if (this.isLaden() && (!this.$hitPoint || this.$hitPoint.dist(p) > 2)) this.dropMorph(p, evt);
   }
   static new(...args) {
     return new this(...args);
@@ -10192,16 +10491,47 @@ class WorldMorph extends Morph {
     this.$keyboardFocus = null;
     this.$pointerLocation = null; // last pointer in world coords; see setPointerLocation
     this.$shiftKeyDown = false; // maintained here
-    this.hands = null;
+    // Hands live in $hands (per-user, see ephemeralHands) — never a persistent slot.
   }
-  addHand(handMorph) {
-    // maybe should check for duplicate adds
-    if (!this.hands) this.hands = [];
-    if (handMorph.actorID == null) handMorph.actorID = $actorID;
-    this.hands.push(handMorph);
-    handMorph.owner = this;
+  addHand(hand) {
+    /** Register a hand (mine or a peer's) in the per-user list. The next frame's
+     * render draws it — no synchronous render here (headless callers have no ctx). */
+    hand.owner = this; // a shadow object's edge: free, and never promotes anything
+    this.ephemeralHands().push(hand);
     this.updateCursorForHands();
-    this.render(canvas.getContext('2d')); // hand should now appear
+    return hand;
+  }
+  ephemeralHands() {
+    /** The hands in this world — mine and my peers' — per-user and never in the
+     * document; lazily created, like {@link Morph#ephemeralSubmorphs}. */
+    if (!this.$hands) this.$hands = [];
+    return this.$hands;
+  }
+  localHand(p) {
+    /** This session's hand, created on first use with its hotspot at world-pt `p`
+     * (the pointer). Color from a hash of the session id, so peers agree. */
+    let hand = this.handForSid($ephSessionID);
+    if (hand) return hand;
+    if (p == null) p = getPointerLocation();
+    if (p == null) p = pt(0, 0);
+    let ci = handColorIndexForSid($ephSessionID);
+    hand = new HandMorph($actorID, p, handColorForIndex(ci));
+    hand.$sid = $ephSessionID;
+    hand.$isLocal = true;
+    hand.$colorIndex = ci;
+    return this.addHand(hand);
+  }
+  migrateLegacyHands() {
+    /** Hands used to be persistent (world.hands, created by an 'Init hand' menu
+     * item) — every pointer move was four document writes, and nothing ever removed
+     * them. Drop the old list: one register write, once per legacy document. Runs
+     * from maybeRepairAfterMerge, so a replica on old code re-adding hands gets
+     * undone too. */
+    if (this.hands != null) this.hands = null;
+  }
+  remoteHandCount() {
+    if (!this.$hands) return 0;
+    return this.$hands.filter((hand) => !hand.$isLocal).length;
   }
   cycleHaloAt(pt) {
     let candidates = this.morphsAtPointInDepthOrder(pt);
@@ -10259,31 +10589,19 @@ class WorldMorph extends Morph {
     return this.handForID(actorID);
   }
   handForID(id) {
-    if (!this.hands || this.hands.length == 0) return null;
-    let matched = this.hands.find((hand) => hand.actorID == id);
-    if (matched) return matched;
-    return null;
+    /** A hand of the user with Automerge actor id `id` (attribution: drag-shadow
+     * tint, unsaved-text borders), or null. A session that reloaded shows up with a
+     * new actor AND a new sid, so this is normally unique; if two sessions ever
+     * shared an actor this answers the first. */
+    if (id == null || !this.$hands || this.$hands.length == 0) return null;
+    let matched = this.$hands.find((hand) => hand.actorID == id);
+    return matched ? matched : null;
   }
-  handAt(pt, excludeIfAny) {
-    /** Frontmost hand whose bounds contain world-pt `pt`, optionally skipping one hand. */
-    if (!this.hands || this.hands.length == 0) return null;
-    for (let i = this.hands.length - 1; i >= 0; i--) {
-      let hand = this.hands[i];
-      if (excludeIfAny && hand === excludeIfAny) continue;
-      // Hands are owned by the world but not in submorphs; owner coords == world coords.
-      if (hand.fullBounds && hand.fullBounds().includesPt(pt)) return hand;
-    }
-    return null;
-  }
-  activateHand(hand, p, evt) {
-    /** Make `hand` the local active user (testing multi-hand). */
-    if (!hand) return false;
-    $actorID = hand.actorID;
-    if (evt) evt.actorID = hand.actorID;
-    // Avoid a jump on the first move after switching.
-    hand.$handPointerLocation = p ? p : getPointerLocation();
-    if (p) setPointerLocation(p);
-    return true;
+  handForSid(sid) {
+    /** The hand of session `sid` (a hand IS a session; see ephApplyHand), or null. */
+    if (sid == null || !this.$hands || this.$hands.length == 0) return null;
+    let matched = this.$hands.find((hand) => hand.$sid == sid);
+    return matched ? matched : null;
   }
   handleStepList() {
     // Fire all due specs without mutating stepList structure during iteration.
@@ -10346,22 +10664,6 @@ class WorldMorph extends Morph {
     });
     console.log('hitMorph ' + hitMorph.toString() + '/n at ' + pt.toString());
     return hitMorph; */
-  }
-  initHand(start) {
-    if (start == false) {
-      this.hands = null;
-      this.updateCursorForHands();
-      return;
-    }
-    if (!this.hands) this.hands = [];  //Means we're using hands
-    // for testing we give new hands IDs of 0, 1, 2, 3, 4, etc
-      let id = this.hands.length;
-      $actorID = id;  // now we act like another user N
-    let color = Color[['green', 'blue', 'red', 'yellow', 'cyan'][id%5]];
-    console.log('creating hand morph');
-    const hm = new HandMorph($actorID, getPointerLocation(), color);
-    console.log('adding hand morph');
-    this.addHand(hm);
   }
   isSteppingMorph(morph, methodName) {
     return this.activeStepList().some((spec) => {
@@ -10457,7 +10759,8 @@ class WorldMorph extends Morph {
     return chain;
   }
   myHand() {
-    return this.handForID($actorID);
+    /** This session's hand, or null before its first pointer event (see localHand). */
+    return this.handForSid($ephSessionID);
   }
   onKeyDown(evt) {
     // Match browser modifier state (handles Shift+N and both Shift keys reliably).
@@ -10512,17 +10815,9 @@ class WorldMorph extends Morph {
       this.cycleHaloAt(p);
       return true;
     }
-    // Hands are drawn from this.hands, not the submorph tree. If the active hand
-    // (cursor) is over another hand, clicking it switches $actorID to that hand.
-    let activeHand = this.handForID(evt.actorID);
-    let handUnder = this.handAt(p, activeHand);
-    if (handUnder) {
-      this.activateHand(handUnder, p, evt);
-      return true;
-    }
-    // this.removeExistingHalos();  // OK here?
-    let hand = activeHand;
-    if (hand && evt.altKey) {
+    // My hand (drawn from $hands, not the submorph tree) takes Alt-clicks: pick up / drop.
+    let hand = this.localHand(p);
+    if (evt.altKey) {
       hand.onPointerDown(p, evt);
       return true;
     }
@@ -10544,19 +10839,16 @@ class WorldMorph extends Morph {
     return hit;
   }
   onPointerMove(p, evt) {
-    let hand = this.handForID(evt.actorID);
-    if (hand) {
-      // Hand must see the previous location to compute its delta; update shared
-      // pointerLocation only after the hand has moved.
-      hand.onPointerMove(p, evt);
-      setPointerLocation(p);
-    } else {
-      setPointerLocation(p);
-    }
+    // My hand follows the pointer (a delta move — it must see the previous location
+    // first, so the shared pointerLocation is updated after it). Per-user state
+    // only: the hand is a shadow object, so this costs no document writes.
+    let hand = this.localHand(p);
+    hand.onPointerMove(p, evt);
+    setPointerLocation(p);
     // Hover UI must track every move — including mid-drag ($pointerFocus set) and
     // while a hand carries morphs — so it runs before the early returns below.
     this.updateHoverUI(p);
-    if (hand && hand.hasSubmorphs()) return true;
+    if (hand.isLaden()) return true;
     if (this.$pointerFocus) {
       // pointerFocus expects pt in its owner's coords (e.g. SliderMorph in ListPane)
       let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
@@ -10566,12 +10858,10 @@ class WorldMorph extends Morph {
   }
   onPointerUp(p, evt) {
     setPointerLocation(p);
-    let hand = this.handForID(evt.actorID);
-    if (hand) {
-      let handHandled = hand.hasSubmorphs() || evt.altKey;
-      hand.onPointerUp(p, evt);
-      if (handHandled) return true;
-    }
+    let hand = this.localHand(p);
+    let handHandled = hand.isLaden() || evt.altKey;
+    hand.onPointerUp(p, evt);
+    if (handHandled) return true;
     let result;
     if (this.$pointerFocus) {
       let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
@@ -10605,23 +10895,33 @@ class WorldMorph extends Morph {
     });
     halos.forEach((halo) => halo.remove());
   }
-  removeHand(handMorph) {
-    this.hands = this.hands.filter((m) => m !== handMorph);
+  removeHand(hand) {
+    /** A peer left (its `bye`, or $HAND_TTL_MS of silence — see ephSweepHands). */
+    if (!this.$hands) return;
+    let ix = this.$hands.indexOf(hand);
+    if (ix >= 0) this.$hands.splice(ix, 1);
+    if (hand.releaseCargo) hand.releaseCargo();
     this.updateCursorForHands();
   }
   render(ctx) {
     this.handleStepList();
     this.renderOn(ctx);
-    if (this.hands)
-      this.hands.forEach((hand) => {
-        ctx.save();
-        const tfm = hand.transform;
-        ctx.translate(tfm.translation.x, tfm.translation.y);
-        ctx.rotate(tfm.rotation);
-        ctx.scale(tfm.scale.x, tfm.scale.y);
-        hand.renderOn(ctx);
-        ctx.restore();
-      });
+    // Hands last, so they sit above everything. Mine is drawn in place of the OS
+    // cursor (see updateCursorForHands) unless $DRAW_LOCAL_HAND is off.
+    let hands = this.$hands;
+    if (!hands || hands.length === 0) return;
+    let drawLocal = $DRAW_LOCAL_HAND !== false;
+    hands.forEach((hand) => {
+      if (hand.$isLocal && !drawLocal) return;
+      ctx.save();
+      const tfm = hand.transform;
+      ctx.translate(tfm.translation.x, tfm.translation.y);
+      ctx.rotate(tfm.rotation);
+      ctx.scale(tfm.scale.x, tfm.scale.y);
+      hand.renderOn(ctx);
+      ctx.restore();
+      if (!hand.$isLocal && hand.renderNameLabelOn) hand.renderNameLabelOn(ctx);
+    });
   }
   setKeyboardFocus(morphOrNull) {
     /*
@@ -10686,9 +10986,8 @@ class WorldMorph extends Morph {
         `MORPHIC
     The graphics model of this system is Morphic, and the UI is taken very closely from Squeak and Lively.
     All objects ("morphs") on the screen are in a tree of morphs (owners) and submorphs, similar to the parent/children structure of HTML.  The root of this tree is a WorldMorph, and any morph can access it with the method "world()".
-    Each user is associated with a "hand" that can pick up any morph (removing it from its prior owner (may be the "world")), and drop it on another object that then becomes its new owner. The hand is the sole source of pointer and keyboard events.
-    Every morph has a 2-D coordinate transform between its bounds (in its owner's oordinate system) and its submorphs and other graphical content)).
-    Please note: hands and transforms are not currently used`,
+    Each user is associated with a "hand" -- their cursor, drawn in their color and visible to everyone else in the world. Alt-click picks up the morph under the hand, Alt-click again drops it on the object underneath (which becomes its new owner), and Alt+Shift-click picks up a copy.
+    Every morph has a 2-D coordinate transform between its bounds (in its owner's coordinate system) and its submorphs and other graphical content.`,
         'Morphic help',
       ),
     );
@@ -10743,9 +11042,6 @@ class WorldMorph extends Morph {
       }),
       menuItem('Text help', function () {
         this.world().showTextHelp();
-      }),
-      menuItem('Init hand', function () {
-        this.world().initHand(true);
       }),
       menuItem('Open transcript', () => {
         Transcript = openTranscript();
@@ -10850,9 +11146,11 @@ class WorldMorph extends Morph {
     return walk(this, pt);
   }
   updateCursorForHands() {
-    let canvas = canvas ? canvas : null;
-    if (!canvas) return;
-    canvas.style.cursor = this.hands && this.hands.length > 0 ? 'none' : 'default';
+    /** My hand replaces the OS cursor while $DRAW_LOCAL_HAND is on. */
+    let c = typeof canvas !== 'undefined' ? canvas : null;
+    if (!c || !c.style) return;
+    let drawLocal = $DRAW_LOCAL_HAND !== false;
+    c.style.cursor = drawLocal && this.myHand() ? 'none' : 'default';
   }
   world() {
     // Note should be cleaner -- see other implementations

@@ -147,19 +147,14 @@ stepper.startStepping(50, 'countStep');
     expect(count()).toBe(n);
   });
 
-  it('keeps stepping while riding in a hand', () => {
+  it('keeps stepping while carried by a hand', () => {
     const n = makeStepper();
-    // Wire the hand like WorldMorph.addHand, minus the immediate canvas render
-    // (the headless ctx stub can't survive a real render pass).
-    rt.eval(`hand = new HandMorph($actorID, pt(0, 0), Color.red)`);
-    rt.eval(`
-if (!Lively.hands) Lively.hands = [];
-Lively.hands.push(hand);
-hand.owner = Lively;
-`);
-    rt.eval(`hand.addMorph(stepper)`);
+    // The hand is per-user (world.$hands); what it carries stays a world child.
+    rt.eval(`hand = Lively.localHand(pt(0, 0))`);
+    rt.eval(`hand.carry(stepper, pt(0, 0))`);
+    expect(rt.eval(`hand.isLaden() && stepper.owner === Lively`)).toBe(true);
     frame(300);
     expect(count()).toBeGreaterThan(n);
-    rt.eval('stepper.remove()'); // clean up: don't leak steps into later tests
+    rt.eval('hand.dropMorph(pt(300, 300)); stepper.remove()'); // clean up: don't leak steps into later tests
   });
 });
