@@ -9,11 +9,15 @@
     "test": "vitest run",
     "bench": "BENCH=1 vitest run src/perfBench.test.ts --disableConsoleIntercept",
     "sync": "pnpm build && pushwork sync",
-    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
+    "pwm:hello": "npx vite-node pwm/join.ts -- --hello",
+    "pwm:eval": "npx vite-node pwm/join.ts --",
+    "pwm:mirror": "npx vite-node pwm/mirrorFragment.ts --"
   },
   "dependencies": {
     "@automerge/automerge": "^3.2.6",
     "@automerge/automerge-repo": "2.6.0-subduction.20",
+    "@automerge/automerge-repo-network-websocket": "2.6.0-subduction.20",
     "@automerge/automerge-repo-react-hooks": "2.6.0-subduction.20",
     "@codemirror/lang-javascript": "6.2.4",
     "@codemirror/lint": "6.9.0",
