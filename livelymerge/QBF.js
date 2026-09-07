@@ -2900,6 +2900,13 @@ class QBFMorph extends Morph {
   static new(...args) {
     return new this(...args);
   }
+  pwmTag() {
+    // Visible on the board: a small banner peers can see when the game is shared.
+    let note = new TextMorph(rect(12, 12, 320, 24), 'Hello from Grok — QBF collab!');
+    this.addMorph(note);
+    if (typeof note.beTopMorph === 'function') note.beTopMorph();
+    return 'qbf-pong';
+  }
 }
 
 // Scrabble-ish letter values.
@@ -5321,4 +5328,138 @@ if (typeof Lively !== 'undefined' && Lively && Lively.addEphemeralMorph) {
   let wm = Lively.findA('MenuMorph');
   if (wm && wm.findItem('quick') == -1)
     wm.addItemBefore('transcript', 'Quick Brown Fox', () => openQBF());
+}
+
+// System Browser category (present whenever this package has been evaluated).
+function qbfBrowserCategoryClasses() {
+  return [
+    'QBFDecorMorph',
+    'QBFTextMorph',
+    'QBFButtonMorph',
+    'QBFLetterMorph',
+    'QBFMorph',
+    'QBFGameScore',
+    'QBFDocScoresStore',
+    'QBFMemoryScoresStore',
+    'QBFScoresMorph',
+    'QBFSoundsPlayer'
+  ];
+}
+function qbfBrowserCategoryMethods() {
+  return [
+    'findAllQBFGames',
+    'findQBFGame',
+    'findQBFScoresViewer',
+    'openQBF',
+    'openQBFPlaying',
+    'openQBFScores',
+    'qbfAddWordsToArray',
+    'qbfAddWordsToCompactString',
+    'qbfAddWordsToEmbeddedList',
+    'qbfApplyAccountNameToAnonymousBoards',
+    'qbfArmEpochEndTimer',
+    'qbfArmFallSound',
+    'qbfBaseLivePlayerName',
+    'qbfBumpGameNumber',
+    'qbfButtonHostFor',
+    'qbfChromeSlideFrill',
+    'qbfClaimUniqueLiveName',
+    'qbfClearEpochEndTimer',
+    'qbfClearLiveScores',
+    'qbfCloseTournamentEpoch',
+    'qbfCommitExpiredTournament',
+    'qbfCompactStringForEach',
+    'qbfCompactStringFromArray',
+    'qbfCompactStringToArray',
+    'qbfConsumeFallSound',
+    'qbfCurrentGameNumber',
+    'qbfDarkBrown',
+    'qbfDefaultPlayerName',
+    'qbfEmbeddedCompactInstallSource',
+    'qbfEmbeddedWordList',
+    'qbfEndTournamentEpoch',
+    'qbfEnsureTournamentState',
+    'qbfEnsureWordList',
+    'qbfEpochDurationMs',
+    'qbfFinalScoresCaption',
+    'qbfFinalScoresHeader',
+    'qbfFinishExpiredTournament',
+    'qbfFlushPendingAccountName',
+    'qbfFormatScoreTime',
+    'qbfGameFor',
+    'qbfInstallAudioUnlock',
+    'qbfInstallBevel',
+    'qbfInstallEmbeddedCompact',
+    'qbfInstallWordListText',
+    'qbfIsTouchDevice',
+    'qbfJoinOrStartTournamentGame',
+    'qbfLetterBag',
+    'qbfLiveScoreRowsForGame',
+    'qbfLiveScoresCaption',
+    'qbfLiveScoresCaptionFor',
+    'qbfLiveScoresHeader',
+    'qbfLiveScoresHeaderFor',
+    'qbfLiveScoresList',
+    'qbfLookupGameNoFromRecent',
+    'qbfLookupWord',
+    'qbfMergePlayerScore',
+    'qbfMulberry32',
+    'qbfNameButtonLabel',
+    'qbfNextGameNumber',
+    'qbfNormalizeWordForList',
+    'qbfNotePendingAccountName',
+    'qbfNotifyLiveScores',
+    'qbfPad',
+    'qbfPadLeft',
+    'qbfPadRight',
+    'qbfPaintBevel',
+    'qbfPostLevelScore',
+    'qbfPostLiveScore',
+    'qbfPostRecentGameResult',
+    'qbfPrepareNewGameNumber',
+    'qbfPrintScoreTable',
+    'qbfPromptPlayerName',
+    'qbfPruneOldScores',
+    'qbfRecentGamesList',
+    'qbfRemoveLiveScore',
+    'qbfResolvePlayerNameFromAccount',
+    'qbfScoreAgeMs',
+    'qbfScoreIsFresh',
+    'qbfScoreRecordPlain',
+    'qbfScoreRetentionMs',
+    'qbfScoresNotify',
+    'qbfScoresStore',
+    'qbfScoresSubscribe',
+    'qbfScoresUnsubscribe',
+    'qbfSecondsLeftInEpoch',
+    'qbfSecondsLeftInMinute',
+    'qbfSeededShuffle',
+    'qbfSeededShuffledLetters',
+    'qbfSetScoresStore',
+    'qbfSetWordList',
+    'qbfShortPlayerName',
+    'qbfSound',
+    'qbfSpeedRank',
+    'qbfStoredGameNumber',
+    'qbfStoredShuffleGen',
+    'qbfStyleScoreListText',
+    'qbfStyleText',
+    'qbfTileQueueForGame',
+    'qbfTopScoresPerLevel',
+    'qbfTournamentEpochOpen',
+    'qbfTruncateName',
+    'qbfViewTournament',
+    'qbfWirePanelCollapse',
+    'qbfWordLogCaption',
+    'qbfWordLogHeader',
+    'qbfWordsFromText',
+    'runQBF',
+    'runQBFScores'
+  ];
+}
+if (typeof $global !== 'undefined' && $global) {
+  if (typeof $global.registerBrowserCategoryClasses === 'function')
+    $global.registerBrowserCategoryClasses('QBF', qbfBrowserCategoryClasses());
+  if (typeof $global.registerBrowserCategoryMethods === 'function')
+    $global.registerBrowserCategoryMethods('QBF', qbfBrowserCategoryMethods());
 }

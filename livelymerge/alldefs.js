@@ -8461,8 +8461,8 @@ w.TranscriptTextPane.proto.remove = function () {
   return w.Morph.proto.remove.call(this);
 };
 
-w.TranscriptPanelMorph = w.PanelMorph.subClass('TranscriptPanelMorph');
-w.TranscriptPanelMorph.proto.initialize = function (initialBounds) {
+w.TranscriptPanel = w.PanelMorph.subClass('TranscriptPanel');
+w.TranscriptPanel.proto.initialize = function (initialBounds) {
   w.PanelMorph.proto.initialize.call(this, initialBounds);
   let panelBounds = this.paneLayoutBounds();
   this.transcriptPane = this.addMorph(w.TranscriptTextPane.new(panelBounds, w.rect(0, 0, 1, 1)));
@@ -8470,21 +8470,21 @@ w.TranscriptPanelMorph.proto.initialize = function (initialBounds) {
   this.layoutChrome();
   this.relayoutContentPanes();
 };
-w.TranscriptPanelMorph.proto.clear = function () {
+w.TranscriptPanel.proto.clear = function () {
   if (this.transcriptPane) this.transcriptPane.clear();
 };
-w.TranscriptPanelMorph.proto.nextPut = function (str) {
+w.TranscriptPanel.proto.nextPut = function (str) {
   if (this.transcriptPane) this.transcriptPane.nextPut(str);
 };
-w.TranscriptPanelMorph.proto.setConsoleMirror = function (on) {
+w.TranscriptPanel.proto.setConsoleMirror = function (on) {
   if (this.transcriptPane) this.transcriptPane.setConsoleMirror(on);
 };
-w.TranscriptPanelMorph.proto.receivesConsoleOutput = function () {
+w.TranscriptPanel.proto.receivesConsoleOutput = function () {
   return this.transcriptPane && this.transcriptPane.receivesConsoleOutput();
 };
-w.TranscriptPanelMorph.proto.remove = function () {
+w.TranscriptPanel.proto.remove = function () {
   // Title-bar close only removes the panel — disconnect console mirror here so a
-  // later Open console reconnects cleanly (see newdefs TranscriptPanelMorph.remove).
+  // later Open console reconnects cleanly (see newdefs TranscriptPanel.remove).
   if (this.transcriptPane) this.transcriptPane.setConsoleMirror(false);
   if (w.Console === this) w.Console = null;
   if (w.Transcript === this) w.Transcript = null;
@@ -8500,7 +8500,7 @@ w.openTranscript = function () {
   let rh = Math.max(80, gb.height() / 2 - 2 * m);
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
-  let panel = w.TranscriptPanelMorph.new(w.rect(rx, ry, rw, rh));
+  let panel = w.TranscriptPanel.new(w.rect(rx, ry, rw, rh));
   w.Lively.addMorph(panel);
   panel.beTopMorph();
   w._lastTranscriptPanel = panel;

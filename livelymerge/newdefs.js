@@ -3484,6 +3484,9 @@ class TextBox extends Shape {
       if (this.localStorageKey) {
         storageSetItem(this.localStorageKey, this.string);
         if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
+      } else if (this.automergeKey) {
+        automergeSetItem(this.automergeKey, this.string);
+        if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
       } else {
         // The browser method pane shows bare class fragments; wrap them in a
         // self-contained replaceMethod(...) call for eval and change tracking.
@@ -3875,6 +3878,10 @@ class TextBox extends Shape {
   setLocalStorageKey(key) {
     // Back door for localStoarage access
     this.localStorageKey = key;
+  }
+  setAutomergeKey(key) {
+    // Shared Automerge kv (Lively.amStore); Ctrl-S writes via automergeSetItem.
+    this.automergeKey = key;
   }
   setNoBreak(ifSo) {
     // Call with true to suppress line breaks
@@ -6598,7 +6605,11 @@ class ListMorph extends Morph {
     if (ctx && !inListPane) {
       let maxW = 0;
       this.displayItems.forEach((item) => {
-        maxW = Math.max(maxW, ctx.measureText(item).width);
+        let w = ctx.measureText(item).width;
+        // Stub/broken canvases often return a tiny constant; fall back to an em estimate
+        // so menus built from a headless peer still get a usable shared width.
+        if (!(w > 0) || w < String(item).length * 2) w = String(item).length * 8;
+        maxW = Math.max(maxW, w);
       });
       let insetX = this.shape.inset ? this.shape.inset.x : 2;
       let isPaneSelMenu = this.className === 'MenuMorph' && this._paneMenuOwnerScrollPane;
@@ -6689,7 +6700,7 @@ class MenuMorph extends ListMorph {
   findItem(s) {
     /**
      * Index of the first item whose label includes s (case-insensitive), or -1.
-     * Separators are skipped. Example: wm.findItem('todo') → index of "ToDo List".
+     * Separators are skipped. Example: wm.findItem('todo') → index of "ToDo list".
      */
     let needle = ('' + (s != null ? s : '')).toLowerCase();
     if (!needle) return -1;
@@ -7014,7 +7025,7 @@ class ScrollPane extends Morph {
   showPaneMenu(ptIfAny, optsIfAny) {
     if (!this.paneMenu || !this.world()) return false;
     let spec = this.paneMenu;
-    let items = spec.items || [];
+    let items = typeof spec.items === 'function' ? spec.items() : spec.items || [];
     if (items.length == 0) return false;
     let opts = optsIfAny || {};
     let worldPt = ptIfAny
@@ -7048,7 +7059,8 @@ class ScrollPane extends Morph {
   showPaneMenuFromMenuButton() {
     /** Fleeting pane menu from the scrollbar menuButton (opens on pointer-down). */
     if (!this.paneMenu || !this.world()) return null;
-    let items = this.paneMenu.items || [];
+    let spec = this.paneMenu;
+    let items = typeof spec.items === 'function' ? spec.items() : spec.items || [];
     if (items.length === 0) return null;
     let menu = this.showPaneMenu(this.paneMenuAnchorInWorld(), {
       fleeting: true,
@@ -7202,6 +7214,9 @@ class TextPane extends ScrollPane {
   }
   setLocalStorageKey(key) {
     this.contentPane.shape.setLocalStorageKey(key);
+  }
+  setAutomergeKey(key) {
+    this.contentPane.shape.setAutomergeKey(key);
   }
   setText(text, opts) {
     let force = opts && opts.force;
@@ -7422,11 +7437,14 @@ class SliderMorph extends Morph {
     if (!this.showsMenuButton || !this.menuButton) return;
     let bnds = this.shape.getBounds();
     let frac = this.menuButtonFraction;
+    let minPx = 4; // short panes (e.g. category strip) need a hittable target
     if (this.isVertical()) {
-      let topH = bnds.height() * frac;
+      let topH = Math.max(minPx, bnds.height() * frac);
+      if (topH > bnds.height()) topH = bnds.height();
       this.menuButton.setBounds(rect(0, 0, bnds.width(), topH));
     } else {
-      let leftW = bnds.width() * frac;
+      let leftW = Math.max(minPx, bnds.width() * frac);
+      if (leftW > bnds.width()) leftW = bnds.width();
       this.menuButton.setBounds(rect(0, 0, leftW, bnds.height()));
     }
   }
@@ -7567,15 +7585,18 @@ class SliderMorph extends Morph {
     );
   }
   trackBounds() {
-    /** Track area; 10% reserved for pane menu button (top if vertical, left if horizontal). */
+    /** Track area; 10% (min 4px) reserved for pane menu button (top if vertical, left if horizontal). */
     let bnds = this.shape.getBounds();
     if (!this.showsMenuButton) return bnds.copy();
     let frac = this.menuButtonFraction;
+    let minPx = 4;
     if (this.isVertical()) {
-      let topH = bnds.height() * frac;
+      let topH = Math.max(minPx, bnds.height() * frac);
+      if (topH > bnds.height()) topH = bnds.height();
       return rect(0, topH, bnds.width(), Math.max(0, bnds.height() - topH));
     }
-    let leftW = bnds.width() * frac;
+    let leftW = Math.max(minPx, bnds.width() * frac);
+    if (leftW > bnds.width()) leftW = bnds.width();
     return rect(leftW, 0, Math.max(0, bnds.width() - leftW), bnds.height());
   }
   tweakValue(tweak) {
@@ -8357,6 +8378,9 @@ class MethodPanel extends PanelMorph {
     // Hack to read from localStorage...
     if (optionalTitle && optionalTitle.startsWith('localStorage.'))
       text = localStorage.getItem(optionalTitle.slice(13));
+    // Shared Automerge kv (mirrors localStorage.* for multiplayer docs).
+    if (optionalTitle && optionalTitle.startsWith('automerge.'))
+      text = automergeGetItem(optionalTitle.slice(10));
     const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
     this.initTextPane(text != null ? text : '', optionalTitle);
@@ -8367,6 +8391,8 @@ class MethodPanel extends PanelMorph {
     this.textPane.setText(string);
     if (optionalTitle && optionalTitle.startsWith('localStorage.'))
       this.textPane.setLocalStorageKey(optionalTitle.slice(13));
+    if (optionalTitle && optionalTitle.startsWith('automerge.'))
+      this.textPane.setAutomergeKey(optionalTitle.slice(10));
     this.setPanelTitle(optionalTitle ? optionalTitle : 'Text Panel');
     this.layoutChrome();
     this.relayoutContentPanes();
@@ -8374,6 +8400,7 @@ class MethodPanel extends PanelMorph {
   }
   maybeWatchMethodConflict(string, optionalTitle) {
     if (optionalTitle && String(optionalTitle).startsWith('localStorage.')) return;
+    if (optionalTitle && String(optionalTitle).startsWith('automerge.')) return;
     let text = string != null ? String(string) : '';
     let watchSpec = null;
     let asCall = !!parseReplaceMethodCallString(text);
@@ -8397,6 +8424,481 @@ class MethodPanel extends PanelMorph {
   }
 }
 
+// +----------------------------------+
+// |  System Browser Categories       |
+// +----------------------------------+
+// Edit classNamesInCategory() and methodNamesInCategory() to reorganize the
+// system browser. categoryForClassName / categoryForMethodName are derived.
+// Packages (e.g. QBF) may call registerBrowserCategoryClasses/Methods when loaded.
+// Extras live in per-user `$` maps (plain JS) so name-lists stay reliable in LM.
+$browserCategoryClassExtras = null;
+$browserCategoryMethodExtras = null;
+
+function browserCategoryClassExtras() {
+  if ($browserCategoryClassExtras == null) $browserCategoryClassExtras = {};
+  return $browserCategoryClassExtras;
+}
+function browserCategoryMethodExtras() {
+  if ($browserCategoryMethodExtras == null) $browserCategoryMethodExtras = {};
+  return $browserCategoryMethodExtras;
+}
+function mergeBrowserCategoryMaps(base, extras) {
+  /** Shallow merge of category→name-list maps; extras append without duplicating. */
+  let out = {};
+  let baseKeys = Object.keys(base || {});
+  for (let i = 0; i < baseKeys.length; i++) {
+    let k = baseKeys[i];
+    out[k] = (base[k] || []).slice();
+  }
+  let extraKeys = Object.keys(extras || {});
+  for (let i = 0; i < extraKeys.length; i++) {
+    let k = extraKeys[i];
+    if (!out[k]) out[k] = [];
+    let list = extras[k] || [];
+    for (let j = 0; j < list.length; j++) {
+      if (out[k].indexOf(list[j]) < 0) out[k].push(list[j]);
+    }
+  }
+  return out;
+}
+function registerBrowserCategoryClasses(category, names) {
+  /** Replace (or add) a package's class list for `category`. Called when a package loads. */
+  browserCategoryClassExtras()[category] = (names || []).slice();
+}
+function registerBrowserCategoryMethods(category, names) {
+  /** Replace (or add) a package's global-method list for `category`. Called when a package loads. */
+  browserCategoryMethodExtras()[category] = (names || []).slice();
+}
+function packageBrowserCategoryClassExtras() {
+  /**
+   * Registered extras plus any live package hooks (e.g. qbfBrowserCategoryClasses).
+   * Hooks mean a package can contribute categories just by being loaded.
+   */
+  let extras = browserCategoryClassExtras();
+  if (typeof qbfBrowserCategoryClasses === 'function')
+    extras = mergeBrowserCategoryMaps(extras, { QBF: qbfBrowserCategoryClasses() });
+  return extras;
+}
+function packageBrowserCategoryMethodExtras() {
+  let extras = browserCategoryMethodExtras();
+  if (typeof qbfBrowserCategoryMethods === 'function')
+    extras = mergeBrowserCategoryMaps(extras, { QBF: qbfBrowserCategoryMethods() });
+  return extras;
+}
+
+function classNamesInCategory() {
+  /**
+   * Map category name → class names in that category.
+   * This (with methodNamesInCategory) is the editable catalog; package extras merge in.
+   */
+  return mergeBrowserCategoryMaps(
+    {
+      'Classes and Objects': ['Map', 'Set'],
+      Geometry: ['Point', 'Rectangle', 'SimpleTransform', 'StepSpec'],
+      'Colors and Style': ['Color', 'HuePickerMorph', 'StylePane', 'StylePanel'],
+      'Basic Graphics': [
+        'Shape',
+        'Ellipse',
+        'PolyLine',
+        'ImageShape',
+        'Pen',
+        'TextCharSpec',
+        'TextLineSpec',
+        'TextBox',
+      ],
+      Morphs: [
+        'Morph',
+        'ImageMorph',
+        'EmojiMorph',
+        'LineMorph',
+        'SimpleButtonMorph',
+        'WorldMorph',
+      ],
+      'Text Lists and Menus': ['TextMorph', 'ListMorph', 'MenuMorph'],
+      Panes: ['ScrollPane', 'ListPane', 'TextPane', 'TranscriptTextPane', 'SliderMorph'],
+      Panels: [
+        'PanelTitleBar',
+        'PanelMorph',
+        'MethodPanel',
+        'BrowserPanel',
+        'InspectorPanel',
+        'MethodListPanel',
+        'ErrorStackPanel',
+        'TranscriptPanel',
+      ],
+      'Hands and Halos': [
+        'HaloHandle',
+        'HaloMorph',
+        'HandMorph',
+        'LineVertexHandle',
+        'LineMidpointHandle',
+      ],
+      'On-screen keyboard': ['KbdKeyMorph', 'OnScreenKeyboardMorph'],
+    },
+    packageBrowserCategoryClassExtras(),
+  );
+}
+
+function methodNamesInCategory() {
+  /**
+   * Map category name → global function names belonging with that category.
+   * Names not listed here surface under "Unclassified globals".
+   * Package extras (registerBrowserCategoryMethods) merge in at read time.
+   */
+  return mergeBrowserCategoryMaps(
+    {
+      'Classes and Objects': [
+        'isClass',
+        'findSuperclassOf',
+        'subclassDepth',
+        'allClassNames',
+        'classNamed',
+        'allClassNamesInSuperclassOrder',
+        'classStaticNames',
+        'classInstanceMemberNames',
+        'nameOfClass',
+        'allClassNamesWithStatics',
+        'classMemberRows',
+        'memberRowSortKey',
+        'accessorForRow',
+        'clearArray',
+        'collectionIndexKey',
+        'deleteFromArray',
+        'deleteFromArrayPred',
+        'ensureCollectionIndex',
+        'classNamesInCategory',
+        'methodNamesInCategory',
+        'categoryForClassName',
+        'categoryForMethodName',
+        'browserCategoryNames',
+        'browserCategoryClassExtras',
+        'browserCategoryMethodExtras',
+        'mergeBrowserCategoryMaps',
+        'registerBrowserCategoryClasses',
+        'registerBrowserCategoryMethods',
+        'packageBrowserCategoryClassExtras',
+        'packageBrowserCategoryMethodExtras',
+        'allGlobalFunctionNames',
+        'unclassifiedGlobalFunctionNames',
+        'classNamesForBrowserCategory',
+        'globalNamesForBrowserCategory',
+      ],
+      Geometry: [
+        'pt',
+        'ptPolar',
+        'rect',
+        'unionPts',
+        'viewportBounds',
+        'getBounds',
+        'newPanelLocation',
+        'newPanelRect',
+        'fleetingMenuAnchorPt',
+        'errorReportPanelBounds',
+        'testTransforms',
+      ],
+      'Colors and Style': [
+        'hsvToColor',
+        'baseColorFromPaint',
+        'colorAlphaFromPaint',
+        'paintWithAlpha',
+        'colorsEqual',
+        'colorByStyleName',
+        'styleColorNames',
+        'styleNameForColor',
+        'styleSnapshotFromMorph',
+        'copyStyleSnapshot',
+        'styleSnapshotsEqual',
+        'applyStyleSnapshotToMorph',
+        'morphDefaultLineWidth',
+        'morphLineStyleIsBorder',
+        'lineWidthCaptionText',
+        'roundLineWidth',
+      ],
+      'Basic Graphics': [
+        'render',
+        'isHtmlCanvasLike',
+        'isHtmlImageLike',
+        'truncateString',
+        'dropNewline',
+      ],
+      Morphs: [
+        'morphWithId',
+        'worldPtHitsMorphOrSubmorphs',
+        'scrollPaneAtWorldPt',
+        'isScrollPaneMorph',
+        'initLively',
+        'populateLively',
+        'init',
+        'initUI',
+        'getUserName',
+      ],
+      'Text Lists and Menus': [
+        'menuItem',
+        'menuItemFrom',
+        'menuItemLabel',
+        'menuItemAction',
+        'menuItemCaption',
+        'menuToggleLabel',
+        'menuSeparatorDisplay',
+        'isMenuItemSpec',
+        'isMenuSeparator',
+        'expandMenuItemEntry',
+        'refreshWorldMenuItems',
+        'showFindNoMatchesMenu',
+        'showPasteHistoryMenu',
+        'promptConfirmMenu',
+        'promptOkToCancelEditsMenu',
+      ],
+      'Clipboard and Paste': [
+        'addPasteBufferItem',
+        'latestPasteBufferItem',
+        'copyTextToOSClipboard',
+        'copyTextToOSClipboardExecCommand',
+      ],
+      Panes: [
+        'hitScrollPaneMenuButtonAt',
+        'fleetingPaneMenuForScrollPane',
+        'removeFleetingPaneMenuFor',
+        'paneMenuIsFrontmostForPanel',
+        'keyboardFocusBelongsToScrollPane',
+        'textPaneWithKeyboardFocus',
+        'classSelectorPaneMenuSpec',
+        'methodSelectorPaneMenuSpec',
+        'categorySelectorPaneMenuSpec',
+      ],
+      Panels: ['browseRecentChanges', 'browseSavedChanges', 'openTranscript', 'openErrorStackPanel'],
+      'Hands and Halos': [],
+      'Pointer and keyboard events': [
+        'setPointerLocation',
+        'getPointerLocation',
+        'pointerEventCanvasLocalPt',
+        'onPointerDown',
+        'onPointerDownNow',
+        'onPointerMove',
+        'onPointerUp',
+        'onWheel',
+        'onKeyDown',
+        'onKeyPress',
+        'onKeyUp',
+        'effectiveShiftKey',
+        'effectiveMetaKey',
+        'isShiftKeyPressed',
+        'isMetaKeyPressed',
+        'isLockKeyPressed',
+        'setShiftKeyPressed',
+        'setMetaKeyPressed',
+        'setLockKeyPressed',
+        'consumeSoftShiftKey',
+        'consumeSoftMetaKey',
+        'toggleMetaKeyPressed',
+      ],
+      'On-screen keyboard': [
+        'defaultOnScreenKeyboardBounds',
+        'onScreenKeyboardBoundsForWorld',
+        'morphIsUnderOnScreenKeyboard',
+        'pressPadShiftKey',
+        'pressPadMetaKey',
+        'padModifierHighlightOn',
+        'clearOskPadModifierState',
+        'getKbdShiftTable',
+        'clearKeyboardFocusUnlessTypingOrOsk',
+        'pointerOnOskKeyUI',
+        'shouldShowOnScreenKeyboardForWorld',
+        'syncOnScreenKeyboardWithFocus',
+        'toggleOnScreenKeyboard',
+        'saveOnScreenKeyboardChrome',
+      ],
+      'Source and Errors': [
+        'constructorBodyFromSource',
+        'constructorBodyOf',
+        'isLegacyFunctionShow',
+        'looksLikeLegacyMethodText',
+        'replaceMethodCallString',
+        'parseReplaceMethodCallString',
+        'fragmentChangeSpec',
+        'fragmentForSpec',
+        'liveMethodPaneTextForSpec',
+        'deleteAccessorHalf',
+        'deleteClassNamed',
+        'deleteMethodWithSpec',
+        'methodFromSpec',
+        'methodSpecKey',
+        'methodSpecFromListLabel',
+        'methodListLabelForSpec',
+        'methodsContaining',
+        'allMethodSpecs',
+        'noteMethodChanges',
+        'exportPartsForSelection',
+        'exportStringForSelection',
+        'exportSelectionsForEntireSystem',
+        'exportMethodShouldOmit',
+        'exportEntireSystem',
+        'viewExportedSystem',
+        'ensureAlldefsSourceLines',
+        'alldefsSourceExcerpt',
+        'defsSourceFile',
+        'isDefsStackFile',
+        'isAlldefsStackFile',
+        'shortStackFileName',
+        'extractDefsLineFromFrame',
+        'extractAlldefsLineFromFrame',
+        'evaluateWithErrorRecovery',
+        'handleRuntimeError',
+        'presentError',
+        'recoverFromRuntimeError',
+        'formatErrorReport',
+        'errorReportHeader',
+        'errorPanelTitle',
+        'formatStackTraceForReport',
+        'formatStackFrameLine',
+        'parseStackFrameLine',
+        'stackFrameFromRawLine',
+        'stackFramesFromError',
+        'stackFrameListLabel',
+        'stackFrameLabelName',
+        'stackFrameHighlightName',
+        'stackFrameSourceText',
+        'stackNameToMethodSpec',
+        'stackTraceLines',
+        'scrubStackFrameUrls',
+        'triggerTestError',
+        'inspect',
+        'inspectString',
+        'log',
+        'hasTranscriptConsoleTargets',
+      ],
+      'Timing and Stats': ['msToRun', 'stats'],
+      Storage: [
+        'storageGetItem',
+        'storageKeys',
+        'storageSetItem',
+        'storageEditItem',
+        'automergeEnsureStore',
+        'automergeGetItem',
+        'automergeKeys',
+        'automergeSetItem',
+        'automergeEditItem',
+        'saveRecentChanges',
+        'recentChangesSince',
+        'recentDateStr',
+        'timeSheet',
+      ],
+      Ephemeral: [
+        'ephApplyMessage',
+        'ephApplyOverlayEntry',
+        'ephBroadcast',
+        'ephCommitLanded',
+        'ephDecodeValue',
+        'ephEncodeValue',
+        'ephFiniteNumber',
+        'ephNudgeSync',
+        'ephOverlayEntryFor',
+        'ephStreamEnd',
+        'ephStreamRegister',
+        'ephSweepOverlays',
+        'ephValidBoundsValue',
+        'ephValidPointValue',
+        'ephValidTransformValue',
+        'ephValidVerticesValue',
+        'flushEphemeralStream',
+        'processEphemeralInbound',
+      ],
+    },
+    packageBrowserCategoryMethodExtras(),
+  );
+}
+
+function categoryForClassName(className) {
+  /** Derived from classNamesInCategory(); null if unclassified. */
+  let map = classNamesInCategory();
+  let cats = Object.keys(map);
+  for (let i = 0; i < cats.length; i++) {
+    let list = map[cats[i]] || [];
+    if (list.indexOf(className) >= 0) return cats[i];
+  }
+  return null;
+}
+
+function categoryForMethodName(methodName) {
+  /** Derived from methodNamesInCategory(); null if unclassified. */
+  let map = methodNamesInCategory();
+  let cats = Object.keys(map);
+  for (let i = 0; i < cats.length; i++) {
+    let list = map[cats[i]] || [];
+    if (list.indexOf(methodName) >= 0) return cats[i];
+  }
+  return null;
+}
+
+function browserCategoryNames() {
+  /** Category names: class catalog order, then any method-only categories. */
+  let fromClasses = Object.keys(classNamesInCategory());
+  let fromMethods = Object.keys(methodNamesInCategory());
+  let seen = {};
+  let out = [];
+  for (let i = 0; i < fromClasses.length; i++) {
+    seen[fromClasses[i]] = true;
+    out.push(fromClasses[i]);
+  }
+  for (let i = 0; i < fromMethods.length; i++) {
+    if (!seen[fromMethods[i]]) out.push(fromMethods[i]);
+  }
+  return out;
+}
+
+function allGlobalFunctionNames() {
+  /** Same filter the system browser uses for the globals message list. */
+  return Object.getOwnPropertyNames($global)
+    .sort()
+    .filter((msg) => msg[0] == msg[0].toLowerCase())
+    .filter((msg) => typeof $global[msg] == 'function' && !isClass($global[msg]));
+}
+
+function unclassifiedGlobalFunctionNames() {
+  return allGlobalFunctionNames().filter((n) => categoryForMethodName(n) == null);
+}
+
+function classNamesForBrowserCategory(category) {
+  /**
+   * Class-pane entries for a browser category selection (without the leading 'globals').
+   * 'All' → every class; 'Unclassified globals' → none.
+   */
+  if (category === 'Unclassified globals') return [];
+  if (category === 'All' || category == null) return allClassNames();
+  let listed = classNamesInCategory()[category] || [];
+  let known = allClassNames();
+  return listed.filter((n) => known.indexOf(n) >= 0 || n === 'Object');
+}
+
+function globalNamesForBrowserCategory(category) {
+  /** Message-pane names when 'globals' is selected under the given category. */
+  if (category === 'All' || category == null) return allGlobalFunctionNames();
+  if (category === 'Unclassified globals') return unclassifiedGlobalFunctionNames();
+  let allowed = methodNamesInCategory()[category] || [];
+  let all = allGlobalFunctionNames();
+  return all.filter((n) => allowed.indexOf(n) >= 0);
+}
+
+function categorySelectorPaneMenuSpec(panel) {
+  /** Pane menu for the system-browser category strip. */
+  return {
+    items: () => {
+      let items = ['Browse category…', menuSeparator, 'All', 'Unclassified globals'];
+      let cats = browserCategoryNames();
+      if (cats.length > 0) {
+        items.push(menuSeparator);
+        for (let i = 0; i < cats.length; i++) items.push(cats[i]);
+      }
+      return items;
+    },
+    onSelect: (item, pane) => {
+      if (isMenuSeparator(item)) return;
+      if (item === 'Browse category…') return;
+      panel.setBrowserCategory(item);
+    },
+  };
+}
+
 //  BrowserPanel
 // --------------
 // Class + method browser with list panes.
@@ -8404,8 +8906,10 @@ class BrowserPanel extends PanelMorph {
   constructor(initialBounds) {
     const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
+    this.selectedCategory = 'All';
     this.selectedClass = null;
     this.selectedMethod = null;
+    this.initCategoryPane();
     this.initClassPane();
     this.initMessagePane();
     this.initMethodPane();
@@ -8413,13 +8917,16 @@ class BrowserPanel extends PanelMorph {
     this.layoutChrome();
     this.relayoutContentPanes();
   }
+  classListForSelectedCategory() {
+    return ['globals'].concat(classNamesForBrowserCategory(this.selectedCategory || 'All'));
+  }
   deleteThisClass() {
     let className = this.selectedClassName();
     if (!className) return;
     if (!deleteClassNamed(className)) return;
     this.selectedClass = null;
     this.selectedMethod = null;
-    this.classPane.setList(['globals'].concat(allClassNamesWithStatics()));
+    this.refreshClassListForCategory();
     if (this.messagePane) this.messagePane.setList(['message names']);
     if (this.methodPane) this.methodPane.setText('Method text', { force: true });
     this.updateBrowserTitle();
@@ -8452,11 +8959,18 @@ class BrowserPanel extends PanelMorph {
     addPasteBufferItem(exportText);
     copyTextToOSClipboard(exportText);
   }
+  initCategoryPane() {
+    /** Category strip (top) — current category name; pane menu browses categories. */
+    let panelBounds = this.paneLayoutBounds();
+    this.categoryPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 1.0, 0.08)));
+    this.categoryPane.setList([this.selectedCategory || 'All']);
+    this.categoryPane.setPaneMenu(categorySelectorPaneMenuSpec(this));
+  }
   initClassPane() {
     /** Class list (upper-left) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.4)));
-    this.classPane.setList(['globals'].concat(allClassNames()));
+    this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.08, 0.4, 0.36)));
+    this.classPane.setList(this.classListForSelectedCategory());
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
       let applyClass = () => {
@@ -8488,7 +9002,7 @@ class BrowserPanel extends PanelMorph {
   initMessagePane() {
     /** Method name list (upper-right) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.messagePane = this.addMorph(new ListPane(panelBounds, rect(0.4, 0.0, 0.6, 0.4)));
+    this.messagePane = this.addMorph(new ListPane(panelBounds, rect(0.4, 0.08, 0.6, 0.36)));
     this.messagePane.setList(['message names']);
     this.messagePane.setPaneMenu(methodSelectorPaneMenuSpec(this));
     this.messagePane.onSelect((methodSelection, shiftKey) => {
@@ -8499,21 +9013,30 @@ class BrowserPanel extends PanelMorph {
         let methodString = null;
         let headerString = '';
         let cls = this.selectedClassName() ? classNamed(this.selectedClassName()) : null;
-        if (this.selectedClass == 'globals') {           // Global methods
-          methodString = $global[this.selectedMethod].toString();
-          headerString = this.selectedMethod + ' = ';
+        if (this.selectedClass == 'globals') {
+          // Global methods
+          let gfn = $global[this.selectedMethod];
+          methodString =
+            typeof gfn == 'function'
+              ? gfn.toString()
+              : '// not a function: ' + this.selectedMethod + ' = ' + gfn;
+          headerString = typeof gfn == 'function' ? this.selectedMethod + ' = ' : '';
         } else if (this.selectedMethod === 'constructor') {
           // Class fragment; save installs it via replaceMethod (keeps the prototype).
           methodString = constructorBodyOf(cls);
-        } else if (/^(get|set) /.test(this.selectedMethod)) { // Accessor halves
+        } else if (/^(get|set) /.test(this.selectedMethod)) {
+          // Accessor halves
           let fn = accessorForRow(cls, this.selectedMethod);
           methodString = fn ? fn.toString() : '// missing accessor ' + this.selectedMethod;
-        } else if (this.selectedMethod.endsWith('*')) {  // Class methods
+        } else if (this.selectedMethod.endsWith('*')) {
+          // Class methods
           let name = this.selectedMethod.slice(0, -1);
           methodString = cls[name].toString();
           // Legacy-format statics keep the assignment form; fragments stand alone.
-          if (isLegacyFunctionShow(methodString)) headerString = this.selectedClass + '.' + name + ' = ';
-        } else {                                         // Proto methods
+          if (isLegacyFunctionShow(methodString))
+            headerString = this.selectedClass + '.' + name + ' = ';
+        } else {
+          // Proto methods
           methodString = cls.prototype[this.selectedMethod].toString();
           if (isLegacyFunctionShow(methodString))
             headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
@@ -8539,7 +9062,7 @@ class BrowserPanel extends PanelMorph {
   initMethodPane() {
     /** Editable method source (lower) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
+    this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.44, 1.0, 0.56)));
     this.methodPane.setText('Method text');
     // Class fragments in this pane save via replaceMethod (see the ctrl-S handler);
     // the globals pane and legacy '<spec> = function ...' text keep plain eval.
@@ -8579,10 +9102,7 @@ class BrowserPanel extends PanelMorph {
   messageListForSelection(classSelection) {
     /** Names shown in the message pane for a class-pane selection. */
     if (classSelection == 'globals') {
-      // Lowercase-first names only: classes get their own list entries.
-      return Object.getOwnPropertyNames($global)
-        .sort()
-        .filter((msg) => msg[0] == msg[0].toLowerCase());
+      return globalNamesForBrowserCategory(this.selectedCategory || 'All');
     }
     // Pin constructor at the top; methods, accessor halves ('get foo' / 'set foo'),
     // and statics (marked with '*') sorted by member name.
@@ -8600,6 +9120,10 @@ class BrowserPanel extends PanelMorph {
     // Runtime Object is not an ES class Fun — no editable constructor fragment.
     if (classSelection === 'Object' || classSelection.endsWith('.class')) return rows;
     return ['constructor'].concat(rows);
+  }
+  refreshClassListForCategory() {
+    if (!this.classPane) return;
+    this.classPane.setList(this.classListForSelectedCategory());
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -8639,11 +9163,35 @@ class BrowserPanel extends PanelMorph {
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.selectedClass),
     );
   }
+  setBrowserCategory(category) {
+    /** Switch the browser to a category (from the category pane menu). */
+    let cat = category != null ? '' + category : 'All';
+    this.selectedCategory = cat;
+    this.selectedClass = null;
+    this.selectedMethod = null;
+    if (this.categoryPane) this.categoryPane.setList([cat]);
+    this.refreshClassListForCategory();
+    if (this.messagePane) this.messagePane.setList(['message names']);
+    if (this.methodPane) this.methodPane.setText('Method text', { force: true });
+    this.stopMethodConflictWatch();
+    this.updateBrowserTitle();
+  }
+  browseClass(className) {
+    /**
+     * Open this browser on `className`: pick its category (or All), then select the class.
+     * Used by the halo B (Browse) handle.
+     */
+    if (!className) return this;
+    let cat = categoryForClassName(className) || 'All';
+    this.setBrowserCategory(cat);
+    if (this.classListForSelectedCategory().indexOf(className) < 0) this.setBrowserCategory('All');
+    if (this.classPane) this.classPane.setSelectionString(className);
+    return this;
+  }
   updateBrowserTitle() {
-    let t = 'System Browser';
-    if (this.selectedClass) t = this.selectedClass;
-    if (this.selectedMethod) t = this.selectedClass + ' ' + this.selectedMethod;
-    this.setPanelTitle(t);
+    let cat = this.selectedCategory || 'All';
+    if (this.selectedClass) this.setPanelTitle(cat + ': ' + this.selectedClass);
+    else this.setPanelTitle(cat === 'All' ? 'System Browser' : cat);
   }
   static new(...args) {
     return new this(...args);
@@ -9184,10 +9732,10 @@ class ErrorStackPanel extends MethodListPanel {
   }
 }
 
-//  TranscriptPanelMorph
+//  TranscriptPanel
 // ----------------------
 // Panel hosting a TranscriptTextPane.
-class TranscriptPanelMorph extends PanelMorph {
+class TranscriptPanel extends PanelMorph {
   constructor(initialBounds) {
     // Open with 'openTranscript()' ;
     // Show with 'Transcript.push("Hi there")' ;
@@ -9607,7 +10155,8 @@ class HaloMorph extends Morph {
       case 'Browse': {
         let className = this.target && this.target.className ? this.target.className : 'Morph';
         let browser = Lively.addEphemeralMorph(new BrowserPanel());
-        browser.classPane.setSelectionString(className);
+        if (browser && browser.browseClass) browser.browseClass(className);
+        else if (browser && browser.classPane) browser.classPane.setSelectionString(className);
         break;
       }
       case 'Inspect':
@@ -10468,7 +11017,7 @@ function openTranscript() {
   let rh = Math.max(80, gb.height() / 2 - 2 * m);
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
-  let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
+  let panel = new TranscriptPanel(rect(rx, ry, rw, rh));
   Lively.addEphemeralMorph(panel);
   panel.beTopMorph();
   return panel;
@@ -11029,7 +11578,7 @@ class WorldMorph extends Morph {
      */
     let opts = optsIfAny || {};
     let items = [
-      menuItem('ToDo List', () => storageEditItem('ToDoList')),
+      menuItem('ToDo list', () => automergeEditItem('ToDoList')),
       menuItem('System browser', function () {
         this.world().addEphemeralMorph(new BrowserPanel());
       }),
@@ -11158,6 +11707,12 @@ class WorldMorph extends Morph {
   }
   static new(...args) {
     return new this(...args);
+  }
+  pwmPing() {
+    // Tiny live-collab smoke: returns a string peers can eval; also flashes a note.
+    let note = new TextMorph(rect(420, 400, 280, 24), 'pong from Grok (live install)');
+    Lively.addMorph(note);
+    return 'pong';
   }
 }
 
@@ -11900,6 +12455,35 @@ function storageSetItem(key, value) {
 function storageEditItem(key) {
   //storageEditItem('ToDoList')
   Lively.addEphemeralMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
+}
+
+// Shared Automerge key/value store (mirrors storage* but syncs across peers).
+// Lives on Lively.amStore — ordinary (non-$) properties on the world, so every
+// replica of this document sees the same strings. Ctrl-S in an automergeEditItem
+// panel writes back through automergeSetItem.
+function automergeEnsureStore() {
+  if (!Lively.amStore) Lively.amStore = {};
+  return Lively.amStore;
+}
+function automergeGetItem(key) {
+  let store = automergeEnsureStore();
+  let v = store[key];
+  return v == null ? null : '' + v;
+}
+function automergeKeys() {
+  return Object.keys(automergeEnsureStore());
+}
+function automergeSetItem(key, value) {
+  // automergeSetItem('ToDoList', 'Items yet to do in Livelymerge:');
+  // automergeGetItem('ToDoList');
+  // automergeKeys();
+  automergeEnsureStore()[key] = value == null ? '' : '' + value;
+}
+function automergeEditItem(key) {
+  // automergeEditItem('ToDoList')
+  let panel = new MethodPanel(null, 'to do list', 'automerge.' + key);
+  Lively.addEphemeralMorph(panel);
+  return panel;
 }
 function saveRecentChanges() {
   // saveRecentChanges();
