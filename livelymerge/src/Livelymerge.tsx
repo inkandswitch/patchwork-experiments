@@ -23,7 +23,11 @@ import './styles.css';
 import { createLivelymergeRuntime, type LivelymergeRuntime } from './livelymergeRuntime';
 
 let runtime: LivelymergeRuntime;
-let alreadyInitialized = false;
+/** The runtime whose initUI() has run. Per runtime (one per mounted document), not per
+ *  page: a page-level flag skipped initUI when switching documents in place or coming
+ *  back to one, leaving the new document without listeners or a frame loop. The
+ *  identity check still absorbs React's double-invoked effects for the same runtime. */
+let initializedRuntime: LivelymergeRuntime | null = null;
 
 const DEFAULT_DRAWER_HEIGHT = 250;
 const MIN_DRAWER_HEIGHT = 120;
@@ -299,18 +303,19 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   }, [docHandle]);
 
   useEffect(() => {
-    if (!alreadyInitialized) {
+    if (initializedRuntime !== runtime) {
+      const rt = runtime;
       doCatchingErrors(() => {
-        runtime.change(() => {
+        rt.change(() => {
           const g = (globalThis as any).$global;
           if (typeof g?.initUI === 'function') {
             g.initUI();
           }
         });
       });
-      alreadyInitialized = true;
+      initializedRuntime = rt;
     }
-  }, [docUrl]);
+  }, [runtime]);
 
   useEffect(() => {
     const onResize = () => setDrawerHeight((h) => clampDrawerHeight(h));
