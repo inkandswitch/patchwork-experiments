@@ -1,0 +1,2 @@
+opl_linux.o: opl_linux.c ../config.h
+../config.h:

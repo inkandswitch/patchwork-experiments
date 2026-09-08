@@ -1,0 +1,21 @@
+txt_conditional.o: txt_conditional.c \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/stdlib.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdlib.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/alloca.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/string.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/string.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h \
+  txt_conditional.h txt_widget.h txt_strut.h
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/stdlib.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdlib.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/alloca.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/string.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/string.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h:
+txt_conditional.h:
+txt_widget.h:
+txt_strut.h:

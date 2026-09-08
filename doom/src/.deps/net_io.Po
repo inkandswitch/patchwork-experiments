@@ -1,0 +1,60 @@
+net_io.o: net_io.c \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdio.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wasi/api.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stddef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stddef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_header_macro.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_ptrdiff_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_size_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_wchar_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_null.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_max_align_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_offsetof.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdint.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdint.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h \
+  debug.h i_system.h d_ticcmd.h doomtype.h ../config.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/inttypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/inttypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdbool.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdbool.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/limits.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/limits.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/limits.h \
+  d_event.h m_argv.h net_defs.h sha1.h net_io.h z_zone.h
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdio.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wasi/api.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stddef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stddef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_header_macro.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_ptrdiff_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_size_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_wchar_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_null.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_max_align_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_offsetof.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdint.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdint.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h:
+debug.h:
+i_system.h:
+d_ticcmd.h:
+doomtype.h:
+../config.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/inttypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/inttypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdbool.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdbool.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/limits.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/limits.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/limits.h:
+d_event.h:
+m_argv.h:
+net_defs.h:
+sha1.h:
+net_io.h:
+z_zone.h:

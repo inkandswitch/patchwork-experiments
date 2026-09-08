@@ -1,0 +1,97 @@
+p_floor.o: p_floor.c ../../src/z_zone.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdio.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wasi/api.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stddef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stddef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_header_macro.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_ptrdiff_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_size_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_wchar_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_null.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_max_align_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_offsetof.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdint.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdint.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h \
+  doomdef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/string.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/string.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h \
+  ../../src/doomtype.h ../../config.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/inttypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/inttypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdbool.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdbool.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/limits.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/limits.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/limits.h \
+  ../../src/i_timer.h ../../src/d_mode.h p_local.h r_local.h \
+  ../../src/tables.h ../../src/m_fixed.h r_data.h r_defs.h d_think.h \
+  p_mobj.h doomdata.h info.h ../../src/i_video.h ../../src/v_patch.h \
+  r_state.h d_player.h d_items.h p_pspr.h ../../src/d_ticcmd.h \
+  ../../src/net_defs.h ../../src/sha1.h r_main.h r_bsp.h r_segs.h \
+  r_plane.h r_things.h r_draw.h p_spec.h s_sound.h sounds.h \
+  ../../src/i_sound.h doomstat.h ../../src/d_loop.h
+../../src/z_zone.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdio.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wasi/api.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stddef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stddef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_header_macro.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_ptrdiff_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_size_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_wchar_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_null.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_max_align_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_offsetof.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdint.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdint.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h:
+doomdef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/string.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/string.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h:
+../../src/doomtype.h:
+../../config.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/inttypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/inttypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdbool.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdbool.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/limits.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/limits.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/limits.h:
+../../src/i_timer.h:
+../../src/d_mode.h:
+p_local.h:
+r_local.h:
+../../src/tables.h:
+../../src/m_fixed.h:
+r_data.h:
+r_defs.h:
+d_think.h:
+p_mobj.h:
+doomdata.h:
+info.h:
+../../src/i_video.h:
+../../src/v_patch.h:
+r_state.h:
+d_player.h:
+d_items.h:
+p_pspr.h:
+../../src/d_ticcmd.h:
+../../src/net_defs.h:
+../../src/sha1.h:
+r_main.h:
+r_bsp.h:
+r_segs.h:
+r_plane.h:
+r_things.h:
+r_draw.h:
+p_spec.h:
+s_sound.h:
+sounds.h:
+../../src/i_sound.h:
+doomstat.h:
+../../src/d_loop.h:

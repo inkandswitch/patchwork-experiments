@@ -1,0 +1,2 @@
+opl_obsd.o: opl_obsd.c ../config.h
+../config.h:

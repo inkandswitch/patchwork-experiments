@@ -1,0 +1,28 @@
+1 ICON "../data/setup.ico"
+
+1 24 MOVEABLE PURE "../src/setup/setup-manifest.xml"
+
+1 VERSIONINFO
+PRODUCTVERSION 0, 0, 1, 0
+FILEVERSION 0, 0, 1, 0
+FILETYPE 1
+{
+ BLOCK "StringFileInfo"
+ {
+  BLOCK "040904E4"
+  {
+   VALUE "FileVersion", "0.0.1.0"
+   VALUE "FileDescription", "Websockets Doom 0.0.1 Setup"
+   VALUE "InternalName", "doom-ws-wasm"
+   VALUE "CompanyName", "https://github.com/cloudflare"
+   VALUE "LegalCopyright", "GNU General Public License"
+   VALUE "ProductName", "Websockets Doom Setup"
+   VALUE "ProductVersion", "0.0.1"
+  }
+ }
+ BLOCK "VarFileInfo"
+ {
+  VALUE "Translation", 0x409, 1252
+ }
+}
+

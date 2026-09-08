@@ -1,0 +1,226 @@
+g_game.o: g_game.c \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/websocket.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/emscripten.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_asm.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_js.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_macros.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdbool.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdbool.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_types.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/promise.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/stdlib.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdlib.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/alloca.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/version.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/wget.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/html5.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/console.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stddef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stddef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_header_macro.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_ptrdiff_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_size_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_wchar_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_null.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_max_align_t.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_offsetof.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/eventloop.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/html5_webgl.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdint.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdint.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/pthread.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/sched.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/time.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/time.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/memory.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/string.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/string.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/math.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/math.h \
+  doomdef.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdio.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wasi/api.h \
+  ../../src/doomtype.h ../../config.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/inttypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/inttypes.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/limits.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/limits.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/limits.h \
+  ../../src/i_timer.h ../../src/d_mode.h ../../src/doomkeys.h doomstat.h \
+  doomdata.h ../../src/d_loop.h ../../src/net_defs.h \
+  ../../src/d_ticcmd.h ../../src/sha1.h d_player.h d_items.h p_pspr.h \
+  ../../src/m_fixed.h ../../src/tables.h info.h d_think.h p_mobj.h \
+  ../../src/deh_main.h ../../src/deh_str.h deh_misc.h f_finale.h \
+  ../../src/d_event.h ../../src/i_input.h ../../src/i_swap.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_endian.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_stdinc.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_config.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_platform.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/begin_code.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/close_code.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_config_emscripten.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/sys/types.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/endian.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/endian.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/sys/select.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/stdarg.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdarg.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdarg.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_header_macro.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg___gnuc_va_list.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_va_list.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_va_arg.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg___va_copy.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_va_copy.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wchar.h \
+  /opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/ctype.h \
+  ../../src/i_system.h ../../src/i_video.h ../../src/m_argv.h \
+  ../../src/m_controls.h m_menu.h ../../src/m_misc.h m_random.h \
+  ../../src/z_zone.h p_saveg.h p_setup.h ../../src/w_wad.h \
+  ../../src/w_file.h p_tick.h d_main.h am_map.h ../../src/m_cheat.h \
+  hu_stuff.h st_stuff.h statdump.h wi_stuff.h ../../src/v_video.h \
+  ../../src/v_patch.h p_local.h r_local.h r_data.h r_defs.h r_state.h \
+  r_main.h r_bsp.h r_segs.h r_plane.h r_things.h r_draw.h p_spec.h \
+  s_sound.h sounds.h ../../src/i_sound.h dstrings.h d_englsh.h r_sky.h \
+  g_game.h
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/websocket.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/emscripten.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_asm.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_js.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_macros.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdbool.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdbool.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/em_types.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/promise.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/stdlib.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdlib.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/features.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/alltypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/alloca.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/version.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/wget.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/html5.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/console.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stddef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stddef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_header_macro.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_ptrdiff_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_size_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_wchar_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_null.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_max_align_t.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stddef_offsetof.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/eventloop.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/emscripten/html5_webgl.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdint.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdint.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/pthread.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/sched.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/time.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/time.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/memory.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/string.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/string.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/strings.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/math.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/math.h:
+doomdef.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdio.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wasi/api.h:
+../../src/doomtype.h:
+../../config.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/inttypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/inttypes.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/limits.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/limits.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/bits/limits.h:
+../../src/i_timer.h:
+../../src/d_mode.h:
+../../src/doomkeys.h:
+doomstat.h:
+doomdata.h:
+../../src/d_loop.h:
+../../src/net_defs.h:
+../../src/d_ticcmd.h:
+../../src/sha1.h:
+d_player.h:
+d_items.h:
+p_pspr.h:
+../../src/m_fixed.h:
+../../src/tables.h:
+info.h:
+d_think.h:
+p_mobj.h:
+../../src/deh_main.h:
+../../src/deh_str.h:
+deh_misc.h:
+f_finale.h:
+../../src/d_event.h:
+../../src/i_input.h:
+../../src/i_swap.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_endian.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_stdinc.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_config.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_platform.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/begin_code.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/close_code.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/SDL2/SDL_config_emscripten.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/sys/types.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/endian.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/endian.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/sys/select.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/compat/stdarg.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/stdarg.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/stdarg.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_header_macro.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg___gnuc_va_list.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_va_list.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_va_arg.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg___va_copy.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/llvm/lib/clang/23/include/__stdarg_va_copy.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/wchar.h:
+/opt/homebrew/Cellar/emscripten/6.0.2/libexec/cache/sysroot/include/ctype.h:
+../../src/i_system.h:
+../../src/i_video.h:
+../../src/m_argv.h:
+../../src/m_controls.h:
+m_menu.h:
+../../src/m_misc.h:
+m_random.h:
+../../src/z_zone.h:
+p_saveg.h:
+p_setup.h:
+../../src/w_wad.h:
+../../src/w_file.h:
+p_tick.h:
+d_main.h:
+am_map.h:
+../../src/m_cheat.h:
+hu_stuff.h:
+st_stuff.h:
+statdump.h:
+wi_stuff.h:
+../../src/v_video.h:
+../../src/v_patch.h:
+p_local.h:
+r_local.h:
+r_data.h:
+r_defs.h:
+r_state.h:
+r_main.h:
+r_bsp.h:
+r_segs.h:
+r_plane.h:
+r_things.h:
+r_draw.h:
+p_spec.h:
+s_sound.h:
+sounds.h:
+../../src/i_sound.h:
+dstrings.h:
+d_englsh.h:
+r_sky.h:
+g_game.h:
