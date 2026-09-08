@@ -2285,6 +2285,63 @@ class SimpleTransform {
   }
 }
 
+/** Affine 2×3 matrix {a,c,e, b,d,f} for x'=ax+cy+e, y'=bx+dy+f. */
+function affineIdentity() {
+  return { a: 1, c: 0, e: 0, b: 0, d: 1, f: 0 };
+}
+function affineFromSimpleTransform(tfm, extraTyIfAny) {
+  /** Match {@link SimpleTransform#transformPt}: scale, canvas-rotate(+r), translate (+ optional Y). */
+  let sx = tfm.scale && tfm.scale.x != null ? tfm.scale.x : 1;
+  let sy = tfm.scale && tfm.scale.y != null ? tfm.scale.y : 1;
+  let r = tfm.rotation || 0;
+  let cos = Math.cos(r);
+  let sin = Math.sin(r);
+  let tx = tfm.translation ? tfm.translation.x : 0;
+  let ty = (tfm.translation ? tfm.translation.y : 0) + (extraTyIfAny || 0);
+  return { a: cos * sx, c: -sin * sy, e: tx, b: sin * sx, d: cos * sy, f: ty };
+}
+function affineCompose(outer, inner) {
+  /** outer ∘ inner — apply inner first (local), then outer. */
+  return {
+    a: outer.a * inner.a + outer.c * inner.b,
+    c: outer.a * inner.c + outer.c * inner.d,
+    e: outer.a * inner.e + outer.c * inner.f + outer.e,
+    b: outer.b * inner.a + outer.d * inner.b,
+    d: outer.b * inner.c + outer.d * inner.d,
+    f: outer.b * inner.e + outer.d * inner.f + outer.f,
+  };
+}
+function affineInvert(m) {
+  let det = m.a * m.d - m.c * m.b;
+  if (Math.abs(det) < 1e-12) return affineIdentity();
+  let id = 1 / det;
+  return {
+    a: m.d * id,
+    c: -m.c * id,
+    e: (m.c * m.f - m.d * m.e) * id,
+    b: -m.b * id,
+    d: m.a * id,
+    f: (m.b * m.e - m.a * m.f) * id,
+  };
+}
+function affineTransformPt(m, p) {
+  return pt(m.a * p.x + m.c * p.y + m.e, m.b * p.x + m.d * p.y + m.f);
+}
+function simpleTransformFromAffine(m) {
+  /**
+   * Decompose into SimpleTransform (scale, rotate, translate). Assumes the matrix
+   * came from composing such transforms (positive scales preferred).
+   */
+  let sx = Math.sqrt(m.a * m.a + m.b * m.b);
+  let sy = Math.sqrt(m.c * m.c + m.d * m.d);
+  let rotation = sx > 1e-9 ? Math.atan2(m.b, m.a) : Math.atan2(-m.c, m.d);
+  let det = m.a * m.d - m.c * m.b;
+  if (det < 0) sy = -sy;
+  if (sx < 1e-9) sx = 1;
+  if (Math.abs(sy) < 1e-9) sy = 1;
+  return new SimpleTransform(pt(m.e, m.f), rotation, pt(sx, sy));
+}
+
 //  StepSpec
 // ----------
 // One entry in a morph stepping schedule.
@@ -4662,9 +4719,9 @@ class Morph {
     return this.beginPointerDrag(p, evt);
   }
   dropOnTopMorphAt(worldDropPt, anchorLocal) {
-    // Reparent under worldDropPt while preserving world position of a local anchor.
-    // anchorLocal: point in this morph's local coords to keep fixed (e.g. relativize(grab)).
-    // If omitted, uses shape bounds topLeft (halo grab/copy, etc.).
+    // Reparent under the morph at worldDropPt, preserving full on-screen appearance
+    // (see reparentToOwnerPreservingWorldAnchor). anchorLocal is kept for callers /
+    // API compatibility; the reparent uses the morph's world affine, not only that point.
     let world = this.world();
     if (!world) return;
     // Find deepest accepting owner at drop point (front-most path), not just world children.
@@ -4746,6 +4803,37 @@ class Morph {
     if (scrollY) q = pt(q.x, q.y + scrollY);
     return this.owner.globalize(q);
   }
+  localToWorldAffine() {
+    /**
+     * Affine map from this morph's local coords to world, matching {@link globalize}
+     * (including per-user $scrollOffsetY as extra Y translation at each level).
+     * Orphans (owner == null, not the world) use their local transform as the whole map
+     * — e.g. a morphCopy that has already baked world appearance.
+     */
+    if (!this.owner) {
+      if (this.className === 'WorldMorph') return affineIdentity();
+      return affineFromSimpleTransform(this.transform, this.$scrollOffsetY || 0);
+    }
+    let m = affineIdentity();
+    let morph = this;
+    while (morph && morph.owner) {
+      let scrollY = morph.$scrollOffsetY || 0;
+      let local = affineFromSimpleTransform(morph.transform, scrollY);
+      m = affineCompose(local, m);
+      morph = morph.owner;
+    }
+    return m;
+  }
+  applyAffineAsLocalTransform(m) {
+    /** Install affine `m` as this morph's local SimpleTransform (in-place when possible). */
+    let nt = simpleTransformFromAffine(m);
+    let tfm = this.transform;
+    if (tfm.translation && tfm.translation.setToPt) tfm.translation.setToPt(nt.translation);
+    else tfm.translation = nt.translation.copy();
+    tfm.rotation = nt.rotation;
+    if (tfm.scale && tfm.scale.setToPt) tfm.scale.setToPt(nt.scale);
+    else tfm.scale = nt.scale.copy();
+  }
   hasSubmorphs() {
     if (this.submorphs != null && this.submorphs.length > 0) return true;
     return this.$submorphs != null && this.$submorphs.length > 0;
@@ -4795,9 +4883,14 @@ class Morph {
     return this.relativize(this.owner.localize(pt));
   }
   morphCopy() {
+    /**
+     * Structural copy whose on-screen appearance matches this morph in the world
+     * (parent rotation/scale baked into the copy's local transform). Owner is left
+     * null so shift-drag / halo Copy can reparent without a dangling parent chain.
+     */
     let copy = new Morph(this.bounds, this.shape.copy());
-    copy.owner = this.owner;
-    copy.transform = this.transform.copy(); // may not need to copy
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex; // keeps submorph stacking on recursive copies
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => {
@@ -5056,7 +5149,9 @@ class Morph {
   }
   reparentToOwnerPreservingWorldAnchor(newOwner, anchorLocal, ephemeralEdge) {
     /**
-     * Reparent under newOwner while keeping anchorLocal at same world point.
+     * Reparent under newOwner while keeping this morph's on-screen appearance
+     * continuous: full world transform (translation, rotation, scale), not only
+     * the world position of anchorLocal. Used by hand grab/drop and halo Grab/Copy.
      * The attachment edge keeps its kind — an ephemeral submorph stays in
      * $submorphs lists, a persistent one in submorphs lists — so a drag never
      * silently promotes an ephemeral morph into the document. Pass ephemeralEdge
@@ -5069,14 +5164,13 @@ class Morph {
     // newOwner's tree, attached by the right kind of edge.
     let targetList = wantEphemeral ? newOwner.$submorphs : newOwner.submorphs;
     if (this.owner === newOwner && targetList && targetList.indexOf(this) >= 0) return;
-    let p = anchorLocal == null ? this.shape.getBounds().topLeft : anchorLocal;
-    let anchorWorld = this.globalize(p);
-    // both removers take this morph out of the previous owner's lists
+    // Capture appearance before the owner chain changes.
+    let worldAffine = this.localToWorldAffine();
     if (wantEphemeral) newOwner.addEphemeralMorph(this);
     else newOwner.addMorph(this);
-    let ownerPt = newOwner.localize(anchorWorld);
-    let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
-    this.transform.translation.setToPt(ownerPt.subPt(rotScale));
+    // newLocal = invert(newOwner→world) ∘ (old local→world)
+    let ownerAffine = newOwner.localToWorldAffine();
+    this.applyAffineAsLocalTransform(affineCompose(affineInvert(ownerAffine), worldAffine));
     this.syncBoundsFromGeometry();
     this.changed();
   }
@@ -5459,8 +5553,8 @@ class ImageMorph extends Morph {
   }
   morphCopy() {
     let copy = new ImageMorph(this.shape.copy());
-    copy.owner = this.owner;
-    copy.transform = this.transform.copy();
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => {
@@ -5587,8 +5681,8 @@ class EmojiMorph extends ImageMorph {
   }
   morphCopy() {
     let copy = new EmojiMorph(this._emojiName, this._emojiSize);
-    copy.owner = this.owner;
-    copy.transform = this.transform.copy();
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     copy.submorphs = this.submorphs.map((m) => {
@@ -5833,6 +5927,7 @@ class LineMorph extends Morph {
     this.syncShapeFromVertices();
   }
   morphCopy() {
+    /** Vertices are already globalized; leave owner null (world appearance is in transform). */
     let worldVerts = this.shape.vertices.map((v) => this.globalize(v));
     let copy = new LineMorph(worldVerts, {
       borderWidth: this.shape.borderWidth,
@@ -5842,7 +5937,7 @@ class LineMorph extends Morph {
       beClosed: this.shape.closed,
       handleRadius: this.handleRadius,
     });
-    copy.owner = this.owner;
+    copy.owner = null;
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
     return copy;
@@ -8634,6 +8729,12 @@ function methodNamesInCategory() {
         'fleetingMenuAnchorPt',
         'errorReportPanelBounds',
         'testTransforms',
+        'affineIdentity',
+        'affineFromSimpleTransform',
+        'affineCompose',
+        'affineInvert',
+        'affineTransformPt',
+        'simpleTransformFromAffine',
       ],
       'Colors and Style': [
         'hsvToColor',
@@ -9892,13 +9993,9 @@ class HaloHandle extends Morph {
       // unrotated targets.)
       this.$scaleAnchorLocal = this.target.shape.getBounds().topLeft.copy();
       this.$scaleAnchorInOwner = this.target.transform.transformPt(this.$scaleAnchorLocal);
-      this.$scaleAnchorWorld = this.target.owner
-        ? this.target.owner.globalize(this.$scaleAnchorInOwner)
-        : this.$scaleAnchorInOwner.copy();
-      this.$scaleStartPointerWorld = worldP.copy();
       this.scaleTransformDrag = effectiveShiftKey(evt);
       this.$scaleStartTransform = this.target.transform.scale.copy();
-      // Start-of-drag frame for the resize preview (SimpleTransform.copy()
+      // Start-of-drag frame for the resize / transform-scale math (SimpleTransform.copy()
       // aliases its points, so build one with copies).
       let tfm = this.target.transform;
       this.$scaleStartTfm = new SimpleTransform(
@@ -9908,7 +10005,7 @@ class HaloHandle extends Morph {
       );
       this.$scaleStartShapeExtent = this.target.shape.getBounds().extent.copy();
       this.$scaleDesiredExtent = null;
-      // Where the grab started, in start-local coordinates. Resizing is
+      // Where the grab started, in start-local coordinates. Scaling is
       // RELATIVE: start extent + the handle's movement along the shape's own
       // axes. The handle sits on the halo frame, not on the shape's corner,
       // so snapping the corner to it would make a rotated morph's size jump
@@ -9940,52 +10037,37 @@ class HaloHandle extends Morph {
     this.moveBy(delta); // the handle itself tracks the pointer
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
+      // Both modes stretch via transform.scale about the shape topLeft (re-pinned).
+      // Plain Z: preview only — dragEnded writes a real setBounds and restores scale.
+      // Shift-Z: keep the scale factors (independent sx/sy from local handle motion).
       let cornerPos = this.getBounds().center();
+      let cornerInOwner = this.target.owner ? this.target.owner.localize(cornerPos) : cornerPos;
+      let scrollY = this.target.$scrollOffsetY;
+      if (scrollY) cornerInOwner = pt(cornerInOwner.x, cornerInOwner.y - scrollY);
+      // Desired local extent from handle motion in the start-of-drag frame (relative,
+      // not corner-snapping — see the note at $scaleStartCornerLocal).
+      let localCorner = this.$scaleStartTfm.invertPt(cornerInOwner);
+      let ext = this.$scaleStartShapeExtent
+        .addPt(localCorner.subPt(this.$scaleStartCornerLocal))
+        .maxPt(pt(1, 1));
+      if (!this.scaleTransformDrag) this.$scaleDesiredExtent = ext;
+      let e0 = this.$scaleStartShapeExtent;
+      let s0 = this.$scaleStartTransform;
+      let sx = (s0.x * ext.x) / Math.max(e0.x, 0.001);
+      let sy = (s0.y * ext.y) / Math.max(e0.y, 0.001);
       if (this.scaleTransformDrag) {
-        // Uniform transform scale: ratio of the pointer's distance from the
-        // anchor (the shape's rendered topLeft corner, which stays fixed).
-        let startDist = Math.max(this.$scaleStartPointerWorld.dist(this.$scaleAnchorWorld), 1);
-        let r = p.dist(this.$scaleAnchorWorld) / startDist;
-        r = Math.max(0.05, Math.min(24, r));
-        this.target.transform.scale = pt(
-          this.$scaleStartTransform.x * r,
-          this.$scaleStartTransform.y * r,
-        );
-        // The transform scales about the morph's local origin; re-pin the
-        // anchor in owner coordinates (as setRotation does for the center).
-        let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
-        this.target.transform.translation = this.target.transform.translation.addPt(
-          this.$scaleAnchorInOwner.subPt(after),
-        );
-      } else {
-        // Resize preview: per-frame feedback lives ONLY on the ephemeral
-        // transform — the frozen shape is stretched via the scale, with the
-        // anchor re-pinned — so neither the shape nor any submorph relayout
-        // touches the document while the pointer moves. The one real
-        // setBounds (+ subclass relayout) happens in dragEnded.
-        let cornerInOwner = this.target.owner ? this.target.owner.localize(cornerPos) : cornerPos;
-        let scrollY = this.target.$scrollOffsetY;
-        if (scrollY) cornerInOwner = pt(cornerInOwner.x, cornerInOwner.y - scrollY);
-        // Desired final local extent: the start extent adjusted by the
-        // handle's movement, measured in the start-of-drag frame so the
-        // preview's own scale edits don't feed back into the math. (Relative,
-        // not corner-snapping — see the note at $scaleStartCornerLocal.)
-        let localCorner = this.$scaleStartTfm.invertPt(cornerInOwner);
-        let ext = this.$scaleStartShapeExtent
-          .addPt(localCorner.subPt(this.$scaleStartCornerLocal))
-          .maxPt(pt(1, 1));
-        this.$scaleDesiredExtent = ext;
-        let e0 = this.$scaleStartShapeExtent;
-        let s0 = this.$scaleStartTransform;
-        this.target.transform.scale = pt(
-          (s0.x * ext.x) / Math.max(e0.x, 0.001),
-          (s0.y * ext.y) / Math.max(e0.y, 0.001),
-        );
-        let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
-        this.target.transform.translation = this.target.transform.translation.addPt(
-          this.$scaleAnchorInOwner.subPt(after),
-        );
+        sx = Math.max(0.05, Math.min(24, sx));
+        sy = Math.max(0.05, Math.min(24, sy));
       }
+      let sc = this.target.transform.scale;
+      if (sc && sc.setToPt) sc.setToPt(pt(sx, sy));
+      else this.target.transform.scale = pt(sx, sy);
+      // Transform scales about the morph local origin; re-pin the anchor in owner space.
+      let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
+      let pin = this.$scaleAnchorInOwner.subPt(after);
+      if (this.target.transform.translation.moveBy) this.target.transform.translation.moveBy(pin);
+      else
+        this.target.transform.translation = this.target.transform.translation.addPt(pin);
       if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
       this.target.changed();
       let world = this.target.world();
@@ -10406,8 +10488,9 @@ class HandMorph extends Morph {
       if (this.isLaden()) return false; // no sense to copy if laden
       let morphUnder = this.world().topMorphAt(p);
       if (!morphUnder || morphUnder.className == 'WorldMorph' || morphUnder === this) return false;
-      let copy = morphUnder.morphCopy();
-      let anchorLocal = copy.localize(p);
+      // Anchor in the source's local shape space (morphCopy keeps that geometry).
+      let anchorLocal = morphUnder.localize(p);
+      let copy = morphUnder.morphCopy(); // bakes world appearance; owner left null
       // The fresh copy is in no submorph list yet, so it can't infer its edge kind —
       // pass the original's, so ephemeral morphs copy as ephemeral (cf. HaloHandle Copy).
       copy.reparentToOwnerPreservingWorldAnchor(
@@ -11567,7 +11650,7 @@ class WorldMorph extends Morph {
     'B' - Browse: Open a browser to edit the code for this object
     'I' -  Inspect: Open an inspector on this object
     'Z' - Scale: Drag the handle to resize the object (changes bounds)
-    Shift-drag Z: drag to grow or shrink via transform.scale (shape and submorphs)
+    Shift-drag Z: scale via transform.scale (independent X/Y; shape and submorphs)
     Note that on platforms that do not offer meta keys, halos can still be accessed by enabling the "Long click for halos" option in the world menu.  This may occasionally prove bothersome when selecting in text, but you can always turn the feature off again.
     [Long-press is currently $LONG_CLICK_MS ==> 700 ms
     and $LONG_CLICK_MOVE_CANCEL_PX ==> 7 pixels]
