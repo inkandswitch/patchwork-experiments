@@ -585,14 +585,16 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
-  // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug)...
-  Lively.spiral = Lively.addMorph(new Morph(rect(50, 210, 1, 1)));
-  Lively.spiral.pen = new Pen(pt(60, 210)).withBug();
+  // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug). The
+  // bug morph itself hosts the pen and the stepping method; there is no separate
+  // (invisible-but-not-quite) controller morph cluttering the world.
+  let spiralPen = new Pen(pt(60, 210)).withBug();
+  Lively.bug = spiralPen.bug;
+  Lively.bug.pen = spiralPen;
   // withBug adds the emoji ephemerally (cheap while stepping); promote so other
   // replicas see the demo bug. Short one-shot spiral — sync cost is fine.
-  if (Lively.spiral.pen.bug && Lively.spiral.pen.bug.bePersistent)
-    Lively.spiral.pen.bug.bePersistent();
-  Lively.spiral.animatedSpiral = function (argsObj) {
+  if (Lively.bug.bePersistent) Lively.bug.bePersistent();
+  Lively.bug.animatedSpiral = function (argsObj) {
     if (!this.args) {
       this.args = argsObj;
       this.pen.setPenColor(Color.red);
@@ -601,7 +603,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.spiralI++;
     if (this.spiralI > this.args.nSteps) {
       this.stopStepping();
-      this.pen.bug.moveTo(this.pen.location.addPt(pt(0, 20)));
+      this.moveTo(this.pen.location.addPt(pt(0, 20)));
       this.world().changed();
       return;
     }
@@ -614,9 +616,9 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
   setTimeout(() => {
     // The world may have been re-initialized since this was scheduled (e.g. a
-    // fresh initLively()); there is no spiral to animate then.
-    if (!Lively || !Lively.spiral) return;
-    Lively.spiral.startStepping(50, 'animatedSpiral', {
+    // fresh initLively()); there is no bug to animate then.
+    if (!Lively || !Lively.bug) return;
+    Lively.bug.startStepping(50, 'animatedSpiral', {
       goDist: 2,
       turnAngle: 60,
       nSteps: 26,
