@@ -394,6 +394,27 @@ class Color {
   lighter() {
     return this.mixedWith(Color.white, 0.5);
   }
+  luminance() {
+    /** WCAG relative luminance, 0 (black) to 1 (white): sRGB channels linearized,
+     * then weighted by how strongly the eye responds to each. */
+    let lin = (c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    return 0.2126 * lin(this.r) + 0.7152 * lin(this.g) + 0.0722 * lin(this.b);
+  }
+  contrastRatioWith(other) {
+    /** WCAG contrast ratio, 1 (identical) to 21 (black on white). */
+    let a = this.luminance();
+    let b = other.luminance();
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  }
+  contrastingBlackOrWhite() {
+    /** Whichever of black and white stands out more against this color — e.g. for
+     * an outline or text drawn on top of it. Black wins once luminance exceeds
+     * about 0.18, so yellow, green, cyan and orange get black; blue, red, purple
+     * and dark gray get white. */
+    return this.contrastRatioWith(Color.black) >= this.contrastRatioWith(Color.white)
+      ? Color.black
+      : Color.white;
+  }
   mixedWith(other, proportion) {
     // Mix with another color
     let p = proportion;
@@ -2319,7 +2340,9 @@ class Pen {
   makeHandShape(location, color) {
     /** The macOS arrow cursor, tip at `location` (the hand's hotspot: it is the
      * shape's top-left corner, so HandMorph#location lands on it). Filled with the
-     * hand's color where the real cursor is black, and outlined in white like it.
+     * hand's color where the real cursor is black, and outlined in whichever of black
+     * and white contrasts more with that color (the real cursor's white outline is
+     * lost against yellow or green).
      * (Lively.addMorph(new Morph(null,
      * new Pen().makeHandShape(pt(100, 100), Color.red)))) */
     this.setPenColor(color);
@@ -2329,7 +2352,7 @@ class Pen {
     handShape.closed = true;
     handShape.setColor(color);
     handShape.setBorderWidth(1);
-    handShape.setBorderColor(Color.white);
+    handShape.setBorderColor(color.contrastingBlackOrWhite());
     return handShape;
   }
   makeMorph() {
@@ -10351,7 +10374,9 @@ class HandMorph extends Morph {
     let w = ctx.measureText(name).width;
     ctx.fillStyle = color && color.fillStyle ? color.fillStyle : 'black';
     ctx.fillRect(loc.x + 12, loc.y + 22, w + 8, 16);
-    ctx.fillStyle = 'white';
+    // Same rule as the hand's outline: black or white, whichever reads on this color.
+    ctx.fillStyle =
+      color && color.contrastingBlackOrWhite ? color.contrastingBlackOrWhite().fillStyle : 'white';
     ctx.fillText(name, loc.x + 16, loc.y + 24);
     ctx.restore();
   }
