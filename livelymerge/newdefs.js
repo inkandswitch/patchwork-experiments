@@ -2317,19 +2317,19 @@ class Pen {
     if (this.bug) this.bug.moveTo(this.location);
   }
   makeHandShape(location, color) {
-    /* (Lively.addMorph(new Morph(null,
-    new Pen().makeHandShape(pt(100, 100), Color.red)))) */
+    /** The macOS arrow cursor, tip at `location` (the hand's hotspot: it is the
+     * shape's top-left corner, so HandMorph#location lands on it). Filled with the
+     * hand's color where the real cursor is black, and outlined in white like it.
+     * (Lively.addMorph(new Morph(null,
+     * new Pen().makeHandShape(pt(100, 100), Color.red)))) */
     this.setPenColor(color);
     this.location = location;
-    this.vertices = [this.location];
-    for (let i = 1; i <= 3; i++) {
-      this.go(20);
-      this.turn(120);
-    }
+    this.vertices = macCursorVertices(location);
     let handShape = this.polyLine();
+    handShape.closed = true;
     handShape.setColor(color);
     handShape.setBorderWidth(1);
-    handShape.setBorderColor(Color.black);
+    handShape.setBorderColor(Color.white);
     return handShape;
   }
   makeMorph() {
@@ -2387,6 +2387,20 @@ class Pen {
   static new(...args) {
     return new this(...args);
   }
+}
+function macCursorVertices(tip) {
+  /** The macOS arrow cursor outline with its tip at world-pt `tip`, in CSS px at 1x
+   * (about 13x20). Traced clockwise: down the left edge, into the notch, down the
+   * tail, back up the tail's right side and out to the right wing. */
+  return [
+    [0, 0],
+    [0, 17],
+    [4.6, 13.2],
+    [7.6, 19.7],
+    [10.6, 18.3],
+    [7.6, 12],
+    [13, 12],
+  ].map((v) => pt(tip.x + v[0], tip.y + v[1]));
 }
 
 // +--------------------+
