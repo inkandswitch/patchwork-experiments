@@ -8960,16 +8960,23 @@ class BrowserPanel extends PanelMorph {
     copyTextToOSClipboard(exportText);
   }
   initCategoryPane() {
-    /** Category strip (top) — current category name; pane menu browses categories. */
+    /** Category strip above the class list only — message/method keep full height. */
     let panelBounds = this.paneLayoutBounds();
-    this.categoryPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 1.0, 0.08)));
+    this.categoryPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.08)));
     this.categoryPane.setList([this.selectedCategory || 'All']);
     this.categoryPane.setPaneMenu(categorySelectorPaneMenuSpec(this));
+    // One-item list: click (including re-click of the already-selected line) opens Browse category…
+    this.categoryPane.onSelect(() => {
+      let at =
+        getPointerLocation() ||
+        (this.categoryPane.paneMenuAnchorInWorld && this.categoryPane.paneMenuAnchorInWorld());
+      this.categoryPane.showPaneMenu(at, { fleeting: true });
+    });
   }
   initClassPane() {
-    /** Class list (upper-left) in the system browser. */
+    /** Class list (upper-left, under category) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.08, 0.4, 0.36)));
+    this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.08, 0.4, 0.32)));
     this.classPane.setList(this.classListForSelectedCategory());
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
@@ -9000,9 +9007,9 @@ class BrowserPanel extends PanelMorph {
     });
   }
   initMessagePane() {
-    /** Method name list (upper-right) in the system browser. */
+    /** Method name list (upper-right) — full height of the top band. */
     let panelBounds = this.paneLayoutBounds();
-    this.messagePane = this.addMorph(new ListPane(panelBounds, rect(0.4, 0.08, 0.6, 0.36)));
+    this.messagePane = this.addMorph(new ListPane(panelBounds, rect(0.4, 0.0, 0.6, 0.4)));
     this.messagePane.setList(['message names']);
     this.messagePane.setPaneMenu(methodSelectorPaneMenuSpec(this));
     this.messagePane.onSelect((methodSelection, shiftKey) => {
@@ -9062,7 +9069,7 @@ class BrowserPanel extends PanelMorph {
   initMethodPane() {
     /** Editable method source (lower) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.44, 1.0, 0.56)));
+    this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
     this.methodPane.setText('Method text');
     // Class fragments in this pane save via replaceMethod (see the ctrl-S handler);
     // the globals pane and legacy '<spec> = function ...' text keep plain eval.
