@@ -85,3 +85,22 @@ Ask the agent to compile this into a patch file or port list when ready.
 **Files:** `newdefs.js` — `topMorphAt`, `onPointerDown` / move / up, `dropOnTopMorphAt` walk, related.
 
 **Related shipped (not this):** Affine reparent / `morphCopy` world-appearance baking for grab/drop object constancy under transforms.
+
+---
+
+## 8. checkpointToRepo → xdefs.js (2026-09-08)
+
+**Shipped in `newdefs.js`:** `checkpointToRepo(path?)` writes a bootable live-system dump (default `xdefs.js`) via host hook `window.checkpointWriteFile(path, text)`.
+
+**Also:** `exportBootableSystemString()` — classes first (with Color.* data), filtered globals (no host natives), top-level data, trailing `init()`.
+
+**Verified:** load newdefs → checkpoint → boot `xdefs.js` → checkpoint again → ~33 byte drift (timestamps). See `src/checkpointToRepo.test.ts`, `xdefs-compare.json`.
+
+**Usage (browser / Patchwork):**
+```javascript
+checkpointToRepo('xdefs.js')  // triggers a file download — no writeFileSync
+```
+Clear a bad hook if you installed one earlier:
+```javascript
+window.checkpointWriteFile = null
+```

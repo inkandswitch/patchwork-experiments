@@ -2,3 +2,9 @@ dist
 node_modules
 .pushwork
 .DS_Store
+
+# Generated system checkpoints
+xdefs.js
+xdefs-roundtrip.js
+xdefs-compare.json
+xdefs-panel-fix.js

@@ -177,12 +177,29 @@ function classStaticNames(cls) {
   // "new".
   // Runtime Object's host statics (keys, create, …) are not LM class members —
   // don't list them as Object.class.* in the browser.
+  // Also skip Fun bookkeeping (`toString` → live.$codeForShow, length, name, prototype).
   if (cls === Object) return [];
   let proto = cls.prototype;
   return Object.getOwnPropertyNames(cls)
     .filter((name) => !(proto && proto[name] === cls[name]))
     .filter((name) => name !== 'new')
+    .filter((name) => !checkpointOmitClassFunName(name))
     .sort();
+}
+function isNativeFunctionSource(src) {
+  /** True for host natives (body is only the native-code marker), not LM sources that mention natives. */
+  return typeof src === 'string' && /\{\s*\[native code\]\s*\}/.test(src);
+}
+function checkpointOmitClassFunName(name) {
+  /** Class-Fun own names that are runtime bookkeeping, not LM statics. */
+  return (
+    name === 'prototype' ||
+    name === 'length' ||
+    name === 'name' ||
+    name === 'toString' ||
+    name === 'caller' ||
+    name === 'arguments'
+  );
 }
 function classInstanceMemberNames(cls) {
   // Method (and accessor) names on the class's prototype, minus bookkeeping keys.
@@ -2209,6 +2226,11 @@ function newPanelLocation(extentIfAny) {
    * world bottom, wrap to panelLocation.y and shift X by ~300.
    */
   let extent = extentIfAny != null ? extentIfAny : pt(400, 300);
+  // Checkpoint / reload may omit these lets — fall back to the usual cascade origin.
+  if (panelLocation == null || typeof panelLocation.copy !== 'function')
+    panelLocation = pt(400, 60);
+  if (panelLocationDelta == null || typeof panelLocationDelta.addPt !== 'function')
+    panelLocationDelta = pt(20, 20);
   if ($nextPanelLocation == null) $nextPanelLocation = panelLocation.copy();
   let worldB = Lively && Lively.getBounds ? Lively.getBounds() : getBounds();
   let worldBottom = worldB.bottom();
@@ -7995,6 +8017,44 @@ function promptOkToCancelEditsMenu(world, atPt, onResult) {
   );
   if (world.promote) world.promote(menu);
 }
+function checkpointDownloadFileName() {
+  /** Basename for browser Downloads — fixed name; the OS keeps versions/dates. */
+  return 'xdefs.js';
+}
+function showCheckpointSavedNotice(world, info) {
+  /**
+   * Fleeting OK dialog after Checkpoint to Downloads: file name, write date, byte count.
+   */
+  let name = info && info.name != null ? '' + info.name : 'xdefs.js';
+  let when = info && info.when != null ? '' + info.when : new Date().toLocaleString();
+  let bytes = info && info.bytes != null ? info.bytes : 0;
+  let titleLine = 'Checkpoint to Downloads';
+  let fileLine = '  file: ' + name;
+  let whenLine = '  when: ' + when;
+  let bytesLine = '  bytes: ' + bytes;
+  let okLine = '  OK';
+  let anchor = fleetingMenuAnchorPt(null);
+  let wdt = 280;
+  if (fileLine.length * 7 > wdt) wdt = fileLine.length * 7;
+  if (whenLine.length * 7 > wdt) wdt = whenLine.length * 7;
+  let menu = new MenuMorph(
+    rect(anchor.x, anchor.y, wdt, 24 + 5 * 20),
+    [titleLine, fileLine, whenLine, bytesLine, okLine],
+    function () {
+      menu.remove();
+    },
+  );
+  let bg = Color.yellow;
+  menu.shape.boxColor = bg;
+  menu.shape.fill = bg;
+  menu.isFleetingMenu = true;
+  world.addEphemeralMorph(menu);
+  menu.setBounds(
+    rect(anchor.x, anchor.y, menu.getBounds().width(), menu.getBounds().height()),
+  );
+  if (world.promote) world.promote(menu);
+  return menu;
+}
 //  PanelTitleBar
 // ---------------
 // Collapse/close/title chrome shared by panels.
@@ -8787,6 +8847,10 @@ function methodNamesInCategory() {
         'showFindNoMatchesMenu',
         'showPasteHistoryMenu',
         'promptConfirmMenu',
+        'checkpointDownloadFileName',
+        'showCheckpointSavedNotice',
+        'downloadTextFile',
+        'checkpointToRepo',
         'promptOkToCancelEditsMenu',
       ],
       'Clipboard and Paste': [
@@ -8873,7 +8937,16 @@ function methodNamesInCategory() {
         'exportSelectionsForEntireSystem',
         'exportMethodShouldOmit',
         'exportEntireSystem',
+        'exportBootableSystemString',
+        'checkpointToRepo',
+        'downloadTextFile',
         'viewExportedSystem',
+        'checkpointValueSource',
+        'checkpointOmitGlobalName',
+        'checkpointOmitClassFunName',
+        'isNativeFunctionSource',
+        'exportClassDataPropertyLines',
+        'exportTopLevelDataLines',
         'ensureAlldefsSourceLines',
         'alldefsSourceExcerpt',
         'defsSourceFile',
@@ -11748,6 +11821,13 @@ class WorldMorph extends Morph {
         refreshWorldMenuItems(this);
         this.shape.selectLineAt(0);
       }),
+      menuItem('Checkpoint to Downloads', function () {
+        let world = this.world();
+        let name = checkpointDownloadFileName();
+        let when = new Date().toLocaleString();
+        let bytes = checkpointToRepo(name);
+        showCheckpointSavedNotice(world, { name: name, when: when, bytes: bytes });
+      }),
     ];
     let menu = new MenuMorph(pos.extent(pt(220, 24 + items.length * 20)), items);
     // Deselect after non-toggle actions (toggles refresh the list themselves).
@@ -12187,34 +12267,316 @@ function allMethodSpecs() {
   });
   return methodSpecs;
 }
-function exportEntireSystem() {
-  // exportEntireSystem() — full system source; viewExportedSystem() to browse
-  let parts = exportSelectionsForEntireSystem().map((selection) =>
-    exportStringForSelection(selection, { includeHeader: true, includeClassDef: true }),
+function checkpointValueSource(v) {
+  /** Best-effort JS source for a non-function value in a checkpoint file. */
+  if (v === null) return 'null';
+  if (v === undefined) return 'undefined';
+  let t = typeof v;
+  if (t === 'number' || t === 'boolean') return String(v);
+  if (t === 'string') return JSON.stringify(v);
+  if (t === 'function') return null;
+  // LM arrays throw on unknown property reads (e.g. `.r`) — detect before Color check.
+  try {
+    if (typeof v.length === 'number' && typeof v.push === 'function' && !v.fillStyle) {
+      try {
+        return JSON.stringify(v);
+      } catch (eArr) {
+        return 'null /* checkpoint: unsaved array */';
+      }
+    }
+  } catch (eLen) {}
+  // Color (and Color-like) swatches
+  try {
+    if (v && typeof v.r === 'number' && typeof v.g === 'number' && typeof v.b === 'number') {
+      return 'new Color(' + v.r + ', ' + v.g + ', ' + v.b + ')';
+    }
+  } catch (eColor) {}
+  if (v && typeof v.toString === 'function') {
+    try {
+      let s = v.toString();
+      if (/^(pt\(|rect\(|new |Color\.)/.test(s)) return s;
+    } catch (e) {}
+  }
+  try {
+    return JSON.stringify(v);
+  } catch (e2) {
+    return 'null /* checkpoint: unsaved ' + t + ' */';
+  }
+}
+function checkpointOmitGlobalName(name) {
+  /** Host / runtime globals that must not be rewritten into a checkpoint file. */
+  if (exportMethodShouldOmit(name)) return true;
+  if (name && name.charAt(0) === '$') return true;
+  let omit = {
+    Date: 1,
+    Number: 1,
+    String: 1,
+    RegExp: 1,
+    Promise: 1,
+    Array: 1,
+    Object: 1,
+    Boolean: 1,
+    Error: 1,
+    Math: 1,
+    JSON: 1,
+    console: 1,
+    parseInt: 1,
+    parseFloat: 1,
+    isNaN: 1,
+    isFinite: 1,
+    eval: 1,
+    undefined: 1,
+    NaN: 1,
+    Infinity: 1,
+    global: 1,
+    window: 1,
+    document: 1,
+    canvas: 1,
+    ctx: 1,
+    localStorage: 1,
+    setTimeout: 1,
+    clearTimeout: 1,
+    setInterval: 1,
+    clearInterval: 1,
+    requestAnimationFrame: 1,
+    cancelAnimationFrame: 1,
+    Automerge: 1,
+    handle: 1,
+    runtime: 1,
+    Lively: 1,
+    topLevelMorph: 1,
+  };
+  return !!omit[name];
+}
+function exportClassDataPropertyLines(className, cls) {
+  /**
+   * Non-function class and prototype data (Color.red, PanelTitleBar.prototype.HEIGHT, …).
+   * Returns a single string block (not an array) for safe use under LM.
+   */
+  let block = '';
+  let appendLine = function (line) {
+    block = block.length === 0 ? line : block + '\n' + line;
+  };
+  let own = Object.getOwnPropertyNames(cls);
+  for (let i = 0; i < own.length; i++) {
+    let name = own[i];
+    if (checkpointOmitClassFunName(name) || name === 'new') continue;
+    if (cls.prototype && cls.prototype[name] === cls[name]) continue;
+    let v = cls[name];
+    if (typeof v === 'function') continue;
+    let src = checkpointValueSource(v);
+    if (src == null) continue;
+    appendLine(className + '.' + name + ' = ' + src + ';');
+  }
+  if (cls.prototype) {
+    let protoNames = Object.getOwnPropertyNames(cls.prototype);
+    for (let j = 0; j < protoNames.length; j++) {
+      let name = protoNames[j];
+      if (name === 'constructor' || name === 'className') continue;
+      let desc = Object.getOwnPropertyDescriptor(cls.prototype, name);
+      if (!desc || desc.get || desc.set) continue;
+      if (typeof desc.value === 'function') continue;
+      let src = checkpointValueSource(desc.value);
+      if (src == null) continue;
+      appendLine(className + '.prototype.' + name + ' = ' + src + ';');
+    }
+  }
+  return block;
+}
+function exportTopLevelDataLines() {
+  /** Snapshot of important non-function globals the demo world expects before init. */
+  // Build with string concat only — LM `[]` is an Automerge array.
+  let block = '';
+  let appendLine = function (line) {
+    block = block.length === 0 ? line : block + '\n' + line;
+  };
+  let consider = function (name) {
+    let v;
+    try {
+      v = $global[name];
+    } catch (e) {
+      return;
+    }
+    if (v === undefined) return;
+    if (typeof v === 'function') return;
+    let src = checkpointValueSource(v);
+    if (src == null) return;
+    appendLine(name + ' = ' + src + ';');
+  };
+  consider('menuItemMaxChars');
+  consider('menuSeparator');
+  consider('paneSelectionMenuNarrowBy');
+  consider('paneSelectionMenuMinWidth');
+  consider('longClickForHalosLabel');
+  consider('onScreenKeyboardLabel');
+  consider('TRANSCRIPT_KEEP_LEN');
+  consider('TRANSCRIPT_MAX_BEFORE_TRUNC');
+  consider('TRANSCRIPT_MARKER_RECURSIVE');
+  consider('TRANSCRIPT_MARKER_STOPPED');
+  consider('pasteBufferItems');
+  consider('kbdDefaultShiftTable');
+  consider('kbdShiftTable');
+  // Cascading panel placement (world-menu browsers / help / inspector).
+  consider('panelLocation');
+  consider('panelLocationDelta');
+  consider('traceMe');
+  consider('debugReparent');
+  if (block.length === 0) return '';
+  return block;
+}
+function exportBootableSystemString() {
+  /**
+   * Full system source suitable for re-eval under the Livelymerge runtime
+   * (classes first, then globals, Color data statics, trailing init).
+   * Unlike the flat browser export, this skips host natives and emits class data.
+   * Builds with string concat (not arrays) — LM `[]` is an Automerge array and
+   * join/forEach on it is unsafe for a multi-hundred-KB export.
+   */
+  let out = '';
+  let append = (s) => {
+    if (s == null || s === '') return;
+    out = out.length === 0 ? s : out + '\n\n' + s;
+  };
+  append(
+    '// xdefs.js — live-system checkpoint ' +
+      new Date().toISOString() +
+      '\n// Generated by checkpointToRepo(). Load via the LM runtime (replaceMethod in scope).',
   );
-  let text = parts.filter((part) => part && part.length > 0).join('\n\n');
-  storageSetItem('system.export', text);
-  storageSetItem('system.export.timestamp', new Date().toLocaleString());
+  append('$uiState = null;');
+  let classNames = allClassNamesInSuperclassOrder();
+  for (let ci = 0; ci < classNames.length; ci++) {
+    let className = classNames[ci];
+    if (className === 'Object') continue;
+    let cls = classNamed(className);
+    if (!cls || !isClass(cls)) continue;
+    append('// ----- ' + className + ' -----');
+    append(cls.toString());
+    let rows = classMemberRows(cls);
+    for (let ri = 0; ri < rows.length; ri++) {
+      let row = rows[ri];
+      let isAccessor = /^(get|set) /.test(row);
+      let name = isAccessor ? row.slice(4) : row;
+      if (exportMethodShouldOmit(name)) continue;
+      let fn = isAccessor ? accessorForRow(cls, row) : cls.prototype[row];
+      if (typeof fn != 'function') continue;
+      let src = fn.toString();
+      if (isNativeFunctionSource(src)) continue;
+      if (!isLegacyFunctionShow(src)) {
+        append(replaceMethodCallString(className, src) + ';');
+        continue;
+      }
+      if (!isAccessor) append(className + '.prototype.' + row + ' = ' + src + ';');
+    }
+    let statics = classStaticNames(cls);
+    for (let si = 0; si < statics.length; si++) {
+      let name = statics[si];
+      if (typeof cls[name] !== 'function') continue;
+      if (exportMethodShouldOmit(name)) continue;
+      let src = cls[name].toString();
+      if (isNativeFunctionSource(src)) continue;
+      if (!isLegacyFunctionShow(src)) {
+        append(replaceMethodCallString(className, src) + ';');
+        continue;
+      }
+      append(className + '.' + name + ' = ' + src + ';');
+    }
+    let dataLines = exportClassDataPropertyLines(className, cls);
+    if (dataLines && dataLines.length) append(dataLines);
+  }
+  append('// ----- globals -----');
+  let globalNames = Object.getOwnPropertyNames($global).sort();
+  for (let gi = 0; gi < globalNames.length; gi++) {
+    let name = globalNames[gi];
+    if (typeof $global[name] !== 'function') continue;
+    if (isClass($global[name])) continue;
+    if (checkpointOmitGlobalName(name)) continue;
+    let src = $global[name].toString();
+    if (isNativeFunctionSource(src)) continue;
+    append(name + ' = ' + src + ';');
+  }
+  let topData = exportTopLevelDataLines();
+  if (topData && topData.length) {
+    append('// ----- top-level data -----');
+    append(topData);
+  }
+  append('init()');
+  return out;
+}
+function downloadTextFile(filename, text) {
+  /**
+   * Browser download of a text file (no Node fs). Uses a data: URL — the LM
+   * `window` proxy breaks `URL.createObjectURL` / unbound host methods.
+   */
+  let name = filename || 'download.txt';
+  let slash = name.lastIndexOf('/');
+  if (slash >= 0) name = name.slice(slash + 1);
+  let doc = window.document;
+  let a = doc.createElement('a');
+  a.href = 'data:text/javascript;charset=utf-8,' + window.encodeURIComponent(text);
+  a.download = name;
+  a.style.display = 'none';
+  doc.body.appendChild(a);
+  a.click();
+  doc.body.removeChild(a);
+  return name;
+}
+function checkpointToRepo(pathIfAny) {
+  /**
+   * Write a bootable checkpoint file (default xdefs.js) mirroring the live system.
+   * In Patchwork / the browser there is no filesystem: this triggers a download via
+   * {@link downloadTextFile}. Optional host-only hook: `window.checkpointWriteFile`
+   * (must be a real host function — do not assign an LM function that calls
+   * writeFileSync; that API does not exist here). Returns byte length.
+   */
+  let path = pathIfAny || 'xdefs.js';
+  let text = exportBootableSystemString();
+  try {
+    storageSetItem('system.checkpoint.timestamp', new Date().toLocaleString());
+    storageSetItem('system.checkpoint.path', path);
+    storageSetItem('system.checkpoint.length', '' + text.length);
+  } catch (e) {}
+  let wrote = false;
+  try {
+    // Only the host `window` hook — never a free LM global named checkpointWriteFile
+    // (users sometimes assign one that closes over writeFileSync and then blows up).
+    let hostWriter = window && window.checkpointWriteFile;
+    if (typeof hostWriter === 'function') {
+      hostWriter(path, text);
+      wrote = true;
+    }
+  } catch (e2) {
+    wrote = false;
+  }
+  if (!wrote) downloadTextFile(path, text);
+  return text.length;
+}
+function exportEntireSystem() {
+  // exportEntireSystem() — bootable checkpoint source; viewExportedSystem() to browse
+  // Prefer checkpointToRepo('xdefs.js') when a host write hook is available.
+  let text = exportBootableSystemString();
+  try {
+    storageSetItem('system.export', text);
+    storageSetItem('system.export.timestamp', new Date().toLocaleString());
+  } catch (e) {
+    // Huge strings may fail in Automerge-backed storage; length is still returned.
+  }
   return text.length;
 }
 function viewExportedSystem() {
   let text = storageGetItem('system.export') || storageGetItem('system.methods');
-  if (!text) text = '// No export yet. Run exportEntireSystem() first.';
+  if (!text) text = '// No export yet. Run exportEntireSystem() or checkpointToRepo() first.';
   let ts =
-    storageGetItem('system.export.timestamp') || storageGetItem('system.methods.timestamp') || '';
-  let title = ts ? 'alldefs export (' + ts + ')' : 'alldefs export';
+    storageGetItem('system.export.timestamp') ||
+    storageGetItem('system.checkpoint.timestamp') ||
+    storageGetItem('system.methods.timestamp') ||
+    '';
+  let title = ts ? 'system export (' + ts + ')' : 'system export';
   Lively.addEphemeralMorph(new MethodPanel(null, text, title));
   return text.length;
 }
 function exportMethodShouldOmit(name) {
-  if (
-    name === 'downloadTextFile' ||
-    name === '_finishSystemExport' ||
-    name === 'viewExportedSystem' ||
-    name === 'exportEntireSystem' ||
-    name === 'exportMethodShouldOmit' ||
-    name === 'exportOmitMethodNames'
-  )
+  // Keep checkpoint / download helpers in checkpoints so a booted xdefs can re-export.
+  if (name === '_finishSystemExport' || name === 'viewExportedSystem' || name === 'exportOmitMethodNames')
     return true;
   if (name.indexOf('exportCatalog') === 0) return true;
   if (
