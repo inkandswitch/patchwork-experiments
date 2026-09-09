@@ -3225,6 +3225,24 @@ class TextBox extends Shape {
     if (evt.key == 'Control') return;
     if (evt.key == 'Alt') return;
     if (evt.key == 'Enter') {
+      // Session-log draft (Cursor-style): Enter sends; Shift-Enter inserts a newline.
+      // Detect via owner chain — never $flags (those are replica-local and won't sync).
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) {
+        let panel = sessionLogPanelForTextBox(this);
+        let shift =
+          !!(evt && evt.shiftKey) ||
+          (typeof effectiveShiftKey === 'function' && effectiveShiftKey(evt)) ||
+          !!$shiftKeyPressedFlag ||
+          !!(topLevelMorph && topLevelMorph.$shiftKeyDown);
+        if (shift) {
+          this.paste(String.fromCharCode(evt.keyCode));
+          return;
+        }
+        if (panel && typeof panel.submitPrompt === 'function') {
+          panel.submitPrompt();
+          return;
+        }
+      }
       this.paste(String.fromCharCode(evt.keyCode));
       return;
     }
@@ -3598,7 +3616,15 @@ class TextBox extends Shape {
       }
     }
     if (k == 's') {
-      // SAVE (eval all)
+      // SAVE (eval all) — session-log draft sends; history never evals prose as code.
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) {
+        let panel = sessionLogPanelForTextBox(this);
+        if (panel && typeof panel.submitPrompt === 'function') {
+          panel.submitPrompt();
+          return;
+        }
+      }
+      if (typeof isSessionLogHistoryTextBox === 'function' && isSessionLogHistoryTextBox(this)) return;
       if (this.localStorageKey) {
         storageSetItem(this.localStorageKey, this.string);
         if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
@@ -3634,12 +3660,16 @@ class TextBox extends Shape {
       }
     }
     if (k == 'd') {
-      // DO IT
+      // DO IT — never eval session-log prose.
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) return;
+      if (typeof isSessionLogHistoryTextBox === 'function' && isSessionLogHistoryTextBox(this)) return;
       let range = this.evalSelectionRange();
       this.wsEval.call(this.workspaceObj, this.string.slice(range[0], range[1]));
     }
     if (k == 'p') {
-      // PRINT IT
+      // PRINT IT — never eval session-log prose.
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) return;
+      if (typeof isSessionLogHistoryTextBox === 'function' && isSessionLogHistoryTextBox(this)) return;
       let range = this.evalSelectionRange();
       let start = range[0];
       let end = range[1]; // exclusive
@@ -6491,6 +6521,11 @@ class SimpleButtonMorph extends TextMorph {
     return false;
   }
   onPointerUp(p, evt) {
+    if (this.isSessionLogSendButton) {
+      let panel = this.owner;
+      while (panel && panel.className !== 'SessionLogPanel') panel = panel.owner;
+      if (panel && typeof panel.submitPrompt === 'function') panel.submitPrompt();
+    }
     this.$dragActorID = null;
     this.$hitPoint = null;
     return true;
@@ -7497,6 +7532,25 @@ class TranscriptTextPane extends TextPane {
   }
   scrollTranscriptToBottom() {
     this._scrollTranscriptBottomQuiet();
+  }
+  setText(text, opts) {
+    /**
+     * Like TextPane.setText but without scrollToTop — transcripts and session logs
+     * grow downward; jumping to the top on every rewrite is wrong.
+     */
+    let force = opts && opts.force;
+    if (!force && this.hasUnsavedChanges()) return false;
+    let normalized = text != null ? String(text) : '';
+    let priorScroll = typeof this.getScrollPosition === 'function' ? this.getScrollPosition() : null;
+    let oldH = this.contentPane && this.contentPane.shape ? this.contentPane.shape.extent.y : 0;
+    this.contentPane.setText(normalized);
+    this._savedTextSnapshot = normalized;
+    if (this.contentPane && this.contentPane.shape) this.contentPane.shape.editorID = null;
+    let newH = this.contentPane && this.contentPane.shape ? this.contentPane.shape.extent.y : 0;
+    if (newH !== oldH && typeof this.onTextBoundsChanged === 'function') {
+      this.onTextBoundsChanged(priorScroll, true);
+    }
+    return true;
   }
   setConsoleMirror(on) {
     this._transcriptReentry++;
@@ -8719,6 +8773,7 @@ function classNamesInCategory() {
         'MethodListPanel',
         'ErrorStackPanel',
         'TranscriptPanel',
+        'SessionLogPanel',
       ],
       'Hands and Halos': [
         'HaloHandle',
@@ -8870,7 +8925,21 @@ function methodNamesInCategory() {
         'methodSelectorPaneMenuSpec',
         'categorySelectorPaneMenuSpec',
       ],
-      Panels: ['browseRecentChanges', 'browseSavedChanges', 'openTranscript', 'openErrorStackPanel'],
+      Panels: [
+        'browseRecentChanges',
+        'browseSavedChanges',
+        'openTranscript',
+        'openSessionLog',
+        'sessionLog',
+        'sessionNote',
+        'submitSessionPrompt',
+        'sessionLogPanelForTextBox',
+        'isSessionLogPromptTextBox',
+        'isSessionLogHistoryTextBox',
+        'findSessionLogPanel',
+        'refreshOpenSessionLogs',
+        'openErrorStackPanel',
+      ],
       'Hands and Halos': [],
       'Pointer and keyboard events': [
         'setPointerLocation',
@@ -9989,6 +10058,125 @@ class TranscriptPanel extends PanelMorph {
     if (typeof Console !== 'undefined' && Console === this) Console = null;
     if (typeof Transcript !== 'undefined' && Transcript === this) Transcript = null;
     return Morph.prototype.remove.call(this);
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+//  SessionLogPanel
+// ----------------------
+// Shared human↔agent session log (backed by Lively.sessionLogText).
+// Persistent panel so both peers see the same chrome. Draft: Enter sends,
+// Shift-Enter newline (Cursor-style). Detection uses owner-chain helpers —
+// never $-flags (those are replica-local and caused Enter/Save bugs).
+class SessionLogPanel extends TranscriptPanel {
+  constructor(initialBounds) {
+    super(initialBounds);
+    this.setPanelTitle('Session log — Enter to send');
+    this._lastSeenLog = null;
+    if (this.transcriptPane) {
+      this.transcriptPane.setConsoleMirror(false);
+      this.transcriptPane.boundsSpec = rect(0, 0, 1, 0.72);
+    }
+    this.initPromptPane();
+    this.layoutChrome();
+    this.relayoutContentPanes();
+    this.syncFromSharedLog(true);
+    this.focusPrompt();
+  }
+  initPromptPane() {
+    if (!this.promptPane) {
+      let panelBounds = this.paneLayoutBounds();
+      this.promptPane = this.addMorph(new TextPane(panelBounds, rect(0, 0.72, 0.78, 0.28)));
+      this.promptPane.setText('');
+      if (this.promptPane._savedTextSnapshot !== undefined) this.promptPane._savedTextSnapshot = '';
+    } else {
+      this.promptPane.boundsSpec = rect(0, 0.72, 0.78, 0.28);
+    }
+    if (!this.sendBtn) {
+      this.sendBtn = this.addMorph(new SimpleButtonMorph(rect(0, 0, 10, 10), 'Send'));
+      this.sendBtn.boundsSpec = rect(0.8, 0.78, 0.18, 0.16);
+      if (this.titleBar && this.titleBar.configureChromeButton) {
+        this.titleBar.configureChromeButton(this.sendBtn, Color.green.lighter().lighter(), 'Send');
+      } else if (this.sendBtn.shape) {
+        this.sendBtn.shape.boxColor = Color.green.lighter().lighter();
+      }
+    }
+    // Shared (non-$) mark so SimpleButtonMorph.onPointerUp routes to submitPrompt on every peer.
+    this.sendBtn.isSessionLogSendButton = true;
+    this.sendBtn.boundsSpec = this.sendBtn.boundsSpec || rect(0.8, 0.78, 0.18, 0.16);
+    return this.promptPane;
+  }
+  ensureSessionPromptUi() {
+    if (this.transcriptPane) this.transcriptPane.boundsSpec = rect(0, 0, 1, 0.72);
+    this.initPromptPane();
+    this.setPanelTitle('Session log — Enter to send');
+    this.layoutChrome();
+    this.relayoutContentPanes();
+    this.syncFromSharedLog(true);
+    this.focusPrompt();
+    return this;
+  }
+  focusPrompt() {
+    let world = this.world && this.world();
+    let morph = this.promptPane && this.promptPane.contentPane;
+    if (world && morph && world.setKeyboardFocus) world.setKeyboardFocus(morph);
+  }
+  relayoutContentPanes() {
+    if (this.collapsed) return;
+    let cb = this.paneLayoutBounds();
+    if (this.transcriptPane && this.transcriptPane.setPaneBoundsIn) this.transcriptPane.setPaneBoundsIn(cb);
+    if (this.promptPane && this.promptPane.setPaneBoundsIn) this.promptPane.setPaneBoundsIn(cb);
+    if (this.sendBtn) {
+      let spec = this.sendBtn.boundsSpec || rect(0.8, 0.78, 0.18, 0.16);
+      this.sendBtn.setBounds(cb.scaleRect(spec));
+    }
+  }
+  submitPrompt() {
+    let shape =
+      this.promptPane && this.promptPane.contentPane && this.promptPane.contentPane.shape;
+    let raw = shape ? String(shape.string || '') : '';
+    let msg = raw.replace(/^\s+|\s+$/g, '');
+    if (!msg) return false;
+    submitSessionPrompt(msg);
+    if (this.promptPane && this.promptPane.contentPane) {
+      this.promptPane.contentPane.setText('');
+      this.promptPane._savedTextSnapshot = '';
+    }
+    this.focusPrompt();
+    return true;
+  }
+  _isNearBottom() {
+    let pane = this.transcriptPane;
+    if (!pane || !pane.scrollBar || typeof pane.scrollBar.getValue !== 'function') return true;
+    let v = pane.scrollBar.getValue();
+    return v == null || v > 0.92;
+  }
+  syncFromSharedLog(forceScroll) {
+    let t = String((typeof Lively !== 'undefined' && Lively && Lively.sessionLogText) || '');
+    if (!forceScroll && t === this._lastSeenLog) return;
+    this._lastSeenLog = t;
+    let pane = this.transcriptPane;
+    let content = pane && pane.contentPane;
+    if (!content) return;
+    // Prefer TranscriptTextPane.setText (no scroll-to-top); fall back to content morph.
+    if (typeof pane.setText === 'function') pane.setText(t, { force: true });
+    else {
+      content.setText(t);
+      if (pane._savedTextSnapshot !== undefined) pane._savedTextSnapshot = t;
+    }
+    // Chat-style: always follow the newest lines.
+    if (pane._scrollTranscriptBottomQuiet) pane._scrollTranscriptBottomQuiet();
+    else if (typeof pane.scrollTranscriptToBottom === 'function') pane.scrollTranscriptToBottom();
+  }
+  sessionLogStep() {
+    this.syncFromSharedLog(false);
+  }
+  remove() {
+    this.stopStepping();
+    if (typeof SessionLog !== 'undefined' && SessionLog === this) SessionLog = null;
+    return super.remove();
   }
   static new(...args) {
     return new this(...args);
@@ -11226,6 +11414,161 @@ function openTranscript() {
   panel.beTopMorph();
   return panel;
 }
+
+/** Max chars kept in the shared session log (AM-friendly). */
+let SESSION_LOG_MAX_CHARS = 120000;
+
+function sessionLogPreview(value, maxChars) {
+  let s = value == null ? '' : '' + value;
+  s = s.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+  let n = maxChars == null ? 140 : maxChars;
+  if (s.length <= n) return s;
+  return s.slice(0, n) + '…';
+}
+
+function sessionLogPanelForTextBox(box) {
+  /** Walk TextBox → TextMorph → … → SessionLogPanel. */
+  let m = box && box.morph;
+  while (m) {
+    if (m.className === 'SessionLogPanel') return m;
+    m = m.owner;
+  }
+  return null;
+}
+
+function isSessionLogPromptTextBox(box) {
+  let panel = sessionLogPanelForTextBox(box);
+  if (!panel || !panel.promptPane || !panel.promptPane.contentPane) return false;
+  return panel.promptPane.contentPane.shape === box;
+}
+
+function isSessionLogHistoryTextBox(box) {
+  let panel = sessionLogPanelForTextBox(box);
+  if (!panel || !panel.transcriptPane || !panel.transcriptPane.contentPane) return false;
+  return panel.transcriptPane.contentPane.shape === box;
+}
+
+/**
+ * Append a line to the shared session log (Lively.sessionLogText) and refresh open panels.
+ */
+function sessionLog(who, msg) {
+  let w = who == null ? '?' : '' + who;
+  let m = msg == null ? '' : '' + msg;
+  let stamp;
+  try {
+    stamp = new Date().toLocaleTimeString();
+  } catch (_e) {
+    stamp = '' + Date.now();
+  }
+  let line = '[' + stamp + '] ' + w + ': ' + m.replace(/\s+$/, '') + '\n';
+  if (typeof Lively === 'undefined' || !Lively) {
+    if (typeof console !== 'undefined' && console.log) console.log(line.replace(/\n$/, ''));
+    return line;
+  }
+  let prev = Lively.sessionLogText == null ? '' : '' + Lively.sessionLogText;
+  let next = prev + line;
+  let max = Number(SESSION_LOG_MAX_CHARS) || 120000;
+  if (next.length > max) next = next.slice(next.length - max);
+  Lively.sessionLogText = next;
+  refreshOpenSessionLogs(true);
+  return line;
+}
+
+function refreshOpenSessionLogs(forceScroll) {
+  let panel = findSessionLogPanel();
+  if (panel && typeof panel.syncFromSharedLog === 'function') panel.syncFromSharedLog(!!forceScroll);
+  if (typeof SessionLog !== 'undefined' && SessionLog && SessionLog !== panel && SessionLog.syncFromSharedLog) {
+    SessionLog.syncFromSharedLog(!!forceScroll);
+  }
+}
+
+function findSessionLogPanel() {
+  if (typeof SessionLog !== 'undefined' && SessionLog && SessionLog.world && SessionLog.world()) {
+    return SessionLog;
+  }
+  if (typeof Lively === 'undefined' || !Lively) return null;
+  let lists = [];
+  try {
+    if (Lively.submorphs) lists.push(Lively.submorphs);
+  } catch (_e) {}
+  try {
+    if (typeof Lively.ephemeralSubmorphs === 'function') lists.push(Lively.ephemeralSubmorphs());
+  } catch (_e2) {}
+  for (let li = 0; li < lists.length; li++) {
+    let list = lists[li];
+    if (!list) continue;
+    for (let i = 0; i < list.length; i++) {
+      let m = list[i];
+      if (m && m.className === 'SessionLogPanel') return m;
+    }
+  }
+  return null;
+}
+
+function openSessionLog() {
+  /**
+   * Opens (or raises) the shared session log. Persistent so both peers see
+   * the same panel / draft / Send button.
+   */
+  let existing = findSessionLogPanel();
+  if (existing) {
+    if (typeof existing.isEphemeralSubmorph === 'function' && existing.isEphemeralSubmorph()) {
+      if (typeof existing.bePersistent === 'function') existing.bePersistent();
+    }
+    if (typeof existing.beTopMorph === 'function') existing.beTopMorph();
+    if (typeof existing.ensureSessionPromptUi === 'function') existing.ensureSessionPromptUi();
+    else if (typeof existing.syncFromSharedLog === 'function') existing.syncFromSharedLog(true);
+    if (!existing.isStepping || !existing.isStepping('sessionLogStep')) {
+      existing.startStepping(400, 'sessionLogStep');
+    }
+    SessionLog = existing;
+    return existing;
+  }
+  let gb = getBounds();
+  if (!gb || !Lively) return null;
+  let m = 8;
+  let rw = Math.max(160, gb.width() / 2 - 2 * m);
+  let rh = Math.max(120, gb.height() / 2 - 2 * m);
+  let panel = new SessionLogPanel(rect(m, m, rw, rh));
+  Lively.addMorph(panel);
+  panel.beTopMorph();
+  panel.startStepping(400, 'sessionLogStep');
+  if (typeof panel.ensureSessionPromptUi === 'function') panel.ensureSessionPromptUi();
+  SessionLog = panel;
+  if (!(Lively.sessionLogText || '').length) {
+    sessionLog(
+      'system',
+      'Session log opened. Type in the bottom draft; Enter sends, Shift-Enter for newline (or click Send).',
+    );
+  } else {
+    panel.syncFromSharedLog(true);
+  }
+  return panel;
+}
+
+function sessionNote(msg) {
+  return sessionLog('Dan', msg);
+}
+
+/**
+ * Human prompt accept: append to the shared log and queue for the agent.
+ * Enter / Send / Ctrl-S in the draft pane — never evaluates the prose as code.
+ */
+function submitSessionPrompt(msg) {
+  let text = msg == null ? '' : String(msg).replace(/^\s+|\s+$/g, '');
+  if (!text) return null;
+  sessionLog('Dan', text);
+  if (typeof Lively !== 'undefined' && Lively) {
+    if (!Lively.sessionPrompts) Lively.sessionPrompts = [];
+    Lively.sessionPrompts.push({
+      at: Date.now(),
+      text: text,
+    });
+    Lively.sessionPromptLatest = text;
+  }
+  return text;
+}
+
 //  WorldMorph
 // ------------
 // Root morph: pointer routing, halos, hands, world menu.
@@ -11798,6 +12141,9 @@ class WorldMorph extends Morph {
       }),
       menuItem('Open transcript', () => {
         Transcript = openTranscript();
+      }),
+      menuItem('Open session log', () => {
+        SessionLog = openSessionLog();
       }),
       menuItem('Open console', () => {
         let p = openTranscript();
