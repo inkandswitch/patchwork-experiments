@@ -135,6 +135,12 @@ export async function joinWorld(opts: {
   installBrowserStubs();
   const mode = opts.mode || 'subduction';
   const flushMs = opts.flushMs ?? 8000;
+  // Patchwork's service worker only *shares* docs with peers whose id
+  // includes "storage-server". Using that prefix lets a live SW peer
+  // send us the doc when we're on the same Subduction mesh. Also subscribe
+  // to the default remote storage id Patchwork uses.
+  const peerId = `storage-server-pwm-${Math.random().toString(36).slice(2, 8)}`;
+  const DEFAULT_REMOTE = '3760df37-a4c6-4f66-9ecd-732039a9385d';
   const repo =
     mode === 'subduction'
       ? new Repo({
@@ -142,6 +148,8 @@ export async function joinWorld(opts: {
           // Automerge doc ops peers expect to sync (still no disk persistence here).
           isEphemeral: false,
           sharePolicy: async () => true,
+          enableRemoteHeadsGossiping: true,
+          peerId,
           // Patchwork / Ink&Switch default relay
           subductionWebsocketEndpoints: [opts.syncUrl],
         } as any)
@@ -149,7 +157,11 @@ export async function joinWorld(opts: {
           network: [new WebSocketClientAdapter(opts.syncUrl)],
           isEphemeral: false,
           sharePolicy: async () => true,
+          peerId,
         });
+  if (typeof (repo as any).subscribeToRemotes === 'function') {
+    (repo as any).subscribeToRemotes([DEFAULT_REMOTE]);
+  }
 
   const handle = await repo.find(opts.docUrl as any);
   if (typeof (handle as any).whenReady === 'function') {

@@ -12,7 +12,13 @@
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
     "pwm:hello": "npx vite-node pwm/join.ts -- --hello",
     "pwm:eval": "npx vite-node pwm/join.ts --",
-    "pwm:mirror": "npx vite-node pwm/mirrorFragment.ts --"
+    "pwm:mirror": "npx vite-node pwm/mirrorFragment.ts --",
+    "pwm:chrome": "node pwm/chromeEval.mjs",
+    "pwm:live": "node pwm/live.mjs",
+    "pwm:bridge": "npx vite-node pwm/httpBridge.ts -- --listen",
+    "pwm:rv": "node pwm/rendezvous.mjs",
+    "pwm:rv:create": "node pwm/rendezvous.mjs --create",
+    "pwm:rv:ping": "node pwm/rendezvous.mjs --push --session-ping"
   },
   "dependencies": {
     "@automerge/automerge": "^3.2.6",

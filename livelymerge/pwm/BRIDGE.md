@@ -38,6 +38,20 @@ Dan arms when he wants the agent to act; disarms otherwise.
 
 **Live join works (2026-09-02):** headless peer + `runtime.eval` on Dan’s doc via Subduction relay `wss://subduction.sync.inkandswitch.com` (`--mode subduction`). Hello TextMorph appeared on Dan’s screen; later moved live to `pt(420, 360)`. Prefer `$pwm.arm` / inbox for gated follow-on evals.
 
+### Live eval when Subduction `find` fails (2026-09-10)
+
+Dan’s world docs are **unavailable** to a headless peer, and a Patchwork tab also **cannot `find`** a headless-created rendezvous doc (both directions time out). Node↔Node create/find on Subduction still works.
+
+**Working path — live CLI** ([`live.mjs`](./live.mjs) / [`liveLib.mjs`](./liveLib.mjs)):
+
+1. Once: Chrome **View → Developer → Allow JavaScript from Apple Events**
+2. Start watch **once** per collab (one permission grant):  
+   `node pwm/live.mjs watch --doc 6NiLqYed`
+3. Agent reads `pwm/.live/session.log` / `pending.txt`; replies by writing `pwm/.live/outbox` (no Chrome permission). Watch pushes to Morphic.
+4. One-shots: `pull` / `reply --text` / `eval --code` / `open`
+
+AppleScript alone is an isolated world (no `window.runtime`). Injecting a `<script>` tag reaches the page main world.
+
 ### Transpile → install (browser path)
 
 The Morphic system browser uses `replaceMethod(className, fragment)` — LM transpiles a single class member and installs it on the live prototype. PWM mirrors that:

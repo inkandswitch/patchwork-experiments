@@ -1637,6 +1637,8 @@ function initUI() {
     $uiState.externalChangeCountSeen = n;
     if (topLevelMorph.migrateLegacyHands) topLevelMorph.migrateLegacyHands();
     topLevelMorph.repairSubmorphOwnership();
+    // Session log UI: refresh only when remotes changed (no per-panel poll).
+    if (typeof refreshOpenSessionLogs === 'function') refreshOpenSessionLogs(false);
   }
 
   function processEvents() {
@@ -8941,6 +8943,8 @@ function methodNamesInCategory() {
       Panels: [
         'browseRecentChanges',
         'browseSavedChanges',
+        'browseGlobalMethod',
+        'todoList',
         'openTranscript',
         'openSessionLog',
         'sessionLog',
@@ -10186,14 +10190,14 @@ class SessionLogPanel extends TranscriptPanel {
     }
   }
   sessionLogStep() {
+    // Kept for older live patches; sync is event-driven now (see ensureLocalSessionLogStepping).
     this.syncFromSharedLog(false);
   }
   ensureLocalSessionLogStepping() {
-    if (this.isStepping && this.isStepping('sessionLogStep')) return;
-    // Only when actually in a WorldMorph — Morph.world() returns `this` when unowned.
-    let world = this.world && this.world();
-    if (!world || world === this || !world.startSteppingSpec) return;
-    this.startStepping(400, 'sessionLogStep');
+    // No 400ms poll — that path was burning Automerge ops. Local sessionLog()
+    // already calls refreshOpenSessionLogs; remotes hitch on externalChangeCount
+    // inside maybeRepairAfterMerge. Just clear any leftover stepper from old builds.
+    if (this.isStepping && this.isStepping('sessionLogStep')) this.stopStepping('sessionLogStep');
   }
   remove() {
     this.stopStepping();
@@ -12186,7 +12190,7 @@ class WorldMorph extends Morph {
      */
     let opts = optsIfAny || {};
     let items = [
-      menuItem('ToDo list', () => automergeEditItem('ToDoList')),
+      menuItem('ToDo list', () => browseGlobalMethod('todoList')),
       menuItem('System browser', function () {
         this.world().addEphemeralMorph(new BrowserPanel());
       }),
@@ -13402,6 +13406,42 @@ function automergeEditItem(key) {
   Lively.addEphemeralMorph(panel);
   return panel;
 }
+
+/**
+ * Open a MethodPanel on a global function — same text + title as BrowserPanel
+ * "spawn this method to its own window" (globals pane).
+ */
+function browseGlobalMethod(name) {
+  let n = name == null ? '' : '' + name;
+  let text = typeof liveMethodPaneTextForSpec === 'function' ? liveMethodPaneTextForSpec(n) : null;
+  if (!text) {
+    let gfn = typeof $global !== 'undefined' ? $global[n] : null;
+    text =
+      typeof gfn === 'function'
+        ? n + ' = ' + gfn.toString()
+        : n + ' = function ' + n + '() {\n  /*\n  */\n}\n';
+  }
+  // Title form matches BrowserPanel.methodCopyTitle for globals.
+  let panel = new MethodPanel(null, text, 'globals ' + n);
+  Lively.addEphemeralMorph(panel);
+  return panel;
+}
+
+/**
+ * ToDo scratchpad as a normal global method — body is one long comment of tasks.
+ * World menu → ToDo list opens a method panel; edit and Ctrl-S to save.
+ */
+function todoList() {
+  /* Livelymerge to do items:
+  [X] fix the world menu access to the todo list
+  [ ] Provide for changeing method and class categories
+      use a pane menu in appropriate places
+  [ ] The session log top pane should be read-only
+  [ ] Should be possible to collapse the sesson log.
+  [ ] Also need an option to truncate it
+  */
+}
+
 function saveRecentChanges() {
   // saveRecentChanges();
   let changes = recentChanges.slice(-50);
@@ -13567,6 +13607,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-09-10 10:16 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-09-10 16:05 PDT';
 init()
-//written on 2026-09-10 10:16 PDT
+//written on 2026-09-10 16:05 PDT

@@ -148,10 +148,7 @@
       replaceMethod(
         'SessionLogPanel',
         `ensureLocalSessionLogStepping() {
-  if (this.isStepping && this.isStepping('sessionLogStep')) return;
-  let world = this.world && this.world();
-  if (!world || world === this || !world.startSteppingSpec) return;
-  this.startStepping(400, 'sessionLogStep');
+  if (this.isStepping && this.isStepping('sessionLogStep')) this.stopStepping('sessionLogStep');
 }`,
       );
     }

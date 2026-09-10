@@ -2,6 +2,7 @@ dist
 node_modules
 .pushwork
 .DS_Store
+pwm/.live/
 
 # Generated system checkpoints
 xdefs.js
