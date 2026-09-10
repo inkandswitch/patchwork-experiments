@@ -85,13 +85,13 @@ function setupMorphic() {
 }
 
 describe('session log', () => {
-  it('appends to Lively.sessionLogText and opens a persistent SessionLogPanel', () => {
+  it('appends to Lively.sessionLogText and opens an ephemeral SessionLogPanel', () => {
     const { rt } = setupMorphic();
     rt.eval(`sessionLog('Dan', 'jettison unused X')`);
     const className = rt.eval(`(() => { let p = openSessionLog(); return p && p.className; })()`) as string;
     expect(className).toBe('SessionLogPanel');
-    const persistent = rt.eval(`(() => { let p = findSessionLogPanel(); return p && !p.isEphemeralSubmorph(); })()`) as boolean;
-    expect(persistent).toBe(true);
+    const ephemeral = rt.eval(`(() => { let p = findSessionLogPanel(); return p && p.isEphemeralSubmorph(); })()`) as boolean;
+    expect(ephemeral).toBe(true);
   });
 
   it('Enter submits via owner-chain detection (no $ flags); Shift-Enter newlines; Ctrl-S does not eval', () => {
@@ -116,7 +116,7 @@ describe('session log', () => {
     withBreak: withBreak,
     afterSave: afterSave,
     isPrompt: isSessionLogPromptTextBox(shape),
-    hasSend: !!p.sendBtn && !!p.sendBtn.isSessionLogSendButton,
+    hasSend: !!p.sendBtn,
   };
 })()
 `) as any;
@@ -124,6 +124,6 @@ describe('session log', () => {
     expect(out.afterEnter).toBe('hello from Enter');
     expect(out.withBreak.includes('\n') || out.withBreak.includes('\r')).toBe(true);
     expect(out.afterSave).toBe('not code');
-    expect(out.hasSend).toBe(true);
+    expect(out.hasSend).toBe(false);
   });
 });
