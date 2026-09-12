@@ -98,7 +98,14 @@ export default function SiteViewerTool(handle, element) {
     }
 
     hideMessage();
-    frame.src = src;
+    // The iframe is sitting on the heads-pinned URL the worker redirected it to, and `src` is the
+    // bare one — so this is a real navigation even when the path has not changed, which is what
+    // picks up a new build. Assigning an unchanged `src` attribute is not reliably a navigation.
+    try {
+      frame.contentWindow.location.replace(src);
+    } catch {
+      frame.src = src;
+    }
   };
 
   // The iframe navigates on its own whenever someone clicks a link, so its location is the
@@ -138,14 +145,27 @@ export default function SiteViewerTool(handle, element) {
   };
   root.addEventListener("click", onClick);
 
-  // A host can move the preview by changing data-path — cakewalk-build does it when you select
-  // a different page to edit. Watch for that rather than only reading it once.
+  // Two things a host can say through the element it already owns:
+  //
+  //   data-path   where to go — cakewalk-build sets it to the page you are editing
+  //   data-build  that a build happened, so reload wherever we are
+  //
+  // The second exists because watching the document is not enough. In the patchwork-folder shape
+  // a rebuilt page changes its own folder document and the file document inside it; the repo root
+  // never moves, so `handle.on("change")` never fires and the preview sits on stale content while
+  // navigating to the page by hand shows the new copy.
   const host = element.closest("patchwork-view") ?? element;
+  let lastBuild = host.getAttribute?.("data-build") ?? null;
   const observer = new MutationObserver(() => {
     const wanted = requestedPath(element);
-    if (wanted && wanted !== subpath) go(wanted);
+    const build = host.getAttribute("data-build");
+    if (wanted && wanted !== subpath) return go(wanted);
+    if (build !== lastBuild) {
+      lastBuild = build;
+      go(subpath);
+    }
   });
-  observer.observe(host, { attributes: true, attributeFilter: ["data-path"] });
+  observer.observe(host, { attributes: true, attributeFilter: ["data-path", "data-build"] });
 
   go(subpath);
 

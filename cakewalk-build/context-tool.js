@@ -255,7 +255,7 @@ export default function CakewalkBuildContextTool(element) {
     // A failure is the one case where the log is the whole point, so do not make someone find it.
     if (status === "error") logBox.open = true;
 
-    renderPreview(Boolean(build?.lastBuiltAt));
+    renderPreview(Boolean(build?.lastBuiltAt), build?.lastBuiltAt);
   }
 
   /**
@@ -264,7 +264,7 @@ export default function CakewalkBuildContextTool(element) {
    * `data-path` is how site-viewer is told where to start — a late-bound convention, so this
    * tool works whether or not that one is installed.
    */
-  function renderPreview(hasBuilt) {
+  function renderPreview(hasBuilt, builtAt) {
     if (!siteUrl || !hasBuilt) {
       stage.innerHTML = `<p class="cwb__empty">${
         siteUrl ? "Press Build to make this repo into a site." : "Select a pushworked CakeWalk repo."
@@ -287,6 +287,10 @@ export default function CakewalkBuildContextTool(element) {
       stage.append(view);
     }
     if (view.getAttribute("data-path") !== path) view.setAttribute("data-path", path);
+    // Tell the preview a build happened. Watching the repo document is not enough for it: in the
+    // patchwork-folder shape a rebuilt page changes its own folder document, and the root — which
+    // is what the preview is mounted on — never moves.
+    if (builtAt && view.getAttribute("data-build") !== builtAt) view.setAttribute("data-build", builtAt);
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────────────────────

@@ -326,6 +326,36 @@
       out.steps.push({ step: "viewer: nested page", href, ...look(page) });
     }
 
+    // ---- the reported bug: a rebuild while the preview is open ---------------------------
+    // Editing a page and rebuilding used to leave the preview on the old copy, while navigating
+    // to the page by hand showed the new one. In the patchwork-folder shape a rebuilt page
+    // changes its own folder document and the root never moves, so the preview — mounted on the
+    // root — was never told anything had happened.
+    const secondEdit = "A second paragraph, added while the preview was open.";
+    essayHandle.change((d) => { d.content = String(d.content) + `\n\n${secondEdit}\n` });
+    const builtBefore = buildEntry()?.lastBuiltAt;
+    host.querySelector('[data-act="build"]').click();
+    for (let i = 0; i < 400; i++) {
+      if (buildEntry()?.status === "ok" && buildEntry()?.lastBuiltAt !== builtBefore) break;
+      await wait(50);
+    }
+
+    const stale = viewerHost.querySelector(".site-viewer__frame")?.contentDocument?.body?.textContent ?? "";
+    // The host tells the viewer a build happened — the channel cakewalk-build uses.
+    viewerHost.querySelector("div")?.setAttribute?.("data-build", buildEntry().lastBuiltAt);
+    viewerHost.setAttribute("data-build", buildEntry().lastBuiltAt);
+    let refreshed = "";
+    for (let i = 0; i < 60; i++) {
+      refreshed = viewerHost.querySelector(".site-viewer__frame")?.contentDocument?.body?.textContent ?? "";
+      if (refreshed.includes(secondEdit)) break;
+      await wait(250);
+    }
+    out.steps.push({
+      step: "rebuilding while the preview is open",
+      staleBeforeTheSignal: !stale.includes(secondEdit),
+      refreshedAfterTheSignal: refreshed.includes(secondEdit),
+    });
+
     viewerCleanup();
     cleanup();
     host.remove();

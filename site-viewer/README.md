@@ -39,11 +39,26 @@ site yet gains one the moment someone builds, so the viewer re-looks when the do
 
 ## A host can say where to start
 
-`data-path` on the `<patchwork-view>` that embeds this tool names the page to open, and changing
-it moves the preview. cakewalk-build sets it to the page for the file you are editing.
+Two attributes on the `<patchwork-view>` that embeds this tool:
 
-It is an attribute rather than a shared module on purpose: neither tool imports the other, and
-when nobody sets it the viewer just opens the site's home page.
+| | |
+| --- | --- |
+| `data-path` | the page to open; changing it moves the preview |
+| `data-build` | that a build happened; changing it reloads wherever the preview is |
+
+Attributes rather than a shared module on purpose: neither tool imports the other, and when
+nobody sets them the viewer just opens the site's home page and reloads on document changes.
+
+`data-build` exists because watching the document is not enough. In the **patchwork-folder**
+shape, rebuilding a page changes that page's own folder document and the file document inside it
+— the repo root, which is what the preview is mounted on, never moves. So `handle.on("change")`
+never fires, and the preview sits on the old copy while navigating to the page by hand shows the
+new one. That was a real bug, reported from use; the probe reproduces it.
+
+Reloading also has to be a real navigation. The iframe is sitting on the heads-pinned URL the
+service worker redirected it to, and the viewer navigates to the *bare* URL — so
+`contentWindow.location.replace()` moves it and picks up the new heads. Assigning an unchanged
+`src` attribute is not reliably a navigation at all.
 
 ## Two things about serving a site out of a document
 
