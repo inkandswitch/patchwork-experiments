@@ -77,33 +77,47 @@ export function requestedPath(element) {
 }
 
 /**
- * Where the site lives inside this document, as a path prefix ("" when it is at the root).
+ * Where the site lives, as something addressable.
  *
  * A built site has index.html at its root. A pushworked *repo* does not — its site is under
- * `public/`, because that is where `site build` and the Patchwork builder both write it. Both
- * are the same automerge type, so the only way to tell is to look.
+ * `public/`, because that is where `site build` and the Patchwork builder both write it. Both are
+ * the same automerge type, so the only way to tell is to look.
  *
- * This works at all because the build emits relative URLs: a page served from
- * `/<url>/public/index.html` resolves `../static/base.css` to `/<url>/public/static/base.css`.
- * Mounting a site at a depth would be impossible if its paths were root-relative.
+ * Returns `{url, prefix}`: the document to mount, and any path prefix inside it.
+ *
+ * The distinction matters more than it looks. In the `patchwork-folder` shape, `public/` is its
+ * own document, so the site can be mounted *there* — and a URL pinned to that document's heads
+ * changes every time a build changes anything. Mounted at the repo root instead, the pinned URL
+ * never moves (rebuilding a page does not touch the root), so the service worker keeps serving
+ * what it cached under it and the preview is stale forever. Measured, not guessed: the bare repo
+ * URL returned a stale page while the same content read through the file document was current.
+ *
+ * In `vfs` there is no separate document — every path is a key on the root — but the root changes
+ * on every build, so mounting there is already correct.
  *
  * Returns undefined when there is no index.html anywhere, which is how the viewer knows to show
  * the document's contents instead of a blank frame.
  */
-export function siteRootIn(doc) {
+export function findSite(doc, docUrl) {
   if (!doc || typeof doc !== "object") return undefined;
+  const here = (prefix) => ({ url: docUrl, prefix });
 
-  const paths = Array.isArray(doc.docs)
-    ? doc.docs.map((d) => d?.name).filter(Boolean)
-    : Object.keys(doc).filter((k) => !k.startsWith("@") && !NOT_A_FILE.has(k));
+  if (Array.isArray(doc.docs)) {
+    const named = (n) => doc.docs.find((l) => l?.name === n);
+    if (named("index.html")) return here("");
+    for (const dir of ["public", "dist", "_site", "build"]) {
+      const link = named(dir);
+      // Its own document: mount there, so its heads address the site.
+      if (link?.url) return { url: String(link.url).split("#")[0], prefix: "" };
+    }
+    return undefined;
+  }
 
-  if (paths.includes("index.html")) return "";
-
-  // A repo keeps its site where the CLI put it. Prefer that over guessing.
-  const named = ["public", "dist", "_site", "build"].find((dir) =>
-    paths.some((p) => p === dir || p.startsWith(dir + "/"))
-  );
-  if (named && (Array.isArray(doc.docs) || paths.includes(`${named}/index.html`))) return named;
+  const paths = Object.keys(doc).filter((k) => !k.startsWith("@") && !NOT_A_FILE.has(k));
+  if (paths.includes("index.html")) return here("");
+  for (const dir of ["public", "dist", "_site", "build"]) {
+    if (paths.includes(`${dir}/index.html`)) return here(dir);
+  }
 
   // Otherwise the shallowest index.html wins, if there is exactly one at that depth.
   const indexes = paths.filter((p) => p.endsWith("/index.html"));
@@ -111,6 +125,5 @@ export function siteRootIn(doc) {
   const depth = (p) => p.split("/").length;
   const shallowest = Math.min(...indexes.map(depth));
   const candidates = indexes.filter((p) => depth(p) === shallowest);
-  if (candidates.length !== 1) return undefined;
-  return candidates[0].slice(0, -"/index.html".length);
+  return candidates.length === 1 ? here(candidates[0].slice(0, -"/index.html".length)) : undefined;
 }

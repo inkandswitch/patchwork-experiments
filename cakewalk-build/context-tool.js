@@ -1,6 +1,6 @@
 import { ImmutableString } from "@automerge/automerge";
 import { collectSources, outputEntries, repoTitle } from "./build.js";
-import { OUTPUT_PREFIX, writeSiteInto } from "./site-doc.js";
+import { writeSiteInto } from "./site-doc.js";
 import { previewPathFor } from "./preview.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
@@ -78,6 +78,8 @@ export default function CakewalkBuildContextTool(element) {
   let builtPaths = new Set();
 
   let storage;
+  /** Has the site we are pointed at been built since we picked it up? */
+  let adopted = false;
   let building = false;
   let dirty = false;
   let watched = new Set(); // handles we listen to for changes
@@ -103,6 +105,23 @@ export default function CakewalkBuildContextTool(element) {
     for (const handle of watched) handle.off("change", rebuildSoon);
     watched = new Set(handles);
     for (const handle of watched) handle.on("change", rebuildSoon);
+  }
+
+  /**
+   * Build the site we have just adopted.
+   *
+   * Not an optimisation — it is what arms the watching. Every source document is subscribed to
+   * as part of a build, so a tool that mounts without building never hears about an edit, and
+   * nothing happens until someone presses the button. Building on adoption makes "pointed at a
+   * site with auto-build on" mean "kept built", which is the only rule worth having.
+   *
+   * An unchanged rebuild writes nothing, so the cost of being wrong here is one compile.
+   */
+  function ensureBuilt() {
+    if (adopted || !siteUrl || !storage) return;
+    if (!autoBuildFor(entry())) return;
+    adopted = true;
+    build();
   }
 
   // ── building ───────────────────────────────────────────────────────────────────────────────
@@ -219,9 +238,11 @@ export default function CakewalkBuildContextTool(element) {
           sourceOfDoc = new Map();
           builtPaths = new Set();
           watchAll([]);
+          adopted = false;
         } else {
           siteTitle = repoTitle(handle.doc());
         }
+        ensureBuilt();
       }
       // Anything else leaves the pinned site alone; render() works out whether it is a page
       // of that site and moves the preview there.
@@ -280,8 +301,9 @@ export default function CakewalkBuildContextTool(element) {
     }
 
     const sourcePath = selectedUrl ? sourceOfDoc.get(selectedUrl) : undefined;
-    const page = previewPathFor(sourcePath, builtPaths) ?? "index.html";
-    const path = `${OUTPUT_PREFIX}/${page}`;
+    // Relative to the site's own root. Where that site lives — its own document in the folder
+    // shape, a path prefix in vfs — is site-viewer's business, not ours.
+    const path = previewPathFor(sourcePath, builtPaths) ?? "index.html";
 
     // The repo document IS the site now — the built pages live inside it under public/ — so the
     // preview points at the repo and says which page to open.
@@ -313,6 +335,7 @@ export default function CakewalkBuildContextTool(element) {
     storage = await repo.find(url);
     storage.on("change", onStorageChange);
     render();
+    ensureBuilt();
   });
 
   const onClick = (event) => {

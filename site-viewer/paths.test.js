@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { requestedPath, servedAt, siteRootIn, splitServed, topLevelNames, withoutHeads } from "./paths.js";
+import { findSite, requestedPath, servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
 const URL_ = "automerge:wZkgNq3hJMwU78JfwPDojeZE3At";
 const PINNED = `${URL_}#2PGRvDySwEtmX7f68hTwXb9jta9Y3F1jdj8HrNpaGUAPVLeNfw`;
@@ -106,44 +106,50 @@ describe("requestedPath", () => {
   });
 });
 
-describe("siteRootIn", () => {
+describe("findSite", () => {
+  const REPO = "automerge:repo";
   const vfsRepo = (...paths) => ({
     "@patchwork": { type: "directory" },
     lastSyncAt: 1,
     ...Object.fromEntries(paths.map((p, i) => [p, `automerge:f${i}`])),
   });
-  const folderRepo = (...names) => ({ docs: names.map((name) => ({ name, url: "automerge:x" })) });
+  const folderRepo = (...names) => ({ docs: names.map((name, i) => ({ name, url: `automerge:${name}` })) });
 
-  test("a built site has its index at the root", () => {
-    expect(siteRootIn(vfsRepo("index.html", "alifib/index.html", "static/base.css"))).toBe("");
+  test("a built site is the document it was handed", () => {
+    expect(findSite(vfsRepo("index.html", "alifib/index.html"), REPO)).toEqual({ url: REPO, prefix: "" });
+    expect(findSite(folderRepo("index.html", "static"), REPO)).toEqual({ url: REPO, prefix: "" });
   });
 
-  // A pushworked repo keeps its site where the CLI writes it. This is the case that sent the
-  // viewer to "No index.html in this document" on every repo.
-  test("a repo's site is under public/", () => {
-    expect(siteRootIn(vfsRepo("content/index.md", "template/essay.html", "public/index.html", "public/alifib/index.html"))).toBe("public");
+  // The case the whole design turns on. In the folder shape public/ is its own document, so the
+  // site is mounted THERE — a URL pinned to that document's heads moves whenever a build changes
+  // anything. Mounted at the repo root instead, the pinned URL never moves (rebuilding a page
+  // does not touch the root) and the service worker serves what it cached under it forever.
+  test("a folder repo's site is its public document, not the repo", () => {
+    expect(findSite(folderRepo("content", "template", "public"), REPO)).toEqual({ url: "automerge:public", prefix: "" });
   });
 
-  test("a folder repo's site is found the same way", () => {
-    expect(siteRootIn(folderRepo("content", "template", "public"))).toBe("public");
-    expect(siteRootIn(folderRepo("index.html", "static"))).toBe("");
+  // vfs has no separate document — but its root changes on every build, so mounting there is
+  // already correct.
+  test("a vfs repo's site is a prefix on the repo itself", () => {
+    expect(findSite(vfsRepo("content/index.md", "template/e.html", "public/index.html"), REPO))
+      .toEqual({ url: REPO, prefix: "public" });
   });
 
   test("a repo that has not been built yet has no site", () => {
-    expect(siteRootIn(vfsRepo("content/index.md", "template/essay.html", "system/io.ts"))).toBe(undefined);
+    expect(findSite(vfsRepo("content/index.md", "template/e.html"), REPO)).toBe(undefined);
+    expect(findSite(folderRepo("content", "template"), REPO)).toBe(undefined);
   });
 
   test("an unambiguous single index one level down is found", () => {
-    expect(siteRootIn(vfsRepo("site/index.html", "site/a.css"))).toBe("site");
+    expect(findSite(vfsRepo("site/index.html", "site/a.css"), REPO)).toEqual({ url: REPO, prefix: "site" });
   });
 
   test("two equally shallow candidates are ambiguous, so neither is chosen", () => {
-    // Guessing here would serve one of two sites with no way to tell which.
-    expect(siteRootIn(vfsRepo("one/index.html", "two/index.html"))).toBe(undefined);
+    expect(findSite(vfsRepo("one/index.html", "two/index.html"), REPO)).toBe(undefined);
   });
 
   test("nothing sensible in, nothing out", () => {
-    expect(siteRootIn(null)).toBe(undefined);
-    expect(siteRootIn({})).toBe(undefined);
+    expect(findSite(null, REPO)).toBe(undefined);
+    expect(findSite({}, REPO)).toBe(undefined);
   });
 });
