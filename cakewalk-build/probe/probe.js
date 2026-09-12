@@ -168,6 +168,17 @@
       if (buildEntry()?.status === "ok" && buildEntry()?.lastBuiltAt !== doc.lastBuiltAt) break;
       await wait(250);
     }
+    // A third identical build, to separate a warm re-read from the first one that had to load
+    // every document. This is the number that decides whether a live loop is affordable.
+    const warmAt = Date.now();
+    host.querySelector('[data-act="build"]').click();
+    const wasBuiltAt = buildEntry()?.lastBuiltAt;
+    for (let i = 0; i < 400; i++) {
+      if (buildEntry()?.lastBuiltAt !== wasBuiltAt && buildEntry()?.status === "ok") break;
+      await wait(50);
+    }
+    out.steps.push({ step: "a warm rebuild, end to end", wallMs: Date.now() - warmAt, log: buildEntry()?.log });
+
     out.steps.push({
       step: "rebuild with nothing changed",
       log: buildEntry()?.log,

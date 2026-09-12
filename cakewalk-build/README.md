@@ -199,6 +199,30 @@ not care. The folder path passed every test and failed the moment it ran in a br
 models the restriction now — a WeakSet of everything already in the document, and a `set` trap
 that throws as Automerge does — so the tests fail first next time.
 
+## What a build costs
+
+The log reports three phases, because "the build is slow" is three different problems. Measured
+on the ARIA notebook (65 source files, 45 built) in a real browser:
+
+```
+warm rebuild, end to end: 60ms
+
+  read 65 files from the repo in 3ms   (9 pages under content/)
+  built 45 files in 50ms
+  nothing changed, wrote nothing in 1ms
+```
+
+**Reading the repo is nearly free once the documents are resolved** — `repo.find` is a memory hit
+and `doc()` on a materialised document costs nothing, so there is no point caching what Automerge
+already cached. A first build is different: it has to load every document, and that is where the
+seconds go.
+
+The compile dominates a warm rebuild, which is the one part that genuinely has to happen: a page
+cannot be built alone, because indexes list their children and the feed carries each post's prose.
+Editing one page costs `read 1ms · compile 28ms · write 4ms`.
+
+That leaves a 600ms debounce with an order of magnitude of headroom.
+
 ## Testing it
 
 `pnpm test` covers the parts with no browser in them: the build logic, both providers, and what

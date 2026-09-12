@@ -115,7 +115,11 @@ export default function CakewalkBuildContextTool(element) {
     render();
 
     try {
+      // Timed in three phases, because "the build is slow" is three different problems: reading
+      // the repo out of Automerge, compiling it, and writing the result back.
+      const readAt = performance.now();
       const { sources, origins, index, shape } = await collectSources(repo, url);
+      const readMs = performance.now() - readAt;
       sourceOfDoc = index;
 
       // Watch every file in the site plus its root. A content edit changes that file's own
@@ -150,6 +154,7 @@ export default function CakewalkBuildContextTool(element) {
 
       const entries = outputEntries(files, origins, { immutable: (text) => new ImmutableString(text) });
       builtPaths = new Set(Object.keys(entries));
+      const writeAt = performance.now();
 
       // ── writing the site back into the repo ─────────────────────────────────────────────
       // Under public/, where `site build` writes it. pushwork syncs the repo both ways, so this
@@ -158,6 +163,7 @@ export default function CakewalkBuildContextTool(element) {
       // `.pushworkattributes` marks public/** as an artifact, so the files are stored as opaque
       // immutable content rather than as text CRDTs nobody will ever co-edit.
       const counts = await writeSiteInto(repo, url, { entries, shape });
+      const writeMs = performance.now() - writeAt;
       const touched = counts.created + counts.replaced + counts.removed;
       const summary = touched
         ? `wrote ${counts.created} new, ${counts.replaced} replaced, ${counts.removed} removed` +
@@ -169,9 +175,9 @@ export default function CakewalkBuildContextTool(element) {
         status: "ok",
         lastBuiltAt: new Date().toISOString(),
         log: [
-          `read ${sourceCount} files from the repo (${pageCount} pages under content/)`,
+          `read ${sourceCount} files from the repo in ${Math.round(readMs)}ms (${pageCount} pages under content/)`,
           `built ${Object.keys(files).length} files in ${Math.round(ms)}ms`,
-          summary,
+          `${summary} in ${Math.round(writeMs)}ms`,
           ...log,
         ],
       });
