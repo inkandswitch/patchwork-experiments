@@ -113,59 +113,91 @@ then **checks its answer against what was actually built**. A page with `clean: 
 where it really landed, and a draft that was not published falls back to the home page rather than
 pointing the preview at a resolver error.
 
-## Assets are referenced, not copied
+## The site goes where the CLI puts it
 
-## Assets are referenced, not copied
+Built output is written into **the repo document, under `public/`** — the same directory
+`site build` writes, so a sync lands it in everyone's checkout as the same bytes, ready for
+`wrangler deploy`. There is no separate output document.
 
-Most of a built site is bytes the build never looked at — images, video, fonts — which came in as
-source documents and were hardlinked straight through. Those go into the output as *their source
-document's URL* rather than as a second copy:
+That matters because a pushworked repo already contains `public/` from whenever someone last ran
+the CLI. An output document of its own meant two built sites with only one of them current, and
+the stale one is what you got when you opened the repo. Now there is one.
 
-```js
-d["alifib/img/01-interface-overview.png"] = "automerge:2zrTHnzQPUGfdMizPQgop9kt9kYE"
+The repo needs a `.pushworkattributes`:
+
+```
+dist/**      artifact
+public/**    artifact
 ```
 
-The resolver behind the service worker follows an Automerge URL wherever it expects a file, so it
-serves identically, with the right content type. For the ARIA notebook that is 13 of 45 files;
-for the Ink & Switch website it is **301 of 603**, whose assets are 150MB against 2.5MB of prose.
+`artifact` stores a file as opaque immutable content rather than as a text CRDT — pushwork's
+`applyFileEntry` reaches for `updateText` only when both sides are plain strings. Nobody edits
+build output and nobody wants its history, so that is exactly right for it. **`dist` is listed
+explicitly because defining any rule in that file replaces pushwork's default artifact directory
+rather than adding to it** — omit it and the build bundle silently stops being an artifact.
+
+An unchanged file is not written at all, which is pushwork's behaviour too. A **changed** file is
+where this deliberately diverges: pushwork mutates the document in place to keep its URL stable,
+and build output instead gets a **new document, with the old one deleted**.
+
+The reason is that a mutated document keeps every version it has ever had. Measured on one 27kb
+page of this site:
+
+| versions | saved | load |
+| --- | --- | --- |
+| 1 | 9kb | 6.1ms |
+| 500 | 112kb | 41.0ms |
+| 2000 | 416kb | 157.2ms |
+
+2000 versions is about 33 minutes of building at 1Hz. Memory after load stays flat — old versions
+are never materialised — but the bytes are stored, synced, and scanned on every cold load, and
+none of it is ever reclaimed. Replacing keeps a built page at one version forever.
+
+The race pushwork avoids by not doing this is real: a folder can reference a new URL before its
+bytes reach the server. It is recoverable for build output in a way it is not for source files —
+the next build fixes it, and nothing depends on an artifact being readable the instant its URL
+appears.
+
+**Deleting an orphan is only safe after checking nothing still points at it.** A passed-through
+asset shares its document with the source it came from, so a path that was passed through and is
+now generated would otherwise take somebody's source file with it. vfs can check cheaply, because
+every path is a key on one document. The folder shape cannot without walking the whole repo, so
+orphans are left alone there.
+
+A one-page edit reports `wrote 0 new, 2 replaced, 0 removed (30 untouched, 13 shared with the
+source, 2 old documents deleted)` — the page, and `index.xml`, because the feed carries each
+post's prose.
+
+Note that `repo.delete` is local: peers and the sync server keep their copies, so this bounds
+your storage rather than theirs.
+
+## Assets are the same document, not a copy
+
+Most of a built site is bytes the build never looked at — images, video, fonts — hardlinked
+straight through. In the repo those become **a second key pointing at the source document**:
+
+```js
+root["content/alifib/img/01.png"] = "automerge:2xoB…"
+root["public/alifib/img/01.png"] = "automerge:2xoB…"   // the same document
+```
+
+One document, two names, which is what the CLI's hardlink amounts to. For the ARIA notebook that
+is 13 of 45 files; for the Ink & Switch website, whose assets are 150MB against 2.5MB of prose, it
+is the difference between a document that works and one that does not.
 
 The match is by object identity rather than by comparing bytes — an in-memory build aliases a
 hardlinked file instead of copying it, so the array that comes out is the one that went in.
 
-## It writes only what moved, and keeps no history
+## A lesson the fake had to learn
 
-Three outcomes, decided by `planWrite()` — pure, so the decision is testable without a repo:
+Automerge refuses an assignment whose value is an object already inside the document —
+*"Cannot create a reference to an existing document object"*. Preserving the subfolder links the
+obvious way (`d.docs = [...d.docs, ...links]`) hits it.
 
-| | when | what it writes |
-| --- | --- | --- |
-| **skip** | nothing changed | the document is not touched at all |
-| **update** | something changed | only the entries that moved |
-| **replace** | no document yet, or `COMPACT_EVERY` builds since the last fresh one | the whole site, history discarded |
-
-A one-page edit writes **two entries** — the page, and `index.xml`, because the feed carries each
-post's prose. Not the other 43.
-
-Writing only what moved is the cheap thing, but every write leaves a version behind in the
-document's history, and nobody wants the built site's history: it is regenerated from source in
-under 100ms. So the document is replaced outright every 50 builds, which bounds the history
-without paying a full rewrite on every keystroke. Measured on this site's real output:
-
-| | per rebuild |
-| --- | --- |
-| in place | ~0.3kb of history |
-| fresh document | ~205kb written and synced |
-
-A no-op build never counts toward compaction, so an idle tab with auto-rebuild on does not churn
-its way into a replacement.
-
-Generated text goes in as an **`ImmutableString`** rather than a plain string. A plain string in
-Automerge is a text CRDT — `getObjectId` returns an object id for one — which is machinery for
-collaborative editing that build output has no use for. pushwork draws the same line for its
-artifact directories.
-
-Because the document is updated in place, its URL holds still across an edit. That matters for
-the live loop: the preview does not have to re-resolve a new URL, and its iframe does not reload,
-on every keystroke.
+The unit tests did not catch that, because the fake repo was plain objects and plain objects do
+not care. The folder path passed every test and failed the moment it ran in a browser. The fake
+models the restriction now — a WeakSet of everything already in the document, and a `set` trap
+that throws as Automerge does — so the tests fail first next time.
 
 ## Testing it
 
@@ -197,13 +229,13 @@ ARIA SGAI Notebook — 66 files, 84 documents — reports:
 | nothing selected | "Nothing selected", no Build offered |
 | a document that is not a repo | "Not a CakeWalk repo", no Build offered |
 | the repo selected (vfs) | "aria-sgai-notebook (vfs)", Build offered and enabled |
-| build | 45 files in ~60ms, `wrote a new document with 45 files` (the first one) |
+| build | 45 files in ~60ms, `wrote 32 new … 13 shared with the source` |
 | the patchwork-folder shape | builds the same way |
-| rebuild, nothing changed | `nothing changed, kept the previous document`, same URL |
-| editing a page | `wrote 2 changed, removed 0` — the page and the feed, in the same document |
-| selecting a content file | stays pinned, preview moves to `alifib/index.html` |
+| rebuild, nothing changed | `nothing changed, wrote nothing` |
+| editing a page | `wrote 0 new, 2 replaced, 0 removed (30 untouched, 2 deleted)` |
+| selecting a content file | stays pinned, preview moves to `public/alifib/index.html` |
 | selecting anything else | stays pinned |
-| output document | 45 files: 32 stored, 13 referenced from source |
+| the repo | 45 files under `public/`, 13 sharing a document with the source, sources untouched |
 | rendered | home 223 css rules; `/alifib/` 461 rules, 6/6 images |
 
 The images are worth a second look: all six are among the referenced files, so a page loading

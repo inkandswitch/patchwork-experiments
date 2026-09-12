@@ -48,9 +48,10 @@ export const repoTitle = (doc) => doc?.["@patchwork"]?.title ?? doc?.title ?? un
 /**
  * Read a repo out of Automerge into a flat map of path → file.
  *
- * Returns the sources, the origin of each binary file (see outputEntries), and an index from
- * file document URL back to its path — which is what lets a tool work out, given the document
- * someone is editing, which page of the site it becomes.
+ * Returns the sources, the origin of each binary file (see outputEntries), an index from file
+ * document URL back to its path — which is what lets a tool work out, given the document someone
+ * is editing, which page of the site it becomes — and which shape the repo uses, since writing
+ * the built site back into it has to match.
  */
 export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
   const root = (await repo.find(rootUrl)).doc();
@@ -116,7 +117,7 @@ export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
     );
   }
 
-  return { sources, origins, index };
+  return { sources, origins, index, shape };
 }
 
 /** A short description of what a document looks like, for an error message. */
@@ -127,14 +128,14 @@ function describeShape(doc) {
 }
 
 /**
- * What to put in the output document for each built file.
+ * What to put in the repo's `public/` for each built file — see site-doc.js, which writes it.
  *
  * A built site is mostly bytes the build never looked at — images, video, fonts — which arrived
- * as source documents and were hardlinked through untouched. Those go in as their source
- * document's URL rather than as a second copy of the bytes: the resolver behind the service
- * worker follows an automerge URL wherever a file is expected, so it serves identically. For a
- * repo whose assets outweigh its prose (the Ink & Switch website is 150MB of them), that is the
- * difference between a document that works and one that does not.
+ * as source documents and were hardlinked through untouched. Those stay as their source
+ * document's URL rather than becoming a second copy of the bytes, so `public/x.png` and
+ * `content/x.png` end up as two names for one document — which is what the CLI's hardlink
+ * amounts to. For a repo whose assets outweigh its prose (the Ink & Switch website is 150MB of
+ * them), that is the difference between a repo that works and one that does not.
  *
  * The link is by object identity, not by comparing bytes: the in-memory build aliases a
  * hardlinked file rather than copying it, so the array that comes out is the one that went in.
@@ -155,74 +156,4 @@ export function outputEntries(files, origins, { immutable = (text) => text } = {
     entries[path] = { content, mimeType: mimeTypeFor(path) };
   }
   return entries;
-}
-
-/**
- * The changes to turn `existing` into `entries` — what to write and what to drop.
- *
- * Writing every file on every build would work, and would put a full copy of the site into the
- * document's history each time. Only what moved is written.
- */
-export function changesFor(existing, entries) {
-  const set = {};
-  for (const [path, entry] of Object.entries(entries)) {
-    if (!same(existing?.[path], entry)) set[path] = entry;
-  }
-  const remove = Object.keys(existing ?? {}).filter(
-    (path) => path !== "@patchwork" && !(path in entries)
-  );
-  return { set, remove };
-}
-
-const same = (a, b) => {
-  if (typeof b === "string") return a === b; // a reference to a source document
-  if (!a || typeof a !== "object" || typeof b !== "object") return false;
-  if (a.mimeType !== b.mimeType) return false;
-  return sameContent(a.content, b.content);
-};
-
-// Text may arrive as a string on one side and an ImmutableString on the other — they read the
-// same and should compare the same, so that switching between them is not a whole-site rewrite
-// on every build.
-const sameContent = (a, b) => {
-  const aBytes = a instanceof Uint8Array;
-  const bBytes = b instanceof Uint8Array;
-  if (aBytes !== bBytes) return false;
-  if (!aBytes) return String(a) === String(b);
-  if (a.byteLength !== b.byteLength) return false;
-  for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false;
-  return true;
-};
-
-/**
- * How many builds may write into one output document before it is replaced with a fresh one.
- *
- * Writing only what changed is the cheap thing to do — a one-page edit is one or two entries,
- * not a whole site — but every such write leaves a version behind in the document's history,
- * and nobody wants the built site's history. Replacing the document occasionally bounds that
- * without paying a full rewrite on every keystroke.
- *
- * Measured on the ARIA notebook: mutating in place costs ~0.3kb of history per rebuild, a fresh
- * document ~205kb written. At 50, the accumulated history stays well under a tenth of the
- * document, and a full rewrite happens about once per editing session rather than continuously.
- */
-export const COMPACT_EVERY = 50;
-
-/**
- * What the output document needs, given what was built and what it already holds.
- *
- *   skip    — nothing changed; do not touch the document at all
- *   update  — write only the entries that moved, into the document that exists
- *   replace — start a fresh document from the finished state, discarding the old history
- *
- * Pure, so the decision can be tested without a repo.
- */
-export function planWrite({ existing, entries, buildsSinceFresh = 0, compactEvery = COMPACT_EVERY }) {
-  if (!existing) return { action: "replace", set: entries, remove: [] };
-
-  const { set, remove } = changesFor(existing, entries);
-  if (!Object.keys(set).length && !remove.length) return { action: "skip", set: {}, remove: [] };
-
-  if (buildsSinceFresh >= compactEvery) return { action: "replace", set: entries, remove: [] };
-  return { action: "update", set, remove };
 }

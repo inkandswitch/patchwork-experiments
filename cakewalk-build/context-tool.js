@@ -1,5 +1,6 @@
 import { ImmutableString } from "@automerge/automerge";
-import { collectSources, outputEntries, planWrite, repoTitle } from "./build.js";
+import { collectSources, outputEntries, repoTitle } from "./build.js";
+import { OUTPUT_PREFIX, writeSiteInto } from "./site-doc.js";
 import { previewPathFor } from "./preview.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
@@ -114,7 +115,7 @@ export default function CakewalkBuildContextTool(element) {
     render();
 
     try {
-      const { sources, origins, index } = await collectSources(repo, url);
+      const { sources, origins, index, shape } = await collectSources(repo, url);
       sourceOfDoc = index;
 
       // Watch every file in the site plus its root. A content edit changes that file's own
@@ -150,46 +151,19 @@ export default function CakewalkBuildContextTool(element) {
       const entries = outputEntries(files, origins, { immutable: (text) => new ImmutableString(text) });
       builtPaths = new Set(Object.keys(entries));
 
-      // ── writing only what moved ─────────────────────────────────────────────────────────
-      // A one-page edit changes one page and the feed, so that is what gets written — not all
-      // 45 files. Every such write does leave a version behind in the document's history, and
-      // nobody wants the built site's history, so the document is replaced outright every
-      // COMPACT_EVERY builds. That bounds the history without paying a full rewrite each time.
-      const record0 = buildFor(storage.doc(), url) ?? {};
-      const previousUrl = record0.outputUrl;
-      let existing;
-      if (previousUrl) {
-        try {
-          existing = (await repo.find(previousUrl)).doc();
-        } catch {
-          existing = undefined; // gone or unreachable: start again
-        }
-      }
-
-      const plan = planWrite({ existing, entries, buildsSinceFresh: record0.buildsSinceFresh ?? 0 });
-      let summary;
-
-      if (plan.action === "skip") {
-        summary = "nothing changed, left the document alone";
-      } else if (plan.action === "replace") {
-        const created = await repo.create2({ "@patchwork": { type: "directory" }, ...plan.set });
-        recordBuild(storage, url, { outputUrl: created.url, buildsSinceFresh: 0 });
-        summary = previousUrl
-          ? `replaced the document (${Object.keys(plan.set).length} files, history discarded)`
-          : `wrote a new document with ${Object.keys(plan.set).length} files`;
-        // Only the one we replaced — anything else may be someone's open preview.
-        if (previousUrl) {
-          try { repo.delete(previousUrl) } catch {}
-        }
-      } else {
-        const output = await repo.find(previousUrl);
-        output.change((d) => {
-          for (const [path, value] of Object.entries(plan.set)) d[path] = value;
-          for (const path of plan.remove) delete d[path];
-        });
-        recordBuild(storage, url, { buildsSinceFresh: (record0.buildsSinceFresh ?? 0) + 1 });
-        summary = `wrote ${Object.keys(plan.set).length} changed, removed ${plan.remove.length}`;
-      }
+      // ── writing the site back into the repo ─────────────────────────────────────────────
+      // Under public/, where `site build` writes it. pushwork syncs the repo both ways, so this
+      // lands in everyone's checkout as the same bytes the CLI would have produced — one built
+      // site rather than a stale copy on disk and a fresh one in a document of its own.
+      // `.pushworkattributes` marks public/** as an artifact, so the files are stored as opaque
+      // immutable content rather than as text CRDTs nobody will ever co-edit.
+      const counts = await writeSiteInto(repo, url, { entries, shape });
+      const touched = counts.created + counts.replaced + counts.removed;
+      const summary = touched
+        ? `wrote ${counts.created} new, ${counts.replaced} replaced, ${counts.removed} removed` +
+          ` (${counts.unchanged} untouched, ${counts.referenced} shared with the source,` +
+          ` ${counts.deleted} old documents deleted)`
+        : `nothing changed, wrote nothing`;
 
       recordBuild(storage, url, {
         status: "ok",
@@ -275,7 +249,7 @@ export default function CakewalkBuildContextTool(element) {
     // A failure is the one case where the log is the whole point, so do not make someone find it.
     if (status === "error") logBox.open = true;
 
-    renderPreview(build?.outputUrl);
+    renderPreview(Boolean(build?.lastBuiltAt));
   }
 
   /**
@@ -284,8 +258,8 @@ export default function CakewalkBuildContextTool(element) {
    * `data-path` is how site-viewer is told where to start — a late-bound convention, so this
    * tool works whether or not that one is installed.
    */
-  function renderPreview(outputUrl) {
-    if (!outputUrl) {
+  function renderPreview(hasBuilt) {
+    if (!siteUrl || !hasBuilt) {
       stage.innerHTML = `<p class="cwb__empty">${
         siteUrl ? "Press Build to make this repo into a site." : "Select a pushworked CakeWalk repo."
       }</p>`;
@@ -293,17 +267,20 @@ export default function CakewalkBuildContextTool(element) {
     }
 
     const sourcePath = selectedUrl ? sourceOfDoc.get(selectedUrl) : undefined;
-    const path = previewPathFor(sourcePath, builtPaths);
+    const page = previewPathFor(sourcePath, builtPaths) ?? "index.html";
+    const path = `${OUTPUT_PREFIX}/${page}`;
 
+    // The repo document IS the site now — the built pages live inside it under public/ — so the
+    // preview points at the repo and says which page to open.
     let view = stage.querySelector("patchwork-view");
-    if (!view || view.getAttribute("doc-url") !== outputUrl) {
+    if (!view || view.getAttribute("doc-url") !== siteUrl) {
       stage.innerHTML = "";
       view = document.createElement("patchwork-view");
-      view.setAttribute("doc-url", outputUrl);
+      view.setAttribute("doc-url", siteUrl);
       view.setAttribute("tool-id", "site-viewer");
       stage.append(view);
     }
-    if (path && view.getAttribute("data-path") !== path) view.setAttribute("data-path", path);
+    if (view.getAttribute("data-path") !== path) view.setAttribute("data-path", path);
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────────────────────

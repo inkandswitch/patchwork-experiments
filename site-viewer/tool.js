@@ -1,4 +1,4 @@
-import { requestedPath, servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
+import { requestedPath, servedAt, siteRootIn, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
 const STYLE_ID = "site-viewer-styles";
 if (!document.getElementById(STYLE_ID)) {
@@ -44,8 +44,15 @@ export default function SiteViewerTool(handle, element) {
   const openLink = root.querySelector(".site-viewer__open");
   const message = root.querySelector(".site-viewer__message");
 
-  /** Where the iframe currently is, inside the document. "" before it has loaded anything. */
-  let subpath = requestedPath(element) ?? "index.html";
+  // Where the site lives in this document: "" for a built site, "public" for a repo that
+  // contains one. Recomputed on change, since a repo has no site until it is built.
+  let siteRoot = siteRootIn(handle.doc());
+
+  /** The site's own home page, wherever the site is mounted. */
+  const homePath = () => (siteRoot ? `${siteRoot}/index.html` : "index.html");
+
+  /** Where the iframe currently is, inside the document. */
+  let subpath = requestedPath(element) ?? homePath();
 
   const showMessage = (title, detail) => {
     message.innerHTML = "";
@@ -80,9 +87,13 @@ export default function SiteViewerTool(handle, element) {
 
     if (!response.ok) {
       const names = topLevelNames(handle.doc());
+      const isHome = at === homePath();
       return showMessage(
-        at === "index.html" ? "No index.html in this document" : `Nothing at /${at}`,
-        names.length ? `This document contains: ${names.join(", ")}` : "This document has no files in it yet."
+        isHome ? "No site in this document" : `Nothing at /${at}`,
+        isHome
+          ? `Looked for index.html at the root and under public/. ` +
+            (names.length ? `This document contains: ${names.join(", ")}` : "It has no files in it yet.")
+          : `The site is at /${siteRoot || ""}.`
       );
     }
 
@@ -100,19 +111,29 @@ export default function SiteViewerTool(handle, element) {
       // A cross-origin document would throw. Nothing we serve is, but a link might lead away.
     }
     if (here) subpath = here.subpath;
-    pathLabel.textContent = "/" + (here?.subpath ?? "");
+    const shown = here?.subpath ?? "";
+    pathLabel.textContent = "/" + (siteRoot && shown.startsWith(siteRoot + "/") ? shown.slice(siteRoot.length + 1) : shown);
+    pathLabel.title = siteRoot ? `serving the site under ${siteRoot}/` : "";
     openLink.href = frame.src;
   };
   frame.addEventListener("load", onFrameLoad);
 
   // Rebuild in another tab, or another person's edit arriving: stay on the page being looked
   // at and re-resolve it, rather than jumping back to the home page.
-  const onChange = debounce(RELOAD_AFTER_QUIET_MS, () => go(subpath));
+  const onChange = debounce(RELOAD_AFTER_QUIET_MS, () => {
+    const found = siteRootIn(handle.doc());
+    if (found !== siteRoot) {
+      // A repo has no site until someone builds one; when that lands, open it.
+      siteRoot = found;
+      return go(homePath());
+    }
+    go(subpath);
+  });
   handle.on("change", onChange);
 
   const onClick = (event) => {
     const act = event.target.closest("[data-act]")?.dataset.act;
-    if (act === "home") go("index.html");
+    if (act === "home") go(homePath());
     if (act === "reload") go(subpath);
   };
   root.addEventListener("click", onClick);

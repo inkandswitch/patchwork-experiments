@@ -21,6 +21,22 @@ iframe below it is the site. Clicking a link inside navigates the iframe, and th
 to follow; when the document changes underneath you — a rebuild, or someone else's edit — the
 page you are on reloads in place rather than throwing you back to the home page.
 
+## It finds the site
+
+A built site has `index.html` at its root. A pushworked **repo** does not — its site is under
+`public/`, because that is where both `site build` and the Patchwork builder write it. Both are
+the same automerge type, so the only way to tell is to look, which is what `siteRootIn()` does:
+root first, then `public/`, then an unambiguous single `index.html` one level down. Two equally
+shallow candidates are treated as ambiguous rather than guessed at.
+
+This works only because the build emits relative URLs. A page served from
+`/<url>/public/index.html` resolves `../static/base.css` to `/<url>/public/static/base.css`;
+root-relative output could not be mounted at a depth at all.
+
+The mount point shows in the toolbar, so serving a subdirectory is never silent, and paths are
+displayed site-relative — `/alifib/index.html`, not `/public/alifib/index.html`. A repo with no
+site yet gains one the moment someone builds, so the viewer re-looks when the document changes.
+
 ## A host can say where to start
 
 `data-path` on the `<patchwork-view>` that embeds this tool names the page to open, and changing

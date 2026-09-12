@@ -133,7 +133,6 @@
       status: doc.status,
       wallMs: Math.round(performance.now() - started),
       log: doc.log,
-      outputUrl: doc.outputUrl,
     });
     if (doc.status !== "ok") throw new Error("build did not succeed: " + (doc.log ?? []).join(" | "));
 
@@ -163,7 +162,6 @@
     // This is what keeps the output document's history from gaining a full copy of the site on
     // every build, and it is only true if changesFor() compares content rather than trusting
     // that a rebuild produces new objects.
-    const before = doc.outputUrl;
     host.querySelector('[data-act="build"]').click();
     await wait(500);
     for (let i = 0; i < 400; i++) {
@@ -174,7 +172,8 @@
       step: "rebuild with nothing changed",
       log: buildEntry()?.log,
       // Nothing changed, so no new document: the previous one is kept and the URL holds still.
-      sameOutputDocument: buildEntry()?.outputUrl === before,
+      // Nothing to write, so nothing is written — not a no-op change, no write at all.
+      wroteNothing: (buildEntry()?.log ?? []).some((l) => l.includes("wrote nothing")),
     });
 
     // ---- editing a page produces a NEW output document -----------------------------------
@@ -182,27 +181,23 @@
     // from its finished state, and the one it replaces is deleted.
     const essaySourcePath = "content/alifib/index.md";
     const essayDocUrl = fileUrls[essaySourcePath];
+    const beforePageUrl = (await window.repo.find(repoHandle.url)).doc()["public/alifib/index.html"];
     const essayHandle = await window.repo.find(essayDocUrl);
     essayHandle.change((d) => { d.content = String(d.content) + "\n\nA paragraph added by the probe.\n" });
 
-    const beforeEdit = buildEntry().outputUrl;
-    const beforeBuiltAt = buildEntry().lastBuiltAt;
+        const beforeBuiltAt = buildEntry().lastBuiltAt;
     host.querySelector('[data-act="build"]').click();
     for (let i = 0; i < 400; i++) {
       if (buildEntry()?.status === "ok" && buildEntry()?.lastBuiltAt !== beforeBuiltAt) break;
       await wait(250);
     }
-    const afterEdit = buildEntry().outputUrl;
-    const doc2 = await window.repo.find(afterEdit);
-    const someContent = doc2.doc()["index.html"]?.content;
+    const repoAfter = (await window.repo.find(repoHandle.url)).doc();
+    const editedPage = await window.repo.find(repoAfter["public/alifib/index.html"]);
     out.steps.push({
       step: "editing a page writes only what moved",
-      // The document is updated in place now, so its URL holds still and the preview does not
-      // have to re-resolve a new one on every keystroke.
-      sameDocument: afterEdit === beforeEdit,
-      // Generated text is an ImmutableString, not a plain string — no text CRDT for output.
-      contentType: someContent?.constructor?.name ?? typeof someContent,
-      editedPageContainsTheEdit: String(doc2.doc()["alifib/index.html"]?.content ?? "").includes("added by the probe"),
+      editedPageContainsTheEdit: String(editedPage.doc()?.content ?? "").includes("added by the probe"),
+      // Replaced, not mutated: a fresh document for the page, so it stays at one version.
+      pageDocumentReplaced: repoAfter["public/alifib/index.html"] !== beforePageUrl,
       log: buildEntry()?.log,
     });
 
@@ -226,26 +221,31 @@
       stillPinned: !host.querySelector('[data-act="build"]')?.hidden,
     });
 
-    // ---- what landed in the output document -------------------------------------------
-    const output = await window.repo.find(buildEntry().outputUrl);
-    const outDoc = output.doc();
-    const paths = Object.keys(outDoc).filter((k) => k !== "@patchwork");
-    const references = paths.filter((p) => typeof outDoc[p] === "string");
+    // ---- what landed in the repo document ------------------------------------------------
+    // Homogeneous with the CLI: the site is under public/ in the repo itself, not in a document
+    // of its own, so a sync puts it in everyone's checkout as the same bytes `site build` writes.
+    const repoDoc = (await window.repo.find(repoHandle.url)).doc();
+    const builtKeys = Object.keys(repoDoc).filter((k) => k.startsWith("public/"));
+    const sourceUrls = new Set(Object.values(fileUrls));
+    const shared = builtKeys.filter((k) => sourceUrls.has(repoDoc[k]));
+    const firstPage = await window.repo.find(repoDoc["public/index.html"]);
     out.steps.push({
-      step: "output document",
-      type: outDoc["@patchwork"]?.type,
-      files: paths.length,
-      storedInline: paths.length - references.length,
-      // Binary files the build passed through should be a pointer at the source document,
-      // not a second copy of the bytes.
-      referencedFromSource: references.length,
-      referenceExample: references[0] ? `${references[0]} → ${outDoc[references[0]]}` : null,
+      step: "the site is in the repo, under public/",
+      builtFiles: builtKeys.length,
+      // A passed-through asset is a second key on the source document, not a copy of its bytes.
+      sharedWithSource: shared.length,
+      sharedExample: shared[0] ? `${shared[0]} → ${repoDoc[shared[0]]}` : null,
+      // Marked artifact in .pushworkattributes, so the content is opaque rather than a text CRDT.
+      contentType: firstPage.doc()?.content?.constructor?.name ?? typeof firstPage.doc()?.content,
+      fileDocShape: Object.keys(firstPage.doc() ?? {}).sort(),
+      sourcesUntouched: Object.keys(repoDoc).some((k) => k.startsWith("content/")),
     });
 
     // ---- does the service worker serve it? ---------------------------------------------
     // Pick the paths out of what was actually built, rather than naming one site's pages: this
     // probe is run against more than one repo, and a missing page should read as a missing page
     // and not as a broken resolver.
+    const paths = builtKeys.map((k) => k.slice("public/".length));
     const pick = (test) => paths.find(test) ?? null;
     const probePaths = [
       "index.html",
@@ -258,7 +258,7 @@
     const served = {};
     for (const path of probePaths) {
       try {
-        const res = await fetch(`/${encodeURIComponent(buildEntry().outputUrl)}/${path}`);
+        const res = await fetch(`/${encodeURIComponent(repoHandle.url)}/public/${path}`);
         served[path] = { status: res.status, type: res.headers.get("content-type"), bytes: (await res.arrayBuffer()).byteLength };
       } catch (err) { served[path] = { error: String(err) } }
     }
@@ -269,7 +269,7 @@
     viewerHost.style.cssText = "position:fixed;left:0;top:0;width:1024px;height:768px;z-index:99998;background:#fff";
     document.body.appendChild(viewerHost);
     const { default: SiteViewerTool } = await import("/site-viewer/tool.js");
-    const viewerCleanup = SiteViewerTool(output, viewerHost);
+    const viewerCleanup = SiteViewerTool(await window.repo.find(repoHandle.url), viewerHost);
 
     const label = () => viewerHost.querySelector(".site-viewer__path")?.textContent;
     const settled = async (want) => {

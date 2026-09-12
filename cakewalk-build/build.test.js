@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { changesFor, collectSources, mimeTypeFor, outputEntries, planWrite, repoShape, repoTitle } from "./build.js";
+import { collectSources, mimeTypeFor, outputEntries, repoShape, repoTitle } from "./build.js";
 
 describe("mimeTypeFor", () => {
   test("the types a built site is actually made of", () => {
@@ -43,52 +43,6 @@ describe("outputEntries", () => {
   });
 });
 
-describe("changesFor", () => {
-  const html = (s) => ({ content: s, mimeType: "text/html" });
-
-  test("an unchanged file is not rewritten", () => {
-    const { set, remove } = changesFor({ "a.html": html("x") }, { "a.html": html("x") });
-    expect(set).toEqual({});
-    expect(remove).toEqual([]);
-  });
-
-  test("a changed file is", () => {
-    const { set } = changesFor({ "a.html": html("x") }, { "a.html": html("y") });
-    expect(set).toEqual({ "a.html": html("y") });
-  });
-
-  test("a page that no longer exists is removed", () => {
-    const { remove } = changesFor({ "old.html": html("x"), "a.html": html("y") }, { "a.html": html("y") });
-    expect(remove).toEqual(["old.html"]);
-  });
-
-  test("the type marker is never removed", () => {
-    const { remove } = changesFor({ "@patchwork": { type: "directory" } }, {});
-    expect(remove).toEqual([]);
-  });
-
-  test("identical bytes are not rewritten, differing bytes are", () => {
-    const before = { "a.png": { content: new Uint8Array([1, 2]), mimeType: "image/png" } };
-    expect(changesFor(before, { "a.png": { content: new Uint8Array([1, 2]), mimeType: "image/png" } }).set).toEqual({});
-    expect(Object.keys(changesFor(before, { "a.png": { content: new Uint8Array([1, 3]), mimeType: "image/png" } }).set)).toEqual(["a.png"]);
-  });
-
-  test("a reference that still points at the same document is left alone", () => {
-    expect(changesFor({ "a.png": "automerge:abc" }, { "a.png": "automerge:abc" }).set).toEqual({});
-    expect(Object.keys(changesFor({ "a.png": "automerge:abc" }, { "a.png": "automerge:xyz" }).set)).toEqual(["a.png"]);
-  });
-
-  test("a file that changed from stored bytes to a reference is rewritten", () => {
-    const before = { "a.png": { content: new Uint8Array([1]), mimeType: "image/png" } };
-    expect(Object.keys(changesFor(before, { "a.png": "automerge:abc" }).set)).toEqual(["a.png"]);
-  });
-
-  test("everything is new against an empty document", () => {
-    const { set } = changesFor(undefined, { "a.html": html("x") });
-    expect(set).toEqual({ "a.html": html("x") });
-  });
-});
-
 // A repo made of plain objects, standing in for automerge documents.
 const fakeRepo = (docs) => ({ find: async (url) => ({ url, doc: () => docs[url] }) });
 
@@ -118,7 +72,8 @@ describe("collectSources", () => {
       "automerge:essay": { name: "index.md", content: "# essay" },
       "automerge:tpl": { name: "essay.html", content: "<html>{{content}}</html>" },
     });
-    const { sources } = await collectSources(repo, "automerge:root");
+    const { sources, shape } = await collectSources(repo, "automerge:root");
+    expect(shape).toBe("vfs");
     expect(sources).toEqual({
       "content/index.md": { content: "# home" },
       "content/alifib/index.md": { content: "# essay" },
@@ -266,53 +221,5 @@ describe("outputEntries with ImmutableString", () => {
     expect(entries["photo.png"]).toBe("automerge:abc");
   });
 
-  test("wrapped and unwrapped text compare equal, so switching is not a whole-site rewrite", () => {
-    const before = { "a.html": { content: "<h1>hi</h1>", mimeType: "text/html" } };
-    const after = outputEntries({ "a.html": { content: "<h1>hi</h1>" } }, new Map(), { immutable });
-    expect(changesFor(before, after).set).toEqual({});
-  });
 });
 
-describe("planWrite", () => {
-  const html = (s) => ({ content: s, mimeType: "text/html" });
-  const site = { "a.html": html("one"), "b.html": html("two") };
-
-  test("no previous document means a fresh one", () => {
-    expect(planWrite({ existing: undefined, entries: site })).toEqual({ action: "replace", set: site, remove: [] });
-  });
-
-  test("nothing changed means the document is not touched at all", () => {
-    const plan = planWrite({ existing: { ...site }, entries: site });
-    expect(plan).toEqual({ action: "skip", set: {}, remove: [] });
-  });
-
-  // The point of the change: a one-page edit writes one page, not the whole site.
-  test("one changed page writes one entry", () => {
-    const plan = planWrite({ existing: { ...site }, entries: { ...site, "b.html": html("TWO") } });
-    expect(plan.action).toBe("update");
-    expect(Object.keys(plan.set)).toEqual(["b.html"]);
-    expect(plan.remove).toEqual([]);
-  });
-
-  test("a deleted page is removed, not left behind", () => {
-    const plan = planWrite({ existing: { ...site }, entries: { "a.html": html("one") } });
-    expect(plan.action).toBe("update");
-    expect(plan.remove).toEqual(["b.html"]);
-  });
-
-  test("after enough builds the document is replaced rather than appended to", () => {
-    const changed = { ...site, "b.html": html("TWO") };
-    expect(planWrite({ existing: { ...site }, entries: changed, buildsSinceFresh: 49 }).action).toBe("update");
-    expect(planWrite({ existing: { ...site }, entries: changed, buildsSinceFresh: 50 }).action).toBe("replace");
-  });
-
-  test("a no-op build never triggers compaction — an idle tab does not churn", () => {
-    expect(planWrite({ existing: { ...site }, entries: site, buildsSinceFresh: 999 }).action).toBe("skip");
-  });
-
-  test("replacing carries the whole site, not just the delta", () => {
-    const changed = { ...site, "b.html": html("TWO") };
-    const plan = planWrite({ existing: { ...site }, entries: changed, buildsSinceFresh: 50 });
-    expect(plan.set).toEqual(changed);
-  });
-});

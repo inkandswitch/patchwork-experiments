@@ -75,3 +75,42 @@ export function requestedPath(element) {
   const path = host?.getAttribute?.("data-path");
   return path ? path.replace(/^\/+/, "") : undefined;
 }
+
+/**
+ * Where the site lives inside this document, as a path prefix ("" when it is at the root).
+ *
+ * A built site has index.html at its root. A pushworked *repo* does not — its site is under
+ * `public/`, because that is where `site build` and the Patchwork builder both write it. Both
+ * are the same automerge type, so the only way to tell is to look.
+ *
+ * This works at all because the build emits relative URLs: a page served from
+ * `/<url>/public/index.html` resolves `../static/base.css` to `/<url>/public/static/base.css`.
+ * Mounting a site at a depth would be impossible if its paths were root-relative.
+ *
+ * Returns undefined when there is no index.html anywhere, which is how the viewer knows to show
+ * the document's contents instead of a blank frame.
+ */
+export function siteRootIn(doc) {
+  if (!doc || typeof doc !== "object") return undefined;
+
+  const paths = Array.isArray(doc.docs)
+    ? doc.docs.map((d) => d?.name).filter(Boolean)
+    : Object.keys(doc).filter((k) => !k.startsWith("@") && !NOT_A_FILE.has(k));
+
+  if (paths.includes("index.html")) return "";
+
+  // A repo keeps its site where the CLI put it. Prefer that over guessing.
+  const named = ["public", "dist", "_site", "build"].find((dir) =>
+    paths.some((p) => p === dir || p.startsWith(dir + "/"))
+  );
+  if (named && (Array.isArray(doc.docs) || paths.includes(`${named}/index.html`))) return named;
+
+  // Otherwise the shallowest index.html wins, if there is exactly one at that depth.
+  const indexes = paths.filter((p) => p.endsWith("/index.html"));
+  if (!indexes.length) return undefined;
+  const depth = (p) => p.split("/").length;
+  const shallowest = Math.min(...indexes.map(depth));
+  const candidates = indexes.filter((p) => depth(p) === shallowest);
+  if (candidates.length !== 1) return undefined;
+  return candidates[0].slice(0, -"/index.html".length);
+}

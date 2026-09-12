@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { requestedPath, servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
+import { requestedPath, servedAt, siteRootIn, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
 const URL_ = "automerge:wZkgNq3hJMwU78JfwPDojeZE3At";
 const PINNED = `${URL_}#2PGRvDySwEtmX7f68hTwXb9jta9Y3F1jdj8HrNpaGUAPVLeNfw`;
@@ -103,5 +103,47 @@ describe("requestedPath", () => {
   test("an element with no patchwork-view around it is not a crash", () => {
     expect(requestedPath(document.createElement("div"))).toBe(undefined);
     expect(requestedPath(null)).toBe(undefined);
+  });
+});
+
+describe("siteRootIn", () => {
+  const vfsRepo = (...paths) => ({
+    "@patchwork": { type: "directory" },
+    lastSyncAt: 1,
+    ...Object.fromEntries(paths.map((p, i) => [p, `automerge:f${i}`])),
+  });
+  const folderRepo = (...names) => ({ docs: names.map((name) => ({ name, url: "automerge:x" })) });
+
+  test("a built site has its index at the root", () => {
+    expect(siteRootIn(vfsRepo("index.html", "alifib/index.html", "static/base.css"))).toBe("");
+  });
+
+  // A pushworked repo keeps its site where the CLI writes it. This is the case that sent the
+  // viewer to "No index.html in this document" on every repo.
+  test("a repo's site is under public/", () => {
+    expect(siteRootIn(vfsRepo("content/index.md", "template/essay.html", "public/index.html", "public/alifib/index.html"))).toBe("public");
+  });
+
+  test("a folder repo's site is found the same way", () => {
+    expect(siteRootIn(folderRepo("content", "template", "public"))).toBe("public");
+    expect(siteRootIn(folderRepo("index.html", "static"))).toBe("");
+  });
+
+  test("a repo that has not been built yet has no site", () => {
+    expect(siteRootIn(vfsRepo("content/index.md", "template/essay.html", "system/io.ts"))).toBe(undefined);
+  });
+
+  test("an unambiguous single index one level down is found", () => {
+    expect(siteRootIn(vfsRepo("site/index.html", "site/a.css"))).toBe("site");
+  });
+
+  test("two equally shallow candidates are ambiguous, so neither is chosen", () => {
+    // Guessing here would serve one of two sites with no way to tell which.
+    expect(siteRootIn(vfsRepo("one/index.html", "two/index.html"))).toBe(undefined);
+  });
+
+  test("nothing sensible in, nothing out", () => {
+    expect(siteRootIn(null)).toBe(undefined);
+    expect(siteRootIn({})).toBe(undefined);
   });
 });
