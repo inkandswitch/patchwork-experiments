@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { collectSources, mimeTypeFor, outputEntries, repoShape, repoTitle } from "./build.js";
+import { mimeTypeFor, outputEntries, pathsByDocument, readRepo, repoShape, repoTitle, sourcesFrom } from "./build.js";
 
 describe("mimeTypeFor", () => {
   test("the types a built site is actually made of", () => {
@@ -23,26 +23,6 @@ describe("mimeTypeFor", () => {
   });
 });
 
-describe("outputEntries", () => {
-  test("a file the build passed through becomes a reference to its source document", () => {
-    const bytes = new Uint8Array([1, 2, 3]);
-    const origins = new Map([[bytes, "automerge:abc"]]);
-    const entries = outputEntries({ "photo.png": { content: bytes } }, origins);
-    expect(entries["photo.png"]).toBe("automerge:abc");
-  });
-
-  test("a file the build made carries its own content and type", () => {
-    const entries = outputEntries({ "index.html": { content: "<h1>hi</h1>" } }, new Map());
-    expect(entries["index.html"]).toEqual({ content: "<h1>hi</h1>", mimeType: "text/html" });
-  });
-
-  test("bytes with no known source are stored, not dropped", () => {
-    const bytes = new Uint8Array([9]);
-    const entries = outputEntries({ "made.png": { content: bytes } }, new Map());
-    expect(entries["made.png"]).toEqual({ content: bytes, mimeType: "image/png" });
-  });
-});
-
 // A repo made of plain objects, standing in for automerge documents.
 const fakeRepo = (docs) => ({ find: async (url) => ({ url, doc: () => docs[url] }) });
 
@@ -53,8 +33,8 @@ describe("collectSources", () => {
       "automerge:content": { docs: [{ name: "index.md", type: "file", url: "automerge:page" }] },
       "automerge:page": { name: "index.md", extension: "md", mimeType: "text/markdown", content: "# hi" },
     });
-    const { sources } = await collectSources(repo, "automerge:root");
-    expect(sources).toEqual({ "content/index.md": { content: "# hi" } });
+    const { files } = await readRepo(repo, "automerge:root");
+    expect(sourcesFrom(files)).toEqual({ "content/index.md": { content: "# hi" } });
   });
 
   // pushwork init defaults to --shape vfs: one root document whose keys are whole paths and
@@ -72,9 +52,9 @@ describe("collectSources", () => {
       "automerge:essay": { name: "index.md", content: "# essay" },
       "automerge:tpl": { name: "essay.html", content: "<html>{{content}}</html>" },
     });
-    const { sources, shape } = await collectSources(repo, "automerge:root");
+    const { files, shape } = await readRepo(repo, "automerge:root");
     expect(shape).toBe("vfs");
-    expect(sources).toEqual({
+    expect(sourcesFrom(files)).toEqual({
       "content/index.md": { content: "# home" },
       "content/alifib/index.md": { content: "# essay" },
       "template/essay.html": { content: "<html>{{content}}</html>" },
@@ -93,8 +73,8 @@ describe("collectSources", () => {
       "automerge:home": { content: "# home" },
       "automerge:tpl": { content: "<html>" },
     });
-    const { sources } = await collectSources(repo, "automerge:root");
-    expect(Object.keys(sources).sort()).toEqual(["content/index.md", "template/x.html"]);
+    const { files } = await readRepo(repo, "automerge:root");
+    expect([...files.keys()].sort()).toEqual(["content/index.md", "template/x.html"]);
   });
 
   test("skips the same directories in a vfs repo", async () => {
@@ -109,13 +89,13 @@ describe("collectSources", () => {
       "automerge:stale": { content: "last build" },
       "automerge:home": { content: "# home" },
     });
-    const { sources } = await collectSources(repo, "automerge:root");
-    expect(Object.keys(sources)).toEqual(["content/index.md"]);
+    const { files } = await readRepo(repo, "automerge:root");
+    expect([...files.keys()]).toEqual(["content/index.md"]);
   });
 
   test("something that is neither shape is refused by name", async () => {
     const repo = fakeRepo({ "automerge:root": { title: "a note", text: "hello" } });
-    await expect(collectSources(repo, "automerge:root")).rejects.toThrow(/not a pushwork repo/);
+    await expect(readRepo(repo, "automerge:root")).rejects.toThrow(/not a pushwork repo/);
   });
 
   test("the index maps a file document back to its path, in both shapes", async () => {
@@ -130,8 +110,8 @@ describe("collectSources", () => {
       "automerge:essay": { content: "# essay" },
     });
     for (const repo of [vfs, folderRepo]) {
-      const { index } = await collectSources(repo, "automerge:root");
-      expect(index.get("automerge:essay")).toBe("content/alifib/index.md");
+      const { files } = await readRepo(repo, "automerge:root");
+      expect(pathsByDocument(files).get("automerge:essay")).toBe("content/alifib/index.md");
     }
   });
 });
@@ -155,7 +135,7 @@ describe("repoShape and repoTitle", () => {
       "automerge:root": { docs: [{ name: "README.md", type: "file", url: "automerge:r" }] },
       "automerge:r": { name: "README.md", extension: "md", content: "hi" },
     });
-    await expect(collectSources(repo, "automerge:root")).rejects.toThrow(/none under content\//);
+    await expect(readRepo(repo, "automerge:root")).rejects.toThrow(/none under content\//);
   });
 
   test("skips the directories a build has no use for", async () => {
@@ -171,8 +151,8 @@ describe("repoShape and repoTitle", () => {
       "automerge:content": { docs: [{ name: "index.md", type: "file", url: "automerge:page" }] },
       "automerge:page": { name: "index.md", extension: "md", content: "# hi" },
     });
-    const { sources } = await collectSources(repo, "automerge:root");
-    expect(Object.keys(sources)).toEqual(["content/index.md"]);
+    const { files } = await readRepo(repo, "automerge:root");
+    expect([...files.keys()]).toEqual(["content/index.md"]);
   });
 
   test("binary files remember which document they came from", async () => {
@@ -188,38 +168,49 @@ describe("repoShape and repoTitle", () => {
       "automerge:page": { name: "index.md", extension: "md", content: "# hi" },
       "automerge:photo": { name: "photo.png", extension: "png", mimeType: "image/png", content: bytes },
     });
-    const { sources, origins } = await collectSources(repo, "automerge:root");
-    expect(sources["content/photo.png"].content).toBe(bytes);
-    expect(origins.get(bytes)).toBe("automerge:photo");
+    const { files } = await readRepo(repo, "automerge:root");
+    // The bytes are kept as they came, and the document they came from is on the same entry —
+    // one map, so the two answers cannot disagree.
+    expect(files.get("content/photo.png").content).toBe(bytes);
+    expect(files.get("content/photo.png").url).toBe("automerge:photo");
   });
 });
 
-describe("outputEntries with ImmutableString", () => {
-  // The wrapper is injected so this module needs no Automerge dependency; a marker class stands
-  // in for ImmutableString here.
+describe("outputEntries", () => {
+  // A marker class stands in for ImmutableString; the wrapper is injected so this module needs
+  // no Automerge dependency.
   class Marker {
     constructor(text) { this.text = text }
     toString() { return this.text }
   }
   const immutable = (text) => new Marker(text);
+  const documentFor = (sourcePath) => ({ "content/photo.png": "automerge:src" })[sourcePath];
 
-  test("generated text is wrapped", () => {
-    const entries = outputEntries({ "index.html": { content: "<h1>hi</h1>" } }, new Map(), { immutable });
+  test("generated text is wrapped and typed", () => {
+    const entries = outputEntries({ "index.html": { content: "<h1>hi</h1>" } }, documentFor, { immutable });
     expect(entries["index.html"].content).toBeInstanceOf(Marker);
     expect(String(entries["index.html"].content)).toBe("<h1>hi</h1>");
+    expect(entries["index.html"].mimeType).toBe("text/html");
   });
 
-  test("bytes are left as bytes — only text is a CRDT worth avoiding", () => {
+  // The build says where a passed-through file came from, by path. Provenance given by identity
+  // would only be true inside one JavaScript heap; by path it survives a clone, a worker, or a
+  // document.
+  test("a file the build passed through becomes a reference to its source document", () => {
     const bytes = new Uint8Array([1, 2, 3]);
-    const entries = outputEntries({ "made.png": { content: bytes } }, new Map(), { immutable });
+    const entries = outputEntries({ "photo.png": { content: bytes, from: "content/photo.png" } }, documentFor, { immutable });
+    expect(entries["photo.png"]).toBe("automerge:src");
+  });
+
+  test("a passed-through file whose source is unknown is stored, not dropped", () => {
+    const bytes = new Uint8Array([9]);
+    const entries = outputEntries({ "made.png": { content: bytes, from: "nowhere/made.png" } }, documentFor, { immutable });
+    expect(entries["made.png"]).toEqual({ content: bytes, mimeType: "image/png" });
+  });
+
+  test("bytes the build generated stay bytes — only text is a CRDT worth avoiding", () => {
+    const bytes = new Uint8Array([1, 2]);
+    const entries = outputEntries({ "made.png": { content: bytes } }, documentFor, { immutable });
     expect(entries["made.png"].content).toBe(bytes);
   });
-
-  test("a referenced file stays a reference", () => {
-    const bytes = new Uint8Array([1]);
-    const entries = outputEntries({ "photo.png": { content: bytes } }, new Map([[bytes, "automerge:abc"]]), { immutable });
-    expect(entries["photo.png"]).toBe("automerge:abc");
-  });
-
 });
-

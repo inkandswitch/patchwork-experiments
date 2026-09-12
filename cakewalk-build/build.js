@@ -1,9 +1,12 @@
 // Build
-// Reading a repo out of Automerge, running its own build system over it, and writing the result
-// back into a document. No DOM in here, so the parts worth testing can be.
+// Reading a repo out of Automerge, and shaping what its build system produced for writing back.
+// No DOM in here, so the parts worth testing can be.
 
 /** Directories a repo has that a build has no use for. */
 export const SKIP = new Set(["node_modules", ".git", ".pushwork", "dist", "public", "public-memory", ".cache"]);
+
+/** Keys a repo document carries about itself rather than about its contents. */
+const RESERVED = new Set(["@patchwork", "lastSyncAt", "title"]);
 
 const MIME = {
   html: "text/html", css: "text/css", js: "text/javascript", mjs: "text/javascript",
@@ -24,16 +27,13 @@ export const mimeTypeFor = (path) => {
   return MIME[name.slice(dot + 1).toLowerCase()] ?? "application/octet-stream";
 };
 
-// Keys a repo document carries about itself rather than about its contents.
-const RESERVED = new Set(["@patchwork", "lastSyncAt", "title"]);
-
 /**
  * Which of pushwork's two shapes is this, if either?
  *
- * `patchwork-folder` is a document per directory, each listing its children in `docs`.
- * `vfs` — the default for `pushwork init` — is one root document whose keys are full
- * repo-relative paths and whose values are the URLs of the file documents. Both keep one
- * document per file; they differ only in how the structure is stored.
+ * `patchwork-folder` is a document per directory, each listing its children in `docs`. `vfs` —
+ * the default for `pushwork init` — is one root document whose keys are full repo-relative paths
+ * and whose values are the URLs of the file documents. Both keep one document per file; they
+ * differ only in how the structure is stored.
  */
 export function repoShape(doc) {
   if (!doc || typeof doc !== "object") return null;
@@ -46,14 +46,13 @@ export function repoShape(doc) {
 export const repoTitle = (doc) => doc?.["@patchwork"]?.title ?? doc?.title ?? undefined;
 
 /**
- * Read a repo out of Automerge into a flat map of path → file.
+ * Read a repo into one map: path → `{content, url}`.
  *
- * Returns the sources, the origin of each binary file (see outputEntries), an index from file
- * document URL back to its path — which is what lets a tool work out, given the document someone
- * is editing, which page of the site it becomes — and which shape the repo uses, since writing
- * the built site back into it has to match.
+ * One map rather than several keyed different ways. Everything anyone needs is a view of it —
+ * what to feed the build, which document a path came from, and which path a document is — and
+ * a single structure cannot disagree with itself.
  */
-export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
+export async function readRepo(repo, rootUrl, { skip = SKIP } = {}) {
   const root = (await repo.find(rootUrl)).doc();
   const shape = repoShape(root);
   if (!shape) {
@@ -64,19 +63,14 @@ export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
     );
   }
 
-  const sources = {};
-  const origins = new Map();
-  const index = new Map();
+  const files = new Map();
 
   const readFile = async (path, url) => {
     const doc = (await repo.find(url)).doc();
     if (!doc || !("content" in doc)) return;
     // Automerge hands text back as a string or an ImmutableString; only bytes stay bytes.
     const raw = doc.content;
-    const content = raw instanceof Uint8Array ? raw : String(raw);
-    sources[path] = { content };
-    index.set(url, path);
-    if (raw instanceof Uint8Array) origins.set(raw, url);
+    files.set(path, { content: raw instanceof Uint8Array ? raw : String(raw), url });
   };
 
   if (shape === "vfs") {
@@ -110,14 +104,14 @@ export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
 
   // A repo with no pages in it builds to a sitemap and an empty feed rather than failing, which
   // looks like a working build of nothing. Say what was read, and refuse the obvious mistake.
-  if (!Object.keys(sources).some((path) => path.startsWith("content/"))) {
+  if (![...files.keys()].some((path) => path.startsWith("content/"))) {
     throw new Error(
-      `Read ${Object.keys(sources).length} files from that repo, but none under content/. ` +
+      `Read ${files.size} files from that repo, but none under content/. ` +
         `A CakeWalk site keeps its pages there, so there is nothing to build.`
     );
   }
 
-  return { sources, origins, index, shape };
+  return { files, shape, title: repoTitle(root) };
 }
 
 /** A short description of what a document looks like, for an error message. */
@@ -127,25 +121,33 @@ function describeShape(doc) {
   return keys.length ? `keys ${keys.slice(0, 4).join(", ")}…` : "no keys";
 }
 
+/** What the build wants: path → {content}. */
+export const sourcesFrom = (files) => Object.fromEntries([...files].map(([path, f]) => [path, { content: f.content }]));
+
+/** Which source path a document is — for working out which page someone is editing. */
+export const pathsByDocument = (files) => new Map([...files].map(([path, f]) => [f.url, path]));
+
 /**
  * What to put in the repo's `public/` for each built file — see site-doc.js, which writes it.
  *
- * A built site is mostly bytes the build never looked at — images, video, fonts — which arrived
- * as source documents and were hardlinked through untouched. Those stay as their source
- * document's URL rather than becoming a second copy of the bytes, so `public/x.png` and
- * `content/x.png` end up as two names for one document — which is what the CLI's hardlink
- * amounts to. For a repo whose assets outweigh its prose (the Ink & Switch website is 150MB of
- * them), that is the difference between a repo that works and one that does not.
+ * A built site is mostly bytes the build never looked at: images, video, fonts, hardlinked
+ * straight through. The build says so, per file, with `from` — the source path it was copied
+ * from — and those stay as a reference to the source's document rather than becoming a second
+ * copy of the bytes. `public/x.png` and `content/x.png` end up as two names for one document,
+ * which is what the CLI's hardlink amounts to. For a repo whose assets outweigh its prose (the
+ * Ink & Switch website is 150MB of them) that is the difference between a repo that works and
+ * one that does not.
  *
- * The link is by object identity, not by comparing bytes: the in-memory build aliases a
- * hardlinked file rather than copying it, so the array that comes out is the one that went in.
+ * Provenance comes from the build by path rather than being inferred from object identity. An
+ * answer given by identity is only true inside one JavaScript heap; an answer given by path
+ * survives a structured clone, a worker, or a document.
  */
-export function outputEntries(files, origins, { immutable = (text) => text } = {}) {
+export function outputEntries(built, documentFor, { immutable = (text) => text } = {}) {
   const entries = {};
-  for (const [path, file] of Object.entries(files)) {
-    const origin = file.content instanceof Uint8Array ? origins.get(file.content) : undefined;
-    if (origin) {
-      entries[path] = origin;
+  for (const [path, file] of Object.entries(built)) {
+    const source = file.from ? documentFor(file.from) : undefined;
+    if (source) {
+      entries[path] = source;
       continue;
     }
     // Generated text goes in as an ImmutableString rather than a plain string, because a plain

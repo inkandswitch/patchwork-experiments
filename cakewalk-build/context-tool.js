@@ -1,7 +1,6 @@
 import { ImmutableString } from "@automerge/automerge";
-import { collectSources, outputEntries, repoTitle } from "./build.js";
+import { outputEntries, pathsByDocument, readRepo, repoTitle, sourcesFrom } from "./build.js";
 import { writeSiteInto } from "./site-doc.js";
-import { previewPathFor } from "./preview.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
 
@@ -72,10 +71,11 @@ export default function CakewalkBuildContextTool(element) {
   let selectedUrl;
   let selectedReason = "Nothing selected";
 
-  // From the last build: which file document is which source path, and what the build produced.
-  // Together they answer "the document being edited is which page of the site".
+  // From the last build: which source path each document is, and which page each source became.
+  // Together they answer "the document being edited is which page of the site" — both given by
+  // the build rather than worked out from its output.
   let sourceOfDoc = new Map();
-  let builtPaths = new Set();
+  let pageOfSource = new Map();
 
   let storage;
   /** Has the site we are pointed at been built since we picked it up? */
@@ -90,7 +90,7 @@ export default function CakewalkBuildContextTool(element) {
   // ── watching ───────────────────────────────────────────────────────────────────────────────
   // Everything in the site, not just its root: a content edit changes that file's own document
   // and never touches the root, so watching the root alone would miss every edit made here.
-  // The handles are already resolved by collectSources, so this costs little beyond the
+  // The handles are already resolved by readRepo, so this costs little beyond the
   // listeners themselves.
   // On unless someone turns it off. A warm rebuild is about 50ms end to end — reading the repo
   // out of Automerge costs 1-3ms once the documents are resolved — so there is no reason to make
@@ -144,17 +144,17 @@ export default function CakewalkBuildContextTool(element) {
       // Timed in three phases, because "the build is slow" is three different problems: reading
       // the repo out of Automerge, compiling it, and writing the result back.
       const readAt = performance.now();
-      const { sources, origins, index, shape } = await collectSources(repo, url);
+      const { files, shape } = await readRepo(repo, url);
       const readMs = performance.now() - readAt;
-      sourceOfDoc = index;
+      sourceOfDoc = pathsByDocument(files);
 
       // Watch every file in the site plus its root. A content edit changes that file's own
       // document and never touches the root, so watching the root alone misses every edit made
       // here; the root still matters because that is where pushwork reports a sync.
-      const handles = await Promise.all([url, ...index.keys()].map((u) => repo.find(u).catch(() => null)));
+      const handles = await Promise.all([url, ...sourceOfDoc.keys()].map((u) => repo.find(u).catch(() => null)));
       watchAll(handles.filter(Boolean));
-      const sourceCount = Object.keys(sources).length;
-      const pageCount = Object.keys(sources).filter((p) => /^content\/.*\.(md|html)$/.test(p)).length;
+      const sourceCount = files.size;
+      const pageCount = [...files.keys()].filter((p) => /^content\/.*\.(md|html)$/.test(p)).length;
 
       let buildSite;
       try {
@@ -166,8 +166,8 @@ export default function CakewalkBuildContextTool(element) {
         );
       }
 
-      const { files, log, ms } = buildSite({
-        sources,
+      const { files: built, pages, log, ms } = buildSite({
+        sources: sourcesFrom(files),
         env: {
           // Every URL relative to the file it sits in. The document this writes to is addressed
           // by a URL with its own heads pinned on, so the mount point changes on every build.
@@ -178,8 +178,15 @@ export default function CakewalkBuildContextTool(element) {
         },
       });
 
-      const entries = outputEntries(files, origins, { immutable: (text) => new ImmutableString(text) });
-      builtPaths = new Set(Object.keys(entries));
+      // `pages` and `from` are recent additions to the buildSite contract. A fork whose build
+      // system predates them still builds: the preview stays on the home page instead of
+      // following the file being edited, and passed-through assets are stored rather than shared
+      // with their source. Both degrade to something correct and slower, which is what a tool
+      // binding to a contract rather than a version owes the repos it does not control.
+      pageOfSource = new Map(Object.entries(pages ?? {}));
+      const entries = outputEntries(built, (sourcePath) => files.get(sourcePath)?.url, {
+        immutable: (text) => new ImmutableString(text),
+      });
       const writeAt = performance.now();
 
       // ── writing the site back into the repo ─────────────────────────────────────────────
@@ -202,7 +209,7 @@ export default function CakewalkBuildContextTool(element) {
         lastBuiltAt: new Date().toISOString(),
         log: [
           `read ${sourceCount} files from the repo in ${Math.round(readMs)}ms (${pageCount} pages under content/)`,
-          `built ${Object.keys(files).length} files in ${Math.round(ms)}ms`,
+          `built ${Object.keys(built).length} files in ${Math.round(ms)}ms`,
           `${summary} in ${Math.round(writeMs)}ms`,
           ...log,
         ],
@@ -225,29 +232,32 @@ export default function CakewalkBuildContextTool(element) {
       return render();
     }
 
+    // Only the lookup is allowed to fail quietly. An earlier version wrapped everything below
+    // in the same catch, so a missing import surfaced as a repo with no name rather than as an
+    // error — a broad catch turns a bug into a shrug.
+    let handle;
     try {
-      const handle = await repo.find(url);
-      if (selectedUrl !== url) return; // moved again while resolving
-      const verdict = describeRepo(handle.doc());
-      selectedReason = verdict.reason;
-      if (verdict.buildable) {
-        // A repo: pin it.
-        if (siteUrl !== url) {
-          siteUrl = url;
-          siteTitle = repoTitle(handle.doc());
-          sourceOfDoc = new Map();
-          builtPaths = new Set();
-          watchAll([]);
-          adopted = false;
-        } else {
-          siteTitle = repoTitle(handle.doc());
-        }
-        ensureBuilt();
-      }
-      // Anything else leaves the pinned site alone; render() works out whether it is a page
-      // of that site and moves the preview there.
+      handle = await repo.find(url);
     } catch {
-      // A document that will not resolve changes nothing.
+      selectedReason = "Not a CakeWalk repo";
+      return render();
+    }
+    if (selectedUrl !== url) return; // moved again while resolving
+
+    const verdict = describeRepo(handle.doc());
+    selectedReason = verdict.reason;
+    if (verdict.buildable) {
+      // A repo: pin it. Anything else leaves the pinned site alone, and render() works out
+      // whether it is a page of that site and moves the preview there.
+      if (siteUrl !== url) {
+        siteUrl = url;
+        sourceOfDoc = new Map();
+        pageOfSource = new Map();
+        watchAll([]);
+        adopted = false;
+      }
+      siteTitle = repoTitle(handle.doc());
+      ensureBuilt();
     }
     render();
   };
@@ -283,7 +293,7 @@ export default function CakewalkBuildContextTool(element) {
     // A failure is the one case where the log is the whole point, so do not make someone find it.
     if (status === "error") logBox.open = true;
 
-    renderPreview(Boolean(build?.lastBuiltAt), build?.lastBuiltAt);
+    renderPreview(Boolean(build?.lastBuiltAt));
   }
 
   /**
@@ -292,7 +302,7 @@ export default function CakewalkBuildContextTool(element) {
    * `data-path` is how site-viewer is told where to start — a late-bound convention, so this
    * tool works whether or not that one is installed.
    */
-  function renderPreview(hasBuilt, builtAt) {
+  function renderPreview(hasBuilt) {
     if (!siteUrl || !hasBuilt) {
       stage.innerHTML = `<p class="cwb__empty">${
         siteUrl ? "Press Build to make this repo into a site." : "Select a pushworked CakeWalk repo."
@@ -300,10 +310,10 @@ export default function CakewalkBuildContextTool(element) {
       return;
     }
 
+    // Which page the document being edited became — the build said so, so there is nothing to
+    // work out here. Relative to the site's own root; where that site lives is site-viewer's job.
     const sourcePath = selectedUrl ? sourceOfDoc.get(selectedUrl) : undefined;
-    // Relative to the site's own root. Where that site lives — its own document in the folder
-    // shape, a path prefix in vfs — is site-viewer's business, not ours.
-    const path = previewPathFor(sourcePath, builtPaths) ?? "index.html";
+    const path = pageOfSource.get(sourcePath) ?? "index.html";
 
     // The repo document IS the site now — the built pages live inside it under public/ — so the
     // preview points at the repo and says which page to open.
@@ -316,10 +326,6 @@ export default function CakewalkBuildContextTool(element) {
       stage.append(view);
     }
     if (view.getAttribute("data-path") !== path) view.setAttribute("data-path", path);
-    // Tell the preview a build happened. Watching the repo document is not enough for it: in the
-    // patchwork-folder shape a rebuilt page changes its own folder document, and the root — which
-    // is what the preview is mounted on — never moves.
-    if (builtAt && view.getAttribute("data-build") !== builtAt) view.setAttribute("data-build", builtAt);
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────────────────────
@@ -344,7 +350,7 @@ export default function CakewalkBuildContextTool(element) {
       siteUrl = undefined;
       siteTitle = undefined;
       sourceOfDoc = new Map();
-      builtPaths = new Set();
+      pageOfSource = new Map();
       watchAll([]);
       render();
     }
