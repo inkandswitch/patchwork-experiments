@@ -13,6 +13,27 @@ pnpm test          # the parts with no browser in them
 pnpm sync          # publish
 ```
 
+## Two tools
+
+**Site Editor** (`cakewalk-editor`) — a site's pages on the left, the one you picked in the
+middle, and what it looks like on the right. Open a repo with it and write.
+
+Almost none of it is new. The editor *is* the `file` tool. The preview *is* `site-viewer`. The
+building is this package's own builder. Each is reached by id through `<patchwork-view>`, so
+nothing is imported and any of them can be absent without taking the rest down. What the tool
+adds is the one thing none of them could know alone: **which page you are working on**, and
+therefore which document to edit and which page to show.
+
+The page list is its own rather than `folder-tree-view`, for one reason: selection has to stay
+inside the tool. A tree that opens documents in the shell would take the whole window with it.
+
+**Site Build** (`cakewalk-build`) — the same builder as a context tool, for when you want the
+preview beside whatever you are already looking at rather than a window of its own.
+
+They share `builder.js`: `buildInto(repo, siteUrl)` reads the repo, runs its build system, and
+writes the result back. That is the mechanism. *When* to build — on a button, on a change, on
+adopting a site — is policy, and belongs to whichever tool is asking.
+
 ## A component, not a tool bound to a document
 
 This registers as a `patchwork:component`, whose render signature is `(element) => cleanup`:

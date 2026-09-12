@@ -3,7 +3,7 @@
   "type": "module",
   "private": true,
   "main": "./index.js",
-  "description": "Build a CakeWalk site from its repo, in the browser, into a document you can browse.",
+  "description": "Write a CakeWalk site in Patchwork: its pages, an editor, and a live preview.",
   "scripts": {
     "sync": "pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",

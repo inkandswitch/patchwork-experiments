@@ -71,3 +71,84 @@
   white-space: pre-wrap;
   opacity: 0.85;
 }
+
+/* ── Site Editor ──────────────────────────────────────────────────────────────────────────
+   Pages, the page, and the site: a column each, with a status line across the bottom. */
+
+.cwe {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(0, 2fr) minmax(0, 2fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-areas: "pages editor preview" "status status status";
+  block-size: 100%;
+  min-block-size: 0;
+  background: var(--pw-background, #fff);
+  color: var(--pw-text, #111);
+  font-size: 0.8125rem;
+}
+
+.cwe__pages {
+  grid-area: pages;
+  overflow: auto;
+  border-inline-end: 1px solid var(--pw-border, #e4e4e7);
+  padding: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cwe__page {
+  font: inherit;
+  text-align: start;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: var(--pw-radius, 6px);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--pw-font-mono, ui-monospace, monospace);
+}
+
+.cwe__page:hover { background: var(--pw-surface-hover, #f4f4f5); }
+.cwe__page[aria-current="true"] { background: var(--pw-surface-selected, var(--pw-surface, #eef)); font-weight: 600; }
+/* A file that is not a page — a template, an image — is still editable, just not previewable. */
+.cwe__page--nonpage { opacity: 0.55; }
+
+.cwe__editor { grid-area: editor; min-inline-size: 0; overflow: hidden; border-inline-end: 1px solid var(--pw-border, #e4e4e7); }
+.cwe__preview { grid-area: preview; min-inline-size: 0; overflow: hidden; }
+.cwe__editor patchwork-view,
+.cwe__preview patchwork-view { display: block; inline-size: 100%; block-size: 100%; contain: layout; }
+
+.cwe__status {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.375rem 0.5rem;
+  border-block-start: 1px solid var(--pw-border, #e4e4e7);
+  flex-wrap: wrap;
+}
+
+.cwe__state { opacity: 0.7; }
+.cwe__state[data-status="building"] { opacity: 1; }
+.cwe__state[data-status="error"] { color: var(--pw-danger, #b91c1c); opacity: 1; }
+
+.cwe__button {
+  font: inherit;
+  color: inherit;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--pw-border, #e4e4e7);
+  border-radius: var(--pw-radius, 6px);
+  background: var(--pw-surface, #fafafa);
+  cursor: pointer;
+}
+
+.cwe__button:hover { background: var(--pw-surface-hover, #f4f4f5); }
+
+.cwe__logbox { flex: 1 0 100%; max-block-size: 9rem; overflow: auto; }
+.cwe__logbox summary { cursor: pointer; opacity: 0.7; }
+.cwe__log { margin: 0.4rem 0 0; font-family: var(--pw-font-mono, ui-monospace, monospace); font-size: 0.75rem; white-space: pre-wrap; opacity: 0.85; }
+.cwe__hint { opacity: 0.75; font-style: italic; }

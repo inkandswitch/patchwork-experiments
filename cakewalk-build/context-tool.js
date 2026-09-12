@@ -1,6 +1,6 @@
 import { ImmutableString } from "@automerge/automerge";
-import { outputEntries, pathsByDocument, readRepo, repoTitle, sourcesFrom } from "./build.js";
-import { writeSiteInto } from "./site-doc.js";
+import { repoTitle } from "./build.js";
+import { buildInto, summarise } from "./builder.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
 
@@ -87,11 +87,7 @@ export default function CakewalkBuildContextTool(element) {
   const record = (patch) => siteUrl && storage && recordBuild(storage, siteUrl, patch);
   const entry = () => buildFor(storage?.doc(), siteUrl);
 
-  // ── watching ───────────────────────────────────────────────────────────────────────────────
-  // Everything in the site, not just its root: a content edit changes that file's own document
-  // and never touches the root, so watching the root alone would miss every edit made here.
-  // The handles are already resolved by readRepo, so this costs little beyond the
-  // listeners themselves.
+  // ── watching and rebuilding ────────────────────────────────────────────────────────────────
   // On unless someone turns it off. A warm rebuild is about 50ms end to end — reading the repo
   // out of Automerge costs 1-3ms once the documents are resolved — so there is no reason to make
   // anyone ask for it.
@@ -141,77 +137,27 @@ export default function CakewalkBuildContextTool(element) {
     render();
 
     try {
-      // Timed in three phases, because "the build is slow" is three different problems: reading
-      // the repo out of Automerge, compiling it, and writing the result back.
-      const readAt = performance.now();
-      const { files, shape } = await readRepo(repo, url);
-      const readMs = performance.now() - readAt;
-      sourceOfDoc = pathsByDocument(files);
+      const result = await buildInto(repo, url, { immutable: (text) => new ImmutableString(text) });
+      sourceOfDoc = result.sourceOfDocument;
+      pageOfSource = result.pages;
 
       // Watch every file in the site plus its root. A content edit changes that file's own
-      // document and never touches the root, so watching the root alone misses every edit made
-      // here; the root still matters because that is where pushwork reports a sync.
-      const handles = await Promise.all([url, ...sourceOfDoc.keys()].map((u) => repo.find(u).catch(() => null)));
+      // document and never touches the root; the root still matters because that is where
+      // pushwork reports a sync. The handles are already resolved by the read, so this costs
+      // little beyond the listeners.
+      const handles = await Promise.all(
+        [url, ...result.sourceOfDocument.keys()].map((u) => repo.find(u).catch(() => null))
+      );
       watchAll(handles.filter(Boolean));
-      const sourceCount = files.size;
-      const pageCount = [...files.keys()].filter((p) => /^content\/.*\.(md|html)$/.test(p)).length;
-
-      let buildSite;
-      try {
-        ({ buildSite } = await import(`/${encodeURIComponent(url)}/${BUNDLE}`));
-      } catch (err) {
-        throw new Error(
-          `That repo has no ${BUNDLE} in it, so there is no build system to run. ` +
-            `Run \`pnpm build:browser\` in the repo and sync it. (${err})`
-        );
-      }
-
-      const { files: built, pages, log, ms } = buildSite({
-        sources: sourcesFrom(files),
-        env: {
-          // Every URL relative to the file it sits in. The document this writes to is addressed
-          // by a URL with its own heads pinned on, so the mount point changes on every build.
-          relativeUrls: true,
-          // pushwork's file documents carry no modification time, so the sitemap's lastmod
-          // would be the epoch for every page. Better to say nothing than a wrong date.
-          useRealBuildDates: false,
-        },
-      });
-
-      // `pages` and `from` are recent additions to the buildSite contract. A fork whose build
-      // system predates them still builds: the preview stays on the home page instead of
-      // following the file being edited, and passed-through assets are stored rather than shared
-      // with their source. Both degrade to something correct and slower, which is what a tool
-      // binding to a contract rather than a version owes the repos it does not control.
-      pageOfSource = new Map(Object.entries(pages ?? {}));
-      const entries = outputEntries(built, (sourcePath) => files.get(sourcePath)?.url, {
-        immutable: (text) => new ImmutableString(text),
-      });
-      const writeAt = performance.now();
-
-      // ── writing the site back into the repo ─────────────────────────────────────────────
-      // Under public/, where `site build` writes it. pushwork syncs the repo both ways, so this
-      // lands in everyone's checkout as the same bytes the CLI would have produced — one built
-      // site rather than a stale copy on disk and a fresh one in a document of its own.
-      // `.pushworkattributes` marks public/** as an artifact, so the files are stored as opaque
-      // immutable content rather than as text CRDTs nobody will ever co-edit.
-      const counts = await writeSiteInto(repo, url, { entries, shape });
-      const writeMs = performance.now() - writeAt;
-      const touched = counts.created + counts.replaced + counts.removed;
-      const summary = touched
-        ? `wrote ${counts.created} new, ${counts.replaced} replaced, ${counts.removed} removed` +
-          ` (${counts.unchanged} untouched, ${counts.referenced} shared with the source,` +
-          ` ${counts.deleted} old documents deleted)`
-        : `nothing changed, wrote nothing`;
 
       recordBuild(storage, url, {
         status: "ok",
         lastBuiltAt: new Date().toISOString(),
         log: [
-          `read ${sourceCount} files from the repo in ${Math.round(readMs)}ms (${pageCount} pages under content/)`,
-          `built ${Object.keys(built).length} files in ${Math.round(ms)}ms`,
-          `${summary} in ${Math.round(writeMs)}ms`,
-          ...log,
+          `read ${result.files.size} files from the repo in ${Math.round(result.readMs)}ms (${result.pageCount} pages under content/)`,
+          `built ${result.builtCount} files in ${Math.round(result.buildMs)}ms`,
+          `${summarise(result)} in ${Math.round(result.writeMs)}ms`,
+          ...result.log,
         ],
       });
     } catch (err) {

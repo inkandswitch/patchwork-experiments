@@ -13,4 +13,17 @@ export const plugins = [
       return (await import("./context-tool.js")).default;
     },
   },
+  {
+    // The editor: a site's pages, the one you picked, and what it looks like — composed from
+    // the `file` tool, `site-viewer`, and this package's builder. Bound to the repo document,
+    // because that is the thing being edited.
+    type: "patchwork:tool",
+    id: "cakewalk-editor",
+    name: "Site Editor",
+    icon: "PenLine",
+    supportedDatatypes: ["folder", "directory"],
+    async load() {
+      return (await import("./editor.js")).default;
+    },
+  },
 ];
