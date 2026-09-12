@@ -103,15 +103,31 @@ you started work.
 
 ## The preview follows what you are editing
 
-`collectSources` returns an index from file document URL back to its path, so the tool knows the
-document in your editor is `content/alifib/index.md`. `previewPathFor()` maps that to the page it
-becomes, and site-viewer is told where to go through a `data-path` attribute on its
-`<patchwork-view>` — a late-bound convention, so neither tool imports the other.
+`readRepo` returns one map — path to `{content, url}` — so the tool knows the document in your
+editor is `content/alifib/index.md`. `buildSite` returns `pages`, which says that source became
+`alifib/index.html`. The preview is told where to go through a `data-path` attribute on its
+`<patchwork-view>`, so neither tool imports the other.
 
-The mapping reproduces CakeWalk's `dest` rule (strip `content/`, `.md` → `.html`, clean URLs) and
-then **checks its answer against what was actually built**. A page with `clean: false` is found
-where it really landed, and a draft that was not published falls back to the home page rather than
-pointing the preview at a resolver error.
+Nothing is inferred. An earlier version reproduced CakeWalk's rule — strip `content/`, `.md` to
+`.html`, the clean-URL rewrite, the `clean: false` exception — and then checked its guess against
+the build output, because a guess that verifies is safer than one that does not. The build knew
+the answer all along; it just wasn't handing it over.
+
+## One map, and provenance by path
+
+`readRepo` returns a single structure and `sourcesFrom` / `pathsByDocument` are views of it. Two
+maps keyed differently can disagree; one cannot.
+
+`buildSite` marks each built file it copied or linked with `from`, the source path. That is how a
+passed-through image becomes a second name for its source document instead of a second copy of
+its bytes. It used to be recovered from the **object identity** of the `Uint8Array` that went in
+and came out — true only while the build and the write share a JavaScript heap, and silently
+false the moment the build moves to a worker or the result crosses a structured clone.
+
+Both fields are optional. A fork whose build system predates them still builds: the preview stays
+on the home page rather than following the file being edited, and assets are stored rather than
+shared. Both degrade to something correct and slower, which is what a tool binding to a contract
+rather than a version owes the repos it does not control.
 
 ## The site goes where the CLI puts it
 

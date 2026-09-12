@@ -21,21 +21,29 @@ iframe below it is the site. Clicking a link inside navigates the iframe, and th
 to follow; when the document changes underneath you — a rebuild, or someone else's edit — the
 page you are on reloads in place rather than throwing you back to the home page.
 
-## It finds the site
+## It finds the site, and mounts it
 
-A built site has `index.html` at its root. A pushworked **repo** does not — its site is under
-`public/`, because that is where both `site build` and the Patchwork builder write it. Both are
-the same automerge type, so the only way to tell is to look, which is what `siteRootIn()` does:
-root first, then `public/`, then an unambiguous single `index.html` one level down. Two equally
-shallow candidates are treated as ambiguous rather than guessed at.
+`findSite()` returns `{url, prefix}` — the document to mount, and any path inside it. A built site
+has `index.html` at its root; a pushworked repo keeps its site under `public/`, which in the
+`patchwork-folder` shape is **its own document**. The site is mounted there.
 
-This works only because the build emits relative URLs. A page served from
-`/<url>/public/index.html` resolves `../static/base.css` to `/<url>/public/static/base.css`;
-root-relative output could not be mounted at a depth at all.
+That distinction is the whole reason the preview updates. Navigation goes to a **heads-pinned**
+URL, because a bare one is answered with a redirect to the pinned one and the service worker
+caches by request URL. Mounted at the repo root, the pinned URL never moves — rebuilding a page
+changes that page's folder document, not the root — so it is a stable key for content that moves,
+and what the cache holds is what you keep getting. Mounted at the `public/` document, its heads
+move on every build, and the page *and every subresource under it* get a fresh key for free.
 
-The mount point shows in the toolbar, so serving a subdirectory is never silent, and paths are
-displayed site-relative — `/alifib/index.html`, not `/public/alifib/index.html`. A repo with no
-site yet gains one the moment someone builds, so the viewer re-looks when the document changes.
+Measured in a real Patchwork before the fix: the bare repo URL served a stale page while the same
+content read through the file document was current. In `vfs` there is no separate document, but
+the root changes on every build, so mounting there was already right.
+
+This also only works because the build emits relative URLs — `../static/base.css` resolves under
+whatever the site is mounted at. Root-relative output could not be mounted anywhere but the root.
+
+The viewer subscribes to the mounted document *and* every folder document along the path it is
+showing, re-resolving each link without its heads — a pinned link is a frozen view that would
+never report a change, which would have looked correct and been silently dead.
 
 ## A host can say where to start
 
