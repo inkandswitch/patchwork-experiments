@@ -1,0 +1,17 @@
+{
+  "name": "@patchwork/site-viewer",
+  "type": "module",
+  "private": true,
+  "main": "./index.js",
+  "description": "Browse a document full of files as the website it is.",
+  "scripts": {
+    "sync": "pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "happy-dom": "^15.11.7",
+    "vitest": "^3.2.4"
+  }
+}
