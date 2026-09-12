@@ -34,16 +34,35 @@ const makeRepo = (docs = {}) => {
     );
   };
 
+  // A URL with heads on it resolves to a *view-only* handle: reading works, change() throws.
+  // pushwork pins the folder links leading into an artifact directory, and `public/**` is one —
+  // so the links this code walks to reach its own output are pinned, and following one as given
+  // yields a handle that cannot be written. Every build failed that way and no test noticed,
+  // because a fake that hands back the same writable object whatever the URL cannot tell the
+  // difference. One handle per document, and the first resolution decides what it is.
+  const idOf = (url) => String(url).split("#")[0];
   const handleFor = (url) => {
-    if (!handles.has(url)) {
-      handles.set(url, { url, doc: () => docs[url], change: (fn) => change(url, fn) });
+    const id = idOf(url);
+    if (!handles.has(id)) {
+      handles.set(
+        id,
+        url === id
+          ? { url: id, doc: () => docs[id], change: (fn) => change(id, fn) }
+          : {
+              url,
+              doc: () => docs[id],
+              change: () => {
+                throw new Error(`Cannot change on DocHandle#${id.slice("automerge:".length)}: it is in view-only mode at specific heads.`);
+              },
+            }
+      );
     }
-    return handles.get(url);
+    return handles.get(id);
   };
   return {
     docs,
     find: async (url) => {
-      if (!(url in docs)) throw new Error(`no such doc ${url}`);
+      if (!(idOf(url) in docs)) throw new Error(`no such doc ${url}`);
       return handleFor(url);
     },
     create2: async (initial) => {
@@ -177,6 +196,40 @@ describe("writeSiteInto — patchwork-folder", () => {
     expect(pub.docs.find((l) => l.name === "index.html").type).toBe("html");
     const alifib = repo.docs[pub.docs.find((l) => l.name === "alifib").url];
     expect(alifib.docs.map((l) => l.name)).toEqual(["index.html"]);
+  });
+
+  // Marking `public/**` an artifact makes pushwork pin every folder link leading into it. A
+  // pinned link resolves to a view-only handle, so following one as given makes the output
+  // directory unwritable and the build dies at whichever directory is pinned — for the notebook
+  // that was public/static/fonts, two levels down, so a build that looked fine on a fresh repo
+  // failed on every real one. Resolve bare, and replace the pin: what is rebuilt continuously
+  // must not be frozen behind a link, or nothing written into it is ever seen through the parent.
+  test("writes through pinned folder links instead of dying on them", async () => {
+    const pinned = (url) => `${url}#somewheresomewhereheadsgohere`;
+    const repo = makeRepo({
+      "automerge:root": { "@patchwork": { type: "folder" }, title: "site",
+                          docs: [{ name: "public", type: "folder", url: pinned("automerge:public") }] },
+      "automerge:public": { "@patchwork": { type: "folder" }, title: "public",
+                            docs: [{ name: "static", type: "folder", url: pinned("automerge:static") }] },
+      "automerge:static": { "@patchwork": { type: "folder" }, title: "static",
+                            docs: [{ name: "fonts", type: "folder", url: pinned("automerge:fonts") }] },
+      "automerge:fonts": { "@patchwork": { type: "folder" }, title: "fonts", docs: [] },
+    });
+
+    await writeSiteInto(repo, "automerge:root", {
+      entries: { "index.html": html("home"), "static/fonts/body.woff2": html("font") },
+      shape: "folder",
+    });
+
+    expect(repo.docs["automerge:public"].docs.find((l) => l.name === "index.html")).toBeTruthy();
+    expect(repo.docs["automerge:fonts"].docs.map((l) => l.name)).toEqual(["body.woff2"]);
+    // The pins are gone from the path to the output, all the way down.
+    const links = [
+      repo.docs["automerge:root"].docs.find((l) => l.name === "public"),
+      repo.docs["automerge:public"].docs.find((l) => l.name === "static"),
+      repo.docs["automerge:static"].docs.find((l) => l.name === "fonts"),
+    ];
+    expect(links.map((l) => l.url)).toEqual(["automerge:public", "automerge:static", "automerge:fonts"]);
   });
 
   test("leaves the existing content folder alone", async () => {

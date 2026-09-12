@@ -5,6 +5,19 @@
 /** Directories a repo has that a build has no use for. */
 export const SKIP = new Set(["node_modules", ".git", ".pushwork", "dist", "public", "public-memory", ".cache"]);
 
+/**
+ * A document URL without its heads.
+ *
+ * Every document this tool touches is resolved bare, and it matters in both directions. Reading:
+ * a pinned link is a frozen view, so following one gives stale sources. Writing: `repo.find`
+ * caches a handle per document, and a handle first resolved from a pinned URL is view-only —
+ * `change()` on it throws "it is in view-only mode at specific heads". Reading the repo before
+ * writing it is exactly the order that trips that, and it did: `public/static/fonts` is reached
+ * through a pinned link, so reading the repo cached a view-only handle for it and every build
+ * failed when the write reached that directory.
+ */
+export const bare = (url) => String(url).split("#")[0];
+
 /** Keys a repo document carries about itself rather than about its contents. */
 const RESERVED = new Set(["@patchwork", "lastSyncAt", "title"]);
 
@@ -53,7 +66,7 @@ export const repoTitle = (doc) => doc?.["@patchwork"]?.title ?? doc?.title ?? un
  * a single structure cannot disagree with itself.
  */
 export async function readRepo(repo, rootUrl, { skip = SKIP } = {}) {
-  const root = (await repo.find(rootUrl)).doc();
+  const root = (await repo.find(bare(rootUrl))).doc();
   const shape = repoShape(root);
   if (!shape) {
     throw new Error(
@@ -66,7 +79,7 @@ export async function readRepo(repo, rootUrl, { skip = SKIP } = {}) {
   const files = new Map();
 
   const readFile = async (path, url) => {
-    const doc = (await repo.find(url)).doc();
+    const doc = (await repo.find(bare(url))).doc();
     if (!doc || !("content" in doc)) return;
     // Automerge hands text back as a string or an ImmutableString; only bytes stay bytes.
     const raw = doc.content;
@@ -86,16 +99,16 @@ export async function readRepo(repo, rootUrl, { skip = SKIP } = {}) {
     );
   } else {
     const walk = async (url, prefix) => {
-      const doc = (await repo.find(url)).doc();
+      const doc = (await repo.find(bare(url))).doc();
       if (!Array.isArray(doc?.docs)) return;
       await Promise.all(
         doc.docs.map(async (link) => {
           if (!link?.name || !link.url) return;
           if (!prefix && skip.has(link.name)) return;
           const path = prefix ? `${prefix}/${link.name}` : link.name;
-          const childDoc = (await repo.find(link.url)).doc();
-          if (Array.isArray(childDoc?.docs)) return walk(link.url, path);
-          return readFile(path, link.url);
+          const childDoc = (await repo.find(bare(link.url))).doc();
+          if (Array.isArray(childDoc?.docs)) return walk(bare(link.url), path);
+          return readFile(path, bare(link.url));
         })
       );
     };
