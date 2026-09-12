@@ -98,6 +98,9 @@
 }
 
 .cwe__page {
+  /* A flex item shrinks by default, so a list longer than the pane squashed its rows to nothing
+     instead of overflowing and scrolling. Rows keep their height; the list scrolls. */
+  flex: none;
   font: inherit;
   text-align: start;
   padding: 0.3rem 0.5rem;
@@ -114,7 +117,6 @@
 
 .cwe__page:hover { background: var(--pw-surface-hover, #f4f4f5); }
 .cwe__page[aria-current="true"] { background: var(--pw-surface-selected, var(--pw-surface, #eef)); font-weight: 600; }
-/* A file that is not a page — a template, an image — is still editable, just not previewable. */
 .cwe__page--nonpage { opacity: 0.55; }
 
 .cwe__editor { grid-area: editor; min-inline-size: 0; overflow: hidden; border-inline-end: 1px solid var(--pw-border, #e4e4e7); }

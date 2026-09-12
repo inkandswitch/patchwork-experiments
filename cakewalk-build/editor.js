@@ -143,21 +143,40 @@ export default function CakewalkEditorTool(handle, element) {
     if (path !== undefined && view.getAttribute("data-path") !== path) view.setAttribute("data-path", path);
   };
 
+  // The list of files last rendered, joined. A build runs about once a second while you type,
+  // and rebuilding the buttons each time would throw away the scroll position every time — so
+  // the rows are made when the set of files changes and only their state is touched after that.
+  let renderedPaths = null;
+  let scrolledTo = null;
+
   function renderPages() {
     const paths = [...files.keys()].filter((p) => p.startsWith("content/")).sort();
-    pagesEl.replaceChildren(
-      ...paths.map((path) => {
-        const button = document.createElement("button");
-        button.className = "cwe__page";
-        button.dataset.path = path;
-        button.setAttribute("aria-current", String(path === selected));
-        // The path without its content/ prefix: that prefix is true of every row and so tells
-        // you nothing about any of them.
-        button.textContent = path.slice("content/".length);
-        if (!pages.has(path)) button.classList.add("cwe__page--nonpage");
-        return button;
-      })
-    );
+    const key = paths.join("\n");
+    if (key !== renderedPaths) {
+      renderedPaths = key;
+      pagesEl.replaceChildren(
+        ...paths.map((path) => {
+          const button = document.createElement("button");
+          button.className = "cwe__page";
+          button.dataset.path = path;
+          // The path without its content/ prefix: that prefix is true of every row and so tells
+          // you nothing about any of them.
+          button.textContent = path.slice("content/".length);
+          return button;
+        })
+      );
+    }
+    for (const button of pagesEl.children) {
+      const path = button.dataset.path;
+      button.setAttribute("aria-current", String(path === selected));
+      // A file that is not a page — a template, an image — is still editable, just not previewable.
+      button.classList.toggle("cwe__page--nonpage", !pages.has(path));
+      // Following a link in the preview can select a file that is scrolled out of sight. Bring it
+      // back, but only on the move: scrolling the list on every build would fight whoever is
+      // reading it.
+      if (path === selected && selected !== scrolledTo) button.scrollIntoView({ block: "nearest" });
+    }
+    scrolledTo = selected;
   }
 
   function render() {
@@ -166,6 +185,7 @@ export default function CakewalkEditorTool(handle, element) {
       stateEl.textContent = verdict.reason;
       stateEl.dataset.status = "error";
       pagesEl.replaceChildren();
+      renderedPaths = null;
       editorEl.replaceChildren();
       previewEl.replaceChildren();
       return;
@@ -196,6 +216,23 @@ export default function CakewalkEditorTool(handle, element) {
   }
 
   // ── wiring ───────────────────────────────────────────────────────────────────────────────
+  // Selection and the preview are one value seen twice: pick a file and the preview goes to its
+  // page; follow a link in the preview and the file it was built from becomes the selection. The
+  // second direction is what makes the preview browsable — without it, moving around the site
+  // would leave the list pointing at somewhere you no longer are.
+  const onNavigate = (event) => {
+    const path = event.detail?.path;
+    if (!path) return;
+    // `pages` maps a source to the page it became; this is the question asked the other way.
+    const source = [...pages].find(([, page]) => page === path)?.[0];
+    if (!source || source === selected || !files.has(source)) return;
+    selected = source;
+    // Rendering re-asserts data-path, which is already where the preview is — site-viewer
+    // ignores a request for the path it is showing, so this does not bounce back.
+    render();
+  };
+  root.addEventListener("site-viewer:navigate", onNavigate);
+
   const onClick = (event) => {
     const page = event.target.closest(".cwe__page");
     if (page) {
@@ -217,6 +254,7 @@ export default function CakewalkEditorTool(handle, element) {
     handle.off("change", onRepoChange);
     watchAll([]);
     root.removeEventListener("click", onClick);
+    root.removeEventListener("site-viewer:navigate", onNavigate);
     root.remove();
   };
 }

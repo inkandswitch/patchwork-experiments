@@ -180,6 +180,16 @@ export default function SiteViewerTool(handle, element) {
       subpath = inSite || homePath();
       watchAll(subpath);
     }
+    // Say where we ended up. The iframe is the only thing that knows a link was followed, and a
+    // host embedding this view — the site editor keeps a file list beside it — has no other way
+    // to stay in step with it. Requested navigations report too: a host that hears its own
+    // request back learns nothing new, and one that drives from the event needs no special case.
+    if (here) {
+      root.dispatchEvent(
+        new CustomEvent("site-viewer:navigate", { detail: { path: subpath }, bubbles: true, composed: true })
+      );
+    }
+
     pathLabel.textContent = "/" + inSite;
     pathLabel.title = site ? `serving ${withoutHeads(site.url)}${prefix ? "/" + prefix : ""}` : "";
     openLink.href = frame.contentWindow?.location?.href ?? "";
