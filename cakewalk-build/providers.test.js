@@ -102,19 +102,26 @@ describe("onToolStorage", () => {
 
 describe("describeRepo", () => {
   const folder = (...names) => ({ docs: names.map((name) => ({ name, url: "automerge:x" })) });
+  // A real vfs root: keys are whole paths, not names. This is what pushwork init writes.
+  const vfs = (...paths) => ({
+    "@patchwork": { type: "directory", title: "a site" },
+    lastSyncAt: 1771461049774,
+    ...Object.fromEntries(paths.map((p, i) => [p, `automerge:file${i}`])),
+  });
 
   test("a folder repo with pages and templates is buildable", () => {
     expect(describeRepo(folder("content", "template", "system"))).toEqual({ buildable: true, reason: "" });
   });
 
-  // The message that matters: a vfs repo HAS content/ and template/, so "not a CakeWalk repo"
-  // would be true and useless. pushwork init defaults to this shape, so it is the one people hit.
-  test("a vfs repo is named as a vfs repo, not as a non-repo", () => {
-    const vfs = { "@patchwork": { type: "directory" }, content: "automerge:a", template: "automerge:b", lastSyncAt: 1 };
-    const { buildable, reason } = describeRepo(vfs);
-    expect(buildable).toBe(false);
-    expect(reason).toMatch(/vfs/);
-    expect(reason).toMatch(/--shape patchwork-folder/);
+  // The bug this replaced: vfs keys are "content/alifib/index.md", never bare "content", so a
+  // check for bare names reported every vfs repo as not a repo at all.
+  test("a vfs repo is buildable, matched by path prefix", () => {
+    expect(describeRepo(vfs("content/index.md", "content/alifib/index.md", "template/essay.html")))
+      .toEqual({ buildable: true, reason: "" });
+  });
+
+  test("a vfs repo missing templates is not", () => {
+    expect(describeRepo(vfs("content/index.md", "system/io.ts")).buildable).toBe(false);
   });
 
   test("a document that is neither says the plain thing", () => {

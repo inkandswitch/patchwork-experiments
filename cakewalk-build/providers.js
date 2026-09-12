@@ -59,33 +59,32 @@ export const onToolStorage = (element, toolId, onChange, options) =>
  * Can this document be built, and if not, why not?
  *
  * A context tool is offered every document the user looks at, so it has to know when it has
- * nothing to say — and say something worth reading when it does. A CakeWalk site is a folder
- * with pages in `content/` and layouts in `template/`; that pair is the signature, and the one
- * thing every fork shares.
+ * nothing to say. A CakeWalk site is a repo with pages in `content/` and layouts in `template/`;
+ * that pair is the signature, and the one thing every fork shares.
  *
- * The case worth spelling out is the last one. `pushwork init` defaults to `--shape vfs`, which
- * puts the whole repo in one document keyed by path instead of a document per file. Such a repo
- * has content/ and template/ in it and still cannot be read here, so "not a CakeWalk repo" would
- * be both true and useless. Name the real problem instead.
- *
- * Whether the repo also carries a browser build is a question for when someone presses Build:
- * that answer is a fixable thing to say, not a reason to hide the button.
+ * Both of pushwork's shapes count. They store the structure differently — `patchwork-folder`
+ * lists children per directory, `vfs` keys one root document by whole path — so the same
+ * question is asked two ways. An earlier version checked only for bare `content` and `template`
+ * keys, which a vfs repo never has: its keys are `content/alifib/index.md`. That reported every
+ * vfs repo as "not a CakeWalk repo", which was true of nothing.
  */
 export function describeRepo(doc) {
   if (!doc || typeof doc !== "object") return { buildable: false, reason: "Nothing selected" };
 
-  const names = new Set(Array.isArray(doc.docs) ? doc.docs.map((d) => d?.name) : Object.keys(doc));
-  const hasSite = names.has("content") && names.has("template");
-
-  if (!Array.isArray(doc.docs)) {
-    return {
-      buildable: false,
-      reason: hasSite
-        ? "This repo was synced with the vfs shape — re-run pushwork with --shape patchwork-folder"
-        : "Not a CakeWalk repo",
-    };
+  if (Array.isArray(doc.docs)) {
+    const names = new Set(doc.docs.map((d) => d?.name));
+    return names.has("content") && names.has("template")
+      ? { buildable: true, reason: "" }
+      : { buildable: false, reason: "Not a CakeWalk repo — no content/ and template/ in it" };
   }
 
-  if (!hasSite) return { buildable: false, reason: "Not a CakeWalk repo — no content/ and template/ in it" };
-  return { buildable: true, reason: "" };
+  if (doc["@patchwork"]?.type === "directory") {
+    const keys = Object.keys(doc);
+    const hasDir = (name) => keys.some((k) => k === name || k.startsWith(name + "/"));
+    return hasDir("content") && hasDir("template")
+      ? { buildable: true, reason: "" }
+      : { buildable: false, reason: "Not a CakeWalk repo — no content/ and template/ in it" };
+  }
+
+  return { buildable: false, reason: "Not a CakeWalk repo" };
 }

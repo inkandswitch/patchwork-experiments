@@ -67,23 +67,53 @@ Two settings are forced, for reasons belonging to the destination rather than th
 - **`useRealBuildDates: false`.** pushwork's file documents carry no modification time, so the
   sitemap's `lastmod` would be the epoch for every page. Better to say nothing.
 
-## Saying why, not just no
+## Both pushwork shapes
 
-The tool is offered every document you look at, so most of its job is knowing when it has
-nothing to say. `describeRepo()` distinguishes three noes, and the third is the one that earns
-its keep:
+`pushwork init` writes one of two layouts, and this reads either:
 
-| what you selected | what it says |
-| --- | --- |
-| anything else | Not a CakeWalk repo |
-| a folder without pages | Not a CakeWalk repo — no content/ and template/ in it |
-| a **vfs** repo | This repo was synced with the vfs shape — re-run pushwork with `--shape patchwork-folder` |
+```js
+// vfs — the DEFAULT. One root document, keys are whole repo-relative paths.
+{ "@patchwork": { type: "directory", title },
+  "content/alifib/index.md": "automerge:aaa",
+  "template/essay.html":     "automerge:ccc",
+  lastSyncAt: 1771461049774 }
 
-`pushwork init` defaults to `--shape vfs`, which puts the whole repo in one document keyed by
-path instead of a document per file. Such a repo *has* content/ and template/ in it and still
-cannot be read here, so "not a CakeWalk repo" would be true and useless. `collectSources()`
-refuses the same case with the same explanation when you press Build, rather than reading
-nothing and producing a sitemap and an empty feed — which is what it used to do.
+// patchwork-folder — a document per directory, nested.
+{ "@patchwork": { type: "folder" }, title, docs: [{name, type, url}], lastSyncAt }
+```
+
+Both keep **one document per file**; they differ only in how the structure is stored. vfs has the
+nicer property for this tool: enumerating a repo is a single document read rather than a crawl
+through every directory — 1 read instead of ~324 for the Ink & Switch website.
+
+`describeRepo` asks the same question of each — are there pages in `content/` and layouts in
+`template/`? — but has to ask it differently, by name for one and by path prefix for the other. An
+earlier version checked only for bare `content` and `template` keys, which a vfs repo never has;
+its keys are `content/alifib/index.md`. That reported every vfs repo as "not a CakeWalk repo",
+which was true of none of them.
+
+## The site stays pinned
+
+Selecting a repo pins it. Selecting anything else — a page you are editing, a chat, whatever —
+leaves it pinned, with an `×` to release it.
+
+That is not a convenience. You cannot edit a page and have its repo selected at the same time,
+because editing is what takes the selection. Without pinning the builder would blank the moment
+you started work.
+
+## The preview follows what you are editing
+
+`collectSources` returns an index from file document URL back to its path, so the tool knows the
+document in your editor is `content/alifib/index.md`. `previewPathFor()` maps that to the page it
+becomes, and site-viewer is told where to go through a `data-path` attribute on its
+`<patchwork-view>` — a late-bound convention, so neither tool imports the other.
+
+The mapping reproduces CakeWalk's `dest` rule (strip `content/`, `.md` → `.html`, clean URLs) and
+then **checks its answer against what was actually built**. A page with `clean: false` is found
+where it really landed, and a draft that was not published falls back to the home page rather than
+pointing the preview at a resolver error.
+
+## Assets are referenced, not copied
 
 ## Assets are referenced, not copied
 
@@ -102,11 +132,40 @@ for the Ink & Switch website it is **301 of 603**, whose assets are 150MB agains
 The match is by object identity rather than by comparing bytes — an in-memory build aliases a
 hardlinked file instead of copying it, so the array that comes out is the one that went in.
 
-## It writes only what moved
+## It writes only what moved, and keeps no history
 
-`changesFor()` diffs the built site against what the output document already holds. An identical
-rebuild writes nothing, so the document's history does not gain a full copy of the site every
-time someone saves a file.
+Three outcomes, decided by `planWrite()` — pure, so the decision is testable without a repo:
+
+| | when | what it writes |
+| --- | --- | --- |
+| **skip** | nothing changed | the document is not touched at all |
+| **update** | something changed | only the entries that moved |
+| **replace** | no document yet, or `COMPACT_EVERY` builds since the last fresh one | the whole site, history discarded |
+
+A one-page edit writes **two entries** — the page, and `index.xml`, because the feed carries each
+post's prose. Not the other 43.
+
+Writing only what moved is the cheap thing, but every write leaves a version behind in the
+document's history, and nobody wants the built site's history: it is regenerated from source in
+under 100ms. So the document is replaced outright every 50 builds, which bounds the history
+without paying a full rewrite on every keystroke. Measured on this site's real output:
+
+| | per rebuild |
+| --- | --- |
+| in place | ~0.3kb of history |
+| fresh document | ~205kb written and synced |
+
+A no-op build never counts toward compaction, so an idle tab with auto-rebuild on does not churn
+its way into a replacement.
+
+Generated text goes in as an **`ImmutableString`** rather than a plain string. A plain string in
+Automerge is a text CRDT — `getObjectId` returns an object id for one — which is machinery for
+collaborative editing that build output has no use for. pushwork draws the same line for its
+artifact directories.
+
+Because the document is updated in place, its URL holds still across an edit. That matters for
+the live loop: the preview does not have to re-resolve a new URL, and its iframe does not reload,
+on every keystroke.
 
 ## Testing it
 
@@ -137,11 +196,14 @@ ARIA SGAI Notebook — 66 files, 84 documents — reports:
 | asked for | `patchwork:selected-doc` and `patchwork:tool-storage` |
 | nothing selected | "Nothing selected", no Build offered |
 | a document that is not a repo | "Not a CakeWalk repo", no Build offered |
-| the repo selected | "aria-sgai-notebook", Build offered |
-| build | 45 files in ~100ms, `wrote 45 changed` |
-| rebuild, nothing changed | `wrote 0 changed, removed 0` |
+| the repo selected (vfs) | "aria-sgai-notebook (vfs)", Build offered and enabled |
+| build | 45 files in ~60ms, `wrote a new document with 45 files` (the first one) |
+| the patchwork-folder shape | builds the same way |
+| rebuild, nothing changed | `nothing changed, kept the previous document`, same URL |
+| editing a page | `wrote 2 changed, removed 0` — the page and the feed, in the same document |
+| selecting a content file | stays pinned, preview moves to `alifib/index.html` |
+| selecting anything else | stays pinned |
 | output document | 45 files: 32 stored, 13 referenced from source |
-| served | `index.html` 200 text/html, `diagrams.css` 200 text/css, `01-interface-overview.png` 200 image/png |
 | rendered | home 223 css rules; `/alifib/` 461 rules, 6/6 images |
 
 The images are worth a second look: all six are among the referenced files, so a page loading

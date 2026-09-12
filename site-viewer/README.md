@@ -21,6 +21,14 @@ iframe below it is the site. Clicking a link inside navigates the iframe, and th
 to follow; when the document changes underneath you — a rebuild, or someone else's edit — the
 page you are on reloads in place rather than throwing you back to the home page.
 
+## A host can say where to start
+
+`data-path` on the `<patchwork-view>` that embeds this tool names the page to open, and changing
+it moves the preview. cakewalk-build sets it to the page for the file you are editing.
+
+It is an attribute rather than a shared module on purpose: neither tool imports the other, and
+when nobody sets it the viewer just opens the site's home page.
+
 ## Two things about serving a site out of a document
 
 Both were measured against a real shell rather than reasoned about, and both shape the code.

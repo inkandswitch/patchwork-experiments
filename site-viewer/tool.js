@@ -1,4 +1,4 @@
-import { servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
+import { requestedPath, servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
 const STYLE_ID = "site-viewer-styles";
 if (!document.getElementById(STYLE_ID)) {
@@ -45,7 +45,7 @@ export default function SiteViewerTool(handle, element) {
   const message = root.querySelector(".site-viewer__message");
 
   /** Where the iframe currently is, inside the document. "" before it has loaded anything. */
-  let subpath = "index.html";
+  let subpath = requestedPath(element) ?? "index.html";
 
   const showMessage = (title, detail) => {
     message.innerHTML = "";
@@ -117,10 +117,20 @@ export default function SiteViewerTool(handle, element) {
   };
   root.addEventListener("click", onClick);
 
-  go("index.html");
+  // A host can move the preview by changing data-path — cakewalk-build does it when you select
+  // a different page to edit. Watch for that rather than only reading it once.
+  const host = element.closest("patchwork-view") ?? element;
+  const observer = new MutationObserver(() => {
+    const wanted = requestedPath(element);
+    if (wanted && wanted !== subpath) go(wanted);
+  });
+  observer.observe(host, { attributes: true, attributeFilter: ["data-path"] });
+
+  go(subpath);
 
   return () => {
     handle.off("change", onChange);
+    observer.disconnect();
     frame.removeEventListener("load", onFrameLoad);
     root.removeEventListener("click", onClick);
     root.remove();

@@ -1,4 +1,6 @@
-import { changesFor, collectSources, outputEntries } from "./build.js";
+import { ImmutableString } from "@automerge/automerge";
+import { collectSources, outputEntries, planWrite, repoTitle } from "./build.js";
+import { previewPathFor } from "./preview.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
 
@@ -11,8 +13,8 @@ if (!document.getElementById(STYLE_ID)) {
   document.head.appendChild(link);
 }
 
-// pushwork sets lastSyncAt on the root folder doc when it has finished writing a sync, which is
-// the signal to rebuild. Wait for quiet anyway: a sync of many files can land in pieces.
+// A sync of many files lands in pieces, and typing produces a change per keystroke. Wait for
+// quiet rather than building on each one.
 const REBUILD_AFTER_QUIET_MS = 600;
 
 // The site's own build system, loaded out of the repo being built. Each CakeWalk site carries
@@ -28,18 +30,20 @@ const debounce = (ms, fn) => {
 };
 
 /**
- * A `patchwork:component`: the host hands it an element and nothing else. The repo to build
- * comes from the selected-doc provider, and what it remembers from the tool-storage provider.
+ * A `patchwork:component`: the host hands it an element and nothing else. The site comes from
+ * the selected-doc provider, and what it remembers from the tool-storage provider.
  */
 export default function CakewalkBuildContextTool(element) {
   const repo = element.repo ?? window.repo;
+
   const root = document.createElement("div");
   root.className = "cwb";
   root.innerHTML = `
     <div class="cwb__bar">
       <span class="cwb__repo"></span>
+      <button class="cwb__button" data-act="unpin" title="Stop building this site" hidden>×</button>
       <button class="cwb__button" data-act="build" hidden>Build</button>
-      <label class="cwb__auto" hidden><input type="checkbox" class="cwb__autobuild"> rebuild on sync</label>
+      <label class="cwb__auto" hidden><input type="checkbox" class="cwb__autobuild"> rebuild on change</label>
       <span class="cwb__status"></span>
     </div>
     <div class="cwb__stage"></div>
@@ -47,6 +51,7 @@ export default function CakewalkBuildContextTool(element) {
   element.append(root);
 
   const repoLabel = root.querySelector(".cwb__repo");
+  const unpinButton = root.querySelector('[data-act="unpin"]');
   const buildButton = root.querySelector('[data-act="build"]');
   const autoLabel = root.querySelector(".cwb__auto");
   const autoBox = root.querySelector(".cwb__autobuild");
@@ -55,28 +60,68 @@ export default function CakewalkBuildContextTool(element) {
   const logBox = root.querySelector(".cwb__logbox");
   const logEl = root.querySelector(".cwb__log");
 
-  /** The document the user is looking at, and whether it is something we can build. */
-  let sourceUrl;
-  let sourceHandle;
-  let isRepo = false;
-  let whyNot = "Nothing selected";
-  let storage; // the account-scoped doc the host creates for this tool
+  // ── the pinned site ────────────────────────────────────────────────────────────────────────
+  // Selecting a repo pins it. Selecting anything else leaves it pinned — which is the whole
+  // point: you cannot edit a page and have its repo selected at the same time, because editing
+  // is what takes the selection.
+  let siteUrl;
+  let siteTitle;
+  let selectedUrl;
+  let selectedReason = "Nothing selected";
+
+  // From the last build: which file document is which source path, and what the build produced.
+  // Together they answer "the document being edited is which page of the site".
+  let sourceOfDoc = new Map();
+  let builtPaths = new Set();
+
+  let storage;
   let building = false;
-  let watching = null; // the repo handle we listen to for syncs
+  let dirty = false;
+  let watched = new Set(); // handles we listen to for changes
 
-  const record = (patch) => sourceUrl && storage && recordBuild(storage, sourceUrl, patch);
-  const entry = () => buildFor(storage?.doc(), sourceUrl);
+  const record = (patch) => siteUrl && storage && recordBuild(storage, siteUrl, patch);
+  const entry = () => buildFor(storage?.doc(), siteUrl);
 
+  // ── watching ───────────────────────────────────────────────────────────────────────────────
+  // Everything in the site, not just its root: a content edit changes that file's own document
+  // and never touches the root, so watching the root alone would miss every edit made here.
+  // The handles are already resolved by collectSources, so this costs little beyond the
+  // listeners themselves.
+  const rebuildSoon = debounce(REBUILD_AFTER_QUIET_MS, () => {
+    if (entry()?.autoBuild) build();
+  });
+
+  function watchAll(handles) {
+    for (const handle of watched) handle.off("change", rebuildSoon);
+    watched = new Set(handles);
+    for (const handle of watched) handle.on("change", rebuildSoon);
+  }
+
+  // ── building ───────────────────────────────────────────────────────────────────────────────
   async function build() {
     // Storage arrives over a port, so it can still be pending on a fast click.
-    if (!sourceUrl || !isRepo || building || !storage) return;
-    const url = sourceUrl; // the selection can move while a build runs
+    if (!siteUrl || !storage) return;
+    if (building) {
+      // Coalesce rather than drop. Dropping loses the last keystroke of a burst, which is
+      // exactly the change you wanted to see.
+      dirty = true;
+      return;
+    }
     building = true;
+    dirty = false;
+    const url = siteUrl; // the selection can move while a build runs
     record({ status: "building" });
     render();
 
     try {
-      const { sources, origins } = await collectSources(repo, url);
+      const { sources, origins, index } = await collectSources(repo, url);
+      sourceOfDoc = index;
+
+      // Watch every file in the site plus its root. A content edit changes that file's own
+      // document and never touches the root, so watching the root alone misses every edit made
+      // here; the root still matters because that is where pushwork reports a sync.
+      const handles = await Promise.all([url, ...index.keys()].map((u) => repo.find(u).catch(() => null)));
+      watchAll(handles.filter(Boolean));
       const sourceCount = Object.keys(sources).length;
       const pageCount = Object.keys(sources).filter((p) => /^content\/.*\.(md|html)$/.test(p)).length;
 
@@ -102,24 +147,49 @@ export default function CakewalkBuildContextTool(element) {
         },
       });
 
-      // One output document per repo, created once and then kept, so anything pointed at it
-      // keeps working across builds.
-      let outputUrl = buildFor(storage.doc(), url)?.outputUrl;
-      if (!outputUrl) {
-        const created = await repo.create2({ "@patchwork": { type: "directory" } });
-        outputUrl = created.url;
-        recordBuild(storage, url, { outputUrl });
+      const entries = outputEntries(files, origins, { immutable: (text) => new ImmutableString(text) });
+      builtPaths = new Set(Object.keys(entries));
+
+      // ── writing only what moved ─────────────────────────────────────────────────────────
+      // A one-page edit changes one page and the feed, so that is what gets written — not all
+      // 45 files. Every such write does leave a version behind in the document's history, and
+      // nobody wants the built site's history, so the document is replaced outright every
+      // COMPACT_EVERY builds. That bounds the history without paying a full rewrite each time.
+      const record0 = buildFor(storage.doc(), url) ?? {};
+      const previousUrl = record0.outputUrl;
+      let existing;
+      if (previousUrl) {
+        try {
+          existing = (await repo.find(previousUrl)).doc();
+        } catch {
+          existing = undefined; // gone or unreachable: start again
+        }
       }
 
-      const output = await repo.find(outputUrl);
-      const entries = outputEntries(files, origins);
-      const { set, remove } = changesFor(output.doc(), entries);
+      const plan = planWrite({ existing, entries, buildsSinceFresh: record0.buildsSinceFresh ?? 0 });
+      let summary;
 
-      output.change((d) => {
-        d["@patchwork"] = { type: "directory" };
-        for (const [path, value] of Object.entries(set)) d[path] = value;
-        for (const path of remove) delete d[path];
-      });
+      if (plan.action === "skip") {
+        summary = "nothing changed, left the document alone";
+      } else if (plan.action === "replace") {
+        const created = await repo.create2({ "@patchwork": { type: "directory" }, ...plan.set });
+        recordBuild(storage, url, { outputUrl: created.url, buildsSinceFresh: 0 });
+        summary = previousUrl
+          ? `replaced the document (${Object.keys(plan.set).length} files, history discarded)`
+          : `wrote a new document with ${Object.keys(plan.set).length} files`;
+        // Only the one we replaced — anything else may be someone's open preview.
+        if (previousUrl) {
+          try { repo.delete(previousUrl) } catch {}
+        }
+      } else {
+        const output = await repo.find(previousUrl);
+        output.change((d) => {
+          for (const [path, value] of Object.entries(plan.set)) d[path] = value;
+          for (const path of plan.remove) delete d[path];
+        });
+        recordBuild(storage, url, { buildsSinceFresh: (record0.buildsSinceFresh ?? 0) + 1 });
+        summary = `wrote ${Object.keys(plan.set).length} changed, removed ${plan.remove.length}`;
+      }
 
       recordBuild(storage, url, {
         status: "ok",
@@ -127,7 +197,7 @@ export default function CakewalkBuildContextTool(element) {
         log: [
           `read ${sourceCount} files from the repo (${pageCount} pages under content/)`,
           `built ${Object.keys(files).length} files in ${Math.round(ms)}ms`,
-          `wrote ${Object.keys(set).length} changed, removed ${remove.length}`,
+          summary,
           ...log,
         ],
       });
@@ -136,61 +206,65 @@ export default function CakewalkBuildContextTool(element) {
     } finally {
       building = false;
       render();
+      // Something changed while we were building; go again.
+      if (dirty && entry()?.autoBuild) rebuildSoon();
     }
   }
 
-  const rebuildSoon = debounce(REBUILD_AFTER_QUIET_MS, () => {
-    if (entry()?.autoBuild) build();
-  });
-
-  /** Listen to the repo itself, so a pushwork sync can trigger a rebuild. */
-  function watchRepo(handle) {
-    if (watching?.url === handle?.url) return;
-    if (watching) watching.off("change", rebuildSoon);
-    watching = null;
-    if (!handle) return;
-    handle.on("change", rebuildSoon);
-    watching = handle;
-  }
-
-  // Selection changes are the main event: everything else follows from what is on screen.
+  // ── selection ──────────────────────────────────────────────────────────────────────────────
   const onSelection = async (url) => {
-    sourceUrl = url;
-    sourceHandle = null;
-    isRepo = false;
-    whyNot = "Nothing selected";
-    render();
-    if (!url) return watchRepo(null);
+    selectedUrl = url;
+    if (!url) {
+      selectedReason = "Nothing selected";
+      return render();
+    }
 
     try {
       const handle = await repo.find(url);
-      // The selection may have moved again while that resolved.
-      if (sourceUrl !== url) return;
-      sourceHandle = handle;
+      if (selectedUrl !== url) return; // moved again while resolving
       const verdict = describeRepo(handle.doc());
-      isRepo = verdict.buildable;
-      whyNot = verdict.reason;
-      watchRepo(isRepo ? handle : null);
+      selectedReason = verdict.reason;
+      if (verdict.buildable) {
+        // A repo: pin it.
+        if (siteUrl !== url) {
+          siteUrl = url;
+          siteTitle = repoTitle(handle.doc());
+          sourceOfDoc = new Map();
+          builtPaths = new Set();
+          watchAll([]);
+        } else {
+          siteTitle = repoTitle(handle.doc());
+        }
+      }
+      // Anything else leaves the pinned site alone; render() works out whether it is a page
+      // of that site and moves the preview there.
     } catch {
-      // A document that will not resolve is not a repo; the message below covers it.
+      // A document that will not resolve changes nothing.
     }
     render();
   };
 
+  // ── rendering ──────────────────────────────────────────────────────────────────────────────
   function render() {
     const build = entry();
     const status = build?.status ?? "idle";
+    const pinned = Boolean(siteUrl);
 
-    buildButton.hidden = !isRepo;
-    autoLabel.hidden = !isRepo;
+    buildButton.hidden = !pinned;
+    unpinButton.hidden = !pinned;
+    autoLabel.hidden = !pinned;
     buildButton.disabled = building || !storage;
     autoBox.checked = Boolean(build?.autoBuild);
 
-    if (!isRepo) repoLabel.textContent = whyNot;
-    else repoLabel.textContent = sourceHandle?.doc()?.title || "CakeWalk repo";
+    if (!pinned) {
+      repoLabel.textContent = selectedReason;
+    } else {
+      const sourcePath = selectedUrl && selectedUrl !== siteUrl ? sourceOfDoc.get(selectedUrl) : undefined;
+      repoLabel.textContent = sourcePath ? `${siteTitle ?? "site"} — ${sourcePath}` : siteTitle ?? "CakeWalk repo";
+    }
 
     const when = build?.lastBuiltAt ? ` · ${new Date(build.lastBuiltAt).toLocaleTimeString()}` : "";
-    statusEl.textContent = !isRepo
+    statusEl.textContent = !pinned
       ? ""
       : { idle: "not built yet", building: "building…", ok: `built${when}`, error: "failed" }[status] ?? status;
     statusEl.dataset.status = status;
@@ -201,31 +275,38 @@ export default function CakewalkBuildContextTool(element) {
     // A failure is the one case where the log is the whole point, so do not make someone find it.
     if (status === "error") logBox.open = true;
 
-    // The preview is whatever tool claims directory documents — site-viewer, if it is installed.
-    // Looked up by id at render time, so this tool does not depend on that one.
-    const outputUrl = build?.outputUrl;
-    const view = stage.querySelector("patchwork-view");
-    if (outputUrl && view?.getAttribute("doc-url") !== outputUrl) {
-      stage.innerHTML = "";
-      const el = document.createElement("patchwork-view");
-      el.setAttribute("doc-url", outputUrl);
-      el.setAttribute("tool-id", "site-viewer");
-      stage.append(el);
-    } else if (!outputUrl) {
-      stage.innerHTML = `<p class="cwb__empty">${
-        isRepo ? "Press Build to make this repo into a site." : "Select a pushworked CakeWalk repo."
-      }</p>`;
-    }
+    renderPreview(build?.outputUrl);
   }
 
-  const onClick = (event) => {
-    if (event.target.closest('[data-act="build"]')) build();
-  };
-  root.addEventListener("click", onClick);
+  /**
+   * The preview, pointed at the page for whatever is being edited.
+   *
+   * `data-path` is how site-viewer is told where to start — a late-bound convention, so this
+   * tool works whether or not that one is installed.
+   */
+  function renderPreview(outputUrl) {
+    if (!outputUrl) {
+      stage.innerHTML = `<p class="cwb__empty">${
+        siteUrl ? "Press Build to make this repo into a site." : "Select a pushworked CakeWalk repo."
+      }</p>`;
+      return;
+    }
 
-  const onToggle = () => record({ autoBuild: autoBox.checked });
-  autoBox.addEventListener("change", onToggle);
+    const sourcePath = selectedUrl ? sourceOfDoc.get(selectedUrl) : undefined;
+    const path = previewPathFor(sourcePath, builtPaths);
 
+    let view = stage.querySelector("patchwork-view");
+    if (!view || view.getAttribute("doc-url") !== outputUrl) {
+      stage.innerHTML = "";
+      view = document.createElement("patchwork-view");
+      view.setAttribute("doc-url", outputUrl);
+      view.setAttribute("tool-id", "site-viewer");
+      stage.append(view);
+    }
+    if (path && view.getAttribute("data-path") !== path) view.setAttribute("data-path", path);
+  }
+
+  // ── wiring ─────────────────────────────────────────────────────────────────────────────────
   const onStorageChange = () => render();
 
   const stopSelection = onSelectedDoc(element, onSelection);
@@ -240,13 +321,29 @@ export default function CakewalkBuildContextTool(element) {
     render();
   });
 
+  const onClick = (event) => {
+    if (event.target.closest('[data-act="build"]')) build();
+    if (event.target.closest('[data-act="unpin"]')) {
+      siteUrl = undefined;
+      siteTitle = undefined;
+      sourceOfDoc = new Map();
+      builtPaths = new Set();
+      watchAll([]);
+      render();
+    }
+  };
+  root.addEventListener("click", onClick);
+
+  const onToggle = () => record({ autoBuild: autoBox.checked });
+  autoBox.addEventListener("change", onToggle);
+
   render();
 
   return () => {
     stopSelection();
     stopStorage();
     storage?.off("change", onStorageChange);
-    if (watching) watching.off("change", rebuildSoon);
+    watchAll([]);
     root.removeEventListener("click", onClick);
     autoBox.removeEventListener("change", onToggle);
     root.remove();

@@ -60,3 +60,18 @@ export const topLevelNames = (doc) => {
   }
   return [...names].sort();
 };
+
+/**
+ * Where a host wants this viewer to start, if it said.
+ *
+ * A tool embedding this one via `<patchwork-view tool-id="site-viewer">` has no way to pass
+ * arguments, so `data-path` on that element is the convention: cakewalk-build sets it to the
+ * page for the file being edited. Reading an attribute rather than requiring a shared module
+ * keeps the two tools late-bound — neither depends on the other, and the attribute is simply
+ * absent when nobody sets it.
+ */
+export function requestedPath(element) {
+  const host = element?.closest?.("patchwork-view") ?? element;
+  const path = host?.getAttribute?.("data-path");
+  return path ? path.replace(/^\/+/, "") : undefined;
+}

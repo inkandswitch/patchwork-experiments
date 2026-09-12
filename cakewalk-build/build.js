@@ -24,56 +24,88 @@ export const mimeTypeFor = (path) => {
   return MIME[name.slice(dot + 1).toLowerCase()] ?? "application/octet-stream";
 };
 
+// Keys a repo document carries about itself rather than about its contents.
+const RESERVED = new Set(["@patchwork", "lastSyncAt", "title"]);
+
 /**
- * Walk a pushwork folder document into a flat map of path → file.
+ * Which of pushwork's two shapes is this, if either?
  *
- * A folder doc lists a document per entry ({name, url}); a directory is an entry whose document
- * has its own `docs`. Binary files keep their source document's URL alongside the bytes — see
- * outputEntries() for what that is for.
+ * `patchwork-folder` is a document per directory, each listing its children in `docs`.
+ * `vfs` — the default for `pushwork init` — is one root document whose keys are full
+ * repo-relative paths and whose values are the URLs of the file documents. Both keep one
+ * document per file; they differ only in how the structure is stored.
+ */
+export function repoShape(doc) {
+  if (!doc || typeof doc !== "object") return null;
+  if (Array.isArray(doc.docs)) return "folder";
+  if (doc["@patchwork"]?.type === "directory") return "vfs";
+  return null;
+}
+
+/** What to call this repo. The two shapes keep their title in different places. */
+export const repoTitle = (doc) => doc?.["@patchwork"]?.title ?? doc?.title ?? undefined;
+
+/**
+ * Read a repo out of Automerge into a flat map of path → file.
+ *
+ * Returns the sources, the origin of each binary file (see outputEntries), and an index from
+ * file document URL back to its path — which is what lets a tool work out, given the document
+ * someone is editing, which page of the site it becomes.
  */
 export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
-  const sources = {};
-  const origins = new Map();
-
   const root = (await repo.find(rootUrl)).doc();
-  if (!Array.isArray(root?.docs)) {
-    // pushwork writes one of two document shapes, and `init` defaults to the one this does not
-    // read. Reported from real use: against a vfs repo the walk found nothing, returned {}, and
-    // the build cheerfully produced a sitemap and an empty feed — two files, no error. A repo
-    // this cannot read has to say so.
+  const shape = repoShape(root);
+  if (!shape) {
     throw new Error(
-      `That document is not a pushwork folder repo. It has ${describeShape(root)}, ` +
-        `and this tool reads the "patchwork-folder" shape — a document per entry, listed in \`docs\`. ` +
-        `Re-run pushwork with \`--shape patchwork-folder\`, which is not the default.`
+      `That document is not a pushwork repo. It has ${describeShape(root)}, and this tool reads ` +
+        `either shape pushwork writes: "vfs" (one document keyed by path) or "patchwork-folder" ` +
+        `(a document per directory).`
     );
   }
 
-  const walk = async (url, prefix) => {
-    const handle = await repo.find(url);
-    const doc = handle.doc();
-    if (!Array.isArray(doc?.docs)) return;
+  const sources = {};
+  const origins = new Map();
+  const index = new Map();
 
-    await Promise.all(
-      doc.docs.map(async (link) => {
-        if (!link?.name || !link.url) return;
-        if (!prefix && skip.has(link.name)) return;
-        const path = prefix ? `${prefix}/${link.name}` : link.name;
-
-        const child = await repo.find(link.url);
-        const childDoc = child.doc();
-        if (Array.isArray(childDoc?.docs)) return walk(link.url, path);
-        if (!childDoc || !("content" in childDoc)) return;
-
-        // Automerge hands text back as an ImmutableString, which is not a string.
-        const raw = childDoc.content;
-        const content = raw instanceof Uint8Array ? raw : String(raw);
-        sources[path] = { content };
-        if (raw instanceof Uint8Array) origins.set(raw, link.url);
-      })
-    );
+  const readFile = async (path, url) => {
+    const doc = (await repo.find(url)).doc();
+    if (!doc || !("content" in doc)) return;
+    // Automerge hands text back as a string or an ImmutableString; only bytes stay bytes.
+    const raw = doc.content;
+    const content = raw instanceof Uint8Array ? raw : String(raw);
+    sources[path] = { content };
+    index.set(url, path);
+    if (raw instanceof Uint8Array) origins.set(raw, url);
   };
 
-  await walk(rootUrl, "");
+  if (shape === "vfs") {
+    // One document, keys are whole paths. Enumerating the repo is a single read.
+    await Promise.all(
+      Object.entries(root).map(([path, url]) => {
+        if (RESERVED.has(path) || path.startsWith("@")) return;
+        if (typeof url !== "string" || !url.startsWith("automerge:")) return;
+        const segments = path.split("/").filter(Boolean);
+        if (!segments.length || skip.has(segments[0])) return;
+        return readFile(segments.join("/"), url);
+      })
+    );
+  } else {
+    const walk = async (url, prefix) => {
+      const doc = (await repo.find(url)).doc();
+      if (!Array.isArray(doc?.docs)) return;
+      await Promise.all(
+        doc.docs.map(async (link) => {
+          if (!link?.name || !link.url) return;
+          if (!prefix && skip.has(link.name)) return;
+          const path = prefix ? `${prefix}/${link.name}` : link.name;
+          const childDoc = (await repo.find(link.url)).doc();
+          if (Array.isArray(childDoc?.docs)) return walk(link.url, path);
+          return readFile(path, link.url);
+        })
+      );
+    };
+    await walk(rootUrl, "");
+  }
 
   // A repo with no pages in it builds to a sitemap and an empty feed rather than failing, which
   // looks like a working build of nothing. Say what was read, and refuse the obvious mistake.
@@ -84,15 +116,14 @@ export async function collectSources(repo, rootUrl, { skip = SKIP } = {}) {
     );
   }
 
-  return { sources, origins };
+  return { sources, origins, index };
 }
 
 /** A short description of what a document looks like, for an error message. */
 function describeShape(doc) {
   if (!doc || typeof doc !== "object") return "no content at all";
   const keys = Object.keys(doc).filter((k) => !k.startsWith("@"));
-  if (doc["@patchwork"]?.type === "directory") return `the "vfs" shape (a directory document keyed by name: ${keys.slice(0, 4).join(", ")}…)`;
-  return `keys ${keys.slice(0, 4).join(", ")}…`;
+  return keys.length ? `keys ${keys.slice(0, 4).join(", ")}…` : "no keys";
 }
 
 /**
@@ -108,11 +139,20 @@ function describeShape(doc) {
  * The link is by object identity, not by comparing bytes: the in-memory build aliases a
  * hardlinked file rather than copying it, so the array that comes out is the one that went in.
  */
-export function outputEntries(files, origins) {
+export function outputEntries(files, origins, { immutable = (text) => text } = {}) {
   const entries = {};
   for (const [path, file] of Object.entries(files)) {
     const origin = file.content instanceof Uint8Array ? origins.get(file.content) : undefined;
-    entries[path] = origin ?? { content: file.content, mimeType: mimeTypeFor(path) };
+    if (origin) {
+      entries[path] = origin;
+      continue;
+    }
+    // Generated text goes in as an ImmutableString rather than a plain string, because a plain
+    // string in Automerge is a text CRDT — machinery for collaborative editing that built output
+    // has no use for. pushwork draws the same line for its artifact directories. `immutable` is
+    // injected so this module needs no Automerge dependency of its own.
+    const content = typeof file.content === "string" ? immutable(file.content) : file.content;
+    entries[path] = { content, mimeType: mimeTypeFor(path) };
   }
   return entries;
 }
@@ -136,16 +176,53 @@ export function changesFor(existing, entries) {
 
 const same = (a, b) => {
   if (typeof b === "string") return a === b; // a reference to a source document
-  if (!a || typeof a !== "object" || typeof a.content !== typeof b.content) return false;
+  if (!a || typeof a !== "object" || typeof b !== "object") return false;
   if (a.mimeType !== b.mimeType) return false;
   return sameContent(a.content, b.content);
 };
 
+// Text may arrive as a string on one side and an ImmutableString on the other — they read the
+// same and should compare the same, so that switching between them is not a whole-site rewrite
+// on every build.
 const sameContent = (a, b) => {
-  if (a instanceof Uint8Array && b instanceof Uint8Array) {
-    if (a.byteLength !== b.byteLength) return false;
-    for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false;
-    return true;
-  }
-  return String(a) === String(b);
+  const aBytes = a instanceof Uint8Array;
+  const bBytes = b instanceof Uint8Array;
+  if (aBytes !== bBytes) return false;
+  if (!aBytes) return String(a) === String(b);
+  if (a.byteLength !== b.byteLength) return false;
+  for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false;
+  return true;
 };
+
+/**
+ * How many builds may write into one output document before it is replaced with a fresh one.
+ *
+ * Writing only what changed is the cheap thing to do — a one-page edit is one or two entries,
+ * not a whole site — but every such write leaves a version behind in the document's history,
+ * and nobody wants the built site's history. Replacing the document occasionally bounds that
+ * without paying a full rewrite on every keystroke.
+ *
+ * Measured on the ARIA notebook: mutating in place costs ~0.3kb of history per rebuild, a fresh
+ * document ~205kb written. At 50, the accumulated history stays well under a tenth of the
+ * document, and a full rewrite happens about once per editing session rather than continuously.
+ */
+export const COMPACT_EVERY = 50;
+
+/**
+ * What the output document needs, given what was built and what it already holds.
+ *
+ *   skip    — nothing changed; do not touch the document at all
+ *   update  — write only the entries that moved, into the document that exists
+ *   replace — start a fresh document from the finished state, discarding the old history
+ *
+ * Pure, so the decision can be tested without a repo.
+ */
+export function planWrite({ existing, entries, buildsSinceFresh = 0, compactEvery = COMPACT_EVERY }) {
+  if (!existing) return { action: "replace", set: entries, remove: [] };
+
+  const { set, remove } = changesFor(existing, entries);
+  if (!Object.keys(set).length && !remove.length) return { action: "skip", set: {}, remove: [] };
+
+  if (buildsSinceFresh >= compactEvery) return { action: "replace", set: entries, remove: [] };
+  return { action: "update", set, remove };
+}

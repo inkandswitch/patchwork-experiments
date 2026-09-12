@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
+import { requestedPath, servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
 const URL_ = "automerge:wZkgNq3hJMwU78JfwPDojeZE3At";
 const PINNED = `${URL_}#2PGRvDySwEtmX7f68hTwXb9jta9Y3F1jdj8HrNpaGUAPVLeNfw`;
@@ -74,5 +74,34 @@ describe("topLevelNames", () => {
   test("nothing sensible in, nothing out", () => {
     expect(topLevelNames(null)).toEqual([]);
     expect(topLevelNames({})).toEqual([]);
+  });
+});
+
+describe("requestedPath", () => {
+  const withAttr = (value) => {
+    const view = document.createElement("patchwork-view");
+    const inner = document.createElement("div");
+    view.append(inner);
+    document.body.append(view);
+    if (value !== undefined) view.setAttribute("data-path", value);
+    return inner;
+  };
+
+  test("reads where the embedding tool wants us to start", () => {
+    expect(requestedPath(withAttr("alifib/index.html"))).toBe("alifib/index.html");
+  });
+
+  test("a leading slash is tolerated", () => {
+    expect(requestedPath(withAttr("/alifib/index.html"))).toBe("alifib/index.html");
+  });
+
+  test("no attribute means no opinion — the viewer picks its own home", () => {
+    expect(requestedPath(withAttr(undefined))).toBe(undefined);
+    expect(requestedPath(withAttr(""))).toBe(undefined);
+  });
+
+  test("an element with no patchwork-view around it is not a crash", () => {
+    expect(requestedPath(document.createElement("div"))).toBe(undefined);
+    expect(requestedPath(null)).toBe(undefined);
   });
 });

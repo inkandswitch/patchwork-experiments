@@ -6,40 +6,50 @@
     const raw = await (await fetch("/repo.json")).json();
     out.sourceFileCount = Object.keys(raw).length;
 
-    // ---- a repo, shaped the way pushwork shapes one -----------------------------------
-    // Nested folder docs ({title, docs:[{name,type,url}]}) with a document per file
-    // ({name, extension, mimeType, content}). Built bottom-up so each folder can name its
-    // children's URLs.
-    const tree = {};
+    // ---- the repo, in BOTH of pushwork's shapes ----------------------------------------
+    // The file documents are the expensive part and both shapes share them, so making two roots
+    // over one set of files tests both for almost the cost of one. vfs is what `pushwork init`
+    // writes by default; patchwork-folder is what it writes with --shape.
+    const fileUrls = {};
+    let docCount = 0;
     for (const [path, f] of Object.entries(raw)) {
+      const name = path.split("/").pop();
+      const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
+      const content = f.encoding === "utf8" ? f.content : Uint8Array.from(atob(f.content), (c) => c.charCodeAt(0));
+      const doc = await window.repo.create2({ "@patchwork": { type: "file" }, name, extension: ext, mimeType: f.mimeType, content });
+      fileUrls[path] = doc.url;
+      docCount++;
+    }
+
+    // vfs: one root document, keys are whole paths, values are the file documents.
+    const vfsRoot = await window.repo.create2({
+      "@patchwork": { type: "directory", title: "aria-sgai-notebook (vfs)" },
+      lastSyncAt: 1,
+      ...fileUrls,
+    });
+
+    // patchwork-folder: a document per directory, nested.
+    const tree = {};
+    for (const [path, url] of Object.entries(fileUrls)) {
       const parts = path.split("/");
       let node = tree;
       for (const dir of parts.slice(0, -1)) node = node[dir] ??= {};
-      node[parts.at(-1)] = f;
+      node[parts.at(-1)] = url;
     }
-
-    let docCount = 0;
     const makeFolder = async (node, title) => {
       const docs = [];
       for (const [name, child] of Object.entries(node)) {
-        if (child && typeof child === "object" && "encoding" in child) {
-          const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
-          const content = child.encoding === "utf8" ? child.content : Uint8Array.from(atob(child.content), (c) => c.charCodeAt(0));
-          const file = await window.repo.create2({ name, extension: ext, mimeType: child.mimeType, content });
-          docCount++;
-          docs.push({ name, type: "file", url: file.url });
-        } else {
-          const folder = await makeFolder(child, name);
-          docs.push({ name, type: "folder", url: folder.url });
-        }
+        if (typeof child === "string") docs.push({ name, type: "file", url: child });
+        else docs.push({ name, type: "folder", url: (await makeFolder(child, name)).url });
       }
       docCount++;
-      return window.repo.create2({ title, docs });
+      return window.repo.create2({ "@patchwork": { type: "folder" }, title, docs });
     };
+    const folderRoot = await makeFolder(tree, "aria-sgai-notebook (folder)");
 
-    const repoHandle = await makeFolder(tree, "aria-sgai-notebook");
     out.sourceDocsCreated = docCount;
-    out.sourceUrl = repoHandle.url;
+    out.shapes = { vfs: vfsRoot.url, folder: folderRoot.url };
+    const repoHandle = vfsRoot; // the default shape is the one to prove
 
     // ---- stand in for the host, and mount the real component ---------------------------
     // A patchwork:component is handed an element and nothing else. Everything it needs comes
@@ -127,6 +137,28 @@
     });
     if (doc.status !== "ok") throw new Error("build did not succeed: " + (doc.log ?? []).join(" | "));
 
+    // ---- the other shape builds too -----------------------------------------------------
+    ports.selection.postMessage({ type: "change", value: [folderRoot.url] });
+    // Wait for the label to name the folder repo, not merely for the button to be enabled: it
+    // was already enabled from the previous selection, so that check passed instantly and the
+    // click rebuilt the wrong repo. A wait for a condition that is already true is not a wait.
+    for (let i = 0; i < 60; i++) {
+      if (host.querySelector(".cwb__repo")?.textContent?.includes("(folder)")) break;
+      await wait(100);
+    }
+    out.folderRepoSelected = host.querySelector(".cwb__repo")?.textContent;
+    host.querySelector('[data-act="build"]').click();
+    const folderEntry = () => storage.doc()?.builds?.[folderRoot.url];
+    for (let i = 0; i < 400; i++) {
+      if (folderEntry()?.status === "ok" || folderEntry()?.status === "error") break;
+      await wait(250);
+    }
+    out.steps.push({ step: "patchwork-folder shape builds too", status: folderEntry()?.status, log: folderEntry()?.log });
+
+    // Back to the vfs repo for the rest.
+    ports.selection.postMessage({ type: "change", value: [repoHandle.url] });
+    await wait(600);
+
     // ---- an identical rebuild should write nothing --------------------------------------
     // This is what keeps the output document's history from gaining a full copy of the site on
     // every build, and it is only true if changesFor() compares content rather than trusting
@@ -141,7 +173,57 @@
     out.steps.push({
       step: "rebuild with nothing changed",
       log: buildEntry()?.log,
+      // Nothing changed, so no new document: the previous one is kept and the URL holds still.
       sameOutputDocument: buildEntry()?.outputUrl === before,
+    });
+
+    // ---- editing a page produces a NEW output document -----------------------------------
+    // Built output gets no history: each build that changes anything is a fresh document made
+    // from its finished state, and the one it replaces is deleted.
+    const essaySourcePath = "content/alifib/index.md";
+    const essayDocUrl = fileUrls[essaySourcePath];
+    const essayHandle = await window.repo.find(essayDocUrl);
+    essayHandle.change((d) => { d.content = String(d.content) + "\n\nA paragraph added by the probe.\n" });
+
+    const beforeEdit = buildEntry().outputUrl;
+    const beforeBuiltAt = buildEntry().lastBuiltAt;
+    host.querySelector('[data-act="build"]').click();
+    for (let i = 0; i < 400; i++) {
+      if (buildEntry()?.status === "ok" && buildEntry()?.lastBuiltAt !== beforeBuiltAt) break;
+      await wait(250);
+    }
+    const afterEdit = buildEntry().outputUrl;
+    const doc2 = await window.repo.find(afterEdit);
+    const someContent = doc2.doc()["index.html"]?.content;
+    out.steps.push({
+      step: "editing a page writes only what moved",
+      // The document is updated in place now, so its URL holds still and the preview does not
+      // have to re-resolve a new one on every keystroke.
+      sameDocument: afterEdit === beforeEdit,
+      // Generated text is an ImmutableString, not a plain string — no text CRDT for output.
+      contentType: someContent?.constructor?.name ?? typeof someContent,
+      editedPageContainsTheEdit: String(doc2.doc()["alifib/index.html"]?.content ?? "").includes("added by the probe"),
+      log: buildEntry()?.log,
+    });
+
+    // ---- selecting a page keeps the site pinned and moves the preview ---------------------
+    ports.selection.postMessage({ type: "change", value: [essayDocUrl] });
+    await wait(800);
+    const view = host.querySelector("patchwork-view");
+    out.steps.push({
+      step: "selecting a content file",
+      label: host.querySelector(".cwb__repo")?.textContent,
+      stillPinned: !host.querySelector('[data-act="build"]')?.hidden,
+      previewPath: view?.getAttribute("data-path"),
+    });
+
+    // Selecting something unrelated must not unpin either.
+    ports.selection.postMessage({ type: "change", value: [notARepo.url] });
+    await wait(500);
+    out.steps.push({
+      step: "selecting something unrelated",
+      label: host.querySelector(".cwb__repo")?.textContent,
+      stillPinned: !host.querySelector('[data-act="build"]')?.hidden,
     });
 
     // ---- what landed in the output document -------------------------------------------
