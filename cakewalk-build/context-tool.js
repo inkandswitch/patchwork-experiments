@@ -5,6 +5,8 @@ import { previewPathFor } from "./preview.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
 
+console.info("cakewalk-build loaded from", import.meta.url);
+
 const STYLE_ID = "cakewalk-build-styles";
 if (!document.getElementById(STYLE_ID)) {
   const link = document.createElement("link");
@@ -88,8 +90,13 @@ export default function CakewalkBuildContextTool(element) {
   // and never touches the root, so watching the root alone would miss every edit made here.
   // The handles are already resolved by collectSources, so this costs little beyond the
   // listeners themselves.
+  // On unless someone turns it off. A warm rebuild is about 50ms end to end — reading the repo
+  // out of Automerge costs 1-3ms once the documents are resolved — so there is no reason to make
+  // anyone ask for it.
+  const autoBuildFor = (record) => record?.autoBuild !== false;
+
   const rebuildSoon = debounce(REBUILD_AFTER_QUIET_MS, () => {
-    if (entry()?.autoBuild) build();
+    if (autoBuildFor(entry())) build();
   });
 
   function watchAll(handles) {
@@ -187,7 +194,7 @@ export default function CakewalkBuildContextTool(element) {
       building = false;
       render();
       // Something changed while we were building; go again.
-      if (dirty && entry()?.autoBuild) rebuildSoon();
+      if (dirty && autoBuildFor(entry())) rebuildSoon();
     }
   }
 
@@ -234,7 +241,7 @@ export default function CakewalkBuildContextTool(element) {
     unpinButton.hidden = !pinned;
     autoLabel.hidden = !pinned;
     buildButton.disabled = building || !storage;
-    autoBox.checked = Boolean(build?.autoBuild);
+    autoBox.checked = autoBuildFor(build);
 
     if (!pinned) {
       repoLabel.textContent = selectedReason;

@@ -49,11 +49,15 @@ Two attributes on the `<patchwork-view>` that embeds this tool:
 Attributes rather than a shared module on purpose: neither tool imports the other, and when
 nobody sets them the viewer just opens the site's home page and reloads on document changes.
 
-`data-build` exists because watching the document is not enough. In the **patchwork-folder**
-shape, rebuilding a page changes that page's own folder document and the file document inside it
-— the repo root, which is what the preview is mounted on, never moves. So `handle.on("change")`
-never fires, and the preview sits on the old copy while navigating to the page by hand shows the
-new one. That was a real bug, reported from use; the probe reproduces it.
+The viewer does not depend on `data-build` being set, though: it subscribes to **every folder
+document along the path it is showing**, not only the document it was handed, so it hears a
+rebuild by itself. Each link is re-resolved *without its heads* — an artifact folder link is
+heads-pinned, and a pinned handle is a frozen view that would never report a change, which would
+have looked correct and been silently dead. In vfs there is nothing to walk, since every path is
+a key on the root.
+
+`data-build` is belt and braces on top of that, and it matters when the two tools are different
+vintages. Watching the document alone is not enough.
 
 Reloading also has to be a real navigation. The iframe is sitting on the heads-pinned URL the
 service worker redirected it to, and the viewer navigates to the *bare* URL — so

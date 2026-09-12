@@ -340,20 +340,18 @@
       await wait(50);
     }
 
-    const stale = viewerHost.querySelector(".site-viewer__frame")?.contentDocument?.body?.textContent ?? "";
-    // The host tells the viewer a build happened — the channel cakewalk-build uses.
-    viewerHost.querySelector("div")?.setAttribute?.("data-build", buildEntry().lastBuiltAt);
-    viewerHost.setAttribute("data-build", buildEntry().lastBuiltAt);
+    // No signal from the host at all: the viewer subscribes to the folder documents along the
+    // path it is showing, so it hears the rebuild itself. This is the case that matters when the
+    // builder someone has installed is an older version than the viewer.
     let refreshed = "";
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 80; i++) {
       refreshed = viewerHost.querySelector(".site-viewer__frame")?.contentDocument?.body?.textContent ?? "";
       if (refreshed.includes(secondEdit)) break;
       await wait(250);
     }
     out.steps.push({
       step: "rebuilding while the preview is open",
-      staleBeforeTheSignal: !stale.includes(secondEdit),
-      refreshedAfterTheSignal: refreshed.includes(secondEdit),
+      refreshedWithNoSignalFromTheHost: refreshed.includes(secondEdit),
     });
 
     viewerCleanup();

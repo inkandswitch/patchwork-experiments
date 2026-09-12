@@ -1,5 +1,7 @@
 import { requestedPath, servedAt, siteRootIn, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
+console.info("site-viewer loaded from", import.meta.url);
+
 const STYLE_ID = "site-viewer-styles";
 if (!document.getElementById(STYLE_ID)) {
   const link = document.createElement("link");
@@ -117,13 +119,49 @@ export default function SiteViewerTool(handle, element) {
     } catch {
       // A cross-origin document would throw. Nothing we serve is, but a link might lead away.
     }
-    if (here) subpath = here.subpath;
+    if (here) {
+      subpath = here.subpath;
+      watchAlong(subpath);
+    }
     const shown = here?.subpath ?? "";
     pathLabel.textContent = "/" + (siteRoot && shown.startsWith(siteRoot + "/") ? shown.slice(siteRoot.length + 1) : shown);
     pathLabel.title = siteRoot ? `serving the site under ${siteRoot}/` : "";
     openLink.href = frame.src;
   };
   frame.addEventListener("load", onFrameLoad);
+
+  // Watching the document this tool was handed is not enough on its own.
+  //
+  // In the patchwork-folder shape, rebuilding a page changes that page's own folder document and
+  // the file document inside it — the repo root never moves. Mounted on the root, we would never
+  // hear about it. So subscribe to every folder document along the path being shown as well, and
+  // re-resolve each link without its heads: an artifact folder link is heads-pinned, and a pinned
+  // handle is a frozen view that will never report a change.
+  //
+  // In vfs there is nothing to walk — every path is a key on the root — and this stops at once.
+  const repo = element.repo ?? window.repo;
+  let alongPath = [];
+
+  const watchAlong = async (at) => {
+    const wanted = [];
+    let current = handle;
+    let doc = current.doc();
+    for (const segment of String(at).split("/").slice(0, -1)) {
+      if (!Array.isArray(doc?.docs)) break;
+      const link = doc.docs.find((l) => l?.name === segment);
+      if (!link?.url) break;
+      try {
+        current = await repo.find(withoutHeads(link.url));
+      } catch {
+        break;
+      }
+      doc = current.doc();
+      wanted.push(current);
+    }
+    for (const h of alongPath) h.off("change", onChange);
+    alongPath = wanted;
+    for (const h of alongPath) h.on("change", onChange);
+  };
 
   // Rebuild in another tab, or another person's edit arriving: stay on the page being looked
   // at and re-resolve it, rather than jumping back to the home page.
@@ -171,6 +209,7 @@ export default function SiteViewerTool(handle, element) {
 
   return () => {
     handle.off("change", onChange);
+    for (const h of alongPath) h.off("change", onChange);
     observer.disconnect();
     frame.removeEventListener("load", onFrameLoad);
     root.removeEventListener("click", onClick);
