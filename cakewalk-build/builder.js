@@ -5,7 +5,7 @@
 // under public/. When to do that — on a button, on a change, on adopting a site — is policy, and
 // belongs to whichever tool is asking. Both tools in this package ask the same way.
 
-import { outputEntries, pathsByDocument, readRepo, sourcesFrom } from "./build.js";
+import { bundleVersion, documentAt, outputEntries, pathsByDocument, readRepo, sourcesFrom } from "./build.js";
 import { writeSiteInto } from "./site-doc.js";
 
 /**
@@ -21,9 +21,14 @@ export async function buildInto(repo, siteUrl, { immutable = (t) => t } = {}) {
   const { files, shape, title } = await readRepo(repo, siteUrl);
   const readMs = performance.now() - readAt;
 
+  // The bundle is content inside the document being built, so the import is keyed by that
+  // content's version. See bundleVersion.
+  const bundleDoc = await documentAt(repo, siteUrl, BUNDLE);
+  const at = bundleDoc ? await bundleVersion(repo, bundleDoc) : "missing";
+
   let buildSite;
   try {
-    ({ buildSite } = await import(`/${encodeURIComponent(siteUrl)}/${BUNDLE}`));
+    ({ buildSite } = await import(`/${encodeURIComponent(siteUrl)}/${BUNDLE}?at=${encodeURIComponent(at)}`));
   } catch (err) {
     throw new Error(
       `That repo has no ${BUNDLE} in it, so there is no build system to run. ` +

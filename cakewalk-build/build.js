@@ -138,6 +138,46 @@ function describeShape(doc) {
 export const sourcesFrom = (files) => Object.fromEntries([...files].map(([path, f]) => [path, { content: f.content }]));
 
 /** Which source path a document is — for working out which page someone is editing. */
+/**
+ * The document a path in the repo lives in, in either shape, or null.
+ *
+ * Only the build system needs this — everything else works from the map readRepo returns, and
+ * the build system is deliberately not in it (dist/ is skipped, and rightly: it is output, not
+ * source). See `bundleVersion`.
+ */
+export async function documentAt(repo, rootUrl, path) {
+  let handle = await repo.find(bare(rootUrl));
+  const root = handle.doc();
+  if (repoShape(root) === "vfs") {
+    const url = root[path];
+    return typeof url === "string" && url.startsWith("automerge:") ? bare(url) : null;
+  }
+  for (const name of path.split("/").filter(Boolean)) {
+    const link = handle.doc()?.docs?.find((l) => l?.name === name);
+    if (!link?.url) return null;
+    handle = await repo.find(bare(link.url));
+  }
+  return bare(handle.url);
+}
+
+/**
+ * A version string for a document: its heads, which change exactly when its content does.
+ *
+ * The build system is imported as a module, and a module is fetched once per URL for the life of
+ * the page — the registry has no revalidation and no eviction. A repo whose build system was
+ * synced while the page was open therefore kept running the old one, silently, with no cache to
+ * clear and nothing in the network tab to see: the URL was right and the bytes it served were
+ * current. Keying the import by this makes it re-import when the build system changes and cache
+ * when it has not, which is what an immutable URL is for.
+ */
+export async function bundleVersion(repo, url) {
+  try {
+    return (await repo.find(bare(url))).heads().join(".");
+  } catch {
+    return "unknown";
+  }
+}
+
 export const pathsByDocument = (files) => new Map([...files].map(([path, f]) => [f.url, path]));
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { mimeTypeFor, outputEntries, pathsByDocument, readRepo, repoShape, repoTitle, sourcesFrom } from "./build.js";
+import { bundleVersion, documentAt, mimeTypeFor, outputEntries, pathsByDocument, readRepo, repoShape, repoTitle, sourcesFrom } from "./build.js";
 
 describe("mimeTypeFor", () => {
   test("the types a built site is actually made of", () => {
@@ -24,7 +24,53 @@ describe("mimeTypeFor", () => {
 });
 
 // A repo made of plain objects, standing in for automerge documents.
-const fakeRepo = (docs) => ({ find: async (url) => ({ url, doc: () => docs[url] }) });
+const fakeRepo = (docs, heads = {}) => ({
+  find: async (url) => {
+    const id = String(url).split("#")[0];
+    if (!(id in docs)) throw new Error(`no such doc ${id}`);
+    return { url: id, doc: () => docs[id], heads: () => heads[id] ?? ["h1"] };
+  },
+});
+
+describe("documentAt", () => {
+  const folder = () =>
+    fakeRepo({
+      "automerge:root": { "@patchwork": { type: "folder" }, title: "site",
+                          docs: [{ name: "dist", type: "folder", url: "automerge:dist#pinned" }] },
+      "automerge:dist": { docs: [{ name: "site-build.js", type: "file", url: "automerge:bundle" }] },
+      "automerge:bundle": { name: "site-build.js", content: "export const buildSite = () => {}" },
+    });
+
+  test("walks a folder repo to the document a path names", async () => {
+    expect(await documentAt(folder(), "automerge:root", "dist/site-build.js")).toBe("automerge:bundle");
+  });
+
+  test("reads a vfs repo straight off the root", async () => {
+    const repo = fakeRepo({
+      "automerge:root": { "@patchwork": { type: "directory" }, "dist/site-build.js": "automerge:bundle" },
+      "automerge:bundle": { content: "" },
+    });
+    expect(await documentAt(repo, "automerge:root", "dist/site-build.js")).toBe("automerge:bundle");
+  });
+
+  test("is null when the path is not there", async () => {
+    expect(await documentAt(folder(), "automerge:root", "dist/missing.js")).toBe(null);
+  });
+});
+
+describe("bundleVersion", () => {
+  // A module is fetched once per URL for the life of the page, so an import keyed only by path
+  // keeps running a build system that has since been replaced. The heads change when the bundle
+  // does and not otherwise, which is exactly the cache key the import wants.
+  test("is the document's heads", async () => {
+    const repo = fakeRepo({ "automerge:bundle": { content: "" } }, { "automerge:bundle": ["aa", "bb"] });
+    expect(await bundleVersion(repo, "automerge:bundle")).toBe("aa.bb");
+  });
+
+  test("does not fail a build when it cannot be read", async () => {
+    expect(await bundleVersion(fakeRepo({}), "automerge:gone")).toBe("unknown");
+  });
+});
 
 describe("collectSources", () => {
   test("reads a patchwork-folder repo", async () => {
