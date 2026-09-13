@@ -178,6 +178,31 @@ export async function bundleVersion(repo, url) {
   }
 }
 
+/**
+ * The first source that has moved on since it was read, or null.
+ *
+ * A build subscribes to the documents it read, and it can only do that once it knows what they
+ * are — so there is a window between reading a document and listening to it in which a change
+ * delivers no event, because nothing was listening yet. The build then quietly produces output
+ * from stale input, and because nothing is listening for the change that was missed, nothing
+ * rebuilds until some unrelated edit happens along. The site sits there wrong, with no error and
+ * no way to tell by looking at it.
+ *
+ * Reading a warm repo takes single-digit milliseconds, so the honest thing is to look rather than
+ * to reason about how narrow the window is.
+ */
+export const changedSince = (files, sourceOfDocument, handles) => {
+  for (const handle of handles) {
+    const path = sourceOfDocument.get(String(handle.url));
+    if (path === undefined) continue;
+    const read = files.get(path)?.content;
+    if (typeof read !== "string") continue; // bytes are shared by reference, not rebuilt
+    const now = handle.doc()?.content;
+    if (now !== undefined && String(now) !== read) return path;
+  }
+  return null;
+};
+
 export const pathsByDocument = (files) => new Map([...files].map(([path, f]) => [f.url, path]));
 
 /**

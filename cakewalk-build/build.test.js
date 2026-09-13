@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { bundleVersion, documentAt, mimeTypeFor, outputEntries, pathsByDocument, readRepo, repoShape, repoTitle, sourcesFrom } from "./build.js";
+import { bundleVersion, changedSince, documentAt, mimeTypeFor, outputEntries, pathsByDocument, readRepo, repoShape, repoTitle, sourcesFrom } from "./build.js";
 
 describe("mimeTypeFor", () => {
   test("the types a built site is actually made of", () => {
@@ -30,6 +30,38 @@ const fakeRepo = (docs, heads = {}) => ({
     if (!(id in docs)) throw new Error(`no such doc ${id}`);
     return { url: id, doc: () => docs[id], heads: () => heads[id] ?? ["h1"] };
   },
+});
+
+describe("changedSince", () => {
+  // A build can only subscribe to the documents it read once it knows what they are, so a change
+  // arriving during the build delivers no event. Without this check the site is left built from
+  // stale input, with nothing listening for the change that was missed and nothing to see wrong.
+  const handle = (url, content) => ({ url, doc: () => ({ content }) });
+  const files = new Map([["content/index.md", { content: "hello", url: "automerge:a" }]]);
+  const sources = new Map([["automerge:a", "content/index.md"]]);
+
+  test("is null when nothing moved", () => {
+    expect(changedSince(files, sources, [handle("automerge:a", "hello")])).toBe(null);
+  });
+
+  test("names the source that moved", () => {
+    expect(changedSince(files, sources, [handle("automerge:a", "hello there")])).toBe("content/index.md");
+  });
+
+  test("compares text through String, so a CRDT value is not mistaken for a change", () => {
+    const asObject = { toString: () => "hello" };
+    expect(changedSince(files, sources, [handle("automerge:a", asObject)])).toBe(null);
+  });
+
+  test("ignores documents that are not sources, like the repo root", () => {
+    expect(changedSince(files, sources, [handle("automerge:root", "anything")])).toBe(null);
+  });
+
+  test("ignores bytes, which are shared by reference rather than rebuilt", () => {
+    const bin = new Map([["content/x.png", { content: new Uint8Array([1, 2]), url: "automerge:b" }]]);
+    const src = new Map([["automerge:b", "content/x.png"]]);
+    expect(changedSince(bin, src, [handle("automerge:b", new Uint8Array([9]))])).toBe(null);
+  });
 });
 
 describe("documentAt", () => {

@@ -1,5 +1,5 @@
 import { ImmutableString } from "@automerge/automerge";
-import { repoTitle } from "./build.js";
+import { changedSince, repoTitle } from "./build.js";
 import { buildInto, summarise } from "./builder.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
 import { buildFor, recordBuild } from "./settings.js";
@@ -158,6 +158,9 @@ export default function CakewalkBuildContextTool(element) {
         [url, ...result.sourceOfDocument.keys()].map((u) => repo.find(u).catch(() => null))
       );
       watchAll(handles.filter(Boolean));
+
+      // Nothing was listening while the build ran. See changedSince.
+      if (changedSince(result.files, result.sourceOfDocument, watched)) dirty = true;
 
       recordBuild(storage, url, {
         status: "ok",

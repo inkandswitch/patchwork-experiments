@@ -1,3 +1,4 @@
+import { changedSince } from "./build.js";
 import { ImmutableString } from "@automerge/automerge";
 import { buildInto, summarise } from "./builder.js";
 import { describeRepo } from "./providers.js";
@@ -109,6 +110,10 @@ export default function CakewalkEditorTool(handle, element) {
         [handle.url, ...result.sourceOfDocument.keys()].map((u) => repo.find(u).catch(() => null))
       );
       watchAll(handles.filter(Boolean));
+
+      // Nothing was listening while the build ran. See changedSince.
+      const moved = changedSince(result.files, result.sourceOfDocument, watched);
+      if (moved) dirty = true;
 
       status = "ok";
       statusDetail = new Date().toLocaleTimeString();
