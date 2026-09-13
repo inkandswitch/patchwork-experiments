@@ -5,12 +5,21 @@ import { describeRepo } from "./providers.js";
 console.info("cakewalk-editor loaded from", import.meta.url);
 
 const STYLE_ID = "cakewalk-build-styles";
-if (!document.getElementById(STYLE_ID)) {
-  const link = document.createElement("link");
-  link.id = STYLE_ID;
-  link.rel = "stylesheet";
-  link.href = new URL("./styles.css", import.meta.url).href;
-  document.head.appendChild(link);
+// One stylesheet for the package, pointed at whichever copy of the module loaded most recently.
+// A shell can have two versions of a tool in one page — the list it booted with and the one it
+// picked up after a sync — and guarding on the element alone meant the version that happened to
+// load first owned the styles for the rest of the session. The new module's CSS then silently
+// did nothing, which looks exactly like a CSS bug and is not one.
+{
+  const href = new URL("./styles.css", import.meta.url).href;
+  let link = document.getElementById(STYLE_ID);
+  if (!link) {
+    link = document.createElement("link");
+    link.id = STYLE_ID;
+    link.rel = "stylesheet";
+    document.head.appendChild(link);
+  }
+  if (link.href !== href) link.href = href;
 }
 
 // Typing produces a change per keystroke. Wait for quiet rather than building on each one; a
