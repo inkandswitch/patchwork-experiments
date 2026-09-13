@@ -276,6 +276,35 @@ describe("writeSiteInto — patchwork-folder", () => {
     expect(String(at(repo, fileLink.url).content)).toBe("essay");
   });
 
+  // A repo built by the CLI, or by an older version of this, has bare links throughout. One bare
+  // link in the middle of the path un-addresses everything below it, so they have to be adopted —
+  // once, without rewriting the file documents they point at.
+  test("bare links left by an earlier build are pinned without rewriting the files", async () => {
+    const repo = makeRepo({
+      "automerge:root": { "@patchwork": { type: "folder" }, title: "site",
+                          docs: [{ name: "public", type: "folder", url: "automerge:public" }] },
+      "automerge:public": { "@patchwork": { type: "folder" }, title: "public",
+                            docs: [{ name: "index.html", type: "html", url: "automerge:page" }] },
+      "automerge:page": { "@patchwork": { type: "file" }, name: "index.html", extension: "html",
+                          mimeType: "text/html", content: "one" },
+    });
+    const counts = await writeSiteInto(repo, "automerge:root", { entries: { "index.html": html("one") }, shape: "folder" });
+    expect(counts).toMatchObject({ unchanged: 1, created: 0, replaced: 0 });
+
+    const publicLink = repo.docs["automerge:root"].docs.find((l) => l.name === "public");
+    const fileLink = repo.docs["automerge:public"].docs.find((l) => l.name === "index.html");
+    expect(publicLink.url).toContain("#");
+    expect(fileLink.url).toContain("#");
+    // The same document, still holding the same bytes — only the link learned to name them.
+    expect(id(fileLink.url)).toBe("automerge:page");
+    expect(String(repo.docs["automerge:page"].content)).toBe("one");
+
+    // And it settles: adopting the pins is a one-off, not something every build redoes.
+    const snapshot = JSON.stringify(repo.docs);
+    await writeSiteInto(repo, "automerge:root", { entries: { "index.html": html("one") }, shape: "folder" });
+    expect(JSON.stringify(repo.docs)).toBe(snapshot);
+  });
+
   // Re-pinning on every build is what keeps a pin from going stale, but it must not mean writing
   // on every build: a build that changed nothing has nothing to re-pin, and history is not free.
   test("a build that changes nothing rewrites nothing, pins included", async () => {

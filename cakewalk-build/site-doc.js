@@ -130,13 +130,18 @@ export async function writeSiteInto(repo, rootUrl, { entries, prefix = OUTPUT_PR
       return entry;
     }
     if (existingUrl) {
-      // Resolve bare — a pinned URL yields a view-only handle, and finding one caches it for
-      // that document — but hand back the URL exactly as it was written. Baring it here would
-      // quietly drop the pin from every file a build left alone.
-      const doc = await repo.find(bare(existingUrl)).then((h) => h?.doc(), () => undefined);
+      // Resolve bare: a pinned URL yields a view-only handle, and finding one caches it for that
+      // document.
+      const handle = await repo.find(bare(existingUrl)).catch(() => null);
+      const doc = handle?.doc();
       if (doc && "content" in doc && sameContent(doc.content, entry.content)) {
         counts.unchanged++;
-        return existingUrl;
+        // Pinned even though nothing was written. A link left by an earlier build — or by the
+        // CLI, which does not pin at all — is bare, and one bare link in the middle of the path
+        // un-addresses everything below it. The document is untouched, so its heads are the ones
+        // it was created with, and asking again gives the same URL: this rewrites a link once
+        // and then never again.
+        return pinnedUrl(handle);
       }
       if (doc) orphaned.add(existingUrl);
     }
