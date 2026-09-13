@@ -30,8 +30,9 @@ import discoveryTools from "./discovery.js"
 import httpTools from "./http.js"
 import ingestTools from "./ingest.js"
 import skillTools from "./skills.js"
+import buildTools from "./build.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools]
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {

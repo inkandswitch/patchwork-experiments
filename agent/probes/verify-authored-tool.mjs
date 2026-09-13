@@ -82,7 +82,12 @@ const chrome = spawn(
   CHROME,
   [
     "--headless=new",
-    "--disable-gpu",
+    // NOT --disable-gpu: that leaves no WebGL at all, so anything drawing with
+    // three.js or a canvas fails in a way that looks like a bug in the tool.
+    // SwiftShader gives headless a software GL implementation.
+    "--use-gl=angle",
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
     "--no-first-run",
     "--no-default-browser-check",
     `--remote-debugging-port=${PORT}`,
@@ -204,13 +209,36 @@ try {
 
       out.renderedText = (host.innerText ?? "").slice(0, 200)
       const buttons = [...host.querySelectorAll("button")]
+      const inputs = [...host.querySelectorAll("input, select, textarea")]
       out.buttonCount = buttons.length
+      out.inputCount = inputs.length
+      out.interactive = buttons.length + inputs.length
+
+      // Drawing tools render to a canvas and may have no controls at all, so
+      // check for one and whether it actually has pixels in it.
+      const canvas = host.querySelector("canvas")
+      out.hasCanvas = !!canvas
+      if (canvas) {
+        out.canvasSize = canvas.width + "x" + canvas.height
+        out.webglContext = !!(canvas.getContext("webgl2") || canvas.getContext("webgl"))
+      }
 
       const before = JSON.parse(JSON.stringify(handle.doc()))
+      // Whatever the tool offers: a button to click, else an input to change.
       if (buttons.length) {
         buttons[0].click()
-        await new Promise((r) => setTimeout(r, 400))
+        out.interactedWith = "button"
+      } else if (inputs.length) {
+        const field = inputs[0]
+        const value = field.type === "range" || field.type === "number"
+          ? String(Number(field.value || 0) + (Number(field.step) || 1))
+          : "probe"
+        field.value = value
+        field.dispatchEvent(new Event("input", { bubbles: true }))
+        field.dispatchEvent(new Event("change", { bubbles: true }))
+        out.interactedWith = "input"
       }
+      await new Promise((r) => setTimeout(r, 400))
       const after = JSON.parse(JSON.stringify(handle.doc()))
       out.before = before
       out.after = after
@@ -231,10 +259,16 @@ try {
     ["the datatype registered", report.datatypeRegistered === true],
     ["the tool registered", report.toolRegistered === true],
     ["the tool mounted without throwing", report.mounted === true],
-    ["it rendered a button", report.buttonCount > 0],
-    ["clicking it changed the document", report.changed === true],
+    ["it rendered something", report.interactive > 0 || report.hasCanvas === true || !!report.renderedText],
     ["it returned a cleanup function", report.cleanupReturned === true],
   ]
+  // A tool with controls should respond to them; a pure drawing tool need not.
+  if (report.interactive > 0) {
+    checks.push([`interacting with its ${report.interactedWith} changed the document`, report.changed === true])
+  }
+  if (report.hasCanvas) {
+    checks.push(["it has a live WebGL canvas", report.webglContext === true])
+  }
   console.log("\n=== verdict ===")
   for (const [label, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`)
   exitCode = checks.every(([, ok]) => ok) ? 0 : 1

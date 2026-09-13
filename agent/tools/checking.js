@@ -26,6 +26,7 @@
 
 import { hostImport } from "./host.js"
 import { truncate } from "./format.js"
+import { contentToText } from "./folders.js"
 
 /**
  * Live mounts, keyed by id.
@@ -123,7 +124,23 @@ async function loadPackage(input, ctx) {
   }
 
   const heads = packageHandle.heads?.() ?? []
-  const entryUrl = packageFileUrl(bare, heads, "index.js")
+
+  // Respect package.json's `main`. A built package's entry is dist/index.js,
+  // and importing index.js instead would check the source that Patchwork will
+  // never load — passing or failing for the wrong reasons.
+  let entry = "index.js"
+  const manifestLink = (packageHandle.doc().docs ?? []).find((d) => d.name === "package.json")
+  if (manifestLink) {
+    try {
+      const manifest = (await ctx.repo.find(manifestLink.url)).doc()
+      const main = JSON.parse(contentToText(manifest?.content)).main
+      if (main) entry = String(main).replace(/^\.\//, "")
+    } catch {
+      /* fall back to index.js */
+    }
+  }
+
+  const entryUrl = packageFileUrl(bare, heads, entry)
   const importModule = ctx.importModule ?? ((url) => import(/* @vite-ignore */ url))
 
   let module
@@ -285,7 +302,15 @@ async function finishMount({ render, handle, toolId, doc, notes }) {
   let cleanup = null
   let mounted = false
   try {
-    cleanup = await render(handle, container)
+    // Bound the mount. A render function that returns a promise which never
+    // settles — waiting on a device, a context, a network call — would
+    // otherwise hang the check forever with no explanation.
+    cleanup = await Promise.race([
+      render(handle, container),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("render did not finish within 20s")), 20000)
+      ),
+    ])
     mounted = true
     notes.push("Mounted without throwing.")
   } catch (err) {

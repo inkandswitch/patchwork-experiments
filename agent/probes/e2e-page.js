@@ -128,7 +128,8 @@ window.__agentProbe = async function (opts) {
       const last = d.turns[d.turns.length - 1]
       return d.status === "idle" && d.turns.length > 1 && last?.role === "assistant"
     }
-    await waitFor("the agent to act", settled, 90000)
+    const patience = opts.waitMs ?? 90000
+    await waitFor("the agent to act", settled, patience)
 
     // Approve repeatedly: a session grant covers one tool, so a turn that uses
     // two different risky tools legitimately asks twice.
@@ -152,8 +153,8 @@ window.__agentProbe = async function (opts) {
       // Approving does not change the status synchronously — the runner picks
       // the call up on its next tick. Waiting for `settled` here would match
       // the still-current "awaiting-approval" and prove nothing.
-      await waitFor("the approval to be picked up", () => session.doc().status !== "awaiting-approval", 30000)
-      await waitFor("the agent to finish", settled, 90000)
+      await waitFor("the approval to be picked up", () => session.doc().status !== "awaiting-approval", 60000)
+      await waitFor("the agent to finish", settled, patience)
     }
 
     clearInterval(statusTimer)

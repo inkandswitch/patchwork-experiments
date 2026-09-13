@@ -75,6 +75,7 @@ any participant can approve and every approval is auditable.
 | Drive the front end | `view_mount` `view_inspect` `view_interact` `view_unmount` | host |
 | | `tool_check` | host |
 | Environment | `registry_list` `plugin_source` `dom_snapshot` | host |
+| Build | `package_build` | worker |
 | Web | `web_search` `web_fetch` `web_import` | worker |
 | APIs | `secret_list` (host) `http_request` | worker |
 
@@ -96,6 +97,30 @@ wrote, and it exists because the failure mode is not knowing what to look for.
 
 Third parties can contribute tools by registering an `agent:tool` plugin —
 JSON metadata at the top level, `execute` behind `async load()`.
+
+## Builds happen in the browser
+
+A TypeScript tool, or one with npm dependencies, has to be compiled — and
+`package_build` does it with esbuild compiled to wasm, running in the page. It
+reads source out of the package document, fetches bare dependencies as ES
+modules, and writes one self-contained bundle back as `dist/index.js`.
+
+Two reasons it is not a shell-out to node:
+
+- **Sandbox.** `npm install` runs arbitrary postinstall scripts on a real
+  filesystem. Bundling executes nothing from the dependency; esbuild only parses
+  it. The browser's sandbox is the boundary everything else here already trusts.
+- **Portability.** A build that needs a particular machine is a build most
+  people cannot run. This one runs wherever Patchwork runs, including in a
+  SharedWorker — it needs no DOM.
+
+Patchwork's own modules stay external and resolve through the importmap;
+bundling a second copy of automerge would give the tool a different Repo and
+nothing would sync.
+
+Measured: a TypeScript tool importing three.js builds in about one second to a
+727 kB self-contained bundle, which registers, mounts, and draws to a live
+WebGL canvas.
 
 ## Risk lives on the document
 

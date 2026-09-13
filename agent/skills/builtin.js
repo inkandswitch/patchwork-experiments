@@ -106,6 +106,34 @@ thread. Two consequences, both of which fail confusingly if you ignore them:
 - **Size the outermost container** (\`height: 100%\`) and let an inner element
   scroll; the host renders tools in a bounded box.
 
+## Tools that need building
+
+TypeScript, JSX, or an npm dependency like three.js means the package has to be
+compiled. That happens **in the browser** — there is no node, no npm install,
+and no machine to provision.
+
+    my-tool/
+      package.json    { "main": "./dist/index.js" }   ← the BUILT entry
+      src/index.ts    exports \`plugins\`
+      src/scene.ts    imports "three"
+      dist/index.js   written by package_build
+
+1. Write your source under \`src/\` as \`.ts\`.
+2. Set \`package.json\`'s \`main\` to \`./dist/index.js\` — Patchwork loads the
+   built entry, and so does tool_check.
+3. \`package_build\` with \`entry: "src/index.ts"\`. Dependencies you import by
+   bare name are fetched as ES modules and bundled in; nothing from them runs,
+   esbuild only parses them.
+4. \`tool_check\` the package, then install it.
+
+Patchwork's own modules (\`@automerge/*\`, \`@inkandswitch/*\`, \`solid-js\`,
+\`@codemirror/*\`) are left external and resolve through the importmap. Do not
+try to bundle them: a second copy of automerge is a second Repo, and nothing
+would sync.
+
+If the build fails, the error names the file and line. Fix it with fs_write and
+build again — that loop is the point of having the compiler here.
+
 ## Then
 
 Run \`tool_check\` on the folder. It mounts the tool, clicks its first button, and

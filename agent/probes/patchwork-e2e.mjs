@@ -152,7 +152,12 @@ const chrome = spawn(
   CHROME,
   [
     flag("headed") ? "--no-first-run" : "--headless=new",
-    "--disable-gpu",
+    // NOT --disable-gpu: that leaves no WebGL at all, so anything drawing with
+    // three.js or a canvas fails in a way that looks like a bug in the tool.
+    // SwiftShader gives headless a software GL implementation.
+    "--use-gl=angle",
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
     "--no-first-run",
     "--no-default-browser-check",
     "--disable-features=Translate,MediaRouter",
@@ -304,7 +309,7 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open") })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), waitMs: Number(option("wait", "90000")) })})`
   )
 
   console.log("\n=== steps ===")
@@ -382,6 +387,11 @@ try {
     for (const line of consoleLines.slice(-30)) console.error(`  ${line}`)
   }
 } finally {
+  // Let sync flush before killing the browser. Documents created seconds ago
+  // may exist only in this throwaway profile; SIGKILL here and they are gone,
+  // which later looks like "the agent produced a broken package" rather than
+  // "the probe threw the package away".
+  await sleep(Number(option("flush", "8000")))
   chrome.kill("SIGKILL")
 }
 
