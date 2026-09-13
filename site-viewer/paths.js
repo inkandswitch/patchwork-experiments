@@ -86,14 +86,19 @@ export function requestedPath(element) {
  * Returns `{url, prefix}`: the document to mount, and any path prefix inside it.
  *
  * The distinction matters more than it looks. In the `patchwork-folder` shape, `public/` is its
- * own document, so the site can be mounted *there* — and a URL pinned to that document's heads
- * changes every time a build changes anything. Mounted at the repo root instead, the pinned URL
- * never moves (rebuilding a page does not touch the root), so the service worker keeps serving
- * what it cached under it and the preview is stale forever. Measured, not guessed: the bare repo
- * URL returned a stale page while the same content read through the file document was current.
+ * own document, so the site is mounted *there* rather than at the repo root: rebuilding a page
+ * does not touch the root, so a URL naming the root stands still while the site underneath it
+ * moves. Measured, not guessed — the repo URL returned a stale page while the same content read
+ * through the file document was current.
  *
- * In `vfs` there is no separate document — every path is a key on the root — but the root changes
- * on every build, so mounting there is already correct.
+ * The link is returned exactly as the document spells it, heads and all. A builder that writes an
+ * artifact directory pins what it wrote, and that pin is a fact recorded in the repo: it says
+ * which bytes this directory held when the build finished. Recomputing it here from the document's
+ * current heads would be guessing at the same answer with less information, and would quietly
+ * disagree with the repo whenever the two were read a moment apart.
+ *
+ * In `vfs` there is no separate document — every path is a key on the root — so the root is the
+ * site, and the prefix says where inside it.
  *
  * Returns undefined when there is no index.html anywhere, which is how the viewer knows to show
  * the document's contents instead of a blank frame.
@@ -107,8 +112,8 @@ export function findSite(doc, docUrl) {
     if (named("index.html")) return here("");
     for (const dir of ["public", "dist", "_site", "build"]) {
       const link = named(dir);
-      // Its own document: mount there, so its heads address the site.
-      if (link?.url) return { url: String(link.url).split("#")[0], prefix: "" };
+      // Its own document, addressed however the repo addresses it.
+      if (link?.url) return { url: String(link.url), prefix: "" };
     }
     return undefined;
   }

@@ -128,6 +128,15 @@ describe("findSite", () => {
     expect(findSite(folderRepo("content", "template", "public"), REPO)).toEqual({ url: "automerge:public", prefix: "" });
   });
 
+  // Heads on the link are the repo saying which bytes that directory held when the build ended.
+  // They are handed back untouched: a URL that names bytes is the only kind that can be cached,
+  // and the only kind an iframe can tell it has already loaded. Recomputing the pin here from the
+  // document's current heads would be guessing at the same answer with less information.
+  test("a pinned link is returned pinned", () => {
+    const repo = { docs: [{ name: "public", url: "automerge:public#abc|def" }] };
+    expect(findSite(repo, REPO)).toEqual({ url: "automerge:public#abc|def", prefix: "" });
+  });
+
   // vfs has no separate document — but its root changes on every build, so mounting there is
   // already correct.
   test("a vfs repo's site is a prefix on the repo itself", () => {

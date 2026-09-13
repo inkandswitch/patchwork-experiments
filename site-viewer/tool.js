@@ -1,4 +1,3 @@
-import { parseAutomergeUrl, stringifyAutomergeUrl } from "@automerge/automerge-repo";
 import { findSite, requestedPath, servedAt, splitServed, topLevelNames, withoutHeads } from "./paths.js";
 
 console.info("site-viewer loaded from", import.meta.url);
@@ -33,21 +32,6 @@ const debounce = (ms, fn) => {
   };
 };
 
-/**
- * The document's URL with its current heads pinned on.
- *
- * Navigation goes to a pinned URL rather than a bare one, and this is the whole reason the
- * preview updates at all. A bare URL is answered with a redirect to the pinned one, and the
- * service worker caches by request URL — so a bare URL is a stable key for content that moves,
- * and what it cached is what you keep getting. Pinning makes the URL change exactly when the
- * content does, which is what a cache wants.
- */
-const pinnedUrl = (handle) =>
-  stringifyAutomergeUrl({
-    documentId: parseAutomergeUrl(withoutHeads(handle.url)).documentId,
-    heads: handle.heads(),
-  });
-
 export default function SiteViewerTool(handle, element) {
   const repo = element.repo ?? window.repo;
 
@@ -76,6 +60,15 @@ export default function SiteViewerTool(handle, element) {
   // a repo keeps its site in a `public/` folder document of its own. `prefix` is any path inside
   // that document. See findSite().
   let site = null;
+  /**
+   * The URL to navigate to, as the repo spells it — pinned when the repo pinned it.
+   *
+   * Kept apart from `site` because the two want opposite things. Navigation wants the address
+   * recorded in the document: pinned, so it names bytes and changes exactly when they do.
+   * Watching wants a live handle, and a handle opened at fixed heads is a frozen view that never
+   * reports a change.
+   */
+  let siteUrl = null;
   let prefix = "";
   /** Where the iframe is, relative to the site's root. */
   let subpath = requestedPath(element) ?? "index.html";
@@ -123,7 +116,7 @@ export default function SiteViewerTool(handle, element) {
   const go = async (at) => {
     if (!site) return showMessageForNoSite();
     subpath = at;
-    const src = servedAt(pinnedUrl(site), [prefix, at].filter(Boolean).join("/"));
+    const src = servedAt(siteUrl, [prefix, at].filter(Boolean).join("/"));
 
     // The resolver throws rather than 404s for a path it cannot reach, and a failed navigation
     // still fires the iframe's load event — so ask first, where the status is legible.
@@ -138,8 +131,8 @@ export default function SiteViewerTool(handle, element) {
     }
 
     hideMessage();
-    // The iframe is on the previous pinned URL; this one differs whenever the site has changed,
-    // so it is a real navigation rather than a no-op assignment.
+    // The iframe is on the previous URL; a pinned one differs whenever the site has changed, so
+    // this is a real navigation rather than a no-op assignment.
     try {
       frame.contentWindow.location.replace(src);
     } catch {
@@ -159,19 +152,25 @@ export default function SiteViewerTool(handle, element) {
   /** Re-read where the site is; open it when it appears. */
   const locate = async ({ navigate }) => {
     const found = findSite(handle.doc(), withoutHeads(handle.url));
-    const sameSite = found && site && withoutHeads(site.url) === found.url && prefix === found.prefix;
     if (!found) {
       site = null;
+      siteUrl = null;
       await watchAll("");
       return showMessageForNoSite();
     }
+    const sameSite = site && withoutHeads(site.url) === withoutHeads(found.url) && prefix === found.prefix;
+    // The same document at a new pin is the ordinary case: a build finished. The document did not
+    // change, so there is nothing to re-open — but the address did, and that is what says there
+    // is something new to load.
+    const moved = siteUrl !== found.url;
+    siteUrl = found.url;
     if (!sameSite) {
-      site = await repo.find(found.url);
+      site = await repo.find(withoutHeads(found.url));
       prefix = found.prefix;
       subpath = requestedPath(element) ?? homePath();
     }
     await watchAll(subpath);
-    if (navigate || !sameSite) await go(subpath);
+    if (navigate || !sameSite || moved) await go(subpath);
   };
 
   const onChange = debounce(RELOAD_AFTER_QUIET_MS, () => locate({ navigate: true }));
