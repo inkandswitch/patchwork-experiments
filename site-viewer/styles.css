@@ -77,3 +77,13 @@
   max-inline-size: 42ch;
   opacity: 0.7;
 }
+
+/* `hidden` has to win over a `display` rule.
+ *
+ * `[hidden] { display: none }` is a UA rule, so any class that also sets `display` beats it and
+ * the element stays laid out — invisible if it happens to have no content, but still there. An
+ * absolutely positioned one goes on swallowing wheels and clicks over whatever it covers, which
+ * is a bug with no visible symptom at the place it happens. That is what made the preview
+ * unscrollable and its links unclickable: the "no site in this document" message sits at inset 0
+ * over the iframe and was `display: grid` whether hidden or not. Hidden means hidden. */
+.site-viewer [hidden] { display: none !important; }
