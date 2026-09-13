@@ -1,4 +1,3 @@
-import { ImmutableString } from "@automerge/automerge";
 import { changedSince, repoTitle } from "./build.js";
 import { buildInto, summarise } from "./builder.js";
 import { describeRepo, onSelectedDoc, onToolStorage } from "./providers.js";
@@ -146,7 +145,7 @@ export default function CakewalkBuildContextTool(element) {
     render();
 
     try {
-      const result = await buildInto(repo, url, { immutable: (text) => new ImmutableString(text) });
+      const result = await buildInto(repo, url);
       sourceOfDoc = result.sourceOfDocument;
       pageOfSource = result.pages;
 

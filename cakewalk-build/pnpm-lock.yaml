@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@automerge/automerge':
+        specifier: 3.2.1
+        version: 3.2.1
       happy-dom:
         specifier: ^15.11.7
         version: 15.11.7
@@ -16,6 +19,9 @@ importers:
         version: 3.2.7(happy-dom@15.11.7)
 
 packages:
+
+  '@automerge/automerge@3.2.1':
+    resolution: {integrity: sha512-xsEZlZe8lWyVCbD7Z7roH4X6ZKlRxMmmumb0M5CuxJWptUEfYsf+1z9lFEJh4aDBbWTLAgxsXd+TBi6jKTj0+g==}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -576,6 +582,8 @@ packages:
     hasBin: true
 
 snapshots:
+
+  '@automerge/automerge@3.2.1': {}
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true

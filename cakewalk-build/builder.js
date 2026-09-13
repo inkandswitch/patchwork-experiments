@@ -16,7 +16,7 @@ import { writeSiteInto } from "./site-doc.js";
 export const BUNDLE = "dist/site-build.js";
 
 /** Build the repo at `siteUrl` and write the result into it. */
-export async function buildInto(repo, siteUrl, { immutable = (t) => t } = {}) {
+export async function buildInto(repo, siteUrl) {
   const readAt = performance.now();
   const { files, shape, title } = await readRepo(repo, siteUrl);
   const readMs = performance.now() - readAt;
@@ -48,7 +48,7 @@ export async function buildInto(repo, siteUrl, { immutable = (t) => t } = {}) {
     },
   });
 
-  const entries = outputEntries(built, (sourcePath) => files.get(sourcePath)?.url, { immutable });
+  const entries = outputEntries(built, (sourcePath) => files.get(sourcePath)?.url);
 
   const writeAt = performance.now();
   const counts = await writeSiteInto(repo, siteUrl, { entries, shape });

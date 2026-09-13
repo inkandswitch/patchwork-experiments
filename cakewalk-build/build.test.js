@@ -1,3 +1,4 @@
+import { ImmutableString } from "@automerge/automerge";
 import { describe, expect, test } from "vitest";
 import { bundleVersion, changedSince, documentAt, mimeTypeFor, outputEntries, pathsByDocument, readRepo, repoShape, repoTitle, sourcesFrom } from "./build.js";
 
@@ -255,18 +256,11 @@ describe("repoShape and repoTitle", () => {
 });
 
 describe("outputEntries", () => {
-  // A marker class stands in for ImmutableString; the wrapper is injected so this module needs
-  // no Automerge dependency.
-  class Marker {
-    constructor(text) { this.text = text }
-    toString() { return this.text }
-  }
-  const immutable = (text) => new Marker(text);
   const documentFor = (sourcePath) => ({ "content/photo.png": "automerge:src" })[sourcePath];
 
   test("generated text is wrapped and typed", () => {
-    const entries = outputEntries({ "index.html": { content: "<h1>hi</h1>" } }, documentFor, { immutable });
-    expect(entries["index.html"].content).toBeInstanceOf(Marker);
+    const entries = outputEntries({ "index.html": { content: "<h1>hi</h1>" } }, documentFor);
+    expect(entries["index.html"].content).toBeInstanceOf(ImmutableString);
     expect(String(entries["index.html"].content)).toBe("<h1>hi</h1>");
     expect(entries["index.html"].mimeType).toBe("text/html");
   });
@@ -276,19 +270,19 @@ describe("outputEntries", () => {
   // document.
   test("a file the build passed through becomes a reference to its source document", () => {
     const bytes = new Uint8Array([1, 2, 3]);
-    const entries = outputEntries({ "photo.png": { content: bytes, from: "content/photo.png" } }, documentFor, { immutable });
+    const entries = outputEntries({ "photo.png": { content: bytes, from: "content/photo.png" } }, documentFor);
     expect(entries["photo.png"]).toBe("automerge:src");
   });
 
   test("a passed-through file whose source is unknown is stored, not dropped", () => {
     const bytes = new Uint8Array([9]);
-    const entries = outputEntries({ "made.png": { content: bytes, from: "nowhere/made.png" } }, documentFor, { immutable });
+    const entries = outputEntries({ "made.png": { content: bytes, from: "nowhere/made.png" } }, documentFor);
     expect(entries["made.png"]).toEqual({ content: bytes, mimeType: "image/png" });
   });
 
   test("bytes the build generated stay bytes — only text is a CRDT worth avoiding", () => {
     const bytes = new Uint8Array([1, 2]);
-    const entries = outputEntries({ "made.png": { content: bytes } }, documentFor, { immutable });
+    const entries = outputEntries({ "made.png": { content: bytes } }, documentFor);
     expect(entries["made.png"].content).toBe(bytes);
   });
 });

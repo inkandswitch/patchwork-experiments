@@ -1,5 +1,4 @@
 import { changedSince } from "./build.js";
-import { ImmutableString } from "@automerge/automerge";
 import { buildInto, summarise } from "./builder.js";
 import { describeRepo } from "./providers.js";
 
@@ -101,7 +100,7 @@ export default function CakewalkEditorTool(handle, element) {
     render();
 
     try {
-      const result = await buildInto(repo, handle.url, { immutable: (text) => new ImmutableString(text) });
+      const result = await buildInto(repo, handle.url);
       files = result.files;
       pages = result.pages;
       if (!selected || !files.has(selected)) selected = firstPage(files);

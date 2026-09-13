@@ -2,6 +2,15 @@
 // Reading a repo out of Automerge, and shaping what its build system produced for writing back.
 // No DOM in here, so the parts worth testing can be.
 
+// A devDependency, not a dependency: at runtime the shell's importmap supplies this, and nothing
+// here is bundled. It is declared so the tests can load this module at all — node resolves
+// nothing from an importmap — and so they can assert against the real ImmutableString rather than
+// a stand-in for it. The wrapper used to be passed in by the caller to avoid declaring it, which
+// bought a dependency-free module at the price of two layers of `immutable = (text) => text`
+// defaults: a caller who forgot got plain strings, which Automerge stores as text CRDTs, which is
+// the history bloat this line exists to prevent. Silent, and the wrong way round.
+import { ImmutableString } from "@automerge/automerge";
+
 /** Directories a repo has that a build has no use for. */
 export const SKIP = new Set(["node_modules", ".git", ".pushwork", "dist", "public", "public-memory", ".cache"]);
 
@@ -220,7 +229,7 @@ export const pathsByDocument = (files) => new Map([...files].map(([path, f]) => 
  * answer given by identity is only true inside one JavaScript heap; an answer given by path
  * survives a structured clone, a worker, or a document.
  */
-export function outputEntries(built, documentFor, { immutable = (text) => text } = {}) {
+export function outputEntries(built, documentFor) {
   const entries = {};
   for (const [path, file] of Object.entries(built)) {
     const source = file.from ? documentFor(file.from) : undefined;
@@ -230,9 +239,8 @@ export function outputEntries(built, documentFor, { immutable = (text) => text }
     }
     // Generated text goes in as an ImmutableString rather than a plain string, because a plain
     // string in Automerge is a text CRDT — machinery for collaborative editing that built output
-    // has no use for. pushwork draws the same line for its artifact directories. `immutable` is
-    // injected so this module needs no Automerge dependency of its own.
-    const content = typeof file.content === "string" ? immutable(file.content) : file.content;
+    // has no use for. pushwork draws the same line for its artifact directories.
+    const content = typeof file.content === "string" ? new ImmutableString(file.content) : file.content;
     entries[path] = { content, mimeType: mimeTypeFor(path) };
   }
   return entries;
