@@ -289,7 +289,9 @@ describe("writeSiteInto — patchwork-folder", () => {
                           mimeType: "text/html", content: "one" },
     });
     const counts = await writeSiteInto(repo, "automerge:root", { entries: { "index.html": html("one") }, shape: "folder" });
-    expect(counts).toMatchObject({ unchanged: 1, created: 0, replaced: 0 });
+    // No file changed, and two directory documents were rewritten all the same — public to pin
+    // the page, root to pin public. A build that says it wrote nothing here would be lying.
+    expect(counts).toMatchObject({ unchanged: 1, created: 0, replaced: 0, relinked: 2 });
 
     const publicLink = repo.docs["automerge:root"].docs.find((l) => l.name === "public");
     const fileLink = repo.docs["automerge:public"].docs.find((l) => l.name === "index.html");

@@ -89,7 +89,10 @@ const fileEntry = (path, content, mimeType) => ({
  */
 export async function writeSiteInto(repo, rootUrl, { entries, prefix = OUTPUT_PREFIX, shape }) {
   const rootHandle = await repo.find(rootUrl);
-  const counts = { created: 0, replaced: 0, unchanged: 0, removed: 0, referenced: 0, deleted: 0 };
+  // `relinked` counts directory documents rewritten — a build can adopt a bare link or refresh a
+  // pin without any file changing, and a summary that only counts files reports that as "nothing
+  // changed, wrote nothing" while it is writing.
+  const counts = { created: 0, replaced: 0, unchanged: 0, removed: 0, referenced: 0, deleted: 0, relinked: 0 };
 
   /**
    * A document's URL with its current heads pinned on — the canonical spelling, from the handle
@@ -116,6 +119,7 @@ export async function writeSiteInto(repo, rootUrl, { entries, prefix = OUTPUT_PR
       link,
     ].sort(byName);
     if (sameLinks(current, next)) return;
+    counts.relinked++;
     handle.change((d) => void (d.docs = next));
   };
 
@@ -264,7 +268,10 @@ export async function writeSiteInto(repo, rootUrl, { entries, prefix = OUTPUT_PR
     // Only when it differs. A build that changed nothing has nothing to say, and saying it anyway
     // would move this document's heads — which now re-pins its parent, and its parent's parent,
     // all the way to the repo root, on every build forever.
-    if (!sameLinks(current, next)) handle.change((d) => void (d.docs = next));
+    if (!sameLinks(current, next)) {
+      counts.relinked++;
+      handle.change((d) => void (d.docs = next));
+    }
   }
 
   // Re-pin the output subtree, deepest first.

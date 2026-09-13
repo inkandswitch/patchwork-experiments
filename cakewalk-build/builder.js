@@ -74,10 +74,12 @@ export async function buildInto(repo, siteUrl) {
 
 /** What a build did, as one line. */
 export const summarise = ({ counts }) => {
-  const touched = counts.created + counts.replaced + counts.removed;
-  return touched
-    ? `wrote ${counts.created} new, ${counts.replaced} replaced, ${counts.removed} removed` +
-        ` (${counts.unchanged} untouched, ${counts.referenced} shared with the source,` +
-        ` ${counts.deleted} old documents deleted)`
-    : `nothing changed, wrote nothing`;
+  const relinked = counts.relinked ?? 0;
+  if (!(counts.created + counts.replaced + counts.removed + relinked)) return `nothing changed, wrote nothing`;
+  return (
+    `wrote ${counts.created} new, ${counts.replaced} replaced, ${counts.removed} removed` +
+    (relinked ? `, ${relinked} ${relinked === 1 ? "directory" : "directories"} relinked` : "") +
+    ` (${counts.unchanged} untouched, ${counts.referenced} shared with the source,` +
+    ` ${counts.deleted} old documents deleted)`
+  );
 };
