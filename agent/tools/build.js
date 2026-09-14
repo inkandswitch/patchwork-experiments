@@ -253,35 +253,91 @@ export function makers(repo) {
 
 // ---------------------------------------------------------------- esbuild
 
-let esbuildReady = null
+/**
+ * Where the "have we initialized esbuild yet" answer lives.
+ *
+ * On globalThis, deliberately, and not in a module-level variable — which is
+ * where it used to be, and which was a bug.
+ *
+ * `esbuild.initialize()` may be called exactly once per esbuild module, and the
+ * browser keys modules by absolute URL. This file gets imported at more than
+ * one URL in normal use: a heads-pinned import and an unpinned one are
+ * different modules, and after a sync a tab can hold both. Two copies of this
+ * file meant two guards standing in front of one esbuild, so the second copy
+ * called `initialize()` again and got `Cannot call "initialize" more than once`
+ * — reported to the agent as a failed package_test, which looked like a problem
+ * with the package under test and was not.
+ *
+ * esbuild's own state is per-realm, so the shared answer has to be per-realm
+ * too. `Symbol.for` gives every copy the same key. Reproduced and fixed against
+ * the deployed shell: probes/esbuild-twice.mjs.
+ */
+const ESBUILD_READY = Symbol.for("patchwork.agent.esbuild")
+
+/** How long to wait for an initialization somebody else started. */
+const INIT_WAIT_MS = 30000
 
 /**
- * Load and initialize esbuild-wasm once per context.
+ * Is esbuild finished initializing?
+ *
+ * There is no flag to read, and `build()` does NOT wait — while initialization
+ * is in flight every API call throws "You need to wait for the promise returned
+ * from initialize to be resolved". So the only honest test is to try something
+ * trivial and see which error comes back.
+ */
+async function usable(esbuild) {
+  try {
+    await esbuild.transform("", { loader: "js" })
+    return true
+  } catch (err) {
+    if (/need to wait|need to call/i.test(String(err?.message ?? err))) return false
+    throw err
+  }
+}
+
+/**
+ * Load and initialize esbuild-wasm once per realm.
  *
  * Imported by absolute URL rather than bare specifier, so this works in a
  * worker, where there is no importmap.
  */
 export async function loadEsbuild({ version = ESBUILD_VERSION, importModule } = {}) {
-  if (esbuildReady) return esbuildReady
+  const url = esbuildModuleUrl(version)
+  const shared = (globalThis[ESBUILD_READY] ??= new Map())
+  const existing = shared.get(url)
+  if (existing) return existing
 
-  esbuildReady = (async () => {
-    const load = importModule ?? ((url) => import(/* @vite-ignore */ url))
-    const esbuild = await load(esbuildModuleUrl(version))
-    await esbuild.initialize({ wasmURL: esbuildWasmUrl(version), worker: true })
+  const ready = (async () => {
+    const load = importModule ?? ((specifier) => import(/* @vite-ignore */ specifier))
+    const esbuild = await load(url)
+    try {
+      await esbuild.initialize({ wasmURL: esbuildWasmUrl(version), worker: true })
+    } catch (err) {
+      // Somebody else initialized this esbuild — an older copy of this file, or
+      // another package sharing the same CDN module. That is fine; it just
+      // means waiting for their initialization rather than starting ours.
+      if (!/more than once/i.test(String(err?.message ?? err))) throw err
+      const deadline = Date.now() + INIT_WAIT_MS
+      while (!(await usable(esbuild))) {
+        if (Date.now() > deadline) throw new Error("esbuild was initialized elsewhere but never became usable.")
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
     return esbuild
   })()
 
+  shared.set(url, ready)
   try {
-    return await esbuildReady
+    return await ready
   } catch (err) {
-    esbuildReady = null // let a later call try again
+    shared.delete(url) // let a later call try again
     throw err
   }
 }
 
 /** Tests only. */
 export function _resetEsbuild() {
-  esbuildReady = null
+  globalThis[ESBUILD_READY] = new Map()
 }
 
 /**

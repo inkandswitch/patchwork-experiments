@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import {
   isExternal, loaderFor, normalizePath, resolveInPackage, entryPointFor,
-  materialize, absorb, makers, packagePlugin, packageBuild, IMPORTMAP_EXTERNALS, _resetEsbuild,
+  materialize, absorb, makers, packagePlugin, packageBuild, IMPORTMAP_EXTERNALS, _resetEsbuild, loadEsbuild,
 } from "./tools/build.js"
 
 describe("what stays external", () => {
@@ -302,5 +302,95 @@ describe("package_build", () => {
     await expect(
       packageBuild.execute({ url: "automerge:pkg" }, { repo, importModule: async () => esbuild })
     ).rejects.toThrow(/Expected ';'/)
+  })
+})
+
+describe("initializing esbuild exactly once per realm", () => {
+  beforeEach(_resetEsbuild)
+
+  /**
+   * An esbuild double with the real one's rules: initialize may be called once,
+   * and nothing works until the promise it returned has resolved.
+   */
+  function fakeEsbuild({ initMs = 0 } = {}) {
+    let initCalled = false
+    let initDone = false
+    return {
+      get initCalls() {
+        return initCalled ? 1 : 0
+      },
+      async initialize() {
+        if (initCalled) throw new Error('Cannot call "initialize" more than once')
+        initCalled = true
+        await new Promise((resolve) => setTimeout(resolve, initMs))
+        initDone = true
+      },
+      async transform(code) {
+        if (!initCalled) throw new Error('You need to call "initialize" before calling this')
+        if (!initDone) {
+          throw new Error('You need to wait for the promise returned from "initialize" to be resolved before calling this')
+        }
+        return { code }
+      },
+    }
+  }
+
+  it("initializes once however many callers there are", async () => {
+    const esbuild = fakeEsbuild()
+    const importModule = async () => esbuild
+    await Promise.all([loadEsbuild({ importModule }), loadEsbuild({ importModule }), loadEsbuild({ importModule })])
+    expect(esbuild.initCalls).toBe(1)
+  })
+
+  it("shares readiness with a second copy of this module", async () => {
+    // The actual bug: two copies of build.js at two URLs, one esbuild between
+    // them. The second copy's loader must not call initialize again — and must
+    // not fail when its own initialize call is refused.
+    const esbuild = fakeEsbuild()
+    await loadEsbuild({ importModule: async () => esbuild })
+
+    // Simulate the other copy: its module-level state is empty, so it starts
+    // from scratch against the same esbuild.
+    _resetEsbuild()
+    const again = await loadEsbuild({ importModule: async () => esbuild })
+
+    expect(again).toBe(esbuild)
+    expect(esbuild.initCalls).toBe(1)
+    expect((await again.transform("x")).code).toBe("x")
+  })
+
+  it("waits for an initialization somebody else started, rather than racing it", async () => {
+    // esbuild's build() does NOT wait for initialize(), so returning as soon as
+    // the "more than once" error arrives would hand back an esbuild that throws
+    // "you need to wait" on first use.
+    const esbuild = fakeEsbuild({ initMs: 60 })
+    const first = loadEsbuild({ importModule: async () => esbuild })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    _resetEsbuild() // the other copy of the module, arriving mid-initialization
+    const second = await loadEsbuild({ importModule: async () => esbuild })
+
+    await expect(second.transform("y")).resolves.toEqual({ code: "y" })
+    await first
+    expect(esbuild.initCalls).toBe(1)
+  })
+
+  it("lets a later call retry after a failed load", async () => {
+    let attempt = 0
+    const importModule = async () => {
+      if (++attempt === 1) throw new Error("network died")
+      return fakeEsbuild()
+    }
+    await expect(loadEsbuild({ importModule })).rejects.toThrow("network died")
+    await expect(loadEsbuild({ importModule })).resolves.toBeTruthy()
+  })
+
+  it("does not swallow an initialization error that is not the double-call one", async () => {
+    const esbuild = {
+      async initialize() {
+        throw new Error("failed to fetch the wasm")
+      },
+    }
+    await expect(loadEsbuild({ importModule: async () => esbuild })).rejects.toThrow("failed to fetch the wasm")
   })
 })
