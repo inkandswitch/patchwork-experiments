@@ -11,7 +11,6 @@
  */
 
 import { hostImport } from "./host.js"
-import { applyChange, contactFromMessage, isAgentChange } from "../identity.js"
 import { applyOps, OpError } from "./ops.js"
 import { previewJson, shape, bytes } from "./format.js"
 
@@ -138,14 +137,14 @@ export const docEdit = {
 
     // One change for all ops: a partially-applied edit is worse than none, and
     // automerge gives us the all-or-nothing for free if we throw inside.
-    applyChange(handle, (draft) => {
+    handle.change((draft) => {
       try {
         done = applyOps(draft, ops, { spliceText: ctx.splice })
       } catch (err) {
         failure = err
         throw err // abandon the change
       }
-    }, ctx)
+    })
 
     if (failure) {
       const hint = failure instanceof OpError ? "" : " (check the path exists — read the document first)"
@@ -197,7 +196,7 @@ export const docHistory = {
   id: "doc_history",
   name: "Document history",
   description:
-    "Summarize a document's change history: how many changes, who made them, and the most recent ones. Every change the agent makes is stamped with its identity, so this distinguishes your edits from its own — use it to answer 'what did you change' honestly.",
+    "Summarize a document's change history: how many changes, by whom, and the most recent ones. Useful for 'what changed recently' and for finding what to undo.",
   where: "worker",
   risk: "read",
   input_schema: {
@@ -216,28 +215,15 @@ export const docHistory = {
 
     const decoded = changes.slice(-limit).map((change) => {
       const meta = automerge.decodeChange(change)
-      const agentContact = contactFromMessage(meta.message)
       return {
         actor: meta.actor.slice(0, 8),
         time: meta.time ? new Date(meta.time * 1000).toISOString() : null,
-        by: agentContact ? "agent" : "person",
         message: meta.message ?? null,
         ops: meta.ops?.length ?? 0,
       }
     })
 
-    // Attribution is per change, not per actor: the agent shares the user's
-    // repo and therefore their actor id, so "who wrote this" can only be
-    // answered by the stamp each change carries.
-    const byAgent = changes.filter((change) => isAgentChange(automerge.decodeChange(change).message)).length
-
-    return previewJson({
-      url,
-      totalChanges: changes.length,
-      changesByAgent: byAgent,
-      changesByPeople: changes.length - byAgent,
-      recent: decoded,
-    })
+    return previewJson({ url, totalChanges: changes.length, recent: decoded })
   },
   summarize(input, output) {
     const match = String(output ?? "").match(/"totalChanges":\s*(\d+)/)

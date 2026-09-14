@@ -16,7 +16,6 @@ import { connectWorkerRunner } from "./worker-client.js"
 import { buildToolset } from "./tools/index.js"
 import { getProvider, readKey, writeKey, loadCatalogue } from "./providers/index.js"
 import { listSecrets, writeSecret } from "./secrets.js"
-import { ensureAgentIdentity, changeMessage } from "./identity.js"
 import { describeModel } from "./providers/openrouter.js"
 import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
@@ -263,13 +262,9 @@ export function AgentTool(handle, element, options = {}) {
     const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
     const liveStore = handleStore(handle, splice)
 
-    // An identity, so its contributions are legible rather than anonymous.
-    const identity = await ensureAgentIdentity(liveStore, repo).catch(() => null)
-
     runner = new SessionRunner({
       store: liveStore,
       runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
-    identity,
       ctx: {
         repo,
         subject: subjectUrl(),
@@ -283,9 +278,6 @@ export function AgentTool(handle, element, options = {}) {
         contactUrl: globalThis.accountDocHandle?.doc()?.contactUrl ?? null,
         moduleSettingsUrl: globalThis.accountDocHandle?.doc()?.moduleSettingsUrl ?? null,
         skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
-        // Stamps every write, so history can tell the agent's edits from yours.
-        changeMessage: changeMessage(identity?.url),
-        agentContact: identity,
         // So view_screenshot can photograph a view that view_mount opened.
         getMount,
         // Documents that always require an explicit yes, whatever touches them.

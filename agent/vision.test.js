@@ -3,7 +3,6 @@ import { initSession, makeTurn, callBlock, resultBlock, toRequest, MAX_IMAGES_IN
 import { toOpenAIMessages } from "./providers/openrouter.js"
 import { runTool } from "./tools/index.js"
 import { canvasWithin, viewScreenshot } from "./tools/screenshot.js"
-import { changeMessage, contactFromMessage, isAgentChange, applyChange } from "./identity.js"
 
 const IMAGE = "data:image/jpeg;base64,AAAA"
 
@@ -117,27 +116,5 @@ describe("view_screenshot", () => {
     await expect(
       viewScreenshot.execute({ mountId: "m" }, { getMount: () => ({ container: element }) })
     ).rejects.toThrow(/no size/)
-  })
-})
-
-describe("identity", () => {
-  it("stamps and recovers a contact from a change message", () => {
-    const message = changeMessage("automerge:contact1")
-    expect(contactFromMessage(message)).toBe("automerge:contact1")
-    expect(isAgentChange(message)).toBe(true)
-  })
-
-  it("does not claim a human change", () => {
-    expect(contactFromMessage(null)).toBeNull()
-    expect(contactFromMessage("edited the title")).toBeNull()
-    expect(isAgentChange(undefined)).toBe(false)
-  })
-
-  it("passes the message through to automerge when one exists", () => {
-    const calls = []
-    const handle = { change: (fn, options) => calls.push(options) }
-    applyChange(handle, () => {}, { changeMessage: "patchwork-agent:x" })
-    applyChange(handle, () => {}, {})
-    expect(calls).toEqual([{ message: "patchwork-agent:x" }, undefined])
   })
 })

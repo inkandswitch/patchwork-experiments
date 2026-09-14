@@ -22,7 +22,6 @@ import {
   callsAwaitingApproval,
 } from "./session.js"
 import { run, OUTCOME } from "./loop.js"
-import { createPresenceTracker } from "./presence.js"
 
 export const HEARTBEAT_MS = 5000
 export const STALE_AFTER_MS = 15000
@@ -69,12 +68,6 @@ export class SessionRunner {
     this.stopped = false
     this.controller = null
     this.heartbeat = null
-
-    // Show up in the document while working, the way a person does. Entirely
-    // best-effort: no failure here should stop the work.
-    this.presence = opts.identity
-      ? createPresenceTracker({ repo: opts.ctx?.repo, identity: opts.identity, importHost: opts.importHost })
-      : null
   }
 
   /** Begin watching for work. Returns a stop function. */
@@ -89,7 +82,6 @@ export class SessionRunner {
     this.stopped = true
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = null
-    this.presence?.leave()
     this.interrupt()
   }
 
@@ -131,7 +123,6 @@ export class SessionRunner {
     this.controller = new AbortController()
     this.onEvent({ type: "start" })
 
-    this.presence?.follow(this.ctx?.subject ?? null).then(() => this.presence?.working())
 
     try {
       const provider = await this.getProvider()
@@ -164,7 +155,6 @@ export class SessionRunner {
     } finally {
       this.running = false
       this.controller = null
-      this.presence?.idle()
       this.releaseIfIdle()
     }
   }

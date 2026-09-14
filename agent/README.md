@@ -23,8 +23,6 @@ claimed by a node process with no tab open.
 | `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
 | `secrets.js` | per-device credentials, addressed by name and never seen by the agent |
-| `identity.js` | the agent's contact, and the change stamp that attributes its writes |
-| `presence.js` | joining a document's presence while working in it |
 | `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
 | `tools/` | the tool surface — documents, discovery, folders, environment, web, http, ingest, authoring, checking |
 | `ui/` | transcript rendering and the provider-subscription protocol |
@@ -187,27 +185,6 @@ a folder document with a `SKILL.md` in it. That matters because this guidance is
 the thing most likely to need correcting in the field: when the agent gets the
 render contract wrong, the fix should be editing a document, not redeploying the
 harness.
-
-## It contributes as itself
-
-The agent shares your repo, so its automerge actor id is *yours* — which makes
-the obvious attribution mechanism (the actor → contact map) actively harmful:
-registering its actor would relabel your own edits as its.
-
-So attribution is per **change**, not per actor. Every write the agent makes
-carries a change message stamped with its contact url, and `doc_history` reports
-`by: "agent"` or `by: "person"` with counts. That is precise, cannot mislabel
-anyone, and needs no second Repo — it works in the browser today.
-
-It also has a **contact** (name, colour) and joins a document's **presence**
-while working, through the same `Presence` mechanism `doc-presence` uses — so it
-arrives and leaves visibly rather than editing your documents invisibly. And
-`view_open` lets it show you what it made instead of handing over a URL in prose.
-
-The honest limit: the contact lives on the session document, not the account, so
-it is one identity per session. The account is a document the safety model always
-asks before touching, and internal machinery must not write where a tool call
-would need permission.
 
 ## It can see what it is working on
 
@@ -393,8 +370,26 @@ contracts belong, because it is the only documentation the model reliably reads.
   power and its hazard: it will write a structurally-invalid document and
   nothing stops it. The datatypes are in the registry and could be checked
   against.
-- **Undo.** History makes "revert what the agent just did" possible; nothing
-  implements it.
+- **Undo, and knowing which edits were the agent's.** History makes "revert what
+  the agent just did" possible; nothing implements it, and there is currently no
+  way to tell its changes from yours.
+
+  An attempt at this was cut. Two findings worth keeping so they are not
+  rediscovered: Patchwork attributes changes by mapping automerge *actor id* to a
+  contact, and the browser agent shares the user's repo — so registering its
+  actor would relabel the user's own edits as the agent's, which is worse than no
+  attribution at all. Stamping each change with a message instead avoids that but
+  is unsatisfying: the marker lives in metadata nobody else reads, and it is
+  advisory rather than structural.
+
+  Doing this properly probably means the agent writing through its own Repo, so
+  it has a genuine actor id of its own and the existing attribution machinery
+  applies unchanged. The node runner already has one; the browser does not.
+
+- **Presence.** The agent does not appear in a document while it works. An
+  implementation against automerge-repo's `Presence` was cut because it did not
+  actually show up — unresolved, and worth checking whether presence needs a peer
+  connection the agent's context does not have.
 - **Large documents.** Reads truncate at 24k characters with a `shapeOnly`
   mode to orient, but there is no paging or query-within, so a chat with
   thousands of messages or a big canvas still reads as noise.
