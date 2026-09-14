@@ -480,6 +480,9 @@ Other probes:
   which is the shape that broke `package_test`.
 - `probes/binary-fetch.mjs` — pulls a real 11 MB wasm module through
   `http_request` and compares every byte against an independent fetch.
+- `probes/revise-loop.mjs` — writes a tool, checks it, edits it, checks again.
+  No model, so it runs in seconds; it exists because a stale import made every
+  check after the first one a lie.
 
 **The key does not live in this package.** `pushwork sync` publishes the whole
 directory and honours only `.pushwork`, `.git`, and `node_modules` — *not*
@@ -572,6 +575,29 @@ binary file inside a package was corrupted on its way to esbuild as well.
 Checking the magic number would not have caught it — UTF-8 replacement leaves
 the first four bytes alone. `probes/binary-fetch.mjs` compares every byte
 against an independent fetch and then compiles the result as WebAssembly.
+
+**Automerge heads are per-document, so a folder's heads say nothing about its
+contents.** `tool_check` pinned its import URL to the package folder's heads, to
+give every revision its own URL and defeat the browser's module cache. But
+editing `tool.js` does not change the folder that contains it — so after the
+first check, every later check imported the module the browser had already
+cached and reported on code that no longer existed. The agent would say "I made
+the buttons bigger and it still passes" having checked the version before the
+edit. The whole revise loop was dishonest, silently, and a passing check was the
+symptom.
+
+A cache-busting suffix is not available: the service worker returns 400 for a
+head it cannot resolve, so the heads have to genuinely move. `loadPackage` now
+fingerprints every document in the package and records it on the package itself,
+which makes the folder's heads reflect its contents.
+
+`probes/revise-loop.mjs` writes a tool, checks it, edits it, and checks again —
+no model involved, so it is fast and deterministic:
+
+```
+before   v1 saw VERSION-ONE / v2 saw VERSION-ONE / v3 saw neither
+after    v1 saw VERSION-ONE / v2 saw VERSION-TWO / v3 saw VERSION-THREE
+```
 
 **A fake that cannot do what the real thing does hides the bug it was written
 for.** The `http_request` doubles were `{ok, text: async () => body}` — no

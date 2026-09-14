@@ -115,6 +115,40 @@ const visibleText = (element) => (element?.innerText ?? element?.textContent ?? 
  * Load a package's entry module and validate the shape Patchwork requires.
  * Returns { module, plugins, notes } or throws with a readable explanation.
  */
+/**
+ * A fingerprint of everything in a package, not just its folder document.
+ *
+ * Automerge heads are per-document, so editing `tool.js` does not change the
+ * heads of the folder that contains it. The folder's heads were what pinned the
+ * import URL — which meant that after the first check, every later check
+ * imported the module the browser had already cached and reported on code that
+ * no longer existed. The agent would say "I made the buttons bigger and it
+ * still passes" having checked the version before the edit.
+ */
+export async function packageContentHash(repo, url, depth = 0, seen = new Set()) {
+  if (depth > 8 || seen.has(url)) return ""
+  seen.add(url)
+  const handle = await repo.find(url)
+  const parts = [(handle.heads?.() ?? []).join(",")]
+  const docs = handle.doc()?.docs
+  if (Array.isArray(docs)) {
+    for (const entry of docs) {
+      parts.push(entry.name ?? "", await packageContentHash(repo, entry.url, depth + 1, seen))
+    }
+  }
+  return parts.join("|")
+}
+
+/** A short, stable digest. Not cryptographic — it only has to change. */
+export function digest(text) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(36)
+}
+
 async function loadPackage(input, ctx) {
   const bare = String(input.url ?? "").split("#")[0]
   if (!bare.startsWith("automerge:")) throw new Error("Pass the package's automerge: URL.")
@@ -122,6 +156,25 @@ async function loadPackage(input, ctx) {
   const packageHandle = await ctx.repo.find(bare)
   if (!Array.isArray(packageHandle.doc()?.docs)) {
     throw new Error(`${bare} is not a package folder document.`)
+  }
+
+  // Record the content fingerprint on the package itself, so the folder's heads
+  // move when anything inside it does and the import URL is therefore new.
+  //
+  // The service worker will not accept an invented version — a URL with a head
+  // it cannot resolve is a 400 — so a cache-busting suffix is not an option and
+  // the heads have to genuinely change. Written only when it differs, so
+  // re-checking an untouched package stays stable and cheap.
+  try {
+    const version = digest(await packageContentHash(ctx.repo, bare))
+    if (packageHandle.doc()?.contentVersion !== version) {
+      packageHandle.change((doc) => {
+        doc.contentVersion = version
+      })
+    }
+  } catch {
+    // A package we cannot fingerprint still checks; it just risks the stale
+    // import this exists to prevent, which is what used to happen always.
   }
 
   const heads = packageHandle.heads?.() ?? []

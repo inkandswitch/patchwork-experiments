@@ -245,6 +245,10 @@
   padding: var(--studio-space-xs, 0.375rem);
   border-top: 1px solid var(--agent-border);
   background: var(--agent-surface);
+  /* A failed write of four files opens itself and would otherwise be several
+     screens of source between you and the next thing that happened. */
+  max-height: 26rem;
+  overflow: auto;
 }
 
 /* Which part of the call you are looking at — "call", "result", a file path. */
