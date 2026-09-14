@@ -405,7 +405,7 @@ export const viewMount = {
     "",
     "This is how you work with what the user actually sees. Use it to check that a change you made looks right, to read a document whose state does not live in a readable shape (a canvas, a text editor), or to operate a tool that has no document-level API — you can click its buttons and type into its fields.",
     "",
-    "Pass `docUrl` to open a real document in an installed tool. Pass `url` instead to mount a package you wrote with tool_write but have not installed. Always view_unmount when you are done.",
+    "Pass `docUrl` to open a real document in an installed tool. Pass `url` instead to mount a package you wrote with fs_write but have not installed. Always view_unmount when you are done.",
   ].join("\n"),
   where: "host",
   risk: "write",
@@ -593,7 +593,7 @@ export const toolCheck = {
   id: "tool_check",
   name: "Check a tool you wrote",
   description: [
-    "Run a tool you wrote end to end and report every problem found. Do this after writing its files and before installing it — code you have not executed is a guess.",
+    "Run a tool you wrote end to end and report every problem found. Do this after writing its files with fs_write and before installing it — code you have not executed is a guess.",
     "",
     "It imports the package from its document (no install needed), creates a document with its datatype, mounts the tool, clicks the first button, checks that the screen followed the document, and tears it down the way Patchwork will.",
     "",
@@ -673,7 +673,7 @@ export const toolCheck = {
 
     const problems = notes.filter((line) => line.startsWith("PROBLEM")).length
     notes.push("")
-    notes.push(problems ? `${problems} problem(s) found — fix with tool_write and check again.` : "No problems found.")
+    notes.push(problems ? `${problems} problem(s) found — fix the files with fs_write and check again.` : "No problems found.")
     return notes.join("\n")
   },
 

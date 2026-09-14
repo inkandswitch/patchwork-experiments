@@ -206,7 +206,7 @@ export function AgentTool(handle, element, options = {}) {
   // Two of them, and that is deliberate. The SharedWorker runs the session —
   // one runner across every tab, surviving navigation. But a worker has no DOM
   // and no plugin registry, so host-tier calls (dom_snapshot, doc_create,
-  // tool_install) park there; the in-tab runner exists to pick exactly those
+  // installing) park there; the in-tab runner exists to pick exactly those
   // up. `needsWork` is runner-aware, so each one only claims the lease for work
   // it can actually do, and the lease keeps them from colliding.
   let workerRunner = null
@@ -270,8 +270,8 @@ export function AgentTool(handle, element, options = {}) {
         subject: subjectUrl(),
         splice,
         element: root,
-        // tool_install needs the account to find its module-settings document;
-        // discovery needs the root folder, which is the entry point to
+        // Installing a module means editing the account's module-settings
+        // document, and discovery needs the root folder — the entry point to
         // everything the user has.
         accountDocHandle: globalThis.accountDocHandle ?? null,
         rootFolderUrl: globalThis.accountDocHandle?.doc()?.rootFolderUrl ?? null,
