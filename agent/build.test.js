@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import {
   isExternal, loaderFor, normalizePath, resolveInPackage, entryPointFor,
-  materialize, absorb, makers, packagePlugin, packageBuild, IMPORTMAP_EXTERNALS, _resetEsbuild, loadEsbuild,
+  materialize, absorb, makers, packagePlugin, packageBuild, IMPORTMAP_EXTERNALS, _resetEsbuild, loadEsbuild, loaderFor,
 } from "./tools/build.js"
 
 describe("what stays external", () => {
@@ -392,5 +392,44 @@ describe("initializing esbuild exactly once per realm", () => {
       },
     }
     await expect(loadEsbuild({ importModule: async () => esbuild })).rejects.toThrow("failed to fetch the wasm")
+  })
+})
+
+describe("binary files in a package", () => {
+  const wasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0xff, 0xfe])
+
+  it("materializes bytes as bytes, not as replacement characters", async () => {
+    const docs = new Map([
+      ["automerge:pkg", { docs: [{ name: "engine.wasm", type: "file", url: "automerge:w" }], "@patchwork": { type: "folder" } }],
+      ["automerge:w", { name: "engine.wasm", content: wasm, "@patchwork": { type: "file" } }],
+    ])
+    const repo = { async find(url) { return { url, doc: () => docs.get(url) } } }
+
+    const files = await materialize(repo, "automerge:pkg")
+    const got = files.get("engine.wasm")
+    expect(got).toBeInstanceOf(Uint8Array)
+    expect([...got]).toEqual([...wasm])
+  })
+
+  it("gives binary assets a loader that does not parse them as JavaScript", () => {
+    expect(loaderFor("engine.wasm")).toBe("binary")
+    expect(loaderFor("logo.png")).toBe("dataurl")
+    expect(loaderFor("Inter.woff2")).toBe("dataurl")
+    expect(loaderFor("notes.md")).toBe("text")
+    expect(loaderFor("index.ts")).toBe("ts")
+  })
+
+  it("hands esbuild the bytes untouched", () => {
+    const files = new Map([["engine.wasm", wasm]])
+    const plugin = packagePlugin(files)
+    // Two onLoad handlers are registered, one per namespace; take the package one.
+    const handlers = new Map()
+    plugin.setup({
+      onResolve: () => {},
+      onLoad: (options, fn) => handlers.set(options.namespace, fn),
+    })
+    const result = handlers.get("package")({ path: "engine.wasm", namespace: "package" })
+    expect(result.contents).toBe(wasm)
+    expect(result.loader).toBe("binary")
   })
 })

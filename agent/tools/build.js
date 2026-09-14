@@ -77,6 +77,14 @@ export function isExternal(specifier) {
 }
 
 /** esbuild's loader for a path, by extension. */
+/**
+ * Which esbuild loader a file wants.
+ *
+ * The binary entries matter as much as the source ones: a `.wasm` imported for
+ * its bytes wants the `binary` loader (a Uint8Array at runtime), and an image
+ * or font wants `dataurl` so it ends up inside a single-file bundle rather than
+ * as a fetch to a path that will not exist.
+ */
 export function loaderFor(path) {
   const extension = String(path).split(".").pop()?.toLowerCase()
   if (extension === "ts") return "ts"
@@ -84,6 +92,11 @@ export function loaderFor(path) {
   if (extension === "jsx") return "jsx"
   if (extension === "json") return "json"
   if (extension === "css") return "css"
+  if (extension === "txt" || extension === "md") return "text"
+  if (extension === "wasm") return "binary"
+  if (["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "woff", "woff2", "ttf", "otf"].includes(extension)) {
+    return "dataurl"
+  }
   return "js"
 }
 
@@ -151,6 +164,20 @@ export function entryPointFor(files, explicit) {
 // ---------------------------------------------------------------- documents
 
 /** Walk a package folder document into a flat map of path → contents. */
+/**
+ * A file's contents, as the kind of thing it actually is.
+ *
+ * Bytes stay bytes. Running everything through a UTF-8 decoder — which is what
+ * this used to do — turns a wasm module into replacement characters on the way
+ * to esbuild, and esbuild takes a Uint8Array for `contents` perfectly happily.
+ * Text still comes back as text, including automerge's ImmutableString.
+ */
+export function fileContents(content) {
+  if (content instanceof Uint8Array) return content
+  if (ArrayBuffer.isView(content)) return new Uint8Array(content.buffer, content.byteOffset, content.byteLength)
+  return contentToText(content)
+}
+
 export async function materialize(repo, folderUrl, { maxFiles = 400 } = {}) {
   const files = new Map()
 
@@ -164,7 +191,7 @@ export async function materialize(repo, folderUrl, { maxFiles = 400 } = {}) {
       }
       return
     }
-    if (isFile(doc)) files.set(prefix, contentToText(doc.content))
+    if (isFile(doc)) files.set(prefix, fileContents(doc.content))
   }
 
   await walk(folderUrl, "", 0)

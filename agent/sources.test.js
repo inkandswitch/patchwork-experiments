@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { saveSource, sourceName, sourceFooter, titleFrom, SPILL_AT } from "./tools/sources.js"
+import { saveSource, sourceName, sourceFooter, titleFrom, isTextResponse, describeBytes, SPILL_AT } from "./tools/sources.js"
+import { httpRequest } from "./tools/http.js"
 import { webFetch } from "./tools/web.js"
 import { runTool } from "./tools/index.js"
 
@@ -176,5 +177,177 @@ describe("web_fetch and its document", () => {
     const outcome = await runTool({ id: "t", execute: async () => "just text" }, {}, {})
     expect(outcome.doc).toBeNull()
     expect(outcome.output).toBe("just text")
+  })
+})
+
+// ------------------------------------------------------ binary responses
+
+describe("telling text from bytes", () => {
+  it("believes a text content-type", () => {
+    for (const type of [
+      "text/plain",
+      "text/html; charset=utf-8",
+      "application/json",
+      "application/ld+json",
+      "image/svg+xml",
+      "application/xml",
+      "application/javascript",
+    ]) {
+      expect(isTextResponse(type, null)).toBe(true)
+    }
+  })
+
+  it("treats anything else as bytes", () => {
+    for (const type of ["application/wasm", "application/octet-stream", "image/png", "font/woff2", "application/pdf"]) {
+      expect(isTextResponse(type, null)).toBe(false)
+    }
+  })
+
+  it("sniffs for a NUL byte when there is no content-type", () => {
+    expect(isTextResponse(null, new TextEncoder().encode("hello, world"))).toBe(true)
+    expect(isTextResponse(null, new Uint8Array([0x00, 0x61, 0x73, 0x6d]))).toBe(false)
+    expect(isTextResponse("", new Uint8Array([1, 2, 0, 3]))).toBe(false)
+  })
+
+  it("names the format from its magic number", () => {
+    expect(describeBytes(new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00]))).toContain("WebAssembly module")
+    expect(describeBytes(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toContain("PNG")
+    expect(describeBytes(new Uint8Array([0x00, 0x61, 0x73, 0x6d]))).toContain("00 61 73 6d")
+    expect(describeBytes(new Uint8Array([0xde, 0xad]))).toBe("de ad")
+  })
+})
+
+describe("saving bytes", () => {
+  const wasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0xff, 0xfe])
+
+  it("stores a Uint8Array as a binary file document, unchanged", async () => {
+    const repo = fakeRepo()
+    const ref = await saveSource({ repo }, {
+      url: "https://example.test/m.wasm",
+      content: wasm,
+      mimeType: "application/wasm",
+    })
+
+    const stored = repo.docs.get(ref.url).content
+    expect(stored).toBeInstanceOf(Uint8Array)
+    // The bytes that came in are the bytes that went to disk. 0xff 0xfe is not
+    // valid UTF-8; if anything decoded this it would be U+FFFD by now.
+    expect([...stored]).toEqual([...wasm])
+    expect(ref).toMatchObject({ binary: true, bytes: 10, mimeType: "application/wasm", name: "example.test m.wasm" })
+    expect(repo.docs.get(ref.url).extension).toBe("wasm")
+  })
+
+  it("keeps text as text", async () => {
+    const repo = fakeRepo()
+    const ref = await saveSource({ repo }, { url: "https://x.test/a", content: "plain words" })
+    expect(typeof repo.docs.get(ref.url).content).toBe("string")
+    expect(ref.binary).toBe(false)
+  })
+
+  it("files the document into a folder when asked", async () => {
+    const repo = fakeRepo()
+    const folder = { docs: [] }
+    repo.docs.set("automerge:pkg", folder)
+    repo.find = async (url) => ({ url, doc: () => repo.docs.get(url), change: (fn) => fn(repo.docs.get(url)) })
+
+    const ref = await saveSource({ repo }, {
+      url: "https://example.test/m.wasm",
+      content: wasm,
+      name: "esbuild.wasm",
+      mimeType: "application/wasm",
+      folder: "automerge:pkg",
+    })
+
+    expect(folder.docs).toEqual([{ name: "esbuild.wasm", type: "file", url: ref.url }])
+    expect(ref.folder).toBe("automerge:pkg")
+  })
+})
+
+describe("http_request and binary bodies", () => {
+  const wasm = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x0a, 0xff, 0xfe, 0x00])
+
+  const respond = (body, { status = 200, type = "application/octet-stream" } = {}) => ({
+    ok: status < 400,
+    status,
+    statusText: status < 400 ? "OK" : "Error",
+    headers: { get: (n) => (n.toLowerCase() === "content-type" ? type : null) },
+    async arrayBuffer() {
+      const b = typeof body === "string" ? new TextEncoder().encode(body) : body
+      return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)
+    },
+    async text() {
+      return typeof body === "string" ? body : new TextDecoder().decode(body)
+    },
+  })
+
+  it("saves a wasm module byte for byte instead of decoding it", async () => {
+    const repo = fakeRepo()
+    const out = await httpRequest.execute(
+      { url: "https://example.test/m.wasm" },
+      { repo, fetchImpl: async () => respond(wasm, { type: "application/wasm" }) }
+    )
+
+    expect(out.doc.binary).toBe(true)
+    expect([...repo.docs.get(out.doc.url).content]).toEqual([...wasm])
+    expect(out.text).toContain("WebAssembly module")
+    expect(out.text).toContain("NOT decoded")
+    // The bytes must not appear in the conversation in any form.
+    expect(out.text).not.toContain("�")
+  })
+
+  it("puts it in a package folder when told to", async () => {
+    const repo = fakeRepo()
+    const folder = { docs: [] }
+    repo.docs.set("automerge:pkg", folder)
+    repo.find = async (url) => ({ url, doc: () => repo.docs.get(url), change: (fn) => fn(repo.docs.get(url)) })
+
+    const out = await httpRequest.execute(
+      { url: "https://example.test/m.wasm", folder: "automerge:pkg", saveAs: "engine.wasm" },
+      { repo, fetchImpl: async () => respond(wasm, { type: "application/wasm" }) }
+    )
+
+    expect(folder.docs[0].name).toBe("engine.wasm")
+    expect(out.text).toContain("in automerge:pkg")
+  })
+
+  it("still returns JSON inline, as before", async () => {
+    const out = await httpRequest.execute(
+      { url: "https://example.test/api" },
+      { fetchImpl: async () => respond('{"ok":true}', { type: "application/json" }) }
+    )
+    expect(typeof out).toBe("string")
+    expect(out).toContain('{"ok":true}')
+    expect(out).toContain("application/json")
+  })
+
+  it("refuses to dump a binary body when there is nowhere to put it", async () => {
+    await expect(
+      httpRequest.execute(
+        { url: "https://example.test/m.wasm" },
+        { fetchImpl: async () => respond(wasm, { type: "application/wasm" }) }
+      )
+    ).rejects.toThrow(/nowhere to write it/)
+  })
+
+  it("describes a binary error body rather than decoding it", async () => {
+    const out = await httpRequest.execute(
+      { url: "https://example.test/m.wasm" },
+      { fetchImpl: async () => respond(wasm, { status: 500, type: "application/wasm" }) }
+    )
+    expect(out).toContain("→ 500")
+    expect(out).toContain("is not shown")
+  })
+
+  it("will not quietly corrupt bytes when the fetch cannot return them", async () => {
+    const textOnly = {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: { get: () => "application/wasm" },
+      text: async () => new TextDecoder().decode(wasm), // lossy, as the platform would be
+    }
+    await expect(
+      httpRequest.execute({ url: "https://example.test/m.wasm" }, { fetchImpl: async () => textOnly })
+    ).rejects.toThrow(/cannot return bytes/)
   })
 })

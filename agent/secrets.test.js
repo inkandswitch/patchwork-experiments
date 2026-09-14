@@ -58,9 +58,31 @@ describe("secret_list", () => {
 })
 
 describe("http_request", () => {
-  const ok = (body = "{}", status = 200) => async () => ({
-    ok: status < 400, status, statusText: "OK", text: async () => body,
-  })
+  /**
+   * A Response double that can do what a real Response does.
+   *
+   * It has to carry headers and arrayBuffer, because http_request reads the
+   * body as bytes and decides from the content-type whether decoding it is
+   * safe. A double that only offers text() cannot exercise that decision — and
+   * a fake that cannot do what the real thing does is how a green suite ships
+   * a tool that corrupts every binary it touches.
+   */
+  const respond = (body, { status = 200, type = "application/json" } = {}) => {
+    const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body
+    return {
+      ok: status < 400,
+      status,
+      statusText: status < 400 ? "OK" : "Error",
+      headers: { get: (name) => (name.toLowerCase() === "content-type" ? type : null) },
+      async arrayBuffer() {
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      },
+      async text() {
+        return new TextDecoder().decode(bytes)
+      },
+    }
+  }
+  const ok = (body = "{}", status = 200) => async () => respond(body, { status })
 
   it("attaches a named secret as a bearer token without revealing it", async () => {
     writeSecret("github", "ghp_secretvalue123")

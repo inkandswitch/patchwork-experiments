@@ -23,6 +23,7 @@
 
 import { listSecrets, readSecret, redact } from "../secrets.js"
 import { truncate, bytes } from "./format.js"
+import { saveSource, isTextResponse, describeBytes } from "./sources.js"
 
 export const secretList = {
   id: "secret_list",
@@ -52,6 +53,8 @@ export const httpRequest = {
     "",
     "To authenticate, pass `useSecret` with the NAME of a stored credential (see secret_list). Its value is attached to the request for you; you never see it and it never appears in this conversation. By default it is sent as `Authorization: Bearer <value>`; set `secretHeader` and `secretPrefix` for APIs that want something else.",
     "",
+    "Binary responses — wasm, images, archives, fonts — are kept as bytes and written to a document rather than decoded into this conversation. Pass `folder` to put that document straight into a package. Decoding bytes as text would corrupt them silently, so it is never done.",
+    "",
     "This runs in a browser, so the target must serve permissive CORS. A failure that mentions CORS means the API cannot be reached from here, not that the credential is wrong.",
   ].join("\n"),
   where: "worker",
@@ -69,7 +72,12 @@ export const httpRequest = {
       useSecret: { type: "string", description: "Name of a stored credential to attach." },
       secretHeader: { type: "string", description: "Header to put it in. Default 'Authorization'." },
       secretPrefix: { type: "string", description: "Prefix before the value. Default 'Bearer '." },
-      maxChars: { type: "number", description: "Default 12000." },
+      maxChars: { type: "number", description: "Default 12000. Text responses only." },
+      folder: {
+        type: "string",
+        description: "Folder document to save the response into. Use it for a file you are fetching in order to keep — a wasm module for a package, say.",
+      },
+      saveAs: { type: "string", description: "File name for the saved document. Defaults to one derived from the URL." },
     },
   },
 
@@ -109,21 +117,76 @@ export const httpRequest = {
       )
     }
 
-    const text = await response.text().catch(() => "")
-    // Redact before anything is returned: a server can echo a credential back
-    // in an error body, and everything returned here lands in the document and
-    // then in the next prompt.
-    const safe = redact(text)
-
-    const summary = `${method} ${url} → ${response.status} ${response.statusText} (${bytes(text.length)})`
-    if (!response.ok) {
-      return `${summary}\n\n${truncate(safe, 2000)}`
+    // Read the body ONCE, as bytes, and decide afterwards what it is. Calling
+    // response.text() first is the bug this exists to avoid: it decodes as
+    // UTF-8 with replacement, so a wasm module comes back full of U+FFFD and
+    // still looks like a successful result.
+    let body
+    if (typeof response.arrayBuffer === "function") {
+      body = new Uint8Array(await response.arrayBuffer().catch(() => new ArrayBuffer(0)))
+    } else {
+      // A fetch implementation that cannot hand back bytes. Decode as text and
+      // say so if the result looks damaged, rather than silently returning
+      // mojibake that reads like a successful download.
+      const text = await response.text().catch(() => "")
+      if (/\ufffd/.test(text)) {
+        throw new Error(
+          "This response is binary and the fetch implementation in use cannot return bytes, so it cannot be retrieved without corrupting it."
+        )
+      }
+      body = new TextEncoder().encode(text)
     }
-    return `${summary}\n\n${truncate(safe, input.maxChars ?? 12000)}`
+    const contentType = response.headers?.get?.("content-type") ?? null
+    const status = `${method} ${url} → ${response.status} ${response.statusText} (${bytes(body.byteLength)}${contentType ? `, ${contentType.split(";")[0].trim()}` : ""})`
+
+    if (isTextResponse(contentType, body)) {
+      const text = new TextDecoder("utf-8", { fatal: false }).decode(body)
+      // Redact before anything is returned: a server can echo a credential back
+      // in an error body, and everything returned here lands in the document
+      // and then in the next prompt.
+      const safe = redact(text)
+      if (!response.ok) return `${status}\n\n${truncate(safe, 2000)}`
+      return `${status}\n\n${truncate(safe, input.maxChars ?? 12000)}`
+    }
+
+    // Binary. An error body is small and worth describing; a successful one is
+    // the thing that was asked for, so it goes into a document intact.
+    if (!response.ok) {
+      return `${status}\n\nThe body is binary (${describeBytes(body)}), so it is not shown.`
+    }
+
+    const ref = await saveSource(ctx, {
+      url,
+      content: body,
+      name: input.saveAs ?? null,
+      mimeType: contentType?.split(";")[0].trim() || "application/octet-stream",
+      folder: input.folder ?? null,
+    })
+
+    if (!ref) {
+      throw new Error(
+        `${status}\nThe response is binary (${describeBytes(body)}) and there is nowhere to write it. Binary is never decoded into the conversation, because that would corrupt it.`
+      )
+    }
+
+    return {
+      text: [
+        status,
+        `Kept as bytes — NOT decoded, so the file is intact.`,
+        `First bytes: ${describeBytes(body)}`,
+        `Saved as '${ref.name}' at ${ref.url}${ref.folder ? ` in ${ref.folder}` : ""}`,
+        ref.folder ? "" : "It is not filed anywhere; pass `folder` to put it in a package.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      doc: ref,
+    }
   },
 
   summarize(input, output) {
     const status = String(output ?? "").match(/→ (\d{3})/)
+    const saved = String(output ?? "").match(/Saved as '([^']+)'/)
+    if (saved) return `${(input?.method ?? "GET").toUpperCase()} → ${saved[1]}`
     let host = input?.url ?? ""
     try {
       host = new URL(input.url).host
