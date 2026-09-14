@@ -224,6 +224,40 @@ document routes around it. `http_request` also asks every time, because a
 request that can carry your credentials to an arbitrary URL is the one thing a
 standing grant is the wrong level of consent for.
 
+## Being refused
+
+A denial is recorded as the call's **result**, exactly like any other outcome,
+and that is load-bearing twice over.
+
+It used to only flip the call's status. The session then stopped dead: no call
+was pending, none was runnable, the last turn was the assistant's, so no runner
+saw work and the model never learned it had been refused. The only way forward
+was to type something.
+
+And what the model was told, when it was finally told, was a synthetic user
+message appended **after the entire conversation** — one per denial, re-sent on
+every turn, ending in "ask what they would like instead". So the last thing it
+read before writing was an instruction to raise the refusal, N times over. It
+did. That is the whole of the "it keeps reporting a decline" bug: a session that
+could only be unstuck by nudging it, and a prompt that rewarded the nudge with
+another announcement.
+
+Now it is stated once, in order, attached to the call it belongs to. The policy
+— do not retry, carry on with what does not depend on it — is in the system
+prompt, where it is said once rather than once per refusal per turn.
+
+Measured over four turns, denying a `doc_edit`:
+
+```
+[1] I'll help you set the title and add 'salt' to the items…
+[2] Now I'll update the title to 'Autumn Soup' and add 'salt'…
+[3] The edit was declined. The document remains with its current title…
+[4] Based on the document I just read: - There are 2 items…
+```
+
+Acknowledged once, then dropped. `--expect-moves-on` asserts exactly that: it
+finds where the refusal was first mentioned and requires silence afterwards.
+
 ## Asking the user
 
 `ask_user` is the one tool that never executes. The call is written into the
@@ -363,6 +397,9 @@ It also asserts on things a unit test cannot reach:
 | `--expect-saved-doc` | fetched content became a document, and the log links it |
 | `--expect-image` | a captured picture is visible, and is not an empty `src` |
 | `--expect-question` | the agent asked, the card rendered, and the answer resumed it |
+| `--deny-tools a,b` | refuses these instead of granting them |
+| `--then "a\|b"` | follow-up messages, to see behaviour across turns |
+| `--expect-moves-on` | it acknowledged a refusal once and then dropped it |
 | `--max-answers 0` | leave a question unanswered, to look at the card |
 | `--unmount-after MS` | the view is torn down mid-turn and the work still finishes |
 | `--shot FILE` | writes a picture of the finished transcript |

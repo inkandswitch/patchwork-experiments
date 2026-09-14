@@ -34,6 +34,7 @@ import {
   unansweredCalls,
   callsAwaitingApproval,
   questionsAwaitingAnswer,
+  DENIED_RESULT,
   runnableCalls,
   needsApproval,
   findCall,
@@ -51,6 +52,7 @@ Guidance specific to this environment:
 - Folders and files are documents too, and so is everything else. A Patchwork TOOL is just a folder of files: write them with fs_write, run it with tool_check, and install it by adding that folder's URL to the module settings document. There is no build step and no special machinery.
 - You have skills — read them. skill_list shows what guidance exists; skill_read gives you one in full. Read "writing-patchwork-tools" before writing a tool and "editing-documents" before your first substantial edit. They exist because the mistakes they describe are the ones that actually get made.
 - view_mount opens any document in any installed tool so you can drive it: click controls, type into fields, and see what rendered. Use it to check that a change LOOKS right, not just that it is structurally present.
+- A declined call is a decision, not an obstacle. Do not retry it, do not keep bringing it up, and do not stop the whole task over it: carry on with everything that does not depend on it, and say in one line what you could not do and why it mattered.
 - When a choice is genuinely the user's — which of two designs, what to call something, a fact only they have — use ask_user and give it options. Do not ask in prose and wait; that makes them read a paragraph and type a reply. Do not ask permission to use a tool either: running it asks for you.
 - Everything you do is collaborative and versioned. Other people may be editing the same documents while you work.
 
@@ -471,6 +473,16 @@ export function decide(store, callId, decision, subject = null) {
 
     if (decision === "deny") {
       block.status = CALL.denied
+      // Record the refusal as the call's RESULT, the same as any other outcome.
+      //
+      // Without this the session simply stopped: status stayed
+      // awaiting-approval, the denied call was no longer pending, no runner saw
+      // work, and the model never learned it had been refused. The only way out
+      // was to type something — which is how this looked like "the agent keeps
+      // reporting a decline", because every nudge re-sent the refusal.
+      if (!d.turns) d.turns = []
+      d.turns.push(makeTurn("tool", [resultBlock(callId, DENIED_RESULT, { isError: true, summary: "declined" })]))
+      d.status = STATUS.idle
       return
     }
     block.status = CALL.approved

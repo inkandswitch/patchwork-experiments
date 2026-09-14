@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import {
+  DENIED_RESULT,
   initSession,
   makeTurn,
   textBlock,
@@ -92,12 +93,56 @@ describe("toRequest", () => {
     expect(messages[1].content[0]).toMatchObject({ type: "result", callId: "c1", output: "the contents" })
   })
 
-  it("turns a denied call into a note instead of sending the call", () => {
+  it("answers a denied call with a result, in the place it happened", () => {
     const doc = freshDoc()
     doc.turns.push(makeTurn("assistant", [callBlock("doc_edit", {}, { id: "c9", status: CALL.denied })]))
     const { messages } = toRequest(doc)
-    expect(JSON.stringify(messages)).not.toContain('"type":"call"')
-    expect(messages.at(-1).content[0].text).toMatch(/declined by the user/)
+
+    // The call is sent AND answered, which is the shape the model already
+    // understands. It used to be dropped and re-announced as a trailing user
+    // message instead.
+    expect(messages.at(-1).content).toEqual([
+      { type: "call", id: "c9", name: "doc_edit", input: {} },
+      { type: "result", callId: "c9", output: DENIED_RESULT, isError: true },
+    ])
+  })
+
+  it("says a denial exactly once, however many turns have passed since", () => {
+    // The bug: every denial was re-appended on every turn, at the very end, so
+    // the last thing the model read before writing was "declined — ask what
+    // they would like instead", N times. It reported the decline over and over.
+    const doc = freshDoc()
+    doc.turns.push(makeTurn("assistant", [callBlock("doc_edit", {}, { id: "c9", status: CALL.denied })]))
+    for (let i = 0; i < 6; i++) {
+      doc.turns.push(makeTurn("user", [textBlock(`carry on ${i}`)]))
+      doc.turns.push(makeTurn("assistant", [textBlock(`working ${i}`)]))
+    }
+
+    const rendered = JSON.stringify(toRequest(doc).messages)
+    expect(rendered.split(DENIED_RESULT).length - 1).toBe(1)
+  })
+
+  it("leaves the denial where it happened rather than at the end", () => {
+    const doc = freshDoc()
+    doc.turns.push(makeTurn("assistant", [callBlock("doc_edit", {}, { id: "c9", status: CALL.denied })]))
+    doc.turns.push(makeTurn("user", [textBlock("do something else then")]))
+
+    const { messages } = toRequest(doc)
+    // The person's next instruction is the last thing the model sees, not a
+    // re-run of the refusal.
+    expect(messages.at(-1).content[0]).toMatchObject({ type: "text", text: "do something else then" })
+  })
+
+  it("keeps denials distinct when several calls were refused", () => {
+    const doc = freshDoc()
+    doc.turns.push(
+      makeTurn("assistant", [
+        callBlock("doc_edit", {}, { id: "c1", status: CALL.denied }),
+        callBlock("fs_write", {}, { id: "c2", status: CALL.denied }),
+      ])
+    )
+    const content = toRequest(doc).messages.at(-1).content
+    expect(content.filter((p) => p.type === "result").map((p) => p.callId)).toEqual(["c1", "c2"])
   })
 
   it("passes the system prompt through untouched", () => {

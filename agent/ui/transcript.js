@@ -46,7 +46,9 @@ export function callSummary(block, result, subject = null) {
 
 function renderCall(block, result, state, handlers) {
   const details = el("details", "agent-call")
-  details.dataset.status = result?.isError ? "error" : block.status
+  // A refusal is a decision, not a failure: `denied` keeps its own styling even
+  // though its result is recorded as an error for the model's benefit.
+  details.dataset.status = block.status === CALL.denied ? CALL.denied : result?.isError ? "error" : block.status
   details.open = state.open.has(block.id) || !!result?.isError
 
   details.addEventListener("toggle", () => {

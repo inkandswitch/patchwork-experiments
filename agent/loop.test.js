@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { run, decide, say, OUTCOME, DEFAULT_SYSTEM } from "./loop.js"
+import { needsWork } from "./runner.js"
 import { memoryStore } from "./store.js"
 import { makeMock } from "./providers/mock.js"
 import {
@@ -284,7 +285,74 @@ describe("approvals", () => {
 
     expect(ran).toBe(0)
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.denied)
-    expect(JSON.stringify(provider.requests[1].messages)).toMatch(/declined by the user/)
+
+    // The model learns about it as the call's own result, once.
+    const sent = JSON.stringify(provider.requests[1].messages)
+    expect(sent).toContain("Declined by the user.")
+    expect(sent.split("Declined by the user.").length - 1).toBe(1)
+  })
+
+  it("does not leave the session stuck after a denial", async () => {
+    // The bug behind "it keeps reporting a decline": denying left status at
+    // awaiting-approval with nothing runnable and no trailing user turn, so no
+    // runner saw work and the model never heard about the refusal. The only way
+    // forward was to type — and every nudge re-sent the pile of refusal notices.
+    const store = session()
+    const provider = makeMock([
+      [{ type: "call", id: "c1", name: "doc_edit", input: {} }],
+      [{ type: "text", delta: "understood, leaving it" }],
+    ])
+    const toolset = fakeToolset([writeTool()])
+
+    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    expect(store.doc().status).toBe(STATUS.awaitingApproval)
+
+    decide(store, "c1", "deny")
+
+    expect(store.doc().status).toBe(STATUS.idle)
+    expect(needsWork(store.doc(), () => true)).toBe(true)
+
+    // The refusal is in the document as the call's result, so the transcript
+    // and the model see the same thing.
+    const result = store.doc().turns.at(-1)
+    expect(result.role).toBe("tool")
+    expect(result.blocks[0]).toMatchObject({ callId: "c1", output: "Declined by the user.", isError: true })
+
+    await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+    expect(transcript(store).map((b) => b.text).join(" ")).toContain("understood, leaving it")
+    expect(store.doc().status).toBe(STATUS.idle)
+  })
+
+  it("does not re-announce an old denial on every later turn", async () => {
+    // What the agent was doing wrong: reporting the same decline again and
+    // again, because it was being told about it again and again — last, after
+    // everything else, on every single turn.
+    const store = session()
+    const provider = makeMock([
+      [{ type: "call", id: "c1", name: "doc_edit", input: {} }],
+      [{ type: "text", delta: "understood" }],
+      [{ type: "text", delta: "still going" }],
+      [{ type: "text", delta: "and again" }],
+    ])
+    const toolset = fakeToolset([writeTool()])
+    const turn = () => run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
+
+    await turn()
+    decide(store, "c1", "deny")
+    await turn()
+    say(store, "do something else")
+    await turn()
+    say(store, "and another thing")
+    await turn()
+
+    for (const request of provider.requests.slice(1)) {
+      const sent = JSON.stringify(request.messages)
+      expect(sent.split("Declined by the user.").length - 1).toBe(1)
+    }
+
+    // …and the refusal is never the last thing the model reads.
+    const last = provider.requests.at(-1).messages.at(-1)
+    expect(JSON.stringify(last)).not.toContain("Declined by the user.")
   })
 })
 

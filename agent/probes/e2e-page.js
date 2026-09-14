@@ -238,30 +238,69 @@ window.__agentProbe = async function (opts) {
       }
     }
 
-    await answerAny()
-    while (session.doc().status === "awaiting-approval" && approved < (opts.maxApprovals ?? 6)) {
-      const card = host.querySelector(".agent-approval")
-      const scopes = [...(card?.querySelectorAll(".agent-approval-scopes button") ?? [])]
+    // Tools to refuse rather than grant. Denial is a path with its own failure
+    // mode — an agent that keeps reporting the same refusal instead of getting
+    // on with the rest of the work — and it needs driving to test.
+    const denyTools = String(opts.denyTools ?? "").split(",").map((t) => t.trim()).filter(Boolean)
+    let denied = 0
+    const deniedTools = []
+
+    const approveOrDeny = async () => {
+      while (session.doc().status === "awaiting-approval" && approved + denied < (opts.maxApprovals ?? 6)) {
+        const card = host.querySelector(".agent-approval")
+        const scopes = [...(card?.querySelectorAll(".agent-approval-scopes button") ?? [])]
       // Which standing grant to take. "narrow" is the tightest offer — a single
       // page or document; "site" is the one that makes an agentic loop bearable,
       // because the next fetch from the same host does not stop and ask.
-      const chosen =
-        opts.grantScope === "site" ? (scopes.length > 1 ? scopes[scopes.length - 2] : scopes[0]) : scopes[0]
-      step("approval requested", {
-        tool: session.doc().turns.flatMap((t) => t.blocks).find((b) => b.type === "call" && b.status === "pending")?.tool,
-        scopes: scopes.map((b) => b.textContent),
-        choosing: chosen?.textContent,
-      })
-      if (!chosen) throw new Error("An approval was requested but no grant scopes rendered")
-      grantsChosen.push(chosen.textContent)
-      chosen.click()
-      approved++
-      // Approving does not change the status synchronously — the runner picks
-      // the call up on its next tick. Waiting for `settled` here would match
-      // the still-current "awaiting-approval" and prove nothing.
-      await waitFor("the approval to be picked up", () => session.doc().status !== "awaiting-approval", 60000)
-      await waitFor("the agent to finish", settled, patience)
+        const pendingTool = session
+          .doc()
+          .turns.flatMap((t) => t.blocks)
+          .find((b) => b.type === "call" && b.status === "pending")?.tool
+        const refuse = denyTools.includes(pendingTool)
+
+        const chosen = refuse
+          ? [...card.querySelectorAll("button")].find((b) => b.textContent === "Deny")
+          : opts.grantScope === "site" && scopes.length > 1
+            ? scopes[scopes.length - 2]
+            : scopes[0]
+
+        step("approval requested", {
+          tool: pendingTool,
+          scopes: scopes.map((b) => b.textContent),
+          choosing: chosen?.textContent,
+        })
+        if (!chosen) throw new Error("An approval was requested but no buttons rendered")
+
+        if (refuse) {
+          deniedTools.push(pendingTool)
+          denied++
+        } else {
+          grantsChosen.push(chosen.textContent)
+          approved++
+        }
+        chosen.click()
+
+        // The decision does not change the status synchronously — the runner
+        // picks it up on its next tick. Waiting for `settled` here would match
+        // the still-current "awaiting-approval" and prove nothing.
+        await waitFor("the decision to be picked up", () => session.doc().status !== "awaiting-approval", 60000)
+        await waitFor("the agent to finish", settled, patience)
+        await answerAny()
+      }
+    }
+
+    await answerAny()
+    await approveOrDeny()
+
+    // Follow-up messages, so a probe can see how the agent behaves over several
+    // turns rather than only on the first one.
+    for (const followUp of opts.followUps ?? []) {
+      textarea.value = followUp
+      sendButton.click()
+      step("followed up", { prompt: followUp })
+      await waitFor("the agent to act on the follow-up", settled, patience)
       await answerAny()
+      await approveOrDeny()
     }
 
     clearInterval(statusTimer)
@@ -280,6 +319,13 @@ window.__agentProbe = async function (opts) {
       .filter((b) => b.type === "text" && b.role === "assistant")
       .map((b) => b.text)
       .join("\n")
+
+    // One entry per assistant turn, so a probe can ask how the agent behaved
+    // ACROSS turns — whether it keeps raising something, for instance.
+    const assistantTurns = doc.turns
+      .filter((t) => t.role === "assistant")
+      .map((t) => (t.blocks ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("\n").trim())
+      .filter(Boolean)
 
     const transcriptRows = [...host.querySelectorAll(".agent-call summary")].map((s) => s.textContent.trim())
 
@@ -308,8 +354,11 @@ window.__agentProbe = async function (opts) {
       runnersSeen: [...runnersSeen],
       runnerMode: host.querySelector(".patchwork-agent")?.dataset.runner ?? null,
       approved,
+      denied,
+      deniedTools,
       answered,
       answersGiven,
+      assistantTurns,
       // So the driver can size a full-page capture to what was actually rendered.
       shotHeight: host?.scrollHeight ?? null,
       grantsChosen,

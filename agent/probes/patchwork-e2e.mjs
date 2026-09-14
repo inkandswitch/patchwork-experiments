@@ -309,7 +309,7 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), denyTools: option("deny-tools", ""), followUps: (option("then", "") || "").split("|").filter(Boolean), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
   )
 
   console.log("\n=== steps ===")
@@ -388,8 +388,9 @@ try {
       ["the tool is registered", report.steps.find((s) => s.name === "registry")?.tool === true],
       ["the panel component is registered", report.steps.find((s) => s.name === "registry")?.panel === true],
       approvalCeiling === "0"
-        ? ["it acted without needing approval", report.approved === 0]
-        : ["it asked before acting", report.approved > 0],
+        ? ["it acted without needing approval", (report.approved ?? 0) + (report.denied ?? 0) === 0]
+        // Being refused is also having asked.
+        : ["it asked before acting", (report.approved ?? 0) + (report.denied ?? 0) > 0],
       ["it finished idle", report.finalStatus === "idle"],
     ]
     if (report.afterUnmount) {
@@ -423,6 +424,28 @@ try {
     if (flag("expect-saved-doc")) {
       checks.push(["it saved fetched content to a document", (report.savedDocs?.length ?? 0) > 0])
       checks.push(["the log links that document", (report.rendered?.docChips?.length ?? 0) > 0])
+    }
+    if (report.denied) {
+      console.log("\n=== refused ===")
+      console.log(`  denied: ${JSON.stringify(report.deniedTools ?? [])}`)
+      console.log("\n=== what it said, turn by turn ===")
+      ;(report.assistantTurns ?? []).forEach((t, i) => console.log(`  [${i + 1}] ${t.replace(/\n/g, " ").slice(0, 200)}`))
+    }
+
+    // A refusal is a decision, not a topic. An agent that raises it again on
+    // every later turn is being told about it again on every later turn.
+    const mentionsRefusal = (t) => /declin|denied|refus|permission|did not (allow|approve)|not allowed/i.test(t)
+    if (flag("expect-moves-on")) {
+      const turns = report.assistantTurns ?? []
+      // Acknowledging a refusal ONCE, in the turn that hears it, is right. What
+      // is wrong is bringing it up again afterwards — so find where it was first
+      // mentioned and require silence after that, wherever it happened to land.
+      const first = turns.findIndex(mentionsRefusal)
+      const later = first === -1 ? [] : turns.slice(first + 1).filter(mentionsRefusal)
+      checks.push(["it was actually refused something", (report.denied ?? 0) > 0])
+      checks.push(["it carried on rather than stopping at the refusal", turns.length > first + 1])
+      checks.push(["it acknowledged the refusal once", first !== -1])
+      checks.push(["it does not raise the refusal again afterwards", later.length === 0])
     }
     if (flag("expect-question")) {
       checks.push(["it asked a question", (report.answered ?? 0) > 0])

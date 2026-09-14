@@ -471,15 +471,28 @@ export function grantCovering(doc, toolId, target) {
  */
 export const MAX_IMAGES_IN_REQUEST = 2
 
+/**
+ * What the model is told when a person refuses a call.
+ *
+ * A statement of fact, not an instruction. The policy — do not retry, say what
+ * you wanted it for — belongs in the system prompt, where it is said once;
+ * repeating it per denial per turn is what made the agent fixate on declining.
+ */
+export const DENIED_RESULT = "Declined by the user."
+
 export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
   const messages = []
   const turns = doc.turns ?? []
 
-  // Find which result blocks still get to carry their image.
+  // Find which result blocks still get to carry their image, and which calls
+  // have an answer at all.
   const withImages = []
+  const answered = new Set()
   for (const turn of turns) {
     for (const block of turn.blocks ?? []) {
-      if (block.type === "result" && block.image) withImages.push(block.id)
+      if (block.type !== "result") continue
+      answered.add(block.callId)
+      if (block.image) withImages.push(block.id)
     }
   }
   const keepImages = new Set(withImages.slice(-maxImages))
@@ -513,8 +526,25 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
       if (block.type === "text") {
         if (block.text) content.push({ type: "text", text: block.text })
       } else if (block.type === "call") {
-        if (block.status === CALL.denied) continue
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
+        // A denial is the call's RESULT, in the place the call happened.
+        //
+        // It used to be skipped here and re-announced as a trailing user
+        // message instead — every denial in the conversation, re-sent on every
+        // turn, appended after everything else. So the last thing the model read
+        // before writing was "this was declined, ask what they would like
+        // instead", N times over, and it did exactly that: reported the decline
+        // again and again instead of getting on with the rest of the work.
+        //
+        // As a result it is stated once, in order, attached to the call it
+        // belongs to — the same shape as every other outcome the model already
+        // knows how to read.
+        // Denials are recorded as results when they happen. Sessions from
+        // before that still have bare denied calls, and a call with no result
+        // is a protocol error for most providers, so synthesize one.
+        if (block.status === CALL.denied && !answered.has(block.id)) {
+          content.push({ type: "result", callId: block.id, output: DENIED_RESULT, isError: true })
+        }
       } else if (block.type === "result") {
         const part = {
           type: "result",
@@ -533,23 +563,6 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
 
     if (!content.length) continue
     messages.push({ role: turn.role, content })
-  }
-
-  // A denied call never reaches the model as a call, but the model does need to
-  // learn that the human said no — otherwise it will try the same thing again.
-  for (const found of eachBlock(doc)) {
-    if (found.turnIndex < startIndex) continue
-    if (found.block.type === "call" && found.block.status === CALL.denied) {
-      messages.push({
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `The ${found.block.tool} call was declined by the user. Do not retry it; ask what they would like instead.`,
-          },
-        ],
-      })
-    }
   }
 
   return { system, messages }
