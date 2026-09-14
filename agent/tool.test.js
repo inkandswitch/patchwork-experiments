@@ -7,14 +7,19 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { AgentTool } from "./tool.js"
 import { initSession, makeTurn, textBlock, callBlock, resultBlock, CALL, STATUS, _resetIds } from "./session.js"
 import { renderTranscript, callSummary } from "./ui/transcript.js"
+import { _reset as resetRunners } from "./runners.js"
 
 /** A DocHandle double with the parts the tool actually uses. */
+let handleCounter = 0
+
 function fakeHandle(seed = {}) {
   const doc = {}
   initSession(doc, seed)
   const listeners = new Set()
   return {
-    url: "automerge:session",
+    // Distinct per handle: runners are registered by session url, so a shared
+    // one would let a runner from an earlier test drive a later one's document.
+    url: `automerge:session${++handleCounter}`,
     doc: () => doc,
     change(fn) {
       fn(doc)
@@ -35,6 +40,7 @@ const mount = (handle, options = {}) => {
 
 beforeEach(() => {
   _resetIds()
+  resetRunners()
   document.body.replaceChildren()
   localStorage.clear()
 })

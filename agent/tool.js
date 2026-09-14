@@ -12,6 +12,7 @@ import { STATUS, CALL, callsAwaitingApproval } from "./session.js"
 import { handleStore } from "./store.js"
 import { decide, say } from "./loop.js"
 import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
+import { ensureRunner as ensureSharedRunner, attachView } from "./runners.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import { buildToolset } from "./tools/index.js"
 import { getProvider, readKey, writeKey, loadCatalogue } from "./providers/index.js"
@@ -197,6 +198,7 @@ export function AgentTool(handle, element, options = {}) {
   const uiState = { open: new Set(), names: new Map(), subject: null }
   const store = handleStore(handle, options.splice ?? null)
   let runner = null
+  let detachView = null
   let disposed = false
 
   const subjectUrl = () => handle.doc()?.subject ?? options.subject ?? null
@@ -251,21 +253,27 @@ export function AgentTool(handle, element, options = {}) {
     return workerRunner
   }
 
+  /**
+   * The runner for this session — shared, and deliberately NOT owned by this
+   * view. Two views of one session share one runner, and closing a view does
+   * not stop it: navigating away should never abort work you asked for.
+   */
   async function ensureRunner() {
     if (runner || disposed) return runner
 
-    // Snapshot the worker's presence now and hold it for this runner's life.
-    const tabCanRun = workerRunner
-      ? (where) => where === "host"
-      : (where) => where === "worker" || where === "host"
+    const entry = await ensureSharedRunner(handle.url, async (emit) => {
+      // Snapshot the worker's presence now and hold it for this runner's life.
+      const tabCanRun = workerRunner
+        ? (where) => where === "host"
+        : (where) => where === "worker" || where === "host"
 
-    const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
-    const liveStore = handleStore(handle, splice)
+      const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
+      const liveStore = handleStore(handle, splice)
 
-    runner = new SessionRunner({
-      store: liveStore,
-      runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
-      ctx: {
+      // Mutable on purpose: `element` is swapped as views come and go, so
+      // host-tier tools always mount into something actually on the page, and
+      // becomes null when nothing is watching.
+      const sharedCtx = {
         repo,
         subject: subjectUrl(),
         splice,
@@ -285,19 +293,41 @@ export function AgentTool(handle, element, options = {}) {
           globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
           globalThis.accountDocHandle?.url,
         ].filter(Boolean),
-      },
-      buildToolset: (doc) => buildToolset(doc),
-      getProvider: async () => getProvider(handle.doc()?.config?.providerId ?? "openrouter"),
-      getKey: () => readKey(handle.doc()?.config?.providerId ?? "openrouter"),
-      // Fixed at construction, NOT read live. A `canRun` that consults
-      // `workerRunner` flips mid-run the moment the worker finishes connecting,
-      // and the turn in flight then parks on its own worker-tier call. The
-      // lease is what keeps two runners from colliding; this only decides what
-      // each is willing to pick up.
-      canRun: tabCanRun,
-      onEvent: () => render(),
+      }
+
+      const made = new SessionRunner({
+        store: liveStore,
+        runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
+        ctx: sharedCtx,
+        buildToolset: (doc) => buildToolset(doc),
+        getProvider: async () => getProvider(handle.doc()?.config?.providerId ?? "openrouter"),
+        getKey: () => readKey(handle.doc()?.config?.providerId ?? "openrouter"),
+        // Fixed at construction, NOT read live. A `canRun` that consults
+        // `workerRunner` flips mid-run the moment the worker finishes
+        // connecting, and the turn in flight then parks on its own worker-tier
+        // call. The lease keeps two runners from colliding; this only decides
+        // what each is willing to pick up.
+        canRun: tabCanRun,
+        onEvent: emit,
+      })
+      // The runner watches the document itself. Previously this subscription
+      // lived in the view, so unmounting the tool left the runner alive but
+      // with nothing to wake it — and an approval written from anywhere else
+      // would never be picked up. A runner that outlives its view has to hear
+      // about changes on its own.
+      const onDocChange = () => made.tick()
+      handle.on("change", onDocChange)
+
+      made.start()
+      return {
+        runner: made,
+        ctx: sharedCtx,
+        dispose: () => handle.off("change", onDocChange),
+      }
     })
-    runner.start()
+
+    runner = entry?.runner ?? null
+    detachView = attachView(handle.url, { element: root, onEvent: () => render() })
     return runner
   }
 
@@ -514,7 +544,11 @@ export function AgentTool(handle, element, options = {}) {
   return () => {
     disposed = true
     handle.off("change", onChange)
-    runner?.stop()
+    // Detach this view; deliberately NOT runner.stop(). Navigating away from a
+    // session must not abort the work it is doing. The runner keeps its lease
+    // and keeps writing to the document, so reopening the session — here or in
+    // another tab — picks up whatever happened while you were gone.
+    detachView?.()
     workerRunner?.close()
     root.remove()
   }

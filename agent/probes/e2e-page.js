@@ -46,10 +46,15 @@ window.__agentProbe = async function (opts) {
 
   let host = null
   let cleanup = null
+  const out = {}
 
   try {
     // ---- 1. Is the harness actually installed in this Patchwork? --------
     const { getRegistry, createDocOfDatatype2 } = await import("@inkandswitch/patchwork-plugins")
+    const { decide } = await import(opts.agentBase + "loop.js")
+    const { callsAwaitingApproval } = await import(opts.agentBase + "session.js")
+    const { handleStore } = await import(opts.agentBase + "store.js")
+    const automerge = await import("@automerge/automerge/slim")
     const toolRegistry = getRegistry("patchwork:tool")
     const datatypeRegistry = getRegistry("patchwork:datatype")
     const componentRegistry = getRegistry("patchwork:component")
@@ -86,6 +91,7 @@ window.__agentProbe = async function (opts) {
       "position:fixed;right:0;top:0;width:440px;height:90vh;z-index:999999;background:var(--editor-fill,white);border-left:1px solid #ccc"
     document.body.append(host)
     cleanup = tool.module(session, host)
+    const store = handleStore(session, automerge.splice)
 
     const textarea = host.querySelector("textarea")
     const sendButton = host.querySelector(".agent-composer button[data-variant='primary']")
@@ -129,6 +135,72 @@ window.__agentProbe = async function (opts) {
       return d.status === "idle" && d.turns.length > 1 && last?.role === "assistant"
     }
     const patience = opts.waitMs ?? 90000
+    // --- optionally throw the view away mid-run -----------------------
+    //
+    // This is what navigating to another document does: Patchwork unmounts the
+    // tool. The runner must not care. Everything after this point watches the
+    // session DOCUMENT, with no view attached to anything.
+    if (opts.unmountAfterMs) {
+      await sleep(opts.unmountAfterMs)
+      const before = { turns: session.doc().turns.length, status: session.doc().status }
+      try {
+        cleanup?.()
+      } catch (err) {
+        step("cleanup threw on unmount", { error: String(err?.message ?? err) })
+      }
+      host.remove()
+      host = null
+      cleanup = null
+      step("unmounted the view", before)
+      out.atUnmount = before
+
+      // Approvals now have to come from outside the view, since there is none.
+      const approveFromOutside = setInterval(() => {
+        for (const call of callsAwaitingApproval(session.doc())) {
+          decide(store, call.id, "session", subject.url)
+        }
+      }, 300)
+
+      try {
+        await waitFor("the agent to finish with no view attached", settled, patience)
+      } finally {
+        clearInterval(approveFromOutside)
+      }
+
+      out.afterUnmount = {
+        turns: session.doc().turns.length,
+        status: session.doc().status,
+        keptGoing: session.doc().turns.length > before.turns,
+      }
+      clearInterval(statusTimer)
+      recordStatus()
+
+      const doc = session.doc()
+      const blocks = doc.turns.flatMap((t) => (t.blocks ?? []).map((b) => ({ role: t.role, ...b })))
+      return {
+        ok: true,
+        elapsedMs: at(),
+        steps,
+        statusTrail,
+        runnersSeen: [...runnersSeen],
+        atUnmount: out.atUnmount,
+        afterUnmount: out.afterUnmount,
+        finalStatus: doc.status,
+        approved: 1,
+        subject: { url: subject.url, doc: JSON.parse(JSON.stringify(subject.doc())) },
+        session: {
+          url: session.url,
+          turns: doc.turns.length,
+          calls: blocks.filter((b) => b.type === "call").map((b) => ({ tool: b.tool, status: b.status, input: b.input })),
+          results: blocks.filter((b) => b.type === "result").map((b) => ({ isError: b.isError, output: String(b.output ?? "").slice(0, 200) })),
+          text: blocks.filter((b) => b.type === "text" && b.role === "assistant").map((b) => b.text).join("\n"),
+        },
+        transcriptRows: [],
+        sessionUrl: session.url,
+        subjectUrl: subject.url,
+      }
+    }
+
     await waitFor("the agent to act", settled, patience)
 
     // Approve repeatedly: a session grant covers one tool, so a turn that uses

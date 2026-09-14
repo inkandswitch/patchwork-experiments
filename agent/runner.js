@@ -114,17 +114,20 @@ export class SessionRunner {
       return
     }
 
-    let generation
-    this.store.change((d) => {
-      generation = claimLease(d, this.runnerUrl, this.now()).generation
-    })
-
+    // Mark ourselves busy BEFORE the first write. Claiming the lease *is* a
+    // change to the session document, and the document's change handler calls
+    // tick() — so a guard set after the write is set too late, and tick()
+    // re-enters itself synchronously until the stack runs out.
     this.running = true
     this.controller = new AbortController()
     this.onEvent({ type: "start" })
 
-
     try {
+      let generation
+      this.store.change((d) => {
+        generation = claimLease(d, this.runnerUrl, this.now()).generation
+      })
+
       const provider = await this.getProvider()
       const toolset = await this.buildToolset(this.store.doc())
 
@@ -146,10 +149,16 @@ export class SessionRunner {
       return result
     } catch (err) {
       // Anything that escaped the loop (a provider that could not be
-      // constructed, a toolset that failed to build) lands here.
-      this.store.change((d) => {
-        d.status = STATUS.error
-      })
+      // constructed, a toolset that failed to build) lands here. Recording the
+      // error is best-effort: if the document itself is what failed, the write
+      // fails too, and losing the runner to that would be the worse outcome.
+      try {
+        this.store.change((d) => {
+          d.status = STATUS.error
+        })
+      } catch {
+        /* the document is unwritable; the event below is all we can report */
+      }
       this.onEvent({ type: "error", error: String(err?.message ?? err) })
       return { outcome: OUTCOME.error, reason: String(err?.message ?? err) }
     } finally {

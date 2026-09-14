@@ -309,13 +309,20 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), waitMs: Number(option("wait", "90000")) })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
   )
 
   console.log("\n=== steps ===")
   for (const s of report.steps ?? []) {
     const { t, name, ...rest } = s
     console.log(`${String(t).padStart(6)}ms  ${name}  ${Object.keys(rest).length ? JSON.stringify(rest) : ""}`)
+  }
+
+  if (report.atUnmount) {
+    console.log(`\n=== navigation ===`)
+    console.log(`  view unmounted at ${report.atUnmount.turns} turns (status ${report.atUnmount.status})`)
+    console.log(`  with no view attached: ${report.afterUnmount.turns} turns, status ${report.afterUnmount.status}`)
+    console.log(`  kept going: ${report.afterUnmount.keptGoing}`)
   }
 
   if (report.runnersSeen?.length) {
@@ -357,6 +364,10 @@ try {
       ["it asked before acting", report.approved > 0],
       ["it finished idle", report.finalStatus === "idle"],
     ]
+    if (report.afterUnmount) {
+      checks.push(["work continued after the view was unmounted", report.afterUnmount.keptGoing === true])
+      checks.push(["it finished with no view attached", report.afterUnmount.status === "idle"])
+    }
     if (expectTitle) {
       checks.push(["the document was actually changed", title === expectTitle])
     }
