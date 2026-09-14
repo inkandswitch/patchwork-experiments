@@ -149,11 +149,17 @@ rendering. Put them beside the code as \`*.test.ts\` and run them with
       it("rejects nonsense", () => { expect(() => add(1, "x")).toThrow(/number/) })
     })
 
-The import says \`vitest\` because that is the idiom everyone writes; it is
-rewritten to a built-in harness when the file is bundled. describe, it, expect,
-beforeEach/afterEach/beforeAll/afterAll, \`.not\`, \`.rejects.toThrow\` and the
-usual matchers all work. A matcher that does not exist says so rather than
-passing quietly.
+The assertions are **real vitest** — \`@vitest/expect\` running on chai, and
+\`vi.fn()\`/\`vi.spyOn()\` from \`@vitest/spy\`. Every matcher you know works,
+including the asymmetric ones:
+
+    expect({ a: 1, b: 2 }).toEqual(expect.objectContaining({ a: 1 }))
+    expect([1, 2, 3]).toEqual(expect.arrayContaining([2]))
+    expect(spy).toHaveBeenCalledWith(21)
+
+Only vitest's CLI is a node program, so what is missing is \`vi.mock\`,
+snapshots and coverage — not the matchers. With no network it falls back to a
+smaller built-in set and says which engine it used in the report.
 
 Tests and \`tool_check\` answer different questions, and you want both:
 \`package_test\` tells you whether the logic is right, \`tool_check\` tells you

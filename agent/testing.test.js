@@ -3,6 +3,7 @@ import {
   findTestFiles, formatResults, testPlugin, packageTest, HARNESS_SHIM, TEST_FILE_PATTERN,
 } from "./tools/testing.js"
 import { _resetEsbuild } from "./tools/build.js"
+import { _resetVitest } from "./tools/harness.js"
 
 describe("finding test files", () => {
   const files = new Map([
@@ -122,6 +123,7 @@ describe("package_test", () => {
 
   it("bundles each test file, runs it, and reports the results", async () => {
     _resetEsbuild()
+    _resetVitest()
     const repo = fakeRepo(PACKAGE)
 
     const esbuild = {
@@ -159,6 +161,7 @@ describe("package_test", () => {
 
   it("reports a test file that fails to build without stopping the run", async () => {
     _resetEsbuild()
+    _resetVitest()
     const repo = fakeRepo(PACKAGE)
     const esbuild = {
       initialize: async () => {},
@@ -176,6 +179,7 @@ describe("package_test", () => {
 
   it("leaves no harness behind on globalThis", async () => {
     _resetEsbuild()
+    _resetVitest()
     const repo = fakeRepo(PACKAGE)
     const esbuild = { initialize: async () => {}, build: async () => ({ outputFiles: [{ text: "x" }] }) }
     await packageTest.execute(

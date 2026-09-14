@@ -1,15 +1,24 @@
 /**
- * A test harness small enough to inject, familiar enough to write against.
+ * The test harness: real vitest where it will run, a subset where it will not.
  *
- * The agent can write tests; without something to run them it never learns
- * whether they pass, which is the same blindness `tool_check` fixed for tools.
- * vitest and jest are node programs, so neither can run here — but their
- * *surface* is what everyone writes tests against, so this implements that
- * surface: describe, it, expect, and the hooks.
+ * "vitest is a node program" is true of the CLI and false of the parts that
+ * matter. Measured in a browser (probes/vitest-feasibility.mjs):
  *
- * Deliberately not a reimplementation of vitest. It is the subset that carries
- * almost all real assertions, and it says clearly when a test uses something it
- * does not have, rather than silently passing.
+ *   @vitest/expect  LOADS — it exports chai plugins, which is how vitest itself
+ *                   assembles `expect`. With chai underneath you get the real
+ *                   matchers, asymmetric matchers, and chai's diffs.
+ *   @vitest/spy     LOADS — real vi.fn() and spyOn, with mock.calls/results.
+ *   @vitest/runner  LOADS — the real collection engine.
+ *   vitest (CLI)    does NOT load, and never will: it is a node program.
+ *
+ * So `expect` and `vi` are the real thing, fetched once per page. What stays
+ * hand-written is only the collector — describe/it/hooks and the run loop —
+ * because that part is sixty lines, and owning it is what lets results be
+ * reported into an agent's transcript rather than a terminal.
+ *
+ * The built-in matchers remain as a FALLBACK, not a product: a local-first
+ * system should still run its tests with no network, and when it does it says
+ * which engine it used rather than pretending.
  */
 
 /** Readable rendering of a value in a failure message. */
@@ -205,11 +214,72 @@ export function makeExpect() {
   return (actual) => build(actual, false)
 }
 
+/** Pinned so a test run does not change under you. */
+export const VITEST_VERSION = "2.1.9"
+export const CHAI_VERSION = "5.1.2"
+
+let vitestReady = null
+
+/**
+ * Assemble the real vitest `expect` and `vi`, or return null if unreachable.
+ *
+ * Cached per page: the modules are a few hundred kilobytes and every test file
+ * in a run wants the same ones.
+ */
+export async function loadVitestAssertions({ importModule, version = VITEST_VERSION } = {}) {
+  if (vitestReady) return vitestReady
+
+  vitestReady = (async () => {
+    const load = importModule ?? ((url) => import(/* @vite-ignore */ url))
+    const [chai, expectPlugins, spy] = await Promise.all([
+      load(`https://esm.sh/chai@${CHAI_VERSION}`),
+      load(`https://esm.sh/@vitest/expect@${version}`),
+      load(`https://esm.sh/@vitest/spy@${version}`),
+    ])
+
+    // Exactly how vitest wires it: chai, plus the jest-compatible plugins.
+    chai.use(expectPlugins.JestExtend)
+    chai.use(expectPlugins.JestChaiExpect)
+    chai.use(expectPlugins.JestAsymmetricMatchers)
+
+    const vi = {
+      fn: spy.fn,
+      spyOn: spy.spyOn,
+      isMockFunction: spy.isMockFunction,
+      clearAllMocks: () => {
+        for (const mock of spy.mocks ?? []) mock.mockClear?.()
+        return vi
+      },
+      restoreAllMocks: () => {
+        for (const mock of spy.mocks ?? []) mock.mockRestore?.()
+        return vi
+      },
+    }
+
+    return { expect: chai.expect, vi, source: `vitest@${version}` }
+  })()
+
+  try {
+    return await vitestReady
+  } catch {
+    vitestReady = null // let a later run try again; the network may come back
+    return null
+  }
+}
+
+/** Tests only. */
+export function _resetVitest() {
+  vitestReady = null
+}
+
 /**
  * A harness instance: the API a test file imports, and a runner for what it
  * registered. One per test file, so files cannot see each other's state.
+ *
+ * `assertions` is the result of loadVitestAssertions, or null to use the
+ * built-in subset.
  */
-export function createHarness({ timeoutMs = 5000 } = {}) {
+export function createHarness({ timeoutMs = 5000, assertions = null } = {}) {
   const tests = []
   const suite = []
   const hooks = { beforeEach: [], afterEach: [], beforeAll: [], afterAll: [] }
@@ -234,7 +304,8 @@ export function createHarness({ timeoutMs = 5000 } = {}) {
     describe,
     it,
     test: it,
-    expect: makeExpect(),
+    expect: assertions?.expect ?? makeExpect(),
+    vi: assertions?.vi ?? null,
     beforeEach: (fn) => hooks.beforeEach.push(fn),
     afterEach: (fn) => hooks.afterEach.push(fn),
     beforeAll: (fn) => hooks.beforeAll.push(fn),
@@ -289,5 +360,12 @@ export function createHarness({ timeoutMs = 5000 } = {}) {
     return results
   }
 
-  return { api, run, get registered() { return tests.length } }
+  return {
+    api,
+    run,
+    engine: assertions?.source ?? "built-in matchers (vitest unreachable)",
+    get registered() {
+      return tests.length
+    },
+  }
 }

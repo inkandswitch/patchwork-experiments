@@ -14,7 +14,7 @@
  */
 
 import { materialize, loadEsbuild, packagePlugin } from "./build.js"
-import { createHarness } from "./harness.js"
+import { createHarness, loadVitestAssertions } from "./harness.js"
 import { truncate } from "./format.js"
 
 /** Test files, by the conventions everyone already uses. */
@@ -46,6 +46,7 @@ export const describe = harness.describe
 export const it = harness.it
 export const test = harness.test
 export const expect = harness.expect
+export const vi = harness.vi
 export const beforeEach = harness.beforeEach
 export const afterEach = harness.afterEach
 export const beforeAll = harness.beforeAll
@@ -125,7 +126,8 @@ export const packageTest = {
     "  import { describe, it, expect } from 'vitest'",
     "  describe('thing', () => { it('works', () => { expect(add(1, 2)).toBe(3) }) })",
     "",
-    "They run in the browser — each file is bundled and executed, with the vitest import rewritten to a built-in harness. describe, it, test, expect, beforeEach/afterEach/beforeAll/afterAll and the usual matchers are supported (toBe, toEqual, toContain, toThrow, toMatch, toMatchObject, toHaveLength, the comparisons, .not, .rejects.toThrow). A matcher that is missing says so rather than passing silently.",
+    "They run in the browser: each file is bundled and executed. The assertions are REAL vitest — @vitest/expect on chai, so every matcher you know works, including asymmetric ones (expect.objectContaining, expect.arrayContaining, expect.any) — and `vi.fn()` / `vi.spyOn()` come from @vitest/spy. Only vitest's CLI cannot run here, so there is no vi.mock, no snapshots and no coverage.",
+    "With no network it falls back to a smaller built-in matcher set and says so in the report, rather than pretending.",
     "",
     "Test the logic you can test this way; use tool_check for whether the tool mounts and renders.",
   ].join("\n"),
@@ -154,7 +156,12 @@ export const packageTest = {
     }
 
     const esbuild = await loadEsbuild({ importModule: ctx.importModule })
+
+    // Real vitest matchers where the network allows, the built-in subset where
+    // it does not. Loaded once for the whole run, not once per file.
+    const assertions = await loadVitestAssertions({ importModule: ctx.importModule })
     const fileResults = []
+    let engine = null
 
     for (const file of testFiles) {
       let bundle
@@ -179,7 +186,8 @@ export const packageTest = {
 
       // A harness per file, so one file's suites and hooks cannot leak into
       // another's.
-      const harness = createHarness({ timeoutMs: input.timeoutMs ?? 5000 })
+      const harness = createHarness({ timeoutMs: input.timeoutMs ?? 5000, assertions })
+      engine = harness.engine
       const previous = globalThis.__patchworkHarness
       globalThis.__patchworkHarness = harness.api
 
@@ -196,9 +204,10 @@ export const packageTest = {
     }
 
     const { report, failed } = formatResults(fileResults)
+    const footer = `\nassertions: ${engine ?? "none"}`
     return failed
-      ? `${report}\n\nFix the failures and run package_test again.`
-      : report
+      ? `${report}${footer}\n\nFix the failures and run package_test again.`
+      : `${report}${footer}`
   },
 
   summarize(input, output) {

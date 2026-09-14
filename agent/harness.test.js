@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { createHarness, makeExpect, deepEqual } from "./tools/harness.js"
+import { describe, it, expect, beforeEach } from "vitest"
+import { createHarness, makeExpect, deepEqual, loadVitestAssertions, _resetVitest } from "./tools/harness.js"
 
 const run = async (register, options) => {
   const harness = createHarness(options)
@@ -140,5 +140,57 @@ describe("the harness runner", () => {
       d("outer", () => d("inner", () => i("deep", () => {})))
     })
     expect(results[0].label).toBe("outer › inner › deep")
+  })
+})
+
+describe("real vitest assertions", () => {
+  beforeEach(_resetVitest)
+
+  it("assembles chai with the jest plugins, the way vitest does", async () => {
+    const installed = []
+    const chai = {
+      use: (plugin) => installed.push(plugin.name ?? "plugin"),
+      expect: (actual) => ({ toBe: (v) => actual === v }),
+    }
+    const modules = {
+      chai,
+      expect: { JestExtend: function JestExtend() {}, JestChaiExpect: function JestChaiExpect() {}, JestAsymmetricMatchers: function JestAsymmetricMatchers() {} },
+      spy: { fn: () => {}, spyOn: () => {}, isMockFunction: () => false, mocks: [] },
+    }
+    const importModule = async (url) =>
+      url.includes("chai") ? modules.chai : url.includes("expect") ? modules.expect : modules.spy
+
+    const assertions = await loadVitestAssertions({ importModule })
+
+    expect(installed).toEqual(["JestExtend", "JestChaiExpect", "JestAsymmetricMatchers"])
+    expect(assertions.source).toContain("vitest@")
+    expect(typeof assertions.vi.fn).toBe("function")
+    expect(typeof assertions.vi.spyOn).toBe("function")
+  })
+
+  it("falls back rather than failing when the network is unreachable", async () => {
+    const assertions = await loadVitestAssertions({
+      importModule: async () => { throw new Error("offline") },
+    })
+    expect(assertions).toBeNull()
+
+    // A harness with no assertions still runs, using the built-in matchers.
+    const harness = createHarness({ assertions: null })
+    expect(harness.engine).toMatch(/built-in/)
+    harness.api.it("still works", () => harness.api.expect(1).toBe(1))
+    const results = await harness.run()
+    expect(results[0].status).toBe("passed")
+  })
+
+  it("reports which engine it used, rather than pretending", async () => {
+    const fake = { expect: () => ({}), vi: { fn: () => {} }, source: "vitest@9.9.9" }
+    expect(createHarness({ assertions: fake }).engine).toBe("vitest@9.9.9")
+    expect(createHarness({ assertions: null }).engine).toMatch(/built-in matchers/)
+  })
+
+  it("exposes vi to tests when the real spy library is present", () => {
+    const spy = () => {}
+    const harness = createHarness({ assertions: { expect: () => ({}), vi: { fn: spy }, source: "vitest@x" } })
+    expect(harness.api.vi.fn).toBe(spy)
   })
 })

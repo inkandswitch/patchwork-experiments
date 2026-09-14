@@ -123,22 +123,45 @@ Measured: a TypeScript tool importing three.js builds in about one second to a
 727 kB self-contained bundle, which registers, mounts, and draws to a live
 WebGL canvas.
 
-## Tests run in the browser too
+## Tests run in the browser too — with real vitest
 
 `tool_check` answers "does this mount and respond to a click". It cannot answer
-"is this function correct" — so an agent that writes tests it cannot run has
+"is this function correct", so an agent that writes tests it cannot run has
 written documentation.
 
 `package_test` bundles each `*.test.ts` with the same esbuild machinery,
 rewrites its `vitest` import to an injected harness, executes the bundle, and
-reports what passed and failed with real messages. The harness is real,
-importable code (`tools/harness.js`) rather than a string blob, so it is itself
-unit-tested — describe/it/expect, the hooks, `.not`, `.rejects.toThrow`, and the
-usual matchers. A matcher it does not have says so rather than passing quietly.
+reports what passed and failed.
 
-Measured: five TypeScript tests with a relative import, a `toThrow` and an async
-case run in 548ms, with a deliberate failure caught and reported as
-`expected 5 to be 6`.
+**The assertions are the real thing.** "vitest is a node program" is true of the
+CLI and false of the parts that matter — measured in a browser with
+`probes/vitest-feasibility.mjs`:
+
+| | |
+|---|---|
+| `@vitest/expect` | loads — it exports chai plugins, which is how vitest itself assembles `expect` |
+| `@vitest/spy` | loads — real `vi.fn()` / `vi.spyOn()` with `mock.calls` and `mock.results` |
+| `@vitest/runner` | loads — the real collection engine |
+| `vitest` (the CLI) | does not load, and never will |
+
+So `expect` is chai with `JestChaiExpect`, `JestExtend` and
+`JestAsymmetricMatchers` installed: every matcher, asymmetric matchers
+(`expect.objectContaining`, `expect.arrayContaining`, `expect.any`), and chai's
+own diffs. What stays hand-written is only the collector — describe/it/hooks and
+the run loop — because that part is sixty lines, and owning it is what lets
+results be reported into a transcript rather than a terminal.
+
+What is genuinely missing is what the CLI provides: `vi.mock`, snapshots,
+coverage, watch.
+
+The built-in matchers remain as a **fallback**, not the product: with no network
+the run still happens and the report says `assertions: built-in matchers`
+instead of pretending.
+
+Measured: eight TypeScript tests — a relative import, `toThrow`, an async case,
+asymmetric matchers, `vi.fn` spies and a deep property path — run in 625ms, with
+a deliberate failure reported as chai's `expected 5 to be 6 // Object.is
+equality`.
 
 ## Risk lives on the document
 
