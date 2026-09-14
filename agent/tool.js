@@ -14,10 +14,12 @@ import { decide, say } from "./loop.js"
 import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import { buildToolset } from "./tools/index.js"
-import { getProvider, readKey, writeKey } from "./providers/index.js"
+import { getProvider, readKey, writeKey, loadCatalogue } from "./providers/index.js"
 import { listSecrets, writeSecret } from "./secrets.js"
-import { SUGGESTED_MODELS } from "./providers/openrouter.js"
+import { ensureAgentIdentity, changeMessage } from "./identity.js"
+import { describeModel } from "./providers/openrouter.js"
 import { hostImport } from "./tools/host.js"
+import { getMount } from "./tools/checking.js"
 import { renderTranscript } from "./ui/transcript.js"
 
 const STYLE_ID = "patchwork-agent-styles"
@@ -101,13 +103,22 @@ export function AgentTool(handle, element, options = {}) {
   // ---- settings panel --------------------------------------------------
   const settings = el("div", "agent-setup")
   settings.style.display = "none"
-  const modelSelect = document.createElement("select")
-  for (const model of SUGGESTED_MODELS) {
-    const option = document.createElement("option")
-    option.value = model.id
-    option.textContent = model.label
-    modelSelect.append(option)
-  }
+  // Every model OpenRouter offers, not a hand-picked few. A datalist gives
+  // native filter-as-you-type over several hundred entries, and free text still
+  // works — so a model released this morning is usable before the catalogue
+  // refreshes.
+  const modelInput = document.createElement("input")
+  modelInput.type = "text"
+  modelInput.setAttribute("list", "agent-model-list")
+  modelInput.placeholder = "search models, or paste any slug"
+  modelInput.autocomplete = "off"
+  modelInput.spellcheck = false
+
+  const modelList = document.createElement("datalist")
+  modelList.id = "agent-model-list"
+
+  const modelStatus = el("p", null, "")
+  const refreshModels = el("button", null, "Refresh model list")
   const keyInput = document.createElement("input")
   keyInput.type = "password"
   keyInput.placeholder = "OpenRouter API key (sk-or-…)"
@@ -131,7 +142,10 @@ export function AgentTool(handle, element, options = {}) {
 
   settings.append(
     el("p", null, "Model"),
-    modelSelect,
+    modelInput,
+    modelList,
+    modelStatus,
+    refreshModels,
     el("p", null, "API key"),
     keyInput,
     keyNote,
@@ -249,9 +263,13 @@ export function AgentTool(handle, element, options = {}) {
     const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
     const liveStore = handleStore(handle, splice)
 
+    // An identity, so its contributions are legible rather than anonymous.
+    const identity = await ensureAgentIdentity(liveStore, repo).catch(() => null)
+
     runner = new SessionRunner({
       store: liveStore,
       runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
+    identity,
       ctx: {
         repo,
         subject: subjectUrl(),
@@ -265,6 +283,11 @@ export function AgentTool(handle, element, options = {}) {
         contactUrl: globalThis.accountDocHandle?.doc()?.contactUrl ?? null,
         moduleSettingsUrl: globalThis.accountDocHandle?.doc()?.moduleSettingsUrl ?? null,
         skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
+        // Stamps every write, so history can tell the agent's edits from yours.
+        changeMessage: changeMessage(identity?.url),
+        agentContact: identity,
+        // So view_screenshot can photograph a view that view_mount opened.
+        getMount,
         // Documents that always require an explicit yes, whatever touches them.
         sensitiveDocs: [
           globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
@@ -347,15 +370,57 @@ export function AgentTool(handle, element, options = {}) {
     event.preventDefault()
     const showing = settings.style.display !== "none"
     settings.style.display = showing ? "none" : "flex"
-    if (!showing) keyInput.focus()
+    if (!showing) {
+      keyInput.focus()
+      if (!catalogueLoaded) loadModels()
+    }
   })
 
-  modelSelect.addEventListener("change", () => {
+  function commitModel() {
+    const chosen = modelInput.value.trim()
+    if (!chosen || chosen === handle.doc()?.config?.model) return
     store.change((d) => {
       if (!d.config) d.config = {}
-      d.config.model = modelSelect.value
+      d.config.model = chosen
     })
     render()
+  }
+
+  modelInput.addEventListener("change", commitModel)
+  modelInput.addEventListener("blur", commitModel)
+
+  let catalogueLoaded = false
+  async function loadModels({ force = false } = {}) {
+    const providerId = handle.doc()?.config?.providerId ?? "openrouter"
+    modelStatus.textContent = force ? "Refreshing…" : "Loading models…"
+    try {
+      const { models, cached, error } = await loadCatalogue(providerId, {
+        force,
+        key: readKey(providerId),
+      })
+      catalogueLoaded = true
+
+      modelList.replaceChildren()
+      for (const model of models) {
+        const option = document.createElement("option")
+        option.value = model.id
+        // The label is what the browser shows beside the id while filtering.
+        option.label = describeModel(model)
+        modelList.append(option)
+      }
+
+      const withTools = models.filter((m) => m.tools).length
+      modelStatus.textContent = error
+        ? `${models.length} models (cached — ${error})`
+        : `${models.length} models, ${withTools} support tool use${cached ? " (cached)" : ""}`
+    } catch (err) {
+      modelStatus.textContent = `Could not load the model list: ${err?.message ?? err}. Any slug still works.`
+    }
+  }
+
+  refreshModels.addEventListener("click", (event) => {
+    event.preventDefault()
+    loadModels({ force: true })
   })
 
   saveKey.addEventListener("click", (event) => {
@@ -387,8 +452,11 @@ export function AgentTool(handle, element, options = {}) {
     statusDot.dataset.status = doc.status ?? STATUS.idle
     statusDot.title = doc.status ?? "idle"
     modelButton.textContent = (doc.config?.model ?? "no model").split("/").pop()
-    if (modelSelect.value !== doc.config?.model && doc.config?.model) {
-      modelSelect.value = doc.config.model
+    // `doc` is the session document; the focused element lives on the DOM one.
+    // Never overwrite the field while it is being typed in.
+    const focused = modelInput.ownerDocument?.activeElement
+    if (doc.config?.model && modelInput.value !== doc.config.model && focused !== modelInput) {
+      modelInput.value = doc.config.model
     }
 
     uiState.subject = doc.subject ?? null

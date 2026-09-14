@@ -30,6 +30,7 @@ import { SessionRunner, needsWork, heldElsewhere } from "./runner.js"
 import { buildToolset } from "./tools/index.js"
 import { getProvider } from "./providers/index.js"
 import { STATUS } from "./session.js"
+import { ensureAgentIdentity, changeMessage } from "./identity.js"
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com"
 
@@ -86,11 +87,18 @@ async function claim(sessionUrl) {
 
   const store = handleStore(handle, splice)
   const runnerUrl = `node-${process.pid}-${Math.random().toString(36).slice(2, 8)}`
+  const identity = await ensureAgentIdentity(store, repo).catch(() => null)
 
   const runner = new SessionRunner({
     store,
     runnerUrl,
-    ctx: { ...baseCtx, subject: doc.subject ?? null },
+    identity,
+    ctx: {
+      ...baseCtx,
+      subject: doc.subject ?? null,
+      changeMessage: changeMessage(identity?.url),
+      agentContact: identity,
+    },
     buildToolset: (sessionDoc) => buildToolset(sessionDoc),
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),
     getKey: () => KEY,

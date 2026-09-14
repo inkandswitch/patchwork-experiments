@@ -383,7 +383,11 @@ async function executeCalls(opts) {
     })
 
     results.push(
-      resultBlock(call.id, outcome.output, { isError: outcome.isError, summary: outcome.summary })
+      resultBlock(call.id, outcome.output, {
+        isError: outcome.isError,
+        summary: outcome.summary,
+        image: outcome.image ?? null,
+      })
     )
   }
 

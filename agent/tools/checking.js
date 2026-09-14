@@ -683,6 +683,11 @@ export const toolCheck = {
   },
 }
 
+/** Look up a live mount, so other tools (screenshots) can act on one. */
+export function getMount(mountId) {
+  return mounts.get(mountId) ?? null
+}
+
 /** Tests only: forget every live mount. */
 export function _resetMounts() {
   for (const id of [...mounts.keys()]) teardown(id, { silent: true })

@@ -164,4 +164,38 @@ export const domSnapshot = {
   },
 }
 
-export default [registryList, pluginSource, domSnapshot]
+export const viewOpen = {
+  id: "view_open",
+  name: "Open a document for the user",
+  description:
+    "Navigate the user's Patchwork to a document, optionally in a particular tool. Use it when you have made or found something they should look at — handing over a URL in prose is worse than just showing them.",
+  where: "host",
+  risk: "write",
+  input_schema: {
+    type: "object",
+    required: ["url"],
+    properties: {
+      url: { type: "string", description: "automerge: URL of the document to open." },
+      toolId: { type: "string", description: "Which tool to open it in. Defaults to the usual one for its datatype." },
+    },
+  },
+  async execute(input, ctx) {
+    const element = ctx.element ?? globalThis.document?.body
+    if (!element) throw new Error("view_open needs a page.")
+    if (!String(input.url ?? "").startsWith("automerge:")) throw new Error("Pass an automerge: URL.")
+
+    element.dispatchEvent(
+      new CustomEvent("patchwork:open-document", {
+        detail: { url: input.url, toolId: input.toolId ?? undefined },
+        bubbles: true,
+        composed: true,
+      })
+    )
+    return `Opened ${input.url}${input.toolId ? ` in ${input.toolId}` : ""} for the user.`
+  },
+  summarize(input) {
+    return `opened ${String(input?.url ?? "").replace(/^automerge:/, "").slice(0, 10)}…`
+  },
+}
+
+export default [registryList, pluginSource, domSnapshot, viewOpen]

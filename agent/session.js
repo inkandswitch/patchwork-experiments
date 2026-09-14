@@ -147,6 +147,8 @@ export function resultBlock(callId, output, opts = {}) {
     callId,
     output: output ?? "",
     isError: opts.isError ?? false,
+    // A data URL, when the tool answered with a picture.
+    image: opts.image ?? null,
     // The tool's own one-line description of what it did. Computed once, when
     // the call runs, because the transcript needs it on every render and the
     // raw output's first line is a poor substitute (a JSON result renders as
@@ -282,9 +284,27 @@ export function needsApproval(doc, toolDef, block = null, subject = null, sensit
  *   - a call with no result yet becomes a result saying so, because a dangling
  *     tool call with no answer is a protocol error for most providers.
  */
-export function toRequest(doc, { system = "" } = {}) {
+/**
+ * How many screenshots to carry in a request.
+ *
+ * Images are expensive on every subsequent turn, not just the one that took
+ * them, so only the most recent few travel. Older ones keep their text and lose
+ * the picture, with a note saying so — the agent can always take another.
+ */
+export const MAX_IMAGES_IN_REQUEST = 2
+
+export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
   const messages = []
   const turns = doc.turns ?? []
+
+  // Find which result blocks still get to carry their image.
+  const withImages = []
+  for (const turn of turns) {
+    for (const block of turn.blocks ?? []) {
+      if (block.type === "result" && block.image) withImages.push(block.id)
+    }
+  }
+  const keepImages = new Set(withImages.slice(-maxImages))
 
   // A summary supersedes everything up to the turn it names. Only the most
   // recent one matters — an older summary is itself inside the range a newer
@@ -318,12 +338,17 @@ export function toRequest(doc, { system = "" } = {}) {
         if (block.status === CALL.denied) continue
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
       } else if (block.type === "result") {
-        content.push({
+        const part = {
           type: "result",
           callId: block.callId,
           output: block.output ?? "",
           isError: !!block.isError,
-        })
+        }
+        if (block.image) {
+          if (keepImages.has(block.id)) part.image = block.image
+          else part.output = `${part.output}\n[screenshot from earlier, not re-sent — take another if you need to look again]`
+        }
+        content.push(part)
       }
       // reasoning: intentionally dropped, see above
     }

@@ -15,6 +15,7 @@
 import { readerUrl, DEFAULT_READER } from "./web.js"
 import { isFolder } from "./folders.js"
 import { bytes, truncate } from "./format.js"
+import { applyChange } from "../identity.js"
 
 const IMPORTS_FOLDER = "Imports"
 

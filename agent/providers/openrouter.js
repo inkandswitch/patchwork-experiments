@@ -72,6 +72,19 @@ export function toOpenAIMessages(system, messages) {
         tool_call_id: r.callId,
         content: typeof r.output === "string" ? r.output : JSON.stringify(r.output),
       })
+
+      // A tool message may only carry text, so a screenshot follows as its own
+      // user message. This is the standard workaround and every vision model
+      // reads it the same way.
+      if (r.image) {
+        out.push({
+          role: "user",
+          content: [
+            { type: "text", text: "Screenshot from the tool call above:" },
+            { type: "image_url", image_url: { url: r.image } },
+          ],
+        })
+      }
     }
   }
 
@@ -321,13 +334,42 @@ export async function* stream({
   throw lastError ?? new Error("OpenRouter: exhausted retries")
 }
 
+/**
+ * Every model OpenRouter offers.
+ *
+ * No key required — the catalogue is public — so the picker can be populated
+ * before anyone has pasted a credential.
+ */
 export async function models({ key, fetchImpl = fetch } = {}) {
   const response = await fetchImpl("https://openrouter.ai/api/v1/models", {
     headers: key ? { authorization: `Bearer ${key}` } : {},
   })
   if (!response.ok) throw new Error(`OpenRouter models ${response.status}`)
   const body = await response.json()
-  return (body.data ?? []).map((m) => ({ id: m.id, label: m.name ?? m.id }))
+
+  return (body.data ?? [])
+    .map((model) => ({
+      id: model.id,
+      label: model.name ?? model.id,
+      context: model.context_length ?? null,
+      // Prices come back as strings in dollars per token; per-million is the
+      // unit people actually think in.
+      promptPerM: model.pricing?.prompt ? Number(model.pricing.prompt) * 1e6 : null,
+      completionPerM: model.pricing?.completion ? Number(model.pricing.completion) * 1e6 : null,
+      tools: (model.supported_parameters ?? []).includes("tools"),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id))
 }
 
-export default { id, name, stream, models, SUGGESTED_MODELS }
+/** One line for a picker: what it is, how big, what it costs. */
+export function describeModel(model) {
+  const parts = [model.label]
+  if (model.context) parts.push(`${Math.round(model.context / 1000)}k ctx`)
+  if (model.promptPerM != null) {
+    parts.push(model.promptPerM === 0 ? "free" : `$${model.promptPerM.toFixed(2)}/M in`)
+  }
+  if (!model.tools) parts.push("no tool use")
+  return parts.join(" · ")
+}
+
+export default { id, name, stream, models, describeModel, SUGGESTED_MODELS }

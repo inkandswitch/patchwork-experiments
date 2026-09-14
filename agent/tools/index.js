@@ -32,8 +32,9 @@ import ingestTools from "./ingest.js"
 import skillTools from "./skills.js"
 import buildTools from "./build.js"
 import testingTools from "./testing.js"
+import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools]
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {
@@ -116,14 +117,25 @@ export async function runTool(tool, input, ctx) {
   }
   try {
     const result = await tool.execute(input ?? {}, ctx)
-    const output = typeof result === "string" ? result : JSON.stringify(result, null, 2)
+
+    // A tool may answer with a picture as well as words. The image rides
+    // alongside the text rather than inside it, so the transcript can decide
+    // how many to carry and the provider can send it as an image part.
+    let image = null
+    let output
+    if (result && typeof result === "object" && typeof result.image === "string") {
+      image = result.image
+      output = result.text ?? ""
+    } else {
+      output = typeof result === "string" ? result : JSON.stringify(result, null, 2)
+    }
     let summary = null
     try {
       summary = tool.summarize?.(input, output) ?? null
     } catch {
       summary = null // a broken summarizer must not fail the call
     }
-    return { output, isError: false, summary: summary ?? `${tool.id} ok` }
+    return { output, image, isError: false, summary: summary ?? `${tool.id} ok` }
   } catch (err) {
     const message = String(err?.message ?? err)
     return { output: `Error: ${message}`, isError: true, summary: `${tool.id} failed` }

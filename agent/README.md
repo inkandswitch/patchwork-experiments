@@ -23,6 +23,8 @@ claimed by a node process with no tab open.
 | `panel.js` | the `context-tool` variant that attaches to whatever you are looking at |
 | `node-runner.mjs` | the same runner, outside the browser: durable, no CORS |
 | `secrets.js` | per-device credentials, addressed by name and never seen by the agent |
+| `identity.js` | the agent's contact, and the change stamp that attributes its writes |
+| `presence.js` | joining a document's presence while working in it |
 | `providers/` | `openrouter.js` (real, with retry), `mock.js` (scripted, for tests) |
 | `tools/` | the tool surface — documents, discovery, folders, environment, web, http, ingest, authoring, checking |
 | `ui/` | transcript rendering and the provider-subscription protocol |
@@ -74,7 +76,8 @@ any participant can approve and every approval is auditable.
 | Folders and files | `fs_list` `fs_read` `fs_grep` `fs_write` | worker |
 | Drive the front end | `view_mount` `view_inspect` `view_interact` `view_unmount` | host |
 | | `tool_check` | host |
-| Environment | `registry_list` `plugin_source` `dom_snapshot` | host |
+| Environment | `registry_list` `plugin_source` `dom_snapshot` `view_open` | host |
+| See | `view_screenshot` | host |
 | Build | `package_build` | worker |
 | Test | `package_test` | host |
 | Web | `web_search` `web_fetch` `web_import` | worker |
@@ -185,6 +188,49 @@ the thing most likely to need correcting in the field: when the agent gets the
 render contract wrong, the fix should be editing a document, not redeploying the
 harness.
 
+## It contributes as itself
+
+The agent shares your repo, so its automerge actor id is *yours* — which makes
+the obvious attribution mechanism (the actor → contact map) actively harmful:
+registering its actor would relabel your own edits as its.
+
+So attribution is per **change**, not per actor. Every write the agent makes
+carries a change message stamped with its contact url, and `doc_history` reports
+`by: "agent"` or `by: "person"` with counts. That is precise, cannot mislabel
+anyone, and needs no second Repo — it works in the browser today.
+
+It also has a **contact** (name, colour) and joins a document's **presence**
+while working, through the same `Presence` mechanism `doc-presence` uses — so it
+arrives and leaves visibly rather than editing your documents invisibly. And
+`view_open` lets it show you what it made instead of handing over a URL in prose.
+
+The honest limit: the contact lives on the session document, not the account, so
+it is one identity per session. The account is a document the safety model always
+asks before touching, and internal machinery must not write where a tool call
+would need permission.
+
+## It can see what it is working on
+
+`view_screenshot` captures what a view is actually drawing. Reading the DOM and
+reading the document tell it what is *there*; only a picture tells it what it
+*looks like*.
+
+Two paths, because they fail differently: a `<canvas>` is read directly with
+`toDataURL` (exact), and anything else is rasterized through an SVG
+`foreignObject`. That rasterizer is implemented here rather than pulled from a
+CDN — `modern-screenshot` returned a byte-identical blank rectangle in headless
+Chrome while a minimal foreignObject rasterized the same content correctly. Ours
+also swaps each canvas for an image of its pixels, which `cloneNode` drops, so a
+chart beside its controls comes out whole.
+
+Images are downscaled and re-encoded as JPEG, and only the **two most recent**
+travel in a request — an image costs context on every subsequent turn, not just
+the one that took it. Older ones keep their text and say the picture was dropped.
+
+Measured: a DOM view captured at 400×218 with 66 distinct colours, and a live
+three.js WebGL canvas at 600×356 with 118 — the WebGL case being the one that
+silently comes back blank when a drawing buffer is not preserved.
+
 ## Credentials
 
 Secrets live in `localStorage`, are addressed **by name**, and the agent never
@@ -223,6 +269,12 @@ and parameter choice *do* live in the document — they are part of the session'
 meaning and should travel with it.
 
 Paste a key into the panel's settings (the button showing the model name).
+
+The model picker lists **every model OpenRouter offers** — 445 at the time of
+writing, 377 of which support tool use — with context size and price per
+million, filtered as you type. The catalogue is cached per device for a day and
+refreshable by hand, and free text still works, so a model released this morning
+is usable before the catalogue catches up.
 
 ## Testing
 

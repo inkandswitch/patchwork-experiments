@@ -126,6 +126,17 @@ try {
     cdp,
     `(async () => {
       const out = {}
+
+      // Import the agent's modules PINNED TO HEADS. An unpinned URL is served
+      // from the browser's module cache, so a freshly synced fix silently does
+      // not run — which looks exactly like the fix not working.
+      const agentUrl = ${JSON.stringify(PACKAGE)}
+      const pinned = await (async () => {
+        const handle = await window.repo.find(agentUrl)
+        const heads = handle.heads?.() ?? []
+        const bare = agentUrl.split("#")[0]
+        return "/" + encodeURIComponent(heads.length ? bare + "#" + [...heads].sort().join("|") : bare) + "/"
+      })()
       try {
         const SOURCE = {
           "package.json": JSON.stringify({ name: "mathy", type: "module", main: "./dist/index.js" }),
@@ -202,7 +213,7 @@ try {
         }
         out.packageUrl = pkg.url
 
-        const testing = await import("/" + encodeURIComponent(${JSON.stringify(PACKAGE)}) + "/tools/testing.js")
+        const testing = await import(pinned + "tools/testing.js")
         const started = Date.now()
         out.report = await testing.packageTest.execute({ url: pkg.url }, { repo: window.repo })
         out.ms = Date.now() - started

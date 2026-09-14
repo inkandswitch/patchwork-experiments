@@ -68,3 +68,57 @@ export function writeKey(providerId, key, storage = globalThis.localStorage) {
 export function hasKey(providerId, storage = globalThis.localStorage) {
   return !!readKey(providerId, storage)
 }
+
+// ---------------------------------------------------------------- catalogue
+
+const CATALOGUE_KEY = "patchwork-agent:models:"
+const CATALOGUE_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The model catalogue, cached per device.
+ *
+ * A few hundred models is a lot to fetch on every settings open, and the list
+ * changes daily rather than hourly — so it is cached for a day and can always
+ * be refreshed by hand.
+ */
+export function readCatalogue(providerId, storage = globalThis.localStorage) {
+  try {
+    const raw = storage?.getItem(CATALOGUE_KEY + providerId)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed.models) || !parsed.models.length) return null
+    return { ...parsed, stale: Date.now() - (parsed.at ?? 0) > CATALOGUE_TTL_MS }
+  } catch {
+    return null
+  }
+}
+
+export function writeCatalogue(providerId, models, storage = globalThis.localStorage) {
+  try {
+    storage?.setItem(CATALOGUE_KEY + providerId, JSON.stringify({ at: Date.now(), models }))
+    return true
+  } catch {
+    return false // quota, private mode — the picker just falls back to fetching
+  }
+}
+
+/** Load the catalogue, from cache when it is fresh enough. */
+export async function loadCatalogue(providerId, { force = false, key = null } = {}) {
+  const cached = readCatalogue(providerId)
+  if (cached && !cached.stale && !force) return { models: cached.models, cached: true }
+
+  const provider = getProvider(providerId)
+  if (typeof provider.models !== "function") {
+    return { models: cached?.models ?? [], cached: true }
+  }
+
+  try {
+    const models = await provider.models({ key })
+    writeCatalogue(providerId, models)
+    return { models, cached: false }
+  } catch (err) {
+    // Offline, or the catalogue endpoint is down: a stale list beats none.
+    if (cached) return { models: cached.models, cached: true, error: String(err?.message ?? err) }
+    throw err
+  }
+}

@@ -10,6 +10,7 @@
  */
 
 import { previewJson, truncate, bytes } from "./format.js"
+import { applyChange } from "../identity.js"
 
 /** File content arrives as a string, an ImmutableString, or raw bytes. */
 export function contentToText(content) {
@@ -339,9 +340,9 @@ export const fsWrite = {
       const handle = await ctx.repo.find(input.url)
       if (!isFile(handle.doc())) throw new Error(`${input.url} is not a file document.`)
       const before = contentToText(handle.doc()?.content).split("\n").length
-      handle.change((draft) => {
+      applyChange(handle, (draft) => {
         draft.content = input.content ?? ""
-      })
+      }, ctx)
       const after = String(input.content ?? "").split("\n").length
       return `Wrote ${input.url}: ${before} → ${after} lines, ${bytes(String(input.content ?? "").length)}`
     }
@@ -366,16 +367,16 @@ export const fsWrite = {
       if (existing) {
         const handle = await ctx.repo.find(existing.url)
         const before = contentToText(handle.doc()?.content).split("\n").length
-        handle.change((draft) => {
+        applyChange(handle, (draft) => {
           draft.content = content
-        })
+        }, ctx)
         written.push(`${path} · updated ${before} → ${content.split("\n").length} lines`)
       } else {
         const created = await createFile(ctx.repo, name, content)
-        folder.change((draft) => {
+        applyChange(folder, (draft) => {
           if (!draft.docs) draft.docs = []
           draft.docs.push({ name, type: "file", url: created.url })
-        })
+        }, ctx)
         written.push(`${path} · created ${content.split("\n").length} lines (${created.url})`)
       }
     }

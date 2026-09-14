@@ -125,6 +125,17 @@ try {
     cdp,
     `(async () => {
       const out = { steps: [] }
+
+      // Import the agent's modules PINNED TO HEADS. An unpinned URL is served
+      // from the browser's module cache, so a freshly synced fix silently does
+      // not run — which looks exactly like the fix not working.
+      const agentUrl = ${JSON.stringify(PACKAGE)}
+      const pinned = await (async () => {
+        const handle = await window.repo.find(agentUrl)
+        const heads = handle.heads?.() ?? []
+        const bare = agentUrl.split("#")[0]
+        return "/" + encodeURIComponent(heads.length ? bare + "#" + [...heads].sort().join("|") : bare) + "/"
+      })()
       const started = Date.now()
       const step = (name, detail) => out.steps.push({ t: Date.now() - started, name, ...detail })
 
@@ -199,7 +210,7 @@ try {
 
         // 2. Import the agent's builder straight out of its own package
         //    document, the same way Patchwork imports any module.
-        const buildModule = await import("/" + encodeURIComponent(${JSON.stringify(PACKAGE)}) + "/tools/build.js")
+        const buildModule = await import(pinned + "tools/build.js")
         step("loaded the builder", { has: typeof buildModule.packageBuild?.execute })
 
         // 3. Build it. esbuild-wasm in the page; three.js fetched as ESM.
