@@ -134,6 +134,23 @@ would sync.
 If the build fails, the error names the file and line. Fix it with fs_write and
 build again — that loop is the point of having the compiler here.
 
+## Files that are not source
+
+A package can hold a wasm module, an image, a font. Fetch one straight into the
+package with \`http_request\`, which keeps bytes as bytes:
+
+    http_request { url: "https://.../engine.wasm",
+                   folder: "<the package folder url>", saveAs: "engine.wasm" }
+
+Importing it from your source gets you the right thing: \`.wasm\` arrives as a
+\`Uint8Array\`, images and fonts as data URLs, so a built bundle is still one
+file with nothing to fetch at runtime. Never ask a tool for a binary as text —
+decoding bytes as UTF-8 destroys them quietly, and a wasm module that has been
+through a decoder still starts with the right four bytes.
+
+Large files sync to every device on the account. Fetch what the tool needs, not
+a whole SDK.
+
 ## Tests
 
 Write tests for logic — anything you could get wrong that is not about
@@ -201,13 +218,73 @@ every datatype.
   — \`shapeOnly: true\` for anything large — and make your paths real.
 - **Prefer a narrow splice to rewriting a field.** A splice merges with
   concurrent edits from other people; replacing the whole string clobbers them.
-- **Offsets come from the text you actually read.** If the read was truncated,
-  your offsets are wrong. Read the specific path you are editing.
+- **Offsets come from the text you actually read.** A whole-document read
+  summarizes long strings, so its offsets are fictional. Read the exact path you
+  are editing — \`{ path: ["body"] }\` — and page through anything long with
+  \`offset\` and \`limit\` until the result stops saying characters remain.
 - **All the ops in one call apply together or not at all**, so group an edit
   that must be atomic into a single \`doc_edit\`.
 - **Nothing validates against the datatype.** A document you write into a shape
   its tool does not expect will render badly or not at all — check with
   \`view_mount\` afterwards if it matters.`,
+  },
+
+  {
+    name: "working-with-the-web",
+    description:
+      "When to search, fetch, import or call an API; how approval works and why you should not pre-negotiate it; what happens to long pages and to binary files.",
+    body: `# Working with the web
+
+Four tools, and picking the wrong one wastes a turn.
+
+- **\`web_search\`** — titles and URLs. It returns links, not answers.
+- **\`web_fetch\`** — read a public page as markdown. The default choice.
+- **\`web_import\`** — read it AND file it in the user's folders. Use this only
+  when they want to keep the material, because it puts a document somewhere they
+  will see it.
+- **\`http_request\`** — methods, headers, bodies, credentials. For APIs and for
+  files, not for reading pages.
+
+## Being asked for permission
+
+Reaching outside Patchwork needs a human yes. Just make the call — the session
+stops, they answer, and you carry on. Do not ask in prose whether you may fetch
+something; that costs a turn and they have to answer twice.
+
+They can hand you a whole site at once, so a research task usually stops once
+and then runs. If you know you are about to read several pages from one place,
+fetch the first one and say so — the choice they are offered includes that site.
+
+A denial is about that call. Do not immediately try the same URL a different
+way; say what you wanted it for, or find another source.
+
+## Long pages become documents
+
+Anything longer than a couple of paragraphs is saved to its own document, and
+the result tells you where and how much of it you were shown. To see more, read
+that document — do not fetch the page again:
+
+    doc_read { url: "automerge:...", path: ["content"], offset: 12000 }
+
+It is cheaper, and the text cannot have shifted underneath your offsets.
+
+## Binary stays binary
+
+A wasm module, an image, a font, an archive: \`http_request\` keeps the bytes and
+writes them to a document rather than putting them in this conversation. You
+never see the contents, which is correct — you could not use them from here
+anyway. What you get is the size, the format read from its magic number, and the
+document URL.
+
+Pass \`folder\` when you are fetching a file in order to keep it, so it lands in
+the package that needs it instead of nowhere in particular.
+
+## What will not work
+
+This runs in a browser. The origin policy still applies, so an API that does not
+serve permissive CORS cannot be called from here — an error mentioning CORS
+means unreachable, not misconfigured. Pages go through a reader service, and
+some sites block it; that is a reason to find another source, not to retry.`,
   },
 
   {
@@ -229,6 +306,11 @@ has to be found.
 - **\`plugin_source\`** to read how an existing tool is written before writing one
   like it. This is the best available documentation, because it is the code that
   is actually running.
+
+Pages you fetched earlier are documents too. \`web_fetch\` saves anything longer
+than a couple of paragraphs and the result gives you the URL, so re-reading part
+of one is \`doc_read\`, not another fetch — cheaper, and the content cannot have
+changed underneath you.
 
 When the user refers to something by name — "the budget doc", "my recipes" —
 search before asking. When a search finds nothing, say what you searched rather

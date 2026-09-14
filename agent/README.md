@@ -44,23 +44,33 @@ its next write and stands down. The same class runs in a tab, a worker, or node
 **Tool calls are tiered.** Each tool declares `where`:
 
 - `worker` — needs only a repo: `doc_read` `doc_edit` `doc_history`, the `fs_*`
-  tools, the `web_*` tools, `tool_write`
-- `host` — needs the page: `dom_snapshot` (a DOM), `registry_list`
-  `plugin_source` `doc_create` (the plugin registry, which is page state, not
-  repo state), `tool_install` (the account document)
+  tools, the `web_*` tools, `http_request`, `package_build`
+- `host` — needs the page: `dom_snapshot` (a DOM), the `view_*` tools,
+  `package_test`, `registry_list` `plugin_source` `doc_create` (the plugin
+  registry, which is page state, not repo state)
 - `task` — for work that belongs outside the browser; the seam exists, nothing uses it yet
 
 A call the current runner cannot execute **parks** the session rather than
 failing it, and resumes when a capable runner appears.
+
+**Runners outlive the views that started them.** A runner is registered per
+session in a module-level registry; views attach to it and detach from it.
+Navigating to another document unmounts the tool, which detaches a view — it
+does not stop the work, abort the turn, or drop the lease. The runner owns its
+own subscription to the session document for the same reason: when that lived in
+the view, a detached runner went deaf and stalled at the first thing it waited
+for. Reopening the session, here or in another tab, picks up whatever happened
+while you were gone. Closing the last tab is still fatal; durability comes from
+a runner outside the browser.
 
 **The transcript is provider-neutral.** No OpenAI- or Anthropic-shaped message
 ever enters the document; adapters translate on the way in and out. That is
 what makes changing model mid-session work, and it is why the web tools are
 ours rather than a provider's hosted search.
 
-**Approvals plus history.** `risk: "read"` runs silently; writes ask once per
-session per tool; `tool_install` asks every time regardless of grants, because
-it adds code that runs on every future load. Grants live in the document, so
+**Approvals plus history.** `risk: "read"` runs silently; everything else asks,
+and the grant it earns can be as narrow as one document or as broad as a whole
+site — see *Risk lives on the document*. Grants live in the session document, so
 any participant can approve and every approval is auditable.
 
 ## The tool surface
@@ -80,6 +90,14 @@ any participant can approve and every approval is auditable.
 | Test | `package_test` | host |
 | Web | `web_search` `web_fetch` `web_import` | worker |
 | APIs | `secret_list` (host) `http_request` | worker |
+
+Outside content does not stay in the conversation. A fetched page longer than a
+couple of paragraphs is written to its own document and linked from the
+transcript, so it persists, syncs, can be reopened, and can be re-read in ranges
+with `doc_read` instead of fetched again — while the model still gets exactly
+the excerpt it asked for. Binary responses are kept as bytes and never decoded;
+`http_request` takes a `folder`, so a wasm module can be fetched straight into
+the package that needs it.
 
 There is deliberately **no tool for writing a tool**. A Patchwork tool is a
 folder of files, so writing one is `fs_write`; installing one is `doc_edit` on
@@ -166,17 +184,36 @@ equality`.
 
 ## Risk lives on the document
 
-`risk: "read"` runs silently and writes ask once per tool per document. On top of
-that, some *documents* always ask, whichever tool touches them: the module
-settings document decides what code runs on every future load, and the account
-document is your identity. Attaching that gate to an "install" tool instead
-would only mean the next tool that can write a document routes around it.
+`risk: "read"` runs silently. Everything else asks, and the answer can be
+narrow or broad: this call only, this document, this page, this directory, this
+whole site, or anything the tool can reach. Approving each fetch individually is
+what made the loop unusable — the agent stops on every page of a documentation
+site and waits for a human to agree it may read the next one.
+
+Breadth never becomes sloppiness, because matching generates the *call's* own
+keys and looks each up exactly. A grant on `https://example.com/` is one entry
+in a map; `https://example.com.attacker.net/x` produces a different set of keys
+and matches none of them. No substring comparison is ever made against a stored
+grant, so a look-alike host cannot get near one, and neither can `http://` when
+the grant was `https://`.
+
+Grants live on the session document, so they are per-conversation, auditable in
+its history, and any participant can approve.
+
+On top of that, some *documents* always ask, whichever tool touches them and
+however broad the grant: the module settings document decides what code runs on
+every future load, and the account document is your identity. Attaching that
+gate to an "install" tool instead would only mean the next tool that can write a
+document routes around it. `http_request` also asks every time, because a
+request that can carry your credentials to an arbitrary URL is the one thing a
+standing grant is the wrong level of consent for.
 
 ## Skills
 
 Guidance the agent needs but should not carry in every prompt: named and
 described in the system prompt, read in full on demand. `writing-patchwork-tools`
 carries the render contract, `editing-documents` the op vocabulary,
+`working-with-the-web` which of the four outside-world tools to reach for,
 `finding-things` how to orient in an unfamiliar Patchwork.
 
 Built-ins ship with the package so the agent is never knowledge-less, but a
@@ -203,6 +240,13 @@ chart beside its controls comes out whole.
 Images are downscaled and re-encoded as JPEG, and only the **two most recent**
 travel in a request — an image costs context on every subsequent turn, not just
 the one that took it. Older ones keep their text and say the picture was dropped.
+
+They show up in the transcript too, beside the call that took them rather than
+inside its disclosure, so you can see what the agent saw without clicking. The
+rest of the log renders as markdown, built with DOM calls: there is no
+`innerHTML` anywhere in the renderer and no HTML parsing at all, which also
+rules out a library, since every markdown library worth using emits an HTML
+string. A script tag in model output is six words.
 
 Measured: a DOM view captured at 400×218 with 66 distinct colours, and a live
 three.js WebGL canvas at 600×356 with 118 — the WebGL case being the one that
@@ -270,8 +314,24 @@ trajectory, every tool call, and the document afterwards.
 
 ```
 node probes/patchwork-e2e.mjs --prompt "…" --model anthropic/claude-opus-4.1 \
-  --expect-tools "tool_write,tool_install" --headed --keep-open
+  --expect-tools "web_fetch,doc_edit" --headed --keep-open
 ```
+
+It also asserts on things a unit test cannot reach:
+
+| flag | what it checks |
+|---|---|
+| `--grant site` | takes the whole-site grant instead of the narrowest one |
+| `--expect-approvals-at-most N` | one grant really did cover many calls (`0` asserts it never had to ask) |
+| `--expect-markdown` | prose rendered as structure, and no markup escaped |
+| `--expect-saved-doc` | fetched content became a document, and the log links it |
+| `--expect-image` | a captured picture is visible, and is not an empty `src` |
+| `--unmount-after MS` | the view is torn down mid-turn and the work still finishes |
+| `--shot FILE` | writes a picture of the finished transcript |
+
+`--shot` is not a nicety. Two bugs shipped past a green suite because the
+assertions asked whether an element existed rather than whether anyone could see
+it; both were obvious in the first capture.
 
 Other probes:
 
@@ -284,6 +344,10 @@ Other probes:
   a tab.
 - `probes/reload-control.mjs` — the control experiment below.
 - `probes/can-read-module.mjs` — can a fresh profile read a published package.
+- `probes/esbuild-twice.mjs` — loads esbuild from two copies of `build.js`,
+  which is the shape that broke `package_test`.
+- `probes/binary-fetch.mjs` — pulls a real 11 MB wasm module through
+  `http_request` and compares every byte against an independent fetch.
 
 **The key does not live in this package.** `pushwork sync` publishes the whole
 directory and honours only `.pushwork`, `.git`, and `node_modules` — *not*
@@ -345,6 +409,52 @@ after    renderedAfter: "🎲 3\nRoll the die!\nLast roll: 3"    (no cleanup err
 The lesson generalizes: a tool's description is where environment-specific API
 contracts belong, because it is the only documentation the model reliably reads.
 
+**One esbuild per realm, not per copy of the module that loads it.**
+`esbuild.initialize()` may be called once per esbuild module, and the browser
+keys modules by absolute URL. `tools/build.js` gets imported at more than one
+URL in ordinary use — a heads-pinned import and an unpinned one are different
+modules, and after a sync a tab holds both — so a module-level "have we
+initialized yet" flag meant two guards in front of one esbuild. The second copy
+was refused and `package_test` failed with `Cannot call "initialize" more than
+once`, which reads like a fault in the package under test. The flag now lives on
+`globalThis` under a `Symbol.for` key, which is the scope esbuild's own state
+has. `probes/esbuild-twice.mjs`:
+
+```
+before   ok / FAIL Cannot call "initialize" more than once / ok
+after    ok / ok / ok
+```
+
+Catching that error is not enough by itself: `esbuild.build()` does **not** await
+initialization, and while one is in flight every call throws `You need to wait
+for the promise returned from "initialize" to be resolved`. There is no flag to
+read, so the loader tries a trivial transform and reads the error.
+
+**`response.text()` destroys binaries silently.** It decodes as UTF-8 *with
+replacement*, so every invalid sequence becomes U+FFFD and the result still
+looks like a successful download. For the esbuild wasm module that is 3,473,386
+bytes of damage in an 11 MB file. `http_request` now reads the body once as
+bytes and classifies afterwards. The same decoder sat in `materialize()`, so a
+binary file inside a package was corrupted on its way to esbuild as well.
+
+Checking the magic number would not have caught it — UTF-8 replacement leaves
+the first four bytes alone. `probes/binary-fetch.mjs` compares every byte
+against an independent fetch and then compiles the result as WebAssembly.
+
+**A fake that cannot do what the real thing does hides the bug it was written
+for.** The `http_request` doubles were `{ok, text: async () => body}` — no
+headers, no `arrayBuffer` — so no test could exercise the decision between text
+and bytes, and none did. This is the same failure the `testing-patchwork-tools`
+skill warns about, met from the other direction: not a fake that models the
+world wrongly, but one too thin to model it at all.
+
+**A probe that asserts with `querySelector` is not looking at the screen.** The
+approval card rendered *inside* the call's `<details>`, which is closed for a
+pending call. Every e2e run passed — hidden nodes are still in the DOM — while a
+person saw a stuck session and no buttons. Found by adding `--shot` to the e2e
+probe and looking at the picture; the same capture showed `display: flex` on a
+list breaking marker hanging, which no assertion would ever have caught.
+
 ## What is not built yet
 
 - **The SharedWorker runner is opt-in, not default.** Turn it on with
@@ -390,8 +500,10 @@ contracts belong, because it is the only documentation the model reliably reads.
   implementation against automerge-repo's `Presence` was cut because it did not
   actually show up — unresolved, and worth checking whether presence needs a peer
   connection the agent's context does not have.
-- **Large documents.** Reads truncate at 24k characters with a `shapeOnly`
-  mode to orient, but there is no paging or query-within, so a chat with
+- **Large collections.** A long *string* can be paged with `doc_read`'s
+  `offset`/`limit`, which is what makes a fetched page re-readable. A large
+  *collection* cannot: reads still truncate at 24k characters with a `shapeOnly`
+  mode to orient, and there is no paging or query-within, so a chat with
   thousands of messages or a big canvas still reads as noise.
 - **Evaluation.** Prompt and tool-description changes are measured by hand, one
   before/after at a time. There is no harness that says whether a change helped.
