@@ -295,9 +295,16 @@ window.__agentProbe = async function (opts) {
     // Follow-up messages, so a probe can see how the agent behaves over several
     // turns rather than only on the first one.
     for (const followUp of opts.followUps ?? []) {
+      const before = session.doc().turns.length
       textarea.value = followUp
       sendButton.click()
       step("followed up", { prompt: followUp })
+
+      // send() is async — it resolves a contact URL before it appends anything —
+      // so `settled` is still true for the PREVIOUS turn the instant we click.
+      // Waiting for it directly matched immediately and waited for nothing,
+      // which made every follow-up assertion quietly meaningless.
+      await waitFor("the message to be appended", () => session.doc().turns.length > before, 15000)
       await waitFor("the agent to act on the follow-up", settled, patience)
       await answerAny()
       await approveOrDeny()

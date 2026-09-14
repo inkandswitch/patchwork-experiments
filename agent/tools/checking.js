@@ -482,8 +482,13 @@ export const viewMount = {
   },
 
   summarize(input, output) {
-    const id = String(output ?? "").match(/mountId: (\S+)/)
-    return `opened ${input?.toolId ?? "document"} · ${id ? id[1] : "failed"}`
+    const text = String(output ?? "")
+    if (!/mountId:/.test(text)) return "could not mount"
+    const elements = text.match(/(\d+) elements/)
+    const buttons = text.match(/(\d+) button/)
+    // What it looks like, not which random id it was given: the row already
+    // says what was mounted, and the mountId means nothing to a person.
+    return elements ? `${elements[1]} elements, ${buttons?.[1] ?? 0} buttons` : "mounted"
   },
 }
 
@@ -604,8 +609,12 @@ export const viewInteract = {
   },
 
   summarize(input, output) {
-    const problem = String(output ?? "").includes("PROBLEM")
-    return `${input?.action ?? "click"} ${input?.selector ?? ""} · ${problem ? "problem" : "ok"}`.trim()
+    const text = String(output ?? "")
+    if (text.includes("PROBLEM")) return "problem"
+    // The interesting part of an interaction is whether anything changed.
+    if (/document did NOT change/i.test(text)) return "no change"
+    if (/document changed/i.test(text)) return /Rendering updated/i.test(text) ? "changed, screen followed" : "changed"
+    return "ok"
   },
 }
 

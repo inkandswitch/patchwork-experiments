@@ -63,11 +63,28 @@ export async function resolvePath(repo, rootUrl, path = "") {
   return { url, doc, handle, trail }
 }
 
+/** A real automerge URL, rather than the shape of one. */
+function looksLikeDocUrl(value) {
+  return typeof value === "string" && /^automerge:[A-Za-z0-9]+/.test(value.trim())
+}
+
 function rootFor(input, ctx) {
+  // A model filling in the `root` field with a placeholder — "automerge:",
+  // "root", "" — is a predictable mistake, and passing it through meant a failed
+  // call, a red block in the user's transcript, and a wasted turn while the
+  // agent worked out that it should have omitted the field. An entry with no
+  // document id in it is not a document; take it as "not given", which is
+  // unambiguously what was meant.
+  const given = typeof input?.root === "string" ? input.root.trim() : null
+  const explicit = looksLikeDocUrl(given) ? given : null
+  if (given && !explicit && !/^(automerge:)?$|^(root|default)$/i.test(given)) {
+    throw new Error(`'${given}' is not a document URL. Omit \`root\` to write at the account root.`)
+  }
+
   // The account's root folder is the useful default: a session's subject is
   // usually an ordinary document, not a folder, so defaulting to it made every
   // fs_* call fail with "not a folder" unless a root was passed by hand.
-  const root = input?.root ?? ctx.rootFolderUrl ?? ctx.subject
+  const root = explicit ?? ctx.rootFolderUrl ?? ctx.subject
   if (!root) throw new Error("No folder specified and no root folder is available. Pass `root`.")
   return root
 }

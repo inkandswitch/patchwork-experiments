@@ -148,3 +148,40 @@ describe("the small pieces", () => {
     expect(baseName("src/deep/file.ts")).toBe("file.ts")
   })
 })
+
+describe("a row says what happened, not what was asked twice", () => {
+  // The verb and detail already carry the question. A summary that repeats them
+  // gives you `click button:last-child · click button:last-child · ok`.
+  const noisy = (tool, input, output) => {
+    const { verb, detail, note } = describeCall({ tool, input, status: "done" }, { output, summary: summaryOf(tool, input, output) })
+    return { verb, detail, note }
+  }
+
+  function summaryOf(toolId, input, output) {
+    const tool = BUILTIN_TOOLS.find((t) => t.id === toolId)
+    return tool?.summarize?.(input, output) ?? null
+  }
+
+  it("does not repeat the selector in an interaction", () => {
+    const row = noisy("view_interact", { action: "click", selector: "button:last-child" }, "Interacted with 'x' — document changed: {}\nRendering updated: \"1\"")
+    expect(row.verb).toBe("click")
+    expect(row.detail).toBe("button:last-child")
+    expect(row.note).toBe("changed, screen followed")
+    expect(row.note).not.toContain("button:last-child")
+  })
+
+  it("says a click did nothing, which is the thing worth knowing", () => {
+    const row = noisy("view_interact", { action: "click", selector: "#go" }, "Interacted with '#go' — the document did NOT change.")
+    expect(row.note).toBe("no change")
+  })
+
+  it("describes a mount by what rendered, not by its random id", () => {
+    const row = noisy("view_mount", { toolId: "tally" }, "Mounted without throwing.\n12 elements, 2 button(s), 1 input(s).\n\nmountId: mount_ab12cd")
+    expect(row.note).toBe("12 elements, 2 buttons")
+    expect(row.note).not.toContain("mount_")
+  })
+
+  it("says plainly when a mount failed", () => {
+    expect(noisy("view_mount", { toolId: "tally" }, "PROBLEM mounting threw: boom").note).toBe("could not mount")
+  })
+})

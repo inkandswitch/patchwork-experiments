@@ -293,6 +293,50 @@ the thing most likely to need correcting in the field: when the agent gets the
 render contract wrong, the fix should be editing a document, not redeploying the
 harness.
 
+## What a session makes, and installing it
+
+Every document a tool creates is recorded on the session and shown in a strip
+under the header: newest first, one click to open, and for a package the install
+controls right there. Before, a created document was reachable from the tool
+result that made it and from nowhere else, so six calls later the thing you
+asked for was above the scroll, identified by fifty characters of base58.
+
+Installing offers two things, because a tool under development and a tool you
+are happy with want different ones:
+
+| | entry | behaviour |
+|---|---|---|
+| **Install** | `automerge:<id>` | live — follows the agent's next edit |
+| **Pin this version** | `automerge:<id>#<heads>` | frozen at exactly this version |
+
+Pinning is how you promote one version: keep using it while the agent goes on
+experimenting, and a later edit cannot change what you installed. The strip says
+which is in force and warns when a pin has fallen **behind** what the package has
+since become — the question a pin creates and nothing else answers, whose only
+other symptom is edits that appear to do nothing. Heads are compared as a set,
+and sorted when written, because two peers at one version can list them in
+different orders.
+
+This is a button and not a tool, deliberately. The module settings document is
+on the always-ask list because installing adds code that runs on every future
+load; a person clicking IS that consent, directly. An `install` verb would route
+around the gate rather than satisfy it — and the agent is told not to hand out
+URLs to paste, because before the button existed, every tool-building session
+ended with one.
+
+## Reading a tool call
+
+Each call is one line until you open it, and what you get when you open it is
+built for the tool. The generic case puts short scalars in a field list and long
+or multi-line strings in their own labelled block; `fs_write` shows each file
+under its path, `doc_edit` reads as one line per change, a fetched page renders
+as prose, and an error stays monospace because it carries stacks and positions.
+
+The bar this had to clear was low and the failure was total: the body used to be
+`JSON.stringify(input, null, 2)`, which escapes every newline — so the single
+most common thing the agent does, writing a file, rendered as one endless line of
+literal `\n`.
+
 ## It can see what it is working on
 
 `view_screenshot` captures what a view is actually drawing. Reading the DOM and
@@ -306,6 +350,17 @@ CDN — `modern-screenshot` returned a byte-identical blank rectangle in headles
 Chrome while a minimal foreignObject rasterized the same content correctly. Ours
 also swaps each canvas for an image of its pixels, which `cloneNode` drops, so a
 chart beside its controls comes out whole.
+
+`tool_check` and `view_mount` attach one automatically, so "does it look right"
+is answered without the agent having to think to ask.
+
+A mounted view also renders into a **workbench** between the transcript and the
+composer, so you watch the agent work rather than take its word for it. Mounting
+used to happen ten thousand pixels off to the left, always: the agent could see
+the tool and the person who asked for it could not. Off-screen remains the
+fallback for when no view is attached — and it is off-screen rather than
+`display: none` because a hidden container reports zero sizes, and a tool that
+measures itself would behave differently there than in front of a person.
 
 Images are downscaled and re-encoded as JPEG, and only the **two most recent**
 travel in a request — an image costs context on every subsequent turn, not just
@@ -400,6 +455,8 @@ It also asserts on things a unit test cannot reach:
 | `--deny-tools a,b` | refuses these instead of granting them |
 | `--then "a\|b"` | follow-up messages, to see behaviour across turns |
 | `--expect-moves-on` | it acknowledged a refusal once and then dropped it |
+| `--expect-made` | it recorded what it built, including a package |
+| `--install-after "Pin this version"` | clicks that button in the strip and checks the module list |
 | `--max-answers 0` | leave a question unanswered, to look at the card |
 | `--unmount-after MS` | the view is torn down mid-turn and the work still finishes |
 | `--shot FILE` | writes a picture of the finished transcript |

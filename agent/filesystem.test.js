@@ -145,3 +145,37 @@ describe("risk on the document, not the verb", () => {
     expect(needsApproval(d, otherTool, { input: { url: SETTINGS } }, null, [SETTINGS])).toBe(true)
   })
 })
+
+describe("a root the model filled in with a placeholder", () => {
+  // Watched happen: the model sent `root: "automerge:"`, the call failed with
+  // "Invalid AutomergeUrl", and the user got a red block in their transcript
+  // while the agent spent a turn working out it should have omitted the field.
+  it("treats an id-less automerge url as not given", async () => {
+    const repo = fakeRepo()
+    const out = await fsWrite.execute({ root: "automerge:", path: "notes.md", content: "hi" }, ctx(repo))
+    expect(out.text).toMatch(/created 1 lines/)
+    expect(entry(repo, "automerge:root", "notes.md")).toBeTruthy()
+  })
+
+  it("accepts the words a model reaches for when it means the default", async () => {
+    const repo = fakeRepo()
+    for (const root of ["", "root", "default"]) {
+      await expect(fsWrite.execute({ root, path: `${root || "blank"}.md`, content: "x" }, ctx(repo))).resolves.toBeTruthy()
+    }
+  })
+
+  it("still refuses something that is meant to be a real url and is not", async () => {
+    const repo = fakeRepo()
+    await expect(
+      fsWrite.execute({ root: "my-folder", path: "a.md", content: "x" }, ctx(repo))
+    ).rejects.toThrow(/not a document URL. Omit `root`/)
+  })
+
+  it("uses a real root when it is given one", async () => {
+    const repo = fakeRepo()
+    const other = "automerge:otherfolder"
+    repo.docs.set(other, { title: "Other", docs: [], "@patchwork": { type: "folder" } })
+    await fsWrite.execute({ root: other, path: "a.md", content: "x" }, ctx(repo))
+    expect(entry(repo, other, "a.md")).toBeTruthy()
+  })
+})
