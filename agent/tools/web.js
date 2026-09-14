@@ -20,6 +20,7 @@
  */
 
 import { truncate, bytes } from "./format.js"
+import { saveSource, sourceFooter, SPILL_AT } from "./sources.js"
 
 /**
  * Strip HTML down to readable text.
@@ -120,8 +121,11 @@ export function parseSearchResults(markdown, limit = 8) {
 export const webFetch = {
   id: "web_fetch",
   name: "Read a web page",
-  description:
+  description: [
     "Fetch a web page and return its readable text as markdown. Use it to read documentation, articles, or anything you found with web_search.",
+    "",
+    "Anything longer than a couple of paragraphs is also saved to its own document, and the result tells you where. Re-read part of a long page with doc_read on that URL instead of fetching it again — it is cheaper and the content cannot have changed underneath you.",
+  ].join("\n"),
   where: "worker",
   risk: "external",
   input_schema: {
@@ -138,10 +142,11 @@ export const webFetch = {
 
     const fetchImpl = ctx.fetchImpl ?? fetch
 
-    // Outside a browser there is no origin policy, so fetch the page itself:
-    // no third party in the path, no rate limit, nothing cached by someone
-    // else, and sites that block the reader become reachable.
+    let content
     if (ctx.direct) {
+      // Outside a browser there is no origin policy, so fetch the page itself:
+      // no third party in the path, no rate limit, nothing cached by someone
+      // else, and sites that block the reader become reachable.
       const response = await fetchImpl(target, {
         signal: ctx.signal,
         headers: { accept: "text/html,text/plain", "user-agent": "patchwork-agent" },
@@ -149,22 +154,30 @@ export const webFetch = {
       if (!response.ok) throw new Error(`Could not fetch ${target} (${response.status}).`)
       const body = await response.text()
       const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(body.slice(0, 2000))
-      return truncate(looksLikeHtml ? htmlToText(body) : body, input.maxChars ?? 12000)
+      content = looksLikeHtml ? htmlToText(body) : body
+    } else {
+      const response = await fetchImpl(readerUrl(target, ctx.reader ?? DEFAULT_READER), {
+        signal: ctx.signal,
+        headers: { accept: "text/plain" },
+      })
+      if (!response.ok) {
+        throw new Error(
+          `Could not read ${target} (${response.status}). The reader may be blocked by that site; try a different page.`
+        )
+      }
+      content = await response.text()
     }
 
-    const response = await fetchImpl(readerUrl(target, ctx.reader ?? DEFAULT_READER), {
-      signal: ctx.signal,
-      headers: { accept: "text/plain" },
-    })
+    const excerpt = truncate(content, input.maxChars ?? 12000)
 
-    if (!response.ok) {
-      throw new Error(
-        `Could not read ${target} (${response.status}). The reader may be blocked by that site; try a different page.`
-      )
-    }
+    // Short pages are already entirely in the transcript; a document would only
+    // add a link to something you can see. Longer ones get one, and the model
+    // keeps exactly the excerpt it asked for either way.
+    if (content.length < SPILL_AT) return excerpt
 
-    const text = await response.text()
-    return truncate(text, input.maxChars ?? 12000)
+    const ref = await saveSource(ctx, { url: target, content, mimeType: "text/markdown" })
+    if (!ref) return excerpt
+    return { text: `${excerpt}\n${sourceFooter(ref, excerpt.length)}`, doc: ref }
   },
   summarize(input, output) {
     let host = input?.url ?? ""
@@ -173,7 +186,9 @@ export const webFetch = {
     } catch {
       /* keep the raw string */
     }
-    return `fetched ${host} · ${bytes(String(output ?? "").length)}`
+    const saved = String(output ?? "").match(/— (\d+) of (\d+) characters|\(complete\)/)
+    const size = saved?.[2] ?? String(output ?? "").length
+    return `fetched ${host} · ${bytes(Number(size))}`
   },
 }
 

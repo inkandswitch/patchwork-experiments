@@ -203,24 +203,26 @@ window.__agentProbe = async function (opts) {
 
     await waitFor("the agent to act", settled, patience)
 
-    // Approve repeatedly: a session grant covers one tool, so a turn that uses
-    // two different risky tools legitimately asks twice.
+    // Approve repeatedly: a grant covers one tool, so a turn that uses two
+    // different risky tools legitimately asks twice.
     let approved = 0
+    const grantsChosen = []
     while (session.doc().status === "awaiting-approval" && approved < (opts.maxApprovals ?? 6)) {
       const card = host.querySelector(".agent-approval")
-      const buttons = [...(card?.querySelectorAll("button") ?? [])]
-      // Match by role rather than exact wording: the grant button's label
-      // changes with what the call targets ("This session" vs "Always for this
-      // doc"), and a probe that hard-codes copy breaks on every rewording.
-      const sessionButton = buttons.find(
-        (b) => b.textContent !== "Allow once" && b.textContent !== "Deny"
-      )
+      const scopes = [...(card?.querySelectorAll(".agent-approval-scopes button") ?? [])]
+      // Which standing grant to take. "narrow" is the tightest offer — a single
+      // page or document; "site" is the one that makes an agentic loop bearable,
+      // because the next fetch from the same host does not stop and ask.
+      const chosen =
+        opts.grantScope === "site" ? (scopes.length > 1 ? scopes[scopes.length - 2] : scopes[0]) : scopes[0]
       step("approval requested", {
         tool: session.doc().turns.flatMap((t) => t.blocks).find((b) => b.type === "call" && b.status === "pending")?.tool,
-        buttons: buttons.map((b) => b.textContent),
+        scopes: scopes.map((b) => b.textContent),
+        choosing: chosen?.textContent,
       })
-      if (!sessionButton) throw new Error("An approval was requested but no approval card rendered")
-      sessionButton.click()
+      if (!chosen) throw new Error("An approval was requested but no grant scopes rendered")
+      grantsChosen.push(chosen.textContent)
+      chosen.click()
       approved++
       // Approving does not change the status synchronously — the runner picks
       // the call up on its next tick. Waiting for `settled` here would match
@@ -248,6 +250,23 @@ window.__agentProbe = async function (opts) {
 
     const transcriptRows = [...host.querySelectorAll(".agent-call summary")].map((s) => s.textContent.trim())
 
+    // What the log actually rendered, rather than what it holds. Markdown and
+    // pictures are only useful if they reach the DOM.
+    const rendered = {
+      markdownBlocks: host.querySelectorAll(".agent-text .agent-md > *").length,
+      headings: [...host.querySelectorAll(".agent-text h1, .agent-text h2, .agent-text h3")].map((h) => h.textContent),
+      listItems: host.querySelectorAll(".agent-text li").length,
+      codeBlocks: host.querySelectorAll(".agent-text pre code").length,
+      links: [...host.querySelectorAll(".agent-text a[href]")].map((a) => a.getAttribute("href")).slice(0, 8),
+      images: [...host.querySelectorAll(".agent-shot img")].map((i) => ({
+        bytes: i.getAttribute("src")?.length ?? 0,
+        kind: i.getAttribute("src")?.slice(0, 20),
+      })),
+      docChips: [...host.querySelectorAll(".agent-doc-chip")].map((c) => c.textContent),
+      // The guarantee that matters: model output never becomes markup.
+      scriptTags: host.querySelectorAll(".agent-text script").length,
+    }
+
     return {
       ok: true,
       elapsedMs: at(),
@@ -256,6 +275,12 @@ window.__agentProbe = async function (opts) {
       runnersSeen: [...runnersSeen],
       runnerMode: host.querySelector(".patchwork-agent")?.dataset.runner ?? null,
       approved,
+      // So the driver can size a full-page capture to what was actually rendered.
+      shotHeight: host?.scrollHeight ?? null,
+      grantsChosen,
+      grants: JSON.parse(JSON.stringify(doc.grants ?? {})),
+      rendered,
+      savedDocs: blocks.filter((b) => b.type === "result" && b.doc).map((b) => b.doc),
       finalStatus: doc.status,
       subject: { url: subject.url, doc: JSON.parse(JSON.stringify(subject.doc())) },
       session: { url: session.url, turns: doc.turns.length, calls, results, text },
@@ -272,7 +297,9 @@ window.__agentProbe = async function (opts) {
     }
   } finally {
     // Leave the DOM in place when asked, so a headed run can be looked at.
-    if (!opts.keepOpen) {
+    // A capture happens after this function returns, so the DOM has to survive
+    // it; --shot sets keepDom.
+    if (!opts.keepOpen && !opts.keepDom) {
       try {
         cleanup?.()
       } catch {

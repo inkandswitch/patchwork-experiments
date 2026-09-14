@@ -14,14 +14,14 @@
  *     turns:   Turn[]
  *     status:  "idle" | "running" | "awaiting-approval" | "parked" | "error"
  *     lease:   { runner, at, generation } | null
- *     grants:  { [toolId]: "session" | "always" }
+ *     grants:  { [grantKey]: "session" | "always" }
  *   }
  *
  *   Turn  = { id, role: "user"|"assistant"|"tool", at, author, blocks: Block[] }
  *   Block = { type: "text",      id, text }
  *         | { type: "reasoning", id, text }
  *         | { type: "call",      id, tool, input, where, status, runner, generation }
- *         | { type: "result",    id, callId, output, isError }
+ *         | { type: "result",    id, callId, output, isError, image, doc }
  *
  * Automerge cannot hold `undefined`, so every optional field is either present
  * or `null` — never assigned undefined. See patchwork-skill §5.
@@ -149,6 +149,10 @@ export function resultBlock(callId, output, opts = {}) {
     isError: opts.isError ?? false,
     // A data URL, when the tool answered with a picture.
     image: opts.image ?? null,
+    // { url, name, bytes, mimeType } when the tool put its content in a
+    // document — a fetched page, an imported file — so the transcript can link
+    // to it and a person can open it instead of reading a wall of text.
+    doc: opts.doc ?? null,
     // The tool's own one-line description of what it did. Computed once, when
     // the call runs, because the transcript needs it on every render and the
     // raw output's first line is a poor substitute (a JSON result renders as
@@ -226,7 +230,61 @@ export function runnableCalls(doc) {
  */
 export function callTarget(block, subject = null) {
   const input = block?.input ?? {}
-  return input.url ?? input.root ?? subject ?? null
+  return normalizeTarget(input.url ?? input.root ?? subject ?? null)
+}
+
+/**
+ * One spelling per thing, so two grants cannot disagree about the same target.
+ *
+ * Only web URLs are normalized: case-folding a host is correct, and a fragment
+ * never changes what is fetched. An automerge URL is already canonical and is
+ * left exactly as it came.
+ */
+export function normalizeTarget(target) {
+  if (target == null) return null
+  const raw = String(target)
+  if (!/^https?:\/\//i.test(raw)) return raw
+  try {
+    const url = new URL(raw)
+    url.hash = ""
+    return url.href
+  } catch {
+    return raw
+  }
+}
+
+/**
+ * The directory URLs that contain this one, innermost first, ending at the origin.
+ *
+ *   https://docs.python.org/3/library/os.html
+ *     -> https://docs.python.org/3/library/
+ *        https://docs.python.org/3/
+ *        https://docs.python.org/
+ *
+ * Prefixes are built by walking path *segments*, never by comparing strings.
+ * That is the whole security argument: a grant on `https://example.com/` can
+ * never be matched by `https://example.com.attacker.net/`, because the attacker
+ * URL simply generates a different set of keys.
+ */
+export function urlPrefixes(target) {
+  let url
+  try {
+    url = new URL(String(target ?? ""))
+  } catch {
+    return []
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return []
+
+  // The directory part: everything up to and including the last slash. A page
+  // is contained by its directory, not by itself.
+  const directory = url.pathname.slice(0, url.pathname.lastIndexOf("/") + 1) || "/"
+  const segments = directory.split("/").filter(Boolean)
+
+  const prefixes = []
+  for (let depth = segments.length; depth >= 0; depth--) {
+    prefixes.push(`${url.origin}/${segments.slice(0, depth).map((s) => `${s}/`).join("")}`)
+  }
+  return [...new Set(prefixes)]
 }
 
 /**
@@ -238,7 +296,90 @@ export function callTarget(block, subject = null) {
  * not "yes, edit anything".
  */
 export function grantKey(toolId, target) {
-  return target ? `${toolId}@${target}` : toolId
+  return target ? `${toolId}@${normalizeTarget(target)}` : toolId
+}
+
+/** The key that means "this tool, on anything at all". */
+export const ANY_TARGET = "*"
+
+/**
+ * Every grant that would cover this call, narrowest first.
+ *
+ * Approving each fetch individually is what made the loop unusable — the agent
+ * stops on every page of a documentation site and waits for a human to agree
+ * that yes, it may read the next one. So a grant can name a subtree: the exact
+ * URL, any directory above it, the whole origin, or every target the tool can
+ * reach.
+ *
+ * Matching is by generating the call's own keys and looking each up exactly, so
+ * no substring comparison is ever made against a stored grant.
+ */
+export function grantCandidates(toolId, target) {
+  const keys = []
+  if (target == null) {
+    keys.push(toolId)
+  } else {
+    keys.push(grantKey(toolId, target))
+    for (const prefix of urlPrefixes(target)) keys.push(grantKey(toolId, prefix))
+  }
+  keys.push(grantKey(toolId, ANY_TARGET))
+  return [...new Set(keys)]
+}
+
+/**
+ * The grants worth *offering* a human for this call, narrowest first.
+ *
+ * Not the same list as the candidates: every intermediate directory is a valid
+ * grant, but a column of six buttons is a worse interface than three. So the
+ * offer is the exact target, its immediate directory, the whole site, and
+ * anything — the scopes people actually think in.
+ */
+export function grantOffers(toolId, target) {
+  if (target == null) {
+    return [{ key: toolId, label: "always", detail: `every ${toolId} call in this session` }]
+  }
+
+  const offers = []
+  const isWeb = /^https?:\/\//i.test(String(target))
+
+  if (isWeb) {
+    const prefixes = urlPrefixes(target)
+    const origin = prefixes[prefixes.length - 1]
+    const directory = prefixes[0]
+    let host = target
+    try {
+      host = new URL(target).host
+    } catch {
+      /* keep the raw string */
+    }
+
+    // Only offer the exact URL when it is not already the directory, otherwise
+    // two buttons would mean the same thing.
+    if (normalizeTarget(target) !== directory) {
+      offers.push({ key: grantKey(toolId, target), label: "this page", detail: String(target) })
+    }
+    if (directory && directory !== origin) {
+      offers.push({ key: grantKey(toolId, directory), label: shortPath(directory), detail: `anything under ${directory}` })
+    }
+    if (origin) offers.push({ key: grantKey(toolId, origin), label: host, detail: `anything on ${host}` })
+    offers.push({ key: grantKey(toolId, ANY_TARGET), label: "any site", detail: `every ${toolId} call in this session` })
+    return offers
+  }
+
+  return [
+    { key: grantKey(toolId, target), label: "this document", detail: String(target) },
+    { key: grantKey(toolId, ANY_TARGET), label: "any document", detail: `every ${toolId} call in this session` },
+  ]
+}
+
+/** `https://docs.python.org/3/library/` -> `/3/library/`, for a button label. */
+export function shortPath(url) {
+  try {
+    const path = new URL(url).pathname
+    return path.length > 28 ? `…${path.slice(-27)}` : path
+  } catch {
+    return String(url)
+  }
 }
 
 /**
@@ -262,12 +403,21 @@ export function needsApproval(doc, toolDef, block = null, subject = null, sensit
   // tool is doing it. Attaching this to a bespoke "install" tool instead would
   // just mean the next tool that can write a document routes around it.
   if (target && sensitive.includes(target)) return true
-  const scoped = grants[grantKey(toolDef.id, target)]
-  if (scoped === "session" || scoped === "always") return false
 
-  // An unscoped grant covers tools that act on no particular document.
-  const unscoped = grants[toolDef.id]
-  return !(target === null && (unscoped === "session" || unscoped === "always"))
+  // Any grant from the exact target up to "anything" answers for this call.
+  return !grantCandidates(toolDef.id, target).some((key) => {
+    const held = grants[key]
+    return held === "session" || held === "always"
+  })
+}
+
+/** Which grant is answering for this call, if any. For explaining a decision. */
+export function grantCovering(doc, toolId, target) {
+  const grants = doc?.grants ?? {}
+  return grantCandidates(toolId, target).find((key) => {
+    const held = grants[key]
+    return held === "session" || held === "always"
+  }) ?? null
 }
 
 // ---------------------------------------------------------------- request

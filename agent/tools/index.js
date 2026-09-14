@@ -118,13 +118,16 @@ export async function runTool(tool, input, ctx) {
   try {
     const result = await tool.execute(input ?? {}, ctx)
 
-    // A tool may answer with a picture as well as words. The image rides
-    // alongside the text rather than inside it, so the transcript can decide
-    // how many to carry and the provider can send it as an image part.
+    // A tool may answer with more than words: a picture, or a document holding
+    // content too big to live in the transcript. Both ride alongside the text
+    // rather than inside it, so the transcript can decide how to show them and
+    // the provider can send an image as an image part.
     let image = null
+    let doc = null
     let output
-    if (result && typeof result === "object" && typeof result.image === "string") {
-      image = result.image
+    if (result && typeof result === "object" && (typeof result.image === "string" || result.doc || typeof result.text === "string")) {
+      image = typeof result.image === "string" ? result.image : null
+      doc = result.doc ?? null
       output = result.text ?? ""
     } else {
       output = typeof result === "string" ? result : JSON.stringify(result, null, 2)
@@ -135,7 +138,7 @@ export async function runTool(tool, input, ctx) {
     } catch {
       summary = null // a broken summarizer must not fail the call
     }
-    return { output, image, isError: false, summary: summary ?? `${tool.id} ok` }
+    return { output, image, doc, isError: false, summary: summary ?? `${tool.id} ok` }
   } catch (err) {
     const message = String(err?.message ?? err)
     return { output: `Error: ${message}`, isError: true, summary: `${tool.id} failed` }

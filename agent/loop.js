@@ -387,6 +387,7 @@ async function executeCalls(opts) {
         isError: outcome.isError,
         summary: outcome.summary,
         image: outcome.image ?? null,
+        doc: outcome.doc ?? null,
       })
     )
   }
@@ -429,26 +430,40 @@ function finish(store, status, outcome, emit, reason = null) {
 /**
  * Record a human decision on a pending call.
  *
- * `scope` is "once" | "session" | "always" | "deny". Grants are stored on the
- * document, so any participant can approve and every approval is auditable.
+ * `decision` is one of:
+ *   "once" | "deny"                 — answer this call and nothing else
+ *   "session" | "always"            — and grant this tool on this exact target
+ *   { grant: "<grantKey>" }         — and grant this tool on a chosen scope
+ *
+ * The object form is what makes broad authority possible: the UI offers the
+ * scopes from `grantOffers` — this page, this directory, this site, anything —
+ * and hands back the key the human picked, rather than the loop assuming the
+ * narrowest one. Grants are stored on the session document, so any participant
+ * can approve and every approval is in the history.
  */
-export function decide(store, callId, scope, subject = null) {
+export function decide(store, callId, decision, subject = null) {
   store.change((d) => {
     const found = findCall(d, callId)
     if (!found) return
     const block = found.block
     if (block.status !== CALL.pending) return
 
-    if (scope === "deny") {
+    if (decision === "deny") {
       block.status = CALL.denied
       return
     }
     block.status = CALL.approved
-    if (scope === "session" || scope === "always") {
+
+    if (decision && typeof decision === "object" && decision.grant) {
+      if (!d.grants) d.grants = {}
+      d.grants[decision.grant] = "always"
+      return
+    }
+    if (decision === "session" || decision === "always") {
       if (!d.grants) d.grants = {}
       // Scoped to the document this call is about, so "yes" means yes to this
       // rather than yes to everything this tool could ever touch.
-      d.grants[grantKey(block.tool, callTarget(block, subject))] = scope
+      d.grants[grantKey(block.tool, callTarget(block, subject))] = decision
     }
   })
 }

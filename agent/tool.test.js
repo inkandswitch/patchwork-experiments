@@ -230,10 +230,114 @@ describe("transcript rendering", () => {
     expect(card.textContent).toContain("Soup")
 
     const buttons = [...card.querySelectorAll("button")].map((b) => b.textContent)
-    expect(buttons).toEqual(["Allow once", "This session", "Deny"])
+    // No target here, so there is one standing grant to offer rather than a
+    // choice of subtrees.
+    expect(buttons).toEqual(["Allow once", "Deny", "always"])
 
-    card.querySelectorAll("button")[1].click()
-    expect(chosen).toEqual([["c1", "session"]])
+    card.querySelectorAll("button")[0].click()
+    expect(chosen).toEqual([["c1", "once"]])
+  })
+
+  it("offers page, section and site scopes when the call names a URL", () => {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(
+      makeTurn("assistant", [
+        callBlock("web_fetch", { url: "https://docs.python.org/3/library/os.html" }, { id: "c1", status: CALL.pending }),
+      ])
+    )
+
+    const chosen = []
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: (id, scope) => chosen.push([id, scope]) })
+
+    const card = container.querySelector(".agent-approval")
+    const scopes = [...card.querySelectorAll(".agent-approval-scopes button")]
+    expect(scopes.map((b) => b.textContent)).toEqual([
+      "this page",
+      "/3/library/",
+      "docs.python.org",
+      "any site",
+    ])
+    expect(scopes[2].title).toBe("anything on docs.python.org")
+
+    scopes[2].click()
+    expect(chosen).toEqual([["c1", { grant: "web_fetch@https://docs.python.org/" }]])
+  })
+
+  it("shows a captured image in the log, not only inside the call", () => {
+    const image = "data:image/jpeg;base64,AAAA"
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("assistant", [callBlock("view_screenshot", {}, { id: "c1", status: CALL.done })]))
+    doc.turns.push(makeTurn("tool", [resultBlock("c1", "Captured 400×200 via dom.", { image, summary: "screenshot" })]))
+
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: () => {} })
+
+    const figure = container.querySelector(".agent-shot")
+    expect(figure).toBeTruthy()
+    expect(figure.querySelector("img").getAttribute("src")).toBe(image)
+    // Outside the <details>, so it is visible without opening the call.
+    expect(figure.closest(".agent-call")).toBeNull()
+    expect(figure.dataset.size).toBe("small")
+
+    figure.click()
+    expect(figure.dataset.size).toBe("large")
+  })
+
+  it("keeps an enlarged image enlarged across a re-render", () => {
+    const image = "data:image/jpeg;base64,BBBB"
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("assistant", [callBlock("view_screenshot", {}, { id: "c1", status: CALL.done })]))
+    doc.turns.push(makeTurn("tool", [resultBlock("c1", "Captured.", { image })]))
+
+    const uiState = state()
+    const container = document.createElement("div")
+    renderTranscript(container, doc, uiState, { decide: () => {} })
+    container.querySelector(".agent-shot").click()
+
+    renderTranscript(container, doc, uiState, { decide: () => {} })
+    expect(container.querySelector(".agent-shot").dataset.size).toBe("large")
+  })
+
+  it("links the document a tool saved its content into", () => {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("assistant", [callBlock("web_fetch", { url: "https://x.test/a" }, { id: "c1", status: CALL.done })]))
+    doc.turns.push(
+      makeTurn("tool", [
+        resultBlock("c1", "excerpt…", { doc: { url: "automerge:saved1", name: "A Page.md", bytes: 42000 } }),
+      ])
+    )
+
+    const opened = []
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: () => {}, openDoc: (url) => opened.push(url) })
+
+    const chip = container.querySelector(".agent-doc-chip")
+    expect(chip.textContent).toContain("A Page.md")
+    expect(chip.textContent).toContain("42 kB")
+
+    chip.click()
+    expect(opened).toEqual(["automerge:saved1"])
+  })
+
+  it("renders prose as markdown rather than as a wall of text", () => {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(
+      makeTurn("assistant", [textBlock("## Findings\n\n- one **important** thing\n- see [the docs](https://x.test/)")])
+    )
+
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: () => {} })
+
+    expect(container.querySelector("h2").textContent).toBe("Findings")
+    expect(container.querySelectorAll("li")).toHaveLength(2)
+    expect(container.querySelector("strong").textContent).toBe("important")
+    expect(container.querySelector("a").getAttribute("href")).toBe("https://x.test/")
   })
 
   it("keeps a call open across re-renders once you have opened it", () => {
@@ -318,5 +422,33 @@ describe("callSummary", () => {
 
   it("marks a pending call as needing approval", () => {
     expect(callSummary({ tool: "doc_edit", input: {}, status: CALL.pending }, null).note).toBe("needs approval")
+  })
+})
+
+describe("an approval a person can actually see", () => {
+  const state = () => ({ open: new Set(), names: new Map() })
+
+  function pendingCall(tool = "web_fetch", input = { url: "https://docs.python.org/3/library/os.html" }) {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("assistant", [callBlock(tool, input, { id: "c1", status: CALL.pending })]))
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: () => {} })
+    return container
+  }
+
+  it("renders the card outside the collapsed call, not inside it", () => {
+    // The bug this exists for: the card was inside <details>, which is closed
+    // for a pending call. querySelector still found it, so every probe passed
+    // while a person saw a stuck session and no buttons.
+    const container = pendingCall()
+    const card = container.querySelector(".agent-approval")
+    expect(card).toBeTruthy()
+    expect(card.closest("details")).toBeNull()
+  })
+
+  it("puts the call's own disclosure back in the collapsed state it belongs in", () => {
+    const container = pendingCall()
+    expect(container.querySelector(".agent-call").open).toBe(false)
   })
 })

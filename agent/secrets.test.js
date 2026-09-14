@@ -163,7 +163,7 @@ describe("web_import", () => {
     const repo = repoWithRoot()
     const out = await webImport.execute({ url: "https://automerge.org" }, ctx(repo))
 
-    expect(out).toMatch(/Imported https:\/\/automerge\.org as 'Automerge\.md'/)
+    expect(out.text).toMatch(/Imported https:\/\/automerge\.org as 'Automerge\.md'/)
     const root = repo.docs.get("automerge:root")
     const importsLink = root.docs.find((d) => d.name === "Imports")
     expect(importsLink).toBeTruthy()
@@ -174,6 +174,9 @@ describe("web_import", () => {
     expect(file.content).toBe(page)
     expect(file.source).toBe("https://automerge.org")
     expect(file.mimeType).toBe("text/markdown")
+
+    // The transcript links to what was imported rather than only describing it.
+    expect(out.doc).toMatchObject({ url: imports.docs[0].url, name: "Automerge.md", mimeType: "text/markdown" })
   })
 
   it("updates in place when the same source is imported again", async () => {
@@ -187,9 +190,11 @@ describe("web_import", () => {
       fetchImpl: async () => ({ ok: true, text: async () => "Title: Automerge\n\nUpdated." }),
     })
 
-    expect(second).toMatch(/Updated Automerge\.md/)
+    expect(second.text).toMatch(/Updated Automerge\.md/)
     expect(repo.docs.get(importsLink.url).docs).toHaveLength(1)
     expect(repo.docs.get(firstFileUrl).content).toContain("Updated.")
+    // Still the same document, so the link in the transcript still resolves.
+    expect(second.doc.url).toBe(firstFileUrl)
   })
 
   it("reuses the Imports folder rather than making a second one", async () => {

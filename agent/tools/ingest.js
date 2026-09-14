@@ -120,7 +120,10 @@ export const webImport = {
         doc.content = content
         doc.importedAt = Date.now()
       })
-      return `Updated ${name} (${existingUrl}) from ${target}: ${bytes(before)} → ${bytes(content.length)}.\n\n${truncate(content, 600)}`
+      return {
+        text: `Updated ${name} (${existingUrl}) from ${target}: ${bytes(before)} → ${bytes(content.length)}.\n\n${truncate(content, 600)}`,
+        doc: { url: existingUrl, name, bytes: content.length, mimeType: "text/markdown" },
+      }
     }
 
     const file = await ctx.repo.create2()
@@ -138,12 +141,15 @@ export const webImport = {
       doc.docs.push({ name, type: "file", url: file.url })
     })
 
-    return [
-      `Imported ${target} as '${name}' (${bytes(content.length)}) at ${file.url}`,
-      `In folder: ${folder.doc()?.title ?? folder.url}`,
-      "",
-      truncate(content, 600),
-    ].join("\n")
+    return {
+      text: [
+        `Imported ${target} as '${name}' (${bytes(content.length)}) at ${file.url}`,
+        `In folder: ${folder.doc()?.title ?? folder.url}`,
+        "",
+        truncate(content, 600),
+      ].join("\n"),
+      doc: { url: file.url, name, bytes: content.length, mimeType: "text/markdown" },
+    }
   },
 
   summarize(input, output) {

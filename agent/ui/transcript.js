@@ -3,14 +3,16 @@
  *
  * Built with DOM calls rather than innerHTML: every string here is model
  * output, tool output, or something a person typed, and none of it should ever
- * be parsed as markup.
+ * be parsed as markup. Prose goes through the markdown renderer, which keeps
+ * that rule — see ui/markdown.js.
  *
  * The narrow column drives the decisions — a tool call is one line until you
- * open it, reasoning is a duration until you open it, and only prose and
- * approvals get full width.
+ * open it, reasoning is a duration until you open it, and only prose,
+ * pictures and approvals get full width.
  */
 
-import { CALL, callTarget } from "../session.js"
+import { CALL, callTarget, grantOffers } from "../session.js"
+import { renderMarkdown } from "./markdown.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -101,9 +103,70 @@ function renderCall(block, result, state, handlers) {
   body.textContent = result ? `${input}\n\n→\n${result.output ?? ""}` : input
   details.append(body)
 
-  if (block.status === CALL.pending) details.append(renderApproval(block, handlers, state.subject))
+  // Everything below lives OUTSIDE the <details>, because a collapsed call
+  // hides it. That was a real bug for approvals: the card asking permission
+  // rendered inside the disclosure, so the session looked stuck with no way to
+  // unstick it — visible to a querySelector, invisible to a person. A picture
+  // is the same argument in a smaller way; a screenshot the agent took to check
+  // its work is the thing you most want to see without clicking.
+  const attachments = []
+  if (block.status === CALL.pending) attachments.push(renderApproval(block, handlers, state.subject))
+  if (result?.image) attachments.push(renderImage(result.image, state))
+  if (result?.doc) attachments.push(renderDocLink(result.doc, handlers))
+  if (!attachments.length) return details
 
-  return details
+  const wrapper = el("div", "agent-call-group")
+  wrapper.append(details, ...attachments)
+  return wrapper
+}
+
+/**
+ * A captured image, shown in the log rather than described in it.
+ *
+ * Small by default so a long session stays readable, and clicking it toggles
+ * full width — the state lives in the same open-set as the disclosure
+ * triangles, so a re-render does not close what you just opened.
+ */
+function renderImage(dataUrl, state) {
+  const key = `image:${dataUrl.length}:${dataUrl.slice(-24)}`
+  const figure = el("figure", "agent-shot")
+  figure.dataset.size = state.open.has(key) ? "large" : "small"
+
+  const image = el("img")
+  image.src = dataUrl
+  image.alt = "what the agent captured"
+  image.loading = "lazy"
+  figure.append(image)
+
+  const caption = el("figcaption", null, state.open.has(key) ? "click to shrink" : "click to enlarge")
+  figure.append(caption)
+
+  figure.addEventListener("click", () => {
+    const large = figure.dataset.size === "large"
+    figure.dataset.size = large ? "small" : "large"
+    caption.textContent = large ? "click to enlarge" : "click to shrink"
+    if (large) state.open.delete(key)
+    else state.open.add(key)
+  })
+  return figure
+}
+
+/** A link to the document a tool put its content in. */
+function renderDocLink(ref, handlers) {
+  const link = el("a", "agent-doc-chip")
+  link.setAttribute("role", "link")
+  link.tabIndex = 0
+  link.append(el("span", "agent-doc-chip-name", ref.name ?? "document"))
+  if (ref.bytes) link.append(el("span", "agent-doc-chip-size", `${Math.round(ref.bytes / 1000)} kB`))
+  const open = (event) => {
+    event.preventDefault()
+    handlers.openDoc?.(ref.url)
+  }
+  link.addEventListener("click", open)
+  link.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") open(event)
+  })
+  return link
 }
 
 function renderApproval(block, handlers, subject) {
@@ -118,25 +181,30 @@ function renderApproval(block, handlers, subject) {
   detail.textContent = JSON.stringify(block.input ?? {}, null, 2).slice(0, 600)
   card.append(detail)
 
-  const row = el("div", "cluster")
-  const button = (label, scope, variant) => {
+  const button = (label, decision, { variant, title } = {}) => {
     const b = el("button", null, label)
     if (variant) b.dataset.variant = variant
+    if (title) b.title = title
     b.addEventListener("click", (event) => {
       event.preventDefault()
-      handlers.decide(block.id, scope)
+      handlers.decide(block.id, decision)
     })
     return b
   }
 
-  // "This session" used to mean "this tool, on anything". It now means this
-  // tool on this document, and the label says so.
-  row.append(
-    button("Allow once", "once", "primary"),
-    button(target ? "Always for this doc" : "This session", "session"),
-    button("Deny", "deny", "danger")
-  )
+  const row = el("div", "cluster")
+  row.append(button("Allow once", "once", { variant: "primary" }), button("Deny", "deny", { variant: "danger" }))
   card.append(row)
+
+  // The standing grants, from narrowest to broadest. Answering every fetch
+  // individually is what makes an agent tedious to work with, so the useful
+  // scopes are one click away: this page, this section, this whole site.
+  const scopes = el("div", "agent-approval-scopes")
+  scopes.append(el("span", "agent-approval-label", "Always allow:"))
+  for (const offer of grantOffers(block.tool, target)) {
+    scopes.append(button(offer.label, { grant: offer.key }, { title: offer.detail }))
+  }
+  card.append(scopes)
   return card
 }
 
@@ -150,8 +218,17 @@ function renderReasoning(block, state) {
 
   const words = String(block.text ?? "").trim().split(/\s+/).filter(Boolean).length
   details.append(el("summary", null, `thought for ${words} word${words === 1 ? "" : "s"}`))
-  details.append(el("div", "agent-reasoning-body", block.text ?? ""))
+  const body = el("div", "agent-reasoning-body")
+  body.append(prose(block.text ?? ""))
+  details.append(body)
   return details
+}
+
+/** Model and human prose, rendered as markdown inside a text container. */
+function prose(text) {
+  const node = el("div", "agent-text")
+  node.append(renderMarkdown(text))
+  return node
 }
 
 /**
@@ -193,7 +270,7 @@ export function renderTranscript(container, doc, state, handlers) {
       const author = state.names.get(turn.author)
       if (author) node.append(el("div", "agent-author", author))
       for (const block of turn.blocks ?? []) {
-        if (block.type === "text") node.append(el("div", "agent-text", block.text ?? ""))
+        if (block.type === "text") node.append(prose(block.text ?? ""))
       }
       container.append(node)
       continue
@@ -205,7 +282,7 @@ export function renderTranscript(container, doc, state, handlers) {
 
     for (const block of turn.blocks ?? []) {
       if (block.type === "text") {
-        if (block.text) node.append(el("div", "agent-text", block.text))
+        if (block.text) node.append(prose(block.text))
       } else if (block.type === "reasoning") {
         if (block.text) node.append(renderReasoning(block, state))
       } else if (block.type === "call") {

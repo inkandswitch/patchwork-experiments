@@ -39,11 +39,38 @@ function valueAtPath(doc, path = []) {
   return node
 }
 
+/** How much of a string one ranged read returns by default. */
+export const RANGE_LIMIT = 8000
+
+/**
+ * A slice of a long string, framed so the model knows where it is.
+ *
+ * The header matters as much as the text: without it a model that reads
+ * characters 8000–16000 has no way to tell whether it has reached the end, and
+ * either stops early or keeps asking.
+ */
+export function readRange(value, input, url, path) {
+  const total = value.length
+  const offset = Math.max(0, Math.min(Math.floor(input.offset ?? 0), total))
+  const limit = Math.max(1, Math.floor(input.limit ?? RANGE_LIMIT))
+  const end = Math.min(offset + limit, total)
+  const remaining = total - end
+
+  const header =
+    `${url} /${path.join("/")} — characters ${offset}–${end} of ${total}` +
+    (remaining ? `, ${remaining} remaining (read on with offset: ${end})` : ", to the end")
+
+  return `${header}\n\n${value.slice(offset, end)}`
+}
+
 export const docRead = {
   id: "doc_read",
   name: "Read document",
-  description:
-    "Read an automerge document, or one path inside it. Defaults to the document this session is attached to. Large strings and byte arrays are summarized rather than dumped; read a narrower path to see more.",
+  description: [
+    "Read an automerge document, or one path inside it. Defaults to the document this session is attached to.",
+    "",
+    "Large strings and byte arrays are summarized rather than dumped. To read a long one in full — a page web_fetch saved, a file's content — point `path` at the string and page through it with `offset` and `limit`. The result says how much is left.",
+  ].join("\n"),
   where: "worker",
   risk: "read",
   input_schema: {
@@ -58,6 +85,14 @@ export const docRead = {
       shapeOnly: {
         type: "boolean",
         description: "Return only the structure (keys and types), not the values. Good for a first look at a big document.",
+      },
+      offset: {
+        type: "number",
+        description: "For a string value: start here. Use with limit to page through a long one.",
+      },
+      limit: {
+        type: "number",
+        description: "For a string value: how many characters to return. Default 8000 when offset is given.",
       },
     },
   },
@@ -77,10 +112,22 @@ export const docRead = {
     }
 
     if (input.shapeOnly) return `${url} /${path.join("/")}\n${shape(value)}`
+
+    // A range over a string, so a long one can be read in full rather than
+    // only ever as its first 2000 characters. Without this the advice to
+    // re-read a saved page with doc_read would not be true.
+    if (typeof value === "string" && (input.offset != null || input.limit != null)) {
+      return readRange(value, input, url, path)
+    }
+
     return previewJson(value)
   },
   summarize(input, output) {
     const where = input?.path?.length ? `/${input.path.join("/")}` : "document"
+    if (input?.offset != null || input?.limit != null) {
+      const range = String(output ?? "").match(/characters (\d+)–(\d+)/)
+      return `read ${where}${range ? ` ${range[1]}–${range[2]}` : ""} · ${bytes(String(output ?? "").length)}`
+    }
     return `read ${where} · ${bytes(String(output ?? "").length)}`
   },
 }

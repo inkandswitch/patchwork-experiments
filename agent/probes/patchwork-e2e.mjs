@@ -13,7 +13,7 @@
  */
 
 import { spawn } from "node:child_process"
-import { readFileSync, mkdtempSync } from "node:fs"
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -309,7 +309,7 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
   )
 
   console.log("\n=== steps ===")
@@ -355,13 +355,33 @@ try {
     console.log("\n=== subject document afterwards ===")
     console.log(JSON.stringify(report.subject.doc, null, 2))
 
+    if (report.grantsChosen?.length || report.grants) {
+      console.log("\n=== grants ===")
+      console.log(`chose: ${JSON.stringify(report.grantsChosen ?? [])}`)
+      for (const [key, scope] of Object.entries(report.grants ?? {})) console.log(`  ${scope.padEnd(8)} ${key}`)
+    }
+    if (report.savedDocs?.length) {
+      console.log("\n=== documents the tools wrote ===")
+      for (const d of report.savedDocs) console.log(`  ${d.name}  ${d.bytes} chars  ${d.url}`)
+    }
+    if (report.rendered) {
+      console.log("\n=== what the log rendered ===")
+      console.log(JSON.stringify(report.rendered, null, 2))
+    }
+
     const title = report.subject.doc?.title
     const expectTitle = option("expect-title", args.includes("--prompt") ? null : "Leek and Potato Soup")
     const expectTools = option("expect-tools", null)
+    // A read-only prompt legitimately never stops to ask, so the approval check
+    // is only right when the run was supposed to touch something. Say so with
+    // --expect-approvals-at-most 0 rather than reading a pass as a pass.
+    const approvalCeiling = option("expect-approvals-at-most", null)
     const checks = [
       ["the tool is registered", report.steps.find((s) => s.name === "registry")?.tool === true],
       ["the panel component is registered", report.steps.find((s) => s.name === "registry")?.panel === true],
-      ["it asked before acting", report.approved > 0],
+      approvalCeiling === "0"
+        ? ["it acted without needing approval", report.approved === 0]
+        : ["it asked before acting", report.approved > 0],
       ["it finished idle", report.finalStatus === "idle"],
     ]
     if (report.afterUnmount) {
@@ -376,6 +396,70 @@ try {
         checks.push([`it called ${wanted}`, report.session.calls.some((c) => c.tool === wanted)])
       }
     }
+
+    // One grant, many calls: the point of subtree authority.
+    if (approvalCeiling && approvalCeiling !== "0") {
+      checks.push([
+        `it asked at most ${approvalCeiling} time(s) for ${report.session.calls.length} calls`,
+        report.approved <= Number(approvalCeiling),
+      ])
+    }
+    if (flag("expect-markdown")) {
+      checks.push(["it rendered prose as markdown", (report.rendered?.markdownBlocks ?? 0) > 0])
+      checks.push([
+        "it rendered structure, not one paragraph",
+        (report.rendered?.headings?.length ?? 0) + (report.rendered?.listItems ?? 0) > 0,
+      ])
+      checks.push(["no markup escaped into the log", report.rendered?.scriptTags === 0])
+    }
+    if (flag("expect-saved-doc")) {
+      checks.push(["it saved fetched content to a document", (report.savedDocs?.length ?? 0) > 0])
+      checks.push(["the log links that document", (report.rendered?.docChips?.length ?? 0) > 0])
+    }
+    if (flag("expect-image")) {
+      checks.push(["a captured image is visible in the log", (report.rendered?.images?.length ?? 0) > 0])
+      checks.push([
+        "the image is a real picture, not an empty src",
+        (report.rendered?.images?.[0]?.bytes ?? 0) > 1000,
+      ])
+    }
+    // A picture of the finished transcript. DOM assertions prove the elements
+    // exist; only this shows whether the thing is legible.
+    const shot = option("shot", null)
+    if (shot) {
+      // Let the panel grow to its content instead of scrolling: a capture of a
+      // scrolled transcript shows its last screen, which is the least useful
+      // part when you are checking how the whole thing reads.
+      const grown = await evaluate(
+        cdp,
+        `(() => {
+          const host = document.getElementById("agent-probe-host")
+          if (!host) return 0
+          const transcript = host.querySelector(".agent-transcript")
+          if (transcript) {
+            transcript.style.overflow = "visible"
+            transcript.style.maxHeight = "none"
+            transcript.style.flex = "none"
+          }
+          host.style.height = "auto"
+          host.style.position = "absolute"
+          host.style.top = "0"
+          document.documentElement.style.overflow = "hidden"
+          return host.scrollHeight
+        })()`
+      ).catch(() => 0)
+
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: 900,
+        height: Math.min(8000, Math.max(600, grown || report.shotHeight || 1400)),
+        deviceScaleFactor: 2,
+        mobile: false,
+      })
+      const captured = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true })
+      writeFileSync(shot, Buffer.from(captured.data, "base64"))
+      console.log(`\nscreenshot: ${shot}`)
+    }
+
     console.log("\n=== verdict ===")
     for (const [label, ok] of checks) console.log(`${ok ? "PASS" : "FAIL"}  ${label}`)
     exitCode = checks.every(([, ok]) => ok) ? 0 : 1

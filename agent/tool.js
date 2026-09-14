@@ -363,11 +363,34 @@ export function AgentTool(handle, element, options = {}) {
     kick()
   }
 
-  function onDecide(callId, scope) {
-    decide(store, callId, scope, subjectUrl())
+  function onDecide(callId, decision) {
+    decide(store, callId, decision, subjectUrl())
     render()
     kick()
   }
+
+  /**
+   * Open another document in Patchwork.
+   *
+   * A custom event rather than an import: `@inkandswitch/patchwork-elements`
+   * resolves through the importmap, and this module also runs where there is
+   * none. The event is the actual contract; the helper is a convenience.
+   */
+  function onOpenDoc(url) {
+    if (!url) return
+    root.dispatchEvent(
+      new CustomEvent("patchwork:open-document", { detail: { url }, bubbles: true, composed: true })
+    )
+  }
+
+  // Document links inside rendered markdown navigate too. Delegated from the
+  // transcript, so re-rendering never leaves a dead link behind.
+  transcript.addEventListener("click", (event) => {
+    const link = event.target.closest?.("[data-doc-url]")
+    if (!link) return
+    event.preventDefault()
+    onOpenDoc(link.dataset.docUrl)
+  })
 
   sendButton.addEventListener("click", (event) => {
     event.preventDefault()
@@ -482,7 +505,7 @@ export function AgentTool(handle, element, options = {}) {
     }
 
     uiState.subject = doc.subject ?? null
-    renderTranscript(transcript, doc, uiState, { decide: onDecide })
+    renderTranscript(transcript, doc, uiState, { decide: onDecide, openDoc: onOpenDoc })
 
     // Header label: what this session is attached to.
     if (doc.subject) {
@@ -502,7 +525,7 @@ export function AgentTool(handle, element, options = {}) {
     hint.textContent = !hasKey
       ? "Add an API key to start"
       : pending
-        ? `${pending} call${pending === 1 ? "" : "s"} need approval`
+        ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
         : elsewhere
           ? "Another runner is working on this session"
           : doc.status === STATUS.parked
