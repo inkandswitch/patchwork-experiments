@@ -309,7 +309,7 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), denyTools: option("deny-tools", ""), followUps: (option("then", "") || "").split("|").filter(Boolean), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), denyTools: option("deny-tools", ""), installAfter: option("install-after", null), followUps: (option("then", "") || "").split("|").filter(Boolean), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
   )
 
   console.log("\n=== steps ===")
@@ -446,6 +446,28 @@ try {
       checks.push(["it carried on rather than stopping at the refusal", turns.length > first + 1])
       checks.push(["it acknowledged the refusal once", first !== -1])
       checks.push(["it does not raise the refusal again afterwards", later.length === 0])
+    }
+    if (report.installed) {
+      console.log("\n=== installed ===")
+      console.log(`  entry:   ${report.installed.entry}`)
+      console.log(`  pinned:  ${report.installed.pinned}`)
+      console.log(`  shows:   ${report.installed.state}`)
+      console.log(`  offers:  ${JSON.stringify(report.installed.buttonsAfter)}`)
+    }
+    const installAfter = option("install-after", null)
+    if (installAfter) {
+      checks.push(["the strip offered the package it built", !!report.installed])
+      checks.push(["clicking it wrote the module list", !!report.installed?.entry])
+      checks.push([
+        installAfter === "Pin this version" ? "it pinned a version" : "it installed live",
+        installAfter === "Pin this version" ? report.installed?.pinned === true : report.installed?.pinned === false,
+      ])
+      checks.push(["the strip then shows it as installed", /installed/.test(report.installed?.state ?? "")])
+    }
+    // The whole point of the strip: the thing you made is reachable afterwards.
+    if (flag("expect-made")) {
+      checks.push(["it recorded what it made", (report.made ?? []).length > 0])
+      checks.push(["a package is among it", (report.made ?? []).some((a) => a.kind === "package")])
     }
     if (flag("expect-question")) {
       checks.push(["it asked a question", (report.answered ?? 0) > 0])

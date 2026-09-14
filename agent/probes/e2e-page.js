@@ -303,6 +303,49 @@ window.__agentProbe = async function (opts) {
       await approveOrDeny()
     }
 
+    // ---- 6b. Install what was made, through the button a person uses ----
+    //
+    // Not by writing the module list directly: the point is that the strip
+    // works, and a probe that bypasses the button proves nothing about it.
+    let installed = null
+    if (opts.installAfter) {
+      const rail = host.querySelector(".agent-made")
+      if (!rail || rail.hidden) throw new Error("Nothing was recorded as made, so there was nothing to install")
+      if (!rail.querySelector(".agent-made-list")) rail.querySelector(".agent-made-toggle").click()
+
+      const rows = [...host.querySelectorAll('.agent-made-row[data-kind="package"]')]
+      if (!rows.length) throw new Error("No package appeared in the strip of what was made")
+
+      const row = rows[0]
+      const target = [...row.querySelectorAll("button")].find((b) => b.textContent === opts.installAfter)
+      if (!target) {
+        throw new Error(
+          `No '${opts.installAfter}' button: the row offers ${[...row.querySelectorAll("button")].map((b) => b.textContent).join(", ")}`
+        )
+      }
+      step("clicked install", { which: opts.installAfter, name: row.querySelector(".agent-made-name")?.textContent })
+      target.click()
+
+      const settingsUrl = window.accountDocHandle?.doc()?.moduleSettingsUrl
+      const settings = await window.repo.find(settingsUrl)
+      await waitFor(
+        "the module list to record it",
+        () => (settings.doc()?.modules ?? []).some((m) => m.split("#")[0] === row.querySelector(".agent-made-open")?.title),
+        15000
+      )
+
+      const entry = (settings.doc()?.modules ?? []).find(
+        (m) => m.split("#")[0] === row.querySelector(".agent-made-open")?.title
+      )
+      installed = {
+        entry,
+        pinned: entry?.includes("#") ?? false,
+        state: host.querySelector(".agent-made-state")?.textContent ?? null,
+        buttonsAfter: [...host.querySelectorAll(".agent-made-actions button")].map((b) => b.textContent),
+      }
+      step("installed", installed)
+    }
+
     clearInterval(statusTimer)
     recordStatus()
 
@@ -354,6 +397,7 @@ window.__agentProbe = async function (opts) {
       runnersSeen: [...runnersSeen],
       runnerMode: host.querySelector(".patchwork-agent")?.dataset.runner ?? null,
       approved,
+      installed,
       denied,
       deniedTools,
       answered,
@@ -363,6 +407,7 @@ window.__agentProbe = async function (opts) {
       shotHeight: host?.scrollHeight ?? null,
       grantsChosen,
       grants: JSON.parse(JSON.stringify(doc.grants ?? {})),
+      made: JSON.parse(JSON.stringify(doc.made ?? [])),
       rendered,
       savedDocs: blocks.filter((b) => b.type === "result" && b.doc).map((b) => b.doc),
       finalStatus: doc.status,

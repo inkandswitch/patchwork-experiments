@@ -232,7 +232,13 @@ export const docCreate = {
       else if (input.title) doc.title = input.title
     })
 
-    return `Created ${input.datatype} document: ${handle.url}`
+    return {
+      text: `Created ${input.datatype} document: ${handle.url}`,
+      // Without this the new document is reachable from this one line of the
+      // transcript and nowhere else — the shortest path to losing the thing the
+      // user just asked for.
+      doc: { url: handle.url, name: input.title || input.datatype, kind: input.datatype },
+    }
   },
   summarize(input, output) {
     return `created ${input?.datatype} · ${String(output ?? "").split(": ")[1] ?? ""}`

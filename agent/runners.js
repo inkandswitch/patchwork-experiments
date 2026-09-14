@@ -84,7 +84,7 @@ export async function ensureRunner(sessionUrl, create) {
  * mount; when the last view detaches it is cleared, and those tools fall back
  * to the page.
  */
-export function attachView(sessionUrl, { element = null, onEvent = null } = {}) {
+export function attachView(sessionUrl, { element = null, workbench = null, onEvent = null } = {}) {
   const entry = live.get(sessionUrl)
   if (!entry) return () => {}
 
@@ -93,6 +93,7 @@ export function attachView(sessionUrl, { element = null, onEvent = null } = {}) 
   entry.idleSince = null
   if (onEvent) entry.listeners.add(onEvent)
   if (element && entry.ctx) entry.ctx.element = element
+  if (workbench && entry.ctx) entry.ctx.workbench = workbench
 
   return () => {
     entry.viewers.delete(token)
@@ -100,8 +101,12 @@ export function attachView(sessionUrl, { element = null, onEvent = null } = {}) 
 
     if (entry.viewers.size === 0) {
       // Nothing is watching. Keep working, but stop pointing host-tier tools at
-      // an element that has been removed from the page.
-      if (entry.ctx) entry.ctx.element = null
+      // elements that have been removed from the page — a tool mounting into a
+      // detached workbench would measure itself as zero-sized.
+      if (entry.ctx) {
+        entry.ctx.element = null
+        entry.ctx.workbench = null
+      }
       entry.idleSince = Date.now()
     }
   }

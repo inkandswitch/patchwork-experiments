@@ -14,6 +14,7 @@
 import { CALL, callTarget, grantOffers, questionOptions } from "../session.js"
 import { renderMarkdown } from "./markdown.js"
 import { describeCall } from "./calls.js"
+import { renderCallBody } from "./bodies.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -63,10 +64,7 @@ function renderCall(block, result, state, handlers) {
   if (note) summary.append(el("span", "agent-call-detail", note))
   details.append(summary)
 
-  const body = el("pre")
-  const input = JSON.stringify(block.input ?? {}, null, 2)
-  body.textContent = result ? `${input}\n\n→\n${result.output ?? ""}` : input
-  details.append(body)
+  details.append(renderCallBody(block, result))
 
   // Everything below lives OUTSIDE the <details>, because a collapsed call
   // hides it. That was a real bug for approvals: the card asking permission
@@ -120,6 +118,8 @@ function renderImage(dataUrl, state) {
 /** A link to the document a tool put its content in. */
 function renderDocLink(ref, handlers) {
   const link = el("a", "agent-doc-chip")
+  // A package is the thing you install; it should not look like a text file.
+  link.dataset.kind = ref.kind ?? "document"
   link.setAttribute("role", "link")
   link.tabIndex = 0
   link.append(el("span", "agent-doc-chip-name", ref.name ?? "document"))

@@ -125,10 +125,18 @@ export async function runTool(tool, input, ctx) {
     // the provider can send an image as an image part.
     let image = null
     let doc = null
+    let made = null
     let output
-    if (result && typeof result === "object" && (typeof result.image === "string" || result.doc || typeof result.text === "string")) {
+    if (
+      result &&
+      typeof result === "object" &&
+      (typeof result.image === "string" || result.doc || result.made || typeof result.text === "string")
+    ) {
       image = typeof result.image === "string" ? result.image : null
       doc = result.doc ?? null
+      // Several documents at once — a folder of files, say. `doc` is the one
+      // the transcript links beside the call; `made` is everything created.
+      made = Array.isArray(result.made) ? result.made : null
       output = result.text ?? ""
     } else {
       output = typeof result === "string" ? result : JSON.stringify(result, null, 2)
@@ -139,7 +147,7 @@ export async function runTool(tool, input, ctx) {
     } catch {
       summary = null // a broken summarizer must not fail the call
     }
-    return { output, image, doc, isError: false, summary: summary ?? `${tool.id} ok` }
+    return { output, image, doc, made, isError: false, summary: summary ?? `${tool.id} ok` }
   } catch (err) {
     const message = String(err?.message ?? err)
     return { output: `Error: ${message}`, isError: true, summary: `${tool.id} failed` }

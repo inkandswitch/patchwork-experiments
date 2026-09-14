@@ -15,6 +15,7 @@
  *     status:  "idle" | "running" | "awaiting-approval" | "parked" | "error"
  *     lease:   { runner, at, generation } | null
  *     grants:  { [grantKey]: "session" | "always" }
+ *     made:    Artifact[]                 documents this session created
  *   }
  *
  *   Turn  = { id, role: "user"|"assistant"|"tool", at, author, blocks: Block[] }
@@ -89,6 +90,7 @@ export function initSession(doc, opts = {}) {
   doc.status = STATUS.idle
   doc.lease = null
   doc.grants = {}
+  doc.made = []
   doc.usage = { in: 0, out: 0, turns: 0 }
 }
 
@@ -245,6 +247,53 @@ export function questionOptions(block) {
       typeof option === "string" ? { label: option, detail: null } : { label: option?.label ?? "", detail: option?.detail ?? null }
     )
     .filter((option) => option.label)
+}
+
+// ------------------------------------------------------------- artifacts
+
+/**
+ * What this session made.
+ *
+ * A document the agent creates is reachable from the tool result that made it
+ * and from nowhere else — so as soon as the transcript is longer than a screen,
+ * the thing you asked for is lost. Six calls later "where did my tool go" has no
+ * answer that does not involve scrolling and reading base58.
+ *
+ * So every document a tool creates is recorded here, newest first, and the view
+ * keeps them one click away for the whole session. It is a list rather than a
+ * set because the ORDER is the story: the last thing made is almost always the
+ * thing you want.
+ */
+export const MAX_ARTIFACTS = 40
+
+export function recordArtifact(doc, ref) {
+  if (!doc || !ref?.url) return false
+  if (!doc.made) doc.made = []
+
+  // Re-writing a file, or re-importing a page, updates the entry in place
+  // rather than stacking duplicates — it is the same artifact.
+  const existing = doc.made.findIndex((a) => a.url === ref.url)
+  if (existing >= 0) {
+    doc.made[existing].at = ref.at ?? Date.now()
+    if (ref.name) doc.made[existing].name = ref.name
+    if (ref.bytes != null) doc.made[existing].bytes = ref.bytes
+    return false
+  }
+
+  doc.made.unshift({
+    url: ref.url,
+    name: ref.name ?? "document",
+    kind: ref.kind ?? "document",
+    bytes: ref.bytes ?? null,
+    at: ref.at ?? Date.now(),
+  })
+  if (doc.made.length > MAX_ARTIFACTS) doc.made.length = MAX_ARTIFACTS
+  return true
+}
+
+/** Everything this session made, newest first. */
+export function artifacts(doc) {
+  return doc?.made ?? []
 }
 
 // ---------------------------------------------------------------- grants

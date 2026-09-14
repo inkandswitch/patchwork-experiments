@@ -314,6 +314,8 @@ export const fsWrite = {
     "",
     "This is how you create a Patchwork tool: a tool is just a folder of files. Write a package.json naming your entry point, an entry module exporting `plugins`, and whatever else it needs. Read the 'writing-patchwork-tools' skill first — it has the contract the entry module and render function must satisfy.",
     "",
+    "The folder you write into is shown to the user with an Install button beside it, so you never need to give them a URL to paste.",
+    "",
     "For a small edit inside a large existing file, prefer doc_edit with a splice range: it merges cleanly with concurrent edits and does not rewrite the whole file.",
   ].join("\n"),
   where: "worker",
@@ -343,7 +345,10 @@ export const fsWrite = {
         draft.content = input.content ?? ""
       })
       const after = String(input.content ?? "").split("\n").length
-      return `Wrote ${input.url}: ${before} → ${after} lines, ${bytes(String(input.content ?? "").length)}`
+      return {
+        text: `Wrote ${input.url}: ${before} → ${after} lines, ${bytes(String(input.content ?? "").length)}`,
+        doc: { url: input.url, name: handle.doc()?.name ?? "file", kind: "file", bytes: String(input.content ?? "").length },
+      }
     }
 
     const batch =
@@ -385,8 +390,22 @@ export const fsWrite = {
     const containing = topFolder.length
       ? (await ensurePath(ctx.repo, root, topFolder)).url
       : root
+    const folderName = topFolder.length ? topFolder.join("/") : "root"
 
-    return [`Wrote ${written.length} file(s):`, ...written.map((line) => `• ${line}`), ``, `Containing folder: ${containing}`].join("\n")
+    return {
+      text: [
+        `Wrote ${written.length} file(s):`,
+        ...written.map((line) => `• ${line}`),
+        ``,
+        `Containing folder: ${containing}`,
+      ].join("\n"),
+      // The FOLDER is the artifact, not the individual files: it is what you
+      // open, what you install, and what a person means by "my tool". Listing
+      // twelve files instead would bury it.
+      doc: topFolder.length
+        ? { url: containing, name: folderName, kind: "package", bytes: null }
+        : null,
+    }
   },
 
   summarize(input) {

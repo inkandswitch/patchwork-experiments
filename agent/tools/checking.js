@@ -26,6 +26,7 @@
 
 import { hostImport } from "./host.js"
 import { truncate } from "./format.js"
+import { rasterize, shrink, canvasWithin } from "./screenshot.js"
 import { contentToText } from "./folders.js"
 
 /**
@@ -231,7 +232,7 @@ async function mountTool({ plugins, input, ctx, doc, notes }) {
     if (!input.docUrl) throw new Error("Pass `docUrl` (and optionally `toolId`) to mount a registered tool.")
     const { render, toolId } = await resolveRegisteredTool(input, ctx, notes)
     const handle = await ctx.repo.find(input.docUrl)
-    return finishMount({ render, handle, toolId, doc, notes })
+    return finishMount({ render, handle, toolId, doc, notes, ctx })
   }
 
   const datatypePlugin = input.datatype
@@ -286,17 +287,31 @@ async function mountTool({ plugins, input, ctx, doc, notes }) {
     throw new Error(`load() did not return a render function (got ${typeof render}).`)
   }
 
-  return finishMount({ render, handle, toolId: toolPlugin.id, doc, notes })
+  return finishMount({ render, handle, toolId: toolPlugin.id, doc, notes, ctx })
 }
 
-/** Put a render function on screen in a hidden container and record the mount. */
-async function finishMount({ render, handle, toolId, doc, notes }) {
+/**
+ * Put a render function on screen and record the mount.
+ *
+ * On screen where possible, and that is the point. This used to mount ten
+ * thousand pixels off to the left, always — so the agent could see what it had
+ * built and the person who asked for it could not. When a view offers a
+ * workbench, the tool mounts INTO it and you watch the agent work.
+ *
+ * Off-screen stays the fallback rather than display:none, because a hidden
+ * container reports zero sizes and a tool that measures itself would behave
+ * differently there than in front of a person.
+ */
+async function finishMount({ render, handle, toolId, doc, notes, ctx }) {
   const container = doc.createElement("div")
-  // Off-screen rather than display:none — a hidden container reports zero
-  // sizes, and a tool that measures itself would behave differently here than
-  // it will in front of a person.
-  container.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;height:400px;overflow:auto"
-  doc.body.append(container)
+  const workbench = ctx?.workbench ?? null
+  if (workbench) {
+    container.className = "agent-bench-mount"
+    workbench.append(container)
+  } else {
+    container.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;height:400px;overflow:auto"
+    doc.body.append(container)
+  }
 
   const captured = captureErrors(globalThis)
   let cleanup = null
@@ -379,6 +394,29 @@ function requireMount(mountId) {
   return mount
 }
 
+/**
+ * A picture of what was just mounted, attached to the result.
+ *
+ * Mounting used to report in prose — "12 elements, 2 button(s)" — which tells
+ * the agent almost nothing about whether the thing looks right and tells the
+ * person watching nothing at all. A thumbnail costs a few kilobytes and answers
+ * both. Best effort: a capture that fails must not fail the mount.
+ */
+async function captureMount(container, doc) {
+  try {
+    const width = container.clientWidth || container.offsetWidth || 0
+    const height = container.clientHeight || container.offsetHeight || 0
+    if (!width || !height) return null
+
+    const canvas = canvasWithin(container)
+    const raw = canvas ? canvas.toDataURL("image/png") : await rasterize(container, { width, height, doc })
+    if (!raw || raw.length < 200) return null
+    return await shrink(raw, { maxWidth: 520, doc })
+  } catch {
+    return null
+  }
+}
+
 const MOUNT_PROPS = {
   docUrl: {
     type: "string",
@@ -409,7 +447,13 @@ export const viewMount = {
   ].join("\n"),
   where: "host",
   risk: "write",
-  input_schema: { type: "object", properties: MOUNT_PROPS },
+  input_schema: {
+    type: "object",
+    properties: {
+      ...MOUNT_PROPS,
+      screenshot: { type: "boolean", description: "Attach a picture of what rendered. Default true." },
+    },
+  },
 
   async execute(input, ctx) {
     const doc = requireDom(ctx)
@@ -432,7 +476,9 @@ export const viewMount = {
     if (mount.mounted) notes.push(...describeRender(mount.container))
     notes.push("")
     notes.push(`mountId: ${mountId} — use view_interact / view_inspect with it, then view_unmount.`)
-    return notes.join("\n")
+
+    const image = mount.mounted && input.screenshot !== false ? await captureMount(mount.container, doc) : null
+    return image ? { text: notes.join("\n"), image } : notes.join("\n")
   },
 
   summarize(input, output) {
@@ -598,6 +644,8 @@ export const toolCheck = {
     "It imports the package from its document (no install needed), creates a document with its datatype, mounts the tool, clicks the first button, checks that the screen followed the document, and tears it down the way Patchwork will.",
     "",
     "This is the check to reach for by default, because it looks for problems you would not think to look for. When you need to drive something specific — type into a field, click a particular control, check against an existing document — use view_mount with view_interact and view_inspect instead.",
+    "",
+    "A picture of what rendered comes back with the result, so you can see whether it LOOKS right rather than only whether it mounted. When it passes, say so and stop — the user installs it with a button, so do not hand them a URL to paste.",
   ].join("\n"),
   where: "host",
   risk: "write",
@@ -607,6 +655,7 @@ export const toolCheck = {
     properties: {
       ...MOUNT_PROPS,
       interact: { type: "boolean", description: "Click the first button and check the result. Default true." },
+      screenshot: { type: "boolean", description: "Attach a picture of what rendered. Default true." },
     },
   },
 
@@ -632,10 +681,17 @@ export const toolCheck = {
     const mountId = `mount_check_${Math.random().toString(36).slice(2, 8)}`
     mounts.set(mountId, mount)
 
+    // Captured BEFORE the interaction, so the picture is the tool as it first
+    // renders rather than mid-click. Taken here because teardown below removes
+    // the container, and a check that reports a problem is exactly when you
+    // most want to see what it looked like.
+    let image = null
+
     try {
       if (mount.mounted) {
         await settle(150)
         notes.push(...describeRender(mount.container))
+        if (input.screenshot !== false) image = await captureMount(mount.container, doc)
 
         const buttons = [...mount.container.querySelectorAll("button")]
         if (input.interact !== false && buttons.length) {
@@ -674,7 +730,7 @@ export const toolCheck = {
     const problems = notes.filter((line) => line.startsWith("PROBLEM")).length
     notes.push("")
     notes.push(problems ? `${problems} problem(s) found — fix the files with fs_write and check again.` : "No problems found.")
-    return notes.join("\n")
+    return image ? { text: notes.join("\n"), image } : notes.join("\n")
   },
 
   summarize(input, output) {

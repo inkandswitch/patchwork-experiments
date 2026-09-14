@@ -21,6 +21,8 @@ import { describeModel } from "./providers/openrouter.js"
 import { hostImport } from "./tools/host.js"
 import { getMount } from "./tools/checking.js"
 import { renderTranscript } from "./ui/transcript.js"
+import { renderMade } from "./ui/made.js"
+import { applyInstall, applyUninstall } from "./ui/install.js"
 
 const STYLE_ID = "patchwork-agent-styles"
 if (typeof document !== "undefined" && !document.getElementById(STYLE_ID)) {
@@ -71,8 +73,28 @@ export function AgentTool(handle, element, options = {}) {
   element.append(root)
 
   const main = el("div", "agent-main")
-  const subjectPane = el("div", "agent-subject-view")
-  root.append(main, subjectPane)
+
+  /**
+   * The second pane: what the agent is looking at.
+   *
+   * Two things want it, and only one at a time. A live mount wins — if the
+   * agent has a tool open and is clicking around in it, THAT is what you want
+   * to see, and watching it happen is most of the difference between trusting
+   * the work and taking its word for it. Otherwise it shows the subject
+   * document, which is what it always did.
+   */
+  const sidePane = el("div", "agent-subject-view")
+  const subjectPane = el("div", "agent-subject-pane")
+  sidePane.append(subjectPane)
+
+  const benchHeader = el("div", "agent-bench-header")
+  const benchLabel = el("span", "agent-bench-label", "")
+  benchHeader.append(benchLabel)
+  const bench = el("div", "agent-bench")
+  const benchPane = el("div", "agent-bench-pane")
+  benchPane.append(benchHeader, bench)
+
+  root.append(main, sidePane)
 
   // ---- header ----------------------------------------------------------
   const header = el("div", "agent-header")
@@ -82,9 +104,23 @@ export function AgentTool(handle, element, options = {}) {
   modelButton.title = "Change model or API key"
   header.append(statusDot, subjectLabel, modelButton)
 
+  // What this session has made, between the header and the transcript: always
+  // visible, never in the way.
+  const made = el("div", "agent-made")
+  made.hidden = true
+
   const transcript = el("div", "agent-transcript")
   const composer = el("div", "agent-composer")
-  main.append(header, transcript, composer)
+  main.append(header, made, transcript, composer)
+
+  // The workbench sits between the transcript and the composer, at every width.
+  //
+  // Putting it in the second pane was the obvious idea and the wrong one: that
+  // pane only exists when the window is wide, so in a sidebar the workbench
+  // ended up stacked BELOW the composer, which is nowhere. Here the reading
+  // order is always "what was said, what is open, what you type next" — and it
+  // belongs in the conversation column anyway, because it is part of the story.
+  main.insertBefore(benchPane, composer)
 
   // ---- composer --------------------------------------------------------
   const input = document.createElement("textarea")
@@ -195,7 +231,7 @@ export function AgentTool(handle, element, options = {}) {
   renderSecrets()
 
   // ---- state -----------------------------------------------------------
-  const uiState = { open: new Set(), names: new Map(), subject: null }
+  const uiState = { open: new Set(), names: new Map(), subject: null, madeOpen: false, settings: null, heads: {} }
   const store = handleStore(handle, options.splice ?? null)
   let runner = null
   let detachView = null
@@ -288,6 +324,9 @@ export function AgentTool(handle, element, options = {}) {
         skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
         // So view_screenshot can photograph a view that view_mount opened.
         getMount,
+        // Where a mounted tool renders. Mutable like `element`: it becomes null
+        // when no view is watching, and mounting falls back to off-screen.
+        workbench: bench,
         // Documents that always require an explicit yes, whatever touches them.
         sensitiveDocs: [
           globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
@@ -327,7 +366,7 @@ export function AgentTool(handle, element, options = {}) {
     })
 
     runner = entry?.runner ?? null
-    detachView = attachView(handle.url, { element: root, onEvent: () => render() })
+    detachView = attachView(handle.url, { element: root, workbench: bench, onEvent: () => render() })
     return runner
   }
 
@@ -367,6 +406,85 @@ export function AgentTool(handle, element, options = {}) {
     decide(store, callId, decision, subjectUrl())
     render()
     kick()
+  }
+
+  // ---- installing what the session built --------------------------------
+
+  /**
+   * The account's module-settings document.
+   *
+   * Read once and kept watched, so the install controls show what is actually
+   * installed — including a change made in another tab.
+   */
+  let settingsHandle = null
+  async function ensureSettings() {
+    if (settingsHandle) return settingsHandle
+    const url = globalThis.accountDocHandle?.doc()?.moduleSettingsUrl
+    if (!url || !repo) return null
+    try {
+      settingsHandle = await repo.find(url)
+      uiState.settings = settingsHandle.doc() ?? null
+      settingsHandle.on("change", () => {
+        uiState.settings = settingsHandle.doc() ?? null
+        render()
+      })
+      render()
+    } catch {
+      settingsHandle = null // no settings document reachable; hide the controls
+    }
+    return settingsHandle
+  }
+
+  /**
+   * Current heads for each package this session made.
+   *
+   * Only so the install strip can say when a pinned version has fallen behind.
+   * Cheap — the documents are already in the repo — and refreshed whenever the
+   * session changes, which is whenever the agent has edited something.
+   */
+  async function refreshHeads(doc) {
+    const packages = (doc?.made ?? []).filter((a) => a.kind === "package")
+    if (!packages.length || !repo) return
+    let changed = false
+    for (const artifact of packages) {
+      try {
+        const handle = await repo.find(artifact.url)
+        const heads = handle.heads?.() ?? []
+        const key = heads.join("|")
+        if (uiState.heads[artifact.url]?.join("|") !== key) {
+          uiState.heads[artifact.url] = heads
+          changed = true
+        }
+      } catch {
+        /* an unreadable package simply has no version to compare */
+      }
+    }
+    if (changed && !disposed) render()
+  }
+
+  async function onInstall(artifact, { heads = null } = {}) {
+    const settings = await ensureSettings()
+    if (!settings) return
+    // "current" means pin to whatever this package is right now, which has to
+    // be read at the moment of clicking — not when the artifact was recorded.
+    let pin = null
+    if (heads === "current") {
+      const pkg = await repo.find(artifact.url)
+      pin = pkg.heads?.() ?? null
+      if (!pin?.length) return
+    }
+    applyInstall(settings, artifact.url, { heads: pin })
+    uiState.settings = settings.doc() ?? null
+    uiState.madeOpen = true
+    render()
+  }
+
+  async function onUninstall(artifact) {
+    const settings = await ensureSettings()
+    if (!settings) return
+    applyUninstall(settings, artifact.url)
+    uiState.settings = settings.doc() ?? null
+    render()
   }
 
   async function onAnswer(callId, text) {
@@ -512,6 +630,7 @@ export function AgentTool(handle, element, options = {}) {
 
     uiState.subject = doc.subject ?? null
     renderTranscript(transcript, doc, uiState, { decide: onDecide, answer: onAnswer, openDoc: onOpenDoc })
+    renderMade(made, doc, uiState, { openDoc: onOpenDoc, install: onInstall, uninstall: onUninstall })
 
     // Header label: what this session is attached to.
     if (doc.subject) {
@@ -549,7 +668,14 @@ export function AgentTool(handle, element, options = {}) {
       settings.style.display = "flex"
     }
 
-    // The pop-out's second pane: the live document, beside the transcript.
+    // The pop-out's second pane: a live mount if there is one, else the
+    // subject document.
+    const openViews = bench.childElementCount
+    root.dataset.bench = openViews ? "on" : "off"
+    benchLabel.textContent = openViews
+      ? `Workbench — ${openViews} view${openViews === 1 ? "" : "s"} the agent has open`
+      : ""
+
     if (mode === "full" && doc.subject && doc.subject !== subjectViewUrl) {
       subjectViewUrl = doc.subject
       subjectPane.replaceChildren()
@@ -561,6 +687,10 @@ export function AgentTool(handle, element, options = {}) {
 
   const onChange = () => {
     render()
+    if (handle.doc()?.made?.length) {
+    ensureSettings()
+    refreshHeads(handle.doc())
+  }
     // The worker parks host-tier calls; this is how the tab notices and takes
     // them. Cheap — `needsWork` is a scan of the transcript, and `tick` is a
     // no-op when this runner has nothing it can do.
@@ -568,8 +698,19 @@ export function AgentTool(handle, element, options = {}) {
       ensureRunner().then((r) => r?.tick())
     }
   }
+  // A tool mounting into the workbench is not a document change, so nothing
+  // would otherwise tell the view to show the pane.
+  const benchWatcher = new MutationObserver(() => render())
+  benchWatcher.observe(bench, { childList: true })
+
   handle.on("change", onChange)
   render()
+  // Only needed once there is something installable; reading it eagerly would
+  // fetch a document most sessions never touch.
+  if (handle.doc()?.made?.length) {
+    ensureSettings()
+    refreshHeads(handle.doc())
+  }
 
   // A session that already has work (reloaded mid-turn, or handed over) starts
   // immediately rather than waiting for someone to type.
@@ -582,6 +723,7 @@ export function AgentTool(handle, element, options = {}) {
     // session must not abort the work it is doing. The runner keeps its lease
     // and keeps writing to the document, so reopening the session — here or in
     // another tab — picks up whatever happened while you were gone.
+    benchWatcher.disconnect()
     detachView?.()
     workerRunner?.close()
     root.remove()

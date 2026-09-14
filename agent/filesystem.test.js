@@ -22,7 +22,7 @@ describe("fs_write creates what does not exist", () => {
     const repo = fakeRepo()
     const out = await fsWrite.execute({ path: "notes.md", content: "hello" }, ctx(repo))
 
-    expect(out).toMatch(/created 1 lines/)
+    expect(out.text).toMatch(/created 1 lines/)
     const link = entry(repo, "automerge:root", "notes.md")
     expect(link.type).toBe("file")
     const file = repo.docs.get(link.url)
@@ -48,7 +48,7 @@ describe("fs_write creates what does not exist", () => {
     const fileUrl = a.docs.find((d) => d.name === "x.js").url
 
     const out = await fsWrite.execute({ path: "a/x.js", content: "two" }, ctx(repo))
-    expect(out).toMatch(/updated/)
+    expect(out.text).toMatch(/updated/)
     expect(a.docs).toHaveLength(1)
     expect(repo.docs.get(fileUrl).content).toBe("two") // same document, history kept
   })
@@ -73,8 +73,8 @@ describe("fs_write creates what does not exist", () => {
       ctx(repo)
     )
 
-    expect(out).toMatch(/Wrote 3 file\(s\)/)
-    const folderUrl = out.match(/Containing folder: (automerge:\S+)/)[1]
+    expect(out.text).toMatch(/Wrote 3 file\(s\)/)
+    const folderUrl = out.text.match(/Containing folder: (automerge:\S+)/)[1]
     expect(repo.docs.get(folderUrl).docs.map((d) => d.name).sort()).toEqual([
       "index.js", "package.json", "tool.js",
     ])
@@ -91,7 +91,7 @@ describe("fs_write creates what does not exist", () => {
       },
       ctx(repo)
     )
-    const folderUrl = out.match(/Containing folder: (automerge:\S+)/)[1]
+    const folderUrl = out.text.match(/Containing folder: (automerge:\S+)/)[1]
 
     // Readable straight back through the ordinary folder tools.
     const listed = await fsList.execute({ path: "counter" }, ctx(repo))
