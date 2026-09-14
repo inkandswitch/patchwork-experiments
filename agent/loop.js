@@ -33,6 +33,7 @@ import {
   estimateTokens,
   unansweredCalls,
   callsAwaitingApproval,
+  questionsAwaitingAnswer,
   runnableCalls,
   needsApproval,
   findCall,
@@ -50,6 +51,7 @@ Guidance specific to this environment:
 - Folders and files are documents too, and so is everything else. A Patchwork TOOL is just a folder of files: write them with fs_write, run it with tool_check, and install it by adding that folder's URL to the module settings document. There is no build step and no special machinery.
 - You have skills — read them. skill_list shows what guidance exists; skill_read gives you one in full. Read "writing-patchwork-tools" before writing a tool and "editing-documents" before your first substantial edit. They exist because the mistakes they describe are the ones that actually get made.
 - view_mount opens any document in any installed tool so you can drive it: click controls, type into fields, and see what rendered. Use it to check that a change LOOKS right, not just that it is structurally present.
+- When a choice is genuinely the user's — which of two designs, what to call something, a fact only they have — use ask_user and give it options. Do not ask in prose and wait; that makes them read a paragraph and type a reply. Do not ask permission to use a tool either: running it asks for you.
 - Everything you do is collaborative and versioned. Other people may be editing the same documents while you work.
 
 Be concise. The transcript is read in a narrow sidebar.`
@@ -58,6 +60,7 @@ Be concise. The transcript is read in a narrow sidebar.`
 export const OUTCOME = {
   idle: "idle", // the model finished its turn
   awaitingApproval: "awaiting-approval",
+  awaitingAnswer: "awaiting-answer", // the agent asked the human something
   parked: "parked", // a host-tier call has no tab to run in
   aborted: "aborted",
   error: "error",
@@ -130,6 +133,12 @@ export async function run(opts) {
     if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
 
     // ---- 1. Anything already pending decides what happens before we call out.
+    //
+    // A question comes first: if the agent has asked something, nothing else it
+    // queued matters until there is an answer.
+    const asking = questionsAwaitingAnswer(store.doc())
+    if (asking.length) return finish(store, STATUS.awaitingAnswer, OUTCOME.awaitingAnswer, emit)
+
     const pending = callsAwaitingApproval(store.doc())
     if (pending.length) return finish(store, STATUS.awaitingApproval, OUTCOME.awaitingApproval, emit)
 
@@ -158,6 +167,13 @@ export async function run(opts) {
 
     // ---- 4. Did it ask for anything?
     if (!assistant.calls.length) return finish(store, STATUS.idle, OUTCOME.idle, emit)
+
+    // A question the model just asked outranks anything else it queued: the
+    // answer may make the rest pointless, and being asked to approve work that
+    // is about to be thrown away is a waste of the person's attention.
+    if (questionsAwaitingAnswer(store.doc()).length) {
+      return finish(store, STATUS.awaitingAnswer, OUTCOME.awaitingAnswer, emit)
+    }
 
     const nowPending = callsAwaitingApproval(store.doc())
     if (nowPending.length) return finish(store, STATUS.awaitingApproval, OUTCOME.awaitingApproval, emit)
@@ -312,13 +328,18 @@ async function streamTurn(opts) {
     store.change((d) => {
       for (const call of calls) {
         const tool = toolset.get(call.name)
-        const approved =
-          tool && !needsApproval(d, tool, { input: call.input }, opts.subject ?? null, opts.sensitive ?? [])
+        // A question is not approved or refused, it is answered — so it goes
+        // in as `asking` and no runner will ever pick it up.
+        const status = tool?.asksHuman
+          ? CALL.asking
+          : tool && !needsApproval(d, tool, { input: call.input }, opts.subject ?? null, opts.sensitive ?? [])
+            ? CALL.approved
+            : CALL.pending
         d.turns[turnIndex].blocks.push(
           callBlock(call.name, call.input, {
             id: call.id,
             where: tool?.where ?? WHERE.worker,
-            status: approved ? CALL.approved : CALL.pending,
+            status,
           })
         )
       }
@@ -466,6 +487,37 @@ export function decide(store, callId, decision, subject = null) {
       d.grants[grantKey(block.tool, callTarget(block, subject))] = decision
     }
   })
+}
+
+/**
+ * Record a person's answer to an `ask_user` call.
+ *
+ * The answer becomes the call's *result*, which is what makes this work without
+ * any new machinery: to the model it is an ordinary tool result, so no adapter,
+ * no prompt shape and no provider has to know that a human was involved.
+ *
+ * `author` is recorded because in a shared session it matters who answered.
+ */
+export function answerQuestion(store, callId, answer, author = null) {
+  const text = String(answer ?? "").trim()
+  if (!text) return false
+
+  let recorded = false
+  store.change((d) => {
+    const found = findCall(d, callId)
+    if (!found) return
+    const block = found.block
+    if (block.status !== CALL.asking) return
+
+    block.status = CALL.done
+    if (!d.turns) d.turns = []
+    d.turns.push(
+      makeTurn("tool", [resultBlock(callId, text, { summary: `answered: ${text.slice(0, 40)}` })], { author })
+    )
+    d.status = STATUS.idle
+    recorded = true
+  })
+  return recorded
 }
 
 /** Add a human message and mark the session ready to run. */

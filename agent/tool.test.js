@@ -387,8 +387,12 @@ describe("callSummary", () => {
   })
 
   it("renders a document url as words, not base58", () => {
-    const summary = callSummary({ tool: "doc_read", input: { url: "automerge:abc123" }, status: CALL.done }, null)
-    expect(summary.detail).toBe("this document")
+    const call = { tool: "doc_read", input: { url: "automerge:abc123" }, status: CALL.done }
+    // The session's own document is "this document"; any OTHER document is not,
+    // and saying so would be a lie about which one was read.
+    expect(callSummary(call, null, "automerge:abc123").detail).toBe("this document")
+    expect(callSummary(call, null, "automerge:elsewhere").detail).toBe("doc abc123")
+    expect(callSummary(call, null).detail).toBe("doc abc123")
   })
 
   it("prefers the tool's own summary over the first line of output", () => {

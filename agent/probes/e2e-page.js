@@ -130,7 +130,7 @@ window.__agentProbe = async function (opts) {
     // failed, or when the agent has actually had the last word.
     const settled = () => {
       const d = session.doc()
-      if (["awaiting-approval", "error", "parked"].includes(d.status)) return true
+      if (["awaiting-approval", "awaiting-answer", "error", "parked"].includes(d.status)) return true
       const last = d.turns[d.turns.length - 1]
       return d.status === "idle" && d.turns.length > 1 && last?.role === "assistant"
     }
@@ -203,10 +203,42 @@ window.__agentProbe = async function (opts) {
 
     await waitFor("the agent to act", settled, patience)
 
-    // Approve repeatedly: a grant covers one tool, so a turn that uses two
-    // different risky tools legitimately asks twice.
+    // Answer questions and approve calls until the agent stops needing us. A
+    // grant covers one tool, so a turn using two risky tools legitimately asks
+    // twice, and a question can follow an approval or vice versa.
     let approved = 0
+    let answered = 0
     const grantsChosen = []
+    const answersGiven = []
+
+    const answerAny = async () => {
+      while (session.doc().status === "awaiting-answer" && answered < (opts.maxAnswers ?? 4)) {
+        const card = host.querySelector(".agent-question")
+        if (!card) throw new Error("The session is waiting on an answer but no question card rendered")
+        const options = [...card.querySelectorAll(".agent-question-options button")]
+        step("question asked", {
+          question: card.querySelector(".agent-question-title")?.textContent?.trim().slice(0, 120),
+          options: options.map((b) => b.textContent),
+        })
+
+        // Prefer a named option; otherwise type, which is the path that has to
+        // work when the agent's guesses at the answers are all wrong.
+        if (options.length) {
+          answersGiven.push(options[0].textContent)
+          options[0].click()
+        } else {
+          const field = card.querySelector(".agent-question-other input")
+          field.value = opts.answer ?? "yes, go ahead"
+          answersGiven.push(field.value)
+          card.querySelector(".agent-question-other button").click()
+        }
+        answered++
+        await waitFor("the answer to be picked up", () => session.doc().status !== "awaiting-answer", 60000)
+        await waitFor("the agent to finish", settled, patience)
+      }
+    }
+
+    await answerAny()
     while (session.doc().status === "awaiting-approval" && approved < (opts.maxApprovals ?? 6)) {
       const card = host.querySelector(".agent-approval")
       const scopes = [...(card?.querySelectorAll(".agent-approval-scopes button") ?? [])]
@@ -229,6 +261,7 @@ window.__agentProbe = async function (opts) {
       // the still-current "awaiting-approval" and prove nothing.
       await waitFor("the approval to be picked up", () => session.doc().status !== "awaiting-approval", 60000)
       await waitFor("the agent to finish", settled, patience)
+      await answerAny()
     }
 
     clearInterval(statusTimer)
@@ -275,6 +308,8 @@ window.__agentProbe = async function (opts) {
       runnersSeen: [...runnersSeen],
       runnerMode: host.querySelector(".patchwork-agent")?.dataset.runner ?? null,
       approved,
+      answered,
+      answersGiven,
       // So the driver can size a full-page capture to what was actually rendered.
       shotHeight: host?.scrollHeight ?? null,
       grantsChosen,

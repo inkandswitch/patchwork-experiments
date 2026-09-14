@@ -90,6 +90,7 @@ any participant can approve and every approval is auditable.
 | Test | `package_test` | host |
 | Web | `web_search` `web_fetch` `web_import` | worker |
 | APIs | `secret_list` (host) `http_request` | worker |
+| Ask | `ask_user` | never runs — see below |
 
 Outside content does not stay in the conversation. A fetched page longer than a
 couple of paragraphs is written to its own document and linked from the
@@ -117,6 +118,21 @@ wrote, and it exists because the failure mode is not knowing what to look for.
 
 Third parties can contribute tools by registering an `agent:tool` plugin —
 JSON metadata at the top level, `execute` behind `async load()`.
+
+Every tool has an entry in `ui/calls.js` saying how its calls read in the log: a
+verb a person would use, and a detail drawn from the field that says what the
+call was *about*. Presentation cannot live on the tool definitions — those are in
+another realm, and the view has the session document and nothing else — so it is
+a pure function of `(input, result)`, and a test fails if a tool has no entry.
+Without it the log reads as `view_interact  #btn-3`: a dump of the arguments
+rather than a description of what happened. Compare:
+
+```
+read   shape        read document · 84 B
+read                read document · 69 B
+ask    Which type of section would you like to add?   answered: Recipe step
+edit   /items[2…2]  edited document · 1 op
+```
 
 ## Builds happen in the browser
 
@@ -207,6 +223,26 @@ gate to an "install" tool instead would only mean the next tool that can write a
 document routes around it. `http_request` also asks every time, because a
 request that can carry your credentials to an arbitrary URL is the one thing a
 standing grant is the wrong level of consent for.
+
+## Asking the user
+
+`ask_user` is the one tool that never executes. The call is written into the
+transcript with status `asking`, the runner parks, and the person's answer is
+recorded as that call's **result**. To the model it is an ordinary tool result,
+so no adapter, prompt shape or provider knows a human was involved — and because
+it is in the document like everything else, a question survives a reload, a
+navigation, or a runner handing over.
+
+It is deliberately not an approval. An approval is "may I", answered yes or no
+by whoever is present; a question is "which", and its answer is content that
+goes to the model. Sharing one mechanism would mean a question could be answered
+by someone clicking *allow*. A question also outranks a pending approval: being
+asked to permit work that the answer might make pointless wastes the attention
+the question was spending.
+
+The card renders the options as buttons **and** a text box, always. The options
+are the agent's guess at what the answers are; being made to pick one of three
+wrong ones is worse than having been asked in prose.
 
 ## Skills
 
@@ -326,6 +362,8 @@ It also asserts on things a unit test cannot reach:
 | `--expect-markdown` | prose rendered as structure, and no markup escaped |
 | `--expect-saved-doc` | fetched content became a document, and the log links it |
 | `--expect-image` | a captured picture is visible, and is not an empty `src` |
+| `--expect-question` | the agent asked, the card rendered, and the answer resumed it |
+| `--max-answers 0` | leave a question unanswered, to look at the card |
 | `--unmount-after MS` | the view is torn down mid-turn and the work still finishes |
 | `--shot FILE` | writes a picture of the finished transcript |
 

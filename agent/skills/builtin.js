@@ -312,6 +312,9 @@ than a couple of paragraphs and the result gives you the URL, so re-reading part
 of one is \`doc_read\`, not another fetch — cheaper, and the content cannot have
 changed underneath you.
 
+When the choice is theirs rather than findable — which of two designs, what to
+call something — that is \`ask_user\`, not a search.
+
 When the user refers to something by name — "the budget doc", "my recipes" —
 search before asking. When a search finds nothing, say what you searched rather
 than guessing.`,

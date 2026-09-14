@@ -309,7 +309,7 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
   )
 
   console.log("\n=== steps ===")
@@ -355,6 +355,14 @@ try {
     console.log("\n=== subject document afterwards ===")
     console.log(JSON.stringify(report.subject.doc, null, 2))
 
+    if (report.answered) {
+      console.log("\n=== questions ===")
+      for (const s of report.steps.filter((s) => s.name === "question asked")) {
+        console.log(`  asked: ${s.question}`)
+        console.log(`  offered: ${JSON.stringify(s.options)}`)
+      }
+      console.log(`  answered: ${JSON.stringify(report.answersGiven ?? [])}`)
+    }
     if (report.grantsChosen?.length || report.grants) {
       console.log("\n=== grants ===")
       console.log(`chose: ${JSON.stringify(report.grantsChosen ?? [])}`)
@@ -415,6 +423,14 @@ try {
     if (flag("expect-saved-doc")) {
       checks.push(["it saved fetched content to a document", (report.savedDocs?.length ?? 0) > 0])
       checks.push(["the log links that document", (report.rendered?.docChips?.length ?? 0) > 0])
+    }
+    if (flag("expect-question")) {
+      checks.push(["it asked a question", (report.answered ?? 0) > 0])
+      checks.push([
+        "the question card rendered, with what it offered",
+        !!report.steps.find((s) => s.name === "question asked"),
+      ])
+      checks.push(["the answer was picked up and it carried on", report.finalStatus === "idle"])
     }
     if (flag("expect-image")) {
       checks.push(["a captured image is visible in the log", (report.rendered?.images?.length ?? 0) > 0])

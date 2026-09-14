@@ -11,8 +11,9 @@
  * pictures and approvals get full width.
  */
 
-import { CALL, callTarget, grantOffers } from "../session.js"
+import { CALL, callTarget, grantOffers, questionOptions } from "../session.js"
 import { renderMarkdown } from "./markdown.js"
+import { describeCall } from "./calls.js"
 
 const el = (tag, className, text) => {
   const node = document.createElement(tag)
@@ -32,53 +33,15 @@ function indexResults(doc) {
   return byCallId
 }
 
-const VERBS = {
-  doc_read: "read",
-  doc_edit: "edit",
-  doc_create: "create",
-  doc_history: "history",
-  fs_list: "list",
-  fs_read: "read",
-  fs_grep: "grep",
-  fs_write: "write",
-  registry_list: "registry",
-  plugin_source: "source",
-  dom_snapshot: "look",
-  web_search: "search",
-  web_fetch: "fetch",
-}
-
-/** The one-line description of a call: a verb and the thing it acted on. */
-export function callSummary(block, result) {
-  const verb = VERBS[block.tool] ?? block.tool
-  const input = block.input ?? {}
-  const target =
-    input.path && Array.isArray(input.path)
-      ? `/${input.path.join("/")}`
-      : input.path ?? input.pattern ?? input.datatype ?? input.selector ?? input.id ?? input.url ?? ""
-
-  // A full automerge URL is 50 characters of base58 and tells a reader nothing.
-  // The interesting part of a call is what it touched *within* the document.
-  const detail = /^automerge:/.test(String(target))
-    ? "this document"
-    : String(target).slice(0, 60)
-
-  if (block.status === CALL.running) return { verb, detail, note: "running…" }
-  if (block.status === CALL.pending) return { verb, detail, note: "needs approval" }
-  if (block.status === CALL.denied) return { verb, detail, note: "declined" }
-
-  if (result?.isError) {
-    const firstLine = String(result.output ?? "").split("\n")[0]
-    return { verb, detail, note: firstLine.replace(/^Error:\s*/, "").slice(0, 80) }
-  }
-  if (result) {
-    // Prefer the tool's own summary; fall back to the first line only for
-    // results written before summaries were recorded.
-    if (result.summary) return { verb, detail, note: result.summary }
-    const firstLine = String(result.output ?? "").split("\n")[0]
-    return { verb, detail, note: firstLine.slice(0, 60) }
-  }
-  return { verb, detail, note: "" }
+/**
+ * The one-line description of a call.
+ *
+ * The table of per-tool verbs and details lives in ui/calls.js, which is pure
+ * and has an entry for every tool. Kept as an export here because it is what
+ * the tests and probes reach for.
+ */
+export function callSummary(block, result, subject = null) {
+  return describeCall(block, result, { subject })
 }
 
 function renderCall(block, result, state, handlers) {
@@ -91,7 +54,7 @@ function renderCall(block, result, state, handlers) {
     else state.open.delete(block.id)
   })
 
-  const { verb, detail, note } = callSummary(block, result)
+  const { verb, detail, note } = callSummary(block, result, state.subject)
   const summary = el("summary")
   summary.append(el("span", "agent-call-verb", verb))
   if (detail) summary.append(el("span", "agent-call-detail", detail))
@@ -111,6 +74,7 @@ function renderCall(block, result, state, handlers) {
   // its work is the thing you most want to see without clicking.
   const attachments = []
   if (block.status === CALL.pending) attachments.push(renderApproval(block, handlers, state.subject))
+  if (block.status === CALL.asking) attachments.push(renderQuestion(block, handlers))
   if (result?.image) attachments.push(renderImage(result.image, state))
   if (result?.doc) attachments.push(renderDocLink(result.doc, handlers))
   if (!attachments.length) return details
@@ -205,6 +169,69 @@ function renderApproval(block, handlers, subject) {
     scopes.append(button(offer.label, { grant: offer.key }, { title: offer.detail }))
   }
   card.append(scopes)
+  return card
+}
+
+/**
+ * A question the agent asked, with its answers as buttons.
+ *
+ * Buttons AND a text box, always: the options are the agent's guess at what the
+ * answers are, and being forced to pick one of three wrong ones is worse than
+ * being asked in prose. Typing beats clicking when neither fits.
+ */
+function renderQuestion(block, handlers) {
+  const card = el("div", "agent-question")
+  const input = block.input ?? {}
+
+  const heading = el("div", "agent-question-title")
+  heading.append(renderMarkdown(input.question ?? "", { className: "agent-md" }))
+  card.append(heading)
+
+  if (input.context) {
+    const context = el("div", "agent-question-context")
+    context.append(renderMarkdown(input.context, { className: "agent-md" }))
+    card.append(context)
+  }
+
+  const send = (text) => {
+    const answer = String(text ?? "").trim()
+    if (answer) handlers.answer?.(block.id, answer)
+  }
+
+  const options = questionOptions(block)
+  if (options.length) {
+    const row = el("div", "agent-question-options")
+    for (const option of options) {
+      const button = el("button", null, option.label)
+      if (option.detail) button.title = option.detail
+      button.addEventListener("click", (event) => {
+        event.preventDefault()
+        send(option.label)
+      })
+      row.append(button)
+    }
+    card.append(row)
+  }
+
+  const other = el("div", "agent-question-other")
+  const field = document.createElement("input")
+  field.type = "text"
+  field.placeholder = options.length ? "or say something else…" : "your answer…"
+  const submit = el("button", null, "Answer")
+  submit.dataset.variant = "primary"
+
+  const fromField = (event) => {
+    event.preventDefault()
+    send(field.value)
+    field.value = ""
+  }
+  submit.addEventListener("click", fromField)
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") fromField(event)
+  })
+
+  other.append(field, submit)
+  card.append(other)
   return card
 }
 

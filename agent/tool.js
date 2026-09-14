@@ -8,9 +8,9 @@
  * a container query.
  */
 
-import { STATUS, CALL, callsAwaitingApproval } from "./session.js"
+import { STATUS, CALL, callsAwaitingApproval, questionsAwaitingAnswer } from "./session.js"
 import { handleStore } from "./store.js"
-import { decide, say } from "./loop.js"
+import { decide, say, answerQuestion } from "./loop.js"
 import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
 import { ensureRunner as ensureSharedRunner, attachView } from "./runners.js"
 import { connectWorkerRunner } from "./worker-client.js"
@@ -369,6 +369,12 @@ export function AgentTool(handle, element, options = {}) {
     kick()
   }
 
+  async function onAnswer(callId, text) {
+    answerQuestion(store, callId, text, await myContactUrl())
+    render()
+    kick()
+  }
+
   /**
    * Open another document in Patchwork.
    *
@@ -505,7 +511,7 @@ export function AgentTool(handle, element, options = {}) {
     }
 
     uiState.subject = doc.subject ?? null
-    renderTranscript(transcript, doc, uiState, { decide: onDecide, openDoc: onOpenDoc })
+    renderTranscript(transcript, doc, uiState, { decide: onDecide, answer: onAnswer, openDoc: onOpenDoc })
 
     // Header label: what this session is attached to.
     if (doc.subject) {
@@ -521,18 +527,23 @@ export function AgentTool(handle, element, options = {}) {
     sendButton.disabled = !hasKey
 
     const pending = callsAwaitingApproval(doc).length
+    const asking = questionsAwaitingAnswer(doc).length
     const elsewhere = heldElsewhere(doc, runner?.runnerUrl)
     hint.textContent = !hasKey
       ? "Add an API key to start"
-      : pending
-        ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
-        : elsewhere
-          ? "Another runner is working on this session"
-          : doc.status === STATUS.parked
-            ? "Waiting for a tab to run a page tool"
-            : busy
-              ? "Working… Enter to steer, Stop to interrupt"
-              : ""
+      : asking
+        ? asking === 1
+          ? "Waiting on your answer"
+          : `Waiting on ${asking} answers`
+        : pending
+          ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
+          : elsewhere
+            ? "Another runner is working on this session"
+            : doc.status === STATUS.parked
+              ? "Waiting for a tab to run a page tool"
+              : busy
+                ? "Working… Enter to steer, Stop to interrupt"
+                : ""
 
     if (!hasKey && settings.style.display === "none" && !doc.turns?.length) {
       settings.style.display = "flex"

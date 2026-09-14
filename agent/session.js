@@ -34,6 +34,10 @@ export const STATUS = {
   idle: "idle",
   running: "running",
   awaitingApproval: "awaiting-approval",
+  // The agent asked the human something and cannot proceed until it is
+  // answered. Distinct from awaiting-approval: nothing is being permitted, a
+  // question is being answered, and the answer becomes the call's result.
+  awaitingAnswer: "awaiting-answer",
   parked: "parked",
   error: "error",
 }
@@ -44,6 +48,7 @@ export const WHERE = { worker: "worker", host: "host", task: "task" }
 /** Lifecycle of a single tool call. */
 export const CALL = {
   pending: "pending", // waiting on approval
+  asking: "asking", // waiting on a human's answer; no runner will execute it
   approved: "approved", // cleared to run, not yet claimed
   running: "running", // claimed by a runner (see `runner` + `generation`)
   done: "done",
@@ -217,6 +222,29 @@ export function callsAwaitingApproval(doc) {
 /** Calls cleared to run but not yet claimed by a runner. */
 export function runnableCalls(doc) {
   return unansweredCalls(doc).filter((c) => c.status === CALL.approved)
+}
+
+/**
+ * Calls that are questions waiting on a person.
+ *
+ * Separate from approvals on purpose. An approval is "may I", and the answer is
+ * yes or no; a question is "which", and the answer is content that becomes the
+ * call's result and goes to the model. Sharing one mechanism would mean the
+ * model could get a question answered by someone clicking "allow".
+ */
+export function questionsAwaitingAnswer(doc) {
+  return unansweredCalls(doc).filter((c) => c.status === CALL.asking)
+}
+
+/** The options a question offers, normalized to {label, detail}. */
+export function questionOptions(block) {
+  const raw = block?.input?.options
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((option) =>
+      typeof option === "string" ? { label: option, detail: null } : { label: option?.label ?? "", detail: option?.detail ?? null }
+    )
+    .filter((option) => option.label)
 }
 
 // ---------------------------------------------------------------- grants

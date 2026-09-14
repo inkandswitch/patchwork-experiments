@@ -20,6 +20,7 @@ import {
   lastTurn,
   runnableCalls,
   callsAwaitingApproval,
+  questionsAwaitingAnswer,
 } from "./session.js"
 import { run, OUTCOME } from "./loop.js"
 
@@ -43,12 +44,22 @@ export const STALE_AFTER_MS = 15000
 export function needsWork(doc, canRun = () => true) {
   if (!doc) return false
   if (callsAwaitingApproval(doc).length) return false
+  // A question the agent asked is work for a person, not for a runner.
+  if (questionsAwaitingAnswer(doc).length) return false
 
   const runnable = runnableCalls(doc)
   if (runnable.length) return runnable.some((call) => canRun(call.where ?? "worker"))
 
   const last = lastTurn(doc)
-  return !!last && last.role === "user"
+  if (!last) return false
+
+  // A trailing *tool* turn means results landed and nobody took them back to
+  // the model. In a healthy run that never persists — the loop goes straight
+  // round again — so seeing it means either an answered question, or a runner
+  // that died between committing results and its next turn. Both want the same
+  // thing: prompt the model. Before this, an answered question sat there and a
+  // half-finished turn was stranded looking idle.
+  return last.role === "user" || last.role === "tool"
 }
 
 export class SessionRunner {
