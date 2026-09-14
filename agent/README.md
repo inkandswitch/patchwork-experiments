@@ -76,6 +76,7 @@ any participant can approve and every approval is auditable.
 | | `tool_check` | host |
 | Environment | `registry_list` `plugin_source` `dom_snapshot` | host |
 | Build | `package_build` | worker |
+| Test | `package_test` | host |
 | Web | `web_search` `web_fetch` `web_import` | worker |
 | APIs | `secret_list` (host) `http_request` | worker |
 
@@ -121,6 +122,23 @@ nothing would sync.
 Measured: a TypeScript tool importing three.js builds in about one second to a
 727 kB self-contained bundle, which registers, mounts, and draws to a live
 WebGL canvas.
+
+## Tests run in the browser too
+
+`tool_check` answers "does this mount and respond to a click". It cannot answer
+"is this function correct" — so an agent that writes tests it cannot run has
+written documentation.
+
+`package_test` bundles each `*.test.ts` with the same esbuild machinery,
+rewrites its `vitest` import to an injected harness, executes the bundle, and
+reports what passed and failed with real messages. The harness is real,
+importable code (`tools/harness.js`) rather than a string blob, so it is itself
+unit-tested — describe/it/expect, the hooks, `.not`, `.rejects.toThrow`, and the
+usual matchers. A matcher it does not have says so rather than passing quietly.
+
+Measured: five TypeScript tests with a relative import, a `toThrow` and an async
+case run in 548ms, with a deliberate failure caught and reported as
+`expected 5 to be 6`.
 
 ## Risk lives on the document
 

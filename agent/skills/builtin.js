@@ -134,6 +134,31 @@ would sync.
 If the build fails, the error names the file and line. Fix it with fs_write and
 build again — that loop is the point of having the compiler here.
 
+## Tests
+
+Write tests for logic — anything you could get wrong that is not about
+rendering. Put them beside the code as \`*.test.ts\` and run them with
+\`package_test\`. They run in the browser; there is no vitest process.
+
+    // src/math.test.ts
+    import { describe, it, expect } from "vitest"
+    import { add } from "./math"
+
+    describe("add", () => {
+      it("adds", () => { expect(add(2, 3)).toBe(5) })
+      it("rejects nonsense", () => { expect(() => add(1, "x")).toThrow(/number/) })
+    })
+
+The import says \`vitest\` because that is the idiom everyone writes; it is
+rewritten to a built-in harness when the file is bundled. describe, it, expect,
+beforeEach/afterEach/beforeAll/afterAll, \`.not\`, \`.rejects.toThrow\` and the
+usual matchers all work. A matcher that does not exist says so rather than
+passing quietly.
+
+Tests and \`tool_check\` answer different questions, and you want both:
+\`package_test\` tells you whether the logic is right, \`tool_check\` tells you
+whether the tool mounts, renders, and responds.
+
 ## Then
 
 Run \`tool_check\` on the folder. It mounts the tool, clicks its first button, and
