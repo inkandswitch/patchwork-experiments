@@ -258,3 +258,24 @@ describe("a pinned version that has fallen behind", () => {
     expect(container.querySelector('[data-variant="primary"]')).toBeNull()
   })
 })
+
+describe("sessions written before any of this existed", () => {
+  // These documents are already out there. Nothing may assume `made` exists.
+  const legacy = () => ({ schemaVersion: 1, title: "old", turns: [], status: "idle", grants: {} })
+
+  it("reads as having made nothing", () => {
+    expect(artifacts(legacy())).toEqual([])
+  })
+
+  it("starts recording without a migration", () => {
+    const doc = legacy()
+    expect(recordArtifact(doc, { url: "automerge:a", name: "tally", kind: "package" })).toBe(true)
+    expect(artifacts(doc)).toHaveLength(1)
+  })
+
+  it("renders as an empty, hidden strip", () => {
+    const container = document.createElement("div")
+    renderMade(container, legacy(), { madeOpen: true }, {})
+    expect(container.hidden).toBe(true)
+  })
+})

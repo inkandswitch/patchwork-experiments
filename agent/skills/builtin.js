@@ -182,6 +182,17 @@ Tests and \`tool_check\` answer different questions, and you want both:
 \`package_test\` tells you whether the logic is right, \`tool_check\` tells you
 whether the tool mounts, renders, and responds.
 
+## Seeing it, and shipping it
+
+\`tool_check\` brings back a picture of what rendered, and a mounted view appears
+in the workbench beside the conversation — so "does it look right" is something
+you can both answer rather than something you assert.
+
+When it passes, say so and stop. The user has a panel listing everything the
+session made, with Install beside anything installable; they choose between
+installing live (which follows your later edits) and pinning this version. Never
+hand them a URL to paste into their settings.
+
 ## Then
 
 Run \`tool_check\` on the folder. It mounts the tool, clicks its first button, and
