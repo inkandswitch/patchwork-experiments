@@ -67,6 +67,29 @@ export function parseDuckDuckGoHtml(html, limit = 8) {
 }
 
 export const DEFAULT_READER = "https://r.jina.ai/"
+
+/** What a page can be asked to come back as. */
+export const FORMATS = ["markdown", "html", "text"]
+
+const FORMAT_MIME = { markdown: "text/markdown", html: "text/html", text: "text/plain" }
+
+/**
+ * Headers that tell the reader what to send back.
+ *
+ * `X-Return-Format: html` returns the DOM after the page's scripts have run,
+ * which is the whole point for a dynamic page: a single-page app's markdown is
+ * its chrome, and a code editor's is its line numbers. Measured against the live
+ * reader, along with the other two formats.
+ *
+ * The reader caches and says so in its markdown ("This is a cached snapshot").
+ * `x-no-cache` opts out, which matters when the question is what a page says
+ * NOW rather than what it usually says.
+ */
+export function readerHeaders(format = "markdown", fresh = false) {
+  const headers = { accept: "text/plain", "X-Return-Format": format }
+  if (fresh) headers["x-no-cache"] = "true"
+  return headers
+}
 const SEARCH_ENGINE = "https://duckduckgo.com/html/?q="
 
 /** Build the reader URL for a target page. */
@@ -133,7 +156,14 @@ export const webFetch = {
     required: ["url"],
     properties: {
       url: { type: "string", description: "Absolute http(s) URL." },
-      maxChars: { type: "number", description: "Default 12000." },
+      format: {
+        type: "string",
+        enum: ["markdown", "html", "text"],
+        description:
+          "markdown to read it, html to inspect what the page actually rendered, text for bare visible text. Default markdown.",
+      },
+      fresh: { type: "boolean", description: "Skip the reader's cache. Use it when the page's content changes." },
+      maxChars: { type: "number", description: "How much to return inline. Default 12000; the rest is in the saved document." },
     },
   },
   async execute(input, ctx) {
@@ -141,6 +171,7 @@ export const webFetch = {
     if (!/^https?:\/\//.test(target)) throw new Error("Pass an absolute http(s) URL.")
 
     const fetchImpl = ctx.fetchImpl ?? fetch
+    const format = FORMATS.includes(input.format) ? input.format : "markdown"
 
     let content
     if (ctx.direct) {
@@ -154,11 +185,14 @@ export const webFetch = {
       if (!response.ok) throw new Error(`Could not fetch ${target} (${response.status}).`)
       const body = await response.text()
       const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(body.slice(0, 2000))
-      content = looksLikeHtml ? htmlToText(body) : body
+      // Nothing renders out here, so `html` is the literal source — a different
+      // thing from what the reader returns, and worth knowing when the two
+      // disagree about a dynamic page.
+      content = format === "html" || !looksLikeHtml ? body : htmlToText(body)
     } else {
       const response = await fetchImpl(readerUrl(target, ctx.reader ?? DEFAULT_READER), {
         signal: ctx.signal,
-        headers: { accept: "text/plain" },
+        headers: readerHeaders(format, input.fresh),
       })
       if (!response.ok) {
         throw new Error(
@@ -175,7 +209,7 @@ export const webFetch = {
     // keeps exactly the excerpt it asked for either way.
     if (content.length < SPILL_AT) return excerpt
 
-    const ref = await saveSource(ctx, { url: target, content, mimeType: "text/markdown" })
+    const ref = await saveSource(ctx, { url: target, content, mimeType: FORMAT_MIME[format] })
     if (!ref) return excerpt
     return { text: `${excerpt}\n${sourceFooter(ref, excerpt.length)}`, doc: ref }
   },

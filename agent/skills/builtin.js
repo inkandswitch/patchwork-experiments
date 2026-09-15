@@ -368,6 +368,26 @@ fetch the first one and say so — the choice they are offered includes that sit
 A denial is about that call. Do not immediately try the same URL a different
 way; say what you wanted it for, or find another source.
 
+## When markdown comes back wrong
+
+Prose extraction throws away whatever a script built, so a dynamic page often
+returns its chrome and none of its content: a single-page app gives you its
+navigation, a code editor gives you its line numbers. That is not a page worth
+reading twice — it is the signal to ask for something else.
+
+    web_fetch { url, format: "html" }    the DOM after the page's scripts ran
+
+That is what you want for inspecting: what a widget rendered, which classes and
+data attributes are on an element, what is actually there.
+
+It is the rendered DOM, not the bytes the server sent. When you need the literal
+source — the script tags, the pre-hydration shell, what the bundle is called —
+that is \`http_request\`, which fetches directly and renders nothing. The two
+disagree about exactly the pages you are asking about, and the disagreement is
+usually the answer.
+
+Pass \`fresh\` when the page changes and a cached snapshot would mislead you.
+
 ## Long pages become documents
 
 Anything longer than a couple of paragraphs is saved to its own document, and

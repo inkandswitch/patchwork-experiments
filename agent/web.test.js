@@ -179,3 +179,91 @@ describe("parseDuckDuckGoHtml", () => {
     expect(parseDuckDuckGoHtml("<p>nothing</p>")).toEqual([])
   })
 })
+
+describe("asking a page for its rendered DOM", () => {
+  // The case this exists for, from a real session: fetching a code playground
+  // as markdown returned the editor's line numbers — "1 2 3 4 5" — and none of
+  // its content, because prose extraction throws away what a script built.
+  const respond = (body) => ({ ok: true, status: 200, text: async () => body })
+
+  function capture(body = "ok") {
+    const seen = []
+    return {
+      seen,
+      fetchImpl: async (url, options) => {
+        seen.push({ url, options })
+        return respond(body)
+      },
+    }
+  }
+
+  it("asks the reader for markdown by default", async () => {
+    const { seen, fetchImpl } = capture()
+    await webFetch.execute({ url: "https://x.test/" }, { fetchImpl })
+    expect(seen[0].options.headers["X-Return-Format"]).toBe("markdown")
+    expect(seen[0].options.headers).not.toHaveProperty("x-no-cache")
+  })
+
+  it("asks for html when told to", async () => {
+    const { seen, fetchImpl } = capture()
+    await webFetch.execute({ url: "https://x.test/", format: "html" }, { fetchImpl })
+    expect(seen[0].options.headers["X-Return-Format"]).toBe("html")
+  })
+
+  it("asks for text when told to", async () => {
+    const { seen, fetchImpl } = capture()
+    await webFetch.execute({ url: "https://x.test/", format: "text" }, { fetchImpl })
+    expect(seen[0].options.headers["X-Return-Format"]).toBe("text")
+  })
+
+  it("ignores a format it does not have, rather than sending nonsense", async () => {
+    const { seen, fetchImpl } = capture()
+    await webFetch.execute({ url: "https://x.test/", format: "pdf" }, { fetchImpl })
+    expect(seen[0].options.headers["X-Return-Format"]).toBe("markdown")
+  })
+
+  it("skips the cache when freshness is what matters", async () => {
+    const { seen, fetchImpl } = capture()
+    await webFetch.execute({ url: "https://x.test/", fresh: true }, { fetchImpl })
+    expect(seen[0].options.headers["x-no-cache"]).toBe("true")
+  })
+
+  it("saves html as html, so the document is not a .md full of markup", async () => {
+    const docs = new Map()
+    let n = 0
+    const repo = {
+      async create2() {
+        const url = `automerge:saved${++n}`
+        const doc = {}
+        docs.set(url, doc)
+        return { url, doc: () => doc, change: (fn) => fn(doc) }
+      },
+    }
+    const big = `<div>${"x".repeat(3000)}</div>`
+    const out = await webFetch.execute(
+      { url: "https://x.test/", format: "html" },
+      { repo, fetchImpl: async () => respond(big) }
+    )
+    expect(out.doc.mimeType).toBe("text/html")
+    expect(docs.get(out.doc.url).extension).toBe("html")
+  })
+
+  it("returns the literal source in direct mode, where nothing renders", async () => {
+    // Outside a browser there is no reader and no rendering, so `html` is the
+    // bytes the server sent — a different thing, and the description says so.
+    const source = '<html><head><script src="/app.js"></script></head><body><div id="root"></div></body></html>'
+    const out = await webFetch.execute(
+      { url: "https://x.test/", format: "html" },
+      { direct: true, fetchImpl: async () => respond(source) }
+    )
+    expect(out).toBe(source)
+  })
+
+  it("still strips markup in direct mode when prose was asked for", async () => {
+    const out = await webFetch.execute(
+      { url: "https://x.test/" },
+      { direct: true, fetchImpl: async () => respond("<p>hello</p><p>there</p>") }
+    )
+    expect(out).toBe("hello\nthere")
+  })
+})
