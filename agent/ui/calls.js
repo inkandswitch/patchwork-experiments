@@ -142,8 +142,9 @@ export const PRESENTATION = {
   view_screenshot: { verb: "screenshot", detail: (i) => i.selector ?? null },
   dom_snapshot: { verb: "look", detail: (i) => i.selector ?? "the page" },
 
-  // ---- asking
+  // ---- asking and naming
   ask_user: { verb: "ask", detail: (i) => i.question ?? null },
+  session_title: { verb: "name", detail: (i) => i.title ?? null },
 }
 
 /** Tool ids we have written a presentation for. Used by the tests. */

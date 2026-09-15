@@ -414,6 +414,8 @@ window.__agentProbe = async function (opts) {
       shotHeight: host?.scrollHeight ?? null,
       grantsChosen,
       grants: JSON.parse(JSON.stringify(doc.grants ?? {})),
+      sessionTitle: doc.title ?? null,
+      headerLabel: host?.querySelector(".agent-subject")?.textContent ?? null,
       made: JSON.parse(JSON.stringify(doc.made ?? [])),
       rendered,
       savedDocs: blocks.filter((b) => b.type === "result" && b.doc).map((b) => b.doc),

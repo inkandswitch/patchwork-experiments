@@ -1,4 +1,4 @@
-import { initSession, STATUS } from "./session.js"
+import { initSession, sessionTitle, STATUS } from "./session.js"
 
 /**
  * The agent session datatype.
@@ -10,19 +10,18 @@ import { initSession, STATUS } from "./session.js"
  */
 export const AgentSessionDatatype = {
   init(doc) {
-    initSession(doc, { title: "Agent" })
+    initSession(doc)
   },
 
+  /**
+   * What the agent called this work, else what was first asked of it.
+   *
+   * This used to have the fallback and never reach it: `init` set the title to
+   * "Agent", so `doc.title` was always truthy and every session in the list was
+   * called the same thing.
+   */
   getTitle(doc) {
-    if (doc.title) return doc.title
-
-    // An untitled session is named by what was first asked of it — much more
-    // useful in a document list than forty things called "Agent".
-    const firstUserTurn = (doc.turns ?? []).find((t) => t.role === "user")
-    const text = (firstUserTurn?.blocks ?? []).find((b) => b.type === "text")?.text
-    if (text) return text.length > 48 ? `${text.slice(0, 48)}…` : text
-
-    return "Agent"
+    return sessionTitle(doc) ?? "Agent"
   },
 
   setTitle(doc, title) {

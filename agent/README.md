@@ -91,6 +91,7 @@ any participant can approve and every approval is auditable.
 | Web | `web_search` `web_fetch` `web_import` | worker |
 | APIs | `secret_list` (host) `http_request` | worker |
 | Ask | `ask_user` | never runs — see below |
+| Name | `session_title` | worker |
 
 Outside content does not stay in the conversation. A fetched page longer than a
 couple of paragraphs is written to its own document and linked from the
@@ -257,6 +258,23 @@ Measured over four turns, denying a `doc_edit`:
 
 Acknowledged once, then dropped. `--expect-moves-on` asserts exactly that: it
 finds where the refusal was first mentioned and requires silence afterwards.
+
+## Naming the work
+
+A session is an ordinary document, so it sits in the user's list beside
+everything else they own. The agent calls `session_title` once it knows what the
+work actually is — naming the *work*, not the request, and renaming it later if
+the work turns into something else. Until it does, the session is named after the
+first thing asked of it.
+
+That fallback existed before and never ran: `init` set the title to `"Agent"`, so
+`doc.title` was always truthy, the code below it was unreachable, and every
+session in the list was called the same thing. A fresh session now has no title
+at all, which is the honest state and the one every fallback is written for.
+
+`session_title` is the only tool with `risk: "self"` — it writes, but only ever
+to the session document, so it is never asked about. Marking it `read` would
+have produced the same behaviour by lying in the tool list to whoever audits it.
 
 ## Asking the user
 
@@ -456,6 +474,7 @@ It also asserts on things a unit test cannot reach:
 | `--then "a\|b"` | follow-up messages, to see behaviour across turns |
 | `--expect-moves-on` | it acknowledged a refusal once and then dropped it |
 | `--expect-made` | it recorded what it built, including a package |
+| `--expect-named` | the agent named the session after the work, and the header shows it |
 | `--install-after "Pin this version"` | clicks that button in the strip and checks the module list |
 | `--max-answers 0` | leave a question unanswered, to look at the card |
 | `--unmount-after MS` | the view is torn down mid-turn and the work still finishes |

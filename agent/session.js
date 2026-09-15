@@ -83,7 +83,11 @@ export const DEFAULT_CONFIG = {
 /** Seed a brand-new session document. Runs inside a `handle.change`. */
 export function initSession(doc, opts = {}) {
   doc.schemaVersion = SCHEMA_VERSION
-  doc.title = opts.title ?? "Agent"
+  // Null, not "Agent". A fresh session has not earned a name yet, and a
+  // placeholder here is worse than nothing: it defeats every fallback that
+  // would otherwise describe the session by what it is doing, and leaves a
+  // document list where everything is called the same thing.
+  doc.title = opts.title ?? null
   doc.subject = opts.subject ?? null
   doc.config = { ...DEFAULT_CONFIG, ...(opts.config ?? {}) }
   doc.turns = []
@@ -247,6 +251,44 @@ export function questionOptions(block) {
       typeof option === "string" ? { label: option, detail: null } : { label: option?.label ?? "", detail: option?.detail ?? null }
     )
     .filter((option) => option.label)
+}
+
+/** The longest a session title should be: it lives in a document list. */
+export const MAX_TITLE = 60
+
+/**
+ * Name a session after the work it is doing.
+ *
+ * Trimmed, collapsed and capped, because this ends up in a sidebar row — and a
+ * model asked for a title will sometimes hand back a sentence, or a sentence
+ * with quotes around it.
+ */
+export function cleanTitle(text) {
+  const once = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .trim()
+  if (!once) return null
+  return once.length > MAX_TITLE ? `${once.slice(0, MAX_TITLE - 1).trimEnd()}…` : once
+}
+
+/**
+ * What to call a session that has not named itself.
+ *
+ * The first thing asked of it, which is nearly always a better name than
+ * anything generic — and is available from the moment there is anything to
+ * name at all.
+ */
+export function derivedTitle(doc) {
+  const firstUserTurn = (doc?.turns ?? []).find((t) => t.role === "user")
+  const text = (firstUserTurn?.blocks ?? []).find((b) => b.type === "text")?.text
+  return cleanTitle(text)
+}
+
+/** The session's title: what it called itself, what it was asked, or nothing. */
+export function sessionTitle(doc) {
+  return cleanTitle(doc?.title) ?? derivedTitle(doc) ?? null
 }
 
 // ------------------------------------------------------------- artifacts
@@ -462,13 +504,19 @@ export function shortPath(url) {
 /**
  * Does this call still need a human decision?
  *
- * `risk: "read"` runs silently. Everything else needs a grant for this tool on
+ * `risk: "read"` and `risk: "self"` run silently — the first touches nothing, the
+ * second touches only this conversation's own document. Everything else needs a
+ * grant for this tool on
  * this document. Tools flagged `alwaysAsk` ignore grants entirely — installing
  * code that runs on every future load should be deliberate every time.
  */
 export function needsApproval(doc, toolDef, block = null, subject = null, sensitive = []) {
   if (!toolDef) return true
-  if (toolDef.risk === "read") return false
+  // "self" is a write, but only ever to the session document — the conversation
+  // you are already having. Stopping to ask permission to name your own
+  // conversation would be an absurd thing to put in front of someone, and
+  // calling it "read" to get that behaviour would be a lie in the tool list.
+  if (toolDef.risk === "read" || toolDef.risk === "self") return false
   if (toolDef.alwaysAsk) return true
 
   const grants = doc.grants ?? {}

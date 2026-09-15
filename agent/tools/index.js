@@ -17,7 +17,8 @@
  *     execute(input, ctx), summarize?(input, output) }
  *
  * `where` is "worker" | "host" | "task" and decides who may run it.
- * `risk` is "read" | "write" | "external"; see session.needsApproval.
+ * `risk` is "read" | "self" | "write" | "external"; see session.needsApproval.
+ * "self" writes only to the session document and so is never asked about.
  */
 
 import { tryHostImport } from "./host.js"
@@ -30,12 +31,13 @@ import discoveryTools from "./discovery.js"
 import httpTools from "./http.js"
 import ingestTools from "./ingest.js"
 import askTools from "./ask.js"
+import namingTools from "./naming.js"
 import skillTools from "./skills.js"
 import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools, ...namingTools]
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {

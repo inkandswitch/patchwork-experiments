@@ -73,7 +73,7 @@ const trail = []
 const runner = new SessionRunner({
   store,
   runnerUrl: `node-probe-${process.pid}`,
-  ctx: { repo, splice, subject: subject.url, direct: true },
+  ctx: { repo, splice, subject: subject.url, sessionUrl: session.url, direct: true },
   buildToolset: (doc) => buildToolset(doc),
   getProvider: async () => getProvider("openrouter"),
   getKey: () => KEY,

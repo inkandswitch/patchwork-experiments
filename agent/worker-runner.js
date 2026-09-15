@@ -95,7 +95,7 @@ async function startSession({ sessionUrl, subject, key, providerId, system }, po
   const runner = new SessionRunner({
     store,
     runnerUrl: `worker-${Math.random().toString(36).slice(2, 10)}`,
-    ctx: { repo, subject, splice: automerge?.splice ?? null },
+    ctx: { repo, subject, sessionUrl, splice: automerge?.splice ?? null },
     buildToolset: (doc) => buildToolset(doc),
     getProvider: async () => getProvider(providerId ?? "openrouter"),
     // The key is passed in per session rather than read from storage: a worker

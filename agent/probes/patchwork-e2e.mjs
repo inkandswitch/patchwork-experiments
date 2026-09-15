@@ -352,6 +352,11 @@ try {
     for (const row of report.transcriptRows) console.log(`  ${row}`)
     console.log("\n=== assistant text ===")
     console.log(report.session.text)
+    if (report.sessionTitle || report.headerLabel) {
+      console.log("\n=== what this session calls itself ===")
+      console.log(`  title:  ${report.sessionTitle ?? "(none — falling back)"}`)
+      console.log(`  header: ${report.headerLabel}`)
+    }
     console.log("\n=== subject document afterwards ===")
     console.log(JSON.stringify(report.subject.doc, null, 2))
 
@@ -468,6 +473,14 @@ try {
     if (flag("expect-made")) {
       checks.push(["it recorded what it made", (report.made ?? []).length > 0])
       checks.push(["a package is among it", (report.made ?? []).some((a) => a.kind === "package")])
+    }
+    if (flag("expect-named")) {
+      checks.push(["it named the session", !!report.sessionTitle])
+      checks.push([
+        "the name describes the work, not the request",
+        !!report.sessionTitle && report.sessionTitle !== PROMPT,
+      ])
+      checks.push(["the header shows it", report.headerLabel === report.sessionTitle])
     }
     if (flag("expect-question")) {
       checks.push(["it asked a question", (report.answered ?? 0) > 0])

@@ -307,6 +307,10 @@ some sites block it; that is a reason to find another source, not to retry.`,
 You start knowing only the document the session is attached to. Everything else
 has to be found.
 
+Name the session with \`session_title\` as soon as you know what you are doing —
+it is a document in the same list, and an unnamed one is as lost as anything
+else here.
+
 - **\`doc_tree\`** once, to see the shape of what the user has.
 - **\`doc_search\`** by name; add \`content: true\` to search inside file documents
   when the name search finds nothing.

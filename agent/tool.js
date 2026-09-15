@@ -8,7 +8,7 @@
  * a container query.
  */
 
-import { STATUS, CALL, callsAwaitingApproval, questionsAwaitingAnswer } from "./session.js"
+import { STATUS, CALL, callsAwaitingApproval, questionsAwaitingAnswer, sessionTitle } from "./session.js"
 import { handleStore } from "./store.js"
 import { decide, say, answerQuestion } from "./loop.js"
 import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
@@ -312,6 +312,9 @@ export function AgentTool(handle, element, options = {}) {
       const sharedCtx = {
         repo,
         subject: subjectUrl(),
+        // So the agent can name its own conversation. Nothing else may be
+        // reached through this — it is the session's own document.
+        sessionUrl: handle.url,
         splice,
         element: root,
         // Installing a module means editing the account's module-settings
@@ -632,13 +635,32 @@ export function AgentTool(handle, element, options = {}) {
     renderTranscript(transcript, doc, uiState, { decide: onDecide, answer: onAnswer, openDoc: onOpenDoc })
     renderMade(made, doc, uiState, { openDoc: onOpenDoc, install: onInstall, uninstall: onUninstall })
 
-    // Header label: what this session is attached to.
-    if (doc.subject) {
+    // Header label: what this session IS, not what it is docked beside.
+    //
+    // It used to show the subject's title, which in a sidebar is the document
+    // you are already looking at — so the one row of chrome the session gets
+    // was spent telling you something you could see. Once the agent names its
+    // own work, that name belongs here; the subject moves to the tooltip, which
+    // is where "and which document is this about" belongs.
+    const named = sessionTitle(doc)
+    if (named) {
+      subjectLabel.textContent = named
+      subjectLabel.title = named
+      if (doc.subject) {
+        titleOf(repo, doc.subject).then((title) => {
+          if (!disposed && title) subjectLabel.title = `${named} — on ${title}`
+        })
+      }
+    } else if (doc.subject) {
       titleOf(repo, doc.subject).then((title) => {
-        if (!disposed) subjectLabel.textContent = title ?? "Agent"
+        if (!disposed) {
+          subjectLabel.textContent = title ?? "Agent"
+          subjectLabel.title = title ? `on ${title}` : ""
+        }
       })
     } else {
-      subjectLabel.textContent = doc.title || "Agent"
+      subjectLabel.textContent = "Agent"
+      subjectLabel.title = ""
     }
 
     const busy = doc.status === STATUS.running
