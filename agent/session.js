@@ -575,7 +575,8 @@ export const MAX_IMAGES_IN_REQUEST = 2
  * you wanted it for — belongs in the system prompt, where it is said once;
  * repeating it per denial per turn is what made the agent fixate on declining.
  */
-export const DENIED_RESULT = "Declined by the user."
+export const DENIED_RESULT =
+  "Declined by the user. Do not retry it. Carry on with everything that does not depend on it, and say in one line what you could not do."
 
 export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST } = {}) {
   const messages = []

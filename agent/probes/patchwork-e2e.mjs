@@ -309,7 +309,7 @@ try {
 
   const report = await evaluate(
     cdp,
-    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), denyTools: option("deny-tools", ""), installAfter: option("install-after", null), followUps: (option("then", "") || "").split("|").filter(Boolean), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
+    `window.__agentProbe(${JSON.stringify({ prompt: PROMPT, model: MODEL, keepOpen: flag("keep-open"), keepDom: !!option("shot", null), waitMs: Number(option("wait", "90000")), unmountAfterMs: Number(option("unmount-after", "0")), grantScope: option("grant", "narrow"), maxApprovals: Number(option("max-approvals", "6")), maxAnswers: Number(option("max-answers", "4")), answer: option("answer", null), denyTools: option("deny-tools", ""), installAfter: option("install-after", null), maxOutput: Number(option("max-output", "0")) || null, reasoning: option("reasoning", null), followUps: (option("then", "") || "").split("|").filter(Boolean), agentBase: "/" + encodeURIComponent(MODULE) + "/" })})`
   )
 
   console.log("\n=== steps ===")
@@ -473,6 +473,15 @@ try {
     if (flag("expect-made")) {
       checks.push(["it recorded what it made", (report.made ?? []).length > 0])
       checks.push(["a package is among it", (report.made ?? []).some((a) => a.kind === "package")])
+    }
+    if (flag("expect-recovered")) {
+      // Forced truncation: the point is that it is reported and then recovered
+      // from, not that it never happens.
+      const text = report.session.text ?? ""
+      checks.push(["it was actually cut off", /cut off/i.test(JSON.stringify(report.session))])
+      checks.push(["it did the work anyway", report.session.calls.length > 0])
+      checks.push(["it did not end on a half-written plan", report.finalStatus === "idle"])
+      void text
     }
     if (flag("expect-named")) {
       checks.push(["it named the session", !!report.sessionTitle])

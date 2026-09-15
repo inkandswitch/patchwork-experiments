@@ -80,6 +80,10 @@ window.__agentProbe = async function (opts) {
     session.change((d) => {
       d.subject = subject.url
       d.config.model = opts.model
+      // A deliberately tiny budget is how the truncation path gets exercised
+      // against a real provider rather than a mock.
+      if (opts.maxOutput) d.config.params = { ...d.config.params, maxTokens: opts.maxOutput }
+      if (opts.reasoning) d.config.params = { ...d.config.params, reasoning: JSON.parse(opts.reasoning) }
     })
     step("created session", { url: session.url, model: session.doc().config.model })
 
@@ -414,6 +418,7 @@ window.__agentProbe = async function (opts) {
       shotHeight: host?.scrollHeight ?? null,
       grantsChosen,
       grants: JSON.parse(JSON.stringify(doc.grants ?? {})),
+      truncations: steps.filter((x) => x.name === "truncated").length,
       sessionTitle: doc.title ?? null,
       headerLabel: host?.querySelector(".agent-subject")?.textContent ?? null,
       made: JSON.parse(JSON.stringify(doc.made ?? [])),

@@ -46,26 +46,25 @@ import { runTool } from "./tools/index.js"
 
 export const DEFAULT_SYSTEM = `You are an agent living inside Patchwork, a local-first workspace where everything is an automerge document.
 
-You work on documents directly through your tools. Prefer acting over describing: if the user asks for a change, make it and report what you did. Name this session with session_title as soon as you know what the work is — it is a document in the user's list, and an unnamed one is lost.
+Do the work. If the user asks for a change, make it: read what you need, make the edit, and say what you did. A plan is not a deliverable here — you have the tools and the user is watching the results appear, so act and report. Where a request is vague, do the obvious useful thing and say what you assumed.
 
 Guidance specific to this environment:
 - Documents have no fixed schema. Read a document (doc_read, shapeOnly first if it is large) before editing it, so your paths are real.
-- Folders and files are documents too, and so is everything else. A Patchwork TOOL is just a folder of files: write them with fs_write, run it with tool_check, and install it by adding that folder's URL to the module settings document. There is no build step and no special machinery.
+- Folders and files are documents too, and so is everything else. A Patchwork TOOL is just a folder of files: write them with fs_write and run it with tool_check. There is no build step and no special machinery.
 - You have skills — read them. skill_list shows what guidance exists; skill_read gives you one in full. Read "writing-patchwork-tools" before writing a tool and "editing-documents" before your first substantial edit. They exist because the mistakes they describe are the ones that actually get made.
 - view_mount opens any document in any installed tool so you can drive it: click controls, type into fields, and see what rendered. Use it to check that a change LOOKS right, not just that it is structurally present.
-- Call session_title before you finish your first reply. This conversation is a document in the user's list, and until you name it they cannot tell it apart from every other one. Name the work in a few words, not the request they typed — "Tally counter tool", "Why the folder view is slow". Rename it later if the work turns into something else.
-- Do NOT tell the user to paste a URL into their module settings to install something you built. The panel shows everything this session made, with an Install button beside it. Say it is ready and what it does; installing is one click and it is theirs to make.
-- A declined call is a decision, not an obstacle. Do not retry it, do not keep bringing it up, and do not stop the whole task over it: carry on with everything that does not depend on it, and say in one line what you could not do and why it mattered.
-- When a choice is genuinely the user's — which of two designs, what to call something, a fact only they have — use ask_user and give it options. Do not ask in prose and wait; that makes them read a paragraph and type a reply. Do not ask permission to use a tool either: running it asks for you.
+- Name the session with session_title once you know what the work is.
 - Everything you do is collaborative and versioned. Other people may be editing the same documents while you work.
 
-Be concise. The transcript is read in a narrow sidebar.`
+Be concise. The transcript is read in a narrow sidebar, and a short answer with the work already done beats a long one describing what could be done.`
+
 
 /** Outcome of a single call to `run`. */
 export const OUTCOME = {
   idle: "idle", // the model finished its turn
   awaitingApproval: "awaiting-approval",
   awaitingAnswer: "awaiting-answer", // the agent asked the human something
+  truncated: "truncated", // the model kept running out of output budget
   parked: "parked", // a host-tier call has no tab to run in
   aborted: "aborted",
   error: "error",
@@ -133,6 +132,9 @@ export async function run(opts) {
     sensitive: (ctx?.sensitiveDocs ?? []).filter(Boolean),
   }
 
+  let truncations = 0
+  const maxTruncations = opts.maxTruncations ?? 2
+
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
     if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
     if (!stillOurs()) return { outcome: OUTCOME.aborted, reason: "lease lost" }
@@ -170,7 +172,70 @@ export async function run(opts) {
 
     if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
 
-    // ---- 4. Did it ask for anything?
+    // ---- 4. Was it cut off?
+    //
+    // `finish_reason: "length"` means the model ran out of output budget
+    // mid-sentence. Nothing here used to look at it, so a turn that stopped
+    // halfway through thinking was written to the transcript and the session
+    // went idle — indistinguishable from a model that had finished. What a
+    // person saw was an agent that wrote a long plan and then did none of it.
+    //
+    // Reasoning models make this much easier to hit, because the thinking
+    // spends the same budget as the answer: several thousand tokens of thought
+    // can exhaust the turn before a single tool call is emitted.
+    if (assistant.stopReason === "length") {
+      truncations++
+      emit({
+        type: "truncated",
+        turn: turnNumber,
+        attempt: truncations,
+        where: assistant.broken?.length ? "tool-arguments" : "output",
+      })
+
+      // Carrying on is almost always what was meant, so do it rather than
+      // making someone type "continue" — but bounded, because a model whose
+      // thinking never fits will otherwise truncate forever.
+      if (truncations <= maxTruncations) {
+        // And give it more room than the attempt that ran out, since the most
+        // likely reason it ran out is that the budget was too small for how
+        // this model works.
+        settings.paramsOverride = {
+          ...(settings.paramsOverride ?? {}),
+          maxTokens: Math.min(
+            MAX_OUTPUT_TOKENS,
+            (settings.paramsOverride?.maxTokens ?? store.doc().config?.params?.maxTokens ?? 8192) * 2
+          ),
+        }
+        appendTurn(
+          store,
+          makeTurn("user", [
+            textBlock(
+              assistant.broken?.length
+                ? `(Your ${assistant.broken.map((c) => c.name).join(" and ")} call was cut off before its ` +
+                  "arguments finished, so it was not run.) Make the call again, and keep the arguments small — " +
+                  "several narrow calls are better than one that does not fit."
+                : "(Your previous message was cut off by the output limit before you finished.) " +
+                  "Continue from where you stopped. Do not restate the plan — make the tool calls."
+            ),
+          ])
+        )
+        continue
+      }
+
+      appendTurn(
+        store,
+        makeTurn("assistant", [
+          textBlock(
+            `⚠ Cut off by the model's output limit ${truncations} times. ` +
+              "It is spending its output budget on thinking before it acts. Raise `params.maxTokens` in this " +
+              "session's config, cap the thinking with `params.reasoning` (e.g. { effort: \"low\" } or " +
+              "{ max_tokens: 1024 }), or pick a model that reasons less."
+          ),
+        ])
+      )
+      return finish(store, STATUS.error, OUTCOME.truncated, emit, "output limit")
+    }
+
     if (!assistant.calls.length) return finish(store, STATUS.idle, OUTCOME.idle, emit)
 
     // A question the model just asked outranks anything else it queued: the
@@ -191,6 +256,9 @@ export async function run(opts) {
 }
 
 // ---------------------------------------------------------------- compaction
+
+/** The most output we will ask any model for, however many times it truncates. */
+export const MAX_OUTPUT_TOKENS = 32000
 
 export const DEFAULT_COMPACT_AT = 80000
 
@@ -273,7 +341,7 @@ async function streamTurn(opts) {
     ...toRequest(store.doc(), { system }),
     tools: toolset.schemas,
     model: store.doc().config?.model,
-    params: store.doc().config?.params ?? {},
+    params: { ...(store.doc().config?.params ?? {}), ...(opts.paramsOverride ?? {}) },
     key: opts.key ?? null,
     signal,
     onRetry: (info) => emit({ type: "retry", ...info }),
@@ -325,6 +393,19 @@ async function streamTurn(opts) {
     }
   } finally {
     appender.flush()
+  }
+
+  // A call whose arguments did not parse is a call that was cut off mid-JSON.
+  //
+  // The provider records this and nothing used to read it, so the call was
+  // committed with `{}` for its input and the tool failed with something
+  // irrelevant — "Pass at least one op" for an edit whose ops never arrived.
+  // Measured with a 120-token budget against a real model: the turn's
+  // finish_reason is `tool_calls`, not `length`, because the call block did
+  // start. So this is the only signal there is.
+  const broken = calls.filter((call) => call.parseError)
+  if (broken.length) {
+    return { calls: [], stopReason: "length", turnIndex, broken }
   }
 
   // Commit the calls once the stream is complete, so the transcript never shows

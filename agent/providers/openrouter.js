@@ -114,6 +114,15 @@ export function buildBody({ system, messages, tools, model, params = {} }) {
   if (t) body.tools = t
   if (params.temperature != null) body.temperature = params.temperature
   if (params.maxTokens != null) body.max_tokens = params.maxTokens
+
+  // Reasoning models spend the SAME output budget on thinking as on the answer,
+  // so a model that thinks for five thousand tokens can exhaust the turn before
+  // it emits a single tool call — which looks exactly like an agent that wrote a
+  // long plan and then did nothing. This is the lever that fixes that:
+  //   { effort: "low" }      think less
+  //   { max_tokens: 1024 }   think at most this much
+  //   { exclude: true }      think, but do not stream it back
+  if (params.reasoning != null) body.reasoning = params.reasoning
   return body
 }
 

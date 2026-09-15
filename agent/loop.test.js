@@ -316,7 +316,8 @@ describe("approvals", () => {
     // and the model see the same thing.
     const result = store.doc().turns.at(-1)
     expect(result.role).toBe("tool")
-    expect(result.blocks[0]).toMatchObject({ callId: "c1", output: "Declined by the user.", isError: true })
+    expect(result.blocks[0]).toMatchObject({ callId: "c1", isError: true })
+    expect(result.blocks[0].output).toMatch(/^Declined by the user\./)
 
     await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
     expect(transcript(store).map((b) => b.text).join(" ")).toContain("understood, leaving it")
