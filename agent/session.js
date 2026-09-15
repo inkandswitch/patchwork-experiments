@@ -414,8 +414,52 @@ export function urlPrefixes(target) {
  * including ones you never had in mind. A grant should mean "yes, edit THIS",
  * not "yes, edit anything".
  */
+/**
+ * Tools that mean the same thing to the person approving them.
+ *
+ * "May you read adjointlabs.com" is one decision. It was three: a real session
+ * ended up holding web_fetch@adjointlabs.com, web_import@adjointlabs.com AND
+ * http_request@adjointlabs.com, because every tool carried its own grant and
+ * the user was asked once per tool per site.
+ *
+ * http_request is in the group only for the calls that are equivalent in power
+ * to a fetch — a plain GET with no credential. Anything carrying a secret, or
+ * changing something, still asks every time; see `asksEveryTime`.
+ */
+export const GRANT_GROUPS = {
+  web_fetch: "web",
+  web_import: "web",
+  web_search: "web",
+  http_request: "web",
+}
+
+export function grantGroup(toolId) {
+  return GRANT_GROUPS[toolId] ?? toolId
+}
+
 export function grantKey(toolId, target) {
-  return target ? `${toolId}@${normalizeTarget(target)}` : toolId
+  const scope = grantGroup(toolId)
+  return target ? `${scope}@${normalizeTarget(target)}` : scope
+}
+
+/**
+ * Does this call ask every time, whatever has been granted?
+ *
+ * `alwaysAsk` may be a boolean or a function of the input, because for some
+ * tools the danger is in the arguments rather than the verb: an http_request
+ * GET with no credential is a fetch, and the same tool with your API key
+ * attached is the most dangerous thing here.
+ */
+export function asksEveryTime(toolDef, input = {}) {
+  const rule = toolDef?.alwaysAsk
+  if (typeof rule === "function") {
+    try {
+      return !!rule(input ?? {})
+    } catch {
+      return true // a rule that throws is not a rule that grants permission
+    }
+  }
+  return !!rule
 }
 
 /** The key that means "this tool, on anything at all". */
@@ -435,13 +479,19 @@ export const ANY_TARGET = "*"
  */
 export function grantCandidates(toolId, target) {
   const keys = []
-  if (target == null) {
-    keys.push(toolId)
-  } else {
-    keys.push(grantKey(toolId, target))
-    for (const prefix of urlPrefixes(target)) keys.push(grantKey(toolId, prefix))
+  // The group key first, then the tool's own — so grants written before tools
+  // were grouped keep working instead of silently asking again.
+  const scopes = [...new Set([grantGroup(toolId), toolId])]
+
+  for (const scope of scopes) {
+    if (target == null) {
+      keys.push(scope)
+    } else {
+      keys.push(`${scope}@${normalizeTarget(target)}`)
+      for (const prefix of urlPrefixes(target)) keys.push(`${scope}@${prefix}`)
+    }
+    keys.push(`${scope}@${ANY_TARGET}`)
   }
-  keys.push(grantKey(toolId, ANY_TARGET))
   return [...new Set(keys)]
 }
 
@@ -517,7 +567,7 @@ export function needsApproval(doc, toolDef, block = null, subject = null, sensit
   // conversation would be an absurd thing to put in front of someone, and
   // calling it "read" to get that behaviour would be a lie in the tool list.
   if (toolDef.risk === "read" || toolDef.risk === "self") return false
-  if (toolDef.alwaysAsk) return true
+  if (asksEveryTime(toolDef, block?.input)) return true
 
   const grants = doc.grants ?? {}
   const target = block ? callTarget(block, subject) : null

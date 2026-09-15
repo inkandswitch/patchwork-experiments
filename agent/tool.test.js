@@ -262,7 +262,7 @@ describe("transcript rendering", () => {
     expect(scopes[2].title).toBe("anything on docs.python.org")
 
     scopes[2].click()
-    expect(chosen).toEqual([["c1", { grant: "web_fetch@https://docs.python.org/" }]])
+    expect(chosen).toEqual([["c1", { grant: "web@https://docs.python.org/" }]])
   })
 
   it("shows a captured image in the log, not only inside the call", () => {
@@ -454,5 +454,44 @@ describe("an approval a person can actually see", () => {
   it("puts the call's own disclosure back in the collapsed state it belongs in", () => {
     const container = pendingCall()
     expect(container.querySelector(".agent-call").open).toBe(false)
+  })
+})
+
+describe("an approval for a call that will ask again anyway", () => {
+  const state = () => ({ open: new Set(), names: new Map() })
+
+  function card(tool, input, alwaysAsks) {
+    const doc = {}
+    initSession(doc, {})
+    doc.turns.push(makeTurn("assistant", [callBlock(tool, input, { id: "c1", status: CALL.pending })]))
+    const container = document.createElement("div")
+    renderTranscript(container, doc, state(), { decide: () => {}, alwaysAsks })
+    return container.querySelector(".agent-approval")
+  }
+
+  it("offers no standing grant, and says why", () => {
+    // A real session collected four http_request grants, including "any site",
+    // and was asked eleven times regardless — alwaysAsk is checked before
+    // grants are. Offering the buttons was worse than offering nothing.
+    const node = card("http_request", { url: "https://api.test/x", useSecret: "gh" }, () => true)
+    expect(node.querySelector(".agent-approval-scopes")).toBeNull()
+    expect(node.querySelector(".agent-approval-note").textContent).toMatch(/asks every time/)
+  })
+
+  it("still offers allow-once and deny", () => {
+    const node = card("http_request", { url: "https://api.test/x" }, () => true)
+    expect([...node.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Allow once", "Deny"])
+  })
+
+  it("offers the scopes as normal for a call that honours them", () => {
+    const node = card("web_fetch", { url: "https://docs.python.org/3/os.html" }, () => false)
+    expect(node.querySelector(".agent-approval-scopes")).toBeTruthy()
+    expect(node.querySelector(".agent-approval-note")).toBeNull()
+  })
+
+  it("offers them when nothing answers the question", () => {
+    // No toolset to ask — better to offer than to claim it will always ask.
+    const node = card("web_fetch", { url: "https://x.test/" }, undefined)
+    expect(node.querySelector(".agent-approval-scopes")).toBeTruthy()
   })
 })

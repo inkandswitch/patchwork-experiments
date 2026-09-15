@@ -217,11 +217,13 @@ describe("the scopes offered to a human", () => {
   it("offers page, directory, site and anything for a web page", () => {
     const offers = grantOffers("web_fetch", "https://docs.python.org/3/library/os.html")
     expect(offers.map((o) => o.label)).toEqual(["this page", "/3/library/", "docs.python.org", "any site"])
+    // Keyed by GROUP, not by tool: "may you read docs.python.org" is one
+    // decision, and it used to be asked once per web tool.
     expect(offers.map((o) => o.key)).toEqual([
-      "web_fetch@https://docs.python.org/3/library/os.html",
-      "web_fetch@https://docs.python.org/3/library/",
-      "web_fetch@https://docs.python.org/",
-      "web_fetch@*",
+      "web@https://docs.python.org/3/library/os.html",
+      "web@https://docs.python.org/3/library/",
+      "web@https://docs.python.org/",
+      "web@*",
     ])
   })
 

@@ -8,7 +8,14 @@
  * a container query.
  */
 
-import { STATUS, CALL, callsAwaitingApproval, questionsAwaitingAnswer, sessionTitle } from "./session.js"
+import {
+  STATUS,
+  CALL,
+  callsAwaitingApproval,
+  questionsAwaitingAnswer,
+  sessionTitle,
+  asksEveryTime,
+} from "./session.js"
 import { handleStore } from "./store.js"
 import { decide, say, answerQuestion } from "./loop.js"
 import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
@@ -232,6 +239,8 @@ export function AgentTool(handle, element, options = {}) {
 
   // ---- state -----------------------------------------------------------
   const uiState = { open: new Set(), names: new Map(), subject: null, madeOpen: false, settings: null, heads: {} }
+  // The toolset the runner built, so the view can ask it about a call.
+  let toolsetRef = null
   const store = handleStore(handle, options.splice ?? null)
   let runner = null
   let detachView = null
@@ -341,7 +350,10 @@ export function AgentTool(handle, element, options = {}) {
         store: liveStore,
         runnerUrl: `tab-${Math.random().toString(36).slice(2, 10)}`,
         ctx: sharedCtx,
-        buildToolset: (doc) => buildToolset(doc),
+        buildToolset: async (doc) => {
+          toolsetRef = await buildToolset(doc)
+          return toolsetRef
+        },
         getProvider: async () => getProvider(handle.doc()?.config?.providerId ?? "openrouter"),
         getKey: () => readKey(handle.doc()?.config?.providerId ?? "openrouter"),
         // Fixed at construction, NOT read live. A `canRun` that consults
@@ -632,7 +644,14 @@ export function AgentTool(handle, element, options = {}) {
     }
 
     uiState.subject = doc.subject ?? null
-    renderTranscript(transcript, doc, uiState, { decide: onDecide, answer: onAnswer, openDoc: onOpenDoc })
+    renderTranscript(transcript, doc, uiState, {
+      decide: onDecide,
+      answer: onAnswer,
+      openDoc: onOpenDoc,
+      // The view has the session document; only the toolset knows which calls
+      // ignore grants, so it answers that question for the card.
+      alwaysAsks: (block) => asksEveryTime(toolsetRef?.get(block.tool), block.input),
+    })
     renderMade(made, doc, uiState, { openDoc: onOpenDoc, install: onInstall, uninstall: onUninstall })
 
     // Header label: what this session IS, not what it is docked beside.

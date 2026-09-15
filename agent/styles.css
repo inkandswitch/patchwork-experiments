@@ -958,3 +958,12 @@
   color: var(--agent-accent-text);
   white-space: nowrap;
 }
+
+/* A call that will ask again however much is granted. */
+.patchwork-agent .agent-approval-note {
+  font-size: 0.74rem;
+  color: var(--agent-muted);
+  margin-top: var(--studio-space-xs, 0.375rem);
+  padding-top: var(--studio-space-xs, 0.375rem);
+  border-top: 1px solid color-mix(in oklch, var(--agent-accent), transparent 70%);
+}

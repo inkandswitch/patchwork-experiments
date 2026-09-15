@@ -162,6 +162,21 @@ function renderApproval(block, handlers, subject) {
   row.append(button("Allow once", "once", { variant: "primary" }), button("Deny", "deny", { variant: "danger" }))
   card.append(row)
 
+  // Offering a standing grant for a call that will ask again anyway is worse
+  // than offering nothing: a real session collected four http_request grants,
+  // including "any site", and was asked eleven times regardless, because
+  // alwaysAsk is checked before grants are. Say so instead.
+  if (handlers.alwaysAsks?.(block)) {
+    card.append(
+      el(
+        "div",
+        "agent-approval-note",
+        "This one asks every time — it can carry your credentials or change something at the other end."
+      )
+    )
+    return card
+  }
+
   // The standing grants, from narrowest to broadest. Answering every fetch
   // individually is what makes an agent tedious to work with, so the useful
   // scopes are one click away: this page, this section, this whole site.

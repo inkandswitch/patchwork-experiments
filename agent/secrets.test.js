@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { listSecrets, readSecret, writeSecret, hasSecret, redact } from "./secrets.js"
 import { httpRequest, secretList } from "./tools/http.js"
 import { nameFor, titleFrom, webImport } from "./tools/ingest.js"
+import { needsApproval, initSession, asksEveryTime } from "./session.js"
 
 beforeEach(() => localStorage.clear())
 
@@ -141,8 +142,49 @@ describe("http_request", () => {
     await expect(httpRequest.execute({ url: "https://x.com", body: "a" }, {})).rejects.toThrow(/GET request cannot/)
   })
 
-  it("always asks, whatever grants exist", () => {
-    expect(httpRequest.alwaysAsk).toBe(true)
+  describe("when it asks, whatever grants exist", () => {
+    const asks = (input) => needsApproval(granted(), httpRequest, { input })
+
+    /** A session that has granted the web group everything it could. */
+    function granted() {
+      const doc = {}
+      initSession(doc, {})
+      doc.grants["web@*"] = "always"
+      doc.grants["http_request@*"] = "always"
+      return doc
+    }
+
+    it("lets a plain GET through on a grant, like any other fetch", () => {
+      // Eleven of these in one session, every one stopping to ask, while the
+      // grants the user kept giving were never consulted.
+      expect(asks({ url: "https://api.test/things" })).toBe(false)
+      expect(asks({ url: "https://api.test/things", method: "get" })).toBe(false)
+    })
+
+    it("still asks every time when a credential is attached", () => {
+      expect(asks({ url: "https://api.test/x", useSecret: "github" })).toBe(true)
+    })
+
+    it("still asks every time for anything that changes something", () => {
+      expect(asks({ url: "https://api.test/x", method: "POST" })).toBe(true)
+      expect(asks({ url: "https://api.test/x", method: "delete" })).toBe(true)
+      expect(asks({ url: "https://api.test/x", body: "{}" })).toBe(true)
+    })
+
+    it("asks when it cannot tell", () => {
+      expect(asksEveryTime({ alwaysAsk: () => { throw new Error("boom") } }, {})).toBe(true)
+    })
+
+    it("shares one grant with the other web tools", () => {
+      // "May you read this site" is one decision, not one per tool.
+      const doc = {}
+      initSession(doc, {})
+      doc.grants["web@https://api.test/"] = "always"
+      const at = { input: { url: "https://api.test/things" } }
+      expect(needsApproval(doc, httpRequest, at)).toBe(false)
+      expect(needsApproval(doc, { id: "web_fetch", risk: "external" }, at)).toBe(false)
+      expect(needsApproval(doc, { id: "web_import", risk: "external" }, at)).toBe(false)
+    })
   })
 })
 

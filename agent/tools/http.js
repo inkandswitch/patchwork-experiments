@@ -11,10 +11,12 @@
  *     appears in no tool input, no transcript, no document.
  *   - Responses are redacted before they are returned, in case a server echoes
  *     a credential back in an error.
- *   - `alwaysAsk`, every single time. A request that can carry your credentials
- *     to an arbitrary URL is the most dangerous thing in this toolset, and a
- *     session-long grant is the wrong level of consent for it. The approval
- *     card shows the method, the URL, and which secret is attached.
+ *   - `alwaysAsk` for the calls that deserve it: anything carrying a secret,
+ *     anything that is not a GET, anything with a body. Those can take your
+ *     credentials to an arbitrary URL or change something at the other end, and
+ *     a standing grant is the wrong level of consent. A plain GET is a fetch,
+ *     and is granted like one — asking every time for those bought nothing and
+ *     cost eleven approvals in a single session.
  *
  * CORS still applies — this is a browser. A request to an API that does not
  * serve permissive CORS will fail, and that is what the `task` tier and a
@@ -55,12 +57,28 @@ export const httpRequest = {
     "",
     "Binary responses — wasm, images, archives, fonts — are kept as bytes and written to a document rather than decoded into this conversation. Pass `folder` to put that document straight into a package. Decoding bytes as text would corrupt them silently, so it is never done.",
     "",
+    "A plain GET is granted per site, like web_fetch. Anything carrying a credential, anything that is not a GET, and anything with a body asks the user every time however much has been granted — so do not reach for a method or a secret you do not need.",
+    "",
     "This runs in a browser, so the target must serve permissive CORS. A failure that mentions CORS means the API cannot be reached from here, not that the credential is wrong.",
   ].join("\n"),
   where: "worker",
   risk: "external",
-  // Every time. See the note at the top of this file.
-  alwaysAsk: true,
+  /**
+   * Every time — but only for the calls that earn it.
+   *
+   * This was `true` unconditionally, and the cost showed up in a real session:
+   * eleven http_request calls, every one a plain GET with no credential, every
+   * one stopping to ask. The user granted http_request@* and then three more
+   * per-site grants, and not one of them did anything, because alwaysAsk is
+   * checked before grants are.
+   *
+   * The danger was never the tool, it is the arguments. A GET with no secret is
+   * a fetch and is granted like one. A request carrying your credentials to an
+   * arbitrary URL, or changing something at the other end, is the most
+   * dangerous thing in this toolset and still asks every single time.
+   */
+  alwaysAsk: (input) =>
+    !!input?.useSecret || String(input?.method ?? "GET").toUpperCase() !== "GET" || !!input?.body,
   input_schema: {
     type: "object",
     required: ["url"],

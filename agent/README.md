@@ -245,6 +245,25 @@ and matches none of them. No substring comparison is ever made against a stored
 grant, so a look-alike host cannot get near one, and neither can `http://` when
 the grant was `https://`.
 
+Grants are keyed by a **group**, not by a tool. "May you read adjointlabs.com"
+is one decision, and it used to be three: a real session ended up holding
+`web_fetch@adjointlabs.com`, `web_import@adjointlabs.com` and
+`http_request@adjointlabs.com` because every tool carried its own grant and the
+user was asked once per tool per site. The four web tools share one `web` group.
+Grants written before the grouping are still honoured, so nothing has to be
+re-approved.
+
+`alwaysAsk` may be a function of the input, because for some tools the danger is
+in the arguments rather than the verb. `http_request` used to ask every single
+time; that same session made eleven of them, all plain GETs with no credential,
+and the user granted `http_request@*` plus three per-site grants that did
+nothing at all — `alwaysAsk` is checked *before* grants are. A GET with no
+secret is a fetch and is granted like one; anything carrying a credential, any
+other method, anything with a body still asks every time.
+
+And the approval card no longer offers standing grants for a call that will
+ignore them. Offering a button that does nothing is worse than offering none.
+
 Grants live on the session document, so they are per-conversation, auditable in
 its history, and any participant can approve.
 
@@ -252,9 +271,7 @@ On top of that, some *documents* always ask, whichever tool touches them and
 however broad the grant: the module settings document decides what code runs on
 every future load, and the account document is your identity. Attaching that
 gate to an "install" tool instead would only mean the next tool that can write a
-document routes around it. `http_request` also asks every time, because a
-request that can carry your credentials to an arbitrary URL is the one thing a
-standing grant is the wrong level of consent for.
+document routes around it.
 
 ## Being refused
 
