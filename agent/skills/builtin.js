@@ -151,6 +151,81 @@ through a decoder still starts with the right four bytes.
 Large files sync to every device on the account. Fetch what the tool needs, not
 a whole SDK.
 
+## Give your tool an API, not just a UI
+
+A render function is something a *person* operates. An agent asked to "use the
+git-clone tool" has no good way in: it can drive your UI through \`view_mount\`
+and hope your selectors never change, or reimplement your logic with
+\`http_request\` and watch the two drift apart. Both are worse than the thing you
+already wrote.
+
+So register the capability alongside the interface. The same package, the same
+\`plugins\` array, one more entry:
+
+    // index.js
+    export const plugins = [
+      { type: "patchwork:datatype", id: "repo", ... },
+      { type: "patchwork:tool", id: "git-clone", ...,
+        async load() { return (await import("./tool.js")).default } },
+
+      { type: "agent:tool",
+        id: "git_clone",                      // snake_case: it is a tool name
+        name: "Clone a repository",
+        description: "Clone a GitHub repo into a folder document. Pass the " +
+                     "owner/name and it fetches the tree and the files.",
+        where: "worker",                      // "host" if it needs the DOM
+        risk: "external",                     // read | self | write | external
+        input_schema: {
+          type: "object",
+          required: ["repo"],
+          properties: {
+            repo: { type: "string", description: "owner/name, e.g. adjointlabs/dots" },
+            into: { type: "string", description: "Folder to clone into. Omit for a new one." },
+          },
+        },
+        async load() { return (await import("./agent.js")).default },
+      },
+    ]
+
+    // agent.js
+    export default {
+      async execute(input, ctx) { /* ctx.repo, ctx.signal, ctx.fetchImpl */
+        return "Cloned 41 files into automerge:…"
+      },
+      summarize(input, output) { return \`cloned \${input.repo}\` },
+    }
+
+The metadata is read from the plugin entry and the behaviour comes from
+\`load()\`, which is the same split every Patchwork plugin uses and for the same
+reason: entries are structured-cloned into a worker, so a function anywhere but
+\`load\` throws DataCloneError and the whole module fails to register.
+
+Write \`execute\` and the UI against **one shared module**, so they cannot
+disagree about what cloning means. That is the point of doing this rather than
+letting an agent reimplement you.
+
+### What the fields do
+
+- **description** is the documentation. It is all the agent ever sees, so say
+  what the tool is for, when to reach for it, and what it will not do.
+- **input_schema** — describe every parameter. An undescribed one gets guessed
+  at.
+- **where** — \`worker\` if a repo is all you need, \`host\` if you need the DOM or
+  the plugin registry.
+- **risk** — \`read\` runs silently; \`write\` and \`external\` ask the user once and
+  can then be granted more broadly; \`alwaysAsk: true\` asks every time, for
+  anything that carries credentials somewhere.
+- **summarize** is the one line shown in the transcript for every call. Say what
+  happened, not what was asked — the row already shows the arguments.
+
+### Watch the mime type
+
+The service worker serves a file document's \`mimeType\` verbatim, and \`import()\`
+refuses a module served as \`text/plain\` — while a plain \`fetch\` of the same URL
+returns 200 and the right bytes, so it looks like the file is fine. \`fs_write\`
+maps extensions to types for you. If you create file documents by hand, \`.js\`
+must be \`text/javascript\` or nothing will load and the error will not say why.
+
 ## Tests
 
 Write tests for logic — anything you could get wrong that is not about
@@ -459,6 +534,37 @@ Pages you fetched earlier are documents too. \`web_fetch\` saves anything longer
 than a couple of paragraphs and the result gives you the URL, so re-reading part
 of one is \`doc_read\`, not another fetch — cheaper, and the content cannot have
 changed underneath you.
+
+## When the user says "use the X tool"
+
+A Patchwork tool is usually a render function — something a person operates —
+so there is a real question about what "use it" means for you. Work down this
+list and stop at the first one that applies.
+
+1. **Does the package contribute an agent tool?** \`registry_list { type:
+   "agent:tool" }\` shows what packages have exposed on purpose. If the
+   capability is there, it is already in your tool list: just call it. This is
+   the path the package author built for you and the only one that cannot drift
+   out of date.
+
+2. **Can you call its logic?** \`plugin_source { id, list: true }\` lists the
+   package's files and \`plugin_source { id, file }\` reads one. If the useful
+   part is a module you can import — a parser, a client, a converter — read it
+   and use it. A package's own code is better than your reconstruction of it.
+
+3. **Can you drive its interface?** \`view_mount\` opens it and \`view_interact\`
+   clicks and types. This genuinely works and is the right answer for a tool
+   whose value IS its interaction — a canvas, an editor. Read "driving-a-view"
+   first. It is brittle for anything else: you are depending on a layout nobody
+   promised you.
+
+4. **Reimplement it only as a last resort,** and say that is what you are
+   doing. Two implementations of the same thing disagree eventually, and the
+   user asked for the tool because they wanted the tool's behaviour.
+
+If a package has no agent tool and you find yourself about to reimplement it,
+that is worth a sentence to the user: the fix is one \`agent:tool\` entry in that
+package's plugins array, and they may well want to add it.
 
 When the choice is theirs rather than findable — which of two designs, what to
 call something — that is \`ask_user\`, not a search.

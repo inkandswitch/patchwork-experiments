@@ -122,8 +122,34 @@ tell whether a change *looks* right rather than merely being structurally
 present. `tool_check` is the one-shot version aimed at code the agent just
 wrote, and it exists because the failure mode is not knowing what to look for.
 
-Third parties can contribute tools by registering an `agent:tool` plugin —
-JSON metadata at the top level, `execute` behind `async load()`.
+## A package can hand the agent a capability
+
+Third parties contribute tools by registering an `agent:tool` plugin — JSON
+metadata at the top level, `execute` behind `async load()`, exactly the split
+every Patchwork plugin uses and for the same reason.
+
+This matters more than it sounds. A Patchwork tool is a render function:
+something a *person* operates. An agent asked to "use the git-clone tool" has
+only bad options — drive the UI through `view_mount` and hope the selectors
+hold, or reimplement the logic with `http_request` and watch the two drift
+apart. Watched happen in a real session, at length, before it picked one:
+
+> The git-clone tool is a UI tool… but I can't easily drive it as an agent.
+> Actually I could use view_mount… But actually, the simpler approach: the
+> git-clone tool's underlying logic uses GitHub API + raw.githubusercontent.com.
+> I can do the same thing directly with http_request.
+
+An `agent:tool` entry answers that: the package declares the capability beside
+the interface, both built on one shared module so they cannot disagree about
+what cloning means. `registry_list { type: "agent:tool" }` is where an agent
+finds what has been exposed, and `writing-patchwork-tools` tells an author how
+to expose it.
+
+The wiring had existed since the first commit and had never been run against a
+real Patchwork. `probes/agent-tool-plugin.mjs` now writes such a package,
+installs it, and checks the toolset picks it up, carries its description and
+schema, reaches the model's tool list, executes, and uses the package's own
+`summarize`.
 
 Every tool has an entry in `ui/calls.js` saying how its calls read in the log: a
 verb a person would use, and a detail drawn from the field that says what the
@@ -514,6 +540,8 @@ Other probes:
   which is the shape that broke `package_test`.
 - `probes/binary-fetch.mjs` — pulls a real 11 MB wasm module through
   `http_request` and compares every byte against an independent fetch.
+- `probes/agent-tool-plugin.mjs` — a package that contributes an `agent:tool`,
+  installed and called for real.
 - `probes/revise-loop.mjs` — writes a tool, checks it, edits it, checks again.
   No model, so it runs in seconds; it exists because a stale import made every
   check after the first one a lie.
@@ -632,6 +660,17 @@ no model involved, so it is fast and deterministic:
 before   v1 saw VERSION-ONE / v2 saw VERSION-ONE / v3 saw neither
 after    v1 saw VERSION-ONE / v2 saw VERSION-TWO / v3 saw VERSION-THREE
 ```
+
+**A file document's mime type decides whether it can be a module.** The service
+worker serves it verbatim, and `import()` refuses a module served as
+`text/plain` with "Failed to fetch dynamically imported module" — while a plain
+`fetch` of the same URL returns 200 with the right bytes, so the file looks
+perfectly fine. `fs_write` maps extensions to types, which is why packages the
+agent writes work; the first version of `probes/agent-tool-plugin.mjs`
+hand-rolled file documents as `text/plain` and spent a while looking like the
+plugin mechanism was broken. The failure surfaces as `ReferenceError: window is
+not defined` from Vite's preload error handler, which is not a clue about
+anything.
 
 **A fake that cannot do what the real thing does hides the bug it was written
 for.** The `http_request` doubles were `{ok, text: async () => body}` — no
