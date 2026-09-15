@@ -619,6 +619,70 @@ export function grantCovering(doc, toolId, target) {
 export const MAX_IMAGES_IN_REQUEST = 2
 
 /**
+ * How much of the older tool results still travels, and what replaces the rest.
+ *
+ * A transcript is almost entirely tool results — measured on a real session,
+ * 133k characters of them against 4k of the agent's own words, 97% of the
+ * weight. Every one was re-sent on every later turn, so twenty-seven turns cost
+ * 1.2M input tokens. An 880-line file read at turn 40 was still being sent at
+ * turn 64, by which point it was noise.
+ *
+ * So results taper. The newest keep their full text, because that is what the
+ * next turn is about; older large ones become their own one-line summary and a
+ * note saying how to get them back. Small ones are never touched — dropping
+ * them saves nothing and costs the model context it can actually use.
+ *
+ * This is the treatment screenshots already got, generalised. It is only
+ * possible because every tool has a `summarize`, which the documentation audit
+ * made a test rather than a convention.
+ */
+export const TAPER_ABOVE = 2000
+export const RECENT_RESULT_BUDGET = 40000
+
+export function resultsToKeepWhole(results, config = {}) {
+  const taperAbove = config.taperAbove ?? TAPER_ABOVE
+  const budget = config.resultBudget ?? RECENT_RESULT_BUDGET
+  const keep = new Set()
+  let spent = 0
+
+  // Newest first: recency is what decides, and the budget is spent on the
+  // large results only.
+  for (let i = results.length - 1; i >= 0; i--) {
+    const block = results[i]
+    const size = String(block.output ?? "").length
+    if (size <= taperAbove) {
+      keep.add(block.id)
+      continue
+    }
+    if (spent + size <= budget) {
+      keep.add(block.id)
+      spent += size
+    }
+  }
+  return keep
+}
+
+/**
+ * The stand-in for a result that is no longer carried in full.
+ *
+ * Has to say three things or it is worse than nothing: what the call was, that
+ * this is an elision rather than the whole answer, and how to get the rest.
+ */
+export function taperedResult(block) {
+  const size = String(block.output ?? "").length
+  const what = block.summary || "an earlier tool result"
+  const saved = block.doc?.url ? ` The content is also saved at ${block.doc.url}.` : ""
+  // Two routes, and the difference between them matters: one is free and gives
+  // exactly what this call said, the other does the work again and gives what
+  // is true now.
+  return (
+    `[Not re-sent in full: ${what}. ${size} characters elided.${saved}` +
+    ` Use session_recall with callId ${block.callId} for what it said,` +
+    ` or make the call again for the current state.]`
+  )
+}
+
+/**
  * What the model is told when a person refuses a call.
  *
  * A statement of fact, not an instruction. The policy — do not retry, say what
@@ -635,15 +699,18 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
   // Find which result blocks still get to carry their image, and which calls
   // have an answer at all.
   const withImages = []
+  const results = []
   const answered = new Set()
   for (const turn of turns) {
     for (const block of turn.blocks ?? []) {
       if (block.type !== "result") continue
       answered.add(block.callId)
+      results.push(block)
       if (block.image) withImages.push(block.id)
     }
   }
   const keepImages = new Set(withImages.slice(-maxImages))
+  const keepWhole = resultsToKeepWhole(results, doc.config ?? {})
 
   // A summary supersedes everything up to the turn it names. Only the most
   // recent one matters — an older summary is itself inside the range a newer
@@ -697,7 +764,7 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
         const part = {
           type: "result",
           callId: block.callId,
-          output: block.output ?? "",
+          output: keepWhole.has(block.id) ? (block.output ?? "") : taperedResult(block),
           isError: !!block.isError,
         }
         if (block.image) {

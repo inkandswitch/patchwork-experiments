@@ -135,6 +135,14 @@ window.__agentProbe = async function (opts) {
     const settled = () => {
       const d = session.doc()
       if (["awaiting-approval", "awaiting-answer", "error", "parked"].includes(d.status)) return true
+      // A call that has been approved but not yet run is not a finished
+      // session. Releasing several at once makes the status idle while three
+      // fetches are still queued, and without this the probe declared victory
+      // on a transcript with no results in it.
+      const queued = d.turns
+        .flatMap((t) => t.blocks ?? [])
+        .some((b) => b.type === "call" && (b.status === "approved" || b.status === "running"))
+      if (queued) return false
       const last = d.turns[d.turns.length - 1]
       return d.status === "idle" && d.turns.length > 1 && last?.role === "assistant"
     }
@@ -287,7 +295,22 @@ window.__agentProbe = async function (opts) {
         // The decision does not change the status synchronously — the runner
         // picks it up on its next tick. Waiting for `settled` here would match
         // the still-current "awaiting-approval" and prove nothing.
-        await waitFor("the decision to be picked up", () => session.doc().status !== "awaiting-approval", 60000)
+        //
+        // But waiting for the STATUS to leave awaiting-approval is wrong too:
+        // one turn can raise several calls, and answering one leaves the others
+        // pending, so the status legitimately stays put. Wait for this call to
+        // stop being pending instead — which is also satisfied when a grant
+        // releases several at once.
+        const waitingOn = session.doc().turns.flatMap((t) => t.blocks ?? [])
+          .find((b) => b.type === "call" && b.status === "pending")?.id
+        await waitFor(
+          "the decision to be picked up",
+          () => {
+            const block = session.doc().turns.flatMap((t) => t.blocks ?? []).find((b) => b.id === waitingOn)
+            return !block || block.status !== "pending"
+          },
+          60000
+        )
         await waitFor("the agent to finish", settled, patience)
         await answerAny()
       }

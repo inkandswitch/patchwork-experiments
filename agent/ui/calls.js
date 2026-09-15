@@ -146,6 +146,7 @@ export const PRESENTATION = {
   // ---- asking and naming
   ask_user: { verb: "ask", detail: (i) => i.question ?? null },
   session_title: { verb: "name", detail: (i) => i.title ?? null },
+  session_recall: { verb: "recall", detail: (i) => i.callId ?? null },
 }
 
 /** Tool ids we have written a presentation for. Used by the tests. */

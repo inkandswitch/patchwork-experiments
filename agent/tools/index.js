@@ -32,12 +32,13 @@ import httpTools from "./http.js"
 import ingestTools from "./ingest.js"
 import askTools from "./ask.js"
 import namingTools from "./naming.js"
+import recallTools from "./recall.js"
 import skillTools from "./skills.js"
 import buildTools from "./build.js"
 import testingTools from "./testing.js"
 import screenshotTools from "./screenshot.js"
 
-export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools, ...namingTools]
+export const BUILTIN_TOOLS = [...docTools, ...folderTools, ...environmentTools, ...webTools, ...skillTools, ...buildTools, ...testingTools, ...screenshotTools, ...checkingTools, ...discoveryTools, ...httpTools, ...ingestTools, ...askTools, ...namingTools, ...recallTools]
 
 /** Everything about a tool the model is allowed to see. */
 export function toSchema(tool) {

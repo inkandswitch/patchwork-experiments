@@ -9,11 +9,17 @@ import {
   urlPrefixes,
   callTarget,
   makeTurn,
+  textBlock,
   callBlock,
+  claimLease,
+  callsAwaitingApproval,
   CALL,
+  STATUS,
   findCall,
+  _resetIds,
 } from "./session.js"
-import { decide } from "./loop.js"
+import { decide, run } from "./loop.js"
+import { makeMock } from "./providers/mock.js"
 import { memoryStore } from "./store.js"
 
 const fresh = () => { const d = {}; initSession(d, {}); return d }
@@ -281,5 +287,112 @@ describe("deciding with a chosen scope", () => {
 
     const next = { input: { url: "https://docs.python.org/3/tutorial/index.html" } }
     expect(needsApproval(store.doc(), { id: "web_fetch", risk: "external" }, next)).toBe(false)
+  })
+})
+
+describe("one answer releases every call it covers", () => {
+  // Watched: the model made three docs.python.org fetches in one turn, the user
+  // granted the site on the first, and the other two went on sitting there
+  // pending — approval is decided when a call is written and was never
+  // reconsidered. Three clicks for one decision.
+  const fetchTool = {
+    id: "web_fetch",
+    name: "Fetch",
+    where: "worker",
+    risk: "external",
+    execute: async (input) => `fetched ${input.url}`,
+  }
+  const toolset = (tools) => {
+    const byId = new Map(tools.map((t) => [t.id, t]))
+    return { tools, schemas: [], get: (id) => byId.get(id) ?? null }
+  }
+
+  async function threeFetches() {
+    _resetIds()
+    const doc = {}
+    initSession(doc, {})
+    doc.turns = [makeTurn("user", [textBlock("fetch three pages")])]
+    claimLease(doc, "local", Date.now())
+    const store = memoryStore(doc)
+
+    const provider = makeMock([
+      [
+        { type: "call", id: "c1", name: "web_fetch", input: { url: "https://docs.python.org/3/a.html" } },
+        { type: "call", id: "c2", name: "web_fetch", input: { url: "https://docs.python.org/3/b.html" } },
+        { type: "call", id: "c3", name: "web_fetch", input: { url: "https://docs.python.org/3/c.html" } },
+      ],
+      [{ type: "text", delta: "done" }],
+    ])
+    await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
+    return { store, provider }
+  }
+
+  it("asks once, not once per call", async () => {
+    const { store, provider } = await threeFetches()
+    expect(callsAwaitingApproval(store.doc())).toHaveLength(3)
+
+    // One decision: yes, that site. The toolset is what lets it release the
+    // others — and it has to happen here, because needsWork stands down while
+    // anything awaits approval and a runner would never get a turn to notice.
+    decide(store, "c1", { grant: "web@https://docs.python.org/" }, null, { toolset: toolset([fetchTool]) })
+    expect(callsAwaitingApproval(store.doc())).toHaveLength(0)
+    // …and the session stops claiming to be waiting for someone.
+    expect(store.doc().status).toBe(STATUS.idle)
+
+    await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
+
+    expect(callsAwaitingApproval(store.doc())).toHaveLength(0)
+    for (const id of ["c1", "c2", "c3"]) {
+      expect(findCall(store.doc(), id).block.status, id).toBe(CALL.done)
+    }
+  })
+
+  it("leaves a call the grant does not cover still waiting", async () => {
+    _resetIds()
+    const doc = {}
+    initSession(doc, {})
+    doc.turns = [makeTurn("user", [textBlock("go")])]
+    claimLease(doc, "local", Date.now())
+    const store = memoryStore(doc)
+    const provider = makeMock([
+      [
+        { type: "call", id: "c1", name: "web_fetch", input: { url: "https://docs.python.org/a" } },
+        { type: "call", id: "c2", name: "web_fetch", input: { url: "https://elsewhere.test/b" } },
+      ],
+      [{ type: "text", delta: "done" }],
+    ])
+    await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
+
+    decide(store, "c1", { grant: "web@https://docs.python.org/" }, null, { toolset: toolset([fetchTool]) })
+    await run({ store, provider, toolset: toolset([fetchTool]), canRun: () => true, flushMs: 0 })
+
+    // Only ever loosens: the other site is a different decision.
+    expect(callsAwaitingApproval(store.doc()).map((c) => c.id)).toEqual(["c2"])
+    expect(store.doc().status).toBe(STATUS.awaitingApproval)
+  })
+
+  it("does nothing when no toolset is there to judge with", async () => {
+    // decide() is called from probes and from other realms without one; it must
+    // degrade to the old behaviour rather than throwing.
+    const { store } = await threeFetches()
+    decide(store, "c1", { grant: "web@https://docs.python.org/" })
+    expect(callsAwaitingApproval(store.doc())).toHaveLength(2)
+  })
+
+  it("does not release a call that asks every time", async () => {
+    _resetIds()
+    const doc = {}
+    initSession(doc, {})
+    doc.turns = [makeTurn("user", [textBlock("go")])]
+    doc.grants["web@*"] = "always"
+    claimLease(doc, "local", Date.now())
+    const store = memoryStore(doc)
+    const asksAlways = { ...fetchTool, id: "http_request", alwaysAsk: () => true }
+    const provider = makeMock([
+      [{ type: "call", id: "c1", name: "http_request", input: { url: "https://x.test/" } }],
+      [{ type: "text", delta: "done" }],
+    ])
+    await run({ store, provider, toolset: toolset([asksAlways]), canRun: () => true, flushMs: 0 })
+    expect(callsAwaitingApproval(store.doc())).toHaveLength(1)
   })
 })

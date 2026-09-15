@@ -91,6 +91,7 @@ any participant can approve and every approval is auditable.
 | Web | `web_search` `web_fetch` `web_import` | worker |
 | APIs | `secret_list` (host) `http_request` | worker |
 | Ask | `ask_user` | never runs — see below |
+| Remember | `session_recall` | worker |
 | Name | `session_title` | worker |
 
 Outside content does not stay in the conversation. A fetched page longer than a
@@ -272,6 +273,39 @@ however broad the grant: the module settings document decides what code runs on
 every future load, and the account document is your identity. Attaching that
 gate to an "install" tool instead would only mean the next tool that can write a
 document routes around it.
+
+## Old results stop travelling
+
+A transcript is almost entirely tool results. Measured on a real session: 133k
+characters of them against 4k of the agent's own words — **97% of the weight** —
+and every one re-sent on every later turn, so twenty-seven turns cost 1.2M input
+tokens. An 880-line file read at turn 40 was still being sent at turn 64, by
+which point it was noise.
+
+So results taper. The newest keep their full text; older large ones become their
+own one-line summary and a note. Small ones are never touched — dropping them
+saves nothing and costs context that can actually be used. Replaying that
+session through the new code:
+
+```
+one request     45k → 21k tokens     52% smaller
+whole session  1205k → 659k tokens   45% less
+results        50 total, 42 whole, 8 tapered
+```
+
+(The 1205k "before" is within 0.5% of the 1,210,403 the session actually
+reported, which is the check that the model of it is right.)
+
+This is the treatment screenshots already had, generalised, and it is only
+possible because every tool has a `summarize` — which the documentation audit
+turned from a convention into a test.
+
+Nothing is deleted; it stops being *sent*. `session_recall` gives back exactly
+what a call returned, for free, and says plainly that it is history. Re-running
+the call is the other option and means something different: what is true now. A
+document the agent has since edited must not answer with what it said an hour
+ago, so the two are never conflated. The call's own arguments sit in the message
+right before the stand-in, so repeating it needs no extra information.
 
 ## Being refused
 

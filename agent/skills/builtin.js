@@ -463,6 +463,21 @@ usually the answer.
 
 Pass \`fresh\` when the page changes and a cached snapshot would mislead you.
 
+## Older results get shortened
+
+A long result stops travelling in full once newer ones have arrived — it becomes
+its summary and a note. The text is not gone, it is just not being re-sent, and
+there are two ways back to it that mean different things:
+
+- \`session_recall\` with the call's id gives you exactly what that call
+  returned, for free. Right when the question is what it *said*.
+- Making the call again does the work and gives the current state. Right when
+  what you need is what is *true now* — a document you have since edited, a page
+  that changes.
+
+Reach for recall by default; it costs nothing. Re-run when freshness is the
+point.
+
 ## Long pages become documents
 
 Anything longer than a couple of paragraphs is saved to its own document, and

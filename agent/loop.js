@@ -146,6 +146,13 @@ export async function run(opts) {
     const asking = questionsAwaitingAnswer(store.doc())
     if (asking.length) return finish(store, STATUS.awaitingAnswer, OUTCOME.awaitingAnswer, emit)
 
+    // A grant given a moment ago may already cover other calls that are still
+    // waiting. Approval is decided when a call is written, so three fetches of
+    // one site in one turn used to be three separate questions — the user
+    // answered "yes, docs.python.org", and the two calls that were about
+    // docs.python.org went on sitting there pending.
+    releaseNowPermitted(settings)
+
     const pending = callsAwaitingApproval(store.doc())
     if (pending.length) return finish(store, STATUS.awaitingApproval, OUTCOME.awaitingApproval, emit)
 
@@ -525,6 +532,39 @@ function commitResults(store, results) {
 
 // ---------------------------------------------------------------- helpers
 
+/**
+ * Approve every pending call the session's grants now allow.
+ *
+ * Only ever loosens: a call that still needs a human is left exactly as it is.
+ * The loop is the right place for this because it holds the toolset, and
+ * whether a call needs approval depends on the tool's risk and on whether it
+ * asks every time regardless.
+ */
+export function releaseNowPermitted({ store, toolset, subject, sensitive }) {
+  const waiting = callsAwaitingApproval(store.doc())
+  if (!waiting.length) return 0
+
+  const freed = waiting.filter((call) => {
+    const tool = toolset.get(call.tool)
+    return tool && !needsApproval(store.doc(), tool, call, subject ?? null, sensitive ?? [])
+  })
+  if (!freed.length) return 0
+
+  store.change((d) => {
+    for (const call of freed) {
+      const found = findCall(d, call.id)
+      if (found && found.block.status === CALL.pending) found.block.status = CALL.approved
+    }
+    // The status has to move with them. Leaving it at awaiting-approval when
+    // nothing is waiting shows a card with no buttons and tells needsWork there
+    // is nothing to do — the session looks stuck while being perfectly ready.
+    if (d.status === STATUS.awaitingApproval && !callsAwaitingApproval(d).length) {
+      d.status = STATUS.idle
+    }
+  })
+  return freed.length
+}
+
 /** Remove a just-appended assistant turn that never received anything. */
 function dropTrailingEmptyTurn(store) {
   store.change((d) => {
@@ -569,7 +609,7 @@ function finish(store, status, outcome, emit, reason = null) {
  * narrowest one. Grants are stored on the session document, so any participant
  * can approve and every approval is in the history.
  */
-export function decide(store, callId, decision, subject = null) {
+export function decide(store, callId, decision, subject = null, { toolset = null, sensitive = [] } = {}) {
   store.change((d) => {
     const found = findCall(d, callId)
     if (!found) return
@@ -604,6 +644,13 @@ export function decide(store, callId, decision, subject = null) {
       d.grants[grantKey(block.tool, callTarget(block, subject))] = decision
     }
   })
+
+  // A grant just given may already cover other calls still waiting. It has to
+  // happen HERE rather than in the loop: `needsWork` stands down while anything
+  // awaits approval, so a runner would never get a turn in which to notice.
+  // Answering "yes, docs.python.org" left the turn's other two docs.python.org
+  // fetches sitting pending, and the session stuck.
+  if (toolset) releaseNowPermitted({ store, toolset, subject, sensitive })
 }
 
 /**

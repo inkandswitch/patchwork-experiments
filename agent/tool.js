@@ -241,6 +241,11 @@ export function AgentTool(handle, element, options = {}) {
   const uiState = { open: new Set(), names: new Map(), subject: null, madeOpen: false, settings: null, heads: {} }
   // The toolset the runner built, so the view can ask it about a call.
   let toolsetRef = null
+  const sensitiveDocs = () =>
+    [
+      globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
+      globalThis.accountDocHandle?.url,
+    ].filter(Boolean)
   const store = handleStore(handle, options.splice ?? null)
   let runner = null
   let detachView = null
@@ -418,7 +423,9 @@ export function AgentTool(handle, element, options = {}) {
   }
 
   function onDecide(callId, decision) {
-    decide(store, callId, decision, subjectUrl())
+    // The toolset decides which other pending calls a new grant releases, so
+    // one "yes" answers every call it covers instead of one per call.
+    decide(store, callId, decision, subjectUrl(), { toolset: toolsetRef, sensitive: sensitiveDocs() })
     render()
     kick()
   }
