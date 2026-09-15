@@ -492,7 +492,9 @@ export const viewMount = {
   id: "view_mount",
   name: "Open a document in its tool",
   description: [
-    "Open a document in a real Patchwork tool, off-screen, and leave it running. Returns a mountId for view_inspect, view_interact and view_unmount.",
+    "Open a document in a real Patchwork tool and leave it running. Returns a mountId for view_inspect, view_interact and view_unmount.",
+    "",
+    "It renders in the user's workbench, beside the conversation, so they can watch you work — and off-screen when no view is attached. A picture of what rendered comes back with the result.",
     "",
     "This is how you work with what the user actually sees. Use it to check that a change you made looks right, to read a document whose state does not live in a readable shape (a canvas, a text editor), or to operate a tool that has no document-level API — you can click its buttons and type into its fields.",
     "",
@@ -556,7 +558,7 @@ export const viewInspect = {
     type: "object",
     required: ["mountId"],
     properties: {
-      mountId: { type: "string" },
+      mountId: { type: "string", description: "The mount to act on, as returned by view_mount." },
       selector: { type: "string", description: "CSS selector to inspect. Defaults to the whole tool." },
       html: { type: "boolean", description: "Return markup instead of text." },
     },
@@ -595,7 +597,7 @@ export const viewInteract = {
   name: "Drive an open document",
   description: [
     "Click, type into, or submit part of an open document, and report what changed — both in the document and on screen.",
-    "Actions: 'click' (a button or any element), 'type' (set an input's value and fire an input event), 'submit' (fire a submit event on a form).",
+    "Actions: 'click' (a button or any element), 'type' (set an input's value and fire both input and change events), 'submit' (fire a submit event on a form).",
     "Without a selector, 'click' uses the first button and 'type' the first input.",
   ].join("\n"),
   where: "host",
@@ -604,7 +606,7 @@ export const viewInteract = {
     type: "object",
     required: ["mountId"],
     properties: {
-      mountId: { type: "string" },
+      mountId: { type: "string", description: "The mount to act on, as returned by view_mount." },
       action: { type: "string", description: "click | type | submit. Default 'click'." },
       selector: { type: "string", description: "CSS selector of the element to act on." },
       value: { type: "string", description: "Text to type, for action 'type'." },
@@ -681,7 +683,7 @@ export const viewUnmount = {
   input_schema: {
     type: "object",
     required: ["mountId"],
-    properties: { mountId: { type: "string" } },
+    properties: { mountId: { type: "string", description: "The mount to act on, as returned by view_mount." } },
   },
 
   async execute(input) {
@@ -705,7 +707,7 @@ export const toolCheck = {
     "",
     "It imports the package from its document (no install needed), creates a document with its datatype, mounts the tool, clicks the first button, checks that the screen followed the document, and tears it down the way Patchwork will.",
     "",
-    "This is the check to reach for by default, because it looks for problems you would not think to look for. When you need to drive something specific — type into a field, click a particular control, check against an existing document — use view_mount with view_interact and view_inspect instead.",
+    "This is the check to reach for by default, because it looks for problems you would not think to look for. When you need to drive something specific — type into a field, click a particular control, check against an existing document — use view_mount with view_interact and view_inspect instead. Read the 'driving-a-view' skill before you do.",
     "",
     "A picture of what rendered comes back with the result, so you can see whether it LOOKS right rather than only whether it mounted. When it passes, say so and stop — the user installs it with a button, so do not hand them a URL to paste.",
   ].join("\n"),

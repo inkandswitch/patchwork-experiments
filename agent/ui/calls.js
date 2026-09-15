@@ -98,6 +98,7 @@ export const PRESENTATION = {
     verb: "grep",
     detail: (i) => (i.pattern ? `${i.pattern}${i.include ? ` in ${i.include}` : ""}` : null),
   },
+  fs_delete: { verb: "remove", detail: (i) => baseName(i.path) },
   fs_write: {
     verb: "write",
     detail: (i) => {

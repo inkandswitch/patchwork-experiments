@@ -178,6 +178,10 @@ Only vitest's CLI is a node program, so what is missing is \`vi.mock\`,
 snapshots and coverage — not the matchers. With no network it falls back to a
 smaller built-in set and says which engine it used in the report.
 
+When you need to drive something specific — a particular control, a sequence of
+steps, a real document rather than a test one — that is \`view_mount\` and the
+tools around it. Read the "driving-a-view" skill first.
+
 Tests and \`tool_check\` answer different questions, and you want both:
 \`package_test\` tells you whether the logic is right, \`tool_check\` tells you
 whether the tool mounts, renders, and responds.
@@ -198,6 +202,92 @@ hand them a URL to paste into their settings.
 Run \`tool_check\` on the folder. It mounts the tool, clicks its first button, and
 tells you whether the screen followed the document. Fix what it reports and check
 again before installing anything.`,
+  },
+
+  {
+    name: "driving-a-view",
+    description:
+      "How to open a document in a real tool and operate it — click, type, read what rendered — and when that beats reading the document. Read this before using view_mount.",
+    body: `# Driving a view
+
+\`view_mount\` opens a document in an installed tool and leaves it running, so
+you can click its controls, type into its fields and read what it drew. Two jobs
+need it:
+
+- **Checking your own work looks right.** A document with the right fields in it
+  can still render as an empty box. Structure is not appearance.
+- **Operating a tool that has no document-level API.** A canvas, a text editor,
+  a drawing surface — the state you care about is not in a readable shape, and
+  clicking the thing is the only way in.
+
+## The loop
+
+    view_mount    { docUrl }          -> mountId, and a picture of what rendered
+    view_inspect  { mountId }         -> what is on screen, and the document
+    view_interact { mountId, ... }    -> click / type / submit, and what changed
+    view_inspect  { mountId }         -> check it
+    view_unmount  { mountId }
+
+Mount a real document with \`docUrl\`; mount a package you wrote but have not
+installed with \`url\`. Four mounts stay live at once and the oldest is dropped,
+so unmount as you go rather than all at the end.
+
+**Inspect before you interact.** Your selector has to match what the tool
+actually rendered, not what you expect it rendered. One \`view_inspect\` costs a
+call and saves several guesses.
+
+## Reading the result
+
+\`view_interact\` reports two things, and you need both:
+
+- whether the **document** changed — did the click actually write anything
+- whether the **screen** changed — did the tool re-render from it
+
+A click that changes the document but not the screen is the most common bug in a
+Patchwork tool, and it is invisible if you only look at one of them. A click that
+changes neither usually means your selector matched the wrong element.
+
+## What it does and does not simulate
+
+- \`click\` calls \`.click()\`. No pointer moves, so hover and drag are out of reach.
+- \`type\` sets the value and fires **both** \`input\` and \`change\`. It does not send
+  keystrokes, so a tool listening for \`keydown\` will not notice, and an
+  autocomplete that reacts per character will not behave as it would for a
+  person.
+- \`submit\` fires a submit event on a form.
+
+\`settleMs\` is how long it waits for the tool to react. Raise it for anything that
+renders asynchronously — an inspect that runs too early reports a failure that is
+only a race.
+
+## The live page is a different thing
+
+\`view_inspect\` reads a mount you opened. \`dom_snapshot\` reads the page the
+user is actually looking at right now — their sidebar, their open document,
+whatever is on their screen. Use that one when the question is about *their*
+Patchwork rather than about something you opened.
+
+\`view_screenshot\` takes a picture of a mount, or of the live page. Mounting and
+\`tool_check\` already return one, so reach for it when you want another look
+after interacting — whether a menu opened, whether a layout broke.
+
+\`view_open\` navigates the user's Patchwork to a document. When you have made or
+found something they should see, open it: handing them a URL in prose is worse
+than just showing them.
+
+## Unmounting is part of the test
+
+\`view_unmount\` tears the tool down the way Patchwork will and tells you whether
+its cleanup was well-behaved: whether it removed what it added and dropped its
+listeners. A tool that leaks on unmount is broken in a way nothing else here will
+tell you about, so always finish with it.
+
+## Or just use tool_check
+
+For a tool you have written, \`tool_check\` does all of the above in one call and
+looks for problems you would not think to look for. Reach for the \`view_*\` tools
+when you need to drive something specific: a particular control, a real
+document, a sequence of steps.`,
   },
 
   {
@@ -237,7 +327,16 @@ every datatype.
   that must be atomic into a single \`doc_edit\`.
 - **Nothing validates against the datatype.** A document you write into a shape
   its tool does not expect will render badly or not at all — check with
-  \`view_mount\` afterwards if it matters.`,
+  \`view_mount\` afterwards if it matters.
+
+## The other two document tools
+
+- **\`doc_history\`** — what changed, when, and by whom. Reach for it when the
+  user says something broke, or asks what you did, or wants something undone:
+  it is how you find out what the document looked like before.
+- **\`doc_create\`** — a new document of an installed datatype. Get the datatype
+  id from \`registry_list\` first; it is rarely what you would guess. The new
+  document is not filed anywhere, so put it where it belongs if it has a place.`,
   },
 
   {
@@ -290,6 +389,14 @@ document URL.
 Pass \`folder\` when you are fetching a file in order to keep it, so it lands in
 the package that needs it instead of nowhere in particular.
 
+## Credentials
+
+You never see a credential's value. \`secret_list\` gives you the NAMES of what
+is stored on this device; pass one as \`useSecret\` and \`http_request\` attaches
+it for you at the moment of the request. It appears in no input, no result and
+no document. If the one you need is not listed, ask the user to add it in the
+agent's settings — you cannot.
+
 ## What will not work
 
 This runs in a browser. The origin policy still applies, so an API that does not
@@ -307,6 +414,10 @@ some sites block it; that is a reason to find another source, not to retry.`,
 You start knowing only the document the session is attached to. Everything else
 has to be found.
 
+A file that should no longer exist is \`fs_delete\`: it takes the entry out of
+its folder, so nothing finds it by path or builds it any more. The document
+itself survives, so a mistake is recoverable.
+
 Name the session with \`session_title\` as soon as you know what you are doing —
 it is a document in the same list, and an unnamed one is as lost as anything
 else here.
@@ -315,7 +426,9 @@ else here.
 - **\`doc_search\`** by name; add \`content: true\` to search inside file documents
   when the name search finds nothing.
 - **\`fs_grep\`** for code — it is far cheaper than reading files one by one.
-  \`include: "\\\\.js$"\` narrows it.
+  \`include: "\\\\.js$"\` narrows it. Then **\`fs_list\`** to see what is around a
+  match, and **\`fs_read\`** for the file itself — with \`offset\` and \`limit\` if
+  it is long, rather than pulling thousands of lines into the conversation.
 - **\`registry_list\`** for what is installed: datatype ids for \`doc_create\`, tool
   ids for \`view_mount\`.
 - **\`plugin_source\`** to read how an existing tool is written before writing one

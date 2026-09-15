@@ -12,7 +12,7 @@
  */
 
 import { previewJson, truncate } from "./format.js"
-import { contentToText, isFolder, isFile } from "./folders.js"
+import { contentToText, isFolder, isFile, ROOT_DESCRIPTION } from "./folders.js"
 
 const DEFAULT_MAX_VISITS = 600
 
@@ -160,8 +160,8 @@ export const docTree = {
   input_schema: {
     type: "object",
     properties: {
-      root: { type: "string" },
-      depth: { type: "number", description: "How many levels. Default 2." },
+      root: { type: "string", description: ROOT_DESCRIPTION },
+      depth: { type: "number", description: "How many levels deep to show. Default 2." },
     },
   },
 

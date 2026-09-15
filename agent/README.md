@@ -81,7 +81,7 @@ any participant can approve and every approval is auditable.
 | Find | `doc_search` `doc_tree` | worker |
 | Documents | `doc_read` `doc_edit` `doc_history` | worker |
 | | `doc_create` | host |
-| Folders and files | `fs_list` `fs_read` `fs_grep` `fs_write` | worker |
+| Folders and files | `fs_list` `fs_read` `fs_grep` `fs_write` `fs_delete` | worker |
 | Drive the front end | `view_mount` `view_inspect` `view_interact` `view_unmount` | host |
 | | `tool_check` | host |
 | Environment | `registry_list` `plugin_source` `dom_snapshot` `view_open` | host |
@@ -100,6 +100,11 @@ with `doc_read` instead of fetched again — while the model still gets exactly
 the excerpt it asked for. Binary responses are kept as bytes and never decoded;
 `http_request` takes a `folder`, so a wasm module can be fetched straight into
 the package that needs it.
+
+`fs_delete` unlinks a file or folder from its parent. It does not destroy the
+document — automerge keeps it, and its history — so a package that has been
+restructured stops shipping its abandoned files while a mistake stays
+recoverable. Renaming is this plus `fs_write`.
 
 There is deliberately **no tool for writing a tool**. A Patchwork tool is a
 folder of files, so writing one is `fs_write`; installing one is `doc_edit` on
@@ -299,10 +304,20 @@ wrong ones is worse than having been asked in prose.
 ## Skills
 
 Guidance the agent needs but should not carry in every prompt: named and
-described in the system prompt, read in full on demand. `writing-patchwork-tools`
-carries the render contract, `editing-documents` the op vocabulary,
-`working-with-the-web` which of the four outside-world tools to reach for,
-`finding-things` how to orient in an unfamiliar Patchwork.
+described in the system prompt, read in full on demand.
+
+| skill | what it carries |
+|---|---|
+| `writing-patchwork-tools` | the plugin shape, the render contract, and the four mistakes actually made |
+| `driving-a-view` | mount → interact → inspect → unmount, and what it does not simulate |
+| `editing-documents` | `doc_edit`'s op vocabulary, and text splices that merge |
+| `working-with-the-web` | which of the four outside-world tools to reach for |
+| `finding-things` | how to orient in a Patchwork you have not seen |
+
+A test holds the parts that rot: every skill must name only tools that exist,
+and every tool must document every parameter it accepts. A parameter with no
+description is one the model has to guess at, which is not hypothetical — it is
+how `root: "automerge:"` got sent and cost a turn.
 
 Built-ins ship with the package so the agent is never knowledge-less, but a
 skill in the session's `skillsFolderUrl` shadows a built-in of the same name —

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { fsWrite, fsList, fsRead } from "./tools/folders.js"
+import { fsWrite, fsList, fsRead, fsDelete } from "./tools/folders.js"
 import { needsApproval, initSession, grantKey } from "./session.js"
 
 /** A repo of plain-object documents with a root folder. */
@@ -177,5 +177,73 @@ describe("a root the model filled in with a placeholder", () => {
     repo.docs.set(other, { title: "Other", docs: [], "@patchwork": { type: "folder" } })
     await fsWrite.execute({ root: other, path: "a.md", content: "x" }, ctx(repo))
     expect(entry(repo, other, "a.md")).toBeTruthy()
+  })
+})
+
+describe("fs_delete", () => {
+  async function pkg() {
+    const repo = fakeRepo()
+    await fsWrite.execute(
+      { files: { "tally/index.js": "a", "tally/tool.js": "b", "tally/old/legacy.js": "c" } },
+      ctx(repo)
+    )
+    return repo
+  }
+
+  it("takes a file out of its folder", async () => {
+    const repo = await pkg()
+    const out = await fsDelete.execute({ path: "tally/tool.js" }, ctx(repo))
+
+    const folder = repo.docs.get(entry(repo, "automerge:root", "tally").url)
+    expect(folder.docs.map((d) => d.name)).toEqual(["index.js", "old"])
+    expect(out).toMatch(/Removed file 'tally\/tool\.js'/)
+  })
+
+  it("says plainly that it unlinked rather than destroyed", async () => {
+    // Automerge keeps the document and its history; claiming otherwise would
+    // make a recoverable mistake sound permanent.
+    const repo = await pkg()
+    const out = await fsDelete.execute({ path: "tally/tool.js" }, ctx(repo))
+    expect(out).toMatch(/still exists at automerge:/)
+    expect(out).toMatch(/unlinked it, it did not destroy it/)
+  })
+
+  it("removes a folder and says how much went with it", async () => {
+    const repo = await pkg()
+    const out = await fsDelete.execute({ path: "tally/old" }, ctx(repo))
+    expect(out).toMatch(/Removed folder 'tally\/old' and the 1 entry in it/)
+    const folder = repo.docs.get(entry(repo, "automerge:root", "tally").url)
+    expect(folder.docs.map((d) => d.name)).toEqual(["index.js", "tool.js"])
+  })
+
+  it("lists what is there when the name is wrong", async () => {
+    const repo = await pkg()
+    await expect(fsDelete.execute({ path: "tally/nope.js" }, ctx(repo))).rejects.toThrow(
+      /'nope\.js' is not in \/tally\. It contains: index\.js, tool\.js, old/
+    )
+  })
+
+  it("does not create the folders it was asked to look in", async () => {
+    // ensurePath would have made them, so a typo would silently build a tree
+    // and then report finding nothing in it.
+    const repo = await pkg()
+    await expect(fsDelete.execute({ path: "typo/deep/file.js" }, ctx(repo))).rejects.toThrow(
+      /\/typo does not exist/
+    )
+    expect(entry(repo, "automerge:root", "typo")).toBeUndefined()
+  })
+
+  it("refuses an empty path rather than removing something arbitrary", async () => {
+    const repo = await pkg()
+    await expect(fsDelete.execute({ path: "" }, ctx(repo))).rejects.toThrow(/Pass the path/)
+    await expect(fsDelete.execute({ path: "/" }, ctx(repo))).rejects.toThrow(/Pass the path/)
+  })
+
+  it("leaves the package buildable afterwards", async () => {
+    const repo = await pkg()
+    await fsDelete.execute({ path: "tally/old" }, ctx(repo))
+    const out = await fsList.execute({ path: "tally" }, ctx(repo))
+    expect(out).not.toContain("old")
+    expect(out).toContain("index.js")
   })
 })

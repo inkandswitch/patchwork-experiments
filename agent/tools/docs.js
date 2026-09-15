@@ -209,8 +209,13 @@ export const docEdit = {
 export const docCreate = {
   id: "doc_create",
   name: "Create document",
-  description:
-    "Create a new document of a registered datatype. Use registry_list to see what datatypes exist. Returns the new document's URL.",
+  description: [
+    "Create a new document of a registered datatype, and return its URL.",
+    "",
+    "Use registry_list to find the datatype id first — this fails on one that is not installed, and the id is rarely what you would guess.",
+    "",
+    "The new document is not filed in any folder. It is listed in the user's panel of what this session made, so they can reach it, but if it belongs somewhere in their tree put it there with fs_write or by editing the folder.",
+  ].join("\n"),
   // Host tier: it needs the datatype from the page's plugin registry.
   where: "host",
   risk: "write",
@@ -218,8 +223,8 @@ export const docCreate = {
     type: "object",
     required: ["datatype"],
     properties: {
-      datatype: { type: "string", description: "Datatype id, e.g. 'folder' or 'chitterchatter'." },
-      title: { type: "string" },
+      datatype: { type: "string", description: "Datatype id, e.g. 'folder' or 'chitterchatter'. Get one from registry_list." },
+      title: { type: "string", description: "What to call it. Give it one — an untitled document is hard for the user to find later." },
     },
   },
   async execute(input, ctx) {
@@ -255,7 +260,7 @@ export const docHistory = {
   input_schema: {
     type: "object",
     properties: {
-      url: { type: "string" },
+      url: { type: "string", description: "Document to describe. Defaults to the session's document." },
       limit: { type: "number", description: "How many recent changes to describe. Default 20." },
     },
   },

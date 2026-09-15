@@ -203,7 +203,7 @@ export const webSearch = {
     type: "object",
     required: ["query"],
     properties: {
-      query: { type: "string" },
+      query: { type: "string", description: "What to search for. Specific beats broad; this returns links, not answers." },
       limit: { type: "number", description: "How many results. Default 8." },
     },
   },

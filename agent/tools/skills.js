@@ -107,7 +107,9 @@ export const skillRead = {
   input_schema: {
     type: "object",
     required: ["name"],
-    properties: { name: { type: "string" } },
+    properties: {
+      name: { type: "string", description: "The skill's name, exactly as skill_list gave it." },
+    },
   },
   async execute(input, ctx) {
     const skills = await resolveSkills(ctx)

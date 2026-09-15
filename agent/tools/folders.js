@@ -68,6 +68,10 @@ function looksLikeDocUrl(value) {
   return typeof value === "string" && /^automerge:[A-Za-z0-9]+/.test(value.trim())
 }
 
+/** Shared by every tool that takes a `root`, so they cannot drift apart. */
+export const ROOT_DESCRIPTION =
+  "Folder document to work from. Omit this for the account's root folder, which is almost always what you want — do not pass a placeholder."
+
 function rootFor(input, ctx) {
   // A model filling in the `root` field with a placeholder — "automerge:",
   // "root", "" — is a predictable mistake, and passing it through meant a failed
@@ -99,8 +103,8 @@ export const fsList = {
   input_schema: {
     type: "object",
     properties: {
-      root: { type: "string", description: "Folder document URL. Defaults to the session's document." },
-      path: { type: "string", description: "Sub-path inside the root, e.g. 'src/components'." },
+      root: { type: "string", description: ROOT_DESCRIPTION },
+      path: { type: "string", description: "Sub-path inside the root, e.g. 'src/components'. Omit for the root itself." },
     },
   },
   async execute(input, ctx) {
@@ -120,16 +124,19 @@ export const fsList = {
 export const fsRead = {
   id: "fs_read",
   name: "Read file",
-  description:
-    "Read a file document's text content by path from a root folder. Use `offset` and `limit` (in lines) for a big file.",
+  description: [
+    "Read a file document's text. Pass `path` to find it by name in a folder, or `url` to read one you already have.",
+    "",
+    "Use `offset` and `limit` — in lines — for anything large; the result says how many lines remain so you can page on.",
+  ].join("\n"),
   where: "worker",
   risk: "read",
   input_schema: {
     type: "object",
     properties: {
-      root: { type: "string" },
-      path: { type: "string", description: "Path to the file, e.g. 'src/tool.js'." },
-      url: { type: "string", description: "Read a file document directly by URL instead of by path." },
+      root: { type: "string", description: ROOT_DESCRIPTION },
+      path: { type: "string", description: "Path to the file, e.g. 'src/tool.js'. Pass this or `url`." },
+      url: { type: "string", description: "Read a file document directly by URL instead of by path. Pass this or `path`." },
       offset: { type: "number", description: "First line to return (1-based)." },
       limit: { type: "number", description: "How many lines. Default 400." },
     },
@@ -180,8 +187,8 @@ export const fsGrep = {
     type: "object",
     required: ["pattern"],
     properties: {
-      root: { type: "string" },
-      path: { type: "string", description: "Sub-path to search under." },
+      root: { type: "string", description: ROOT_DESCRIPTION },
+      path: { type: "string", description: "Sub-path to search under. Omit to search the whole tree." },
       pattern: { type: "string", description: "JavaScript regular expression." },
       flags: { type: "string", description: "Regex flags. Default 'i'." },
       include: { type: "string", description: "Only search files whose name matches this regex, e.g. '\\.js$'." },
@@ -340,7 +347,7 @@ export const fsWrite = {
   input_schema: {
     type: "object",
     properties: {
-      root: { type: "string", description: "Folder to write under. Defaults to the account root." },
+      root: { type: "string", description: ROOT_DESCRIPTION },
       path: { type: "string", description: "Path of one file, e.g. 'my-tool/index.js'." },
       content: { type: "string", description: "Contents of that file." },
       files: {
@@ -432,4 +439,93 @@ export const fsWrite = {
   },
 }
 
-export default [fsList, fsRead, fsGrep, fsWrite]
+/**
+ * Walk to a folder without creating anything along the way.
+ *
+ * `ensurePath` makes the folders it cannot find, which is right for writing and
+ * wrong for deleting: a typo in a path to delete would otherwise silently build
+ * the folders it was about to look in and then report finding nothing.
+ */
+async function findPath(repo, rootUrl, parts) {
+  let handle = await repo.find(rootUrl)
+  const trail = []
+  for (const part of parts) {
+    const doc = handle.doc()
+    if (!isFolder(doc)) throw new Error(`/${trail.join("/")} is not a folder.`)
+    const existing = (doc.docs ?? []).find((entry) => entry.name === part)
+    if (!existing) return { handle: null, missing: `/${[...trail, part].join("/")}` }
+    handle = await repo.find(existing.url)
+    trail.push(part)
+  }
+  return { handle, missing: null }
+}
+
+export const fsDelete = {
+  id: "fs_delete",
+  name: "Delete a file or folder",
+  description: [
+    "Remove a file or folder from the folder that contains it.",
+    "",
+    "Use it when a file should no longer be part of a package — you restructured, renamed something, or wrote a file you did not end up needing. A package that keeps its abandoned files ships dead code, and a stray entry point can make tool_check load the wrong thing.",
+    "",
+    "This unlinks: it takes the entry out of its parent folder. The document itself still exists and is still in the history, so nothing is destroyed and a mistake is recoverable — but it will no longer be found by path, by fs_list, or by a build.",
+    "",
+    "Renaming or moving is this plus fs_write. Deleting a folder takes everything under it out with it, so name the exact path you mean.",
+  ].join("\n"),
+  where: "worker",
+  risk: "write",
+  input_schema: {
+    type: "object",
+    required: ["path"],
+    properties: {
+      root: { type: "string", description: ROOT_DESCRIPTION },
+      path: { type: "string", description: "Path of the file or folder to remove, e.g. 'tally/old-tool.js'." },
+    },
+  },
+
+  async execute(input, ctx) {
+    const parts = String(input.path ?? "").split("/").filter(Boolean)
+    if (!parts.length) throw new Error("Pass the path of the file or folder to remove.")
+
+    const root = rootFor(input, ctx)
+    const name = parts.pop()
+    const { handle: folder, missing } = await findPath(ctx.repo, root, parts)
+    if (!folder) throw new Error(`${missing} does not exist, so '${input.path}' cannot be removed.`)
+
+    const entries = folder.doc()?.docs ?? []
+    const index = entries.findIndex((entry) => entry.name === name)
+    if (index === -1) {
+      const available = entries.map((e) => e.name).join(", ")
+      throw new Error(
+        `'${name}' is not in /${parts.join("/")}. It contains: ${available || "nothing"}`
+      )
+    }
+
+    const entry = entries[index]
+    // Count what goes with a folder, so the result says how much was removed
+    // rather than leaving the agent to assume it was one thing.
+    let removed = 1
+    if (entry.type === "folder") {
+      try {
+        const inside = await ctx.repo.find(entry.url)
+        removed += (inside.doc()?.docs ?? []).length
+      } catch {
+        /* an unreadable folder is still unlinked; the count is just a count */
+      }
+    }
+
+    folder.change((draft) => {
+      draft.docs.splice(index, 1)
+    })
+
+    return `Removed ${entry.type} '${input.path}'${
+      entry.type === "folder" ? ` and the ${removed - 1} entr${removed - 1 === 1 ? "y" : "ies"} in it` : ""
+    }. The document still exists at ${entry.url} — this unlinked it, it did not destroy it.`
+  },
+
+  summarize(input) {
+    return `removed ${String(input?.path ?? "").split("/").filter(Boolean).pop() ?? ""}`
+  },
+}
+
+export default [fsList, fsRead, fsGrep, fsWrite, fsDelete]
