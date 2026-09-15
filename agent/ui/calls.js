@@ -153,6 +153,15 @@ export const PRESENTED = Object.keys(PRESENTATION)
 
 const MAX_DETAIL = 64
 
+/** The first argument a person could read, for a tool we have no entry for. */
+function firstReadableValue(input) {
+  for (const value of Object.values(input ?? {})) {
+    if (typeof value === "string" && value.trim()) return value
+    if (typeof value === "number" || typeof value === "boolean") return String(value)
+  }
+  return undefined
+}
+
 /**
  * The one-line description of a call: a verb, what it acted on, and how it went.
  *
@@ -173,9 +182,13 @@ export function describeCall(block, result, { subject = null } = {}) {
       detail = null // a malformed input must not break the log
     }
   } else {
-    // No entry: show the field most likely to mean something, but never a raw
-    // document URL.
-    const guess = input.path ?? input.name ?? input.query ?? input.selector ?? input.id ?? input.url
+    // No entry — a tool contributed by a package. Show the field most likely to
+    // mean something, and if none of the usual names are there, the first short
+    // string it was given: a third-party tool's row was otherwise its bare id
+    // and nothing else, which is the dump-the-arguments problem in its purest
+    // form.
+    const named = input.path ?? input.name ?? input.query ?? input.selector ?? input.id ?? input.url
+    const guess = named ?? firstReadableValue(input)
     detail = isDocUrl(guess) ? shortDoc(guess, subject) : (pathLabel(guess) ?? guess)
   }
 

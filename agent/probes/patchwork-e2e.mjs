@@ -240,8 +240,11 @@ try {
       const settingsUrl = accountDoc?.moduleSettingsUrl
       if (!settingsUrl) return { ok: false, why: "account has no moduleSettingsUrl" }
       const settings = await window.repo.find(settingsUrl)
-      const already = (settings.doc()?.modules ?? []).some((m) => m.startsWith(${JSON.stringify(MODULE)}))
-      if (!already) settings.change((d) => { if (!d.modules) d.modules = []; d.modules.push(${JSON.stringify(MODULE)}) })
+      for (const url of ${JSON.stringify([MODULE, ...(process.argv.includes("--extra-module") ? [process.argv[process.argv.indexOf("--extra-module") + 1]] : [])])}) {
+        const already = (settings.doc()?.modules ?? []).some((m) => m.split("#")[0] === url.split("#")[0])
+        if (!already) settings.change((d) => { if (!d.modules) d.modules = []; d.modules.push(url) })
+      }
+      const already = false
       return { ok: true, already, modules: settings.doc().modules.length, settingsUrl }
     })()`
   )

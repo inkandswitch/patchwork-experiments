@@ -185,3 +185,36 @@ describe("a row says what happened, not what was asked twice", () => {
     expect(noisy("view_mount", { toolId: "tally" }, "PROBLEM mounting threw: boom").note).toBe("could not mount")
   })
 })
+
+describe("a tool contributed by a package", () => {
+  // These have no entry in the table by definition — the table only knows the
+  // built-ins. The fallback is all a third-party tool ever gets, so it has to
+  // produce something better than a bare id.
+  it("shows the first readable argument when it has no named one", () => {
+    const row = describeCall(
+      { tool: "wordcount_count", input: { text: "the quick brown fox" }, status: "done" },
+      { summary: "counted: 4 words" }
+    )
+    expect(row.verb).toBe("wordcount_count")
+    expect(row.detail).toBe("the quick brown fox")
+    expect(row.note).toBe("counted: 4 words")
+  })
+
+  it("still prefers a named field when there is one", () => {
+    expect(describeCall({ tool: "git_clone", input: { text: "x", name: "dots" } }, null).detail).toBe("dots")
+  })
+
+  it("never shows a raw document url, even by the fallback", () => {
+    const row = describeCall({ tool: "some_tool", input: { target: "automerge:4PDTNBQcoJiMQ" } }, null)
+    expect(row.detail).not.toContain("PDTNBQcoJiMQ")
+  })
+
+  it("survives arguments with nothing readable in them", () => {
+    expect(() => describeCall({ tool: "some_tool", input: { flags: { a: true } } }, null)).not.toThrow()
+    expect(describeCall({ tool: "some_tool", input: {} }, null).detail).toBe("")
+  })
+
+  it("shows a number when that is all there is", () => {
+    expect(describeCall({ tool: "some_tool", input: { count: 12 } }, null).detail).toBe("12")
+  })
+})
