@@ -195,8 +195,16 @@ export const webFetch = {
         headers: readerHeaders(format, input.fresh),
       })
       if (!response.ok) {
+        // 422 means the reader could not treat it as a page — which is what
+        // happens when it is not one. Watched cost two calls: an agent after a
+        // JavaScript bundle tried web_import, then web_fetch, and was told
+        // both times to try a different page, which was not the problem.
+        const notAPage =
+          response.status === 422 || /\.(js|mjs|json|css|txt|xml|csv|map)(\?|$)/i.test(target)
         throw new Error(
-          `Could not read ${target} (${response.status}). The reader may be blocked by that site; try a different page.`
+          notAPage
+            ? `The reader could not read ${target} (${response.status}). This looks like a file rather than a page — fetch it with http_request, which returns it as it is.`
+            : `Could not read ${target} (${response.status}). The reader may be blocked by that site; try a different page.`
         )
       }
       content = await response.text()

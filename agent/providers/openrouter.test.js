@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest"
-import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream } from "./openrouter.js"
+import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel } from "./openrouter.js"
+
+/** A ReadableStream of SSE chunks, the shape `response.body` actually has. */
+function streamOf(chunks) {
+  const encoder = new TextEncoder()
+  let i = 0
+  return {
+    getReader: () => ({
+      read: async () => (i < chunks.length ? { done: false, value: encoder.encode(chunks[i++]) } : { done: true }),
+      releaseLock() {},
+    }),
+  }
+}
 
 /** Feed a string to an async-iterable in fixed-size pieces, like a real socket. */
 async function* chunked(text, size = 7) {
@@ -199,5 +211,97 @@ describe("decodeStream", () => {
     const events = await collect(decodeStream(chunked(wire)))
     expect(events.filter((e) => e.type === "stop")).toHaveLength(1)
     expect(events.at(-1).type).toBe("stop")
+  })
+})
+
+describe("a model that cannot read images", () => {
+  // Watched in a real session: view_mount attached a screenshot, the next
+  // request 404'd with "No endpoints found that support image input", and every
+  // turn after it failed the same way — permanently, because the images carried
+  // forward are the newest ones. A person had to notice and say so.
+  const withImage = [
+    { role: "user", content: [{ type: "text", text: "look" }] },
+    { role: "tool", content: [{ type: "result", callId: "c1", output: "mounted", image: "data:image/jpeg;base64,AAA" }] },
+  ]
+
+  it("sends the screenshot by default", () => {
+    const body = buildBody({ system: "", messages: withImage, model: "m" })
+    expect(JSON.stringify(body)).toContain("image_url")
+  })
+
+  it("leaves it out when asked to", () => {
+    const body = buildBody({ system: "", messages: withImage, model: "m", dropImages: true })
+    expect(JSON.stringify(body)).not.toContain("image_url")
+    // …and keeps the tool result itself, which is the part that carries meaning.
+    expect(JSON.stringify(body)).toContain("mounted")
+  })
+
+  it("retries without images when the provider refuses them", async () => {
+    const bodies = []
+    const fetchImpl = async (_url, options) => {
+      bodies.push(JSON.parse(options.body))
+      if (bodies.length === 1) {
+        return {
+          ok: false,
+          status: 404,
+          headers: { get: () => null },
+          text: async () =>
+            JSON.stringify({ error: { message: "No endpoints found that support image input", code: 404 } }),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        body: streamOf(['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', "data: [DONE]\n\n"]),
+      }
+    }
+
+    const events = []
+    const retries = []
+    for await (const event of stream({
+      system: "",
+      messages: withImage,
+      model: "m",
+      key: "k",
+      fetchImpl,
+      onRetry: (info) => retries.push(info),
+    })) {
+      events.push(event)
+    }
+
+    expect(bodies).toHaveLength(2)
+    expect(JSON.stringify(bodies[0])).toContain("image_url")
+    expect(JSON.stringify(bodies[1])).not.toContain("image_url")
+    expect(events.some((e) => e.type === "text" && e.delta === "hi")).toBe(true)
+    expect(retries[0].reason).toMatch(/cannot read images/)
+  })
+
+  it("does not strip images for an unrelated failure", async () => {
+    const bodies = []
+    const fetchImpl = async (_url, options) => {
+      bodies.push(JSON.parse(options.body))
+      if (bodies.length === 1) {
+        return { ok: false, status: 429, headers: { get: () => null }, text: async () => "rate limited" }
+      }
+      return { ok: true, status: 200, body: streamOf(['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', "data: [DONE]\n\n"]) }
+    }
+    for await (const _ of stream({ system: "", messages: withImage, model: "m", key: "k", fetchImpl })) { void _ }
+    expect(JSON.stringify(bodies[1])).toContain("image_url")
+  })
+
+  it("reports which models can see, so one can be chosen on purpose", async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "seeing/one", name: "One", architecture: { input_modalities: ["text", "image"] }, supported_parameters: ["tools"] },
+          { id: "blind/two", name: "Two", architecture: { input_modalities: ["text"] }, supported_parameters: ["tools"] },
+        ],
+      }),
+    })
+    const list = await models({ key: "k", fetchImpl })
+    expect(list.find((m) => m.id === "seeing/one").images).toBe(true)
+    expect(list.find((m) => m.id === "blind/two").images).toBe(false)
+    expect(describeModel(list.find((m) => m.id === "seeing/one"))).toContain("sees images")
   })
 })

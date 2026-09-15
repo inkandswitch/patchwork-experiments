@@ -165,6 +165,10 @@ export async function run(opts) {
     try {
       assistant = await streamTurn(settings)
     } catch (err) {
+      // streamTurn appends its assistant turn before the first token arrives,
+      // so a request that dies leaves an empty one behind. Two of those sit in
+      // a real session, rendering as nothing and telling nobody anything.
+      dropTrailingEmptyTurn(store)
       if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
       appendTurn(store, makeTurn("assistant", [textBlock(`⚠ ${String(err?.message ?? err)}`)]))
       return finish(store, STATUS.error, OUTCOME.error, emit, String(err?.message ?? err))
@@ -520,6 +524,14 @@ function commitResults(store, results) {
 }
 
 // ---------------------------------------------------------------- helpers
+
+/** Remove a just-appended assistant turn that never received anything. */
+function dropTrailingEmptyTurn(store) {
+  store.change((d) => {
+    const last = d.turns?.[d.turns.length - 1]
+    if (last && last.role === "assistant" && (last.blocks ?? []).length === 0) d.turns.pop()
+  })
+}
 
 function appendTurn(store, turn) {
   store.change((d) => {

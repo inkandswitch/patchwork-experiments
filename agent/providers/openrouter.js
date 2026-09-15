@@ -36,7 +36,7 @@ export const SUGGESTED_MODELS = [
  * assistant message and each result as its own `role: "tool"` message keyed by
  * id. So one neutral turn can fan out into several OpenAI messages.
  */
-export function toOpenAIMessages(system, messages) {
+export function toOpenAIMessages(system, messages, { dropImages = false } = {}) {
   const out = []
   if (system) out.push({ role: "system", content: system })
 
@@ -75,8 +75,9 @@ export function toOpenAIMessages(system, messages) {
 
       // A tool message may only carry text, so a screenshot follows as its own
       // user message. This is the standard workaround and every vision model
-      // reads it the same way.
-      if (r.image) {
+      // reads it the same way — and a model that is not one rejects the whole
+      // request, which is why this can be turned off.
+      if (r.image && !dropImages) {
         out.push({
           role: "user",
           content: [
@@ -104,10 +105,10 @@ export function toOpenAITools(tools = []) {
   }))
 }
 
-export function buildBody({ system, messages, tools, model, params = {} }) {
+export function buildBody({ system, messages, tools, model, params = {}, dropImages = false }) {
   const body = {
     model,
-    messages: toOpenAIMessages(system, messages),
+    messages: toOpenAIMessages(system, messages, { dropImages }),
     stream: true,
   }
   const t = toOpenAITools(tools)
@@ -291,7 +292,12 @@ export async function* stream({
 }) {
   if (!key) throw new Error("No OpenRouter API key. Add one in the agent panel.")
 
-  const body = JSON.stringify(buildBody({ system, messages, tools, model, params }))
+  // Whether to include screenshots. Starts from what the caller believes and
+  // is turned off for good the moment the provider says otherwise.
+  let withImages = params?.images !== false
+  const render = () => JSON.stringify(buildBody({ system, messages, tools, model, params, dropImages: !withImages }))
+
+  let body = render()
   let lastError = null
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -327,6 +333,23 @@ export async function* stream({
 
     const detail = await response.text().catch(() => "")
     lastError = new Error(`OpenRouter ${response.status}: ${detail.slice(0, 400)}`)
+
+    // A model that cannot read images rejects the ENTIRE request, so one
+    // screenshot in the transcript kills every turn after it — permanently,
+    // because the newest images are exactly the ones carried forward. Watched
+    // happen: a view_mount attached a picture, the next request 404'd with
+    // "No endpoints found that support image input", and the session could
+    // only be rescued by a person noticing and saying so.
+    //
+    // Retry without them rather than failing. The catalogue says which models
+    // take images, but it can be stale or unreachable, and this is the only
+    // signal that is never wrong.
+    if (withImages && /image input|image support|support image/i.test(detail)) {
+      withImages = false
+      body = render()
+      onRetry?.({ attempt, delay: 0, reason: "this model cannot read images; retrying without them" })
+      continue
+    }
 
     if (!isRetryable(response.status) || attempt === maxAttempts) throw lastError
 
@@ -366,6 +389,10 @@ export async function models({ key, fetchImpl = fetch } = {}) {
       promptPerM: model.pricing?.prompt ? Number(model.pricing.prompt) * 1e6 : null,
       completionPerM: model.pricing?.completion ? Number(model.pricing.completion) * 1e6 : null,
       tools: (model.supported_parameters ?? []).includes("tools"),
+      // Whether a screenshot can be sent at all. A model without this rejects
+      // the WHOLE request with a 404, not just the image, so it is not an
+      // optional nicety — see the note on stream().
+      images: (model.architecture?.input_modalities ?? []).includes("image"),
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
 }
@@ -378,6 +405,7 @@ export function describeModel(model) {
     parts.push(model.promptPerM === 0 ? "free" : `$${model.promptPerM.toFixed(2)}/M in`)
   }
   if (!model.tools) parts.push("no tool use")
+  if (model.images) parts.push("sees images")
   return parts.join(" · ")
 }
 

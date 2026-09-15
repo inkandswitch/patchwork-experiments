@@ -221,3 +221,26 @@ describe("a tool call cut off mid-arguments", () => {
     expect(transcript(store).some((b) => b.type === "call" && b.tool === "doc_read")).toBe(true)
   })
 })
+
+describe("a turn that dies before it says anything", () => {
+  it("leaves no empty assistant turn behind", async () => {
+    // streamTurn appends its turn before the first token arrives, so a request
+    // that throws used to leave an empty one in the document — two of them sit
+    // in a real session, rendering as nothing and telling nobody anything.
+    const store = session()
+    const provider = {
+      id: "boom",
+      name: "Boom",
+      requests: [],
+      async *stream() {
+        throw new Error("OpenRouter 404: No endpoints found that support image input")
+      },
+    }
+
+    await run({ store, provider, toolset: toolset(), canRun: () => true, flushMs: 0 })
+
+    const empties = store.doc().turns.filter((t) => t.role === "assistant" && (t.blocks ?? []).length === 0)
+    expect(empties).toHaveLength(0)
+    expect(transcript(store).at(-1).text).toMatch(/support image input/)
+  })
+})

@@ -267,3 +267,28 @@ describe("asking a page for its rendered DOM", () => {
     expect(out).toBe("hello\nthere")
   })
 })
+
+describe("fetching something that is not a page", () => {
+  const failWith = (status) => async () => ({ ok: false, status, text: async () => "" })
+
+  it("points at http_request for a file, rather than at another page", async () => {
+    // Watched cost two calls: an agent after a JavaScript bundle tried
+    // web_import, then web_fetch, and was told both times to try a different
+    // page — which was not the problem.
+    await expect(
+      webFetch.execute({ url: "https://x.test/assets/index-Bnz1O14r.js" }, { fetchImpl: failWith(422) })
+    ).rejects.toThrow(/looks like a file rather than a page — fetch it with http_request/)
+  })
+
+  it("recognises a file by its extension even on another status", async () => {
+    await expect(
+      webFetch.execute({ url: "https://x.test/data.json" }, { fetchImpl: failWith(500) })
+    ).rejects.toThrow(/http_request/)
+  })
+
+  it("still gives the blocked-page advice for an actual page", async () => {
+    await expect(
+      webFetch.execute({ url: "https://x.test/article" }, { fetchImpl: failWith(403) })
+    ).rejects.toThrow(/may be blocked by that site; try a different page/)
+  })
+})
