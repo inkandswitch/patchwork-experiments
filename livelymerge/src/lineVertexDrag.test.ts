@@ -194,7 +194,7 @@ const lineOverlayMessage = (
   vertsFlat: number[] | null,
   opts: { end?: boolean; sid?: string } = {},
 ) => ({
-  type: 'lm-eph',
+  type: 'lm-eph-changes',
   v: 1,
   actor: 'actor-remote',
   sid: opts.sid ?? 'eph-remote-session',
@@ -255,7 +255,7 @@ describe('line vertex drag: ephemeral until drop', () => {
 
     // Peers watch live: per-frame messages carry the flat ephemeral vertex list.
     const mid: any = handle.sentEphemeral[handle.sentEphemeral.length - 1];
-    expect(mid.type).toBe('lm-eph');
+    expect(mid.type).toBe('lm-eph-changes');
     expect(mid.end).toBeUndefined();
     expect(mid.objects[0].id).toBe(lineId);
     const midVerts = Array.from(mid.objects[0].props.vertices) as number[];

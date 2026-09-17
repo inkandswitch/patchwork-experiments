@@ -890,9 +890,9 @@ class Set {
 // Wire format — plain JSON, and deliberately NO $-prefixed keys: LM reads/writes of
 // $-names on HOST objects route to the ephemeral-property sidecar, not the object,
 // so $-keys on a message would be invisible from LM code.
-//   { type: 'lm-eph', v: 1, actor, sid, end?,
+//   { type: 'lm-eph-changes', v: 1, actor, sid, end?,
 //     objects: [{ id, props: { transform, bounds, vertices? } }],
-//     hand?: { x, y, ci, name?, carrying?: [morphId, ...] } | { bye: true } }
+//     hand?: { x, y, colorIndex, name?, carrying?: [morphId, ...] } | { bye: true } }
 // Values are className-tagged trees ({ c: 'Point', x, y }, ...). Receivers decode by
 // prototype delegation (Object.create($global[c].prototype) + fields), validate
 // every number, and may ONLY write the whitelisted $-props (see
@@ -901,7 +901,7 @@ class Set {
 // `vertices` (line reshapes only, gated on $vertexDragActive) is a flat
 // [x0, y0, x1, y1, ...] number array — NOT the class-tagged codec, whose v1
 // deliberately carries no arrays; it has its own validator (ephValidVerticesValue).
-// `hand` is plain numbers/strings (x, y = the hand's hotspot in world coords; ci =
+// `hand` is plain numbers/strings (x, y = the hand's hotspot in world coords; colorIndex =
 // palette index; carrying = ids of the doc morphs the hand is carrying, for the
 // drag-shadow tint) with its own validator (ephValidHandPayload).
 //
@@ -916,14 +916,13 @@ class Set {
 // Timing policy is entirely receiver-side: an overlay lapses $EPH_OVERLAY_MS after
 // the last message about it, so a sender that dies mid-drag self-heals. The final
 // message (sent from finishPointerDrag AFTER the commit, so it carries exactly the
-// committed values) is flagged end:true; the receiver gives it the short
-// $EPH_OVERLAY_END_MS deadline — but does NOT drop the overlay at that deadline
-// unless this replica's document already shows the committed values. Document sync
-// is not prompt: now that idle replicas make no doc writes (op economy), a commit
-// can take arbitrarily long to sync in, and dropping the overlay early would snap
-// the morph back to its stale pre-drag position until then. So the sweep holds an
-// end overlay (which already shows the committed values) until the document catches
-// up, giving up after $EPH_OVERLAY_COMMIT_WAIT_MS if the commit never arrives.
+// committed values) is flagged end:true; the receiver does NOT put a timer on that
+// overlay at all — it holds it (the overlay already shows the committed values) until
+// this replica's document actually contains those values, then drops it invisibly.
+// The commit takes an unpredictable time to sync in (a round trip through the sync
+// server at minimum, sometimes far longer), and any fixed deadline would sometimes
+// expire first and snap the morph back to its stale pre-drag position. The only
+// timer is the $EPH_OVERLAY_COMMIT_WAIT_MS give-up, in case the commit never arrives.
 //
 // GC note: decoded overlays are shadow objects reachable only through $-props
 // (ephemeral-live, swept once the lease cleanup nulls them), and window._ephOverlays
@@ -988,7 +987,7 @@ function ephHandPayload(now) {
   let h = new window.Object();
   h.x = loc.x;
   h.y = loc.y;
-  h.ci = hand.$colorIndex != null ? hand.$colorIndex : 0;
+  h.colorIndex = hand.$colorIndex != null ? hand.$colorIndex : 0;
   let name = window._lmUserName;
   if (typeof name === 'string' && name.length > 0) h.name = name;
   if (hand.isLaden()) {
@@ -1034,7 +1033,7 @@ function ephOverlayEntryFor(morph) {
 }
 function ephBroadcast(objs, isEnd) {
   let msg = new window.Object();
-  msg.type = 'lm-eph';
+  msg.type = 'lm-eph-changes';
   msg.v = 1;
   msg.actor = $actorID;
   msg.sid = $ephSessionID; // replica identity for echo suppression (see above)
@@ -1126,7 +1125,8 @@ function ephValidHandPayload(h) {
   if (h == null || typeof h !== 'object') return false;
   if (h.bye === true) return true;
   if (!ephFiniteNumber(h.x) || !ephFiniteNumber(h.y)) return false;
-  if (h.ci != null && !(Number.isInteger(h.ci) && h.ci >= 0 && h.ci < 1024)) return false;
+  if (h.colorIndex != null && !(Number.isInteger(h.colorIndex) && h.colorIndex >= 0 && h.colorIndex < 1024))
+    return false;
   if (h.name != null && !(typeof h.name === 'string' && h.name.length <= 32)) return false;
   if (h.carrying != null) {
     let ids = h.carrying;
@@ -1147,7 +1147,7 @@ function processEphemeralInbound() {
   ephSweepHands(now);
 }
 function ephApplyMessage(m, now) {
-  if (!m || m.type !== 'lm-eph' || m.v !== 1) return;
+  if (!m || m.type !== 'lm-eph-changes' || m.v !== 1) return;
   // Echo safety on the per-session replica id — NEVER on actor alone: two users
   // can legitimately hold the same $actorID (see the comment block above). The
   // actor comparison remains only for messages from pre-`sid` senders.
@@ -1178,7 +1178,7 @@ function ephApplyHand(m, now) {
   if (!hand) {
     let cap = $HAND_MAX_REMOTE != null ? $HAND_MAX_REMOTE : 64;
     if (world.remoteHandCount() >= cap) return;
-    let ci = h.ci != null ? h.ci : 0;
+    let ci = h.colorIndex != null ? h.colorIndex : 0;
     hand = new HandMorph(typeof m.actor === 'string' ? m.actor : null, p, handColorForIndex(ci));
     hand.$sid = m.sid;
     hand.$isLocal = false;
@@ -1242,7 +1242,9 @@ function ephApplyOverlayEntry(entry, isEnd, now) {
   // The lease record: a host object of numbers only (never LM heap objects — see
   // the GC note above).
   let lease = new window.Object();
-  lease.deadline = now + (isEnd ? $EPH_OVERLAY_END_MS || 250 : $EPH_OVERLAY_MS || 1000);
+  // An end overlay is eligible for removal right away — but only once the commit has
+  // landed (see ephSweepOverlays), so its deadline is simply `now`.
+  lease.deadline = isEnd ? now : now + ($EPH_OVERLAY_MS || 1000);
   if (isEnd) {
     // The end message carries exactly the values the sender committed. Record them
     // so the sweep can hold the overlay until this replica's document has caught
@@ -1451,13 +1453,13 @@ function initUI() {
 
   $actorID = window.Automerge.getActorId(window.handle.doc());
 
-  // Receiver-side overlay lifetimes (the sender never dictates timing): lapse after
-  // this much silence about an ongoing interaction / after its end:true message.
+  // Receiver-side overlay lifetimes (the sender never dictates timing): an in-progress
+  // overlay lapses after this much silence about it. (End overlays have no deadline;
+  // they wait for the commit — see the timing-policy comment above.)
   $EPH_OVERLAY_MS = 1000;
-  $EPH_OVERLAY_END_MS = 250;
-  // How long past its deadline an end overlay may wait for the sender's committed
-  // values to sync into this replica's document, and how long an unreachable
-  // morph's lease is kept before it's abandoned. See ephSweepOverlays.
+  // How long an end overlay may wait for the sender's committed values to sync into
+  // this replica's document, and how long an unreachable morph's lease is kept
+  // before it's abandoned. See ephSweepOverlays.
   $EPH_OVERLAY_COMMIT_WAIT_MS = 30000;
   $EPH_OVERLAY_ABANDON_MS = 60000;
   // Minimum spacing between sync nudges (see ephNudgeSync); <= 0 disables nudging.
@@ -1505,7 +1507,7 @@ function initUI() {
   // because the pagehide listener below runs outside one and must not touch the LM
   // heap (same rule as the canvas listeners). Rebuilt on every re-init — same sid.
   let ephByeMsg = new window.Object();
-  ephByeMsg.type = 'lm-eph';
+  ephByeMsg.type = 'lm-eph-changes';
   ephByeMsg.v = 1;
   ephByeMsg.actor = $actorID;
   ephByeMsg.sid = $ephSessionID;

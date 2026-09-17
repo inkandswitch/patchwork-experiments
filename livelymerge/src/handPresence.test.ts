@@ -191,7 +191,7 @@ Lively.testBox = Lively.addMorph(new Morph(rect(30, 20, 60, 30)));
 
 type HandOpts = {
   actor?: string;
-  ci?: number;
+  colorIndex?: number;
   name?: string;
   carrying?: string[];
   bye?: boolean;
@@ -199,7 +199,7 @@ type HandOpts = {
   hand?: unknown; // raw override (malformed payloads)
 };
 const handMessage = (sid: string, x: number, y: number, opts: HandOpts = {}) => ({
-  type: 'lm-eph',
+  type: 'lm-eph-changes',
   v: 1,
   actor: opts.actor ?? 'actor-remote',
   sid,
@@ -212,7 +212,7 @@ const handMessage = (sid: string, x: number, y: number, opts: HandOpts = {}) => 
         : {
             x,
             y,
-            ci: opts.ci ?? 2,
+            colorIndex: opts.colorIndex ?? 2,
             ...(opts.name ? { name: opts.name } : {}),
             ...(opts.carrying ? { carrying: opts.carrying } : {}),
           },
@@ -279,16 +279,16 @@ describe('hands: my own hand', () => {
     runFrame();
     expect(handle.sentEphemeral.length).toBe(1);
     const m = lastSent(handle);
-    expect(m.type).toBe('lm-eph');
+    expect(m.type).toBe('lm-eph-changes');
     expect(m.v).toBe(1);
     expect(m.sid).toBe(rt.eval(`$ephSessionID`));
     expect(m.actor).toBe('actor-test');
     expect(m.objects.length).toBe(0);
     expect(m.hand.x).toBe(100);
     expect(m.hand.y).toBe(100);
-    expect(Number.isInteger(m.hand.ci)).toBe(true);
-    expect(m.hand.ci).toBe(rt.eval(`Lively.myHand().$colorIndex`));
-    expect(m.hand.ci).toBeLessThan(rt.eval(`$HAND_PALETTE.length`) as number);
+    expect(Number.isInteger(m.hand.colorIndex)).toBe(true);
+    expect(m.hand.colorIndex).toBe(rt.eval(`Lively.myHand().$colorIndex`));
+    expect(m.hand.colorIndex).toBeLessThan(rt.eval(`$HAND_PALETTE.length`) as number);
     expect(m.hand.name).toBeUndefined();
     expect(m.hand.carrying).toBeUndefined();
 
@@ -340,7 +340,7 @@ describe('hands: my own hand', () => {
   it('prebuilds the goodbye message for the pagehide listener', () => {
     const { rt } = makeWorld();
     const bye = (globalThis as any)._ephByeMsg;
-    expect(bye.type).toBe('lm-eph');
+    expect(bye.type).toBe('lm-eph-changes');
     expect(bye.v).toBe(1);
     expect(bye.sid).toBe(rt.eval(`$ephSessionID`));
     expect(bye.actor).toBe('actor-test');
@@ -354,7 +354,7 @@ describe('hands: peers', () => {
     const { handle, rt, runFrame, runFrames, opsDuring, docEntryCount } = makeWorld();
     const entriesBefore = docEntryCount();
     const arrival = opsDuring(() => {
-      handle.deliverEphemeral(handMessage('sid-dan', 200, 200, { actor: 'actor-dan', ci: 3, name: 'Dan' }));
+      handle.deliverEphemeral(handMessage('sid-dan', 200, 200, { actor: 'actor-dan', colorIndex: 3, name: 'Dan' }));
       runFrame();
     });
     expect(arrival.count, arrival.keys.join('\n')).toBe(0);
@@ -373,7 +373,7 @@ describe('hands: peers', () => {
     // Peers' hands do not hide MY cursor.
     expect((globalThis as any).canvas.style.cursor).toBe('default');
 
-    handle.deliverEphemeral(handMessage('sid-dan', 260, 230, { actor: 'actor-dan', ci: 3 }));
+    handle.deliverEphemeral(handMessage('sid-dan', 260, 230, { actor: 'actor-dan', colorIndex: 3 }));
     runFrame();
     expect(rt.eval(`Lively.handForSid('sid-dan').hotspot().x`)).toBe(260);
     expect(rt.eval(`Lively.handForSid('sid-dan').hotspot().y`)).toBe(230);
@@ -381,7 +381,7 @@ describe('hands: peers', () => {
     expect(rt.eval(`Lively.$hands.length`)).toBe(1); // same sid, same hand
 
     // A second peer gets a second hand; nothing reaches the document.
-    handle.deliverEphemeral(handMessage('sid-eve', 10, 10, { actor: 'actor-eve', ci: 5 }));
+    handle.deliverEphemeral(handMessage('sid-eve', 10, 10, { actor: 'actor-eve', colorIndex: 5 }));
     runFrames(3);
     expect(rt.eval(`Lively.$hands.length`)).toBe(2);
     expect(docEntryCount()).toBe(entriesBefore);
@@ -427,12 +427,12 @@ describe('hands: peers', () => {
     expect(rt.eval(`Lively.$hands == null || Lively.$hands.length === 0`)).toBe(true);
 
     const bad: unknown[] = [
-      { x: NaN, y: 1, ci: 0 },
-      { x: 1, y: Infinity, ci: 0 },
-      { x: 1, y: 1, ci: 1.5 },
-      { x: 1, y: 1, ci: -1 },
-      { x: 1, y: 1, ci: 0, name: 'x'.repeat(40) },
-      { x: 1, y: 1, ci: 0, carrying: [1, 2] },
+      { x: NaN, y: 1, colorIndex: 0 },
+      { x: 1, y: Infinity, colorIndex: 0 },
+      { x: 1, y: 1, colorIndex: 1.5 },
+      { x: 1, y: 1, colorIndex: -1 },
+      { x: 1, y: 1, colorIndex: 0, name: 'x'.repeat(40) },
+      { x: 1, y: 1, colorIndex: 0, carrying: [1, 2] },
       'not an object',
       { x: 'a', y: 'b' },
     ];
@@ -445,7 +445,7 @@ describe('hands: peers', () => {
     expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(300);
     // A message must carry a sid to place a hand.
-    handle.deliverEphemeral({ type: 'lm-eph', v: 1, actor: 'actor-old', objects: [], hand: { x: 1, y: 1, ci: 0 } });
+    handle.deliverEphemeral({ type: 'lm-eph-changes', v: 1, actor: 'actor-old', objects: [], hand: { x: 1, y: 1, colorIndex: 0 } });
     runFrame();
     expect(rt.eval(`Lively.$hands == null || Lively.$hands.length === 0`)).toBe(true);
   }, 60_000);
