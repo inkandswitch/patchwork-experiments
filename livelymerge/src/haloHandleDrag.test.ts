@@ -93,7 +93,7 @@ describe('halo handle drag (full stack)', () => {
     // Strip the trailing top-level init(): it boots a demo world whose rAF
     // closure and timers go stale (and crash) once the test's own
     // initUI()/initLively() replace them.
-    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+    rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
     rt.eval(`
 initUI();
 initLively();

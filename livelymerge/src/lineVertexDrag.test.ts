@@ -115,7 +115,7 @@ function makeWorld() {
   const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
   // Strip the trailing top-level init(): it boots a demo world (including its own
   // demo line) that would fight this test's world.
-  rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+  rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   // World-coord vertices (30,330) → (90,330): line origin lands at (30,330), so
   // line-local coords are world − (30,330) and vertex 0 sits at local (0,0).
   rt.eval(`

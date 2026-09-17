@@ -70,7 +70,7 @@ function setup() {
       return { measureText: () => ({ width: 10 }) };
     }
   };
-  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*$/, ''));
+  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   return { rt };
 }
 

@@ -112,7 +112,7 @@ function setup() {
   g.handle = handle;
   g.runtime = rt;
   const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
-  rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+  rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   return { harness, handle, rt };
 }
 

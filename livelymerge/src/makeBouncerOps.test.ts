@@ -80,7 +80,7 @@ function setup() {
   };
   // Minimal broadcast stub so ephStreamRegister can run.
   g.handle.broadcast = () => {};
-  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*$/, ''));
+  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   return { handle, rt };
 }
 

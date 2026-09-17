@@ -82,7 +82,7 @@ function setupMorphic() {
       return { measureText: () => ({ width: 10 }) };
     }
   };
-  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*$/, ''));
+  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   rt.eval(`initUI(); initLively();`);
   return { handle, rt };
 }

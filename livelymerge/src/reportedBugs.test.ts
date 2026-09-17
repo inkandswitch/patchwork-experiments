@@ -128,7 +128,7 @@ function setup() {
   // (initUI()/initLively(), or an explicit rt.eval('init()') for the
   // full-boot tests). Letting the source's init() run too would leave a stale
   // demo-world rAF closure and timers that crash once re-initialized.
-  rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+  rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   return { harness, handle, rt };
 }
 

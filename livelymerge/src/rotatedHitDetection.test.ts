@@ -110,7 +110,7 @@ describe('rotated morph hit detection', () => {
     g.runtime = rt;
     const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
     // Strip the trailing top-level init() (see the halo test below for why).
-    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+    rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
 
     // A 100x20 strip anchored at (200,200), rotated +90° (ctx.rotate sense).
     // rotateBy pivots about the shape center (250,210), so the strip renders
@@ -184,7 +184,7 @@ Lively.rotBox2.rotateBy(Math.PI / 4);
     // Strip the file's trailing top-level init(): it boots a demo world and
     // schedules timers against it, which crash later once the test's own
     // initLively() replaces the global Lively.
-    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+    rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
 
     rt.eval(`
 initUI();
@@ -259,7 +259,7 @@ halo && halo.getBounds().containsRect
     g.runtime = rt;
     const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
     // Strip the trailing top-level init() (see the halo-frame test above).
-    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+    rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
     rt.eval(`
 initUI();
 initLively();

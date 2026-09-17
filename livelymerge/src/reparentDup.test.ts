@@ -93,7 +93,7 @@ function boot() {
   g.handle = docHandle;
   g.runtime = rt;
   const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
-  rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+  rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   rt.eval(`
 initUI();
 initLively();

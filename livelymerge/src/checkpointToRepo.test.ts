@@ -93,7 +93,7 @@ function installBrowserStubs(writeSink: { path?: string; text?: string }) {
 }
 
 function stripTrailingInit(src: string) {
-  return src.replace(/\binit\(\)\s*$/, '');
+  return src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, '');
 }
 
 function normalizeCheckpoint(text: string) {

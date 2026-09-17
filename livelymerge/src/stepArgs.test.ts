@@ -17,7 +17,7 @@ function setup() {
   g.HTMLImageElement = class {}; g.HTMLCanvasElement = class {};
   g.Image = class { width=0; height=0; set src(_v:string){} };
   g.OffscreenCanvas = class { width=0; height=0; constructor(w:number,h:number){this.width=w;this.height=h;} getContext(){return { measureText:()=>({width:10})}; } };
-  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*$/, ''));
+  rt.eval(readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8').replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   return { rt };
 }
 
