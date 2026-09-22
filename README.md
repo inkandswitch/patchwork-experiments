@@ -24,33 +24,37 @@ see `src/index.ts` → `src/component.ts`). A consumer mounts it purely by id:
 ```tsx
 <patchwork-view
   component="patchwork-isolation"
-  root-component="my-isolated-root"            // patchwork:component the iframe mounts
-  attr:automerge-allowlist={urls.join(",")}    // seeds the sync allowlist (see note)
-  shared-providers="patchwork:contact,patchwork:selected-doc">
-  <script type="application/json" data-patchwork-isolation>{JSON.stringify(props)}</script>  {/* opaque root-component data, pushed live */}
+  root-component="my-isolated-root" // patchwork:component the iframe mounts
+  attr:automerge-allowlist={urls.join(",")} // seeds the sync allowlist (see note)
+  shared-providers="patchwork:contact,patchwork:selected-doc,patchwork:worker-channel"
+>
+  <script type="application/json" data-patchwork-isolation>
+    {JSON.stringify(props)}
+  </script>{" "}
+  {/* opaque root-component data, pushed live */}
 </patchwork-view>
 ```
 
 The config rides on the mounted element's DOM surface. It splits into two kinds
-— **structural** (what the boundary *is*) and **opaque cargo** (data for the
+— **structural** (what the boundary _is_) and **opaque cargo** (data for the
 root that the boundary never interprets):
 
-| config            | carried as                                        | change behavior |
-| ----------------- | ------------------------------------------------- | --------------- |
-| `rootComponentId` | `root-component` attribute                        | **reboot**      |
-| `rootUrls`        | `automerge-allowlist` attribute (comma-separated) | **reboot**      |
-| bridged providers | `shared-providers` attribute                      | **reboot**      |
-| root-component data (opaque) | inert `<script data-patchwork-isolation>` child | **push, no reboot** |
+| config                       | carried as                                        | change behavior     |
+| ---------------------------- | ------------------------------------------------- | ------------------- |
+| `rootComponentId`            | `root-component` attribute                        | **reboot**          |
+| `rootUrls`                   | `automerge-allowlist` attribute (comma-separated) | **reboot**          |
+| bridged providers            | `shared-providers` attribute                      | **reboot**          |
+| root-component data (opaque) | inert `<script data-patchwork-isolation>` child   | **push, no reboot** |
 
 **Structural attributes → reboot.** `patchwork-view` only re-syncs a component on
 `component`/`url` changes (the three structural attributes aren't in its
 `observedAttributes` at all), so the mount fn (`component.ts`) self-observes them
 with a `MutationObserver` and reboots the iframe (microtask-debounced) when one
 changes — they change which root mounts, the sync allowlist, or the bridged set,
-so a fresh boot is required. (This observer watches *attributes only*, never the
+so a fresh boot is required. (This observer watches _attributes only_, never the
 element subtree: the iframe is appended as a child of this element, so a subtree
 observer would retrigger on the iframe's own churn and loop. It lives in the
-mount fn rather than `bootIsolation` because it *triggers* reboots and so must
+mount fn rather than `bootIsolation` because it _triggers_ reboots and so must
 outlive any single boot.)
 
 **Root-component data → opaque cargo, pushed live.** The boundary treats the data
@@ -58,7 +62,7 @@ outlive any single boot.)
 `:scope >`) as an opaque string: it never parses it, only relays its text. It
 rides the boot message on first mount, and `bootIsolation` installs a
 `MutationObserver` — scoped to that `<script>` node's text specifically — that
-pushes later changes to the *running* iframe via a `root-component-data-update`
+pushes later changes to the _running_ iframe via a `root-component-data-update`
 RPC message with **no reboot**. (This observer lives inside `bootIsolation`: its
 lifetime is exactly one boot, so it is torn down with the rest. The iframe side
 lives in `boot/iframe/root-component-data.ts`.) The iframe writes the new text
@@ -69,8 +73,8 @@ switching documents still reboots (the allowlist must re-seed); a same-document
 props tweak (collapse toggle, tool reorder) updates in place.
 
 > **`attr:automerge-allowlist`, not `automerge-allowlist`, for the dynamic
-> value.** In a Solid consumer, a *dynamic* `automerge-allowlist={...}` compiles
-> to a DOM *property* assignment, which `getAttribute` (and the MutationObserver)
+> value.** In a Solid consumer, a _dynamic_ `automerge-allowlist={...}` compiles
+> to a DOM _property_ assignment, which `getAttribute` (and the MutationObserver)
 > would never see. The `attr:` namespace forces a real attribute. Static string
 > literals (`root-component`, `shared-providers`) are baked into the template as
 > attributes already and need no prefix — only dynamic bindings do.

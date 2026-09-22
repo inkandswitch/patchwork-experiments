@@ -193,6 +193,7 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
     createIframe(rpcChannel.port2, intermediary.iframePort, mapper, assets, {
       rootComponentId,
       importMap,
+      bridgedProviders,
     });
   }
 
@@ -204,6 +205,7 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
     config: {
       rootComponentId: string;
       importMap: ReturnType<typeof getResolvedImportMap>;
+      bridgedProviders: string[];
     }
   ) {
     const el = document.createElement("iframe");
@@ -239,6 +241,10 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
           // initial boot rather than lost, since a pre-port push no-ops.
           rootComponentData: readRootComponentData(host),
           registryEntries,
+          // Which selector types this instance may bridge. The iframe half checks
+          // it before claiming, so a non-bridged selector keeps bubbling to a
+          // local provider instead of being swallowed and then rejected.
+          bridgedProviders: config.bridgedProviders,
           esmsSource: assets.esmsSource,
           hostStyles: assets.hostStyles,
           importMap: config.importMap,

@@ -26,6 +26,7 @@
 
 import { isValidAutomergeUrl } from "@automerge/automerge-repo/slim";
 import { log } from "../log.js";
+import { resolveGatedAttribute } from "./gating.js";
 
 /**
  * Provider subscription types that have been analyzed for security
@@ -48,7 +49,46 @@ export const ALLOWED_PROVIDERS = [
   // identity, so it is safe to relay into the iframe; lets isolated tools
   // (e.g. the titlebar theme tool) mirror the host's active theme.
   "patchwork:current-theme",
+  // A worker connection: the host runs the worker and transfers its
+  // `{readable, writable}` stream pair in. The worker, and any config or
+  // secrets it resolves, never leave the host — only the streams cross.
+  //
+  // The gate is the TYPE, not the worker `kind` nested in the selector: opting
+  // in here opts into every registered kind. That is deliberate. Scoping comes
+  // from the transport instead — each subscription carries its own MessagePort
+  // and is relayed under its own id, so a tool receives the streams for the
+  // worker it connected to and has no handle on anyone else's.
+  "patchwork:worker-channel",
 ];
+
+/**
+ * Transferables to hand `postMessage` for a relayed value.
+ *
+ * Values normally structured-clone, but a provider may answer with something
+ * that cannot be cloned — a worker's stream pair is the live case. `accept()`
+ * lets a provider name those in its own transfer list; the bridge has to do the
+ * same on each hop or the relay throws `DataCloneError`.
+ *
+ * Deliberately shallow: it inspects the value's own enumerable properties and
+ * does not recurse. A provider that wants something transferred puts it at the
+ * top level of the value (as the worker provider does), and walking arbitrary
+ * depth would risk detaching an object the sender still holds a reference to.
+ */
+export function transferablesIn(value: unknown): Transferable[] {
+  if (!value || typeof value !== "object") return [];
+  const out: Transferable[] = [];
+  for (const candidate of Object.values(value as Record<string, unknown>)) {
+    if (
+      candidate instanceof ReadableStream ||
+      candidate instanceof WritableStream ||
+      candidate instanceof MessagePort ||
+      candidate instanceof ArrayBuffer
+    ) {
+      out.push(candidate as Transferable);
+    }
+  }
+  return out;
+}
 
 /**
  * Resolve the set of provider types to bridge for one isolation instance: the
@@ -58,22 +98,7 @@ export const ALLOWED_PROVIDERS = [
  * analysis before being added. No providers are bridged unless opted in.
  */
 export function resolveBridgedProviders(element: HTMLElement): string[] {
-  const requested = (element.getAttribute("shared-providers") ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const bridged: string[] = [];
-  for (const provider of requested) {
-    if (ALLOWED_PROVIDERS.includes(provider)) {
-      bridged.push(provider);
-    } else {
-      console.warn(
-        `[patchwork-isolation] shared-providers: "${provider}" is not in ALLOWED_PROVIDERS. ` +
-          `New provider types need independent security analysis before being added.`
-      );
-    }
-  }
-  return bridged;
+  return resolveGatedAttribute(element, "shared-providers", ALLOWED_PROVIDERS);
 }
 
 interface ActiveSubscription {
@@ -195,11 +220,14 @@ export function startHostProvidersBridge(
             ? await valueFilter(selector.type, e.data.value)
             : e.data.value;
           if (value === undefined) return;
-          rpcPort.postMessage({
-            type: "providers-bridge-change",
-            id,
-            value,
-          });
+          rpcPort.postMessage(
+            {
+              type: "providers-bridge-change",
+              id,
+              value,
+            },
+            transferablesIn(value)
+          );
         }
       });
       hostPort.start();

@@ -12,7 +12,7 @@ import { log } from "./log.js";
  *
  *   <patchwork-view
  *     component="patchwork-isolation"
- *     root-component="threepane-isolation-root"         // which root to mount inside the iframe
+ *     root-component="threepane-isolation-root"     // which root to mount inside the iframe
  *     automerge-allowlist="automerge:abc,automerge:def" // sync allowlist seeds
  *     shared-providers="patchwork:contact,...">         // bridged providers
  *     <script type="application/json" data-root-component-data> // opaque root-component data
@@ -49,6 +49,7 @@ export const mountIsolation: ComponentRender = (element) => {
       "root-component",
       "automerge-allowlist",
       "shared-providers",
+      "shared-tools",
     ],
   });
 

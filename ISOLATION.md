@@ -266,21 +266,19 @@ The marker is a **single path segment** — the literal prefix `registry--` fuse
 
 Resolved module URLs returned to the iframe are prefixed with the host origin (e.g., `https://host/registry--@scope--name/dist/index.js`) so that relative imports in code-split packages resolve correctly.
 
-### Tool-spawned Web Workers
+### Worker channel
 
-Some tools construct a Web Worker (e.g. a model-inference worker). The opaque-origin sandbox makes this impossible by default: a worker script can't be loaded cross-origin from the `null`-origin iframe, and even a same-origin blob worker has none of the iframe's module-loading machinery (its imports resolve to host-origin URLs it can't fetch). The iframe-side **Worker shim** (`boot/iframe/worker-shim.ts`) re-enables workers _inside_ the boundary without granting them any new authority.
+Some tools need a Web Worker (e.g. a model-inference worker). Rather than construct one _inside_ the boundary — where the opaque `null` origin blocks cross-origin worker scripts and a same-origin blob worker has none of the iframe's module-loading machinery — the worker runs in the **host realm** and only its stream pair crosses the boundary. This is the same generic transport (`@grjte/patchwork-worker`) a tool uses outside isolation, so the tool's code is identical in and out of the sandbox.
 
-The shim patches `self.Worker`. For a module worker whose script is a host-origin URL (a `registry--` marker) — or a `blob:` worker a tool built itself by fetching the script text — it:
+The mechanism is an ordinary provider subscription whose answered value happens to carry transferred streams:
 
-1. Fetches the worker's entry source via the **existing module RPC** (`fetch-package`); for a `blob:` script it reads the blob text back (same-origin to the iframe).
-2. Builds a **same-origin blob** that prepends the es-module-shims source and a bootstrap (`boot/iframe/worker-bootstrap.ts`), and constructs the real worker from that blob as a **classic worker** (a `blob:` URL inherits the iframe's origin, so construction is allowed; classic — not `{type:"module"}` — because the blob has no top-level `import`/`export` and a classic worker's top-level script is exempt from the "module worker can't follow a cross-origin redirect" restriction).
-3. Hands the worker a dedicated `MessagePort`. Inside the worker, the bootstrap installs es-module-shims with a `source` hook: host-origin (`registry--`) module requests are relayed **over that port back to the iframe**, which forwards them to the same `fetch-package`/`fetch-resource` RPC handlers; genuinely external modules (e.g. a CDN lib the worker imports) are fetched directly in the worker (a worker `fetch` follows redirects and returns the final text, which es-module-shims blob-imports — sidestepping the module-worker redirect restriction).
+1. A tool inside the iframe calls `connectWorker(kind, request)` (`@grjte/patchwork-worker/connect.js`, the only file it loads). That dispatches a `patchwork:subscribe` for `{type: "patchwork:worker-channel", kind, request}`.
+2. The providers bridge relays that subscription across the boundary (see below), where the host-realm **worker provider** (`patchwork-worker-provider`, shipped by the `providers` package and mounted by the frame) answers it. The provider resolves `kind` from the `patchwork:worker` plugin registry, `serveWorkerSpec` constructs **one dedicated worker for that connection** in the host realm, and the provider answers with the `{readable, writable}` stream pair — naming both streams in `accept()`'s transfer list so they are _moved_, not cloned.
+3. The bridge transfers the pair back into the iframe (the transferables are re-derived on each hop; `providers-bridge.ts` `transferablesIn` host-side and the iframe half's inline copy). The tool reads/writes frames over the pair exactly as it would host-side.
 
-**Why this preserves the boundary.** The worker inherits the iframe's opaque `null` origin (no host DOM, cookies, storage, or keyhive). It is handed **no host RPC port and no Automerge sync port** — it can talk only to the iframe, and only to request modules/resources. Those requests pass through the identical `classify` allowlist and `registry--` marker resolution the iframe uses, so a worker can load nothing the iframe couldn't, and the host still sees only the iframe as its RPC peer — no new host-facing surface. The relay forwards **only** `fetch-package`/`fetch-resource`; every other message type is ignored (no document sync, providers, or navigation reach the worker). The worker's own application messages travel on the standard `Worker.postMessage`/`onmessage` channel, separate from the relay `MessagePort` and never inspected (the bootstrap buffers app messages that arrive before the real worker installs its handler, then replays them).
+**Why this preserves the boundary.** The worker runs in the host realm, but the iframe never gets a handle on it — only the two stream endpoints. Everything the worker resolves (its config, and any secrets such as an API key) stays host-side and never enters a frame or crosses into the sandbox; only request/response frames flow over the streams. The worker is created and terminated with the connection (no sharing, no reuse), so an isolated tool cannot reach another tool's worker: each subscription carries its own `MessagePort` and is relayed under its own id, and the tool receives only the streams for the `kind` it connected to.
 
-Non-module workers, and module workers whose script is a genuine non-host, non-blob cross-origin URL, fall through to the native `Worker` constructor unchanged.
-
-Note (current scope): nested workers (a worker that itself spawns a worker) are not yet re-shimmed inside the worker; the target tools spawn their workers from the iframe context, not from within a worker. This is a straightforward extension (re-install the shim in the bootstrap) if a tool needs it.
+**Gating.** The gate is the subscription **type** (`patchwork:worker-channel`), not the worker `kind` nested in the selector — opting in via `shared-providers` opts into every registered kind. Scoping comes from the transport instead (one worker, one connection, one id per request), not from a per-kind allowlist.
 
 ### Package registry in iframe
 
@@ -300,14 +298,16 @@ DOM events do not cross iframe boundaries, so provider subscriptions (`patchwork
 
 **Two-tier allowlist:**
 
-1. **`ALLOWED_PROVIDERS` (hard allowlist)** — a set of provider types that have been analyzed for security implications and are safe to bridge: `patchwork:contact` and `patchwork:selected-doc`. New types require independent security analysis before being added. Any type not in this set is rejected with a console warning.
+1. **`ALLOWED_PROVIDERS` (hard allowlist)** — a set of provider types that have been analyzed for security implications and are safe to bridge: `patchwork:contact`, `patchwork:selected-doc`, `patchwork:current-theme`, and `patchwork:worker-channel`. New types require independent security analysis before being added. Any type not in this set is rejected with a console warning.
 
-2. **`shared-providers` attribute (per-instance)** — the `<patchwork-isolation>` element reads a `shared-providers` attribute (comma-separated list of provider types). The effective bridged set is the intersection of this attribute and `ALLOWED_PROVIDERS`. No providers are bridged by default — the host must opt in.
+2. **`shared-providers` attribute (per-instance)** — the isolation `<patchwork-view>` element reads a `shared-providers` attribute (comma-separated list of provider types). The effective bridged set is the intersection of this attribute and `ALLOWED_PROVIDERS`. No providers are bridged by default — the host must opt in.
 
 **Analyzed types:**
 
 - **`patchwork:contact`** — returns the user's contact document URL. Leaks minimal information (the user's own contact doc), and will only be bridged when the host opts in via `shared-providers`. Used by tools such as comments-view and codemirror-base to tag comments with the current user.
 - **`patchwork:selected-doc`** — returns the currently selected document URLs. Used by history-view to know which document to show history for. Values are silently filtered to only include URLs already on the document allowlist (no prompting) — the semantic is "which of my allowlisted documents is selected," not "give me access to the selected document."
+- **`patchwork:current-theme`** — returns the active theme id (a plain string). Carries no automerge URLs or user identity, so relaying it into the iframe is safe; lets isolated tools (e.g. the titlebar theme tool) mirror the host's active theme.
+- **`patchwork:worker-channel`** — opens a worker connection: the host runs the worker and transfers its `{readable, writable}` stream pair in. The worker, and any config or secrets it resolves, never leave the host — only the streams cross. See "Worker channel" above; the gate is the type, and scoping comes from the transport (one worker per connection, per-request ids), not a per-`kind` allowlist.
 
 **All other subscription types are rejected.** Bridging additional providers could leak document URLs or other sensitive information to the isolated context.
 

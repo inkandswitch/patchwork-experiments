@@ -1,6 +1,6 @@
 /**
  * The isolated iframe's config, read directly off the mounted host element (the
- * `<patchwork-view component="patchwork-isolation">`). The element IS the config
+ * `<patchwork-view component="patchwork-isolation-llm">`). The element IS the config
  * surface — there is no separate spec object — so these are the reads
  * `bootIsolation` composes, alongside the boot assets, import map, and styles.
  *
