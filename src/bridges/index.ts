@@ -34,3 +34,7 @@ export {
   resolveBridgedProviders,
   makeBridgedValueFilter,
 } from "./providers-bridge.js";
+export {
+  startHostOpenToolBridge,
+  resolveSharedTools,
+} from "./open-tool-bridge.js";

@@ -48,6 +48,8 @@ import {
   startHostProvidersBridge,
   resolveBridgedProviders,
   makeBridgedValueFilter,
+  startHostOpenToolBridge,
+  resolveSharedTools,
 } from "../../bridges/index.js";
 import { generateIframeSrcdoc } from "./srcdoc.js";
 import { log } from "../../log.js";
@@ -147,6 +149,10 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
     // (see providers-bridge).
     const bridgedProviders = resolveBridgedProviders(host);
 
+    // Host components this instance may open: shared-tools ∩ ALLOWED_OPEN_TOOLS
+    // (see open-tool-bridge). Empty unless opted in.
+    const sharedTools = resolveSharedTools(host);
+
     // The bridge filters URLs in bridged values against the allowlist; the
     // silent-vs-prompt policy per provider type lives in the bridge.
     const bridgedValueFilter = makeBridgedValueFilter({
@@ -186,6 +192,10 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
         bridgedProviders,
         bridgedValueFilter
       ),
+      // Open-tool bridge: lets an isolated tool open a host-realm tool (e.g. the
+      // LLM config tray) by re-dispatching patchwork:open-tool on the host
+      // element. Gated by shared-tools ∩ ALLOWED_OPEN_TOOLS.
+      startHostOpenToolBridge(hostRpcPort, host, sharedTools),
       watchRegistries(hostRpcPort, mapper)
     );
 

@@ -198,6 +198,18 @@ export async function boot(deps: BootDeps) {
     true
   );
 
+  // Open-tool bridge (iframe side): forward patchwork:open-tool to the host so an
+  // isolated tool can open a HOST-realm tool (e.g. the LLM config tray) it can't
+  // reach itself. The host gates by a component allowlist (see open-tool-bridge).
+  // Capturing + does not stopPropagation, mirroring open-document above.
+  document.addEventListener(
+    "patchwork:open-tool",
+    ((event: CustomEvent) => {
+      rpcPort.postMessage({ type: "open-tool", detail: event.detail });
+    }) as EventListener,
+    true
+  );
+
   const d = init.data;
   log("init", { root: d.rootComponentId });
 
