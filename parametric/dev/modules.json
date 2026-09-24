@@ -1,4 +1,0 @@
-{
-  "_comment": "Development module list for the local Patchwork host. Serve with `node dev/serve.mjs`, then boot the host with ?system-package-list=/modules.json,http://localhost:5198/dev/modules.json (and lattice's list for the sketches theme).",
-  "modules": ["../parametric.js"]
-}
