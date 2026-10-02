@@ -5,9 +5,8 @@ import { log } from "./log.js";
 /**
  * The isolation `patchwork:component` mount function.
  *
- * In patchwork-base, cross-package units are resolved through the registry by
- * id — never imported. So isolation ships as a `patchwork:component`
- * (`patchwork-isolation`) rather than the custom element it is in core. The
+ * Cross-package units are resolved through the registry by id, never imported,
+ * so isolation ships as a `patchwork:component` (`patchwork-isolation`). The
  * consumer mounts it with `<patchwork-view component="patchwork-isolation">` and
  * puts all the config on that element's DOM surface:
  *

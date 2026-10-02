@@ -10,9 +10,7 @@
  * rather than closed over, since `.toString()` can't capture surrounding scope.
  */
 
-// RegistryEntry is a host↔iframe wire type — see ../../types.ts (the single
-// source of truth). Imported for use in this file's type positions and re-exported for
-// any importer that sources it here.
+// RegistryEntry is a host↔iframe wire type — see ../../types.ts.
 import type { RegistryEntry } from "../../types.js";
 export type { RegistryEntry };
 

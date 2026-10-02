@@ -434,8 +434,7 @@ function sameDoc(a: AutomergeUrl, b: AutomergeUrl): boolean {
  *  1. Already denylisted — an O(1) set lookup. Once the eager `populateDenylist`
  *     pass has run, the account doc, every module-settings doc, and all
  *     tool-source folder/branches docs are already here, so this short-circuit
- *     catches them with no I/O. (This is why the denylist is a cache, not
- *     redundant work — see the module header.)
+ *     catches them with no I/O.
  *  2. The account doc, matched by identity.
  *  3. A module-settings doc, matched by membership in the user's settings set
  *     (covers a settings doc wired in after the eager pass).

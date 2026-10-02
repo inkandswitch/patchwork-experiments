@@ -94,9 +94,8 @@ export function installLinkInterception(hostOrigin: string, log: IframeLog): voi
 
   // Install the prototype patches once. boot() runs a single time per iframe,
   // and the iframe (with these globals) is destroyed wholesale when the host
-  // element is torn down — so there is nothing to restore. The guard is pure
-  // defense in depth: it guarantees the wrappers can never stack even if this
-  // were somehow re-invoked.
+  // element is torn down — so there is nothing to restore. The guard stops the
+  // wrappers stacking if this is ever re-invoked.
   const PATCH_FLAG = "__patchworkDomPatched";
   if (!(Node.prototype as any)[PATCH_FLAG]) {
     (Node.prototype as any)[PATCH_FLAG] = true;
