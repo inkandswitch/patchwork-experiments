@@ -95,7 +95,8 @@ describe('session log crash probe', () => {
     if (Lively.handleStepList) Lively.handleStepList();
   }
   openSessionLog();
-  openSessionLog();
+  // Re-open replaces prior panels, so check the last one returned.
+  p = openSessionLog();
   for (let i = 0; i < 10; i++) {
     if (Lively.handleStepList) Lively.handleStepList();
   }

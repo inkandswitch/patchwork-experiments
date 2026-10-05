@@ -1,3 +1,4 @@
+//written on 2026-10-05 11:43 PDT
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -1372,6 +1373,10 @@ function morphWithId(root, id) {
     if (found == null) found = morphWithId(m, id);
   });
   return found;
+}
+function morphNamed(name) {
+  /** morphNamed('sun') — the world's nearest morph with that part name (see Morph.get), or null. */
+  return Lively.get(name);
 }
 
 function initUI() {
@@ -3608,11 +3613,7 @@ class TextBox extends Shape {
       let term = this.selectedTextString();
       let hits = methodsContaining(term);
       if (!hits || hits.length === 0) {
-        // (was `let pt = ... : pt(120, 120)` — the local `pt` shadowed the global
-        //  pt() and referenced itself in its own initializer: a TDZ ReferenceError
-        //  whenever the pointer location was unknown.)
-        let at = getPointerLocation() ? getPointerLocation().copy() : pt(120, 120);
-        showFindNoMatchesMenu(Lively, at, term);
+        showFindNoMatchesMenu(Lively, null, term);
       } else {
         // Per-user tool window; promote via the halo's P handle to share it.
         Lively.addEphemeralMorph(
@@ -4666,6 +4667,126 @@ class Morph {
     let name = '' + className;
     return this.find((m) => m && m.className === name);
   }
+
+  // Part names (after Lively Kernel's morph.setName / morph.get)
+  // ------------------------------------------------------------
+  // A name labels a morph as a "part" so code can find it by role, e.g.
+  //   clock.get('hourHand').rotateBy(0.1)
+  // instead of holding a reference to it. Names are plain strings in the
+  // persistent field `name`, so they are shared by every replica and survive
+  // reloads. They are not required to be unique: lookups answer the nearest
+  // match (see get), and getAllNamed answers every match.
+  setName(name) {
+    /**
+     * Name this morph (answers this, so calls chain). null or '' removes the name.
+     *   new Morph(rect(0, 0, 40, 40)).setName('sun')
+     */
+    let s = name == null ? '' : '' + name;
+    if (s === '') {
+      if (this.name != null) this.name = null;
+    } else if (this.name !== s) {
+      this.name = s;
+    }
+    return this;
+  }
+  getName() {
+    /** This morph's part name, or null. */
+    return this.name != null && this.name !== '' ? this.name : null;
+  }
+  isNamed(name) {
+    return this.name != null && this.name === '' + name;
+  }
+  getSubmorphNamed(name) {
+    /**
+     * The nearest DESCENDANT named `name` (not this morph itself), or null.
+     * Breadth-first, so a direct submorph beats a deeper one; siblings are tried
+     * frontmost first. Includes ephemeral (per-user) submorphs.
+     */
+    let n = '' + name;
+    let level = this.allSubmorphsTopFirst();
+    while (level.length) {
+      let next = [];
+      for (let i = 0; i < level.length; i++) {
+        if (level[i].isNamed(n)) return level[i];
+        let subs = level[i].allSubmorphsTopFirst();
+        for (let j = 0; j < subs.length; j++) next.push(subs[j]);
+      }
+      level = next;
+    }
+    return null;
+  }
+  getOwnerNamed(name) {
+    /** The nearest OWNER (ancestor) named `name`, or null. */
+    let n = '' + name;
+    for (let o = this.owner; o != null; o = o.owner) if (o.isNamed(n)) return o;
+    return null;
+  }
+  get(name) {
+    /**
+     * Find the part named `name` nearest to this morph — the usual way to reach
+     * a part from a method, the way Lively Kernel's morph.get(name) works:
+     *   1. this morph itself, if so named;
+     *   2. else the nearest descendant (getSubmorphNamed);
+     *   3. else climb the owner chain: at each owner, try the owner and then
+     *      its other branches, so siblings and cousins are found before more
+     *      distant relatives.
+     * Climbing ends at the world, so `world.get(name)` (or morphNamed(name))
+     * searches everything in it. Answers null when no part has that name.
+     */
+    let n = '' + name;
+    if (this.isNamed(n)) return this;
+    let found = this.getSubmorphNamed(n);
+    if (found) return found;
+    let searched = this;
+    for (let o = this.owner; o != null; o = o.owner) {
+      if (o.isNamed(n)) return o;
+      let subs = o.allSubmorphsTopFirst();
+      for (let i = 0; i < subs.length; i++) {
+        if (subs[i] === searched) continue;
+        if (subs[i].isNamed(n)) return subs[i];
+        found = subs[i].getSubmorphNamed(n);
+        if (found) return found;
+      }
+      searched = o;
+    }
+    return null;
+  }
+  getAllNamed(name) {
+    /** Every morph named `name` in this morph's tree (itself included), breadth-first. */
+    let n = '' + name;
+    let out = [];
+    let level = [this];
+    while (level.length) {
+      let next = [];
+      for (let i = 0; i < level.length; i++) {
+        if (level[i].isNamed(n)) out.push(level[i]);
+        let subs = level[i].allSubmorphsTopFirst();
+        for (let j = 0; j < subs.length; j++) next.push(subs[j]);
+      }
+      level = next;
+    }
+    return out;
+  }
+  partNames() {
+    /** Names of the named morphs in this morph's tree (not itself), breadth-first, no duplicates. */
+    let out = [];
+    let level = this.allSubmorphsTopFirst();
+    while (level.length) {
+      let next = [];
+      for (let i = 0; i < level.length; i++) {
+        let n = level[i].getName();
+        if (n != null && out.indexOf(n) < 0) out.push(n);
+        let subs = level[i].allSubmorphsTopFirst();
+        for (let j = 0; j < subs.length; j++) next.push(subs[j]);
+      }
+      level = next;
+    }
+    return out;
+  }
+  copyPartNameTo(copy) {
+    /** Copies keep their part name, so a copied assembly's parts can still find each other. */
+    if (this.getName() != null) copy.name = this.name;
+  }
   eachSubmorph(fn) {
     /**
      * Iterate my submorphs (persistent + ephemeral) in DRAW order — backmost
@@ -4677,7 +4798,8 @@ class Morph {
     list.forEach(fn);
   }
   toString() {
-    return 'a ' + this.className + ' (' + this.shape.toString() + ')';
+    let named = this.getName() != null ? " named '" + this.name + "'" : '';
+    return 'a ' + this.className + named + ' (' + this.shape.toString() + ')';
   }
   beTopMorph() {
     // Promote my top-level ancestor to the front of its zBand in the world.
@@ -4950,6 +5072,7 @@ class Morph {
     copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex; // keeps submorph stacking on recursive copies
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
       let sub = m.morphCopy();
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
@@ -5614,6 +5737,7 @@ class ImageMorph extends Morph {
     copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
       let sub = m.morphCopy();
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
@@ -5742,6 +5866,7 @@ class EmojiMorph extends ImageMorph {
     copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
       let sub = m.morphCopy();
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
@@ -5997,6 +6122,7 @@ class LineMorph extends Morph {
     copy.owner = null;
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     return copy;
   }
   morphMenu() {
@@ -8690,6 +8816,755 @@ class MethodPanel extends PanelMorph {
 }
 
 // +----------------------------------+
+// |  Patchwork Tool Adapters         |
+// +----------------------------------+
+// Other tools open in this page can register a ToolAdapter on
+// window.__patchworkToolAdapters (protocol v1, see
+// llm-canvas/src/tldraw/toolAdapter.ts): a handful of JSON-in/JSON-out
+// primitives. Behavior lives here, in ordinary Morphic methods built on those
+// primitives. Adapters are host objects: look them up on every use (never
+// store one in a morph), and pass them host values (hostArray / hostObject).
+
+function toolAdapterRegistry() {
+  let reg = window.__patchworkToolAdapters;
+  return reg && reg.version === 1 ? reg : null;
+}
+function patchworkToolAdapters() {
+  /** Infos of every live adapter: patchworkToolAdapters().map((i) => i.id) */
+  let reg = toolAdapterRegistry();
+  if (!reg) return [];
+  let infos = reg.list();
+  let out = [];
+  for (let i = 0; i < infos.length; i++) out.push(infos[i]);
+  return out;
+}
+function toolAdapterForDoc(kind, docUrl) {
+  /** The live adapter of `kind` showing `docUrl` (ids change per mount; doc urls don't). */
+  let infos = patchworkToolAdapters();
+  for (let i = 0; i < infos.length; i++) {
+    if (infos[i].kind === kind && infos[i].docUrl === docUrl) return toolAdapterRegistry().get(infos[i].id);
+  }
+  return null;
+}
+function hostArray(items) {
+  let arr = new window.Array();
+  for (let i = 0; i < items.length; i++) arr.push(items[i]);
+  return arr;
+}
+function hostObject(fields) {
+  let obj = new window.Object();
+  let keys = Object.keys(fields);
+  for (let i = 0; i < keys.length; i++) if (fields[keys[i]] != null) obj[keys[i]] = fields[keys[i]];
+  return obj;
+}
+function linkTLDraw() {
+  /** linkTLDraw() — put a TLDrawLinkMorph in the world for the first open TLDraw canvas. */
+  let infos = patchworkToolAdapters().filter((i) => i.kind === 'tldraw');
+  if (infos.length === 0) {
+    showNotifyMenu('no TLDraw canvas (llm-canvas 0.0.20 or later) is open in this page');
+    return null;
+  }
+  let link = new TLDrawLinkMorph(infos[0].docUrl);
+  link.moveBy(pt(120, 120));
+  Lively.addMorph(link);
+  link.startLinkStepping();
+  return link;
+}
+
+//  TLDrawLinkMorph
+// -----------------
+// A visible proxy for one TLDraw canvas. It stores only the canvas's doc url;
+// every method re-finds the live adapter. Edit onCanvasEvent to react to what
+// happens over there.
+class TLDrawLinkMorph extends Morph {
+  constructor(docUrl) {
+    let b = rect(0, 0, 240, 180);
+    super(b, new Shape('Rectangle', b, Color.paleLavender, 1, Color.gray));
+    this.docUrl = docUrl;
+  }
+  adapter() {
+    let a = toolAdapterForDoc('tldraw', this.docUrl);
+    if (!a) throw new Error('TLDraw canvas …' + this.docTail() + ' is not open in this page');
+    return a;
+  }
+  docTail() {
+    return String(this.docUrl).slice(-5);
+  }
+
+  // Primitives, wrapped
+  shapes() {
+    let list = this.adapter().shapes();
+    let out = [];
+    for (let i = 0; i < list.length; i++) out.push(list[i]);
+    return out;
+  }
+  selectedIds() {
+    let ids = this.adapter().selectedIds();
+    let out = [];
+    for (let i = 0; i < ids.length; i++) out.push(ids[i]);
+    return out;
+  }
+  addShape(type, x, y, text, color) {
+    return this.adapter().createShape(hostObject({ type: type, x: x, y: y, text: text, color: color }));
+  }
+  addBox(x, y, text, color) {
+    return this.addShape('geo', x, y, text, color || 'light-violet');
+  }
+  addNote(x, y, text, color) {
+    return this.addShape('note', x, y, text, color || 'yellow');
+  }
+  rotateShapes(ids, radians) {
+    this.adapter().rotateShapes(hostArray(ids), radians);
+  }
+  nudgeShapes(ids, dx, dy) {
+    this.adapter().nudge(hostArray(ids), dx, dy);
+  }
+  zoomToFit() {
+    this.adapter().zoomToFit();
+  }
+  selectedIdsOrNotify() {
+    let ids = this.selectedIds();
+    if (ids.length === 0) showNotifyMenu('select something in TLDraw first');
+    return ids;
+  }
+  rotateSelectionBy(degrees) {
+    let ids = this.selectedIdsOrNotify();
+    if (ids.length) this.rotateShapes(ids, (degrees * Math.PI) / 180);
+  }
+  nudgeSelection(dx, dy) {
+    let ids = this.selectedIdsOrNotify();
+    if (ids.length) this.nudgeShapes(ids, dx, dy);
+  }
+
+  // Behaviors
+  spinSelection(degrees, ms) {
+    /** Rotate the TLDraw selection by `degrees` in 10 steps over `ms`. */
+    let ids = this.selectedIdsOrNotify();
+    if (ids.length === 0) return;
+    this.$spin = { ids: ids, stepRad: (degrees * Math.PI) / 180 / 10, stepsLeft: 10 };
+    this.startStepping(Math.max(16, Math.round((ms || 1000) / 10)), 'spinStep');
+  }
+  spinStep() {
+    let spin = this.$spin;
+    if (!spin || spin.stepsLeft <= 0) return this.stopStepping('spinStep');
+    spin.stepsLeft--;
+    this.rotateShapes(spin.ids, spin.stepRad);
+  }
+  todoNotes() {
+    /** One TLDraw note per open [ ] item in todoList(). */
+    let items = openTodoItems();
+    for (let i = 0; i < items.length; i++) this.addNote((i % 4) * 240, Math.floor(i / 4) * 240, items[i]);
+    return items.length;
+  }
+  logShapes() {
+    let list = this.shapes();
+    log('TLDraw …' + this.docTail() + ': ' + list.length + ' shapes');
+    for (let i = 0; i < list.length; i++) {
+      let s = list[i];
+      log('  ' + s.type + ' ' + s.id + ' @' + Math.round(s.x) + ',' + Math.round(s.y) + (s.text ? ' "' + s.text + '"' : ''));
+    }
+  }
+
+  // Events: drained from the adapter's queue in a step, never from a host callback
+  startLinkStepping() {
+    this.startStepping(400, 'linkStep');
+  }
+  linkStep() {
+    let status = this.pollCanvas();
+    let key = status + '|' + this.mapSignature();
+    if (key !== this.$renderKey) {
+      this.$renderKey = key;
+      this.$status = status;
+      this.changed();
+    }
+  }
+  hostShapeList() {
+    /** Host array of shapes with id/x/y/rotation — cheap enough to scan every step. */
+    let a = toolAdapterForDoc('tldraw', this.docUrl);
+    return a ? a.shapes() : [];
+  }
+  mapSignature() {
+    /** A string that changes whenever the mini-map would. */
+    let list;
+    let sel;
+    try {
+      list = this.hostShapeList();
+      sel = this.selectedIds().join(',');
+    } catch (err) {
+      return '';
+    }
+    let s = sel;
+    for (let i = 0; i < list.length; i++) {
+      let r = list[i];
+      s += ';' + r.id + ':' + Math.round(r.x) + ',' + Math.round(r.y) + ',' + Math.round((r.rotation || 0) * 100);
+    }
+    return s;
+  }
+  pollCanvas() {
+    /** Deliver queued canvas events; answer the status line. */
+    let a = toolAdapterForDoc('tldraw', this.docUrl);
+    if (!a) return 'not open in this page';
+    let events = a.drainEvents();
+    for (let i = 0; i < events.length; i++) this.onCanvasEvent(events[i]);
+    return a.shapes().length + ' shapes · ' + a.selectedIds().length + ' selected';
+  }
+  onCanvasEvent(evt) {
+    /** Called for each TLDraw event: { type: 'selection', ids } or { type: 'shapes', added, removed, updated }. */
+  }
+  linkTitle() {
+    return 'TLDraw ⇄ …' + this.docTail();
+  }
+
+  renderMeOn(ctx) {
+    if (!this.hasChanged) return;
+    super.renderMeOn(ctx);
+    let b = this.shape.getBounds();
+    let left = b.topLeft.x;
+    let top = b.topLeft.y;
+    let cx = left + b.width() / 2;
+    ctx.save();
+    ctx.fillStyle = 'black';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(truncateString(this.linkTitle(), 34), cx, top + 13);
+    ctx.font = '11px sans-serif';
+    ctx.fillText(this.$status || 'menu → reconnect', cx, top + 29);
+    ctx.restore();
+    if (b.height() > 80) this.renderMapOn(ctx, rect(left + 6, top + 40, b.width() - 12, b.height() - 46));
+  }
+  renderMapOn(ctx, area) {
+    /** Mini-map of the canvas: each shape as its (rotated) box, arrows as lines, selection in blue. */
+    let list;
+    let selected;
+    try {
+      list = this.shapes();
+      selected = this.selectedIds();
+    } catch (err) {
+      return;
+    }
+    let ax = area.topLeft.x;
+    let ay = area.topLeft.y;
+    ctx.save();
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = '#bbb';
+    ctx.lineWidth = 1;
+    ctx.fillRect(ax, ay, area.width(), area.height());
+    ctx.strokeRect(ax, ay, area.width(), area.height());
+    if (list.length === 0) return ctx.restore();
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < list.length; i++) {
+      let s = list[i];
+      let reach = Math.max(s.w || 0, s.h || 0);
+      minX = Math.min(minX, s.x - reach * 0.2);
+      minY = Math.min(minY, s.y - reach * 0.2);
+      maxX = Math.max(maxX, s.x + reach);
+      maxY = Math.max(maxY, s.y + reach);
+      if (s.line) {
+        minX = Math.min(minX, s.line[0], s.line[2]);
+        minY = Math.min(minY, s.line[1], s.line[3]);
+        maxX = Math.max(maxX, s.line[0], s.line[2]);
+        maxY = Math.max(maxY, s.line[1], s.line[3]);
+      }
+    }
+    let pad = 6;
+    let scale = Math.min((area.width() - 2 * pad) / Math.max(1, maxX - minX), (area.height() - 2 * pad) / Math.max(1, maxY - minY));
+    let ox = ax + pad + (area.width() - 2 * pad - (maxX - minX) * scale) / 2;
+    let oy = ay + pad + (area.height() - 2 * pad - (maxY - minY) * scale) / 2;
+    ctx.beginPath();
+    ctx.rect(ax, ay, area.width(), area.height());
+    ctx.clip();
+    for (let i = 0; i < list.length; i++) {
+      let s = list[i];
+      let isSel = selected.indexOf(s.id) >= 0;
+      ctx.strokeStyle = isSel ? '#2f6fed' : '#555';
+      ctx.lineWidth = isSel ? 2 : 1;
+      if (s.line) {
+        ctx.beginPath();
+        ctx.moveTo(ox + (s.line[0] - minX) * scale, oy + (s.line[1] - minY) * scale);
+        ctx.lineTo(ox + (s.line[2] - minX) * scale, oy + (s.line[3] - minY) * scale);
+        ctx.stroke();
+        continue;
+      }
+      ctx.save();
+      ctx.translate(ox + (s.x - minX) * scale, oy + (s.y - minY) * scale);
+      ctx.rotate(s.rotation || 0);
+      ctx.fillStyle = s.type === 'note' ? '#fde68a' : '#ede9fe';
+      ctx.fillRect(0, 0, Math.max(2, (s.w || 0) * scale), Math.max(2, (s.h || 0) * scale));
+      ctx.strokeRect(0, 0, Math.max(2, (s.w || 0) * scale), Math.max(2, (s.h || 0) * scale));
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+  menuItems() {
+    return [
+      'reconnect',
+      'add box',
+      'add note',
+      'ToDo list → notes',
+      'spin selection 60°',
+      'nudge selection →',
+      'zoom to fit',
+      'log shapes',
+    ];
+  }
+  morphMenu() {
+    return {
+      items: this.menuItems(),
+      onSelect: function (item, link) {
+        try {
+          link.doMenuItem(item);
+        } catch (err) {
+          showNotifyMenu(err && err.message ? err.message : '' + err);
+        }
+      },
+    };
+  }
+  doMenuItem(item) {
+    if (item === 'reconnect') this.startLinkStepping();
+    if (item === 'add box') this.addBox(0, 0, 'from Morphic');
+    if (item === 'add note') this.addNote(200, 0, 'from Morphic');
+    if (item === 'ToDo list → notes') this.todoNotes();
+    if (item === 'spin selection 60°') this.spinSelection(60, 1000);
+    if (item === 'nudge selection →') this.nudgeSelection(40, 0);
+    if (item === 'zoom to fit') this.zoomToFit();
+    if (item === 'log shapes') this.logShapes();
+  }
+  morphCopy() {
+    let copy = new TLDrawLinkMorph(this.docUrl);
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
+    this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
+    return copy;
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+//  Linking by document
+// ---------------------
+// linkToDoc(url) needs no shared page: it edits the TLDraw document itself
+// through window.repo, and learns the TLDraw selection from the presence
+// broadcasts peers send on that doc. The host-side half (repo.find, the
+// broadcast listener, Automerge writes) is compiled as host code, so its
+// promise/event callbacks never run Livelymerge code outside a transaction.
+
+function hostDocLinkerSource() {
+  return `
+  var state = prior || { handles: {}, pending: {}, errors: {}, presence: {} };
+  // Two presence formats carry a TLDraw instance_presence record:
+  //   llm-canvas: [userId, record]
+  //   tldraw4 (automerge-repo Presence): { __presence: { type: 'update', channel: 'presence', value: record } }
+  //                                  or { __presence: { type: 'snapshot', state: { presence: record } } }
+  function notePresence(url, m) {
+    var rec;
+    if (Array.isArray(m) && m.length >= 2) rec = m[1];
+    else if (m && m.__presence) {
+      var p = m.__presence;
+      if (p.type === 'update' && p.channel === 'presence') rec = p.value;
+      else if (p.type === 'snapshot' && p.state && 'presence' in p.state) rec = p.state.presence;
+      else return;
+      if (rec == null) rec = { typeName: 'instance_presence', selectedShapeIds: [] };
+    } else return;
+    if (!rec || rec.typeName !== 'instance_presence') return;
+    state.presence[url] = { ids: (rec.selectedShapeIds || []).slice(), at: Date.now() };
+  }
+  // Presence arrives from remote peers as ephemeral messages; a TLDraw view in
+  // this same repo shares our handle, and a handle never hears its own
+  // broadcasts, so tap what it sends as well.
+  // Taps call through window._lmDocLinker, so an edited parser applies to handles tapped earlier.
+  function tap(url, h) {
+    if (h.__lmPresenceTapV2) return;
+    h.__lmPresenceTapV2 = true;
+    var hear = function (m) {
+      try { window._lmDocLinker.notePresence(url, m); } catch (e) {}
+    };
+    var send = h.broadcast;
+    h.broadcast = function (m) {
+      hear(m);
+      return send.apply(this, arguments);
+    };
+    h.on('ephemeral-message', function (e) { hear(e && e.message); });
+  }
+  function find(url) {
+    if (state.handles[url]) return tap(url, state.handles[url]);
+    if (state.pending[url]) return;
+    state.pending[url] = true;
+    delete state.errors[url];
+    Promise.resolve(window.repo.find(url))
+      .then(function (h) {
+        state.handles[url] = h;
+        tap(url, h);
+      }, function (err) {
+        state.errors[url] = String((err && err.message) || err);
+      })
+      .then(function () { delete state.pending[url]; });
+  }
+  function doc(url) {
+    var h = state.handles[url];
+    return h ? h.doc() : null;
+  }
+  function recordsOfType(url, typeName) {
+    var d = doc(url);
+    if (!d || !d.store) return [];
+    return Object.keys(d.store)
+      .map(function (k) { return d.store[k]; })
+      .filter(function (r) { return r && r.typeName === typeName; });
+  }
+  function title(url) {
+    var pages = recordsOfType(url, 'page').sort(function (a, b) { return a.index < b.index ? -1 : 1; });
+    return pages.length && pages[0].name != null ? String(pages[0].name) : null;
+  }
+  function putRecord(url, rec) {
+    state.handles[url].change(function (d) { d.store[rec.id] = rec; });
+  }
+  function setFields(url, updates) {
+    state.handles[url].change(function (d) {
+      updates.forEach(function (u) {
+        var r = d.store[u.id];
+        if (!r) return;
+        Object.keys(u.fields).forEach(function (k) { r[k] = u.fields[k]; });
+      });
+    });
+  }
+  function heads(url) {
+    return state.handles[url].heads().slice();
+  }
+  // Put every shape back as it was at oldHeads: re-create deleted ones,
+  // delete added ones, restore the rest. Answers { added, deleted, restored }.
+  function revertShapesTo(url, oldHeads) {
+    var h = state.handles[url];
+    var then = h.view(oldHeads.slice()).doc().store;
+    var counts = { added: 0, deleted: 0, restored: 0 };
+    var plain = function (r) { return JSON.parse(JSON.stringify(r)); };
+    h.change(function (d) {
+      Object.keys(d.store).forEach(function (k) {
+        if (d.store[k].typeName === 'shape' && !then[k]) { delete d.store[k]; counts.deleted++; }
+      });
+      Object.keys(then).forEach(function (k) {
+        if (then[k].typeName !== 'shape') return;
+        var old = plain(then[k]);
+        var now = d.store[k];
+        if (!now) { d.store[k] = old; counts.added++; return; }
+        if (JSON.stringify(old) === JSON.stringify(now)) return;
+        Object.keys(old).forEach(function (f) {
+          if (JSON.stringify(old[f]) !== JSON.stringify(now[f])) now[f] = old[f];
+        });
+        counts.restored++;
+      });
+    });
+    return counts;
+  }
+  return { state: state, find: find, notePresence: notePresence, doc: doc, recordsOfType: recordsOfType, title: title, putRecord: putRecord, setFields: setFields, heads: heads, revertShapesTo: revertShapesTo };
+`;
+}
+function hostDocLinker() {
+  // Rebuilt when this source is edited; `prior` carries over already-found doc handles.
+  let src = hostDocLinkerSource();
+  let old = window._lmDocLinker;
+  if (!old || window._lmDocLinkerSource !== src) {
+    window._lmDocLinker = new window.Function('prior', src)(old ? old.state : null);
+    window._lmDocLinkerSource = src;
+  }
+  return window._lmDocLinker;
+}
+function toHost(value) {
+  /** Deep copy of plain LM data (objects, arrays, primitives) as host values. */
+  if (value == null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return hostArray(value.map(toHost));
+  let obj = new window.Object();
+  let keys = Object.keys(value);
+  for (let i = 0; i < keys.length; i++) if (value[keys[i]] !== undefined) obj[keys[i]] = toHost(value[keys[i]]);
+  return obj;
+}
+function automergeUrlFrom(text) {
+  /** 'automerge:…' from a bare id, an automerge url, or a Patchwork link containing one. */
+  let s = String(text || '').trim();
+  let m = s.match(/automerge:([1-9A-HJ-NP-Za-km-z]+)/);
+  if (m) return 'automerge:' + m[1];
+  m = s.match(/([1-9A-HJ-NP-Za-km-z]{20,})\/?$/);
+  return m ? 'automerge:' + m[1] : null;
+}
+function linkToDoc(url) {
+  /** linkToDoc('automerge:…') — link to a TLDraw (llm-canvas) doc by url; no shared page needed. */
+  let docUrl = automergeUrlFrom(url);
+  if (!docUrl) {
+    showNotifyMenu("'" + url + "' doesn't look like a Patchwork doc url");
+    return null;
+  }
+  if (!window.repo) {
+    showNotifyMenu('no Patchwork repo in this page');
+    return null;
+  }
+  let link = new TLDrawDocLinkMorph(docUrl);
+  link.moveBy(pt(120, 180));
+  Lively.addMorph(link);
+  link.startLinkStepping();
+  return link;
+}
+
+//  TLDrawDocLinkMorph
+// --------------------
+// Same behaviors as TLDrawLinkMorph, with primitives that edit the TLDraw
+// document directly. "Selected" means the latest selection a TLDraw peer
+// broadcast; failing that, the shapes this link created.
+class TLDrawDocLinkMorph extends TLDrawLinkMorph {
+  constructor(docUrl) {
+    super(docUrl);
+    this.madeIds = [];
+  }
+  linkTitle() {
+    let name = null;
+    try {
+      name = hostDocLinker().title(this.docUrl);
+    } catch (err) {}
+    return 'TLDraw ⇄ ' + (name || '…' + this.docTail());
+  }
+  tlDoc() {
+    let linker = hostDocLinker();
+    linker.find(this.docUrl);
+    let doc = linker.doc(this.docUrl);
+    if (doc) {
+      if (!doc.store) throw new Error('doc …' + this.docTail() + ' is not a TLDraw canvas');
+      return doc;
+    }
+    let err = linker.state.errors[this.docUrl];
+    throw new Error(err ? 'could not open doc …' + this.docTail() + ': ' + err : 'doc …' + this.docTail() + ' is still loading');
+  }
+  shapeRecords() {
+    this.tlDoc();
+    let recs = hostDocLinker().recordsOfType(this.docUrl, 'shape');
+    let out = [];
+    for (let i = 0; i < recs.length; i++) out.push(recs[i]);
+    return out;
+  }
+  shapeWidth(r) {
+    let p = r.props;
+    let scale = (p && p.scale) || 1;
+    return (r.type === 'note' ? 200 : (p && p.w) || 100) * scale;
+  }
+  shapeHeight(r) {
+    let p = r.props;
+    let scale = (p && p.scale) || 1;
+    let growY = (p && p.growY) || 0;
+    return ((r.type === 'note' ? 200 : (p && p.h) || 24) + growY) * scale;
+  }
+  richTextString(rt) {
+    if (!rt) return null;
+    if (rt.text != null) return String(rt.text);
+    let parts = [];
+    let kids = rt.content || [];
+    for (let i = 0; i < kids.length; i++) {
+      let s = this.richTextString(kids[i]);
+      if (s != null) parts.push(s);
+    }
+    return parts.length ? parts.join(rt.type === 'doc' ? '\n' : '') : null;
+  }
+
+  // Primitives
+  shapes() {
+    return this.shapeRecords().map((r) => {
+      let p = r.props;
+      let line = null;
+      if (r.type === 'arrow' && p && p.start && p.end)
+        line = [r.x + p.start.x, r.y + p.start.y, r.x + p.end.x, r.y + p.end.y];
+      return {
+        id: r.id,
+        type: r.type,
+        x: r.x,
+        y: r.y,
+        rotation: r.rotation,
+        w: this.shapeWidth(r),
+        h: this.shapeHeight(r),
+        line: line,
+        color: p ? p.color : null,
+        text: p ? this.richTextString(p.richText) : null,
+      };
+    });
+  }
+  hostShapeList() {
+    return hostDocLinker().recordsOfType(this.docUrl, 'shape');
+  }
+  mapSignature() {
+    let list = this.hostShapeList();
+    let p = hostDocLinker().state.presence[this.docUrl];
+    let s = p ? p.ids.join(',') : '';
+    for (let i = 0; i < list.length; i++) {
+      let r = list[i];
+      s += ';' + r.id + ':' + Math.round(r.x) + ',' + Math.round(r.y) + ',' + Math.round((r.rotation || 0) * 100);
+    }
+    return s;
+  }
+  presenceSelection() {
+    let p = hostDocLinker().state.presence[this.docUrl];
+    let out = [];
+    if (p) for (let i = 0; i < p.ids.length; i++) out.push(p.ids[i]);
+    return out;
+  }
+  selectedIds() {
+    let ids = this.presenceSelection();
+    if (ids.length) return ids;
+    let store = this.tlDoc().store;
+    return this.madeIds.filter((id) => store[id] != null);
+  }
+  addShape(type, x, y, text, color) {
+    this.tlDoc();
+    let linker = hostDocLinker();
+    let pages = linker.recordsOfType(this.docUrl, 'page');
+    let pageId = null;
+    for (let i = 0; i < pages.length; i++) if (pageId == null || pages[i].id < pageId) pageId = pages[i].id;
+    if (pageId == null) throw new Error('doc …' + this.docTail() + ' has no page');
+    let shapes = linker.recordsOfType(this.docUrl, 'shape');
+    let maxIndex = null;
+    for (let i = 0; i < shapes.length; i++) {
+      let r = shapes[i];
+      if (r.parentId === pageId && (maxIndex == null || r.index > maxIndex)) maxIndex = r.index;
+    }
+    let richText = { type: 'doc', content: [text ? { type: 'paragraph', content: [{ type: 'text', text: String(text) }] } : { type: 'paragraph' }] };
+    if (type !== 'geo' && type !== 'note') throw new Error("addShape by doc supports 'geo' and 'note', not '" + type + "'");
+    let props = { color: color || 'black', labelColor: 'black', size: 'm', font: 'draw', align: 'middle', verticalAlign: 'middle', growY: 0, url: '', scale: 1, richText: richText };
+    if (type === 'note') props.fontSizeAdjustment = 0;
+    if (type === 'geo') {
+      props.w = 160;
+      props.h = 90;
+      props.geo = 'rectangle';
+      props.dash = 'draw';
+      props.fill = 'solid';
+    }
+    let id = 'shape:lm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    let rec = {
+      id: id,
+      typeName: 'shape',
+      type: type,
+      x: x,
+      y: y,
+      rotation: 0,
+      index: maxIndex ? maxIndex + 'V' : 'a1',
+      parentId: pageId,
+      isLocked: false,
+      opacity: 1,
+      meta: {},
+      props: props,
+    };
+    hostDocLinker().putRecord(this.docUrl, toHost(rec));
+    this.madeIds.push(id);
+    return id;
+  }
+  rotateShapes(ids, radians) {
+    /** Rotate each shape about its own center (records rotate about their top-left). */
+    let store = this.tlDoc().store;
+    let updates = [];
+    for (let i = 0; i < ids.length; i++) {
+      let r = store[ids[i]];
+      if (!r) continue;
+      let hw = this.shapeWidth(r) / 2;
+      let hh = this.shapeHeight(r) / 2;
+      let r1 = r.rotation || 0;
+      let r2 = r1 + radians;
+      let cx = r.x + hw * Math.cos(r1) - hh * Math.sin(r1);
+      let cy = r.y + hw * Math.sin(r1) + hh * Math.cos(r1);
+      updates.push({
+        id: ids[i],
+        fields: {
+          rotation: r2,
+          x: cx - (hw * Math.cos(r2) - hh * Math.sin(r2)),
+          y: cy - (hw * Math.sin(r2) + hh * Math.cos(r2)),
+        },
+      });
+    }
+    if (updates.length) hostDocLinker().setFields(this.docUrl, toHost(updates));
+  }
+  nudgeShapes(ids, dx, dy) {
+    let store = this.tlDoc().store;
+    let updates = [];
+    for (let i = 0; i < ids.length; i++) {
+      let r = store[ids[i]];
+      if (r) updates.push({ id: ids[i], fields: { x: r.x + dx, y: r.y + dy } });
+    }
+    if (updates.length) hostDocLinker().setFields(this.docUrl, toHost(updates));
+  }
+  zoomToFit() {
+    throw new Error('zoom to fit needs the canvas open in this page');
+  }
+
+  // Revert point: the doc version to go back to (Automerge heads, kept as strings)
+  markRevertPoint() {
+    this.tlDoc();
+    let heads = hostDocLinker().heads(this.docUrl);
+    let marked = [];
+    for (let i = 0; i < heads.length; i++) marked.push(String(heads[i]));
+    this.revertHeads = marked;
+    this.revertMarkedAt = new Date().toLocaleTimeString();
+  }
+  revertToMark() {
+    /** Put every shape back as it was when the revert point was marked. */
+    if (!this.revertHeads || this.revertHeads.length === 0) throw new Error('no revert point marked yet');
+    this.tlDoc();
+    let c = hostDocLinker().revertShapesTo(this.docUrl, hostArray(this.revertHeads));
+    this.madeIds = [];
+    showNotifyMenu('reverted to ' + this.revertMarkedAt + ': ' + c.restored + ' restored, ' + c.deleted + ' removed, ' + c.added + ' re-created');
+  }
+  menuItems() {
+    let items = super.menuItems();
+    items.push('mark revert point');
+    items.push('revert canvas to mark' + (this.revertMarkedAt ? ' (' + this.revertMarkedAt + ')' : ''));
+    return items;
+  }
+  doMenuItem(item) {
+    if (item === 'mark revert point') return this.markRevertPoint();
+    if (item.startsWith('revert canvas to mark')) return this.revertToMark();
+    super.doMenuItem(item);
+  }
+  pollCanvas() {
+    let store;
+    try {
+      store = this.tlDoc().store;
+    } catch (err) {
+      return err.message;
+    }
+    if (!this.revertHeads) this.markRevertPoint();
+    let shapeCount = hostDocLinker().recordsOfType(this.docUrl, 'shape').length;
+    let p = hostDocLinker().state.presence[this.docUrl];
+    if (p && p.ids.length) return shapeCount + ' shapes · ' + p.ids.length + ' selected';
+    let made = 0;
+    for (let i = 0; i < this.madeIds.length; i++) if (store[this.madeIds[i]] != null) made++;
+    return shapeCount + ' shapes · ' + made + ' made here';
+  }
+  morphCopy() {
+    let copy = new TLDrawDocLinkMorph(this.docUrl);
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
+    this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
+    return copy;
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+function openTodoItems() {
+  /** The open [ ] items of todoList(), continuation lines joined. */
+  let lines = String(todoList).split('\n');
+  let items = [];
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+    if (line.startsWith('*/')) break;
+    if (line.startsWith('[ ]')) items.push(line.slice(3).trim());
+    else if (line.startsWith('[')) items.push(null);
+    else if (items.length && items[items.length - 1] != null && line) items[items.length - 1] += ' ' + line;
+  }
+  return items.filter((s) => s != null);
+}
+
+// +----------------------------------+
 // |  System Browser Categories       |
 // +----------------------------------+
 // Edit classNamesInCategory() and methodNamesInCategory() to reorganize the
@@ -8800,6 +9675,7 @@ function classNamesInCategory() {
         'LineMidpointHandle',
       ],
       'On-screen keyboard': ['KbdKeyMorph', 'OnScreenKeyboardMorph'],
+      'Patchwork tools': ['TLDrawLinkMorph', 'TLDrawDocLinkMorph'],
     },
     packageBrowserCategoryClassExtras(),
   );
@@ -8895,6 +9771,7 @@ function methodNamesInCategory() {
       ],
       Morphs: [
         'morphWithId',
+        'morphNamed',
         'worldPtHitsMorphOrSubmorphs',
         'scrollPaneAtWorldPt',
         'isScrollPaneMorph',
@@ -8917,6 +9794,7 @@ function methodNamesInCategory() {
         'expandMenuItemEntry',
         'refreshWorldMenuItems',
         'showFindNoMatchesMenu',
+        'showNotifyMenu',
         'showPasteHistoryMenu',
         'promptConfirmMenu',
         'checkpointDownloadFileName',
@@ -9104,6 +9982,20 @@ function methodNamesInCategory() {
         'ephValidVerticesValue',
         'flushEphemeralStream',
         'processEphemeralInbound',
+      ],
+      'Patchwork tools': [
+        'toolAdapterRegistry',
+        'patchworkToolAdapters',
+        'toolAdapterForDoc',
+        'hostArray',
+        'hostObject',
+        'linkTLDraw',
+        'linkToDoc',
+        'automergeUrlFrom',
+        'hostDocLinker',
+        'hostDocLinkerSource',
+        'toHost',
+        'openTodoItems',
       ],
     },
     packageBrowserCategoryMethodExtras(),
@@ -12197,6 +13089,7 @@ class WorldMorph extends Morph {
         this.world().addEphemeralMorph(new BrowserPanel());
       }),
       menuItem('Recent changes', () => browseRecentChanges()),
+      menuItem('Link TLDraw canvas', () => linkTLDraw()),
       menuItem('Morphic help', function () {
         this.world().showMorphicHelp();
       }),
@@ -12554,21 +13447,43 @@ function methodsContaining(searchString) {
   });
   return found;
 }
-function showFindNoMatchesMenu(world, pt, searchString) {
+function showFindNoMatchesMenu(world, atIfAny, searchString) {
   /** Fleeting notifier for find-in-methods when there are zero hits (no panel required). */
-  if (!world) return;
   let term = '' + (searchString != null ? searchString : '');
   let msg =
     "no occurrences of '" + term.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' were found";
-  let menu = new MenuMorph(
-    rect(pt.x, pt.y, Math.max(280, 24 + Math.min(msg.length, 80) * 7), 48),
-    [msg],
-    function () {
-      menu.remove();
-    },
-  );
+  return showNotifyMenu(msg, atIfAny, world);
+}
+function showNotifyMenu(msg, atIfAny, worldIfAny) {
+  /**
+   * showNotifyMenu('Hello') — one-line fleeting notice, dismissed by clicking it.
+   * Opens at the pointer, else at atIfAny, else mid-screen; always wholly on screen.
+   */
+  let world = worldIfAny || Lively;
+  if (!world) return null;
+  msg = '' + msg;
+  let w = Math.max(280, 24 + Math.min(msg.length, 80) * 7);
+  let menu = new MenuMorph(rect(0, 0, w, 48), [msg], function () {
+    menu.remove();
+  });
   menu.isFleetingMenu = true;
   world.addEphemeralMorph(menu);
+  // setList during construction can disturb bounds, so measure after adding.
+  let mb = menu.getBounds();
+  let mw = mb.width();
+  let mh = mb.height();
+  let screen = getBounds();
+  let pos = getPointerLocation();
+  let at;
+  if (pos) at = pt(pos.x + 3, pos.y + 2);
+  else if (atIfAny != null) at = pt(atIfAny.x, atIfAny.y);
+  else at = pt(screen.center().x - mw / 2, screen.center().y - mh / 2);
+  let s0 = screen.topLeft;
+  let x = Math.max(s0.x, Math.min(at.x, s0.x + screen.width() - mw));
+  let y = Math.max(s0.y, Math.min(at.y, s0.y + screen.height() - mh));
+  menu.setBounds(rect(x, y, mw, mh));
+  if (world.promote) world.promote(menu);
+  return menu;
 }
 function noteMethodChanges(evalString) {
   /* recentChanges is an array of triples as in the last line here
@@ -13609,6 +14524,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-09-10 16:05 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-10-05 11:43 PDT';
 init()
-//written on 2026-09-10 16:05 PDT
+//written on 2026-10-05 11:43 PDT

@@ -344,9 +344,9 @@ Lively.rotBox.showHalo();
     expect(rt.eval(`Lively.rotBox.shape.getBounds().extent.x`)).toBeCloseTo(60, 4);
     expect(rt.eval(`Lively.rotBox.shape.getBounds().extent.y`)).toBeCloseTo(50, 4);
 
-    // --- Shift-drag (uniform transform scale) on a rotated morph: the shape
-    // is untouched, the scale follows the pointer's distance from the anchor,
-    // and the rendered anchor corner stays pinned.
+    // --- Shift-drag (transform scale) on a rotated morph: the shape is
+    // untouched, x and y scale independently from the handle's motion along
+    // the shape's own axes, and the rendered anchor corner stays pinned.
     rt.eval(`
 Lively.rotBox2 = Lively.addMorph(new Morph(rect(400, 300, 100, 20)));
 Lively.rotBox2.rotateBy(Math.PI / 2);
@@ -358,12 +358,12 @@ Lively.rotBox2.showHalo();
     ];
     const [sx, sy] = scaleHandleCenter();
     dispatch('pointerdown', sx, sy, { shiftKey: true });
-    dispatch('pointermove', sx + 20, sy + 60, { shiftKey: true });
-    dispatch('pointerup', sx + 20, sy + 60, { shiftKey: true });
-    const startDist = Math.max(Math.hypot(sx - anchor2[0], sy - anchor2[1]), 1);
-    const expectedR = Math.hypot(sx + 20 - anchor2[0], sy + 60 - anchor2[1]) / startDist;
-    expect(rt.eval(`Lively.rotBox2.transform.scale.x`)).toBeCloseTo(expectedR, 4);
-    expect(rt.eval(`Lively.rotBox2.transform.scale.y`)).toBeCloseTo(expectedR, 4);
+    dispatch('pointermove', sx - 10, sy + 40, { shiftKey: true });
+    dispatch('pointerup', sx - 10, sy + 40, { shiftKey: true });
+    // At 90°, world delta (-10,+40) is (+40,+10) in shape-local axes:
+    // extent (100,20) would become (140,30), so scale = (1.4, 1.5).
+    expect(rt.eval(`Lively.rotBox2.transform.scale.x`)).toBeCloseTo(1.4, 4);
+    expect(rt.eval(`Lively.rotBox2.transform.scale.y`)).toBeCloseTo(1.5, 4);
     expect(rt.eval(`Lively.rotBox2.shape.getBounds().extent.x`)).toBeCloseTo(100, 6);
     expect(rt.eval(`Lively.rotBox2.shape.getBounds().extent.y`)).toBeCloseTo(20, 6);
     expect(

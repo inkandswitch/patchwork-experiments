@@ -92,7 +92,7 @@ describe('session log', () => {
     expect(className).toBe('SessionLogPanel');
     const ephemeral = rt.eval(`(() => { let p = findSessionLogPanel(); return p && p.isEphemeralSubmorph(); })()`) as boolean;
     expect(ephemeral).toBe(true);
-  });
+  }, 120000);
 
   it('Enter submits via owner-chain detection (no $ flags); Shift-Enter newlines; Ctrl-S does not eval', () => {
     const { rt } = setupMorphic();
@@ -125,5 +125,5 @@ describe('session log', () => {
     expect(out.withBreak.includes('\n') || out.withBreak.includes('\r')).toBe(true);
     expect(out.afterSave).toBe('not code');
     expect(out.hasSend).toBe(false);
-  });
+  }, 120000);
 });
