@@ -9,6 +9,7 @@ import { automergeUrlToServiceWorkerUrl } from "@inkandswitch/patchwork-filesyst
 import type { ToolElement } from "@inkandswitch/patchwork-plugins";
 import { EmbedShapeUtil, EmbedShapeTool, embedUiOverrides, EmbedToolbar, setEmbedToolContext, getDefaultToolId, loadDatatype, DocTokenShapeUtil, ToolTokenShapeUtil, DOC_TOKEN_SHAPE_TYPE, TOOL_TOKEN_SHAPE_TYPE } from "./EmbedShape/index.ts";
 import { EMBED_SHAPE_TYPE } from "./EmbedShape/EmbedShapeUtil.tsx";
+import { registerTldrawAdapter } from "./toolAdapter.ts";
 import { isPatchworkDrag, resolveDropItems, getDragData } from "../shared/dnd/index.ts";
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -58,7 +59,7 @@ function useContactInfo() {
   };
 }
 
-const VERSION = "0.0.19";
+const VERSION = "0.0.20";
 
 function VersionBadge() {
   return (
@@ -112,6 +113,8 @@ function TldrawInner(props: { docUrl: AutomergeUrl; element: ToolElement }) {
   useEffect(() => {
     setEmbedToolContext(props.element, editor);
   }, [props.element, editor]);
+
+  useEffect(() => registerTldrawAdapter(editor, props.docUrl), [editor, props.docUrl]);
 
   useEditorSetup(key);
   usePatchworkDrop(props.element);
