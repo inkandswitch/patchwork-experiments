@@ -1,4 +1,4 @@
-//written on 2026-10-05 13:54 PDT; gestures, hands and streaming added 2026-10-06 (see lm-07)
+//written on 2026-10-07 10:40 PDT
 // The Kit — kernel
 // =================
 // Parts with slots, connected by wires, reacting to signals. See KIT_PLAN.md.
@@ -22,8 +22,11 @@
 // Looks, layout, and input are conventions on ordinary slots, not new concepts:
 //   geometry  x, y, w, h (owner coordinates), rotation (degrees), pivotX/pivotY
 //             (0..1 of w/h, default 0.5 = rotate about the centre)
-//   look      'box' (default) | 'oval' | 'none'; fill, border, borderWidth, radius;
-//             text, fontSize, textColor, align; hidden; a `draw` script overrides
+//   look      'box' (default) | 'oval' | 'none' | 'text'; fill, border, borderWidth,
+//             radius; text, fontSize, textColor, align; hidden; a `draw` script overrides.
+//             'text' is a box you can type in (caret, selection) — see kitField.
+//             Double-click completes a match (word / line / brackets / whole string);
+//             shift-drag extends the nearer end.
 //   layout    'free' (default) | 'row' | 'column'; gap, padding; fit (shrink-wrap)
 //   input     pointerDown / pointerMove / pointerUp / click / keyDown signals go to
 //             the part under the pointer, or the nearest owner that handles them
@@ -32,6 +35,12 @@
 //             picked up by the user's hand (press and drag it; Alt-click picks it up
 //             and keeps holding it until the next click) and dropped into any other
 //             such container; `locked` stops it
+//   bin       a container with `isBin`: dragging a sub-part stamps an instance()
+//             (the original stays); dropping a part in keeps it as a new prototype
+//   halo      meta/cmd-click a part: copy, delete, wire, resize, rotate, inspect
+//   inspect   halo "i" (or kitInspect(part)): slot list + script editor, themselves parts
+//   find      bin "find" (or kitFind(text)): kitSearch hits; click a hit to inspect
+//   wires     drawn when `$kit.showWires` is true; the Wire halo button drag-connects
 //   stepping  a part with an onTick script and `stepEvery` (ms) is signalled `tick`
 //
 // Gestures, overlays, hands (the idiom from the lm-07 lab note)
@@ -464,6 +473,11 @@ kitMethods(Part, {
     }
     return false;
   },
+  beTop: function () {
+    /** Move me last among my owner's sub-parts (frontmost). */
+    if (this.owner) this.owner.add(this);
+    return this;
+  },
 
   // --- Likeness (delegation) --------------------------------------------------
   // `like` is how parts share behaviour without classes: a part with no slot of its
@@ -596,8 +610,9 @@ kitMethods(Part, {
      */
     if (this === excluding || this.get('hidden')) return null;
     let l = this.localFromOwner(ox, oy);
+    let sy = this.get('scroll') ? this.$scrollY || 0 : 0;
     for (let i = this.parts.length - 1; i >= 0; i--) {
-      let hit = this.parts[i].partAt(l.x, l.y, excluding);
+      let hit = this.parts[i].partAt(l.x, l.y + sy, excluding);
       if (hit) return hit;
     }
     return this.containsLocal(l.x, l.y) ? this : null;
@@ -659,6 +674,8 @@ kitMethods(Part, {
         let wid = across + 2 * pad;
         this.put('w', mode === 'row' ? len : wid);
         this.put('h', mode === 'row' ? wid : len);
+        let maxH = this.num('maxH', 0);
+        if (maxH > 0 && this.num('h', 0) > maxH) this.put('h', maxH);
       }
     }
     for (let i = 0; i < this.parts.length; i++) this.parts[i].layout();
@@ -691,11 +708,21 @@ kitMethods(Part, {
       c.shadowOffsetX = 0;
       c.shadowOffsetY = 0;
     }
+    let clipKids = this.get('scroll') || this.get('clip');
+    if (clipKids) {
+      c.save();
+      c.beginPath();
+      c.rect(0, 0, this.num('w', 0), this.num('h', 0));
+      c.clip();
+      if (this.get('scroll')) c.translate(0, -(this.$scrollY || 0));
+    }
     for (let i = 0; i < this.parts.length; i++) this.parts[i].draw(c);
+    if (clipKids) c.restore();
     c.restore();
   },
   drawLook: function (c) {
     let look = this.get('look') || 'box';
+    if (look === 'text') look = 'box';
     let w = this.num('w', 0);
     let h = this.num('h', 0);
     if (look !== 'none') {
@@ -719,20 +746,79 @@ kitMethods(Part, {
       }
     }
     let text = this.get('text');
-    if (text != null && text !== '') this.drawText(c, '' + text, w, h);
+    let editing = typeof $kit === 'object' && $kit && $kit.focus === this;
+    if ((text != null && text !== '') || editing) {
+      c.save();
+      c.beginPath();
+      c.rect(0, 0, w, h);
+      c.clip();
+      this.drawText(c, text == null ? '' : '' + text, w, h);
+      c.restore();
+    }
   },
   drawText: function (c, text, w, h) {
-    let size = this.num('fontSize', 14);
-    let lines = text.split('\n');
-    let align = this.get('align') || 'center';
+    let v = kitTextView(this);
+    let size = v.size;
+    let lines = v.lines;
+    let align = v.align;
     c.font = size + 'px sans-serif';
-    c.fillStyle = this.get('textColor') || '#222';
     c.textBaseline = 'middle';
     c.textAlign = align;
-    let x = align === 'left' ? 4 : align === 'right' ? w - 4 : w / 2;
-    let lineH = size * 1.25;
-    let y = h / 2 - ((lines.length - 1) * lineH) / 2;
-    for (let i = 0; i < lines.length; i++) c.fillText(lines[i], x, y + i * lineH);
+    let pad = v.pad;
+    let x = align === 'left' ? pad : align === 'right' ? w - pad : w / 2;
+    let lineH = v.lineH;
+    let y0 = v.y0;
+    if (typeof $kit === 'object' && $kit && $kit.focus === this) {
+      let lohi = kitTextRange(this);
+      if (lohi.lo !== lohi.hi) {
+        c.fillStyle = '#b8d4f0';
+        let a = 0;
+        for (let i = 0; i < lines.length; i++) {
+          let b = a + lines[i].length;
+          let s = Math.max(lohi.lo, a);
+          let e = Math.min(lohi.hi, b);
+          if (e > s) {
+            let x0 = kitTextX(c, lines[i], s - a, align, w, pad);
+            let x1 = kitTextX(c, lines[i], e - a, align, w, pad);
+            c.fillRect(Math.min(x0, x1), y0 + i * lineH - lineH / 2, Math.abs(x1 - x0) || 1, lineH);
+          }
+          a = b + 1;
+        }
+      }
+    }
+    if (typeof $kit === 'object' && $kit && $kit.focus === this) {
+      let pair = kitTextBracketAt(v.text, kitCaret(this));
+      if (pair) {
+        let tint = pair.ok ? '#c8e6b8' : '#f0c0c0';
+        kitTextMark(c, v, pair.a, tint);
+        if (pair.ok) kitTextMark(c, v, pair.b, tint);
+      }
+    }
+    c.fillStyle = this.get('textColor') || '#222';
+    for (let i = 0; i < lines.length; i++) c.fillText(lines[i], x, y0 + i * lineH);
+    if (typeof $kit === 'object' && $kit && $kit.focus === this) {
+      let caret = kitCaret(this);
+      let line = 0;
+      let col = caret;
+      let seen = 0;
+      for (let i = 0; i < lines.length; i++) {
+        if (caret <= seen + lines[i].length) {
+          line = i;
+          col = caret - seen;
+          break;
+        }
+        seen += lines[i].length + 1;
+        line = i;
+        col = lines[i].length;
+      }
+      let cx = kitTextX(c, lines[line] || '', col, align, w, pad);
+      c.strokeStyle = '#222';
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(cx, y0 + line * lineH - lineH / 2);
+      c.lineTo(cx, y0 + line * lineH + lineH / 2);
+      c.stroke();
+    }
   },
 
   // --- Printing ---------------------------------------------------------------
@@ -836,6 +922,326 @@ function kitSearch(root, text) {
     for (let j = 0; j < all[i].wiresOut.length; j++) visit(all[i].wiresOut[j]);
   }
   return hits;
+}
+
+function kitOutlets(p) {
+  /**
+   * Names a wire can leave on: 'click', each onX script's signal (onClick -> click),
+   * and every data slot. The wire picker's left column.
+   */
+  let seen = {};
+  let out = [];
+  let add = (n) => {
+    if (n && !seen[n]) {
+      seen[n] = true;
+      out.push(n);
+    }
+  };
+  add('click');
+  let names = p.slotNames();
+  for (let i = 0; i < names.length; i++) {
+    let n = names[i];
+    let v = p.get(n);
+    if (typeof v === 'function') {
+      if (n.length > 2 && n.slice(0, 2) === 'on') add(n.charAt(2).toLowerCase() + n.slice(3));
+    } else add(n);
+  }
+  return out;
+}
+
+function kitInlets(p) {
+  /** Names a wire can enter: data slots and action scripts (not onX reactions). */
+  let seen = {};
+  let out = [];
+  let add = (n) => {
+    if (n && !seen[n]) {
+      seen[n] = true;
+      out.push(n);
+    }
+  };
+  let names = p.slotNames();
+  for (let i = 0; i < names.length; i++) {
+    let n = names[i];
+    let v = p.get(n);
+    if (typeof v === 'function') {
+      if (!(n.length > 2 && n.slice(0, 2) === 'on')) add(n);
+    } else add(n);
+  }
+  return out;
+}
+
+function kitSpawn(proto, dest) {
+  /**
+   * Stamp an instance of `proto` into `dest` (usually the world), sitting exactly
+   * where the prototype appears on screen. Dragging out of a bin uses this so the
+   * original stays put and later edits to it show through in the stamp.
+   */
+  let inst = proto.instance();
+  let pv = proto.pivot();
+  let wpt = proto.worldFromLocal(pv.x, pv.y);
+  let turn = proto.worldRotation();
+  dest.add(inst);
+  let l = dest.localFromWorld(wpt.x, wpt.y);
+  let ipv = inst.pivot();
+  inst.store('x', l.x - ipv.x);
+  inst.store('y', l.y - ipv.y);
+  inst.store('rotation', turn - dest.worldRotation());
+  return inst;
+}
+
+function kitWorldBox(p) {
+  /** Axis-aligned world rectangle covering a (possibly rotated) part. */
+  let w = p.num('w', 0);
+  let h = p.num('h', 0);
+  let pts = [
+    p.worldFromLocal(0, 0),
+    p.worldFromLocal(w, 0),
+    p.worldFromLocal(w, h),
+    p.worldFromLocal(0, h),
+  ];
+  let x0 = pts[0].x;
+  let y0 = pts[0].y;
+  let x1 = x0;
+  let y1 = y0;
+  for (let i = 1; i < 4; i++) {
+    if (pts[i].x < x0) x0 = pts[i].x;
+    if (pts[i].y < y0) y0 = pts[i].y;
+    if (pts[i].x > x1) x1 = pts[i].x;
+    if (pts[i].y > y1) y1 = pts[i].y;
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, pts: pts };
+}
+
+function kitHaloItems(target) {
+  /**
+   * Overlay buttons and handles around `target`, in world pixels. Not parts: they
+   * live only while the halo is up (ephemeral, per user) so they never enter the doc.
+   */
+  let box = kitWorldBox(target);
+  let bw = 44;
+  let bh = 18;
+  let y = box.y - bh - 6;
+  let x = box.x;
+  return [
+    { id: 'copy', x: x, y: y, w: bw, h: bh, label: 'copy' },
+    { id: 'del', x: x + bw + 4, y: y, w: bw, h: bh, label: 'del' },
+    { id: 'wire', x: x + 2 * (bw + 4), y: y, w: bw, h: bh, label: 'wire' },
+    { id: 'resize', x: box.x + box.w - 6, y: box.y + box.h - 6, w: 14, h: 14, label: '' },
+    { id: 'rotate', x: box.x + box.w - 6, y: box.y - 8, w: 14, h: 14, label: '' },
+    { id: 'inspect', x: box.x - 8, y: box.y + box.h - 6, w: 14, h: 14, label: 'i' },
+  ];
+}
+
+function kitHitItem(items, wx, wy) {
+  if (!items) return null;
+  for (let i = 0; i < items.length; i++) {
+    let r = items[i];
+    if (wx >= r.x && wy >= r.y && wx <= r.x + r.w && wy <= r.y + r.h) return r;
+  }
+  return null;
+}
+
+function kitShowHalo(target) {
+  $kit.haloTarget = target && target.owner && !target.$isHand ? target : null;
+  $kit.wiringFrom = null;
+  $kit.picker = null;
+  $kit.haloDrag = null;
+}
+
+function kitOpenPicker(from, to, wx, wy) {
+  $kit.picker = { from: from, to: to, outlet: null, x: wx + 8, y: wy + 8 };
+  $kit.wiringFrom = null;
+}
+
+function kitPickerItems() {
+  let pk = $kit.picker;
+  if (!pk) return [];
+  let out = kitOutlets(pk.from);
+  let inn = kitInlets(pk.to);
+  let rowH = 18;
+  let colW = 90;
+  let items = [];
+  items.push({ id: 'title', x: pk.x, y: pk.y, w: colW * 2 + 8, h: 16, label: 'wire', kind: 'label' });
+  for (let i = 0; i < out.length; i++) {
+    items.push({
+      id: 'out:' + out[i],
+      x: pk.x,
+      y: pk.y + 20 + i * rowH,
+      w: colW,
+      h: rowH - 1,
+      label: out[i],
+      kind: 'outlet',
+      name: out[i],
+    });
+  }
+  for (let i = 0; i < inn.length; i++) {
+    items.push({
+      id: 'in:' + inn[i],
+      x: pk.x + colW + 8,
+      y: pk.y + 20 + i * rowH,
+      w: colW,
+      h: rowH - 1,
+      label: inn[i],
+      kind: 'inlet',
+      name: inn[i],
+    });
+  }
+  return items;
+}
+
+function kitPick(item) {
+  let pk = $kit.picker;
+  if (!pk || !item) return;
+  if (item.kind === 'outlet') pk.outlet = item.name;
+  else if (item.kind === 'inlet' && pk.outlet) {
+    wire(pk.from, pk.outlet, pk.to, item.name);
+    $kit.picker = null;
+    $kit.showWires = true;
+  }
+}
+
+function kitDoHalo(id, target, wx, wy) {
+  if (id === 'copy') {
+    let cpy = target.copy();
+    cpy.moveTo(target.world());
+    cpy.put('x', cpy.num('x', 0) + 16);
+    cpy.put('y', cpy.num('y', 0) + 16);
+    kitShowHalo(cpy);
+  } else if (id === 'del') {
+    target.unwireAll();
+    target.remove();
+    kitShowHalo(null);
+  } else if (id === 'wire') {
+    $kit.wiringFrom = target;
+    $kit.picker = null;
+  } else if (id === 'inspect') {
+    kitInspect(target);
+  } else if (id === 'resize' || id === 'rotate') {
+    $kit.haloDrag = { id: id, target: target, x: wx, y: wy, rot0: target.num('rotation', 0) };
+  }
+}
+
+function kitHaloDragTo(wx, wy) {
+  let d = $kit.haloDrag;
+  if (!d) return;
+  let tgt = d.target;
+  if (d.id === 'resize') {
+    let l = tgt.localFromWorld(wx, wy);
+    tgt.put('w', Math.max(12, l.x));
+    tgt.put('h', Math.max(12, l.y));
+  } else if (d.id === 'rotate') {
+    let pv = tgt.pivot();
+    let c = tgt.worldFromLocal(pv.x, pv.y);
+    tgt.put('rotation', (Math.atan2(wy - c.y, wx - c.x) * 180) / Math.PI);
+  }
+}
+
+function kitCenter(p) {
+  return p.worldFromLocal(p.num('w', 0) / 2, p.num('h', 0) / 2);
+}
+
+function kitDrawWires(world, c) {
+  let all = world.allParts();
+  c.save();
+  c.strokeStyle = '#4a7bd0';
+  c.fillStyle = '#4a7bd0';
+  c.lineWidth = 1.5;
+  c.font = '11px sans-serif';
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (let i = 0; i < all.length; i++) {
+    let ws = all[i].wiresOut;
+    for (let j = 0; j < ws.length; j++) {
+      let wr = ws[j];
+      if (!wr.from || !wr.to) continue;
+      let a = kitCenter(wr.from);
+      let b = kitCenter(wr.to);
+      c.beginPath();
+      c.moveTo(a.x, a.y);
+      c.lineTo(b.x, b.y);
+      c.stroke();
+      let mx = (a.x + b.x) / 2;
+      let my = (a.y + b.y) / 2;
+      let label = (wr.outlet || '') + '→' + (wr.inlet || '');
+      c.fillStyle = '#f4f1ea';
+      c.fillRect(mx - 28, my - 8, 56, 14);
+      c.fillStyle = '#4a7bd0';
+      c.fillText(label, mx, my);
+    }
+  }
+  c.restore();
+}
+
+function kitDrawHalo(c) {
+  let tgt = $kit.haloTarget;
+  if (!tgt || !tgt.owner) return;
+  let box = kitWorldBox(tgt);
+  c.save();
+  c.strokeStyle = '#4a7bd0';
+  c.lineWidth = 1.5;
+  c.setLineDash ? c.setLineDash([4, 3]) : null;
+  c.strokeRect(box.x - 2, box.y - 2, box.w + 4, box.h + 4);
+  c.setLineDash ? c.setLineDash([]) : null;
+  let items = kitHaloItems(tgt);
+  for (let i = 0; i < items.length; i++) {
+    let r = items[i];
+    c.fillStyle = r.id === 'resize' || r.id === 'rotate' ? '#4a7bd0' : '#fff';
+    c.strokeStyle = '#4a7bd0';
+    c.lineWidth = 1;
+    c.fillRect(r.x, r.y, r.w, r.h);
+    c.strokeRect(r.x, r.y, r.w, r.h);
+    if (r.label) {
+      c.fillStyle = r.id === 'del' ? '#a33' : '#234';
+      c.font = '11px sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(r.label, r.x + r.w / 2, r.y + r.h / 2);
+    }
+  }
+  c.restore();
+}
+
+function kitDrawPicker(c) {
+  let items = kitPickerItems();
+  if (items.length === 0) return;
+  let pk = $kit.picker;
+  c.save();
+  let last = items[items.length - 1];
+  let top = items[0];
+  c.fillStyle = '#fff';
+  c.strokeStyle = '#4a7bd0';
+  c.lineWidth = 1;
+  let h = last.y + last.h - top.y + 8;
+  c.fillRect(pk.x - 6, pk.y - 6, top.w + 12, h);
+  c.strokeRect(pk.x - 6, pk.y - 6, top.w + 12, h);
+  for (let i = 0; i < items.length; i++) {
+    let r = items[i];
+    let chosen = pk.outlet && r.kind === 'outlet' && r.name === pk.outlet;
+    if (r.kind !== 'label') {
+      c.fillStyle = chosen ? '#4a7bd0' : '#f4f1ea';
+      c.fillRect(r.x, r.y, r.w, r.h);
+    }
+    c.fillStyle = chosen ? '#fff' : '#234';
+    c.font = '11px sans-serif';
+    c.textAlign = 'left';
+    c.textBaseline = 'middle';
+    c.fillText(r.label, r.x + 4, r.y + r.h / 2);
+  }
+  c.restore();
+}
+
+function kitDrawRubber(c) {
+  let src = $kit.wiringFrom;
+  if (!src) return;
+  let a = kitCenter(src);
+  c.save();
+  c.strokeStyle = '#4a7bd0';
+  c.setLineDash ? c.setLineDash([5, 4]) : null;
+  c.beginPath();
+  c.moveTo(a.x, a.y);
+  c.lineTo($kit.pointerX || a.x, $kit.pointerY || a.y);
+  c.stroke();
+  c.restore();
 }
 
 function kitPartWithId(root, id) {
@@ -1464,6 +1870,11 @@ function kitCarryMove(world, hand, wx, wy) {
   let cargo = hand.$cargo;
   if (!hand.$lifted) {
     if (!hand.$sticky && Math.abs(wx - hand.$grabX) + Math.abs(wy - hand.$grabY) <= 3) return;
+    // A bin stamps an instance and leaves the prototype; anything else is moved.
+    if (cargo.owner && cargo.owner.get('isBin')) {
+      cargo = kitSpawn(cargo, world);
+      kitHandSetCargo(hand, cargo);
+    }
     cargo.moveTo(world); // lift it to the top level, frontmost: the one structural write
     hand.$lifted = true;
   }
@@ -1485,8 +1896,40 @@ function kitDrop(world, hand, wx, wy) {
 }
 
 function kitPointerDown(world, wx, wy, e) {
+  $kit.pointerX = wx;
+  $kit.pointerY = wy;
   let hand = kitLocalHand(world, wx, wy);
   kitMoveHand(hand, wx, wy);
+  // Overlay hits first (halo, picker): they are not parts, so they never persist.
+  if ($kit.picker) {
+    let hit = kitHitItem(kitPickerItems(), wx, wy);
+    if (hit && hit.kind !== 'label') kitPick(hit);
+    else $kit.picker = null;
+    $kit.down = { overlay: true, x: wx, y: wy };
+    return;
+  }
+  if ($kit.haloTarget && $kit.haloTarget.owner) {
+    let hit = kitHitItem(kitHaloItems($kit.haloTarget), wx, wy);
+    if (hit) {
+      if (hit.id === 'resize' || hit.id === 'rotate') kitGestureBegin();
+      kitDoHalo(hit.id, $kit.haloTarget, wx, wy);
+      $kit.down = { overlay: true, x: wx, y: wy };
+      return;
+    }
+  }
+  if ($kit.wiringFrom) {
+    let target = world.partAt(wx, wy) || world;
+    if (target !== world && target !== $kit.wiringFrom) kitOpenPicker($kit.wiringFrom, target, wx, wy);
+    else $kit.wiringFrom = null;
+    $kit.down = { overlay: true, x: wx, y: wy };
+    return;
+  }
+  if (e.metaKey) {
+    let target = world.partAt(wx, wy) || world;
+    kitShowHalo(target === world ? null : target);
+    $kit.down = { overlay: true, x: wx, y: wy };
+    return;
+  }
   if (hand.$cargo) {
     // A press while my hand is laden (a sticky carry) drops the cargo, nothing else.
     kitDrop(world, hand, wx, wy);
@@ -1495,6 +1938,7 @@ function kitPointerDown(world, wx, wy, e) {
   }
   kitGestureBegin();
   let target = world.partAt(wx, wy) || world;
+  if ($kit.focus && $kit.focus !== target) $kit.focus = null;
   $kit.down = { target: target, x: wx, y: wy };
   if (e.altKey) {
     let g = kitGrabbable(target);
@@ -1510,8 +1954,19 @@ function kitPointerDown(world, wx, wy, e) {
 }
 
 function kitPointerMove(world, wx, wy, e) {
+  $kit.pointerX = wx;
+  $kit.pointerY = wy;
   let hand = kitLocalHand(world, wx, wy);
   kitMoveHand(hand, wx, wy);
+  if ($kit.haloDrag) {
+    kitHaloDragTo(wx, wy);
+    return;
+  }
+  if ($kit.textDrag) {
+    kitTextDragTo($kit.textDrag, wx, wy);
+    return;
+  }
+  if ($kit.down && $kit.down.overlay) return;
   if ($kit.capture) {
     kitDispatch('pointerMove', $kit.capture, kitEvent(e, wx, wy, $kit.capture));
     return;
@@ -1525,10 +1980,24 @@ function kitPointerMove(world, wx, wy, e) {
 }
 
 function kitPointerUp(world, wx, wy, e) {
+  $kit.pointerX = wx;
+  $kit.pointerY = wy;
   let hand = kitLocalHand(world, wx, wy);
   kitMoveHand(hand, wx, wy);
   let down = $kit.down;
+  let textDrag = $kit.textDrag;
   $kit.down = null;
+  $kit.textDrag = null;
+  if (textDrag) kitTextFinish(textDrag);
+  if ($kit.haloDrag) {
+    $kit.haloDrag = null;
+    kitGestureEndIfIdle(world);
+    return;
+  }
+  if (down && down.overlay) {
+    kitGestureEndIfIdle(world);
+    return;
+  }
   if ($kit.capture) {
     let c = $kit.capture;
     $kit.capture = null;
@@ -1570,6 +2039,21 @@ function kitHandleEvent(world, e) {
       $kit.inPointerEvent = false;
     }
   } else if (t === 'keydown') kitKeyDown(world, e);
+  else if (t === 'wheel') kitWheel(world, wx, wy, e);
+}
+
+function kitWheel(world, wx, wy, e) {
+  /** Scroll the text field or `scroll` container under the pointer. */
+  let target = world.partAt(wx, wy) || world;
+  let dy = typeof e.deltaY === 'number' ? e.deltaY : 0;
+  let p = target;
+  while (p) {
+    if (p.get('scroll') || p.get('look') === 'text' || p.get('multiline')) {
+      kitScrollBy(p, dy);
+      return;
+    }
+    p = p.owner;
+  }
 }
 
 // +-------------+
@@ -1624,6 +2108,10 @@ function kitTry(fn) {
 function kitRender(world, c) {
   c.clearRect(0, 0, world.num('w', 0), world.num('h', 0));
   world.draw(c);
+  if ($kit.showWires !== false) kitDrawWires(world, c);
+  if ($kit.wiringFrom) kitDrawRubber(c);
+  kitDrawHalo(c);
+  kitDrawPicker(c);
   // Hands last, above everything: peers' with name tags, mine in place of the cursor.
   let hands = world.$hands;
   if (hands) {
@@ -1668,6 +2156,15 @@ function initUI() {
     handSweepAt: null,
     ephListener: null,
     drawLocalHand: true, // my hand replaces the OS cursor over the canvas
+    showWires: true,
+    haloTarget: null,
+    haloDrag: null,
+    wiringFrom: null,
+    picker: null,
+    pointerX: 0,
+    pointerY: 0,
+    textDrag: null,
+    textDragStart: null,
   };
   // My session id: what peers key my hand and my messages by. Random, never
   // persisted, and kept across re-inits so a mid-session initUI can't make this
@@ -1702,12 +2199,17 @@ function initUI() {
           /* ignore */
         }
       }
+      if (canvas.focus) canvas.focus();
       window._kitEvents.push(e);
     });
     listen(canvas, 'pointermove', (e) => window._kitEvents.push(e));
     listen(canvas, 'pointerup', (e) => window._kitEvents.push(e));
     listen(canvas, 'pointercancel', (e) => window._kitEvents.push(e));
     listen(canvas, 'keydown', (e) => window._kitEvents.push(e));
+    listen(canvas, 'wheel', (e) => {
+      if (e.preventDefault) e.preventDefault();
+      window._kitEvents.push(e);
+    });
   }
   // Peers' messages: the callback runs outside the frame transaction, so it only
   // queues; kitProcessInbound drains the queue inside the frame. The listener is
@@ -1750,6 +2252,7 @@ function initUI() {
   }
 
   if (typeof kitWorld === 'undefined' || !kitWorld) kitWorld = kitMakeWorld();
+  else kitInstallTools(kitWorld);
   function onFrame(now) {
     try {
       window.runtime.change(() => {
@@ -1776,7 +2279,702 @@ function initUI() {
 function kitMakeWorld() {
   let world = part({ name: 'world', fill: '#f4f1ea', acceptsDrops: true, x: 0, y: 0, w: 800, h: 600 });
   kitExamples(world);
+  kitInstallTools(world);
   return world;
+}
+
+function kitInstallTools(world) {
+  /**
+   * Ensure the world has a parts bin, and that an older bin (from before Finder)
+   * gets a find button. Safe to call again after re-eval.
+   */
+  let bin = world.find('bin');
+  if (!bin) bin = world.add(kitMakeBin());
+  if (!bin.find('findBtn')) {
+    let wbtn = bin.find('wiresBtn');
+    let idx = wbtn ? bin.parts.indexOf(wbtn) + 1 : 2;
+    bin.add(kitMakeFindBtn(), idx);
+  }
+}
+
+function kitParseValue(text, old) {
+  if (typeof old === 'number') {
+    let n = Number(text);
+    return n === n ? n : old;
+  }
+  if (typeof old === 'boolean') return text === 'true' || text === '1';
+  return text;
+}
+
+function kitTextOf(p) {
+  let t = p.get('text');
+  return t == null ? '' : '' + t;
+}
+
+function kitTextView(p) {
+  /**
+   * How a field lays out its string: top-aligned + $scrollY for `text` / multiline
+   * (so a long script cannot paint over the Inspector rows); centred for labels.
+   */
+  let text = kitTextOf(p);
+  let size = p.num('fontSize', 14);
+  let lineH = size * 1.25;
+  let pad = 4;
+  let lines = text.split('\n');
+  let h = p.num('h', 0);
+  let top = p.get('look') === 'text' || p.get('multiline');
+  let scrollY = top && typeof p.$scrollY === 'number' ? p.$scrollY : 0;
+  let y0 = top ? pad + lineH / 2 - scrollY : h / 2 - ((lines.length - 1) * lineH) / 2;
+  return {
+    text: text,
+    size: size,
+    lineH: lineH,
+    pad: pad,
+    lines: lines,
+    y0: y0,
+    align: p.get('align') || (top ? 'left' : 'center'),
+    w: p.num('w', 0),
+    h: h,
+  };
+}
+
+function kitScrollMax(p) {
+  if (p.get('look') === 'text' || p.get('multiline')) {
+    let v = kitTextView(p);
+    return Math.max(0, v.lines.length * v.lineH + 2 * v.pad - v.h);
+  }
+  if (!p.get('scroll')) return 0;
+  let pad = p.num('padding', 0);
+  let gap = p.num('gap', 0);
+  let inner = pad;
+  if (p.get('layout') === 'column' || p.get('layout') === 'row') {
+    for (let i = 0; i < p.parts.length; i++) {
+      if (p.parts[i].get('hidden')) continue;
+      inner += (p.get('layout') === 'column' ? p.parts[i].num('h', 0) : p.parts[i].num('w', 0)) + gap;
+    }
+    inner = inner - gap + pad;
+  } else {
+    inner = pad;
+    for (let i = 0; i < p.parts.length; i++) {
+      let ch = p.parts[i];
+      if (ch.get('hidden')) continue;
+      let bot = ch.num('y', 0) + ch.num('h', 0);
+      if (bot > inner) inner = bot;
+    }
+    inner += pad;
+  }
+  return Math.max(0, inner - p.num('h', 0));
+}
+
+function kitScrollBy(p, dy) {
+  let max = kitScrollMax(p);
+  let y = (p.$scrollY || 0) + dy;
+  if (y < 0) y = 0;
+  if (y > max) y = max;
+  p.$scrollY = y;
+}
+
+function kitTextRevealCaret(p) {
+  if (!(p.get('look') === 'text' || p.get('multiline'))) return;
+  let v = kitTextView(p);
+  let lc = kitTextLineCol(v.text, kitCaret(p));
+  let yLine = v.pad + lc.line * v.lineH;
+  let view = p.$scrollY || 0;
+  let viewH = Math.max(v.lineH, v.h - 2 * v.pad);
+  if (yLine < view) p.$scrollY = yLine;
+  else if (yLine + v.lineH > view + viewH) p.$scrollY = yLine + v.lineH - viewH;
+  let max = kitScrollMax(p);
+  if ((p.$scrollY || 0) < 0) p.$scrollY = 0;
+  if ((p.$scrollY || 0) > max) p.$scrollY = max;
+}
+
+function kitCaret(p) {
+  let n = kitTextOf(p).length;
+  let c = p.$caret;
+  if (typeof c !== 'number') c = n;
+  return Math.max(0, Math.min(n, c));
+}
+
+function kitAnchor(p) {
+  let n = kitTextOf(p).length;
+  let a = p.$anchor;
+  if (typeof a !== 'number') a = kitCaret(p);
+  return Math.max(0, Math.min(n, a));
+}
+
+function kitTextRange(p) {
+  let a = kitAnchor(p);
+  let c = kitCaret(p);
+  return a < c ? { lo: a, hi: c } : { lo: c, hi: a };
+}
+
+function kitTextX(c, line, col, align, w, pad) {
+  /** x of column `col` on `line`, matching drawText. */
+  let prefix = line.slice(0, col);
+  let tw = c.measureText ? c.measureText(prefix).width : col * 8;
+  if (align === 'left') return pad + tw;
+  let full = c.measureText ? c.measureText(line).width : line.length * 8;
+  if (align === 'right') return w - pad - (full - tw);
+  return w / 2 - full / 2 + tw;
+}
+
+function kitTextIndexAt(p, lx, ly) {
+  /** Caret index nearest local point (lx, ly). */
+  let v = kitTextView(p);
+  let line = Math.round((ly - v.y0) / v.lineH);
+  if (line < 0) line = 0;
+  if (line >= v.lines.length) return v.text.length;
+  let start = 0;
+  for (let i = 0; i < line; i++) start += v.lines[i].length + 1;
+  let s = v.lines[line];
+  let c = typeof ctx !== 'undefined' ? ctx : null;
+  if (c && c.font != null) c.font = v.size + 'px sans-serif';
+  let best = 0;
+  let bestD = 1e9;
+  for (let i = 0; i <= s.length; i++) {
+    let x = kitTextX(c || { measureText: null }, s, i, v.align, v.w, v.pad);
+    let d = Math.abs(x - lx);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return start + best;
+}
+
+function kitTextReplace(p, lo, hi, insert, caret) {
+  let t = kitTextOf(p);
+  p.set('text', t.slice(0, lo) + insert + t.slice(hi));
+  p.$caret = caret;
+  p.$anchor = caret;
+  kitTextRevealCaret(p);
+}
+
+function kitTextMove(p, next, extend) {
+  let n = kitTextOf(p).length;
+  if (next < 0) next = 0;
+  if (next > n) next = n;
+  p.$caret = next;
+  if (!extend) p.$anchor = next;
+  kitTextRevealCaret(p);
+}
+
+function kitTextLineCol(t, i) {
+  let head = t.slice(0, i);
+  let line = head.split('\n').length - 1;
+  let nl = head.lastIndexOf('\n');
+  return { line: line, col: nl < 0 ? i : i - nl - 1 };
+}
+
+function kitTextAtLineCol(t, line, col) {
+  let lines = t.split('\n');
+  if (line < 0) return 0;
+  if (line >= lines.length) return t.length;
+  let start = 0;
+  for (let i = 0; i < line; i++) start += lines[i].length + 1;
+  if (col < 0) col = 0;
+  if (col > lines[line].length) col = lines[line].length;
+  return start + col;
+}
+
+function kitTextMark(c, v, index, color) {
+  /** Highlight the character at `index` (bracket match). */
+  let lc = kitTextLineCol(v.text, index);
+  let line = v.lines[lc.line] || '';
+  let x0 = kitTextX(c, line, lc.col, v.align, v.w, v.pad);
+  let x1 = kitTextX(c, line, Math.min(lc.col + 1, line.length), v.align, v.w, v.pad);
+  c.fillStyle = color;
+  c.fillRect(Math.min(x0, x1), v.y0 + lc.line * v.lineH - v.lineH / 2, Math.max(Math.abs(x1 - x0), 4), v.lineH);
+}
+
+function kitTextBracketAt(t, caret) {
+  /**
+   * Matching bracket at the caret (char before, else at). `{ a, b, ok }`.
+   * ok is false when the mate is missing (still mark the one we are on).
+   */
+  let mates = { '(': ')', '[': ']', '{': '}', ')': '(', ']': '[', '}': '{' };
+  let opens = { '(': true, '[': true, '{': true };
+  let tryAt = (i) => {
+    if (i < 0 || i >= t.length) return null;
+    let ch = t.charAt(i);
+    let other = mates[ch];
+    if (!other) return null;
+    let dir = opens[ch] ? 1 : -1;
+    let depth = 0;
+    for (let j = i; j >= 0 && j < t.length; j += dir) {
+      let c = t.charAt(j);
+      if (c === ch) depth++;
+      else if (c === other) {
+        depth--;
+        if (depth === 0) return { a: i, b: j, ok: true };
+      }
+    }
+    return { a: i, b: i, ok: false };
+  };
+  return tryAt(caret - 1) || tryAt(caret);
+}
+
+function kitTextSelectWord(str, i1) {
+  /**
+   * Double-click match from Livelymerge TextBox.selectWord: whole string at either
+   * end, whole line at a line break, insides of brackets/quotes/block comments,
+   * slash-slash to end of line, a run of spaces, else an alphanumeric (and 12.3) word.
+   * Returns { lo, hi } with hi exclusive.
+   */
+  if (!str) return { lo: 0, hi: 0 };
+  let n = str.length;
+  if (i1 < 0) i1 = 0;
+  if (i1 > n) i1 = n;
+  if (i1 === 0 || i1 === n) return { lo: 0, hi: n };
+  let rightBrackets = '*)}]>\'"`';
+  let leftBrackets = '*({[<\'"`';
+  let isWhite = (c) => c === '\t' || c === ' ';
+  let isAlpha = (c) => /^[a-zA-Z0-9\-]$/.test(c || '');
+  let periodWithDigit = (c, prev) => c === '.' && '0123456789'.indexOf(prev) >= 0;
+  let matchBrackets = (chin, chout, start, dir) => {
+    let i = start;
+    let depth = 1;
+    while (dir < 0 ? i - 1 >= 0 : i + 1 < n) {
+      i += dir;
+      if (str.charAt(i) === chin && chin !== chout) depth++;
+      if (str.charAt(i) === chout) depth--;
+      if (depth === 0) return i;
+    }
+    return i;
+  };
+  let lineAround = (i) => {
+    let lo = i;
+    while (lo > 0 && str.charAt(lo - 1) !== '\n' && str.charAt(lo - 1) !== '\r') lo--;
+    let hi = i;
+    while (hi < n && str.charAt(hi) !== '\n' && str.charAt(hi) !== '\r') hi++;
+    if (hi < n) hi++;
+    return { lo: lo, hi: hi };
+  };
+  if (i1 > 0) {
+    let left = str.charAt(i1 - 1);
+    if (left === '\n' || left === '\r') return lineAround(i1);
+    let bi = leftBrackets.indexOf(left);
+    if (left === '*' && (i1 - 2 < 0 || str.charAt(i1 - 2) !== '/')) bi = -1;
+    if (bi >= 0) {
+      let close = matchBrackets(leftBrackets.charAt(bi), rightBrackets.charAt(bi), i1 - 1, 1);
+      return { lo: i1, hi: close };
+    }
+  }
+  if (i1 < n) {
+    let right = str.charAt(i1);
+    if (right === '\n' || right === '\r') return lineAround(i1);
+    let bi = rightBrackets.indexOf(right);
+    if (right === '*' && (i1 + 1 >= n || str.charAt(i1 + 1) !== '/')) bi = -1;
+    if (bi >= 0) {
+      let open = matchBrackets(rightBrackets.charAt(bi), leftBrackets.charAt(bi), i1, -1);
+      return { lo: open + 1, hi: i1 };
+    }
+  }
+  if (i1 >= 2 && str.charAt(i1 - 1) === '/' && str.charAt(i1 - 2) === '/') {
+    let hi = i1;
+    while (hi < n && str.charAt(hi) !== '\n' && str.charAt(hi) !== '\r') hi++;
+    return { lo: i1, hi: hi };
+  }
+  let myI1 = i1;
+  let myI2 = i1 - 1;
+  while (myI1 - 1 >= 0 && isWhite(str.charAt(myI1 - 1))) myI1--;
+  while (myI2 + 1 < n && isWhite(str.charAt(myI2 + 1))) myI2++;
+  if (myI2 - myI1 >= 1) return { lo: myI1, hi: myI2 + 1 };
+  let i2 = i1 - 1;
+  let prev = i1 < n ? str.charAt(i1) : '';
+  while (i1 - 1 >= 0 && (isAlpha(str.charAt(i1 - 1)) || periodWithDigit(str.charAt(i1 - 1), prev))) {
+    prev = str.charAt(i1 - 1);
+    i1--;
+  }
+  while (i2 + 1 < n && (isAlpha(str.charAt(i2 + 1)) || periodWithDigit(str.charAt(i2 + 1), prev))) {
+    prev = str.charAt(i2 + 1);
+    i2++;
+  }
+  return { lo: i1, hi: i2 + 1 };
+}
+
+function kitTextShiftExtend(p, i) {
+  /**
+   * Shift-click/drag: pin the farther end of the current selection and move the
+   * nearer one (ties go to the right end). An empty selection pins where it was.
+   */
+  let range = kitTextRange(p);
+  let a = range.lo;
+  let b = range.hi;
+  let far = a === b ? a : Math.abs(i - a) <= Math.abs(i - b) ? b : a;
+  p.$anchor = far;
+  p.$caret = i;
+}
+
+function kitTextFinish(p) {
+  /**
+   * Pointer-up: a tiny drag is still a click (so the next click can complete a
+   * double-click match). Remember a collapsed caret for that second click.
+   */
+  if (!p) return;
+  let start = $kit.textDragStart;
+  $kit.textDragStart = null;
+  if (start && !start.shift) {
+    let d = Math.abs(($kit.pointerX || 0) - start.x) + Math.abs(($kit.pointerY || 0) - start.y);
+    if (d < 4) {
+      p.$caret = start.i;
+      p.$anchor = start.i;
+    }
+  }
+  let range = kitTextRange(p);
+  p.$priorNull = range.lo === range.hi ? range.lo : -1;
+}
+
+function kitTextDragTo(p, wx, wy) {
+  let l = p.localFromWorld(wx, wy);
+  p.$caret = kitTextIndexAt(p, l.x, l.y);
+  kitTextRevealCaret(p);
+}
+
+function kitTextClick(e) {
+  /**
+   * Focus me and start a drag-select. Shift moves the nearer end. A second click
+   * at the same caret completes selectWord (whole match), and does not keep dragging.
+   */
+  $kit.focus = this;
+  let i = kitTextIndexAt(this, e.lx, e.ly);
+  if (e.shift) {
+    kitTextShiftExtend(this, i);
+    $kit.textDrag = this;
+    $kit.textDragStart = { x: e.x, y: e.y, i: i, shift: true };
+  } else if (this.$priorNull === i) {
+    let w = kitTextSelectWord(kitTextOf(this), i);
+    this.$anchor = w.lo;
+    this.$caret = w.hi;
+    this.$priorNull = -1;
+    $kit.textDrag = null;
+    $kit.textDragStart = null;
+  } else {
+    this.$caret = i;
+    this.$anchor = i;
+    $kit.textDrag = this;
+    $kit.textDragStart = { x: e.x, y: e.y, i: i, shift: false };
+  }
+  kitTextRevealCaret(this);
+}
+
+function kitTextKey(e) {
+  /**
+   * Real typing on a focused field: caret, selection, arrows, Backspace/Delete.
+   * Enter accepts (Shift-Enter or `multiline` inserts a newline); ⌘/Ctrl-Enter
+   * always accepts. The bindings follow Livelymerge's TextBox, not Morphic itself.
+   */
+  let k = e.key;
+  if (k == null || k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta') return;
+  let t = kitTextOf(this);
+  let caret = kitCaret(this);
+  let range = kitTextRange(this);
+  let lo = range.lo;
+  let hi = range.hi;
+  if (e.ctrl || e.meta) {
+    if (k === 'a' || k === 'A') {
+      this.$anchor = 0;
+      this.$caret = t.length;
+      return;
+    }
+    if ((k === 'Enter' || k === 'Return') && this.isScript('accept')) this.run('accept');
+    return;
+  }
+  if (k === 'Backspace') {
+    if (lo !== hi) kitTextReplace(this, lo, hi, '', lo);
+    else if (lo > 0) kitTextReplace(this, lo - 1, lo, '', lo - 1);
+    return;
+  }
+  if (k === 'Delete') {
+    if (lo !== hi) kitTextReplace(this, lo, hi, '', lo);
+    else if (lo < t.length) kitTextReplace(this, lo, lo + 1, '', lo);
+    return;
+  }
+  if (k === 'ArrowLeft') {
+    kitTextMove(this, lo !== hi && !e.shift ? lo : caret - 1, e.shift);
+    return;
+  }
+  if (k === 'ArrowRight') {
+    kitTextMove(this, lo !== hi && !e.shift ? hi : caret + 1, e.shift);
+    return;
+  }
+  if (k === 'ArrowUp' || k === 'ArrowDown') {
+    let lc = kitTextLineCol(t, caret);
+    let dest = kitTextAtLineCol(t, lc.line + (k === 'ArrowUp' ? -1 : 1), lc.col);
+    kitTextMove(this, dest, e.shift);
+    return;
+  }
+  if (k === 'Enter') {
+    if (e.shift || this.get('multiline')) {
+      kitTextReplace(this, lo, hi, '\n', lo + 1);
+      return;
+    }
+    if (this.isScript('accept')) this.run('accept');
+    return;
+  }
+  if (k === 'Escape') {
+    $kit.focus = null;
+    return;
+  }
+  if (k.length === 1) kitTextReplace(this, lo, hi, k, lo + 1);
+}
+
+function kitField(spec) {
+  /** A part you can click and type into. `look: 'text'` if none given. Enter runs `accept`. */
+  if (!spec.look) spec.look = 'text';
+  if (spec.align == null) spec.align = 'left';
+  let f = part(spec);
+  f.define('onPointerDown', kitTextClick);
+  f.define('onKeyDown', kitTextKey);
+  return f;
+}
+
+function kitInspect(tgt) {
+  /**
+   * Open (or raise) the Inspector on `tgt`. The Inspector is an ordinary part, so it
+   * can inspect itself — that's how you change the Inspector from inside the Kit.
+   */
+  let dest = tgt && tgt.world ? tgt.world() : kitWorld;
+  let ins = dest.find('inspector');
+  if (!ins) ins = dest.add(kitMakeInspector());
+  ins.run('show', tgt);
+  ins.beTop();
+  return ins;
+}
+
+function kitFind(q) {
+  let dest = kitWorld;
+  let f = dest.find('finder');
+  if (!f) f = dest.add(kitMakeFinder());
+  f.beTop();
+  if (q != null && q !== '') {
+    f.find('query').set('text', q);
+    f.run('search', q);
+  }
+  $kit.focus = f.find('query');
+  return f;
+}
+
+function kitMakeInspector() {
+  /**
+   * A column of slot rows plus a script editor. `show(tgt)` rebuilds the rows from
+   * tgt.slotNames(). Click a script row to edit; click a data row and type, Enter
+   * to set. All of that is scripts on this part, so they appear in the list too.
+   */
+  let ins = part({
+    name: 'inspector',
+    x: 16,
+    y: 400,
+    w: 310,
+    fill: '#fff',
+    border: '#4a7bd0',
+    radius: 6,
+    layout: 'column',
+    gap: 3,
+    padding: 8,
+    fit: true,
+  });
+  ins.add(part({ name: 'title', look: 'none', text: 'Inspector', w: 290, h: 18, align: 'left', fontSize: 13, locked: true }));
+  ins.add(part({ name: 'rows', fill: 'none', w: 290, layout: 'column', gap: 1, fit: true, maxH: 220, scroll: true }));
+  let editor = ins.add(
+    kitField({
+      name: 'editor',
+      w: 290,
+      h: 120,
+      text: '',
+      fill: '#f8f6f1',
+      border: '#ccc',
+      fontSize: 11,
+      align: 'left',
+      multiline: true,
+      hidden: true,
+    }),
+  );
+  editor.define('accept', function () {
+    let host = this.owner;
+    let tgt = host.get('target');
+    let n = host.get('editing');
+    if (!tgt || !n) return;
+    try {
+      tgt.define(n, this.get('text'));
+    } catch (err) {
+      $kit.lastError = String(err && err.message ? err.message : err);
+    }
+    host.run('refresh');
+  });
+  let rowLike = part({ name: 'rowLike' });
+  rowLike.define('onPointerDown', kitTextClick);
+  rowLike.define('onClick', function () {
+    if (this.get('kind') === 'script') this.owner.owner.run('pick', this.get('slotName'));
+  });
+  rowLike.define('onKeyDown', kitTextKey);
+  rowLike.define('accept', function () {
+    let host = this.owner.owner;
+    let tgt = host.get('target');
+    let n = this.get('slotName');
+    if (!tgt || !n) return;
+    let raw = '' + this.get('text');
+    let prefix = n + ': ';
+    let body = raw.indexOf(prefix) === 0 ? raw.slice(prefix.length) : raw;
+    tgt.set(n, kitParseValue(body, tgt.get(n)));
+    host.run('refresh');
+  });
+  ins.put('rowLike', rowLike);
+  ins.define('show', function (tgt) {
+    this.put('target', tgt);
+    this.put('editing', null);
+    this.find('editor').put('hidden', true);
+    this.run('refresh');
+  });
+  ins.define('refresh', function () {
+    let tgt = this.get('target');
+    this.find('title').set('text', tgt ? 'inspect ' + tgt : 'Inspector');
+    let rows = this.find('rows');
+    while (rows.parts.length > 0) rows.removePart(rows.parts[0]);
+    if (!tgt) return;
+    let names = tgt.slotNames();
+    let proto = this.get('rowLike');
+    for (let i = 0; i < names.length; i++) {
+      let n = names[i];
+      let v = tgt.get(n);
+      let kind = typeof v === 'function' ? 'script' : v && v.slots ? 'ref' : 'data';
+      let shown = kind === 'script' ? n + '  ƒ' : kind === 'ref' ? n + ': ' + v : n + ': ' + v;
+      rows.add(
+        part({
+          like: proto,
+          slotName: n,
+          kind: kind,
+          text: shown,
+          w: 290,
+          h: 18,
+          fontSize: 11,
+          align: 'left',
+          fill: tgt.hasOwn(n) ? '#fff' : '#f0eee8',
+          border: '#eee',
+          locked: true,
+        }),
+      );
+    }
+  });
+  ins.define('pick', function (n) {
+    let tgt = this.get('target');
+    if (!tgt) return;
+    this.put('editing', n);
+    if (typeof tgt.get(n) === 'function') {
+      let ed = this.find('editor');
+      ed.put('hidden', false);
+      ed.set('text', tgt.scriptSource(n) || '');
+      ed.$caret = kitTextOf(ed).length;
+      ed.$anchor = ed.$caret;
+      $kit.focus = ed;
+    }
+  });
+  return ins;
+}
+
+function kitMakeFinder() {
+  /**
+   * A search field plus hit rows. Enter runs kitSearch on the world; a hit's click
+   * opens the Inspector on that part. Built from the same field/row pattern.
+   */
+  let f = part({
+    name: 'finder',
+    x: 340,
+    y: 400,
+    w: 260,
+    fill: '#fff',
+    border: '#4a7bd0',
+    radius: 6,
+    layout: 'column',
+    gap: 3,
+    padding: 8,
+    fit: true,
+  });
+  f.add(part({ name: 'title', look: 'none', text: 'Finder', w: 240, h: 16, align: 'left', fontSize: 13, locked: true }));
+  let query = f.add(
+    kitField({ name: 'query', w: 240, h: 22, text: '', fill: '#f8f6f1', border: '#ccc', fontSize: 12, align: 'left' }),
+  );
+  query.define('accept', function () {
+    this.owner.run('search', this.get('text'));
+  });
+  f.add(part({ name: 'hits', fill: 'none', w: 240, layout: 'column', gap: 1, fit: true }));
+  let hitLike = part({ name: 'hitLike' });
+  hitLike.define('onClick', function () {
+    kitInspect(this.get('hitPart'));
+  });
+  f.put('hitLike', hitLike);
+  f.define('search', function (q) {
+    let hits = this.find('hits');
+    while (hits.parts.length > 0) hits.removePart(hits.parts[0]);
+    if (q == null || q === '') return;
+    let list = kitSearch(this.world(), q);
+    let proto = this.get('hitLike');
+    let n = list.length < 12 ? list.length : 12;
+    for (let i = 0; i < n; i++) {
+      let h = list[i];
+      hits.add(
+        part({
+          like: proto,
+          hitPart: h.part,
+          text: (h.part.name || '?') + ' · ' + (h.slot || '') + ' · ' + h.where,
+          w: 240,
+          h: 18,
+          fontSize: 11,
+          align: 'left',
+          fill: '#fff',
+          border: '#eee',
+          locked: true,
+        }),
+      );
+    }
+  });
+  return f;
+}
+
+function kitMakeFindBtn() {
+  let btn = part({ name: 'findBtn', w: 130, h: 22, text: 'find', fill: '#6a6a6a', textColor: 'white', radius: 4, locked: true });
+  btn.define('onClick', function () {
+    kitFind();
+  });
+  return btn;
+}
+
+function kitMakeBin() {
+  /**
+   * A column of prototypes. Dragging one out stamps an instance (isBin); dropping a
+   * finished part in keeps it as a new prototype. The "wires" button toggles drawing.
+   */
+  let bin = part({
+    name: 'bin',
+    x: 620,
+    y: 16,
+    w: 150,
+    h: 280,
+    fill: '#ece8df',
+    border: '#b8ad96',
+    radius: 8,
+    layout: 'column',
+    gap: 8,
+    padding: 10,
+    acceptsDrops: true,
+    isBin: true,
+    fit: true,
+  });
+  bin.add(part({ look: 'none', text: 'Parts Bin', w: 130, h: 16, align: 'left', fontSize: 12, textColor: '#555', locked: true }));
+  let wiresBtn = bin.add(
+    part({ name: 'wiresBtn', w: 130, h: 22, text: 'hide wires', fill: '#4a7bd0', textColor: 'white', radius: 4, locked: true }),
+  );
+  wiresBtn.define('onClick', function () {
+    $kit.showWires = $kit.showWires === false;
+    this.set('text', $kit.showWires === false ? 'show wires' : 'hide wires');
+    this.set('fill', $kit.showWires === false ? '#ccc' : '#4a7bd0');
+    this.set('textColor', $kit.showWires === false ? '#222' : 'white');
+  });
+  bin.add(kitMakeFindBtn());
+  bin.add(part({ name: 'box', w: 48, h: 32, fill: '#d8d4cc', border: '#999', radius: 4 }));
+  bin.add(part({ name: 'oval', look: 'oval', w: 40, h: 40, fill: '#8eb4e0' }));
+  bin.add(part({ name: 'protoButton', w: 88, h: 28, text: 'button', fill: '#4a7bd0', textColor: 'white', radius: 6 }));
+  return bin;
 }
 
 function kitLabel(text, x, y) {
@@ -1788,13 +2986,13 @@ function kitExamples(world) {
    * A few things built from parts, to play with and take apart. Each is a few
    * parts, a slot or two, and at most a couple of one-line scripts or wires.
    */
-  // Counter: a button wired to a number's increment action; onCount shows the count.
+  // Counter: a button wired to a number — two world parts, so you can drag them apart
+  // (same as slider and dial) and see the wire between them.
   world.add(kitLabel('Counter: click +1', 30, 20));
-  let counter = world.add(part({ name: 'counter', x: 30, y: 44, w: 150, h: 44, fill: 'none' }));
-  let num = counter.add(part({ name: 'number', x: 0, y: 0, w: 80, h: 44, count: 0, text: '0', fontSize: 20, fill: 'white', border: '#999', radius: 6 }));
+  let num = world.add(part({ name: 'number', x: 30, y: 44, w: 80, h: 44, count: 0, text: '0', fontSize: 20, fill: 'white', border: '#999', radius: 6 }));
   num.define('increment', function () { this.set('count', this.get('count') + 1); });
   num.define('onCount', function (n) { this.set('text', '' + n); });
-  let plus = counter.add(part({ name: 'button', x: 90, y: 0, w: 60, h: 44, text: '+1', fill: '#4a7bd0', textColor: 'white', radius: 8 }));
+  let plus = world.add(part({ name: 'button', x: 170, y: 44, w: 60, h: 44, text: '+1', fill: '#4a7bd0', textColor: 'white', radius: 8 }));
   wire(plus, 'click', num, 'increment');
 
   // Slider -> dial: one wire with a transform; another wire to a readout. The whole
@@ -1835,6 +3033,9 @@ function kitExamples(world) {
     this.find('hourHand').setLocal('rotation', h * 30 - 90);
   });
 
+  world.add(kitLabel('⌘-click a part for its halo; i = inspect', 300, 20));
+  world.add(kitLabel('drag from the bin to stamp a copy; Option-click carries', 300, 40));
+
   // Shelf: a row container. Drag things onto it and they line up.
   world.add(kitLabel('Shelf: drop parts here (layout: row)', 300, 240));
   let shelf = world.add(part({ name: 'shelf', x: 300, y: 270, w: 300, h: 70, fill: '#e6dfd0', border: '#b8ad96', radius: 6, layout: 'row', gap: 8, padding: 10, acceptsDrops: true, fit: true }));
@@ -1843,5 +3044,5 @@ function kitExamples(world) {
 }
 
 // Live stamp — eval `KITDEFS_WRITTEN_ON` to confirm this build is loaded.
-let KITDEFS_WRITTEN_ON = '2026-10-06 11:48 PDT';
-//written on 2026-10-06 11:48 PDT
+let KITDEFS_WRITTEN_ON = '2026-10-07 10:40 PDT';
+//written on 2026-10-07 10:40 PDT
