@@ -1,0 +1,114 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene drag probe</title>
+<!-- Driven by probes/drag-run.mjs, which serves the package root, opens this in
+     headless Chrome and moves a real mouse over CDP. This page only sets the
+     stage: the BUILT tool (dist/) mounted against an in-memory repo, next to a
+     fake sidebar whose rows start a drag with the same dataTransfer the
+     Patchwork sidebar sets (sideboard/src/sideboard/document-list/item.tsx). -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; }
+  #sidebar { width: 220px; flex: none; border-right: 1px solid #ccc; padding: 8px; box-sizing: border-box; }
+  #sidebar .doc { padding: 6px 8px; margin-block-end: 4px; border-radius: 4px; background: #eee; cursor: grab; user-select: none; }
+  #host { width: 1100px; height: 700px; flex: none; }
+</style>
+<div id="sidebar"></div>
+<div id="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+
+const errors = [];
+const origError = console.error;
+console.error = (...a) => { errors.push(a.map(String).join(" ")); origError(...a); };
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+
+// a 20 mm cube as binary STL
+function cubeSTL(s = 20) {
+  const v = [[0,0,0],[s,0,0],[s,s,0],[0,s,0],[0,0,s],[s,0,s],[s,s,s],[0,s,s]];
+  const f = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+  const buf = new ArrayBuffer(84 + f.length * 50), dv = new DataView(buf);
+  dv.setUint32(80, f.length, true);
+  f.forEach((tri, i) => tri.forEach((vi, k) => v[vi].forEach((c, j) => dv.setFloat32(84 + i * 50 + 12 + (k * 3 + j) * 4, c, true))));
+  return new Uint8Array(buf);
+}
+
+try {
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const repo = new FakeRepo();
+  const sceneDoc = {};
+  (await getRegistry("patchwork:datatype").load("scene")).module.init(sceneDoc);
+  const scene = repo.add({ "@patchwork": { type: "scene" }, ...sceneDoc });
+
+  // The stage: a group G (at x=1, scaled 2) holding an empty group G2, and
+  // three loose leaves after it. Leaves are hidden so nothing needs loading.
+  const T = (x = 0, scale = 1) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale });
+  const base = { sourceUrl: null, providerId: null, renderUrl: null, visible: true, color: null, opacity: 1, wireframe: false };
+  scene.change((d) => {
+    d.objects.G = { ...base, kind: "group", name: "G", parent: null, transform: T(1, 2) };
+    d.objects.G2 = { ...base, kind: "group", name: "G2", parent: "G", transform: T() };
+    for (const [id, x] of [["L1", 0], ["L2", 3], ["L3", 6]]) {
+      d.objects[id] = { ...base, kind: "object", name: id, providerId: "file-stl", visible: false, parent: null, transform: T(x) };
+    }
+    d.order = ["G", "G2", "L1", "L2", "L3"];
+  });
+
+  const cube = repo.add({ "@patchwork": { type: "file" }, name: "cube.stl", extension: "stl", mimeType: "model/stl", content: cubeSTL() });
+
+  // The fake sidebar: exactly the types and shapes item.tsx puts on a drag.
+  const sidebar = document.getElementById("sidebar");
+  for (const item of [{ id: "i1", url: cube.url, name: "cube.stl", type: "file" }]) {
+    const row = document.createElement("div");
+    row.className = "doc";
+    row.draggable = true;
+    row.dataset.name = item.name;
+    row.textContent = item.name;
+    row.addEventListener("dragstart", (event) => {
+      event.dataTransfer.effectAllowed = "all";
+      const docId = item.url.slice("automerge:".length);
+      event.dataTransfer.items.add(`${location.protocol}//${location.host}/#doc=${docId}\r\n`, "text/uri-list");
+      event.dataTransfer.items.add(JSON.stringify([item.id]), "text/x-sideboard-ids");
+      event.dataTransfer.items.add(JSON.stringify([item.url]), "text/x-patchwork-urls");
+      event.dataTransfer.items.add(JSON.stringify({ source: null, items: [item] }), "text/x-patchwork-dnd");
+    });
+    sidebar.append(row);
+  }
+
+  const host = document.getElementById("host");
+  host.repo = repo;
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  Tool(scene, host);
+
+  // Every drag event the page sees, for the runner to read back.
+  const dragLog = [];
+  for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
+    document.addEventListener(type, (e) => dragLog.push(`${type}@${e.target?.closest?.(".object-row")?.dataset.id ?? e.target?.className ?? e.target?.tagName}`), true);
+  }
+  const rect = (el) => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; };
+  window.__dragProbe = {
+    errors,
+    sceneUrl: scene.url,
+    row: (id) => { const li = host.querySelector(`.object-row[data-id="${id}"]`); return li && { li: rect(li), main: rect(li.querySelector(".row-main")) }; },
+    rowByName: (name) => { const li = [...host.querySelectorAll(".object-row")].find((r) => r.querySelector(".name")?.textContent === name); return li && { id: li.dataset.id, li: rect(li) }; },
+    sidebarItem: (name) => rect(sidebar.querySelector(`.doc[data-name="${name}"]`)),
+    viewport: () => rect(host.querySelector(".viewport")),
+    mark: () => { const li = host.querySelector(".object-row[data-drop]"); return li ? { id: li.dataset.id, drop: li.dataset.drop } : null; },
+    dragLog: (clear = false) => { const out = [...dragLog]; if (clear) dragLog.length = 0; return out; },
+    marks: () => [...host.querySelectorAll(".object-row[data-drop]")].map((li) => `${li.dataset.id}:${li.dataset.drop}`),
+    hintHidden: () => host.querySelector(".drop-hint").hidden,
+    toast: () => { const t = host.querySelector(".toast"); return t.hidden ? null : t.textContent; },
+    clearToast: () => { host.querySelector(".toast").hidden = true; },
+    heads: () => scene.heads().join(","),
+    doc: () => JSON.parse(JSON.stringify(scene.doc())),
+    outline: () => [...host.querySelectorAll(".object-row")].map((r) => `${"  ".repeat(Number(r.dataset.depth || 0))}${r.querySelector(".name")?.textContent}`),
+  };
+} catch (err) {
+  window.__dragProbe = { fatal: String(err?.stack || err), errors };
+}
+</script>

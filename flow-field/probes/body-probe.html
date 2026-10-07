@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>flow-field body probe</title>
+<script type="importmap">
+  { "imports": { "@inkandswitch/patchwork-plugins": "../src/test/patchwork-plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  #host { width: 1200px; height: 700px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script type="module">
+  // Mounts the built editor with a hull linked as its body, against a stub
+  // plugin registry and an in-memory repo. Serve the package root:
+  //   python3 -m http.server 8765   →   http://localhost:8765/probes/body-probe.html
+  // ?model=slender-body-3d   the 3D model instead of the waterplane panels
+  // ?path=mesh               no section provider: slice a scene:source GLB instead
+  // ?z=0.5                   the editor's height slider
+  // document.title becomes "ready <path>" once the section is in.
+  import { getRegistry } from "@inkandswitch/patchwork-plugins";
+  import { plugins } from "../dist/index.js";
+  import { transomWaterline, prismGLB } from "../src/test/hull-fixtures.js";
+  const q = new URLSearchParams(location.search);
+  const HULL = "automerge:hu11111111111111111111111";
+
+  function memHandle(url, doc) {
+    const listeners = new Set();
+    let cur = doc;
+    return {
+      url,
+      doc: () => cur,
+      change(fn) { const n = structuredClone(cur); fn(n); cur = n; listeners.forEach((l) => l({ doc: cur })); },
+      on(e, f) { if (e === "change") listeners.add(f); },
+      off(e, f) { listeners.delete(f); },
+    };
+  }
+  const hull = memHandle(HULL, { "@patchwork": { type: "probe-hull" }, title: "Probe hull", scale: 1 });
+  window.hull = hull;
+  window.repo = { find: async (url) => (url === HULL ? hull : Promise.reject(new Error("unavailable"))) };
+  const loop = (k) => transomWaterline(60).map(([x, y]) => [x * k, y * k]);
+  if (q.get("path") === "mesh") {
+    getRegistry("scene:source").register({
+      type: "scene:source", id: "probe-hull-surface", name: "Probe hull", supportedDatatypes: ["probe-hull"], params: [],
+      async load() { return { build: async ({ doc }) => ({ kind: "glb", glb: prismGLB(loop(doc.scale), { levels: [-1.2, 0.4] }) }) }; },
+    });
+  } else {
+    getRegistry("geometry:section").register({
+      type: "geometry:section", id: "probe-hull-section", name: "Probe hull section", supportedDatatypes: ["probe-hull"], planes: ["waterline", "z"],
+      async load() {
+        return { section: (doc, req) => ({ frame: "floating", units: "m", plane: { kind: req.plane.kind, z: req.plane.z ?? 0 }, loops: [{ points: loop(doc.scale), closed: true }] }) };
+      },
+    });
+  }
+
+  const dt = await plugins.find((p) => p.type === "patchwork:datatype").load();
+  const Tool = await plugins.find((p) => p.type === "patchwork:tool").load();
+  const doc = {};
+  dt.init(doc);
+  doc.elements = {};
+  doc.freestream.headingDeg = 180;
+  doc.domain = { min: [-5, -4, -3], max: [15, 4, 1] };
+  doc.body = { url: HULL, plane: { kind: "waterline" }, model: q.get("model") ?? "waterplane-2d", panels: 120 };
+  const handle = memHandle("automerge:flowprobe", doc);
+  window.handle = handle;
+  Tool(handle, document.getElementById("host"));
+  if (q.get("z")) {
+    const r = document.querySelector('[aria-label="Slice height"]');
+    r.value = q.get("z");
+    r.dispatchEvent(new Event("input"));
+  }
+  const t0 = performance.now();
+  for (let i = 0; i < 200; i++) {
+    const path = document.querySelector(".chip-path")?.textContent ?? "";
+    if (/exact|mesh|no section/.test(path)) break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  document.title = `ready ${document.querySelector(".chip-path")?.textContent} ${(performance.now() - t0).toFixed(0)}ms`;
+  window.__probeCleanup = true;
+</script>
+</body>
+</html>

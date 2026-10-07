@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>flow-field tool probe</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  #host { width: 1200px; height: 700px; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script type="module">
+  // Mounts the built tool against a fake handle. Serve the package root:
+  //   python3 -m http.server 8765   →   http://localhost:8765/probes/tool-probe.html
+  // ?preset=<id> loads a preset, ?color=speed switches the heatmap.
+  import { plugins } from "../dist/index.js";
+  const q = new URLSearchParams(location.search);
+  const dt = await plugins.find((p) => p.type === "patchwork:datatype").load();
+  const Tool = await plugins.find((p) => p.type === "patchwork:tool").load();
+  const doc = {};
+  dt.init(doc);
+  const listeners = new Set();
+  let cur = doc;
+  const handle = {
+    doc: () => cur,
+    change(fn) { const n = structuredClone(cur); fn(n); cur = n; listeners.forEach((l) => l()); },
+    on(e, f) { if (e === "change") listeners.add(f); },
+    off(e, f) { listeners.delete(f); },
+  };
+  window.handle = handle;
+  Tool(handle, document.getElementById("host"));
+  if (q.get("preset")) {
+    const sel = document.querySelector('[aria-label="Load a preset"]');
+    sel.value = q.get("preset");
+    sel.dispatchEvent(new Event("change"));
+  }
+  if (q.get("color")) {
+    const sel = document.querySelector('[aria-label="Colour by"]');
+    sel.value = q.get("color");
+    sel.dispatchEvent(new Event("change"));
+  }
+  if (q.get("select")) [...document.querySelectorAll(".elements li")][0]?.click();
+  const t0 = performance.now();
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  document.title = `ready ${(performance.now() - t0).toFixed(0)}ms`;
+</script>
+</body>
+</html>

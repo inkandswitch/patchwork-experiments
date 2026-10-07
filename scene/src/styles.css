@@ -1,0 +1,1055 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --scene-bg: var(--editor-fill, white);
+    --scene-fg: var(--editor-line, black);
+    --scene-muted: var(--editor-line-offset-50, #888);
+    --scene-faint: var(--editor-line-offset-30, #aaa);
+    --scene-border: var(--editor-fill-offset-20, #ddd);
+    --scene-surface: var(--editor-fill-offset-10, #f4f4f4);
+    --scene-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 6%);
+    --scene-viewport-bg: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --scene-grid-major: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 40%);
+    --scene-grid-minor: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 20%);
+    /* labels and field names: readable, but quieter than values */
+    --scene-label: color-mix(in oklch, var(--editor-line, black) 72%, var(--editor-fill, white));
+    --scene-object: color-mix(in oklch, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 45%), var(--studio-link, steelblue) 25%);
+    --scene-accent: var(--studio-primary, #35f7ca);
+    --scene-accent-fill: var(--studio-primary-fill, #35f7ca);
+    --scene-accent-line: var(--studio-primary-line, black);
+    --scene-accent-text: var(--editor-primary-text, var(--studio-primary, teal));
+    --scene-remote: var(--studio-secondary, mediumpurple);
+    --scene-danger: var(--studio-danger, crimson);
+    --scene-danger-text: var(--editor-danger-text, var(--studio-danger, crimson));
+    --scene-warning: var(--studio-warning, orange);
+    --scene-dimension: color-mix(in oklch, var(--studio-warning, orange) 80%, var(--editor-line, black));
+    --scene-axis-x: color-mix(in oklch, red 75%, var(--editor-line, black));
+    --scene-axis-y: color-mix(in oklch, limegreen 75%, var(--editor-line, black));
+    --scene-axis-z: color-mix(in oklch, dodgerblue 80%, var(--editor-line, black));
+    --scene-label-bg: color-mix(in oklch, var(--editor-fill, white) 82%, transparent);
+    --scene-shadow: var(--studio-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.12));
+    --scene-family: var(--editor-family-sans, system-ui, sans-serif);
+    --scene-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+/* ─── composition ─────────────────────────────────────────────────────────── */
+
+.scene-tool .cluster:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+/* ─── scene tool block ────────────────────────────────────────────────────── */
+
+.scene-tool {
+  container-type: inline-size;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  font-family: var(--scene-family);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.scene-tool *:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls * {
+  box-sizing: border-box;
+}
+
+.scene-tool .toolbar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--studio-space-xs, 0.375rem);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px solid var(--scene-border);
+}
+
+.scene-tool .add-form:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  gap: var(--studio-space-2xs, 4px);
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.scene-tool .add-url:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--scene-family-code);
+  font-size: 12px;
+}
+
+.scene-tool input[type="text"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool input[type="number"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool select:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls input[type="text"],
+.scene-render-controls input[type="number"],
+.scene-render-controls select {
+  font: inherit;
+  color: inherit;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+.scene-tool .button:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .button {
+  font: inherit;
+  color: inherit;
+  background: var(--scene-surface);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--studio-transition-fast, 0.1s ease);
+}
+
+.scene-tool .button:hover:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .button:hover {
+  background: var(--scene-hover);
+}
+
+.scene-tool .button[aria-pressed="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+}
+
+.scene-tool .button.danger:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+}
+
+.scene-tool .button.link:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .link {
+  background: none;
+  border-color: transparent;
+  color: var(--scene-accent-text);
+  padding: 3px 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-tool .button:disabled:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scene-tool .toggle:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-tool .body:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 290px);
+  min-height: 0;
+}
+
+.scene-tool[data-panel-hidden] .body:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.scene-tool[data-panel-hidden] .sidebar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+@container (max-width: 640px) {
+  .scene-tool .body:where(:not(.about-embed *), .about-embed .scene-tool *) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+  }
+  .scene-tool .sidebar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+    border-left: none;
+    border-top: 1px solid var(--scene-border);
+  }
+}
+
+/* viewport */
+
+.scene-tool .viewport {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  background: var(--scene-viewport-bg);
+  isolation: isolate;
+}
+
+/* The renderer appends its canvas (and then the label layer) after the
+   overlays in the template, and a positioned element later in the DOM paints
+   over earlier ones at the same z-index. So the stacking order is explicit:
+   canvas, then labels, then the HUD and hints, then the provider chooser. */
+.scene-tool .viewport > .canvas {
+  z-index: 0;
+}
+
+.scene-tool .viewport > .labels,
+.scene-tool .viewport > .grid-caption {
+  z-index: 1;
+}
+
+.scene-tool .viewport > .hud,
+.scene-tool .viewport > .empty,
+.scene-tool .viewport > .no-webgl,
+.scene-tool .viewport > .measure-hint,
+.scene-tool .viewport > .toast,
+.scene-tool .viewport > .drop-hint {
+  z-index: 2;
+}
+
+.scene-tool .viewport > .chooser {
+  z-index: 3;
+}
+
+.scene-tool .viewport[data-measuring] .canvas {
+  cursor: crosshair;
+}
+
+.scene-tool .viewport[data-hovering]:not([data-measuring]) .canvas {
+  cursor: pointer;
+}
+
+.scene-tool .canvas:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+  display: block;
+  touch-action: none;
+}
+
+.scene-tool .labels:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.scene-tool .label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+  border-radius: var(--studio-radius-sm, 4px);
+  color: var(--scene-fg);
+  will-change: transform;
+}
+
+.scene-tool .grid-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  font-size: 11px;
+  /* a halo of the background keeps tick numbers legible over grid lines and meshes */
+  text-shadow:
+    0 0 2px var(--scene-viewport-bg),
+    0 0 2px var(--scene-viewport-bg),
+    0 0 3px var(--scene-viewport-bg);
+}
+
+.scene-tool .grid-caption:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  right: var(--studio-space-xs, 0.375rem);
+  bottom: var(--studio-space-xs, 0.375rem);
+  padding: 1px 6px;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--scene-label-bg);
+  color: var(--scene-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.scene-tool .axis-label:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .triad-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 700;
+  font-size: 12px;
+  text-shadow:
+    0 0 2px var(--scene-viewport-bg),
+    0 0 3px var(--scene-viewport-bg);
+}
+
+.scene-tool .axis-label[data-axis="x"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .triad-label[data-axis="x"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-axis-x);
+}
+
+.scene-tool .axis-label[data-axis="y"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .triad-label[data-axis="y"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-axis-y);
+}
+
+.scene-tool .axis-label[data-axis="z"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .triad-label[data-axis="z"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-axis-z);
+}
+
+.scene-tool .bounds-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-bg) 92%, transparent);
+  color: var(--scene-label);
+  border: 1px solid var(--scene-border);
+}
+
+/* Labels are positioned in DOM order, so a bounds label re-created after a
+   rebuild would otherwise land on top of a dimension label. Dimensions are the
+   thing the user made on purpose: keep them above bounds labels, and opaque. */
+.scene-tool .bounds-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  z-index: 1;
+}
+
+.scene-tool .dimension-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  z-index: 2;
+  pointer-events: auto;
+  cursor: pointer;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-dimension);
+  font-weight: 600;
+  box-shadow: var(--scene-shadow);
+}
+
+.scene-tool .dimension-label[data-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  z-index: 3;
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+}
+
+.scene-tool .dimension-label[data-preview]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: none;
+  border-style: dashed;
+}
+
+.scene-tool .dimension-label[data-detached]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-style: dotted;
+}
+
+/* an anchor no longer on its (rebuilt) object: this measures the old shape */
+.scene-tool .dimension-label[data-offsurface]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-style: dashed;
+  border-color: var(--scene-warning);
+  opacity: 0.8;
+}
+
+.scene-tool .tag[data-tone="warn"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  border-color: var(--scene-warning);
+  background: color-mix(in oklch, var(--scene-warning) 20%, transparent);
+}
+
+.scene-tool .legend-tint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-weight: normal;
+}
+
+.scene-tool .empty:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .no-webgl:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: var(--studio-space-lg, 1.5rem);
+  color: var(--scene-muted);
+  pointer-events: none;
+}
+
+/* Overlays like .chooser and .drop-hint set their own display further down,
+   at the same specificity, so a plain [hidden] rule would lose to them and a
+   hidden overlay would still show. Hidden always wins here. */
+.scene-tool [hidden] {
+  display: none !important;
+}
+
+.scene-tool .empty p:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0.25em 0;
+}
+
+.scene-tool .hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  font-size: 12px;
+}
+
+.scene-tool .hud:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: var(--studio-space-xs, 0.375rem);
+  left: var(--studio-space-xs, 0.375rem);
+  display: flex;
+  gap: 4px;
+  pointer-events: none;
+}
+
+/* colour legends, from each object's GLB (extras.legend) */
+.scene-tool .legends:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: var(--studio-space-sm, 0.5rem);
+  bottom: var(--studio-space-sm, 0.5rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--studio-space-xs, 0.375rem);
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.scene-tool .legend:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  gap: 3px;
+  min-width: 12rem;
+  max-width: 22rem;
+  padding: 6px 8px 5px;
+  border-radius: var(--studio-radius-sm, 6px);
+  background: var(--scene-label-bg);
+  border: 1px solid var(--scene-border);
+  box-shadow: var(--scene-shadow);
+  font-size: 11px;
+  color: var(--scene-fg);
+}
+
+.scene-tool .legend-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-tool .legend-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  height: 9px;
+  border-radius: 2px;
+}
+
+.scene-tool .legend-ticks:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  justify-content: space-between;
+  color: var(--scene-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-tool .label-leader:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 0;
+  border-top: 1px solid var(--scene-dimension);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.scene-tool .measure-hint:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .toast:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  box-shadow: var(--scene-shadow);
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-tool .measure-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  top: var(--studio-space-xs, 0.375rem);
+  pointer-events: none;
+}
+
+.scene-tool .toast:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  bottom: var(--studio-space-md, 1rem);
+}
+
+.scene-tool .toast[data-kind="error"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+  border-color: var(--scene-danger);
+}
+
+.scene-tool .chooser {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--studio-space-md, 1rem);
+  min-width: 14rem;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-md, 8px);
+  box-shadow: var(--studio-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.2));
+}
+
+.scene-tool .chooser-title:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.scene-tool .drop-hint {
+  position: absolute;
+  inset: 8px;
+  display: grid;
+  place-content: center;
+  border: 2px dashed var(--scene-accent);
+  border-radius: var(--studio-radius-md, 8px);
+  background: color-mix(in oklch, var(--scene-bg) 70%, transparent);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* sidebar */
+
+.scene-tool .sidebar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--scene-border);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-sm, 0.5rem);
+}
+
+.scene-tool .panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scene-tool .panel + .panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-top: 1px solid var(--scene-border);
+  padding-top: var(--studio-space-sm, 0.5rem);
+}
+
+.scene-tool .panel-title:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--scene-muted);
+}
+
+.scene-tool .object-list:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .dimension-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scene-tool .object-row:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .dimension-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: var(--studio-radius-sm, 4px);
+  border-left: 3px solid transparent;
+}
+
+/* groups and attached objects nest under their parent: 10px a level, at most 8 levels */
+.scene-tool .object-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding-left: calc(2px + min(var(--depth, 0), 8) * 10px);
+}
+
+.scene-tool .object-row[data-attached] .row-main:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  content: "↳";
+  color: var(--scene-faint);
+  flex: none;
+}
+
+.scene-tool .twisty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  width: 16px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--scene-muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.scene-tool .twisty:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  content: "▸";
+  display: inline-block;
+  transition: transform var(--studio-transition-fast, 0.1s ease);
+}
+
+.scene-tool .twisty[aria-expanded="true"]:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  transform: rotate(90deg);
+}
+
+.scene-tool .twisty:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+  color: var(--scene-fg);
+}
+
+.scene-tool .object-row[data-leaf] .twisty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  visibility: hidden;
+}
+
+.scene-tool .swatch-spacer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  width: 18px;
+}
+
+.scene-tool .object-row[data-kind="group"] .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+}
+
+/* Where a drag would land. A group takes the drop inside it, which is a wash
+   over the whole row; before and after are a line on the edge the thing would
+   be inserted at. Set by tool.js as data-drop on the row under the pointer. */
+.scene-tool .object-row[data-drop]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: relative;
+}
+
+.scene-tool .object-row[data-drop="into"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--pw-surface-selected, color-mix(in srgb, currentColor 10%, transparent));
+  outline: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+.scene-tool .object-row[data-drop="before"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after,
+.scene-tool .object-row[data-drop="after"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  block-size: 2px;
+  background: currentColor;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.scene-tool .object-row[data-drop="before"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after { inset-block-start: -1px; }
+.scene-tool .object-row[data-drop="after"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after { inset-block-end: -1px; }
+
+/* The name is the grab handle for moving a row. */
+.scene-tool .row-main[draggable="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: grab;
+}
+
+
+.scene-tool .row-main .count:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--scene-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* while filtering: the ancestors of a match, shown for context */
+.scene-tool .object-row[data-context] .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+}
+
+.scene-tool .panel-head:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.scene-tool .outline-search:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-tool .outline-filter:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 6px;
+}
+
+.scene-tool .match-count:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  font-size: 11px;
+  color: var(--scene-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the object's (or its group's) infoUrl document, height-capped */
+.scene-tool .about:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--scene-border);
+  padding-top: var(--studio-space-xs, 0.375rem);
+}
+
+.scene-tool .about-embed {
+  height: min(50vh, 28rem);
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.scene-tool .about-embed > patchwork-view {
+  display: block;
+  min-height: 100%;
+}
+
+.scene-tool .object-row:hover:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .object-row[data-hover]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .dimension-row:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+}
+
+.scene-tool .object-row[data-selected]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .dimension-row[data-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-accent) 22%, var(--scene-bg));
+}
+
+.scene-tool .object-row[data-remote-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-left-color: var(--scene-remote);
+}
+
+.scene-tool .object-row[data-remote-hover]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-left-color: color-mix(in oklch, var(--scene-remote) 45%, transparent);
+}
+
+.scene-tool .object-row[data-hidden] .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+}
+
+.scene-tool .row-main:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.scene-tool .row-main .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-tool .swatch:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: none;
+  cursor: pointer;
+}
+
+.scene-tool .swatch[data-auto]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.45;
+}
+
+.scene-tool .icon-button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--scene-muted);
+  background: none;
+  border: none;
+  padding: 2px 5px;
+  border-radius: var(--studio-radius-sm, 4px);
+  cursor: pointer;
+}
+
+.scene-tool .icon-button:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+  background: var(--scene-hover);
+}
+
+.scene-tool .empty-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  padding: 2px 4px;
+}
+
+.scene-tool .tag:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 10px;
+  color: var(--scene-muted);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-round, 9999px);
+  padding: 0 5px;
+}
+
+.scene-tool .pill:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--scene-surface);
+  color: var(--scene-label);
+  border: 1px solid var(--scene-border);
+  white-space: nowrap;
+}
+
+.scene-tool .pill[data-state="building"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .pill[data-state="building"] {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  animation: scene-pulse 1.2s ease-in-out infinite;
+}
+
+.scene-tool .pill[data-state="error"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .pill[data-state="error"] {
+  background: var(--scene-danger);
+  color: var(--scene-bg);
+}
+
+.scene-tool .pill[data-state="loading"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+.scene-tool .pill[data-state="stale"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .pill[data-state="warn"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .pill[data-state="stale"] {
+  background: color-mix(in oklch, var(--scene-warning) 30%, var(--scene-bg));
+  color: var(--scene-fg);
+}
+
+@keyframes scene-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* inspector */
+
+.scene-tool .name-input:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: 100%;
+  font-weight: 600;
+}
+
+.scene-tool .field:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-tool .field-group:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scene-tool .group-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  font-size: 12px;
+}
+
+.scene-tool .unit:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+}
+
+.scene-tool .triple:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.scene-tool .num:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.scene-tool .num > span:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  font-size: 11px;
+  width: 0.9em;
+}
+
+.scene-tool .num input:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-tool .status-line:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--scene-muted);
+}
+
+.scene-tool .notes:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+}
+
+.scene-tool .status .warn:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool p.warn:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--scene-label);
+  border-left: 3px solid var(--scene-warning);
+  padding-left: 6px;
+}
+
+.scene-tool .error:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-render-controls .error {
+  margin: 0;
+  width: 100%;
+  color: var(--scene-danger-text);
+  font-family: var(--scene-family-code);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.scene-tool .controls-embed:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-height: 2rem;
+}
+
+.scene-tool .controls-embed > patchwork-view:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: block;
+}
+
+.scene-tool .status-line .notes:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+/* ─── render controls block ───────────────────────────────────────────────── */
+
+.scene-render-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--studio-space-xs, 0.375rem);
+  padding: var(--studio-space-2xs, 4px) 0;
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  font-family: var(--scene-family);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* Opened on its own (not inside a scene's inspector): give it room to breathe. */
+.scene-render-controls[data-standalone] {
+  padding: var(--studio-space-md, 1rem) var(--studio-space-lg, 1.25rem);
+  gap: var(--studio-space-sm, 0.625rem);
+}
+
+.scene-render-controls[data-standalone] > * {
+  max-width: 34rem;
+}
+
+.scene-render-controls .head,
+.scene-render-controls .status-row,
+.scene-render-controls .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.scene-render-controls .provider {
+  font-weight: 600;
+}
+
+.scene-render-controls .built,
+.scene-render-controls .hint {
+  color: var(--scene-muted);
+  font-size: 11px;
+}
+
+.scene-render-controls .notice {
+  color: var(--scene-muted);
+  font-size: 12px;
+}
+
+.scene-render-controls [hidden] {
+  display: none !important;
+}
+
+.scene-render-controls .param-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scene-render-controls .params[data-empty]::before {
+  content: "No build parameters.";
+  color: var(--scene-faint);
+  font-size: 12px;
+}
+
+.scene-render-controls .param {
+  display: grid;
+  grid-template-columns: minmax(5rem, 38%) 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-render-controls .param[data-kind="boolean"] {
+  display: flex;
+}
+
+.scene-render-controls .param-label {
+  color: var(--scene-label);
+}
+
+.scene-render-controls .param-number {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-render-controls .param-number input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-render-controls .param-number input[type="number"] {
+  width: 5.5rem;
+  flex: 0 0 auto;
+}
+
+.scene-render-controls .pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

@@ -1,0 +1,159 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>attach probe</title>
+<!-- Serve the scene package root:  node probes/probe-server.mjs . 4458
+     then open http://localhost:4458/probes/attach-probe.html
+     Drives the real Viewport (src/, three from node_modules) with a parent and a
+     child object: checks the child follows its parent, that boxes are the
+     object's own geometry in world space, that a gizmo drag on the child reports
+     a LOCAL transform whose world pose is where the drag put it, and that
+     removing the parent leaves the child in the scene. POSTs a JSON report. -->
+<script type="importmap">
+{ "imports": {
+  "three": "../node_modules/three/build/three.module.js",
+  "three/examples/jsm/": "../node_modules/three/examples/jsm/",
+  "three-mesh-bvh": "../node_modules/three-mesh-bvh/src/index.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  #host { position: relative; width: 900px; height: 600px; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { Vector3 } from "three";
+import { Viewport } from "../src/viewport.js";
+import { encodeGLB, computeNormals } from "../src/glb.js";
+import { worldMatrix, planAttach, orphanTransforms } from "../src/hierarchy.js";
+import { applyMatrix } from "../src/transform.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const report = (x) => fetch("/report", { method: "POST", body: JSON.stringify(x, null, 2) });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const r6 = (v) => (Array.isArray(v) ? v.map(r6) : Math.round(v * 1e6) / 1e6);
+
+// a unit cube from 0..1 on each axis
+function cube(color) {
+  const p = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+  const tris = [0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,1,2,6,1,6,5,2,3,7,2,7,6,3,0,4,3,4,7];
+  const positions = new Float32Array(tris.flatMap((i) => p[i]));
+  return encodeGLB({ meshes: [{ name: "cube", positions, normals: computeNormals(positions), color }] });
+}
+
+try {
+  const host = document.getElementById("host");
+  let ended = null;
+  const vp = new Viewport({ host, themeRoot: host, onTransformEnd: (id, t) => (ended = { id, t }) });
+  const objects = {
+    p: { name: "parent", visible: true, opacity: 1, transform: { position: [2, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 2 } },
+    c: { name: "child", visible: true, opacity: 1, parent: "p", transform: { position: [1, 0, 0], rotation: [0, 0, 0], scale: 0.5 } },
+  };
+  const apply = () => { for (const [id, o] of Object.entries(objects)) vp.applyDisplay(id, o, o.parent ?? null); };
+  apply();
+  await vp.setGLB("p", cube("#888888"));
+  await vp.setGLB("c", cube("#cc4444"));
+  vp.frameAll();
+  await sleep(100);
+
+  const boxOf = (id) => { const b = vp.objectBox(id); return b ? { min: r6(b.min.toArray()), max: r6(b.max.toArray()) } : null; };
+  // expected child box: world matrix applied to the unit cube's corners
+  const expectBox = (id) => {
+    const m = worldMatrix(objects, id);
+    const pts = [0, 1].flatMap((x) => [0, 1].flatMap((y) => [0, 1].map((z) => applyMatrix(m, [x, y, z]))));
+    return { min: r6([0, 1, 2].map((i) => Math.min(...pts.map((p) => p[i])))), max: r6([0, 1, 2].map((i) => Math.max(...pts.map((p) => p[i])))) };
+  };
+  const childBox1 = boxOf("c");
+  const childBoxExpected1 = expectBox("c");
+  const parentBox1 = boxOf("p");
+  const parentBoxExpected1 = expectBox("p");
+
+  // move the parent: the child follows
+  objects.p.transform.position = [5, 0, 0];
+  apply();
+  const childBox2 = boxOf("c");
+  const childBoxExpected2 = expectBox("c");
+
+  // hide the parent: the child stays visible and pickable-ish (its box still exists)
+  objects.p.visible = false;
+  apply();
+  const childBoxWhileParentHidden = boxOf("c");
+  const parentBoxWhileHidden = boxOf("p");
+  objects.p.visible = true;
+  apply();
+
+  // gizmo drag on the child, along world X (the parent is turned 90° about Y, so that is not local X)
+  vp.setSelection("c");
+  vp.setGizmoMode("translate");
+  await sleep(50);
+  const g = vp.gizmo;
+  const worldBefore = new Vector3();
+  vp.objects.get("c").group.getWorldPosition(worldBefore);
+  const toNdc = (v) => v.clone().project(vp.camera);
+  const start = toNdc(worldBefore);
+  const target = worldBefore.clone().add(new Vector3(0.5, 0, 0));
+  const end = toNdc(target);
+  g.axis = "X";
+  vp.gizmoHelper.updateMatrixWorld(true); // orients the drag plane for this axis
+  g.pointerDown({ x: start.x, y: start.y, button: 0 });
+  g.pointerMove({ x: end.x, y: end.y, button: -1 });
+  g.pointerUp({ x: end.x, y: end.y, button: 0 });
+  await sleep(50);
+  const worldAfter = new Vector3();
+  vp.objects.get("c").group.getWorldPosition(worldAfter);
+  // what the doc would store; its world pose via our own maths must equal where three put it
+  const reported = ended?.t ?? null;
+  let reportedWorld = null;
+  if (reported) {
+    objects.c.transform = reported;
+    reportedWorld = r6(applyMatrix(worldMatrix(objects, "c"), [0, 0, 0]));
+    apply();
+  }
+
+  // detach the child keeping its pose (what the inspector does)
+  const worldPreDetach = r6(applyMatrix(worldMatrix(objects, "c"), [0.5, 0.5, 0.5]));
+  const plan = planAttach(objects, "c", null);
+  objects.c.parent = plan.parent; objects.c.transform = plan.transform;
+  apply();
+  const childBoxDetached = boxOf("c");
+  const childBoxDetachedExpected = expectBox("c");
+  const worldPostDetach = r6(applyMatrix(worldMatrix(objects, "c"), [0.5, 0.5, 0.5]));
+
+  // re-attach, then remove the parent (orphans keep their world pose)
+  const plan2 = planAttach(objects, "c", "p");
+  objects.c.parent = plan2.parent; objects.c.transform = plan2.transform;
+  apply();
+  const orphans = orphanTransforms(objects, "p");
+  delete objects.p;
+  objects.c.parent = null; objects.c.transform = orphans.c;
+  vp.removeObject("p");
+  apply();
+  const childBoxOrphaned = boxOf("c");
+  const childStillInScene = vp.objects.get("c")?.group.parent === vp.content;
+
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const near = (a, b, eps = 1e-3) => a && b && a.every((v, i) => Math.abs(v - b[i]) < eps);
+  const checks = {
+    childBoxWorld: eq(childBox1, childBoxExpected1),
+    parentBoxOwnGeometryOnly: eq(parentBox1, parentBoxExpected1),
+    childFollowsParent: eq(childBox2, childBoxExpected2),
+    childVisibleWhenParentHidden: !!childBoxWhileParentHidden && parentBoxWhileHidden === null,
+    gizmoMovedAlongWorldX: near(worldAfter.toArray(), target.toArray(), 0.02),
+    gizmoReportsLocal: !!reportedWorld && near(reportedWorld, worldAfter.toArray()),
+    detachPreservesWorld: eq(worldPreDetach, worldPostDetach) && eq(childBoxDetached, childBoxDetachedExpected),
+    orphanKeepsPose: eq(childBoxOrphaned, childBoxDetachedExpected) && childStillInScene,
+  };
+  await report({
+    ok: Object.values(checks).every(Boolean) && errors.length === 0,
+    checks,
+    childBox1, childBoxExpected1, parentBox1, parentBoxExpected1, childBox2, childBoxExpected2,
+    worldBefore: r6(worldBefore.toArray()), target: r6(target.toArray()), worldAfter: r6(worldAfter.toArray()), reported, reportedWorld,
+    worldPreDetach, worldPostDetach, childBoxOrphaned,
+    errors,
+  });
+  window.__probeCleanup = () => vp.dispose();
+} catch (err) {
+  await report({ ok: false, fatal: String(err?.stack || err), errors });
+}
+</script>

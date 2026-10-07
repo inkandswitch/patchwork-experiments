@@ -1,0 +1,195 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene probe</title>
+<!-- Serve the scene package root:  node probes/probe-server.mjs . 4457
+     then open http://localhost:4457/probes/scene-probe.html
+     Mounts the BUILT tool (dist/) against an in-memory repo, adds an STL and a
+     GLB, measures between two picked points, and POSTs a JSON report. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<!-- Optional: Patchwork theme CSS, if the serving root has a themes/ dir
+     (copy patchwork-base/theming/src/{theme,gloom}.css there). ?theme=gloom for dark. -->
+<link rel="stylesheet" href="../themes/theme.css">
+<link rel="stylesheet" href="../themes/gloom.css">
+<script>
+  const t = new URLSearchParams(location.search).get("theme");
+  if (t) document.documentElement.setAttribute("theme", t);
+</script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  #host { width: 1100px; height: 700px; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { encodeGLB, computeNormals, MODE } from "../src/glb.js";
+
+const errors = [];
+const origError = console.error;
+console.error = (...a) => { errors.push(a.map(String).join(" ")); origError(...a); };
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+
+const report = (x) => fetch("/report", { method: "POST", body: JSON.stringify(x, null, 2) });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+async function until(fn, ms = 10000) {
+  const t0 = performance.now();
+  while (performance.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(50); }
+  return null;
+}
+
+// a 20 mm cube as binary STL, Z-up, sitting on z=0
+function cubeSTL(s = 20) {
+  const v = [[0,0,0],[s,0,0],[s,s,0],[0,s,0],[0,0,s],[s,0,s],[s,s,s],[0,s,s]];
+  const f = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+  const buf = new ArrayBuffer(84 + f.length * 50), dv = new DataView(buf);
+  dv.setUint32(80, f.length, true);
+  f.forEach((tri, i) => tri.forEach((vi, k) => v[vi].forEach((c, j) => dv.setFloat32(84 + i * 50 + 12 + (k * 3 + j) * 4, c, true))));
+  return new Uint8Array(buf);
+}
+
+// a 30×10×15 mm box as a GLB, 10 mm to the right of the cube, plus its edges as lines
+function boxGLB() {
+  const [x0, x1, y0, y1, z0, z1] = [0.03, 0.06, 0, 0.01, -0.015, 0];
+  const p = [[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+  const tris = [0,1,2,0,2,3,4,6,5,4,7,6,0,4,5,0,5,1,1,5,6,1,6,2,2,6,7,2,7,3,3,7,4,3,4,0];
+  const positions = new Float32Array(tris.flatMap((i) => p[i]));
+  const edges = [0,1,1,2,2,3,3,0,4,5,5,6,6,7,7,4,0,4,1,5,2,6,3,7];
+  return encodeGLB({ meshes: [
+    { name: "box", positions, normals: computeNormals(positions), color: "#d9643a", attributes: { _ID: new Float32Array(positions.length / 3).fill(1) } },
+    { name: "box edges", positions: new Float32Array(p.flat()), indices: edges, mode: MODE.LINES, color: [0, 0, 0] },
+  ] });
+}
+
+try {
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const sceneDoc = {};
+  (await getRegistry("patchwork:datatype").load("scene")).module.init(sceneDoc);
+  const scene = repo.add({ "@patchwork": { type: "scene" }, ...sceneDoc });
+  scene.change((d) => { d.view.units = "mm"; d.view.bounds = true; });
+  const stl = repo.add({ "@patchwork": { type: "file" }, name: "cube.stl", extension: "stl", mimeType: "model/stl", content: cubeSTL() });
+  const glb = repo.add({ "@patchwork": { type: "file" }, name: "box.glb", extension: "glb", mimeType: "model/gltf-binary", content: boxGLB() });
+
+  const host = document.getElementById("host");
+  host.repo = repo;
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const cleanup = Tool(scene, host);
+  const q = (s) => host.querySelector(s);
+
+  // The toolbar's URL bar is gone: a document comes in by drop (or paste), so
+  // drop one on the viewport, with a real DataTransfer.
+  async function add(url) {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", url);
+    q(".viewport").dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+    await sleep(100);
+  }
+  await add(stl.url);
+  await add(glb.url);
+
+  // the STL builds through its render doc; the GLB is passthrough (v3 §6): no render doc, shown from the file
+  const vp = () => window.__sceneDebug.viewport;
+  const renders = async () => Promise.all(Object.entries(scene.doc().objects).map(async ([id, o]) =>
+    o.renderUrl ? (await repo.find(o.renderUrl)).doc() : { title: o.name, passthrough: true, status: vp().hasContent(id) ? "idle" : "loading", glbUrl: o.sourceUrl, builtFrom: null }));
+  const built = await until(async () => { const r = await renders(); return r.length === 2 && r.every((x) => x.glbUrl && x.status === "idle") && r; });
+  const glbIsPassthrough = Object.values(scene.doc().objects).some((o) => o.providerId === "file-glb" && o.renderUrl === null) && repo.created.length === 1 + 1; // the STL's render doc + its GLB
+  // deselect so bounds show for every object
+  host.querySelector(".viewport").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  q('[data-action="frame"]').click();
+  await sleep(300);
+  const boundsLabels = await until(() => { const l = [...host.querySelectorAll(".bounds-label")].map((e) => e.textContent); return l.length >= 6 && l; }, 5000);
+
+  // find object pixels by hovering a grid over the canvas
+  const canvas = q(".canvas");
+  const rect = canvas.getBoundingClientRect();
+  const hits = [];
+  for (let gy = 0.25; gy <= 0.75; gy += 0.05) {
+    for (let gx = 0.2; gx <= 0.8; gx += 0.04) {
+      const x = rect.left + rect.width * gx, y = rect.top + rect.height * gy;
+      canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: x, clientY: y, bubbles: true, pointerId: 1 }));
+      await frame(); await frame();
+      if ("hovering" in q(".viewport").dataset) hits.push({ x, y });
+    }
+  }
+  const click = async (x, y) => {
+    canvas.dispatchEvent(new PointerEvent("pointerdown", { clientX: x, clientY: y, button: 0, bubbles: true, pointerId: 1 }));
+    canvas.dispatchEvent(new PointerEvent("pointerup", { clientX: x, clientY: y, button: 0, bubbles: true, pointerId: 1 }));
+    await frame(); await frame();
+  };
+  // select by clicking the first hit
+  let selectedAfterClick = null;
+  if (hits.length) {
+    await click(hits[0].x, hits[0].y);
+    selectedAfterClick = q(".object-row[data-selected] .name")?.textContent ?? null;
+  }
+  // measure between the leftmost and rightmost hits
+  q('[data-action="measure"]').click();
+  hits.sort((a, b) => a.x - b.x);
+  if (hits.length >= 2) {
+    const a = hits[0], b = hits[hits.length - 1];
+    canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: a.x, clientY: a.y, bubbles: true, pointerId: 1 }));
+    await frame(); await frame();
+    await click(a.x, a.y);
+    canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: b.x, clientY: b.y, bubbles: true, pointerId: 1 }));
+    await frame(); await frame();
+    await click(b.x, b.y);
+  }
+  host.querySelector(".viewport").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await sleep(200);
+  const dims = Object.values(scene.doc().dimensions ?? {});
+
+  // move the cube: the dimension anchored to it should follow
+  const cubeId = Object.entries(scene.doc().objects).find(([, o]) => o.name === "cube.stl")?.[0];
+  const dimLabelBefore = q(".dimension-label")?.textContent;
+  scene.change((d) => { d.objects[cubeId].transform.position = [-0.02, 0, 0]; });
+  await sleep(200);
+  const dimLabelAfter = q(".dimension-label")?.textContent;
+
+  // change the STL unit param through the embedded controls
+  const cubeRow = [...host.querySelectorAll(".object-row")].find((r) => r.textContent.includes("cube"));
+  cubeRow.querySelector(".row-main").click();
+  await sleep(100);
+  const unitSelect = q(".scene-render-controls select");
+  const cubeRender = await repo.find(scene.doc().objects[cubeId].renderUrl);
+  const glbBefore = cubeRender.doc().glbUrl;
+  unitSelect.value = "cm";
+  unitSelect.dispatchEvent(new Event("change"));
+  const rebuilt = await until(() => cubeRender.doc().glbUrl !== glbBefore && cubeRender.doc().status === "idle", 5000);
+  await sleep(300);
+  const boundsAfterUnit = [...host.querySelectorAll(".bounds-label")].map((e) => e.textContent);
+
+  // leave the scene nicely framed with the cube selected for the screenshot
+  cubeRender.change((d) => { d.params.unit = "mm"; });
+  await sleep(600);
+  scene.change((d) => { d.objects[cubeId].transform.position = [0, 0, 0]; });
+  q('[data-action="frame"]').click();
+  await sleep(500);
+
+  await report({
+    ok: !!built && !!boundsLabels && dims.length === 1 && glbIsPassthrough,
+    built: (built || []).map((r) => ({ title: r.title, status: r.status, builtFrom: !!r.builtFrom, passthrough: !!r.passthrough })),
+    glbIsPassthrough,
+    boundsLabels,
+    gridLabels: [...host.querySelectorAll(".grid-label")].map((e) => e.textContent).slice(0, 8),
+    triad: [...host.querySelectorAll(".triad-label")].map((e) => e.textContent),
+    hoverHits: hits.length,
+    selectedAfterClick,
+    dimensions: dims.map((d) => ({ a: d.a.objectId ? "attached" : "world", b: d.b.objectId ? "attached" : "world" })),
+    dimLabelBefore, dimLabelAfter,
+    rebuiltAfterUnitChange: !!rebuilt,
+    boundsAfterUnit,
+    outline: [...host.querySelectorAll(".object-row")].map((r) => r.textContent),
+    hud: q(".hud").textContent,
+    errors: errors.filter((e) => !/setPointerCapture|releasePointerCapture/i.test(e)),
+  });
+  window.__probeCleanup = cleanup;
+} catch (err) {
+  await report({ ok: false, fatal: String(err?.stack || err), errors });
+}
+</script>

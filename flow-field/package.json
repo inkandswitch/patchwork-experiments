@@ -1,0 +1,22 @@
+{
+  "name": "@tiny-patchwork/flow-field",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "description": "An analytic 3D potential flow (sources, sinks, doublets, line vortices in a uniform stream) standing in for CFD results: a top-down editor, plus scene:source providers that render streamlines and a pressure slice into a 3D scene.",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "sync": "vite build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.3.2",
+    "happy-dom": "^15.11.7",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}

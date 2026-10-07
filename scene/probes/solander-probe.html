@@ -1,0 +1,348 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>solander probe</title>
+<!-- Driven by probes/solander-run.mjs (which serves this package, the site's
+     original GLBs and a scene doc of the importer's shape, and drives headless
+     Chrome over CDP). Mounts the BUILT tool (dist/) against an in-memory repo
+     whose GLB file docs are fetched over HTTP the first time they are found,
+     so "docs fetched on open" is the number of HTTP GETs. Exposes
+     window.__probe for the driver: phases, stats and actions. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; }
+  #host { position: absolute; inset: 0; }
+</style>
+<div id="host"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo, FakeHandle, fakeUrl } from "../src/test/fake-repo.js";
+
+const P = (window.__probe = { phase: "boot", errors: [], log: [] });
+const origError = console.error;
+console.error = (...a) => { P.errors.push(a.map(String).join(" ")); origError(...a); };
+window.addEventListener("error", (e) => P.errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => P.errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+const pct = (xs, q) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return +s[Math.min(s.length - 1, Math.floor(q * s.length))].toFixed(3); };
+const summary = (xs) => ({ n: xs.length, p50: pct(xs, 0.5), p95: pct(xs, 0.95), max: xs.length ? +Math.max(...xs).toFixed(3) : null });
+
+// ?cold=1: make every shader source unique, so the GPU driver can't reuse a
+// compiled program from an earlier run (a first visit, as far as shaders go)
+if (new URLSearchParams(location.search).get("cold")) {
+  const nonce = `${Date.now()}-${Math.random()}`;
+  for (const C of [WebGLRenderingContext, WebGL2RenderingContext]) {
+    const orig = C.prototype.shaderSource;
+    C.prototype.shaderSource = function (sh, src) { return orig.call(this, sh, `${src}\n// probe ${nonce}\n`); };
+  }
+}
+// long tasks, all the time
+P.longTasks = [];
+new PerformanceObserver((list) => { for (const e of list.getEntries()) P.longTasks.push({ at: +e.startTime.toFixed(1), ms: +e.duration.toFixed(1) }); }).observe({ type: "longtask", buffered: true });
+
+// ── an in-memory repo whose GLB docs arrive over HTTP on first find ─────────
+const net = { gets: 0, bytes: 0, inFlight: 0, maxInFlight: 0, urls: [] };
+P.net = net;
+class LazyRepo extends FakeRepo {
+  constructor() { super(); this.lazy = new Map(); this.loading = new Map(); }
+  lazyFile(url, path, name) { this.lazy.set(url, { path, name }); }
+  async find(url) {
+    if (this.handles.has(url)) return this.handles.get(url);
+    const l = this.lazy.get(url);
+    if (!l) throw new Error(`unavailable: ${url}`);
+    if (!this.loading.has(url)) {
+      this.loading.set(url, (async () => {
+        net.gets++; net.inFlight++; net.maxInFlight = Math.max(net.maxInFlight, net.inFlight); net.urls.push(l.name);
+        try {
+          const res = await fetch(l.path);
+          if (!res.ok) throw new Error(`HTTP ${res.status} for ${l.path}`);
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          net.bytes += bytes.length;
+          return this.add({ "@patchwork": { type: "file" }, name: l.name, extension: "glb", mimeType: "model/gltf-binary", content: bytes }, url);
+        } finally { net.inFlight--; }
+      })());
+    }
+    return this.loading.get(url);
+  }
+}
+
+// a stand-in <patchwork-view>: shows the doc's first line, like a tiny markdown view
+class ProbeView extends HTMLElement {
+  async connectedCallback() {
+    const h = await window.repo.find(this.getAttribute("doc-url")).catch(() => null);
+    this.textContent = h ? String(h.doc().content ?? h.doc().title ?? "").split("\n").slice(0, 3).join("\n") : "(missing)";
+    this.style.whiteSpace = "pre-wrap"; this.style.padding = "6px"; this.style.fontSize = "12px";
+  }
+}
+customElements.define("patchwork-view", ProbeView);
+
+try {
+  const params = new URLSearchParams(location.search);
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const repo = new LazyRepo();
+  window.repo = repo;
+  const sceneJson = await (await fetch("/fixture/scene.json")).json();
+  // pending:glb%3A<set>%2F<file>  →  a fake automerge url, served from /geom/<set>/<file>
+  const urlFor = new Map();
+  const mapUrl = (pending, make) => {
+    if (typeof pending !== "string" || !pending.startsWith("pending:")) return pending;
+    if (!urlFor.has(pending)) urlFor.set(pending, make(decodeURIComponent(pending.slice(8))));
+    return urlFor.get(pending);
+  };
+  const objects = sceneJson.objects;
+  for (const o of Object.values(objects)) {
+    if (o.sourceUrl) o.sourceUrl = mapUrl(o.sourceUrl, (key) => {
+      const m = /^glb:(main|battery|jig)\/(.+)$/.exec(key);
+      const url = fakeUrl();
+      repo.lazyFile(url, `/geom/${m[1]}/${encodeURIComponent(m[2])}`, m[2]);
+      return url;
+    });
+    if (o.infoUrl) o.infoUrl = mapUrl(o.infoUrl, (key) => repo.add({ "@patchwork": { type: "markdown" }, content: `# ${key}\n\n(probe stand-in for the imported markdown doc)` }).url);
+  }
+  if (params.get("camera") === "none") sceneJson.camera = null;
+  const scene = repo.add(sceneJson);
+  P.sceneUrl = scene.url;
+  const ids = (pred) => Object.entries(objects).filter(([, o]) => pred(o)).map(([id]) => id);
+  const byName = (name) => ids((o) => o.name === name && o.kind === "object")[0];
+  P.hullId = byName("HULL");
+  P.deckId = byName("DECK");
+
+  const host = document.getElementById("host");
+  host.repo = repo;
+  const tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  P.phase = "mounting";
+  const tMount = performance.now();
+  P.tMount = tMount;
+  // per-frame sampler: renderOutline calls per animation frame
+  const outlinePerFrame = [];
+  let lastOutline = 0;
+  let sampling = true;
+  const sample = () => {
+    if (!sampling) return;
+    const dbg = window.__sceneDebug;
+    if (dbg) { const t = dbg.perf.outline.total; outlinePerFrame.push(t - lastOutline); lastOutline = t; }
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+  P.cleanup = tool(scene, host);
+  const dbg = window.__sceneDebug;
+  lastOutline = dbg.perf.outline.total;
+  P.mountMs = +(performance.now() - tMount).toFixed(1);
+  const vp = dbg.viewport;
+  const gl = vp.renderer?.getContext?.();
+  const ext = gl?.getExtension?.("WEBGL_debug_renderer_info");
+  P.gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl ? gl.getParameter(gl.RENDERER) : "none";
+
+  async function untilLoaded(timeoutMs = 120000) {
+    const t0 = performance.now();
+    while (performance.now() - t0 < timeoutMs) {
+      const s = dbg.stats();
+      if (s.pending === 0) return performance.now();
+      await sleep(20);
+    }
+    return null;
+  }
+  async function stable() { vp.invalidate(); await frame(); await frame(); vp.invalidate(); await frame(); }
+  function geometryBytes() {
+    const geos = new Set(); let bytes = 0; let tex = new Set();
+    vp.content.traverse((o) => {
+      if (o.geometry && !geos.has(o.geometry) && !o.userData?.shared) {
+        geos.add(o.geometry);
+        for (const a of Object.values(o.geometry.attributes)) bytes += (a.isInterleavedBufferAttribute ? a.data.array.byteLength / Math.max(1, Object.keys(o.geometry.attributes).length) : a.array.byteLength);
+        if (o.geometry.index) bytes += o.geometry.index.array.byteLength;
+        if (o.isInstancedMesh) bytes += o.instanceMatrix.array.byteLength;
+      }
+      for (const m of [].concat(o.material ?? [])) for (const k of Object.keys(m)) if (m[k]?.isTexture) tex.add(m[k]);
+    });
+    return { geometries: geos.size, geometryMB: +(bytes / 1e6).toFixed(2), textures: tex.size };
+  }
+  function pickBench(n = 400, opts = { snapPx: 0 }) {
+    const rect = vp.canvas.getBoundingClientRect();
+    const times = []; let hits = 0;
+    for (let i = 0; i < n; i++) {
+      // a grid over the middle 70 % of the canvas (where the boat is)
+      const gx = (i % 20) / 19, gy = Math.floor(i / 20) / 19;
+      const x = rect.left + rect.width * (0.15 + 0.7 * gx), y = rect.top + rect.height * (0.15 + 0.7 * gy);
+      const t0 = performance.now();
+      const hit = vp.pick(x, y, opts);
+      times.push(performance.now() - t0);
+      if (hit?.objectId) hits++;
+    }
+    return { ...summary(times), hits };
+  }
+  function toggleBench(id, n = 10) {
+    const times = [];
+    for (let i = 0; i < n; i++) {
+      const t0 = performance.now();
+      scene.change((d) => (d.objects[id].visible = !d.objects[id].visible));
+      times.push(performance.now() - t0);
+    }
+    return summary(times);
+  }
+  // what's drawn, counted from the scene graph (renderer.info also counts
+  // three's transmission pre-pass, which re-draws every opaque object)
+  function drawn() {
+    let drawObjects = 0, triangles = 0, transmissive = new Set();
+    for (const e of vp.objects.values()) {
+      if (e.kind === "group" || !e.content || !vp.isShown(e)) continue;
+      triangles += e.stats?.triangles ?? 0;
+      e.content.traverseVisible((o) => {
+        if (!(o.isMesh || o.isLine || o.isPoints)) return;
+        const mats = [].concat(o.material ?? []);
+        drawObjects += Math.max(1, mats.length);
+        for (const m of mats) if (m.transmission > 0) transmissive.add(m.name || "(unnamed)");
+      });
+    }
+    return { drawObjects, sceneTriangles: triangles, transmissiveMaterials: [...transmissive].sort() };
+  }
+  const renderStats = () => ({ ...vp.stats, ...drawn() });
+  // what hovering costs in Measure mode (tool.js onViewportHover): vertex snapping within 10 px, and the ground
+  const measureBench = (n = 200) => pickBench(n, { snapPx: 10, ground: true });
+  // every long task that overlaps [t, …): one that began just before t (the mount's own task) counts too
+  const longSince = (t) => P.longTasks.filter((l) => l.at + l.ms >= t);
+
+  // ── phase 1: open ────────────────────────────────────────────────────────
+  P.phase = "loading";
+  let firstPixels = null;
+  (async () => {
+    while (!firstPixels) {
+      if (vp.hasContent(P.hullId) && vp.hasContent(P.deckId)) {
+        await frame(); // drawn
+        firstPixels = +(performance.now() - tMount).toFixed(1);
+      } else await frame();
+    }
+  })();
+  const tLoaded = await untilLoaded();
+  await sleep(300);
+  await stable();
+  const effVisible = (() => {
+    const inh = (id) => { for (let p = objects[id].parent; p; p = objects[p].parent) if (objects[p].kind === "group" && !objects[p].visible) return false; return true; };
+    return ids((o) => o.kind === "object" && o.visible).filter((id) => inh(id)).length;
+  })();
+  P.open = {
+    objects: Object.keys(objects).length,
+    groups: ids((o) => o.kind === "group").length,
+    effectivelyVisibleLayers: effVisible,
+    docsFetched: net.gets,
+    bytesFetched: net.bytes,
+    maxFindsInFlight: dbg.queue.stats().maxFindsInFlight,
+    maxParsesInFlight: dbg.queue.stats().maxParsesInFlight,
+    maxHttpInFlight: net.maxInFlight,
+    subscriptions: dbg.queue.subscriptions(),
+    firstPixelsMs: firstPixels,
+    allVisibleLoadedMs: tLoaded ? +(tLoaded - tMount).toFixed(1) : null,
+    // the task that ran the synchronous mount (Viewport constructor: WebGL context, environment; first sync)
+    mountMs: P.mountMs,
+    viewportConstructMs: vp.perf.construct ?? null,
+    mountTask: P.longTasks.filter((l) => l.at <= tMount + P.mountMs && l.at + l.ms >= tMount),
+    longTasksDuringLoad: longSince(tMount).filter((l) => l.at <= (tLoaded ?? Infinity)),
+    // renderer.info.render.calls for the last frame (includes three's transmission pre-pass)
+    drawCalls: vp.stats.calls,
+    render: renderStats(),
+    gpu: geometryBytes(),
+    outlinePerFrameMax: Math.max(0, ...outlinePerFrame),
+    outlineCallsDuringLoad: dbg.perf.outline.total,
+    outlineMs: summary(dbg.perf.outline.values()),
+    flushMs: summary(dbg.perf.flush.values()),
+    syncMs: summary(dbg.perf.sync.values()),
+    slowFrames: vp.perf.slowFrames.filter((f) => f.at >= tMount),
+    slowestLoads: [...vp.perf.loads].sort((a, b) => b.prepareMs + b.compileMs - a.prepareMs - a.compileMs).slice(0, 6).map((l) => ({ ...l, name: objects[l.id]?.name })),
+    errors: [...P.errors],
+  };
+  P.phase = "default-ready";
+  P.benchDefault = async () => {
+    const pick = pickBench();
+    const layer = byName("railing flanges") ?? P.hullId;
+    const group = ids((o) => o.kind === "group" && o.name === "BODY")[0];
+    const outlineBefore = dbg.perf.outline.values().length;
+    const toggleLayer = toggleBench(layer);
+    const toggleGroup = toggleBench(group);
+    await stable();
+    // idle: nothing changes, nothing is drawn
+    await sleep(300);
+    const f0 = vp.stats.frames;
+    await sleep(1000);
+    const idleFramesPerSecond = vp.stats.frames - f0;
+    const measureHover = measureBench(200);
+    // a burst: 50 doc changes in one task (a peer's catch-up): how many outline passes, how long a task
+    await stable();
+    const o0 = dbg.perf.outline.total, b0 = performance.now();
+    for (let i = 0; i < 50; i++) scene.change((d) => (d.objects[layer].name = d.objects[layer].name));
+    for (let i = 0; i < 50; i++) scene.change((d) => (d.objects[layer].opacity = i % 2 ? 1 : 0.999));
+    const burstTaskMs = performance.now() - b0;
+    const outlineInTask = dbg.perf.outline.total - o0;
+    await frame(); await frame();
+    const burst = { changes: 100, taskMs: +burstTaskMs.toFixed(1), outlineInTask, outlineAfterTwoFrames: dbg.perf.outline.total - o0, syncMs: summary(dbg.perf.sync.values().slice(-100)) };
+    scene.change((d) => (d.objects[layer].opacity = 1));
+    return { idleFramesPerSecond, pick, measureHover, burst, toggleLayer, toggleGroup, outlineMsAfterToggles: summary(dbg.perf.outline.values().slice(outlineBefore)), syncMs: summary(dbg.perf.sync.values().slice(-20)) };
+  };
+  P.setXray = (on) => scene.change((d) => {
+    for (const name of ["HULL", "DECK", "ctr beam inside surfaces", "ctr beam outside surfaces"]) {
+      const id = Object.keys(d.objects).find((k) => d.objects[k].name === name && d.objects[k].kind === "object");
+      if (id) { d.objects[id].color = on ? "#f0f8ff" : null; d.objects[id].opacity = on ? 0.18 : 1; }
+    }
+  });
+  // the same view with transmission traded for opacity by a scene material rule
+  P.noTransmission = async () => {
+    await stable();
+    const before = renderStats();
+    const rules = JSON.parse(JSON.stringify(scene.doc().materialRules ?? []));
+    const names = before.transmissiveMaterials;
+    scene.change((d) => { d.materialRules = [...rules, ...names.map((n) => ({ match: { nameEquals: n === "(unnamed)" ? "" : n }, set: { transmission: 0, opacity: 0.4 } }))]; });
+    await stable();
+    const after = renderStats();
+    scene.change((d) => { d.materialRules = rules; });
+    await stable();
+    return { rulesAdded: names.length, before, after, restored: renderStats() };
+  };
+  // ── phase 2: battery shown ───────────────────────────────────────────────
+  P.showBattery = async () => {
+    const t0 = performance.now(); const gets0 = net.gets; const bytes0 = net.bytes;
+    const battery = ids((o) => o.kind === "group" && o.name === "Battery (display)")[0];
+    const toggleMs = (() => { const s = performance.now(); scene.change((d) => (d.objects[battery].visible = true)); return performance.now() - s; })();
+    const t = await untilLoaded(); await sleep(200); await stable();
+    return { toggleMs: +toggleMs.toFixed(2), loadMs: t ? +(t - t0).toFixed(1) : null, docsFetched: net.gets - gets0, bytes: net.bytes - bytes0, longTasks: longSince(t0), render: renderStats(), drawCalls: vp.stats.calls, gpu: geometryBytes(), pick: pickBench(200), measureHover: measureBench(200) };
+  };
+  P.frameAll = async () => { vp.frameAll(); await stable(); };
+  P.setCamera = async (cam) => { vp.setCamera(cam); await stable(); };
+  // ── phase 3: everything shown ────────────────────────────────────────────
+  P.showAll = async () => {
+    const t0 = performance.now(); const gets0 = net.gets;
+    scene.change((d) => { for (const o of Object.values(d.objects)) o.visible = true; });
+    const t = await untilLoaded(); await sleep(200); await stable();
+    return { loadMs: t ? +(t - t0).toFixed(1) : null, docsFetched: net.gets - gets0, totalDocsFetched: net.gets, totalBytes: net.bytes, longTasks: longSince(t0), render: renderStats(), drawCalls: vp.stats.calls, gpu: geometryBytes(), pick: pickBench(200), measureHover: measureBench(200), outlineMs: summary(dbg.perf.outline.values()), errors: [...P.errors] };
+  };
+  P.selectFirst = (name) => { const id = byName(name); const row = document.querySelector(`.object-row[data-id="${id}"] .row-main`); if (row) row.click(); return !!row; };
+  P.expand = (name) => { const id = ids((o) => o.name === name)[0]; document.querySelector(`.object-row[data-id="${id}"] .twisty`)?.click(); };
+  P.stop = () => { sampling = false; };
+  // filter the outline, Enter to select (and reveal) the first match
+  P.searchSelect = async (q) => {
+    const input = document.querySelector(".outline-filter");
+    input.value = q;
+    input.dispatchEvent(new Event("input"));
+    const count = document.querySelector(".match-count").textContent;
+    const t0 = performance.now();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    const selectMs = performance.now() - t0;
+    await stable();
+    await sleep(200);
+    return { count, selectMs: +selectMs.toFixed(2), selected: document.querySelector(".object-row[data-selected] .name")?.textContent, about: document.querySelector(".inspector .about-title")?.textContent ?? null };
+  };
+  P.clearSearch = async () => {
+    const input = document.querySelector(".outline-filter");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await stable();
+    return { rows: document.querySelectorAll(".object-row").length };
+  };
+  P.deselect = async () => {
+    document.querySelector(".scene-tool").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await stable();
+  };
+} catch (err) {
+  P.phase = "fatal";
+  P.fatal = String(err?.stack || err);
+}
+</script>

@@ -1,0 +1,150 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>implicit-surface probe</title>
+<!-- pnpm build && node probes/probe-server.mjs 4471
+     Full run (POSTs a JSON report): http://localhost:4471/probes/probe.html
+     Screenshot mode: ?shot&example=cleat&mode=3&theme=gloom  (sets window.__ready)
+     Mounts the BUILT tool and provider from dist/, against a real Automerge doc. -->
+<script type="importmap">{{IMPORTMAP}}</script>
+<link rel="stylesheet" href="/themes/theme.css">
+<link rel="stylesheet" href="/themes/gloom.css">
+<script>
+  const t = new URLSearchParams(location.search).get("theme");
+  if (t) document.documentElement.setAttribute("theme", t);
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: var(--editor-fill, white); }
+  #host { width: 100vw; height: 100vh; }
+</style>
+<div id="host"></div>
+<script type="module">
+import * as A from "@automerge/automerge";
+import { plugins } from "../dist/index.js";
+
+const q = new URLSearchParams(location.search);
+const errors = [];
+const origError = console.error;
+console.error = (...a) => { errors.push(a.map(String).join(" ")); origError(...a); };
+const warnings = [];
+const origWarn = console.warn;
+console.warn = (...a) => { warnings.push(a.map(String).join(" ")); origWarn(...a); };
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+async function until(fn, ms = 20000) {
+  const t0 = performance.now();
+  while (performance.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(40); }
+  return null;
+}
+
+function fakeHandle(dt) {
+  let doc = A.change(A.init(), (d) => dt.init(d));
+  const listeners = new Set();
+  return {
+    url: "automerge:probe", isReady: () => true, doc: () => doc,
+    change(fn) { doc = A.change(doc, fn); for (const l of [...listeners]) l({ doc }); },
+    on(ev, l) { if (ev === "change") listeners.add(l); },
+    off(ev, l) { if (ev === "change") listeners.delete(l); },
+  };
+}
+
+const [dtPlugin, toolPlugin, srcPlugin] = plugins;
+const dt = await dtPlugin.load();
+const Tool = await toolPlugin.load();
+const handle = fakeHandle(dt);
+const host = document.getElementById("host");
+const dispose = Tool(handle, host);
+const root = host.querySelector(".implicit-surface");
+const status = () => root.querySelector(".status");
+const canvas = root.querySelector("canvas.stage");
+const examples = [...root.querySelectorAll(".examples option")].map((o) => o.value).filter(Boolean);
+
+/** fraction of canvas pixels that differ clearly from the corner (background) pixel */
+function coverage() {
+  const c = document.createElement("canvas");
+  c.width = 160; c.height = 100;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  g.drawImage(canvas, 0, 0, c.width, c.height);
+  const d = g.getImageData(0, 0, c.width, c.height).data;
+  const bg = [d[0], d[1], d[2]];
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) > 40) n++;
+  return +(n / (d.length / 4)).toFixed(3);
+}
+const setMode = async (m) => { root.querySelector(`[data-mode="${m}"]`).click(); await frame(); await frame(); await sleep(250); };
+async function load(id) {
+  const sel = root.querySelector(".examples");
+  window.confirm = () => true;
+  sel.value = id;
+  sel.dispatchEvent(new Event("change"));
+  await sleep(200);
+  return until(() => ["ok", "warning", "error"].includes(status().dataset.state) && !/Compiling/.test(status().textContent));
+}
+
+if (q.has("shot")) {
+  if (q.get("example")) await load(q.get("example"));
+  else await until(() => status().dataset.state === "ok");
+  if (q.get("mode")) await setMode(Number(q.get("mode")));
+  if (q.get("slice")) { const s = root.querySelector(".slice-y"); s.value = q.get("slice"); s.dispatchEvent(new Event("input")); }
+  if (q.get("reference")) root.querySelector('[data-action="reference"]').click();
+  if (q.get("source")) { handle.change((d) => A.updateText(d, ["source"], q.get("source"))); await sleep(400); }
+  if (q.get("orbit")) {
+    const [dx, dy] = q.get("orbit").split(",").map(Number);
+    const r = canvas.getBoundingClientRect();
+    const o = { pointerId: 1, button: 0, bubbles: true, clientX: r.left + 300, clientY: r.top + 300 };
+    canvas.dispatchEvent(new PointerEvent("pointerdown", o));
+    canvas.dispatchEvent(new PointerEvent("pointermove", { ...o, clientX: o.clientX + dx, clientY: o.clientY + dy }));
+    canvas.dispatchEvent(new PointerEvent("pointerup", o));
+  }
+  await sleep(600);
+  window.__ready = { status: status().textContent, errors };
+} else {
+  const report = { examples: {}, errors, warnings };
+  report.initial = await until(() => status().dataset.state === "ok" && status().textContent);
+  // every example in every mode compiles on the GPU and draws something
+  for (const id of examples) {
+    const t0 = performance.now();
+    await load(id);
+    const r = { status: status().dataset.state, text: status().textContent, loadMs: Math.round(performance.now() - t0), coverage: {} };
+    for (const m of [0, 1, 2, 3, 4]) { await setMode(m); r.coverage[m] = coverage(); }
+    await setMode(0);
+    report.examples[id] = r;
+  }
+  // a broken source keeps the last good picture and explains
+  const before = coverage();
+  handle.change((d) => A.updateText(d, ["source"], d.source + "\n+ nope(1)"));
+  await until(() => status().dataset.state === "error");
+  await sleep(300);
+  report.brokenSource = { status: status().textContent, coverageBefore: before, coverageAfter: coverage() };
+
+  // the scene provider, from the BUILT bundle: does the worker start, and does the page stay responsive?
+  const src = await srcPlugin.load();
+  const RealWorker = window.Worker;
+  let workers = 0;
+  window.Worker = class extends RealWorker { constructor(...a) { super(...a); workers++; } };
+  const doc = { title: "Probe gyroid", bounds: { min: [-0.17, -0.17, -0.17], max: [0.17, 0.17, 0.17] },
+    source: "intersect(roundBox(0.3, 0.3, 0.3, 25mm), gyroid(100mm, 8mm))" };
+  let maxGap = 0, last = performance.now(), running = true;
+  (function tick() { const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now; if (running) requestAnimationFrame(tick); })();
+  const warnBefore = warnings.length;
+  const t0 = performance.now();
+  let build;
+  try {
+    const out = await src.build({ doc, params: { resolution: 160, smoothNormals: true } });
+    const dv = new DataView(out.glb.buffer, out.glb.byteOffset);
+    build = { ok: true, magic: dv.getUint32(0, true) === 0x46546c67, bytes: out.glb.byteLength, notes: out.meta.notes, bounds: out.meta.bounds };
+  } catch (e) { build = { ok: false, error: String(e) }; }
+  running = false;
+  report.provider = { ...build, workersStarted: workers, fellBack: warnings.slice(warnBefore).some((w) => /main thread/.test(w)),
+    ms: Math.round(performance.now() - t0), maxFrameGapMs: Math.round(maxGap), fingerprint: src.fingerprint(doc) };
+  window.Worker = RealWorker;
+
+  dispose();
+  report.cleanedUp = host.children.length === 0;
+  report.webgl2 = !!document.createElement("canvas").getContext("webgl2");
+  await fetch("/report", { method: "POST", body: JSON.stringify(report, null, 2) });
+  window.__ready = true;
+}
+</script>
