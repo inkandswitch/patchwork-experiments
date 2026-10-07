@@ -81,7 +81,7 @@ describe('Kit world (phase 4)', () => {
     send('pointerup', 30 + 12 + 176 + 40, 200);
     expect(
       rt.eval(`[kitWorld.find('slider').get('value'), kitWorld.find('needle').get('rotation'),
-        kitWorld.find('readout').get('text'), kitWorld.find('knob').get('x')].join(',')`),
+        kitWorld.find('readout').get('text'), kitWorld.find('knob').origin().x].join(',')`),
     ).toBe('100,270,100,176');
   });
 
@@ -91,17 +91,23 @@ describe('Kit world (phase 4)', () => {
     expect(rt.eval(`typeof kitWorld.find('hourHand').get('rotation')`)).toBe('number');
   });
 
-  it('clock hands stay on the oval centre when the clock is resized', () => {
-    const { rt, frame } = makeKit();
-    rt.eval(`kitWorld.find('clock').put('w', 200); kitWorld.find('clock').put('h', 80);`);
-    frame();
+  it('clock hands stay on the oval centre and scaleBy its extent', () => {
+    const { rt } = makeKit();
     expect(
       rt.eval(`(() => {
         let c = kitWorld.find('clock');
+        c.put('stepEvery', 0);
+        c.put('extent', pt(200, 80));
         let hr = c.find('hourHand');
-        return [hr.get('x'), hr.get('y') + hr.get('h') / 2, c.get('w') / 2, c.get('h') / 2].join(',');
+        let hub = c.worldFromLocal(c.extent().scaleBy(0.5));
+        let at = function (deg) {
+          hr.setLocal('rotation', deg);
+          let tip = hr.worldFromLocal(hr.extent());
+          return [Math.round(tip.x - hub.x), Math.round(tip.y - hub.y)].join(',');
+        };
+        return at(0) + '|' + at(90);
       })()`),
-    ).toBe('100,40,100,40');
+    ).toBe('0,-20|50,0');
   });
 
   it('drag a part off the shelf onto the world, then back; the row layout follows', () => {
@@ -110,20 +116,20 @@ describe('Kit world (phase 4)', () => {
     expect(rt.eval(`kitWorld.find('red').owner.name`)).toBe('shelf');
     drag(330, 300, 600, 500);
     expect(rt.eval(`[kitWorld.find('red').owner.name, kitWorld.find('shelf').parts.length,
-      kitWorld.find('green').get('x'), kitWorld.find('red').get('x'), kitWorld.find('red').get('y')].join(',')`)).toBe(
+      kitWorld.find('green').origin().x, kitWorld.find('red').origin().x, kitWorld.find('red').origin().y].join(',')`)).toBe(
       'world,1,10,580,480',
     );
     // drop it on the green ball: green doesn't accept drops, its shelf does
     drag(600, 500, 330, 300);
     expect(rt.eval(`[kitWorld.find('red').owner.name, kitWorld.find('shelf').parts.map(p => p.name).join('+'),
-      kitWorld.find('red').get('x'), kitWorld.find('shelf').get('w')].join(',')`)).toBe('shelf,green+red,58,108');
+      kitWorld.find('red').origin().x, kitWorld.find('shelf').extent().x].join(',')`)).toBe('shelf,green+red,58,108');
   });
 
   it('hands go with the clock: dragging a hand moves the whole clock', () => {
     const { rt, drag } = makeKit();
     // clock at (60,270) 140x140; the hour hand starts at its centre (130,340)
     drag(135, 340, 435, 440);
-    expect(rt.eval(`kitWorld.find('clock').get('x') + ',' + kitWorld.find('clock').get('y') + ',' + kitWorld.find('hourHand').owner.name`)).toBe(
+    expect(rt.eval(`kitWorld.find('clock').origin().x + ',' + kitWorld.find('clock').origin().y + ',' + kitWorld.find('hourHand').owner.name`)).toBe(
       '360,370,clock',
     );
   });
@@ -136,7 +142,7 @@ describe('Kit world (phase 4)', () => {
   let r = [];
   r.push(w.partAt(62, 272) === w);          // corner of the clock's square, outside the oval
   r.push(w.partAt(130, 274) === w.find('clock')); // inside the oval, beyond the hands' reach
-  let b = w.add(part({ name: 'bar', x: 500, y: 450, w: 100, h: 10, rotation: 90 }));
+  let b = w.add(part({ name: 'bar', bounds: rect(500, 450, 100, 10), rotation: 90 }));
   r.push(w.partAt(550, 420) === b, w.partAt(510, 455) === w);
   return r.join(',');
 })()`),
@@ -182,7 +188,7 @@ describe('Kit world (phase 4)', () => {
     const { rt, drag } = makeKit();
     const pos = rt.eval(`(() => {
       let b = kitWorld.find('bin').find('box');
-      let c = b.worldFromLocal(b.get('w') / 2, b.get('h') / 2);
+      let c = b.worldFromLocal(b.extent().scale(0.5));
       return [c.x, c.y, kitWorld.find('bin').parts.filter(function (p) { return p.name === 'box'; }).length];
     })()`) as [number, number, number];
     expect(pos[2]).toBe(1);
@@ -214,11 +220,11 @@ describe('Kit world (phase 4)', () => {
     expect(rt.eval(`kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length + ',' + ($kit.haloTarget == null)`)).toBe('2,true');
 
     click(330, 300, { metaKey: true }); // red on the shelf
-    const rz = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'resize'; }); return [h.x + h.w / 2, h.y + h.h / 2, $kit.haloTarget.get('w'), $kit.haloTarget.get('h')]; })()`) as number[];
+    const rz = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'resize'; }); return [h.x + h.w / 2, h.y + h.h / 2, $kit.haloTarget.extent().x, $kit.haloTarget.extent().y]; })()`) as number[];
     send('pointerdown', rz[0], rz[1]);
     send('pointermove', rz[0] + 20, rz[1] + 10);
     send('pointerup', rz[0] + 20, rz[1] + 10);
-    expect(rt.eval(`kitWorld.find('red').get('w') > 40 && kitWorld.find('red').get('h') > 40`)).toBe(true);
+    expect(rt.eval(`kitWorld.find('red').extent().x > 40 && kitWorld.find('red').extent().y > 40`)).toBe(true);
   });
 
   it('dragging the copy handle moves the new part and leaves the handle on it', () => {
@@ -226,7 +232,7 @@ describe('Kit world (phase 4)', () => {
     click(200, 66, { metaKey: true });
     const pos = rt.eval(`(() => {
       let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'copy'; });
-      return [h.x + h.w / 2, h.y + h.h / 2, kitWorld.find('button').get('x'), kitWorld.find('button').get('y')];
+      return [h.x + h.w / 2, h.y + h.h / 2, kitWorld.find('button').origin().x, kitWorld.find('button').origin().y];
     })()`) as number[];
     send('pointerdown', pos[0], pos[1]);
     send('pointermove', pos[0] + 40, pos[1] + 30);
@@ -235,14 +241,14 @@ describe('Kit world (phase 4)', () => {
       rt.eval(`(() => {
         let orig = kitWorld.parts.filter(function (p) { return p.name === 'button'; })[0];
         let cpy = $kit.haloTarget;
-        return [kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length, cpy !== orig, cpy.get('x') !== orig.get('x')].join(',');
+        return [kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length, cpy !== orig, cpy.origin().x !== orig.origin().x].join(',');
       })()`),
     ).toBe('2,true,true');
   });
 
   it('repeated halo click climbs to the owner then clears', () => {
     const { rt, click } = makeKit();
-    const pos = rt.eval(`(() => { let g = kitWorld.find('green'); let p = g.worldFromLocal(g.get('w') / 2, g.get('h') / 2); return [p.x, p.y]; })()`) as number[];
+    const pos = rt.eval(`(() => { let g = kitWorld.find('green'); let p = g.worldFromLocal(g.extent().scale(0.5)); return [p.x, p.y]; })()`) as number[];
     click(pos[0], pos[1], { metaKey: true });
     expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('green');
     click(pos[0], pos[1], { metaKey: true });
@@ -254,8 +260,8 @@ describe('Kit world (phase 4)', () => {
   it('halo wire button opens a picker that actually wires two parts', () => {
     const { rt, click } = makeKit();
     rt.eval(`
-      kitWorld.add(part({ name: 'srcA', x: 400, y: 400, w: 40, h: 40, n: 0, fill: '#aaa' }));
-      kitWorld.add(part({ name: 'dstB', x: 500, y: 400, w: 40, h: 40, n: 0, fill: '#aaa' }));
+      kitWorld.add(part({ name: 'srcA', bounds: rect(400, 400, 40, 40), n: 0, fill: '#aaa' }));
+      kitWorld.add(part({ name: 'dstB', bounds: rect(500, 400, 40, 40), n: 0, fill: '#aaa' }));
       kitOpenPicker(kitWorld.find('srcA'), kitWorld.find('dstB'), 410, 360);
     `);
     const picks = rt.eval(`(() => {
@@ -271,7 +277,7 @@ describe('Kit world (phase 4)', () => {
     ).toBe('7,true');
   });
 
-  it('inspector ticks so scale shows up in w and h', () => {
+  it('inspector ticks so scale shows up in extent', () => {
     const { rt, click, send, frame } = makeKit();
     rt.eval(`kitInspect(kitWorld.find('red'))`);
     frame();
@@ -283,21 +289,27 @@ describe('Kit world (phase 4)', () => {
     expect(
       rt.eval(`(() => {
         let rows = kitWorld.find('inspector').find('rows').parts;
-        let w = rows.find(function (r) { return r.get('slotName') === 'w'; });
-        let h = rows.find(function (r) { return r.get('slotName') === 'h'; });
-        return (w.get('text') !== 'w: 40') + ',' + (h.get('text') !== 'h: 40');
+        let e = rows.find(function (r) { return r.get('slotName') === 'extent'; });
+        return e.get('text') !== 'extent: pt(40, 40)';
       })()`),
-    ).toBe('true,true');
+    ).toBe(true);
   });
 
-  it('opening an inspector does not keep a prior rotation', () => {
+  it('opening an inspector leaves earlier ones in place', () => {
     const { rt, frame } = makeKit();
     rt.eval(`kitInspect(kitWorld.find('number'))`);
     frame();
     rt.eval(`kitWorld.find('inspector').put('rotation', 45)`);
     rt.eval(`kitInspect(kitWorld.find('button'))`);
     frame();
-    expect(rt.eval(`kitWorld.find('inspector').get('rotation') + ',' + kitWorld.find('inspector').get('target').name`)).toBe('0,button');
+    expect(
+      rt.eval(`(() => {
+        let all = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; });
+        let a = all[0];
+        let b = all[all.length - 1];
+        return all.length + ',' + a.get('rotation') + ',' + a.get('target').name + ',' + b.get('rotation') + ',' + b.get('target').name;
+      })()`),
+    ).toBe('2,45,number,0,button');
   });
 
   it('inspector lists slots, edits a script, and can inspect itself', () => {
@@ -324,11 +336,13 @@ describe('Kit world (phase 4)', () => {
     frame();
     expect(
       rt.eval(`(() => {
-        let ins = kitWorld.find('inspector');
-        let names = ins.find('rows').parts.map(function (r) { return r.get('slotName'); });
-        return (ins.get('target') === ins) + ',' + names.includes('show') + ',' + names.includes('refresh');
+        let all = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; });
+        let inner = all[0];
+        let outer = all[all.length - 1];
+        let names = outer.find('rows').parts.map(function (r) { return r.get('slotName'); });
+        return all.length + ',' + (outer.get('target') === inner) + ',' + inner.get('target').name + ',' + names.includes('show') + ',' + names.includes('refresh');
       })()`),
-    ).toBe('true,true,true');
+    ).toBe('2,true,number,true,true');
   });
 
   it('finder search hits open the inspector', () => {
@@ -348,7 +362,7 @@ describe('Kit world (phase 4)', () => {
   it('a text field has a caret, replaces a selection, and arrows', () => {
     const { rt, send, frame } = makeKit();
     rt.eval(`
-      let f = kitWorld.add(kitField({ name: 'note', x: 10, y: 10, w: 160, h: 24, text: 'abcd' }));
+      let f = kitWorld.add(kitField({ name: 'note', bounds: rect(10, 10, 160, 24), text: 'abcd' }));
       $kit.focus = f;
       f.$caret = 4;
       f.$anchor = 4;
@@ -359,9 +373,16 @@ describe('Kit world (phase 4)', () => {
     send('keydown', 20, 20, { key: 'ArrowLeft', shiftKey: true });
     send('keydown', 20, 20, { key: 'x' });
     expect(rt.eval(`kitWorld.find('note').get('text') + '|' + kitWorld.find('note').$caret`)).toBe('axc|2');
-    rt.eval(`kitWorld.find('note').put('multiline', true); kitWorld.find('note').$caret = 2; kitWorld.find('note').$anchor = 2;`);
+    rt.eval(`
+      kitWorld.find('note').define('accept', function () { this.put('saved', this.get('text')); });
+      kitWorld.find('note').$caret = 2;
+      kitWorld.find('note').$anchor = 2;
+    `);
+    send('keydown', 20, 20, { key: 'Enter', shiftKey: true });
+    send('keydown', 20, 20, { key: 'Enter', metaKey: true });
+    expect(rt.eval(`kitWorld.find('note').get('text') + ',' + kitWorld.find('note').get('saved')`)).toBe('ax\n\nc,undefined');
     send('keydown', 20, 20, { key: 'Enter' });
-    expect(rt.eval(`kitWorld.find('note').get('text')`)).toBe('ax\nc');
+    expect(rt.eval(`kitWorld.find('note').get('saved')`)).toBe('ax\n\nc');
     frame();
     expect(rt.eval(`$kit.lastError`)).toBe(null);
   });
@@ -370,7 +391,7 @@ describe('Kit world (phase 4)', () => {
     const { rt } = makeKit();
     expect(
       rt.eval(`(() => {
-        let f = kitWorld.add(kitField({ name: 'long', x: 10, y: 10, w: 120, h: 36, multiline: true, text: 'a\\nb\\nc\\nd\\ne\\nf\\ng' }));
+        let f = kitWorld.add(kitField({ name: 'long', bounds: rect(10, 10, 120, 36), multiline: true, text: 'a\\nb\\nc\\nd\\ne\\nf\\ng' }));
         $kit.focus = f;
         f.$caret = f.get('text').length;
         f.$anchor = f.$caret;
@@ -383,7 +404,7 @@ describe('Kit world (phase 4)', () => {
   it('dragging across a text field selects, double-click completes the whole match', () => {
     const { rt, send, click } = makeKit();
     const pos = rt.eval(`(() => {
-      let f = kitWorld.add(kitField({ name: 'note', x: 20, y: 20, w: 200, h: 24, text: 'hello world' }));
+      let f = kitWorld.add(kitField({ name: 'note', bounds: rect(20, 20, 200, 24), text: 'hello world' }));
       let a = f.worldFromLocal(4, 12);
       let b = f.worldFromLocal(4 + 50, 12);
       let w = f.worldFromLocal(4 + 70, 12);
@@ -427,7 +448,7 @@ describe('Kit world (phase 4)', () => {
   it('shift-drag extends the nearer end of a selection', () => {
     const { rt, send } = makeKit();
     const pos = rt.eval(`(() => {
-      let f = kitWorld.add(kitField({ name: 'note', x: 20, y: 20, w: 220, h: 24, text: 'abcdefghij' }));
+      let f = kitWorld.add(kitField({ name: 'note', bounds: rect(20, 20, 220, 24), text: 'abcdefghij' }));
       let a = f.worldFromLocal(4 + 20, 12);
       let b = f.worldFromLocal(4 + 80, 12);
       let c = f.worldFromLocal(4, 12);
@@ -459,7 +480,7 @@ describe('Kit world (phase 4)', () => {
   it('clicking in a text field places the caret', () => {
     const { rt, click } = makeKit();
     const pos = rt.eval(`(() => {
-      let f = kitWorld.add(kitField({ name: 'note', x: 20, y: 20, w: 200, h: 24, text: 'hello' }));
+      let f = kitWorld.add(kitField({ name: 'note', bounds: rect(20, 20, 200, 24), text: 'hello' }));
       let p = f.worldFromLocal(4 + 20, 12); // ~2 characters in (10px each in the stub)
       return [p.x, p.y];
     })()`) as number[];

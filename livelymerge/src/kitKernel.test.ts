@@ -163,6 +163,35 @@ describe('Kit kernel', () => {
     ).toBe('clock:label:value clock:onTick:slot name / 1');
   });
 
+  it('pt and rect: arithmetic, contains, part origin/extent', () => {
+    const { rt } = makeKit();
+    expect(
+      rt.eval(`(() => {
+  let a = pt(3, 4).add(pt(1, 2));
+  let b = pt(a);
+  let c = pt(1, 0).rot(Math.PI / 2);
+  let r = rect(10, 20, 30, 40);
+  let box = part({ bounds: rect(5, 7, 10, 20) });
+  let p = box.worldFromLocal(2, 3);
+  let q = box.worldFromLocal(pt(2, 3));
+  box.put('origin', pt(8, 9));
+  box.put('extent', pt(12, 16));
+  return [
+    a.x, a.y, b.x, b.y,
+    Math.round(c.x * 1000) / 1000, Math.round(c.y * 1000) / 1000,
+    r.contains(pt(10, 20)), r.contains(pt(40, 60)), r.contains(pt(9, 20)),
+    r.center().x, r.center().y,
+    box.origin().x, box.origin().y, box.extent().x, box.extent().y,
+    box.bounds().w, box.bounds().h,
+    p.x, p.y, q.x, q.y,
+    String(pt(1, 2)), String(rect(0, 1, 2, 3)),
+    Math.round(ptPolar(1, 0).scaleBy(pt(100, 40)).r()),
+    Math.round(ptPolar(1, -Math.PI / 2).scaleBy(pt(100, 40)).r()),
+  ].join(',');
+})()`),
+    ).toBe('4,6,4,6,0,1,true,true,false,25,40,8,9,12,16,12,16,7,10,7,10,pt(1, 2),rect(0, 1, 2, 3),100,40');
+  });
+
   it('parts persist in the document and survive a reload', () => {
     const { rt, handle } = makeKit();
     rt.eval(`

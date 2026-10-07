@@ -1,4 +1,4 @@
-//written on 2026-10-07 11:45 PDT
+//written on 2026-10-07 14:36 PDT
 // The Kit — kernel
 // =================
 // Parts with slots, connected by wires, reacting to signals. See KIT_PLAN.md.
@@ -20,9 +20,11 @@
 //          script, run it with the value; otherwise set the slot (which signals).
 //
 // Looks, layout, and input are conventions on ordinary slots, not new concepts:
-//   geometry  x, y, w, h (owner coordinates), rotation (degrees), pivotX/pivotY
-//             (0..1 of w/h, default 0.5 = rotate about the centre)
-//   look      'box' (default) | 'oval' | 'none' | 'text'; fill, border, borderWidth,
+//   geometry  origin and extent are Points (owner coordinates); bounds is
+//             rect(origin, extent). A spec may pass bounds: rect(x, y, w, h), or
+//             origin/extent, or the old x,y,w,h names. rotation (degrees),
+//             pivotX/pivotY (0..1 of extent, default 0.5 = rotate about the centre)
+//   look      'box' (default) | 'oval' | 'line' | 'none' | 'text'; fill, border, borderWidth,
 //             radius; text, fontSize, textColor, align; hidden; a `draw` script overrides.
 //             'text' is a box you can type in (caret, selection) — see kitField.
 //             Double-click completes a match (word / line / brackets / whole string);
@@ -79,10 +81,13 @@
 // hold the methods; every part is Object.create(Part). Re-evaluating this file
 // rewrites the methods on those same objects, so existing parts pick up new kernel
 // code without being rebuilt. (Classes can't do this: a re-declared class is a new
-// class, and old instances keep the old methods.)
+// class, and old instances keep the old methods.) Point and Rectangle use the same
+// trick, but they are ephemeral helpers — never stored in slots.
 
 let Part = typeof Part === 'object' && Part ? Part : {};
 let Wire = typeof Wire === 'object' && Wire ? Wire : Object.create(Part);
+let Point = typeof Point === 'object' && Point ? Point : {};
+let Rectangle = typeof Rectangle === 'object' && Rectangle ? Rectangle : {};
 
 function kitMethods(target, methods) {
   /** Copy every method in `methods` onto `target` (the kernel's "class body"). */
@@ -108,13 +113,44 @@ kitMethods(Part, {
     this.parts = [];
     this.wiresOut = [];
     if (spec) {
+      let ox, oy, ex, ey, hasO, hasE;
       let keys = Object.keys(spec);
       for (let i = 0; i < keys.length; i++) {
         let k = keys[i];
-        if (k === 'name') this.setName(spec.name);
-        else if (k === 'like') this.makeLike(spec.like);
-        else this.put(k, spec[k]);
+        let v = spec[k];
+        if (k === 'name') this.setName(v);
+        else if (k === 'like') this.makeLike(v);
+        else if (k === 'bounds') {
+          ox = v.x;
+          oy = v.y;
+          ex = v.w;
+          ey = v.h;
+          hasO = true;
+          hasE = true;
+        } else if (k === 'origin') {
+          ox = v.x;
+          oy = v.y;
+          hasO = true;
+        } else if (k === 'extent') {
+          ex = v.x;
+          ey = v.y;
+          hasE = true;
+        } else if (k === 'x') {
+          ox = v;
+          hasO = true;
+        } else if (k === 'y') {
+          oy = v;
+          hasO = true;
+        } else if (k === 'w') {
+          ex = v;
+          hasE = true;
+        } else if (k === 'h') {
+          ey = v;
+          hasE = true;
+        } else this.put(k, v);
       }
+      if (hasO) this.put('origin', pt(ox, oy));
+      if (hasE) this.put('extent', pt(ex, ey));
     }
     return this;
   },
@@ -217,7 +253,7 @@ kitMethods(Part, {
   },
   put: function (name, value) {
     /** Store an own slot WITHOUT signalling (construction, layout, copies). */
-    if (this.ownValue(name) === value) return this;
+    if (kitSame(this.ownValue(name), value)) return this;
     if (kitOverlayScope(this)) this.overlayWrite(name, value);
     else this.slots[name] = value;
     return this;
@@ -228,7 +264,7 @@ kitMethods(Part, {
      * react. Setting a slot to the value it already has does nothing — this is what
      * keeps a loop of wires (a <-> b) from ringing forever.
      */
-    if (this.ownValue(name) === value) return this;
+    if (kitSame(this.ownValue(name), value)) return this;
     if (kitOverlayScope(this)) this.overlayWrite(name, value);
     else this.slots[name] = value;
     this.signal(name, value);
@@ -243,7 +279,7 @@ kitMethods(Part, {
      * The name stays in $pending, so the gesture's end message still reports it.
      */
     if (this.$slots && this.$slots[name] !== undefined) delete this.$slots[name];
-    if (this.slots[name] !== value) this.slots[name] = value;
+    if (!kitSame(this.slots[name], value)) this.slots[name] = value;
     return this;
   },
   setLocal: function (name, value) {
@@ -253,7 +289,7 @@ kitMethods(Part, {
      * replica computes for itself (the clock's hands) or wants to show only to
      * its own user. clearLocal(name) lets the shared value show through again.
      */
-    if (this.ownValue(name) === value) return this;
+    if (kitSame(this.ownValue(name), value)) return this;
     if (!this.$slots) this.$slots = {};
     this.$slots[name] = value;
     this.signal(name, value);
@@ -288,7 +324,7 @@ kitMethods(Part, {
       let k = names[i];
       let v = this.$slots ? this.$slots[k] : undefined;
       if (v !== undefined) {
-        if (this.slots[k] !== v) this.slots[k] = v;
+        if (!kitSame(this.slots[k], v)) this.slots[k] = v;
         delete this.$slots[k];
       }
     }
@@ -533,7 +569,7 @@ kitMethods(Part, {
       else {
         n.like = o.like;
         let keys = Object.keys(o.slots);
-        for (let k = 0; k < keys.length; k++) n.slots[keys[k]] = o.slots[keys[k]];
+        for (let k = 0; k < keys.length; k++) n.slots[keys[k]] = kitCopySlot(o.slots[keys[k]]);
       }
       news.push(n);
     }
@@ -550,37 +586,55 @@ kitMethods(Part, {
   },
 
   // --- Geometry ---------------------------------------------------------------
-  // x, y, w, h are in my owner's coordinates; rotation (degrees) turns me about my
-  // pivot (pivotX, pivotY as fractions of w, h). Points are plain {x, y} objects.
+  // Slots `origin` and `extent` are Points (owner coordinates). bounds() is the
+  // rectangle they make. rotation (degrees) turns me about my pivot (pivotX,
+  // pivotY as fractions of extent, default 0.5 = rotate about the centre).
 
+  origin: function () {
+    let v = this.get('origin');
+    return v ? pt(v) : pt(0, 0);
+  },
+  extent: function () {
+    let v = this.get('extent');
+    return v ? pt(v) : pt(0, 0);
+  },
+  bounds: function () {
+    return rect(this.origin(), this.extent());
+  },
+  restToLocal: function (p) {
+    /** Map a point in my `rest` coordinates to my current local pixels. */
+    let r = pt(this.get('rest'));
+    let e = this.extent();
+    return p.sub(r.scaleBy(0.5)).scaleBy(pt(e.x / (r.x || 1), e.y / (r.y || 1))).add(e.scaleBy(0.5));
+  },
+  localToRest: function (p) {
+    let r = pt(this.get('rest'));
+    let e = this.extent();
+    return p.sub(e.scaleBy(0.5)).scaleBy(pt((r.x || 1) / (e.x || 1), (r.y || 1) / (e.y || 1))).add(r.scaleBy(0.5));
+  },
   pivot: function () {
-    return { x: this.num('w', 0) * this.num('pivotX', 0.5), y: this.num('h', 0) * this.num('pivotY', 0.5) };
+    let e = this.extent();
+    return pt(e.x * this.num('pivotX', 0.5), e.y * this.num('pivotY', 0.5));
   },
-  ownerFromLocal: function (lx, ly) {
+  ownerFromLocal: function (x, y) {
+    let local = pt(x, y);
     let pv = this.pivot();
-    let r = (this.num('rotation', 0) * Math.PI) / 180;
-    let dx = lx - pv.x;
-    let dy = ly - pv.y;
-    let c = Math.cos(r);
-    let s = Math.sin(r);
-    return { x: dx * c - dy * s + pv.x + this.num('x', 0), y: dx * s + dy * c + pv.y + this.num('y', 0) };
+    let p = local.sub(pv).rot((this.num('rotation', 0) * Math.PI) / 180).add(pv).add(this.origin());
+    if (this.owner && this.owner.get('rest')) p = this.owner.restToLocal(p);
+    return p;
   },
-  localFromOwner: function (ox, oy) {
+  localFromOwner: function (x, y) {
+    let owner = this.owner && this.owner.get('rest') ? this.owner.localToRest(pt(x, y)) : pt(x, y);
     let pv = this.pivot();
-    let r = (this.num('rotation', 0) * Math.PI) / 180;
-    let dx = ox - this.num('x', 0) - pv.x;
-    let dy = oy - this.num('y', 0) - pv.y;
-    let c = Math.cos(r);
-    let s = Math.sin(r);
-    return { x: dx * c + dy * s + pv.x, y: -dx * s + dy * c + pv.y };
+    return owner.sub(this.origin()).sub(pv).rot((-this.num('rotation', 0) * Math.PI) / 180).add(pv);
   },
-  worldFromLocal: function (lx, ly) {
-    let p = this.ownerFromLocal(lx, ly);
-    return this.owner ? this.owner.worldFromLocal(p.x, p.y) : p;
+  worldFromLocal: function (x, y) {
+    let p = this.ownerFromLocal(x, y);
+    return this.owner ? this.owner.worldFromLocal(p) : p;
   },
-  localFromWorld: function (wx, wy) {
-    let p = this.owner ? this.owner.localFromWorld(wx, wy) : { x: wx, y: wy };
-    return this.localFromOwner(p.x, p.y);
+  localFromWorld: function (x, y) {
+    let p = this.owner ? this.owner.localFromWorld(x, y) : pt(x, y);
+    return this.localFromOwner(p);
   },
   worldRotation: function () {
     let r = 0;
@@ -591,33 +645,40 @@ kitMethods(Part, {
     }
     return r;
   },
-  containsLocal: function (lx, ly) {
-    /** Is my-coordinates point (lx, ly) on me? (Ovals test the ellipse.) */
+  containsLocal: function (x, y) {
+    /** Is my-coordinates point on me? (Ovals test the ellipse.) */
     let look = this.get('look') || 'box';
     if (look === 'none') return false;
-    let w = this.num('w', 0);
-    let h = this.num('h', 0);
-    if (look === 'oval') {
-      let nx = (lx - w / 2) / (w / 2);
-      let ny = (ly - h / 2) / (h / 2);
-      return nx * nx + ny * ny <= 1;
+    let p = pt(x, y);
+    let e = this.extent();
+    if (look === 'line') {
+      let len2 = e.x * e.x + e.y * e.y;
+      let t = len2 ? (p.x * e.x + p.y * e.y) / len2 : 0;
+      if (t < 0) t = 0;
+      if (t > 1) t = 1;
+      return p.sub(e.scaleBy(t)).r() <= this.num('borderWidth', 2);
     }
-    return lx >= 0 && ly >= 0 && lx <= w && ly <= h;
+    if (look === 'oval') {
+      let mid = e.scale(0.5);
+      let n = pt((p.x - mid.x) / (mid.x || 1), (p.y - mid.y) / (mid.y || 1));
+      return n.x * n.x + n.y * n.y <= 1;
+    }
+    return rect(pt(0, 0), e).contains(p);
   },
-  partAt: function (ox, oy, excluding) {
+  partAt: function (x, y, excluding) {
     /**
-     * The frontmost visible part at owner-coordinates (ox, oy): one of my sub-parts
+     * The frontmost visible part at owner-coordinates: one of my sub-parts
      * (last added is in front) or me — or null. `excluding` skips a sub-tree (the
      * part being carried).
      */
     if (this === excluding || this.get('hidden')) return null;
-    let l = this.localFromOwner(ox, oy);
+    let l = this.localFromOwner(x, y);
     let sy = this.get('scroll') ? this.$scrollY || 0 : 0;
     for (let i = this.parts.length - 1; i >= 0; i--) {
       let hit = this.parts[i].partAt(l.x, l.y + sy, excluding);
       if (hit) return hit;
     }
-    return this.containsLocal(l.x, l.y) ? this : null;
+    return this.containsLocal(l) ? this : null;
   },
   moveTo: function (newOwner, index) {
     /**
@@ -630,12 +691,11 @@ kitMethods(Part, {
       return this;
     }
     let pv = this.pivot();
-    let w = this.worldFromLocal(pv.x, pv.y);
+    let w = this.worldFromLocal(pv);
     let r = this.worldRotation() - (newOwner ? newOwner.worldRotation() : 0);
-    let l = newOwner ? newOwner.localFromWorld(w.x, w.y) : w;
+    let l = (newOwner ? newOwner.localFromWorld(w) : w).sub(pv);
     newOwner.add(this, index);
-    this.store('x', l.x - pv.x);
-    this.store('y', l.y - pv.y);
+    this.store('origin', l);
     this.store('rotation', r);
     return this;
   },
@@ -659,25 +719,23 @@ kitMethods(Part, {
       for (let i = 0; i < this.parts.length; i++) {
         let p = this.parts[i];
         if (p.get('hidden')) continue;
+        let e = p.extent();
         if (mode === 'row') {
-          p.put('x', along);
-          p.put('y', pad);
-          along += p.num('w', 0) + gap;
-          across = Math.max(across, p.num('h', 0));
+          p.put('origin', pt(along, pad));
+          along += e.x + gap;
+          across = Math.max(across, e.y);
         } else {
-          p.put('x', pad);
-          p.put('y', along);
-          along += p.num('h', 0) + gap;
-          across = Math.max(across, p.num('w', 0));
+          p.put('origin', pt(pad, along));
+          along += e.y + gap;
+          across = Math.max(across, e.x);
         }
       }
       if (this.get('fit')) {
         let len = Math.max(along - gap + pad, 2 * pad);
         let wid = across + 2 * pad;
-        this.put('w', mode === 'row' ? len : wid);
-        this.put('h', mode === 'row' ? wid : len);
+        this.put('extent', mode === 'row' ? pt(len, wid) : pt(wid, len));
         let maxH = this.num('maxH', 0);
-        if (maxH > 0 && this.num('h', 0) > maxH) this.put('h', maxH);
+        if (maxH > 0 && this.extent().y > maxH) this.put('extent', pt(this.extent().x, maxH));
       }
     }
     for (let i = 0; i < this.parts.length; i++) this.parts[i].layout();
@@ -689,8 +747,9 @@ kitMethods(Part, {
     /** Draw me (my look, or my `draw` script) and then my sub-parts, in my frame. */
     if (this.get('hidden')) return;
     let pv = this.pivot();
+    let o = this.origin();
     c.save();
-    c.translate(this.num('x', 0) + pv.x, this.num('y', 0) + pv.y);
+    c.translate(o.x + pv.x, o.y + pv.y);
     let r = this.num('rotation', 0);
     if (r) c.rotate((r * Math.PI) / 180);
     c.translate(-pv.x, -pv.y);
@@ -712,25 +771,49 @@ kitMethods(Part, {
     }
     let clipKids = this.get('scroll') || this.get('clip');
     if (clipKids) {
+      let e = this.extent();
       c.save();
       c.beginPath();
-      c.rect(0, 0, this.num('w', 0), this.num('h', 0));
+      c.rect(0, 0, e.x, e.y);
       c.clip();
       if (this.get('scroll')) c.translate(0, -(this.$scrollY || 0));
     }
+    let rest = this.get('rest');
+    if (rest) {
+      let r = pt(rest);
+      let e = this.extent();
+      c.save();
+      c.translate(e.x / 2, e.y / 2);
+      c.scale(e.x / (r.x || 1), e.y / (r.y || 1));
+      c.translate(-r.x / 2, -r.y / 2);
+    }
     for (let i = 0; i < this.parts.length; i++) this.parts[i].draw(c);
+    if (rest) c.restore();
     if (clipKids) c.restore();
     c.restore();
   },
   drawLook: function (c) {
     let look = this.get('look') || 'box';
     if (look === 'text') look = 'box';
-    let w = this.num('w', 0);
-    let h = this.num('h', 0);
+    let e = this.extent();
+    if (look === 'line') {
+      c.beginPath();
+      c.moveTo(0, 0);
+      c.lineTo(e.x, e.y);
+      c.strokeStyle = this.get('border') || this.get('fill') || '#333';
+      c.lineWidth = this.num('borderWidth', 2);
+      c.lineCap = 'round';
+      c.stroke();
+      return;
+    }
+    let w = e.x;
+    let h = e.y;
     if (look !== 'none') {
       c.beginPath();
-      if (look === 'oval') c.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, 2 * Math.PI);
-      else {
+      if (look === 'oval') {
+        let mid = e.scale(0.5);
+        c.ellipse(mid.x, mid.y, mid.x, mid.y, 0, 0, 2 * Math.PI);
+      } else {
         let rad = Math.min(this.num('radius', 0), w / 2, h / 2);
         if (rad > 0 && c.roundRect) c.roundRect(0, 0, w, h, rad);
         else c.rect(0, 0, w, h);
@@ -872,6 +955,133 @@ kitMethods(Wire, {
   },
 });
 
+// +-------------------+
+// |  Point, Rectangle |
+// +-------------------+
+// Ephemeral helpers (never stored in slots — parts keep numeric x, y, w, h).
+// Same upgrade trick as Part: objects with methods, so re-eval rewrites them.
+
+kitMethods(Point, {
+  init: function (x, y) {
+    this.x = x || 0;
+    this.y = y || 0;
+    return this;
+  },
+  add: function (p) {
+    return pt(this.x + p.x, this.y + p.y);
+  },
+  sub: function (p) {
+    return pt(this.x - p.x, this.y - p.y);
+  },
+  min: function (p) {
+    return pt(Math.min(this.x, p.x), Math.min(this.y, p.y));
+  },
+  max: function (p) {
+    return pt(Math.max(this.x, p.x), Math.max(this.y, p.y));
+  },
+  scaleBy: function (s) {
+    let sp = typeof s === 'number' ? pt(s, s) : s;
+    return pt(this.x * sp.x, this.y * sp.y);
+  },
+  scale: function (s) {
+    return this.scaleBy(s);
+  },
+  dist: function (p) {
+    let d = this.sub(p);
+    return Math.sqrt(d.x * d.x + d.y * d.y);
+  },
+  r: function () {
+    return this.dist(pt(0, 0));
+  },
+  theta: function () {
+    return Math.atan2(this.y, this.x);
+  },
+  radial: function (r, theta) {
+    /** theta = 0 is 12 o'clock (0, -r); increasing clockwise, like a clock. */
+    return pt(r * Math.sin(theta), -r * Math.cos(theta));
+  },
+  rot: function (radians) {
+    let c = Math.cos(radians);
+    let s = Math.sin(radians);
+    return pt(this.x * c - this.y * s, this.x * s + this.y * c);
+  },
+  toString: function () {
+    return 'pt(' + this.x + ', ' + this.y + ')';
+  },
+});
+
+kitMethods(Rectangle, {
+  init: function (x, y, w, h) {
+    this.x = x || 0;
+    this.y = y || 0;
+    this.w = w || 0;
+    this.h = h || 0;
+    return this;
+  },
+  right: function () {
+    return this.x + this.w;
+  },
+  bottom: function () {
+    return this.y + this.h;
+  },
+  center: function () {
+    return pt(this.x + this.w / 2, this.y + this.h / 2);
+  },
+  topLeft: function () {
+    return pt(this.x, this.y);
+  },
+  topRight: function () {
+    return pt(this.right(), this.y);
+  },
+  bottomLeft: function () {
+    return pt(this.x, this.bottom());
+  },
+  bottomRight: function () {
+    return pt(this.right(), this.bottom());
+  },
+  contains: function (p) {
+    return p.x >= this.x && p.y >= this.y && p.x <= this.right() && p.y <= this.bottom();
+  },
+  outset: function (n) {
+    return rect(this.x - n, this.y - n, this.w + 2 * n, this.h + 2 * n);
+  },
+  toString: function () {
+    return 'rect(' + this.x + ', ' + this.y + ', ' + this.w + ', ' + this.h + ')';
+  },
+});
+
+function kitSame(a, b) {
+  /** Value equality for slots: Points and Rectangles compare by coordinates. */
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (typeof a.x !== 'number' || typeof b.x !== 'number') return false;
+  if (a.x !== b.x || a.y !== b.y) return false;
+  if (typeof a.w === 'number' || typeof b.w === 'number') return a.w === b.w && a.h === b.h;
+  return true;
+}
+
+function kitCopySlot(v) {
+  if (v && typeof v === 'object' && typeof v.x === 'number') {
+    return typeof v.w === 'number' ? rect(v.x, v.y, v.w, v.h) : pt(v);
+  }
+  return v;
+}
+
+function pt(x, y) {
+  if (y == null && x != null && typeof x === 'object') return Object.create(Point).init(x.x, x.y);
+  return Object.create(Point).init(x, y);
+}
+
+function ptPolar(r, theta) {
+  return pt(r, 0).rot(theta);
+}
+
+function rect(x, y, w, h) {
+  if (w == null && x != null && typeof x === 'object' && y != null && typeof y === 'object')
+    return Object.create(Rectangle).init(x.x, x.y, y.x, y.y);
+  return Object.create(Rectangle).init(x, y, w, h);
+}
+
 // +-----------+
 // |  Helpers  |
 // +-----------+
@@ -888,7 +1098,7 @@ function compileScript(source) {
 }
 
 function part(spec) {
-  /** part({ name: 'n', x: 1 }) — make a new Part with these slots. */
+  /** part({ name: 'n', origin: pt(1, 2) }) — make a new Part with these slots. */
   return Object.create(Part).init(spec);
 }
 
@@ -980,38 +1190,26 @@ function kitSpawn(proto, dest) {
    */
   let inst = proto.instance();
   let pv = proto.pivot();
-  let wpt = proto.worldFromLocal(pv.x, pv.y);
-  let turn = proto.worldRotation();
+  let wpt = proto.worldFromLocal(pv);
   dest.add(inst);
-  let l = dest.localFromWorld(wpt.x, wpt.y);
-  let ipv = inst.pivot();
-  inst.store('x', l.x - ipv.x);
-  inst.store('y', l.y - ipv.y);
-  inst.store('rotation', turn - dest.worldRotation());
+  let l = dest.localFromWorld(wpt).sub(inst.pivot());
+  inst.store('origin', l);
+  inst.store('rotation', proto.worldRotation() - dest.worldRotation());
   return inst;
 }
 
 function kitWorldBox(p) {
   /** Axis-aligned world rectangle covering a (possibly rotated) part. */
-  let w = p.num('w', 0);
-  let h = p.num('h', 0);
-  let pts = [
-    p.worldFromLocal(0, 0),
-    p.worldFromLocal(w, 0),
-    p.worldFromLocal(w, h),
-    p.worldFromLocal(0, h),
-  ];
-  let x0 = pts[0].x;
-  let y0 = pts[0].y;
-  let x1 = x0;
-  let y1 = y0;
-  for (let i = 1; i < 4; i++) {
-    if (pts[i].x < x0) x0 = pts[i].x;
-    if (pts[i].y < y0) y0 = pts[i].y;
-    if (pts[i].x > x1) x1 = pts[i].x;
-    if (pts[i].y > y1) y1 = pts[i].y;
+  let e = p.extent();
+  let lo = p.worldFromLocal(pt(0, 0));
+  let hi = lo;
+  let corners = [pt(e.x, 0), e, pt(0, e.y)];
+  for (let i = 0; i < 3; i++) {
+    let q = p.worldFromLocal(corners[i]);
+    lo = lo.min(q);
+    hi = hi.max(q);
   }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, pts: pts };
+  return rect(lo, hi.sub(lo));
 }
 
 function kitHaloItems(target) {
@@ -1022,27 +1220,36 @@ function kitHaloItems(target) {
    */
   let box = kitWorldBox(target);
   let s = 16;
-  let at = (id, label, hx, hy) => ({ id: id, label: label, x: hx - s / 2, y: hy - s / 2, w: s, h: s });
-  let x0 = box.x + s;
-  let x1 = box.x + box.w - s;
-  let maxW = Math.max(20, x1 - x0);
+  let at = function (id, label, p) {
+    let r = rect(p.x - s / 2, p.y - s / 2, s, s);
+    r.id = id;
+    r.label = label;
+    return r;
+  };
+  let maxW = Math.max(20, box.w - s);
   let name = target.name != null ? '' + target.name : 'part';
   let tw = Math.min(maxW, Math.max(20, name.length * 7 + 8));
+  let mid = box.center();
+  let title = rect(mid.x - tw / 2, box.bottom() - 8, tw, 16);
+  title.id = 'title';
+  title.label = name;
+  title.maxW = maxW;
   return [
-    at('copy', 'c', box.x + box.w, box.y),
-    at('wire', '-', box.x + box.w, box.y + box.h / 2),
-    at('resize', 's', box.x + box.w, box.y + box.h),
-    at('rotate', 'r', box.x, box.y + box.h),
-    at('del', 'x', box.x, box.y),
-    { id: 'title', x: box.x + box.w / 2 - tw / 2, y: box.y + box.h - 8, w: tw, h: 16, label: name, maxW: maxW },
+    at('copy', 'c', box.topRight()),
+    at('wire', '-', pt(box.right(), mid.y)),
+    at('resize', 's', box.bottomRight()),
+    at('rotate', 'r', box.bottomLeft()),
+    at('del', 'x', box.topLeft()),
+    title,
   ];
 }
 
 function kitHitItem(items, wx, wy) {
   if (!items) return null;
+  let p = pt(wx, wy);
   for (let i = 0; i < items.length; i++) {
     let r = items[i];
-    if (wx >= r.x && wy >= r.y && wx <= r.x + r.w && wy <= r.y + r.h) return r;
+    if (rect(r.x, r.y, r.w, r.h).contains(p)) return r;
   }
   return null;
 }
@@ -1133,24 +1340,22 @@ function kitHaloDragTo(wx, wy) {
   let d = $kit.haloDrag;
   if (!d) return;
   let tgt = d.target;
+  let here = pt(wx, wy);
   if (d.id === 'copy') {
-    tgt.put('x', tgt.num('x', 0) + wx - d.x);
-    tgt.put('y', tgt.num('y', 0) + wy - d.y);
+    tgt.put('origin', tgt.origin().add(here.sub(pt(d.x, d.y))));
     d.x = wx;
     d.y = wy;
   } else if (d.id === 'resize') {
-    let l = tgt.localFromWorld(wx, wy);
-    tgt.put('w', Math.max(12, l.x));
-    tgt.put('h', Math.max(12, l.y));
+    let l = tgt.localFromWorld(here);
+    tgt.put('extent', pt(Math.max(12, l.x), Math.max(12, l.y)));
   } else if (d.id === 'rotate') {
-    let pv = tgt.pivot();
-    let c = tgt.worldFromLocal(pv.x, pv.y);
+    let c = tgt.worldFromLocal(tgt.pivot());
     tgt.put('rotation', (Math.atan2(wy - c.y, wx - c.x) * 180) / Math.PI);
   }
 }
 
 function kitCenter(p) {
-  return p.worldFromLocal(p.num('w', 0) / 2, p.num('h', 0) / 2);
+  return p.worldFromLocal(p.extent().scale(0.5));
 }
 
 function kitDrawWires(world, c) {
@@ -1193,7 +1398,8 @@ function kitDrawHalo(c) {
   c.strokeStyle = '#4a7bd0';
   c.lineWidth = 1.5;
   c.setLineDash ? c.setLineDash([4, 3]) : null;
-  c.strokeRect(box.x - 2, box.y - 2, box.w + 4, box.h + 4);
+  let ring = box.outset(2);
+  c.strokeRect(ring.x, ring.y, ring.w, ring.h);
   c.setLineDash ? c.setLineDash([]) : null;
   c.font = '11px sans-serif';
   c.textAlign = 'center';
@@ -1379,8 +1585,7 @@ function kitMakeHand(world, sid, wx, wy, colorIndex) {
   hand.$isHand = true; // before any slot write: a hand's writes never go to an overlay
   hand.setName('hand');
   hand.put('look', 'none');
-  hand.put('x', wx);
-  hand.put('y', wy);
+  hand.put('origin', pt(wx, wy));
   hand.put('colorIndex', colorIndex);
   hand.$sid = sid;
   hand.$isLocal = false;
@@ -1391,8 +1596,7 @@ function kitMakeHand(world, sid, wx, wy, colorIndex) {
 
 function kitMoveHand(hand, wx, wy) {
   /** Hands are per-user objects: these writes never reach the document. */
-  hand.put('x', wx);
-  hand.put('y', wy);
+  hand.put('origin', pt(wx, wy));
 }
 
 function kitRemoveHand(world, hand) {
@@ -1439,11 +1643,10 @@ function kitHandColor(index) {
 
 function kitDrawHand(c, hand) {
   /** An arrow cursor at the hand's position, in its colour, with a name tag for peers. */
-  let x = hand.num('x', 0);
-  let y = hand.num('y', 0);
+  let o = hand.origin();
   let color = kitHandColor(hand.num('colorIndex', 0));
   c.save();
-  c.translate(x, y);
+  c.translate(o.x, o.y);
   c.beginPath();
   c.moveTo(0, 0);
   c.lineTo(0, 17);
@@ -1506,7 +1709,7 @@ function kitUserName() {
 // routes $-names on host objects to its ephemeral sidecar, not to the object.
 //
 //   { type: 'kit-eph-changes', v: 1, sid, end?: true,
-//     objects: [{ id, owner, slots: { x: 130, y: 70, ... } }],
+//     objects: [{ id, owner, slots: { origin: { x: 130, y: 70 }, ... } }],
 //     hand?: { x, y, colorIndex, name?, carrying?: partId } | { bye: true } }
 //
 // `sid` is the sender's session id (echo suppression; a hand IS a session). An
@@ -1520,7 +1723,25 @@ function kitUserName() {
 function kitStreamable(v) {
   if (typeof v === 'number') return Number.isFinite(v);
   if (typeof v === 'string') return v.length <= 1024;
-  return typeof v === 'boolean';
+  if (typeof v === 'boolean') return true;
+  if (v && typeof v === 'object' && typeof v.x === 'number' && Number.isFinite(v.x) && Number.isFinite(v.y)) {
+    return v.w == null || (typeof v.w === 'number' && Number.isFinite(v.w) && Number.isFinite(v.h));
+  }
+  return false;
+}
+
+function kitStreamValue(v) {
+  if (v && typeof v === 'object' && typeof v.x === 'number') {
+    let o = new window.Object();
+    o.x = v.x;
+    o.y = v.y;
+    if (typeof v.w === 'number') {
+      o.w = v.w;
+      o.h = v.h;
+    }
+    return o;
+  }
+  return v;
 }
 
 function kitEntryFor(p, names, committed) {
@@ -1533,7 +1754,7 @@ function kitEntryFor(p, names, committed) {
     let k = names[i];
     let v = committed ? p.persistentValue(k) : p.ownValue(k);
     if (kitStreamable(v)) {
-      slots[k] = v;
+      slots[k] = kitStreamValue(v);
       n++;
     }
   }
@@ -1551,8 +1772,9 @@ function kitHandPayload(world, now) {
   let hand = kitMyHand(world);
   if (!hand) return null;
   let h = new window.Object();
-  h.x = hand.num('x', 0);
-  h.y = hand.num('y', 0);
+  let o = hand.origin();
+  h.x = o.x;
+  h.y = o.y;
   h.colorIndex = hand.num('colorIndex', 0);
   let name = window._lmUserName;
   if (typeof name === 'string' && name.length > 0) h.name = name;
@@ -1571,7 +1793,8 @@ function kitHandDue(world, now) {
   let hand = kitMyHand(world);
   if (!hand) return false;
   if ($kit.handSentAt == null) return true;
-  if (hand.num('x', 0) !== $kit.handSentX || hand.num('y', 0) !== $kit.handSentY) return true;
+  let o = hand.origin();
+  if (o.x !== $kit.handSentX || o.y !== $kit.handSentY) return true;
   let carrying = hand.$cargo && typeof hand.$cargo.$id === 'string' ? hand.$cargo.$id : null;
   if (carrying !== $kit.handSentCarrying) return true;
   return now - $kit.handSentAt >= KIT_HAND_HEARTBEAT_MS;
@@ -1846,7 +2069,7 @@ function kitDispatch(name, target, evt) {
   let p = target;
   while (p) {
     if (p.handles(name)) {
-      let l = p.localFromWorld(evt.x, evt.y);
+      let l = p.localFromWorld(pt(evt.x, evt.y));
       evt.lx = l.x;
       evt.ly = l.y;
       evt.part = p;
@@ -1904,8 +2127,7 @@ function kitCarryMove(world, hand, wx, wy) {
     cargo.moveTo(world); // lift it to the top level, frontmost: the one structural write
     hand.$lifted = true;
   }
-  cargo.set('x', cargo.num('x', 0) + wx - hand.$lastX);
-  cargo.set('y', cargo.num('y', 0) + wy - hand.$lastY);
+  cargo.set('origin', cargo.origin().add(pt(wx - hand.$lastX, wy - hand.$lastY)));
   hand.$lastX = wx;
   hand.$lastY = wy;
 }
@@ -2021,8 +2243,7 @@ function kitPointerUp(world, wx, wy, e) {
     $kit.haloDrag = null;
     if (d.id === 'copy' && d.target && d.target.owner) {
       if (Math.abs(wx - d.ox) + Math.abs(wy - d.oy) < 4) {
-        d.target.put('x', d.target.num('x', 0) + 16);
-        d.target.put('y', d.target.num('y', 0) + 16);
+        d.target.put('origin', d.target.origin().add(pt(16, 16)));
       } else {
         d.target.moveTo(kitDropTarget(world, wx, wy, d.target));
       }
@@ -2119,8 +2340,7 @@ function kitFrame(now) {
   let world = kitWorld;
   $kit.frameNow = now;
   if (typeof canvas !== 'undefined' && canvas) {
-    world.put('w', canvas.width);
-    world.put('h', canvas.height);
+    world.put('extent', pt(canvas.width, canvas.height));
   }
   let events = window._kitEvents;
   window._kitEvents = new window.Array();
@@ -2142,7 +2362,8 @@ function kitTry(fn) {
 }
 
 function kitRender(world, c) {
-  c.clearRect(0, 0, world.num('w', 0), world.num('h', 0));
+  let e = world.extent();
+  c.clearRect(0, 0, e.x, e.y);
   world.draw(c);
   if ($kit.showWires !== false) kitDrawWires(world, c);
   if ($kit.wiringFrom) kitDrawRubber(c);
@@ -2157,14 +2378,13 @@ function kitRender(world, c) {
     }
   }
   if ($kit.lastError) {
-    let h = world.num('h', 0);
     c.fillStyle = '#b3261e';
-    c.fillRect(0, h - 22, world.num('w', 0), 22);
+    c.fillRect(0, e.y - 22, e.x, 22);
     c.fillStyle = 'white';
     c.font = '12px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
-    c.fillText('Script error: ' + $kit.lastError + '   (click to dismiss)', 8, h - 11);
+    c.fillText('Script error: ' + $kit.lastError + '   (click to dismiss)', 8, e.y - 11);
   }
 }
 
@@ -2313,7 +2533,7 @@ function initUI() {
 // +-----------------------+
 
 function kitMakeWorld() {
-  let world = part({ name: 'world', fill: '#f4f1ea', acceptsDrops: true, x: 0, y: 0, w: 800, h: 600 });
+  let world = part({ name: 'world', fill: '#f4f1ea', acceptsDrops: true, bounds: rect(0, 0, 800, 600) });
   kitExamples(world);
   kitInstallTools(world);
   return world;
@@ -2333,7 +2553,20 @@ function kitInstallTools(world) {
   }
 }
 
+function kitSlotText(v) {
+  if (v && typeof v === 'object' && typeof v.x === 'number')
+    return typeof v.w === 'number' ? String(rect(v.x, v.y, v.w, v.h)) : String(pt(v));
+  return '' + v;
+}
+
 function kitParseValue(text, old) {
+  if (old && typeof old === 'object' && typeof old.x === 'number') {
+    let m = /^\s*pt\(\s*([^,]+),\s*([^)]+)\)\s*$/.exec(text);
+    if (m) return pt(Number(m[1]), Number(m[2]));
+    m = /^\s*rect\(\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^)]+)\)\s*$/.exec(text);
+    if (m && typeof old.w === 'number') return rect(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]));
+    return old;
+  }
   if (typeof old === 'number') {
     let n = Number(text);
     return n === n ? n : old;
@@ -2357,10 +2590,10 @@ function kitTextView(p) {
   let lineH = size * 1.25;
   let pad = 4;
   let lines = text.split('\n');
-  let h = p.num('h', 0);
+  let e = p.extent();
   let top = p.get('look') === 'text' || p.get('multiline');
   let scrollY = top && typeof p.$scrollY === 'number' ? p.$scrollY : 0;
-  let y0 = top ? pad + lineH / 2 - scrollY : h / 2 - ((lines.length - 1) * lineH) / 2;
+  let y0 = top ? pad + lineH / 2 - scrollY : e.y / 2 - ((lines.length - 1) * lineH) / 2;
   return {
     text: text,
     size: size,
@@ -2369,8 +2602,8 @@ function kitTextView(p) {
     lines: lines,
     y0: y0,
     align: p.get('align') || (top ? 'left' : 'center'),
-    w: p.num('w', 0),
-    h: h,
+    w: e.x,
+    h: e.y,
   };
 }
 
@@ -2386,7 +2619,7 @@ function kitScrollMax(p) {
   if (p.get('layout') === 'column' || p.get('layout') === 'row') {
     for (let i = 0; i < p.parts.length; i++) {
       if (p.parts[i].get('hidden')) continue;
-      inner += (p.get('layout') === 'column' ? p.parts[i].num('h', 0) : p.parts[i].num('w', 0)) + gap;
+      inner += (p.get('layout') === 'column' ? p.parts[i].extent().y : p.parts[i].extent().x) + gap;
     }
     inner = inner - gap + pad;
   } else {
@@ -2394,12 +2627,12 @@ function kitScrollMax(p) {
     for (let i = 0; i < p.parts.length; i++) {
       let ch = p.parts[i];
       if (ch.get('hidden')) continue;
-      let bot = ch.num('y', 0) + ch.num('h', 0);
+      let bot = ch.origin().y + ch.extent().y;
       if (bot > inner) inner = bot;
     }
     inner += pad;
   }
-  return Math.max(0, inner - p.num('h', 0));
+  return Math.max(0, inner - p.extent().y);
 }
 
 function kitScrollBy(p, dy) {
@@ -2697,8 +2930,8 @@ function kitTextClick(e) {
 function kitTextKey(e) {
   /**
    * Real typing on a focused field: caret, selection, arrows, Backspace/Delete.
-   * Enter accepts (Shift-Enter or `multiline` inserts a newline); ⌘/Ctrl-Enter
-   * always accepts. The bindings follow Livelymerge's TextBox, not Morphic itself.
+   * Enter runs `accept` (save a script, set a data row, run Finder). Shift-Enter,
+   * ⌘-Enter, or Ctrl-Enter insert a newline. Cmd-S is left to the browser.
    */
   let k = e.key;
   if (k == null || k === 'Shift' || k === 'Control' || k === 'Alt' || k === 'Meta') return;
@@ -2707,13 +2940,15 @@ function kitTextKey(e) {
   let range = kitTextRange(this);
   let lo = range.lo;
   let hi = range.hi;
+  if ((k === 'Enter' || k === 'Return') && (e.shift || e.ctrl || e.meta)) {
+    kitTextReplace(this, lo, hi, '\n', lo + 1);
+    return;
+  }
   if (e.ctrl || e.meta) {
     if (k === 'a' || k === 'A') {
       this.$anchor = 0;
       this.$caret = t.length;
-      return;
     }
-    if ((k === 'Enter' || k === 'Return') && this.isScript('accept')) this.run('accept');
     return;
   }
   if (k === 'Backspace') {
@@ -2740,12 +2975,9 @@ function kitTextKey(e) {
     kitTextMove(this, dest, e.shift);
     return;
   }
-  if (k === 'Enter') {
-    if (e.shift || this.get('multiline')) {
-      kitTextReplace(this, lo, hi, '\n', lo + 1);
-      return;
-    }
+  if (k === 'Enter' || k === 'Return') {
     if (this.isScript('accept')) this.run('accept');
+    else kitTextReplace(this, lo, hi, '\n', lo + 1);
     return;
   }
   if (k === 'Escape') {
@@ -2767,12 +2999,16 @@ function kitField(spec) {
 
 function kitInspect(tgt) {
   /**
-   * Open (or raise) the Inspector on `tgt`. The Inspector is an ordinary part, so it
-   * can inspect itself — that's how you change the Inspector from inside the Kit.
+   * Open a new Inspector on `tgt`. Earlier inspectors stay put, so you can inspect
+   * an inspector (or keep two targets in view). Delete one when you are done with it.
    */
   let dest = tgt && tgt.world ? tgt.world() : kitWorld;
-  let ins = dest.find('inspector');
-  if (!ins) ins = dest.add(kitMakeInspector());
+  let last = null;
+  for (let i = 0; i < dest.parts.length; i++) {
+    if (dest.parts[i].name === 'inspector') last = dest.parts[i];
+  }
+  let ins = dest.add(kitMakeInspector());
+  if (last) ins.put('origin', last.origin().add(pt(24, 24)));
   ins.run('show', tgt);
   ins.beTop();
   return ins;
@@ -2795,13 +3031,13 @@ function kitMakeInspector() {
   /**
    * A column of slot rows plus a script editor. `show(tgt)` rebuilds the rows from
    * tgt.slotNames(). Click a script row to edit; click a data row and type, Enter
-   * to set. All of that is scripts on this part, so they appear in the list too.
+   * to set. Shift/⌘/Ctrl-Enter insert a newline. All of that is scripts on this
+   * part, so they appear in the list too.
    */
   let ins = part({
     name: 'inspector',
-    x: 16,
-    y: 400,
-    w: 310,
+    origin: pt(16, 400),
+    extent: pt(310, 0),
     fill: '#fff',
     border: '#4a7bd0',
     radius: 6,
@@ -2810,13 +3046,12 @@ function kitMakeInspector() {
     padding: 8,
     fit: true,
   });
-  ins.add(part({ name: 'title', look: 'none', text: 'Inspector', w: 290, h: 18, align: 'left', fontSize: 13, locked: true }));
-  ins.add(part({ name: 'rows', fill: 'none', w: 290, layout: 'column', gap: 1, fit: true, maxH: 220, scroll: true }));
+  ins.add(part({ name: 'title', look: 'none', text: 'Inspector', extent: pt(290, 18), align: 'left', fontSize: 13, locked: true }));
+  ins.add(part({ name: 'rows', fill: 'none', extent: pt(290, 0), layout: 'column', gap: 1, fit: true, maxH: 220, scroll: true }));
   let editor = ins.add(
     kitField({
       name: 'editor',
-      w: 290,
-      h: 120,
+      extent: pt(290, 120),
       text: '',
       fill: '#f8f6f1',
       border: '#ccc',
@@ -2875,15 +3110,14 @@ function kitMakeInspector() {
       let n = names[i];
       let v = tgt.get(n);
       let kind = typeof v === 'function' ? 'script' : v && v.slots ? 'ref' : 'data';
-      let shown = kind === 'script' ? n + '  ƒ' : n + ': ' + v;
+      let shown = kind === 'script' ? n + '  ƒ' : n + ': ' + kitSlotText(v);
       rows.add(
         part({
           like: proto,
           slotName: n,
           kind: kind,
           text: shown,
-          w: 290,
-          h: 18,
+          extent: pt(290, 18),
           fontSize: 11,
           align: 'left',
           fill: tgt.hasOwn(n) ? '#fff' : '#f0eee8',
@@ -2895,7 +3129,7 @@ function kitMakeInspector() {
   });
   ins.put('stepEvery', 16);
   ins.define('onTick', function () {
-    /** Keep data rows in step with the target (w/h while scaling, count, …). */
+    /** Keep data rows in step with the target (extent while scaling, count, …). */
     let tgt = this.get('target');
     if (!tgt) return;
     let rows = this.find('rows');
@@ -2911,7 +3145,7 @@ function kitMakeInspector() {
         return;
       }
       if (row.get('kind') !== 'data' || $kit.focus === row) continue;
-      let shown = names[i] + ': ' + tgt.get(names[i]);
+      let shown = names[i] + ': ' + kitSlotText(tgt.get(names[i]));
       if (row.get('text') !== shown) row.put('text', shown);
     }
   });
@@ -2938,9 +3172,8 @@ function kitMakeFinder() {
    */
   let f = part({
     name: 'finder',
-    x: 340,
-    y: 400,
-    w: 260,
+    origin: pt(340, 400),
+    extent: pt(260, 0),
     fill: '#fff',
     border: '#4a7bd0',
     radius: 6,
@@ -2949,14 +3182,14 @@ function kitMakeFinder() {
     padding: 8,
     fit: true,
   });
-  f.add(part({ name: 'title', look: 'none', text: 'Finder', w: 240, h: 16, align: 'left', fontSize: 13, locked: true }));
+  f.add(part({ name: 'title', look: 'none', text: 'Finder', extent: pt(240, 16), align: 'left', fontSize: 13, locked: true }));
   let query = f.add(
-    kitField({ name: 'query', w: 240, h: 22, text: '', fill: '#f8f6f1', border: '#ccc', fontSize: 12, align: 'left' }),
+    kitField({ name: 'query', extent: pt(240, 22), text: '', fill: '#f8f6f1', border: '#ccc', fontSize: 12, align: 'left' }),
   );
   query.define('accept', function () {
     this.owner.run('search', this.get('text'));
   });
-  f.add(part({ name: 'hits', fill: 'none', w: 240, layout: 'column', gap: 1, fit: true }));
+  f.add(part({ name: 'hits', fill: 'none', extent: pt(240, 0), layout: 'column', gap: 1, fit: true }));
   let hitLike = part({ name: 'hitLike' });
   hitLike.define('onClick', function () {
     kitInspect(this.get('hitPart'));
@@ -2976,8 +3209,7 @@ function kitMakeFinder() {
           like: proto,
           hitPart: h.part,
           text: (h.part.name || '?') + ' · ' + (h.slot || '') + ' · ' + h.where,
-          w: 240,
-          h: 18,
+          extent: pt(240, 18),
           fontSize: 11,
           align: 'left',
           fill: '#fff',
@@ -2991,7 +3223,7 @@ function kitMakeFinder() {
 }
 
 function kitMakeFindBtn() {
-  let btn = part({ name: 'findBtn', w: 130, h: 22, text: 'find', fill: '#6a6a6a', textColor: 'white', radius: 4, locked: true });
+  let btn = part({ name: 'findBtn', extent: pt(130, 22), text: 'find', fill: '#6a6a6a', textColor: 'white', radius: 4, locked: true });
   btn.define('onClick', function () {
     kitFind();
   });
@@ -3005,10 +3237,7 @@ function kitMakeBin() {
    */
   let bin = part({
     name: 'bin',
-    x: 620,
-    y: 16,
-    w: 150,
-    h: 280,
+    bounds: rect(620, 16, 150, 280),
     fill: '#ece8df',
     border: '#b8ad96',
     radius: 8,
@@ -3019,9 +3248,9 @@ function kitMakeBin() {
     isBin: true,
     fit: true,
   });
-  bin.add(part({ look: 'none', text: 'Parts Bin', w: 130, h: 16, align: 'left', fontSize: 12, textColor: '#555', locked: true }));
+  bin.add(part({ look: 'none', text: 'Parts Bin', extent: pt(130, 16), align: 'left', fontSize: 12, textColor: '#555', locked: true }));
   let wiresBtn = bin.add(
-    part({ name: 'wiresBtn', w: 130, h: 22, text: 'hide wires', fill: '#4a7bd0', textColor: 'white', radius: 4, locked: true }),
+    part({ name: 'wiresBtn', extent: pt(130, 22), text: 'hide wires', fill: '#4a7bd0', textColor: 'white', radius: 4, locked: true }),
   );
   wiresBtn.define('onClick', function () {
     $kit.showWires = $kit.showWires === false;
@@ -3030,14 +3259,14 @@ function kitMakeBin() {
     this.set('textColor', $kit.showWires === false ? '#222' : 'white');
   });
   bin.add(kitMakeFindBtn());
-  bin.add(part({ name: 'box', w: 48, h: 32, fill: '#d8d4cc', border: '#999', radius: 4 }));
-  bin.add(part({ name: 'oval', look: 'oval', w: 40, h: 40, fill: '#8eb4e0' }));
-  bin.add(part({ name: 'protoButton', w: 88, h: 28, text: 'button', fill: '#4a7bd0', textColor: 'white', radius: 6 }));
+  bin.add(part({ name: 'box', extent: pt(48, 32), fill: '#d8d4cc', border: '#999', radius: 4 }));
+  bin.add(part({ name: 'oval', look: 'oval', extent: pt(40, 40), fill: '#8eb4e0' }));
+  bin.add(part({ name: 'protoButton', extent: pt(88, 28), text: 'button', fill: '#4a7bd0', textColor: 'white', radius: 6 }));
   return bin;
 }
 
-function kitLabel(text, x, y) {
-  return part({ look: 'none', text: text, x: x, y: y, w: 200, h: 20, align: 'left', fontSize: 13, textColor: '#555' });
+function kitLabel(text, p) {
+  return part({ look: 'none', text: text, origin: pt(p), extent: pt(200, 20), align: 'left', fontSize: 13, textColor: '#555' });
 }
 
 function kitExamples(world) {
@@ -3047,69 +3276,63 @@ function kitExamples(world) {
    */
   // Counter: a button wired to a number — two world parts, so you can drag them apart
   // (same as slider and dial) and see the wire between them.
-  world.add(kitLabel('Counter: click +1', 30, 20));
-  let num = world.add(part({ name: 'number', x: 30, y: 44, w: 80, h: 44, count: 0, text: '0', fontSize: 20, fill: 'white', border: '#999', radius: 6 }));
+  world.add(kitLabel('Counter: click +1', pt(30, 20)));
+  let num = world.add(part({ name: 'number', bounds: rect(30, 44, 80, 44), count: 0, text: '0', fontSize: 20, fill: 'white', border: '#999', radius: 6 }));
   num.define('increment', function () { this.set('count', this.get('count') + 1); });
   num.define('onCount', function (n) { this.set('text', '' + n); });
-  let plus = world.add(part({ name: 'button', x: 170, y: 44, w: 60, h: 44, text: '+1', fill: '#4a7bd0', textColor: 'white', radius: 8 }));
+  let plus = world.add(part({ name: 'button', bounds: rect(170, 44, 60, 44), text: '+1', fill: '#4a7bd0', textColor: 'white', radius: 8 }));
   wire(plus, 'click', num, 'increment');
 
   // Slider -> dial: one wire with a transform; another wire to a readout. The whole
   // chain (value, knob, angle, needle, readout) is overlaid while the pointer is
   // down and committed once on release — the scripts don't do anything special.
-  world.add(kitLabel('Slider wired to a dial', 30, 120));
-  let slider = world.add(part({ name: 'slider', x: 30, y: 150, w: 200, h: 24, fill: '#ddd', radius: 12, value: 25 }));
-  slider.add(part({ name: 'knob', look: 'oval', x: 38, y: 0, w: 24, h: 24, fill: '#4a7bd0' }));
+  world.add(kitLabel('Slider wired to a dial', pt(30, 120)));
+  let slider = world.add(part({ name: 'slider', bounds: rect(30, 150, 200, 24), fill: '#ddd', radius: 12, value: 25 }));
+  slider.add(part({ name: 'knob', look: 'oval', origin: pt(38, 0), extent: pt(24, 24), fill: '#4a7bd0' }));
   slider.define('onPointerDown', function (e) { kitCapture(this); this.run('track', e); });
   slider.define('onPointerMove', function (e) { this.run('track', e); });
   slider.define('track', function (e) {
-    let v = Math.round(Math.max(0, Math.min(100, ((e.lx - 12) / (this.get('w') - 24)) * 100)));
+    let v = Math.round(Math.max(0, Math.min(100, ((e.lx - 12) / (this.extent().x - 24)) * 100)));
     this.set('value', v);
   });
-  slider.define('onValue', function (v) { this.find('knob').put('x', (v / 100) * (this.get('w') - 24)); });
-  let dial = world.add(part({ name: 'dial', look: 'oval', x: 260, y: 120, w: 90, h: 90, fill: 'white', border: '#999', angle: 0 }));
-  dial.add(part({ name: 'needle', x: 45, y: 43, w: 40, h: 4, pivotX: 0, fill: '#c33' }));
+  slider.define('onValue', function (v) { this.find('knob').put('origin', pt((v / 100) * (this.extent().x - 24), 0)); });
+  let dial = world.add(part({ name: 'dial', look: 'oval', bounds: rect(260, 120, 90, 90), fill: 'white', border: '#999', angle: 0 }));
+  dial.add(part({ name: 'needle', origin: dial.extent().scale(0.5).sub(pt(0, 2)), extent: pt(40, 4), pivotX: 0, fill: '#c33' }));
   dial.define('onAngle', function (a) { this.find('needle').set('rotation', a); });
   wire(slider, 'value', dial, 'angle', (v) => v * 3.6 - 90);
-  let readout = world.add(part({ name: 'readout', look: 'none', x: 360, y: 155, w: 80, h: 20, text: '25', align: 'left' }));
+  let readout = world.add(part({ name: 'readout', look: 'none', bounds: rect(360, 155, 80, 20), text: '25', align: 'left' }));
   wire(slider, 'value', readout, 'text', (v) => '' + v);
   slider.signal('value', 25);
 
   // Clock: three hands and an onTick script. Every replica computes the time for
   // itself, so the hands' rotation is per-user (setLocal): no document writes, ever.
-  world.add(kitLabel('Clock: onTick script, stepEvery 16', 30, 240));
-  let clock = world.add(part({ name: 'clock', look: 'oval', x: 60, y: 270, w: 140, h: 140, fill: 'white', border: '#555', borderWidth: 3, stepEvery: 16 }));
-  clock.add(part({ name: 'hourHand', x: 70, y: 67, w: 40, h: 6, pivotX: 0, fill: '#333', radius: 3 }));
-  clock.add(part({ name: 'minuteHand', x: 70, y: 68, w: 58, h: 4, pivotX: 0, fill: '#333', radius: 2 }));
-  clock.add(part({ name: 'secondHand', x: 70, y: 69, w: 62, h: 2, pivotX: 0, fill: '#c33' }));
+  world.add(kitLabel('Clock: onTick script, stepEvery 16', pt(30, 240)));
+  let radius = 70;
+  let clock = world.add(part({ name: 'clock', look: 'oval', bounds: rect(60, 270, radius * 2, radius * 2), rest: pt(radius * 2, radius * 2), fill: 'white', border: '#555', borderWidth: 3, stepEvery: 16 }));
+  let hub = pt(radius, radius);
+  clock.add(part({ name: 'hourHand', look: 'line', origin: hub, extent: Point.radial(radius * 0.5, 0), borderWidth: 4, border: '#333', pivotX: 0, pivotY: 0 }));
+  clock.add(part({ name: 'minuteHand', look: 'line', origin: hub, extent: Point.radial(radius * 0.7, 0), borderWidth: 3, border: '#333', pivotX: 0, pivotY: 0 }));
+  clock.add(part({ name: 'secondHand', look: 'line', origin: hub, extent: Point.radial(radius * 0.75, 0), borderWidth: 2, border: '#c33', pivotX: 0, pivotY: 0 }));
   clock.define('onTick', function () {
-    let cx = this.num('w', 0) / 2;
-    let cy = this.num('h', 0) / 2;
-    this.find('hourHand').setLocal('x', cx);
-    this.find('hourHand').setLocal('y', cy - this.find('hourHand').num('h', 0) / 2);
-    this.find('minuteHand').setLocal('x', cx);
-    this.find('minuteHand').setLocal('y', cy - this.find('minuteHand').num('h', 0) / 2);
-    this.find('secondHand').setLocal('x', cx);
-    this.find('secondHand').setLocal('y', cy - this.find('secondHand').num('h', 0) / 2);
     let d = new Date();
-    let s = d.getSeconds();
-    let m = d.getMinutes() + s / 60;
-    let h = (d.getHours() % 12) + m / 60;
-    this.find('secondHand').setLocal('rotation', s * 6 - 90);
-    this.find('minuteHand').setLocal('rotation', m * 6 - 90);
-    this.find('hourHand').setLocal('rotation', h * 30 - 90);
+    let second = d.getSeconds();
+    let minute = d.getMinutes() + second / 60;
+    let hour = (d.getHours() % 12) + minute / 60;
+    this.find('hourHand').setLocal('rotation', (hour / 12) * 360);
+    this.find('minuteHand').setLocal('rotation', (minute / 60) * 360);
+    this.find('secondHand').setLocal('rotation', (second / 60) * 360);
   });
 
-  world.add(kitLabel('⌘-click a part for its halo; click the name to inspect', 300, 20));
-  world.add(kitLabel('drag from the bin to stamp a copy; Option-click carries', 300, 40));
+  world.add(kitLabel('⌘-click a part for its halo; click the name to inspect', pt(300, 20)));
+  world.add(kitLabel('drag from the bin to stamp a copy; Option-click carries', pt(300, 40)));
 
   // Shelf: a row container. Drag things onto it and they line up.
-  world.add(kitLabel('Shelf: drop parts here (layout: row)', 300, 240));
-  let shelf = world.add(part({ name: 'shelf', x: 300, y: 270, w: 300, h: 70, fill: '#e6dfd0', border: '#b8ad96', radius: 6, layout: 'row', gap: 8, padding: 10, acceptsDrops: true, fit: true }));
-  shelf.add(part({ name: 'red', x: 0, y: 0, w: 40, h: 40, fill: '#d05a4a', radius: 4 }));
-  shelf.add(part({ name: 'green', look: 'oval', x: 0, y: 0, w: 40, h: 40, fill: '#5aa05a' }));
+  world.add(kitLabel('Shelf: drop parts here (layout: row)', pt(300, 240)));
+  let shelf = world.add(part({ name: 'shelf', bounds: rect(300, 270, 300, 70), fill: '#e6dfd0', border: '#b8ad96', radius: 6, layout: 'row', gap: 8, padding: 10, acceptsDrops: true, fit: true }));
+  shelf.add(part({ name: 'red', extent: pt(40, 40), fill: '#d05a4a', radius: 4 }));
+  shelf.add(part({ name: 'green', look: 'oval', extent: pt(40, 40), fill: '#5aa05a' }));
 }
 
 // Live stamp — eval `KITDEFS_WRITTEN_ON` to confirm this build is loaded.
-let KITDEFS_WRITTEN_ON = '2026-10-07 11:45 PDT';
-//written on 2026-10-07 11:45 PDT
+let KITDEFS_WRITTEN_ON = '2026-10-07 14:36 PDT';
+//written on 2026-10-07 14:36 PDT
