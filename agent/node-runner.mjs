@@ -28,7 +28,7 @@ import { splice } from "@automerge/automerge/slim"
 import { handleStore } from "./store.js"
 import { SessionRunner, needsWork, heldElsewhere } from "./runner.js"
 import { buildToolset } from "./tools/index.js"
-import { getProvider } from "./providers/index.js"
+import { getProvider, modelInfo } from "./providers/index.js"
 import { STATUS } from "./session.js"
 
 const DEFAULT_SYNC = "wss://subduction.sync.inkandswitch.com"
@@ -94,6 +94,7 @@ async function claim(sessionUrl) {
     buildToolset: (sessionDoc) => buildToolset(sessionDoc),
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),
     getKey: () => KEY,
+    getModelInfo: (model, providerId) => modelInfo(providerId ?? MODEL_PROVIDER, model, { key: KEY }),
     // No DOM, no registry. Host-tier calls park for a tab to pick up.
     canRun: (where) => where === "worker" || where === "task",
     onEvent: (event) => {

@@ -8,6 +8,7 @@ import { AgentTool } from "./tool.js"
 import { initSession, makeTurn, textBlock, callBlock, resultBlock, CALL, STATUS, _resetIds } from "./session.js"
 import { renderTranscript, callSummary } from "./ui/transcript.js"
 import { _reset as resetRunners } from "./runners.js"
+import { viewMount, _resetMounts } from "./tools/checking.js"
 
 /** A DocHandle double with the parts the tool actually uses. */
 let handleCounter = 0
@@ -493,5 +494,83 @@ describe("an approval for a call that will ask again anyway", () => {
     // No toolset to ask — better to offer than to claim it will always ask.
     const node = card("web_fetch", { url: "https://x.test/" }, undefined)
     expect(node.querySelector(".agent-approval-scopes")).toBeTruthy()
+  })
+})
+
+describe("what a call made or opened, inline", () => {
+  /** A repo with one package whose tool draws a button. */
+  function packageRepo() {
+    const docs = new Map([["automerge:package", { docs: [{ name: "package.json", type: "file", url: "automerge:pkg" }] }]])
+    let n = 0
+    const handle = (url) => ({ url, doc: () => docs.get(url), change(fn) { fn(docs.get(url)) }, heads: () => ["h1"], on() {}, off() {} })
+    return {
+      async create2() { const url = `automerge:new${++n}`; docs.set(url, {}); return handle(url) },
+      async find(url) { if (!docs.has(url)) throw new Error("missing"); return handle(url) },
+    }
+  }
+  const module = {
+    plugins: [
+      { type: "patchwork:datatype", id: "widget", name: "Widget", async load() { return { init: (d) => { d.title = "W" }, getTitle: (d) => d.title } } },
+      { type: "patchwork:tool", id: "widget", name: "Widget", supportedDatatypes: ["widget"], async load() {
+        return (handle, element) => { const b = document.createElement("button"); b.textContent = "roll"; element.append(b); return () => b.remove() }
+      } },
+    ],
+  }
+
+  function sessionWith(callId, input, output, doc = null) {
+    const handle = fakeHandle()
+    handle.change((d) => {
+      d.turns.push(makeTurn("assistant", [callBlock("view_mount", input, { id: callId, status: CALL.done })]))
+      d.turns.push(makeTurn("tool", [resultBlock(callId, output, doc ? { doc } : {})]))
+    })
+    return handle
+  }
+
+  beforeEach(() => _resetMounts())
+
+  it("adopts the agent's live mount beside its call, keeps it across re-renders, and parks it on cleanup", async () => {
+    const repo = packageRepo()
+    const out = await viewMount.execute({ url: "automerge:package", screenshot: false }, { repo, importModule: async () => module })
+    const mountId = String(out).match(/mountId: (mount_\w+)/)[1]
+    const container = document.body.querySelector(".agent-mount-holder .agent-mount")
+    expect(container).toBeTruthy()
+    expect(container.querySelector("button").textContent).toBe("roll")
+
+    const handle = sessionWith("c1", { url: "automerge:package" }, out)
+    const { element, cleanup } = mount(handle, { repo })
+
+    const view = element.querySelector('.agent-view[data-kind="mount"]')
+    expect(view).toBeTruthy()
+    expect(view.dataset.expanded).toBe("yes")
+    expect(view.querySelector(".agent-view-body").firstElementChild).toBe(container)
+    expect(document.body.querySelector(".agent-mount-holder .agent-mount")).toBeNull() // moved, not copied
+
+    // A re-render moves the same running tool; it is not torn down and remade.
+    handle.change((d) => d.turns.push(makeTurn("user", [textBlock("looks good")])))
+    expect(element.querySelector('.agent-view[data-kind="mount"] .agent-view-body').firstElementChild).toBe(container)
+    expect(container.querySelector("button").textContent).toBe("roll")
+
+    // Closing the session view parks the agent's mount; the agent keeps working.
+    cleanup()
+    expect(document.body.querySelector(".agent-mount-holder .agent-mount")).toBe(container)
+    expect(container.querySelector("button")).toBeTruthy()
+  })
+
+  it("shows a package the agent wrote as a view with Try it and install controls, not a chip", () => {
+    const handle = fakeHandle()
+    handle.change((d) => {
+      d.turns.push(makeTurn("assistant", [callBlock("fs_write", { files: { "tally/index.js": "" } }, { id: "c1", status: CALL.done })]))
+      d.turns.push(makeTurn("tool", [resultBlock("c1", "Wrote 1 file(s)", { doc: { url: "automerge:tally", name: "tally", kind: "package" } })]))
+    })
+    const { element, cleanup } = mount(handle)
+    const view = element.querySelector('.agent-view[data-kind="package"]')
+    expect(view).toBeTruthy()
+    expect(view.dataset.expanded).toBe("no")
+    expect(view.querySelector(".agent-view-title").textContent).toBe("tally")
+    expect([...view.querySelectorAll("button")].map((b) => b.textContent)).toContain("Try it")
+    expect(element.querySelector(".agent-doc-chip")).toBeNull()
+    expect(element.querySelector(".agent-made")).toBeNull()
+    expect(element.querySelector(".agent-bench-pane")).toBeNull()
+    cleanup()
   })
 })

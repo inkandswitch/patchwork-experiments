@@ -70,6 +70,9 @@ export class SessionRunner {
     this.buildToolset = opts.buildToolset
     this.getProvider = opts.getProvider
     this.getKey = opts.getKey ?? (() => null)
+    // (modelId, providerId) => catalogue entry | null. Optional: without it
+    // the loop sends whatever the session's config says and caps nothing.
+    this.getModelInfo = opts.getModelInfo ?? null
     this.canRun = opts.canRun ?? ((where) => where === "worker")
     this.onEvent = opts.onEvent ?? (() => {})
     this.now = opts.now ?? (() => Date.now())
@@ -142,10 +145,23 @@ export class SessionRunner {
       const provider = await this.getProvider()
       const toolset = await this.buildToolset(this.store.doc())
 
+      // What the catalogue knows about this model. A failure here is not a
+      // reason to not run: the loop treats null as "no opinion".
+      let modelInfo = null
+      if (this.getModelInfo) {
+        try {
+          const config = this.store.doc()?.config ?? {}
+          modelInfo = await this.getModelInfo(config.model ?? null, config.providerId ?? "openrouter")
+        } catch {
+          modelInfo = null
+        }
+      }
+
       const result = await run({
         store: this.store,
         provider,
         toolset,
+        modelInfo,
         ctx: this.ctx,
         runnerUrl: this.runnerUrl,
         generation,

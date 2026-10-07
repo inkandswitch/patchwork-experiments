@@ -81,7 +81,7 @@ any participant can approve and every approval is auditable.
 | Find | `doc_search` `doc_tree` | worker |
 | Documents | `doc_read` `doc_edit` `doc_history` | worker |
 | | `doc_create` | host |
-| Folders and files | `fs_list` `fs_read` `fs_grep` `fs_write` `fs_delete` | worker |
+| Folders and files | `fs_list` `fs_read` `fs_grep` `fs_write` `fs_edit` `fs_delete` | worker |
 | Drive the front end | `view_mount` `view_inspect` `view_interact` `view_unmount` | host |
 | | `tool_check` | host |
 | Environment | `registry_list` `plugin_source` `dom_snapshot` `view_open` | host |
@@ -106,6 +106,22 @@ the package that needs it.
 document — automerge keeps it, and its history — so a package that has been
 restructured stops shipping its abandoned files while a mistake stays
 recoverable. Renaming is this plus `fs_write`.
+
+`fs_edit` exists because of a session that did not end. The model had found a
+one-line bug in a 500-line file, and `fs_write`'s description told it that for
+a small edit it should prefer `doc_edit` with a splice range — which takes
+character offsets. Nothing in the toolset produces a character offset:
+`fs_grep` gives line numbers, `fs_read` gives numbered lines, `doc_read` pages
+by character but leaves the counting to the reader. The model saw that the
+recommended path was impossible and the workable one discouraged, and spent
+sixty seconds and seven thousand characters of reasoning oscillating between
+them until someone pressed Stop. The rule that came out of it: **every value a
+tool asks for must be something another tool hands back.** Text and line
+numbers are; offsets are not. So `fs_edit` (and `doc_edit`'s `find`) take the
+old text and the new, and compute the splice themselves — the merge-friendly
+edit the recommendation was reaching for, without the arithmetic. `fs_write`
+over an existing file now splices only the characters that differ, so the
+fallback is fine too.
 
 There is deliberately **no tool for writing a tool**. A Patchwork tool is a
 folder of files, so writing one is `fs_write`; installing one is `doc_edit` on
@@ -265,6 +281,25 @@ other method, anything with a body still asks every time.
 And the approval card no longer offers standing grants for a call that will
 ignore them. Offering a button that does nothing is worse than offering none.
 
+**What a call is about is the tool's to say.** One rule used to decide the
+document a grant was scoped to, for every tool: `input.url`, else `input.root`,
+else the session's subject. It was wrong for most tools, and wrong on the card.
+A `web_search` has no url, so it was "about" whatever document the session was
+open on; its card offered "this document" and "any document", and "any
+document" — chosen by someone who thought they were answering a question about
+a search — wrote `web@*`, which is every site for every web tool. `fs_write` by
+path was "about" the subject too, though it writes wherever the path says, and
+`doc_create`, `view_interact` and others likewise. Now each tool declares
+`target` (plain JSON, so a plugin can too): the fields that name what it acts
+on, in order, and whether it falls back to the subject. Only `doc_read`,
+`doc_edit` and `doc_history` do, because their `url` really does default to it.
+A tool that declares nothing is about its `url` or `root` and otherwise about
+nothing, which yields an honest "always" rather than a misattributed "this
+document". A root is offered as "this folder — anything inside it", and the
+broad button's tooltip says what the group grant actually covers. The file
+tools (`fs_write`, `fs_edit`, `fs_delete`) share a `files` group the way the web
+tools share `web`; grants written under the old per-tool keys still match.
+
 Grants live on the session document, so they are per-conversation, auditable in
 its history, and any participant can approve.
 
@@ -387,7 +422,7 @@ described in the system prompt, read in full on demand.
 |---|---|
 | `writing-patchwork-tools` | the plugin shape, the render contract, and the four mistakes actually made |
 | `driving-a-view` | mount → interact → inspect → unmount, and what it does not simulate |
-| `editing-documents` | `doc_edit`'s op vocabulary, and text splices that merge |
+| `editing-documents` | `doc_edit`'s op vocabulary, and why text edits anchor on text (`find`, `fs_edit`) rather than offsets |
 | `working-with-the-web` | which of the four outside-world tools to reach for |
 | `finding-things` | how to orient in a Patchwork you have not seen |
 
@@ -405,11 +440,25 @@ harness.
 
 ## What a session makes, and installing it
 
-Every document a tool creates is recorded on the session and shown in a strip
-under the header: newest first, one click to open, and for a package the install
-controls right there. Before, a created document was reachable from the tool
-result that made it and from nowhere else, so six calls later the thing you
-asked for was above the scroll, identified by fifty characters of base58.
+Every document a call makes or opens appears **in the transcript, beside that
+call**: a document with a Show button that opens it in its tool right there, a
+package with Try it and its install controls, and the agent's own `view_mount`
+adopted live so watching the agent work is reading the transcript. A person's
+mount goes through the same loader as the agent's, so a package renders
+installed or not.
+
+Two things went away for this. A strip under the header listed "things made
+here", and a workbench pane between the transcript and the composer showed what
+the agent had mounted. Both were somewhere other than where the thing was
+talked about, and both had to be found. What a call produced now sits under the
+call, and scrolls with it.
+
+One thing does not happen: a package the agent just wrote is not run until a
+person clicks. The agent's mounts were granted; a person's are asked for by the
+button. The view is persistent across re-renders — the transcript rebuilds on
+every change, and a running tool must not be torn down because someone typed —
+so the header is redrawn and the body is moved. Collapsing a view keeps it
+running; the agent can still drive and screenshot it.
 
 Installing offers two things, because a tool under development and a tool you
 are happy with want different ones:
@@ -420,7 +469,7 @@ are happy with want different ones:
 | **Pin this version** | `automerge:<id>#<heads>` | frozen at exactly this version |
 
 Pinning is how you promote one version: keep using it while the agent goes on
-experimenting, and a later edit cannot change what you installed. The strip says
+experimenting, and a later edit cannot change what you installed. The header says
 which is in force and warns when a pin has fallen **behind** what the package has
 since become — the question a pin creates and nothing else answers, whose only
 other symptom is edits that appear to do nothing. Heads are compared as a set,
@@ -464,13 +513,13 @@ chart beside its controls comes out whole.
 `tool_check` and `view_mount` attach one automatically, so "does it look right"
 is answered without the agent having to think to ask.
 
-A mounted view also renders into a **workbench** between the transcript and the
-composer, so you watch the agent work rather than take its word for it. Mounting
-used to happen ten thousand pixels off to the left, always: the agent could see
-the tool and the person who asked for it could not. Off-screen remains the
-fallback for when no view is attached — and it is off-screen rather than
-`display: none` because a hidden container reports zero sizes, and a tool that
-measures itself would behave differently there than in front of a person.
+A mounted view also renders in the transcript beside the call that opened it,
+so you watch the agent work rather than take its word for it. Mounting used to
+happen ten thousand pixels off to the left, always: the agent could see the
+tool and the person who asked for it could not. Off-screen is still where a
+mount lives when no view has adopted it — off-screen rather than `display: none`
+because a hidden container reports zero sizes, and a tool that measures itself
+would behave differently there than in front of a person.
 
 Images are downscaled and re-encoded as JPEG, and only the **two most recent**
 travel in a request — an image costs context on every subsequent turn, not just
@@ -526,6 +575,32 @@ meaning and should travel with it.
 
 Paste a key into the panel's settings (the button showing the model name).
 
+**No sampling parameters are hardcoded.** `DEFAULT_CONFIG` used to set
+`temperature: 0` for every model. That is a preference from one model family,
+and for open-weight reasoning models it is the textbook cause of verbatim
+thinking loops — Xiaomi's own guidance for MiMo is temperature 1.0, top_p 0.95
+and a repetition penalty. Now a knob the session does not set is not sent, so
+each model runs at the values its authors recommend and the provider applies.
+The catalogue carries what OpenRouter publishes per model (`default_parameters`,
+`supported_parameters`, `top_provider.max_completion_tokens`), and the runner
+hands the loop that entry: a knob set in `config.params` that the model does
+not take is dropped rather than sent, `maxTokens` is capped at what the model
+can produce (the truncation recovery respects the same ceiling), and the
+settings panel shows the defaults in effect and what the session overrides.
+Anything set in `config.params` remains an explicit override that travels with
+the session.
+
+**A model that repeats itself is stopped.** The truncation recovery assumes a
+turn that ran out of budget needed more of it. A model stuck in a thinking loop
+needs the opposite, and it would otherwise run to the limit and then be told to
+continue. So `streamTurn` watches the turn's own prose, and when the last 240
+characters have already appeared verbatim earlier in the turn (with a
+vocabulary check so a table's padding does not count) it abandons the stream,
+keeps what was said, and tells the model once to take the simplest option and
+call a tool. A second loop ends the run with an error that names the knobs to
+change. Provider-agnostic on purpose: it is the same signal whichever model or
+sampling produced it. `repeatWindow: 0` turns it off.
+
 The model picker lists **every model OpenRouter offers** — 445 at the time of
 writing, 377 of which support tool use — with context size and price per
 million, filtered as you type. The catalogue is cached per device for a day and
@@ -567,7 +642,7 @@ It also asserts on things a unit test cannot reach:
 | `--expect-moves-on` | it acknowledged a refusal once and then dropped it |
 | `--expect-made` | it recorded what it built, including a package |
 | `--expect-named` | the agent named the session after the work, and the header shows it |
-| `--install-after "Pin this version"` | clicks that button in the strip and checks the module list |
+| `--install-after "Pin this version"` | clicks that button on the package's inline view and checks the module list |
 | `--max-answers 0` | leave a question unanswered, to look at the card |
 | `--unmount-after MS` | the view is torn down mid-turn and the work still finishes |
 | `--shot FILE` | writes a picture of the finished transcript |

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { renderMade, iconFor, isPackage } from "./ui/made.js"
+import { createInlineViews, iconFor, isPackage, wantsInstall } from "./ui/views.js"
 import { installState, moduleUrlFor, splitModuleUrl, applyInstall, applyUninstall, shortHeads, pinIsBehind } from "./ui/install.js"
 import { initSession, recordArtifact, artifacts, MAX_ARTIFACTS } from "./session.js"
 
@@ -115,99 +115,6 @@ describe("the installed module list", () => {
   })
 })
 
-describe("the strip of what was made", () => {
-  const state = (over = {}) => ({ madeOpen: true, settings: null, ...over })
-
-  function render(made, over = {}, handlers = {}) {
-    const doc = {}
-    initSession(doc, {})
-    doc.made = made
-    const container = document.createElement("div")
-    renderMade(container, doc, state(over), handlers)
-    return container
-  }
-
-  it("stays out of the way when nothing has been made", () => {
-    const container = render([])
-    expect(container.hidden).toBe(true)
-    expect(container.children).toHaveLength(0)
-  })
-
-  it("names the newest thing even when the list is closed", () => {
-    const container = render(
-      [{ url: "automerge:a", name: "tally", kind: "package" }, { url: "automerge:b", name: "notes.md", kind: "file" }],
-      { madeOpen: false }
-    )
-    expect(container.querySelector(".agent-made-latest").textContent).toBe("tally")
-    expect(container.querySelector(".agent-made-list")).toBeNull()
-    expect(container.querySelector(".agent-made-toggle").textContent).toContain("2 things made here")
-  })
-
-  it("opens a document when its row is clicked", () => {
-    const opened = []
-    const container = render([{ url: "automerge:a", name: "tally", kind: "package" }], {}, { openDoc: (u) => opened.push(u) })
-    container.querySelector(".agent-made-open").click()
-    expect(opened).toEqual(["automerge:a"])
-  })
-
-  it("offers install and pin for a package that is not installed", () => {
-    const container = render([{ url: "automerge:a", name: "tally", kind: "package" }], { settings: { modules: [] } })
-    expect([...container.querySelectorAll(".agent-made-actions button")].map((b) => b.textContent)).toEqual([
-      "Install",
-      "Pin this version",
-    ])
-  })
-
-  it("shows the installed version and how to change it", () => {
-    const container = render([{ url: "automerge:a", name: "tally", kind: "package" }], {
-      settings: { modules: ["automerge:a#abcdefghij"] },
-    })
-    expect(container.querySelector(".agent-made-state").textContent).toBe("installed @ abcdefg")
-    expect([...container.querySelectorAll(".agent-made-actions button")].map((b) => b.textContent)).toEqual([
-      "Follow edits",
-      "Remove",
-    ])
-  })
-
-  it("says live when it is not pinned", () => {
-    const container = render([{ url: "automerge:a", name: "tally", kind: "package" }], {
-      settings: { modules: ["automerge:a"] },
-    })
-    expect(container.querySelector(".agent-made-state").textContent).toBe("installed · live")
-    expect([...container.querySelectorAll(".agent-made-actions button")].map((b) => b.textContent)).toEqual([
-      "Pin this version",
-      "Remove",
-    ])
-  })
-
-  it("asks to pin at the version current when you click, not when it was made", () => {
-    const asked = []
-    const container = render(
-      [{ url: "automerge:a", name: "tally", kind: "package" }],
-      { settings: { modules: [] } },
-      { install: (a, opts) => asked.push([a.url, opts]) }
-    )
-    container.querySelectorAll(".agent-made-actions button")[1].click()
-    expect(asked).toEqual([["automerge:a", { heads: "current" }]])
-  })
-
-  it("offers nothing to install for an ordinary document", () => {
-    const container = render([{ url: "automerge:a", name: "notes.md", kind: "file" }], { settings: { modules: [] } })
-    expect(container.querySelector(".agent-made-actions")).toBeNull()
-    expect(isPackage({ kind: "file" })).toBe(false)
-  })
-
-  it("hides the install controls when the settings document is unreadable", () => {
-    const container = render([{ url: "automerge:a", name: "tally", kind: "package" }], { settings: null })
-    expect(container.querySelector(".agent-made-actions")).toBeNull()
-  })
-
-  it("has an icon for every kind, including ones it has not heard of", () => {
-    expect(iconFor("package")).toBe("📦")
-    expect(iconFor("nonsense")).toBe("📄")
-  })
-})
-
 describe("a pinned version that has fallen behind", () => {
   it("knows when the package has moved on", () => {
     expect(pinIsBehind("a|b", ["a", "b"])).toBe(false)
@@ -224,19 +131,12 @@ describe("a pinned version that has fallen behind", () => {
   })
 
   it("offers to update, and says so, when the pin is stale", () => {
-    const doc = {}
-    initSession(doc, {})
-    doc.made = [{ url: "automerge:a", name: "tally", kind: "package" }]
-    const container = document.createElement("div")
-    renderMade(
-      container,
-      doc,
-      { madeOpen: true, settings: { modules: ["automerge:a#oldhead"] }, heads: { "automerge:a": ["newhead"] } },
-      {}
-    )
-
-    expect(container.querySelector(".agent-made-state").textContent).toContain("behind")
-    expect([...container.querySelectorAll(".agent-made-actions button")].map((b) => b.textContent)).toEqual([
+    const views = createInlineViews({})
+    const state = { open: new Set(), settings: { modules: ["automerge:a#oldhead"] }, heads: { "automerge:a": ["newhead"] } }
+    const node = views.elementFor({ id: "c1" }, { doc: { url: "automerge:a", name: "tally", kind: "package" } }, state)
+    expect(node.querySelector(".agent-view-state").textContent).toContain("behind")
+    expect([...node.querySelectorAll(".agent-view-actions button")].map((b) => b.textContent)).toEqual([
+      "Try it",
       "Update to current",
       "Follow edits",
       "Remove",
@@ -244,18 +144,11 @@ describe("a pinned version that has fallen behind", () => {
   })
 
   it("stays quiet when the pin is current", () => {
-    const doc = {}
-    initSession(doc, {})
-    doc.made = [{ url: "automerge:a", name: "tally", kind: "package" }]
-    const container = document.createElement("div")
-    renderMade(
-      container,
-      doc,
-      { madeOpen: true, settings: { modules: ["automerge:a#h1"] }, heads: { "automerge:a": ["h1"] } },
-      {}
-    )
-    expect(container.querySelector(".agent-made-state").textContent).not.toContain("behind")
-    expect(container.querySelector('[data-variant="primary"]')).toBeNull()
+    const views = createInlineViews({})
+    const state = { open: new Set(), settings: { modules: ["automerge:a#h1"] }, heads: { "automerge:a": ["h1"] } }
+    const node = views.elementFor({ id: "c1" }, { doc: { url: "automerge:a", name: "tally", kind: "package" } }, state)
+    expect(node.querySelector(".agent-view-state").textContent).not.toContain("behind")
+    expect([...node.querySelectorAll("button")].map((b) => b.textContent)).not.toContain("Update to current")
   })
 })
 
@@ -273,9 +166,162 @@ describe("sessions written before any of this existed", () => {
     expect(artifacts(doc)).toHaveLength(1)
   })
 
-  it("renders as an empty, hidden strip", () => {
+  it("wants nothing installed", () => {
+    expect(wantsInstall(artifacts(legacy()), { modules: [] })).toBe(false)
+  })
+})
+
+describe("a call's document, package or mount, inline in the transcript", () => {
+  const ref = { url: "automerge:a", name: "tally", kind: "package" }
+  const state = (over = {}) => ({ open: new Set(), settings: null, heads: {}, ...over })
+
+  it("shows nothing for a call that made nothing", () => {
+    const views = createInlineViews({})
+    expect(views.elementFor({ id: "c1" }, { output: "ok" }, state())).toBeNull()
+    expect(views.elementFor({ id: "c1" }, null, state())).toBeNull()
+  })
+
+  it("names the thing, opens it on click, and offers to try a package rather than running it unasked", () => {
+    const opened = []
+    const views = createInlineViews({ openDoc: (u) => opened.push(u) })
+    const node = views.elementFor({ id: "c1" }, { doc: ref }, state())
+    expect(node.dataset.kind).toBe("package")
+    expect(node.dataset.expanded).toBe("no") // nothing runs until a person clicks
+    expect(node.querySelector(".agent-view-title").textContent).toBe("tally")
+    node.querySelector(".agent-view-name").click()
+    expect(opened).toEqual(["automerge:a"])
+    expect([...node.querySelectorAll(".agent-view-actions button")].map((b) => b.textContent)).toEqual(["Try it"])
+  })
+
+  it("says Show for a document and Try it for a package", () => {
+    const views = createInlineViews({})
+    const doc = views.elementFor({ id: "c1" }, { doc: { url: "automerge:d", name: "notes.md", kind: "file" } }, state())
+    expect(doc.querySelector(".agent-view-actions button").textContent).toBe("Show")
+  })
+
+  it("mounts for a person through the same loader, and hides again", async () => {
+    const mounted = []
+    let cleaned = 0
     const container = document.createElement("div")
-    renderMade(container, legacy(), { madeOpen: true }, {})
-    expect(container.hidden).toBe(true)
+    const views = createInlineViews({
+      mountForPerson: async (input) => {
+        mounted.push(input)
+        return { container, cleanup: () => cleaned++ }
+      },
+    })
+    const st = state()
+    const node = views.elementFor({ id: "c1" }, { doc: ref }, st)
+    node.querySelector(".agent-view-actions button").click()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mounted).toEqual([{ url: "automerge:a" }]) // a package mounts as itself
+
+    const again = views.elementFor({ id: "c1" }, { doc: ref }, st)
+    expect(again).toBe(node) // persistent: the running tool is not re-created
+    expect(again.dataset.expanded).toBe("yes")
+    expect(again.querySelector(".agent-view-body").firstElementChild).toBe(container)
+    expect([...again.querySelectorAll(".agent-view-actions button")].map((b) => b.textContent)).toEqual(["Hide", "Collapse"])
+
+    again.querySelector(".agent-view-actions button").click()
+    expect(cleaned).toBe(1)
+    expect(views.elementFor({ id: "c1" }, { doc: ref }, st).dataset.expanded).toBe("no")
+  })
+
+  it("a document mounts by docUrl", async () => {
+    const mounted = []
+    const views = createInlineViews({
+      mountForPerson: async (input) => {
+        mounted.push(input)
+        return { container: document.createElement("div"), cleanup() {} }
+      },
+    })
+    const node = views.elementFor({ id: "c1" }, { doc: { url: "automerge:d", name: "n", kind: "document" } }, state())
+    node.querySelector(".agent-view-actions button").click()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(mounted).toEqual([{ docUrl: "automerge:d" }])
+  })
+
+  it("reports a mount that failed instead of leaving a dead button", async () => {
+    const views = createInlineViews({ mountForPerson: async () => { throw new Error("PROBLEM mounting threw: boom\nmore") } })
+    const st = state()
+    const node = views.elementFor({ id: "c1" }, { doc: ref }, st)
+    node.querySelector(".agent-view-actions button").click()
+    await new Promise((r) => setTimeout(r, 0))
+    const after = views.elementFor({ id: "c1" }, { doc: ref }, st)
+    expect(after.querySelector(".agent-view-error").textContent).toBe("PROBLEM mounting threw: boom")
+    expect(after.querySelector(".agent-view-actions button").textContent).toBe("Try it")
+  })
+
+  it("adopts the agent's live mount beside the call that opened it, expanded, and lets it go when it closes", () => {
+    const container = document.createElement("div")
+    let live = { container, toolId: "tally" }
+    const views = createInlineViews({
+      mountIdIn: (output) => String(output ?? "").match(/mountId: (mount_\w+)/)?.[1] ?? null,
+      getMount: (id) => (id === "mount_ab12" ? live : null),
+    })
+    const st = state()
+    const result = { output: "Mounted without throwing.\nmountId: mount_ab12 — use view_interact" }
+    const node = views.elementFor({ id: "c1", tool: "view_mount" }, result, st)
+    expect(node.dataset.kind).toBe("mount")
+    expect(node.dataset.expanded).toBe("yes")
+    expect(node.querySelector(".agent-view-body").firstElementChild).toBe(container)
+    expect(node.querySelector(".agent-view-title").textContent).toBe("tally · open")
+    // Collapsing keeps it running; the agent can still drive and screenshot it.
+    node.querySelector(".agent-view-actions button").click()
+    expect(views.elementFor({ id: "c1" }, result, st).dataset.expanded).toBe("no")
+    expect(container.parentElement).toBe(node.querySelector(".agent-view-body"))
+
+    live = null // view_unmount ran
+    const closed = views.elementFor({ id: "c1" }, result, st)
+    expect(closed.querySelector(".agent-view-state").textContent).toBe("closed")
+    expect(closed.querySelector(".agent-view-body").childElementCount).toBe(0)
+  })
+
+  it("parks the agent's mounts and tears down a person's when the view goes away", async () => {
+    const parked = []
+    let cleaned = 0
+    const agents = document.createElement("div")
+    const views = createInlineViews({
+      mountIdIn: (output) => (/mount_x/.test(String(output ?? "")) ? "mount_x" : null),
+      getMount: (id) => (id === "mount_x" ? { container: agents } : null),
+      parkMount: (c) => parked.push(c),
+      mountForPerson: async () => ({ container: document.createElement("div"), cleanup: () => cleaned++ }),
+    })
+    const st = state()
+    views.elementFor({ id: "c1" }, { output: "mountId: mount_x" }, st)
+    const person = views.elementFor({ id: "c2" }, { doc: ref }, st)
+    person.querySelector(".agent-view-actions button").click()
+    await new Promise((r) => setTimeout(r, 0))
+
+    views.dispose()
+    expect(parked).toEqual([agents])
+    expect(cleaned).toBe(1)
+  })
+
+  it("hides the install controls when the settings document is unreadable, and shows them when it is not", () => {
+    const views = createInlineViews({})
+    const none = views.elementFor({ id: "c1" }, { doc: ref }, state({ settings: null }))
+    expect([...none.querySelectorAll(".agent-view-actions button")].map((b) => b.textContent)).toEqual(["Try it"])
+    const some = views.elementFor({ id: "c2" }, { doc: ref }, state({ settings: { modules: [] } }))
+    expect([...some.querySelectorAll(".agent-view-actions button")].map((b) => b.textContent)).toEqual([
+      "Try it",
+      "Install",
+      "Pin this version",
+    ])
+    const installed = views.elementFor({ id: "c3" }, { doc: ref }, state({ settings: { modules: ["automerge:a"] } }))
+    expect(installed.querySelector(".agent-view-state").textContent).toBe("installed · live")
+  })
+
+  it("asks to pin at the version current when you click, not when it was made", () => {
+    const asked = []
+    const views = createInlineViews({ install: (a, opts) => asked.push([a.url, opts]) })
+    const node = views.elementFor({ id: "c1" }, { doc: ref }, state({ settings: { modules: [] } }))
+    ;[...node.querySelectorAll(".agent-view-actions button")].find((b) => b.textContent === "Pin this version").click()
+    expect(asked).toEqual([["automerge:a", { heads: "current" }]])
+  })
+
+  it("has an icon for every kind, including ones it has not heard of", () => {
+    expect(iconFor("package")).toBe("📦")
+    expect(iconFor("nonsense")).toBe("📄")
+    expect(isPackage({ kind: "file" })).toBe(false)
   })
 })

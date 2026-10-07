@@ -105,7 +105,26 @@ export function toOpenAITools(tools = []) {
   }))
 }
 
-export function buildBody({ system, messages, tools, model, params = {}, dropImages = false }) {
+/**
+ * Our parameter names against OpenRouter's. Both spellings are accepted in a
+ * session's `config.params`, since people edit that document by hand.
+ */
+const KNOBS = [
+  ["temperature", "temperature"],
+  ["topP", "top_p"],
+  ["topK", "top_k"],
+  ["minP", "min_p"],
+  ["repetitionPenalty", "repetition_penalty"],
+  ["frequencyPenalty", "frequency_penalty"],
+  ["presencePenalty", "presence_penalty"],
+  ["seed", "seed"],
+]
+
+/**
+ * `capabilities` is what the catalogue knows about this model, when it knows
+ * anything: { supports: [param names] | null, maxOutput: number | null }.
+ */
+export function buildBody({ system, messages, tools, model, params = {}, dropImages = false, capabilities = null }) {
   const body = {
     model,
     messages: toOpenAIMessages(system, messages, { dropImages }),
@@ -113,8 +132,24 @@ export function buildBody({ system, messages, tools, model, params = {}, dropIma
   }
   const t = toOpenAITools(tools)
   if (t) body.tools = t
-  if (params.temperature != null) body.temperature = params.temperature
-  if (params.maxTokens != null) body.max_tokens = params.maxTokens
+
+  // Only what was chosen goes on the wire. A knob the session leaves unset is
+  // not sent, so the model runs at the values its authors recommend and the
+  // provider applies — which differ per model (Claude 1.0; MiMo 1.0 and top_p
+  // 0.95, with a repetition penalty; others again) and which this file should
+  // not have to know. A knob the catalogue says the model does not take is
+  // dropped rather than sent, since some upstreams reject the whole request
+  // over one.
+  const supports = (name) => !Array.isArray(capabilities?.supports) || capabilities.supports.includes(name)
+  for (const [ours, theirs] of KNOBS) {
+    const value = params[ours] ?? params[theirs]
+    if (value != null && supports(theirs)) body[theirs] = value
+  }
+  if (params.maxTokens != null) {
+    // Asking for more than the model can produce is a 400 on some upstreams.
+    const ceiling = capabilities?.maxOutput
+    body.max_tokens = ceiling ? Math.min(params.maxTokens, ceiling) : params.maxTokens
+  }
 
   // Reasoning models spend the SAME output budget on thinking as on the answer,
   // so a model that thinks for five thousand tokens can exhaust the turn before
@@ -123,7 +158,7 @@ export function buildBody({ system, messages, tools, model, params = {}, dropIma
   //   { effort: "low" }      think less
   //   { max_tokens: 1024 }   think at most this much
   //   { exclude: true }      think, but do not stream it back
-  if (params.reasoning != null) body.reasoning = params.reasoning
+  if (params.reasoning != null && supports("reasoning")) body.reasoning = params.reasoning
   return body
 }
 
@@ -250,6 +285,14 @@ async function* readBody(response) {
       yield decoder.decode(value, { stream: true })
     }
   } finally {
+    // The loop may stop reading early — a model caught repeating itself, say.
+    // Cancel so the connection closes rather than streaming tokens into a
+    // generator nobody is iterating.
+    try {
+      await reader.cancel()
+    } catch {
+      /* already closed */
+    }
     reader.releaseLock?.()
   }
 }
@@ -284,6 +327,7 @@ export async function* stream({
   tools,
   model,
   params,
+  capabilities = null,
   key,
   signal,
   fetchImpl = fetch,
@@ -295,7 +339,8 @@ export async function* stream({
   // Whether to include screenshots. Starts from what the caller believes and
   // is turned off for good the moment the provider says otherwise.
   let withImages = params?.images !== false
-  const render = () => JSON.stringify(buildBody({ system, messages, tools, model, params, dropImages: !withImages }))
+  const render = () =>
+    JSON.stringify(buildBody({ system, messages, tools, model, params, capabilities, dropImages: !withImages }))
 
   let body = render()
   let lastError = null
@@ -393,8 +438,29 @@ export async function models({ key, fetchImpl = fetch } = {}) {
       // the WHOLE request with a 404, not just the image, so it is not an
       // optional nicety — see the note on stream().
       images: (model.architecture?.input_modalities ?? []).includes("image"),
+      // What the model's authors recommend, which parameters it takes, and the
+      // most it can emit in one turn. This is how the harness avoids hardcoding
+      // per-model sampling: unset knobs are left to these defaults, set ones
+      // are filtered against `supports`, and maxTokens is capped at `maxOutput`.
+      defaults: pickDefaults(model.default_parameters),
+      supports: Array.isArray(model.supported_parameters) ? model.supported_parameters : null,
+      maxOutput: model.top_provider?.max_completion_tokens ?? null,
     }))
     .sort((a, b) => a.id.localeCompare(b.id))
+}
+
+/** The recommended sampling values the catalogue lists — numbers only; null means "no opinion". */
+function pickDefaults(raw) {
+  const out = {}
+  for (const [name, value] of Object.entries(raw ?? {})) if (typeof value === "number") out[name] = value
+  return out
+}
+
+/** "temperature 1 · top_p 0.95", or "" when the catalogue has no opinion. */
+export function describeDefaults(model) {
+  return Object.entries(model?.defaults ?? {})
+    .map(([name, value]) => `${name} ${value}`)
+    .join(" · ")
 }
 
 /** One line for a picker: what it is, how big, what it costs. */
@@ -409,4 +475,4 @@ export function describeModel(model) {
   return parts.join(" · ")
 }
 
-export default { id, name, stream, models, describeModel, SUGGESTED_MODELS }
+export default { id, name, stream, models, describeModel, describeDefaults, SUGGESTED_MODELS }

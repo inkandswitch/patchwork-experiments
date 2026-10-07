@@ -98,7 +98,9 @@ describe("asking a question", () => {
     const toolTurn = doc.turns.at(-1)
     expect(toolTurn.role).toBe("tool")
     expect(toolTurn.author).toBe("automerge:me")
-    expect(toolTurn.blocks[0]).toMatchObject({ type: "result", callId, output: "Grid" })
+    expect(toolTurn.blocks[0]).toMatchObject({ type: "result", callId })
+    // Stored frozen; line 119 below checks it reaches the provider as a plain string.
+    expect(String(toolTurn.blocks[0].output)).toBe("Grid")
 
     // …and there is work again.
     expect(needsWork(doc, () => true)).toBe(true)

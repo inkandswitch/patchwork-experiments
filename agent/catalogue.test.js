@@ -1,13 +1,16 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { describeModel } from "./providers/openrouter.js"
-import { readCatalogue, writeCatalogue, loadCatalogue } from "./providers/index.js"
+import { readCatalogue, writeCatalogue, loadCatalogue, modelInfo, _resetModelInfo } from "./providers/index.js"
 
 const MODELS = [
   { id: "anthropic/claude-opus-4.1", label: "Claude Opus 4.1", context: 200000, promptPerM: 15, tools: true },
   { id: "meta/free-thing", label: "Free Thing", context: 8000, promptPerM: 0, tools: false },
 ]
 
-beforeEach(() => localStorage.clear())
+beforeEach(() => {
+  localStorage.clear()
+  _resetModelInfo()
+})
 
 describe("describeModel", () => {
   it("says what it is, how big, and what it costs", () => {
@@ -81,5 +84,33 @@ describe("loadCatalogue", () => {
     } finally {
       globalThis.fetch = originalFetch
     }
+  })
+})
+
+describe("modelInfo", () => {
+  const WITH_INFO = [
+    { ...MODELS[0], supports: ["temperature", "tools"], maxOutput: 32000, defaults: { temperature: 1 } },
+    { ...MODELS[1], supports: null, maxOutput: null, defaults: {} },
+  ]
+
+  it("answers from a fresh cache without touching the network", async () => {
+    writeCatalogue("openrouter", WITH_INFO)
+    const info = await modelInfo("openrouter", "anthropic/claude-opus-4.1")
+    expect(info.supports).toEqual(["temperature", "tools"])
+    expect(info.maxOutput).toBe(32000)
+  })
+
+  it("has no opinion about a model it has never heard of, or no model at all", async () => {
+    writeCatalogue("openrouter", WITH_INFO)
+    expect(await modelInfo("openrouter", "brand/new-this-morning")).toBeNull()
+    expect(await modelInfo("openrouter", null)).toBeNull()
+  })
+
+  it("remembers what it found, so a worker does not refetch every turn", async () => {
+    writeCatalogue("openrouter", WITH_INFO)
+    const first = await modelInfo("openrouter", "anthropic/claude-opus-4.1")
+    localStorage.clear()
+    const second = await modelInfo("openrouter", "anthropic/claude-opus-4.1")
+    expect(second).toBe(first)
   })
 })

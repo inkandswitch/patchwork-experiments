@@ -494,9 +494,7 @@
   height: 100%;
 }
 
-/* The second pane: the subject document, in the pop-out only. The workbench
-   used to live here too, until it turned out this pane does not exist at
-   sidebar widths. */
+/* The second pane: the subject document, in the pop-out only. */
 .patchwork-agent .agent-subject-view {
   display: none;
   min-height: 0;
@@ -505,64 +503,12 @@
   flex-direction: column;
 }
 
-/* The workbench pane: its own box, wherever it was placed. */
-.patchwork-agent .agent-bench-pane { display: none; flex-direction: column; min-height: 0; }
-.patchwork-agent[data-bench="on"] .agent-bench-pane { display: flex; }
-
-/* At most half the column, so opening a view never buries the conversation. */
-.patchwork-agent .agent-bench-pane {
-  flex: 0 1 auto;
-  max-height: 45%;
-  border-top: 1px solid var(--agent-border);
-}
-
 .patchwork-agent .agent-subject-pane { display: block; height: 100%; min-height: 0; }
 
 .patchwork-agent .agent-subject-view patchwork-view {
   display: block;
   height: 100%;
 }
-
-/* ---- The workbench: what the agent has open -------------------------- */
-
-.patchwork-agent .agent-bench-header { display: flex; }
-.patchwork-agent .agent-bench {
-  display: flex;
-  flex-direction: column;
-  gap: var(--studio-space-xs, 0.375rem);
-  /* Takes half when it shares with the subject, all of it when alone. */
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: var(--studio-space-xs, 0.375rem);
-}
-
-.patchwork-agent .agent-bench-header {
-  align-items: center;
-  gap: var(--studio-space-xs, 0.375rem);
-  padding: var(--studio-space-2xs, 0.25rem) var(--studio-space-xs, 0.375rem);
-  border-bottom: 1px solid var(--agent-border);
-  background: var(--agent-surface);
-  font-size: 0.72rem;
-  color: var(--agent-muted);
-  flex: 0 0 auto;
-}
-
-/* Each mounted tool gets a real box with a real size, because a tool that
-   measures itself must see what it will see in front of a person. */
-.patchwork-agent .agent-bench-mount {
-  border: 1px solid var(--agent-border);
-  border-radius: var(--studio-radius-sm, 4px);
-  background: var(--agent-bg);
-  min-height: 200px;
-  height: 100%;
-  overflow: auto;
-  flex: 1 1 auto;
-  position: relative;
-}
-
-/* More than one open: they share, rather than the first one taking everything. */
-.patchwork-agent .agent-bench-mount + .agent-bench-mount { margin-top: 0; }
 
 /* ---- Markdown ---------------------------------------------------------- */
 
@@ -857,108 +803,6 @@
 /* A call waiting on a person should not look like one that is running. */
 .patchwork-agent .agent-call[data-status="asking"] > summary { color: var(--agent-accent-text); }
 
-/* ---- What this session made ------------------------------------------ */
-
-.patchwork-agent .agent-made {
-  border-bottom: 1px solid var(--agent-border);
-  background: var(--agent-surface);
-  flex: 0 0 auto;
-}
-
-.patchwork-agent .agent-made[hidden] { display: none; }
-
-/* One line when closed: a transcript in a sidebar cannot spare more. */
-.patchwork-agent .agent-made-toggle {
-  display: flex;
-  align-items: baseline;
-  gap: var(--studio-space-xs, 0.375rem);
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: var(--studio-space-2xs, 0.25rem) var(--studio-space-xs, 0.375rem);
-  font-size: 0.74rem;
-  color: var(--agent-muted);
-  cursor: pointer;
-  text-align: left;
-}
-
-.patchwork-agent .agent-made-toggle:hover { color: var(--agent-fg); }
-.patchwork-agent .agent-made-caret { color: var(--agent-faint); }
-
-/* The newest thing, named even when the list is shut — it is what you want. */
-.patchwork-agent .agent-made-latest {
-  color: var(--agent-fg);
-  font-family: var(--agent-family-code);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.patchwork-agent .agent-made-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 0 var(--studio-space-xs, 0.375rem) var(--studio-space-xs, 0.375rem);
-  max-height: 14rem;
-  overflow: auto;
-}
-
-.patchwork-agent .agent-made-row {
-  display: flex;
-  align-items: center;
-  gap: var(--studio-space-xs, 0.375rem);
-  flex-wrap: wrap;
-  padding: 2px 0;
-}
-
-.patchwork-agent .agent-made-open {
-  display: flex;
-  align-items: baseline;
-  gap: var(--studio-space-xs, 0.375rem);
-  border: 0;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-size: 0.78rem;
-  color: var(--agent-fg);
-  cursor: pointer;
-  min-width: 0;
-  flex: 1 1 auto;
-  text-align: left;
-}
-
-.patchwork-agent .agent-made-open:hover .agent-made-name { text-decoration: underline; }
-
-.patchwork-agent .agent-made-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A package is the one you act on, so it reads as the heavier row. */
-.patchwork-agent .agent-made-row[data-kind="package"] .agent-made-name { font-weight: 600; }
-
-.patchwork-agent .agent-made-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--studio-space-2xs, 0.25rem);
-  flex: 0 0 auto;
-}
-
-.patchwork-agent .agent-made-actions button {
-  font-size: 0.7rem;
-  padding: 1px 6px;
-}
-
-.patchwork-agent .agent-made-state {
-  font-size: 0.7rem;
-  font-family: var(--agent-family-code);
-  color: var(--agent-accent-text);
-  white-space: nowrap;
-}
-
 /* A call that will ask again however much is granted. */
 .patchwork-agent .agent-approval-note {
   font-size: 0.74rem;
@@ -967,3 +811,84 @@
   padding-top: var(--studio-space-xs, 0.375rem);
   border-top: 1px solid color-mix(in oklch, var(--agent-accent), transparent 70%);
 }
+
+.patchwork-agent .agent-setup .agent-model-defaults {
+  font-size: 11px;
+  opacity: 0.75;
+}
+.patchwork-agent .agent-setup .agent-model-defaults:empty {
+  display: none;
+}
+
+/* ---- A document, package or tool, live in the transcript ---------------- */
+
+.patchwork-agent .agent-view {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--agent-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--agent-surface);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.patchwork-agent .agent-view-header {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  flex-wrap: wrap;
+  padding: 2px var(--studio-space-xs, 0.375rem);
+  font-size: 0.76rem;
+}
+
+.patchwork-agent .agent-view-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--studio-space-xs, 0.375rem);
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--agent-fg);
+  cursor: pointer;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+.patchwork-agent .agent-view-name:disabled { cursor: default; }
+.patchwork-agent .agent-view-name:not(:disabled):hover .agent-view-title { text-decoration: underline; }
+.patchwork-agent .agent-view-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.patchwork-agent .agent-view[data-kind="package"] .agent-view-title { font-weight: 600; }
+
+.patchwork-agent .agent-view-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-2xs, 0.25rem);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.patchwork-agent .agent-view-actions button { font-size: 0.7rem; padding: 1px 6px; }
+
+.patchwork-agent .agent-view-state {
+  font-size: 0.7rem;
+  font-family: var(--agent-family-code);
+  color: var(--agent-accent-text);
+  white-space: nowrap;
+}
+.patchwork-agent .agent-view-error { font-size: 0.7rem; color: var(--agent-danger, #b3261e); }
+
+/* The running tool gets a real box with a real size, because a tool that
+   measures itself must see what it will see in front of a person. Resizable,
+   because a sidebar is narrow and a canvas wants room. */
+.patchwork-agent .agent-view-body { display: none; }
+.patchwork-agent .agent-view[data-expanded="yes"] .agent-view-body {
+  display: block;
+  height: 320px;
+  min-height: 120px;
+  resize: vertical;
+  overflow: auto;
+  border-top: 1px solid var(--agent-border);
+  background: var(--agent-bg);
+  position: relative;
+}
+.patchwork-agent .agent-view-body > .agent-mount { min-height: 100%; }

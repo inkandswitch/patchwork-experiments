@@ -63,7 +63,10 @@ export function describeOps(ops) {
   const names = []
   for (const op of ops.slice(0, 3)) {
     const range = op?.range
-    if (typeof range === "string") names.push(range)
+    if (typeof op?.find === "string") {
+      const snippet = op.find.replace(/\s+/g, " ").trim()
+      names.push(`${pathLabel(op?.path) ?? "text"} “${snippet.length > 18 ? `${snippet.slice(0, 17)}…` : snippet}”`)
+    } else if (typeof range === "string") names.push(range)
     else if (Array.isArray(range)) {
       const target = pathLabel(op?.path)
       names.push(target ? `${target}[${range[0]}…${range[1]}]` : `[${range[0]}…${range[1]}]`)
@@ -99,14 +102,21 @@ export const PRESENTATION = {
     detail: (i) => (i.pattern ? `${i.pattern}${i.include ? ` in ${i.include}` : ""}` : null),
   },
   fs_delete: { verb: "remove", detail: (i) => baseName(i.path) },
+  fs_edit: {
+    verb: "edit",
+    detail: (i) => (i.path ? baseName(i.path) : i.url ? "file" : null),
+  },
   fs_write: {
     verb: "write",
     detail: (i) => {
-      if (Array.isArray(i.files) && i.files.length) {
-        const names = i.files.slice(0, 2).map((f) => baseName(f.path))
-        return names.join(", ") + (i.files.length > 2 ? ` +${i.files.length - 2}` : "")
+      // `files` is a map of path to content. This used to expect an array and
+      // so rendered every multi-file write as "write undefined".
+      const paths = i.files && typeof i.files === "object" ? Object.keys(i.files) : []
+      if (paths.length) {
+        const names = paths.slice(0, 2).map(baseName)
+        return names.join(", ") + (paths.length > 2 ? ` +${paths.length - 2}` : "")
       }
-      return baseName(i.path)
+      return i.path ? baseName(i.path) : i.url ? "file" : null
     },
   },
 

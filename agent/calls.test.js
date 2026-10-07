@@ -87,10 +87,20 @@ describe("what each kind of call reads like", () => {
   })
 
   it("names files, not paths, when writing several", () => {
-    expect(show("fs_write", { files: [{ path: "src/a.ts" }, { path: "src/b.ts" }, { path: "src/c.ts" }] }).detail).toBe(
+    // `files` is a map of path to content — the shape the tool's schema
+    // declares. The presentation used to expect an array and rendered every
+    // multi-file write as "write undefined".
+    expect(show("fs_write", { files: { "src/a.ts": "", "src/b.ts": "", "src/c.ts": "" } }).detail).toBe(
       "a.ts, b.ts +1"
     )
     expect(show("fs_write", { path: "src/index.ts" }).detail).toBe("index.ts")
+    expect(show("fs_write", { url: "automerge:2qMVfMqBCLg7JkLaaxr6oPmr2umh", content: "x" }).detail).toBe("file")
+  })
+
+  it("names the file an edit touched, and describes a find op by its anchor", () => {
+    expect(show("fs_edit", { path: "tally/tool.js", old: "a", new: "b" }).detail).toBe("tool.js")
+    expect(show("fs_edit", { url: "automerge:2qMVfMqBCLg7JkLaaxr6oPmr2umh", old: "a" }).detail).toBe("file")
+    expect(describeOps([{ path: ["body"], find: "createElement(\"svg\")", value: "x" }])).toBe("/body “createElement(\"sv…”")
   })
 
   it("uses the action as the verb when driving a view", () => {

@@ -8,6 +8,7 @@ import {
   grantOffers,
   urlPrefixes,
   callTarget,
+  callScope,
   makeTurn,
   textBlock,
   callBlock,
@@ -19,22 +20,135 @@ import {
   _resetIds,
 } from "./session.js"
 import { decide, run } from "./loop.js"
+import { BUILTIN_TOOLS } from "./tools/index.js"
 import { makeMock } from "./providers/mock.js"
 import { memoryStore } from "./store.js"
 
 const fresh = () => { const d = {}; initSession(d, {}); return d }
-const editTool = { id: "doc_edit", risk: "write" }
+// The real doc_edit says its url defaults to the session's subject; a fake
+// that says nothing is about the url it is given and nothing else.
+const editTool = { id: "doc_edit", risk: "write", target: { fields: ["url"], fallback: "subject" } }
 
 describe("callTarget", () => {
   it("prefers an explicit url", () => {
     expect(callTarget({ input: { url: "automerge:a" } }, "automerge:subject")).toBe("automerge:a")
   })
-  it("falls back to root, then to the session subject", () => {
+  it("with no tool definition to consult, keeps the historical rule: url, root, then the subject", () => {
     expect(callTarget({ input: { root: "automerge:r" } }, "automerge:s")).toBe("automerge:r")
     expect(callTarget({ input: {} }, "automerge:s")).toBe("automerge:s")
   })
   it("is null when nothing identifies a document", () => {
     expect(callTarget({ input: {} }, null)).toBeNull()
+  })
+})
+
+describe("what a call is about is the tool's to say", () => {
+  const subject = "automerge:subject"
+
+  it("does not assume the subject for a tool that says nothing", () => {
+    expect(callTarget({ input: {} }, subject, { id: "some_plugin_tool", risk: "write" })).toBeNull()
+    expect(callTarget({ input: { url: "automerge:a" } }, subject, { id: "some_plugin_tool", risk: "write" })).toBe("automerge:a")
+  })
+
+  it("lets a tool name its fields, in order, and its fallback", () => {
+    const mount = { id: "view_mount", target: { fields: ["docUrl", "url"] } }
+    expect(callTarget({ input: { docUrl: "automerge:d", url: "automerge:pkg" } }, subject, mount)).toBe("automerge:d")
+    expect(callTarget({ input: { url: "automerge:pkg" } }, subject, mount)).toBe("automerge:pkg")
+    expect(callTarget({ input: {} }, subject, mount)).toBeNull()
+
+    const edit = { id: "doc_edit", target: { fields: ["url"], fallback: "subject" } }
+    expect(callTarget({ input: {} }, subject, edit)).toBe(subject)
+  })
+
+  it("lets a tool say it is about nothing, whatever its input", () => {
+    const search = { id: "web_search", target: "none" }
+    expect(callTarget({ input: { query: "x", url: "https://a.test/" } }, subject, search)).toBeNull()
+  })
+
+  it("knows a root is a folder and a url is a document", () => {
+    const write = { id: "fs_write", target: { fields: ["url", "root"] } }
+    expect(callScope({ input: { root: "automerge:r", path: "a/b.js" } }, subject, write)).toEqual({ target: "automerge:r", kind: "folder" })
+    expect(callScope({ input: { url: "automerge:f" } }, subject, write)).toEqual({ target: "automerge:f", kind: "document" })
+    expect(callScope({ input: { path: "a/b.js" } }, subject, write)).toEqual({ target: null, kind: null })
+  })
+
+  it("is what the real tools declare", () => {
+    const tools = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
+    const about = (id, input) => callTarget({ input }, subject, tools.get(id))
+
+    // Watched: every one of these was keyed on the subject, and the card said
+    // "this document" about a call that never touched it.
+    expect(about("web_search", { query: "petri nets" })).toBeNull()
+    expect(about("fs_write", { path: "petri/tool.js", content: "" })).toBeNull()
+    expect(about("doc_create", { datatype: "folder" })).toBeNull()
+    expect(about("view_interact", { mountId: "m1", action: "click" })).toBeNull()
+    expect(about("view_mount", { docUrl: "automerge:d" })).toBe("automerge:d")
+    expect(about("tool_check", { url: "automerge:pkg", datatype: "x" })).toBe("automerge:pkg")
+
+    // The ones that really do default to the subject still do.
+    expect(about("doc_edit", { ops: [] })).toBe(subject)
+    expect(about("doc_read", {})).toBe(subject)
+  })
+})
+
+describe("the web search that granted the web", () => {
+  // The bug in one test. A session open on a document; the model searches; the
+  // card offers "this document" and "any document"; the user, asked about a
+  // search, picks the broad one — and every web tool may now reach every site.
+  const subject = "automerge:3H3XydHzrADXYsr6AmWvzStGSrMs"
+  const tools = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
+  const toolset = { get: (id) => tools.get(id) ?? null }
+
+  it("no longer offers document scopes for a search, or writes web@* from one", () => {
+    const search = tools.get("web_search")
+    const block = callBlock("web_search", { query: "petri nets" }, { id: "c1" })
+    const { target, kind } = callScope(block, subject, search)
+    expect(target).toBeNull()
+    expect(grantOffers("web_search", target, kind ?? "document").map((o) => o.key)).toEqual(["web_search"])
+
+    const doc = fresh()
+    doc.turns.push(makeTurn("assistant", [block]))
+    const store = memoryStore(doc)
+    decide(store, "c1", "always", subject, { toolset })
+    expect(store.doc().grants).toEqual({ web_search: "always" })
+
+    const fetchTool = tools.get("web_fetch")
+    expect(needsApproval(store.doc(), fetchTool, { input: { url: "https://evil.example/x" } }, subject)).toBe(true)
+  })
+
+  it("says what 'any site' actually covers", () => {
+    const offers = grantOffers("web_fetch", "https://docs.python.org/3/library/os.html")
+    expect(offers.at(-1)).toEqual({ key: "web@*", label: "any site", detail: "every web fetch, search, import and plain GET in this session" })
+  })
+})
+
+describe("file tools share one grant", () => {
+  const tools = new Map(BUILTIN_TOOLS.map((t) => [t.id, t]))
+
+  it("an fs_write grant on a folder covers an fs_edit under it, and the old key still works", () => {
+    const doc = fresh()
+    doc.grants["files@automerge:pkg"] = "always"
+    expect(needsApproval(doc, tools.get("fs_edit"), { input: { root: "automerge:pkg", path: "a.js", old: "a", new: "b" } })).toBe(false)
+    expect(needsApproval(doc, tools.get("fs_delete"), { input: { root: "automerge:other", path: "a.js" } })).toBe(true)
+
+    const legacy = fresh()
+    legacy.grants["fs_write@*"] = "always" // written before the grouping
+    expect(needsApproval(legacy, tools.get("fs_write"), { input: { url: "automerge:f", content: "" } })).toBe(false)
+  })
+
+  it("offers folder scopes for a root, and says what 'any folder' covers", () => {
+    const offers = grantOffers("fs_write", "automerge:pkg", "folder")
+    expect(offers.map((o) => o.label)).toEqual(["this folder", "any folder"])
+    expect(offers[0].detail).toBe("anything inside automerge:pkg")
+    expect(offers[1]).toEqual({ key: "files@*", label: "any folder", detail: "every file write, edit and delete in this session" })
+  })
+
+  it("offers a plain always for a write by path, which goes wherever the path says", () => {
+    const write = tools.get("fs_write")
+    const { target, kind } = callScope({ input: { path: "petri/tool.js", content: "" } }, "automerge:subject", write)
+    expect(grantOffers("fs_write", target, kind ?? "document")).toEqual([
+      { key: "fs_write", label: "always", detail: "every fs_write call in this session" },
+    ])
   })
 })
 

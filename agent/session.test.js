@@ -1,28 +1,6 @@
+import { ImmutableString } from "@automerge/automerge"
 import { describe, it, expect, beforeEach } from "vitest"
-import {
-  DENIED_RESULT,
-  initSession,
-  makeTurn,
-  textBlock,
-  callBlock,
-  resultBlock,
-  reasoningBlock,
-  toRequest,
-  findCall,
-  findResult,
-  unansweredCalls,
-  callsAwaitingApproval,
-  runnableCalls,
-  needsApproval,
-  leaseIsLive,
-  canClaim,
-  claimLease,
-  holdsLease,
-  makeId,
-  _resetIds,
-  CALL,
-  STATUS,
-} from "./session.js"
+import { CALL, DENIED_RESULT, STATUS, _resetIds, callBlock, callsAwaitingApproval, canClaim, claimLease, findCall, findResult, holdsLease, initSession, leaseIsLive, makeId, makeTurn, needsApproval, reasoningBlock, resultBlock, runnableCalls, textBlock, toRequest, unansweredCalls } from "./session.js"
 
 const freshDoc = () => {
   const doc = {}
@@ -168,7 +146,7 @@ describe("call bookkeeping", () => {
     expect(unansweredCalls(doc)).toHaveLength(1)
     doc.turns.push(makeTurn("tool", [resultBlock("c1", "ok")]))
     expect(unansweredCalls(doc)).toHaveLength(0)
-    expect(findResult(doc, "c1").block.output).toBe("ok")
+    expect(String(findResult(doc, "c1").block.output)).toBe("ok")
   })
 
   it("separates pending from runnable", () => {
@@ -250,5 +228,41 @@ describe("the lease", () => {
     claimLease(doc, "runner-b", 99999)
     expect(holdsLease(doc, "runner-a", 1)).toBe(false)
     expect(holdsLease(doc, "runner-b", 2)).toBe(true)
+  })
+})
+
+describe("what a result costs to keep", () => {
+  // A plain string in automerge is a text CRDT — per-character structure, for
+  // collaborative editing nobody does to a tool result. Measured on this
+  // version: twelve 200kB screenshots cost 374MB resident and about a second
+  // apiece to write and to load as plain strings, against 9MB and 13ms frozen.
+  // A session with a few dozen screenshots in it was taking the browser down.
+  // This is one line in resultBlock, with no local symptom if it goes away.
+  test("output and image are stored frozen, not as editable text", () => {
+    const block = resultBlock("c1", "ok", { image: "data:image/png;base64,AAAA" })
+    expect(block.output).toBeInstanceOf(ImmutableString)
+    expect(block.image).toBeInstanceOf(ImmutableString)
+    expect(String(block.output)).toBe("ok")
+    expect(String(block.image)).toBe("data:image/png;base64,AAAA")
+  })
+
+  test("a result with no image keeps null rather than an empty frozen string", () => {
+    expect(resultBlock("c1", "ok").image).toBe(null)
+  })
+
+  // Frozen in the document, plain at the boundary: an ImmutableString is not a
+  // string to a `typeof` check or to JSON.stringify, and the provider adapters
+  // do both.
+  test("the provider is handed plain strings", () => {
+    const doc = {
+      turns: [
+        makeTurn("assistant", [{ type: "call", id: "c1", tool: "shot", input: {}, status: "done" }]),
+        makeTurn("tool", [resultBlock("c1", "ok", { image: "data:image/png;base64,AAAA" })]),
+      ],
+    }
+    const parts = toRequest(doc, { system: "" }).messages.flatMap((m) => m.content)
+    const result = parts.find((p) => p.type === "result")
+    expect(typeof result.output).toBe("string")
+    expect(typeof result.image).toBe("string")
   })
 })

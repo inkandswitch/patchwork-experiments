@@ -38,7 +38,7 @@ export const sessionRecall = {
     type: "object",
     required: ["callId"],
     properties: {
-      callId: { type: "string", description: "The id of the call whose result you want, e.g. 'c12'." },
+      callId: { type: "string", description: "The id of the call whose result you want, exactly as the elided result quotes it." },
       offset: { type: "number", description: "Start here in the stored text. Default 0." },
       limit: { type: "number", description: `How many characters. Default ${RECALL_LIMIT}.` },
     },

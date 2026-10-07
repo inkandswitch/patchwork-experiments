@@ -7,6 +7,10 @@
  *                              (characters if the target is a string, items if
  *                              it is a list). A key => ASSIGN that key, or
  *                              DELETE it when no value is supplied.
+ *   find   string              on a string target: the exact text to replace
+ *                              with `value`. It must occur exactly once. The
+ *                              splice range is computed here, so the model
+ *                              never has to count characters.
  *   value  any                 what to insert or set.
  *
  * Giving the model one edit verb instead of a per-datatype tool per document
@@ -20,6 +24,92 @@
  */
 
 export class OpError extends Error {}
+
+// ---------------------------------------------------------------- anchoring
+
+/**
+ * Where `find` sits in `text`, or why it cannot be used as an anchor.
+ *
+ * The rule is exact-match, exactly-once. Fuzzy matching would make the tool
+ * guess, and a guess that lands in the wrong place is an edit nobody asked for.
+ * The error says how many times the text occurs and where, so the model can
+ * widen the anchor rather than start over.
+ */
+export function locate(text, find) {
+  if (typeof find !== "string" || !find.length) throw new OpError("`find` must be a non-empty string")
+  const first = text.indexOf(find)
+  if (first === -1) {
+    const firstLine = find.split("\n")[0].trim()
+    const near = firstLine && firstLine !== find ? text.indexOf(firstLine) : -1
+    const hint =
+      near >= 0
+        ? ` Its first line does appear (around line ${lineOf(text, near)}), so the rest differs — re-read that part and copy it exactly.`
+        : " Re-read the text and copy the anchor exactly, whitespace included."
+    throw new OpError(`\`find\` text not found.${hint}`)
+  }
+  const second = text.indexOf(find, first + 1)
+  if (second !== -1) {
+    const lines = []
+    let count = 0
+    for (let at = first; at !== -1; at = text.indexOf(find, at + 1)) {
+      count++
+      const line = lineOf(text, at)
+      if (lines.length < 5 && !lines.includes(line)) lines.push(line)
+    }
+    throw new OpError(
+      `\`find\` text occurs ${count} times (line${lines.length === 1 ? "" : "s"} ${lines.join(", ")}${count > 5 ? ", …" : ""}). Include more surrounding text so it matches exactly one place.`
+    )
+  }
+  return first
+}
+
+/** 1-based line number of a character offset. */
+export function lineOf(text, offset) {
+  let line = 1
+  for (let i = 0; i < offset && i < text.length; i++) if (text.charCodeAt(i) === 10) line++
+  return line
+}
+
+/**
+ * The smallest splice that turns `before` into `after`.
+ *
+ * Trims the common prefix and suffix, so replacing one word in a 20 kB file is
+ * a splice of a few characters — which is what lets the change merge with
+ * someone else's concurrent edit elsewhere in the file, and keeps the
+ * document's history readable. Reassigning the whole string is neither.
+ */
+export function minimalSplice(before, after) {
+  const max = Math.min(before.length, after.length)
+  let prefix = 0
+  while (prefix < max && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix++
+  let suffix = 0
+  while (
+    suffix < max - prefix &&
+    before.charCodeAt(before.length - 1 - suffix) === after.charCodeAt(after.length - 1 - suffix)
+  ) {
+    suffix++
+  }
+  return {
+    from: prefix,
+    to: before.length - suffix,
+    inserted: after.slice(prefix, after.length - suffix),
+  }
+}
+
+/**
+ * Splice `from..to` of the string at `path`, through automerge's text splice
+ * when one is available and by reassignment when not (plain objects, tests).
+ */
+export function spliceString(draft, path, from, to, inserted, spliceText) {
+  if (spliceText) {
+    spliceText(draft, path, from, Math.max(0, to - from), inserted)
+    return
+  }
+  const { parent, key } = parentOf(draft, path)
+  if (!parent) throw new OpError("cannot splice the document root as text")
+  const target = parent[key]
+  parent[key] = target.slice(0, from) + inserted + target.slice(to)
+}
 
 function nodeAt(root, path) {
   let node = root
@@ -46,6 +136,13 @@ export function validateOp(op) {
       throw new OpError(`path segments must be strings or numbers, got ${typeof key}`)
     }
   }
+  if (op.find !== undefined && op.find !== null) {
+    if (typeof op.find !== "string" || !op.find.length) throw new OpError("`find` must be a non-empty string")
+    if (op.range !== undefined && op.range !== null) throw new OpError("give `find` or `range`, not both")
+    if (op.value !== undefined && op.value !== null && typeof op.value !== "string") {
+      throw new OpError("with `find`, `value` must be the replacement text (a string), or omitted to delete the text")
+    }
+  }
   if (op.range !== undefined && op.range !== null && Array.isArray(op.range)) {
     const [from, to] = op.range
     if (typeof from !== "number" || (to !== undefined && typeof to !== "number")) {
@@ -66,7 +163,26 @@ export function validateOp(op) {
 export function applyOp(draft, op, { spliceText = null } = {}) {
   validateOp(op)
   const path = op.path ?? []
-  const { range, value } = op
+  const { range, value, find } = op
+
+  // ---- FIND: anchor on text, compute the range here ----------------------
+  //
+  // The model has line numbers (fs_grep, fs_read) and the text itself; it does
+  // not have character offsets, and asking it to produce them sent a real
+  // session into a long loop of trying to count. So the anchor is the text.
+  if (find !== undefined && find !== null) {
+    const target = nodeAt(draft, path)
+    if (typeof target !== "string") {
+      throw new OpError(
+        `cannot use \`find\` on /${path.join("/")}: it is ${target === undefined ? "missing" : typeof target}, not a string`
+      )
+    }
+    const replacement = value == null ? "" : String(value)
+    const at = locate(target, find)
+    const { from, to, inserted } = minimalSplice(find, replacement)
+    spliceString(draft, path, at + from, at + to, inserted, spliceText)
+    return `replaced ${find.length} chars at line ${lineOf(target, at)} in /${path.join("/")}`
+  }
 
   // ---- SPLICE: range is [from, to] -------------------------------------
   if (Array.isArray(range)) {
@@ -75,13 +191,7 @@ export function applyOp(draft, op, { spliceText = null } = {}) {
 
     if (typeof target === "string") {
       const inserted = value == null ? "" : String(value)
-      if (spliceText) {
-        spliceText(draft, path, from, Math.max(0, to - from), inserted)
-      } else {
-        const { parent, key } = parentOf(draft, path)
-        if (!parent) throw new OpError("cannot splice the document root as text")
-        parent[key] = target.slice(0, from) + inserted + target.slice(to)
-      }
+      spliceString(draft, path, from, to, inserted, spliceText)
       return `spliced ${inserted.length} chars at ${from} in /${path.join("/")}`
     }
 

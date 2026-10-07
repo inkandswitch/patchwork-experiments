@@ -13,7 +13,7 @@
  *
  * A tool definition:
  *
- *   { id, name, description, input_schema, where, risk, alwaysAsk?,
+ *   { id, name, description, input_schema, where, risk, alwaysAsk?, target?,
  *     execute(input, ctx), summarize?(input, output) }
  *
  * `where` is "worker" | "host" | "task" and decides who may run it.
@@ -76,6 +76,8 @@ export async function loadPluginTools({ onError } = {}) {
         where: description.where ?? "worker",
         risk: description.risk ?? "write",
         alwaysAsk: description.alwaysAsk ?? false,
+        // What a call is about, for approval scoping — see session.callScope.
+        target: description.target,
         execute: impl.execute,
         summarize: impl.summarize ?? null,
         source: description.importUrl ?? null,

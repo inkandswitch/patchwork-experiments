@@ -74,7 +74,7 @@ describe("fs_write creates what does not exist", () => {
     )
 
     expect(out.text).toMatch(/Wrote 3 file\(s\)/)
-    const folderUrl = out.text.match(/Containing folder: (automerge:\S+)/)[1]
+    const folderUrl = out.text.match(/Package folder: (automerge:\S+)/)[1]
     expect(repo.docs.get(folderUrl).docs.map((d) => d.name).sort()).toEqual([
       "index.js", "package.json", "tool.js",
     ])
@@ -91,7 +91,7 @@ describe("fs_write creates what does not exist", () => {
       },
       ctx(repo)
     )
-    const folderUrl = out.text.match(/Containing folder: (automerge:\S+)/)[1]
+    const folderUrl = out.text.match(/Package folder: (automerge:\S+)/)[1]
 
     // Readable straight back through the ordinary folder tools.
     const listed = await fsList.execute({ path: "counter" }, ctx(repo))

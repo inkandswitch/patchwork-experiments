@@ -343,12 +343,9 @@ window.__agentProbe = async function (opts) {
     // works, and a probe that bypasses the button proves nothing about it.
     let installed = null
     if (opts.installAfter) {
-      const rail = host.querySelector(".agent-made")
-      if (!rail || rail.hidden) throw new Error("Nothing was recorded as made, so there was nothing to install")
-      if (!rail.querySelector(".agent-made-list")) rail.querySelector(".agent-made-toggle").click()
 
-      const rows = [...host.querySelectorAll('.agent-made-row[data-kind="package"]')]
-      if (!rows.length) throw new Error("No package appeared in the strip of what was made")
+      const rows = [...host.querySelectorAll('.agent-view[data-kind="package"]')]
+      if (!rows.length) throw new Error("No package appeared inline in the transcript")
 
       const row = rows[0]
       const target = [...row.querySelectorAll("button")].find((b) => b.textContent === opts.installAfter)
@@ -357,25 +354,25 @@ window.__agentProbe = async function (opts) {
           `No '${opts.installAfter}' button: the row offers ${[...row.querySelectorAll("button")].map((b) => b.textContent).join(", ")}`
         )
       }
-      step("clicked install", { which: opts.installAfter, name: row.querySelector(".agent-made-name")?.textContent })
+      step("clicked install", { which: opts.installAfter, name: row.querySelector(".agent-view-title")?.textContent })
       target.click()
 
       const settingsUrl = window.accountDocHandle?.doc()?.moduleSettingsUrl
       const settings = await window.repo.find(settingsUrl)
       await waitFor(
         "the module list to record it",
-        () => (settings.doc()?.modules ?? []).some((m) => m.split("#")[0] === row.querySelector(".agent-made-open")?.title),
+        () => (settings.doc()?.modules ?? []).some((m) => m.split("#")[0] === row.querySelector(".agent-view-name")?.title),
         15000
       )
 
       const entry = (settings.doc()?.modules ?? []).find(
-        (m) => m.split("#")[0] === row.querySelector(".agent-made-open")?.title
+        (m) => m.split("#")[0] === row.querySelector(".agent-view-name")?.title
       )
       installed = {
         entry,
         pinned: entry?.includes("#") ?? false,
-        state: host.querySelector(".agent-made-state")?.textContent ?? null,
-        buttonsAfter: [...host.querySelectorAll(".agent-made-actions button")].map((b) => b.textContent),
+        state: host.querySelector(".agent-view-state")?.textContent ?? null,
+        buttonsAfter: [...host.querySelectorAll(".agent-view-actions button")].map((b) => b.textContent),
       }
       step("installed", installed)
     }

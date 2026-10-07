@@ -237,6 +237,10 @@ export const webFetch = {
 export const webSearch = {
   id: "web_search",
   name: "Search the web",
+  // A search is about no document and no site. Left to the default rule it was
+  // keyed on the session's subject, and "any document" on its card wrote
+  // `web@*`: every site, for every web tool.
+  target: "none",
   description:
     "Search the web and return titles and URLs. Follow up with web_fetch to read any result. Prefer specific queries; this returns links, not answers.",
   where: "worker",

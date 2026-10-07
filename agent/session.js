@@ -1,9 +1,12 @@
 /**
  * The session model — pure functions over plain objects.
  *
- * Nothing in this file touches automerge, the DOM, or the network, so all of it
- * is unit-testable. `store.js` applies these shapes to a real DocHandle; the
- * loop reads and writes through that.
+ * It takes one thing from automerge: ImmutableString, a value type rather than
+ * a document operation — no repo, no handle, no wasm, no network — so all of
+ * this is still unit-testable. It belongs here because it is part of the shape:
+ * it says a field is a scalar rather than collaborative text. `store.js`
+ * applies these shapes to a real DocHandle; the loop reads and writes through
+ * that.
  *
  * A session document:
  *
@@ -27,6 +30,8 @@
  * Automerge cannot hold `undefined`, so every optional field is either present
  * or `null` — never assigned undefined. See patchwork-skill §5.
  */
+
+import { ImmutableString } from "@automerge/automerge"
 
 export const SCHEMA_VERSION = 1
 
@@ -74,10 +79,17 @@ export function _resetIds() {
   idCounter = 0
 }
 
+// No sampling parameters by default. A knob the session does not set is not
+// sent, so the model runs at the values its authors recommend and the provider
+// applies — which differ: Claude's default is 1.0, MiMo forces 1.0 and top_p
+// 0.95, and greedy decoding (temperature 0, the old default here) is exactly
+// what sends open-weight reasoning models into verbatim thinking loops. The
+// model catalogue carries each model's defaults; the settings panel shows them.
+// Anything set here is an explicit override and travels with the session.
 export const DEFAULT_CONFIG = {
   providerId: "openrouter",
   model: "anthropic/claude-sonnet-4.5",
-  params: { temperature: 0, maxTokens: 8192 },
+  params: { maxTokens: 8192 },
 }
 
 /** Seed a brand-new session document. Runs inside a `handle.change`. */
@@ -151,15 +163,38 @@ export function summaryBlock(text, upToTurnId, opts = {}) {
   return { type: "summary", id: opts.id ?? makeId("s"), text, upToTurnId }
 }
 
+/**
+ * Content written to the document once and never edited again.
+ *
+ * A plain string in automerge is a text CRDT: per-character structure, so two
+ * people can edit the same sentence and have it merge. A tool result is not
+ * that. One runner writes it whole and nothing ever edits it — but it is by far
+ * the largest thing in the document, carrying screenshots as data URLs and
+ * fetched pages as text.
+ *
+ * Getting this wrong is not marginal. Measured on this version of automerge,
+ * twelve 200kB screenshots — 2.4MB of real content — stored as plain strings:
+ * 374MB resident, ~1s to write each, ~900ms to load. The same content as
+ * ImmutableStrings: 9MB, 13ms, 14ms. Roughly 155 bytes of CRDT metadata per
+ * character. That is the difference between a session that works and a tab that
+ * runs the browser out of memory, which is what a session holding a few dozen
+ * screenshots was doing.
+ *
+ * Readers coerce with String(), and toRequest hands plain strings to the
+ * providers, so nothing downstream needs to know.
+ */
+const frozen = (text) => new ImmutableString(String(text))
+
 export function resultBlock(callId, output, opts = {}) {
   return {
     type: "result",
     id: opts.id ?? makeId("r"),
     callId,
-    output: output ?? "",
+    output: frozen(output ?? ""),
     isError: opts.isError ?? false,
-    // A data URL, when the tool answered with a picture.
-    image: opts.image ?? null,
+    // A data URL, when the tool answered with a picture. The single biggest
+    // thing in any session document, so it is stored frozen — see above.
+    image: opts.image ? frozen(opts.image) : null,
     // { url, name, bytes, mimeType } when the tool put its content in a
     // document — a fetched page, an imported file — so the transcript can link
     // to it and a person can open it instead of reading a wall of text.
@@ -341,15 +376,51 @@ export function artifacts(doc) {
 // ---------------------------------------------------------------- grants
 
 /**
- * Which document is a call about?
+ * Which document is a call about? Each tool says.
  *
- * Most tools act on `input.url` (or `input.root`), and fall back to the
- * session's subject when neither is given. Tools that act on no particular
- * document — a web search, say — have no target.
+ * A tool definition may carry `target`, plain JSON so a plugin can declare it:
+ *
+ *   target: "none"                                   acts on no document
+ *   target: { fields: ["docUrl", "url"] }            the first of these given
+ *   target: { fields: ["url"], fallback: "subject" } …else the session's subject
+ *
+ * With no declaration a call is about `input.url`, else `input.root`, else
+ * nothing. The one rule that used to apply to every tool — url, root, else the
+ * subject — was wrong for most of them, and wrong in a way that showed up on
+ * the approval card: a web_search was "about" whatever document the session
+ * was open on, so its card offered "this document" and "any document", and
+ * "any document" wrote `web@*` — every site, for every web tool. fs_write by
+ * path was "about" the subject too, though it writes wherever the path says;
+ * doc_create, view_interact and the rest likewise. Only doc_read, doc_edit and
+ * doc_history really default to the subject, and they say so.
+ *
+ * `kind` says what sort of thing the target is, so the card can say "this
+ * folder — anything inside it" for a root and "this document" for a file.
  */
-export function callTarget(block, subject = null) {
+export const DEFAULT_TARGET = { fields: ["url", "root"] }
+
+/** What callers with no tool definition get: the historical rule, kept for them. */
+const LEGACY_TARGET = { fields: ["url", "root"], fallback: "subject" }
+
+export function callScope(block, env = null, toolDef = null) {
+  const subject = typeof env === "string" ? env : (env?.subject ?? null)
   const input = block?.input ?? {}
-  return normalizeTarget(input.url ?? input.root ?? subject ?? null)
+
+  const spec = toolDef ? (toolDef.target === undefined ? DEFAULT_TARGET : toolDef.target) : LEGACY_TARGET
+  if (spec === "none" || spec === null) return { target: null, kind: null }
+
+  for (const field of spec.fields ?? []) {
+    const value = input[field]
+    if (value != null && value !== "") {
+      return { target: normalizeTarget(value), kind: spec.kind ?? (field === "root" || field === "folder" ? "folder" : "document") }
+    }
+  }
+  if (spec.fallback === "subject" && subject) return { target: normalizeTarget(subject), kind: "document" }
+  return { target: null, kind: null }
+}
+
+export function callTarget(block, env = null, toolDef = null) {
+  return callScope(block, env, toolDef).target
 }
 
 /**
@@ -431,6 +502,23 @@ export const GRANT_GROUPS = {
   web_import: "web",
   web_search: "web",
   http_request: "web",
+  // "May you write files" is likewise one decision; before fs_edit existed it
+  // was implicitly one tool. Grants written as fs_write@… keep working.
+  fs_write: "files",
+  fs_edit: "files",
+  fs_delete: "files",
+}
+
+/** What a broad grant on this tool's group actually allows, for the button's tooltip. */
+export function describeGrantScope(toolId) {
+  switch (grantGroup(toolId)) {
+    case "web":
+      return "every web fetch, search, import and plain GET in this session"
+    case "files":
+      return "every file write, edit and delete in this session"
+    default:
+      return `every ${toolId} call in this session`
+  }
 }
 
 export function grantGroup(toolId) {
@@ -438,8 +526,11 @@ export function grantGroup(toolId) {
 }
 
 export function grantKey(toolId, target) {
-  const scope = grantGroup(toolId)
-  return target ? `${scope}@${normalizeTarget(target)}` : scope
+  // A grant with no target is on the tool, not the group: "always allow
+  // searching" must not be stored as a bare `web`, which reads as the whole
+  // group and would need a rule saying it means less than it says.
+  if (!target) return toolId
+  return `${grantGroup(toolId)}@${normalizeTarget(target)}`
 }
 
 /**
@@ -503,7 +594,7 @@ export function grantCandidates(toolId, target) {
  * offer is the exact target, its immediate directory, the whole site, and
  * anything — the scopes people actually think in.
  */
-export function grantOffers(toolId, target) {
+export function grantOffers(toolId, target, kind = "document") {
   if (target == null) {
     return [{ key: toolId, label: "always", detail: `every ${toolId} call in this session` }]
   }
@@ -531,13 +622,21 @@ export function grantOffers(toolId, target) {
       offers.push({ key: grantKey(toolId, directory), label: shortPath(directory), detail: `anything under ${directory}` })
     }
     if (origin) offers.push({ key: grantKey(toolId, origin), label: host, detail: `anything on ${host}` })
-    offers.push({ key: grantKey(toolId, ANY_TARGET), label: "any site", detail: `every ${toolId} call in this session` })
+    offers.push({ key: grantKey(toolId, ANY_TARGET), label: "any site", detail: describeGrantScope(toolId) })
     return offers
   }
 
+  // The tooltip has to say what the broad grant covers, because it is keyed by
+  // group: "any document" on an fs_edit is every write, edit and delete.
+  if (kind === "folder") {
+    return [
+      { key: grantKey(toolId, target), label: "this folder", detail: `anything inside ${target}` },
+      { key: grantKey(toolId, ANY_TARGET), label: "any folder", detail: describeGrantScope(toolId) },
+    ]
+  }
   return [
     { key: grantKey(toolId, target), label: "this document", detail: String(target) },
-    { key: grantKey(toolId, ANY_TARGET), label: "any document", detail: `every ${toolId} call in this session` },
+    { key: grantKey(toolId, ANY_TARGET), label: "any document", detail: describeGrantScope(toolId) },
   ]
 }
 
@@ -570,7 +669,7 @@ export function needsApproval(doc, toolDef, block = null, subject = null, sensit
   if (asksEveryTime(toolDef, block?.input)) return true
 
   const grants = doc.grants ?? {}
-  const target = block ? callTarget(block, subject) : null
+  const target = block ? callTarget(block, subject, toolDef) : null
 
   // Risk belongs to the document, not only to the verb. Your module settings
   // decide what code runs on every future load, and your account is your
@@ -764,11 +863,14 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
         const part = {
           type: "result",
           callId: block.callId,
-          output: keepWhole.has(block.id) ? (block.output ?? "") : taperedResult(block),
+          // Plain strings from here on. This is the boundary with the
+          // providers, and an ImmutableString is not a string to a `typeof`
+          // check or to JSON.stringify.
+          output: keepWhole.has(block.id) ? String(block.output ?? "") : taperedResult(block),
           isError: !!block.isError,
         }
         if (block.image) {
-          if (keepImages.has(block.id)) part.image = block.image
+          if (keepImages.has(block.id)) part.image = String(block.image)
           else part.output = `${part.output}\n[screenshot from earlier, not re-sent — take another if you need to look again]`
         }
         content.push(part)

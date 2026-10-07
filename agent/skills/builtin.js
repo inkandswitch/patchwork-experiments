@@ -131,7 +131,7 @@ Patchwork's own modules (\`@automerge/*\`, \`@inkandswitch/*\`, \`solid-js\`,
 try to bundle them: a second copy of automerge is a second Repo, and nothing
 would sync.
 
-If the build fails, the error names the file and line. Fix it with fs_write and
+If the build fails, the error names the file and line. Fix it with fs_edit and
 build again — that loop is the point of having the compiler here.
 
 ## Files that are not source
@@ -264,7 +264,7 @@ whether the tool mounts, renders, and responds.
 ## Seeing it, and shipping it
 
 \`tool_check\` brings back a picture of what rendered, and a mounted view appears
-in the workbench beside the conversation — so "does it look right" is something
+in the transcript beside your call — so "does it look right" is something
 you can both answer rather than something you assert.
 
 When it passes, say so and stop. The user has a panel listing everything the
@@ -368,7 +368,7 @@ document, a sequence of steps.`,
   {
     name: "editing-documents",
     description:
-      "How to change any Patchwork document safely with doc_edit's path/range/value ops, including text splices that merge with other people's edits.",
+      "How to change any Patchwork document safely with doc_edit's path/range/value ops, and how to change text by anchoring on it (find, fs_edit) rather than counting characters.",
     body: `# Editing documents
 
 \`doc_edit\` takes ops of \`{ path, range, value }\`. One verb covers every edit to
@@ -378,6 +378,8 @@ every datatype.
 - **range** — an array \`[from, to]\` SPLICES: characters if the target is a
   string, items if it is a list. A string or number SETS that key on the map or
   list at \`path\`. Omit \`value\` (or pass null) to delete.
+- **find** — for a string, the exact text to replace with \`value\`, instead of a
+  range. It must occur exactly once.
 
 ## Recipes
 
@@ -385,19 +387,33 @@ every datatype.
     delete a field         { path: [], range: "draft" }
     append to a list       { path: ["items"], range: [2, 2], value: "milk" }
     replace list items     { path: ["items"], range: [1, 3], value: ["a"] }
+    change some text       { path: ["body"], find: "teh cat", value: "the cat" }
     insert text at 10      { path: ["body"], range: [10, 10], value: "hello" }
-    replace text 6..11     { path: ["body"], range: [6, 11], value: "there" }
+
+## Changing text: anchor on it, do not count
+
+You have line numbers (fs_grep, fs_read) and you have the text itself. You do
+not have character offsets, and working them out by eye does not end well. So:
+
+- **In a file**, use \`fs_edit\` with the old text and the new. Copy the old text
+  exactly from what you read. If it occurs more than once, include a line
+  around it.
+- **In any other document's string**, use \`doc_edit\` with \`find\`. Same rule.
+- **A numeric range** is for lists, and for inserting at the very start or end
+  of a string (\`[0, 0]\`, or \`[n, n]\` where n is the length the read reported).
+- Rewriting the whole thing with \`fs_write\` is fine too: it changes only the
+  characters that differ. It just costs you the tokens to re-emit the file.
+
+Either way the change lands as a splice of just the differing characters, so
+it merges with other people's concurrent edits.
 
 ## Rules worth following
 
 - **Read before you write.** Documents have no fixed schema, so \`doc_read\` first
   — \`shapeOnly: true\` for anything large — and make your paths real.
-- **Prefer a narrow splice to rewriting a field.** A splice merges with
-  concurrent edits from other people; replacing the whole string clobbers them.
-- **Offsets come from the text you actually read.** A whole-document read
-  summarizes long strings, so its offsets are fictional. Read the exact path you
-  are editing — \`{ path: ["body"] }\` — and page through anything long with
-  \`offset\` and \`limit\` until the result stops saying characters remain.
+- **Anchor text edits on the text** (\`find\`, or \`fs_edit\`), as above. If you do
+  give a numeric range, the offsets must come from a read of that exact path —
+  a whole-document read summarizes long strings, so its offsets are fictional.
 - **All the ops in one call apply together or not at all**, so group an edit
   that must be atomic into a single \`doc_edit\`.
 - **Nothing validates against the datatype.** A document you write into a shape

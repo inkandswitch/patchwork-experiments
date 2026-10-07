@@ -10,6 +10,7 @@
  */
 
 import { previewJson, truncate, bytes } from "./format.js"
+import { locate, lineOf, minimalSplice, spliceString } from "./ops.js"
 
 /** File content arrives as a string, an ImmutableString, or raw bytes. */
 export function contentToText(content) {
@@ -144,6 +145,7 @@ export const fsRead = {
   async execute(input, ctx) {
     let doc
     let label
+    let url = null
     if (input.url) {
       doc = (await ctx.repo.find(input.url)).doc()
       label = input.url
@@ -151,6 +153,7 @@ export const fsRead = {
       const found = await resolvePath(ctx.repo, rootFor(input, ctx), input.path ?? "")
       doc = found.doc
       label = `/${found.trail.join("/")}`
+      url = found.url
     }
 
     if (!isFile(doc)) throw new Error(`${label} has no content field — it is not a file document.`)
@@ -161,7 +164,10 @@ export const fsRead = {
     const limit = input.limit ?? 400
     const slice = lines.slice(offset - 1, offset - 1 + limit)
 
-    const header = `${label} · ${lines.length} lines · ${bytes(text.length)}`
+    // The URL rides along so the file can be edited or re-read by URL without
+    // an fs_list to find it: before this, a file found by path had no URL
+    // anywhere in the transcript.
+    const header = `${label} · ${lines.length} lines · ${bytes(text.length)}${url ? ` · ${url}` : ""}`
     const numbered = slice.map((line, i) => `${offset + i}\t${line}`).join("\n")
     const footer =
       offset - 1 + slice.length < lines.length
@@ -331,6 +337,11 @@ async function ensurePath(repo, rootUrl, parts) {
 export const fsWrite = {
   id: "fs_write",
   name: "Write files",
+  // A url names one file; a root names the folder written under; a path with
+  // neither writes into the account tree, which no single document stands
+  // for. It used to fall back to the session's subject, so the card offered
+  // "this document" for a write that went nowhere near it.
+  target: { fields: ["url", "root"] },
   description: [
     "Write one or more files, creating them — and any folders in their path — if they do not exist.",
     "",
@@ -340,7 +351,7 @@ export const fsWrite = {
     "",
     "The folder you write into is shown to the user with an Install button beside it, so you never need to give them a URL to paste.",
     "",
-    "For a small edit inside a large existing file, prefer doc_edit with a splice range: it merges cleanly with concurrent edits and does not rewrite the whole file.",
+    "Writing over an existing file changes only the characters that differ, so it is safe to use for a rewrite. To change one part of a file, fs_edit is quicker: give it the old text and the new.",
   ].join("\n"),
   where: "worker",
   risk: "write",
@@ -364,14 +375,12 @@ export const fsWrite = {
     if (input.url) {
       const handle = await ctx.repo.find(input.url)
       if (!isFile(handle.doc())) throw new Error(`${input.url} is not a file document.`)
-      const before = contentToText(handle.doc()?.content).split("\n").length
-      handle.change((draft) => {
-        draft.content = input.content ?? ""
-      })
-      const after = String(input.content ?? "").split("\n").length
+      const content = String(input.content ?? "")
+      const before = contentToText(handle.doc()?.content)
+      const changed = overwrite(handle, before, content, ctx.splice)
       return {
-        text: `Wrote ${input.url}: ${before} → ${after} lines, ${bytes(String(input.content ?? "").length)}`,
-        doc: { url: input.url, name: handle.doc()?.name ?? "file", kind: "file", bytes: String(input.content ?? "").length },
+        text: `Wrote ${input.url}: ${before.split("\n").length} → ${content.split("\n").length} lines, ${bytes(content.length)} (${changed})`,
+        doc: { url: input.url, name: handle.doc()?.name ?? "file", kind: "file", bytes: content.length },
       }
     }
 
@@ -394,11 +403,9 @@ export const fsWrite = {
 
       if (existing) {
         const handle = await ctx.repo.find(existing.url)
-        const before = contentToText(handle.doc()?.content).split("\n").length
-        handle.change((draft) => {
-          draft.content = content
-        })
-        written.push(`${path} · updated ${before} → ${content.split("\n").length} lines`)
+        const before = contentToText(handle.doc()?.content)
+        const changed = overwrite(handle, before, content, ctx.splice)
+        written.push(`${path} · updated ${before.split("\n").length} → ${content.split("\n").length} lines (${changed})`)
       } else {
         const created = await createFile(ctx.repo, name, content)
         folder.change((draft) => {
@@ -416,12 +423,17 @@ export const fsWrite = {
       : root
     const folderName = topFolder.length ? topFolder.join("/") : "root"
 
+    // Say what the URL is FOR. "Containing folder" read as "the folder this
+    // package is in", and a real session spent a turn on fs_list working out
+    // that it was the package itself.
     return {
       text: [
         `Wrote ${written.length} file(s):`,
         ...written.map((line) => `• ${line}`),
         ``,
-        `Containing folder: ${containing}`,
+        topFolder.length
+          ? `Package folder: ${containing} — this is the \`url\` for tool_check, view_mount, package_build and package_test.`
+          : `Written at the root folder: ${containing}`,
       ].join("\n"),
       // The FOLDER is the artifact, not the individual files: it is what you
       // open, what you install, and what a person means by "my tool". Listing
@@ -436,6 +448,140 @@ export const fsWrite = {
     const count = input?.files ? Object.keys(input.files).length : 1
     const what = input?.files ? `${count} files` : (input?.path ?? input?.url ?? "file")
     return `wrote ${what}`
+  },
+}
+
+/**
+ * Apply text splices to a file's content in one change.
+ *
+ * Through automerge's text splice when the runner has one, so only the
+ * characters that changed are in the change: a concurrent edit elsewhere in
+ * the file merges instead of being overwritten, and the history says what
+ * changed rather than "the whole file". Falls back to reassigning the string
+ * when there is no splice (tests) or the content is not spliceable text (an
+ * ImmutableString written by something else, say).
+ *
+ * `splices` is [{ from, to, inserted }] in ascending order of `from`.
+ */
+function spliceContent(handle, before, splices, splice) {
+  let after = before
+  for (const { from, to, inserted } of [...splices].reverse()) {
+    after = after.slice(0, from) + inserted + after.slice(to)
+  }
+  handle.change((draft) => {
+    try {
+      if (!splice || typeof draft.content !== "string") throw new Error("not spliceable")
+      // Later positions first, so the earlier offsets stay valid.
+      for (const { from, to, inserted } of [...splices].reverse()) {
+        spliceString(draft, ["content"], from, to, inserted, splice)
+      }
+    } catch {
+      draft.content = after
+    }
+  })
+  return after
+}
+
+/** Replace a file's content with `content`, as the smallest splice that does it. */
+function overwrite(handle, before, content, splice) {
+  const { from, to, inserted } = minimalSplice(before, content)
+  if (from === to && !inserted.length) return "unchanged"
+  spliceContent(handle, before, [{ from, to, inserted }], splice)
+  return `${to - from} chars removed, ${inserted.length} added`
+}
+
+/** The file a `path` or `url` names, with a label for messages. */
+async function fileFor(input, ctx) {
+  if (input.url) {
+    const handle = await ctx.repo.find(input.url)
+    if (!isFile(handle.doc())) throw new Error(`${input.url} is not a file document.`)
+    return { handle, label: handle.doc()?.name ?? input.url, url: input.url }
+  }
+  if (input.path == null || input.path === "") throw new Error("Pass `path` (from the root folder) or `url` to say which file.")
+  const found = await resolvePath(ctx.repo, rootFor(input, ctx), input.path)
+  if (!isFile(found.doc)) throw new Error(`/${found.trail.join("/")} is not a file.`)
+  return { handle: found.handle, label: `/${found.trail.join("/")}`, url: found.url }
+}
+
+export const fsEdit = {
+  id: "fs_edit",
+  name: "Edit a file",
+  target: { fields: ["url", "root"] },
+  description: [
+    "Change part of an existing file: give the exact text to replace (`old`) and what to put there (`new`).",
+    "",
+    "Copy `old` from what fs_read or fs_grep showed you, character for character, whitespace included. It must occur exactly once — if it does not, include a line or two around it, or pass `replaceAll: true` to change every occurrence. You never need character offsets: the tool finds the text and changes only the characters that differ, so the edit merges with concurrent edits elsewhere in the file and the history stays readable.",
+    "",
+    "The result shows the edited lines with a little context, so you can see the change landed without reading the file again. To replace a whole file, use fs_write; to rename or remove one, fs_delete plus fs_write.",
+  ].join("\n"),
+  where: "worker",
+  risk: "write",
+  input_schema: {
+    type: "object",
+    required: ["old"],
+    properties: {
+      root: { type: "string", description: ROOT_DESCRIPTION },
+      path: { type: "string", description: "Path to the file, e.g. 'my-tool/tool.js'. Pass this or `url`." },
+      url: { type: "string", description: "The file document's URL, if you have it. Pass this or `path`." },
+      old: { type: "string", description: "The exact text to replace, copied from the file." },
+      new: { type: "string", description: "What to put in its place. Omit it, or pass an empty string, to delete `old`." },
+      replaceAll: {
+        type: "boolean",
+        description: "Change every occurrence of `old` instead of requiring exactly one. Default false.",
+      },
+    },
+  },
+
+  async execute(input, ctx) {
+    const old = input.old
+    const replacement = input.new ?? ""
+    if (typeof old !== "string" || !old.length) throw new Error("Pass `old`: the exact text to replace, copied from the file.")
+    if (old === replacement) throw new Error("`old` and `new` are identical, so there is nothing to change.")
+
+    const { handle, label, url } = await fileFor(input, ctx)
+    const before = contentToText(handle.doc()?.content)
+
+    let positions
+    if (input.replaceAll) {
+      positions = []
+      for (let at = before.indexOf(old); at !== -1; at = before.indexOf(old, at + old.length)) positions.push(at)
+      if (!positions.length) locate(before, old) // throws, saying why it was not found
+    } else {
+      positions = [locate(before, old)]
+    }
+
+    const { from, to, inserted } = minimalSplice(old, replacement)
+    const after = spliceContent(
+      handle,
+      before,
+      positions.map((at) => ({ from: at + from, to: at + to, inserted })),
+      ctx.splice
+    )
+
+    // Show the change in place: a few lines either side, numbered the way
+    // fs_read numbers them, so the next edit can anchor on what is there now.
+    const lines = after.split("\n")
+    const line = lineOf(after, positions[0])
+    const start = Math.max(1, line - 2)
+    const end = Math.min(lines.length, line + replacement.split("\n").length + 1)
+    const context = lines.slice(start - 1, end).map((text, i) => `${start + i}\t${text}`).join("\n")
+
+    const n = positions.length
+    return {
+      text: [
+        `Edited ${label}: replaced ${n === 1 ? "1 occurrence" : `${n} occurrences`} of ${old.length} chars${n === 1 ? ` at line ${line}` : ""}. Now ${lines.length} lines, ${bytes(after.length)}.`,
+        ``,
+        truncate(context, 4000),
+      ].join("\n"),
+      doc: { url, name: handle.doc()?.name ?? label, kind: "file", bytes: after.length },
+    }
+  },
+
+  summarize(input, output) {
+    const what = input?.path ? String(input.path).split("/").filter(Boolean).pop() : "file"
+    const line = String(output ?? "").match(/at line (\d+)/)?.[1]
+    const count = String(output ?? "").match(/replaced (\d+) occurrences/)?.[1]
+    return `edited ${what}${line ? ` · line ${line}` : count ? ` · ${count} places` : ""}`
   },
 }
 
@@ -463,6 +609,7 @@ async function findPath(repo, rootUrl, parts) {
 export const fsDelete = {
   id: "fs_delete",
   name: "Delete a file or folder",
+  target: { fields: ["root"] },
   description: [
     "Remove a file or folder from the folder that contains it.",
     "",
@@ -528,4 +675,4 @@ export const fsDelete = {
   },
 }
 
-export default [fsList, fsRead, fsGrep, fsWrite, fsDelete]
+export default [fsList, fsRead, fsGrep, fsWrite, fsEdit, fsDelete]

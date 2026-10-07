@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel } from "./openrouter.js"
+import { toOpenAIMessages, toOpenAITools, buildBody, sseEvents, decodeStream, stream, models, describeModel, describeDefaults } from "./openrouter.js"
 
 /** A ReadableStream of SSE chunks, the shape `response.body` actually has. */
 function streamOf(chunks) {
@@ -106,6 +106,49 @@ describe("buildBody", () => {
     expect(body.model).toBe("m")
     expect("temperature" in body).toBe(false)
     expect("max_tokens" in body).toBe(false)
+  })
+
+  it("sends only the knobs the session set, so an unset one is the model's own default", () => {
+    // The harness used to send temperature 0 for every model. That is tuned
+    // for one family and is exactly what sends open-weight reasoning models
+    // into verbatim thinking loops; nothing here should know which is which.
+    const body = buildBody({ messages: [], model: "m", params: { maxTokens: 100 } })
+    expect("temperature" in body).toBe(false)
+    expect("top_p" in body).toBe(false)
+    expect(body.max_tokens).toBe(100)
+  })
+
+  it("accepts both spellings of a knob, since people edit config.params by hand", () => {
+    const camel = buildBody({ messages: [], model: "m", params: { topP: 0.9, repetitionPenalty: 1.05 } })
+    const snake = buildBody({ messages: [], model: "m", params: { top_p: 0.9, repetition_penalty: 1.05 } })
+    expect(camel.top_p).toBe(0.9)
+    expect(camel.repetition_penalty).toBe(1.05)
+    expect(snake).toEqual(camel)
+  })
+
+  it("drops a knob the catalogue says this model does not take", () => {
+    const body = buildBody({
+      messages: [],
+      model: "m",
+      params: { temperature: 0.7, repetitionPenalty: 1.05, reasoning: { effort: "low" } },
+      capabilities: { supports: ["temperature", "tools"], maxOutput: null },
+    })
+    expect(body.temperature).toBe(0.7)
+    expect("repetition_penalty" in body).toBe(false)
+    expect("reasoning" in body).toBe(false)
+  })
+
+  it("sends every set knob when the catalogue has no opinion", () => {
+    const body = buildBody({ messages: [], model: "m", params: { temperature: 0.7, reasoning: { effort: "low" } }, capabilities: { supports: null } })
+    expect(body.temperature).toBe(0.7)
+    expect(body.reasoning).toEqual({ effort: "low" })
+  })
+
+  it("caps max_tokens at what the model can produce", () => {
+    const body = buildBody({ messages: [], model: "m", params: { maxTokens: 8192 }, capabilities: { supports: null, maxOutput: 4096 } })
+    expect(body.max_tokens).toBe(4096)
+    const roomy = buildBody({ messages: [], model: "m", params: { maxTokens: 8192 }, capabilities: { supports: null, maxOutput: 131072 } })
+    expect(roomy.max_tokens).toBe(8192)
   })
 
   it("passes temperature 0 through rather than treating it as absent", () => {
@@ -303,5 +346,34 @@ describe("a model that cannot read images", () => {
     expect(list.find((m) => m.id === "seeing/one").images).toBe(true)
     expect(list.find((m) => m.id === "blind/two").images).toBe(false)
     expect(describeModel(list.find((m) => m.id === "seeing/one"))).toContain("sees images")
+  })
+  it("carries each model's recommended defaults, accepted parameters and output ceiling", async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: "xiaomi/mimo",
+            name: "MiMo",
+            default_parameters: { temperature: 1, top_p: 0.95, frequency_penalty: 0, top_k: null },
+            supported_parameters: ["temperature", "top_p", "repetition_penalty", "tools", "reasoning"],
+            top_provider: { max_completion_tokens: 131072 },
+          },
+          { id: "terse/one", name: "Terse" },
+        ],
+      }),
+    })
+    const list = await models({ key: "k", fetchImpl })
+    const mimo = list.find((m) => m.id === "xiaomi/mimo")
+    expect(mimo.defaults).toEqual({ temperature: 1, top_p: 0.95, frequency_penalty: 0 }) // nulls are "no opinion"
+    expect(mimo.supports).toContain("repetition_penalty")
+    expect(mimo.maxOutput).toBe(131072)
+    expect(describeDefaults(mimo)).toBe("temperature 1 · top_p 0.95 · frequency_penalty 0")
+
+    const terse = list.find((m) => m.id === "terse/one")
+    expect(terse.defaults).toEqual({})
+    expect(terse.supports).toBeNull()
+    expect(terse.maxOutput).toBeNull()
+    expect(describeDefaults(terse)).toBe("")
   })
 })

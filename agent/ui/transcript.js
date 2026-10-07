@@ -76,7 +76,12 @@ function renderCall(block, result, state, handlers) {
   if (block.status === CALL.pending) attachments.push(renderApproval(block, handlers, state.subject))
   if (block.status === CALL.asking) attachments.push(renderQuestion(block, handlers))
   if (result?.image) attachments.push(renderImage(result.image, state))
-  if (result?.doc) attachments.push(renderDocLink(result.doc, handlers))
+  // What the call made or opened, live in the transcript when the host can
+  // show it — a document in its tool, a package running, the agent's own
+  // mount — and a chip that opens it elsewhere when it cannot.
+  const view = handlers.view?.(block, result) ?? null
+  if (view) attachments.push(view)
+  else if (result?.doc) attachments.push(renderDocLink(result.doc, handlers))
   if (!attachments.length) return details
 
   const wrapper = el("div", "agent-call-group")
@@ -91,7 +96,10 @@ function renderCall(block, result, state, handlers) {
  * full width — the state lives in the same open-set as the disclosure
  * triangles, so a re-render does not close what you just opened.
  */
-function renderImage(dataUrl, state) {
+function renderImage(image_, state) {
+  // Stored frozen (see resultBlock), so this is an ImmutableString off the
+  // document and a plain string from a test or a fresh call.
+  const dataUrl = String(image_ ?? "")
   const key = `image:${dataUrl.length}:${dataUrl.slice(-24)}`
   const figure = el("figure", "agent-shot")
   figure.dataset.size = state.open.has(key) ? "large" : "small"
@@ -137,7 +145,9 @@ function renderDocLink(ref, handlers) {
 
 function renderApproval(block, handlers, subject) {
   const card = el("div", "agent-approval")
-  const target = callTarget(block, subject)
+  // The tool knows what its call is about; the view only has the document, so
+  // the host answers through a handler and the historical rule is the fallback.
+  const { target, kind } = handlers.scopeOf?.(block) ?? { target: callTarget(block, subject), kind: "document" }
   card.append(el("div", "agent-approval-title", `Run ${block.tool}?`))
   if (target) {
     card.append(el("div", "agent-approval-detail", `on ${String(target).replace(/^automerge:/, "doc ")}`))
@@ -182,7 +192,7 @@ function renderApproval(block, handlers, subject) {
   // scopes are one click away: this page, this section, this whole site.
   const scopes = el("div", "agent-approval-scopes")
   scopes.append(el("span", "agent-approval-label", "Always allow:"))
-  for (const offer of grantOffers(block.tool, target)) {
+  for (const offer of grantOffers(block.tool, target, kind ?? "document")) {
     scopes.append(button(offer.label, { grant: offer.key }, { title: offer.detail }))
   }
   card.append(scopes)

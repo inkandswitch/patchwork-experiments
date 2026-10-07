@@ -15,6 +15,7 @@ import {
   questionsAwaitingAnswer,
   sessionTitle,
   asksEveryTime,
+  callScope,
 } from "./session.js"
 import { handleStore } from "./store.js"
 import { decide, say, answerQuestion } from "./loop.js"
@@ -22,13 +23,13 @@ import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
 import { ensureRunner as ensureSharedRunner, attachView } from "./runners.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import { buildToolset } from "./tools/index.js"
-import { getProvider, readKey, writeKey, loadCatalogue } from "./providers/index.js"
+import { getProvider, readKey, writeKey, loadCatalogue, modelInfo } from "./providers/index.js"
 import { listSecrets, writeSecret } from "./secrets.js"
-import { describeModel } from "./providers/openrouter.js"
+import { describeModel, describeDefaults } from "./providers/openrouter.js"
 import { hostImport } from "./tools/host.js"
-import { getMount } from "./tools/checking.js"
 import { renderTranscript } from "./ui/transcript.js"
-import { renderMade } from "./ui/made.js"
+import { createInlineViews } from "./ui/views.js"
+import { getMount, mountForPerson, mountIdIn, parkMount } from "./tools/checking.js"
 import { applyInstall, applyUninstall } from "./ui/install.js"
 
 const STYLE_ID = "patchwork-agent-styles"
@@ -94,13 +95,6 @@ export function AgentTool(handle, element, options = {}) {
   const subjectPane = el("div", "agent-subject-pane")
   sidePane.append(subjectPane)
 
-  const benchHeader = el("div", "agent-bench-header")
-  const benchLabel = el("span", "agent-bench-label", "")
-  benchHeader.append(benchLabel)
-  const bench = el("div", "agent-bench")
-  const benchPane = el("div", "agent-bench-pane")
-  benchPane.append(benchHeader, bench)
-
   root.append(main, sidePane)
 
   // ---- header ----------------------------------------------------------
@@ -111,23 +105,13 @@ export function AgentTool(handle, element, options = {}) {
   modelButton.title = "Change model or API key"
   header.append(statusDot, subjectLabel, modelButton)
 
-  // What this session has made, between the header and the transcript: always
-  // visible, never in the way.
-  const made = el("div", "agent-made")
-  made.hidden = true
-
+  // What the session makes and opens lives IN the transcript, beside the call
+  // that made or opened it (ui/views.js). There used to be a strip of "things
+  // made here" under the header and a workbench pane for the agent's mounts;
+  // both were places to look other than where the thing was talked about.
   const transcript = el("div", "agent-transcript")
   const composer = el("div", "agent-composer")
-  main.append(header, made, transcript, composer)
-
-  // The workbench sits between the transcript and the composer, at every width.
-  //
-  // Putting it in the second pane was the obvious idea and the wrong one: that
-  // pane only exists when the window is wide, so in a sidebar the workbench
-  // ended up stacked BELOW the composer, which is nowhere. Here the reading
-  // order is always "what was said, what is open, what you type next" — and it
-  // belongs in the conversation column anyway, because it is part of the story.
-  main.insertBefore(benchPane, composer)
+  main.append(header, transcript, composer)
 
   // ---- composer --------------------------------------------------------
   const input = document.createElement("textarea")
@@ -161,6 +145,10 @@ export function AgentTool(handle, element, options = {}) {
   modelList.id = "agent-model-list"
 
   const modelStatus = el("p", null, "")
+  // What the chosen model runs at when the session sets nothing. The harness
+  // no longer hardcodes a temperature; this is where a person sees what the
+  // model's authors recommend, and what an override in config.params replaces.
+  const paramsNote = el("p", "agent-model-defaults", "")
   const refreshModels = el("button", null, "Refresh model list")
   const keyInput = document.createElement("input")
   keyInput.type = "password"
@@ -188,6 +176,7 @@ export function AgentTool(handle, element, options = {}) {
     modelInput,
     modelList,
     modelStatus,
+    paramsNote,
     refreshModels,
     el("p", null, "API key"),
     keyInput,
@@ -238,9 +227,23 @@ export function AgentTool(handle, element, options = {}) {
   renderSecrets()
 
   // ---- state -----------------------------------------------------------
-  const uiState = { open: new Set(), names: new Map(), subject: null, madeOpen: false, settings: null, heads: {} }
+  const uiState = { open: new Set(), names: new Map(), subject: null, settings: null, heads: {} }
   // The toolset the runner built, so the view can ask it about a call.
   let toolsetRef = null
+
+  // The inline views: what each call made or opened, live, beside the call.
+  // A person's own mount goes through the same loader as the agent's, with a
+  // context of its own — it needs a repo and a page, nothing of the runner's.
+  const views = createInlineViews({
+    getMount,
+    mountIdIn,
+    parkMount,
+    mountForPerson: (input) => mountForPerson(input, { repo, element: root }),
+    openDoc: (url) => onOpenDoc(url),
+    install: (ref, opts) => onInstall(ref, opts),
+    uninstall: (ref) => onUninstall(ref),
+    rerender: () => render(),
+  })
   const sensitiveDocs = () =>
     [
       globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
@@ -341,9 +344,6 @@ export function AgentTool(handle, element, options = {}) {
         skillsFolderUrl: handle.doc()?.config?.skillsFolderUrl ?? null,
         // So view_screenshot can photograph a view that view_mount opened.
         getMount,
-        // Where a mounted tool renders. Mutable like `element`: it becomes null
-        // when no view is watching, and mounting falls back to off-screen.
-        workbench: bench,
         // Documents that always require an explicit yes, whatever touches them.
         sensitiveDocs: [
           globalThis.accountDocHandle?.doc()?.moduleSettingsUrl,
@@ -361,6 +361,7 @@ export function AgentTool(handle, element, options = {}) {
         },
         getProvider: async () => getProvider(handle.doc()?.config?.providerId ?? "openrouter"),
         getKey: () => readKey(handle.doc()?.config?.providerId ?? "openrouter"),
+        getModelInfo: (model, providerId) => modelInfo(providerId, model, { key: readKey(providerId) }),
         // Fixed at construction, NOT read live. A `canRun` that consults
         // `workerRunner` flips mid-run the moment the worker finishes
         // connecting, and the turn in flight then parks on its own worker-tier
@@ -386,7 +387,7 @@ export function AgentTool(handle, element, options = {}) {
     })
 
     runner = entry?.runner ?? null
-    detachView = attachView(handle.url, { element: root, workbench: bench, onEvent: () => render() })
+    detachView = attachView(handle.url, { element: root, onEvent: () => render() })
     return runner
   }
 
@@ -497,7 +498,6 @@ export function AgentTool(handle, element, options = {}) {
     }
     applyInstall(settings, artifact.url, { heads: pin })
     uiState.settings = settings.doc() ?? null
-    uiState.madeOpen = true
     render()
   }
 
@@ -581,6 +581,25 @@ export function AgentTool(handle, element, options = {}) {
   modelInput.addEventListener("blur", commitModel)
 
   let catalogueLoaded = false
+  let catalogueModels = []
+
+  function renderDefaults() {
+    const doc = handle.doc()
+    const info = catalogueModels.find((m) => m.id === doc?.config?.model)
+    if (!info) {
+      paramsNote.textContent = ""
+      return
+    }
+    const set = Object.entries(doc?.config?.params ?? {}).filter(([name]) => name !== "maxTokens")
+    const recommended = describeDefaults(info)
+    const ceiling = info.maxOutput ? `up to ${Math.round(info.maxOutput / 1000)}k output tokens` : ""
+    const parts = []
+    if (recommended) parts.push(`Runs at its authors' defaults: ${recommended}`)
+    if (ceiling) parts.push(ceiling)
+    if (set.length) parts.push(`This session overrides: ${set.map(([k, v]) => `${k} ${JSON.stringify(v)}`).join(", ")}`)
+    paramsNote.textContent = parts.join(" · ")
+  }
+
   async function loadModels({ force = false } = {}) {
     const providerId = handle.doc()?.config?.providerId ?? "openrouter"
     modelStatus.textContent = force ? "Refreshing…" : "Loading models…"
@@ -590,6 +609,8 @@ export function AgentTool(handle, element, options = {}) {
         key: readKey(providerId),
       })
       catalogueLoaded = true
+      catalogueModels = models
+      renderDefaults()
 
       modelList.replaceChildren()
       for (const model of models) {
@@ -649,6 +670,7 @@ export function AgentTool(handle, element, options = {}) {
     if (doc.config?.model && modelInput.value !== doc.config.model && focused !== modelInput) {
       modelInput.value = doc.config.model
     }
+    renderDefaults()
 
     uiState.subject = doc.subject ?? null
     renderTranscript(transcript, doc, uiState, {
@@ -658,8 +680,9 @@ export function AgentTool(handle, element, options = {}) {
       // The view has the session document; only the toolset knows which calls
       // ignore grants, so it answers that question for the card.
       alwaysAsks: (block) => asksEveryTime(toolsetRef?.get(block.tool), block.input),
+      scopeOf: (block) => callScope(block, subjectUrl(), toolsetRef?.get(block.tool) ?? null),
+      view: (block, result) => views.elementFor(block, result, uiState),
     })
-    renderMade(made, doc, uiState, { openDoc: onOpenDoc, install: onInstall, uninstall: onUninstall })
 
     // Header label: what this session IS, not what it is docked beside.
     //
@@ -716,14 +739,7 @@ export function AgentTool(handle, element, options = {}) {
       settings.style.display = "flex"
     }
 
-    // The pop-out's second pane: a live mount if there is one, else the
-    // subject document.
-    const openViews = bench.childElementCount
-    root.dataset.bench = openViews ? "on" : "off"
-    benchLabel.textContent = openViews
-      ? `Workbench — ${openViews} view${openViews === 1 ? "" : "s"} the agent has open`
-      : ""
-
+    // The pop-out's second pane shows the subject document.
     if (mode === "full" && doc.subject && doc.subject !== subjectViewUrl) {
       subjectViewUrl = doc.subject
       subjectPane.replaceChildren()
@@ -746,11 +762,6 @@ export function AgentTool(handle, element, options = {}) {
       ensureRunner().then((r) => r?.tick())
     }
   }
-  // A tool mounting into the workbench is not a document change, so nothing
-  // would otherwise tell the view to show the pane.
-  const benchWatcher = new MutationObserver(() => render())
-  benchWatcher.observe(bench, { childList: true })
-
   handle.on("change", onChange)
   render()
   // Only needed once there is something installable; reading it eagerly would
@@ -771,7 +782,7 @@ export function AgentTool(handle, element, options = {}) {
     // session must not abort the work it is doing. The runner keeps its lease
     // and keeps writing to the document, so reopening the session — here or in
     // another tab — picks up whatever happened while you were gone.
-    benchWatcher.disconnect()
+    views.dispose()
     detachView?.()
     workerRunner?.close()
     root.remove()

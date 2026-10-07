@@ -140,7 +140,7 @@ describe("tool calls", () => {
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.done)
 
     const results = transcript(store).filter((b) => b.type === "result")
-    expect(results[0].output).toBe("a list")
+    expect(String(results[0].output)).toBe("a list")
 
     // the tool result must reach the model on the next turn
     expect(JSON.stringify(provider.requests[1].messages)).toContain("a list")
@@ -186,7 +186,7 @@ describe("tool calls", () => {
     expect(findCall(store.doc(), "c1").block.status).toBe(CALL.error)
     const errorResult = transcript(store).find((b) => b.type === "result")
     expect(errorResult.isError).toBe(true)
-    expect(errorResult.output).toContain("no such document")
+    expect(String(errorResult.output)).toContain("no such document")
   })
 
   it("runs several calls from one turn and answers them all", async () => {
@@ -208,7 +208,7 @@ describe("tool calls", () => {
       flushMs: 0,
     })
 
-    const outputs = transcript(store).filter((b) => b.type === "result").map((b) => b.output)
+    const outputs = transcript(store).filter((b) => b.type === "result").map((b) => String(b.output))
     expect(outputs).toEqual(["read 1", "read 2"])
   })
 })
@@ -317,7 +317,7 @@ describe("approvals", () => {
     const result = store.doc().turns.at(-1)
     expect(result.role).toBe("tool")
     expect(result.blocks[0]).toMatchObject({ callId: "c1", isError: true })
-    expect(result.blocks[0].output).toMatch(/^Declined by the user\./)
+    expect(String(result.blocks[0].output)).toMatch(/^Declined by the user\./)
 
     await run({ store, provider, toolset, runnerUrl: "runner-a", generation: 1, flushMs: 0 })
     expect(transcript(store).map((b) => b.text).join(" ")).toContain("understood, leaving it")

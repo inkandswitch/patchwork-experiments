@@ -66,6 +66,7 @@ export function readRange(value, input, url, path) {
 export const docRead = {
   id: "doc_read",
   name: "Read document",
+  target: { fields: ["url"], fallback: "subject" },
   description: [
     "Read an automerge document, or one path inside it. Defaults to the document this session is attached to.",
     "",
@@ -135,15 +136,20 @@ export const docRead = {
 export const docEdit = {
   id: "doc_edit",
   name: "Edit document",
+  // The url defaults to the session's subject in execute(), so it does here.
+  target: { fields: ["url"], fallback: "subject" },
   description: [
     "Edit any automerge document with one or more ops. Each op is { path, range, value }:",
     "• path: array of keys/indices from the document root to what you are touching. [] is the root.",
     "• range: [from, to] to SPLICE — replacing characters when the target is a string, items when it is a list.",
     "  Insert without deleting by using [n, n]. Or give a key (string/number) to SET that key on the map/list at path.",
+    "• find: for a string, the exact text to replace instead of a range. It must occur exactly once. This is how to change text you have read — you never need to count characters.",
     "• value: what to insert or set. Omit it (or null) to delete.",
     "Examples: set a title — { path: [], range: 'title', value: 'New' }.",
     "Append to a list — { path: ['items'], range: [2, 2], value: { done: false } }.",
+    "Change some text — { path: ['body'], find: 'teh cat', value: 'the cat' }.",
     "Insert text at offset 10 — { path: ['body'], range: [10, 10], value: 'hello' }.",
+    "For a file, fs_edit does the same by path.",
   ].join("\n"),
   where: "worker",
   risk: "write",
@@ -166,6 +172,11 @@ export const docEdit = {
                 { type: "string" },
                 { type: "number" },
               ],
+            },
+            find: {
+              type: "string",
+              description:
+                "For a string at path: the exact text to replace with `value` (omit value to delete it). Must occur exactly once. Use this instead of counting offsets for a range.",
             },
             value: { description: "What to insert or set. Omit to delete." },
           },
@@ -209,6 +220,9 @@ export const docEdit = {
 export const docCreate = {
   id: "doc_create",
   name: "Create document",
+  // A new document is about no existing one. Keyed on the subject, its card
+  // offered "this document", which was not what it was going to touch.
+  target: "none",
   description: [
     "Create a new document of a registered datatype, and return its URL.",
     "",
@@ -253,6 +267,7 @@ export const docCreate = {
 export const docHistory = {
   id: "doc_history",
   name: "Document history",
+  target: { fields: ["url"], fallback: "subject" },
   description:
     "Summarize a document's change history: how many changes, by whom, and the most recent ones. Useful for 'what changed recently' and for finding what to undo.",
   where: "worker",

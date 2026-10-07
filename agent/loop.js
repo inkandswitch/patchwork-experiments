@@ -65,6 +65,7 @@ export const OUTCOME = {
   awaitingApproval: "awaiting-approval",
   awaitingAnswer: "awaiting-answer", // the agent asked the human something
   truncated: "truncated", // the model kept running out of output budget
+  repetition: "repetition", // the model kept repeating itself while thinking
   parked: "parked", // a host-tier call has no tab to run in
   aborted: "aborted",
   error: "error",
@@ -98,6 +99,7 @@ export async function run(opts) {
     system = DEFAULT_SYSTEM,
     canRun = (where) => where === WHERE.worker,
     onEvent = null,
+    modelInfo = null,
   } = opts
 
   const emit = (event) => {
@@ -130,10 +132,20 @@ export async function run(opts) {
     flushMs: opts.flushMs ?? 120,
     subject: ctx?.subject ?? null,
     sensitive: (ctx?.sensitiveDocs ?? []).filter(Boolean),
+    // What the catalogue knows about the model in use, or null for "no
+    // opinion". The provider uses it to drop parameters the model does not
+    // take and to cap max_tokens; the truncation recovery below respects the
+    // same ceiling.
+    capabilities: modelInfo
+      ? { supports: modelInfo.supports ?? null, maxOutput: modelInfo.maxOutput ?? null }
+      : null,
+    repeatWindow: opts.repeatWindow ?? REPEAT_WINDOW,
   }
 
   let truncations = 0
   const maxTruncations = opts.maxTruncations ?? 2
+  let repetitions = 0
+  const maxRepetitions = opts.maxRepetitions ?? 1
 
   for (let turnNumber = 0; turnNumber < maxTurns; turnNumber++) {
     if (signal?.aborted) return finish(store, STATUS.idle, OUTCOME.aborted, emit)
@@ -214,6 +226,7 @@ export async function run(opts) {
           ...(settings.paramsOverride ?? {}),
           maxTokens: Math.min(
             MAX_OUTPUT_TOKENS,
+            settings.capabilities?.maxOutput ?? Infinity,
             (settings.paramsOverride?.maxTokens ?? store.doc().config?.params?.maxTokens ?? 8192) * 2
           ),
         }
@@ -247,6 +260,46 @@ export async function run(opts) {
       return finish(store, STATUS.error, OUTCOME.truncated, emit, "output limit")
     }
 
+    // ---- 5. Was it going round in circles?
+    //
+    // The truncation recovery above assumes a model that stopped needed more
+    // room. A model that is repeating itself needs the opposite: it was
+    // stopped by streamTurn the moment its thinking began re-emitting its own
+    // earlier paragraphs, and giving it a bigger budget would buy more of the
+    // same. Watched happen: sixty seconds of "just rewrite the file — actually
+    // wait —" over the same three options, in a loop that would have run to
+    // the output limit and then been told to continue.
+    if (assistant.stopReason === "repetition") {
+      repetitions++
+      emit({ type: "repeating", turn: turnNumber, attempt: repetitions })
+
+      if (repetitions <= maxRepetitions) {
+        appendTurn(
+          store,
+          makeTurn("user", [
+            textBlock(
+              "(You were repeating yourself, so your turn was stopped.) Do not deliberate further. " +
+                "Take the simplest option that works and make the tool call now. If you are genuinely stuck, " +
+                "ask the user one question with ask_user instead."
+            ),
+          ])
+        )
+        continue
+      }
+
+      appendTurn(
+        store,
+        makeTurn("assistant", [
+          textBlock(
+            "⚠ Stopped: the model kept repeating itself while thinking. " +
+              "Try another model, or set sampling parameters for this one in the session's config " +
+              "(its authors' recommended `temperature`, `top_p` and `repetition_penalty` are shown in the model picker)."
+          ),
+        ])
+      )
+      return finish(store, STATUS.error, OUTCOME.repetition, emit, "repetition")
+    }
+
     if (!assistant.calls.length) return finish(store, STATUS.idle, OUTCOME.idle, emit)
 
     // A question the model just asked outranks anything else it queued: the
@@ -271,6 +324,32 @@ export async function run(opts) {
 /** The most output we will ask any model for, however many times it truncates. */
 export const MAX_OUTPUT_TOKENS = 32000
 
+/** How many characters of a turn's own text must recur, verbatim, to count as a loop. */
+export const REPEAT_WINDOW = 240
+
+/**
+ * Has the text just streamed already appeared, word for word, earlier in this
+ * same turn?
+ *
+ * A model stuck in a thinking loop re-emits its own paragraphs — "Best idea:
+ * just rewrite tool.js with fs_write. Do it. Actually wait" — and the third
+ * copy reads exactly like the first. A working model does not produce 240
+ * identical characters twice in one turn; a quoted line of code is shorter,
+ * and a table or a run of dashes is caught by the whitespace test. So an exact
+ * recurrence of the window is the signal, and it is the same signal whichever
+ * model or sampling produced it.
+ */
+export function repeatsItself(streamed, window = REPEAT_WINDOW) {
+  if (!window || streamed.length < window * 2) return false
+  const tail = streamed.slice(-window)
+  if (tail.trim().length < window / 2) return false
+  // Prose has vocabulary. A table's separator rows, a grid of dashes, a run of
+  // identical list markers repeat legitimately and have almost none.
+  const words = new Set(tail.toLowerCase().match(/[a-z0-9_]+/g) ?? [])
+  if (words.size < 12) return false
+  return streamed.lastIndexOf(tail, streamed.length - window - 1) !== -1
+}
+
 export const DEFAULT_COMPACT_AT = 80000
 
 const COMPACT_PROMPT = `Summarize the conversation above for your own future reference. You are about to lose the detail, so keep what you would need to carry on:
@@ -291,7 +370,7 @@ Write it as notes to yourself, not as a message to the user. Be specific and com
  * failing — a large request is better than no request.
  */
 async function maybeCompact(settings) {
-  const { store, provider, system, key, signal, emit } = settings
+  const { store, provider, system, key, signal, emit, capabilities } = settings
   const doc = store.doc()
   const threshold = doc.config?.compactAt ?? DEFAULT_COMPACT_AT
 
@@ -317,6 +396,7 @@ async function maybeCompact(settings) {
       tools: [],
       model: doc.config?.model,
       params: { ...(doc.config?.params ?? {}), maxTokens: 4000 },
+      capabilities: capabilities ?? null,
       key,
       signal,
     })) {
@@ -353,6 +433,7 @@ async function streamTurn(opts) {
     tools: toolset.schemas,
     model: store.doc().config?.model,
     params: { ...(store.doc().config?.params ?? {}), ...(opts.paramsOverride ?? {}) },
+    capabilities: opts.capabilities ?? null,
     key: opts.key ?? null,
     signal,
     onRetry: (info) => emit({ type: "retry", ...info }),
@@ -368,11 +449,27 @@ async function streamTurn(opts) {
   let reasoningIndex = null
   let stopReason = "end"
 
+  // Watch this turn's own prose for a loop. Checked every few dozen characters
+  // rather than every delta; the scan is linear in the turn so far.
+  const repeatWindow = opts.repeatWindow ?? REPEAT_WINDOW
+  let streamed = ""
+  let sinceCheck = 0
+  let repeated = false
+  const watch = (delta) => {
+    if (repeated || !repeatWindow) return
+    streamed += delta
+    sinceCheck += delta.length
+    if (sinceCheck < 32) return
+    sinceCheck = 0
+    if (repeatsItself(streamed, repeatWindow)) repeated = true
+  }
+
   const blockPath = (blockIndex) => ["turns", turnIndex, "blocks", blockIndex, "text"]
 
   try {
     for await (const event of provider.stream(request)) {
       if (signal?.aborted) break
+      if (repeated) break
 
       if (event.type === "text") {
         if (textIndex === null) {
@@ -384,6 +481,7 @@ async function streamTurn(opts) {
         }
         appender.append(blockPath(textIndex), event.delta)
         emit({ type: "text", delta: event.delta })
+        watch(event.delta)
       } else if (event.type === "reasoning") {
         if (reasoningIndex === null) {
           appender.flush()
@@ -393,6 +491,7 @@ async function streamTurn(opts) {
           reasoningIndex = store.doc().turns[turnIndex].blocks.length - 1
         }
         appender.append(blockPath(reasoningIndex), event.delta)
+        watch(event.delta)
       } else if (event.type === "call") {
         calls.push(event)
       } else if (event.type === "usage") {
@@ -405,6 +504,10 @@ async function streamTurn(opts) {
   } finally {
     appender.flush()
   }
+
+  // Stopped for going round in circles. Whatever was streamed stays in the
+  // transcript — it is what happened — but no call is committed from it.
+  if (repeated) return { calls: [], stopReason: "repetition", turnIndex }
 
   // A call whose arguments did not parse is a call that was cut off mid-JSON.
   //
@@ -640,8 +743,9 @@ export function decide(store, callId, decision, subject = null, { toolset = null
     if (decision === "session" || decision === "always") {
       if (!d.grants) d.grants = {}
       // Scoped to the document this call is about, so "yes" means yes to this
-      // rather than yes to everything this tool could ever touch.
-      d.grants[grantKey(block.tool, callTarget(block, subject))] = decision
+      // rather than yes to everything this tool could ever touch. The tool
+      // says what it is about; without a toolset the historical rule applies.
+      d.grants[grantKey(block.tool, callTarget(block, subject, toolset?.get?.(block.tool) ?? null))] = decision
     }
   })
 

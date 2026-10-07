@@ -26,7 +26,7 @@ import { handleStore } from "./store.js"
 import { SessionRunner } from "./runner.js"
 import { buildToolset } from "./tools/index.js"
 import { setHostUrls } from "./tools/host.js"
-import { getProvider } from "./providers/index.js"
+import { getProvider, modelInfo } from "./providers/index.js"
 
 /** The wasm loader wants a DOM. Give it the smallest one that works. */
 function shimDocument() {
@@ -101,6 +101,7 @@ async function startSession({ sessionUrl, subject, key, providerId, system }, po
     // The key is passed in per session rather than read from storage: a worker
     // has no access to the page's localStorage.
     getKey: () => entry.key,
+    getModelInfo: (model, providerId) => modelInfo(providerId ?? "openrouter", model, { key: entry.key }),
     // A worker has no DOM and no plugin registry. Host-tier calls park here and
     // are picked up by a tab.
     canRun: (where) => where === "worker",

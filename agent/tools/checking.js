@@ -72,6 +72,7 @@ function teardown(mountId, { silent = false } = {}) {
   }
 
   mount.container.remove()
+  pruneHolder(mount.container.ownerDocument)
   mounts.delete(mountId)
   return notes
 }
@@ -348,23 +349,52 @@ async function mountTool({ plugins, input, ctx, doc, notes }) {
  *
  * On screen where possible, and that is the point. This used to mount ten
  * thousand pixels off to the left, always — so the agent could see what it had
- * built and the person who asked for it could not. When a view offers a
- * workbench, the tool mounts INTO it and you watch the agent work.
+ * built and the person who asked for it could not. Now the transcript adopts
+ * the mount into a view beside the call that opened it, and you watch the
+ * agent work where it is talked about.
  *
  * Off-screen stays the fallback rather than display:none, because a hidden
  * container reports zero sizes and a tool that measures itself would behave
  * differently there than in front of a person.
  */
+/**
+ * Where a mount lives when nothing on screen has claimed it.
+ *
+ * Off-screen rather than `display: none`, because a hidden container reports
+ * zero sizes and a tool that measures itself would behave differently there
+ * than in front of a person. The transcript adopts a container into the view
+ * beside the call that opened it, and parks it back here when that view goes
+ * away — the mount itself never stops.
+ */
+export function mountHolder(doc = globalThis.document) {
+  let holder = doc.querySelector(".agent-mount-holder")
+  if (!holder) {
+    holder = doc.createElement("div")
+    holder.className = "agent-mount-holder"
+    holder.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;height:400px;overflow:auto"
+    doc.body.append(holder)
+  }
+  return holder
+}
+
+/** An empty holder is removed, so a page that mounted nothing is left exactly as it was. */
+function pruneHolder(doc = globalThis.document) {
+  const holder = doc?.querySelector?.(".agent-mount-holder")
+  if (holder && !holder.childElementCount) holder.remove()
+}
+
+/** Put a mount's container back off-screen. Safe to call on one that is already there or gone. */
+export function parkMount(container) {
+  if (!container || !container.isConnected) return
+  const holder = mountHolder(container.ownerDocument)
+  if (container.parentElement !== holder) holder.append(container)
+}
+
 async function finishMount({ render, handle, toolId, doc, notes, ctx }) {
   const container = doc.createElement("div")
-  const workbench = ctx?.workbench ?? null
-  if (workbench) {
-    container.className = "agent-bench-mount"
-    workbench.append(container)
-  } else {
-    container.style.cssText = "position:fixed;left:-10000px;top:0;width:600px;height:400px;overflow:auto"
-    doc.body.append(container)
-  }
+  container.className = "agent-mount"
+  mountHolder(doc).append(container)
+  void ctx
 
   const captured = captureErrors(globalThis)
   let cleanup = null
@@ -490,11 +520,13 @@ const MOUNT_PROPS = {
 
 export const viewMount = {
   id: "view_mount",
+  // About the document opened, or the package mounted; never the subject.
+  target: { fields: ["docUrl", "url"] },
   name: "Open a document in its tool",
   description: [
     "Open a document in a real Patchwork tool and leave it running. Returns a mountId for view_inspect, view_interact and view_unmount.",
     "",
-    "It renders in the user's workbench, beside the conversation, so they can watch you work — and off-screen when no view is attached. A picture of what rendered comes back with the result.",
+    "It renders in the transcript, beside this call, so the user can watch you work — and keeps running off-screen when nobody is looking. A picture of what rendered comes back with the result.",
     "",
     "This is how you work with what the user actually sees. Use it to check that a change you made looks right, to read a document whose state does not live in a readable shape (a canvas, a text editor), or to operate a tool that has no document-level API — you can click its buttons and type into its fields.",
     "",
@@ -594,6 +626,8 @@ export const viewInspect = {
 
 export const viewInteract = {
   id: "view_interact",
+  // Acts on a mount, which view_mount was approved for. No document of its own.
+  target: "none",
   name: "Drive an open document",
   description: [
     "Click, type into, or submit part of an open document, and report what changed — both in the document and on screen.",
@@ -675,6 +709,7 @@ export const viewInteract = {
 
 export const viewUnmount = {
   id: "view_unmount",
+  target: "none",
   name: "Close an open document",
   description:
     "Close an open document, tearing the tool down the way Patchwork will, and report whether its cleanup is well-behaved. Always finish a view_mount with this.",
@@ -701,6 +736,7 @@ export const viewUnmount = {
 
 export const toolCheck = {
   id: "tool_check",
+  target: { fields: ["docUrl", "url"] },
   name: "Check a tool you wrote",
   description: [
     "Run a tool you wrote end to end and report every problem found. Do this after writing its files with fs_write and before installing it — code you have not executed is a guess.",
@@ -806,6 +842,53 @@ export const toolCheck = {
 /** Look up a live mount, so other tools (screenshots) can act on one. */
 export function getMount(mountId) {
   return mounts.get(mountId) ?? null
+}
+
+/** The mountId a view_mount result named, if any. */
+export function mountIdIn(output) {
+  return String(output ?? "").match(/mountId: (mount_[a-z0-9]+)/)?.[1] ?? null
+}
+
+/**
+ * Mount for a person, not the agent: the "Show" button on a document or
+ * package in the transcript.
+ *
+ * Same loader and same mount code as view_mount, so a package renders here
+ * exactly as it would for the agent, installed or not. Not registered in
+ * `mounts`: a person's view must not be evicted to make room for the agent's
+ * fourth, and the agent's view_* tools have no business driving it. Returns
+ * the container plus a cleanup that tears the tool down the way Patchwork will.
+ */
+export async function mountForPerson(input, ctx) {
+  const doc = requireDom(ctx)
+  let plugins = null
+  let notes = []
+  if (input.url) {
+    const loaded = await loadPackage(input, ctx)
+    plugins = loaded.plugins
+    notes = loaded.notes
+  }
+  const mount = await mountTool({ plugins, input, ctx, doc, notes })
+  if (!mount.mounted) {
+    mount.captured.stop()
+    mount.container.remove()
+    throw new Error(notes.filter((n) => /PROBLEM/.test(n)).join("\n") || "Could not mount.")
+  }
+  return {
+    container: mount.container,
+    handle: mount.handle,
+    toolId: mount.toolId,
+    cleanup() {
+      mount.captured.stop()
+      try {
+        mount.cleanup?.()
+      } catch {
+        /* the tool's problem, reported to the agent when it checks */
+      }
+      mount.container.remove()
+      pruneHolder(mount.container.ownerDocument)
+    },
+  }
 }
 
 /** Tests only: forget every live mount. */
