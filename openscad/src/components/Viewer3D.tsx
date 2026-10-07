@@ -2,6 +2,7 @@ import {onMount, onCleanup, createEffect} from "solid-js"
 import * as THREE from "three"
 import {STLLoader} from "three/examples/jsm/loaders/STLLoader.js"
 import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js"
+import {needsReframe} from "./framing"
 
 export function Viewer3D(props: {stl: Uint8Array | null}) {
 	let container!: HTMLDivElement
@@ -65,10 +66,13 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 		}
 		tick()
 
+		// the radius the camera was last framed for: re-frame only when the part's size changes a lot
+		let framedRadius = 0
 		function frameCamera(geometry: THREE.BufferGeometry) {
 			geometry.computeBoundingSphere()
 			const sphere = geometry.boundingSphere
 			if (!sphere || !isFinite(sphere.radius) || sphere.radius === 0) return
+			framedRadius = sphere.radius
 			const center = sphere.center
 			const radius = sphere.radius
 			const dir = new THREE.Vector3(0.55, -0.85, 0.65).normalize()
@@ -94,7 +98,13 @@ export function Viewer3D(props: {stl: Uint8Array | null}) {
 			}
 			mesh = new THREE.Mesh(geometry, material)
 			scene.add(mesh)
-			if (wasEmpty) frameCamera(geometry)
+			// Keep the camera where the user left it across edits, unless the part
+			// is now a very different size (a first render of a placeholder, an
+			// imported parameter arriving, a unit change): then the old framing
+			// shows one face filling the view, or a speck.
+			geometry.computeBoundingSphere()
+			const r = geometry.boundingSphere?.radius ?? 0
+			if (wasEmpty || needsReframe(framedRadius, r)) frameCamera(geometry)
 		})
 
 		onCleanup(() => {

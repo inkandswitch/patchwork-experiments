@@ -2,6 +2,9 @@
 // alive across renders (loading the engine is the expensive part) and
 // multiplexes concurrent render requests by id.
 
+/// <reference types="vite/client" />
+import workerUrl from "./worker.ts?worker&url"
+
 export type LoadProgress = {
 	phase: "downloading" | "starting"
 	loaded: number
@@ -44,14 +47,40 @@ type Pending = {
 	reject: (err: Error) => void
 }
 
-let worker: Worker | null = null
+let worker: Promise<Worker> | null = null
 const pending = new Map<number, Pending>()
 let nextId = 1
 
-function getWorker(): Worker {
-	if (worker) return worker
-	worker = new Worker(new URL("./worker.ts", import.meta.url), {type: "module"})
-	worker.onmessage = (event: MessageEvent) => {
+// Resolved against this module's own URL (the package bundle), never the
+// page, so the worker is found wherever the module is loaded from: the
+// OpenSCAD tool, or another tool (the scene) calling the scene:source build.
+// (`?worker&url` makes vite bundle the worker and give us its URL; with
+// `base: "./"` that URL is emitted as new URL("assets/…", import.meta.url).)
+const WORKER_URL = new URL(workerUrl, import.meta.url)
+
+/**
+ * `new Worker()` only accepts a same-origin script. When this bundle is served
+ * from somewhere other than the page (a dev server, a CDN), fetch the worker
+ * and start it from a blob URL instead. The worker bundle has no imports of
+ * its own, so it runs unchanged from a blob.
+ */
+async function spawnWorker(): Promise<Worker> {
+	const sameOrigin = typeof location === "undefined" || WORKER_URL.origin === location.origin
+	if (sameOrigin || WORKER_URL.protocol === "blob:" || WORKER_URL.protocol === "data:") {
+		try {
+			return new Worker(WORKER_URL, {type: "module"})
+		} catch (err) {
+			if (sameOrigin) throw err
+		}
+	}
+	const response = await fetch(WORKER_URL)
+	if (!response.ok) throw new Error(`Failed to load OpenSCAD worker: HTTP ${response.status}`)
+	const blobUrl = URL.createObjectURL(new Blob([await response.text()], {type: "text/javascript"}))
+	return new Worker(blobUrl, {type: "module"})
+}
+
+function attach(w: Worker): Worker {
+	w.onmessage = (event: MessageEvent) => {
 		const msg = event.data
 		if (msg?.type === "progress") {
 			emitProgress(msg.progress)
@@ -65,12 +94,22 @@ function getWorker(): Worker {
 			else entry.reject(new RenderError(msg.error, msg.logs ?? []))
 		}
 	}
-	worker.onerror = event => {
+	w.onerror = event => {
 		const err = new Error(event.message || "OpenSCAD worker crashed")
 		for (const entry of pending.values()) entry.reject(err)
 		pending.clear()
-		worker?.terminate()
+		w.terminate()
 		worker = null
+	}
+	return w
+}
+
+function getWorker(): Promise<Worker> {
+	if (!worker) {
+		worker = spawnWorker().then(attach)
+		worker.catch(() => {
+			worker = null
+		})
 	}
 	return worker
 }
@@ -79,6 +118,12 @@ export function renderScad(source: string, imports: RenderImportInput[] = []): P
 	return new Promise((resolve, reject) => {
 		const id = nextId++
 		pending.set(id, {resolve, reject})
-		getWorker().postMessage({id, type: "render", source, imports})
+		getWorker().then(
+			w => w.postMessage({id, type: "render", source, imports}),
+			err => {
+				pending.delete(id)
+				reject(err)
+			},
+		)
 	})
 }
