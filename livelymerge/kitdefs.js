@@ -1,4 +1,4 @@
-//written on 2026-10-07 10:40 PDT
+//written on 2026-10-07 11:45 PDT
 // The Kit — kernel
 // =================
 // Parts with slots, connected by wires, reacting to signals. See KIT_PLAN.md.
@@ -37,10 +37,12 @@
 //             such container; `locked` stops it
 //   bin       a container with `isBin`: dragging a sub-part stamps an instance()
 //             (the original stays); dropping a part in keeps it as a new prototype
-//   halo      meta/cmd-click a part: copy, delete, wire, resize, rotate, inspect
-//   inspect   halo "i" (or kitInspect(part)): slot list + script editor, themselves parts
+//   halo      meta/cmd-click a part: c copy, x delete, - wire, s scale, r rotate;
+//             the name at the bottom inspects (ellipsis if it meets r or s).
+//             A second ⌘-click climbs to the owner; the world clears the halo.
+//   inspect   halo title (or kitInspect(part)): slot list + script editor, themselves parts
 //   find      bin "find" (or kitFind(text)): kitSearch hits; click a hit to inspect
-//   wires     drawn when `$kit.showWires` is true; the Wire halo button drag-connects
+//   wires     drawn when `$kit.showWires` is true; the halo "-" handle drag-connects
 //   stepping  a part with an onTick script and `stepEvery` (ms) is signalled `tick`
 //
 // Gestures, overlays, hands (the idiom from the lm-07 lab note)
@@ -1014,21 +1016,25 @@ function kitWorldBox(p) {
 
 function kitHaloItems(target) {
   /**
-   * Overlay buttons and handles around `target`, in world pixels. Not parts: they
-   * live only while the halo is up (ephemeral, per user) so they never enter the doc.
+   * Letter handles around `target`, in world pixels. Not parts: they live only
+   * while the halo is up (ephemeral, per user) so they never enter the doc.
+   * c NE, - E, s SE, r SW, x NW; the name sits on the bottom edge between r and s.
    */
   let box = kitWorldBox(target);
-  let bw = 44;
-  let bh = 18;
-  let y = box.y - bh - 6;
-  let x = box.x;
+  let s = 16;
+  let at = (id, label, hx, hy) => ({ id: id, label: label, x: hx - s / 2, y: hy - s / 2, w: s, h: s });
+  let x0 = box.x + s;
+  let x1 = box.x + box.w - s;
+  let maxW = Math.max(20, x1 - x0);
+  let name = target.name != null ? '' + target.name : 'part';
+  let tw = Math.min(maxW, Math.max(20, name.length * 7 + 8));
   return [
-    { id: 'copy', x: x, y: y, w: bw, h: bh, label: 'copy' },
-    { id: 'del', x: x + bw + 4, y: y, w: bw, h: bh, label: 'del' },
-    { id: 'wire', x: x + 2 * (bw + 4), y: y, w: bw, h: bh, label: 'wire' },
-    { id: 'resize', x: box.x + box.w - 6, y: box.y + box.h - 6, w: 14, h: 14, label: '' },
-    { id: 'rotate', x: box.x + box.w - 6, y: box.y - 8, w: 14, h: 14, label: '' },
-    { id: 'inspect', x: box.x - 8, y: box.y + box.h - 6, w: 14, h: 14, label: 'i' },
+    at('copy', 'c', box.x + box.w, box.y),
+    at('wire', '-', box.x + box.w, box.y + box.h / 2),
+    at('resize', 's', box.x + box.w, box.y + box.h),
+    at('rotate', 'r', box.x, box.y + box.h),
+    at('del', 'x', box.x, box.y),
+    { id: 'title', x: box.x + box.w / 2 - tw / 2, y: box.y + box.h - 8, w: tw, h: 16, label: name, maxW: maxW },
   ];
 }
 
@@ -1102,11 +1108,12 @@ function kitPick(item) {
 
 function kitDoHalo(id, target, wx, wy) {
   if (id === 'copy') {
+    kitGestureBegin();
     let cpy = target.copy();
+    if (target.owner) target.owner.add(cpy);
     cpy.moveTo(target.world());
-    cpy.put('x', cpy.num('x', 0) + 16);
-    cpy.put('y', cpy.num('y', 0) + 16);
     kitShowHalo(cpy);
+    $kit.haloDrag = { id: 'copy', target: cpy, x: wx, y: wy, ox: wx, oy: wy };
   } else if (id === 'del') {
     target.unwireAll();
     target.remove();
@@ -1114,10 +1121,11 @@ function kitDoHalo(id, target, wx, wy) {
   } else if (id === 'wire') {
     $kit.wiringFrom = target;
     $kit.picker = null;
-  } else if (id === 'inspect') {
+  } else if (id === 'title') {
     kitInspect(target);
   } else if (id === 'resize' || id === 'rotate') {
-    $kit.haloDrag = { id: id, target: target, x: wx, y: wy, rot0: target.num('rotation', 0) };
+    kitGestureBegin();
+    $kit.haloDrag = { id: id, target: target, x: wx, y: wy };
   }
 }
 
@@ -1125,7 +1133,12 @@ function kitHaloDragTo(wx, wy) {
   let d = $kit.haloDrag;
   if (!d) return;
   let tgt = d.target;
-  if (d.id === 'resize') {
+  if (d.id === 'copy') {
+    tgt.put('x', tgt.num('x', 0) + wx - d.x);
+    tgt.put('y', tgt.num('y', 0) + wy - d.y);
+    d.x = wx;
+    d.y = wy;
+  } else if (d.id === 'resize') {
     let l = tgt.localFromWorld(wx, wy);
     tgt.put('w', Math.max(12, l.x));
     tgt.put('h', Math.max(12, l.y));
@@ -1182,19 +1195,32 @@ function kitDrawHalo(c) {
   c.setLineDash ? c.setLineDash([4, 3]) : null;
   c.strokeRect(box.x - 2, box.y - 2, box.w + 4, box.h + 4);
   c.setLineDash ? c.setLineDash([]) : null;
+  c.font = '11px sans-serif';
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
   let items = kitHaloItems(tgt);
   for (let i = 0; i < items.length; i++) {
     let r = items[i];
-    c.fillStyle = r.id === 'resize' || r.id === 'rotate' ? '#4a7bd0' : '#fff';
+    c.fillStyle = '#fff';
     c.strokeStyle = '#4a7bd0';
     c.lineWidth = 1;
-    c.fillRect(r.x, r.y, r.w, r.h);
-    c.strokeRect(r.x, r.y, r.w, r.h);
-    if (r.label) {
+    if (r.id === 'title') {
+      c.fillRect(r.x, r.y, r.w, r.h);
+      c.strokeRect(r.x, r.y, r.w, r.h);
+      let s = r.label || '';
+      let maxW = r.maxW || r.w;
+      if (c.measureText && c.measureText(s).width > maxW) {
+        while (s.length > 1 && c.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+        s = s + '…';
+      }
+      c.fillStyle = '#234';
+      c.fillText(s, r.x + r.w / 2, r.y + r.h / 2);
+    } else {
+      c.beginPath();
+      c.arc(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, 0, Math.PI * 2);
+      c.fill();
+      c.stroke();
       c.fillStyle = r.id === 'del' ? '#a33' : '#234';
-      c.font = '11px sans-serif';
-      c.textAlign = 'center';
-      c.textBaseline = 'middle';
       c.fillText(r.label, r.x + r.w / 2, r.y + r.h / 2);
     }
   }
@@ -1911,7 +1937,6 @@ function kitPointerDown(world, wx, wy, e) {
   if ($kit.haloTarget && $kit.haloTarget.owner) {
     let hit = kitHitItem(kitHaloItems($kit.haloTarget), wx, wy);
     if (hit) {
-      if (hit.id === 'resize' || hit.id === 'rotate') kitGestureBegin();
       kitDoHalo(hit.id, $kit.haloTarget, wx, wy);
       $kit.down = { overlay: true, x: wx, y: wy };
       return;
@@ -1926,7 +1951,9 @@ function kitPointerDown(world, wx, wy, e) {
   }
   if (e.metaKey) {
     let target = world.partAt(wx, wy) || world;
-    kitShowHalo(target === world ? null : target);
+    let cur = $kit.haloTarget;
+    if (cur && cur.owner && (cur === target || cur.contains(target))) kitShowHalo(cur.owner);
+    else kitShowHalo(target === world ? null : target);
     $kit.down = { overlay: true, x: wx, y: wy };
     return;
   }
@@ -1990,7 +2017,16 @@ function kitPointerUp(world, wx, wy, e) {
   $kit.textDrag = null;
   if (textDrag) kitTextFinish(textDrag);
   if ($kit.haloDrag) {
+    let d = $kit.haloDrag;
     $kit.haloDrag = null;
+    if (d.id === 'copy' && d.target && d.target.owner) {
+      if (Math.abs(wx - d.ox) + Math.abs(wy - d.oy) < 4) {
+        d.target.put('x', d.target.num('x', 0) + 16);
+        d.target.put('y', d.target.num('y', 0) + 16);
+      } else {
+        d.target.moveTo(kitDropTarget(world, wx, wy, d.target));
+      }
+    }
     kitGestureEndIfIdle(world);
     return;
   }
@@ -2823,6 +2859,7 @@ function kitMakeInspector() {
   ins.define('show', function (tgt) {
     this.put('target', tgt);
     this.put('editing', null);
+    this.put('rotation', 0);
     this.find('editor').put('hidden', true);
     this.run('refresh');
   });
@@ -2838,7 +2875,7 @@ function kitMakeInspector() {
       let n = names[i];
       let v = tgt.get(n);
       let kind = typeof v === 'function' ? 'script' : v && v.slots ? 'ref' : 'data';
-      let shown = kind === 'script' ? n + '  ƒ' : kind === 'ref' ? n + ': ' + v : n + ': ' + v;
+      let shown = kind === 'script' ? n + '  ƒ' : n + ': ' + v;
       rows.add(
         part({
           like: proto,
@@ -2854,6 +2891,28 @@ function kitMakeInspector() {
           locked: true,
         }),
       );
+    }
+  });
+  ins.put('stepEvery', 16);
+  ins.define('onTick', function () {
+    /** Keep data rows in step with the target (w/h while scaling, count, …). */
+    let tgt = this.get('target');
+    if (!tgt) return;
+    let rows = this.find('rows');
+    let names = tgt.slotNames();
+    if (names.length !== rows.parts.length) {
+      this.run('refresh');
+      return;
+    }
+    for (let i = 0; i < names.length; i++) {
+      let row = rows.parts[i];
+      if (row.get('slotName') !== names[i]) {
+        this.run('refresh');
+        return;
+      }
+      if (row.get('kind') !== 'data' || $kit.focus === row) continue;
+      let shown = names[i] + ': ' + tgt.get(names[i]);
+      if (row.get('text') !== shown) row.put('text', shown);
     }
   });
   ins.define('pick', function (n) {
@@ -3018,12 +3077,20 @@ function kitExamples(world) {
 
   // Clock: three hands and an onTick script. Every replica computes the time for
   // itself, so the hands' rotation is per-user (setLocal): no document writes, ever.
-  world.add(kitLabel('Clock: onTick script, stepEvery 1000', 30, 240));
-  let clock = world.add(part({ name: 'clock', look: 'oval', x: 60, y: 270, w: 140, h: 140, fill: 'white', border: '#555', borderWidth: 3, stepEvery: 1000 }));
+  world.add(kitLabel('Clock: onTick script, stepEvery 16', 30, 240));
+  let clock = world.add(part({ name: 'clock', look: 'oval', x: 60, y: 270, w: 140, h: 140, fill: 'white', border: '#555', borderWidth: 3, stepEvery: 16 }));
   clock.add(part({ name: 'hourHand', x: 70, y: 67, w: 40, h: 6, pivotX: 0, fill: '#333', radius: 3 }));
   clock.add(part({ name: 'minuteHand', x: 70, y: 68, w: 58, h: 4, pivotX: 0, fill: '#333', radius: 2 }));
   clock.add(part({ name: 'secondHand', x: 70, y: 69, w: 62, h: 2, pivotX: 0, fill: '#c33' }));
   clock.define('onTick', function () {
+    let cx = this.num('w', 0) / 2;
+    let cy = this.num('h', 0) / 2;
+    this.find('hourHand').setLocal('x', cx);
+    this.find('hourHand').setLocal('y', cy - this.find('hourHand').num('h', 0) / 2);
+    this.find('minuteHand').setLocal('x', cx);
+    this.find('minuteHand').setLocal('y', cy - this.find('minuteHand').num('h', 0) / 2);
+    this.find('secondHand').setLocal('x', cx);
+    this.find('secondHand').setLocal('y', cy - this.find('secondHand').num('h', 0) / 2);
     let d = new Date();
     let s = d.getSeconds();
     let m = d.getMinutes() + s / 60;
@@ -3033,7 +3100,7 @@ function kitExamples(world) {
     this.find('hourHand').setLocal('rotation', h * 30 - 90);
   });
 
-  world.add(kitLabel('⌘-click a part for its halo; i = inspect', 300, 20));
+  world.add(kitLabel('⌘-click a part for its halo; click the name to inspect', 300, 20));
   world.add(kitLabel('drag from the bin to stamp a copy; Option-click carries', 300, 40));
 
   // Shelf: a row container. Drag things onto it and they line up.
@@ -3044,5 +3111,5 @@ function kitExamples(world) {
 }
 
 // Live stamp — eval `KITDEFS_WRITTEN_ON` to confirm this build is loaded.
-let KITDEFS_WRITTEN_ON = '2026-10-07 10:40 PDT';
-//written on 2026-10-07 10:40 PDT
+let KITDEFS_WRITTEN_ON = '2026-10-07 11:45 PDT';
+//written on 2026-10-07 11:45 PDT

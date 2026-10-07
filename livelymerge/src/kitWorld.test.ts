@@ -91,6 +91,19 @@ describe('Kit world (phase 4)', () => {
     expect(rt.eval(`typeof kitWorld.find('hourHand').get('rotation')`)).toBe('number');
   });
 
+  it('clock hands stay on the oval centre when the clock is resized', () => {
+    const { rt, frame } = makeKit();
+    rt.eval(`kitWorld.find('clock').put('w', 200); kitWorld.find('clock').put('h', 80);`);
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let c = kitWorld.find('clock');
+        let hr = c.find('hourHand');
+        return [hr.get('x'), hr.get('y') + hr.get('h') / 2, c.get('w') / 2, c.get('h') / 2].join(',');
+      })()`),
+    ).toBe('100,40,100,40');
+  });
+
   it('drag a part off the shelf onto the world, then back; the row layout follows', () => {
     const { rt, drag } = makeKit();
     // shelf at (300,270), padding 10: red sits at (310,280), 40x40
@@ -183,23 +196,59 @@ describe('Kit world (phase 4)', () => {
     ).toBe('bin,1,world,true,false');
   });
 
-  it('alt-click shows a halo; copy and delete work; resize changes size', () => {
+  it('halo letter handles copy, stamp again, delete, and scale', () => {
     const { rt, click, send } = makeKit();
     click(200, 66, { metaKey: true });
     expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('button');
-    const copyBtn = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'copy'; }); return [h.x + 2, h.y + 2]; })()`) as [number, number];
+    const copyBtn = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'copy'; }); return [h.x + h.w / 2, h.y + h.h / 2]; })()`) as [number, number];
     click(copyBtn[0], copyBtn[1]);
     expect(rt.eval(`kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length`)).toBe(2);
-    const del = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'del'; }); return [h.x + 2, h.y + 2]; })()`) as [number, number];
+    expect(rt.eval(`$kit.haloTarget && $kit.haloTarget !== kitWorld.find('button')`)).toBe(true);
+
+    const copyAgain = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'copy'; }); return [h.x + h.w / 2, h.y + h.h / 2]; })()`) as [number, number];
+    click(copyAgain[0], copyAgain[1]);
+    expect(rt.eval(`kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length + ',' + !!$kit.haloTarget`)).toBe('3,true');
+
+    const del = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'del'; }); return [h.x + h.w / 2, h.y + h.h / 2]; })()`) as [number, number];
     click(del[0], del[1]);
-    expect(rt.eval(`kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length + ',' + ($kit.haloTarget == null)`)).toBe('1,true');
+    expect(rt.eval(`kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length + ',' + ($kit.haloTarget == null)`)).toBe('2,true');
 
     click(330, 300, { metaKey: true }); // red on the shelf
-    const rz = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'resize'; }); return [h.x + 8, h.y + 8, $kit.haloTarget.get('w'), $kit.haloTarget.get('h')]; })()`) as number[];
+    const rz = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'resize'; }); return [h.x + h.w / 2, h.y + h.h / 2, $kit.haloTarget.get('w'), $kit.haloTarget.get('h')]; })()`) as number[];
     send('pointerdown', rz[0], rz[1]);
     send('pointermove', rz[0] + 20, rz[1] + 10);
     send('pointerup', rz[0] + 20, rz[1] + 10);
     expect(rt.eval(`kitWorld.find('red').get('w') > 40 && kitWorld.find('red').get('h') > 40`)).toBe(true);
+  });
+
+  it('dragging the copy handle moves the new part and leaves the handle on it', () => {
+    const { rt, click, send } = makeKit();
+    click(200, 66, { metaKey: true });
+    const pos = rt.eval(`(() => {
+      let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'copy'; });
+      return [h.x + h.w / 2, h.y + h.h / 2, kitWorld.find('button').get('x'), kitWorld.find('button').get('y')];
+    })()`) as number[];
+    send('pointerdown', pos[0], pos[1]);
+    send('pointermove', pos[0] + 40, pos[1] + 30);
+    send('pointerup', pos[0] + 40, pos[1] + 30);
+    expect(
+      rt.eval(`(() => {
+        let orig = kitWorld.parts.filter(function (p) { return p.name === 'button'; })[0];
+        let cpy = $kit.haloTarget;
+        return [kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length, cpy !== orig, cpy.get('x') !== orig.get('x')].join(',');
+      })()`),
+    ).toBe('2,true,true');
+  });
+
+  it('repeated halo click climbs to the owner then clears', () => {
+    const { rt, click } = makeKit();
+    const pos = rt.eval(`(() => { let g = kitWorld.find('green'); let p = g.worldFromLocal(g.get('w') / 2, g.get('h') / 2); return [p.x, p.y]; })()`) as number[];
+    click(pos[0], pos[1], { metaKey: true });
+    expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('green');
+    click(pos[0], pos[1], { metaKey: true });
+    expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('shelf');
+    click(pos[0], pos[1], { metaKey: true });
+    expect(rt.eval(`$kit.haloTarget`)).toBe(null);
   });
 
   it('halo wire button opens a picker that actually wires two parts', () => {
@@ -220,6 +269,35 @@ describe('Kit world (phase 4)', () => {
     expect(
       rt.eval(`kitWorld.find('srcA').set('n', 7); kitWorld.find('dstB').get('n') + ',' + ($kit.picker == null)`),
     ).toBe('7,true');
+  });
+
+  it('inspector ticks so scale shows up in w and h', () => {
+    const { rt, click, send, frame } = makeKit();
+    rt.eval(`kitInspect(kitWorld.find('red'))`);
+    frame();
+    click(330, 300, { metaKey: true });
+    const rz = rt.eval(`(() => { let h = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'resize'; }); return [h.x + h.w / 2, h.y + h.h / 2]; })()`) as number[];
+    send('pointerdown', rz[0], rz[1]);
+    send('pointermove', rz[0] + 24, rz[1] + 16);
+    send('pointerup', rz[0] + 24, rz[1] + 16);
+    expect(
+      rt.eval(`(() => {
+        let rows = kitWorld.find('inspector').find('rows').parts;
+        let w = rows.find(function (r) { return r.get('slotName') === 'w'; });
+        let h = rows.find(function (r) { return r.get('slotName') === 'h'; });
+        return (w.get('text') !== 'w: 40') + ',' + (h.get('text') !== 'h: 40');
+      })()`),
+    ).toBe('true,true');
+  });
+
+  it('opening an inspector does not keep a prior rotation', () => {
+    const { rt, frame } = makeKit();
+    rt.eval(`kitInspect(kitWorld.find('number'))`);
+    frame();
+    rt.eval(`kitWorld.find('inspector').put('rotation', 45)`);
+    rt.eval(`kitInspect(kitWorld.find('button'))`);
+    frame();
+    expect(rt.eval(`kitWorld.find('inspector').get('rotation') + ',' + kitWorld.find('inspector').get('target').name`)).toBe('0,button');
   });
 
   it('inspector lists slots, edits a script, and can inspect itself', () => {

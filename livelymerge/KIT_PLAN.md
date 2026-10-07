@@ -182,6 +182,8 @@ a concept, or only a convention? Did the kernel stay readable?
 | 4b real text | `look: 'text'` is a look, not a new idea | 2,746 | Bindings from LM TextBox; Kit-native caret/keys. |
 | 4d drag-select + brackets | still the `text` look | 2,938 | Mouse-drag and double-click word select; matching `()[]{}` tinted at the caret. |
 | 4e selectWord + shift-extend | still the `text` look | 3,048 | Double-click completes the whole match (string/line/brackets/quotes/word); shift-drag moves the nearer end. |
+| 4f letter halo | still overlay handles | 3,081 | Dropped the three word-buttons; c/x/-/s/r letters; copy handle stamps and stays. Title inspects. Net +33: stamp-copy and title cost more than the menu saved. |
+| 4g inspector tick + halo climb | still 4 ideas | 3,106 | Inspector onTick keeps data rows live; ⌘-click climbs owner then clears. |
 
 **Still true:** four ideas, two conventions, one `$` rule. **Bent:** kernel size. The next cuts should make halo/menus/lists *parts* (so they shrink the kernel) rather than add a Browser type.
 
