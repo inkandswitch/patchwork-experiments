@@ -24,4 +24,35 @@ export const plugins = [
 			return (await import("./tool")).OpenscadTool
 		},
 	},
+	{
+		// Renders an OpenSCAD doc into a 3D scene (see the patchwork "scene"
+		// package). Metadata only up here: this module also runs in a worker.
+		type: "scene:source",
+		id: "openscad-model",
+		name: "OpenSCAD model",
+		icon: "Box",
+		supportedDatatypes: ["openscad"],
+		// Optional scene-host extension: a source edit re-runs OpenSCAD, so
+		// debounce it like an expensive build even though `unit` is cheap.
+		cost: "expensive",
+		params: [
+			{
+				key: "unit",
+				label: "Units",
+				kind: "enum",
+				default: "mm",
+				options: [
+					{value: "mm", label: "Millimetres"},
+					{value: "cm", label: "Centimetres"},
+					{value: "m", label: "Metres"},
+					{value: "in", label: "Inches"},
+				],
+				// the last STL is cached, so a unit change only re-encodes
+				cost: "cheap",
+			},
+		],
+		async load() {
+			return (await import("./scene/source")).default
+		},
+	},
 ]

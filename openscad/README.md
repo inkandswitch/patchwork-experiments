@@ -54,6 +54,34 @@ its data available inside your `.scad` source as JSON.
 - Because of the generated line, reported error/warning line numbers are
   off by exactly one (not one per import) whenever any import is attached.
 
+## In a 3D scene
+
+The package also registers a `scene:source` provider, `openscad-model`, so an
+OpenSCAD doc can be dropped into a Patchwork scene (the `scene` package). It
+lives in `src/scene/`:
+
+- `build()` runs the same engine as the editor (same worker, same import
+  resolution: each `doc.imports` entry is fetched with `repo.find()` and bound
+  as JSON; an unavailable one binds to `{}`), parses the binary STL and encodes
+  a GLB with flat per-face normals. OpenSCAD is Z-up and unitless; the `unit`
+  param (default millimetres) scales to metres and `(x, y, z)` becomes
+  `(x, z, -y)` for glTF's Y-up.
+- The last few STLs are cached by source + import JSON, so changing `unit`
+  re-encodes without running OpenSCAD again.
+- `fingerprint()` hashes the source and the import bindings (name, doc url),
+  not the title, so renaming never rebuilds.
+- `dependencies()` lists the imported docs (once each, not transitively,
+  since imports are bound as plain JSON). The scene host records their heads
+  next to the source's, so an edit *inside* an imported doc rebuilds too.
+- `src/scene/glb.js` is a copy of the scene package's encoder. Don't edit it
+  here; copy a newer one over it.
+
+The worker URL is resolved against the engine chunk (`import.meta.url`), not
+the page, so it works when the scene loads this provider. If the bundle is on
+a different origin from the page (a dev server), the engine fetches the
+worker and starts it from a blob URL, since `new Worker()` refuses
+cross-origin scripts.
+
 ## Possible follow-ups
 
 - Customizer panel for OpenSCAD `/* [group] */` parameters.
@@ -67,6 +95,8 @@ its data available inside your `.scad` source as JSON.
 ```bash
 pnpm install
 pnpm build            # build dist/
+pnpm test             # STL -> GLB, fingerprint, dependencies, import resolution
+pnpm typecheck
 ```
 
 ## Sync to Patchwork

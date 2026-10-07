@@ -13,6 +13,9 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
     "push": "pnpm build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
@@ -43,6 +46,7 @@
     "@types/three": "^0.180.0",
     "typescript": "^5.8.3",
     "vite": "^5.4.19",
-    "vite-plugin-solid": "^2.10.0"
+    "vite-plugin-solid": "^2.10.0",
+    "vitest": "^3.2.4"
   }
 }
