@@ -1,4 +1,4 @@
-//written on 2026-10-08 14:03 PDT
+//written on 2026-10-08 16:10 PDT
 // The Kit — kernel
 // =================
 // Parts with slots, connected by wires, reacting to signals. See KIT_PLAN.md.
@@ -28,24 +28,30 @@
 //             radius; text, fontSize, textColor, align; hidden; a `draw` script overrides.
 //             'text' is a box you can type in (caret, selection) — see kitField.
 //             Double-click completes a match (word / line / brackets / whole string);
-//             shift-drag extends the nearer end.
+//             shift-drag extends the nearer end. A hidden textarea (the keyboard
+//             buffer) mirrors the focused field both ways so the OS IME and clipboard
+//             see the same text and selection.
 //   layout    a `layout` script packing along `delta` (pt(1,0) row, pt(0,1) column),
 //             or the strings 'row' / 'column' / 'free'; gap, padding; fit (shrink-wrap)
 //   input     pointerDown / pointerMove / pointerUp / click / keyDown signals go to
 //             the part under the pointer, or the nearest owner that handles them
-//             (has an onPointerDown, … script or a wire from that outlet)
+//             (has an onPointerDown, … script or a wire from that outlet). The event
+//             is { at (world Point), local (in the handling part), target, part,
+//             shift, alt, meta, ctrl, button, key }
 //   carrying  a part sitting in a container whose `acceptsDrops` is true can be
 //             picked up by the user's hand (press and drag it; Alt-click picks it up
 //             and keeps holding it until the next click) and dropped into any other
 //             such container; `locked` stops it
 //   bin       a container with `isBin`: dragging a sub-part stamps an instance()
 //             (the original stays); dropping a part in keeps it as a new prototype
-//   halo      meta/cmd-click a part: c copy, x delete, - wire, s scale, r rotate;
-//             the name at the bottom inspects (ellipsis if it meets r or s).
-//             A second ⌘-click climbs the owner chain. The world's halo sits just
-//             inside (title only — inspect). Climbing off the world clears.
+//   halo      meta/cmd-click a part: a halo *part* (kept on $kit, not in the world's
+//             parts list) with handle children — c copy, x delete, - wire, s scale,
+//             r rotate; the name at the bottom inspects (ellipsis if it meets r or s).
+//             ⌘-click a handle to halo *it* (title inspects). A second ⌘-click on
+//             the target climbs the owner chain. The world's halo sits just inside
+//             (title only). Climbing off the world clears.
 //   closer    slot; if true, a permanent x at the NW corner deletes me (inspectors, finder)
-//   inspect   halo title (or kitInspect(part)): parts list (click to inspect) then slots;
+//   inspect   halo title (or kitInspect(part)): owner, then parts list (click to inspect), then slots;
 //             script editor; the Inspector is itself parts
 //   find      bin "find" (or kitFind(text)): kitSearch hits; click a hit to inspect
 //   wires     drawn when `$kit.showWires` is true; the halo "-" handle drag-connects
@@ -1190,48 +1196,182 @@ function kitWorldBox(p) {
   return rect(lo, hi.sub(lo));
 }
 
+function kitIsWorld(p) {
+  return p === kitWorld;
+}
+
 function kitHaloFrame(target) {
   /**
    * Rectangle the halo ring follows. Ordinary parts: just outside. The world:
    * just inside, so the ring isn't clipped by the canvas edge.
    */
   let box = kitWorldBox(target);
-  return target.owner ? box.outset(2) : box.outset(-20);
+  return kitIsWorld(target) ? box.outset(-20) : box.outset(2);
+}
+
+function kitIsHaloPart(p) {
+  return !!(p && (p.$isHalo || p.$isHaloHandle));
+}
+
+function kitHaloHandleProto() {
+  /** One `like` for every letter handle: oval, locked, click runs kitDoHalo. */
+  let p = $kit.haloHandleLike;
+  if (p) return p;
+  p = Object.create(Part);
+  p.$isHaloHandle = true; // before any slot write: halo parts never overlay/persist
+  p.init({
+    name: 'haloHandle',
+    look: 'oval',
+    extent: pt(16, 16),
+    fill: '#fff',
+    border: '#4a7bd0',
+    fontSize: 11,
+    textColor: '#234',
+    locked: true,
+  });
+  p.define('onPointerDown', function (e) {
+    kitDoHalo(this.name, $kit.haloTarget, e.at);
+  });
+  $kit.haloHandleLike = p;
+  return p;
+}
+
+function kitHaloLayout(halo, target) {
+  /**
+   * Sit the halo ring on kitHaloFrame and park each handle on the target's world
+   * box (c NE, - E, s SE, r SW, x NW; name on the bottom edge). The world's title
+   * sits 100px left of centre so it misses Patchwork's workspace-open control.
+   */
+  let ring = kitHaloFrame(target);
+  let box = kitIsWorld(target) ? ring : kitWorldBox(target);
+  halo.put('origin', pt(ring.x, ring.y));
+  halo.put('extent', pt(ring.w, ring.h));
+  let place = function (id, p) {
+    let h = halo.find(id);
+    if (!h) return;
+    h.put('origin', p.sub(pt(ring.x, ring.y)).sub(h.extent().scale(0.5)));
+  };
+  if (!kitIsWorld(target)) {
+    place('copy', box.topRight());
+    place('wire', pt(box.right(), box.center().y));
+    place('resize', box.bottomRight());
+    place('rotate', box.bottomLeft());
+    place('del', box.topLeft());
+  }
+  let title = halo.find('title');
+  if (title) {
+    let name = target.name != null ? '' + target.name : 'part';
+    title.put('text', name);
+    let maxW = Math.max(20, box.w - 16);
+    let tw = Math.min(maxW, Math.max(20, name.length * 7 + 8));
+    title.put('extent', pt(tw, 16));
+    title.put('maxW', maxW);
+    let tx = box.center().x - tw / 2 - (kitIsWorld(target) ? 100 : 0);
+    title.put('origin', pt(tx - ring.x, box.bottom() - 8 - ring.y));
+  }
+}
+
+function kitMakeHalo(target) {
+  /**
+   * A halo part with handle children. Not added to the world's parts list: the
+   * only edge is `$kit.halo`, so it is per-user and never enters the document.
+   */
+  let halo = Object.create(Part);
+  halo.$isHalo = true;
+  halo.init({ name: 'halo', look: 'none', fill: 'none' });
+  halo.define('draw', function (c) {
+    let e = this.extent();
+    c.save();
+    c.strokeStyle = '#4a7bd0';
+    c.lineWidth = 1.5;
+    if (c.setLineDash) c.setLineDash([4, 3]);
+    c.strokeRect(0, 0, e.x, e.y);
+    if (c.setLineDash) c.setLineDash([]);
+    c.restore();
+  });
+  let proto = kitHaloHandleProto();
+  let mk = function (id, label, extra) {
+    let h = Object.create(Part);
+    h.$isHaloHandle = true;
+    h.init({ like: proto, name: id, text: label });
+    halo.add(h);
+    if (extra) {
+      let ks = Object.keys(extra);
+      for (let i = 0; i < ks.length; i++) h.put(ks[i], extra[ks[i]]);
+    }
+    return h;
+  };
+  if (!kitIsWorld(target)) {
+    mk('copy', 'c');
+    mk('wire', '-');
+    mk('resize', 's');
+    mk('rotate', 'r');
+    mk('del', 'x', { textColor: '#a33' });
+  }
+  let title = mk('title', target.name != null ? '' + target.name : 'part', { look: 'box' });
+  title.define('draw', function (c) {
+    let s = '' + (this.get('text') || '');
+    let maxW = this.num('maxW', this.extent().x);
+    c.font = this.num('fontSize', 11) + 'px sans-serif';
+    if (c.measureText && c.measureText(s).width > maxW) {
+      while (s.length > 1 && c.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+      s = s + '…';
+    }
+    let hold = this.slots.text;
+    this.slots.text = s;
+    this.drawLook(c);
+    this.slots.text = hold;
+  });
+  kitHaloLayout(halo, target);
+  return halo;
+}
+
+function kitPlaceHalo() {
+  if ($kit.halo && $kit.haloTarget) kitHaloLayout($kit.halo, $kit.haloTarget);
+}
+
+function kitHitHalo(wx, wy) {
+  if (!$kit.halo) return null;
+  kitPlaceHalo();
+  let hit = $kit.halo.partAt(wx, wy);
+  if (hit && hit !== $kit.halo) return hit;
+  let tgt = $kit.haloTarget;
+  if (tgt && tgt.$isHaloHandle && tgt.partAt(wx, wy)) return tgt;
+  return null;
+}
+
+function kitLiftHaloHandle(h) {
+  /** Take a handle out of the current halo so it can wear a halo of its own. */
+  if (!h || !h.owner) return;
+  let pv = h.pivot();
+  let w = h.worldFromLocal(pv);
+  let r = h.worldRotation();
+  h.remove();
+  h.put('origin', w.sub(pv));
+  h.put('rotation', r);
 }
 
 function kitHaloItems(target) {
   /**
-   * Letter handles around `target`, in world pixels. Not parts: they live only
-   * while the halo is up (ephemeral, per user) so they never enter the doc.
-   * c NE, - E, s SE, r SW, x NW; the name sits on the bottom edge between r and s.
-   * The world is title-only (inspect).
+   * World-pixel boxes of the halo's handle parts. Same letters as kitMakeHalo:
+   * c NE, - E, s SE, r SW, x NW; the name on the bottom edge. The world is title-only.
    */
-  let box = target.owner ? kitWorldBox(target) : kitHaloFrame(target);
-  let s = 16;
-  let at = function (id, label, p) {
-    let r = rect(p.x - s / 2, p.y - s / 2, s, s);
-    r.id = id;
-    r.label = label;
-    return r;
-  };
-  let maxW = Math.max(20, box.w - s);
-  let name = target.name != null ? '' + target.name : 'part';
-  let tw = Math.min(maxW, Math.max(20, name.length * 7 + 8));
-  let mid = box.center();
-  // World's title sits 100px left of centre so it misses Patchwork's workspace-open control.
-  let title = rect(mid.x - tw / 2 - (target.owner ? 0 : 100), box.bottom() - 8, tw, 16);
-  title.id = 'title';
-  title.label = name;
-  title.maxW = maxW;
-  if (!target.owner) return [title];
-  return [
-    at('copy', 'c', box.topRight()),
-    at('wire', '-', pt(box.right(), mid.y)),
-    at('resize', 's', box.bottomRight()),
-    at('rotate', 'r', box.bottomLeft()),
-    at('del', 'x', box.topLeft()),
-    title,
-  ];
+  if (!target) return [];
+  let live = $kit.halo && $kit.haloTarget === target;
+  let halo = live ? $kit.halo : kitMakeHalo(target);
+  if (live) kitHaloLayout(halo, target);
+  let out = [];
+  for (let i = 0; i < halo.parts.length; i++) {
+    let h = halo.parts[i];
+    let o = h.worldFromLocal(0, 0);
+    let e = h.extent();
+    let r = rect(o.x, o.y, e.x, e.y);
+    r.id = h.name;
+    r.label = h.get('text');
+    r.maxW = h.get('maxW');
+    out.push(r);
+  }
+  return out;
 }
 
 function kitCloserRect(p) {
@@ -1271,10 +1411,20 @@ function kitHitItem(items, wx, wy) {
 }
 
 function kitShowHalo(target) {
-  $kit.haloTarget = target && !target.$isHand ? target : null;
+  let next = target && !target.$isHand && !target.$isHalo ? target : null;
   $kit.wiringFrom = null;
   $kit.picker = null;
   $kit.haloDrag = null;
+  if (next && next === $kit.haloTarget && $kit.halo) {
+    kitPlaceHalo();
+    return;
+  }
+  if (next && next.$isHaloHandle && $kit.halo && next.owner === $kit.halo) {
+    $kit.haloPrev = $kit.haloTarget;
+    kitLiftHaloHandle(next);
+  } else if (!next || !next.$isHaloHandle) $kit.haloPrev = null;
+  $kit.haloTarget = next;
+  $kit.halo = next ? kitMakeHalo(next) : null;
 }
 
 function kitOpenPicker(from, to, wx, wy) {
@@ -1329,14 +1479,15 @@ function kitPick(item) {
   }
 }
 
-function kitDoHalo(id, target, wx, wy) {
+function kitDoHalo(id, target, at) {
+  at = pt(at);
   if (id === 'copy') {
     kitGestureBegin();
     let cpy = target.copy();
     if (target.owner) target.owner.add(cpy);
     cpy.moveTo(target.world());
     kitShowHalo(cpy);
-    $kit.haloDrag = { id: 'copy', target: cpy, x: wx, y: wy, ox: wx, oy: wy };
+    $kit.haloDrag = { id: 'copy', target: cpy, at: at, at0: at };
   } else if (id === 'del') {
     kitClosePart(target);
   } else if (id === 'wire') {
@@ -1346,25 +1497,25 @@ function kitDoHalo(id, target, wx, wy) {
     kitInspect(target);
   } else if (id === 'resize' || id === 'rotate') {
     kitGestureBegin();
-    $kit.haloDrag = { id: id, target: target, x: wx, y: wy };
+    $kit.haloDrag = { id: id, target: target, at: at };
   }
 }
 
-function kitHaloDragTo(wx, wy) {
+function kitHaloDragTo(at) {
   let d = $kit.haloDrag;
   if (!d) return;
   let tgt = d.target;
-  let here = pt(wx, wy);
+  at = pt(at);
   if (d.id === 'copy') {
-    tgt.put('origin', tgt.origin().add(here.sub(pt(d.x, d.y))));
-    d.x = wx;
-    d.y = wy;
+    tgt.put('origin', tgt.origin().add(at.sub(d.at)));
+    d.at = at;
   } else if (d.id === 'resize') {
-    let l = tgt.localFromWorld(here);
+    let l = tgt.localFromWorld(at);
     tgt.put('extent', pt(Math.max(12, l.x), Math.max(12, l.y)));
   } else if (d.id === 'rotate') {
     let c = tgt.worldFromLocal(tgt.pivot());
-    tgt.put('rotation', (Math.atan2(wy - c.y, wx - c.x) * 180) / Math.PI);
+    let v = at.sub(c);
+    tgt.put('rotation', (Math.atan2(v.y, v.x) * 180) / Math.PI);
   }
 }
 
@@ -1428,46 +1579,10 @@ function kitDrawClosers(world, c) {
 }
 
 function kitDrawHalo(c) {
+  kitPlaceHalo();
   let tgt = $kit.haloTarget;
-  if (!tgt) return;
-  let box = kitHaloFrame(tgt);
-  c.save();
-  c.strokeStyle = '#4a7bd0';
-  c.lineWidth = 1.5;
-  c.setLineDash ? c.setLineDash([4, 3]) : null;
-  let ring = box;
-  c.strokeRect(ring.x, ring.y, ring.w, ring.h);
-  c.setLineDash ? c.setLineDash([]) : null;
-  c.font = '11px sans-serif';
-  c.textAlign = 'center';
-  c.textBaseline = 'middle';
-  let items = kitHaloItems(tgt);
-  for (let i = 0; i < items.length; i++) {
-    let r = items[i];
-    c.fillStyle = '#fff';
-    c.strokeStyle = '#4a7bd0';
-    c.lineWidth = 1;
-    if (r.id === 'title') {
-      c.fillRect(r.x, r.y, r.w, r.h);
-      c.strokeRect(r.x, r.y, r.w, r.h);
-      let s = r.label || '';
-      let maxW = r.maxW || r.w;
-      if (c.measureText && c.measureText(s).width > maxW) {
-        while (s.length > 1 && c.measureText(s + '…').width > maxW) s = s.slice(0, -1);
-        s = s + '…';
-      }
-      c.fillStyle = '#234';
-      c.fillText(s, r.x + r.w / 2, r.y + r.h / 2);
-    } else {
-      c.beginPath();
-      c.arc(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, 0, Math.PI * 2);
-      c.fill();
-      c.stroke();
-      c.fillStyle = r.id === 'del' ? '#a33' : '#234';
-      c.fillText(r.label, r.x + r.w / 2, r.y + r.h / 2);
-    }
-  }
-  c.restore();
+  if (tgt && tgt.$isHaloHandle) tgt.draw(c);
+  if ($kit.halo) $kit.halo.draw(c);
 }
 
 function kitDrawPicker(c) {
@@ -1538,9 +1653,15 @@ let KIT_HAND_MAX = 64; // peers' hands we are willing to show
 
 function kitOverlayScope(p) {
   /** Should a write to `p` go to its overlay? Yes during a gesture, inside pointer
-   * event handling — but never for a hand (per-user already; its writes are free). */
+   * event handling — but never for a hand or a halo handle (per-user already). */
   return (
-    typeof $kit === 'object' && $kit != null && $kit.gesture != null && $kit.inPointerEvent === true && !p.$isHand
+    typeof $kit === 'object' &&
+    $kit != null &&
+    $kit.gesture != null &&
+    $kit.inPointerEvent === true &&
+    !p.$isHand &&
+    !p.$isHalo &&
+    !p.$isHaloHandle
   );
 }
 
@@ -2069,7 +2190,7 @@ function kitSweepLeases(world, now) {
 //   pointerDown / pointerMove / pointerUp / click  ->  the part under the pointer, or
 //       the nearest owner that handles that signal (has a script or wire for it);
 //   keyDown  ->  the focused part ($kit.focus), else the world.
-// The event value is { x, y (world), lx, ly (in the handling part), target, part,
+// The event value is { at (world Point), local (in the handling part), target, part,
 // shift, alt, meta, ctrl, button, key }.
 // A part can capture the pointer (kitCapture(part)) so moves and the up go to it
 // even when the pointer leaves it — that's how a slider keeps tracking.
@@ -2085,11 +2206,10 @@ function kitCapture(p) {
 }
 
 function kitEvent(e, wx, wy, target) {
+  let at = pt(wx, wy);
   return {
-    x: wx,
-    y: wy,
-    lx: wx,
-    ly: wy,
+    at: at,
+    local: at,
     target: target,
     part: target,
     shift: !!e.shiftKey,
@@ -2106,9 +2226,7 @@ function kitDispatch(name, target, evt) {
   let p = target;
   while (p) {
     if (p.handles(name)) {
-      let l = p.localFromWorld(pt(evt.x, evt.y));
-      evt.lx = l.x;
-      evt.ly = l.y;
+      evt.local = p.localFromWorld(evt.at);
       evt.part = p;
       p.signal(name, evt);
       return true;
@@ -2185,7 +2303,7 @@ function kitPointerDown(world, wx, wy, e) {
   $kit.pointerY = wy;
   let hand = kitLocalHand(world, wx, wy);
   kitMoveHand(hand, wx, wy);
-  // Overlay hits first (halo, picker): they are not parts, so they never persist.
+  // Overlay hits first: picker, then halo handles (parts, but not in world.parts).
   if ($kit.picker) {
     let hit = kitHitItem(kitPickerItems(), wx, wy);
     if (hit && hit.kind !== 'label') kitPick(hit);
@@ -2193,13 +2311,14 @@ function kitPointerDown(world, wx, wy, e) {
     $kit.down = { overlay: true, x: wx, y: wy };
     return;
   }
-  if ($kit.haloTarget) {
-    let hit = kitHitItem(kitHaloItems($kit.haloTarget), wx, wy);
-    if (hit) {
-      kitDoHalo(hit.id, $kit.haloTarget, wx, wy);
-      $kit.down = { overlay: true, x: wx, y: wy };
-      return;
-    }
+  let handle = kitHitHalo(wx, wy);
+  if (handle) {
+    if (e.metaKey) {
+      if ($kit.haloTarget === handle) kitShowHalo(handle.owner || $kit.haloPrev);
+      else kitShowHalo(handle);
+    } else kitDispatch('pointerDown', handle, kitEvent(e, wx, wy, handle));
+    $kit.down = { overlay: true, x: wx, y: wy };
+    return;
   }
   if ($kit.wiringFrom) {
     let target = world.partAt(wx, wy) || world;
@@ -2233,7 +2352,10 @@ function kitPointerDown(world, wx, wy, e) {
   }
   kitGestureBegin();
   let target = world.partAt(wx, wy) || world;
-  if ($kit.focus && $kit.focus !== target) $kit.focus = null;
+  if ($kit.focus && $kit.focus !== target) {
+    $kit.focus = null;
+    window._kitKeyBufFromDom = false;
+  }
   $kit.down = { target: target, x: wx, y: wy };
   if (e.altKey) {
     let g = kitGrabbable(target);
@@ -2254,7 +2376,7 @@ function kitPointerMove(world, wx, wy, e) {
   let hand = kitLocalHand(world, wx, wy);
   kitMoveHand(hand, wx, wy);
   if ($kit.haloDrag) {
-    kitHaloDragTo(wx, wy);
+    kitHaloDragTo(pt(wx, wy));
     return;
   }
   if ($kit.textDrag) {
@@ -2288,7 +2410,8 @@ function kitPointerUp(world, wx, wy, e) {
     let d = $kit.haloDrag;
     $kit.haloDrag = null;
     if (d.id === 'copy' && d.target && d.target.owner) {
-      if (Math.abs(wx - d.ox) + Math.abs(wy - d.oy) < 4) {
+      let delta = pt(wx, wy).sub(d.at0 || d.at);
+      if (Math.abs(delta.x) + Math.abs(delta.y) < 4) {
         d.target.put('origin', d.target.origin().add(pt(16, 16)));
       } else {
         d.target.moveTo(kitDropTarget(world, wx, wy, d.target));
@@ -2391,10 +2514,13 @@ function kitFrame(now) {
   let events = window._kitEvents;
   window._kitEvents = new window.Array();
   for (let i = 0; i < events.length; i++) kitTry(() => kitHandleEvent(world, events[i]));
+  kitTry(() => kitApplyOsPaste());
   kitTry(() => kitTick(world, now));
   kitTry(() => kitProcessInbound(world, now));
   kitTry(() => world.layout());
+  kitTry(() => kitPlaceHalo());
   kitTry(() => kitFlushStream(world, now));
+  kitTry(() => kitSyncKeyBuffer());
   if (typeof ctx !== 'undefined' && ctx) kitTry(() => kitRender(world, ctx));
 }
 
@@ -2460,7 +2586,10 @@ function initUI() {
     ephListener: null,
     drawLocalHand: true, // my hand replaces the OS cursor over the canvas
     showWires: true,
+    halo: null,
+    haloHandleLike: null,
     haloTarget: null,
+    haloPrev: null,
     haloDrag: null,
     wiringFrom: null,
     picker: null,
@@ -2508,7 +2637,19 @@ function initUI() {
     listen(canvas, 'pointermove', (e) => window._kitEvents.push(e));
     listen(canvas, 'pointerup', (e) => window._kitEvents.push(e));
     listen(canvas, 'pointercancel', (e) => window._kitEvents.push(e));
-    listen(canvas, 'keydown', (e) => window._kitEvents.push(e));
+    listen(canvas, 'keydown', (e) => {
+      // Cmd/Ctrl-V waits for the `paste` event (that is where the OS text is).
+      // Do not preventDefault on V or the paste event never arrives.
+      if (window._kitTextFocus && (e.metaKey || e.ctrlKey)) {
+        let ch = e.key && e.key.length === 1 ? e.key.toLowerCase() : '';
+        if (ch === 'v') return;
+        if (ch === 'c' || ch === 'x' || ch === 'a') {
+          if (e.preventDefault) e.preventDefault();
+        }
+      }
+      window._kitEvents.push(e);
+    });
+    kitInstallKeyBuffer(signal);
     listen(canvas, 'wheel', (e) => {
       if (e.preventDefault) e.preventDefault();
       window._kitEvents.push(e);
@@ -2942,7 +3083,8 @@ function kitTextFinish(p) {
   let start = $kit.textDragStart;
   $kit.textDragStart = null;
   if (start && !start.shift) {
-    let d = Math.abs(($kit.pointerX || 0) - start.x) + Math.abs(($kit.pointerY || 0) - start.y);
+    let dlt = pt($kit.pointerX || 0, $kit.pointerY || 0).sub(start.at);
+    let d = Math.abs(dlt.x) + Math.abs(dlt.y);
     if (d < 4) {
       p.$caret = start.i;
       p.$anchor = start.i;
@@ -2964,11 +3106,12 @@ function kitTextClick(e) {
    * at the same caret completes selectWord (whole match), and does not keep dragging.
    */
   $kit.focus = this;
-  let i = kitTextIndexAt(this, e.lx, e.ly);
+  window._kitKeyBufFromDom = false;
+  let i = kitTextIndexAt(this, e.local.x, e.local.y);
   if (e.shift) {
     kitTextShiftExtend(this, i);
     $kit.textDrag = this;
-    $kit.textDragStart = { x: e.x, y: e.y, i: i, shift: true };
+    $kit.textDragStart = { at: e.at, i: i, shift: true };
   } else if (this.$priorNull === i) {
     let w = kitTextSelectWord(kitTextOf(this), i);
     this.$anchor = w.lo;
@@ -2980,7 +3123,7 @@ function kitTextClick(e) {
     this.$caret = i;
     this.$anchor = i;
     $kit.textDrag = this;
-    $kit.textDragStart = { x: e.x, y: e.y, i: i, shift: false };
+    $kit.textDragStart = { at: e.at, i: i, shift: false };
   }
   kitTextRevealCaret(this);
 }
@@ -3003,9 +3146,21 @@ function kitTextKey(e) {
     return;
   }
   if (e.ctrl || e.meta) {
-    if (k === 'a' || k === 'A') {
+    let ch = ('' + k).toLowerCase();
+    if (ch === 'a') {
       this.$anchor = 0;
       this.$caret = t.length;
+    } else if (ch === 'c') {
+      kitClipboardWrite(t.slice(lo, hi));
+    } else if (ch === 'x') {
+      kitClipboardWrite(t.slice(lo, hi));
+      kitTextReplace(this, lo, hi, '', lo);
+    } else if (ch === 'v') {
+      let paste = window._kitPaste;
+      if (paste == null) return;
+      window._kitPaste = null;
+      paste = '' + paste;
+      kitTextReplace(this, lo, hi, paste, lo + paste.length);
     }
     return;
   }
@@ -3040,9 +3195,243 @@ function kitTextKey(e) {
   }
   if (k === 'Escape') {
     $kit.focus = null;
+    window._kitKeyBufFromDom = false;
     return;
   }
   if (k.length === 1) kitTextReplace(this, lo, hi, k, lo + 1);
+}
+
+function kitApplyOsPaste() {
+  /**
+   * Apply a paste captured outside the frame (host listener only stashes a string
+   * and a flag — it must not allocate heap objects).
+   */
+  if (!window._kitNeedPaste) return;
+  window._kitNeedPaste = false;
+  let p = $kit.focus;
+  let paste = window._kitPaste;
+  window._kitPaste = null;
+  if (!p || paste == null) return;
+  paste = '' + paste;
+  let range = kitTextRange(p);
+  kitTextReplace(p, range.lo, range.hi, paste, range.lo + paste.length);
+}
+
+function kitClipboardWrite(text) {
+  /** Push `text` to the OS clipboard and the keyboard buffer. Host-only writes. */
+  text = text == null ? '' : '' + text;
+  window._kitClip = text;
+  let doc = window.document;
+  let ta = window._kitKeyBuffer;
+  try {
+    if (ta) {
+      let hold = ta.value;
+      let s0 = ta.selectionStart;
+      let s1 = ta.selectionEnd;
+      ta.value = text;
+      if (ta.focus) ta.focus();
+      if (ta.select) ta.select();
+      else if (ta.setSelectionRange) ta.setSelectionRange(0, text.length);
+      if (doc && doc.execCommand) doc.execCommand('copy');
+      ta.value = hold;
+      if (ta.setSelectionRange && hold != null) ta.setSelectionRange(s0 || 0, s1 || 0);
+    }
+  } catch (_err) {
+    /* ignore */
+  }
+  let nav = window.navigator;
+  if (nav && nav.clipboard && nav.clipboard.writeText) {
+    try {
+      nav.clipboard.writeText(text);
+    } catch (_err) {
+      /* ignore */
+    }
+  }
+}
+
+function kitInstallKeyBuffer(signal) {
+  /**
+   * Host textarea the OS types into. Never on the LM heap. Clicks still hit the
+   * canvas (pointer-events: none); we push Kit text/selection into it, and pull
+   * when the DOM says it changed. Copy/cut/paste are taken from the document so
+   * they work even when the canvas, not the buffer, has keyboard focus.
+   */
+  let doc = window.document;
+  if (!doc || !doc.body) return;
+  if (window._kitKeyBuffer && window._kitKeyBuffer.parentNode) {
+    window._kitKeyBuffer.parentNode.removeChild(window._kitKeyBuffer);
+  }
+  let ta = doc.createElement('textarea');
+  ta.setAttribute('aria-hidden', 'true');
+  ta.tabIndex = 0;
+  ta.autocomplete = 'off';
+  ta.spellcheck = false;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '0';
+  ta.style.width = '200px';
+  ta.style.height = '40px';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+  ta.style.resize = 'none';
+  ta.style.border = 'none';
+  ta.style.padding = '0';
+  ta.style.margin = '0';
+  doc.body.appendChild(ta);
+  window._kitKeyBuffer = ta;
+  window._kitKeyBufFromDom = false;
+  window._kitComposing = false;
+  window._kitTextFocus = false;
+  window._kitClip = '';
+  window._kitPaste = null;
+  window._kitNeedPaste = false;
+  let mark = () => {
+    window._kitKeyBufFromDom = true;
+  };
+  ta.addEventListener('input', mark, { signal: signal });
+  ta.addEventListener(
+    'compositionstart',
+    () => {
+      window._kitComposing = true;
+    },
+    { signal: signal },
+  );
+  ta.addEventListener(
+    'compositionend',
+    () => {
+      window._kitComposing = false;
+      mark();
+    },
+    { signal: signal },
+  );
+  ta.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.isComposing) return;
+      let ch = e.key && e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (e.key === 'Enter' || e.key === 'Return' || e.key === 'Escape') {
+        if (e.preventDefault) e.preventDefault();
+        window._kitEvents.push(e);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && (ch === 'a' || ch === 'c' || ch === 'x')) {
+        if (e.preventDefault) e.preventDefault();
+        window._kitEvents.push(e);
+      }
+    },
+    { signal: signal },
+  );
+  let onCopyCut = (e) => {
+    if (!window._kitTextFocus) return;
+    if (e.clipboardData && window._kitSel != null) {
+      e.clipboardData.setData('text/plain', window._kitSel);
+      if (e.preventDefault) e.preventDefault();
+    }
+  };
+  window.addEventListener('copy', onCopyCut, { signal: signal, capture: true });
+  window.addEventListener('cut', onCopyCut, { signal: signal, capture: true });
+  window.addEventListener(
+    'paste',
+    (e) => {
+      // Host-only: primitives on window. Do not allocate heap objects here —
+      // this listener runs outside a transaction (a `{}` here kills the frame loop).
+      if (!window._kitTextFocus) return;
+      let t = '';
+      try {
+        if (e.clipboardData && e.clipboardData.getData) t = e.clipboardData.getData('text/plain') || '';
+      } catch (_err) {
+        t = '';
+      }
+      window._kitPaste = '' + t;
+      window._kitNeedPaste = true;
+      if (e.preventDefault) e.preventDefault();
+    },
+    { signal: signal, capture: true },
+  );
+  if (doc.addEventListener) {
+    doc.addEventListener(
+      'selectionchange',
+      () => {
+        if (doc.activeElement === window._kitKeyBuffer) mark();
+      },
+      { signal: signal },
+    );
+  }
+}
+
+function kitPlaceKeyBuffer(_p, ta) {
+  if (!ta.style) return;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '0';
+  ta.style.width = '200px';
+  ta.style.height = '40px';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+}
+
+function kitPushKeyBuffer(p, ta) {
+  let t = kitTextOf(p);
+  if (ta.value !== t) ta.value = t;
+  let a = typeof p.$anchor === 'number' ? p.$anchor : t.length;
+  let c = typeof p.$caret === 'number' ? p.$caret : a;
+  if (a < 0) a = 0;
+  if (c < 0) c = 0;
+  if (a > t.length) a = t.length;
+  if (c > t.length) c = t.length;
+  let lo = a < c ? a : c;
+  let hi = a < c ? c : a;
+  let dir = c < a ? 'backward' : 'forward';
+  if (ta.selectionStart !== lo || ta.selectionEnd !== hi) {
+    if (ta.setSelectionRange) ta.setSelectionRange(lo, hi, dir);
+    else {
+      ta.selectionStart = lo;
+      ta.selectionEnd = hi;
+    }
+  }
+  kitPlaceKeyBuffer(p, ta);
+  let doc = typeof document !== 'undefined' ? document : null;
+  let ae = doc && doc.activeElement;
+  if (ta.focus && (!ae || ae === ta || ae === canvas || ae === doc.body)) ta.focus();
+}
+
+function kitPullKeyBuffer(p, ta) {
+  let t = ta.value == null ? '' : '' + ta.value;
+  if (kitTextOf(p) !== t) p.set('text', t);
+  let n = t.length;
+  let lo = typeof ta.selectionStart === 'number' ? ta.selectionStart : n;
+  let hi = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : lo;
+  if (lo < 0) lo = 0;
+  if (hi < 0) hi = 0;
+  if (lo > n) lo = n;
+  if (hi > n) hi = n;
+  let back = ta.selectionDirection === 'backward';
+  p.$anchor = back ? hi : lo;
+  p.$caret = back ? lo : hi;
+  kitTextRevealCaret(p);
+}
+
+function kitSyncKeyBuffer() {
+  /**
+   * One frame of two-way sync: DOM edits win if the buffer marked a change;
+   * otherwise Kit text and caret are written out so copy/paste/IME see them.
+   */
+  let p = $kit.focus;
+  window._kitTextFocus = !!p;
+  if (p) {
+    let t = kitTextOf(p);
+    let r = kitTextRange(p);
+    window._kitSel = t.slice(r.lo, r.hi);
+  }
+  let ta = typeof window !== 'undefined' ? window._kitKeyBuffer : null;
+  if (!ta || window._kitComposing) return;
+  if (!p) return;
+  if (window._kitKeyBufFromDom) {
+    window._kitKeyBufFromDom = false;
+    kitPullKeyBuffer(p, ta);
+    return;
+  }
+  kitPushKeyBuffer(p, ta);
 }
 
 function kitField(spec) {
@@ -3059,8 +3448,14 @@ function kitInspect(tgt) {
   /**
    * Open a new Inspector on `tgt`. Earlier inspectors stay put, so you can inspect
    * an inspector (or keep two targets in view). Delete one when you are done with it.
+   * Halo handles live outside the world's parts list, so their inspector still
+   * lands in the world.
    */
-  let dest = tgt && tgt.world ? tgt.world() : kitWorld;
+  let dest = kitWorld;
+  if (tgt && tgt.world && !kitIsHaloPart(tgt)) {
+    let w = tgt.world();
+    if (w && w !== tgt && !w.$isHalo) dest = w;
+  }
   let last = null;
   for (let i = 0; i < dest.parts.length; i++) {
     if (dest.parts[i].name === 'inspector') last = dest.parts[i];
@@ -3082,6 +3477,7 @@ function kitFind(q) {
     f.run('search', q);
   }
   $kit.focus = f.find('query');
+  window._kitKeyBufFromDom = false;
   return f;
 }
 
@@ -3191,20 +3587,23 @@ function kitMakeInspector() {
   let rowLike = part({ name: 'rowLike' });
   rowLike.define('onPointerDown', kitTextClick);
   rowLike.define('onClick', function () {
-    if (this.get('kind') === 'part') {
+    if (this.get('kind') === 'part' || this.get('kind') === 'owner') {
       let p = this.$hitPart;
       if (!p) {
         let tgt = this.owner.owner.get('target');
-        let n = this.get('partIndex');
-        let k = 0;
-        if (tgt) {
-          for (let i = 0; i < tgt.parts.length; i++) {
-            if (tgt.parts[i].$isHand) continue;
-            if (k === n) {
-              p = tgt.parts[i];
-              break;
+        if (this.get('kind') === 'owner') p = tgt && tgt.owner;
+        else {
+          let n = this.get('partIndex');
+          let k = 0;
+          if (tgt) {
+            for (let i = 0; i < tgt.parts.length; i++) {
+              if (tgt.parts[i].$isHand) continue;
+              if (k === n) {
+                p = tgt.parts[i];
+                break;
+              }
+              k++;
             }
-            k++;
           }
         }
       }
@@ -3227,7 +3626,9 @@ function kitMakeInspector() {
   });
   ins.put('rowLike', rowLike);
   ins.define('show', function (tgt) {
-    this.put('target', tgt);
+    this.clearLocal('target');
+    if (kitIsHaloPart(tgt)) this.setLocal('target', tgt);
+    else this.put('target', tgt);
     this.put('editing', null);
     this.put('rotation', 0);
     this.find('editor').put('hidden', true);
@@ -3240,16 +3641,13 @@ function kitMakeInspector() {
     while (rows.parts.length > 0) rows.removePart(rows.parts[0]);
     if (!tgt) return;
     let proto = this.get('rowLike');
-    let k = 0;
-    for (let i = 0; i < tgt.parts.length; i++) {
-      let p = tgt.parts[i];
-      if (p.$isHand) continue;
+    let addPartRow = function (kind, p, index) {
       let row = rows.add(
         part({
           like: proto,
-          kind: 'part',
-          partIndex: k,
-          text: (p.name != null ? p.name : 'part') + '  part',
+          kind: kind,
+          partIndex: index,
+          text: (p.name != null ? p.name : 'part') + (kind === 'owner' ? '  owner' : '  part'),
           extent: pt(290, 18),
           fontSize: 11,
           align: 'left',
@@ -3259,6 +3657,14 @@ function kitMakeInspector() {
         }),
       );
       row.$hitPart = p;
+      return row;
+    };
+    if (tgt.owner) addPartRow('owner', tgt.owner, -1);
+    let k = 0;
+    for (let i = 0; i < tgt.parts.length; i++) {
+      let p = tgt.parts[i];
+      if (p.$isHand) continue;
+      addPartRow('part', p, k);
       k++;
     }
     let names = tgt.slotNames();
@@ -3294,12 +3700,23 @@ function kitMakeInspector() {
       if (!tgt.parts[i].$isHand) kids.push(tgt.parts[i]);
     }
     let names = tgt.slotNames();
-    if (rows.parts.length !== kids.length + names.length) {
+    let own = tgt.owner ? 1 : 0;
+    if (rows.parts.length !== own + kids.length + names.length) {
       this.run('refresh');
       return;
     }
+    if (own) {
+      let row = rows.parts[0];
+      if (row.get('kind') !== 'owner') {
+        this.run('refresh');
+        return;
+      }
+      row.$hitPart = tgt.owner;
+      let label = (tgt.owner.name != null ? tgt.owner.name : 'part') + '  owner';
+      if (row.get('text') !== label) row.put('text', label);
+    }
     for (let i = 0; i < kids.length; i++) {
-      let row = rows.parts[i];
+      let row = rows.parts[own + i];
       if (row.get('kind') !== 'part' || row.get('partIndex') !== i) {
         this.run('refresh');
         return;
@@ -3309,7 +3726,7 @@ function kitMakeInspector() {
       if (row.get('text') !== label) row.put('text', label);
     }
     for (let i = 0; i < names.length; i++) {
-      let row = rows.parts[kids.length + i];
+      let row = rows.parts[own + kids.length + i];
       if (row.get('slotName') !== names[i]) {
         this.run('refresh');
         return;
@@ -3330,6 +3747,7 @@ function kitMakeInspector() {
       ed.$caret = kitTextOf(ed).length;
       ed.$anchor = ed.$caret;
       $kit.focus = ed;
+      window._kitKeyBufFromDom = false;
     }
   });
   return ins;
@@ -3467,7 +3885,7 @@ function kitExamples() {
   slider.define('onPointerDown', function (e) { kitCapture(this); this.run('track', e); });
   slider.define('onPointerMove', function (e) { this.run('track', e); });
   slider.define('track', function (e) {
-    let v = Math.round(Math.max(0, Math.min(100, ((e.lx - 12) / (this.extent().x - 24)) * 100)));
+    let v = Math.round(Math.max(0, Math.min(100, ((e.local.x - 12) / (this.extent().x - 24)) * 100)));
     this.set('value', v);
   });
   slider.define('onValue', function (v) { this.find('knob').put('origin', pt((v / 100) * (this.extent().x - 24), 0)); });
@@ -3513,5 +3931,5 @@ function kitExamples() {
 }
 
 // Live stamp — eval `KITDEFS_WRITTEN_ON` to confirm this build is loaded.
-let KITDEFS_WRITTEN_ON = '2026-10-08 14:03 PDT';
-//written on 2026-10-08 14:03 PDT
+let KITDEFS_WRITTEN_ON = '2026-10-08 16:10 PDT';
+//written on 2026-10-08 16:10 PDT

@@ -319,6 +319,59 @@ describe('Kit world (phase 4)', () => {
     ).toBe('true,true,true');
   });
 
+  it('the halo is a part; ⌘-click a handle haloes it (does not stamp)', () => {
+    const { rt, click, frame } = makeKit();
+    click(200, 66, { metaKey: true });
+    expect(
+      rt.eval(`(() => {
+        let h = $kit.halo;
+        return [
+          h && h.$isHalo,
+          kitWorld.parts.indexOf(h) < 0,
+          h.find('copy') && h.find('copy').$isHaloHandle,
+          h.find('copy').isScript('onPointerDown'),
+          h.parts.map(function (p) { return p.name; }).join(','),
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,copy,wire,resize,rotate,del,title');
+    expect(rt.eval(`$kit.halo.find('rotate').scriptSource('onPointerDown').indexOf('e.at') >= 0`)).toBe(true);
+    const copyBtn = rt.eval(`(() => { let h = $kit.halo.find('copy'); let p = h.worldFromLocal(h.extent().scale(0.5)); return [p.x, p.y]; })()`) as [
+      number,
+      number,
+    ];
+    const before = rt.eval(`kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length`);
+    click(copyBtn[0], copyBtn[1], { metaKey: true });
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let tgt = $kit.haloTarget;
+        let title = $kit.halo.find('title');
+        let tp = title.worldFromLocal(title.extent().scale(0.5));
+        $kit._titlePt = tp;
+        return [
+          tgt && tgt.name,
+          tgt && tgt.$isHaloHandle,
+          kitWorld.parts.filter(function (p) { return p.name === 'button'; }).length,
+          $kit.halo.find('copy') != null,
+        ].join(',');
+      })()`),
+    ).toBe('copy,true,' + before + ',true');
+    const title = rt.eval(`[$kit._titlePt.x, $kit._titlePt.y]`) as [number, number];
+    click(title[0], title[1]);
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let ins = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; }).pop();
+        let names = ins.find('rows').parts.map(function (r) { return r.get('slotName'); });
+        return [
+          ins.get('target') && ins.get('target').name,
+          names.includes('onPointerDown'),
+          kitWorld.allParts().some(function (p) { return p.$isHalo || p.$isHaloHandle; }),
+        ].join(',');
+      })()`),
+    ).toBe('copy,true,false');
+  });
+
   it('halo wire button opens a picker that actually wires two parts', () => {
     const { rt, click } = makeKit();
     rt.eval(`
@@ -391,10 +444,11 @@ describe('Kit world (phase 4)', () => {
     expect(
       rt.eval(`(() => {
         let rows = kitWorld.find('inspector').find('rows').parts;
+        let owner = rows.find(function (r) { return r.get('kind') === 'owner'; });
         let parts = rows.filter(function (r) { return r.get('kind') === 'part'; }).map(function (r) { return r.$hitPart && r.$hitPart.name; });
-        return parts.join(',');
+        return (owner && owner.$hitPart && owner.$hitPart.name) + ',' + parts.join(',');
       })()`),
-    ).toBe('hourHand,minuteHand,secondHand');
+    ).toBe('world,hourHand,minuteHand,secondHand');
     const hit = rt.eval(`(() => {
       let h = kitWorld.find('inspector').find('rows').parts.find(function (r) { return r.$hitPart && r.$hitPart.name === 'hourHand'; });
       let p = h.worldFromLocal(10, 8);
@@ -408,6 +462,22 @@ describe('Kit world (phase 4)', () => {
         return all.length + ',' + all[all.length - 1].get('target').name;
       })()`),
     ).toBe('2,hourHand');
+    rt.eval(`kitInspect(kitWorld.find('hourHand'))`);
+    frame();
+    const ownerHit = rt.eval(`(() => {
+      let ins = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; }).pop();
+      let h = ins.find('rows').parts.find(function (r) { return r.get('kind') === 'owner'; });
+      let p = h.worldFromLocal(10, 8);
+      return [p.x, p.y];
+    })()`) as number[];
+    click(ownerHit[0], ownerHit[1]);
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let all = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; });
+        return all[all.length - 1].get('target').name;
+      })()`),
+    ).toBe('clock');
   });
 
   it('inspecting the clock does not rebuild inspector rows every tick', () => {
@@ -622,6 +692,72 @@ describe('Kit world (phase 4)', () => {
     click(pos[0], pos[1]);
     expect(rt.eval(`$kit.focus && $kit.focus.name`)).toBe('note');
     expect(rt.eval(`kitWorld.find('note').$caret`)).toBe(2);
+  });
+
+  it('the keyboard buffer pushes Kit text out and pulls DOM edits in', () => {
+    const { rt, frame } = makeKit();
+    const buf: {
+      value: string;
+      selectionStart: number;
+      selectionEnd: number;
+      selectionDirection: string;
+      style: Record<string, string>;
+      focus: () => void;
+      setSelectionRange: (a: number, b: number, d?: string) => void;
+    } = {
+      value: '',
+      selectionStart: 0,
+      selectionEnd: 0,
+      selectionDirection: 'forward',
+      style: {},
+      focus() {},
+      setSelectionRange(a, b, d) {
+        this.selectionStart = a;
+        this.selectionEnd = b;
+        this.selectionDirection = d || 'forward';
+      },
+    };
+    (globalThis as any)._kitKeyBuffer = buf;
+    (globalThis as any)._kitKeyBufFromDom = false;
+    rt.eval(`
+      let f = kitWorld.add(kitField({ name: 'note', bounds: rect(10, 10, 160, 24), text: 'hello' }));
+      $kit.focus = f;
+      f.$caret = 5;
+      f.$anchor = 2;
+    `);
+    frame();
+    expect(buf.value).toBe('hello');
+    expect([buf.selectionStart, buf.selectionEnd, buf.selectionDirection].join(',')).toBe('2,5,forward');
+    buf.value = 'held';
+    buf.selectionStart = 4;
+    buf.selectionEnd = 4;
+    buf.selectionDirection = 'forward';
+    (globalThis as any)._kitKeyBufFromDom = true;
+    frame();
+    expect(rt.eval(`kitWorld.find('note').get('text') + '|' + kitWorld.find('note').$caret + '|' + kitWorld.find('note').$anchor`)).toBe(
+      'held|4|4',
+    );
+  });
+
+  it('meta-c / meta-x / meta-v copy, cut and paste through the keyboard buffer', () => {
+    const { rt, send } = makeKit();
+    rt.eval(`
+      let f = kitWorld.add(kitField({ name: 'note', bounds: rect(10, 10, 160, 24), text: 'abcd' }));
+      $kit.focus = f;
+      f.$anchor = 1;
+      f.$caret = 3;
+    `);
+    send('keydown', 20, 20, { key: 'c', metaKey: true });
+    expect(rt.eval(`window._kitClip + '|' + kitWorld.find('note').get('text')`)).toBe('bc|abcd');
+    send('keydown', 20, 20, { key: 'x', metaKey: true });
+    expect(rt.eval(`window._kitClip + '|' + kitWorld.find('note').get('text') + '|' + kitWorld.find('note').$caret`)).toBe('bc|ad|1');
+    (globalThis as any)._kitPaste = 'XY';
+    send('keydown', 20, 20, { key: 'v', metaKey: true });
+    expect(rt.eval(`kitWorld.find('note').get('text') + '|' + kitWorld.find('note').$caret`)).toBe('aXYd|3');
+    (globalThis as any)._kitPaste = 'Z';
+    (globalThis as any)._kitNeedPaste = true;
+    send('pointermove', 20, 20);
+    expect(rt.eval(`kitWorld.find('note').get('text')`)).toBe('aXYZd');
   });
 
   it('typing in a finder field then Enter runs search', () => {
