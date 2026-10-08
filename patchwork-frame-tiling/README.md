@@ -61,6 +61,16 @@ and resize freely.
   the subject). The selected panel shows an accent rail along its header, and
   each context panel shows a **subject chip** naming the document it
   describes — click it to reveal/focus that panel.
+- **Overlays** are registry-driven as well: every `patchwork:component` tagged
+  `"overlay"` is mounted once, in a full-frame layer above the panels that lets
+  pointer events through (the component's own surface opts back in), and each
+  gets a **top-bar button** beside the tray. The button sends
+  `patchwork:toggle-overlay` to the overlay's `<patchwork-view>`; the overlay
+  answers with a bubbling `patchwork:overlay-state` `{ open }`, which shows the
+  button pressed. The ambient agent's floating box is one.
+- Besides the selection, the frame answers **`patchwork:open-views`** with
+  every content panel's document — `[{ url, toolId, selected }]` — for tools
+  whose context is everything on screen.
 - The frame mounts patchwork-base's **context providers** so tools get their
   shared context via bubbling `patchwork:subscribe` events (see Architecture):
   comments authoring/listing, focus, and the current contact all work, and the

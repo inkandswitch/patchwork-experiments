@@ -54,7 +54,7 @@ import {
   splitLeafIn,
 } from "./layout";
 import { TopBar } from "./TopBar";
-import { FrameProviders } from "./FrameProviders";
+import { FrameProviders, type OpenView } from "./FrameProviders";
 import "./styles.css";
 import type {
   DropSide,
@@ -791,6 +791,43 @@ export const PatchworkFrame = ({
   // automatically, with no shared config doc to read or migrate.
   const contextTools = useTaggedComponents("context-tool");
   const trayItems = useTaggedComponents("system-tray");
+  // Overlays float above the panels (the ambient agent, say): mounted once,
+  // in a layer that lets pointer events through to the tiles beneath.
+  const overlays = useTaggedComponents("overlay");
+  // Which overlays say they're open (`patchwork:overlay-state`), so their
+  // top-bar buttons show pressed. Toggling is the overlay's business: the
+  // button sends `patchwork:toggle-overlay` to the overlay's view.
+  const overlayLayerRef = useRef<HTMLDivElement | null>(null);
+  const [openOverlays, setOpenOverlays] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const toggleOverlay = useCallback((id: string) => {
+    overlayLayerRef.current
+      ?.querySelector(`.tile-overlay[data-overlay-id="${CSS.escape(id)}"] > patchwork-view`)
+      ?.dispatchEvent(new CustomEvent("patchwork:toggle-overlay"));
+  }, []);
+  // Heard on our hosting view, which exists before the provider gate lets the
+  // overlay layer render (see the open-document listener below).
+  useEffect(() => {
+    const start = element instanceof ShadowRoot ? element.host : element;
+    const host = start.closest("patchwork-view") ?? start;
+    const onState: EventListener = (event) => {
+      const id = (event.target as Element | null)
+        ?.closest?.("[data-overlay-id]")
+        ?.getAttribute("data-overlay-id");
+      if (!id) return;
+      const open = !!(event as CustomEvent<{ open?: boolean }>).detail?.open;
+      setOpenOverlays((prev) => {
+        if (prev.has(id) === open) return prev;
+        const next = new Set(prev);
+        if (open) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    };
+    host.addEventListener("patchwork:overlay-state", onState);
+    return () => host.removeEventListener("patchwork:overlay-state", onState);
+  }, [element]);
 
   // Each tab gets its own layout document, identified in the URL, so tabs are
   // independent sessions rather than one mirrored workspace. A freshly-minted
@@ -924,6 +961,23 @@ export const PatchworkFrame = ({
   }, [layout, selectedLeafId]);
   const selectedDocUrl = selectedLeafView?.url;
   const selectedToolId = selectedLeafView?.toolId ?? null;
+
+  // Every document on screen, for tools that care about more than the
+  // selection (`patchwork:open-views`). Content panels only, in layout order.
+  const openViews = useMemo<OpenView[]>(() => {
+    if (!layout) return [];
+    const views: OpenView[] = [];
+    for (const id of collectLeafIds(layout)) {
+      const leaf = findLeaf(layout, id);
+      if (!leaf || !isContentLeaf(leaf, rootFolderUrl) || !leaf.view.url) continue;
+      views.push({
+        url: leaf.view.url,
+        toolId: leaf.view.toolId ?? null,
+        selected: leaf.id === selectedLeafId,
+      });
+    }
+    return views;
+  }, [layout, rootFolderUrl, selectedLeafId]);
 
   // Refs hold the latest doc/handle so the once-mounted open-document listener
   // and pointer handlers can read current state synchronously.
@@ -1436,6 +1490,7 @@ export const PatchworkFrame = ({
       accountDocUrl={accountDocUrl}
       selectedDocUrl={selectedDocUrl}
       selectedToolId={selectedToolId}
+      openViews={openViews}
     >
       <div className="tile-app" data-patchwork-frame="tiling">
         <TopBar
@@ -1445,6 +1500,9 @@ export const PatchworkFrame = ({
           contactUrl={accountDoc.contactUrl}
           rootFolderHandle={rootFolderHandle}
           trayItems={trayItems}
+          overlays={overlays}
+          openOverlays={openOverlays}
+          onToggleOverlay={toggleOverlay}
           onHome={goHome}
           onOpen={openFromChrome}
         />
@@ -1458,6 +1516,19 @@ export const PatchworkFrame = ({
           ) : (
             <div className="tile-frame__empty">
               {rootFolderUrl ? "Loading…" : "Setting up your workspace…"}
+            </div>
+          )}
+          {overlays.length > 0 && (
+            <div className="tile-overlays" ref={overlayLayerRef}>
+              {overlays.map((overlay) => (
+                <div
+                  key={overlay.id}
+                  className="tile-overlay"
+                  data-overlay-id={overlay.id}
+                >
+                  <patchwork-view component={overlay.id} />
+                </div>
+              ))}
             </div>
           )}
         </div>

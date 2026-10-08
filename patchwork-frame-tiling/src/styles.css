@@ -40,6 +40,7 @@ patchwork-view {
 }
 
 .tile-frame {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -47,6 +48,23 @@ patchwork-view {
   background: var(--tile-fill-offset);
   color: var(--tile-fg);
   overflow: hidden;
+}
+
+/*
+ * Overlays: components tagged "overlay", each in its own full-frame layer
+ * above the panels. The layers let pointer events through, so an overlay's
+ * own surface opts back in (`pointer-events: auto`). Below the top bar's
+ * popovers (z-index 50), above the drop zones (20).
+ */
+.tile-overlays,
+.tile-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tile-overlays {
+  z-index: 40;
 }
 
 /* App-level top strip */
@@ -107,6 +125,10 @@ patchwork-view {
 .tile-topbar__btn:hover:not(:disabled) {
   background: var(--tile-fill-offset);
   opacity: 1;
+}
+
+.tile-topbar__btn[data-pressed] {
+  background: var(--tile-fill-offset);
 }
 
 .tile-topbar__btn:disabled {

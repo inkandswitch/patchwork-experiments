@@ -33,20 +33,34 @@ const REQUIRED_PROVIDERS = Object.values(BASE_PROVIDER_IDS);
 
 type SelectedView = { url: AutomergeUrl; toolId: string | null };
 
+/** One document on screen, as `patchwork:open-views` reports it. */
+export type OpenView = {
+  url: AutomergeUrl;
+  toolId: string | null;
+  selected: boolean;
+};
+
 /**
  * Answers `patchwork:selected-doc` and `patchwork:selected-view` subscriptions
  * with the tiling frame's active *content* panel, re-emitting whenever that
  * selection changes. Unlike the base `SelectedDocProvider` (which tracks the
  * last-opened document), this mirrors what the frame visually marks as selected
  * so context tools (history, …) and the wayfinding chips always agree.
+ *
+ * Also answers `patchwork:open-views`: every content panel's document, with the
+ * selected one marked — for tools (the ambient agent) whose context is
+ * everything on screen, not just the selection. Frames that show one document
+ * at a time needn't answer it; subscribers fall back to `selected-doc`.
  */
 const SelectionProvider = ({
   selectedDocUrl,
   selectedToolId,
+  openViews,
   children,
 }: {
   selectedDocUrl: AutomergeUrl | undefined;
   selectedToolId: string | null;
+  openViews: OpenView[];
   children: ReactNode;
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -54,6 +68,9 @@ const SelectionProvider = ({
   const viewSubscribers = useRef(
     new Set<(view: SelectedView | null) => void>(),
   );
+  const openSubscribers = useRef(new Set<(views: OpenView[]) => void>());
+  const currentOpen = useRef<OpenView[]>([]);
+  currentOpen.current = openViews;
 
   // Hold the latest selection so newly-arriving subscribers get the current
   // value synchronously inside `accept`.
@@ -84,6 +101,12 @@ const SelectionProvider = ({
           viewSubscribers.current.add(respond);
           return () => viewSubscribers.current.delete(respond);
         });
+      } else if (type === "patchwork:open-views") {
+        accept<OpenView[]>(subscribeEvent, (respond) => {
+          respond(currentOpen.current);
+          openSubscribers.current.add(respond);
+          return () => openSubscribers.current.delete(respond);
+        });
       }
     };
     el.addEventListener("patchwork:subscribe", onSubscribe);
@@ -98,6 +121,13 @@ const SelectionProvider = ({
       : null;
     for (const emit of viewSubscribers.current) emit(view);
   }, [selectedDocUrl, selectedToolId]);
+
+  // `openViews` is a fresh array whenever the layout changes; only re-emit
+  // when what it describes changed.
+  const openKey = JSON.stringify(openViews);
+  useEffect(() => {
+    for (const emit of openSubscribers.current) emit(currentOpen.current);
+  }, [openKey]);
 
   return (
     <div ref={ref} style={{ display: "contents" }}>
@@ -118,11 +148,13 @@ export const FrameProviders = ({
   accountDocUrl,
   selectedDocUrl,
   selectedToolId,
+  openViews,
   children,
 }: {
   accountDocUrl: AutomergeUrl;
   selectedDocUrl: AutomergeUrl | undefined;
   selectedToolId: string | null;
+  openViews: OpenView[];
   children: ReactNode;
 }) => {
   const accountRef = useRef<HTMLElement>(null);
@@ -188,6 +220,7 @@ export const FrameProviders = ({
               <SelectionProvider
                 selectedDocUrl={selectedDocUrl}
                 selectedToolId={selectedToolId}
+                openViews={openViews}
               >
                 {ready ? children : null}
               </SelectionProvider>
