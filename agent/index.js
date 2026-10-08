@@ -44,4 +44,19 @@ export const plugins = [
       return (element) => AgentPanel(element, { mode: "panel" })
     },
   },
+
+  {
+    // The ambient agent: a floating box, summoned with Cmd/Ctrl+J or the
+    // frame's button for it, about whatever you have open. A frame mounts
+    // components tagged "overlay" in a layer above its panels.
+    type: "patchwork:component",
+    id: "agent-ambient",
+    name: "Agent",
+    icon: "Bot",
+    tags: ["overlay"],
+    async load() {
+      const { AmbientAgent } = await import("./ambient.js")
+      return (element) => AmbientAgent(element)
+    },
+  },
 ]

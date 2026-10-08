@@ -279,6 +279,21 @@ function renderReasoning(block, state) {
 }
 
 /** Model and human prose, rendered as markdown inside a text container. */
+/**
+ * Where the person was when they spoke: one muted line naming the focused
+ * document, with the rest of what was open in its tooltip. The model gets the
+ * full note (session.js `describeContext`); a person only needs the gist.
+ */
+function renderContext(block) {
+  const focused = block.focused
+  if (!focused && !block.open?.length) return null
+  const text = focused ? `on ${focused.title ?? "untitled"}` : `${block.open.length} open`
+  const chip = el("div", "agent-context", text)
+  const open = (block.open ?? []).map((v) => v.title ?? v.url)
+  chip.title = open.length ? `Also open: ${open.join(", ")}` : ""
+  return chip
+}
+
 function prose(text) {
   const node = el("div", "agent-text")
   node.append(renderMarkdown(text))
@@ -309,7 +324,7 @@ export function renderTranscript(container, doc, state, handlers) {
         "agent-empty",
         doc.subject
           ? "Ask for a change to this document, or a question about it."
-          : "Ask a question, or point this session at a document."
+          : "Ask about what you have open, or anything in your workspace."
       )
     )
     return
@@ -325,6 +340,10 @@ export function renderTranscript(container, doc, state, handlers) {
       if (author) node.append(el("div", "agent-author", author))
       for (const block of turn.blocks ?? []) {
         if (block.type === "text") node.append(prose(block.text ?? ""))
+        else if (block.type === "context") {
+          const chip = renderContext(block)
+          if (chip) node.append(chip)
+        }
       }
       container.append(node)
       continue

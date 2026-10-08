@@ -25,6 +25,7 @@ import {
   addUsage,
   makeTurn,
   textBlock,
+  contextBlock,
   reasoningBlock,
   callBlock,
   resultBlock,
@@ -55,6 +56,7 @@ Guidance specific to this environment:
 - view_mount opens any document in any installed tool so you can drive it: click controls, type into fields, and see what rendered. Use it to check that a change LOOKS right, not just that it is structurally present.
 - Name the session with session_title once you know what the work is.
 - Everything you do is collaborative and versioned. Other people may be editing the same documents while you work.
+- A message may begin with a "[Workspace when this message was sent]" note: what the person had focused and open at that moment. "This", "here" and "it" mean the focused document. The note can differ from one message to the next — go by the latest one, and pass its urls to tools explicitly.
 
 Be concise. The transcript is read in a narrow sidebar, and a short answer with the work already done beats a long one describing what could be done.`
 
@@ -789,10 +791,17 @@ export function answerQuestion(store, callId, answer, author = null) {
 }
 
 /** Add a human message and mark the session ready to run. */
-export function say(store, text, author = null) {
+/**
+ * Append what the person said. `context` (see `contextBlock`) records what
+ * they had open; it goes first, so the model reads where they were before what
+ * they asked. A context with nothing in it is left out rather than recorded.
+ */
+export function say(store, text, author = null, context = null) {
+  const located = !!(context?.focused?.url || context?.open?.length)
   store.change((d) => {
     if (!d.turns) d.turns = []
-    d.turns.push(makeTurn("user", [textBlock(text)], { author }))
+    const blocks = located ? [contextBlock(context), textBlock(text)] : [textBlock(text)]
+    d.turns.push(makeTurn("user", blocks, { author }))
     d.status = STATUS.idle
   })
 }

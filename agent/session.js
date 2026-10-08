@@ -134,6 +134,43 @@ export function textBlock(text, opts = {}) {
   return { type: "text", id: opts.id ?? makeId("b"), text }
 }
 
+/**
+ * What the person had in front of them when they spoke.
+ *
+ * An ambient session is about no one document: it is summoned from anywhere,
+ * and "this" means whatever was focused at the moment of asking — which is
+ * different on every message. So each message carries its own snapshot, kept
+ * in the transcript beside the words it explains, rather than a live value the
+ * runner reads later and that has moved on by the time the model is called.
+ *
+ * `views` are `{ url, title, toolId }`; every field is present (null when
+ * unknown) because automerge will not store `undefined`.
+ */
+export function contextBlock({ focused = null, open = [] } = {}, opts = {}) {
+  const view = (v) => ({ url: String(v.url), title: v.title ?? null, toolId: v.toolId ?? null })
+  return {
+    type: "context",
+    id: opts.id ?? makeId("b"),
+    focused: focused?.url ? view(focused) : null,
+    open: (open ?? []).filter((v) => v?.url && v.url !== focused?.url).map(view),
+  }
+}
+
+/** A context block as the model reads it. */
+export function describeContext(block) {
+  const line = (v) => {
+    const name = v.title ? `"${v.title}"` : "untitled"
+    return `${name} — ${v.url}${v.toolId ? ` (in ${v.toolId})` : ""}`
+  }
+  const lines = ["[Workspace when this message was sent]"]
+  lines.push(block.focused ? `Focused: ${line(block.focused)}` : "Focused: nothing")
+  if (block.open?.length) {
+    lines.push("Also open:")
+    for (const v of block.open) lines.push(`- ${line(v)}`)
+  }
+  return lines.join("\n")
+}
+
 export function reasoningBlock(text, opts = {}) {
   return { type: "reasoning", id: opts.id ?? makeId("b"), text }
 }
@@ -839,6 +876,8 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
     for (const block of turn.blocks ?? []) {
       if (block.type === "text") {
         if (block.text) content.push({ type: "text", text: block.text })
+      } else if (block.type === "context") {
+        content.push({ type: "text", text: describeContext(block) })
       } else if (block.type === "call") {
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
         // A denial is the call's RESULT, in the place the call happened.

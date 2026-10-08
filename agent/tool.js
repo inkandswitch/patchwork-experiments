@@ -31,15 +31,32 @@ import { renderTranscript } from "./ui/transcript.js"
 import { createInlineViews } from "./ui/views.js"
 import { getMount, mountForPerson, mountIdIn, parkMount } from "./tools/checking.js"
 import { applyInstall, applyUninstall } from "./ui/install.js"
+import { watchWorkspace } from "./ui/workspace.js"
+import { startDictation, composeDictation, voiceSupported } from "./ui/voice.js"
 
-const STYLE_ID = "patchwork-agent-styles"
-if (typeof document !== "undefined" && !document.getElementById(STYLE_ID)) {
+const MIC_ICON = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`
+
+/** Ctrl/Cmd+Shift+Space: start or stop dictating. */
+export function isDictationShortcut(event) {
+  return (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.code === "Space"
+}
+
+// Keyed by URL, not by a fixed id: a module url carries its version, and two
+// versions of this package can be loaded in one page (an older install beside
+// a newer one). With a fixed id, whichever loaded first kept its stylesheet and
+// the other version's new rules never arrived.
+const STYLE_MARK = "data-patchwork-agent-styles"
+if (typeof document !== "undefined") {
   try {
-    const link = document.createElement("link")
-    link.id = STYLE_ID
-    link.rel = "stylesheet"
-    link.href = new URL("./styles.css", import.meta.url).href
-    document.head.appendChild(link)
+    const href = new URL("./styles.css", import.meta.url).href
+    const loaded = [...document.querySelectorAll(`link[${STYLE_MARK}]`)].some((link) => link.href === href)
+    if (!loaded) {
+      const link = document.createElement("link")
+      link.setAttribute(STYLE_MARK, "")
+      link.rel = "stylesheet"
+      link.href = href
+      document.head.appendChild(link)
+    }
   } catch {
     // happy-dom refuses external stylesheets in tests; styling is not what
     // those assert on, so a failure to load CSS must not fail the mount.
@@ -123,8 +140,13 @@ export function AgentTool(handle, element, options = {}) {
   stopButton.dataset.variant = "danger"
   stopButton.style.display = "none"
   const hint = el("span", "agent-hint", "")
+  const micButton = el("button", "agent-mic")
+  micButton.type = "button"
+  // A constant, not data.
+  micButton.innerHTML = MIC_ICON
+  micButton.hidden = !voiceSupported()
   const row = el("div", "agent-composer-row")
-  row.append(hint, stopButton, sendButton)
+  row.append(hint, micButton, stopButton, sendButton)
   composer.append(input, row)
 
   // ---- settings panel --------------------------------------------------
@@ -255,6 +277,13 @@ export function AgentTool(handle, element, options = {}) {
   let disposed = false
 
   const subjectUrl = () => handle.doc()?.subject ?? options.subject ?? null
+
+  // A session about no one document is about whatever you have open. Each
+  // message records that (session.js `contextBlock`), so "this" means what was
+  // focused when you said it — in the floating box, or docked as a panel.
+  const workspace =
+    !options.context && !subjectUrl() ? watchWorkspace(element, { repo, exclude: () => [handle.url] }) : null
+  const contextFor = options.context ?? (workspace ? () => workspace.snapshot() : null)
 
   // ---- runners ---------------------------------------------------------
   //
@@ -414,11 +443,129 @@ export function AgentTool(handle, element, options = {}) {
     ensureRunner().then((r) => r?.tick())
   }
 
+  // ---- dictation -------------------------------------------------------
+  //
+  // Speech goes into the composer, not straight to the agent: you see what was
+  // heard and send it yourself, the same as anything typed. Typing while
+  // listening is fine — what you typed becomes the text dictation adds to.
+  let dictation = null
+  let wantDictation = false
+  let voiceStatus = null
+  let spokenBase = ""
+  let spoken = ""
+  let interim = ""
+  const isMac = /mac|iphone|ipad/i.test(globalThis.navigator?.platform ?? "")
+  const dictationLabel = `${isMac ? "⌘⇧" : "Ctrl+Shift+"}Space`
+
+  function showDictation() {
+    input.value = composeDictation(spokenBase, spoken, interim)
+  }
+
+  function reflectDictation(state) {
+    micButton.dataset.state = state
+    micButton.setAttribute("aria-pressed", state === "off" ? "false" : "true")
+    micButton.title = state === "off" ? `Dictate (${dictationLabel})` : `Stop dictating (${dictationLabel})`
+  }
+  reflectDictation("off")
+
+  async function startListening() {
+    if (wantDictation || micButton.hidden) return
+    wantDictation = true
+    spokenBase = input.value
+    spoken = ""
+    interim = ""
+    voiceStatus = "Starting the microphone…"
+    reflectDictation("starting")
+    render()
+    try {
+      const session = await startDictation({
+        onInterim: (text) => {
+          interim = text
+          showDictation()
+        },
+        onFinal: (text) => {
+          spoken = composeDictation("", spoken, text)
+          interim = ""
+          showDictation()
+        },
+        onStatus: (message) => {
+          if (!wantDictation) return
+          voiceStatus = message ?? "Listening…"
+          if (!message) reflectDictation("on")
+          render()
+        },
+        onError: (err) => failDictation(err),
+      }, { element: root })
+      if (!wantDictation || disposed) {
+        session.stop()
+        return
+      }
+      dictation = session
+      if (micButton.dataset.state === "starting") voiceStatus ??= "Loading the speech model…"
+      render()
+    } catch (err) {
+      failDictation(err)
+    }
+  }
+
+  /** Stop listening, keeping whatever was heard — including a phrase in flight. */
+  function stopListening() {
+    wantDictation = false
+    dictation?.stop()
+    dictation = null
+    if (interim) {
+      spoken = composeDictation("", spoken, interim)
+      interim = ""
+      showDictation()
+    }
+    voiceStatus = null
+    reflectDictation("off")
+    if (!disposed) render()
+  }
+
+  function failDictation(err) {
+    stopListening()
+    const denied = err?.name === "NotAllowedError" || err?.name === "SecurityError"
+    voiceStatus = denied ? "Microphone access was refused" : `Dictation failed: ${err?.message ?? err}`
+    render()
+  }
+
+  const toggleDictation = () => (wantDictation ? stopListening() : startListening())
+
+  micButton.addEventListener("click", (event) => {
+    event.preventDefault()
+    toggleDictation()
+    input.focus()
+  })
+  // Typed text becomes the base that dictation continues from.
+  input.addEventListener("input", () => {
+    if (!wantDictation) return
+    spokenBase = input.value
+    spoken = ""
+    interim = ""
+  })
+  // The shortcut, when focus is anywhere in this view; and a hook for hosts
+  // (the ambient box) to drive it from outside.
+  root.addEventListener("keydown", (event) => {
+    if (!isDictationShortcut(event)) return
+    event.preventDefault()
+    toggleDictation()
+  })
+  root.addEventListener("patchwork-agent:dictate", (event) => {
+    const want = event.detail?.on
+    if (want === true) startListening()
+    else if (want === false) stopListening()
+    else toggleDictation()
+  })
+
   async function send() {
+    if (wantDictation) stopListening()
     const text = input.value.trim()
     if (!text) return
     input.value = ""
-    say(store, text, await myContactUrl())
+    // What was open when this was sent, for a session with no subject.
+    const context = (await contextFor?.().catch(() => null)) ?? null
+    say(store, text, await myContactUrl(), context)
     render()
     kick()
   }
@@ -719,21 +866,24 @@ export function AgentTool(handle, element, options = {}) {
     const pending = callsAwaitingApproval(doc).length
     const asking = questionsAwaitingAnswer(doc).length
     const elsewhere = heldElsewhere(doc, runner?.runnerUrl)
-    hint.textContent = !hasKey
-      ? "Add an API key to start"
-      : asking
-        ? asking === 1
-          ? "Waiting on your answer"
-          : `Waiting on ${asking} answers`
-        : pending
-          ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
-          : elsewhere
-            ? "Another runner is working on this session"
-            : doc.status === STATUS.parked
-              ? "Waiting for a tab to run a page tool"
-              : busy
-                ? "Working… Enter to steer, Stop to interrupt"
-                : ""
+    // Dictation's status wins while it is on: it is what you are doing now.
+    hint.textContent =
+      voiceStatus ??
+      (!hasKey
+        ? "Add an API key to start"
+        : asking
+          ? asking === 1
+            ? "Waiting on your answer"
+            : `Waiting on ${asking} answers`
+          : pending
+            ? `${pending} call${pending === 1 ? " needs" : "s need"} approval`
+            : elsewhere
+              ? "Another runner is working on this session"
+              : doc.status === STATUS.parked
+                ? "Waiting for a tab to run a page tool"
+                : busy
+                  ? "Working… Enter to steer, Stop to interrupt"
+                  : "")
 
     if (!hasKey && settings.style.display === "none" && !doc.turns?.length) {
       settings.style.display = "flex"
@@ -783,6 +933,8 @@ export function AgentTool(handle, element, options = {}) {
     // and keeps writing to the document, so reopening the session — here or in
     // another tab — picks up whatever happened while you were gone.
     views.dispose()
+    if (wantDictation) stopListening()
+    workspace?.dispose()
     detachView?.()
     workerRunner?.close()
     root.remove()
