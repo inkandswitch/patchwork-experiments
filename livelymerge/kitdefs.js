@@ -1,4 +1,4 @@
-//written on 2026-10-07 14:36 PDT
+//written on 2026-10-08 14:03 PDT
 // The Kit — kernel
 // =================
 // Parts with slots, connected by wires, reacting to signals. See KIT_PLAN.md.
@@ -29,7 +29,8 @@
 //             'text' is a box you can type in (caret, selection) — see kitField.
 //             Double-click completes a match (word / line / brackets / whole string);
 //             shift-drag extends the nearer end.
-//   layout    'free' (default) | 'row' | 'column'; gap, padding; fit (shrink-wrap)
+//   layout    a `layout` script packing along `delta` (pt(1,0) row, pt(0,1) column),
+//             or the strings 'row' / 'column' / 'free'; gap, padding; fit (shrink-wrap)
 //   input     pointerDown / pointerMove / pointerUp / click / keyDown signals go to
 //             the part under the pointer, or the nearest owner that handles them
 //             (has an onPointerDown, … script or a wire from that outlet)
@@ -41,11 +42,15 @@
 //             (the original stays); dropping a part in keeps it as a new prototype
 //   halo      meta/cmd-click a part: c copy, x delete, - wire, s scale, r rotate;
 //             the name at the bottom inspects (ellipsis if it meets r or s).
-//             A second ⌘-click climbs to the owner; the world clears the halo.
-//   inspect   halo title (or kitInspect(part)): slot list + script editor, themselves parts
+//             A second ⌘-click climbs the owner chain. The world's halo sits just
+//             inside (title only — inspect). Climbing off the world clears.
+//   closer    slot; if true, a permanent x at the NW corner deletes me (inspectors, finder)
+//   inspect   halo title (or kitInspect(part)): parts list (click to inspect) then slots;
+//             script editor; the Inspector is itself parts
 //   find      bin "find" (or kitFind(text)): kitSearch hits; click a hit to inspect
 //   wires     drawn when `$kit.showWires` is true; the halo "-" handle drag-connects
 //   stepping  a part with an onTick script and `stepEvery` (ms) is signalled `tick`
+//   open      a new world is signalled `open`; onOpen runs the world's `examples` script
 //
 // Gestures, overlays, hands (the idiom from the lm-07 lab note)
 // ------------------------------------------------------------
@@ -704,40 +709,13 @@ kitMethods(Part, {
 
   layout: function () {
     /**
-     * Arrange my sub-parts by my `layout` slot, then lay out each of them:
-     *   'row' / 'column'  place them in order, `gap` apart, inside `padding`;
-     *                     with `fit` true I shrink-wrap around them.
-     *   'free' (default)  leave them where they are.
+     * Arrange my sub-parts, then lay out each of them. If `layout` is a script,
+     * run it (the row/column exhibit). If it is 'row' or 'column', do the same
+     * packing. 'free' (default) leaves them where they are. `fit` shrink-wraps.
      * Runs before every draw; writes only what actually moves.
      */
-    let mode = this.get('layout');
-    if (mode === 'row' || mode === 'column') {
-      let pad = this.num('padding', 6);
-      let gap = this.num('gap', 6);
-      let along = pad;
-      let across = 0;
-      for (let i = 0; i < this.parts.length; i++) {
-        let p = this.parts[i];
-        if (p.get('hidden')) continue;
-        let e = p.extent();
-        if (mode === 'row') {
-          p.put('origin', pt(along, pad));
-          along += e.x + gap;
-          across = Math.max(across, e.y);
-        } else {
-          p.put('origin', pt(pad, along));
-          along += e.y + gap;
-          across = Math.max(across, e.x);
-        }
-      }
-      if (this.get('fit')) {
-        let len = Math.max(along - gap + pad, 2 * pad);
-        let wid = across + 2 * pad;
-        this.put('extent', mode === 'row' ? pt(len, wid) : pt(wid, len));
-        let maxH = this.num('maxH', 0);
-        if (maxH > 0 && this.extent().y > maxH) this.put('extent', pt(this.extent().x, maxH));
-      }
-    }
+    if (this.isScript('layout')) this.run('layout');
+    else if (this.get('layout') === 'row' || this.get('layout') === 'column') kitLayoutLine.call(this);
     for (let i = 0; i < this.parts.length; i++) this.parts[i].layout();
   },
 
@@ -1212,13 +1190,23 @@ function kitWorldBox(p) {
   return rect(lo, hi.sub(lo));
 }
 
+function kitHaloFrame(target) {
+  /**
+   * Rectangle the halo ring follows. Ordinary parts: just outside. The world:
+   * just inside, so the ring isn't clipped by the canvas edge.
+   */
+  let box = kitWorldBox(target);
+  return target.owner ? box.outset(2) : box.outset(-20);
+}
+
 function kitHaloItems(target) {
   /**
    * Letter handles around `target`, in world pixels. Not parts: they live only
    * while the halo is up (ephemeral, per user) so they never enter the doc.
    * c NE, - E, s SE, r SW, x NW; the name sits on the bottom edge between r and s.
+   * The world is title-only (inspect).
    */
-  let box = kitWorldBox(target);
+  let box = target.owner ? kitWorldBox(target) : kitHaloFrame(target);
   let s = 16;
   let at = function (id, label, p) {
     let r = rect(p.x - s / 2, p.y - s / 2, s, s);
@@ -1230,10 +1218,12 @@ function kitHaloItems(target) {
   let name = target.name != null ? '' + target.name : 'part';
   let tw = Math.min(maxW, Math.max(20, name.length * 7 + 8));
   let mid = box.center();
-  let title = rect(mid.x - tw / 2, box.bottom() - 8, tw, 16);
+  // World's title sits 100px left of centre so it misses Patchwork's workspace-open control.
+  let title = rect(mid.x - tw / 2 - (target.owner ? 0 : 100), box.bottom() - 8, tw, 16);
   title.id = 'title';
   title.label = name;
   title.maxW = maxW;
+  if (!target.owner) return [title];
   return [
     at('copy', 'c', box.topRight()),
     at('wire', '-', pt(box.right(), mid.y)),
@@ -1242,6 +1232,32 @@ function kitHaloItems(target) {
     at('del', 'x', box.topLeft()),
     title,
   ];
+}
+
+function kitCloserRect(p) {
+  /** World-pixel box of the permanent delete handle (same place as the halo's x). */
+  let box = kitWorldBox(p);
+  let s = 16;
+  return rect(box.x - s / 2, box.y - s / 2, s, s);
+}
+
+function kitCloserAt(world, wx, wy) {
+  let all = world.allParts();
+  let here = pt(wx, wy);
+  for (let i = all.length - 1; i >= 0; i--) {
+    let p = all[i];
+    if (!p.get('closer') || p.get('hidden') || !p.owner) continue;
+    let r = kitCloserRect(p);
+    if (rect(r.x, r.y, r.w, r.h).contains(here)) return p;
+  }
+  return null;
+}
+
+function kitClosePart(p) {
+  if (!p || !p.owner) return;
+  p.unwireAll();
+  p.remove();
+  if ($kit.haloTarget === p || ($kit.haloTarget && p.contains($kit.haloTarget))) kitShowHalo(null);
 }
 
 function kitHitItem(items, wx, wy) {
@@ -1255,7 +1271,7 @@ function kitHitItem(items, wx, wy) {
 }
 
 function kitShowHalo(target) {
-  $kit.haloTarget = target && target.owner && !target.$isHand ? target : null;
+  $kit.haloTarget = target && !target.$isHand ? target : null;
   $kit.wiringFrom = null;
   $kit.picker = null;
   $kit.haloDrag = null;
@@ -1322,9 +1338,7 @@ function kitDoHalo(id, target, wx, wy) {
     kitShowHalo(cpy);
     $kit.haloDrag = { id: 'copy', target: cpy, x: wx, y: wy, ox: wx, oy: wy };
   } else if (id === 'del') {
-    target.unwireAll();
-    target.remove();
-    kitShowHalo(null);
+    kitClosePart(target);
   } else if (id === 'wire') {
     $kit.wiringFrom = target;
     $kit.picker = null;
@@ -1390,15 +1404,38 @@ function kitDrawWires(world, c) {
   c.restore();
 }
 
+function kitDrawClosers(world, c) {
+  let all = world.allParts();
+  c.save();
+  c.font = '11px sans-serif';
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  for (let i = 0; i < all.length; i++) {
+    let p = all[i];
+    if (!p.get('closer') || p.get('hidden') || !p.owner) continue;
+    let r = kitCloserRect(p);
+    c.fillStyle = '#fff';
+    c.strokeStyle = '#4a7bd0';
+    c.lineWidth = 1;
+    c.beginPath();
+    c.arc(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, 0, Math.PI * 2);
+    c.fill();
+    c.stroke();
+    c.fillStyle = '#a33';
+    c.fillText('x', r.x + r.w / 2, r.y + r.h / 2);
+  }
+  c.restore();
+}
+
 function kitDrawHalo(c) {
   let tgt = $kit.haloTarget;
-  if (!tgt || !tgt.owner) return;
-  let box = kitWorldBox(tgt);
+  if (!tgt) return;
+  let box = kitHaloFrame(tgt);
   c.save();
   c.strokeStyle = '#4a7bd0';
   c.lineWidth = 1.5;
   c.setLineDash ? c.setLineDash([4, 3]) : null;
-  let ring = box.outset(2);
+  let ring = box;
   c.strokeRect(ring.x, ring.y, ring.w, ring.h);
   c.setLineDash ? c.setLineDash([]) : null;
   c.font = '11px sans-serif';
@@ -2156,7 +2193,7 @@ function kitPointerDown(world, wx, wy, e) {
     $kit.down = { overlay: true, x: wx, y: wy };
     return;
   }
-  if ($kit.haloTarget && $kit.haloTarget.owner) {
+  if ($kit.haloTarget) {
     let hit = kitHitItem(kitHaloItems($kit.haloTarget), wx, wy);
     if (hit) {
       kitDoHalo(hit.id, $kit.haloTarget, wx, wy);
@@ -2171,11 +2208,20 @@ function kitPointerDown(world, wx, wy, e) {
     $kit.down = { overlay: true, x: wx, y: wy };
     return;
   }
+  let close = kitCloserAt(world, wx, wy);
+  if (close) {
+    kitClosePart(close);
+    $kit.down = { overlay: true, x: wx, y: wy };
+    return;
+  }
   if (e.metaKey) {
     let target = world.partAt(wx, wy) || world;
     let cur = $kit.haloTarget;
-    if (cur && cur.owner && (cur === target || cur.contains(target))) kitShowHalo(cur.owner);
-    else kitShowHalo(target === world ? null : target);
+    // Climb while the click is on the current target (or inside it). The world
+    // contains everything, so a world halo does not climb from a child click —
+    // that just moves the halo onto the child. Click the empty world to clear.
+    if (cur && cur !== world && (cur === target || cur.contains(target))) kitShowHalo(cur.owner);
+    else kitShowHalo(cur === world && target === world ? null : target);
     $kit.down = { overlay: true, x: wx, y: wy };
     return;
   }
@@ -2367,6 +2413,7 @@ function kitRender(world, c) {
   world.draw(c);
   if ($kit.showWires !== false) kitDrawWires(world, c);
   if ($kit.wiringFrom) kitDrawRubber(c);
+  kitDrawClosers(world, c);
   kitDrawHalo(c);
   kitDrawPicker(c);
   // Hands last, above everything: peers' with name tags, mine in place of the cursor.
@@ -2534,7 +2581,11 @@ function initUI() {
 
 function kitMakeWorld() {
   let world = part({ name: 'world', fill: '#f4f1ea', acceptsDrops: true, bounds: rect(0, 0, 800, 600) });
-  kitExamples(world);
+  world.define('examples', kitExamples);
+  world.define('onOpen', function () {
+    this.run('examples');
+  });
+  world.signal('open');
   kitInstallTools(world);
   return world;
 }
@@ -2544,6 +2595,11 @@ function kitInstallTools(world) {
    * Ensure the world has a parts bin, and that an older bin (from before Finder)
    * gets a find button. Safe to call again after re-eval.
    */
+  if (!world.isScript('examples')) world.define('examples', kitExamples);
+  if (!world.isScript('onOpen'))
+    world.define('onOpen', function () {
+      this.run('examples');
+    });
   let bin = world.find('bin');
   if (!bin) bin = world.add(kitMakeBin());
   if (!bin.find('findBtn')) {
@@ -2551,6 +2607,8 @@ function kitInstallTools(world) {
     let idx = wbtn ? bin.parts.indexOf(wbtn) + 1 : 2;
     bin.add(kitMakeFindBtn(), idx);
   }
+  if (!bin.find('row')) bin.add(kitMakeRow());
+  if (!bin.find('column')) bin.add(kitMakeColumn());
 }
 
 function kitSlotText(v) {
@@ -3027,12 +3085,68 @@ function kitFind(q) {
   return f;
 }
 
+function kitLayoutLine() {
+  /**
+   * Place my visible children along `delta` (pt(1,0) is a row, pt(0,1) a column),
+   * `gap` apart, inside `padding`. With `fit` I shrink-wrap. The kernel then
+   * lays out each child.
+   */
+  let pad = this.num('padding', 6);
+  let gap = this.num('gap', 6);
+  let dir = this.get('delta');
+  dir = dir && typeof dir.x === 'number' ? pt(dir) : this.get('layout') === 'column' ? pt(0, 1) : pt(1, 0);
+  let along = pad;
+  let across = 0;
+  for (let i = 0; i < this.parts.length; i++) {
+    let p = this.parts[i];
+    if (p.get('hidden')) continue;
+    let e = p.extent();
+    p.put('origin', pt(pad, pad).add(dir.scale(along - pad)));
+    along += e.x * dir.x + e.y * dir.y + gap;
+    across = Math.max(across, e.x * dir.y + e.y * dir.x);
+  }
+  if (this.get('fit')) {
+    let len = Math.max(along - gap + pad, 2 * pad);
+    let e = pt(2 * pad, 2 * pad).add(dir.scale(len - 2 * pad)).add(pt(dir.y, dir.x).scale(across));
+    let maxH = this.num('maxH', 0);
+    if (maxH > 0 && e.y > maxH) e = pt(e.x, maxH);
+    this.put('extent', e);
+  }
+}
+
+function kitMakeRow() {
+  let r = part({
+    name: 'row',
+    text: 'row',
+    extent: pt(120, 36),
+    fill: '#e6dfd0',
+    border: '#b8ad96',
+    radius: 6,
+    gap: 8,
+    padding: 10,
+    acceptsDrops: true,
+    fit: true,
+    delta: pt(1, 0),
+  });
+  r.define('layout', kitLayoutLine);
+  return r;
+}
+
+function kitMakeColumn() {
+  let c = kitMakeRow();
+  c.setName('column');
+  c.put('text', 'column');
+  c.put('delta', pt(0, 1));
+  c.put('extent', pt(88, 48));
+  return c;
+}
+
 function kitMakeInspector() {
   /**
-   * A column of slot rows plus a script editor. `show(tgt)` rebuilds the rows from
-   * tgt.slotNames(). Click a script row to edit; click a data row and type, Enter
-   * to set. Shift/⌘/Ctrl-Enter insert a newline. All of that is scripts on this
-   * part, so they appear in the list too.
+   * Parts list (click a child to inspect it) then slot rows plus a script editor.
+   * `show(tgt)` rebuilds both from tgt.parts and tgt.slotNames(). Click a script
+   * row to edit; click a data row and type, Enter to set. Shift/⌘/Ctrl-Enter insert
+   * a newline. All of that is scripts on this part, so they appear in the list too.
    */
   let ins = part({
     name: 'inspector',
@@ -3045,6 +3159,7 @@ function kitMakeInspector() {
     gap: 3,
     padding: 8,
     fit: true,
+    closer: true,
   });
   ins.add(part({ name: 'title', look: 'none', text: 'Inspector', extent: pt(290, 18), align: 'left', fontSize: 13, locked: true }));
   ins.add(part({ name: 'rows', fill: 'none', extent: pt(290, 0), layout: 'column', gap: 1, fit: true, maxH: 220, scroll: true }));
@@ -3076,6 +3191,26 @@ function kitMakeInspector() {
   let rowLike = part({ name: 'rowLike' });
   rowLike.define('onPointerDown', kitTextClick);
   rowLike.define('onClick', function () {
+    if (this.get('kind') === 'part') {
+      let p = this.$hitPart;
+      if (!p) {
+        let tgt = this.owner.owner.get('target');
+        let n = this.get('partIndex');
+        let k = 0;
+        if (tgt) {
+          for (let i = 0; i < tgt.parts.length; i++) {
+            if (tgt.parts[i].$isHand) continue;
+            if (k === n) {
+              p = tgt.parts[i];
+              break;
+            }
+            k++;
+          }
+        }
+      }
+      if (p) kitInspect(p);
+      return;
+    }
     if (this.get('kind') === 'script') this.owner.owner.run('pick', this.get('slotName'));
   });
   rowLike.define('onKeyDown', kitTextKey);
@@ -3104,8 +3239,29 @@ function kitMakeInspector() {
     let rows = this.find('rows');
     while (rows.parts.length > 0) rows.removePart(rows.parts[0]);
     if (!tgt) return;
-    let names = tgt.slotNames();
     let proto = this.get('rowLike');
+    let k = 0;
+    for (let i = 0; i < tgt.parts.length; i++) {
+      let p = tgt.parts[i];
+      if (p.$isHand) continue;
+      let row = rows.add(
+        part({
+          like: proto,
+          kind: 'part',
+          partIndex: k,
+          text: (p.name != null ? p.name : 'part') + '  part',
+          extent: pt(290, 18),
+          fontSize: 11,
+          align: 'left',
+          fill: '#eef3fa',
+          border: '#eee',
+          locked: true,
+        }),
+      );
+      row.$hitPart = p;
+      k++;
+    }
+    let names = tgt.slotNames();
     for (let i = 0; i < names.length; i++) {
       let n = names[i];
       let v = tgt.get(n);
@@ -3133,13 +3289,27 @@ function kitMakeInspector() {
     let tgt = this.get('target');
     if (!tgt) return;
     let rows = this.find('rows');
+    let kids = [];
+    for (let i = 0; i < tgt.parts.length; i++) {
+      if (!tgt.parts[i].$isHand) kids.push(tgt.parts[i]);
+    }
     let names = tgt.slotNames();
-    if (names.length !== rows.parts.length) {
+    if (rows.parts.length !== kids.length + names.length) {
       this.run('refresh');
       return;
     }
-    for (let i = 0; i < names.length; i++) {
+    for (let i = 0; i < kids.length; i++) {
       let row = rows.parts[i];
+      if (row.get('kind') !== 'part' || row.get('partIndex') !== i) {
+        this.run('refresh');
+        return;
+      }
+      row.$hitPart = kids[i];
+      let label = (kids[i].name != null ? kids[i].name : 'part') + '  part';
+      if (row.get('text') !== label) row.put('text', label);
+    }
+    for (let i = 0; i < names.length; i++) {
+      let row = rows.parts[kids.length + i];
       if (row.get('slotName') !== names[i]) {
         this.run('refresh');
         return;
@@ -3181,6 +3351,7 @@ function kitMakeFinder() {
     gap: 3,
     padding: 8,
     fit: true,
+    closer: true,
   });
   f.add(part({ name: 'title', look: 'none', text: 'Finder', extent: pt(240, 16), align: 'left', fontSize: 13, locked: true }));
   let query = f.add(
@@ -3262,6 +3433,8 @@ function kitMakeBin() {
   bin.add(part({ name: 'box', extent: pt(48, 32), fill: '#d8d4cc', border: '#999', radius: 4 }));
   bin.add(part({ name: 'oval', look: 'oval', extent: pt(40, 40), fill: '#8eb4e0' }));
   bin.add(part({ name: 'protoButton', extent: pt(88, 28), text: 'button', fill: '#4a7bd0', textColor: 'white', radius: 6 }));
+  bin.add(kitMakeRow());
+  bin.add(kitMakeColumn());
   return bin;
 }
 
@@ -3269,11 +3442,13 @@ function kitLabel(text, p) {
   return part({ look: 'none', text: text, origin: pt(p), extent: pt(200, 20), align: 'left', fontSize: 13, textColor: '#555' });
 }
 
-function kitExamples(world) {
+function kitExamples() {
   /**
    * A few things built from parts, to play with and take apart. Each is a few
    * parts, a slot or two, and at most a couple of one-line scripts or wires.
+   * Lives as the world's `examples` script (`this` is the world); onOpen runs it.
    */
+  let world = this;
   // Counter: a button wired to a number — two world parts, so you can drag them apart
   // (same as slider and dial) and see the wire between them.
   world.add(kitLabel('Counter: click +1', pt(30, 20)));
@@ -3326,13 +3501,17 @@ function kitExamples(world) {
   world.add(kitLabel('⌘-click a part for its halo; click the name to inspect', pt(300, 20)));
   world.add(kitLabel('drag from the bin to stamp a copy; Option-click carries', pt(300, 40)));
 
-  // Shelf: a row container. Drag things onto it and they line up.
-  world.add(kitLabel('Shelf: drop parts here (layout: row)', pt(300, 240)));
-  let shelf = world.add(part({ name: 'shelf', bounds: rect(300, 270, 300, 70), fill: '#e6dfd0', border: '#b8ad96', radius: 6, layout: 'row', gap: 8, padding: 10, acceptsDrops: true, fit: true }));
+  // Shelf: a row whose `layout` script is inspectable (same packing as the bin's row).
+  world.add(kitLabel('Shelf: drop parts here (layout script)', pt(300, 240)));
+  let shelf = world.add(kitMakeRow());
+  shelf.setName('shelf');
+  shelf.put('text', '');
+  shelf.put('origin', pt(300, 270));
+  shelf.put('extent', pt(300, 70));
   shelf.add(part({ name: 'red', extent: pt(40, 40), fill: '#d05a4a', radius: 4 }));
   shelf.add(part({ name: 'green', look: 'oval', extent: pt(40, 40), fill: '#5aa05a' }));
 }
 
 // Live stamp — eval `KITDEFS_WRITTEN_ON` to confirm this build is loaded.
-let KITDEFS_WRITTEN_ON = '2026-10-07 14:36 PDT';
-//written on 2026-10-07 14:36 PDT
+let KITDEFS_WRITTEN_ON = '2026-10-08 14:03 PDT';
+//written on 2026-10-08 14:03 PDT

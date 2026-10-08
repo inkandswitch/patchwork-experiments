@@ -110,6 +110,37 @@ describe('Kit world (phase 4)', () => {
     ).toBe('0,-20|50,0');
   });
 
+  it('shelf layout is a script; row and column differ only by delta', () => {
+    const { rt, frame } = makeKit();
+    expect(
+      rt.eval(`(() => {
+        let r = kitWorld.find('bin').find('row');
+        let c = kitWorld.find('bin').find('column');
+        return [
+          kitWorld.find('shelf').isScript('layout'),
+          r.isScript('layout'),
+          c.scriptSource('layout') === r.scriptSource('layout'),
+          String(r.get('delta')),
+          String(c.get('delta')),
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,pt(1, 0),pt(0, 1)');
+    rt.eval(`
+      let r = kitWorld.add(kitMakeRow());
+      r.put('origin', pt(10, 500));
+      r.add(part({ name: 'a', extent: pt(20, 10) }));
+      r.add(part({ name: 'b', extent: pt(30, 10) }));
+      let c = kitWorld.add(kitMakeColumn());
+      c.put('origin', pt(200, 500));
+      c.add(part({ name: 'ca', extent: pt(20, 10) }));
+      c.add(part({ name: 'cb', extent: pt(20, 12) }));
+    `);
+    frame();
+    expect(
+      rt.eval(`[kitWorld.find('a').origin().x, kitWorld.find('b').origin().x, kitWorld.find('ca').origin().y, kitWorld.find('cb').origin().y].join(',')`),
+    ).toBe('10,38,10,28');
+  });
+
   it('drag a part off the shelf onto the world, then back; the row layout follows', () => {
     const { rt, drag } = makeKit();
     // shelf at (300,270), padding 10: red sits at (310,280), 40x40
@@ -246,7 +277,7 @@ describe('Kit world (phase 4)', () => {
     ).toBe('2,true,true');
   });
 
-  it('repeated halo click climbs to the owner then clears', () => {
+  it('repeated halo click climbs to the owner, then the world, then clears', () => {
     const { rt, click } = makeKit();
     const pos = rt.eval(`(() => { let g = kitWorld.find('green'); let p = g.worldFromLocal(g.extent().scale(0.5)); return [p.x, p.y]; })()`) as number[];
     click(pos[0], pos[1], { metaKey: true });
@@ -254,7 +285,38 @@ describe('Kit world (phase 4)', () => {
     click(pos[0], pos[1], { metaKey: true });
     expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('shelf');
     click(pos[0], pos[1], { metaKey: true });
+    expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('world');
+    click(40, 520, { metaKey: true });
     expect(rt.eval(`$kit.haloTarget`)).toBe(null);
+  });
+
+  it('the world halo is title-only and inspects; examples is a world script', () => {
+    const { rt, click, frame } = makeKit();
+    expect(
+      rt.eval(`(() => {
+        let ids = kitHaloItems(kitWorld).map(function (i) { return i.id; }).join(',');
+        let hits = kitSearch(kitWorld, 'hourHand').map(function (h) { return (h.part.name || '?') + ':' + (h.slot || '') + ':' + h.where; });
+        return [
+          kitWorld.isScript('examples'),
+          kitWorld.isScript('onOpen'),
+          hits.some(function (h) { return h.indexOf('world:examples:script') === 0; }),
+          ids,
+          kitHaloFrame(kitWorld).x > kitWorld.origin().x,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,title,true');
+    click(40, 520, { metaKey: true });
+    expect(rt.eval(`$kit.haloTarget && $kit.haloTarget.name`)).toBe('world');
+    const title = rt.eval(`(() => { let t = kitHaloItems($kit.haloTarget).find(function (i) { return i.id === 'title'; }); return [t.x + t.w / 2, t.y + t.h / 2]; })()`) as number[];
+    click(title[0], title[1]);
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let ins = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; }).pop();
+        let names = ins.find('rows').parts.map(function (r) { return r.get('slotName'); });
+        return (ins.get('target') === kitWorld) + ',' + names.includes('examples') + ',' + names.includes('onOpen');
+      })()`),
+    ).toBe('true,true,true');
   });
 
   it('halo wire button opens a picker that actually wires two parts', () => {
@@ -295,6 +357,16 @@ describe('Kit world (phase 4)', () => {
     ).toBe(true);
   });
 
+  it('a closer x dismisses the inspector', () => {
+    const { rt, click, frame } = makeKit();
+    rt.eval(`kitInspect(kitWorld.find('number'))`);
+    frame();
+    frame();
+    const x = rt.eval(`(() => { let r = kitCloserRect(kitWorld.find('inspector')); return [r.x + r.w / 2, r.y + r.h / 2]; })()`) as number[];
+    click(x[0], x[1]);
+    expect(rt.eval(`kitWorld.find('inspector') == null`)).toBe(true);
+  });
+
   it('opening an inspector leaves earlier ones in place', () => {
     const { rt, frame } = makeKit();
     rt.eval(`kitInspect(kitWorld.find('number'))`);
@@ -310,6 +382,68 @@ describe('Kit world (phase 4)', () => {
         return all.length + ',' + a.get('rotation') + ',' + a.get('target').name + ',' + b.get('rotation') + ',' + b.get('target').name;
       })()`),
     ).toBe('2,45,number,0,button');
+  });
+
+  it('inspector lists child parts; clicking one inspects it', () => {
+    const { rt, click, frame } = makeKit();
+    rt.eval(`kitInspect(kitWorld.find('clock'))`);
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let rows = kitWorld.find('inspector').find('rows').parts;
+        let parts = rows.filter(function (r) { return r.get('kind') === 'part'; }).map(function (r) { return r.$hitPart && r.$hitPart.name; });
+        return parts.join(',');
+      })()`),
+    ).toBe('hourHand,minuteHand,secondHand');
+    const hit = rt.eval(`(() => {
+      let h = kitWorld.find('inspector').find('rows').parts.find(function (r) { return r.$hitPart && r.$hitPart.name === 'hourHand'; });
+      let p = h.worldFromLocal(10, 8);
+      return [p.x, p.y];
+    })()`) as number[];
+    click(hit[0], hit[1]);
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let all = kitWorld.parts.filter(function (p) { return p.name === 'inspector'; });
+        return all.length + ',' + all[all.length - 1].get('target').name;
+      })()`),
+    ).toBe('2,hourHand');
+  });
+
+  it('inspecting the clock does not rebuild inspector rows every tick', () => {
+    const { rt, handle, frame } = makeKit();
+    rt.eval(`kitInspect(kitWorld.find('clock'))`);
+    frame();
+    frame();
+    frame();
+    expect(
+      rt.eval(`(() => {
+        let rows = kitWorld.find('inspector').find('rows');
+        $kit._row0 = rows.parts[0];
+        return rows.parts.length;
+      })()`),
+    ).toBeGreaterThan(3);
+    const headsBefore = Automerge.getHeads(handle.doc() as any);
+    frame();
+    frame();
+    frame();
+    frame();
+    frame();
+    expect(rt.eval(`kitWorld.find('inspector').find('rows').parts[0] === $kit._row0`)).toBe(true);
+    const changes = Automerge.getChanges(
+      Automerge.view(handle.doc() as any, headsBefore) as any,
+      handle.doc() as any,
+    );
+    const keys: string[] = [];
+    let count = 0;
+    for (const ch of changes) {
+      const dec = Automerge.decodeChange(ch);
+      count += dec.ops.length;
+      for (const op of dec.ops as any[]) {
+        keys.push(`${op.action} key=${String(op.key ?? op.elemId ?? '?')} val=${JSON.stringify(op.value ?? '')}`.slice(0, 120));
+      }
+    }
+    expect(count, `idle clock inspector ops:\n  ${keys.join('\n  ')}`).toBe(0);
   });
 
   it('inspector lists slots, edits a script, and can inspect itself', () => {
@@ -350,7 +484,8 @@ describe('Kit world (phase 4)', () => {
     rt.eval(`kitFind('increment')`);
     frame();
     const hit = rt.eval(`(() => {
-      let h = kitWorld.find('finder').find('hits').parts[0];
+      let hits = kitWorld.find('finder').find('hits').parts;
+      let h = hits.find(function (p) { return (p.get('text') || '').indexOf('increment') >= 0; }) || hits[0];
       let p = h.worldFromLocal(10, 8);
       return [p.x, p.y, h.get('text')];
     })()`) as [number, number, string];
