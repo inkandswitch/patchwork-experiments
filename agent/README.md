@@ -107,6 +107,17 @@ document — automerge keeps it, and its history — so a package that has been
 restructured stops shipping its abandoned files while a mistake stays
 recoverable. Renaming is this plus `fs_write`.
 
+Writing, editing or deleting by path inside a package (any folder with a
+`package.json` on the way down) also writes a fresh `contentVersion` to that
+package's folder. Patchwork loads a package at its folder document's heads, and
+every module in it at those same heads, but a file's content lives in its own
+document: editing `agent.js` in place left the folder, and so the package URL,
+unchanged. The module watcher saw nothing to reload, and the browser's module
+map and the service worker's cache kept serving the first version under that
+URL through reloads and new tabs. Plugin tools are also looked up in the
+registry at call time rather than kept from when the run built its toolset, so
+a tool rewritten mid-run is the one that runs next.
+
 `fs_edit` exists because of a session that did not end. The model had found a
 one-line bug in a 500-line file, and `fs_write`'s description told it that for
 a small edit it should prefer `doc_edit` with a splice range — which takes

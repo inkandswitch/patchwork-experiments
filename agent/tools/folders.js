@@ -334,6 +334,60 @@ async function ensurePath(repo, rootUrl, parts) {
   return handle
 }
 
+/**
+ * Move the version of every package a write landed in.
+ *
+ * Patchwork loads a package at its folder document's heads, and every module
+ * inside it — `./agent.js` imported from `index.js` — at those same heads. A
+ * file's content lives in its own document, so editing it in place changes the
+ * file's heads and not the folder's: the package's URL stays the same, the
+ * module watcher sees nothing to reload, and the browser's module map and the
+ * service worker's cache keep answering that URL with the old bytes, through
+ * reloads and new tabs. A real session rewrote a tool's executor four times and
+ * got the first stub back every time. Writing to the package folder itself is
+ * what makes "I changed this package" visible to the thing that loads it.
+ *
+ * `folders` is a list of folder paths (as part arrays) under `rootUrl`; every
+ * folder from the root down each path that holds a package.json is a package,
+ * and each is bumped once however many of the writes landed in it.
+ */
+async function bumpPackages(repo, rootUrl, folders) {
+  const found = new Map()
+  for (const parts of folders) {
+    let handle = await repo.find(rootUrl)
+    for (let depth = 0; ; depth++) {
+      const doc = handle.doc()
+      if (!isFolder(doc)) break
+      if (doc.docs.some((entry) => entry.name === "package.json") && !found.has(handle.url)) {
+        found.set(handle.url, { handle, path: `/${parts.slice(0, depth).join("/")}` })
+      }
+      if (depth === parts.length) break
+      const next = doc.docs.find((entry) => entry.name === parts[depth])
+      if (!next) break
+      handle = await repo.find(next.url)
+    }
+  }
+
+  const version = Math.random().toString(36).slice(2, 9)
+  for (const { handle } of found.values()) {
+    handle.change((draft) => {
+      draft.contentVersion = version
+    })
+  }
+  return [...found.values()].map(({ handle, path }) => ({ url: handle.url, path }))
+}
+
+/** One line for a tool result saying which packages will reload, or nothing. */
+function bumpedLine(bumped) {
+  if (!bumped.length) return null
+  const names = bumped.map(({ path, url }) => `${path} (${url})`).join(", ")
+  return `Package version moved: ${names}. Patchwork reloads it at its new heads, so its tools and views pick up this change — there is nothing to touch by hand.`
+}
+
+/** What to say after writing a file by URL, where the package it is in is unknown. */
+const BY_URL_NOTE =
+  "Written by URL, so the package this file belongs to (if any) was not marked as changed, and Patchwork keeps running its old version. To change an installed package's code, write by `path` instead."
+
 export const fsWrite = {
   id: "fs_write",
   name: "Write files",
@@ -379,7 +433,10 @@ export const fsWrite = {
       const before = contentToText(handle.doc()?.content)
       const changed = overwrite(handle, before, content, ctx.splice)
       return {
-        text: `Wrote ${input.url}: ${before.split("\n").length} → ${content.split("\n").length} lines, ${bytes(content.length)} (${changed})`,
+        text: [
+          `Wrote ${input.url}: ${before.split("\n").length} → ${content.split("\n").length} lines, ${bytes(content.length)} (${changed})`,
+          ...(changed === "unchanged" ? [] : [``, BY_URL_NOTE]),
+        ].join("\n"),
         doc: { url: input.url, name: handle.doc()?.name ?? "file", kind: "file", bytes: content.length },
       }
     }
@@ -392,6 +449,7 @@ export const fsWrite = {
 
     const root = rootFor(input, ctx)
     const written = []
+    const touched = []
 
     for (const [path, content] of Object.entries(batch)) {
       const parts = String(path).split("/").filter(Boolean)
@@ -405,8 +463,10 @@ export const fsWrite = {
         const handle = await ctx.repo.find(existing.url)
         const before = contentToText(handle.doc()?.content)
         const changed = overwrite(handle, before, content, ctx.splice)
+        if (changed !== "unchanged") touched.push(parts)
         written.push(`${path} · updated ${before.split("\n").length} → ${content.split("\n").length} lines (${changed})`)
       } else {
+        touched.push(parts)
         const created = await createFile(ctx.repo, name, content)
         folder.change((draft) => {
           if (!draft.docs) draft.docs = []
@@ -422,6 +482,7 @@ export const fsWrite = {
       ? (await ensurePath(ctx.repo, root, topFolder)).url
       : root
     const folderName = topFolder.length ? topFolder.join("/") : "root"
+    const bumped = bumpedLine(await bumpPackages(ctx.repo, root, touched))
 
     // Say what the URL is FOR. "Containing folder" read as "the folder this
     // package is in", and a real session spent a turn on fs_list working out
@@ -434,6 +495,7 @@ export const fsWrite = {
         topFolder.length
           ? `Package folder: ${containing} — this is the \`url\` for tool_check, view_mount, package_build and package_test.`
           : `Written at the root folder: ${containing}`,
+        ...(bumped ? [bumped] : []),
       ].join("\n"),
       // The FOLDER is the artifact, not the individual files: it is what you
       // open, what you install, and what a person means by "my tool". Listing
@@ -495,12 +557,13 @@ async function fileFor(input, ctx) {
   if (input.url) {
     const handle = await ctx.repo.find(input.url)
     if (!isFile(handle.doc())) throw new Error(`${input.url} is not a file document.`)
-    return { handle, label: handle.doc()?.name ?? input.url, url: input.url }
+    return { handle, label: handle.doc()?.name ?? input.url, url: input.url, root: null, folder: null }
   }
   if (input.path == null || input.path === "") throw new Error("Pass `path` (from the root folder) or `url` to say which file.")
-  const found = await resolvePath(ctx.repo, rootFor(input, ctx), input.path)
+  const root = rootFor(input, ctx)
+  const found = await resolvePath(ctx.repo, root, input.path)
   if (!isFile(found.doc)) throw new Error(`/${found.trail.join("/")} is not a file.`)
-  return { handle: found.handle, label: `/${found.trail.join("/")}`, url: found.url }
+  return { handle: found.handle, label: `/${found.trail.join("/")}`, url: found.url, root, folder: found.trail.slice(0, -1) }
 }
 
 export const fsEdit = {
@@ -538,7 +601,7 @@ export const fsEdit = {
     if (typeof old !== "string" || !old.length) throw new Error("Pass `old`: the exact text to replace, copied from the file.")
     if (old === replacement) throw new Error("`old` and `new` are identical, so there is nothing to change.")
 
-    const { handle, label, url } = await fileFor(input, ctx)
+    const { handle, label, url, root, folder } = await fileFor(input, ctx)
     const before = contentToText(handle.doc()?.content)
 
     let positions
@@ -567,11 +630,13 @@ export const fsEdit = {
     const context = lines.slice(start - 1, end).map((text, i) => `${start + i}\t${text}`).join("\n")
 
     const n = positions.length
+    const bumped = folder ? bumpedLine(await bumpPackages(ctx.repo, root, [folder])) : BY_URL_NOTE
     return {
       text: [
         `Edited ${label}: replaced ${n === 1 ? "1 occurrence" : `${n} occurrences`} of ${old.length} chars${n === 1 ? ` at line ${line}` : ""}. Now ${lines.length} lines, ${bytes(after.length)}.`,
         ``,
         truncate(context, 4000),
+        ...(bumped ? [``, bumped] : []),
       ].join("\n"),
       doc: { url, name: handle.doc()?.name ?? label, kind: "file", bytes: after.length },
     }
@@ -664,10 +729,11 @@ export const fsDelete = {
     folder.change((draft) => {
       draft.docs.splice(index, 1)
     })
+    const bumped = bumpedLine(await bumpPackages(ctx.repo, root, [parts]))
 
     return `Removed ${entry.type} '${input.path}'${
       entry.type === "folder" ? ` and the ${removed - 1} entr${removed - 1 === 1 ? "y" : "ies"} in it` : ""
-    }. The document still exists at ${entry.url} — this unlinked it, it did not destroy it.`
+    }. The document still exists at ${entry.url} — this unlinked it, it did not destroy it.${bumped ? `\n\n${bumped}` : ""}`
   },
 
   summarize(input) {

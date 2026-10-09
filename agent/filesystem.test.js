@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { fsWrite, fsList, fsRead, fsDelete } from "./tools/folders.js"
+import { fsWrite, fsList, fsRead, fsDelete, fsEdit } from "./tools/folders.js"
 import { needsApproval, initSession, grantKey } from "./session.js"
 
 /** A repo of plain-object documents with a root folder. */
@@ -245,5 +245,85 @@ describe("fs_delete", () => {
     const out = await fsList.execute({ path: "tally" }, ctx(repo))
     expect(out).not.toContain("old")
     expect(out).toContain("index.js")
+  })
+})
+
+describe("writing into a package moves the package's version", () => {
+  // Patchwork loads a package at its folder's heads, and every module in it at
+  // those same heads. Editing a file changes only the file's document, so
+  // without this the package URL never moved and a rewritten executor kept
+  // loading as the first version, through reloads and new tabs.
+  async function installed() {
+    const repo = fakeRepo()
+    await fsWrite.execute(
+      { files: { "lm-eval/package.json": "{}", "lm-eval/index.js": "a", "lm-eval/agent.js": "stub", "lm-eval/src/util.js": "u" } },
+      ctx(repo)
+    )
+    const url = entry(repo, "automerge:root", "lm-eval").url
+    return { repo, url, version: () => repo.docs.get(url).contentVersion }
+  }
+
+  it("bumps the package folder when a file in it is rewritten in place", async () => {
+    const { repo, url, version } = await installed()
+    const before = version()
+    const out = await fsWrite.execute({ path: "lm-eval/agent.js", content: "real" }, ctx(repo))
+    expect(version()).not.toBe(before)
+    expect(out.text).toContain(`Package version moved: /lm-eval (${url})`)
+  })
+
+  it("bumps the package, not just the subfolder, for a file deeper inside it", async () => {
+    const { repo, version } = await installed()
+    const before = version()
+    await fsWrite.execute({ path: "lm-eval/src/util.js", content: "v2" }, ctx(repo))
+    expect(version()).not.toBe(before)
+    const src = repo.docs.get(entry(repo, entry(repo, "automerge:root", "lm-eval").url, "src").url)
+    expect(src.contentVersion).toBeUndefined()
+  })
+
+  it("bumps on fs_edit and fs_delete by path", async () => {
+    const { repo, version } = await installed()
+    let before = version()
+    const edited = await fsEdit.execute({ path: "lm-eval/agent.js", old: "stub", new: "real" }, ctx(repo))
+    expect(version()).not.toBe(before)
+    expect(edited.text).toMatch(/Package version moved/)
+
+    before = version()
+    const removed = await fsDelete.execute({ path: "lm-eval/src/util.js" }, ctx(repo))
+    expect(version()).not.toBe(before)
+    expect(removed).toMatch(/Package version moved/)
+  })
+
+  it("bumps when the root itself is the package", async () => {
+    const { repo, url, version } = await installed()
+    const before = version()
+    await fsWrite.execute({ root: url, path: "agent.js", content: "real" }, { repo })
+    expect(version()).not.toBe(before)
+  })
+
+  it("leaves folders that are not packages alone, and says nothing about it", async () => {
+    const repo = fakeRepo()
+    await fsWrite.execute({ path: "notes/a.md", content: "one" }, ctx(repo))
+    const out = await fsWrite.execute({ path: "notes/a.md", content: "two" }, ctx(repo))
+    expect(repo.docs.get(entry(repo, "automerge:root", "notes").url).contentVersion).toBeUndefined()
+    expect(repo.docs.get("automerge:root").contentVersion).toBeUndefined()
+    expect(out.text).not.toMatch(/Package version/)
+  })
+
+  it("does not bump for a write that changed nothing", async () => {
+    const { repo, version } = await installed()
+    const before = version()
+    await fsWrite.execute({ path: "lm-eval/agent.js", content: "stub" }, ctx(repo))
+    expect(version()).toBe(before)
+  })
+
+  it("says, when writing by URL, that the package was not marked as changed", async () => {
+    // By URL there is no folder to walk up, so the agent has to hear that the
+    // running version will not move, rather than find out by calling it.
+    const { repo, url } = await installed()
+    const agentUrl = entry(repo, url, "agent.js").url
+    const written = await fsWrite.execute({ url: agentUrl, content: "real" }, ctx(repo))
+    expect(written.text).toMatch(/write by `path` instead/)
+    const edited = await fsEdit.execute({ url: agentUrl, old: "real", new: "realer" }, ctx(repo))
+    expect(edited.text).toMatch(/write by `path` instead/)
   })
 })

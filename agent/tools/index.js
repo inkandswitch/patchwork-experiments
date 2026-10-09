@@ -55,12 +55,14 @@ export function toSchema(tool) {
  * Loading is lazy and failure is non-fatal: a broken third-party tool should
  * cost the agent that one capability, not the whole session.
  */
-export async function loadPluginTools({ onError } = {}) {
-  const plugins = await tryHostImport("plugins")
-  if (!plugins) return [] // not running inside Patchwork (tests, node)
-  const { getRegistry } = plugins
+export async function loadPluginTools({ onError, registry: given } = {}) {
+  let registry = given
+  if (!registry) {
+    const plugins = await tryHostImport("plugins")
+    if (!plugins) return [] // not running inside Patchwork (tests, node)
+    registry = plugins.getRegistry("agent:tool")
+  }
 
-  const registry = getRegistry("agent:tool")
   const found = []
 
   for (const description of registry.all()) {
@@ -68,6 +70,7 @@ export async function loadPluginTools({ onError } = {}) {
       const loaded = await registry.load(description.id)
       const impl = loaded?.module
       if (!impl?.execute) continue
+      const id = description.id
       found.push({
         id: description.id,
         name: description.name ?? description.id,
@@ -78,7 +81,19 @@ export async function loadPluginTools({ onError } = {}) {
         alwaysAsk: description.alwaysAsk ?? false,
         // What a call is about, for approval scoping — see session.callScope.
         target: description.target,
-        execute: impl.execute,
+        // Looked up again at call time, not kept from when the toolset was
+        // built: a run lasts as long as the model keeps calling tools, and
+        // when the package behind this tool is edited mid-run Patchwork
+        // re-registers it, which the registry's own memo follows and a
+        // captured function does not. The agent that rewrote a tool and then
+        // called it got the old one back for the rest of the run.
+        // If the new version fails to load, that is the answer: quietly running
+        // the old one is exactly what made the stale code so hard to see.
+        async execute(input, ctx) {
+          const current = (await registry.load(id))?.module
+          if (!current?.execute) throw new Error(`The ${id} package no longer provides an execute function.`)
+          return current.execute(input, ctx)
+        },
         summarize: impl.summarize ?? null,
         source: description.importUrl ?? null,
       })
