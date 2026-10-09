@@ -9,7 +9,7 @@
 
 import { hostImport } from "./host.js"
 import { previewJson, truncate, bytes } from "./format.js"
-import { contentToText, isFolder } from "./folders.js"
+import { contentToText, resolvePath, treeNode, treeEntries, treeEnter } from "./folders.js"
 
 export const registryList = {
   id: "registry_list",
@@ -88,15 +88,32 @@ export const pluginSource = {
 
     if (importUrl.startsWith("automerge:")) {
       const bare = importUrl.split("#")[0].split("?")[0]
-      const doc = (await ctx.repo.find(bare)).doc()
-      if (!isFolder(doc)) throw new Error(`${bare} is not a package folder.`)
+      const root = await ctx.repo.find(bare)
+      const tree = treeNode(root)
+      if (!tree) throw new Error(`${bare} is not a package folder.`)
 
       if (input.list || !input.file) {
-        const names = (doc.docs ?? []).map((d) => d.name)
+        // Every file, by path: a directory document keeps its whole tree in
+        // one document, so the top level alone would hide src/ entirely.
+        const names = []
+        const walk = async (node, prefix, depth) => {
+          for (const entry of treeEntries(node)) {
+            const path = prefix ? `${prefix}/${entry.name}` : entry.name
+            if (entry.type === "folder" && depth < 8) {
+              const { node: inside } = await treeEnter(ctx.repo, entry).catch(() => ({}))
+              if (inside) {
+                await walk(inside, path, depth + 1)
+                continue
+              }
+            }
+            names.push(path)
+          }
+        }
+        await walk(tree, "", 0)
         if (input.list) return `${input.id} (${bare})\n${names.join("\n")}`
         // Default to the entry point named by package.json.
-        const pkgEntry = (doc.docs ?? []).find((d) => d.name === "package.json")
         let main = "index.js"
+        const pkgEntry = treeEntries(tree).find((d) => d.name === "package.json")
         if (pkgEntry) {
           const pkgDoc = (await ctx.repo.find(pkgEntry.url)).doc()
           try {
@@ -108,14 +125,13 @@ export const pluginSource = {
         input = { ...input, file: main.replace(/^\.\//, "") }
       }
 
-      const parts = input.file.split("/").filter(Boolean)
-      let node = doc
-      for (const part of parts) {
-        const entry = (node.docs ?? []).find((d) => d.name === part)
-        if (!entry) throw new Error(`'${part}' not in package. Use list:true to see the files.`)
-        node = (await ctx.repo.find(entry.url)).doc()
+      let node
+      try {
+        node = (await resolvePath(ctx.repo, bare, input.file)).doc
+      } catch {
+        throw new Error(`'${input.file}' not in package. Use list:true to see the files.`)
       }
-      const text = contentToText(node.content)
+      const text = contentToText(node?.content)
       return `${input.id}/${input.file} · ${bytes(text.length)}\n${truncate(text, 20000)}`
     }
 

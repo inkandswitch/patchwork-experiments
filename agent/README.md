@@ -118,6 +118,15 @@ URL through reloads and new tabs. Plugin tools are also looked up in the
 registry at call time rather than kept from when the run built its toolset, so
 a tool rewritten mid-run is the one that runs next.
 
+Packages come in two shapes, and the file tools, `package_build`, `tool_check`
+and `plugin_source` read and write both through one small tree layer in
+`tools/folders.js`. A folder document links to file and folder documents by
+name (`docs[]`). A directory document — what pushwork writes — is a single
+document keyed by full path (`"src/index.ts": "automerge:…"`), so its folders
+are only shared prefixes, and build output is linked pinned to heads. Writing a
+file behind a pinned link moves the pin to the new heads, or Patchwork would
+keep serving the old build.
+
 `fs_edit` exists because of a session that did not end. The model had found a
 one-line bug in a 500-line file, and `fs_write`'s description told it that for
 a small edit it should prefer `doc_edit` with a splice range — which takes

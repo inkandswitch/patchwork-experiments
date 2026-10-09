@@ -22,7 +22,7 @@
  */
 
 import { truncate, bytes } from "./format.js"
-import { contentToText, isFolder, isFile } from "./folders.js"
+import { contentToText, isFile, treeNode, treeEntries, treeEnter, treeAdd, treeRepin } from "./folders.js"
 
 /** Pinned, because a build that changes under you is not a build. */
 export const ESBUILD_VERSION = "0.21.5"
@@ -137,8 +137,15 @@ export function normalizePath(path) {
   return out.join("/")
 }
 
-/** The package's entry point, from package.json's `main`, else a conventional guess. */
-export function entryPointFor(files, explicit) {
+/**
+ * The package's entry point, from package.json's `main`, else a conventional guess.
+ *
+ * `main` names what Patchwork loads, which in a built package is this build's
+ * own output. Before the first build that file does not exist; after it, it
+ * does, and taking it as the entry meant every rebuild bundled the previous
+ * bundle and quietly ignored every edit to the source.
+ */
+export function entryPointFor(files, explicit, outfile = "dist/index.js") {
   if (explicit) return explicit
 
   const manifest = files.get("package.json")
@@ -147,9 +154,9 @@ export function entryPointFor(files, explicit) {
       const main = JSON.parse(manifest).main
       if (main) {
         const cleaned = normalizePath(main.replace(/^\.\//, ""))
-        if (files.has(cleaned)) return cleaned
-        // `main` usually points at the build output, which does not exist yet;
-        // fall through to the source conventions below.
+        if (files.has(cleaned) && cleaned !== normalizePath(outfile)) return cleaned
+        // `main` usually points at the build output; fall through to the
+        // source conventions below.
       }
     } catch {
       /* a malformed package.json is not fatal here */
@@ -181,20 +188,22 @@ export function fileContents(content) {
 export async function materialize(repo, folderUrl, { maxFiles = 400 } = {}) {
   const files = new Map()
 
-  const walk = async (url, prefix, depth) => {
+  // A package is a folder document of file documents, or one directory
+  // document with a key per path (pushwork's shape); the tree helpers read both.
+  const walk = async ({ node, handle }, prefix, depth) => {
     if (depth > 12 || files.size >= maxFiles) return
-    const doc = (await repo.find(url)).doc()
-
-    if (isFolder(doc)) {
-      for (const entry of doc.docs ?? []) {
-        await walk(entry.url, prefix ? `${prefix}/${entry.name}` : entry.name, depth + 1)
+    if (node) {
+      for (const entry of treeEntries(node)) {
+        await walk(await treeEnter(repo, entry), prefix ? `${prefix}/${entry.name}` : entry.name, depth + 1)
       }
       return
     }
+    const doc = handle.doc()
     if (isFile(doc)) files.set(prefix, fileContents(doc.content))
   }
 
-  await walk(folderUrl, "", 0)
+  const root = await repo.find(folderUrl)
+  await walk({ node: treeNode(root), handle: root }, "", 0)
   return files
 }
 
@@ -203,47 +212,50 @@ export async function materialize(repo, folderUrl, { maxFiles = 400 } = {}) {
  *
  * Files are created or updated in place, so the document keeps its identity and
  * its history — and an already-installed module picks up the new build without
- * being reinstalled.
+ * being reinstalled. In a directory document a link pinned to heads is moved to
+ * the new heads, or Patchwork would go on serving the previous build.
  */
 export async function absorb(repo, folderUrl, outputs, { makeFile, makeFolder }) {
   const written = []
 
   const folderFor = async (parts) => {
-    let handle = await repo.find(folderUrl)
+    let node = treeNode(await repo.find(folderUrl))
+    if (!node) throw new Error(`${folderUrl} is not a folder or a directory document.`)
     for (const part of parts) {
-      const existing = (handle.doc()?.docs ?? []).find((entry) => entry.name === part)
+      const existing = treeEntries(node).find((entry) => entry.name === part)
       if (existing) {
-        handle = await repo.find(existing.url)
+        ;({ node } = await treeEnter(repo, existing))
+        if (!node) throw new Error(`'${part}' is a file, so build output cannot go inside it.`)
+      } else if (node.prefix !== null) {
+        node = { handle: node.handle, prefix: `${node.prefix}${part}/` }
       } else {
         const created = await makeFolder(part)
-        handle.change((draft) => {
+        node.handle.change((draft) => {
           if (!draft.docs) draft.docs = []
           draft.docs.push({ name: part, type: "folder", url: created.url })
         })
-        handle = created
+        node = { handle: created, prefix: null }
       }
     }
-    return handle
+    return node
   }
 
   for (const [path, content] of outputs) {
     const parts = path.split("/").filter(Boolean)
     const name = parts.pop()
     const folder = await folderFor(parts)
-    const existing = (folder.doc()?.docs ?? []).find((entry) => entry.name === name)
+    const existing = treeEntries(folder).find((entry) => entry.name === name)
 
     if (existing) {
-      const file = await repo.find(existing.url)
+      const { handle: file } = await treeEnter(repo, existing)
       file.change((draft) => {
         draft.content = content
       })
+      treeRepin(folder, existing, file)
       written.push(`${path} · updated, ${bytes(content.length)}`)
     } else {
       const file = await makeFile(name, content)
-      folder.change((draft) => {
-        if (!draft.docs) draft.docs = []
-        draft.docs.push({ name, type: "file", url: file.url })
-      })
+      treeAdd(folder, name, file.url)
       written.push(`${path} · created, ${bytes(content.length)}`)
     }
   }
@@ -481,7 +493,8 @@ export const packageBuild = {
     const files = await materialize(ctx.repo, input.url)
     if (!files.size) throw new Error(`${input.url} has no files in it.`)
 
-    const entry = entryPointFor(files, input.entry)
+    const outfile = input.outfile ?? "dist/index.js"
+    const entry = entryPointFor(files, input.entry, outfile)
     if (!entry) {
       throw new Error(
         `No entry point. Pass \`entry\`, or add one of src/index.ts, index.ts, index.js. The package contains: ${[...files.keys()].join(", ")}`
@@ -489,7 +502,6 @@ export const packageBuild = {
     }
 
     const esbuild = await loadEsbuild({ importModule: ctx.importModule })
-    const outfile = input.outfile ?? "dist/index.js"
     const started = Date.now()
 
     let result

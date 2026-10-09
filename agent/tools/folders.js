@@ -33,9 +33,141 @@ export function isFile(doc) {
 }
 
 /**
- * Walk a slash-separated path from a root folder document.
- * Returns { url, doc, trail }. Throws with the available names on a miss,
- * because "no such file" without a listing costs the model another round trip.
+ * A directory document: what pushwork writes for a package (its "vfs" shape).
+ *
+ * One document holds the whole tree, keyed by full path — `"src/index.ts":
+ * "automerge:…"` — with each value a link to a file document, pinned to heads
+ * for build output. There are no folder documents in it at all, so code that
+ * only knew `docs[]` saw an empty package and built nothing.
+ */
+export function isDirectory(doc) {
+  return doc?.["@patchwork"]?.type === "directory"
+}
+
+/** Keys a directory document uses for itself rather than for files. */
+const DIRECTORY_RESERVED = new Set(["@patchwork", "lastSyncAt", "contentVersion", "title"])
+
+/**
+ * A place in a tree that can hold files.
+ *
+ * Either a folder document (`{ handle }`), or a path inside a directory
+ * document (`{ handle, prefix }`, where the prefix is "" or ends in "/"). The
+ * tools below walk, list and write through these, so both shapes behave the
+ * same to the agent: `src` is a folder you can list and write into whether it
+ * is a document of its own or a prefix on some keys.
+ */
+export function treeNode(handle) {
+  const doc = handle?.doc()
+  if (isFolder(doc)) return { handle, prefix: null }
+  if (isDirectory(doc)) return { handle, prefix: "" }
+  return null
+}
+
+/** What is in a tree node: `{ name, type: "file" | "folder", url, node? }`. */
+export function treeEntries(node) {
+  const doc = node.handle.doc()
+  if (node.prefix === null) return (doc?.docs ?? []).map((d) => ({ name: d.name, type: d.type, url: d.url }))
+
+  const entries = new Map()
+  for (const [key, value] of Object.entries(doc ?? {})) {
+    if (DIRECTORY_RESERVED.has(key) || !key.startsWith(node.prefix)) continue
+    if (typeof value !== "string" || !value.startsWith("automerge:")) continue
+    const rest = key.slice(node.prefix.length)
+    const slash = rest.indexOf("/")
+    if (slash === -1) {
+      entries.set(rest, { name: rest, type: "file", url: value })
+    } else {
+      const name = rest.slice(0, slash)
+      if (!entries.has(name)) {
+        // A folder here is only a shared prefix: it has no document of its own.
+        entries.set(name, { name, type: "folder", url: null, node: { handle: node.handle, prefix: `${node.prefix}${name}/` } })
+      }
+    }
+  }
+  return [...entries.values()]
+}
+
+/**
+ * Step into an entry: the tree node it is, or `{ handle }` for a file.
+ *
+ * Always the live document, even through a link pinned to heads: a pinned
+ * link finds a read-only view, and every tool that walks here may go on to
+ * write. A write re-pins the link (treeRepin), so reading the live document is
+ * reading what the link will say.
+ */
+export async function treeEnter(repo, entry) {
+  if (entry.node) return { node: entry.node, handle: entry.node.handle }
+  const handle = await repo.find(String(entry.url).split("#")[0])
+  return { node: treeNode(handle), handle }
+}
+
+/** Link a new file into a tree node. */
+export function treeAdd(node, name, url) {
+  node.handle.change((draft) => {
+    if (node.prefix === null) {
+      if (!draft.docs) draft.docs = []
+      draft.docs.push({ name, type: "file", url })
+    } else {
+      draft[`${node.prefix}${name}`] = url
+    }
+  })
+}
+
+/** Unlink an entry — a file, or a folder and everything under it. */
+export function treeRemove(node, entry) {
+  node.handle.change((draft) => {
+    if (node.prefix === null) {
+      const index = draft.docs.findIndex((d) => d.name === entry.name)
+      if (index !== -1) draft.docs.splice(index, 1)
+      return
+    }
+    const key = `${node.prefix}${entry.name}`
+    for (const existing of Object.keys(draft)) {
+      if (existing === key || existing.startsWith(`${key}/`)) delete draft[existing]
+    }
+  })
+}
+
+/**
+ * After a file's content changes, keep a pinned link pointing at it.
+ *
+ * pushwork links build output with heads (`automerge:…#heads`), so the
+ * directory names an exact version. Rewriting that file without moving the
+ * link would leave Patchwork serving the old build however often it rebuilt.
+ */
+export function treeRepin(node, entry, handle) {
+  if (node.prefix === null || !String(entry.url).includes("#") || !handle.view) return
+  const pinned = handle.view(handle.heads()).url
+  node.handle.change((draft) => {
+    draft[`${node.prefix}${entry.name}`] = pinned
+  })
+}
+
+/** A child folder of a tree node, made if it does not exist. */
+async function treeChild(repo, node, name) {
+  const existing = treeEntries(node).find((entry) => entry.name === name)
+  if (existing) {
+    const { node: child } = await treeEnter(repo, existing)
+    if (!child) throw new Error(`'${name}' is a file, so nothing can go inside it.`)
+    return child
+  }
+  // Inside a directory document a folder is just a longer key, which the
+  // first file written into it creates.
+  if (node.prefix !== null) return { handle: node.handle, prefix: `${node.prefix}${name}/` }
+  const created = await createFolder(repo, name)
+  node.handle.change((draft) => {
+    if (!draft.docs) draft.docs = []
+    draft.docs.push({ name, type: "folder", url: created.url })
+  })
+  return { handle: created, prefix: null }
+}
+
+/**
+ * Walk a slash-separated path from a root folder or directory document.
+ * Returns { url, doc, handle, node, trail }: `node` when the path names a
+ * folder, `doc` and `handle` for whatever is there. Throws with the available
+ * names on a miss, because "no such file" without a listing costs the model
+ * another round trip.
  */
 export async function resolvePath(repo, rootUrl, path = "") {
   const parts = String(path)
@@ -45,23 +177,23 @@ export async function resolvePath(repo, rootUrl, path = "") {
 
   let url = rootUrl
   let handle = await repo.find(url)
-  let doc = handle.doc()
+  let node = treeNode(handle)
   const trail = []
 
   for (const part of parts) {
-    if (!isFolder(doc)) throw new Error(`/${trail.join("/")} is not a folder, so '${part}' cannot be inside it.`)
-    const entry = (doc.docs ?? []).find((d) => d.name === part)
+    if (!node) throw new Error(`/${trail.join("/")} is not a folder, so '${part}' cannot be inside it.`)
+    const entries = treeEntries(node)
+    const entry = entries.find((d) => d.name === part)
     if (!entry) {
-      const names = (doc.docs ?? []).map((d) => d.name).join(", ")
+      const names = entries.map((d) => d.name).join(", ")
       throw new Error(`'${part}' is not in /${trail.join("/")}. Contains: ${names || "(empty)"}`)
     }
-    url = entry.url
-    handle = await repo.find(url)
-    doc = handle.doc()
+    ;({ node, handle } = await treeEnter(repo, entry))
+    url = entry.url ?? handle.url
     trail.push(part)
   }
 
-  return { url, doc, handle, trail }
+  return { url, doc: node?.prefix ? null : handle.doc(), handle, node, trail }
 }
 
 /** A real automerge URL, rather than the shape of one. */
@@ -109,11 +241,11 @@ export const fsList = {
     },
   },
   async execute(input, ctx) {
-    const { doc, url, trail } = await resolvePath(ctx.repo, rootFor(input, ctx), input.path ?? "")
-    if (!isFolder(doc)) {
+    const { doc, node, url, trail } = await resolvePath(ctx.repo, rootFor(input, ctx), input.path ?? "")
+    if (!node) {
       return `/${trail.join("/")} is a ${doc?.["@patchwork"]?.type ?? "document"}, not a folder. Use fs_read or doc_read.`
     }
-    const entries = (doc.docs ?? []).map((d) => ({ name: d.name, type: d.type, url: d.url }))
+    const entries = treeEntries(node).map(({ name, type, url }) => (url ? { name, type, url } : { name, type }))
     return previewJson({ path: `/${trail.join("/")}`, url, entries })
   },
   summarize(input, output) {
@@ -216,22 +348,23 @@ export const fsGrep = {
     let filesSearched = 0
     let truncated = false
 
-    const walk = async (url, prefix, depth) => {
+    const walk = async (place, prefix, depth) => {
       if (matches.length >= maxMatches || depth > 12) {
         truncated = truncated || matches.length >= maxMatches
         return
       }
-      const doc = (await ctx.repo.find(url)).doc()
-      if (isFolder(doc)) {
-        for (const entry of doc.docs ?? []) {
+      const { node, handle } = place
+      if (node) {
+        for (const entry of treeEntries(node)) {
           if (matches.length >= maxMatches) {
             truncated = true
             return
           }
-          await walk(entry.url, `${prefix}/${entry.name}`, depth + 1)
+          await walk(await treeEnter(ctx.repo, entry), `${prefix}/${entry.name}`, depth + 1)
         }
         return
       }
+      const doc = handle.doc()
       if (!isFile(doc)) return
       if (includeRe && !includeRe.test(prefix)) return
 
@@ -248,7 +381,7 @@ export const fsGrep = {
       }
     }
 
-    await walk(start.url, `/${start.trail.join("/")}`.replace(/\/$/, ""), 0)
+    await walk(start, `/${start.trail.join("/")}`.replace(/\/$/, ""), 0)
 
     if (!matches.length) return `No matches for /${input.pattern}/ in ${filesSearched} files.`
     return [
@@ -309,29 +442,17 @@ async function createFolder(repo, name) {
  * here, writing a tool is writing files. There is nothing else to it.
  */
 async function ensurePath(repo, rootUrl, parts) {
-  let handle = await repo.find(rootUrl)
+  let node = treeNode(await repo.find(rootUrl))
   const trail = []
 
   for (const part of parts) {
-    const doc = handle.doc()
-    if (!isFolder(doc)) throw new Error(`/${trail.join("/")} is not a folder, so '${part}' cannot go inside it.`)
-
-    const existing = (doc.docs ?? []).find((entry) => entry.name === part)
-    if (existing) {
-      handle = await repo.find(existing.url)
-    } else {
-      const created = await createFolder(repo, part)
-      const parent = handle
-      parent.change((draft) => {
-        if (!draft.docs) draft.docs = []
-        draft.docs.push({ name: part, type: "folder", url: created.url })
-      })
-      handle = created
-    }
+    if (!node) throw new Error(`/${trail.join("/")} is not a folder, so '${part}' cannot go inside it.`)
+    node = await treeChild(repo, node, part)
     trail.push(part)
   }
 
-  return handle
+  if (!node) throw new Error(`/${trail.join("/")} is not a folder, so nothing can be written inside it.`)
+  return node
 }
 
 /**
@@ -354,17 +475,19 @@ async function ensurePath(repo, rootUrl, parts) {
 async function bumpPackages(repo, rootUrl, folders) {
   const found = new Map()
   for (const parts of folders) {
-    let handle = await repo.find(rootUrl)
-    for (let depth = 0; ; depth++) {
-      const doc = handle.doc()
-      if (!isFolder(doc)) break
-      if (doc.docs.some((entry) => entry.name === "package.json") && !found.has(handle.url)) {
+    let node = treeNode(await repo.find(rootUrl))
+    for (let depth = 0; node; depth++) {
+      const entries = treeEntries(node)
+      // A package inside a directory document is that document: its heads are
+      // the version, whatever prefix the package.json sits under.
+      const { handle } = node
+      if (entries.some((entry) => entry.name === "package.json") && !found.has(handle.url)) {
         found.set(handle.url, { handle, path: `/${parts.slice(0, depth).join("/")}` })
       }
       if (depth === parts.length) break
-      const next = doc.docs.find((entry) => entry.name === parts[depth])
+      const next = entries.find((entry) => entry.name === parts[depth])
       if (!next) break
-      handle = await repo.find(next.url)
+      ;({ node } = await treeEnter(repo, next))
     }
   }
 
@@ -457,21 +580,22 @@ export const fsWrite = {
       const name = parts.pop()
 
       const folder = await ensurePath(ctx.repo, root, parts)
-      const existing = (folder.doc()?.docs ?? []).find((entry) => entry.name === name)
+      const existing = treeEntries(folder).find((entry) => entry.name === name)
 
       if (existing) {
-        const handle = await ctx.repo.find(existing.url)
+        if (existing.type === "folder") throw new Error(`'${path}' is a folder, not a file.`)
+        const { handle } = await treeEnter(ctx.repo, existing)
         const before = contentToText(handle.doc()?.content)
         const changed = overwrite(handle, before, content, ctx.splice)
-        if (changed !== "unchanged") touched.push(parts)
+        if (changed !== "unchanged") {
+          touched.push(parts)
+          treeRepin(folder, existing, handle)
+        }
         written.push(`${path} · updated ${before.split("\n").length} → ${content.split("\n").length} lines (${changed})`)
       } else {
         touched.push(parts)
         const created = await createFile(ctx.repo, name, content)
-        folder.change((draft) => {
-          if (!draft.docs) draft.docs = []
-          draft.docs.push({ name, type: "file", url: created.url })
-        })
+        treeAdd(folder, name, created.url)
         written.push(`${path} · created ${content.split("\n").length} lines (${created.url})`)
       }
     }
@@ -479,7 +603,7 @@ export const fsWrite = {
     // The folder a package lives in is what gets installed, so say which it is.
     const topFolder = Object.keys(batch)[0].split("/").filter(Boolean).slice(0, -1)
     const containing = topFolder.length
-      ? (await ensurePath(ctx.repo, root, topFolder)).url
+      ? (await ensurePath(ctx.repo, root, topFolder)).handle.url
       : root
     const folderName = topFolder.length ? topFolder.join("/") : "root"
     const bumped = bumpedLine(await bumpPackages(ctx.repo, root, touched))
@@ -630,6 +754,11 @@ export const fsEdit = {
     const context = lines.slice(start - 1, end).map((text, i) => `${start + i}\t${text}`).join("\n")
 
     const n = positions.length
+    if (folder) {
+      const { node } = await resolvePath(ctx.repo, root, folder.join("/"))
+      const entry = node && treeEntries(node).find((e) => e.url === url)
+      if (entry) treeRepin(node, entry, handle)
+    }
     const bumped = folder ? bumpedLine(await bumpPackages(ctx.repo, root, [folder])) : BY_URL_NOTE
     return {
       text: [
@@ -658,17 +787,17 @@ export const fsEdit = {
  * the folders it was about to look in and then report finding nothing.
  */
 async function findPath(repo, rootUrl, parts) {
-  let handle = await repo.find(rootUrl)
+  let node = treeNode(await repo.find(rootUrl))
   const trail = []
   for (const part of parts) {
-    const doc = handle.doc()
-    if (!isFolder(doc)) throw new Error(`/${trail.join("/")} is not a folder.`)
-    const existing = (doc.docs ?? []).find((entry) => entry.name === part)
-    if (!existing) return { handle: null, missing: `/${[...trail, part].join("/")}` }
-    handle = await repo.find(existing.url)
+    if (!node) throw new Error(`/${trail.join("/")} is not a folder.`)
+    const existing = treeEntries(node).find((entry) => entry.name === part)
+    if (!existing) return { node: null, missing: `/${[...trail, part].join("/")}` }
+    ;({ node } = await treeEnter(repo, existing))
     trail.push(part)
   }
-  return { handle, missing: null }
+  if (!node) throw new Error(`/${trail.join("/")} is not a folder.`)
+  return { node, missing: null }
 }
 
 export const fsDelete = {
@@ -701,39 +830,40 @@ export const fsDelete = {
 
     const root = rootFor(input, ctx)
     const name = parts.pop()
-    const { handle: folder, missing } = await findPath(ctx.repo, root, parts)
+    const { node: folder, missing } = await findPath(ctx.repo, root, parts)
     if (!folder) throw new Error(`${missing} does not exist, so '${input.path}' cannot be removed.`)
 
-    const entries = folder.doc()?.docs ?? []
-    const index = entries.findIndex((entry) => entry.name === name)
-    if (index === -1) {
+    const entries = treeEntries(folder)
+    const entry = entries.find((e) => e.name === name)
+    if (!entry) {
       const available = entries.map((e) => e.name).join(", ")
       throw new Error(
         `'${name}' is not in /${parts.join("/")}. It contains: ${available || "nothing"}`
       )
     }
 
-    const entry = entries[index]
     // Count what goes with a folder, so the result says how much was removed
     // rather than leaving the agent to assume it was one thing.
     let removed = 1
     if (entry.type === "folder") {
       try {
-        const inside = await ctx.repo.find(entry.url)
-        removed += (inside.doc()?.docs ?? []).length
+        const { node: inside } = await treeEnter(ctx.repo, entry)
+        removed += inside ? treeEntries(inside).length : 0
       } catch {
         /* an unreadable folder is still unlinked; the count is just a count */
       }
     }
 
-    folder.change((draft) => {
-      draft.docs.splice(index, 1)
-    })
+    treeRemove(folder, entry)
     const bumped = bumpedLine(await bumpPackages(ctx.repo, root, [parts]))
 
     return `Removed ${entry.type} '${input.path}'${
       entry.type === "folder" ? ` and the ${removed - 1} entr${removed - 1 === 1 ? "y" : "ies"} in it` : ""
-    }. The document still exists at ${entry.url} — this unlinked it, it did not destroy it.${bumped ? `\n\n${bumped}` : ""}`
+    }. ${
+      entry.url
+        ? `The document still exists at ${entry.url} — this unlinked it, it did not destroy it.`
+        : "The documents in it still exist — this unlinked them, it did not destroy them."
+    }${bumped ? `\n\n${bumped}` : ""}`
   },
 
   summarize(input) {

@@ -27,7 +27,7 @@
 import { hostImport } from "./host.js"
 import { truncate } from "./format.js"
 import { rasterize, shrink, canvasWithin } from "./screenshot.js"
-import { contentToText } from "./folders.js"
+import { contentToText, treeNode, treeEntries } from "./folders.js"
 
 /**
  * Live mounts, keyed by id.
@@ -131,12 +131,16 @@ export async function packageContentHash(repo, url, depth = 0, seen = new Set())
   seen.add(url)
   const handle = await repo.find(url)
   const parts = [(handle.heads?.() ?? []).join(",")]
-  const docs = handle.doc()?.docs
-  if (Array.isArray(docs)) {
-    for (const entry of docs) {
-      parts.push(entry.name ?? "", await packageContentHash(repo, entry.url, depth + 1, seen))
+  // A directory document's "folders" are prefixes inside it, so they are
+  // walked in place; every real link is hashed by what it points at.
+  const walk = async (node) => {
+    for (const entry of treeEntries(node)) {
+      if (entry.node) await walk(entry.node)
+      else parts.push(entry.name ?? "", await packageContentHash(repo, entry.url, depth + 1, seen))
     }
   }
+  const node = treeNode(handle)
+  if (node) await walk(node)
   return parts.join("|")
 }
 
@@ -155,7 +159,8 @@ async function loadPackage(input, ctx) {
   if (!bare.startsWith("automerge:")) throw new Error("Pass the package's automerge: URL.")
 
   const packageHandle = await ctx.repo.find(bare)
-  if (!Array.isArray(packageHandle.doc()?.docs)) {
+  const packageTree = treeNode(packageHandle)
+  if (!packageTree) {
     throw new Error(`${bare} is not a package folder document.`)
   }
 
@@ -184,7 +189,7 @@ async function loadPackage(input, ctx) {
   // and importing index.js instead would check the source that Patchwork will
   // never load — passing or failing for the wrong reasons.
   let entry = "index.js"
-  const manifestLink = (packageHandle.doc().docs ?? []).find((d) => d.name === "package.json")
+  const manifestLink = treeEntries(packageTree).find((d) => d.name === "package.json")
   if (manifestLink) {
     try {
       const manifest = (await ctx.repo.find(manifestLink.url)).doc()

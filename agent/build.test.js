@@ -80,6 +80,17 @@ describe("entryPointFor", () => {
     expect(entryPointFor(files)).toBe("src/index.ts")
   })
 
+  it("ignores package.json main once it points at output a previous build wrote", () => {
+    // Taking it would rebuild the old bundle from itself and drop every source edit.
+    const files = new Map([
+      ["package.json", '{"main":"./dist/index.js"}'],
+      ["dist/index.js", "previous build"],
+      ["src/index.ts", ""],
+    ])
+    expect(entryPointFor(files)).toBe("src/index.ts")
+    expect(entryPointFor(files, undefined, "out/bundle.js")).toBe("dist/index.js")
+  })
+
   it("uses package.json main when it points at real source", () => {
     const files = new Map([["package.json", '{"main":"./app.ts"}'], ["app.ts", ""]])
     expect(entryPointFor(files)).toBe("app.ts")
