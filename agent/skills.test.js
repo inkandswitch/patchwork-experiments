@@ -32,6 +32,19 @@ describe("built-in skills", () => {
     expect(out).toContain("cleanup function")
   })
 
+  it("steer away from the things that fail without saying why", async () => {
+    // Each of these is a failure the build or the host reports badly or not at
+    // all: a CSS import, Solid JSX, a hex colour that ignores the theme, and an
+    // edit by URL that leaves the installed package on its old version.
+    const out = await skillRead.execute({ name: "writing-patchwork-tools" }, { repo: fakeRepo({}) })
+    expect(out).toContain('Do not \`import "./styles.css"\`')
+    expect(out).toContain("solid-js/html")
+    expect(out).toContain("Do not use JSX for Solid")
+    expect(out).toContain("@layer package")
+    expect(out).toContain("Never write a hex colour")
+    expect(out).toContain("always write by path")
+  })
+
   it("match by prefix, so a near-miss name still works", async () => {
     const out = await skillRead.execute({ name: "writing" }, { repo: fakeRepo({}) })
     expect(out).toContain("# writing-patchwork-tools")

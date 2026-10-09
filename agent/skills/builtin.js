@@ -18,7 +18,7 @@ export const BUILTIN_SKILLS = [
   {
     name: "writing-patchwork-tools",
     description:
-      "How to write a Patchwork tool that actually works: the plugin shape, the render contract, and the four mistakes that get made. Read this before writing any tool.",
+      "How to write a Patchwork tool that works: the plugin shape, the render contract and its usual mistakes, imports, styling with the theme, building, and changing an installed tool. Read before writing or changing any tool.",
     body: `# Writing a Patchwork tool
 
 A tool is a folder of files. There is nothing else to it: write the files with
@@ -33,16 +33,67 @@ the module settings document. No build step, no bundler, no deploy.
       datatype.js     the document shape
       tool.js         the render function
 
+## What to write it in
+
+**Plain JavaScript first.** A render function that rebuilds its DOM from the
+document on every change (below) is the simplest thing that works, and it
+needs no build. Most tools should be exactly that.
+
+**Solid if you need fine-grained reactivity — never React.** When the UI has
+enough independent live pieces that rebuilding everything gets painful, use
+Solid through \`solid-js/html\` tagged templates. It is in the importmap, so
+this needs no build either:
+
+    import { render } from "solid-js/web"
+    import html from "solid-js/html"
+    import { createSignal } from "solid-js"
+
+    export default function Tool(handle, element) {
+      const [doc, setDoc] = createSignal(handle.doc())
+      const onChange = () => setDoc(handle.doc())
+      handle.on("change", onChange)
+      const dispose = render(
+        () => html\`<button onClick=\${() => handle.change((d) => { d.count = (d.count ?? 0) + 1 })}>
+          count: \${() => doc().count ?? 0}
+        </button>\`,
+        element,
+      )
+      return () => { handle.off("change", onChange); dispose() }
+    }
+
+Write every dynamic part as a function (\`\${() => doc().count}\`); a bare value
+renders once and never updates. Do not use JSX for Solid: Solid's JSX needs its
+own compiler, which \`package_build\` does not run, and \`solid-js\` has no JSX
+runtime Patchwork can load. \`html\` gives you the same updates.
+
+Put these imports in \`tool.js\`, never in \`index.js\` — see the next section.
+
 ## The entry module
 
 \`index.js\` must \`export const plugins = [...]\`. Patchwork evaluates this module
 **in a worker with no importmap**, and structured-clones every entry to the main
 thread. Two consequences, both of which fail confusingly if you ignore them:
 
-- Every field except \`load\` must be JSON-ish. A function anywhere else throws
-  DataCloneError and the whole module fails to register.
-- No bare imports in this file's static graph. Keep them inside \`load()\`, which
-  runs on the main thread where the importmap exists.
+- **Every field except \`load\` must be JSON-ish**: strings, numbers, arrays,
+  plain objects. A function anywhere else throws DataCloneError and the whole
+  module fails to register. That holds for every plugin type, including ones
+  other tools define (\`chat:slash\`, say): behaviour goes behind \`load()\`.
+
+      // WRONG: transform is a top-level function
+      { type: "chat:slash", id: "me", cmd: "/me", transform: (arg) => ({ text: arg }) }
+
+      // RIGHT: metadata at the top, the function comes back from load()
+      { type: "chat:slash", id: "me", cmd: "/me",
+        async load() { return { transform: (arg) => ({ text: arg }) } } }
+
+- **No bare imports in this file's static graph** — not \`solid-js\`, not
+  \`@inkandswitch/*\`, not even an unused one, and not one pulled in by a file
+  you import. The worker cannot resolve them ("Failed to resolve module
+  specifier") and the module fails to load. Keep them inside \`load()\`'s dynamic
+  \`import()\`, which runs on the main thread where the importmap exists.
+
+So the entry module is metadata plus one-line \`load()\`s, and the real code
+lives in files those import:
 
     export const plugins = [
       { type: "patchwork:datatype", id: "counter", name: "Counter", icon: "Hash",
@@ -52,7 +103,18 @@ thread. Two consequences, both of which fail confusingly if you ignore them:
         async load() { return (await import("./tool.js")).default } },
     ]
 
-\`icon\` is a lucide icon name. A tool's id and its pin id must match.
+That split is also what keeps Patchwork fast: it reads every package's
+\`plugins\` just to list names and icons, and a heavy entry module is parsed for
+nothing. Have each file \`export default\` what \`load()\` returns.
+
+- \`icon\` is a lucide icon name (\`"Music"\`, \`"Grid3x3"\`, \`"Sparkles"\`).
+- A tool's \`id\` and its pin id must match, or the pin resolves to nothing.
+- \`supportedDatatypes: ["*"]\` makes a tool that opens any document, like an
+  inspector.
+- \`unlisted: true\` keeps a datatype out of the "new document" menus.
+- One package can register as many plugins as it likes — a datatype and its
+  tool, several tools, an \`agent:tool\` (see below). Code two plugins share
+  belongs in one package, not copied between two.
 
 ## The datatype
 
@@ -60,9 +122,12 @@ thread. Two consequences, both of which fail confusingly if you ignore them:
       init(doc)        { doc.title = "Counter"; doc.count = 0 },
       getTitle(doc)    { return doc.title || "Counter" },
       setTitle(doc, t) { doc.title = t },
+      markCopy(doc)    { doc.title = "Copy of " + (doc.title || "Counter") },   // optional
     }
 
-\`init\` defines the schema by example. Keep it flat and JSON-shaped.
+\`init\` runs inside a change on a brand-new document and defines the schema by
+example. Keep it flat and JSON-shaped. \`getTitle\` and \`setTitle\` are what give
+the document a name anywhere in Patchwork.
 
 ## The render contract
 
@@ -96,15 +161,151 @@ thread. Two consequences, both of which fail confusingly if you ignore them:
       return () => { handle.off("change", render); root.remove() }   // mandatory
     }
 
-## Other things that will bite
+## Reading and writing the document
+
+    const doc = handle.doc()                 // a snapshot: read it, never mutate it
+    handle.change((d) => { d.count = 1 })    // every write goes through change()
+    handle.on("change", render)              // local and remote edits alike
 
 - **Automerge cannot hold \`undefined\`.** Use null, or \`delete d.field\` inside a
   change.
-- **There is no shadow DOM.** Namespace every class under your tool id, or set
-  styles inline. Your CSS leaks into the rest of Patchwork otherwise.
-- **Use textContent, not innerHTML,** for anything out of a document.
+- **\`repo.find(url)\` returns a Promise** of a handle that is already ready:
+  \`const h = await repo.find(url)\`. There is no \`whenReady()\` to call.
+  \`await repo.create2()\` makes a new document (\`repo.create\` is the old API).
+- **For text several people edit,** do not assign the whole string on every
+  keystroke — concurrent edits overwrite each other. Inside the change, use
+  \`updateText(d, ["body"], newValue)\` from \`@automerge/automerge\`, which
+  writes only what differs, so edits merge.
+- Patchwork puts \`window.repo\` and \`window.accountDocHandle\` on the page. The
+  user's name is
+  \`(await repo.find(accountDocHandle.doc().contactUrl)).doc().name\`.
+
+## Multiplayer without writing to the document
+
+Presence, cursors, "now playing", typing indicators — state that should reach
+the people looking right now and never be stored — go over the handle's
+ephemeral channel instead of into the document:
+
+    handle.broadcast({ type: "cursor", x, y })
+    const onMessage = ({ message }) => { /* message is what was broadcast */ }
+    handle.on("ephemeral-message", onMessage)
+    // and in cleanup: handle.off("ephemeral-message", onMessage)
+
+Only peers with the document open receive it, and nothing persists. Anything
+that should still be there tomorrow belongs in \`handle.change()\`.
+
+## Talking to Patchwork
+
+    import { openDocument } from "@inkandswitch/patchwork-elements"
+    openDocument(element, url, toolId)       // navigate to another document
+
+Under that is a bubbling \`patchwork:open-document\` event with
+\`detail: { url, toolId }\`, and \`patchwork:mounted\` fires when an inner
+\`<patchwork-view>\` has rendered. Embedding another tool is
+\`<patchwork-view tool-id="...">\` — a lookup by id at runtime, which renders
+nothing if that tool is not installed rather than breaking yours.
+
+## What you can import
+
+Patchwork's importmap provides these by bare name, in a bundleless tool or a
+built one alike:
+
+- \`@automerge/automerge\` (and \`/slim\`), \`@automerge/automerge-repo\`
+- \`@inkandswitch/patchwork-elements\`, \`-filesystem\`, \`-plugins\`, \`-providers\`,
+  \`-bootloader\`
+- \`@codemirror/state\`, \`@codemirror/view\`, \`@codemirror/language\`,
+  \`@codemirror/commands\`
+- \`solid-js\`, \`solid-js/web\`, \`solid-js/html\`, \`solid-js/store\`, \`solid-js/h\`
+
+Import them by those names, never from esm.sh or unpkg: a second copy of
+automerge is a second Repo, and nothing would sync. Anything else needs
+\`package_build\` (below).
+
+## Files and assets
+
+    type FolderDoc = { title: string, docs: DocLink[] }
+    type DocLink   = { name: string, type: string, url: AutomergeUrl }
+    type FileDoc   = { name, extension, mimeType, content: string | Uint8Array }
+
+- \`automergeUrlToServiceWorkerUrl(url)\` from
+  \`@inkandswitch/patchwork-filesystem\` turns a file document into a URL you
+  can put in \`<img src>\` or \`<audio src>\`.
+- In a bundleless tool, load your own files with
+  \`new URL("./click.wav", import.meta.url)\`.
+- \`(await getRegistry("patchwork:datatype").load(id)).module\` gets an
+  installed datatype at runtime (\`getRegistry\` is from
+  \`@inkandswitch/patchwork-plugins\`).
+
+## Styling
+
+There is **no shadow DOM**: your tool renders into the same page as everything
+else, so unscoped CSS leaks out and other tools' CSS leaks in.
+
+- **Scope everything under one root class**, ideally your tool id:
+  \`.counter .label { ... }\`, never a bare \`.label\` or \`button\`.
+- **Ship styles inside your JavaScript**: a \`<style>\` element your render
+  function appends and your cleanup removes. Do not \`import "./styles.css"\`:
+  \`package_build\` writes one file, and the build fails with "Cannot import ...
+  into a JavaScript file without an output path configured".
+- **No CSS frameworks** — no Tailwind, no DaisyUI. Plain CSS.
 - **Size the outermost container** (\`height: 100%\`) and let an inner element
-  scroll; the host renders tools in a bounded box.
+  scroll (\`overflow: auto\`); the host renders tools in a bounded box.
+
+### Colours come from the theme
+
+Never write a hex colour, and never \`white\` or \`black\`. Patchwork's theme
+sets CSS variables, and a tool that uses them follows the user's theme,
+including dark mode, for free. Map the ones you use to your own names in one
+place, inside \`@layer package\`, and use only your names in rules:
+
+    @layer package {
+      :root, :host, [theme] {
+        --counter-bg: var(--editor-fill, white);
+        --counter-fg: var(--editor-line, black);
+        --counter-muted: var(--editor-line-offset-50, #999);
+        --counter-border: var(--editor-fill-offset-20, #ccc);
+        --counter-accent: var(--studio-primary, #35f7ca);
+        --counter-accent-ink: var(--studio-primary-line, black);
+        --counter-hover: color-mix(in oklch, var(--editor-fill), var(--editor-line) 5%);
+        --counter-font: var(--editor-family-sans, system-ui, sans-serif);
+      }
+    }
+
+    .counter { background: var(--counter-bg); color: var(--counter-fg); font-family: var(--counter-font); }
+    .counter button { background: var(--counter-accent); color: var(--counter-accent-ink); }
+    .counter .item[data-selected] { background: var(--counter-hover); }
+
+(The fallbacks after the commas are the only place a literal colour belongs.)
+
+- **\`--editor-*\` is the surface a tool paints on**: \`--editor-fill\` and
+  \`--editor-line\` (background and ink), \`--editor-fill-offset-10\`…\`-50\` for
+  tinted backgrounds, \`--editor-line-offset-10\`…\`-50\` for muted text,
+  \`--editor-family-sans\`, \`--editor-family-code\`. \`--studio-*\` fill and line
+  are Patchwork's own chrome; a tool should not use them.
+- **Accents are \`--studio-primary\`, \`-secondary\`, \`-danger\`, \`-warning\`.** Painting
+  a surface in one is \`--studio-primary-fill\`, with \`--studio-primary-line\` for the
+  ink on top of it. Accent-coloured text on the normal background is
+  \`--editor-primary-text\`.
+- **Need another shade? \`color-mix()\`** the theme's colours: toward
+  \`--editor-fill\` to lighten, toward \`--editor-line\` to darken, so it inverts
+  correctly in a dark theme.
+- **Never write \`@media (prefers-color-scheme: dark)\`.** The theme swaps the
+  variables; there is nothing for you to do.
+- Spacing, radius and transitions may be used directly:
+  \`--studio-space-2xs\`…\`-2xl\`, \`--studio-radius-sm\`…\`-xl\`,
+  \`--studio-radius-round\`, \`--studio-shadow-sm\`…\`-lg\`,
+  \`--studio-transition-fast\`…\`-slow\`.
+- **State is a data attribute**: \`.item[data-selected]\`, \`[data-state="editing"]\`,
+  not a modifier class.
+
+## Other things that will bite
+
+- **Never \`stopPropagation()\` on \`click\`.** Solid listens for clicks on the
+  document, so stopping one kills every \`onClick\` above it. Stop
+  \`pointerdown\` instead, if you must stop anything.
+- **Use textContent, not innerHTML,** for anything out of a document.
+- **Cleanup tears down everything**: listeners, intervals, animation frames,
+  audio contexts, workers — not only the DOM.
 
 ## Tools that need building
 
@@ -150,6 +351,19 @@ through a decoder still starts with the right four bytes.
 
 Large files sync to every device on the account. Fetch what the tool needs, not
 a whole SDK.
+
+## Changing a tool that is already installed
+
+Patchwork runs a package at its folder document's version, not its files'.
+Editing a file changes only that file's document, so on its own nothing
+reloads. \`fs_write\`, \`fs_edit\` and \`fs_delete\` **by path** move the package's
+version for you, and say so ("Package version moved"); after that Patchwork
+reloads it and your next call to its tools runs the new code. Writing a file
+**by URL** cannot know which package it is in and does not — so for a package
+that is installed, always write by path.
+
+Never "touch" some other folder to force a reload: the version that matters is
+the package folder's, and nothing else.
 
 ## Give your tool an API, not just a UI
 

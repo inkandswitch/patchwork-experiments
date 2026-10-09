@@ -469,7 +469,11 @@ export const packageBuild = {
       entry: { type: "string", description: "Entry file, e.g. 'src/index.ts'. Inferred if omitted." },
       outfile: { type: "string", description: "Where to write the bundle. Default 'dist/index.js'." },
       minify: { type: "boolean", description: "Default false — readable output is easier to debug." },
-      jsxImportSource: { type: "string", description: "For JSX, e.g. 'solid-js'." },
+      jsxImportSource: {
+        type: "string",
+        description:
+          "For JSX, the package whose jsx-runtime to use. Not for Solid: solid-js has no JSX runtime Patchwork can load — write Solid with solid-js/html templates, which need no build.",
+      },
     },
   },
 
