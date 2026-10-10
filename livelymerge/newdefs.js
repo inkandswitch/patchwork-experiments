@@ -1,4 +1,4 @@
-//written on 2026-10-05 11:43 PDT
+//written on 2026-10-10 15:15 PDT
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -3355,58 +3355,90 @@ class TextBox extends Shape {
     let newLineStarts = [];
     let ctx = this.getTextContext(this.font);
     let str = this.string != null ? String(this.string) : '';
-    let lineStart = 0;
+    let insetX = this.inset && this.inset.x != null ? this.inset.x : 0;
+    let border = this.borderWidth != null ? this.borderWidth : 0;
+    let maxW = this.extent.x - insetX * 2 - border * 2;
+    if (!(maxW > 8)) maxW = Math.max(8, this.extent.x);
     let lineTopLeft = this.topLeft.addPt(this.inset);
-    let lineNo = 0;
-    let bottomY = null;
+    let lh = this.lineHeight;
+    let lineW = this.extent.x;
     if (str.length === 0) {
       // Empty text still occupies one line of height so caret/selection are visible.
-      newLines.push(new TextLineSpec(lineTopLeft, pt(this.extent.x, this.lineHeight), ''));
+      newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), ''));
       newLineStarts.push(0);
-      bottomY = lineTopLeft.y + this.lineHeight + 2;
+      lineTopLeft = lineTopLeft.addPt(pt(0, lh));
     } else {
-      let inAlpha = false;
-      let alphaBreak = 0;
+      let lineStart = 0;
+      let tokenStart = 0;
       for (let idx = 0; idx < str.length; idx++) {
         let c = str[idx];
-        let isAlpha = /^[a-zA-Z0-9]*$/.test(c);
-        if (c == '\n' || c == '\r' || idx == str.length - 1) {
-          let thisLine = new TextLineSpec(
-            lineTopLeft,
-            pt(this.extent.x, this.lineHeight),
-            str.slice(lineStart, idx + 1),
-          );
-          newLines.push(thisLine);
+        if (c == '\n' || c == '\r') {
+          newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), str.slice(lineStart, idx + 1)));
           newLineStarts.push(lineStart);
-          lineNo++;
-          lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
+          lineTopLeft = lineTopLeft.addPt(pt(0, lh));
           lineStart = idx + 1;
-        } else if (!this.noBreak) {
-          let maybeLine = str.slice(lineStart, idx + 1);
-          let metrics = ctx.measureText(maybeLine);
-          if (metrics.width >= this.extent.x) {
-            let thisLine = new TextLineSpec(
-              lineTopLeft,
-              pt(this.extent.x, this.lineHeight),
-              str.slice(lineStart, alphaBreak),
-            );
-            newLines.push(thisLine);
+          tokenStart = lineStart;
+        } else if (!this.noBreak && idx > lineStart) {
+          let piece = str.slice(lineStart, idx + 1);
+          let w = 0;
+          if (ctx && ctx.measureText) {
+            let m = ctx.measureText(piece);
+            if (m) w = m.width;
+          }
+          if (!(w > 0)) w = piece.length * 8;
+          if (w > maxW) {
+            // Break before the current identifier. If that name is itself wider
+            // than maxW, hard-wrap at idx — never emit an empty line.
+            let breakAt = tokenStart > lineStart ? tokenStart : idx;
+            newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), str.slice(lineStart, breakAt)));
             newLineStarts.push(lineStart);
-            lineNo++;
-            lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
-            lineStart = alphaBreak;
+            lineTopLeft = lineTopLeft.addPt(pt(0, lh));
+            lineStart = breakAt;
+            tokenStart = lineStart;
+            idx = breakAt - 1;
+          } else {
+            let ident =
+              (c >= 'a' && c <= 'z') ||
+              (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') ||
+              c == '_';
+            if (c == ' ') tokenStart = idx + 1;
+            else if (!ident) {
+              let next = idx + 1 < str.length ? str[idx + 1] : '';
+              let nextIdent =
+                (next >= 'a' && next <= 'z') ||
+                (next >= 'A' && next <= 'Z') ||
+                (next >= '0' && next <= '9') ||
+                next == '_';
+              if (nextIdent) tokenStart = idx + 1;
+            }
           }
-          if (!inAlpha && isAlpha) {
-            alphaBreak = idx;
-            inAlpha = true;
+        } else {
+          let ident =
+            (c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '_';
+          if (c == ' ') tokenStart = idx + 1;
+          else if (!ident) {
+            let next = idx + 1 < str.length ? str[idx + 1] : '';
+            let nextIdent =
+              (next >= 'a' && next <= 'z') ||
+              (next >= 'A' && next <= 'Z') ||
+              (next >= '0' && next <= '9') ||
+              next == '_';
+            if (nextIdent) tokenStart = idx + 1;
           }
-          inAlpha = isAlpha;
         }
       }
-      bottomY = lineTopLeft.y + 2;
+      if (lineStart < str.length) {
+        newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), str.slice(lineStart)));
+        newLineStarts.push(lineStart);
+        lineTopLeft = lineTopLeft.addPt(pt(0, lh));
+      }
     }
     this.reconcileComposedLines(newLines, newLineStarts);
-    return bottomY;
+    return lineTopLeft.y + 2;
   }
   reconcileComposedLines(newLines, newLineStarts) {
     /** Update lines/lineStarts to match the freshly composed layout with value
@@ -6912,7 +6944,11 @@ class ListMorph extends Morph {
     this.itemList = list || [];
     // ListPanes already clip long lines visually; ellipsis truncation only hides
     // useful name text. Free-floating menus still truncate so they don't grow huge.
-    let inListPane = this.owner && this.owner.className === 'ListPane';
+    let ownerName = this.owner && this.owner.className;
+    let inListPane =
+      ownerName === 'ListPane' ||
+      ownerName === 'FabrikListView' ||
+      !!(this.owner && this.owner.scrollByLines);
     let lim = menuItemMaxChars != null ? menuItemMaxChars : 15;
     if (this.className === 'MenuMorph') lim = Math.max(lim, 48);
     this.displayItems = this.itemList.map((item) => {
@@ -7112,7 +7148,10 @@ function isScrollPaneMorph(m) {
     n === 'ScrollPane' ||
     n === 'TextPane' ||
     n === 'ListPane' ||
-    n === 'TranscriptTextPane'
+    n === 'TranscriptTextPane' ||
+    n === 'FabrikListView' ||
+    n === 'FabrikTextView' ||
+    n === 'FabrikFunctionView'
   );
 }
 function scrollPaneAtWorldPt(world, worldPt) {
@@ -10093,6 +10132,43 @@ function categorySelectorPaneMenuSpec(panel) {
   };
 }
 
+function browserPanelDefaultExtent() {
+  /** Default System Browser size (same as {@link newPanelRect} / {@link BrowserPanel}). */
+  return pt(400, 300);
+}
+
+function browserPanelPaneSpecs() {
+  /**
+   * Fractional pane placement inside {@link BrowserPanel#paneLayoutBounds}.
+   * category + classNames stack on the left (40%); methodNames is the top-right
+   * band (60% × 40%); methodDefinition is the lower 60%.
+   */
+  return {
+    category: rect(0.0, 0.0, 0.4, 0.08),
+    classNames: rect(0.0, 0.08, 0.4, 0.32),
+    methodNames: rect(0.4, 0.0, 0.6, 0.4),
+    methodDefinition: rect(0.0, 0.4, 1.0, 0.6),
+  };
+}
+
+function browserPanelUserPaneBounds(contentBounds) {
+  /** Approximate user-view rectangles for the four browser panes, in the same
+   * coordinate space as `contentBounds` (panel-local content box). */
+  let box = contentBounds;
+  if (!box) {
+    let e = browserPanelDefaultExtent();
+    let th = typeof PanelTitleBar === 'function' && PanelTitleBar.prototype ? PanelTitleBar.prototype.HEIGHT : 24;
+    box = rect(0, th, e.x, Math.max(8, e.y - th));
+  }
+  let specs = browserPanelPaneSpecs();
+  return {
+    category: box.scaleRect(specs.category),
+    classNames: box.scaleRect(specs.classNames),
+    methodNames: box.scaleRect(specs.methodNames),
+    methodDefinition: box.scaleRect(specs.methodDefinition),
+  };
+}
+
 //  BrowserPanel
 // --------------
 // Class + method browser with list panes.
@@ -10156,7 +10232,7 @@ class BrowserPanel extends PanelMorph {
   initCategoryPane() {
     /** Category strip above the class list only — message/method keep full height. */
     let panelBounds = this.paneLayoutBounds();
-    this.categoryPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.08)));
+    this.categoryPane = this.addMorph(new ListPane(panelBounds, browserPanelPaneSpecs().category));
     this.categoryPane.setList([this.selectedCategory || 'All']);
     this.categoryPane.setPaneMenu(categorySelectorPaneMenuSpec(this));
     // One-item list: click (including re-click of the already-selected line) opens Browse category…
@@ -10170,7 +10246,7 @@ class BrowserPanel extends PanelMorph {
   initClassPane() {
     /** Class list (upper-left, under category) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.08, 0.4, 0.32)));
+    this.classPane = this.addMorph(new ListPane(panelBounds, browserPanelPaneSpecs().classNames));
     this.classPane.setList(this.classListForSelectedCategory());
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
@@ -10203,7 +10279,7 @@ class BrowserPanel extends PanelMorph {
   initMessagePane() {
     /** Method name list (upper-right) — full height of the top band. */
     let panelBounds = this.paneLayoutBounds();
-    this.messagePane = this.addMorph(new ListPane(panelBounds, rect(0.4, 0.0, 0.6, 0.4)));
+    this.messagePane = this.addMorph(new ListPane(panelBounds, browserPanelPaneSpecs().methodNames));
     this.messagePane.setList(['message names']);
     this.messagePane.setPaneMenu(methodSelectorPaneMenuSpec(this));
     this.messagePane.onSelect((methodSelection, shiftKey) => {
@@ -10263,7 +10339,7 @@ class BrowserPanel extends PanelMorph {
   initMethodPane() {
     /** Editable method source (lower) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
+    this.methodPane = this.addMorph(new TextPane(panelBounds, browserPanelPaneSpecs().methodDefinition));
     this.methodPane.setText('Method text');
     // Class fragments in this pane save via replaceMethod (see the ctrl-S handler);
     // the globals pane and legacy '<spec> = function ...' text keep plain eval.
@@ -14524,6 +14600,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-10-05 11:43 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-10-10 15:15 PDT';
 init()
-//written on 2026-10-05 11:43 PDT
+//written on 2026-10-10 15:15 PDT

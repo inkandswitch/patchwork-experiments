@@ -170,7 +170,17 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
   );
 }
 
-export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+/** The version stamp a defs file declares (`let KITDEFS_WRITTEN_ON = '…'`), if any. */
+function defsStamp(source: string): string | null {
+  return (
+    /\bFABRIK_WRITTEN_ON = '([^']+)'/.exec(source)?.[1] ??
+    /\bKITDEFS_WRITTEN_ON = '([^']+)'/.exec(source)?.[1] ??
+    /\bNEWDEFS_WRITTEN_ON = '([^']+)'/.exec(source)?.[1] ??
+    null
+  );
+}
+
+export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl; bootSource?: string }) => {
   const docHandle = useDocHandle<LivelymergeDoc>(docUrl, { suspense: true })!;
   // One runtime per doc handle — recreating it on every render would wipe the shadow
   // table and all per-user ($-prefixed) state, and reset the GC's once-per-id
@@ -305,17 +315,29 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
   useEffect(() => {
     if (initializedRuntime !== runtime) {
       const rt = runtime;
+      // Boot (or upgrade) the document's code when the bundled defs are a different
+      // version from the one it last loaded. Re-evaluating is safe: the defs keep
+      // existing objects and only rewrite their methods.
+      if (bootSource) {
+        doCatchingErrors(() => {
+          const loaded = rt.eval(`typeof KITDEFS_WRITTEN_ON === 'string' ? KITDEFS_WRITTEN_ON : null`);
+          if (loaded !== defsStamp(bootSource)) rt.eval(bootSource);
+        });
+      }
       doCatchingErrors(() => {
         rt.change(() => {
           const g = (globalThis as any).$global;
           if (typeof g?.initUI === 'function') {
             g.initUI();
           }
+          if (typeof g?.initFabrik === 'function') {
+            g.initFabrik();
+          }
         });
       });
       initializedRuntime = rt;
     }
-  }, [runtime]);
+  }, [runtime, bootSource]);
 
   useEffect(() => {
     const onResize = () => setDrawerHeight((h) => clampDrawerHeight(h));
