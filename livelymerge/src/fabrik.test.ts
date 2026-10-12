@@ -77,7 +77,7 @@ function stripTrailingInit(src: string) {
   return src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, '');
 }
 
-function makeFabrik() {
+function bootFabrik(start: string) {
   installBrowserStubs();
   const handle = createAutomergeTestDocHandle();
   const rt = createLivelymergeRuntime(handle);
@@ -88,8 +88,16 @@ function makeFabrik() {
   const fabrik = readFileSync(join(__dirname, '..', 'Fabrik.js'), 'utf8');
   rt.eval(newdefs);
   rt.eval(fabrik);
-  rt.eval('initUI(); initFabrik();');
+  rt.eval(start);
   return { rt, handle };
+}
+
+function makeFabrik() {
+  return bootFabrik('initUI(); initFabrik();');
+}
+
+function makePopulatedFabrik() {
+  return bootFabrik('initUI(); populateLively();');
 }
 
 describe('Fabrik', () => {
@@ -255,4 +263,111 @@ describe('Fabrik', () => {
       })()`),
     ).toBe('true,true');
   });
+
+  it('offers make a Fabrik part for globals and Open Fabrik on the world menu', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        let wm = Lively.get('worldMenu');
+        let spec = methodSelectorPaneMenuSpec({ selectedClass: 'globals', selectedMethod: 'classNamed' });
+        let items = typeof spec.items === 'function' ? spec.items() : spec.items;
+        let hasMake = false;
+        for (let i = 0; i < items.length; i++) if (items[i] == 'make a Fabrik part') hasMake = true;
+        let noMake = methodSelectorPaneMenuSpec({ selectedClass: 'Ellipse', selectedMethod: 'moveBy' });
+        let noItems = typeof noMake.items === 'function' ? noMake.items() : noMake.items;
+        let hasOnClass = false;
+        for (let i = 0; i < noItems.length; i++) if (noItems[i] == 'make a Fabrik part') hasOnClass = true;
+        let fv = fabrikPartFromGlobalName('classNamed', pt(20, 20));
+        let src = fv && fv.contentPane && fv.contentPane.shape ? fv.contentPane.shape.string : '';
+        let pin = fv ? fabrikPinNamed(fv, 'name') : null;
+        let openIx = wm && wm.findItem ? wm.findItem('Open Fabrik') : -1;
+        let transIx = wm && wm.findItem ? wm.findItem('transcript') : -1;
+        let demoSrc = Lively.get('classNamed').contentPane.shape.string || '';
+        let listProto = null;
+        let fnProto = null;
+        Lively.get('fabrikBin').eachSubmorph(function (m) {
+          if (m.fabrikKind === 'listView') listProto = m;
+          if (m.fabrikKind === 'functionView') fnProto = m;
+        });
+        return [
+          !!wm,
+          wm.getBounds().width() <= 205,
+          openIx >= 0 && openIx < transIx,
+          hasMake,
+          !hasOnClass,
+          src.indexOf('function classNamed') >= 0,
+          !!pin,
+          demoSrc.indexOf('function classNamed') >= 0,
+          !!(listProto && listProto.fabrikList && listProto.fabrikList.length === 3),
+          !!(fnProto && ('' + fnProto.fabrikSource).indexOf('=>') >= 0),
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true,true,true');
+  });
+
+  it('starts from populateLively; Open Fabrik rebuilds the browser test', () => {
+    const { rt } = makePopulatedFabrik();
+    expect(
+      rt.eval(`(() => {
+        let menus = [];
+        Lively.eachSubmorph(function (m) {
+          if (m.className === 'MenuMorph') menus.push(m);
+        });
+        let openBefore = false;
+        for (let i = 0; i < menus.length; i++) {
+          if (menus[i].findItem && menus[i].findItem('Open Fabrik') >= 0) openBefore = true;
+        }
+        let hadBox = !!Lively.box;
+        let hadFabrik = !!Lively.get('fabrikBrowser');
+        initFabrik();
+        let again = Lively.get('fabrikBrowser');
+        initFabrik();
+        let wm = Lively.get('worldMenu');
+        return [
+          hadBox,
+          !hadFabrik,
+          openBefore,
+          !!again,
+          !!Lively.get('fabrikBrowser'),
+          !!(wm && wm.findItem && wm.findItem('Open Fabrik') >= 0),
+          Lively.fabrikWires.length >= 9,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('wires attach at the out tip and the in pin outer flat; pb views drop on pointer up', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let cats = Lively.get('categories');
+        let inPin = fabrikPinNamed(cats, 'strings');
+        let outPin = fabrikPinNamed(cats, 'selection');
+        let inW = fabrikPinCenterWorld(inPin);
+        let outW = fabrikPinCenterWorld(outPin);
+        let inB = inPin.boundsInWorld();
+        let outB = outPin.boundsInWorld();
+        let proto = null;
+        Lively.get('fabrikBin').eachSubmorph(function (m) {
+          if (m.fabrikKind === 'listView') proto = m;
+        });
+        let copy = fabrikStamp(proto, Lively, pt(80, 80));
+        copy.beginPointerDrag(pt(80, 80), { actorID: 't' });
+        copy.onPointerMove(pt(140, 120), { actorID: 't' });
+        copy.onPointerUp(pt(140, 120), { actorID: 't' });
+        let worldX = copy.boundsInWorld().topLeft.x;
+        return [
+          inW.x <= inB.topLeft.x + 2,
+          Math.abs(inW.y - (inB.topLeft.y + inB.height() / 2)) < 3,
+          outW.x >= outB.topLeft.x + outB.width() - 2,
+          Math.abs(outW.y - (outB.topLeft.y + outB.height() / 2)) < 3,
+          !copy.$hitPoint,
+          Lively.$pointerFocus == null,
+          copy.world() === Lively,
+          worldX > 90,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true');
+  }, 20000);
 });

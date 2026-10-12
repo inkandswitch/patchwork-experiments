@@ -1,8 +1,8 @@
-//written on 2026-10-10 16:10 PDT
+//written on 2026-10-12 11:05 PDT
 // Fabrik — application construction set on newdefs (Livelymerge Morphic).
 // Parts bin, pins, wires, and a system browser with edit view / user view.
 //
-let FABRIK_WRITTEN_ON = '2026-10-10 16:10 PDT';
+let FABRIK_WRITTEN_ON = '2026-10-12 11:05 PDT';
 let FABRIK_EDIT_GAP = 50;
 let FABRIK_PIN_W = 14;
 let FABRIK_PIN_H = 12;
@@ -267,8 +267,24 @@ function fabrikInstallWheel(world) {
 }
 
 function fabrikPinCenterWorld(pin) {
-  let b = pin.boundsInWorld();
-  return b.center();
+  /**
+   * Wire attachment: output tip (outward point), or the midpoint of an input
+   * pin's outward flat side.
+   */
+  let e = pin.shape && pin.shape.extent ? pin.shape.extent : pt(FABRIK_PIN_W, FABRIK_PIN_H);
+  let local = pin.pinDir === 'out' ? pt(e.x, e.y / 2) : pt(0, e.y / 2);
+  return pin.globalize(local);
+}
+
+function fabrikViewOnPointerMove(view, p, evt) {
+  /** While the view itself is being dragged (parts-bin stamp), skip content hit-testing. */
+  if (view.$hitPoint) return Morph.prototype.continuePointerDrag.call(view, p, evt);
+  return Morph.prototype.onPointerMove.call(view, p, evt);
+}
+
+function fabrikViewOnPointerUp(view, p, evt) {
+  if (view.$hitPoint) return Morph.prototype.endPointerDrag.call(view, p, evt);
+  return Morph.prototype.onPointerUp.call(view, p, evt);
 }
 
 function fabrikAddPin(host, name, dir, type) {
@@ -436,7 +452,7 @@ class FabrikPin extends Morph {
     this.fabrikHost = null;
     let fill = fabrikPinFill(this.pinDir);
     this.setColor(fill);
-    this.setStyles(fill, 1, Color.black);
+    this.setStyles(fill, 0, fill);
   }
   includesPt(p) {
     if (!fabrikEditMode(this.world())) return false;
@@ -453,15 +469,11 @@ class FabrikPin extends Morph {
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    if (pointingIn) {
-      ctx.moveTo(0, 0);
-      ctx.lineTo(0, h);
-      ctx.lineTo(w, h / 2);
-    } else {
-      ctx.moveTo(w, 0);
-      ctx.lineTo(w, h);
-      ctx.lineTo(0, h / 2);
-    }
+    // In pins sit on the left (tip toward the part); out pins sit on the right
+    // (tip away from the part). Both triangles therefore point right.
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, h);
+    ctx.lineTo(w, h / 2);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
@@ -472,15 +484,9 @@ class FabrikPin extends Morph {
       ctx.strokeStyle = '#c45c00';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      if (pointingIn) {
-        ctx.moveTo(-1, -1);
-        ctx.lineTo(-1, h + 1);
-        ctx.lineTo(w + 1, h / 2);
-      } else {
-        ctx.moveTo(w + 1, -1);
-        ctx.lineTo(w + 1, h + 1);
-        ctx.lineTo(-1, h / 2);
-      }
+      ctx.moveTo(-1, -1);
+      ctx.lineTo(-1, h + 1);
+      ctx.lineTo(w + 1, h / 2);
       ctx.closePath();
       ctx.stroke();
       ctx.restore();
@@ -496,19 +502,9 @@ class FabrikPin extends Morph {
     }
     if (!(tw > 0)) tw = name.length * 6;
     let padX = 3;
-    let padY = 2;
     let boxW = tw + padX * 2;
-    let boxH = 14;
     let boxX = pointingIn ? w + 2 : -2 - boxW;
-    let boxY = h / 2 - boxH / 2;
-    ctx.fillStyle = 'rgba(255,255,255,0.45)';
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.rect(boxX + 0.5, boxY + 0.5, boxW - 1, boxH - 1);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(30,30,30,0.7)';
+    ctx.fillStyle = Color.blue && Color.blue.fillStyle ? Color.blue.fillStyle : '#0033cc';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     ctx.fillText(name, boxX + padX, h / 2);
@@ -716,6 +712,12 @@ class FabrikListView extends ListPane {
     let lh = this.contentLineHeight ? this.contentLineHeight() : 16;
     return this._scrollContentTo(this.getScrollPosition() + (lineCount * lh) / slideRoom);
   }
+  onPointerMove(p, evt) {
+    return fabrikViewOnPointerMove(this, p, evt);
+  }
+  onPointerUp(p, evt) {
+    return fabrikViewOnPointerUp(this, p, evt);
+  }
   static new(...args) {
     return new this(...args);
   }
@@ -772,6 +774,12 @@ class FabrikTextView extends TextPane {
   }
   scrollByLines(lineCount) {
     return FabrikListView.prototype.scrollByLines.call(this, lineCount);
+  }
+  onPointerMove(p, evt) {
+    return fabrikViewOnPointerMove(this, p, evt);
+  }
+  onPointerUp(p, evt) {
+    return fabrikViewOnPointerUp(this, p, evt);
   }
   static new(...args) {
     return new this(...args);
@@ -843,6 +851,12 @@ class FabrikFunctionView extends TextPane {
   includesPt(p) {
     if (this.$fabrikHidden) return false;
     return Morph.prototype.includesPt.call(this, p);
+  }
+  onPointerMove(p, evt) {
+    return fabrikViewOnPointerMove(this, p, evt);
+  }
+  onPointerUp(p, evt) {
+    return fabrikViewOnPointerUp(this, p, evt);
   }
   renderOn(ctx) {
     if (this.$fabrikHidden) return;
@@ -986,11 +1000,13 @@ function fabrikWorldPtInBin(world, worldP) {
 function fabrikStamp(proto, dest, at) {
   let m = null;
   let kind = proto.fabrikKind;
-  if (kind === 'listView') m = new FabrikListView(rect(at.x, at.y, 160, 200));
-  else if (kind === 'textView') m = new FabrikTextView(rect(at.x, at.y, 240, 180));
+  if (kind === 'listView') {
+    m = new FabrikListView(rect(at.x, at.y, 160, 200));
+    if (proto.fabrikList) m.setList(proto.fabrikList);
+  } else if (kind === 'textView') m = new FabrikTextView(rect(at.x, at.y, 240, 180));
   else if (kind === 'functionView')
     m = new FabrikFunctionView(rect(at.x, at.y, 260, 96), {
-      source: proto.fabrikSource || 'function (v) { return v; }',
+      source: proto.fabrikSource || '(v) => v',
       inputs: proto.fabrikInputs || [{ name: 'v', type: 'any' }],
     });
   else if (proto.className === 'LineMorph')
@@ -1002,6 +1018,99 @@ function fabrikStamp(proto, dest, at) {
     m.moveBy(at.subPt(m.getBounds().topLeft));
   }
   return m;
+}
+
+function fabrikGuessPinType(name) {
+  if (name == 'cls' || name == 'klass' || name == 'obj' || name == 'value' || name == 'fn') return 'any';
+  return 'text';
+}
+
+function fabrikFnParamNames(fn) {
+  if (typeof fn !== 'function' || !fn.toString) return [];
+  let src = fn.toString();
+  let open = src.indexOf('(');
+  let close = src.indexOf(')');
+  if (open < 0 || close <= open) return [];
+  let parts = src.slice(open + 1, close).split(',');
+  let names = [];
+  for (let i = 0; i < parts.length; i++) {
+    let p = parts[i];
+    while (p.length > 0 && (p.charAt(0) == ' ' || p.charAt(0) == '\n' || p.charAt(0) == '\t')) p = p.slice(1);
+    if (p.indexOf('...') == 0) p = p.slice(3);
+    let eq = p.indexOf('=');
+    if (eq >= 0) p = p.slice(0, eq);
+    while (p.length > 0 && (p.charAt(p.length - 1) == ' ' || p.charAt(p.length - 1) == '\n')) p = p.slice(0, p.length - 1);
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(p)) names.push(p);
+  }
+  return names;
+}
+
+function fabrikPartFromGlobalName(name, at) {
+  let fn = null;
+  if (typeof $global !== 'undefined' && $global) fn = $global[name];
+  if (typeof fn !== 'function' && typeof globalThis !== 'undefined') fn = globalThis[name];
+  if (typeof fn !== 'function') return null;
+  let params = fabrikFnParamNames(fn);
+  let args = params.join(', ');
+  let source = fn.toString();
+  let namedHead = 'function ' + name + '(';
+  if (source.indexOf('function (') === 0 || source.indexOf('function(') === 0)
+    source = 'function ' + name + source.slice(source.indexOf('('));
+  else if (source.indexOf(namedHead) !== 0 && source.indexOf('function ' + name + ' ') !== 0)
+    source = namedHead + args + ') { return $global.' + name + '(' + args + '); }';
+  let inputs = [];
+  for (let i = 0; i < params.length; i++) inputs.push({ name: params[i], type: fabrikGuessPinType(params[i]) });
+  let fv = new FabrikFunctionView(rect(at.x, at.y, 250, 84), {
+    source: source,
+    inputs: inputs,
+    outputType: 'any',
+  });
+  fv.setName(name);
+  fabrikFitFunctionView(fv);
+  return fv;
+}
+
+function fabrikMakePartFromGlobal(panel) {
+  let name = panel && panel.selectedMethod;
+  if (!name) return null;
+  let world = panel.world && panel.world() ? panel.world() : Lively;
+  let at = pt(660, 70);
+  if (panel.boundsInWorld) {
+    let b = panel.boundsInWorld();
+    at = pt(b.topLeft.x + b.width() + 24, b.topLeft.y + 28);
+  }
+  let fv = fabrikPartFromGlobalName(name, at);
+  if (fv && world && world.addMorph) world.addMorph(fv);
+  return fv;
+}
+
+function fabrikOfferOpenMenu(world) {
+  world = world || (typeof Lively === 'object' ? Lively : null);
+  if (!world) return;
+  let kids = [];
+  if (world.submorphs) for (let i = 0; i < world.submorphs.length; i++) kids.push(world.submorphs[i]);
+  if (world.$submorphs) for (let i = 0; i < world.$submorphs.length; i++) kids.push(world.$submorphs[i]);
+  for (let i = 0; i < kids.length; i++) {
+    let m = kids[i];
+    if (!m || m.className !== 'MenuMorph' || !m.addItemBefore) continue;
+    if (m.findItem && m.findItem('Open Fabrik') >= 0) continue;
+    if (m.findItem && m.findItem('transcript') < 0) continue;
+    m.addItemBefore('transcript', menuItem('Open Fabrik', function () {
+      initFabrik();
+    }));
+  }
+}
+
+function fabrikInstallWorldMenu(world) {
+  if (!world || !world.showWorldMenuAt) return null;
+  let prior = world.get && world.get('worldMenu');
+  if (prior && prior.remove) prior.remove();
+  let menu = world.showWorldMenuAt(pt(130, 40));
+  if (!menu) return null;
+  menu.setName('worldMenu');
+  menu.isFleetingMenu = false;
+  if (menu.owner !== world && world.addMorph) world.addMorph(menu);
+  return menu;
 }
 
 function fabrikMakeBinItem(bin, morph, kind, label) {
@@ -1058,6 +1167,7 @@ function fabrikPopulateBin(bin) {
   let lv = new Morph(rect(x, y, 130, 22));
   lv.setColor(Color.white);
   lv.addMorph(new TextMorph(rect(4, 2, 120, 18), 'listView'));
+  lv.fabrikList = ['one', 'two', 'three'];
   fabrikMakeBinItem(bin, lv, 'listView', 'listView');
   y += 30;
   let tv = new Morph(rect(x, y, 130, 22));
@@ -1068,7 +1178,7 @@ function fabrikPopulateBin(bin) {
   let fv = new Morph(rect(x, y, 130, 22));
   fv.setColor(Color.white);
   fv.addMorph(new TextMorph(rect(4, 2, 120, 18), 'functionView'));
-  fv.fabrikSource = 'function (v) { return v; }';
+  fv.fabrikSource = '(v) => v';
   fv.fabrikInputs = [{ name: 'v', type: 'any' }];
   fabrikMakeBinItem(bin, fv, 'functionView', 'functionView');
 }
@@ -1339,7 +1449,7 @@ function fabrikBuildDemo(world, fab) {
 
   let classNamesInCategory = world.addMorph(
     new FabrikFunctionView(rect(660, 70, 250, 84), {
-      source: 'function (category) { return fabrikClassNamesInCategory(category); }',
+      source: 'function classNamesInCategory(category) { return fabrikClassNamesInCategory(category); }',
       inputs: [{ name: 'category', type: 'text' }],
       outputType: 'text',
     }),
@@ -1348,7 +1458,7 @@ function fabrikBuildDemo(world, fab) {
 
   let classFn = world.addMorph(
     new FabrikFunctionView(rect(660, 164, 250, 84), {
-      source: 'function (s) { return classNamed(s); }',
+      source: 'function classNamed(s) { return $global.classNamed(s); }',
       inputs: [{ name: 's', type: 'text' }],
       outputType: 'any',
     }),
@@ -1357,7 +1467,7 @@ function fabrikBuildDemo(world, fab) {
 
   let methodsFn = world.addMorph(
     new FabrikFunctionView(rect(660, 258, 250, 84), {
-      source: 'function (cls) { return fabrikMethodNames(cls); }',
+      source: 'function methodsOfClass(cls) { return fabrikMethodNames(cls); }',
       inputs: [{ name: 'cls', type: 'any' }],
       outputType: 'text',
     }),
@@ -1366,7 +1476,7 @@ function fabrikBuildDemo(world, fab) {
 
   let codeFn = world.addMorph(
     new FabrikFunctionView(rect(660, 352, 250, 100), {
-      source: 'function (cls, name) { return fabrikCodeString(cls, name); }',
+      source: 'function codeString(cls, name) { return fabrikCodeString(cls, name); }',
       inputs: [
         { name: 'cls', type: 'any' },
         { name: 'name', type: 'text' },
@@ -1434,19 +1544,20 @@ function fabrikBuildWorld(world) {
   fabrikBuildDemo(world, fab);
   fabrikInstallWheel(world);
   fabrikSetView('edit', world);
+  fabrikInstallWorldMenu(world);
 }
 
 function initFabrik() {
   /**
-   * Build (or rebuild) the Fabrik surface. A stamp change after re-eval gets a
-   * fresh world so pin/list fixes show up without a new document.
+   * (Re)build the Fabrik browser test setup. Called from the world menu
+   * 'Open Fabrik' so a construction can be thrown away and started over.
    */
-  if (typeof Lively === 'object' && Lively && Lively.isFabrikWorld && Lively.fabrikStamp === FABRIK_WRITTEN_ON)
-    return Lively;
-  initLively();
+  if (typeof initLively === 'function') initLively();
   fabrikBuildWorld(Lively);
   Lively.fabrikStamp = FABRIK_WRITTEN_ON;
   return Lively;
 }
 
-//written on 2026-10-10 16:10 PDT
+if (typeof Lively === 'object' && Lively) fabrikOfferOpenMenu(Lively);
+
+//written on 2026-10-12 11:05 PDT

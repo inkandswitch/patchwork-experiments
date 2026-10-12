@@ -1,4 +1,4 @@
-//written on 2026-10-10 15:15 PDT
+//written on 2026-10-11 16:15 PDT
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -79,7 +79,7 @@ let kbdDefaultShiftTable = {
 let kbdShiftTable = { ...kbdDefaultShiftTable };
 let $useOnScreenKbd = false;
 let longClickForHalosLabel = 'Long click for halos';
-let onScreenKeyboardLabel = 'Show on-screen keyboard';
+let onScreenKeyboardLabel = 'On-screen keyboard';
 let TRANSCRIPT_MAX_BEFORE_TRUNC = 1000;
 let TRANSCRIPT_KEEP_LEN = 500;
 let TRANSCRIPT_MARKER_RECURSIVE = '---recursive call ---';
@@ -6826,17 +6826,31 @@ function menuItemFrom(labelOrItem, actionIfAny) {
 function methodSelectorPaneMenuSpec(panel) {
   /** Pane menu for method-selector list panes (browser message list, method-list panel, …). */
   return {
-    items: [
-      'spawn this method to its own window',
-      'export this method to the OS paste buffer',
-      menuSeparator,
-      'delete this method',
-    ],
+    items: function () {
+      let items = [
+        'spawn this method to its own window',
+        'export this method to the OS paste buffer',
+        menuSeparator,
+        'delete this method',
+      ];
+      if (
+        typeof fabrikMakePartFromGlobal === 'function' &&
+        panel &&
+        panel.selectedClass == 'globals' &&
+        panel.selectedMethod
+      ) {
+        items.push(menuSeparator);
+        items.push('make a Fabrik part');
+      }
+      return items;
+    },
     onSelect: (item, pane) => {
       if (isMenuSeparator(item)) return;
       if (item == 'spawn this method to its own window') panel.spawnMethodCopyToWindow();
       if (item == 'export this method to the OS paste buffer') panel.exportMethodCopyToOSPaste();
       if (item == 'delete this method') panel.promptDeleteThisMethod();
+      if (item == 'make a Fabrik part' && typeof fabrikMakePartFromGlobal === 'function')
+        fabrikMakePartFromGlobal(panel);
     },
   };
 }
@@ -13175,6 +13189,15 @@ class WorldMorph extends Morph {
       menuItem('Text help', function () {
         this.world().showTextHelp();
       }),
+    ];
+    if (typeof initFabrik === 'function') {
+      items.push(
+        menuItem('Open Fabrik', function () {
+          initFabrik();
+        }),
+      );
+    }
+    items = items.concat([
       menuItem('Open transcript', () => {
         Transcript = openTranscript();
       }),
@@ -13206,15 +13229,15 @@ class WorldMorph extends Morph {
         refreshWorldMenuItems(this);
         this.shape.selectLineAt(0);
       }),
-      menuItem('Checkpoint to Downloads', function () {
+      menuItem('Write checkpoint', function () {
         let world = this.world();
         let name = checkpointDownloadFileName();
         let when = new Date().toLocaleString();
         let bytes = checkpointToRepo(name);
         showCheckpointSavedNotice(world, { name: name, when: when, bytes: bytes });
       }),
-    ];
-    let menu = new MenuMorph(pos.extent(pt(220, 24 + items.length * 20)), items);
+    ]);
+    let menu = new MenuMorph(pos.extent(pt(200, 24 + items.length * 20)), items);
     // Deselect after non-toggle actions (toggles refresh the list themselves).
     let priorSelect = menu.actionFn;
     menu.setSelectFn(function (item, shiftKey) {
@@ -14600,6 +14623,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-10-10 15:15 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-10-11 16:15 PDT';
 init()
-//written on 2026-10-10 15:15 PDT
+//written on 2026-10-11 16:15 PDT

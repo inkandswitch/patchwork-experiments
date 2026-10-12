@@ -313,30 +313,34 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
   }, [docHandle]);
 
   useEffect(() => {
-    if (initializedRuntime !== runtime) {
-      const rt = runtime;
-      // Boot (or upgrade) the document's code when the bundled defs are a different
-      // version from the one it last loaded. Re-evaluating is safe: the defs keep
-      // existing objects and only rewrite their methods.
-      if (bootSource) {
-        doCatchingErrors(() => {
-          const loaded = rt.eval(`typeof KITDEFS_WRITTEN_ON === 'string' ? KITDEFS_WRITTEN_ON : null`);
-          if (loaded !== defsStamp(bootSource)) rt.eval(bootSource);
-        });
-      }
+    const rt = runtime;
+    const firstInit = initializedRuntime !== runtime;
+    // Always sync bundled defs when their stamp changes — an already-mounted
+    // document used to skip this and keep the previous FabrikPin/world-menu code.
+    if (bootSource) {
       doCatchingErrors(() => {
-        rt.change(() => {
-          const g = (globalThis as any).$global;
-          if (typeof g?.initUI === 'function') {
-            g.initUI();
-          }
-          if (typeof g?.initFabrik === 'function') {
-            g.initFabrik();
-          }
-        });
+        const loaded = rt.eval(
+          `typeof FABRIK_WRITTEN_ON === 'string' ? FABRIK_WRITTEN_ON : typeof KITDEFS_WRITTEN_ON === 'string' ? KITDEFS_WRITTEN_ON : typeof NEWDEFS_WRITTEN_ON === 'string' ? NEWDEFS_WRITTEN_ON : null`,
+        );
+        if (loaded !== defsStamp(bootSource)) rt.eval(bootSource);
       });
-      initializedRuntime = rt;
     }
+    doCatchingErrors(() => {
+      rt.change(() => {
+        const g = (globalThis as any).$global;
+        if (firstInit && typeof g?.initUI === 'function') {
+          g.initUI();
+        }
+        if (firstInit && typeof g?.populateLively === 'function') {
+          g.populateLively();
+        } else if (g?.Lively && g.Lively.isFabrikWorld && typeof g?.initFabrik === 'function') {
+          g.initFabrik();
+        } else if (typeof g?.fabrikOfferOpenMenu === 'function') {
+          g.fabrikOfferOpenMenu();
+        }
+      });
+    });
+    initializedRuntime = rt;
   }, [runtime, bootSource]);
 
   useEffect(() => {
