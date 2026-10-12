@@ -149,8 +149,7 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
     // (see providers-bridge).
     const bridgedProviders = resolveBridgedProviders(host);
 
-    // Host components this instance may open: shared-tools ∩ ALLOWED_OPEN_TOOLS
-    // (see open-tool-bridge). Empty unless opted in.
+    // shared-tools ∩ ALLOWED_OPEN_TOOLS (see open-tool-bridge).
     const sharedTools = resolveSharedTools(host);
 
     // The bridge filters URLs in bridged values against the allowlist; the
@@ -192,9 +191,7 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
         bridgedProviders,
         bridgedValueFilter
       ),
-      // Open-tool bridge: lets an isolated tool open a host-realm tool (e.g. the
-      // LLM config tray) by re-dispatching patchwork:open-tool on the host
-      // element. Gated by shared-tools ∩ ALLOWED_OPEN_TOOLS.
+      // Lets an isolated tool open a host tool, like the LLM config tray.
       startHostOpenToolBridge(hostRpcPort, host, sharedTools),
       watchRegistries(hostRpcPort, mapper)
     );
@@ -251,9 +248,8 @@ export function bootIsolation(host: HTMLElement): IsolationHandle {
           // initial boot rather than lost, since a pre-port push no-ops.
           rootComponentData: readRootComponentData(host),
           registryEntries,
-          // Which selector types this instance may bridge. The iframe half checks
-          // it before claiming, so a non-bridged selector keeps bubbling to a
-          // local provider instead of being swallowed and then rejected.
+          // The iframe only claims these, so other selectors can still reach a
+          // provider inside the iframe.
           bridgedProviders: config.bridgedProviders,
           esmsSource: assets.esmsSource,
           hostStyles: assets.hostStyles,

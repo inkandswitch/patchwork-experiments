@@ -511,12 +511,10 @@ function rewriteAutomergeDepsInSource(
  * stripped) from a request URL, or null if it has none. Identifies the package
  * that owns a served module.
  *
- * The heads suffix (`#<heads>` / `%23<heads>`) MUST be stripped: a heads-pinned
- * request arrives as `registry--@scope--name%23<heads>`, but the name registered
- * via `markPackageHasDeps`/`markerNameFor` is bare (`registry--@scope--name`).
- * Without stripping, `packageNeedsRewrite` misses and the serve-path source
- * rewrite (baked automerge dep → marker) never fires — so a heads-pinned tool's
- * automerge deps stay raw and get blocked by the iframe allowlist.
+ * A heads-pinned request arrives as `registry--@scope--name%23<heads>`, but
+ * `markPackageHasDeps` records the bare name, so without stripping
+ * `packageNeedsRewrite` misses and the iframe allowlist blocks the tool's
+ * automerge deps.
  */
 function markerNameFromUrl(url: string): string | null {
   const { first } = splitFirstSegment(url);

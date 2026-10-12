@@ -34,11 +34,7 @@ export function createProvidersBridge(
   log: IframeLog,
   bridgedTypes: string[] = []
 ): ProvidersBridge {
-  // Selector types the host is willing to bridge for this instance. Checked
-  // BEFORE claiming, so a type we can't serve keeps bubbling and a local
-  // provider still gets a chance at it. Claiming everything and letting the host
-  // reject (the previous behaviour) both swallowed events a local provider could
-  // have answered and made "unclaimed" meaningless inside the sandbox.
+  // Selector types the host will bridge for this instance.
   const bridged = new Set(bridgedTypes);
   // Consumer ports for subscriptions currently forwarded to the host, keyed by
   // the id we assigned when forwarding.
@@ -54,12 +50,9 @@ export function createProvidersBridge(
       log("providers-bridge: received change for id:", msg.id, "value:", msg.value);
       const port = bridgedSubscriptions.get(msg.id);
       if (port) {
-        // Transferables ride in the value and must be named again on this hop,
-        // or a value that cannot be structured-cloned (a worker's stream pair)
-        // throws DataCloneError. Inlined rather than imported: this function is
-        // serialized into the srcdoc via .toString() and cannot close over
-        // module scope. Kept in step with `transferablesIn` in
-        // ../../bridges/providers-bridge.ts.
+        // Streams can't be cloned, so they have to be transferred again on this
+        // hop. A copy of `transferablesIn` in ../../bridges/providers-bridge.ts,
+        // because this function is serialized into the srcdoc and can't import.
         const transfer: Transferable[] = [];
         const value = msg.value;
         if (value && typeof value === "object") {
@@ -81,24 +74,10 @@ export function createProvidersBridge(
       return true;
     }
     if (msg.type === "providers-bridge-rejected") {
-      // Host refused this subscription.
-      //
-      // The reply below is FORWARD-COMPAT ONLY — it does not currently unblock
-      // anyone. Upstream `subscribe()` matches `{type:"change"}` and drops every
-      // other message, `request()` has no reject path, and closing a MessagePort
-      // fires no event on the receiver. So a refused consumer waits exactly as
-      // long as it did when we dropped this silently. Fixing that needs an
-      // upstream refusal channel in @inkandswitch/patchwork-providers.
-      //
-      // What actually prevents the hang is the allowlist check in install():
-      // we no longer claim selectors the host won't bridge, so they keep bubbling
-      // to a local provider instead of being swallowed and then rejected. This
-      // path should now only be reachable on an iframe/host allowlist mismatch,
-      // i.e. a bug.
-      //
-      // (The worker channel is different: its connect.js treats a claimed
-      // subscription that answers `null` as an explicit refusal and rejects at
-      // once, so its consumer is unblocked either way.)
+      // Only reachable if the iframe and host disagree about what's bridged,
+      // since install() doesn't claim anything else. Nothing upstream listens
+      // for "unavailable" yet (patchwork-providers has no way to refuse a
+      // subscription), so the consumer still waits.
       log("providers-bridge: rejected by host for id:", msg.id);
       const port = bridgedSubscriptions.get(msg.id);
       bridgedSubscriptions.delete(msg.id);
@@ -121,9 +100,7 @@ export function createProvidersBridge(
       const detail = event.detail;
       if (!detail?.selector?.type || !detail?.port) return;
 
-      // Only claim what the host will actually bridge. Anything else is left to
-      // bubble — the host would only reject it, and claiming first would deny a
-      // local provider the chance to answer.
+      // Leave anything the host won't bridge for a provider in here.
       if (!bridged.has(detail.selector.type)) {
         log("providers-bridge: not bridged, leaving unclaimed:", detail.selector.type);
         return;

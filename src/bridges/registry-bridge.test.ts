@@ -317,21 +317,16 @@ describe("dependency round-trip (rewrite → runtime-encode → resolve)", () =>
     );
   });
 
-  it("rewrites a consumer served under a HEADS-PINNED marker (heads stripped for the gate)", () => {
+  it("rewrites a consumer served under a heads-pinned marker", () => {
     const mapper = new PackagesUrlMapper();
-    // The consumer declared a dep and is marked as needing rewrite (bare name).
     mapper.encodeSegment(`${AM_B}#${HEADS}`, "@chee/patchwork-llm");
     mapper.markPackageHasDeps(mapper.markerNameFor("@patchwork/chat-llm"));
 
     const source = `const dep = getImportableUrlFromAutomergeUrl("${AM_B}#${HEADS}")`;
-    // Serve request under the consumer's HEADS-PINNED marker (what a pushwork
-    // heads-pinned registration produces): the gate must strip the heads to match
-    // the bare name recorded by markPackageHasDeps, or the rewrite won't fire and
-    // the dep literal stays raw (→ blocked by the iframe allowlist).
     const consumerReq = `${HOST}/registry--@patchwork--chat-llm%23${HEADS}/dist/index.js`;
     const rewritten = rewriteServedSource(source, consumerReq, mapper);
     expect(rewritten).toContain(`registry--@chee--patchwork-llm%23${HEADS}`);
-    expect(rewritten).not.toContain(AM_B); // raw automerge id must be gone
+    expect(rewritten).not.toContain(AM_B);
   });
 
   it("skips the rewrite for a package not recorded as having automerge deps", () => {

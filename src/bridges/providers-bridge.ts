@@ -49,30 +49,18 @@ export const ALLOWED_PROVIDERS = [
   // identity, so it is safe to relay into the iframe; lets isolated tools
   // (e.g. the titlebar theme tool) mirror the host's active theme.
   "patchwork:current-theme",
-  // A worker connection: the host runs the worker and transfers its
-  // `{readable, writable}` stream pair in. The worker, and any config or
-  // secrets it resolves, never leave the host — only the streams cross.
-  //
-  // The gate is the TYPE, not the worker `kind` nested in the selector: opting
-  // in here opts into every registered kind. That is deliberate. Scoping comes
-  // from the transport instead — each subscription carries its own MessagePort
-  // and is relayed under its own id, so a tool receives the streams for the
-  // worker it connected to and has no handle on anyone else's.
+  // A worker connection. The worker runs on the host and only its
+  // `{readable, writable}` pair is transferred in, so its config and secrets
+  // stay out here. This allows every worker kind, but each subscription has its
+  // own port, so a tool only gets the streams for the worker it asked for.
   "patchwork:worker-channel",
 ];
 
 /**
- * Transferables to hand `postMessage` for a relayed value.
- *
- * Values normally structured-clone, but a provider may answer with something
- * that cannot be cloned — a worker's stream pair is the live case. `accept()`
- * lets a provider name those in its own transfer list; the bridge has to do the
- * same on each hop or the relay throws `DataCloneError`.
- *
- * Deliberately shallow: it inspects the value's own enumerable properties and
- * does not recurse. A provider that wants something transferred puts it at the
- * top level of the value (as the worker provider does), and walking arbitrary
- * depth would risk detaching an object the sender still holds a reference to.
+ * The streams, ports and buffers at the top level of a relayed value, for
+ * `postMessage`'s transfer list. A worker's stream pair can't be cloned, so
+ * without this the relay throws DataCloneError. It doesn't recurse, so nothing
+ * nested that the sender still holds gets detached.
  */
 export function transferablesIn(value: unknown): Transferable[] {
   if (!value || typeof value !== "object") return [];

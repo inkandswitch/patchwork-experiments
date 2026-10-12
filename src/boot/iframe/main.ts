@@ -198,10 +198,8 @@ export async function boot(deps: BootDeps) {
     true
   );
 
-  // Open-tool bridge (iframe side): forward patchwork:open-tool to the host so an
-  // isolated tool can open a HOST-realm tool (e.g. the LLM config tray) it can't
-  // reach itself. The host gates by a component allowlist (see open-tool-bridge).
-  // Capturing + does not stopPropagation, mirroring open-document above.
+  // Forward patchwork:open-tool to the host, which checks it against
+  // shared-tools (see open-tool-bridge).
   document.addEventListener(
     "patchwork:open-tool",
     ((event: CustomEvent) => {
@@ -308,8 +306,7 @@ export async function boot(deps: BootDeps) {
 
     // 15. Providers bridge — forward unclaimed patchwork:subscribe events to
     // the host so host-side providers can answer them (see ./providers-bridge.ts).
-    // This includes `patchwork:worker-channel`: a worker connection is an
-    // ordinary subscription whose value carries transferred streams.
+    // Worker connections (`patchwork:worker-channel`) go through here too.
     providers.install();
 
     log(`boot complete — root "${d.rootComponentId}"`);
