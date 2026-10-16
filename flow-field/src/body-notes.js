@@ -1,5 +1,6 @@
 // The build notes' account of a linked body: which model, how fine, and which
-// path the section came by (an exact section, or a slice of a provider's mesh).
+// path the section came by (a slice of a scene render, an exact section, or a
+// slice of a provider's mesh).
 // Pure.
 
 import { normalizeBodySpec, BODY_MODEL_LABELS } from "./body.js";
@@ -13,12 +14,15 @@ export function bodyNote(doc, field, result) {
   const spec = normalizeBodySpec(doc?.body);
   if (!spec) return "";
   const body = field?.body;
+  if (!body && result?.pending) return `; ${result.error}, so the flow is drawn without it`;
   if (!body) return `; linked body not applied: ${result && !result.ok ? result.error : "its section isn't available"}`;
   const via = !result?.ok
     ? ""
-    : result.path === "exact"
-      ? `, from the exact section from ${result.providerName}`
-      : `, from a mesh slice of ${result.providerName}'s build`;
+    : result.path === "render"
+      ? `, from a slice of the scene render “${result.providerName}”`
+      : result.path === "exact"
+        ? `, from the exact section from ${result.providerName}`
+        : `, from a mesh slice of ${result.providerName}'s build (default params)`;
   if (body.failed) return `; linked body not applied: ${body.failed}${via}`;
   const at = `z = ${(body.z0 ?? 0).toFixed(2)} m`;
   const warn = (body.info?.warnings ?? []).map((w) => `; ${w}`).join("");

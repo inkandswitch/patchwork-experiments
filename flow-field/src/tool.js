@@ -35,7 +35,8 @@ import {
   MIN_PANELS,
   MAX_PANELS,
 } from "./body.js";
-import { acquireSection, sectionPathLabel } from "./section.js";
+import { acquireSection, sectionPathLabel, renderTitle } from "./section.js";
+import { isRenderDoc, renderKey } from "./render-read.js";
 import { loadGetRegistry } from "./registry.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "./dnd.js";
 
@@ -54,6 +55,8 @@ async function titleOf(doc, datatype) {
   } catch {
     // fall back below
   }
+  // a render doc's datatype (scene) appends this to its title; say the same without it
+  if (isRenderDoc(doc)) return `${renderTitle(doc)} (3D render)`;
   return String(doc?.title || doc?.name || datatype || "linked document");
 }
 
@@ -230,7 +233,7 @@ export default function FlowFieldTool(handle, element) {
   const seedInput = numberInput(
     (v) =>
       write((d) => {
-        d.seeds ??= { count: 15, plane: "upstream" };
+        d.seeds ??= { count: 15 };
         d.seeds.count = Math.max(1, Math.min(40, Math.round(v)));
       }),
     { min: "1", max: "40", step: "1", "aria-label": "Seed count" },
@@ -260,7 +263,10 @@ export default function FlowFieldTool(handle, element) {
     { class: "flow" },
     el("div", { class: "cluster" }, linkOpen),
     linkBox,
-    el("p", { class: "hint", text: "Link a hull (or any document a section or scene provider can cut) and the flow goes round its waterline, derived live from the hull. You can also drop a document onto the view." }),
+    el("p", {
+      class: "hint",
+      text: "Link a hull and the flow goes round its waterline, derived live from it. Best is the hull's 3D render from a scene (drag its row from the scene's outline onto the view): the flow then uses exactly the geometry the scene shows. A hull document itself works too, built with its provider's defaults.",
+    }),
   );
   const chipTitle = el("span", { class: "chip-title" });
   const chipPath = el("span", { class: "chip-path" });
@@ -494,6 +500,7 @@ export default function FlowFieldTool(handle, element) {
     section: null,
     error: null,
     title: null,
+    renderKey: null, // for a linked scene render: the key of the GLB the section was cut from
     version: 0,
   };
   const findRepo = () => globalThis.repo ?? handle.repo ?? null;
@@ -516,6 +523,7 @@ export default function FlowFieldTool(handle, element) {
       section: null,
       error: null,
       title: null,
+      renderKey: null,
       version: linked.version + 1,
     });
   }
@@ -556,6 +564,10 @@ export default function FlowFieldTool(handle, element) {
     if (r.handle && !linked.handle) {
       linked.handle = r.handle;
       const onHull = () => {
+        // a scene render changes all the time (status, "building"); only a
+        // new GLB changes the body
+        const d = r.handle.doc?.();
+        if (isRenderDoc(d) && linked.renderKey != null && renderKey(d) === linked.renderKey) return;
         clearTimeout(linked.timer);
         linked.timer = setTimeout(fetchSection, HULL_DEBOUNCE_MS);
       };
@@ -573,11 +585,13 @@ export default function FlowFieldTool(handle, element) {
       }, wait);
     }
     linked.result = r;
-    linked.status = r.ok ? "ready" : "error";
+    // "pending": a scene render that hasn't been built yet; it is followed, not retried
+    linked.status = r.ok ? "ready" : r.pending ? "pending" : "error";
     linked.section = r.ok ? r.section : null;
     linked.error = r.ok ? null : r.error;
+    linked.renderKey = r.renderKey ?? null;
     linked.version++;
-    if (r.doc && !linked.title) {
+    if (r.doc && (!linked.title || r.renderKey != null)) {
       const title = await titleOf(r.doc, r.datatype);
       if (dead || seq !== linked.seq) return;
       linked.title = title;
@@ -620,25 +634,31 @@ export default function FlowFieldTool(handle, element) {
     }
     const path =
       linked.status === "ready"
-        ? linked.result?.path === "exact"
-          ? "exact section"
-          : "mesh fallback"
-        : linked.status === "error"
-          ? "no section"
-          : "finding section…";
+        ? linked.result?.path === "render"
+          ? "scene render"
+          : linked.result?.path === "exact"
+            ? "exact section"
+            : "mesh fallback"
+        : linked.status === "pending"
+          ? "not built yet"
+          : linked.status === "error"
+            ? "no section"
+            : "finding section…";
     chipTitle.textContent = linked.title ?? "linked document";
     chipPath.textContent = path;
     chip.dataset.status = linked.status;
     chip.title = `${spec.url}${linked.status === "ready" ? `\n${sectionPathLabel(linked.result)}` : ""}`;
     const loops = linked.section?.loops?.length ?? 0;
     bodyStatus.textContent =
-      linked.status === "error"
-        ? `No body: ${linked.error}. The flow is just the stream and the elements.`
-        : linked.status === "ready"
-          ? loops
-            ? `${capitalize(sectionPathLabel(linked.result))}: ${loops} loop${loops === 1 ? "" : "s"} at z = ${fmt(linked.section.plane?.z ?? 0)} m. Edits to it show up here.`
-            : `The ${sectionPathLabel(linked.result)} has nothing at this plane.`
-          : "Cutting the section…";
+      linked.status === "pending"
+        ? `${capitalize(linked.error)}. The flow is just the stream and the elements until the scene builds it.`
+        : linked.status === "error"
+          ? `No body: ${linked.error}. The flow is just the stream and the elements.`
+          : linked.status === "ready"
+            ? loops
+              ? `${capitalize(sectionPathLabel(linked.result))}: ${loops} loop${loops === 1 ? "" : "s"} at z = ${fmt(linked.section.plane?.z ?? 0)} m. Edits to it show up here.`
+              : `The ${sectionPathLabel(linked.result)} has nothing at this plane.`
+            : "Cutting the section…";
     bodyStatus.dataset.tone = linked.status === "error" ? "error" : "";
     setValue(planeSelect, spec.plane.kind);
     planeZInput.hidden = spec.plane.kind !== "z";

@@ -10,43 +10,20 @@ import { sliceGrid, coarseMask } from "./geometry.js";
 import { autoColormap, bakeColors, bakeColorsAlpha, resolveRange, isDiverging, legendFor } from "./colormap.js";
 import { toGltfInPlace, boxToGltf } from "./coords.js";
 import { encodeGLB, computeBounds } from "./glb.js";
+import { SLICE_PARAMS, coerceParams, paramDefaults, paramSpec } from "./params.js";
 
-export const SLICE_DEFAULTS = Object.freeze({
-  height: 0,
-  resolution: 110,
-  colorBy: "cp",
-  colormap: "auto",
-  mask: true,
-  autoRange: true,
-  colorMin: -1,
-  colorMax: 1,
-  fade: 0,
-  bodyModel: "doc",
-});
+export const SLICE_DEFAULTS = Object.freeze(paramDefaults(SLICE_PARAMS));
 
 /**
  * The build runs synchronously on the scene's main thread and each result is
  * stored as a doc, so this is capped: 160 cells is ~0.8 MB and well under a
- * second even with the mask. Keep in step with the declared max in index.js.
+ * second even with the mask. It is the declared max in params.js.
  */
-export const MAX_SLICE_RESOLUTION = 160;
+export const MAX_SLICE_RESOLUTION = paramSpec(SLICE_PARAMS, "resolution").max;
 
-const finite = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
-
+/** Params with defaults filled and clamped exactly as the scene host does (params.js). */
 export function sliceParams(params = {}) {
-  const p = { ...SLICE_DEFAULTS, ...params };
-  return {
-    height: finite(p.height, 0),
-    resolution: Math.max(4, Math.min(MAX_SLICE_RESOLUTION, Math.floor(finite(p.resolution, 110)))),
-    colorBy: p.colorBy === "speed" ? "speed" : "cp",
-    colormap: ["viridis", "coolwarm", "turbo"].includes(p.colormap) ? p.colormap : "auto",
-    mask: p.mask !== false,
-    autoRange: p.autoRange !== false,
-    colorMin: finite(p.colorMin, -1),
-    colorMax: finite(p.colorMax, 1),
-    fade: Math.max(0, Math.min(1, finite(p.fade, 0))),
-    bodyModel: ["waterplane-2d", "slender-body-3d"].includes(p.bodyModel) ? p.bodyModel : "doc",
-  };
+  return coerceParams(SLICE_PARAMS, params);
 }
 
 /**

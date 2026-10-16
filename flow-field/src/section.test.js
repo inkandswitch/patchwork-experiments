@@ -137,8 +137,8 @@ describe("the flow providers with a linked body", () => {
     const plain = flowDoc(null);
     const legacy = { ...plain };
     delete legacy.body;
-    // a doc without a body hashes exactly as before the link existed
-    const old = hashString(stableStringify({ freestream: plain.freestream, elements: plain.elements, domain: plain.domain, seeds: plain.seeds }));
+    // a doc without a body hashes without a body key (seeds: only the count is read)
+    const old = hashString(stableStringify({ freestream: plain.freestream, elements: plain.elements, domain: plain.domain, seeds: { count: plain.seeds.count } }));
     expect(flowFingerprint(plain)).toBe(old);
     expect(flowFingerprint(legacy)).toBe(old);
     expect(flowDependencies(plain)).toEqual([]);
@@ -181,7 +181,7 @@ describe("the flow providers with a linked body", () => {
     getRegistry("scene:source").register(meshProvider());
     const repo = fakeRepo({ [HULL]: hullDoc() });
     const planar = await streamSource.build({ doc: flowDoc(body), params: { rakeRows: 2, rowSpacing: 0.5, seedCount: 8, tubes: false }, repo, url: FLOW });
-    expect(planar.meta.notes).toMatch(/from a mesh slice of Test hull's build/);
+    expect(planar.meta.notes).toMatch(/from a mesh slice of Test hull's build \(default params\)/);
     const p = parseGLB(planar.glb);
     const pos = readAccessor(p.json, p.bin, p.json.meshes[0].primitives[0].attributes.POSITION);
     const heights = new Set();
