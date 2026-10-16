@@ -134,14 +134,24 @@ or unmount.
   Matte writes no material, so the scene uses its theme colour as before;
   satin (roughness 0.42) and metal (metallic 1, roughness 0.32) write a white
   PBR material that the scene's object colour tints, so a bronze colour on a
-  metal finish gives polished bronze.
+  metal finish gives polished bronze. The ParamSpec is the source of truth for
+  the resolution range: the scene host clamps to it before `build()`, and
+  `mesh/job.js` repeats the same numbers as a defensive clamp for direct
+  callers (`index.test.js` checks that they agree).
+- Provider metadata: `cost: "expensive"` (a source edit remeshes from scratch)
+  and `version: 2`. Bump `version` whenever `build()` would make different
+  output for the same doc and params; the host then marks renders from older
+  versions stale, and never ones from newer versions.
 - Output: glTF 2.0, **Y-up, metres**. The language is already Y-up metres, so
-  nothing is converted. There is one mesh named after the doc's title, with
+  nothing is converted. There is one mesh, always named `Implicit surface` (the
+  scene outline shows the object's own name), with
   `NORMAL` from the SDF gradient (or flat per-face normals, unwelded, when
   `smoothNormals` is off) and a per-vertex **`_CURVATURE`** (mean curvature in
   1/m, from the same central differences). three.js reads it as `_curvature`.
   `meta.bounds` is the mesh's bounds, and `meta.notes` gives the triangle
-  count, GLB size, resolution, cell size and time.
+  count, GLB size, resolution, cell size and time (or "mesh reused" on a
+  cache hit). The host keeps `meta.bounds` and shows it as a placeholder box
+  while the GLB loads.
 - **Surface nets**, streamed one z-slab at a time, so memory is O(n²). The
   field is clipped to the bounds, and the grid has one extra cell on every side,
   so the mesh is always closed; infinite fields like `gyroid` get capped. Where
@@ -151,16 +161,47 @@ or unmount.
   clean at the default 96, which `examples.test.js` checks (no non-manifold
   edges, no normal against its face). The gyroid block is the exception: it
   keeps a few pinched vertices where its walls meet the box's rounded corners.
-- `fingerprint(doc)` hashes the source, the bounds and the title (the title
-  names the mesh), plus a mesher version. Notes don't trigger rebuilds.
-- **Off the main thread:** meshing runs in a module worker at
-  `new URL("./mesh/worker.js", import.meta.url)`. Vite bundles it next to the
-  chunk that spawns it, so it resolves wherever the bundle is served, including
-  inside the Scene tool. If a worker can't start (no `Worker`, a CSP), it falls
-  back to the main thread and yields about every 12 ms. It yields between
-  slabs, between blocks of normals and between chunks of the unweld. Only
-  `encodeGLB` runs in one piece: about 20 ms for the gyroid at 160 in node,
-  and about 100 ms with flat normals.
+- `fingerprint(doc)` is `v1:` plus a hash of the source and the bounds, and
+  nothing else: not the title (renaming never remeshes) and not the notes.
+  Usable bounds are hashed as numbers. Invalid bounds are hashed as `invalid:`
+  plus their raw value, so they never collide with the default box the mesher
+  would otherwise substitute: going from valid to invalid bounds rebuilds (and
+  reports the problem), and fixing them to exactly the default box retries.
+  The `v1:` prefix is frozen. Signal a change in mesher output by bumping the
+  provider's `version`, not the prefix.
+- **Mesh cache.** A build has two stages. The expensive one (`meshSurface`:
+  evaluate the field, surface nets, field normals and curvature) depends only
+  on the fingerprint and the resolution. The cheap one (`finishMesh`: flat
+  normals and the unweld, the finish's material, GLB encode, notes) depends on
+  `smoothNormals` and `finish`. The provider keeps the last three surfaces
+  (up to 128 MB; the newest is always kept) in an LRU keyed by
+  `fingerprint|resolution`. So changing the finish or the normals, renaming
+  the doc, or flipping back to a recent resolution only refinishes, and gives
+  byte-identical GLBs. Two builds that need the same surface at once share one
+  job.
+- **Off the main thread:** the expensive stage, and the first finish, run in a
+  module worker at `new URL("./mesh/worker.js", import.meta.url)`, one worker
+  per job, terminated afterwards. The worker sends back the surface (for the
+  cache) and the GLB, both transferred. Vite bundles the worker next to the
+  chunk that spawns it, so it resolves wherever the bundle is served,
+  including inside the Scene tool. The worker posts `ready` once its module
+  has loaded, and progress about once a second while it works:
+  - an error before `ready`, or no `ready` within 15 s, means it couldn't start
+    (no `Worker`, a CSP, a 404). The job then runs on the main thread, yielding
+    about every 12 ms: between slabs, between blocks of normals and between
+    chunks of the unweld.
+  - an error after `ready`, or 30 s without a message, means it crashed
+    mid-job, for example out of memory at resolution 160. The build rejects
+    and says so. It isn't rerun on the main thread; the scene host retries
+    failed builds after 5 s, 30 s and 2 min.
+  - a new build of the same source url with a **different fingerprint**
+    supersedes a running one: its worker (or main-thread job) is stopped and
+    its promise rejects with a `superseded` error. Builds of the same doc at
+    another resolution, or of other docs, run side by side.
+
+  Refinishing a cached surface runs on the main thread with the same yielding.
+  Only `encodeGLB` runs in one piece: about 20 ms for the gyroid at 160 in
+  node, and about 100 ms with flat normals.
 - The mesh gets big quickly, and the Scene keeps every build as a new file doc.
   A gyroid block at 96 is about 420k triangles (~11 MB of GLB); at 160 it is
   about 1.2M (~30 MB). Flat normals unweld the mesh, which makes it about three
@@ -180,8 +221,8 @@ or unmount.
 | `src/examples.js` | the example menu |
 | `src/tool.js`, `src/editor.js`, `src/styles.css` | the tool and its CodeMirror setup |
 | `src/preview/` | shader, WebGL2 host, orbit camera, theme colours |
-| `src/mesh/` | surface nets, the mesh job, the worker, `glb.js`, `quality.js` (manifold and normal checks for tests) |
-| `src/scene-source.js` | the `implicit-mesh` provider |
+| `src/mesh/` | surface nets, the two-stage mesh job, the worker, `glb.js`, `quality.js` (manifold and normal checks for tests) |
+| `src/scene-source.js` | the `implicit-mesh` provider: surface cache, worker lifecycle, supersession |
 | `probes/` | headless-Chrome probe of the built bundle |
 
 ### Browser probe

@@ -27,8 +27,15 @@ export const plugins = [
     name: "Implicit surface (meshed)",
     icon: "Atom",
     supportedDatatypes: ["implicit-surface"],
+    // a source edit remeshes from scratch
+    cost: "expensive",
+    // Bump when build() makes different output for the same doc and params
+    // (not the "v1:" fingerprint prefix in doc.js, which stays put).
+    // 2: the mesh has a fixed name instead of the doc's title.
+    version: 2,
     params: [
       {
+        // the host clamps to min/max; mesh/job.js repeats them (index.test.js checks)
         key: "resolution",
         label: "Resolution (cells across)",
         kind: "integer",
