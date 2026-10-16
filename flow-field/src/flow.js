@@ -4,14 +4,29 @@
 
 import { compileField } from "./field.js";
 import { compileBody, normalizeBodySpec } from "./body.js";
-import { stableStringify } from "./fingerprint.js";
+import { hashString, stableStringify } from "./fingerprint.js";
 
 // The panel solve is a dense N × N system: cheap (a millisecond or two at
 // N = 120), but the editor compiles the field on every pointer move, so keep
-// the last few. Keyed by the section object itself plus everything the solve
-// reads from the doc.
+// the last few. Keyed by the section's geometry (section.key, a hash of its
+// plane and loops: every acquisition makes a new section object, so identity
+// would never hit across builds) plus everything the solve reads from the doc.
 const cache = [];
 const CACHE_SIZE = 4;
+const keys = new WeakMap(); // sections without a .key (made by hand) → their key, hashed once
+
+/** A stable key for a section's geometry: a hash of its plane and loops. */
+export function sectionKey(section) {
+  const loops = (section?.loops ?? []).map((l) => l?.points ?? l);
+  return hashString(stableStringify({ kind: section?.plane?.kind ?? null, z: section?.plane?.z ?? null, loops }));
+}
+
+function keyOfSection(section) {
+  if (typeof section.key === "string") return section.key;
+  let k = keys.get(section);
+  if (!k) keys.set(section, (k = sectionKey(section)));
+  return k;
+}
 
 /**
  * @param {object} doc
@@ -31,7 +46,8 @@ export function compileFlow(doc, section = null) {
     dy: base.dy,
     elements: base.elements,
   });
-  let hit = cache.find((c) => c.section === section && c.key === key);
+  const skey = keyOfSection(section);
+  let hit = cache.find((c) => c.skey === skey && c.key === key);
   if (!hit) {
     let body;
     try {
@@ -40,7 +56,7 @@ export function compileFlow(doc, section = null) {
       // never let a bad section break the flow: no body, and say why
       body = { model: spec.model, z0: 0, loops: [], empty: true, failed: String(err?.message ?? err), add() {}, contains: () => false, info: { model: spec.model, loops: 0, panels: 0, warnings: [] } };
     }
-    hit = { section, key, body };
+    hit = { skey, key, body };
     cache.unshift(hit);
     cache.length = Math.min(cache.length, CACHE_SIZE);
   }
