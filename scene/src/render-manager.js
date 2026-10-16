@@ -34,6 +34,13 @@ export const DEP_WAIT_MS = 5_000;
 // Rebuild. Covers the transient failures inside build(): a CDN fetch, a worker
 // that ran out of memory once, a dependency that answered late.
 export const RETRY_BACKOFF_MS = Object.freeze([5_000, 30_000, 120_000]);
+// A render doc this client didn't just create may be handed over before its
+// history has synced: a fresh peer can see the seed (builtFrom: null) for a
+// moment and would rebuild something that is already built (seen in Patchwork:
+// every new viewer rebuilt "never-built" renders at once). So no automatic
+// build starts sooner than this after the render doc was opened. Every change
+// re-evaluates, so when the real builtFrom arrives the build is called off.
+export const SYNC_SETTLE_MS = 2_500;
 
 function parseKey(key) {
   try {
@@ -52,8 +59,9 @@ function parseKey(key) {
  * @param {(objectId: string, bytes: Uint8Array, glbUrl: string) => void} o.onGLB
  * @param {{ setTimeout, clearTimeout }} [o.timers]
  * @param {() => number} [o.now]
+ * @param {number} [o.syncSettleMs]  see SYNC_SETTLE_MS
  */
-export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now }) {
+export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now, syncSettleMs = SYNC_SETTLE_MS }) {
   const entries = new Map();
   let disposed = false;
   const selfId = repo?.peerId ?? null;
@@ -271,7 +279,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       changed: reason === "params" ? changedKeys(parseKey(render.builtFrom?.paramsKey), render.params ?? {}) : [],
     });
     if (entry.forceNext) delay = 0;
-    else delay += peerStagger();
+    else {
+      delay += peerStagger();
+      if (!entry.createdHere && entry.openedAt != null) delay = Math.max(delay, entry.openedAt + syncSettleMs - now());
+    }
     // Someone else said they are building exactly this; give them a chance.
     if (!entry.forceNext) {
       for (const hint of [entry.remote, entry.statusHint]) {
@@ -294,12 +305,16 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     entry.forceNext = false;
     // Re-check: a peer may have finished while we waited, or the source may
     // now list a dependency that is still loading (evaluate waits for it).
+    let why = "forced";
     if (!force) {
       const { reason, contested, held } = judge(entry, render, source);
       if (!reason || contested || held.length || render.pinned) return;
+      if (!entry.createdHere && entry.openedAt != null && now() < entry.openedAt + syncSettleMs) return evaluate(entry);
       const pending = entry.deps.pendingSince();
       if (pending != null && pending + DEP_WAIT_MS > now()) return evaluate(entry);
+      why = reason;
     }
+    console.info(`[scene] building ${render.title ?? entry.objectId} (${why})`);
     const key = inputsKey(render, source);
 
     entry.building = true;
@@ -364,7 +379,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     evaluate(entry);
   }
 
-  async function track(objectId, { sourceUrl, renderUrl }) {
+  async function track(objectId, { sourceUrl, renderUrl, createdHere = false }) {
     const existing = entries.get(objectId);
     if (existing && existing.sourceUrl === sourceUrl && existing.renderUrl === renderUrl) return;
     if (existing) untrack(objectId);
@@ -373,6 +388,8 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       objectId,
       sourceUrl,
       renderUrl,
+      createdHere,
+      openedAt: null,
       state: { phase: "loading", stale: false, building: false },
       timer: null,
       statusTimer: null,
@@ -418,6 +435,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       if (entry.dead) return;
       entry.renderHandle = renderHandle;
       entry.sourceHandle = sourceHandle;
+      entry.openedAt = now();
       renderHandle.on("change", onChange);
       sourceHandle.on("change", onChange);
       const onMsg = (payload) => {

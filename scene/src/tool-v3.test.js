@@ -134,7 +134,8 @@ describe("scene tool v3 (mounted, no WebGL)", () => {
     const render = repo.add({ "@patchwork": { type: "scene-render" }, title: "old", parent: file.url, providerId: "file-glb", params: {}, glbUrl: null, builtFrom: null, builtAt: null, status: "idle", error: null, pinned: false });
     const scene = newScene(repo, { objects: { old: { name: "old", sourceUrl: file.url, providerId: "file-glb", renderUrl: render.url, visible: true, color: null, opacity: 1, wireframe: false, transform: T() } }, order: ["old"] });
     mount(scene);
-    await new Promise((r) => setTimeout(r, 30));
+    // a render doc the scene didn't make waits out the sync settle window first
+    await new Promise((r) => setTimeout(r, 2_700));
     await flush();
     expect(render.doc().glbUrl).toBeTruthy(); // built by the provider, as before
     expect(render.doc().status).toBe("idle");

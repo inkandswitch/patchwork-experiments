@@ -199,6 +199,8 @@ export default function SceneTool(handle, element) {
   const outlineRows = new Map(); // objectId → the outline row's elements
   const displayKeys = new Map(); // objectId → displayKey last applied
   const hintKeys = new Map(); // objectId → hint bounds last given to the viewport
+  // render docs this scene made itself, this session: nothing to wait to sync before building
+  const createdHere = new Set();
   let emptyRow = null;
   const peers = new Map(); // senderId → { selected, hover, at }
   const cleanups = [];
@@ -625,6 +627,7 @@ export default function SceneTool(handle, element) {
     const renderHandle = provider.passthrough
       ? null
       : await repo.create2(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }));
+    if (renderHandle) createdHere.add(renderHandle.url);
     const id = newId("o");
     // Only an object that is still there can be a parent: the drag may have
     // started before someone else deleted it. A non-group parent is an
@@ -1766,7 +1769,7 @@ export default function SceneTool(handle, element) {
         queue.remove(id);
         if (applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds) && shown) hinted = true;
         // hydrate only what is shown; once loaded it stays loaded
-        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl });
+        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.has(o.renderUrl) });
         continue;
       }
       const src = docUrl(o.sourceUrl);

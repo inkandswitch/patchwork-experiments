@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { FakeRepo, fakeTimers, flush } from "./test/fake-repo.js";
-import { createRenderManager, DEP_WAIT_MS, PEER_STAGGER_MS, RETRY_BACKOFF_MS } from "./render-manager.js";
+import { createRenderManager as createWithSettle, DEP_WAIT_MS, PEER_STAGGER_MS, RETRY_BACKOFF_MS, SYNC_SETTLE_MS } from "./render-manager.js";
+
+// These tests are about what happens once a render doc is in hand; the wait
+// for a freshly opened doc to finish syncing has its own tests below.
+const createRenderManager = (o) => createWithSettle({ syncSettleMs: 0, ...o });
 import { newRenderDoc } from "./datatype.js";
 import { encodeGLB } from "./glb.js";
 import { runBuild } from "./build.js";
@@ -241,6 +245,43 @@ describe("render manager", () => {
     hull.change((d) => (d.length = 11));
     for (let i = 0; i < 6; i++) await timers.advance(1000);
     expect(impl.build).toHaveBeenCalledTimes(2);
+    mgr.dispose();
+  });
+
+  it("doesn't rebuild a render it opened as never-built if its builtFrom arrives within the settle window", async () => {
+    const t = setup();
+    const mgr = createWithSettle({ repo: t.repo, timers: t.timers, now: t.timers.now, loadProvider: async () => t.provider });
+    await mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    expect(t.impl.build).not.toHaveBeenCalled();
+    expect(t.timers.pendingDelays().some((d) => d > 0 && d <= SYNC_SETTLE_MS)).toBe(true);
+    // the rest of its history syncs in: a peer built it
+    t.render.change((d) => {
+      d.glbUrl = "automerge:theirs";
+      d.builtFrom = { heads: t.source.heads(), fingerprint: null, paramsKey: '{"size":1}', deps: {} };
+    });
+    await t.timers.advance(SYNC_SETTLE_MS + 1000);
+    expect(t.impl.build).not.toHaveBeenCalled();
+    mgr.dispose();
+  });
+
+  it("builds a render that really is never-built once the settle window is over", async () => {
+    const t = setup();
+    const mgr = createWithSettle({ repo: t.repo, timers: t.timers, now: t.timers.now, loadProvider: async () => t.provider });
+    await mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(SYNC_SETTLE_MS - 100);
+    expect(t.impl.build).not.toHaveBeenCalled();
+    await t.timers.advance(200);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    mgr.dispose();
+  });
+
+  it("builds a render doc this scene just created at once", async () => {
+    const t = setup();
+    const mgr = createWithSettle({ repo: t.repo, timers: t.timers, now: t.timers.now, loadProvider: async () => t.provider });
+    await mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, createdHere: true });
+    await t.timers.advance(0);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
     mgr.dispose();
   });
 
