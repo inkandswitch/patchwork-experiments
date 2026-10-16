@@ -3,7 +3,7 @@
   "version": "0.0.2",
   "description": "OpenSCAD editor and 3D viewer for Patchwork, running entirely in the browser via openscad-wasm.",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js"
   },
@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "push": "pnpm build && pushwork sync",
+    "sync": "vite build && pushwork sync",
+    "push": "pnpm sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
   "keywords": [

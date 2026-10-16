@@ -4,6 +4,8 @@
 // first use and cached via the Cache API, matching the pattern used by the
 // pandoc and ffmpeg Patchwork tools for their own (much larger) WASM engines.
 
+import {openscadArgs} from "./args"
+
 declare const self: DedicatedWorkerGlobalScope
 
 /** openscad-wasm npm version we pin; a single ES module bundling engine + wasm */
@@ -167,9 +169,7 @@ async function render(
 
 	instance.FS.writeFile("/input.scad", finalSource)
 
-	const args = ["/input.scad"]
-	if (imports.length > 0) args.push("--enable=import-function")
-	args.push("--export-format=binstl", "-o", "/model.stl")
+	const args = openscadArgs({input: "/input.scad", output: "/model.stl", hasImports: imports.length > 0})
 
 	let exitCode: number
 	try {

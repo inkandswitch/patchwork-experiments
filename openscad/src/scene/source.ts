@@ -4,11 +4,15 @@
 // Loaded on the main thread by the scene host via the plugin's load(). The
 // engine starts its own worker; its URL is resolved against this package's
 // bundle (import.meta.url in render/engine.ts), not against the page.
+//
+// Renders go through the engine's shared cache (render/engine.ts), the same
+// one the editor uses: with the editor and a scene both open on a doc, the
+// source compiles once, and a unit change only re-encodes the cached STL.
 
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 import type {OpenscadDoc} from "../types"
 import {docToJsonString} from "../imports"
-import type {RenderImportInput, RenderResult} from "../render/engine"
+import type {Render, RenderImportInput} from "../render/engine"
 import {computeBounds, computeNormals, encodeGLB} from "./glb.js"
 import {parseSTL, zUpToYUpMeters, UNIT_METERS, type Unit} from "./stl"
 
@@ -29,8 +33,6 @@ export type BuildArgs = {
 	handle?: unknown
 	url?: string
 }
-
-type Render = (source: string, imports: RenderImportInput[]) => Promise<RenderResult>
 
 /** 53-bit string hash (cyrb53), as 14 hex digits. Not cryptographic; just a change detector. */
 export function hash53(str: string, seed = 0): string {
@@ -56,6 +58,12 @@ export function hash53(str: string, seed = 0): string {
  * only sees this doc, and the scene host covers the imported docs itself by
  * recording the heads of every doc dependencies() lists (scene contract v2,
  * "Provider dependencies").
+ *
+ * It describes the *inputs* only. When build() starts making different output
+ * from the same inputs (a new engine flag, a changed transform), bump the
+ * provider's `version` in src/index.ts rather than the `scad1:` prefix: the
+ * host restales every render built by an older version, once, and a render
+ * built by a newer version is never stale to an older one.
  */
 export function fingerprint(doc: OpenscadDoc | undefined): string {
 	const source = String(doc?.source ?? "")
@@ -121,14 +129,12 @@ function countWarnings(logs: string[]): number {
 }
 
 /**
- * Build a SourceImpl around a renderer. The last few STLs are kept by
- * fingerprint + import JSON, so changing only the unit re-encodes without
- * running OpenSCAD again.
+ * Build a SourceImpl around a renderer. This keeps no cache of its own: the
+ * default export passes the engine's shared renderScad, whose cache is keyed
+ * by source + import JSON, so changing only the unit re-encodes without
+ * running OpenSCAD again (and a render the editor already did is reused).
  */
 export function createOpenscadSource(render: () => Promise<Render>) {
-	const cache = new Map<string, RenderResult>()
-	const CACHE_SIZE = 4
-
 	return {
 		fingerprint,
 		dependencies,
@@ -139,17 +145,11 @@ export function createOpenscadSource(render: () => Promise<Render>) {
 			const source = String(doc.source ?? "")
 			const {imports, missing} = await resolveImports(doc, repo)
 
-			const key = `${fingerprint(doc)}:${hash53(JSON.stringify(imports))}`
-			let result = cache.get(key)
-			const cached = !!result
-			if (!result) {
-				try {
-					result = await (await render())(source, imports)
-				} catch (err) {
-					throw cleanError(err)
-				}
-				cache.set(key, result)
-				while (cache.size > CACHE_SIZE) cache.delete(cache.keys().next().value as string)
+			let result
+			try {
+				result = await (await render())(source, imports)
+			} catch (err) {
+				throw cleanError(err)
 			}
 
 			// A fixed mesh name: the title is not in the fingerprint, so a name
@@ -157,7 +157,7 @@ export function createOpenscadSource(render: () => Promise<Render>) {
 			// the scene object's own name anyway.
 			const {triangles, ...out} = stlToGLB(result.stl, unit)
 			const notes = [`${triangles} triangles`]
-			if (!cached) notes.push(`rendered in ${(result.elapsedMillis / 1000).toFixed(1)} s`)
+			if (!result.cached) notes.push(`rendered in ${(result.elapsedMillis / 1000).toFixed(1)} s`)
 			const warnings = countWarnings(result.logs)
 			if (warnings) notes.push(`${warnings} warning${warnings === 1 ? "" : "s"}`)
 			if (missing.length) notes.push(`import${missing.length === 1 ? "" : "s"} unavailable: ${missing.join(", ")}`)
