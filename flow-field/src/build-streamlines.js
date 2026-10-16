@@ -10,58 +10,29 @@ import { dedupePolyline, simplifyPolyline, linesMesh, tubesMesh, capPoints } fro
 import { autoColormap, bakeColors, resolveRange, isDiverging, legendFor } from "./colormap.js";
 import { toGltfInPlace, boxToGltf } from "./coords.js";
 import { encodeGLB, computeBounds, MODE } from "./glb.js";
+import { STREAMLINE_PARAMS, coerceParams, paramDefaults, paramSpec } from "./params.js";
 
-export const STREAMLINE_DEFAULTS = Object.freeze({
-  seedCount: 0,
-  rakeRows: 3,
-  seedHeight: 0,
-  rowSpacing: 0.6,
-  step: 0.1,
-  maxSteps: 600,
-  colorBy: "speed",
-  colormap: "auto",
-  autoRange: true,
-  colorMin: 0,
-  colorMax: 3,
-  tubes: true,
-  tubeRadius: 0.05,
-  hugLines: 3,
-  bodyModel: "doc",
-});
+export const STREAMLINE_DEFAULTS = Object.freeze(paramDefaults(STREAMLINE_PARAMS));
 
 /**
  * The build runs synchronously on the scene's main thread and each result is
  * stored as a doc, so the mesh is capped at about 2.5 MB: past this many
  * vertices the tubes go from 6 sides to 4, and then the lines are thinned.
- * Keep the seed limits in step with the declared max in index.js.
+ * The seed limits are the declared maxima in params.js.
  */
 export const MAX_MESH_VERTICES = 48000;
-export const MAX_SEEDS_PER_ROW = 40;
-export const MAX_RAKE_ROWS = 8;
-export const MAX_HUG_LINES = 8;
+export const MAX_SEEDS_PER_ROW = paramSpec(STREAMLINE_PARAMS, "seedCount").max;
+export const MAX_RAKE_ROWS = paramSpec(STREAMLINE_PARAMS, "rakeRows").max;
+export const MAX_HUG_LINES = paramSpec(STREAMLINE_PARAMS, "hugLines").max;
 
 const finite = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d);
 
-/** Params with defaults filled and nonsense clamped. */
+/**
+ * Params with defaults filled and clamped exactly as the scene host does
+ * (params.js), so the declared metadata is the only source of bounds.
+ */
 export function streamlineParams(params = {}) {
-  const p = { ...STREAMLINE_DEFAULTS, ...params };
-  return {
-    seedCount: Math.max(0, Math.min(MAX_SEEDS_PER_ROW, Math.floor(finite(p.seedCount, 0)))),
-    rakeRows: Math.max(1, Math.min(MAX_RAKE_ROWS, Math.floor(finite(p.rakeRows, 1)))),
-    seedHeight: finite(p.seedHeight, 0),
-    rowSpacing: finite(p.rowSpacing, 0.6),
-    step: Math.max(0.005, finite(p.step, 0.1)),
-    maxSteps: Math.max(1, Math.min(20000, Math.floor(finite(p.maxSteps, 600)))),
-    colorBy: p.colorBy === "cp" ? "cp" : "speed",
-    colormap: ["viridis", "coolwarm", "turbo"].includes(p.colormap) ? p.colormap : "auto",
-    autoRange: p.autoRange !== false,
-    colorMin: finite(p.colorMin, 0),
-    colorMax: finite(p.colorMax, 1),
-    tubes: p.tubes !== false,
-    tubeRadius: Math.max(0.001, finite(p.tubeRadius, 0.03)),
-    hugLines: Math.max(0, Math.min(MAX_HUG_LINES, Math.floor(finite(p.hugLines, 3)))),
-    bodyModel: ["waterplane-2d", "slender-body-3d"].includes(p.bodyModel) ? p.bodyModel : "doc",
-  };
+  return coerceParams(STREAMLINE_PARAMS, params);
 }
 
 /**

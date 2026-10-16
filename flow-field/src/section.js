@@ -1,17 +1,31 @@
 // Getting a section of the linked doc (doc.body.url). Main thread only: it
 // uses the repo and the host's plugin registry, both late-bound.
 //
+// 0. render (preferred): the link is a scene's `scene-render` doc. Its
+//    current GLB (render-read.js) is what the scene shows, built with the
+//    params the scene chose, with the render's own dependencies already
+//    folded in; mesh-section.js cuts its triangles with the plane. No
+//    provider is called. A render with no GLB yet gives no body (not an
+//    error the build throws on): the host rebuilds the flow when the render
+//    gets a new glbUrl, since the url is in dependencies().
+// Otherwise the link is a source doc (a hull), the legacy path:
 // 1. exact: a `geometry:section` provider for the linked doc's datatype
-//    (scene contract v2 §2) answers with loops in the floating frame.
+//    (scene contract v2 §2) answers with loops in the floating frame. None
+//    exists yet; the hook stays so one can be added without touching this.
 // 2. mesh fallback: a `scene:source` provider for that datatype builds the doc
-//    to a GLB in memory (nothing is stored), and mesh-section.js cuts its
-//    triangles with the plane.
+//    to a GLB in memory (nothing is stored), with its DEFAULT params, and
+//    mesh-section.js cuts its triangles with the plane. Builds are cached
+//    (upstream.js), so the two flow providers share one per hull edit.
 // Either can be missing; the result then says why, and the flow goes on
 // without a body.
 
 import { loadGetRegistry } from "./registry.js";
 import { meshSection } from "./mesh-section.js";
 import { normalizeLoops, planeZ } from "./body.js";
+import { stableStringify } from "./fingerprint.js";
+import { sectionKey } from "./flow.js";
+import { isRenderDoc, readRender, renderKey } from "./render-read.js";
+import { cachedUpstream, rememberUpstreamDeps } from "./upstream.js";
 
 export const OWN_DATATYPE = "flow-field";
 
@@ -59,18 +73,81 @@ export function defaultParams(specs) {
   return out;
 }
 
-/** A section result made safe: loops normalised, plane z filled in. */
+/**
+ * A section result made safe: loops normalised, plane z filled in. `key` is a
+ * hash of the plane and the loops, so two cuts with the same geometry share a
+ * key however many times they are made (compileFlow caches on it).
+ */
 export function cleanSection(result, plane) {
   const z = Number.isFinite(result?.plane?.z) ? result.plane.z : planeZ(plane);
   const loops = normalizeLoops(result?.loops).map((points) => ({ points, closed: true }));
+  const kind = plane?.kind === "z" ? "z" : "waterline";
   return {
     frame: "floating",
     units: "m",
-    plane: { kind: plane?.kind === "z" ? "z" : "waterline", z },
+    plane: { kind, z },
     loops,
+    key: sectionKey({ plane: { kind, z }, loops }),
     meta: result?.meta && typeof result.meta === "object" ? { ...result.meta } : {},
   };
 }
+
+/** Sorted heads of a handle, or null if it can't say. */
+function headsOf(h) {
+  try {
+    const heads = h?.heads?.();
+    return Array.isArray(heads) ? [...heads].map(String).sort() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The cache key of an upstream build: the provider (and its version), its
+ * params, the body as the provider sees it (its fingerprint() if it has one,
+ * else the body's heads), and the heads of every doc it says it reads. Null
+ * (don't cache) when the body can't be identified.
+ */
+async function upstreamKey(p, mod, doc, h, params, deps, repo) {
+  let body = null;
+  if (typeof mod.fingerprint === "function") {
+    try {
+      const fp = mod.fingerprint(doc);
+      if (fp != null) body = `fp:${fp}`;
+    } catch {
+      body = null;
+    }
+  }
+  if (body == null) {
+    const heads = headsOf(h);
+    if (!heads) return null;
+    body = `h:${heads.join(",")}`;
+  }
+  const depKeys = [];
+  for (const d of deps) {
+    let heads = null;
+    try {
+      heads = headsOf(await repo?.find?.(d));
+    } catch {
+      heads = null;
+    }
+    depKeys.push(`${d}=${heads ? heads.join(",") : "-"}`);
+  }
+  return `${p.id}@${p.version ?? ""}|${stableStringify(params)}|${body}|${depKeys.join(";")}`;
+}
+
+/** A provider's dependencies(doc), defensively: distinct urls, sorted, never the doc's own. */
+function upstreamDeps(mod, doc, url) {
+  try {
+    const list = typeof mod?.dependencies === "function" ? mod.dependencies(doc) : [];
+    return Array.isArray(list) ? [...new Set(list.filter((u) => typeof u === "string" && u && u !== url))].sort() : [];
+  } catch {
+    return [];
+  }
+}
+
+/** One of the flow field's own scene providers? (A flow can't be the body of a flow.) */
+const isFlowProviderId = (id) => typeof id === "string" && id.startsWith("flow-field");
 
 /**
  * Find the linked doc and cut its section.
@@ -81,12 +158,14 @@ export function cleanSection(result, plane) {
  * @param {object} [o.handle]         the linked doc's handle, if already found
  * @param {Function} [o.getRegistry]  defaults to the host's (late-bound)
  * @param {string} [o.selfUrl]        the flow doc's own url (a flow can't be its own body)
- * @returns {Promise<{ ok: true, section, path: "exact"|"mesh", providerId, providerName, datatype, handle, doc }
- *                  | { ok: false, error: string, transient: boolean, datatype?, handle?, doc? }>}
+ * @returns {Promise<{ ok: true, section, path: "render"|"exact"|"mesh", providerId, providerName, datatype, handle, doc, renderKey?, title? }
+ *                  | { ok: false, error: string, transient: boolean, pending?: true, datatype?, handle?, doc?, renderKey?, title? }>}
  *   `transient` failures are about this peer's situation, not the link: the
  *   doc hasn't loaded here, or nothing installed here can cut it. Another
  *   peer (or this one, later) may well succeed. The rest (a self-link, a flow
- *   linked to a flow) fail the same everywhere.
+ *   linked to a flow, a render that hasn't been built: `pending`) are the same
+ *   everywhere. For a render, `renderKey` is the key of the render as read;
+ *   it changes exactly when its GLB does.
  */
 export async function acquireSection({ url, plane, repo, handle, getRegistry, selfUrl } = {}) {
   if (!url) return { ok: false, error: "no linked document", transient: false };
@@ -106,6 +185,7 @@ export async function acquireSection({ url, plane, repo, handle, getRegistry, se
   const { datatype } = source;
   const fail = (error, transient = true) => ({ ok: false, error, transient, datatype, handle: h, doc });
   if (datatype === OWN_DATATYPE) return fail("a flow field can't be the body of another flow field", false);
+  if (isRenderDoc(doc)) return renderSection({ url, doc, handle: h, plane, repo, selfUrl, fail });
   const get = getRegistry ?? (await loadGetRegistry());
   if (!get) return fail("the plugin registry isn't available, so nothing can cut a section");
   const request = sectionRequest(plane);
@@ -145,10 +225,17 @@ export async function acquireSection({ url, plane, repo, handle, getRegistry, se
     try {
       const mod = await loadModule(sources, p);
       if (typeof mod?.build !== "function") throw new Error("it has no build()");
-      const result = await mod.build({ doc, handle: h, url, params: defaultParams(p.params), repo });
-      let glb = result?.glb;
-      if (glb instanceof ArrayBuffer) glb = new Uint8Array(glb);
-      if (!(glb instanceof Uint8Array)) throw new Error("it returned no GLB");
+      const params = defaultParams(p.params);
+      const deps = upstreamDeps(mod, doc, url);
+      rememberUpstreamDeps(url, deps);
+      const key = await upstreamKey(p, mod, doc, h, params, deps, repo);
+      const glb = await cachedUpstream(key, async () => {
+        const result = await mod.build({ doc, handle: h, url, params, repo });
+        let bytes = result?.glb;
+        if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
+        if (!(bytes instanceof Uint8Array)) throw new Error("it returned no GLB");
+        return bytes;
+      });
       const section = cleanSection(meshSection(glb, z, request.plane), request.plane);
       if (notes.length) section.meta.notes = `${section.meta.notes ?? ""}; ${notes.join("; ")}`;
       return { ok: true, section, path: "mesh", providerId: p.id, providerName: p.name ?? p.id, datatype, handle: h, doc };
@@ -162,9 +249,47 @@ export async function acquireSection({ url, plane, repo, handle, getRegistry, se
   );
 }
 
+/**
+ * The section of a linked scene-render doc: its current GLB, sliced. The GLB
+ * is Y-up metres in the render's frame, mapped into the floating frame the
+ * same way as the mesh fallback (x = X, y = −Z, z = Y).
+ */
+async function renderSection({ url, doc, handle, plane, repo, selfUrl, fail }) {
+  const title = renderTitle(doc);
+  const extra = { datatype: RENDER_DATATYPE, renderKey: renderKey(doc), title };
+  if (selfUrl && doc.parent === selfUrl) return { ...fail("a flow can't be linked to its own render", false), ...extra };
+  if (isFlowProviderId(doc.providerId)) return { ...fail("a flow field's render can't be the body of a flow field", false), ...extra };
+  let r;
+  try {
+    if (!repo?.find) throw new Error("no repo to find it in");
+    // the render's own handle is in hand: don't look it up again
+    r = await readRender({ find: (u) => (u === url ? handle : repo.find(u)) }, url);
+  } catch (err) {
+    return { ...fail(`couldn't load the linked render's GLB (${err?.message ?? err})`), ...extra };
+  }
+  extra.renderKey = renderKey(r.render);
+  if (!r.glb) {
+    const why = r.status === "error" && r.error ? `its last build failed: ${r.error}` : `“${title}” has no GLB yet`;
+    // the same on every peer, and the host rebuilds the flow when the render's
+    // glbUrl changes: no body, and no throw
+    return { ...fail(`linked body not built yet (${why})`, false), pending: true, ...extra };
+  }
+  const request = sectionRequest(plane);
+  const section = cleanSection(meshSection(r.glb, planeZ(request.plane), request.plane), request.plane);
+  return { ok: true, section, path: "render", providerId: doc.providerId ?? null, providerName: title, handle, doc, ...extra };
+}
+
+export const RENDER_DATATYPE = "scene-render";
+
+/** A render doc's own title (the datatype's getTitle adds " (3D render)"; the editor asks it). */
+export function renderTitle(render) {
+  return String(render?.title || "scene render");
+}
+
 /** A short human line for which path gave the section. */
 export function sectionPathLabel(r) {
   if (!r?.ok) return "";
+  if (r.path === "render") return `slice of the scene render “${r.providerName}”`;
   return r.path === "exact" ? `exact section (${r.providerName})` : `mesh slice of ${r.providerName}`;
 }
 
