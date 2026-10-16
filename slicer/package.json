@@ -1,0 +1,26 @@
+{
+  "name": "patchwork-slicer",
+  "version": "3.0.0",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "description": "An FDM slicer for Patchwork. A slice-job document points at a scene render (or a GLB/STL file), keeps its settings, and re-slices when the geometry changes, saving G-code with its provenance.",
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "sync": "vite build && pushwork sync",
+    "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\"",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "clipper-lib": "^6.4.2",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@inkandswitch/patchwork-bootloader": "^0.3.2",
+    "happy-dom": "^15.11.7",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4"
+  }
+}
