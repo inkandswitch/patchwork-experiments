@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8">
+<script type="module">
+// Builds an OpenSCAD part through the real scene:source provider in dist/,
+// in a real browser worker, and reports triangle counts and timings.
+const report = (x) => fetch("/report", { method: "POST", body: JSON.stringify(x, null, 2) });
+try {
+  const { plugins } = await import("../dist/index.js");
+  const provider = await plugins.find((p) => p.id === "openscad-model").load();
+  const plate = `difference(){ cube([120,120,6]); for(i=[0:7],j=[0:7]) translate([10+i*14,10+j*14,-1]) cylinder(h=8,r=4,$fn=48); }
+for(i=[0:3]) translate([20+i*25,60,10]) sphere(r=8,$fn=48);`;
+  const runs = [];
+  for (const [label, source] of [["plate", plate], ["plate again (cache)", plate], ["broken", "cube([1,1"]]) {
+    const t0 = performance.now();
+    try {
+      const r = await provider.build({ doc: { source, imports: [] }, params: { unit: "mm" } });
+      runs.push({ label, ms: Math.round(performance.now() - t0), bytes: r.glb.byteLength, notes: r.meta?.notes, bounds: r.meta?.bounds });
+    } catch (err) {
+      runs.push({ label, ms: Math.round(performance.now() - t0), error: String(err?.message ?? err).slice(0, 200) });
+    }
+  }
+  await report({ ok: true, runs });
+} catch (err) {
+  await report({ ok: false, fatal: String(err?.stack || err) });
+}
+</script>
