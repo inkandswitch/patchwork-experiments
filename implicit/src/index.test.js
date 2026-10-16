@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { plugins } from "./index.js";
 import { ImplicitSurfaceDatatype } from "./datatype.js";
 import { compile } from "./lang/index.js";
+import { DEFAULT_RESOLUTION, MAX_RESOLUTION, MIN_RESOLUTION } from "./mesh/job.js";
 
 describe("plugins", () => {
   it("are structured-clone safe apart from load()", () => {
@@ -25,6 +26,14 @@ describe("plugins", () => {
       expect.objectContaining({ key: "smoothNormals", kind: "boolean", default: true, cost: "cheap" }),
       expect.objectContaining({ key: "finish", kind: "enum", default: "matte", cost: "cheap" }),
     ]);
+    expect(src.cost).toBe("expensive");
+    expect(Number.isInteger(src.version)).toBe(true);
+    expect(src.version).toBeGreaterThanOrEqual(2);
+  });
+  it("agree with the mesher on the resolution range", () => {
+    const spec = plugins.find((p) => p.type === "scene:source").params.find((p) => p.key === "resolution");
+    expect([spec.min, spec.max, spec.default]).toEqual([MIN_RESOLUTION, MAX_RESOLUTION, DEFAULT_RESOLUTION]);
+    expect([spec.min, spec.max]).toEqual([16, 160]);
   });
   it("load what they promise", async () => {
     const [dt, tool, src] = await Promise.all(plugins.map((p) => p.load()));
