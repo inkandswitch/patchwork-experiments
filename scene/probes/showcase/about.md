@@ -4,7 +4,7 @@ Every object here is a different kind of document, rendered into this scene by
 the package that owns it. Nothing is a copy: edit a source and the scene
 follows, and so does anything built from it.
 
-**Gyroid sculpture** — an *Implicit Surface*: a signed-distance program,
+**Twisted strands** — an *Implicit Surface*: a signed-distance program,
 meshed with surface nets. Its render params (resolution, finish) are in the
 inspector; finish and smoothing re-use the cached mesh.
 

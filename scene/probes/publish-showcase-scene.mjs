@@ -2,8 +2,8 @@
 //
 //   node probes/publish-showcase-scene.mjs [--sync wss://…] [--settle 8000]
 //
-// Makes NEW docs on every run (no dedupe): an implicit sculpture, tower and
-// hull, an OpenSCAD plinth that imports the sculpture, a flow field whose body
+// Makes NEW docs on every run (no dedupe): an implicit sculpture (twisted
+// strands), tower and hull, an OpenSCAD plinth that imports the sculpture, a flow field whose body
 // is the hull's scene render, an About note, a render doc per object, and the
 // scene. Nothing is built here: the first scene to open builds every render
 // (the hull first; the flow follows once the hull's GLB exists).
@@ -50,14 +50,20 @@ const implicitDoc = (title, ex, notes = "") => ({
   bounds: { min: [...ex.bounds.min], max: [...ex.bounds.max] },
   notes,
 })
-const sculpture = await make(implicitDoc("Gyroid sculpture", example("gyroid-block")))
+// Not the gyroid example: a gyroid lattice meshes to ~20 MB at a resolution that
+// looks good, too heavy for a first open. The strands are under 1 MB at 96.
+const strands = {
+  source: readFileSync(resolve(here, "showcase/strands.sdf"), "utf8"),
+  bounds: { min: [-0.1, -0.17, -0.1], max: [0.1, 0.17, 0.1] },
+}
+const sculpture = await make(implicitDoc("Twisted strands", strands))
 const tower = await make(implicitDoc("Twisted tower", example("tower")))
 const hull = await make(implicitDoc("Hull", example("hull")))
 const plinth = await make({
   "@patchwork": { type: "openscad" },
   title: "Plinth",
   source: readFileSync(resolve(here, "showcase/plinth.scad"), "utf8"),
-  imports: [{ name: "sculpture", docUrl: sculpture, label: "Gyroid sculpture" }],
+  imports: [{ name: "sculpture", docUrl: sculpture, label: "Twisted strands" }],
 })
 const about = await make({
   "@patchwork": { type: "file" },
@@ -70,7 +76,7 @@ const about = await make({
 // ─── renders (the hull's first: the flow field links to it) ───────────────
 const render = (title, parent, providerId, params) => make(newRenderDoc({ title, parent, providerId, params }))
 const implicitParams = (over) => ({ ...defaultParams(specs(implicitPlugins, "implicit-mesh")), ...over })
-const rSculpture = await render("Gyroid sculpture", sculpture, "implicit-mesh", implicitParams({ resolution: 128, finish: "metal" }))
+const rSculpture = await render("Twisted strands", sculpture, "implicit-mesh", implicitParams({ resolution: 96, finish: "metal" }))
 const rTower = await render("Twisted tower", tower, "implicit-mesh", implicitParams({ resolution: 112, finish: "satin" }))
 const rHull = await render("Hull", hull, "implicit-mesh", implicitParams({ resolution: 112, finish: "satin" }))
 const rPlinth = await render("Plinth", plinth, "openscad-model", { unit: "mm" })
@@ -82,15 +88,15 @@ const flow = await make({
   title: "Flow past the hull",
   freestream: { speed: 2, headingDeg: 180 }, // from the bow towards the stern
   elements: {},
-  domain: { min: [-1.3, -0.6, -0.4], max: [1.3, 0.6, 0.1] },
-  seeds: { count: 14 },
+  domain: { min: [-0.9, -0.32, -0.25], max: [0.9, 0.32, 0.05] },
+  seeds: { count: 9 },
   body: { url: rHull, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 140 },
 })
 const flowParams = (id, over) => ({ ...defaultParams(specs(flowPlugins, id)), ...over })
 const rStream = await render("Flow past the hull", flow, "flow-field-streamlines",
-  flowParams("flow-field-streamlines", { rakeRows: 3, seedHeight: -0.03, rowSpacing: 0.07, step: 0.015, maxSteps: 400, tubeRadius: 0.006 }))
+  flowParams("flow-field-streamlines", { rakeRows: 2, seedHeight: -0.04, rowSpacing: 0.08, step: 0.01, maxSteps: 400, tubeRadius: 0.005 }))
 const rSlice = await render("Flow past the hull", flow, "flow-field-slice",
-  flowParams("flow-field-slice", { height: -0.05, resolution: 120, fade: 0.3 }))
+  flowParams("flow-field-slice", { height: -0.06, resolution: 140, fade: 0.3 }))
 
 // ─── the scene ─────────────────────────────────────────────────────────────
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale })
@@ -104,11 +110,12 @@ const object = (name, parent, sourceUrl, providerId, renderUrl, transform, color
 })
 
 const objects = {
-  gDisplay: group("Sculpture on a plinth", null, T([-0.95, 0, 0.1]), about),
+  // positions put each part's lowest point on the ground (see its render's bounds)
+  gDisplay: group("Sculpture on a plinth", null, T([-0.55, 0, 0.35]), about),
   plinth: object("Plinth", "gDisplay", plinth, "openscad-model", rPlinth, T(), "#e6e1d8"),
-  sculpture: object("Gyroid sculpture", "gDisplay", sculpture, "implicit-mesh", rSculpture, T([0, 0.47, 0], [0, 0.4, 0]), "#b08d57"),
-  tower: object("Twisted tower", null, tower, "implicit-mesh", rTower, T([-0.1, 0.25, -0.35]), "#7f9cc4", { infoUrl: about }),
-  gFlow: group("Hull in a flow", null, T([1.55, 0.42, 0]), about),
+  sculpture: object("Twisted strands", "gDisplay", sculpture, "implicit-mesh", rSculpture, T([0, 0.479, 0], [0, 0.4, 0]), "#b08d57"),
+  tower: object("Twisted tower", null, tower, "implicit-mesh", rTower, T([0.25, 0.257, 0.3]), "#7f9cc4", { infoUrl: about }),
+  gFlow: group("Hull in a flow", null, T([0.35, 0.42, -0.95]), about),
   hull: object("Hull", "gFlow", hull, "implicit-mesh", rHull, T(), "#f1efe9"),
   // attached to the hull: the flow is in the hull render's frame, so identity
   streamlines: object("Streamlines", "hull", flow, "flow-field-streamlines", rStream, T()),
@@ -116,19 +123,14 @@ const objects = {
 }
 const order = ["gDisplay", "plinth", "sculpture", "tower", "gFlow", "hull", "streamlines", "slice"]
 
-// world = group · local; groups are translations only here
+// world = group · local; groups are translations only here. Anchors are vertices
+// of the built meshes (bow and stern on the waterline; the plinth's floor and cap
+// corners for the strands' bounds), so neither dimension reads "off surface".
 const world = (g, p) => p.map((v, i) => v + objects[g].transform.position[i])
+const anchor = (objectId, g, local) => ({ objectId, local, world: world(g, local) })
 const dims = {
-  hullLength: {
-    a: { objectId: "hull", local: [0.496, 0, 0], world: world("gFlow", [0.496, 0, 0]) },
-    b: { objectId: "hull", local: [-0.498, 0, 0], world: world("gFlow", [-0.498, 0, 0]) },
-    label: null,
-  },
-  plinthHeight: {
-    a: { objectId: "plinth", local: [0.235, 0, 0.235], world: world("gDisplay", [0.235, 0, 0.235]) },
-    b: { objectId: "plinth", local: [0.235, 0.32, 0.235], world: world("gDisplay", [0.235, 0.32, 0.235]) },
-    label: null,
-  },
+  hullLength: { a: anchor("hull", "gFlow", [0.4971, -0.005, -0.005]), b: anchor("hull", "gFlow", [-0.4983, -0.005, -0.005]), label: null },
+  plinthHeight: { a: anchor("plinth", "gDisplay", [0.159, 0, 0.159]), b: anchor("plinth", "gDisplay", [0.149, 0.32, 0.149]), label: null },
 }
 
 const scene = await make({
@@ -138,7 +140,7 @@ const scene = await make({
   order,
   dimensions: dims,
   view: { units: "mm", grid: true, axes: true, bounds: false },
-  camera: { position: [2.9, 1.7, 3.1], target: [0.35, 0.3, 0] },
+  camera: { position: [2.75, 1.85, 4.25], target: [0.15, 0.28, -0.42] },
 })
 console.log(`scene ${scene}`)
 

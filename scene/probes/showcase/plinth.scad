@@ -1,5 +1,5 @@
 // A display plinth sized from the sculpture that stands on it.
-// `sculpture` is the Gyroid sculpture document, imported as data (drag any
+// `sculpture` is the Twisted strands document, imported as data (drag any
 // document onto the Imports bar to bind it). Change the sculpture's bounds and
 // this plinth rebuilds to fit, in the editor and in every scene showing it.
 
