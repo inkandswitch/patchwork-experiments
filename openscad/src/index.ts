@@ -26,15 +26,22 @@ export const plugins = [
 	},
 	{
 		// Renders an OpenSCAD doc into a 3D scene (see the patchwork "scene"
-		// package). Metadata only up here: this module also runs in a worker.
+		// package). Everything but load() is plain data: the host reads this
+		// `plugins` array in a worker, so it must survive structuredClone.
+		// build() itself runs on the main thread (src/scene/source.ts), and the
+		// render engine it calls starts its own worker for OpenSCAD.
 		type: "scene:source",
 		id: "openscad-model",
 		name: "OpenSCAD model",
 		icon: "Box",
 		supportedDatatypes: ["openscad"],
-		// Optional scene-host extension: a source edit re-runs OpenSCAD, so
-		// debounce it like an expensive build even though `unit` is cheap.
+		// A source edit re-runs OpenSCAD, so debounce it like an expensive
+		// build even though `unit` is cheap.
 		cost: "expensive",
+		// Bump when build() makes different output from the same doc and
+		// params; renders built by an older version (or none) go stale once.
+		// The fingerprint stays content-only. v1: the Manifold backend.
+		version: 1,
 		params: [
 			{
 				key: "unit",
@@ -47,7 +54,8 @@ export const plugins = [
 					{value: "m", label: "Metres"},
 					{value: "in", label: "Inches"},
 				],
-				// the last STL is cached, so a unit change only re-encodes
+				// the engine caches STLs by source + imports, so a unit
+				// change only re-encodes
 				cost: "cheap",
 			},
 		],
