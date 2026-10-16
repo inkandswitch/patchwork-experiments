@@ -968,7 +968,20 @@ export default function SceneTool(handle, element) {
     main.draggable = true;
     main.addEventListener("dragstart", (e) => {
       e.dataTransfer.setData(ROW_MIME, JSON.stringify({ scene: handle.url, id }));
-      e.dataTransfer.effectAllowed = "move";
+      // Outside this scene the row is its geometry: the render doc, the way the
+      // sidebar's own drags look, so a slicer or a flow field's body slot can
+      // take it (see README "Consuming a render"). A passthrough object is its
+      // GLB file. This scene and others ignore these types on a row drag.
+      const o = doc().objects?.[id];
+      const url = o && !isGroup(o) ? o.renderUrl ?? o.sourceUrl : null;
+      if (url) {
+        e.dataTransfer.setData("text/x-patchwork-dnd", JSON.stringify({ source: "scene", items: [{ url, name: o.name, type: o.renderUrl ? "scene-render" : undefined }] }));
+        e.dataTransfer.setData("text/x-patchwork-urls", JSON.stringify([url]));
+        e.dataTransfer.setData("text/plain", url);
+        e.dataTransfer.effectAllowed = "copyMove";
+      } else {
+        e.dataTransfer.effectAllowed = "move";
+      }
     });
     const li = el("li", { class: "object-row", role: "treeitem", dataset: { id, ...(group ? { kind: "group" } : {}) } }, twisty, vis, sw, main, remove);
     row = { li, twisty, vis, sw, name, count, pill, remove, main, group };
@@ -1512,7 +1525,12 @@ export default function SceneTool(handle, element) {
   // drag & drop, paste
   let dragDepth = 0;
   const hint = $(".drop-hint");
-  const accepts = (dt) => hasPatchworkDrop(dt) || [...(dt?.types ?? [])].includes("Files");
+  // A row dragged from an outline (this scene's or another's) also carries its
+  // render doc as a document; that is for other tools, never added here.
+  const accepts = (dt) => {
+    const types = [...(dt?.types ?? [])];
+    return !types.includes(ROW_MIME) && (hasPatchworkDrop(dt) || types.includes("Files"));
+  };
   root.addEventListener("dragenter", (e) => {
     if (fromEmbed(e)) return;
     if (!accepts(e.dataTransfer)) return;

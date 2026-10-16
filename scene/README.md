@@ -44,7 +44,10 @@ world pose, so nothing moves on screen. A row released where it already sits
 writes nothing, and a reorder among siblings changes only `order` (spliced, so
 a collaborator's concurrent add survives the merge). A group can't be dropped
 into itself or into anything inside it, and a row dragged in from another
-scene's outline is refused.
+scene's outline is refused. Dragged out of the scene, a row is its geometry:
+it carries the object's render doc (a passthrough object, its GLB file) in the
+sidebar's drag formats, so it can be dropped on a slicer or a flow field's body
+slot; scenes themselves never add a dragged row.
 
 - **Outline**: visibility, colour, remove; click to select, double-click to frame.
   Groups and attached objects are listed (indented, 10 px a level up to 8)

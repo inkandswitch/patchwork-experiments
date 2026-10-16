@@ -525,6 +525,30 @@ describe("scene tool (mounted, no WebGL)", () => {
     expect(element.querySelector(".toast").textContent).toMatch(/no longer in this scene/);
   });
 
+  it("a dragged row carries its render doc for other tools, and the scene itself ignores that", async () => {
+    await addByUrl(file.url);
+    await wait(20);
+    const [id] = Object.keys(scene.doc().objects);
+    const renderUrl = scene.doc().objects[id].renderUrl;
+    const data = {};
+    const start = new Event("dragstart", { bubbles: true });
+    start.dataTransfer = { setData: (t, v) => (data[t] = v), effectAllowed: "" };
+    element.querySelector(`.object-row[data-id="${id}"] .row-main`).dispatchEvent(start);
+    expect(JSON.parse(data["text/x-patchwork-urls"])).toEqual([renderUrl]);
+    expect(data["text/plain"]).toBe(renderUrl);
+    expect(JSON.parse(data["text/x-patchwork-dnd"]).items[0]).toMatchObject({ url: renderUrl, type: "scene-render" });
+
+    // the same drag released over the viewport adds nothing
+    const before = Object.keys(scene.doc().objects).length;
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    drop.dataTransfer = { types: Object.keys(data), files: [], getData: (t) => data[t] ?? "" };
+    element.querySelector(".viewport").dispatchEvent(drop);
+    await flush();
+    await flush();
+    expect(Object.keys(scene.doc().objects).length).toBe(before);
+    expect(drop.defaultPrevented).toBe(false);
+  });
+
   it("a drop on the tree doesn't leave the whole-tool hint stuck on", async () => {
     const g = addGroup();
     await flush();
