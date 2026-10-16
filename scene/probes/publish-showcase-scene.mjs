@@ -98,6 +98,26 @@ const rStream = await render("Flow past the hull", flow, "flow-field-streamlines
 const rSlice = await render("Flow past the hull", flow, "flow-field-slice",
   flowParams("flow-field-slice", { height: -0.06, resolution: 140, fade: 0.3 }))
 
+// A Camber hull: camber's own default design (5 m, written by camber/patchwork's
+// seedDoc, saved here as JSON), rendered at 1.6 m, with a flow linked to its render.
+// camber-hull-surface's ParamSpec defaults (camber/patchwork/src/scene/params.ts):
+const CAMBER_DEFAULTS = { sections: 96, girth: 6, size: "document", lengthMeters: 10, rake: true, origin: "waterline", transom: true, outline: true, stations: true, stationCount: 10, dwl: true }
+const camber = await make({ "@patchwork": { type: "camber-hull" }, ...JSON.parse(readFileSync(resolve(here, "showcase/camber-hull.json"), "utf8")), title: "Camber hull" })
+const rCamber = await render("Camber hull", camber, "camber-hull-surface", { ...CAMBER_DEFAULTS, size: "length", lengthMeters: 1.6 })
+const camberFlow = await make({
+  "@patchwork": { type: "flow-field" },
+  title: "Flow past the camber hull",
+  freestream: { speed: 2, headingDeg: 180 },
+  elements: {},
+  domain: { min: [-0.7, -0.5, -0.3], max: [2.3, 0.5, 0.05] },
+  seeds: { count: 11 },
+  body: { url: rCamber, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 160 },
+})
+const rCamberStream = await render("Flow past the camber hull", camberFlow, "flow-field-streamlines",
+  flowParams("flow-field-streamlines", { rakeRows: 2, seedHeight: -0.04, rowSpacing: 0.09, step: 0.012, maxSteps: 500, tubeRadius: 0.006 }))
+const rCamberSlice = await render("Flow past the camber hull", camberFlow, "flow-field-slice",
+  flowParams("flow-field-slice", { height: -0.05, resolution: 140, fade: 0.3 }))
+
 // ─── the scene ─────────────────────────────────────────────────────────────
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale })
 const group = (name, parent, transform, infoUrl = null) => ({
@@ -120,8 +140,12 @@ const objects = {
   // attached to the hull: the flow is in the hull render's frame, so identity
   streamlines: object("Streamlines", "hull", flow, "flow-field-streamlines", rStream, T()),
   slice: object("Pressure slice", "hull", flow, "flow-field-slice", rSlice, T(), null, { opacity: 0.85 }),
+  gCamber: group("Camber hull in a flow", null, T([-0.45, 0.22, -2.25]), about),
+  camber: object("Camber hull", "gCamber", camber, "camber-hull-surface", rCamber, T(), "#efe9dc"),
+  camberStreamlines: object("Streamlines", "camber", camberFlow, "flow-field-streamlines", rCamberStream, T()),
+  camberSlice: object("Pressure slice", "camber", camberFlow, "flow-field-slice", rCamberSlice, T(), null, { opacity: 0.85 }),
 }
-const order = ["gDisplay", "plinth", "sculpture", "tower", "gFlow", "hull", "streamlines", "slice"]
+const order = ["gDisplay", "plinth", "sculpture", "tower", "gFlow", "hull", "streamlines", "slice", "gCamber", "camber", "camberStreamlines", "camberSlice"]
 
 // world = group · local; groups are translations only here. Anchors are vertices
 // of the built meshes (bow and stern on the waterline; the plinth's floor and cap
@@ -140,7 +164,7 @@ const scene = await make({
   order,
   dimensions: dims,
   view: { units: "mm", grid: true, axes: true, bounds: false },
-  camera: { position: [2.75, 1.85, 4.25], target: [0.15, 0.28, -0.42] },
+  camera: { position: [3.9, 2.9, 3.4], target: [0.3, 0.22, -1.15] },
 })
 console.log(`scene ${scene}`)
 

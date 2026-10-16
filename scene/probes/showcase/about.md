@@ -20,5 +20,12 @@ hull's **render** in this scene: the flow slices the very mesh you see, so a
 change to the hull rebuilds the hull, then the streamlines and the pressure
 slice. Both are attached to the hull and move with it.
 
+**Camber hull** — a *Camber* hull design (camber's own default boat, 5 m),
+rendered at 1.6 m by its provider's "scale to length", with its stations and
+design waterline drawn as lines. It has a flow field of its own, linked to its
+render: the flow slices the scaled mesh you see, so it lines up at any scale.
+Open the hull in Camber, change the sheer or the transom, and the hull, its
+streamlines and its pressure slice all rebuild.
+
 Drag any object from the outline onto a slicer or a flow field's body slot to
 use its geometry there.
