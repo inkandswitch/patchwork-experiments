@@ -196,7 +196,8 @@ or unmount.
     failed builds after 5 s, 30 s and 2 min.
   - a new build of the same source url with a **different fingerprint**
     supersedes a running one: its worker (or main-thread job) is stopped and
-    its promise rejects with a `superseded` error. Builds of the same doc at
+    its promise rejects with a `superseded` error named `AbortError`, which the
+    scene host treats as cancelled rather than failed (no error, no retry wait). Builds of the same doc at
     another resolution, or of other docs, run side by side.
 
   Refinishing a cached surface runs on the main thread with the same yielding.

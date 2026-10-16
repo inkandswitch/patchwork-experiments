@@ -100,7 +100,8 @@ function crashed(job, message) {
 }
 
 export function supersededError() {
-  return Object.assign(new Error("superseded: a newer build of this document started"), { superseded: true });
+  // AbortError: the scene host treats it as cancelled, not failed (no error shown, no retry wait)
+  return Object.assign(new Error("superseded: a newer build of this document started"), { name: "AbortError", superseded: true });
 }
 
 /**

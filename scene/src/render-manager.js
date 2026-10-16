@@ -336,6 +336,8 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       entry.failureKey = null;
       entry.failures = 0;
       clearTimer(entry, "retryTimer");
+    } else if (result.aborted) {
+      // cancelled by the provider, not failed: evaluate again below
     } else {
       // Don't hammer a failing build, but don't give up on it at once either.
       // counted against failureKey, which (unlike failedKey) the retry timer leaves alone

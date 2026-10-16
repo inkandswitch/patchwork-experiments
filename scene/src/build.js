@@ -113,7 +113,8 @@ export function glbFileDoc(title, glb) {
  *        called once build() resolves, with the snapshot above: may fill in a
  *        dependency that finished loading during the build (build() read it)
  * @param {() => number} [o.now]
- * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean, superseded?: boolean } | { ok: false, error: string }>}
+ * @returns {Promise<{ ok: true, glbUrl, builtFrom, meta, reused?: boolean, superseded?: boolean } | { ok: false, error: string, aborted?: true }>}
+ *        aborted: build() rejected with an AbortError (the provider cancelled it); not recorded as an error
  */
 export async function runBuild({ repo, renderHandle, sourceHandle, provider, deps = {}, depsAfter, now = Date.now }) {
   const render = renderHandle.doc();
@@ -198,6 +199,16 @@ export async function runBuild({ repo, renderHandle, sourceHandle, provider, dep
     });
     return { ok: true, glbUrl, builtFrom, meta: result.meta ?? null, reused };
   } catch (err) {
+    if (err?.name === "AbortError") {
+      // The provider cancelled it (a newer build of the same doc superseded it):
+      // not a failure. Put the status back; the caller re-evaluates.
+      if (renderHandle.doc()?.status === "building") {
+        renderHandle.change((d) => {
+          d.status = "idle";
+        });
+      }
+      return { ok: false, aborted: true, error: errorMessage(err) };
+    }
     const error = errorMessage(err);
     console.warn(`[scene] build failed (${provider?.id ?? "?"})`, err);
     renderHandle.change((d) => {

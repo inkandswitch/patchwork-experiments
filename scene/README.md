@@ -336,6 +336,9 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
 - `bounds` is the last build's `meta.bounds`; until the GLB loads it is drawn
   as a placeholder box (a scene object's own `hint.bounds` wins).
 - The previous GLB stays on screen while the next one builds.
+- A build that rejects with an error named `AbortError` was cancelled by its
+  provider (say, superseded by a newer build of the same doc): the status goes
+  back to idle, nothing is recorded, and the render is evaluated again at once.
 - A failed build records `status: "error"` and `error`. It is retried
   automatically after 5 s, 30 s and 2 min (inputs unchanged; covers a CDN
   fetch, a worker that ran out of memory once), then not again until its

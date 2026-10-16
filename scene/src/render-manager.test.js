@@ -137,6 +137,22 @@ describe("render manager", () => {
     expect(t.mgr.state("o1").retryAt).toBeNull();
   });
 
+  it("a build the provider aborts (AbortError) is not an error and is tried again at once", async () => {
+    let calls = 0;
+    const t = setup({
+      build: async () => {
+        if (calls++ === 0) throw Object.assign(new Error("superseded"), { name: "AbortError" });
+        return { kind: "glb", glb: tinyGLB() };
+      },
+    });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    await t.timers.advance(0);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.render.doc()).toMatchObject({ status: "idle", error: null });
+    expect(t.render.doc().glbUrl).toBeTruthy();
+  });
+
   it("a transient failure recovers on the first retry", async () => {
     let calls = 0;
     const t = setup({ build: async () => { if (calls++ === 0) throw new Error("cdn"); return { kind: "glb", glb: tinyGLB() }; } });
