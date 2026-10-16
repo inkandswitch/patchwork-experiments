@@ -26,6 +26,12 @@
  *         | { type: "reasoning", id, text }
  *         | { type: "call",      id, tool, input, where, status, runner, generation }
  *         | { type: "result",    id, callId, output, isError, image, doc }
+ *         | { type: "event",     id, source, label, text, count, at }
+ *
+ * An event block is news a tool delivered after its call was over (see
+ * events.js). It rides in a "user" turn because that is what wakes a runner and
+ * what every provider accepts after an assistant turn, but it is not the user
+ * speaking, and both the model and the transcript are told so.
  *
  * Automerge cannot hold `undefined`, so every optional field is either present
  * or `null` — never assigned undefined. See patchwork-skill §5.
@@ -169,6 +175,28 @@ export function describeContext(block) {
     for (const v of block.open) lines.push(`- ${line(v)}`)
   }
   return lines.join("\n")
+}
+
+/**
+ * Something a tool noticed after its call was over: `source` is the tool id,
+ * `label` what it was watching, `count` how many notices were folded into it.
+ */
+export function eventBlock(source, text, opts = {}) {
+  return {
+    type: "event",
+    id: opts.id ?? makeId("b"),
+    source: String(source),
+    label: opts.label ?? null,
+    text: String(text),
+    count: opts.count ?? 1,
+    at: opts.at ?? Date.now(),
+  }
+}
+
+/** An event block as the model reads it. */
+export function describeEvent(block) {
+  const watching = block.label ? `, watching ${block.label}` : ""
+  return `[Event from ${block.source}${watching}. Not a message from the user: you asked to be woken when this happened.]\n${block.text ?? ""}`
 }
 
 export function reasoningBlock(text, opts = {}) {
@@ -878,6 +906,8 @@ export function toRequest(doc, { system = "", maxImages = MAX_IMAGES_IN_REQUEST 
         if (block.text) content.push({ type: "text", text: block.text })
       } else if (block.type === "context") {
         content.push({ type: "text", text: describeContext(block) })
+      } else if (block.type === "event") {
+        content.push({ type: "text", text: describeEvent(block) })
       } else if (block.type === "call") {
         content.push({ type: "call", id: block.id, name: block.tool, input: block.input ?? {} })
         // A denial is the call's RESULT, in the place the call happened.

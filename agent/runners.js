@@ -125,6 +125,9 @@ export function stopRunner(sessionUrl) {
   return true
 }
 
+/** A session a tool can still wake is listening, not idle (events.js). */
+const listening = (entry) => entry.ctx?.events?.listening() > 0
+
 /**
  * Reap runners nobody is watching and which have nothing left to do.
  *
@@ -137,13 +140,17 @@ export function reapIdle({ now = Date.now(), graceMs = IDLE_GRACE_MS } = {}) {
   for (const [url, entry] of live) {
     if (entry.viewers.size > 0) continue
     if (entry.runner?.running) continue
+    if (listening(entry)) continue
     if (entry.idleSince && now - entry.idleSince > graceMs) reaped.push(url)
   }
 
   // Over the cap, drop the longest-unwatched idle runners first.
   if (live.size - reaped.length > MAX_LIVE_RUNNERS) {
     const candidates = [...live.entries()]
-      .filter(([url, e]) => !reaped.includes(url) && e.viewers.size === 0 && !e.runner?.running)
+      .filter(
+        ([url, e]) =>
+          !reaped.includes(url) && e.viewers.size === 0 && !e.runner?.running && !listening(e)
+      )
       .sort((a, b) => (a[1].idleSince ?? 0) - (b[1].idleSince ?? 0))
     while (live.size - reaped.length > MAX_LIVE_RUNNERS && candidates.length) {
       reaped.push(candidates.shift()[0])

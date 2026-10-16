@@ -27,6 +27,7 @@ import { splice } from "@automerge/automerge/slim"
 
 import { handleStore } from "./store.js"
 import { SessionRunner, needsWork, heldElsewhere } from "./runner.js"
+import { createEvents } from "./events.js"
 import { buildToolset } from "./tools/index.js"
 import { getProvider, modelInfo } from "./providers/index.js"
 import { STATUS } from "./session.js"
@@ -90,7 +91,7 @@ async function claim(sessionUrl) {
   const runner = new SessionRunner({
     store,
     runnerUrl,
-    ctx: { ...baseCtx, subject: doc.subject ?? null },
+    ctx: { ...baseCtx, subject: doc.subject ?? null, events: createEvents(store) },
     buildToolset: (sessionDoc) => buildToolset(sessionDoc),
     getProvider: async () => getProvider(doc.config?.providerId ?? MODEL_PROVIDER),
     getKey: () => KEY,

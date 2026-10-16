@@ -333,6 +333,20 @@ export function renderTranscript(container, doc, state, handlers) {
   for (const turn of turns) {
     if (turn.role === "tool") continue // results render inside their call
 
+    // News a tool delivered (events.js). It rides in a user turn, but nobody
+    // said it, so it must not look as if anybody did.
+    if (turn.role === "user" && turn.blocks?.length && turn.blocks.every((b) => b.type === "event")) {
+      const node = el("div", "agent-turn")
+      node.dataset.role = "event"
+      for (const block of turn.blocks) {
+        const head = `${block.source}${block.label ? ` · ${block.label}` : ""}${block.count > 1 ? ` (${block.count} changes)` : ""}`
+        node.append(el("div", "agent-author", `Woken by ${head}`))
+        node.append(prose(block.text ?? ""))
+      }
+      container.append(node)
+      continue
+    }
+
     if (turn.role === "user") {
       const node = el("div", "agent-turn")
       node.dataset.role = "user"

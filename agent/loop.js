@@ -597,7 +597,10 @@ async function executeCalls(opts) {
     if (!claimed) continue
 
     emit({ type: "call-start", tool: call.tool, input: call.input })
-    const outcome = await runTool(tool, call.input, { ...ctx, signal })
+    // `events` is the session's, under this tool's name, so news it delivers
+    // later says where it came from (events.js).
+    const events = ctx.events?.forTool(call.tool)
+    const outcome = await runTool(tool, call.input, { ...ctx, signal, events })
     emit({ type: "call-end", tool: call.tool, summary: outcome.summary, isError: outcome.isError })
 
     store.change((d) => {

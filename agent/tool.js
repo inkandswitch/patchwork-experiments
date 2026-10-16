@@ -22,6 +22,7 @@ import { decide, say, answerQuestion } from "./loop.js"
 import { SessionRunner, heldElsewhere, needsWork } from "./runner.js"
 import { ensureRunner as ensureSharedRunner, attachView } from "./runners.js"
 import { connectWorkerRunner } from "./worker-client.js"
+import { createEvents } from "./events.js"
 import { buildToolset } from "./tools/index.js"
 import { getProvider, readKey, writeKey, loadCatalogue, modelInfo } from "./providers/index.js"
 import { listSecrets, writeSecret } from "./secrets.js"
@@ -351,6 +352,9 @@ export function AgentTool(handle, element, options = {}) {
 
       const { splice } = await hostImport("automerge").catch(() => ({ splice: null }))
       const liveStore = handleStore(handle, splice)
+      // How tools wake this session after their calls are over. It belongs to the
+      // runner, not the view: a tool may be watching long after the view has gone.
+      const events = createEvents(liveStore)
 
       // Mutable on purpose: `element` is swapped as views come and go, so
       // host-tier tools always mount into something actually on the page, and
@@ -362,6 +366,7 @@ export function AgentTool(handle, element, options = {}) {
         // reached through this — it is the session's own document.
         sessionUrl: handle.url,
         splice,
+        events,
         element: root,
         // Installing a module means editing the account's module-settings
         // document, and discovery needs the root folder — the entry point to
@@ -411,7 +416,10 @@ export function AgentTool(handle, element, options = {}) {
       return {
         runner: made,
         ctx: sharedCtx,
-        dispose: () => handle.off("change", onDocChange),
+        dispose: () => {
+          handle.off("change", onDocChange)
+          events.stop()
+        },
       }
     })
 

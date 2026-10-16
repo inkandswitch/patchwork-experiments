@@ -203,6 +203,28 @@ ask    Which type of section would you like to add?   answered: Recipe step
 edit   /items[2…2]  edited document · 1 op
 ```
 
+## A tool can wake the agent
+
+A tool call is pull: the agent asks, the tool answers. A tool that watches
+something — a document, a running world — sees the interesting part when
+nobody is asking. `ctx.events.open(key, { label })` gives it a channel, and
+`channel.notify(render)` says something happened; `channel.close()` stops it.
+
+Whether and when that wakes the agent is decided here, in `events.js`, not by
+each tool, because every wake is a model call over the whole conversation:
+notices on a channel fold together and wait for a quiet moment; nothing is
+delivered while a turn is running (the agent will hear it from the tool
+directly) or waiting on a person; wakes are spaced and capped per hour, which
+also stops an agent that acts on a wake from waking itself forever. `render` is
+called at delivery, so the news describes things as they are then, and a tool
+that already reported it returns `""` and the wake dissolves.
+
+A delivered wake is a user turn of `event` blocks — a user turn because that is
+what starts a runner and what providers accept, but the model is told it is not
+the user speaking, and the transcript shows it as news from the tool. An open
+channel keeps an unwatched tab runner from being reaped. Nothing outlives the
+realm the tool runs in: close the last tab and the watching stops with it.
+
 ## Builds happen in the browser
 
 A TypeScript tool, or one with npm dependencies, has to be compiled — and

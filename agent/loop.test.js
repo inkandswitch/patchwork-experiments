@@ -166,6 +166,27 @@ describe("tool calls", () => {
     expect(seen.ctx.subject).toBe("automerge:subject")
   })
 
+  it("hands each tool the session's events under its own name", async () => {
+    const store = session()
+    let seen = null
+    const provider = makeMock([[{ type: "call", id: "c1", name: "doc_read", input: {} }], [{ type: "text", delta: "ok" }]])
+    const opened = []
+    const events = { forTool: (source) => ({ open: (key) => opened.push(`${source}:${key}`) }) }
+
+    await run({
+      store,
+      provider,
+      toolset: fakeToolset([readTool(async (input, ctx) => { seen = ctx; ctx.events.open("k"); return "x" })]),
+      ctx: { events },
+      runnerUrl: "runner-a",
+      generation: 1,
+      flushMs: 0,
+    })
+
+    expect(opened).toEqual(["doc_read:k"])
+    expect(seen.events).not.toBe(events)
+  })
+
   it("turns a throwing tool into an error result the model can see", async () => {
     const store = session()
     const provider = makeMock([
