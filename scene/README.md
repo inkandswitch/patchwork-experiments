@@ -119,6 +119,8 @@ except `load` must survive `structuredClone`) with the code behind `load()`:
   supportedDatatypes: ["camber-hull"], // datatype ids; ["file"] for file docs
   extensions: ["stl"],                 // ONLY for file providers: lower-case, no dot
   params: [ParamSpec, ...],            // build params, optional
+  cost: "expensive",                   // what a build after a source edit costs (set it!)
+  version: 1,                          // integer; bump when build() output changes for the same inputs
   async load() { return (await import("./scene-source.js")).default },
 }
 ```
@@ -138,6 +140,7 @@ type SourceImpl = {
   build(args: { doc, handle, url, params, repo }): Promise<BuildResult>  // must not write the source
   fingerprint?(doc): string   // changes iff something build() reads changes; else heads are used
   dependencies?(doc): AutomergeUrl[]  // sync: the OTHER docs build() reads (imports, a linked hull…)
+  fingerprintDependency?(url, doc): string | null  // sync: like fingerprint(), for one dependency
 }
 
 type BuildResult = {
@@ -148,7 +151,21 @@ type BuildResult = {
 ```
 
 `params` passed to `build()` always have every ParamSpec default filled in, so a
-provider can add params later without migrating render docs.
+provider can add params later without migrating render docs. They are also
+**coerced and clamped to their spec** (`min`/`max`, integer rounding, enum
+options, `#rrggbb` colours); a value that can't be coerced is replaced by the
+default. Render docs are written by forms, agents, other tools and merges, so
+the host checks them once and a provider can trust its own metadata instead of
+re-clamping (and disagreeing with it). Keys without a spec pass through.
+
+**Version.** A provider that declares an integer `version` gets it recorded in
+`builtFrom.providerVersion`. Bump it whenever `build()` would make different
+output from the same doc and params (a better mesher, a fixed transform), and
+every render built by an older version (or by one that declared none) goes
+stale once. A render built by a *newer* version is never stale to an older
+provider, so two collaborators on different versions don't rebuild over each
+other; the newer build stays. Prefer this to a hand-bumped prefix inside the
+fingerprint.
 
 **Dependencies.** If `build()` reads documents besides its source (an OpenSCAD
 file's imports, a flow field's linked hull), return their URLs from
@@ -163,6 +180,14 @@ up to 5 s for dependencies that are still loading, so it doesn't build once
 without them and again with them. Dependencies are only transitive if you list
 them transitively. Duplicates and the source's own URL are ignored.
 
+By default a dependency is recorded by its heads, so *any* edit to it rebuilds.
+`fingerprintDependency(url, doc)` narrows that the way `fingerprint` narrows
+the source: return a string that changes iff something build() reads from that
+doc changes (null = use heads), and it is recorded as `["fp:<string>"]` in
+place of the heads. A **scene-render** dependency needs nothing: the host keys
+it by its `glbUrl` on its own, so a consumer rebuilds when the render it reads
+gets a new GLB, never on the render's status writes (see *Consuming a render*).
+
 The form in `scene-render-controls` is generated from `params`: `number` /
 `integer` get a number field plus a slider when both `min` and `max` are given
 (logarithmic when `log: true` and `min > 0`), `enum` a select, `boolean` a
@@ -174,6 +199,25 @@ For source-doc edits the scene uses 150 ms if every param is `cheap`, otherwise
 800 ms. A provider may also set an optional top-level `cost: "cheap" |
 "expensive"` to say how expensive a build from a source edit is (this is an
 extension; hosts that don't know it fall back to the rule above).
+
+### Consuming a render
+
+When your provider (or tool) needs another object's geometry — a flow field
+around a hull, a slicer, an FEA mesh — read that object's **render doc**, not
+its source, and never call another package's provider yourself:
+
+- the work is done once and shared, by whichever scene keeps it fresh;
+- you get exactly the geometry the scene shows, built with the params the
+  scene chose for it, not the provider's defaults;
+- its own dependencies come along for free: an OpenSCAD part's imports are the
+  render's business, and a new GLB is all you see.
+
+Copy `src/render-read.js` (see *The kit*) and list the render's url in
+`dependencies(doc)`; `readRender(repo, url)` gives you `{ glb, glbUrl,
+builtFrom, status, error, bounds, source }`. The GLB is in the render's own
+frame (Y-up metres); to follow the object around the scene, attach your object
+to it. A render that hasn't been built yet gives `glb: null`: say so in your
+`meta.notes` rather than throwing, and you rebuild when it arrives.
 
 ### GLB conventions
 
@@ -202,10 +246,28 @@ extension; hosts that don't know it fall back to the rule above).
   `max`. The scene draws it as a bar with three ticks. Anything else in it is
   ignored, and a legend that doesn't check out is simply not shown.
 
+### The kit
+
+Small modules that several packages need are **copied**, never imported across
+packages. Each says `[kit: <name> v<N>]` in its header; the canonical copies
+live here in `src/`:
+
+| file | what |
+|---|---|
+| `src/glb.js` | the GLB encoder (and a minimal reader), below |
+| `src/render-read.js` | reading a `scene-render` doc and its GLB from another package |
+
+To change one, edit the canonical copy, bump its version, and run
+`node scripts/check-kit.mjs --fix` at the repo root to copy it over every other;
+without `--fix` the script fails on any copy that has drifted.
+
 ### The encoder
 
 `src/glb.js` is a dependency-free GLB encoder. **Copy it** into your package
-(never import across packages). Its API is documented at the top of the file:
+(never import across packages). Its API is documented at the top of the file.
+v2 adds per-vertex `colors` (COLOR_0), `unlit` (KHR_materials_unlit), `blend`
+(alphaMode BLEND) and writes `asset.extras.units = "m"`, so a consumer outside
+a scene (a slicer, say) knows the scale without guessing:
 
 ```js
 import { encodeGLB, computeNormals, MODE } from "./glb.js"
@@ -235,17 +297,24 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   glbUrl: AutomergeUrl | null,      // repointed on every rebuild
   builtFrom: {
     heads: string[], fingerprint: string | null, paramsKey: string,
-    deps?: { [url: AutomergeUrl]: string[] }   // each dependency's sorted heads, as read; {} when none
+    deps?: { [url: AutomergeUrl]: string[] },  // each dependency's sorted heads, as read ({} when none),
+                                               // or ["fp:<key>"] for a keyed dependency
+    providerVersion?: number,                  // the provider's `version`, if it declares one
+    glbHash?: string                           // content hash of the GLB at glbUrl
   } | null,
   builtAt: number | null,
+  bounds?: { min: [x,y,z], max: [x,y,z] } | null,  // the last build's meta.bounds (placeholder box)
   status: "idle" | "building" | "error",
   error: string | null,
   pinned: boolean                   // true = never auto-rebuild
 }
 ```
 
-- `paramsKey` is JSON of `params` with keys sorted at every level.
-- **Stale** iff `builtFrom` is null, or `paramsKey` differs, or (provider has a
+- `paramsKey` is JSON of `params` (as stored, before defaults and clamping)
+  with keys sorted at every level.
+- **Stale** iff `builtFrom` is null, or `paramsKey` differs, or the installed
+  provider declares a `version` newer than `builtFrom.providerVersion` (or
+  there is none recorded), or (provider has a
   fingerprint ? `fingerprint(source) !== builtFrom.fingerprint` : sorted source
   heads ≠ sorted `builtFrom.heads`), or the provider's current dependency URLs
   differ from the keys of `builtFrom.deps`, or any dependency's sorted heads
@@ -253,13 +322,21 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   dependencies existed) counts as `{}`, so a provider that starts reporting
   dependencies rebuilds each of its renders once. A dependency that isn't
   loaded counts as having no heads (`[]`).
-- Every build makes a **new immutable GLB file doc** and repoints `glbUrl`:
-  `{ "@patchwork": { type: "file" }, name: "<title>.glb", extension: "glb",
-  mimeType: "model/gltf-binary", content: Uint8Array }`. Superseded GLBs are
+- Every build that produces new bytes makes a **new immutable GLB file doc**
+  and repoints `glbUrl`: `{ "@patchwork": { type: "file" }, name:
+  "<title>.glb", extension: "glb", mimeType: "model/gltf-binary", content:
+  Uint8Array }`. A build whose bytes hash the same as the current GLB's
+  (`builtFrom.glbHash`) keeps the current file doc, so a rebuild that changes
+  nothing (a rename, a version bump with identical output) makes no new doc
+  and doesn't disturb anything that depends on the render. Superseded GLBs are
   simply orphaned.
+- `bounds` is the last build's `meta.bounds`; until the GLB loads it is drawn
+  as a placeholder box (a scene object's own `hint.bounds` wins).
 - The previous GLB stays on screen while the next one builds.
-- A failed build records `status: "error"` and `error`, and is not retried until
-  its inputs change (or someone presses Rebuild).
+- A failed build records `status: "error"` and `error`. It is retried
+  automatically after 5 s, 30 s and 2 min (inputs unchanged; covers a CDN
+  fetch, a worker that ran out of memory once), then not again until its
+  inputs change or someone presses Rebuild.
 - Before building, a scene broadcasts `{ type: "scene-render:building", key }` on
   the render doc; other open scenes hold off on the same inputs for 20 s so two
   peers don't both run an expensive build.
@@ -353,7 +430,8 @@ MaterialRule = {
 | `src/deps.js` | watches a provider's dependency docs (subscribe, retry, heads) |
 | `src/build.js` | one build: provider → GLB file doc → repoint render doc |
 | `src/controls-tool.js`, `src/param-form.js` | the `scene-render-controls` tool |
-| `src/glb.js` | the GLB encoder (copy me) |
+| `src/glb.js` | the GLB encoder (kit: copy me) |
+| `src/render-read.js` | reading a render doc and its GLB from another package (kit: copy me) |
 | `src/stl.js`, `src/sources/*` | STL parsing and the two file providers |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |

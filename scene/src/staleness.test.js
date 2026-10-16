@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, heldDeps, inputsKey, isContested, isStale, normalizeDeps, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
+import { builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
 
@@ -163,5 +163,47 @@ describe("peers that disagree about dependencies", () => {
     const loaded = (u) => u === "automerge:c";
     expect(heldDeps(built, cur, loaded)).toEqual(["automerge:a"]);
     expect(heldDeps(undefined, cur, loaded)).toEqual([]);
+  });
+});
+
+describe("provider versions", () => {
+  it("only an older (or unversioned) build is stale", () => {
+    expect(olderVersion(undefined, 1)).toBe(true);
+    expect(olderVersion(1, 2)).toBe(true);
+    expect(olderVersion(2, 2)).toBe(false);
+    expect(olderVersion(3, 2)).toBe(false);
+    expect(olderVersion(1, undefined)).toBe(false);
+    expect(olderVersion(1, "nope")).toBe(false);
+  });
+  it("staleReason says provider, after params and before the fingerprint", () => {
+    const r = built({ a: 1 }, ["h"], "fp");
+    expect(staleReason(r, { heads: ["h"], fingerprint: "fp", providerVersion: 1 })).toBe("provider");
+    r.builtFrom.providerVersion = 1;
+    expect(staleReason(r, { heads: ["h"], fingerprint: "fp", providerVersion: 1 })).toBeNull();
+    expect(staleReason(r, { heads: ["h"], fingerprint: "other", providerVersion: 2 })).toBe("provider");
+    expect(staleReason({ ...r, params: { a: 2 } }, { heads: ["h"], fingerprint: "fp", providerVersion: 2 })).toBe("params");
+  });
+  it("a version change is a new inputsKey (so a failed build is tried again)", () => {
+    const r = built({}, ["h"]);
+    expect(inputsKey(r, { heads: ["h"], providerVersion: 1 })).not.toBe(inputsKey(r, { heads: ["h"], providerVersion: 2 }));
+  });
+});
+
+describe("effectiveParams", () => {
+  const specs = [
+    { key: "n", kind: "number", default: 1, min: 0, max: 5 },
+    { key: "i", kind: "integer", default: 2 },
+    { key: "e", kind: "enum", default: "a", options: [{ value: "a" }, { value: "b" }] },
+    { key: "c", kind: "color", default: "#000000" },
+    { key: "b", kind: "boolean", default: false },
+  ];
+  it("fills defaults, clamps, rounds and coerces", () => {
+    expect(effectiveParams(specs, { n: 9, i: 2.6, e: "b", c: "#ABCDEF", b: 1 })).toEqual({ n: 5, i: 3, e: "b", c: "#abcdef", b: true });
+  });
+  it("falls back to the default for values that aren't of the spec's kind", () => {
+    expect(effectiveParams(specs, { n: "lots", i: null, e: "z", c: "red" })).toEqual({ n: 1, i: 2, e: "a", c: "#000000", b: false });
+  });
+  it("passes through keys it has no spec for", () => {
+    expect(effectiveParams(specs, { extra: { x: 1 } }).extra).toEqual({ x: 1 });
   });
 });

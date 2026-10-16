@@ -4,6 +4,12 @@
 // A doc that can't be loaded is retried with backoff and reads as no heads
 // ([]) meanwhile; it never blocks a build. No automerge here beyond
 // repo.find / handle.heads / handle.on, so it is testable with the fake repo.
+//
+// A dependency can be keyed by something narrower than its heads: `keyOf(url,
+// handle)` may return a string, recorded as ["fp:<string>"] in place of the
+// heads, so edits to the doc that don't change that string don't rebuild
+// anything (a scene-render dependency is keyed by its glbUrl, so its status
+// writes are invisible downstream).
 
 import { sortedHeads } from "./staleness.js";
 
@@ -14,10 +20,25 @@ const RETRY_MAX_MS = 30_000;
  * @param {object} o
  * @param {object} o.repo
  * @param {() => void} o.onChange   a dependency loaded, failed, or changed
+ * @param {(url: string, handle: object) => string | null} [o.keyOf]
+ *        a narrower key for a loaded dependency; null = use its heads
  * @param {{ setTimeout, clearTimeout }} [o.timers]
  * @param {() => number} [o.now]
  */
-export function createDependencyWatcher({ repo, onChange, timers = globalThis, now = Date.now }) {
+export function createDependencyWatcher({ repo, onChange, keyOf, timers = globalThis, now = Date.now }) {
+  /** What a loaded dependency records: ["fp:<key>"] when keyOf gives one, else its sorted heads. */
+  function recorded(url, handle, heads) {
+    if (typeof keyOf === "function") {
+      try {
+        const k = keyOf(url, handle);
+        if (k != null) return [`fp:${k}`];
+      } catch (err) {
+        console.warn("[scene] dependency key threw; using heads", err);
+      }
+    }
+    return sortedHeads(heads);
+  }
+
   const deps = new Map(); // url → { handle, pending, since, failures, retry, off }
   let disposed = false;
 
@@ -84,12 +105,12 @@ export function createDependencyWatcher({ repo, onChange, timers = globalThis, n
       return changed;
     },
     urls: () => [...deps.keys()].sort(),
-    /** { url: sorted heads } for every watched doc; [] for one not loaded. */
+    /** { url: sorted heads (or ["fp:<key>"]) } for every watched doc; [] for one not loaded. */
     snapshot() {
       const out = {};
       for (const url of [...deps.keys()].sort()) {
         const h = deps.get(url).handle;
-        out[url] = h ? sortedHeads(h.heads?.() ?? []) : [];
+        out[url] = h ? recorded(url, h, h.heads?.() ?? []) : [];
       }
       return out;
     },
@@ -106,10 +127,14 @@ export function createDependencyWatcher({ repo, onChange, timers = globalThis, n
       const rec = deps.get(url);
       return !!rec && !rec.handle && rec.failures > 0;
     },
-    /** Sorted heads the doc had when it loaded (what a find() racing it read), or null if not loaded. */
+    /**
+     * Sorted heads the doc had when it loaded (what a find() racing it read), or
+     * null if not loaded. A keyed dependency gives its current key instead: the
+     * key can't be recomputed for an older version of the doc.
+     */
     headsAtLoad: (url) => {
       const rec = deps.get(url);
-      return rec?.handle ? [...rec.loadHeads] : null;
+      return rec?.handle ? recorded(url, rec.handle, rec.loadHeads) : null;
     },
     dispose() {
       disposed = true;

@@ -65,15 +65,19 @@ export function depsKey(deps) {
 /**
  * Why a render is stale, or null if it is fresh.
  * @param {object} render   the scene-render doc
- * @param {object} source   { heads: string[], fingerprint: string | null | undefined, deps?: { [url]: string[] } }
+ * @param {object} source   { heads: string[], fingerprint: string | null | undefined, deps?: { [url]: string[] },
+ *                            providerVersion?: number }
  *                          fingerprint undefined/null = provider has no fingerprint();
- *                          deps = current heads of each doc the provider says it reads (absent = none)
- * @returns {null | "never-built" | "params" | "fingerprint" | "heads" | "deps"}
+ *                          deps = current heads of each doc the provider says it reads (absent = none),
+ *                            or ["fp:<key>"] for one the provider (or the host) fingerprints;
+ *                          providerVersion = the installed provider's `version`, if it declares one
+ * @returns {null | "never-built" | "params" | "provider" | "fingerprint" | "heads" | "deps"}
  */
 export function staleReason(render, source) {
   const built = render?.builtFrom;
   if (!built) return "never-built";
   if (built.paramsKey !== paramsKey(render.params)) return "params";
+  if (olderVersion(built.providerVersion, source?.providerVersion)) return "provider";
   const fp = source?.fingerprint;
   if (fp != null) {
     if (fp !== built.fingerprint) return "fingerprint";
@@ -81,6 +85,27 @@ export function staleReason(render, source) {
     return "heads";
   }
   return sameDeps(source?.deps, built.deps) ? null : "deps";
+}
+
+// ─── provider versions ──────────────────────────────────────────────────────
+// A provider may declare an integer `version` and bump it whenever build()
+// would produce different output from the same inputs. builtFrom records it.
+// Only a build by an OLDER version (or by one that declared none) is stale:
+// a peer with an older provider installed leaves a newer build alone instead
+// of rebuilding over it, so two versions can't ping-pong.
+
+/** A provider version as an integer, or null if it doesn't declare a usable one. */
+export function providerVersionOf(v) {
+  const n = Number(v);
+  return v != null && Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/** True when `current` is a version and what was built is older (or unversioned). */
+export function olderVersion(built, current) {
+  const cur = providerVersionOf(current);
+  if (cur == null) return false;
+  const b = providerVersionOf(built);
+  return b == null || b < cur;
 }
 
 /**
@@ -151,6 +176,53 @@ export function withDefaults(specs, params) {
   return out;
 }
 
+const clampNum = (v, spec) => {
+  let n = Number(v);
+  if (v === null || v === "" || !Number.isFinite(n)) return null;
+  if (spec.kind === "integer") n = Math.round(n);
+  if (Number.isFinite(spec.min)) n = Math.max(spec.min, n);
+  if (Number.isFinite(spec.max)) n = Math.min(spec.max, n);
+  return n;
+};
+
+/** Convert a raw value to the spec's type (clamped to min/max), or null if it isn't one. */
+export function coerceParam(spec, raw) {
+  switch (spec?.kind) {
+    case "number":
+    case "integer":
+      return clampNum(raw, spec);
+    case "boolean":
+      return !!raw;
+    case "enum": {
+      const opt = (spec.options ?? []).find((o) => String(o.value) === String(raw));
+      return opt ? opt.value : null;
+    }
+    case "color":
+      return /^#[0-9a-f]{6}$/i.test(String(raw)) ? String(raw).toLowerCase() : null;
+    default:
+      return String(raw ?? "");
+  }
+}
+
+/**
+ * What build() is handed: every default filled in, and every value that has a
+ * ParamSpec coerced to its kind and clamped to its min/max; one that can't be
+ * coerced falls back to the default. Values arrive from forms, agents, other
+ * tools and merges, so a provider can trust its metadata instead of re-clamping.
+ * Keys without a spec pass through untouched.
+ */
+export function effectiveParams(specs, params) {
+  const out = withDefaults(specs, params);
+  for (const spec of specs ?? []) {
+    if (!spec?.key || !(spec.key in out)) continue;
+    const v = coerceParam(spec, out[spec.key]);
+    if (v != null) out[spec.key] = v;
+    else if (spec.default !== undefined) out[spec.key] = spec.default;
+    else delete out[spec.key];
+  }
+  return out;
+}
+
 /** Just the defaults, for seeding a new render doc. */
 export function defaultParams(specs) {
   return withDefaults(specs, {});
@@ -191,5 +263,6 @@ export function debounceFor(reason, { specs = [], providerCost, changed = [] } =
 export function inputsKey(render, source) {
   const fp = source?.fingerprint;
   const deps = depsKey(source?.deps);
-  return `${paramsKey(render?.params)}|${fp != null ? `fp:${fp}` : `h:${sortedHeads(source?.heads).join(",")}`}${deps ? `|d:${deps}` : ""}`;
+  const v = providerVersionOf(source?.providerVersion);
+  return `${paramsKey(render?.params)}|${fp != null ? `fp:${fp}` : `h:${sortedHeads(source?.heads).join(",")}`}${deps ? `|d:${deps}` : ""}${v != null ? `|v:${v}` : ""}`;
 }

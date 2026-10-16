@@ -1,15 +1,14 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.
+ * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v2]
  *
  * COPY THIS FILE into your package; do not import it across packages. It has no
  * imports and no DOM use, so it runs anywhere (main thread, worker, node).
+ * The canonical copy is patchwork-experiments/scene/src/glb.js; copy it whole,
+ * never edit a copy (`node scripts/check-kit.mjs` fails on a copy that differs).
  *
- * flow-field's copy (copied from scene/src/glb.js) adds three things: a
- * `colors` primitive field, written as the standard COLOR_0 attribute
- * (FLOAT VEC3 or VEC4, LINEAR 0..1), so baked colormaps show in any glTF
- * viewer without a custom shader (search for "COLOR_0"); `unlit`, which marks
- * the material KHR_materials_unlit so a data plane shows its colours exactly
- * rather than shaded; and `blend`, alphaMode BLEND, for per-vertex alpha.
+ * v2 (from flow-field's fork): per-vertex `colors` (COLOR_0), `unlit`
+ * (KHR_materials_unlit), `blend` (alphaMode BLEND), and `asset.extras.units`,
+ * so a consumer reading the GLB outside a scene knows it is in metres.
  *
  * ─── API ──────────────────────────────────────────────────────────────────────
  *
@@ -20,6 +19,7 @@
  *     nodes?: Node[],               // optional; default = one root node per mesh
  *     extras?: object,              // copied onto the glTF scene's `extras`
  *     generator?: string,           // asset.generator (default "patchwork glb.js")
+ *     units?: string,               // asset.extras.units (default "m", the scene convention)
  *   }
  *
  *   Mesh = {
@@ -34,7 +34,7 @@
  *     normals?:  Float32Array | number[],   // xyz per vertex, unit length
  *     colors?:   Float32Array | number[] | { array, itemSize: 3 | 4 },
  *                                           // COLOR_0, LINEAR rgb(a) 0..1 per vertex
- *                                           // (flow-field extension; a bare array is rgb)
+ *                                           // (a bare array is rgb)
  *     indices?:  Uint32Array | Uint16Array | number[],  // stored as u16 when they fit
  *     mode?:     number,                    // MODE.TRIANGLES (default), LINES, LINE_STRIP…
  *     attributes?: { [name]: Float32Array | number[] | { array, itemSize } },
@@ -47,7 +47,7 @@
  *     metallic?: number,                    // default 0
  *     roughness?: number,                   // default 0.8
  *     doubleSided?: boolean,                // default true
- *     unlit?: boolean,                      // KHR_materials_unlit (flow-field extension)
+ *     unlit?: boolean,                      // KHR_materials_unlit
  *     blend?: boolean,                      // alphaMode BLEND, e.g. for COLOR_0 alpha
  *   }
  *
@@ -252,7 +252,7 @@ export function encodeGLB(scene) {
 
   const material = (prim) => {
     const color = toColor(prim.color);
-    if (!color && prim.metallic == null && prim.roughness == null) return undefined;
+    if (!color && prim.metallic == null && prim.roughness == null && !prim.unlit && !prim.blend) return undefined;
     const m = {
       pbrMetallicRoughness: {
         baseColorFactor: color ?? [1, 1, 1, 1],
@@ -304,7 +304,7 @@ export function encodeGLB(scene) {
         attributes.NORMAL = accessors.length - 1;
       }
 
-      // flow-field extension: per-vertex colours as the standard COLOR_0
+      // per-vertex colours as the standard COLOR_0
       if (prim.colors) {
         const spec = prim.colors;
         const isObj = !Array.isArray(spec) && !ArrayBuffer.isView(spec);
@@ -407,7 +407,7 @@ export function encodeGLB(scene) {
   const roots = nodes.map((_, i) => i).filter((i) => !childOf.has(i));
 
   const gltf = {
-    asset: { version: "2.0", generator: scene.generator ?? "patchwork glb.js" },
+    asset: { version: "2.0", generator: scene.generator ?? "patchwork glb.js", extras: { units: scene.units ?? "m" } },
     scene: 0,
     scenes: [{ nodes: roots, ...(scene.extras ? { extras: scene.extras } : {}) }],
   };

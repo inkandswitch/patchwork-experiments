@@ -3,7 +3,7 @@
 // current GLB bytes to the view. No three.js here, so it is testable with fakes.
 
 import { fileBytes } from "./file-content.js";
-import { dependenciesOf, errorMessage, fingerprintOf, runBuild } from "./build.js";
+import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild, validBounds } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
 import { builtInputsKey, changedKeys, debounceFor, heldDeps, inputsKey, isContested, sortedHeads, staleReason } from "./staleness.js";
 
@@ -29,6 +29,11 @@ const PEER_MEMORY_MS = 30 * 60_000;
 // was already built from (recorded with heads): that is never rebuilt over
 // until this client can read it (see heldDeps).
 export const DEP_WAIT_MS = 5_000;
+// A build that throws is retried automatically after each of these waits (its
+// inputs unchanged), then left alone until they change or someone presses
+// Rebuild. Covers the transient failures inside build(): a CDN fetch, a worker
+// that ran out of memory once, a dependency that answered late.
+export const RETRY_BACKOFF_MS = Object.freeze([5_000, 30_000, 120_000]);
 
 function parseKey(key) {
   try {
@@ -42,7 +47,7 @@ function parseKey(key) {
  * @param {object} o
  * @param {object} o.repo
  * @param {(providerId: string) => Promise<object | null>} o.loadProvider
- *        resolves to { id, name, params, cost?, module } or null if not installed
+ *        resolves to { id, name, params, cost?, version?, module } or null if not installed
  * @param {(objectId: string, state: object) => void} o.onState
  * @param {(objectId: string, bytes: Uint8Array, glbUrl: string) => void} o.onGLB
  * @param {{ setTimeout, clearTimeout }} [o.timers]
@@ -102,6 +107,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       heads: entry.sourceHandle?.heads?.() ?? [],
       fingerprint: fingerprintOf(entry.provider?.module, doc),
       deps: entry.deps.snapshot(),
+      providerVersion: entry.provider?.version,
     };
   }
 
@@ -172,6 +178,8 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       building: entry.building,
       providerId: render.providerId,
       providerName: entry.provider?.name ?? render.providerId,
+      bounds: validBounds(render.bounds),
+      retryAt: entry.retryTimer != null ? entry.retryAt : null,
     };
 
     if (!entry.sourceHandle) return emit(entry, { ...base, phase: "loading" });
@@ -218,7 +226,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
 
     if (!reason) {
       clearTimer(entry);
+      clearTimer(entry, "retryTimer");
       entry.failedKey = null;
+      entry.failureKey = null;
+      entry.failures = 0;
       // Up to date, but the doc still says a (superseded) build failed: e.g. an
       // edit broke the build and a later edit put the source back.
       if (render.status === "error" || (render.status === "idle" && render.error != null)) settleStatus(entry);
@@ -319,8 +330,29 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     });
     entry.building = false;
     if (entry.dead) return;
-    if (result.ok) entry.lastBuilt = builtInputsKey(result.builtFrom);
-    entry.failedKey = result.ok ? null : key;
+    if (result.ok) {
+      entry.lastBuilt = builtInputsKey(result.builtFrom);
+      entry.failedKey = null;
+      entry.failureKey = null;
+      entry.failures = 0;
+      clearTimer(entry, "retryTimer");
+    } else {
+      // Don't hammer a failing build, but don't give up on it at once either.
+      // counted against failureKey, which (unlike failedKey) the retry timer leaves alone
+      entry.failures = entry.failureKey === key ? entry.failures + 1 : 1;
+      entry.failureKey = key;
+      entry.failedKey = key;
+      clearTimer(entry, "retryTimer");
+      const wait = RETRY_BACKOFF_MS[entry.failures - 1];
+      if (wait != null) {
+        entry.retryAt = now() + wait;
+        entry.retryTimer = timers.setTimeout(() => {
+          entry.retryTimer = null;
+          if (entry.failedKey === key) entry.failedKey = null; // the next evaluate may build it again
+          evaluate(entry);
+        }, wait);
+      }
+    }
     emit(entry, { building: false, notes: result.ok ? result.meta?.notes ?? null : entry.state.notes ?? null });
     if (entry.forceNext) {
       // A rebuild was asked for while this one ran; it still has to happen.
@@ -348,6 +380,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       depsAsked: null,
       building: false,
       failedKey: null,
+      failures: 0,
+      failureKey: null,
+      retryTimer: null,
+      retryAt: null,
       forceNext: false,
       lastBuilt: null,
       buildingSeenAt: null,
@@ -364,6 +400,8 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       repo,
       timers,
       now,
+      // read at snapshot time, so it follows the provider once that has loaded
+      keyOf: (url, handle) => dependencyKeyOf(entry.provider?.module, url, handle.doc?.()),
       // a dependency loaded, failed or changed: same as a source edit
       onChange: () => {
         if (!entry.building) evaluate(entry);
@@ -428,6 +466,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     clearTimer(entry, "statusTimer");
     clearTimer(entry, "glbTimer");
     clearTimer(entry, "depTimer");
+    clearTimer(entry, "retryTimer");
     entry.deps.dispose();
     for (const c of entry.cleanups) c();
     entries.delete(objectId);

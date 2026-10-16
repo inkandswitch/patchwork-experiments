@@ -317,7 +317,7 @@ export default function SceneTool(handle, element) {
     if (!registry?.has?.(id)) return null;
     const p = await registry.load(id);
     if (!p?.module) return null;
-    return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, module: p.module };
+    return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, version: p.version, module: p.module };
   }
 
   // ─── viewport ─────────────────────────────────────────────────────────────
@@ -350,7 +350,13 @@ export default function SceneTool(handle, element) {
     repo,
     loadProvider,
     onState: (id, s) => {
+      const before = objState.get(id)?.bounds;
       objState.set(id, s);
+      // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
+      if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
+        const o = doc()?.objects?.[id];
+        if (o && !o.hint?.bounds) applyHint(id, s.bounds);
+      }
       schedule("outline", "hud");
       if (id === selected) updateInspector();
     },
@@ -933,7 +939,7 @@ export default function SceneTool(handle, element) {
     if (s.phase === "no-provider") return { state: "warn", text: "no provider", title: `Provider “${s.providerId}” is not installed` };
     if (s.phase === "error") return { state: "error", text: "error", title: s.error };
     if (s.building || s.status === "building") return { state: "building", text: "building", title: "Rebuilding…" };
-    if (s.status === "error") return { state: "error", text: "error", title: s.error };
+    if (s.status === "error") return { state: "error", text: "error", title: s.retryAt ? `${s.error} · retrying automatically` : s.error };
     if (s.glbError || s.parseError) return { state: "error", text: "error", title: s.glbError || s.parseError };
     if (s.stale && s.depsUnavailable?.length) return { state: "stale", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
     if (s.stale && s.contested) return { state: "stale", text: "stale", title: contestedText(s) };
@@ -1700,6 +1706,15 @@ export default function SceneTool(handle, element) {
 
   // ─── doc → everything ─────────────────────────────────────────────────────
   let framedFromHints = false;
+  /** Give the viewport a placeholder box (only when it changed); true if there is one. */
+  function applyHint(id, b) {
+    const hk = b ? `${b.min}|${b.max}` : "";
+    if (hintKeys.get(id) !== hk) {
+      hintKeys.set(id, hk);
+      viewport.setHint(id, b ?? null);
+    }
+    return !!hk;
+  }
   function sync() {
     if (dead) return;
     const t0 = now();
@@ -1731,6 +1746,7 @@ export default function SceneTool(handle, element) {
       const shown = o.visible !== false && inh.visible;
       if (o.renderUrl) {
         queue.remove(id);
+        if (applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds) && shown) hinted = true;
         // hydrate only what is shown; once loaded it stays loaded
         if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl });
         continue;
@@ -1738,13 +1754,7 @@ export default function SceneTool(handle, element) {
       const src = docUrl(o.sourceUrl);
       if (!src) continue;
       if (tracked.has(id)) manager.untrack(id);
-      const b = o.hint?.bounds;
-      const hk = b ? `${b.min}|${b.max}` : "";
-      if (hintKeys.get(id) !== hk) {
-        hintKeys.set(id, hk);
-        viewport.setHint(id, b ?? null);
-      }
-      if (hk && shown) hinted = true;
+      if (applyHint(id, o.hint?.bounds) && shown) hinted = true;
       if (shown) queue.ensure(id, src, priorityOf(id, o));
       else if (queue.cancel(id)) {
         // dropped before it loaded: it's "not loaded (hidden)" again, not loading or failing

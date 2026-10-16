@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { FakeRepo, fakeTimers, flush } from "./test/fake-repo.js";
-import { createRenderManager, DEP_WAIT_MS, PEER_STAGGER_MS } from "./render-manager.js";
+import { createRenderManager, DEP_WAIT_MS, PEER_STAGGER_MS, RETRY_BACKOFF_MS } from "./render-manager.js";
 import { newRenderDoc } from "./datatype.js";
 import { encodeGLB } from "./glb.js";
 import { runBuild } from "./build.js";
 
-const tinyGLB = () => encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, 0] }] });
+const tinyGLB = (z = 0) => encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, z] }] });
 
 function setup({ params = [{ key: "size", kind: "number", default: 1, cost: "cheap" }], build, fingerprint, pinned = false, peerId } = {}) {
   const repo = new FakeRepo();
@@ -14,7 +14,8 @@ function setup({ params = [{ key: "size", kind: "number", default: 1, cost: "che
   const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing", size: 1 });
   const render = repo.add({ ...newRenderDoc({ title: "Thing", parent: source.url, providerId: "thing", params: { size: 1 } }), pinned });
   const impl = {
-    build: vi.fn(build ?? (async () => ({ kind: "glb", glb: tinyGLB(), meta: { notes: "ok" } }))),
+    // output depends on the size param, as a real provider's would
+    build: vi.fn(build ?? (async ({ params: p }) => ({ kind: "glb", glb: tinyGLB(Number(p?.size) || 0), meta: { notes: "ok" } }))),
     ...(fingerprint ? { fingerprint } : {}),
   };
   const provider = { id: "thing", name: "Thing", params, module: impl };
@@ -107,15 +108,124 @@ describe("render manager", () => {
     expect(t.render.doc().builtFrom).not.toBeNull();
   });
 
-  it("records errors and does not retry the same inputs", async () => {
+  it("records errors and does not retry the same inputs at once", async () => {
     const t = setup({ build: async () => { throw new Error("boom"); } });
     await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
-    await t.timers.advance(5000);
+    await t.timers.advance(4000);
     expect(t.impl.build).toHaveBeenCalledTimes(1);
     expect(t.render.doc()).toMatchObject({ status: "error", error: "boom", glbUrl: null });
     t.render.change((d) => (d.params.size = 4));
     await t.timers.advance(5000);
     expect(t.impl.build).toHaveBeenCalledTimes(2); // new inputs → one more try
+  });
+
+  it("retries a failed build with backoff, then gives up until the inputs change", async () => {
+    let fail = true;
+    const t = setup({ build: async () => { if (fail) throw new Error("flaky"); return { kind: "glb", glb: tinyGLB() }; } });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.mgr.state("o1").retryAt).toBeGreaterThan(t.timers.now());
+    for (const wait of RETRY_BACKOFF_MS) await t.timers.advance(wait + 900);
+    expect(t.impl.build).toHaveBeenCalledTimes(1 + RETRY_BACKOFF_MS.length);
+    await t.timers.advance(10 * 60_000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1 + RETRY_BACKOFF_MS.length); // out of retries
+    fail = false;
+    t.render.change((d) => (d.params.size = 2));
+    await t.timers.advance(1000);
+    expect(t.render.doc()).toMatchObject({ status: "idle", error: null });
+    expect(t.mgr.state("o1").retryAt).toBeNull();
+  });
+
+  it("a transient failure recovers on the first retry", async () => {
+    let calls = 0;
+    const t = setup({ build: async () => { if (calls++ === 0) throw new Error("cdn"); return { kind: "glb", glb: tinyGLB() }; } });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    await t.timers.advance(RETRY_BACKOFF_MS[0] + 900);
+    expect(t.render.doc()).toMatchObject({ status: "idle", error: null });
+    expect(t.render.doc().glbUrl).toBeTruthy();
+  });
+
+  it("rebuilds when the installed provider is newer than the build, never when it is older", async () => {
+    const t = setup();
+    t.provider.version = 2;
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    expect(t.render.doc().builtFrom.providerVersion).toBe(2);
+    t.mgr.dispose();
+
+    // a peer still running version 1 leaves the newer build alone
+    const older = createRenderManager({
+      repo: t.repo, timers: t.timers, now: t.timers.now,
+      loadProvider: async () => ({ ...t.provider, version: 1 }),
+    });
+    await older.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(older.state("o1")).toMatchObject({ stale: false });
+    older.dispose();
+
+    // version 3 rebuilds it once
+    const newer = createRenderManager({
+      repo: t.repo, timers: t.timers, now: t.timers.now,
+      loadProvider: async () => ({ ...t.provider, version: 3 }),
+    });
+    await newer.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.render.doc().builtFrom.providerVersion).toBe(3);
+    newer.dispose();
+  });
+
+  it("keys a scene-render dependency by its glbUrl: status writes don't rebuild downstream", async () => {
+    const repo = new FakeRepo();
+    const timers = fakeTimers();
+    const upstream = repo.add({ ...newRenderDoc({ title: "Hull", parent: "automerge:x", providerId: "hull", params: {} }), glbUrl: "automerge:glb1" });
+    const source = repo.add({ "@patchwork": { type: "flow" }, body: upstream.url });
+    const render = repo.add(newRenderDoc({ title: "Flow", parent: source.url, providerId: "flow", params: {} }));
+    let n = 0;
+    const impl = { build: vi.fn(async () => ({ kind: "glb", glb: tinyGLB(n++) })), dependencies: (doc) => [doc.body] };
+    const mgr = createRenderManager({ repo, timers, now: timers.now, loadProvider: async () => ({ id: "flow", name: "Flow", params: [], module: impl }) });
+    await mgr.track("o", { sourceUrl: source.url, renderUrl: render.url });
+    for (let i = 0; i < 3; i++) await timers.advance(1000);
+    expect(impl.build).toHaveBeenCalledTimes(1);
+    expect(render.doc().builtFrom.deps).toEqual({ [upstream.url]: ["fp:render:automerge:glb1"] });
+
+    upstream.change((d) => (d.status = "building"));
+    upstream.change((d) => (d.status = "idle"));
+    for (let i = 0; i < 6; i++) await timers.advance(1000);
+    expect(impl.build).toHaveBeenCalledTimes(1);
+
+    upstream.change((d) => (d.glbUrl = "automerge:glb2"));
+    for (let i = 0; i < 6; i++) await timers.advance(1000);
+    expect(impl.build).toHaveBeenCalledTimes(2);
+    expect(render.doc().builtFrom.deps).toEqual({ [upstream.url]: ["fp:render:automerge:glb2"] });
+    mgr.dispose();
+  });
+
+  it("uses the provider's fingerprintDependency when it has one", async () => {
+    const repo = new FakeRepo();
+    const timers = fakeTimers();
+    const hull = repo.add({ "@patchwork": { type: "hull" }, length: 10, title: "Hull" });
+    const source = repo.add({ "@patchwork": { type: "flow" }, body: hull.url });
+    const render = repo.add(newRenderDoc({ title: "Flow", parent: source.url, providerId: "flow", params: {} }));
+    let n = 0;
+    const impl = {
+      build: vi.fn(async () => ({ kind: "glb", glb: tinyGLB(n++) })),
+      dependencies: (doc) => [doc.body],
+      fingerprintDependency: (url, doc) => `len:${doc.length}`,
+    };
+    const mgr = createRenderManager({ repo, timers, now: timers.now, loadProvider: async () => ({ id: "flow", name: "Flow", params: [], module: impl }) });
+    await mgr.track("o", { sourceUrl: source.url, renderUrl: render.url });
+    for (let i = 0; i < 3; i++) await timers.advance(1000);
+    hull.change((d) => (d.title = "Renamed hull"));
+    for (let i = 0; i < 6; i++) await timers.advance(1000);
+    expect(impl.build).toHaveBeenCalledTimes(1);
+    hull.change((d) => (d.length = 11));
+    for (let i = 0; i < 6; i++) await timers.advance(1000);
+    expect(impl.build).toHaveBeenCalledTimes(2);
+    mgr.dispose();
   });
 
   it("rebuilds after a build that raced with an edit", async () => {
@@ -587,12 +697,13 @@ describe("render manager: provider dependencies", () => {
       };
       const impl = {
         build: async ({ repo: r, doc }) => {
+          let length = 0;
           try {
-            await r.find(doc.body);
+            length = (await r.find(doc.body)).doc().length;
           } catch {
             // builds without the body
           }
-          return { kind: "glb", glb: tinyGLB() };
+          return { kind: "glb", glb: tinyGLB(length) };
         },
         ...(lists(name) ? { dependencies: (doc) => (doc.body ? [doc.body] : []) } : {}),
       };
@@ -720,16 +831,51 @@ describe("runBuild", () => {
     expect(render.doc().glbUrl).toBe(repo.created[0].url);
   });
 
-  it("a forced rebuild of an already-fresh render still makes a new GLB", async () => {
+  it("a forced rebuild of an already-fresh render still builds, and makes a new GLB if the bytes differ", async () => {
     const repo = new FakeRepo();
     const source = repo.add({ title: "s" });
     const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: { size: 1 } }));
-    const provider = { id: "p", params: [], module: { build: async () => ({ kind: "glb", glb: tinyGLB() }) } };
+    let z = 0;
+    const provider = { id: "p", params: [], module: { build: async () => ({ kind: "glb", glb: tinyGLB(z++) }) } };
     await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
     const first = render.doc().glbUrl;
     const res = await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
     expect(res.superseded).toBeUndefined();
+    expect(res.reused).toBe(false);
     expect(repo.created).toHaveLength(2);
     expect(render.doc().glbUrl).not.toBe(first);
+  });
+
+  it("keeps the current GLB file doc when a rebuild produces the same bytes", async () => {
+    const repo = new FakeRepo();
+    const source = repo.add({ title: "s" });
+    const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: {} }));
+    const provider = { id: "p", params: [], module: { build: async () => ({ kind: "glb", glb: tinyGLB() }) } };
+    await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
+    const first = render.doc().glbUrl;
+    const hash = render.doc().builtFrom.glbHash;
+    expect(hash).toMatch(/^(sha256|c53):/);
+    source.change((d) => (d.title = "renamed"));
+    const res = await runBuild({ repo, renderHandle: render, sourceHandle: source, provider });
+    expect(res.reused).toBe(true);
+    expect(repo.created).toHaveLength(1);
+    expect(render.doc().glbUrl).toBe(first);
+    expect(render.doc().builtFrom.heads).toEqual(source.heads());
+  });
+
+  it("hands build() params clamped to their specs, records the provider version and meta.bounds", async () => {
+    const repo = new FakeRepo();
+    const source = repo.add({ title: "s" });
+    const render = repo.add(newRenderDoc({ title: "s", parent: source.url, providerId: "p", params: { n: 999, k: "nope" } }));
+    const build = vi.fn(async () => ({ kind: "glb", glb: tinyGLB(), meta: { bounds: { min: [0, 0, 0], max: [1, 2, 3] } } }));
+    const params = [
+      { key: "n", kind: "integer", default: 4, min: 1, max: 10 },
+      { key: "k", kind: "enum", default: "a", options: [{ value: "a" }, { value: "b" }] },
+    ];
+    await runBuild({ repo, renderHandle: render, sourceHandle: source, provider: { id: "p", params, version: 3, module: { build } } });
+    expect(build.mock.calls[0][0].params).toEqual({ n: 10, k: "a" });
+    expect(render.doc().builtFrom.paramsKey).toBe('{"k":"nope","n":999}'); // the stored values, as written
+    expect(render.doc().builtFrom.providerVersion).toBe(3);
+    expect(render.doc().bounds).toEqual({ min: [0, 0, 0], max: [1, 2, 3] });
   });
 });

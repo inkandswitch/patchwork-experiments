@@ -9,7 +9,7 @@
 
 import css from "./styles.css?inline";
 import { createParamForm } from "./param-form.js";
-import { dependenciesOf, errorMessage, fingerprintOf, runBuild } from "./build.js";
+import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
 import { staleReason } from "./staleness.js";
 
@@ -61,7 +61,11 @@ export default function SceneRenderControls(handle, element) {
   let dead = false;
   const offs = [];
   // the other docs the provider says it reads, so staleness (and a standalone build) sees them
-  const deps = createDependencyWatcher({ repo, onChange: () => render() });
+  const deps = createDependencyWatcher({
+    repo,
+    onChange: () => render(),
+    keyOf: (url, h) => dependencyKeyOf(provider?.module, url, h.doc?.()),
+  });
 
   function specs() {
     return providerMeta?.params ?? [];
@@ -76,7 +80,7 @@ export default function SceneRenderControls(handle, element) {
     try {
       const loaded = await registry.load(id);
       if (dead) return;
-      provider = loaded?.module ? { id, name: loaded.name, params: loaded.params ?? [], cost: loaded.cost, module: loaded.module } : null;
+      provider = loaded?.module ? { id, name: loaded.name, params: loaded.params ?? [], cost: loaded.cost, version: loaded.version, module: loaded.module } : null;
     } catch (err) {
       console.warn("[scene-render-controls] provider failed to load", err);
       provider = null;
@@ -116,6 +120,7 @@ export default function SceneRenderControls(handle, element) {
             heads: sourceHandle.heads?.() ?? [],
             fingerprint: fingerprintOf(provider.module, sourceHandle.doc()),
             deps: deps.snapshot(),
+            providerVersion: provider.version,
           })
         : undefined;
     if (reason === "deps" && deps.pendingSince() != null) reason = undefined;

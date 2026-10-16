@@ -33,6 +33,7 @@ export function newRenderDoc({ title, parent, providerId, params }) {
     glbUrl: null,
     builtFrom: null,
     builtAt: null,
+    bounds: null,
     status: "idle",
     error: null,
     pinned: false,

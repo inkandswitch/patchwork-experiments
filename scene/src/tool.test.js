@@ -165,12 +165,15 @@ describe("scene tool (mounted, no WebGL)", () => {
     expect(r.glbUrl).not.toBe(firstGlb);
     expect(JSON.parse(r.builtFrom.paramsKey)).toEqual({ unit: "in", up: "z" });
 
-    // "rebuild now" goes through the scene (the event is claimed)
+    // "rebuild now" goes through the scene (the event is claimed); same bytes, so same GLB doc
     const before = repo.created.length;
+    const builtAt = r.builtAt;
+    await wait(5);
     controls.querySelector(".rebuild").click();
     await wait(20);
     await flush();
-    expect(repo.created.length).toBe(before + 1);
+    expect((await repo.find(renderUrl)).doc().builtAt).toBeGreaterThan(builtAt);
+    expect(repo.created.length).toBe(before);
   });
 
   it("inspector shows build notes once, with no stray text and no duplicate status or buttons", async () => {
