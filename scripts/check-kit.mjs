@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CANON_DIR = join(ROOT, "scene", "src");
-const SKIP = new Set(["node_modules", "dist", ".git", ".pushwork", "static-dist", ".pnpm-store"]);
+const SKIP = new Set(["node_modules", "dist", ".git", ".pushwork", ".claude", "static-dist", ".pnpm-store"]);
 const fix = process.argv.includes("--fix");
 
 const kitName = (text) => text.slice(0, 600).match(/\[kit: (\S+) v(\d+)\]/);
