@@ -5,26 +5,19 @@ import type {OpenscadDoc, OpenscadImport} from "../types"
 import {styles} from "../styles"
 import {CodeEditor} from "./CodeEditor"
 import {Viewer3D} from "./Viewer3D"
-import {onLoadProgress, renderScad, RenderError, type LoadProgress, type RenderImportInput} from "../render/engine"
+import {onLoadProgress, renderScad, RenderError, type LoadProgress} from "../render/engine"
 import {hasPatchworkDrop, parsePatchworkDrop, type PatchworkDropItem} from "../dnd"
-import {docToJsonString, sanitizeIdentifier, uniqueIdentifier} from "../imports"
+import {sanitizeIdentifier, uniqueIdentifier} from "../imports"
+import {createImportResolver} from "../importResolver"
 
 const AUTO_RENDER_DELAY_MS = 700
+/** Longest the editor holds a render for imports that are still loading (as the scene host does). */
+const IMPORT_WAIT_MS = 5000
 
 function formatBytes(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
 	return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-// `handle` is loosely typed: it comes from `element.repo.find()`, and the
-// host app's `@automerge/automerge-repo` copy doesn't always structurally
-// unify with this package's own (pnpm can end up with two copies whose
-// private class fields make TS treat them as distinct nominal types even
-// though they're identical at runtime).
-type ResolvedImport = {
-	name: string
-	handle: {doc(): Record<string, unknown> | undefined; on: DocHandle<any>["on"]; off: DocHandle<any>["off"]} | null
 }
 
 export function OpenscadEditor(props: {
@@ -37,6 +30,8 @@ export function OpenscadEditor(props: {
 	const [logs, setLogs] = createSignal<string[]>([])
 	const [status, setStatus] = createSignal<"idle" | "rendering" | "ready" | "error">("idle")
 	const [elapsedMillis, setElapsedMillis] = createSignal<number | null>(null)
+	const [cached, setCached] = createSignal(false)
+	const [waitingForImports, setWaitingForImports] = createSignal(false)
 	const [engineProgress, setEngineProgress] = createSignal<LoadProgress | null>(null)
 	const [imports, setImports] = createSignal<OpenscadImport[]>(initialDoc?.imports ?? [])
 	const [dropActive, setDropActive] = createSignal(false)
@@ -44,63 +39,44 @@ export function OpenscadEditor(props: {
 	const [renameValue, setRenameValue] = createSignal("")
 
 	// Docs referenced by `doc.imports`, resolved via the repo and kept live:
-	// any change to a referenced doc re-triggers a render. Keyed by docUrl.
-	const resolvedImports = new Map<AutomergeUrl, ResolvedImport>()
-
-	function onImportDocChange() {
-		scheduleRender()
-	}
-
-	function syncImports(doc: OpenscadDoc | undefined) {
-		const wanted = doc?.imports ?? []
-		const wantedUrls = new Set(wanted.map(imp => imp.docUrl))
-
-		for (const [url, entry] of resolvedImports) {
-			if (!wantedUrls.has(url)) {
-				entry.handle?.off("change", onImportDocChange)
-				resolvedImports.delete(url)
-			}
-		}
-
-		for (const imp of wanted) {
-			const existing = resolvedImports.get(imp.docUrl)
-			if (existing) {
-				existing.name = imp.name
-				continue
-			}
-			const entry: ResolvedImport = {name: imp.name, handle: null}
-			resolvedImports.set(imp.docUrl, entry)
-			props.element.repo
-				.find<Record<string, unknown>>(imp.docUrl)
-				.then((handle: any) => {
-					if (resolvedImports.get(imp.docUrl) !== entry) return // superseded meanwhile
-					entry.handle = handle
-					handle.on("change", onImportDocChange)
-					scheduleRender()
-				})
-				.catch(err => {
-					console.warn("openscad: failed to resolve import", imp.docUrl, err)
-				})
-		}
-	}
+	// a change to one (or one finally arriving after a failed find, which is
+	// retried with backoff) re-triggers a render.
+	const resolver = createImportResolver({
+		// `as any`: the host's automerge-repo copy doesn't always unify with ours
+		find: url => props.element.repo.find(url) as any,
+		// a render waiting in renderNow() reads the imports after it wakes,
+		// so it already includes this change
+		onChange: () => {
+			if (!waitingForImports()) scheduleRender()
+		},
+		onError: (url, err, attempt) => {
+			if (attempt === 1) console.warn("openscad: failed to resolve import, retrying", url, err)
+		},
+	})
 
 	let runId = 0
 	async function renderNow() {
-		const doc = props.handle.doc()
-		const source = doc?.source ?? ""
-		const importList = doc?.imports ?? []
-		const importPayload: RenderImportInput[] = importList.map(imp => {
-			const resolved = resolvedImports.get(imp.docUrl)
-			return {name: imp.name, json: docToJsonString(resolved?.handle?.doc())}
-		})
 		const id = ++runId
 		setStatus("rendering")
+		// Don't render with an import that is still loading: it would bind {}
+		// (usually an error) and render again a moment later. Imports that
+		// failed, or are slower than this, bind {} and re-render on arrival.
+		setWaitingForImports(resolver.pending())
+		if (waitingForImports()) {
+			await resolver.settled(IMPORT_WAIT_MS)
+			if (id !== runId) return
+			setWaitingForImports(false)
+		}
+		const doc = props.handle.doc()
+		const source = doc?.source ?? ""
+		const importPayload = resolver.payload(doc?.imports ?? [])
 		try {
 			const result = await renderScad(source, importPayload)
 			if (id !== runId) return
 			setStl(result.stl)
 			setLogs(result.logs)
 			setElapsedMillis(result.elapsedMillis)
+			setCached(!!result.cached)
 			setStatus("ready")
 		} catch (err) {
 			if (id !== runId) return
@@ -124,21 +100,22 @@ export function OpenscadEditor(props: {
 	function onDocChange() {
 		const doc = props.handle.doc()
 		setImports(doc?.imports ?? [])
-		syncImports(doc)
+		resolver.sync(doc?.imports ?? [])
 		scheduleRender()
 	}
 
 	onMount(() => {
 		const unsubProgress = onLoadProgress(setEngineProgress)
-		syncImports(props.handle.doc())
+		resolver.sync(props.handle.doc()?.imports ?? [])
 		props.handle.on("change", onDocChange)
+		// waits for the imports just requested before compiling (see renderNow)
 		void renderNow()
 		onCleanup(() => {
 			unsubProgress()
 			props.handle.off("change", onDocChange)
 			if (debounceTimer) clearTimeout(debounceTimer)
-			for (const entry of resolvedImports.values()) entry.handle?.off("change", onImportDocChange)
-			resolvedImports.clear()
+			runId++ // drop any render in flight
+			resolver.dispose()
 		})
 	})
 
@@ -164,10 +141,12 @@ export function OpenscadEditor(props: {
 			}
 			return p.fromCache ? "starting engine (cached)…" : "starting engine…"
 		}
-		if (status() === "rendering") return "Rendering…"
+		if (status() === "rendering") return waitingForImports() ? "Loading imports…" : "Rendering…"
 		if (status() === "error") return "Render failed"
 		if (status() === "ready" && elapsedMillis() != null) {
-			return `Rendered in ${Math.round(elapsedMillis()!)}ms`
+			return cached()
+				? `Rendered in ${Math.round(elapsedMillis()!)}ms (cached)`
+				: `Rendered in ${Math.round(elapsedMillis()!)}ms`
 		}
 		return "Idle"
 	}
