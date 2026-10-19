@@ -15,8 +15,8 @@ import { STREAMLINE_PARAMS, coerceParams, paramDefaults, paramSpec } from "./par
 export const STREAMLINE_DEFAULTS = Object.freeze(paramDefaults(STREAMLINE_PARAMS));
 
 /**
- * The build runs synchronously on the scene's main thread and each result is
- * stored as a doc, so the mesh is capped at about 2.5 MB: past this many
+ * Each result is stored as a doc (and the build may fall back to the main
+ * thread when no worker can be started), so the mesh is capped at about 2.5 MB: past this many
  * vertices the tubes go from 6 sides to 4, and then the lines are thinned.
  * The seed limits are the declared maxima in params.js.
  */

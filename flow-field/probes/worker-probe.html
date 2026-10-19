@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>flow-field worker probe</title>
+<script type="importmap">
+  { "imports": { "@inkandswitch/patchwork-plugins": "../src/test/patchwork-plugins-stub.js" } }
+</script>
+</head>
+<body>
+<script type="module">
+  // Runs the built scene providers (dist/) in a real browser: builds a flow
+  // linked to a scene render (a render doc + its GLB file doc in a fake repo),
+  // once with workers and once with Worker removed (the main-thread fallback),
+  // and reports timings, the longest main-thread stall during each, whether a
+  // worker was started, that both paths made the same bytes, and that a newer
+  // build of the same flow supersedes an older one with an AbortError.
+  //   pnpm build
+  //   node probes/probe-server.mjs . 4471 &      # prints the JSON report and exits
+  //   open http://localhost:4471/probes/worker-probe.html
+  // ?dist=http://localhost:4472/dist/index.js  load the bundle from another
+  //   origin (serve the package there too, with KEEP_SERVING=1): the worker
+  //   is then started from a blob URL.
+  // ?panels=120&resolution=110  the body's panels and the slice's resolution
+  //   (400 and 160 with the probe's point source take most of a minute)
+  const report = (x) => fetch("/report", { method: "POST", body: JSON.stringify(x, null, 2) });
+  try {
+    const q = new URLSearchParams(location.search);
+    const RealWorker = globalThis.Worker;
+    const started = [];
+    globalThis.Worker = class extends RealWorker {
+      constructor(url, opts) {
+        super(url, opts);
+        started.push(String(url).replace(/^(blob:).*$/, "$1…").replace(location.origin, ""));
+      }
+    };
+    const { plugins } = await import(q.get("dist") ?? "../dist/index.js");
+    const { transomWaterline, prismGLB } = await import("../src/test/hull-fixtures.js");
+    const slice = await plugins.find((p) => p.id === "flow-field-slice").load();
+    const lines = await plugins.find((p) => p.id === "flow-field-streamlines").load();
+
+    const RENDER = "automerge:rend111111111111111111111";
+    const GLB = "automerge:g1b1111111111111111111111";
+    const FLOW = "automerge:f1ow111111111111111111111";
+    const handle = (url, doc) => ({ url, doc: () => doc, heads: () => ["a"] });
+    const handles = {
+      [RENDER]: handle(RENDER, {
+        "@patchwork": { type: "scene-render" }, title: "Hull", parent: "automerge:hu11111111111111111111111",
+        providerId: "test-hull-surface", params: {}, glbUrl: GLB,
+        builtFrom: { heads: ["a"], fingerprint: null, paramsKey: "{}" }, status: "idle", error: null,
+      }),
+      [GLB]: handle(GLB, { "@patchwork": { type: "file" }, name: "Hull.glb", extension: "glb", content: prismGLB(transomWaterline()) }),
+    };
+    const repo = { async find(url) { if (!handles[url]) throw new Error(`unavailable: ${url}`); return handles[url]; } };
+    const flow = (speed = 2) => ({
+      title: "probe",
+      freestream: { speed, headingDeg: 180 },
+      elements: { s: { kind: "source", position: [-2, 3, -0.5], strength: 1 } }, // panels re-solved per height
+      domain: { min: [-5, -6, -2], max: [20, 6, 1] },
+      seeds: { count: 15 },
+      body: { url: RENDER, plane: { kind: "waterline" }, model: "waterplane-2d", panels: Number(q.get("panels") ?? 120) },
+    });
+    const res = Number(q.get("resolution") ?? 110);
+    const jobs = [
+      [`slice r${res} + mask`, slice, { resolution: res }],
+      ["streamlines 8×40", lines, { seedCount: 40, rakeRows: 8 }],
+    ];
+
+    // the longest gap between animation frames while a build runs
+    async function stall(fn) {
+      let last = performance.now(), max = 0, on = true;
+      const tick = () => { const t = performance.now(); max = Math.max(max, t - last); last = t; if (on) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      await new Promise((r) => setTimeout(r, 50));
+      const t0 = performance.now();
+      const out = await fn();
+      const ms = performance.now() - t0;
+      await new Promise((r) => setTimeout(r, 50));
+      on = false;
+      return { out, ms: Math.round(ms), maxFrameGapMs: Math.round(max) };
+    }
+
+    const runs = [];
+    const bytes = {};
+    for (const mode of ["worker", "worker (warm)", "main thread"]) {
+      if (mode === "main thread") globalThis.Worker = undefined;
+      for (const [label, src, params] of jobs) {
+        const before = started.length;
+        // a different speed per run: no panel-solve cache hit in the worker either
+        const speed = mode === "worker (warm)" ? 2.5 : 2;
+        const { out, ms, maxFrameGapMs } = await stall(() => src.build({ doc: flow(speed), params, repo, url: FLOW }));
+        if (mode !== "worker (warm)") (bytes[label] ??= []).push(Array.from(out.glb));
+        runs.push({ mode, label, ms, maxFrameGapMs, workersStarted: started.length - before, kb: Math.round(out.glb.byteLength / 1024), notes: out.meta.notes.slice(0, 160) });
+        console.log(JSON.stringify(runs.at(-1)));
+      }
+    }
+    globalThis.Worker = class extends RealWorker {
+      constructor(url, opts) { super(url, opts); started.push(String(url).replace(/^(blob:).*$/, "$1…").replace(location.origin, "")); }
+    };
+    const identical = Object.fromEntries(Object.entries(bytes).map(([k, [a, b]]) => [k, a.length === b.length && a.every((x, i) => x === b[i])]));
+
+    // supersession: an older build of the same flow is cancelled by a newer one
+    const older = slice.build({ doc: flow(2), params: { resolution: res }, repo, url: FLOW }).then(() => "resolved", (e) => `${e.name}: ${e.message}`);
+    const newer = slice.build({ doc: flow(3), params: { resolution: res }, repo, url: FLOW }).then(() => "resolved", (e) => `${e.name}: ${e.message}`);
+    const supersede = { older: await older, newer: await newer };
+
+    await report({ ok: true, crossOrigin: !!q.get("dist"), workersStarted: started, identical, supersede, runs });
+  } catch (err) {
+    await report({ ok: false, fatal: String(err?.stack || err) });
+  }
+</script>
+</body>
+</html>
