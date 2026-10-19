@@ -38,8 +38,9 @@ export const plugins = [
     icon: "Wind",
     supportedDatatypes: ["flow-field"],
     params: STREAMLINE_PARAMS,
-    // builds run synchronously on the scene's main thread, and a linked body
-    // can mean a panel solve (and, for a source-doc link, an upstream build)
+    // builds run in a worker (main thread if none starts), and a linked body
+    // can mean panel solves (and, for a source-doc link, an upstream build
+    // on the main thread)
     cost: "expensive",
     version: VERSION,
     async load() {

@@ -117,9 +117,10 @@ linked hull doc by its heads, so any hull edit rebuilds the flow. The build
 notes say which body model was used and which path the section came by, or
 why the body was left out.
 
-**Contract v3 metadata.** Both providers declare `cost: "expensive"` (a build
-runs synchronously on the scene's main thread, and a linked body adds a panel
-solve, plus an upstream build for a source-doc link) and `version: 2`. Every
+**Contract v3 metadata.** Both providers declare `cost: "expensive"` (a
+masked slice can take seconds, a linked body adds panel solves, and a
+source-doc link an upstream build) and `version: 2`; moving the builds into a
+worker didn't change a byte of their output, so the version stayed. Every
 param declares its own `cost`: `step`, `maxSteps`, `resolution` and `mask`
 change how much work a build does and are `expensive`, the rest only recolour
 or re-seed and are `cheap`. The param table lives in `src/params.js` and both
@@ -182,16 +183,46 @@ Both providers put a colour legend on their mesh as `extras.legend`
 draws in the viewport's corner.
 
 The default build is 45 tubes (about 0.7 MB) or a 110 × 60 slice (about
-0.4 MB), each in well under 100 ms. The builds run synchronously on the
-scene's main thread, and each result is stored as a doc, so their size is
-capped. `resolution` goes up to 160 (about 0.8 MB and 60 ms). `seedCount` goes
+0.4 MB), each in well under 100 ms. Each result is stored as a doc, so their
+size is capped. `resolution` goes up to 160 (about 0.8 MB and 60 ms). `seedCount` goes
 up to 40 per row and `rakeRows` up to 8. Past 48,000 mesh vertices the tubes
 drop to 4 sides and the lines are thinned (the build notes say so), which
-keeps the largest streamline build under about 2.7 MB.
+keeps the largest streamline build under about 2.7 MB. A linked body costs
+more: a masked 110-cell slice past a 120-panel hull with a point source of the
+doc's own takes about 1.3 s, and at 160 cells and 400 panels most of a minute.
 
-Future work: run the builds in a worker. Everything a build does is pure
-except reading the linked body (`src/section.js`), so the body could be read
-on the main thread and the section handed to a worker with the doc and params.
+**Off the main thread.** A build reads the linked body on the main thread
+(`src/section.js`: it needs the repo and the plugin registry, and slices the
+render's GLB there), then hands the rest (compiling the flow and its panel
+solves, tracing, meshing, the mask, encoding the GLB) to a module worker as a
+plain job: the doc copied to plain data, the cleaned section, the params
+coerced as the host does, and the few fields of the acquisition the notes
+read (`src/build-job.js`). The worker (`src/build-worker.js`) sends back
+`{ glb, meta }` with the GLB transferred. `src/build-runner.js` keeps up to two
+idle workers for 30 s (the slice and the streamlines build together after an
+edit), each with its own panel-solve cache. The worker's URL comes from a
+`?worker&url` import resolved against the module, and vite bundles it into one
+import-free file; when the bundle is on another origin than the page (a dev
+server; production serves modules same-origin through the service worker) the
+`Worker` constructor throws, so the script is fetched and started from a blob
+URL. A worker that doesn't post "ready" within 15 s (or can't be constructed
+at all) means the job runs on the main thread instead, as builds used to, and
+workers aren't tried again in that page. One that crashes after starting is an
+error, which the host retries. Both paths run the same job, so they make the
+same bytes (tested, and checked in Chrome by `probes/worker-probe.html`).
+
+A newer build of the same flow doc (same source url) that read a different
+doc or section supersedes an older one still running: its worker is
+terminated and its promise rejects with an `AbortError`, which the scene host
+counts as cancelled, not failed, and re-evaluates. Builds that read the same
+inputs (two renders of one flow with different params) run side by side. A
+build that reaches its worker after a newer one of another version has
+started cancels itself the same way.
+
+Future work: the editor (`src/tool.js`) still compiles and samples the flow
+on the main thread, and the hull-doc link's upstream build runs on the main
+thread. The masked slice with point elements and a panel body is the slow
+case above and would be worth profiling.
 
 ## Linking a hull
 
@@ -269,7 +300,8 @@ The caveats of a hull-doc link, all of which linking its render avoids:
 panel solves, keyed by the section's geometry (`section.key`, a hash of its
 plane and loops) and what the solve reads from the doc. Every acquisition
 makes a new section object, so keying on the geometry is what lets two
-builds of the same hull share one solve.
+builds of the same hull share one solve. Scene builds run in workers, each
+with its own copy of that cache (and the editor has the main thread's).
 
 **In the editor**, **Link hull…** takes a pasted URL (`automerge:…`, a
 Patchwork `#doc=` link, or a bare id), or you can drop a document onto the
@@ -397,13 +429,17 @@ flow and a peak speed just over U (tested).
 | `src/coords.js` | Z-up → Y-up |
 | `src/fingerprint.js` | stable hash of what the builds read; `dependencies` |
 | `src/build-streamlines.js`, `src/build-slice.js` | doc + params → GLB (pure) |
-| `src/scene-streamlines.js`, `src/scene-slice.js` | the `SourceImpl`s |
+| `src/scene-streamlines.js`, `src/scene-slice.js` | the `SourceImpl`s, both made by `src/scene-build.js`: read the body here, run the rest as a job |
+| `src/build-job.js` | a build as a plain job (doc, section, params) → `{ glb, meta }`, and the worker's message handler (pure) |
+| `src/build-worker.js` | the module worker: "ready", then one job per message |
+| `src/build-runner.js` | the worker pool, the blob-URL start, the main-thread fallback, superseding by source url (main thread) |
 | `src/glb.js` | kit copy of `scene/src/glb.js` (v2, which took in this package's `colors` → `COLOR_0`, `unlit` and `blend`); never edit the copy |
 | `src/view2d.js` | the editor's geometry: view fit, hit tests, dial, heatmap sampling |
 | `src/presets.js` | the preset flows |
 | `src/tool.js`, `src/styles.css` | the editor |
 | `probes/tool-probe.html` | mounts the built editor against an in-memory handle (`python3 -m http.server`, then open it; `?preset=spinning&color=speed`) |
 | `probes/body-probe.html` | the editor with a hull linked through a stub registry (`?model=slender-body-3d`, `?path=mesh`, `?z=`) |
+| `probes/worker-probe.html`, `probes/probe-server.mjs` | the built providers in a real browser worker vs the main thread: timings, the longest frame gap, identical bytes, superseding; `?dist=` another origin for the blob path (see the page's header) |
 | `src/test/` | test fixtures: a stub `@inkandswitch/patchwork-plugins` (aliased in `vitest.config.ts`) and prism hull GLBs |
 
 Tests cover the physics: uniform stream, source radial symmetry and flux,
@@ -428,4 +464,9 @@ refused, and the editor follows `renderKey` (status writes don't re-cut).
 Also the upstream cache (one build per hull edit across both providers,
 fingerprint and dependency keys, failures forgotten), the remembered
 transitive dependencies, the compileFlow geometry key, and
-(`src/params.test.js`) that metadata and clamps agree.
+(`src/params.test.js`) that metadata and clamps agree. `src/build-worker.test.js`
+checks that the worker's handler (on a structured-cloned job) and the
+providers make byte-identical GLBs and equal notes to the old main-thread
+build, with and without linked bodies of both models, and drives
+`build-runner.js` through a fake `Worker` that runs that handler: pooling, the
+fallback when a worker can't start, a crash as an error, and superseding.
