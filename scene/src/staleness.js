@@ -87,6 +87,56 @@ export function staleReason(render, source) {
   return sameDeps(source?.deps, built.deps) ? null : "deps";
 }
 
+// ─── fixed versions (`at`) ───────────────────────────────────────────────────
+// A scene object may carry `at: { heads, deps? }`: build from the source AT
+// those heads (and from each dependency listed in `deps` at its heads) instead
+// of the latest. Absent/null follows the latest. A dependency recorded by key
+// (["fp:<key>"]) has no heads to view, so it can't be listed.
+
+const isFpKey = (heads) => heads.length === 1 && String(heads[0]).startsWith("fp:");
+
+/**
+ * A scene object's `at`, cleaned: { heads: sorted, deps: { url: sorted heads } },
+ * or null when it follows the latest (absent, null, or no usable heads).
+ */
+export function normalizeAt(at) {
+  if (!at || typeof at !== "object") return null;
+  const heads = sortedHeads(Array.isArray(at.heads) ? at.heads.filter((h) => typeof h === "string" && h) : []);
+  if (!heads.length) return null;
+  const deps = {};
+  const nd = normalizeDeps(at.deps);
+  for (const url of Object.keys(nd)) if (nd[url].length && !isFpKey(nd[url])) deps[url] = nd[url];
+  return { heads, deps };
+}
+
+/** A stable string for an `at`; "" when it follows the latest. */
+export function atKey(at) {
+  const a = normalizeAt(at);
+  if (!a) return "";
+  const deps = depsKey(a.deps);
+  return `${a.heads.join(",")}${deps ? `|d:${deps}` : ""}`;
+}
+
+/**
+ * The `at` that freezes exactly what a build was made from: its source heads,
+ * and every dependency it recorded by heads. Keyed dependencies are left out
+ * (they have no heads; see normalizeAt) unless `keyedHeads` gives heads for
+ * one. null when it was never built.
+ * @param {object} builtFrom
+ * @param {{ [url]: string[] }} [keyedHeads]  heads to fix a keyed dependency at
+ */
+export function atFromBuilt(builtFrom, keyedHeads = {}) {
+  const heads = sortedHeads(builtFrom?.heads);
+  if (!heads.length) return null;
+  const deps = {};
+  const recorded = normalizeDeps(builtFrom.deps);
+  for (const url of Object.keys(recorded)) {
+    const h = isFpKey(recorded[url]) ? sortedHeads(keyedHeads?.[url]) : recorded[url];
+    if (h.length && !isFpKey(h)) deps[url] = h;
+  }
+  return { heads, deps };
+}
+
 // ─── provider versions ──────────────────────────────────────────────────────
 // A provider may declare an integer `version` and bump it whenever build()
 // would produce different output from the same inputs. builtFrom records it.

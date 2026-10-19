@@ -586,6 +586,75 @@ describe("scene tool (mounted, no WebGL)", () => {
     expect(objs.map((o) => o.name)).toEqual(["Dropped"]);
   });
 
+  // ─── fixed versions (`at`) ───
+  const STL2 = STL.replace("vertex 10 0 0", "vertex 30 0 0");
+  const versionText = () => element.querySelector(".inspector .version-text")?.textContent;
+  const button = (cls) => element.querySelector(`.inspector .${cls}`);
+
+  it("a URL with heads adds the object fixed at that version, built from it", async () => {
+    const h1 = file.heads();
+    file.change((d) => (d.content = STL2));
+    await addByUrl(`${file.url}#${h1[0]}`);
+    const [id] = Object.keys(scene.doc().objects);
+    const o = scene.doc().objects[id];
+    expect(o.sourceUrl).toBe(file.url);
+    expect(o.at).toEqual({ heads: h1 });
+    await wait(20);
+    await flush();
+    const render = (await repo.find(o.renderUrl)).doc();
+    expect(render.builtFrom.heads).toEqual(h1);
+    expect(render.bounds.max[0]).toBeCloseTo(0.01); // 10 mm: the old triangle, not the 30 mm one
+    expect(element.querySelector(`.object-row[data-id="${id}"] .fixed-mark`)).toBeTruthy();
+    expect(versionText()).toMatch(/^Fixed at /);
+    // the embedded controls ask the scene, so they don't call it stale
+    const controls = element.querySelector(".scene-render-controls");
+    expect(controls.querySelector(".status").textContent).toBe("Up to date");
+    expect(controls.querySelector(".built").textContent).toMatch(/fixed version/);
+  });
+
+  it("inspector: Fix at this version freezes what is built; Follow latest catches up", async () => {
+    await addByUrl(file.url);
+    await wait(20);
+    await flush();
+    const [id] = Object.keys(scene.doc().objects);
+    const renderUrl = scene.doc().objects[id].renderUrl;
+    const built = (await repo.find(renderUrl)).doc();
+    expect(versionText()).toBe("Latest");
+    expect(button("fix-version").disabled).toBe(false);
+    expect(button("follow-latest").disabled).toBe(true);
+    expect(element.querySelector(".fixed-mark")).toBeNull();
+
+    const created = repo.created.length;
+    button("fix-version").click();
+    await flush();
+    expect(scene.doc().objects[id].at).toEqual({ heads: built.builtFrom.heads });
+    expect(versionText()).toMatch(/^Fixed at .* · built /);
+    expect(button("fix-version").disabled).toBe(true);
+    expect(button("follow-latest").disabled).toBe(false);
+    expect(element.querySelector(`.object-row[data-id="${id}"] .fixed-mark`)).toBeTruthy();
+
+    // edits to the source no longer rebuild it, and the GLB never changed
+    file.change((d) => (d.content = STL2));
+    await wait(300);
+    await flush();
+    const after = (await repo.find(renderUrl)).doc();
+    expect(after.glbUrl).toBe(built.glbUrl);
+    expect(after.builtAt).toBe(built.builtAt);
+    expect(repo.created.length).toBe(created);
+    expect(element.querySelector(".scene-render-controls .status").textContent).toBe("Up to date");
+
+    button("follow-latest").click();
+    await flush();
+    expect("at" in scene.doc().objects[id]).toBe(false);
+    expect(versionText()).toBe("Latest");
+    expect(element.querySelector(".fixed-mark")).toBeNull();
+    await wait(300);
+    await flush();
+    const latest = (await repo.find(renderUrl)).doc();
+    expect(latest.builtFrom.heads).toEqual(file.heads());
+    expect(latest.glbUrl).not.toBe(built.glbUrl);
+  });
+
   it("broadcasts selection and cleans up everything", async () => {
     await addByUrl(file.url);
     expect(scene.broadcasts.at(-1)).toMatchObject({ type: "scene:presence" });

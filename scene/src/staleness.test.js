@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
+import { atFromBuilt, atKey, normalizeAt, builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
 
@@ -205,5 +205,35 @@ describe("effectiveParams", () => {
   });
   it("passes through keys it has no spec for", () => {
     expect(effectiveParams(specs, { extra: { x: 1 } }).extra).toEqual({ x: 1 });
+  });
+});
+
+describe("fixed versions (at)", () => {
+  it("normalizes: absent/empty follows the latest; heads sorted; keyed deps dropped", () => {
+    expect(normalizeAt(null)).toBeNull();
+    expect(normalizeAt({ heads: [] })).toBeNull();
+    expect(normalizeAt({ heads: ["b", "a"] })).toEqual({ heads: ["a", "b"], deps: {} });
+    expect(normalizeAt({ heads: ["a"], deps: { "automerge:x": ["d2", "d1"], "automerge:y": ["fp:k"], "automerge:z": [] } })).toEqual({
+      heads: ["a"],
+      deps: { "automerge:x": ["d1", "d2"] },
+    });
+  });
+  it("keys the same version the same way", () => {
+    expect(atKey(null)).toBe("");
+    expect(atKey({ heads: ["b", "a"], deps: { u: ["2", "1"] } })).toBe(atKey({ heads: ["a", "b"], deps: { u: ["1", "2"] } }));
+    expect(atKey({ heads: ["a"] })).not.toBe(atKey({ heads: ["a"], deps: { u: ["1"] } }));
+  });
+  it("atFromBuilt freezes what a build read", () => {
+    expect(atFromBuilt(null)).toBeNull();
+    const builtFrom = { heads: ["h2", "h1"], paramsKey: "{}", fingerprint: null, deps: { a: ["x"], r: ["fp:glb"] } };
+    expect(atFromBuilt(builtFrom)).toEqual({ heads: ["h1", "h2"], deps: { a: ["x"] } });
+    expect(atFromBuilt(builtFrom, { r: ["rh"] })).toEqual({ heads: ["h1", "h2"], deps: { a: ["x"], r: ["rh"] } });
+  });
+  it("a fixed source judged at its fixed heads isn't stale from edits; params still are", () => {
+    // the render manager hands staleReason the view's heads (= at.heads), never the live ones
+    const r = built({ size: 1 }, ["h1"]);
+    const at = normalizeAt({ heads: ["h1"] });
+    expect(staleReason(r, { heads: at.heads })).toBeNull();
+    expect(staleReason({ ...r, params: { size: 2 } }, { heads: at.heads })).toBe("params");
   });
 });

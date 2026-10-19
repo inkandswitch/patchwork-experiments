@@ -6,14 +6,21 @@
 // "Rebuild now" first asks an enclosing scene (a cancelable, bubbling
 // `scene:rebuild` DOM event) so the scene's own build loop does it; standalone,
 // it runs the build itself.
+//
+// Whether the object is fixed at a version lives on the scene object, not the
+// render doc, so the controls ask the scene around them: a bubbling
+// `scene:render-context` event whose `detail.at` the scene fills in. The scene
+// fires `scene:render-context-changed` at the controls when that changes.
 
 import css from "./styles.css?inline";
 import { createParamForm } from "./param-form.js";
-import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild } from "./build.js";
+import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, runBuild, viewAt } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
-import { staleReason } from "./staleness.js";
+import { normalizeAt, staleReason } from "./staleness.js";
 
 export const REBUILD_EVENT = "scene:rebuild";
+export const CONTEXT_EVENT = "scene:render-context";
+export const CONTEXT_CHANGED_EVENT = "scene:render-context-changed";
 
 function relativeTime(ts, now = Date.now()) {
   if (!ts) return "never";
@@ -59,13 +66,22 @@ export default function SceneRenderControls(handle, element) {
   let form = null;
   let localBuilding = false;
   let dead = false;
+  let at = null; // the scene object's fixed version, if a scene says so
   const offs = [];
   // the other docs the provider says it reads, so staleness (and a standalone build) sees them
   const deps = createDependencyWatcher({
     repo,
     onChange: () => render(),
     keyOf: (url, h) => dependencyKeyOf(provider?.module, url, h.doc?.()),
+    fixedHeadsOf: (url) => at?.deps?.[url] ?? null,
   });
+
+  /** Ask an enclosing scene whether this render's object is fixed at a version. */
+  function askContext() {
+    const detail = { renderUrl: handle.url, at: null };
+    root.dispatchEvent(new CustomEvent(CONTEXT_EVENT, { detail, bubbles: true, composed: true }));
+    at = normalizeAt(detail.at);
+  }
 
   function specs() {
     return providerMeta?.params ?? [];
@@ -112,13 +128,16 @@ export default function SceneRenderControls(handle, element) {
     $(".provider").textContent = providerMeta?.name ?? doc.providerId ?? "No provider";
     $(".open-source").hidden = !doc.parent;
 
-    if (provider && sourceHandle) deps.set(dependenciesOf(provider.module, sourceHandle.doc(), sourceHandle.url));
+    askContext();
+    // a fixed object is judged at its fixed heads (null until they're here)
+    const src = at ? viewAt(sourceHandle, at.heads) : sourceHandle;
+    if (provider && src) deps.set(dependenciesOf(provider.module, src.doc(), handle.doc()?.parent ?? null));
     // undefined = can't tell yet (provider, source or a dependency not loaded)
     let reason =
-      doc.builtFrom && provider && sourceHandle
+      doc.builtFrom && provider && src
         ? staleReason(doc, {
-            heads: sourceHandle.heads?.() ?? [],
-            fingerprint: fingerprintOf(provider.module, sourceHandle.doc()),
+            heads: src.heads?.() ?? [],
+            fingerprint: fingerprintOf(provider.module, src.doc()),
             deps: deps.snapshot(),
             providerVersion: provider.version,
           })
@@ -137,7 +156,7 @@ export default function SceneRenderControls(handle, element) {
     const pill = $(".status");
     pill.dataset.state = state;
     pill.textContent = label;
-    $(".built").textContent = `built ${relativeTime(doc.builtAt)}`;
+    $(".built").textContent = `built ${relativeTime(doc.builtAt)}${at ? " · fixed version" : ""}`;
 
     const err = $(".error");
     err.hidden = !(state === "error" && doc.error);
@@ -221,6 +240,7 @@ export default function SceneRenderControls(handle, element) {
     render();
   };
   handle.on("change", onChange);
+  root.addEventListener(CONTEXT_CHANGED_EVENT, render);
   const tick = setInterval(render, 30_000);
 
   import("@inkandswitch/patchwork-plugins")
