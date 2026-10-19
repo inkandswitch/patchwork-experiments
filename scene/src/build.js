@@ -3,6 +3,7 @@
 // A build whose bytes are identical to the current GLB's keeps the current file
 // doc (builtFrom.glbHash), so a rebuild that changes nothing makes no new doc.
 
+import { hasHeads } from "@automerge/automerge";
 import { parseGLB } from "./glb.js";
 import { isRenderDoc, renderKey } from "./render-read.js";
 import { effectiveParams, normalizeDeps, paramsKey, providerVersionOf, sameDeps, sameHeads, sortedHeads, stableStringify } from "./staleness.js";
@@ -72,6 +73,25 @@ export function dependencyKeyOf(impl, url, doc) {
  * doc rather than throwing, so an empty view of a non-empty doc counts as
  * missing). With no heads, the handle itself.
  */
+/**
+ * False when the handle's doc lacks some of these changes: a peer built from a
+ * version of it this client hasn't synced yet. (A handle may answer itself with
+ * `hasHeads(heads)`, as the test fakes do; anything that can't be asked counts
+ * as known.)
+ */
+export function knowsHeads(handle, heads) {
+  const list = (heads ?? []).filter((h) => typeof h === "string" && h && !h.startsWith("fp:"));
+  if (!handle || !list.length) return true;
+  if (typeof handle.hasHeads === "function") return !!handle.hasHeads(list);
+  const doc = handle.doc?.();
+  if (!doc) return false;
+  try {
+    return hasHeads(doc, list);
+  } catch {
+    return true;
+  }
+}
+
 export function viewAt(handle, heads) {
   if (!handle) return null;
   if (!heads?.length) return handle;

@@ -8,7 +8,7 @@
 // never make it stale. Params and provider versions still do.
 
 import { fileBytes } from "./file-content.js";
-import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, pinnedRepo, runBuild, validBounds, viewAt } from "./build.js";
+import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, knowsHeads, pinnedRepo, runBuild, validBounds, viewAt } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
 import { atFromBuilt, atKey, builtInputsKey, changedKeys, debounceFor, heldDeps, inputsKey, isContested, normalizeAt, sortedHeads, staleReason } from "./staleness.js";
 
@@ -168,7 +168,29 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     const reason = staleReason(render, source);
     const contested = isContested(render, source, entry.lastBuilt);
     const held = reason === "deps" ? heldDeps(render.builtFrom?.deps, source.deps, (u) => entry.deps.ready(u)) : [];
-    return { reason, contested, held };
+    return { reason, contested, held, behind: isBehind(entry, render, reason) };
+  }
+
+  /**
+   * The render was built from changes to its source (or a dependency it records
+   * by heads) that this client hasn't synced yet: a peer that is ahead built
+   * it. It only *looks* stale here; rebuilding would replace a newer build with
+   * one made from an older version, and that peer would rebuild straight back
+   * (seen in Patchwork: a client missing one edit to a flow doc and a client
+   * with it took turns rebuilding the flow, every time either opened the scene).
+   * Never auto-rebuilt; a change to the source or the dependency re-evaluates.
+   * Not for objects fixed at a version (`at`), which wait for their heads anyway.
+   */
+  function isBehind(entry, render, reason) {
+    if (reason !== "fingerprint" && reason !== "heads" && reason !== "deps") return false;
+    if (entry.at) return false;
+    const built = render.builtFrom;
+    if (!knowsHeads(entry.sourceHandle, built?.heads)) return true;
+    for (const [url, heads] of Object.entries(built?.deps ?? {})) {
+      const h = entry.deps.handle(url);
+      if (h && Array.isArray(heads) && !knowsHeads(h, heads)) return true;
+    }
+    return false;
   }
 
   function settleStatus(entry) {
@@ -230,7 +252,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
 
     refreshDeps(entry);
     const source = sourceInfo(entry);
-    const { reason, contested, held } = judge(entry, render, source);
+    const { reason, contested, held, behind } = judge(entry, render, source);
     const key = inputsKey(render, source);
     const depsPendingSince = entry.deps.pendingSince();
     // Built from a dependency that we tried and failed to load here.
@@ -241,8 +263,9 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       ...base,
       phase: "ready",
       versionMissing: false,
-      stale: !!reason && !unsure,
-      reason: unsure ? null : reason,
+      stale: !!reason && !unsure && !behind,
+      reason: unsure || behind ? null : reason,
+      behind,
       contested,
       // built by a scene host from before dependencies (SCENE-CONTRACT v2 §1)
       // existed: it records no `deps` at all, where this one always does
@@ -275,6 +298,11 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     if (contested && !entry.forceNext) {
       // Same source and params as our own last build; only a peer's differing
       // fingerprint says otherwise. Rebuilding would just flip it back. Manual only.
+      clearTimer(entry);
+      return;
+    }
+    if (behind && !entry.forceNext) {
+      // A peer built it from changes we don't have yet: wait for them to sync.
       clearTimer(entry);
       return;
     }
@@ -338,8 +366,8 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     // now list a dependency that is still loading (evaluate waits for it).
     let why = "forced";
     if (!force) {
-      const { reason, contested, held } = judge(entry, render, source);
-      if (!reason || contested || held.length || render.pinned) return;
+      const { reason, contested, held, behind } = judge(entry, render, source);
+      if (!reason || contested || held.length || behind || render.pinned) return;
       if (!entry.createdHere && entry.openedAt != null && now() < entry.openedAt + syncSettleMs) return evaluate(entry);
       const pending = entry.deps.pendingSince();
       if (pending != null && pending + DEP_WAIT_MS > now()) return evaluate(entry);

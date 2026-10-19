@@ -285,6 +285,41 @@ describe("render manager", () => {
     mgr.dispose();
   });
 
+  it("doesn't rebuild over a build made from source changes it hasn't synced yet", async () => {
+    const t = setup({ fingerprint: (doc) => `fp:${doc.size}` });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    // a peer that is one edit ahead (size 7) rebuilds; we see its build, not yet its edit
+    t.render.change((d) => {
+      d.builtFrom = { ...JSON.parse(JSON.stringify(d.builtFrom)), heads: ["a-change-we-have-not-synced"], fingerprint: "fp:7" };
+    });
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.mgr.state("o1")).toMatchObject({ behind: true, stale: false });
+    // the peer's edit syncs in: now we have what it built from, and it is fresh
+    t.source._history.set("a-change-we-have-not-synced", {});
+    t.source.change((d) => (d.size = 7));
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.mgr.state("o1")).toMatchObject({ behind: false, stale: false });
+  });
+
+  it("still rebuilds a build made from an older version it has", async () => {
+    const t = setup({ fingerprint: (doc) => `fp:${doc.size}` });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    const builtHeads = t.source.heads();
+    t.source.change((d) => (d.size = 2));
+    // a lagging peer writes a build from the version before that edit
+    t.render.change((d) => {
+      d.builtFrom = { ...JSON.parse(JSON.stringify(d.builtFrom)), heads: builtHeads, fingerprint: "fp:1" };
+    });
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.render.doc().builtFrom.fingerprint).toBe("fp:2");
+  });
+
   it("rebuilds after a build that raced with an edit", async () => {
     let release;
     const t = setup({

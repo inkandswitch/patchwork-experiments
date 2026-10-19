@@ -341,6 +341,13 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
 - `bounds` is the last build's `meta.bounds`; until the GLB loads it is drawn
   as a placeholder box (a scene object's own `hint.bounds` wins).
 - The previous GLB stays on screen while the next one builds.
+- A render built from changes to its source (or to a dependency recorded by
+  heads) that this client hasn't synced yet is never auto-rebuilt, however
+  stale it looks: a peer that is ahead built it, and rebuilding would put a
+  build from an older version over a newer one, with that peer rebuilding
+  straight back. (`Automerge.hasHeads` on the source doc; seen in Patchwork,
+  where a client missing one edit to a flow doc and one with it took turns
+  rebuilding the flow.) A change to the source re-evaluates.
 - A scene doesn't start an automatic build until 2.5 s after it opened a
   render doc it didn't create itself. A fresh peer can be handed the doc
   before its history has synced and briefly see `builtFrom: null`; without the
