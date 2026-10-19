@@ -807,6 +807,18 @@
   padding: 0 5px;
 }
 
+/* an object fixed at a version (scene object `at`) */
+.scene-tool .fixed-mark:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  white-space: nowrap;
+}
+
+.scene-tool .version-text:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .scene-tool .pill:where(:not(.about-embed *), .about-embed .scene-tool *),
 .scene-render-controls .pill {
   font-size: 10px;

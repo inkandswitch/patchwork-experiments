@@ -17,15 +17,15 @@ import { Viewport } from "./viewport.js";
 import { createRenderManager } from "./render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "./glb-queue.js";
 import { newRenderDoc, DEFAULT_VIEW } from "./datatype.js";
-import { defaultParams } from "./staleness.js";
+import { atKey, defaultParams, normalizeAt } from "./staleness.js";
 import { describeForHumans, describeSource, extensionOf, matchProviders } from "./providers.js";
-import { hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "./dnd.js";
+import { hasPatchworkDrop, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "./dnd.js";
 import { canMove, dropIntent, isMove, placementFor, spliceOrder } from "./tree-drop.js";
 import { detachAnchor, distance, makeAnchor, normalizeTransform, resolveAnchor } from "./anchors.js";
 import { attachTargets, brokenParents, orphanTransforms, planAttach, resolveParents, treeOrder, worldMatrix } from "./hierarchy.js";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, removalSet, searchOutline, ungroupPlan, visibleRows } from "./groups.js";
 import { UNIT_OPTIONS, formatLength, fromUnits, roundForDisplay, toUnits } from "./units.js";
-import { REBUILD_EVENT } from "./controls-tool.js";
+import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
 import { fileBytes } from "./file-content.js";
 
@@ -141,6 +141,16 @@ function orderedIds(doc) {
 /** An infoUrl / sourceUrl that is really an automerge URL, else null. */
 function docUrl(v) {
   return typeof v === "string" && v.startsWith("automerge:") ? parseAutomergeUrl(v) : null;
+}
+
+/** Heads, shortened for display: the first 8 characters of each. */
+function shortHeads(heads) {
+  return (heads ?? []).map((h) => String(h).slice(0, 8)).join(" + ");
+}
+
+/** True when a scene object is fixed at a version (`at`), cheaply. */
+function isFixed(o) {
+  return !!o?.renderUrl && Array.isArray(o.at?.heads) && o.at.heads.length > 0;
 }
 
 /** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
@@ -600,14 +610,17 @@ export default function SceneTool(handle, element) {
   }
 
   /**
-   * @param hint {{ name?: string, parent?: string | null, before?: string | null }}
+   * @param hint {{ name?: string, parent?: string | null, before?: string | null, heads?: string[] }}
    *   `parent` and `before` are where a drop onto the tree asked for it to go;
    *   without them it lands at the top level, which is what the viewport and a
-   *   paste still do.
+   *   paste still do. `heads` (or heads in the URL itself) adds it fixed at
+   *   that version (`at`).
    */
   async function addFromUrl(input, hint = {}) {
-    const url = parseAutomergeUrl(input);
-    if (!url) return toast("That doesn't look like an automerge URL.", "error");
+    const link = parseAutomergeLink(input);
+    if (!link) return toast("That doesn't look like an automerge URL.", "error");
+    const url = link.url;
+    const heads = hint.heads?.length ? hint.heads : link.heads;
     if (url === handle.url) return toast("A scene can't contain itself.", "error");
     let source;
     try {
@@ -650,6 +663,9 @@ export default function SceneTool(handle, element) {
         wireframe: false,
         transform: IDENTITY(),
       };
+      // A URL with heads names a version: show that one. (A passthrough
+      // object is shown straight from its file, so it has nothing to fix.)
+      if (heads?.length && renderHandle) d.objects[id].at = { heads: [...heads] };
       const at = hint.before ? d.order.indexOf(hint.before) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
       else d.order.push(id);
@@ -964,6 +980,7 @@ export default function SceneTool(handle, element) {
     const name = el("span", { class: "name" });
     const count = group ? el("span", { class: "count" }) : null;
     const pill = el("span", { class: "pill" });
+    const fixedMark = group ? null : el("span", { class: "tag fixed-mark" }, "◷ fixed");
     const remove = el("button", { type: "button", class: "icon-button", title: group ? "Remove group and everything in it" : "Remove from scene", "aria-label": "Remove from scene", onclick: () => removeObject(id) }, "×");
     const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => viewport.frameObject(id) }, name, count);
     // The name is the grab handle. Making the whole row draggable would fight
@@ -987,7 +1004,7 @@ export default function SceneTool(handle, element) {
       }
     });
     const li = el("li", { class: "object-row", role: "treeitem", dataset: { id, ...(group ? { kind: "group" } : {}) } }, twisty, vis, sw, main, remove);
-    row = { li, twisty, vis, sw, name, count, pill, remove, main, group };
+    row = { li, twisty, vis, sw, name, count, pill, fixedMark, remove, main, group };
     outlineRows.set(id, row);
     return row;
   }
@@ -1018,7 +1035,7 @@ export default function SceneTool(handle, element) {
       const o = objects[id];
       const group = isGroup(o);
       const st = statusOf(id);
-      const { li, twisty, vis, sw, name, count, pill, remove } = outlineRow(id, group);
+      const { li, twisty, vis, sw, name, count, pill, fixedMark, remove } = outlineRow(id, group);
       if (li.dataset.depth !== String(depth)) {
         li.dataset.depth = String(depth);
         li.style.setProperty("--depth", String(depth));
@@ -1057,6 +1074,14 @@ export default function SceneTool(handle, element) {
         if (pill.parentNode !== li) li.insertBefore(pill, remove);
       } else {
         pill.remove();
+      }
+      if (fixedMark) {
+        // display only: the Version row in the inspector changes it
+        if (isFixed(o)) {
+          const t = `Fixed at version ${shortHeads(o.at.heads)}; doesn't follow edits to its source`;
+          if (fixedMark.title !== t) fixedMark.title = t;
+          if (fixedMark.parentNode !== li) li.insertBefore(fixedMark, pill.parentNode === li ? pill : remove);
+        } else fixedMark.remove();
       }
       return li;
     });
@@ -1251,6 +1276,14 @@ export default function SceneTool(handle, element) {
 
     const status = el("div", { class: "status-line" });
     const controls = o.renderUrl ? el("div", { class: "controls-embed" }) : null;
+    // Which version of the source it shows (`at`); only a render doc can be fixed.
+    const version = o.renderUrl
+      ? {
+          text: el("span", { class: "version-text" }),
+          fix: el("button", { type: "button", class: "button fix-version", onclick: () => fixVersion(id) }, "Fix at this version"),
+          follow: el("button", { type: "button", class: "button follow-latest", title: "Follow edits to the source again", onclick: () => followLatest(id) }, "Follow latest"),
+        }
+      : null;
     const about = el("section", { class: "about", hidden: true });
 
     const parts = [
@@ -1277,6 +1310,8 @@ export default function SceneTool(handle, element) {
       ),
       about,
       controls ? el("h3", { class: "panel-title" }, "Build") : null,
+      version ? el("div", { class: "field version-row" }, el("span", {}, "Version"), version.text) : null,
+      version ? el("div", { class: "cluster" }, version.fix, version.follow) : null,
       controls,
       status,
     ];
@@ -1300,6 +1335,9 @@ export default function SceneTool(handle, element) {
       aboutKey: null,
       unmountAbout: null,
       unmountControls: controls ? mountControls(controls, o.renderUrl) : null,
+      controls,
+      version,
+      atKey: atKey(o.at),
     };
     updateInspector();
   }
@@ -1356,6 +1394,7 @@ export default function SceneTool(handle, element) {
     setVal(inspector.scale.input, String(t.scale));
     updateAbout();
     const s = objState.get(inspector.id) ?? {};
+    updateVersion(o, s);
     // replaceChildren() turns a null argument into the text "null": pass only nodes.
     const parts = [];
     if (isPassthrough(o)) {
@@ -1380,6 +1419,53 @@ export default function SceneTool(handle, element) {
     }
     inspector.status.replaceChildren(...parts);
     inspector.status.hidden = !parts.length;
+  }
+
+  /** The inspector's Version row: Latest or Fixed at…, and which button makes sense. */
+  function updateVersion(o, s) {
+    const v = inspector.version;
+    if (!v) return;
+    const at = normalizeAt(o.at);
+    const key = atKey(at);
+    if (key !== inspector.atKey) {
+      inspector.atKey = key;
+      // the embedded controls judge staleness themselves, against `at`
+      inspector.controls?.querySelector(".scene-render-controls")?.dispatchEvent(new CustomEvent(CONTEXT_CHANGED_EVENT));
+    }
+    let text = "Latest";
+    let title = "Follows edits to its source";
+    if (at) {
+      const builtThere = s.builtAt != null && (s.builtHeads ?? []).join(",") === at.heads.join(",");
+      text = `Fixed at ${shortHeads(at.heads)}`;
+      if (builtThere) text += ` · built ${new Date(s.builtAt).toLocaleString()}`;
+      if (s.versionMissing) text += " · waiting for that version to sync";
+      const deps = Object.keys(at.deps).length;
+      title = `Source heads ${at.heads.join(", ")}${deps ? `; ${deps} linked document${deps > 1 ? "s" : ""} fixed too` : ""}`;
+    }
+    if (v.text.textContent !== text) v.text.textContent = text;
+    v.text.title = title;
+    const point = manager.fixPoint(inspector.id);
+    v.fix.disabled = !point || atKey(point) === key;
+    v.fix.title = !point ? "Not built here yet: nothing to fix" : "Keep showing exactly what is built now, whatever later edits to the source do";
+    v.follow.disabled = !at;
+  }
+
+  /** Fix an object at exactly what its render was last built from. */
+  function fixVersion(id) {
+    const point = manager.fixPoint(id);
+    if (!point) return toast("It hasn't been built here yet, so there's no version to fix.", "error");
+    const deps = Object.entries(point.deps);
+    updateObject(id, (x) => {
+      // fresh arrays: automerge won't take a value that is already in a document
+      x.at = { heads: [...point.heads] };
+      if (deps.length) x.at.deps = Object.fromEntries(deps.map(([u, h]) => [u, [...h]]));
+    });
+  }
+
+  function followLatest(id) {
+    updateObject(id, (x) => {
+      delete x.at;
+    });
   }
 
   /** Attach `id` to `parent` (null = detach), keeping it where it is in the world. */
@@ -1563,7 +1649,7 @@ export default function SceneTool(handle, element) {
     const items = parsePatchworkDrop(dt);
     if (!items.length) return toast("Nothing droppable there.", "error");
     (async () => {
-      for (const item of items) await addFromUrl(item.url, { name: item.name });
+      for (const item of items) await addFromUrl(item.url, { name: item.name, heads: item.heads });
     })();
   });
   root.addEventListener("paste", (e) => {
@@ -1663,7 +1749,7 @@ export default function SceneTool(handle, element) {
     e.preventDefault();
     e.stopPropagation();
     (async () => {
-      for (const item of items) await addFromUrl(item.url, { name: item.name, parent: place.parent, before: place.before });
+      for (const item of items) await addFromUrl(item.url, { name: item.name, heads: item.heads, parent: place.parent, before: place.before });
     })();
   });
 
@@ -1718,11 +1804,19 @@ export default function SceneTool(handle, element) {
     // Hidden, so not hydrated yet (v3 §7): an explicit Rebuild loads it first.
     // It then stays tracked, like anything that has loaded.
     if (!o.sourceUrl) return;
-    Promise.resolve(manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl }))
+    Promise.resolve(manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, at: o.at ?? null }))
       .then(() => {
         if (!dead && doc().objects?.[id]?.renderUrl === url) manager.rebuild(id);
       })
       .catch((err) => console.warn("[scene] rebuild failed to start", err));
+  });
+
+  // embedded controls asking whether their render's object is fixed at a version
+  root.addEventListener(CONTEXT_EVENT, (e) => {
+    const url = e.detail?.renderUrl;
+    if (!url) return;
+    const o = Object.values(doc().objects ?? {}).find((x) => x?.renderUrl === url);
+    if (o) e.detail.at = o.at ?? null;
   });
 
   // ─── doc → everything ─────────────────────────────────────────────────────
@@ -1769,7 +1863,7 @@ export default function SceneTool(handle, element) {
         queue.remove(id);
         if (applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds) && shown) hinted = true;
         // hydrate only what is shown; once loaded it stays loaded
-        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.has(o.renderUrl) });
+        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.has(o.renderUrl), at: o.at ?? null });
         continue;
       }
       const src = docUrl(o.sourceUrl);

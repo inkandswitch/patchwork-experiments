@@ -7,7 +7,7 @@ import { createRenderManager as createWithSettle, DEP_WAIT_MS, PEER_STAGGER_MS, 
 const createRenderManager = (o) => createWithSettle({ syncSettleMs: 0, ...o });
 import { newRenderDoc } from "./datatype.js";
 import { encodeGLB } from "./glb.js";
-import { runBuild } from "./build.js";
+import { pinnedRepo, runBuild, viewAt } from "./build.js";
 
 const tinyGLB = (z = 0) => encodeGLB({ meshes: [{ positions: [0, 0, 0, 1, 0, 0, 0, 1, z] }] });
 
@@ -934,5 +934,204 @@ describe("runBuild", () => {
     expect(render.doc().builtFrom.paramsKey).toBe('{"k":"nope","n":999}'); // the stored values, as written
     expect(render.doc().builtFrom.providerVersion).toBe(3);
     expect(render.doc().bounds).toEqual({ min: [0, 0, 0], max: [1, 2, 3] });
+  });
+});
+
+describe("fake repo views (modelled on automerge-repo DocHandle.view)", () => {
+  it("are read-only snapshots at the given heads", () => {
+    const repo = new FakeRepo();
+    const h = repo.add({ n: 1 });
+    const h1 = h.heads();
+    h.change((d) => (d.n = 2));
+    const v = h.view(h1);
+    expect(v.doc()).toEqual({ n: 1 });
+    expect(v.heads()).toEqual(h1);
+    expect(v.isReadOnly()).toBe(true);
+    expect(v.url).toBe(`${h.url}#${h1[0]}`);
+    expect(() => v.change(() => {})).toThrow(/view-only/);
+    h.change((d) => (d.n = 3));
+    expect(v.doc()).toEqual({ n: 1 });
+    expect(h.view(["unknown"]).doc()).toEqual({}); // like the real one: empty, no throw
+  });
+});
+
+describe("viewAt / pinnedRepo", () => {
+  it("viewAt gives the view, the handle itself without heads, and null for heads not here", () => {
+    const repo = new FakeRepo();
+    const h = repo.add({ n: 1 });
+    const h1 = h.heads();
+    h.change((d) => (d.n = 2));
+    expect(viewAt(h, h1).doc()).toEqual({ n: 1 });
+    expect(viewAt(h, [])).toBe(h);
+    expect(viewAt(h, ["nope"])).toBeNull();
+    expect(viewAt({ doc: () => ({}) }, ["x"])).toBeNull(); // no view()
+  });
+
+  it("finds listed docs at their heads, everything else live, and passes the rest of the repo through", async () => {
+    const repo = new FakeRepo();
+    const a = repo.add({ v: "a1" });
+    const b = repo.add({ v: "b1" });
+    const a1 = a.heads();
+    a.change((d) => (d.v = "a2"));
+    b.change((d) => (d.v = "b2"));
+    const r = pinnedRepo(repo, { [a.url]: a1 });
+    expect((await r.find(a.url)).doc()).toEqual({ v: "a1" });
+    expect((await r.find(a.url)).isReadOnly()).toBe(true);
+    expect((await r.find(b.url)).doc()).toEqual({ v: "b2" });
+    const made = await r.create2({ x: 1 });
+    expect(repo.created).toContain(made);
+    expect(pinnedRepo(repo, {})).toBe(repo);
+    expect(pinnedRepo(repo, null)).toBe(repo);
+  });
+});
+
+describe("render manager: fixed versions (at)", () => {
+  it("builds from the source at the fixed heads, through a read-only view", async () => {
+    const t = setup();
+    const h1 = t.source.heads();
+    t.source.change((d) => (d.size = 7));
+    const seen = [];
+    t.impl.build.mockImplementation(async ({ doc, handle, url }) => {
+      seen.push({ size: doc.size, readOnly: handle.isReadOnly(), url });
+      return { kind: "glb", glb: tinyGLB(doc.size) };
+    });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at: { heads: h1 } });
+    await t.timers.advance(0);
+    expect(seen).toEqual([{ size: 1, readOnly: true, url: `${t.source.url}#${h1[0]}` }]);
+    expect(t.render.doc().builtFrom.heads).toEqual(h1);
+    expect(t.states.at(-1)).toMatchObject({ phase: "ready", stale: false, fixed: true, builtHeads: h1 });
+  });
+
+  it("never goes stale from source edits; a params edit rebuilds at the fixed heads", async () => {
+    const t = setup();
+    const h1 = t.source.heads();
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at: { heads: h1 } });
+    await t.timers.advance(0);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    t.source.change((d) => (d.size = 9));
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.states.at(-1)).toMatchObject({ stale: false, reason: null });
+    t.render.change((d) => (d.params.size = 2));
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.impl.build.mock.calls[1][0].doc.size).toBe(1);
+    expect(t.render.doc().builtFrom).toMatchObject({ heads: h1, paramsKey: '{"size":2}' });
+  });
+
+  it("a newer provider version still rebuilds a fixed object", async () => {
+    const t = setup();
+    const h1 = t.source.heads();
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at: { heads: h1 } });
+    await t.timers.advance(0);
+    t.provider.version = 2;
+    t.render.change((d) => (d.title = "poke")); // anything that re-evaluates
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.render.doc().builtFrom).toMatchObject({ heads: h1, providerVersion: 2 });
+  });
+
+  it("fixing at fixPoint() changes nothing; following the latest again catches up", async () => {
+    const t = setup();
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await t.timers.advance(0);
+    const glb = t.render.doc().glbUrl;
+    const at = t.mgr.fixPoint("o1");
+    expect(at).toEqual({ heads: t.source.heads(), deps: {} });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at });
+    t.source.change((d) => (d.size = 4));
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.render.doc().glbUrl).toBe(glb);
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at: null });
+    expect(t.states.at(-1)).toMatchObject({ stale: true, reason: "heads", fixed: false });
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(2);
+    expect(t.render.doc().builtFrom.heads).toEqual(t.source.heads());
+  });
+
+  it("fixPoint is null before the first build", async () => {
+    const t = setup({ pinned: true });
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    expect(t.mgr.fixPoint("o1")).toBeNull();
+    expect(t.mgr.fixPoint("nope")).toBeNull();
+  });
+
+  it("waits, without building, for fixed heads this replica doesn't have", async () => {
+    const t = setup();
+    await t.mgr.track("o1", { sourceUrl: t.source.url, renderUrl: t.render.url, at: { heads: ["not-here-yet"] } });
+    await t.timers.advance(5000);
+    expect(t.impl.build).not.toHaveBeenCalled();
+    expect(t.states.at(-1)).toMatchObject({ phase: "loading", versionMissing: true, fixed: true });
+  });
+});
+
+describe("render manager: fixed dependencies", () => {
+  function setupDeps() {
+    const repo = new FakeRepo();
+    const timers = fakeTimers();
+    const hull = repo.add({ length: 10 });
+    const source = repo.add({ body: hull.url, size: 1 });
+    const render = repo.add(newRenderDoc({ title: "Flow", parent: source.url, providerId: "flow", params: {} }));
+    const read = [];
+    const impl = {
+      dependencies: (doc) => [doc.body],
+      build: vi.fn(async ({ repo: r, doc }) => {
+        const h = await r.find(doc.body);
+        read.push({ size: doc.size, length: h.doc().length });
+        return { kind: "glb", glb: tinyGLB(h.doc().length) };
+      }),
+    };
+    const provider = { id: "flow", name: "Flow", params: [], module: impl };
+    const states = [];
+    const mgr = createRenderManager({ repo, loadProvider: async () => provider, onState: (id, s) => states.push(s), timers, now: timers.now });
+    return { repo, timers, hull, source, render, impl, mgr, states, read };
+  }
+
+  it("reads a listed dependency at its fixed heads and ignores edits to it; unlisted ones read live", async () => {
+    const t = setupDeps();
+    const at = { heads: t.source.heads(), deps: { [t.hull.url]: t.hull.heads() } };
+    t.hull.change((d) => (d.length = 11));
+    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url, at });
+    await flush();
+    await t.timers.advance(0);
+    expect(t.read).toEqual([{ size: 1, length: 10 }]);
+    expect(t.render.doc().builtFrom.deps).toEqual({ [t.hull.url]: at.deps[t.hull.url] });
+    t.hull.change((d) => (d.length = 12));
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1);
+    expect(t.states.at(-1)).toMatchObject({ stale: false });
+
+    // fixed source, dependency not listed: it reads live, and its edits rebuild
+    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url, at: { heads: at.heads } });
+    await t.timers.advance(5000);
+    expect(t.read.at(-1)).toEqual({ size: 1, length: 12 });
+    t.hull.change((d) => (d.length = 13));
+    await t.timers.advance(5000);
+    expect(t.read.at(-1)).toEqual({ size: 1, length: 13 });
+  });
+
+  it("fixPoint lists the dependencies the build read, at the heads it read them", async () => {
+    const t = setupDeps();
+    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await flush();
+    await t.timers.advance(0);
+    expect(t.mgr.fixPoint("o")).toEqual({ heads: t.source.heads(), deps: { [t.hull.url]: t.hull.heads() } });
+  });
+
+  it("fixPoint fixes a keyed dependency at its current heads while its key is the one built from", async () => {
+    const t = setupDeps();
+    t.impl.fingerprintDependency = (url, doc) => `len:${doc.length}`;
+    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url });
+    await flush();
+    await t.timers.advance(0);
+    expect(t.render.doc().builtFrom.deps).toEqual({ [t.hull.url]: ["fp:len:10"] });
+    const at = t.mgr.fixPoint("o");
+    expect(at.deps).toEqual({ [t.hull.url]: t.hull.heads() });
+    await t.mgr.track("o", { sourceUrl: t.source.url, renderUrl: t.render.url, at });
+    t.hull.change((d) => (d.length = 20));
+    await t.timers.advance(5000);
+    expect(t.impl.build).toHaveBeenCalledTimes(1); // still fresh: the view keys as len:10
+    expect(t.states.at(-1)).toMatchObject({ stale: false });
   });
 });

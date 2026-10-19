@@ -29,7 +29,9 @@ pnpm install && pnpm build && pnpm test
 
 Make a Scene, then drop documents onto it from the sidebar (or drop `.stl` /
 `.glb` files from the desktop, or paste an automerge URL anywhere outside a
-text field). If more than one provider can show a document you pick one.
+text field). If more than one provider can show a document you pick one. A URL
+that names a version (`automerge:<id>#<heads>`, or a Patchwork link to a
+version) adds the object **fixed at that version** (see *Fixed versions*).
 
 Dropping onto the **outline** puts the document where you dropped it rather than
 at the top level: on a group's row it goes inside that group, and near a row's
@@ -50,6 +52,7 @@ sidebar's drag formats, so it can be dropped on a slicer or a flow field's body
 slot; scenes themselves never add a dragged row.
 
 - **Outline**: visibility, colour, remove; click to select, double-click to frame.
+  An object fixed at a version shows a small "◷ fixed" tag (display only).
   Groups and attached objects are listed (indented, 10 px a level up to 8)
   under their parent, and anything with children folds open and shut (the
   chevron, or ← / → on a focused row; ↑ / ↓ move). What's open is yours alone,
@@ -70,7 +73,9 @@ slot; scenes themselves never add a dragged row.
   as they look (a hidden group's contents stay hidden, a translucent one's
   keep its opacity), and removes it. **About** shows the object's `infoUrl` document (or its nearest
   group's, labelled "About <group>") in an embedded `<patchwork-view>`, with
-  **Open**. Then the embedded build controls, for objects that have a render doc.
+  **Open**. Then, for objects that have a render doc, **Version** ("Latest", or
+  "Fixed at <short heads> · built <time>") with **Fix at this version** and
+  **Follow latest**, and the embedded build controls.
 - **Attaching**: pick an object under *Attached to* and this one moves with it
   from then on (a flow field attached to its hull, say). Attaching and
   detaching keep the object exactly where it is; only its stored transform
@@ -309,7 +314,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   bounds?: { min: [x,y,z], max: [x,y,z] } | null,  // the last build's meta.bounds (placeholder box)
   status: "idle" | "building" | "error",
   error: string | null,
-  pinned: boolean                   // true = never auto-rebuild
+  pinned: boolean                   // true = never auto-rebuild (see Fixed versions for the difference)
 }
 ```
 
@@ -371,7 +376,8 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
     parent?: string | null,         // another objectId (object or group); absent = null
     infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
-    hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
+    hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number },
+    at?: { heads: string[], deps?: { [url: AutomergeUrl]: string[] } } | null  // fixed version; absent/null = latest
   } },
   order: string[],
   dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
@@ -424,6 +430,56 @@ MaterialRule = {
 - Bounds, **Frame all** and selection boxes are world-space boxes of each
   object's own geometry (not including what is attached to it).
 - `camera` is written 1.5 s after you stop orbiting and read once on open.
+
+### Fixed versions (`at`)
+
+An object normally shows the latest version of its source. With `at` set it
+shows a fixed one: the render manager builds from a read-only view of the
+source at `at.heads` (automerge-repo's `DocHandle.view(heads)`), and build()
+is handed a repo whose `find(url)` gives a view at `at.deps[url]` for every
+dependency listed there, so a fixed OpenSCAD part's imports are fixed too.
+Dependencies that aren't listed are read live. Heads are automerge-repo's
+URL heads (base58check change hashes, what `handle.heads()` returns).
+
+- `builtFrom.heads` records the fixed heads, and listed dependencies are
+  recorded from their views, so edits to the live source or a listed
+  dependency never make the object stale. A params edit or a newer provider
+  `version` still rebuilds it, at the fixed heads. An unlisted dependency
+  still rebuilds it when it changes.
+- Until this replica has the fixed heads (they haven't synced yet) the object
+  stays "loading" and nothing is built.
+- **Fix at this version** sets `at` from the render's current `builtFrom`:
+  its heads, and every dependency it recorded by heads. A dependency recorded
+  by key (`["fp:<key>"]`, e.g. a scene-render dependency) has no heads there;
+  while its key is still the one built from, its current heads are used. So
+  you freeze exactly what you see, and nothing rebuilds: same inputs, same
+  build (and if one ever happens, the `glbHash` check keeps the same GLB doc).
+  It is disabled until the render has been built here. **Follow latest**
+  deletes `at`; the object then catches up like any stale render.
+- **URLs.** A dropped or pasted URL with heads adds the object with
+  `at: { heads }` (no `deps`). Accepted: `automerge:<id>#<h1>|<h2>` (the form
+  automerge-repo's `stringifyAutomergeUrl` writes, heads `|`-joined), a
+  Patchwork link `…/#doc=automerge:<id>#<heads>&tool=…`, an older
+  `…#doc=<id>&heads=<heads>`, and the same percent-encoded. A path suffix is
+  dropped; heads that don't look like heads are ignored (the object follows the
+  latest). A passthrough object (`file-glb`) is shown straight from its file
+  and is never fixed.
+- **How this differs from `pinned`.** `pinned` lives on the render doc and only
+  stops automatic rebuilds: it keeps showing whatever was last built, stale or
+  not, and any Rebuild builds the latest. `at` lives on the scene object and
+  changes *what* is built: Rebuild, params edits and provider bumps all build
+  the fixed version, and it is never stale from source edits.
+- The embedded `scene-render-controls` only see the render doc, so they ask
+  the scene around them with a bubbling `scene:render-context` DOM event
+  (`detail.renderUrl`; the scene fills in `detail.at`), and judge staleness at
+  those heads. The scene fires `scene:render-context-changed` at them when
+  `at` changes.
+- **Copies and branches.** Render docs are per scene object, and copying or
+  branching a scene copies the objects' `renderUrl`s, so the copies share
+  render docs. `at` is on the scene object, so a branch of the scene can fix
+  a different version, but both then build into the same render doc and
+  rebuild over each other while both are open. Render docs are not
+  branch-aware; remove and re-add the object in the branch if that matters.
 
 ## Layout
 

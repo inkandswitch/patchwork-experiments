@@ -1,5 +1,9 @@
 // A tiny in-memory stand-in for an automerge Repo + DocHandle, enough for the
-// scene's logic: doc(), change(), heads(), on/off("change"), broadcast.
+// scene's logic: doc(), change(), heads(), on/off("change"), broadcast, and
+// view(heads), modelled on automerge-repo's DocHandle.view: a read-only handle
+// whose doc() is the doc at those heads, whose heads() are those heads, whose
+// url carries `#heads`, and which emits no "change". Like the real one, a view
+// at heads this handle doesn't know gives an empty doc rather than throwing.
 let counter = 0;
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -13,13 +17,36 @@ export function fakeUrl() {
   return `automerge:${id}`;
 }
 
+/**
+ * A head shaped like automerge-repo's (49 base58 characters), so a URL with
+ * `#<head>` passes parseAutomergeLink. Not a real change hash.
+ */
+export function fakeHead() {
+  let n = ++counter;
+  let tail = "";
+  do {
+    tail = B58[n % 58] + tail;
+    n = Math.floor(n / 58);
+  } while (n > 0);
+  return `H${"x".repeat(48 - tail.length)}${tail}`; // unique per call
+}
+
 export class FakeHandle {
   constructor(url, doc) {
     this.url = url;
     this._doc = structuredClone(doc);
-    this._heads = [`h${++counter}`];
+    this._heads = [fakeHead()];
+    this._history = new Map([[this._heads[0], structuredClone(this._doc)]]);
     this._listeners = new Map();
     this.broadcasts = [];
+  }
+  view(heads) {
+    const hs = [...heads].map(String);
+    const known = hs.length === 1 && this._history.has(hs[0]);
+    return new FakeViewHandle(this, hs, known ? structuredClone(this._history.get(hs[0])) : {});
+  }
+  isReadOnly() {
+    return false;
   }
   doc() {
     return this._doc;
@@ -31,7 +58,8 @@ export class FakeHandle {
     const draft = structuredClone(this._doc);
     fn(draft);
     this._doc = draft;
-    this._heads = [`h${++counter}`];
+    this._heads = [fakeHead()];
+    this._history.set(this._heads[0], structuredClone(draft));
     this.emit("change", { handle: this, doc: this._doc });
   }
   on(ev, fn) {
@@ -50,6 +78,33 @@ export class FakeHandle {
   broadcast(message) {
     this.broadcasts.push(message);
   }
+}
+
+export class FakeViewHandle {
+  constructor(parent, heads, doc) {
+    this.parent = parent;
+    this.url = `${parent.url}#${[...heads].sort().join("|")}`;
+    this._heads = heads;
+    this._doc = doc;
+  }
+  doc() {
+    return this._doc;
+  }
+  heads() {
+    return [...this._heads];
+  }
+  view(heads) {
+    return this.parent.view(heads);
+  }
+  isReadOnly() {
+    return true;
+  }
+  change() {
+    throw new Error(`Cannot change on ${this.parent.url}: it is in view-only mode at specific heads.`);
+  }
+  on() {}
+  off() {}
+  broadcast() {}
 }
 
 export class FakeRepo {

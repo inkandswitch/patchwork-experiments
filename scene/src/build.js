@@ -65,6 +65,60 @@ export function dependencyKeyOf(impl, url, doc) {
   return null;
 }
 
+/**
+ * A read-only handle on `handle`'s doc at `heads` (automerge-repo's
+ * DocHandle.view), or null if it can't be had here: no view() on this handle,
+ * or heads this replica doesn't have yet (automerge-repo then gives an empty
+ * doc rather than throwing, so an empty view of a non-empty doc counts as
+ * missing). With no heads, the handle itself.
+ */
+export function viewAt(handle, heads) {
+  if (!handle) return null;
+  if (!heads?.length) return handle;
+  if (typeof handle.view !== "function") return null;
+  try {
+    const v = handle.view([...heads]);
+    const d = v?.doc();
+    if (!d) return null;
+    if (Object.keys(d).length === 0 && Object.keys(handle.doc?.() ?? {}).length > 0) return null;
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The repo build() is handed for a fixed object: find(url) gives a read-only
+ * view at the listed heads for every dependency in `deps` ({ url: heads }),
+ * so a fixed OpenSCAD part's imports are fixed too. Unlisted URLs, and
+ * everything else on the repo (create2 for the GLB, peerId…), are the repo's
+ * own. With nothing listed, the repo itself.
+ */
+export function pinnedRepo(repo, deps) {
+  const fixed = {};
+  const nd = normalizeDeps(deps);
+  for (const url of Object.keys(nd)) if (nd[url].length) fixed[url] = nd[url];
+  if (!repo || !Object.keys(fixed).length) return repo;
+  const headsFor = (url) => {
+    const s = String(url ?? "");
+    if (fixed[s]) return fixed[s];
+    if (s.includes("#")) return null; // asks for a version of its own
+    return fixed[s.split("/")[0]] ?? null; // a path inside a fixed doc
+  };
+  async function find(url, ...rest) {
+    const handle = await repo.find(url, ...rest);
+    const heads = headsFor(url);
+    return heads && typeof handle?.view === "function" ? handle.view([...heads]) : handle;
+  }
+  return new Proxy(repo, {
+    get(target, prop) {
+      if (prop === "find") return find;
+      const v = Reflect.get(target, prop, target);
+      return typeof v === "function" ? v.bind(target) : v;
+    },
+  });
+}
+
 /** A bounds box worth keeping: { min: [x,y,z], max: [x,y,z] } of finite numbers, else null. */
 export function validBounds(b) {
   const ok = (v) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(Number(n)));
@@ -105,7 +159,9 @@ export function glbFileDoc(title, glb) {
  * @param {object} o
  * @param {object} o.repo
  * @param {object} o.renderHandle   the scene-render doc
- * @param {object} o.sourceHandle   the source doc (never written)
+ * @param {object} o.sourceHandle   the source doc (never written); a read-only view
+ *        (DocHandle.view) for a fixed object, so build() reads it at those heads
+ *        (and is told its url, which then carries `#heads`)
  * @param {object} o.provider       { id, name, params: ParamSpec[], version?: number, module: SourceImpl }
  * @param {{ [url]: string[] }} [o.deps]  heads of each dependency as this build reads it
  *        ([] for one that couldn't be loaded); recorded as builtFrom.deps
