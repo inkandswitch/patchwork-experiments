@@ -180,8 +180,11 @@ or unmount.
   byte-identical GLBs. Two builds that need the same surface at once share one
   job.
 - **Off the main thread:** the expensive stage, and the first finish, run in a
-  module worker at `new URL("./mesh/worker.js", import.meta.url)`, one worker
-  per job, terminated afterwards. The worker sends back the surface (for the
+  module worker (vite bundles `src/mesh/worker.js` via a `?worker&url` import),
+  one worker per job, terminated afterwards. A bundle loaded from another
+  origin than the page (a dev server, a static tools host; not pushwork, whose
+  modules come through the page's service worker) can't start it directly, so
+  then the script is fetched and started from a blob URL. The worker sends back the surface (for the
   cache) and the GLB, both transferred. Vite bundles the worker next to the
   chunk that spawns it, so it resolves wherever the bundle is served,
   including inside the Scene tool. The worker posts `ready` once its module

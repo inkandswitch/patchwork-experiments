@@ -210,6 +210,26 @@ describe("worker lifecycle", () => {
 
   const small = { source: "sphere(0.1)", bounds: doc.bounds, resolution: 16 };
 
+  it("starts the worker from a blob URL when the bundle is cross-origin", async () => {
+    const urls = [];
+    fakeWorkers(works);
+    const Real = globalThis.Worker;
+    vi.stubGlobal("Worker", class extends Real {
+      constructor(url, opts) {
+        urls.push(String(url));
+        if (!String(url).startsWith("blob:")) throw new DOMException("cross-origin", "SecurityError");
+        super(url, opts);
+      }
+    });
+    vi.stubGlobal("location", { origin: "https://elsewhere.example" });
+    vi.stubGlobal("fetch", async () => ({ ok: true, text: async () => "self.postMessage({ type: 'ready' })" }));
+    const r = await runJob(small);
+    expect(r.stats.triangles).toBeGreaterThan(0);
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toMatch(/^blob:/);
+    expect(warn).not.toHaveBeenCalled(); // no main-thread fallback
+  });
+
   it("meshes in a module worker and posts it the job", async () => {
     fakeWorkers(works);
     const r = await runJob(small);

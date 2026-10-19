@@ -20,6 +20,10 @@
 // source url with a different fingerprint supersedes a running one: its worker
 // is terminated and its promise rejects with a "superseded" error.
 
+// `?worker&url` makes vite bundle the worker and give us its URL (the bare
+// `new URL("./mesh/worker.js", import.meta.url)` is only bundled when written
+// inside `new Worker(...)`, which the cross-origin fallback below can't be).
+import workerUrl from "./mesh/worker.js?worker&url";
 import { fingerprintDoc } from "./doc.js";
 import { clampResolution, DEFAULT_RESOLUTION, finishMesh, meshSurface, surfaceBytes } from "./mesh/job.js";
 
@@ -105,19 +109,52 @@ export function supersededError() {
 }
 
 /**
+ * Start the mesher worker. `new Worker()` only accepts a same-origin script:
+ * in Patchwork the bundle is served from the page's origin (pushwork modules
+ * come through the service worker), but a bundle loaded from elsewhere (a dev
+ * server, a static tools host) can't start it directly. Then fetch the script
+ * and start it from a blob URL; the worker bundle has no imports of its own,
+ * so it runs unchanged from there. Same approach as openscad's engine.
+ */
+async function spawnWorker() {
+  const url = new URL(workerUrl, import.meta.url);
+  try {
+    // a cross-origin script makes the constructor throw (SecurityError) at once
+    return new Worker(url, { type: "module", name: "implicit-mesh" });
+  } catch (err) {
+    const crossOrigin = typeof location !== "undefined" && url.origin !== location.origin;
+    if (!crossOrigin) throw err;
+  }
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`could not fetch the worker (HTTP ${response.status})`);
+  const blobUrl = URL.createObjectURL(new Blob([await response.text()], { type: "text/javascript" }));
+  try {
+    return new Worker(blobUrl, { type: "module", name: "implicit-mesh" });
+  } finally {
+    // the worker has fetched it by the time it runs; the URL itself isn't needed after construction
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  }
+}
+
+/**
  * Run a job in a fresh module worker.
  * @returns {{ promise: Promise<{ surface, result }>, cancel(err: Error): void }}
  */
 function inWorker(job) {
   let cancel = () => {};
+  let cancelled = null;
   const promise = new Promise((resolve, reject) => {
-    let worker;
-    try {
-      worker = new Worker(new URL("./mesh/worker.js", import.meta.url), { type: "module", name: "implicit-mesh" });
-    } catch (err) {
-      reject(startFailure(err?.message ?? String(err)));
-      return;
-    }
+    // cancelled before the worker even started
+    cancel = (err) => {
+      cancelled = err;
+      reject(err);
+    };
+    spawnWorker().then(
+      (worker) => (cancelled ? worker.terminate() : run(worker, resolve, reject)),
+      (err) => reject(startFailure(err?.message ?? String(err))),
+    );
+  });
+  const run = (worker, resolve, reject) => {
     const id = nextId++;
     let ready = false;
     let settled = false;
@@ -162,7 +199,7 @@ function inWorker(job) {
     cancel = (err) => settle(reject, err);
     watch();
     worker.postMessage({ id, job }); // queued until the module has loaded
-  });
+  };
   return { promise, cancel: (err) => cancel(err) };
 }
 
