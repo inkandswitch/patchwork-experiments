@@ -15,8 +15,8 @@ import { SLICE_PARAMS, coerceParams, paramDefaults, paramSpec } from "./params.j
 export const SLICE_DEFAULTS = Object.freeze(paramDefaults(SLICE_PARAMS));
 
 /**
- * The build runs synchronously on the scene's main thread and each result is
- * stored as a doc, so this is capped: 160 cells is ~0.8 MB and well under a
+ * Each result is stored as a doc (and the build may fall back to the main
+ * thread when no worker can be started), so this is capped: 160 cells is ~0.8 MB and well under a
  * second even with the mask. It is the declared max in params.js.
  */
 export const MAX_SLICE_RESOLUTION = paramSpec(SLICE_PARAMS, "resolution").max;
