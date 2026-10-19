@@ -106,7 +106,9 @@ export async function sliceJob({ repo, handle, onProgress, now = Date.now, onInp
       d.status = "idle";
       d.error = null;
       d.errorFrom = null;
-      d.stats = { ...stats, sizeMm: [...stats.sizeMm] };
+      d.stats = { ...stats, sizeMm: [...stats.sizeMm], gcodeBytes: saved.bytes.byteLength };
+      if (saved.storedBytes != null) d.stats.storedBytes = saved.storedBytes;
+      if (saved.tooLarge) d.stats.notStored = true;
     });
     return { ok: true, gcode, toolpaths, model, inputs, gcodeUrl: saved.url, reused: saved.reused };
   } catch (err) {

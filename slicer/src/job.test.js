@@ -1,3 +1,4 @@
+import { readGcode } from "./output.js";
 import { describe, it, expect } from "vitest";
 import { sliceJob } from "./job.js";
 import { newJobDoc, normalizeJob } from "./datatype.js";
@@ -19,7 +20,7 @@ function setup(jobFields = {}) {
   return { repo, glb, part, render, job };
 }
 
-const gcodeOf = async (repo, url) => new TextDecoder().decode(fileBytes((await repo.find(url)).doc()));
+const gcodeOf = async (repo, url) => readGcode((await repo.find(url)).doc(), fileBytes);
 const keysNow = async (repo, j) => ({ ...(await currentSourceKey(j.source, (await repo.find(j.source)).doc())), settingsKey: settingsKey(j.settings) });
 
 describe("sliceJob", () => {

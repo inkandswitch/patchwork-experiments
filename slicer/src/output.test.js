@@ -1,5 +1,6 @@
+import { fileBytes } from "./render-read.js";
 import { describe, it, expect } from "vitest";
-import { gcodeFileDoc, gcodeName, hashBytes, saveGcode } from "./output.js";
+import { gcodeFileDoc, gcodeName, hashBytes, saveGcode, readGcode } from "./output.js";
 import { generateGcode, provenanceHeader, readProvenance } from "./gcode.js";
 import { buildToolpaths } from "./toolpaths.js";
 import { DEFAULT_SETTINGS, stableStringify } from "./settings.js";
@@ -15,10 +16,30 @@ const prov = (o = {}) => ({ job: JOB, source: SRC, sourceKind: "scene-render", s
 describe("G-code file docs", () => {
   it("one file doc of bytes, named after the job", () => {
     const d = gcodeFileDoc("Hull (3D render)", new Uint8Array([59]));
-    expect(d).toMatchObject({ "@patchwork": { type: "file" }, name: "Hull (3D render).gcode", extension: "gcode" });
+    expect(d).toMatchObject({ "@patchwork": { type: "file" }, name: "Hull (3D render).gcode.gz", extension: "gz", contentEncoding: "gzip" });
     expect(d.content).toBeInstanceOf(Uint8Array);
     expect(gcodeName("part.stl")).toBe("part.gcode");
     expect(gcodeName("")).toBe("slice.gcode");
+  });
+
+  it("stores G-code gzip-compressed, reads it back, and reads old plain docs too", async () => {
+    const repo = new FakeRepo();
+    const text = "G28\n" + "G1 X10 Y10 E0.5\n".repeat(20000);
+    const saved = await saveGcode({ repo, job: { title: "A", gcodeUrl: null, builtFrom: null }, gcode: text });
+    const doc = (await repo.find(saved.url)).doc();
+    expect(doc.content.byteLength).toBeLessThan(text.length / 20);
+    expect(saved.storedBytes).toBe(doc.content.byteLength);
+    expect(await readGcode(doc, fileBytes)).toBe(text);
+    const plain = { "@patchwork": { type: "file" }, name: "old.gcode", content: new TextEncoder().encode("G28\n") };
+    expect(await readGcode(plain, fileBytes)).toBe("G28\n");
+  });
+
+  it("stores nothing when even the compressed G-code is too large", async () => {
+    const repo = new FakeRepo();
+    const saved = await saveGcode({ repo, job: { title: "A", gcodeUrl: null, builtFrom: null }, gcode: "G28\n".repeat(1000), maxStored: 10 });
+    expect(saved).toMatchObject({ url: null, tooLarge: true });
+    expect(saved.hash).toMatch(/^(sha256|c53):/);
+    expect(repo.created.length).toBe(0);
   });
 
   it("keeps the current doc when the bytes are the same, makes a new one when they change", async () => {

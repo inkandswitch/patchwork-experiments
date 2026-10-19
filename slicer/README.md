@@ -110,11 +110,18 @@ H2D by default — `nozzle`, `lineWidth`).
 
 ## Output
 
-- One current G-code **file doc** per job (`gcodeUrl`): `{ "@patchwork": {
-  type: "file" }, name: "<title>.gcode", extension: "gcode", mimeType:
-  "text/x-gcode", content: Uint8Array }`. A slice whose bytes hash the same as
-  the current G-code (`builtFrom.gcodeHash`) keeps that doc; new bytes make a
-  new immutable doc and repoint `gcodeUrl`. Superseded ones are orphaned.
+- One current G-code **file doc** per job (`gcodeUrl`), **gzip-compressed**:
+  `{ "@patchwork": { type: "file" }, name: "<title>.gcode.gz", extension: "gz",
+  mimeType: "application/gzip", contentEncoding: "gzip", content: Uint8Array }`.
+  G-code is huge and repetitive (a 31 cm print at 0.2 mm is ~150 MB, ~6M
+  lines) and compresses about tenfold; stored raw, every automatic re-slice
+  of a big model would push a 100+ MB doc to the sync server. If it is still
+  over 24 MB compressed nothing is stored (`gcodeUrl: null`, `stats.notStored`)
+  and the G-code is downloaded from the view that sliced it. The preview and
+  Download decompress it (and still read plain docs from earlier versions).
+  When a re-slice's G-code hashes the same as the current one
+  (`builtFrom.gcodeHash`, of the uncompressed text) the doc is kept; new G-code
+  makes a new immutable doc and repoints `gcodeUrl`. Superseded ones are orphaned.
 - **Download G-code** saves it; **Open G-code** opens the file doc.
 - The preview is drawn from the saved G-code (walls, solid, infill, with a
   layer slider), so it shows what the file says whoever sliced it. The viewer

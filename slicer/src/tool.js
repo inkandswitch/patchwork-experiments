@@ -17,7 +17,7 @@ import { fileBytes } from "./render-read.js";
 import { bounds } from "./stl.js";
 import { bedOffset } from "./toolpaths.js";
 import { fitScale, unitLabel } from "./units.js";
-import { gcodeName } from "./output.js";
+import { gcodeName, readGcode } from "./output.js";
 import { hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop, sceneRowFromDrop, sliceUrlForSceneObject } from "./dnd.js";
 import { onThemeChange, resolveCssColor } from "./theme.js";
 
@@ -313,7 +313,7 @@ export default function SlicerTool(handle, element) {
     const j = job();
     if (!text && j.gcodeUrl) {
       try {
-        text = new TextDecoder().decode(fileBytes((await repo.find(j.gcodeUrl)).doc()));
+        text = await readGcode((await repo.find(j.gcodeUrl)).doc(), fileBytes);
       } catch (err) {
         return say(`Couldn't read the G-code: ${errorMessage(err)}`);
       }
@@ -423,7 +423,7 @@ export default function SlicerTool(handle, element) {
     if (!url || preview?.url === url) return;
     const gen = ++previewGen;
     try {
-      const text = new TextDecoder().decode(fileBytes((await repo.find(url)).doc()));
+      const text = await readGcode((await repo.find(url)).doc(), fileBytes);
       if (dead || gen !== previewGen || preview?.url === url) return;
       setPreview(url, text);
     } catch (err) {
@@ -616,6 +616,17 @@ export default function SlicerTool(handle, element) {
       ["Triangles", s.triangles],
       ["G-code lines", s.lines],
     ];
+    const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+    if (s.gcodeBytes) {
+      rows.push([
+        "G-code",
+        s.notStored
+          ? `${mb(s.gcodeBytes)}, too large to store (${mb(s.storedBytes)} compressed): download it here`
+          : s.storedBytes
+            ? `${mb(s.gcodeBytes)} (stored as ${mb(s.storedBytes)})`
+            : mb(s.gcodeBytes),
+      ]);
+    }
     for (const [k, v] of rows) statsEl.append(el("dt", {}, k), el("dd", {}, String(v ?? "–")));
   }
 

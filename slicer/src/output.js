@@ -1,4 +1,10 @@
-// Where a job's G-code goes: one current file doc per job. A slice whose bytes
+// Where a job's G-code goes: one current file doc per job, gzip-compressed.
+// G-code is enormous and repetitive (a 31 cm print at 0.2 mm layers is ~150 MB
+// of text, ~6M lines) and compresses about tenfold; stored raw, every automatic
+// re-slice of a big model would push a 100+ MB doc to the sync server. Above
+// MAX_STORED_BYTES even compressed, nothing is stored: the job records the
+// slice (builtFrom, stats) with gcodeUrl null, and the G-code is downloaded
+// from the view that sliced it. A slice whose bytes
 // hash the same as the current G-code's (builtFrom.gcodeHash) keeps that doc,
 // so re-slicing after a change that doesn't alter the output (a source rename
 // that changed heads, a setting changed and changed back, a peer's identical
@@ -33,15 +39,36 @@ export function gcodeName(title) {
   return `${base || "slice"}.gcode`;
 }
 
-/** A Patchwork file doc for G-code. Bytes, not a string: a string would be a collaborative text CRDT, megabytes of ops. */
-export function gcodeFileDoc(title, bytes) {
+/** The most compressed G-code a job stores (bytes). */
+export const MAX_STORED_BYTES = 24 * 1024 * 1024;
+
+async function pipeThrough(bytes, stream) {
+  return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer());
+}
+export const gzip = (bytes) => pipeThrough(bytes, new CompressionStream("gzip"));
+export const gunzip = (bytes) => pipeThrough(bytes, new DecompressionStream("gzip"));
+
+/**
+ * A Patchwork file doc for G-code, gzip-compressed (`contentEncoding: "gzip"`,
+ * name `….gcode.gz`). Bytes, not a string: a string would be a collaborative
+ * text CRDT, megabytes of ops.
+ */
+export function gcodeFileDoc(title, gzBytes) {
   return {
     "@patchwork": { type: "file" },
-    name: gcodeName(title),
-    extension: "gcode",
-    mimeType: "text/x-gcode",
-    content: bytes,
+    name: `${gcodeName(title)}.gz`,
+    extension: "gz",
+    mimeType: "application/gzip",
+    contentEncoding: "gzip",
+    content: gzBytes,
   };
+}
+
+/** The G-code text in a stored file doc: gzip (this slicer) or plain (older docs). */
+export async function readGcode(doc, fileBytes) {
+  const bytes = fileBytes(doc);
+  const gz = doc?.contentEncoding === "gzip" || (bytes[0] === 0x1f && bytes[1] === 0x8b);
+  return new TextDecoder().decode(gz ? await gunzip(bytes) : bytes);
 }
 
 /**
@@ -52,12 +79,14 @@ export function gcodeFileDoc(title, bytes) {
  * @param {object} o.job     the job doc as it is now (normalized or raw)
  * @param {string|Uint8Array} o.gcode
  * @param {string} [o.title]
- * @returns {Promise<{ url: string, hash: string, reused: boolean, bytes: Uint8Array }>}
+ * @returns {Promise<{ url: string | null, hash: string, reused: boolean, bytes: Uint8Array, storedBytes: number | null, tooLarge?: true }>}
  */
-export async function saveGcode({ repo, job, gcode, title }) {
+export async function saveGcode({ repo, job, gcode, title, maxStored = MAX_STORED_BYTES }) {
   const bytes = typeof gcode === "string" ? new TextEncoder().encode(gcode) : gcode;
-  const hash = await hashBytes(bytes);
-  if (job?.gcodeUrl && job?.builtFrom?.gcodeHash === hash) return { url: job.gcodeUrl, hash, reused: true, bytes };
-  const handle = await repo.create2(gcodeFileDoc(title ?? job?.title, bytes));
-  return { url: handle.url, hash, reused: false, bytes };
+  const hash = await hashBytes(bytes); // of the G-code itself, so dedupe doesn't depend on the compressor
+  if (job?.gcodeUrl && job?.builtFrom?.gcodeHash === hash) return { url: job.gcodeUrl, hash, reused: true, bytes, storedBytes: null };
+  const gz = await gzip(bytes);
+  if (gz.byteLength > maxStored) return { url: null, hash, reused: false, bytes, storedBytes: gz.byteLength, tooLarge: true };
+  const handle = await repo.create2(gcodeFileDoc(title ?? job?.title, gz));
+  return { url: handle.url, hash, reused: false, bytes, storedBytes: gz.byteLength };
 }
