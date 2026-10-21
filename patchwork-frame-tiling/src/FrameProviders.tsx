@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { DraftRelay } from "./drafts";
 
 /**
  * The base context providers (shipped by patchwork-base) that we mount via the
@@ -149,12 +150,15 @@ export const FrameProviders = ({
   selectedDocUrl,
   selectedToolId,
   openViews,
+  draftScope,
   children,
 }: {
   accountDocUrl: AutomergeUrl;
   selectedDocUrl: AutomergeUrl | undefined;
   selectedToolId: string | null;
   openViews: OpenView[];
+  /** The selected content panel's draft-state provider (see `drafts.tsx`). */
+  draftScope: HTMLElement | null;
   children: ReactNode;
 }) => {
   const accountRef = useRef<HTMLElement>(null);
@@ -222,7 +226,9 @@ export const FrameProviders = ({
                 selectedToolId={selectedToolId}
                 openViews={openViews}
               >
-                {ready ? children : null}
+                <DraftRelay scope={draftScope}>
+                  {ready ? children : null}
+                </DraftRelay>
               </SelectionProvider>
             </patchwork-view>
           </patchwork-view>

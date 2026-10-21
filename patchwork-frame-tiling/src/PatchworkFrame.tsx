@@ -55,6 +55,7 @@ import {
 } from "./layout";
 import { TopBar } from "./TopBar";
 import { FrameProviders, type OpenView } from "./FrameProviders";
+import { DraftScope, useDraftsAvailable } from "./drafts";
 import "./styles.css";
 import type {
   DropSide,
@@ -296,6 +297,10 @@ type LayoutOps = {
   selectedLeafId: string | null;
   /** URL of the current selected document (what context panels describe). */
   selectedDocUrl: AutomergeUrl | undefined;
+  /** Whether the draft providers are installed (wrap content panels in them). */
+  draftsAvailable: boolean;
+  /** Report a content panel's ready draft scope (or its removal). */
+  setDraftScope: (leafId: string, scope: HTMLElement | null) => void;
   /** The user's remembered tool choices (account-synced), for defaulting. */
   toolPreferences: ToolPreferences | undefined;
   /** Persist an explicit tool choice for this doc and its datatype. */
@@ -711,6 +716,21 @@ const TilePanel = ({
             className="tile-panel__view"
             component={leaf.view.toolId}
           />
+        ) : ops.draftsAvailable && !isRootFolder && resolvedUrl ? (
+          // Each content panel is its own draft scope; keyed on the url
+          // because the draft-state provider binds its doc once at mount.
+          <DraftScope
+            key={`${leaf.id}:${resolvedUrl}`}
+            leafId={leaf.id}
+            url={resolvedUrl}
+            onScope={ops.setDraftScope}
+          >
+            <patchwork-view
+              className="tile-panel__view"
+              doc-url={resolvedUrl}
+              tool-id={effectiveToolId}
+            />
+          </DraftScope>
         ) : (
           <patchwork-view
             key={leaf.id}
@@ -961,6 +981,27 @@ export const PatchworkFrame = ({
   }, [layout, selectedLeafId]);
   const selectedDocUrl = selectedLeafView?.url;
   const selectedToolId = selectedLeafView?.toolId ?? null;
+
+  // Each content panel's draft-state provider, once mounted. The selected
+  // one is what context panels (the Drafts sidebar) are relayed to.
+  const draftsAvailable = useDraftsAvailable();
+  const [draftScopes, setDraftScopes] = useState<
+    ReadonlyMap<string, HTMLElement>
+  >(() => new Map());
+  const setDraftScope = useCallback(
+    (leafId: string, scope: HTMLElement | null) => {
+      setDraftScopes((prev) => {
+        if (scope ? prev.get(leafId) === scope : !prev.has(leafId)) return prev;
+        const next = new Map(prev);
+        if (scope) next.set(leafId, scope);
+        else next.delete(leafId);
+        return next;
+      });
+    },
+    [],
+  );
+  const selectedDraftScope =
+    (selectedLeafId && draftScopes.get(selectedLeafId)) || null;
 
   // Every document on screen, for tools that care about more than the
   // selection (`patchwork:open-views`). Content panels only, in layout order.
@@ -1481,6 +1522,8 @@ export const PatchworkFrame = ({
     rootFolderUrl,
     selectedLeafId,
     selectedDocUrl,
+    draftsAvailable,
+    setDraftScope,
     toolPreferences: accountDoc.toolPreferences,
     rememberTool,
   };
@@ -1491,6 +1534,7 @@ export const PatchworkFrame = ({
       selectedDocUrl={selectedDocUrl}
       selectedToolId={selectedToolId}
       openViews={openViews}
+      draftScope={selectedDraftScope}
     >
       <div className="tile-app" data-patchwork-frame="tiling">
         <TopBar
