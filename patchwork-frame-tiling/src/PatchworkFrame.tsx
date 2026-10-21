@@ -175,6 +175,22 @@ const readDocParam = (): string | null => {
   }
 };
 
+// The URL's `doc`/`tool` as a panel view, normalized the way the host's router
+// does it (`docParamToUrl`) so it compares equal to what the host dispatches.
+const readDeepLink = (): PanelView | null => {
+  try {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const raw = params.get(DOC_PARAM);
+    if (!raw) return null;
+    const url = raw.startsWith("automerge:") ? raw : `automerge:${raw}`;
+    if (!isValidAutomergeUrl(url)) return null;
+    const toolId = params.get("tool");
+    return toolId ? { url, toolId } : { url };
+  } catch {
+    return null;
+  }
+};
+
 const syncDocParam = (
   url: AutomergeUrl | undefined,
   toolId: string | null,
@@ -1281,12 +1297,18 @@ export const PatchworkFrame = ({
   // Route a document-open request. `sourceId` is the panel the request came
   // from (null for app chrome and for URL/deep-link opens, which arrive on the
   // mount element).
+  //
+  // An open that arrives before the layout has loaded is held in
+  // `pendingOpenRef` and replayed once it has (see below), rather than dropped.
   const openView = useCallback(
     (view: PanelView, sourceId: string | null) => {
       if (!view.url) return;
       const doc = docRef.current;
       const current = doc?.layout ?? null;
-      if (!current) return;
+      if (!current) {
+        pendingOpenRef.current = { view, sourceId };
+        return;
+      }
 
       const leafIds = collectLeafIds(current);
       const liveIds = new Set(leafIds);
@@ -1371,6 +1393,29 @@ export const PatchworkFrame = ({
     },
     [change, navigate, focusLeaf, rootFolderUrl],
   );
+
+  // Replay an open that arrived before the layout existed. The host routes a
+  // deep link (`#doc=…`) once, as the frame mounts — before a fresh session's
+  // layout doc is seeded, and possibly before our listener is even attached
+  // (we suspend on the account doc first). So we also seed this from the URL
+  // itself; if that doc is already open, the replay is just a focus.
+  const pendingOpenRef = useRef<{
+    view: PanelView;
+    sourceId: string | null;
+  } | null>(null);
+  const deepLinkReadRef = useRef(false);
+  if (!deepLinkReadRef.current) {
+    deepLinkReadRef.current = true;
+    const view = readDeepLink();
+    if (view) pendingOpenRef.current = { view, sourceId: null };
+  }
+  useEffect(() => {
+    if (!layout) return;
+    const pending = pendingOpenRef.current;
+    if (!pending) return;
+    pendingOpenRef.current = null;
+    openView(pending.view, pending.sourceId);
+  }, [layout, openView]);
 
   const handleOpenDocument = useCallback(
     (event: OpenDocumentEvent) => {
