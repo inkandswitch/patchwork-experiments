@@ -113,6 +113,8 @@ describe('Fabrik', () => {
           !!Lively.$fabrikEditMode,
           Lively.$fabrikViewMode === 'edit',
           !!fab,
+          !!(fab.modePane && ('' + (fab.modePane.contentPane && fab.modePane.contentPane.shape && fab.modePane.contentPane.shape.string)).indexOf('edit') >= 0),
+          !!(fab.modePane && fab.modePane.paneMenu && fab.modePane.paneMenu.items && fab.modePane.paneMenu.items.indexOf('user view') >= 0),
           !!fabrikPinNamed(fab, 'probe'),
           !!fabrikPinNamed(fab, 'categories'),
           !!fabrikPinNamed(Lively.get('categories'), 'strings'),
@@ -121,7 +123,7 @@ describe('Fabrik', () => {
           !!Lively.get('fabrikBrowser'),
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
   });
 
   it('shows Ellipse.moveBy in edit view and user view', () => {
@@ -164,7 +166,7 @@ describe('Fabrik', () => {
     ).toBe('true,true');
   });
 
-  it('user view hugs and abuts; edit view leaves a wire gap without name gutters', () => {
+  it('user view hugs and abuts; edit view leaves a wire gap with name gutters', () => {
     const { rt } = makeFabrik();
     expect(
       rt.eval(`(() => {
@@ -199,19 +201,24 @@ describe('Fabrik', () => {
         let outBlue = outPin.shape.fillColor && outPin.shape.fillColor.b > outPin.shape.fillColor.g;
         fabrikSetView('user', Lively);
         let userBw = Lively.get('fabrik').shape.borderWidth;
+        let userOrigin = Lively.get('fabrikBrowser').getBounds().topLeft;
+        let fabY = Lively.get('fabrik').getBounds().topLeft.y;
         fabrikSetView('wiring', Lively);
         let wiringGap = Lively.get('methodNames').getBounds().topLeft.x - (
           Lively.get('categories').getBounds().topLeft.x + Lively.get('categories').getBounds().width()
         );
         return [
-          editPad < 8,
+          editPad >= 28 && editPad <= 32,
           editGap > 40 && editGap < 70,
           editDefGap > 40,
           userPad < 8,
           Math.abs(userVGap) < 6,
           Math.abs(userHGap) < 6,
           Math.abs(userDefGap) < 6,
-          Math.abs(outGap - 50) < 8,
+          Math.abs(outGap - 100) < 8,
+          Math.abs(fabY - 14) < 3,
+          Math.abs(userOrigin.x - 232) < 3,
+          Math.abs(userOrigin.y - 84) < 3,
           pinRight <= 1,
           inGreen,
           outBlue,
@@ -220,7 +227,7 @@ describe('Fabrik', () => {
           wiringGap > 40 && wiringGap < 70,
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
   });
 
   it('function view source wraps without blank lines after return', () => {
@@ -292,6 +299,7 @@ describe('Fabrik', () => {
         return [
           !!wm,
           wm.getBounds().width() <= 205,
+          Math.abs(wm.getBounds().topLeft.x - 20) < 4,
           openIx >= 0 && openIx < transIx,
           hasMake,
           !hasOnClass,
@@ -302,7 +310,7 @@ describe('Fabrik', () => {
           !!(fnProto && ('' + fnProto.fabrikSource).indexOf('=>') >= 0),
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true');
   });
 
   it('starts from populateLively; Open Fabrik rebuilds the browser test', () => {
@@ -357,6 +365,19 @@ describe('Fabrik', () => {
         copy.onPointerMove(pt(140, 120), { actorID: 't' });
         copy.onPointerUp(pt(140, 120), { actorID: 't' });
         let worldX = copy.boundsInWorld().topLeft.x;
+        let clsOut = fabrikPinNamed(Lively.get('classNamed'), 'result');
+        let methIn = fabrikPinNamed(Lively.get('methodsOfClass'), 'cls');
+        let wire = null;
+        for (let i = 0; i < Lively.fabrikWires.length; i++) {
+          let w = Lively.fabrikWires[i];
+          if (w.fromPin === clsOut && w.toPin === methIn) wire = w;
+        }
+        let clsOutW = fabrikPinCenterWorld(clsOut);
+        let methInW = fabrikPinCenterWorld(methIn);
+        let stubOut = fabrikWireStubWorld(clsOut);
+        let stubIn = fabrikWireStubWorld(methIn);
+        let cOut = fabrikWireControlWorld(clsOut, methIn, true);
+        let cIn = fabrikWireControlWorld(clsOut, methIn, false);
         return [
           inW.x <= inB.topLeft.x + 2,
           Math.abs(inW.y - (inB.topLeft.y + inB.height() / 2)) < 3,
@@ -366,8 +387,13 @@ describe('Fabrik', () => {
           Lively.$pointerFocus == null,
           copy.world() === Lively,
           worldX > 90,
+          !!(wire && wire.className === 'FabrikWire'),
+          Math.abs(stubOut.x - (clsOutW.x + 20)) < 2,
+          Math.abs(stubIn.x - (methInW.x - 20)) < 2,
+          cOut.x > stubOut.x + 40,
+          cIn.x < stubIn.x - 20,
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true');
   }, 20000);
 });

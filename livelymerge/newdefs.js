@@ -1,4 +1,4 @@
-//written on 2026-10-11 16:15 PDT
+//written on 2026-10-23 17:50 PDT
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -599,7 +599,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     ),
   );
 
-  Lively.showWorldMenuAt(pt(130, 40));
+  Lively.showWorldMenuAt(pt(20, 40));
 
   testTransforms();
 
@@ -5980,8 +5980,8 @@ class LineMorph extends Morph {
   }
   beClosed(on) {
     /** Connect last vertex back to first. `line.beClosed(true)` or read `line.beClosed()`. */
-    if (arguments.length === 0) return !!this.shape.closed;
-    this.shape.closed = !!on;
+    if (on === undefined) return !!(this.shape && this.shape.closed);
+    if (this.shape) this.shape.closed = !!on;
     this.changed();
     let world = this.world();
     if (world && world.changed) world.changed();
@@ -5990,8 +5990,8 @@ class LineMorph extends Morph {
   }
   beCurved(on) {
     /** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
-    if (arguments.length === 0) return !!this.shape.curved;
-    this.shape.curved = !!on;
+    if (on === undefined) return !!(this.shape && this.shape.curved);
+    if (this.shape) this.shape.curved = !!on;
     this.changed();
     let world = this.world();
     if (world && world.changed) world.changed();
@@ -6161,8 +6161,8 @@ class LineMorph extends Morph {
     return {
       items: ['be curved', 'be closed', '---------', '------->', '<-------', '<----->'],
       onSelect: function (item, line) {
-        if (item === 'be curved') line.beCurved(!line.beCurved());
-        if (item === 'be closed') line.beClosed(!line.beClosed());
+        if (item === 'be curved') line.beCurved(!(line.shape && line.shape.curved));
+        if (item === 'be closed') line.beClosed(!(line.shape && line.shape.closed));
         if (item === '---------') line.setArrowheads('none');
         if (item === '------->') line.setArrowheads('end');
         if (item === '<-------') line.setArrowheads('start');
@@ -13168,7 +13168,7 @@ class WorldMorph extends Morph {
   showWorldMenuAt(pos, optsIfAny) {
     /**
      * World menu with label+action items (editable live via findItem / addItem* / removeItem).
-     * Answers the menu morph — e.g. wm = Lively.showWorldMenuAt(pt(130, 40))
+     * Answers the menu morph — e.g. wm = Lively.showWorldMenuAt(pt(20, 40))
      *   wm.removeItem(wm.findItem('todo'))
      *   wm.addItemBefore('transcript', 'Quick Brown Fox', () => openQBF())
      */
@@ -14623,6 +14623,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-10-11 16:15 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-10-23 17:50 PDT';
 init()
-//written on 2026-10-11 16:15 PDT
+//written on 2026-10-23 17:50 PDT
