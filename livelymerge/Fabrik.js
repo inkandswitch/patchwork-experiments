@@ -1,11 +1,15 @@
-//written on 2026-10-23 18:15 PDT
+//written on 2026-10-26 20:33 PDT
 // Fabrik — application construction set on newdefs (Livelymerge Morphic).
 // Parts bin, pins, wires, and a system browser with edit view / user view.
 //
-let FABRIK_WRITTEN_ON = '2026-10-23 18:15 PDT';
+let FABRIK_WRITTEN_ON = '2026-10-26 20:33 PDT';
 let FABRIK_EDIT_GAP = 50;
 let FABRIK_PIN_W = 14;
 let FABRIK_PIN_H = 12;
+let FABRIK_FN_X = 50;
+let FABRIK_FN_W = 250;
+let FABRIK_FN_TO_EDIT = 80;
+let FABRIK_FN_Y_DROP = 100;
 
 function fabrikViewMode(world) {
   world = world || Lively;
@@ -267,14 +271,76 @@ function fabrikInstallWheel(world) {
   } catch (err) {}
 }
 
+function fabrikHostXY(i) {
+  /**
+   * Scratch x/y records on the host `window` object — never `pt()`. Wire
+   * redraw runs inside the Automerge frame transaction; a Morphic Point is a
+   * heap allocation, and the old cubic path made thousands of them per frame
+   * (Chrome's rAF-violation log).
+   */
+  let bag = window._fabrikXY;
+  if (!bag) {
+    bag = new window.Array();
+    window._fabrikXY = bag;
+  }
+  while (bag.length <= i) {
+    let o = new window.Object();
+    o.x = 0;
+    o.y = 0;
+    bag.push(o);
+  }
+  return bag[i];
+}
+
+function fabrikMorphLocalToWorld(morph, lx, ly, out) {
+  /** Scale, canvas-rotate(+r), translate — same order as SimpleTransform.transformPt. */
+  let m = morph;
+  let x = lx;
+  let y = ly;
+  while (m && m.owner) {
+    let t = m.transform;
+    let sc = t && t.scale;
+    let sx = sc && sc.x != null ? sc.x : 1;
+    let sy = sc && sc.y != null ? sc.y : 1;
+    x = x * sx;
+    y = y * sy;
+    let r = t && t.rotation ? t.rotation : 0;
+    if (r) {
+      let c = Math.cos(-r);
+      let s = Math.sin(-r);
+      let nx = x * c - y * s;
+      let ny = x * s + y * c;
+      x = nx;
+      y = ny;
+    }
+    let tr = t && t.translation;
+    if (tr) {
+      x = x + tr.x;
+      y = y + tr.y;
+    }
+    if (m.$scrollOffsetY) y = y + m.$scrollOffsetY;
+    m = m.owner;
+  }
+  out.x = x;
+  out.y = y;
+  return out;
+}
+
+function fabrikPinCenterInto(pin, out) {
+  let e = pin && pin.shape && pin.shape.extent ? pin.shape.extent : null;
+  let w = e && e.x != null ? e.x : FABRIK_PIN_W;
+  let h = e && e.y != null ? e.y : FABRIK_PIN_H;
+  let lx = pin && pin.pinDir === 'out' ? w : 0;
+  return fabrikMorphLocalToWorld(pin, lx, h / 2, out);
+}
+
 function fabrikPinCenterWorld(pin) {
   /**
    * Wire attachment: output tip (outward point), or the midpoint of an input
    * pin's outward flat side.
    */
-  let e = pin.shape && pin.shape.extent ? pin.shape.extent : pt(FABRIK_PIN_W, FABRIK_PIN_H);
-  let local = pin.pinDir === 'out' ? pt(e.x, e.y / 2) : pt(0, e.y / 2);
-  return pin.globalize(local);
+  let o = fabrikPinCenterInto(pin, fabrikHostXY(0));
+  return pt(o.x, o.y);
 }
 
 function fabrikPinAwayX(pin) {
@@ -283,16 +349,39 @@ function fabrikPinAwayX(pin) {
 
 function fabrikWireStubWorld(pin) {
   /** 20px straight out from the pin, along its away direction. */
-  let p = fabrikPinCenterWorld(pin);
+  let p = fabrikPinCenterInto(pin, fabrikHostXY(0));
   return pt(p.x + fabrikPinAwayX(pin) * 20, p.y);
 }
 
 function fabrikWireHeadedBack(fromPin, toPin, fromEnd) {
-  let a = fabrikPinCenterWorld(fromPin);
-  let b = fabrikPinCenterWorld(toPin);
+  let a = fabrikPinCenterInto(fromPin, fabrikHostXY(0));
+  let b = fabrikPinCenterInto(toPin, fabrikHostXY(1));
   let away = fabrikPinAwayX(fromEnd ? fromPin : toPin);
   let otherDx = fromEnd ? b.x - a.x : a.x - b.x;
   return otherDx * away < 0;
+}
+
+function fabrikWireControlInto(fromPin, toPin, fromEnd, ax, ay, bx, by, stubX, stubY, out) {
+  let pin = fromEnd ? fromPin : toPin;
+  let away = fabrikPinAwayX(pin);
+  let otherDx = fromEnd ? bx - ax : ax - bx;
+  let headedBack = otherDx * away < 0;
+  let extra = headedBack ? 52 : 16;
+  let yOff = 0;
+  let host = pin && pin.fabrikHost;
+  if (headedBack && host && host.shape) {
+    let hb = host.shape.getBounds();
+    let mid = fabrikMorphLocalToWorld(
+      host,
+      hb.topLeft.x + hb.extent.x / 2,
+      hb.topLeft.y + hb.extent.y / 2,
+      fabrikHostXY(4),
+    );
+    yOff = (stubY < mid.y ? -1 : 1) * 28;
+  }
+  out.x = stubX + away * extra;
+  out.y = stubY + yOff;
+  return out;
 }
 
 function fabrikWireControlWorld(fromPin, toPin, fromEnd) {
@@ -301,19 +390,109 @@ function fabrikWireControlWorld(fromPin, toPin, fromEnd) {
    * Backward runs reach farther and bow around the part so the stub and
    * curve leave the pin as one smooth departure.
    */
+  let a = fabrikPinCenterInto(fromPin, fabrikHostXY(0));
+  let b = fabrikPinCenterInto(toPin, fabrikHostXY(1));
   let pin = fromEnd ? fromPin : toPin;
-  let stub = fabrikWireStubWorld(pin);
-  let away = fabrikPinAwayX(pin);
-  let headedBack = fabrikWireHeadedBack(fromPin, toPin, fromEnd);
-  let extra = headedBack ? 52 : 16;
-  let yOff = 0;
-  let host = pin && pin.fabrikHost;
-  if (headedBack && host && host.boundsInWorld) {
-    let hb = host.boundsInWorld();
-    let cy = hb.topLeft.y + hb.height() / 2;
-    yOff = (stub.y < cy ? -1 : 1) * 28;
+  let stubX = (fromEnd ? a.x : b.x) + fabrikPinAwayX(pin) * 20;
+  let stubY = fromEnd ? a.y : b.y;
+  let o = fabrikWireControlInto(fromPin, toPin, fromEnd, a.x, a.y, b.x, b.y, stubX, stubY, fabrikHostXY(2));
+  return pt(o.x, o.y);
+}
+
+function fabrikXYSegDist(px, py, ax, ay, bx, by) {
+  let dx = bx - ax;
+  let dy = by - ay;
+  let len2 = dx * dx + dy * dy;
+  if (!(len2 > 0)) {
+    let ox = px - ax;
+    let oy = py - ay;
+    return Math.sqrt(ox * ox + oy * oy);
   }
-  return pt(stub.x + away * extra, stub.y + yOff);
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2;
+  if (t < 0) t = 0;
+  if (t > 1) t = 1;
+  let qx = ax + t * dx - px;
+  let qy = ay + t * dy - py;
+  return Math.sqrt(qx * qx + qy * qy);
+}
+
+function fabrikBezierXY(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t, out) {
+  let u = 1 - t;
+  let a = u * u * u;
+  let b = 3 * u * u * t;
+  let c = 3 * u * t * t;
+  let d = t * t * t;
+  out.x = a * p0x + b * p1x + c * p2x + d * p3x;
+  out.y = a * p0y + b * p1y + c * p2y + d * p3y;
+  return out;
+}
+
+function fabrikWireRefreshGeom(wire) {
+  let fromPin = wire.fromPin;
+  let toPin = wire.toPin;
+  if (!fromPin || !toPin) return false;
+  let a = fabrikPinCenterInto(fromPin, fabrikHostXY(0));
+  let b = fabrikPinCenterInto(toPin, fabrikHostXY(1));
+  if (wire.$gReady && wire.$ax === a.x && wire.$ay === a.y && wire.$bx === b.x && wire.$by === b.y)
+    return true;
+  let awayA = fabrikPinAwayX(fromPin);
+  let awayB = fabrikPinAwayX(toPin);
+  let a2x = a.x + awayA * 20;
+  let a2y = a.y;
+  let b2x = b.x + awayB * 20;
+  let b2y = b.y;
+  let c1 = fabrikWireControlInto(fromPin, toPin, true, a.x, a.y, b.x, b.y, a2x, a2y, fabrikHostXY(2));
+  let c2 = fabrikWireControlInto(fromPin, toPin, false, a.x, a.y, b.x, b.y, b2x, b2y, fabrikHostXY(3));
+  wire.$ax = a.x;
+  wire.$ay = a.y;
+  wire.$bx = b.x;
+  wire.$by = b.y;
+  wire.$a2x = a2x;
+  wire.$a2y = a2y;
+  wire.$b2x = b2x;
+  wire.$b2y = b2y;
+  wire.$c1x = c1.x;
+  wire.$c1y = c1.y;
+  wire.$c2x = c2.x;
+  wire.$c2y = c2.y;
+  wire.$gReady = true;
+  return true;
+}
+
+function fabrikCachedWireHits(wire, px, py) {
+  if (!fabrikWireRefreshGeom(wire)) return false;
+  if (fabrikXYSegDist(px, py, wire.$ax, wire.$ay, wire.$a2x, wire.$a2y) <= 8) return true;
+  if (fabrikXYSegDist(px, py, wire.$b2x, wire.$b2y, wire.$bx, wire.$by) <= 8) return true;
+  let prev = fabrikHostXY(5);
+  let cur = fabrikHostXY(6);
+  prev.x = wire.$a2x;
+  prev.y = wire.$a2y;
+  for (let i = 1; i <= 16; i++) {
+    fabrikBezierXY(
+      wire.$a2x,
+      wire.$a2y,
+      wire.$c1x,
+      wire.$c1y,
+      wire.$c2x,
+      wire.$c2y,
+      wire.$b2x,
+      wire.$b2y,
+      i / 16,
+      cur,
+    );
+    if (fabrikXYSegDist(px, py, prev.x, prev.y, cur.x, cur.y) <= 8) return true;
+    prev.x = cur.x;
+    prev.y = cur.y;
+  }
+  return false;
+}
+
+function fabrikWireHitsWorldPt(fromPin, toPin, worldPt) {
+  if (!fromPin || !toPin || !worldPt) return false;
+  let probe = new window.Object();
+  probe.fromPin = fromPin;
+  probe.toPin = toPin;
+  return fabrikCachedWireHits(probe, worldPt.x, worldPt.y);
 }
 
 function fabrikViewOnPointerMove(view, p, evt) {
@@ -387,7 +566,6 @@ function fabrikRenderHostOn(host, ctx) {
    * ScrollPane clips to its frame, which hid pins sitting outside the part.
    * Draw the frame+content clipped, then the pins (and their labels) unclipped.
    */
-  let pins = host.fabrikPins || [];
   ctx.save();
   let bnds = host.shape.getBounds();
   ctx.beginPath();
@@ -406,6 +584,8 @@ function fabrikRenderHostOn(host, ctx) {
     ctx.restore();
   });
   ctx.restore();
+  if (!fabrikPaneShowsPins(host)) return;
+  let pins = host.fabrikPins || [];
   for (let i = 0; i < pins.length; i++) {
     let each = pins[i];
     ctx.save();
@@ -443,8 +623,15 @@ function fabrikConnect(fromPin, toPin) {
   if (fabrikWiringMode(world) && world.addMorphFront) world.addMorphFront(wire);
   else world.addMorphBack(wire);
   world.fabrikWires.push(wire);
+  fabrikEmitIfNoInputs(outPin.fabrikHost);
   if (outPin.value !== undefined) inPin.receive(outPin.value);
   return wire;
+}
+
+function fabrikEmitIfNoInputs(host) {
+  if (!host || host.className !== 'FabrikFunctionView') return;
+  if (host.fabrikInputs && host.fabrikInputs.length) return;
+  if (host.fabrikRun) host.fabrikRun();
 }
 
 function fabrikMethodNames(cls) {
@@ -499,7 +686,8 @@ class FabrikPin extends Morph {
     return Morph.prototype.includesPt.call(this, p);
   }
   renderOn(ctx) {
-    if (!fabrikEditMode(this.world())) return;
+    let host = this.fabrikHost || this.owner;
+    if (host && host.$fabrikShowPins === false) return;
     let w = this.shape.extent.x;
     let h = this.shape.extent.y;
     let pointingIn = this.pinDir !== 'out';
@@ -518,29 +706,36 @@ class FabrikPin extends Morph {
     ctx.fill();
     ctx.stroke();
     ctx.restore();
-    let world = this.world();
-    if (world && world.$fabrikWiringFrom === this) {
-      ctx.save();
-      ctx.strokeStyle = '#c45c00';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(-1, -1);
-      ctx.lineTo(-1, h + 1);
-      ctx.lineTo(w + 1, h / 2);
-      ctx.closePath();
-      ctx.stroke();
-      ctx.restore();
+    if (host && host.world) {
+      let world = host.world();
+      if (world && world.$fabrikWiringFrom === this) {
+        ctx.save();
+        ctx.strokeStyle = '#c45c00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-1, -1);
+        ctx.lineTo(-1, h + 1);
+        ctx.lineTo(w + 1, h / 2);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      }
     }
     let name = this.pinName || '';
     if (!name) return;
     ctx.save();
     ctx.font = '11px sans-serif';
-    let tw = 0;
-    if (ctx.measureText) {
-      let m = ctx.measureText(name);
-      if (m && m.width) tw = m.width;
+    let tw = this.$labelW;
+    if (!(tw > 0) || this.$labelFor !== name) {
+      tw = 0;
+      if (ctx.measureText) {
+        let m = ctx.measureText(name);
+        if (m && m.width) tw = m.width;
+      }
+      if (!(tw > 0)) tw = name.length * 6;
+      this.$labelW = tw;
+      this.$labelFor = name;
     }
-    if (!(tw > 0)) tw = name.length * 6;
     let padX = 3;
     let boxW = tw + padX * 2;
     let boxH = 14;
@@ -641,9 +836,23 @@ class FabrikWire extends Morph {
     this.toPin = toPin;
     this.shape.borderWidth = 0;
     this.setColor(Color.white);
+    this.$gReady = false;
   }
-  includesPt(_p) {
-    return false;
+  includesPt(p) {
+    let world = this.owner;
+    if (!world || world.$fabrikViewMode !== 'wiring') return false;
+    return fabrikCachedWireHits(this, p.x, p.y);
+  }
+  onPointerDown(p, evt) {
+    if (!this.includesPt(p)) return false;
+    let world = this.owner || this.world();
+    if (fabrikPinAtWorld(world, p)) return false;
+    if (typeof effectiveMetaKey === 'function' && effectiveMetaKey(evt)) {
+      consumeSoftMetaKey();
+      if (this.showHalo) this.showHalo();
+      return false;
+    }
+    return true;
   }
   fullBounds() {
     return this.shape.getBounds().copy();
@@ -652,24 +861,33 @@ class FabrikWire extends Morph {
     if (this.toPin) this.toPin.receive(value);
   }
   renderOn(ctx) {
-    if (!fabrikEditMode(this.world())) return;
-    if (!this.fromPin || !this.toPin) return;
-    let a = this.localize(fabrikPinCenterWorld(this.fromPin));
-    let b = this.localize(fabrikPinCenterWorld(this.toPin));
-    let a2 = this.localize(fabrikWireStubWorld(this.fromPin));
-    let b2 = this.localize(fabrikWireStubWorld(this.toPin));
-    let c1 = this.localize(fabrikWireControlWorld(this.fromPin, this.toPin, true));
-    let c2 = this.localize(fabrikWireControlWorld(this.fromPin, this.toPin, false));
+    let world = this.owner;
+    if (!world || world.$fabrikViewMode === 'user') return;
+    if (!fabrikWireRefreshGeom(this)) return;
+    let ox = 0;
+    let oy = 0;
+    let t = this.transform;
+    if (t && t.translation) {
+      ox = t.translation.x;
+      oy = t.translation.y;
+    }
     ctx.save();
     ctx.strokeStyle = '#4a7bd0';
-    ctx.lineWidth = fabrikWiringMode(this.world()) ? 2.5 : 1.5;
+    ctx.lineWidth = world.$fabrikViewMode === 'wiring' ? 2.5 : 1.5;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(a2.x, a2.y);
-    ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, b2.x, b2.y);
-    ctx.lineTo(b.x, b.y);
+    ctx.moveTo(this.$ax - ox, this.$ay - oy);
+    ctx.lineTo(this.$a2x - ox, this.$a2y - oy);
+    ctx.bezierCurveTo(
+      this.$c1x - ox,
+      this.$c1y - oy,
+      this.$c2x - ox,
+      this.$c2y - oy,
+      this.$b2x - ox,
+      this.$b2y - oy,
+    );
+    ctx.lineTo(this.$bx - ox, this.$by - oy);
     ctx.stroke();
     ctx.restore();
   }
@@ -1040,18 +1258,150 @@ class FabrikBrowser extends PanelMorph {
   renderOn(ctx) {
     Morph.prototype.renderOn.call(this, ctx);
     if (!fabrikEditMode(this.world())) return;
-    let b = this.shape.getBounds();
-    let o = b.topLeft;
-    ctx.save();
-    ctx.strokeStyle = '#666';
-    ctx.lineWidth = 1.5;
-    if (ctx.setLineDash) ctx.setLineDash([7, 4]);
-    ctx.strokeRect(o.x + 1, o.y + 1, b.width() - 2, b.height() - 2);
-    ctx.restore();
+    fabrikStrokeDashedFrame(ctx, this.shape.getBounds());
   }
   static new(...args) {
     return new this(...args);
   }
+}
+
+class FabrikPanel extends PanelMorph {
+  /**
+   * Open construction panel: title bar + a tiny content box. Until wrap, the
+   * interior is not hittable, so parts under the dashed preview stay editable.
+   */
+  constructor(bounds) {
+    super(bounds || rect(40, 40, 120, 64));
+    this.setColor(Color.white);
+    this.setStyles(Color.white, 1, Color.gray);
+    this.setPanelTitle('Fabrik');
+    this.isFabrikPanel = true;
+    this.$fabrikWrapped = false;
+    if (this.titleBar && this.titleBar.closeBtn) this.titleBar.removeMorph(this.titleBar.closeBtn);
+  }
+  relayoutContentPanes() {}
+  isOpenFabrikPanel() {
+    return !this.$fabrikWrapped;
+  }
+  includesPt(p) {
+    if (this.$fabrikWrapped) return Morph.prototype.includesPt.call(this, p);
+    if (!this.titleBarHitInfo) return false;
+    return !!this.titleBarHitInfo(this.relativize(p));
+  }
+  morphMenu() {
+    return {
+      items: ['wrap user views'],
+      onSelect: function (item, morph) {
+        if (item === 'wrap user views' && morph && morph.wrapUserViews) morph.wrapUserViews();
+      },
+    };
+  }
+  previewFrameLocal() {
+    let views = fabrikWrappableViewsIn(this);
+    if (!views.length) return this.shape.getBounds().copy();
+    let u = null;
+    for (let i = 0; i < views.length; i++) {
+      let wr = views[i].boundsInWorld();
+      let tl = this.localize(wr.topLeft);
+      let local = rect(tl.x, tl.y, wr.width(), wr.height());
+      u = u ? u.union(local) : local;
+    }
+    return u;
+  }
+  wrapUserViews() {
+    let views = fabrikWrappableViewsIn(this);
+    if (!views.length) return this;
+    let worldU = null;
+    for (let i = 0; i < views.length; i++) {
+      let wr = views[i].boundsInWorld();
+      worldU = worldU ? worldU.union(wr) : fabrikCopyRect(wr);
+    }
+    let th = this.titleBarHeight || 24;
+    let nb = rect(worldU.topLeft.x, worldU.topLeft.y - th, Math.max(80, worldU.width()), worldU.height() + th);
+    this.setBounds(nb);
+    for (let j = 0; j < views.length; j++) {
+      if (views[j].reparentToOwnerPreservingWorldAnchor)
+        views[j].reparentToOwnerPreservingWorldAnchor(this, null);
+    }
+    this.$fabrikWrapped = true;
+    if (this.layoutChrome) this.layoutChrome();
+    if (this.changed) this.changed();
+    return this;
+  }
+  renderMeOn(ctx) {
+    if (!this.$fabrikWrapped) return;
+    Morph.prototype.renderMeOn.call(this, ctx);
+  }
+  renderOn(ctx) {
+    if (this.$fabrikWrapped) {
+      Morph.prototype.renderOn.call(this, ctx);
+      if (fabrikEditMode(this.world())) fabrikStrokeDashedFrame(ctx, this.shape.getBounds());
+      return;
+    }
+    if (this.titleBar) {
+      ctx.save();
+      let tfm = this.titleBar.transform;
+      ctx.translate(tfm.translation.x, tfm.translation.y);
+      this.titleBar.renderOn(ctx);
+      ctx.restore();
+    }
+    if (fabrikEditMode(this.world())) fabrikStrokeDashedFrame(ctx, this.previewFrameLocal());
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+function fabrikStrokeDashedFrame(ctx, b) {
+  if (!ctx || !b) return;
+  let o = b.topLeft;
+  ctx.save();
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 1.5;
+  if (ctx.setLineDash) ctx.setLineDash([7, 4]);
+  ctx.strokeRect(o.x + 1, o.y + 1, b.width() - 2, b.height() - 2);
+  ctx.restore();
+}
+
+function fabrikIsWrappableView(m) {
+  if (!m) return false;
+  let cn = m.className;
+  if (cn !== 'FabrikListView' && cn !== 'FabrikTextView') return false;
+  if (m.isFabrikProto || m.$fabrikHidden) return false;
+  return true;
+}
+
+function fabrikWrappableViewsIn(panel) {
+  let world = panel && panel.world ? panel.world() : null;
+  let found = [];
+  if (!world || !world.eachSubmorph || !panel.boundsInWorld) return found;
+  let frame = panel.boundsInWorld();
+  world.eachSubmorph(function (m) {
+    if (!fabrikIsWrappableView(m)) return;
+    if (m.owner !== world) return;
+    if (!m.boundsInWorld) return;
+    if (frame.overlapsRect(m.boundsInWorld())) found.push(m);
+  });
+  return found;
+}
+
+function fabrikMakeNewPanel(world) {
+  world = world || Lively;
+  let th = 24;
+  if (typeof PanelTitleBar === 'function' && PanelTitleBar.prototype && PanelTitleBar.prototype.HEIGHT)
+    th = PanelTitleBar.prototype.HEIGHT;
+  let x = 40;
+  let y = 40;
+  let cats = world && world.get ? world.get('categories') : null;
+  if (cats && cats.getBounds) {
+    let b = cats.getBounds();
+    x = b.topLeft.x;
+    y = b.topLeft.y - (th + 48);
+    if (y < 8) y = 8;
+  }
+  let panel = new FabrikPanel(rect(x, y, 120, th + 40));
+  if (world && world.addMorph) world.addMorph(panel);
+  return panel;
 }
 
 function fabrikWorldPtInBin(world, worldP) {
@@ -1164,16 +1514,76 @@ function fabrikOfferOpenMenu(world) {
   }
 }
 
+function fabrikMenuWidth() {
+  return 200;
+}
+
+function fabrikWorldMenuTopLeft(world) {
+  /** Inset 100px from the top and 100px from the right of the world. */
+  let b = world && world.getBounds ? world.getBounds() : rect(0, 0, 800, 600);
+  let mw = fabrikMenuWidth();
+  let x = b.topLeft.x + b.width() - 100 - mw;
+  let y = b.topLeft.y + 100;
+  if (x < b.topLeft.x + 8) x = b.topLeft.x + 8;
+  return pt(x, y);
+}
+
 function fabrikInstallWorldMenu(world) {
   if (!world || !world.showWorldMenuAt) return null;
   let prior = world.get && world.get('worldMenu');
   if (prior && prior.remove) prior.remove();
-  let menu = world.showWorldMenuAt(pt(20, 40));
+  let menu = world.showWorldMenuAt(fabrikWorldMenuTopLeft(world));
   if (!menu) return null;
   menu.setName('worldMenu');
   menu.isFleetingMenu = false;
   if (menu.owner !== world && world.addMorph) world.addMorph(menu);
   return menu;
+}
+
+function fabrikInstallViewMenu(world) {
+  if (!world) return null;
+  let prior = world.get && world.get('fabrikViewMenu');
+  if (prior && prior.remove) prior.remove();
+  let wm = world.get && world.get('worldMenu');
+  let at;
+  if (wm && wm.getBounds) {
+    let b = wm.getBounds();
+    at = pt(b.topLeft.x, b.topLeft.y + b.height() + 20);
+  } else {
+    let o = fabrikWorldMenuTopLeft(world);
+    at = pt(o.x, o.y + 44);
+  }
+  let items = [
+    menuItem('user view', function () {
+      fabrikSetView('user', world);
+    }),
+    menuItem('edit view', function () {
+      fabrikSetView('edit', world);
+    }),
+    menuItem('wiring', function () {
+      fabrikSetView('wiring', world);
+    }),
+    menuItem('make new panel', function () {
+      fabrikMakeNewPanel(world);
+    }),
+  ];
+  let menu = new MenuMorph(rect(at.x, at.y, fabrikMenuWidth(), 24 + items.length * 20), items);
+  menu.setName('fabrikViewMenu');
+  menu.isFleetingMenu = false;
+  if (world.addMorph) world.addMorph(menu);
+  fabrikSyncViewMenu(world);
+  return menu;
+}
+
+function fabrikSyncViewMenu(world) {
+  let menu = world && world.get ? world.get('fabrikViewMenu') : null;
+  if (!menu || !menu.shape) return;
+  let ix = menu.findItem ? menu.findItem(fabrikModeLabel(fabrikViewMode(world))) : -1;
+  if (ix < 0) {
+    if (menu.shape.selectLineAt) menu.shape.selectLineAt(0);
+    return;
+  }
+  menu.shape.$selectedLineIndex = ix + 1;
 }
 
 function fabrikMakeBinItem(bin, morph, kind, label) {
@@ -1264,7 +1674,8 @@ function fabrikRememberLayout(part, mode, bounds) {
 
 function fabrikDefaultUserPanelBounds() {
   let e = typeof browserPanelDefaultExtent === 'function' ? browserPanelDefaultExtent() : pt(400, 300);
-  return rect(232, 84, e.x, e.y);
+  let x = FABRIK_FN_X + FABRIK_FN_W + FABRIK_FN_TO_EDIT;
+  return rect(x, 84, e.x, e.y);
 }
 
 function fabrikExpandUserPaneBounds(user, gap) {
@@ -1300,17 +1711,18 @@ function fabrikUnionRects(list) {
   return r;
 }
 
-function fabrikEnsureLayouts(world, browser) {
-  /**
-   * User layout = BrowserPanel pane bounds. Edit layout expands that region by
-   * FABRIK_EDIT_GAP. Stored on each part as $fabrikLayouts so both views can
-   * later be changed and kept.
-   */
-  if (!browser || browser.$fabrikLayouts) return;
-  let gap = FABRIK_EDIT_GAP;
-  let userPanel = fabrikDefaultUserPanelBounds();
-  let th = browser.titleBarHeight || 24;
-  let content = rect(0, th, userPanel.width(), Math.max(8, userPanel.height() - th));
+function fabrikDemoFnNames() {
+  return ['browserCategoryNames', 'classNamesInCategory', 'classNamed', 'methodsOfClass', 'codeString'];
+}
+
+function fabrikDemoUserViewNames() {
+  return ['categories', 'classNames', 'methodNames', 'methodDefinition'];
+}
+
+function fabrikDemoPaneLocals(edit) {
+  let origin = fabrikDefaultUserPanelBounds();
+  let th = 24;
+  let content = rect(0, th, origin.width(), Math.max(8, origin.height() - th));
   let userPanes =
     typeof browserPanelUserPaneBounds === 'function'
       ? browserPanelUserPaneBounds(content)
@@ -1320,68 +1732,111 @@ function fabrikEnsureLayouts(world, browser) {
           methodNames: rect(160, th, 240, 110),
           methodDefinition: rect(0, th + 110, 400, 166),
         };
-  let editPanes = fabrikExpandUserPaneBounds(userPanes, gap);
-  let editUnion = fabrikUnionRects([
-    editPanes.category,
-    editPanes.classNames,
-    editPanes.methodNames,
-    editPanes.methodDefinition,
-  ]);
-  let editPanel = rect(
-    userPanel.topLeft.x,
-    userPanel.topLeft.y,
-    editUnion.topLeft.x + editUnion.width(),
-    editUnion.topLeft.y + editUnion.height(),
+  return edit ? fabrikExpandUserPaneBounds(userPanes, FABRIK_EDIT_GAP) : userPanes;
+}
+
+function fabrikOffsetRect(origin, local) {
+  return rect(
+    origin.topLeft.x + local.topLeft.x,
+    origin.topLeft.y + local.topLeft.y,
+    local.width(),
+    local.height(),
   );
-  browser.$fabrikLayouts = {
-    user: { bounds: fabrikCopyRect(userPanel), panes: userPanes },
-    edit: { bounds: fabrikCopyRect(editPanel), panes: editPanes },
+}
+
+function fabrikDemoPaneWorldRects(edit) {
+  let origin = fabrikDefaultUserPanelBounds();
+  let panes = fabrikDemoPaneLocals(edit);
+  return {
+    categories: fabrikOffsetRect(origin, panes.category),
+    classNames: fabrikOffsetRect(origin, panes.classNames),
+    methodNames: fabrikOffsetRect(origin, panes.methodNames),
+    methodDefinition: fabrikOffsetRect(origin, panes.methodDefinition),
   };
-  let outX = editPanel.topLeft.x + editPanel.width() + gap + 50;
-  let y = userPanel.topLeft.y + th;
-  let fnW = 250;
-  let fnNames = ['classNamesInCategory', 'classNamed', 'methodsOfClass', 'codeString'];
-  for (let i = 0; i < fnNames.length; i++) {
-    let m = world && world.get ? world.get(fnNames[i]) : null;
+}
+
+function fabrikPlaceFunctionView(world, name, x, y, w) {
+  let m = world && world.get ? world.get(name) : null;
+  if (!m) return null;
+  Morph.prototype.setBounds.call(m, rect(x, y, w, 40));
+  fabrikFitFunctionView(m);
+  fabrikRememberLayout(m, 'edit', m.getBounds());
+  return m;
+}
+
+function fabrikEnsureLayouts(world, _browser) {
+  /**
+   * User layout hugs the four world-level views. Edit layout expands that
+   * region by FABRIK_EDIT_GAP. Stored on each part as $fabrikLayouts.
+   */
+  if (!world || world.$fabrikLayoutsReady) return;
+  let gap = FABRIK_EDIT_GAP;
+  let userPanel = fabrikDefaultUserPanelBounds();
+  let th = 24;
+  let userRects = fabrikDemoPaneWorldRects(false);
+  let editRects = fabrikDemoPaneWorldRects(true);
+  let names = fabrikDemoUserViewNames();
+  for (let i = 0; i < names.length; i++) {
+    let m = world.get ? world.get(names[i]) : null;
     if (!m) continue;
-    Morph.prototype.setBounds.call(m, rect(outX, y, fnW, 40));
-    fabrikFitFunctionView(m);
-    fabrikRememberLayout(m, 'edit', m.getBounds());
-    let b = m.getBounds();
+    fabrikRememberLayout(m, 'user', userRects[names[i]]);
+    fabrikRememberLayout(m, 'edit', editRects[names[i]]);
+  }
+  let editUnion = fabrikUnionRects([
+    editRects.categories,
+    editRects.classNames,
+    editRects.methodNames,
+    editRects.methodDefinition,
+  ]);
+  let outX = FABRIK_FN_X;
+  let y = userPanel.topLeft.y + th + FABRIK_FN_Y_DROP;
+  let fnW = FABRIK_FN_W;
+  let fnNames = ['classNamesInCategory', 'classNamed', 'methodsOfClass', 'codeString'];
+  for (let j = 0; j < fnNames.length; j++) {
+    let fm = fabrikPlaceFunctionView(world, fnNames[j], outX, y, fnW);
+    if (!fm) continue;
+    let b = fm.getBounds();
     y = b.topLeft.y + b.height() + gap;
   }
-  let bin = world && world.get ? world.get('fabrikBin') : null;
+  let first = world.get ? world.get('classNamesInCategory') : null;
+  if (first) {
+    let fb = first.getBounds();
+    let catFn = fabrikPlaceFunctionView(world, 'browserCategoryNames', outX, fb.topLeft.y - gap - 40, fnW);
+    if (catFn) {
+      let ch = catFn.getBounds().height();
+      fabrikPlaceFunctionView(world, 'browserCategoryNames', outX, fb.topLeft.y - gap - ch, fnW);
+    }
+  }
+  let bin = world.get ? world.get('fabrikBin') : null;
   if (bin) {
     let bb = bin.getBounds();
-    fabrikRememberLayout(bin, 'edit', rect(outX + fnW + 150, userPanel.topLeft.y, bb.width(), bb.height()));
+    fabrikRememberLayout(
+      bin,
+      'edit',
+      rect(editUnion.topLeft.x + editUnion.width() + gap, userPanel.topLeft.y, bb.width(), bb.height()),
+    );
+  }
+  world.$fabrikLayoutsReady = true;
+}
+
+function fabrikApplyViewLayouts(world, edit) {
+  if (!world) return;
+  let mode = edit ? 'edit' : 'user';
+  let names = fabrikDemoUserViewNames();
+  for (let i = 0; i < names.length; i++) {
+    let pane = world.get ? world.get(names[i]) : null;
+    if (!pane) continue;
+    if (pane.owner && pane.owner !== world) continue;
+    let stored = fabrikGetLayout(pane, mode);
+    if (!stored || !stored.bounds) continue;
+    pane.$fabrikShowPins = !!edit;
+    pane.setBounds(fabrikCopyRect(stored.bounds));
   }
 }
 
 function fabrikApplyBrowserLayout(browser, edit) {
   if (!browser || browser.collapsed) return;
-  let mode = edit ? 'edit' : 'user';
-  let stored = fabrikGetLayout(browser, mode);
-  let panes = stored && stored.panes;
-  if (!panes) {
-    let box = browser.paneLayoutBounds();
-    let userPanes =
-      typeof browserPanelUserPaneBounds === 'function' ? browserPanelUserPaneBounds(box) : null;
-    panes = edit && userPanes ? fabrikExpandUserPaneBounds(userPanes, FABRIK_EDIT_GAP) : userPanes;
-  }
-  if (!panes) return;
-  let map = [
-    ['categories', panes.category],
-    ['classNames', panes.classNames],
-    ['methodNames', panes.methodNames],
-    ['methodDefinition', panes.methodDefinition],
-  ];
-  for (let i = 0; i < map.length; i++) {
-    let pane = browser.fabrikPanes && browser.fabrikPanes[map[i][0]];
-    let r = map[i][1];
-    if (!pane || !r) continue;
-    pane.$fabrikShowPins = !!edit;
-    pane.setBounds(fabrikCopyRect(r));
-  }
+  fabrikApplyViewLayouts(browser.world ? browser.world() : Lively, edit);
 }
 
 function fabrikLayoutBrowser(browser, edit) {
@@ -1389,7 +1844,7 @@ function fabrikLayoutBrowser(browser, edit) {
 }
 
 function fabrikPlaceHelpers(world, edit) {
-  let names = ['classNamesInCategory', 'classNamed', 'methodsOfClass', 'codeString'];
+  let names = fabrikDemoFnNames();
   for (let i = 0; i < names.length; i++) {
     let m = world.get(names[i]);
     fabrikShowPart(m, edit);
@@ -1451,13 +1906,8 @@ function fabrikSetView(mode, world) {
   world.$fabrikViewMode = mode;
   let edit = mode !== 'user';
   world.$fabrikEditMode = edit;
-  let browser = world.get('fabrikBrowser');
-  if (browser) {
-    fabrikEnsureLayouts(world, browser);
-    let L = fabrikGetLayout(browser, edit ? 'edit' : 'user');
-    if (L && L.bounds) browser.setBounds(L.bounds);
-    fabrikLayoutBrowser(browser, edit);
-  }
+  fabrikEnsureLayouts(world);
+  fabrikApplyViewLayouts(world, edit);
   fabrikPlaceHelpers(world, edit);
   fabrikStackWires(world, mode === 'wiring');
   fabrikApplyFabrikChrome(world);
@@ -1466,6 +1916,7 @@ function fabrikSetView(mode, world) {
     fab.modePane.setPaneMenu(fabrikModePaneMenuSpec());
     fab.modePane.setText(fabrikModeLabel(mode), { force: true });
   }
+  fabrikSyncViewMenu(world);
   if (world.changed) world.changed();
 }
 
@@ -1478,24 +1929,32 @@ function fabrikReveal(world, category, className, methodName) {
   if (methods && methodName) methods.setSelectionString(methodName);
 }
 
-function fabrikBuildDemo(world, fab) {
+function fabrikBuildDemo(world) {
   /**
-   * A Lively-style system browser from parts:
-   *   first the four user-view panes, then the functions that sit outside,
-   *   then the wires that couple them.
+   * A Lively-style system browser from parts laid out as a wiring diagram:
+   *   the four user views in the world, then the functions, then the wires.
    */
-  fab = fab || (world.get && world.get('fabrik'));
+  let editRects = fabrikDemoPaneWorldRects(true);
+  let categories = world.addMorph(new FabrikListView(editRects.categories));
+  categories.setName('categories');
+  let classNames = world.addMorph(new FabrikListView(editRects.classNames));
+  classNames.setName('classNames');
+  let methodNames = world.addMorph(new FabrikListView(editRects.methodNames));
+  methodNames.setName('methodNames');
+  let methodDefinition = world.addMorph(new FabrikTextView(editRects.methodDefinition));
+  methodDefinition.setName('methodDefinition');
 
-  let browser = world.addMorph(new FabrikBrowser(fabrikDefaultUserPanelBounds()));
-  browser.setName('fabrikBrowser');
-
-  let categories = browser.addPane('categories', new FabrikListView(rect(0, 0, 160, 56)));
-  let classNames = browser.addPane('classNames', new FabrikListView(rect(0, 0, 160, 150)));
-  let methodNames = browser.addPane('methodNames', new FabrikListView(rect(0, 0, 200, 150)));
-  let methodDefinition = browser.addPane('methodDefinition', new FabrikTextView(rect(0, 0, 400, 150)));
+  let browserCategoryNamesFn = world.addMorph(
+    new FabrikFunctionView(rect(FABRIK_FN_X, 70, FABRIK_FN_W, 84), {
+      source: 'function browserCategoryNames() { return $global.browserCategoryNames(); }',
+      inputs: [],
+      outputType: 'text',
+    }),
+  );
+  browserCategoryNamesFn.setName('browserCategoryNames');
 
   let classNamesInCategory = world.addMorph(
-    new FabrikFunctionView(rect(710, 70, 250, 84), {
+    new FabrikFunctionView(rect(FABRIK_FN_X, 70, FABRIK_FN_W, 84), {
       source: 'function classNamesInCategory(category) { return fabrikClassNamesInCategory(category); }',
       inputs: [{ name: 'category', type: 'text' }],
       outputType: 'text',
@@ -1504,7 +1963,7 @@ function fabrikBuildDemo(world, fab) {
   classNamesInCategory.setName('classNamesInCategory');
 
   let classFn = world.addMorph(
-    new FabrikFunctionView(rect(710, 164, 250, 84), {
+    new FabrikFunctionView(rect(FABRIK_FN_X, 164, FABRIK_FN_W, 84), {
       source: 'function classNamed(s) { return $global.classNamed(s); }',
       inputs: [{ name: 's', type: 'text' }],
       outputType: 'any',
@@ -1513,7 +1972,7 @@ function fabrikBuildDemo(world, fab) {
   classFn.setName('classNamed');
 
   let methodsFn = world.addMorph(
-    new FabrikFunctionView(rect(710, 258, 250, 84), {
+    new FabrikFunctionView(rect(FABRIK_FN_X, 258, FABRIK_FN_W, 84), {
       source: 'function methodsOfClass(cls) { return fabrikMethodNames(cls); }',
       inputs: [{ name: 'cls', type: 'any' }],
       outputType: 'text',
@@ -1522,7 +1981,7 @@ function fabrikBuildDemo(world, fab) {
   methodsFn.setName('methodsOfClass');
 
   let codeFn = world.addMorph(
-    new FabrikFunctionView(rect(710, 352, 250, 100), {
+    new FabrikFunctionView(rect(FABRIK_FN_X, 352, FABRIK_FN_W, 100), {
       source: 'function codeString(cls, name) { return fabrikCodeString(cls, name); }',
       inputs: [
         { name: 'cls', type: 'any' },
@@ -1533,7 +1992,7 @@ function fabrikBuildDemo(world, fab) {
   );
   codeFn.setName('codeString');
 
-  fabrikConnect(fabrikPinNamed(fab, 'categories'), fabrikPinNamed(categories, 'strings'));
+  fabrikConnect(fabrikPinNamed(browserCategoryNamesFn, 'result'), fabrikPinNamed(categories, 'strings'));
   fabrikConnect(fabrikPinNamed(categories, 'selection'), fabrikPinNamed(classNamesInCategory, 'category'));
   fabrikConnect(fabrikPinNamed(classNamesInCategory, 'result'), fabrikPinNamed(classNames, 'strings'));
   fabrikConnect(fabrikPinNamed(classNames, 'selection'), fabrikPinNamed(classFn, 's'));
@@ -1543,17 +2002,15 @@ function fabrikBuildDemo(world, fab) {
   fabrikConnect(fabrikPinNamed(methodNames, 'selection'), fabrikPinNamed(codeFn, 'name'));
   fabrikConnect(fabrikPinNamed(codeFn, 'result'), fabrikPinNamed(methodDefinition, 'text'));
 
-  if (fab && fab.emitCategories) fab.emitCategories();
-  fabrikEnsureLayouts(world, browser);
-  fabrikLayoutBrowser(browser, true);
+  fabrikEnsureLayouts(world);
+  fabrikApplyViewLayouts(world, true);
   fabrikReveal(world, 'Basic Graphics', 'Ellipse', 'moveBy');
   return {
-    fab: fab,
-    browser: browser,
     categories: categories,
     classNames: classNames,
     methodNames: methodNames,
     methodDefinition: methodDefinition,
+    browserCategoryNames: browserCategoryNamesFn,
     classNamesInCategory: classNamesInCategory,
     classFn: classFn,
     methodsFn: methodsFn,
@@ -1578,19 +2035,18 @@ function fabrikBuildWorld(world) {
   world.fabrikWires = [];
   world.$fabrikEditMode = true;
   world.$fabrikViewMode = 'edit';
+  world.$fabrikLayoutsReady = false;
   world.isFabrikWorld = true;
-
-  let fab = world.addMorph(new Fabrik(rect(212, 14, 280, 56)));
-  fab.setName('fabrik');
 
   let bin = world.addMorph(new FabrikBin(rect(1110, 32, 170, 536)));
   bin.setName('fabrikBin');
   fabrikPopulateBin(bin);
 
-  fabrikBuildDemo(world, fab);
+  fabrikBuildDemo(world);
   fabrikInstallWheel(world);
   fabrikSetView('edit', world);
   fabrikInstallWorldMenu(world);
+  fabrikInstallViewMenu(world);
 }
 
 function initFabrik() {
@@ -1606,4 +2062,4 @@ function initFabrik() {
 
 if (typeof Lively === 'object' && Lively) fabrikOfferOpenMenu(Lively);
 
-//written on 2026-10-23 18:15 PDT
+//written on 2026-10-26 20:33 PDT

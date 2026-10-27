@@ -105,22 +105,30 @@ describe('Fabrik', () => {
     const { rt } = makeFabrik();
     expect(
       rt.eval(`(() => {
-        let fab = Lively.get('fabrik');
+        let catFn = Lively.get('browserCategoryNames');
+        let catSrc = catFn && catFn.contentPane && catFn.contentPane.shape ? catFn.contentPane.shape.string : '';
+        let wired = false;
+        let from = fabrikPinNamed(catFn, 'result');
+        let to = fabrikPinNamed(Lively.get('categories'), 'strings');
+        for (let i = 0; i < Lively.fabrikWires.length; i++) {
+          let w = Lively.fabrikWires[i];
+          if (w.fromPin === from && w.toPin === to) wired = true;
+        }
         return [
           !!Lively.isFabrikWorld,
           !!Lively.get('fabrikBin'),
           Lively.fabrikWires.length >= 9,
           !!Lively.$fabrikEditMode,
           Lively.$fabrikViewMode === 'edit',
-          !!fab,
-          !!(fab.modePane && ('' + (fab.modePane.contentPane && fab.modePane.contentPane.shape && fab.modePane.contentPane.shape.string)).indexOf('edit') >= 0),
-          !!(fab.modePane && fab.modePane.paneMenu && fab.modePane.paneMenu.items && fab.modePane.paneMenu.items.indexOf('user view') >= 0),
-          !!fabrikPinNamed(fab, 'probe'),
-          !!fabrikPinNamed(fab, 'categories'),
+          !Lively.get('fabrik'),
+          !!catFn,
+          !!(catFn && !(catFn.fabrikInputs && catFn.fabrikInputs.length)),
+          catSrc.indexOf('browserCategoryNames') >= 0,
+          wired,
           !!fabrikPinNamed(Lively.get('categories'), 'strings'),
           !!fabrikPinNamed(Lively.get('classNames'), 'strings'),
           !!fabrikPinNamed(Lively.get('methodNames'), 'strings'),
-          !!Lively.get('fabrikBrowser'),
+          !Lively.get('fabrikBrowser') && Lively.get('categories').owner === Lively,
         ].join(',');
       })()`),
     ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
@@ -154,7 +162,7 @@ describe('Fabrik', () => {
     expect(
       rt.eval(`(() => {
         fabrikSetView('edit', Lively);
-        fabrikReveal(Lively, 'All', 'Morph', 'addMorph');
+        fabrikReveal(Lively, 'Morphs', 'Morph', 'addMorph');
         let list = Lively.get('methodNames');
         let room = fabrikContentHeight(list) - list.fabrikPaneHeight();
         let before = list.contentPane.$scrollOffsetY || 0;
@@ -191,18 +199,19 @@ describe('Fabrik', () => {
           methods.getBounds().topLeft.y + methods.getBounds().height(),
         );
         fabrikSetView('edit', Lively);
-        let browser = Lively.get('fabrikBrowser');
         let fn = Lively.get('classNamesInCategory');
-        let outGap = fn.getBounds().topLeft.x - (browser.getBounds().topLeft.x + browser.getBounds().width());
+        let catFn = Lively.get('browserCategoryNames');
+        let fnX = fn.getBounds().topLeft.x;
+        let fnW = fn.getBounds().width();
+        let editFnGap = cats.getBounds().topLeft.x - (fnX + fnW);
+        let catGap = fn.getBounds().topLeft.y - (catFn.getBounds().topLeft.y + catFn.getBounds().height());
         let inPin = fabrikPinNamed(cats, 'strings');
         let outPin = fabrikPinNamed(cats, 'selection');
         let pinRight = inPin.getBounds().topLeft.x + inPin.getBounds().width();
         let inGreen = inPin.shape.fillColor && inPin.shape.fillColor.g > inPin.shape.fillColor.b;
         let outBlue = outPin.shape.fillColor && outPin.shape.fillColor.b > outPin.shape.fillColor.g;
         fabrikSetView('user', Lively);
-        let userBw = Lively.get('fabrik').shape.borderWidth;
-        let userOrigin = Lively.get('fabrikBrowser').getBounds().topLeft;
-        let fabY = Lively.get('fabrik').getBounds().topLeft.y;
+        let userOrigin = Lively.get('categories').getBounds().topLeft;
         fabrikSetView('wiring', Lively);
         let wiringGap = Lively.get('methodNames').getBounds().topLeft.x - (
           Lively.get('categories').getBounds().topLeft.x + Lively.get('categories').getBounds().width()
@@ -215,19 +224,20 @@ describe('Fabrik', () => {
           Math.abs(userVGap) < 6,
           Math.abs(userHGap) < 6,
           Math.abs(userDefGap) < 6,
-          Math.abs(outGap - 100) < 8,
-          Math.abs(fabY - 14) < 3,
-          Math.abs(userOrigin.x - 232) < 3,
-          Math.abs(userOrigin.y - 84) < 3,
+          Math.abs(fnX - 50) < 3,
+          Math.abs(editFnGap - 80) < 8,
+          Math.abs(fn.getBounds().topLeft.y - 208) < 8,
+          Math.abs(catGap - 50) < 8,
+          Math.abs(userOrigin.x - 380) < 3,
+          Math.abs(userOrigin.y - 108) < 8,
           pinRight <= 1,
           inGreen,
           outBlue,
-          userBw === 2,
           Lively.$fabrikViewMode === 'wiring',
           wiringGap > 40 && wiringGap < 70,
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
   });
 
   it('function view source wraps without blank lines after return', () => {
@@ -296,10 +306,19 @@ describe('Fabrik', () => {
           if (m.fabrikKind === 'listView') listProto = m;
           if (m.fabrikKind === 'functionView') fnProto = m;
         });
+        let vm = Lively.get('fabrikViewMenu');
+        let worldB = Lively.getBounds();
+        let rightGap = worldB.topLeft.x + worldB.width() - (wm.getBounds().topLeft.x + wm.getBounds().width());
+        let belowGap = vm
+          ? vm.getBounds().topLeft.y - (wm.getBounds().topLeft.y + wm.getBounds().height())
+          : -1;
         return [
           !!wm,
           wm.getBounds().width() <= 205,
-          Math.abs(wm.getBounds().topLeft.x - 20) < 4,
+          Math.abs(wm.getBounds().topLeft.y - 100) < 8,
+          Math.abs(rightGap - 100) < 8,
+          !!(vm && vm.findItem && vm.findItem('user view') >= 0 && vm.findItem('wiring') >= 0 && vm.findItem('make new panel') >= 0),
+          Math.abs(belowGap - 20) < 8,
           openIx >= 0 && openIx < transIx,
           hasMake,
           !hasOnClass,
@@ -310,7 +329,7 @@ describe('Fabrik', () => {
           !!(fnProto && ('' + fnProto.fabrikSource).indexOf('=>') >= 0),
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
   });
 
   it('starts from populateLively; Open Fabrik rebuilds the browser test', () => {
@@ -326,9 +345,9 @@ describe('Fabrik', () => {
           if (menus[i].findItem && menus[i].findItem('Open Fabrik') >= 0) openBefore = true;
         }
         let hadBox = !!Lively.box;
-        let hadFabrik = !!Lively.get('fabrikBrowser');
+        let hadFabrik = !!Lively.get('categories');
         initFabrik();
-        let again = Lively.get('fabrikBrowser');
+        let again = Lively.get('categories');
         initFabrik();
         let wm = Lively.get('worldMenu');
         return [
@@ -336,7 +355,7 @@ describe('Fabrik', () => {
           !hadFabrik,
           openBefore,
           !!again,
-          !!Lively.get('fabrikBrowser'),
+          !!Lively.get('categories') && !Lively.get('fabrikBrowser'),
           !!(wm && wm.findItem && wm.findItem('Open Fabrik') >= 0),
           Lively.fabrikWires.length >= 9,
         ].join(',');
@@ -378,6 +397,19 @@ describe('Fabrik', () => {
         let stubIn = fabrikWireStubWorld(methIn);
         let cOut = fabrikWireControlWorld(clsOut, methIn, true);
         let cIn = fabrikWireControlWorld(clsOut, methIn, false);
+        fabrikSetView('edit', Lively);
+        let editHit = !!(wire && wire.includesPt(stubOut));
+        fabrikSetView('wiring', Lively);
+        let wiringHit = !!(wire && wire.includesPt(stubOut));
+        let fv = new FabrikFunctionView(rect(40, 40, 220, 40), {
+          source: 'function () { return "constOk"; }',
+          inputs: [],
+        });
+        Lively.addMorph(fv);
+        let tv = new FabrikTextView(rect(40, 90, 180, 40));
+        Lively.addMorph(tv);
+        fabrikConnect(fabrikPinNamed(fv, 'result'), fabrikPinNamed(tv, 'text'));
+        let emitted = tv.contentPane && tv.contentPane.shape ? tv.contentPane.shape.string : '';
         return [
           inW.x <= inB.topLeft.x + 2,
           Math.abs(inW.y - (inB.topLeft.y + inB.height() / 2)) < 3,
@@ -392,8 +424,46 @@ describe('Fabrik', () => {
           Math.abs(stubIn.x - (methInW.x - 20)) < 2,
           cOut.x > stubOut.x + 40,
           cIn.x < stubIn.x - 20,
+          !editHit,
+          wiringHit,
+          emitted.indexOf('constOk') >= 0,
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
   }, 20000);
+
+  it('make new panel is open until wrap user views adopts the enclosed parts', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let cats = Lively.get('categories');
+        let defn = Lively.get('methodDefinition');
+        let panel = fabrikMakeNewPanel(Lively);
+        let menu = panel.morphMenu();
+        let hasWrap = !!(menu && menu.items && menu.items.indexOf('wrap user views') >= 0);
+        let tiny = panel.getBounds().width() <= 140 && panel.getBounds().height() <= 80;
+        let mid = cats.boundsInWorld().center();
+        let hitOpen = Lively.topMorphAt(mid);
+        let pass = hitOpen !== panel && hitOpen !== panel.titleBar;
+        let u = cats.boundsInWorld().union(defn.boundsInWorld());
+        panel.setBounds(rect(u.topLeft.x - 8, u.topLeft.y - 30, u.width() + 16, u.height() + 40));
+        let preview = panel.previewFrameLocal();
+        let previewCovers = preview.width() > 80 && preview.height() > 80;
+        panel.wrapUserViews();
+        return [
+          panel.className === 'FabrikPanel',
+          tiny,
+          hasWrap,
+          cats.owner === Lively || pass,
+          pass,
+          previewCovers,
+          panel.$fabrikWrapped === true,
+          cats.owner === panel,
+          defn.owner === panel,
+          Lively.get('classNamesInCategory').owner === Lively,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true,true,true');
+  });
 });
