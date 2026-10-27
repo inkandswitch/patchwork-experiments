@@ -333,8 +333,8 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
         }
         if (firstInit && typeof g?.populateLively === 'function') {
           g.populateLively();
-        } else if (g?.Lively && g.Lively.isFabrikWorld && typeof g?.initFabrik === 'function') {
-          g.initFabrik();
+        } else if (g?.Lively && g.Lively.isFabrikWorld && typeof g?.openFabrik === 'function') {
+          g.openFabrik();
         } else if (typeof g?.fabrikOfferOpenMenu === 'function') {
           g.fabrikOfferOpenMenu();
         }

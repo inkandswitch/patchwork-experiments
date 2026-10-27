@@ -1,4 +1,4 @@
-//written on 2026-10-23 17:50 PDT
+//written on 2026-10-27 11:29 PDT
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -13190,10 +13190,10 @@ class WorldMorph extends Morph {
         this.world().showTextHelp();
       }),
     ];
-    if (typeof initFabrik === 'function') {
+    if (typeof openFabrik === 'function') {
       items.push(
         menuItem('Open Fabrik', function () {
-          initFabrik();
+          openFabrik();
         }),
       );
     }
@@ -14623,6 +14623,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-10-23 17:50 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-10-27 11:29 PDT';
 init()
-//written on 2026-10-23 17:50 PDT
+//written on 2026-10-27 11:29 PDT

@@ -93,7 +93,7 @@ function bootFabrik(start: string) {
 }
 
 function makeFabrik() {
-  return bootFabrik('initUI(); initFabrik();');
+  return bootFabrik('initUI(); openFabrik(); fabrikTest();');
 }
 
 function makePopulatedFabrik() {
@@ -224,11 +224,11 @@ describe('Fabrik', () => {
           Math.abs(userVGap) < 6,
           Math.abs(userHGap) < 6,
           Math.abs(userDefGap) < 6,
-          Math.abs(fnX - 50) < 3,
+          Math.abs(fnX - 250) < 3,
           Math.abs(editFnGap - 80) < 8,
           Math.abs(fn.getBounds().topLeft.y - 208) < 8,
           Math.abs(catGap - 50) < 8,
-          Math.abs(userOrigin.x - 380) < 3,
+          Math.abs(userOrigin.x - 580) < 3,
           Math.abs(userOrigin.y - 108) < 8,
           pinRight <= 1,
           inGreen,
@@ -300,23 +300,18 @@ describe('Fabrik', () => {
         let openIx = wm && wm.findItem ? wm.findItem('Open Fabrik') : -1;
         let transIx = wm && wm.findItem ? wm.findItem('transcript') : -1;
         let demoSrc = Lively.get('classNamed').contentPane.shape.string || '';
-        let listProto = null;
-        let fnProto = null;
-        Lively.get('fabrikBin').eachSubmorph(function (m) {
-          if (m.fabrikKind === 'listView') listProto = m;
-          if (m.fabrikKind === 'functionView') fnProto = m;
-        });
+        let bin = Lively.get('fabrikBin');
+        let listProto = bin.findKindIn('views', 'listView');
+        let fnProto = bin.findKindIn('views', 'functionView');
         let vm = Lively.get('fabrikViewMenu');
-        let worldB = Lively.getBounds();
-        let rightGap = worldB.topLeft.x + worldB.width() - (wm.getBounds().topLeft.x + wm.getBounds().width());
         let belowGap = vm
           ? vm.getBounds().topLeft.y - (wm.getBounds().topLeft.y + wm.getBounds().height())
           : -1;
         return [
           !!wm,
           wm.getBounds().width() <= 205,
-          Math.abs(wm.getBounds().topLeft.y - 100) < 8,
-          Math.abs(rightGap - 100) < 8,
+          Math.abs(wm.getBounds().topLeft.y - 20) < 8,
+          Math.abs(wm.getBounds().topLeft.x - 20) < 8 && Math.abs(vm.getBounds().topLeft.x - 20) < 8,
           !!(vm && vm.findItem && vm.findItem('user view') >= 0 && vm.findItem('wiring') >= 0 && vm.findItem('make new panel') >= 0),
           Math.abs(belowGap - 20) < 8,
           openIx >= 0 && openIx < transIx,
@@ -327,6 +322,66 @@ describe('Fabrik', () => {
           demoSrc.indexOf('function classNamed') >= 0,
           !!(listProto && listProto.fabrikList && listProto.fabrikList.length === 3),
           !!(fnProto && ('' + fnProto.fabrikSource).indexOf('=>') >= 0),
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
+  });
+
+  it('parts bin lists shapes, parts, and views in a scrollable pane', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let bin = Lively.get('fabrikBin');
+        let cats = bin.categoryPane && bin.categoryPane.contentPane && bin.categoryPane.contentPane.itemList;
+        let bb = bin.getBounds();
+        let binXBefore = bb.topLeft.x;
+        bin.showCategory('shapes');
+        let star = bin.findKind('star');
+        let line = bin.findKind('line');
+        let protoStar = new Pen().star(10, 30, Color.black);
+        let starMatch =
+          star &&
+          star.shape &&
+          star.shape.vertices &&
+          protoStar.vertices &&
+          star.shape.vertices.length === protoStar.vertices.length;
+        if (line && line.updateHoverHandles) line.updateHoverHandles(line.boundsInWorld().center());
+        let noHandles = !(line && line.$vertexHandles && line.$vertexHandles.length);
+        bin.showCategory('parts');
+        let parts = bin.$binCats.parts;
+        let partKids = 0;
+        if (bin.partsPane && bin.partsPane.contentPane)
+          bin.partsPane.contentPane.eachSubmorph(function () {
+            partKids = partKids + 1;
+          });
+        let partSrc = parts && parts[0] && parts[0].fabrikSource ? '' + parts[0].fabrikSource : '';
+        bin.showCategory('shapes');
+        let pane = bin.partsPane;
+        let pb = pane.boundsInWorld();
+        let emptyWorld = pt(pb.topLeft.x + pb.width() - 40, pb.topLeft.y + pb.height() - 40);
+        Lively.onPointerDown(emptyWorld, { actorID: 't' });
+        Lively.onPointerMove(pt(emptyWorld.x + 30, emptyWorld.y + 20), { actorID: 't' });
+        let paneStayed = pane.owner === bin && pane.contentPane && pane.contentPane.owner === pane;
+        Lively.onPointerUp(pt(emptyWorld.x + 30, emptyWorld.y + 20), { actorID: 't' });
+        bin.showCategory('views');
+        let listProto = bin.findKindIn('views', 'listView');
+        let fnDummy = bin.findKindIn('views', 'functionView');
+        return [
+          bin.className === 'FabrikBin',
+          !!(cats && cats[0] === 'shapes' && cats[1] === 'parts' && cats[2] === 'views'),
+          Math.abs(bb.width() - 370) < 2,
+          Math.abs(bb.topLeft.x - 1160) < 8,
+          Math.abs(bin.getBounds().topLeft.x - binXBefore) < 1,
+          !!starMatch,
+          noHandles,
+          !!(parts && parts.length === 5),
+          partKids === 5,
+          partSrc.indexOf('browserCategoryNames') >= 0,
+          bin.partsPane && bin.partsPane.className === 'FabrikBinPartsPane' && !!bin.partsPane.scrollByLines,
+          paneStayed,
+          !!(listProto && listProto.fabrikList && listProto.fabrikList.length === 3),
+          !!(fnDummy && ('' + fnDummy.fabrikSource).indexOf('=>') >= 0),
         ].join(',');
       })()`),
     ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
@@ -346,21 +401,25 @@ describe('Fabrik', () => {
         }
         let hadBox = !!Lively.box;
         let hadFabrik = !!Lively.get('categories');
-        initFabrik();
+        openFabrik();
+        let afterOpen = !Lively.get('categories') && !!Lively.get('fabrikBin') && !!Lively.get('fabrikViewMenu');
+        fabrikTest();
         let again = Lively.get('categories');
-        initFabrik();
+        openFabrik();
+        fabrikTest();
         let wm = Lively.get('worldMenu');
         return [
           hadBox,
           !hadFabrik,
           openBefore,
+          afterOpen,
           !!again,
           !!Lively.get('categories') && !Lively.get('fabrikBrowser'),
           !!(wm && wm.findItem && wm.findItem('Open Fabrik') >= 0),
           Lively.fabrikWires.length >= 9,
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true');
   }, 20000);
 
   it('wires attach at the out tip and the in pin outer flat; pb views drop on pointer up', () => {
@@ -375,10 +434,7 @@ describe('Fabrik', () => {
         let outW = fabrikPinCenterWorld(outPin);
         let inB = inPin.boundsInWorld();
         let outB = outPin.boundsInWorld();
-        let proto = null;
-        Lively.get('fabrikBin').eachSubmorph(function (m) {
-          if (m.fabrikKind === 'listView') proto = m;
-        });
+        let proto = Lively.get('fabrikBin').findKindIn('views', 'listView');
         let copy = fabrikStamp(proto, Lively, pt(80, 80));
         copy.beginPointerDrag(pt(80, 80), { actorID: 't' });
         copy.onPointerMove(pt(140, 120), { actorID: 't' });
@@ -410,6 +466,25 @@ describe('Fabrik', () => {
         Lively.addMorph(tv);
         fabrikConnect(fabrikPinNamed(fv, 'result'), fabrikPinNamed(tv, 'text'));
         let emitted = tv.contentPane && tv.contentPane.shape ? tv.contentPane.shape.string : '';
+        let bin = Lively.get('fabrikBin');
+        bin.showCategory('parts');
+        let protoA = bin.findKindIn('parts', 'functionView');
+        let protoB = (bin.$binCats.parts && bin.$binCats.parts[1]) || protoA;
+        let srcPart = fabrikStamp(protoA, Lively, pt(90, 220));
+        srcPart.beginPointerDrag(pt(90, 220), { actorID: 't' });
+        srcPart.onPointerMove(pt(120, 250), { actorID: 't' });
+        srcPart.onPointerUp(pt(120, 250), { actorID: 't' });
+        let dstPart = fabrikStamp(protoB, Lively, pt(380, 220));
+        dstPart.beginPointerDrag(pt(380, 220), { actorID: 't' });
+        dstPart.onPointerMove(pt(410, 250), { actorID: 't' });
+        dstPart.onPointerUp(pt(410, 250), { actorID: 't' });
+        let srcOut = fabrikPinNamed(srcPart, 'result');
+        let dstIn = fabrikPinNamed(dstPart, protoB.fabrikInputs && protoB.fabrikInputs[0] ? protoB.fabrikInputs[0].name : 'category');
+        fabrikConnect(srcOut, dstIn);
+        srcPart.beginPointerDrag(pt(120, 250), { actorID: 't' });
+        srcPart.onPointerUp(pt(120, 250), { actorID: 't' });
+        let srcSurvived = srcPart.owner === Lively && srcPart.world() === Lively && !srcPart.$fabrikHidden;
+        let dstSurvived = dstPart.owner === Lively && dstPart.world() === Lively;
         return [
           inW.x <= inB.topLeft.x + 2,
           Math.abs(inW.y - (inB.topLeft.y + inB.height() / 2)) < 3,
@@ -427,9 +502,11 @@ describe('Fabrik', () => {
           !editHit,
           wiringHit,
           emitted.indexOf('constOk') >= 0,
+          srcSurvived,
+          dstSurvived,
         ].join(',');
       })()`),
-    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
+    ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
   }, 20000);
 
   it('make new panel is open until wrap user views adopts the enclosed parts', () => {
