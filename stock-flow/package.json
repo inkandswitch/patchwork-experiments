@@ -12,6 +12,7 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "sf": "node cli/sf.ts",
+    "export:aachen": "tsx examples/aachen/export.ts",
     "sync": "pnpm build && pushwork sync",
     "register": "pw-modules add \"$MODULE_SETTINGS_DOC_URL\" \"$(pushwork url)\""
   },
@@ -32,6 +33,7 @@
     "@inkandswitch/patchwork-bootloader": "^0.2.6",
     "@types/node": "^24.0.0",
     "happy-dom": "^21.0.4",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.0"
