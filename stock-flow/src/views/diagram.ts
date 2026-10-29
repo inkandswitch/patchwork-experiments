@@ -106,7 +106,7 @@ function mid(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function wrap(label: string): string[] {
+export function wrap(label: string): string[] {
   const lines: string[] = [];
   for (const word of label.split(/\s+/)) {
     const last = lines[lines.length - 1];

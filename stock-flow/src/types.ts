@@ -14,6 +14,21 @@ export type StockFlowModelDoc = {
   scenarios: Record<ScenarioId, Scenario>;
   /** Prose about the structure the loop view derives from the equations. */
   annotations: Annotations;
+  /** Where the diagrams put things. Without it, they are laid out automatically. */
+  layout?: Layouts;
+};
+
+export type Layouts = { loops?: DiagramLayout; stockFlow?: DiagramLayout };
+
+/** Placement only: which links are drawn and their signs still come from the equations. */
+export type DiagramLayout = {
+  /** The variables the diagram shows, in model coordinates; the others are folded into the links between these. */
+  nodes: Record<VariableId, { x: number; y: number; lines?: string[] }>;
+  /** How far an arrow bows out, in pixels, to the right of its direction of travel. */
+  bends?: Record<LinkKey, number>;
+  /** Where each named loop's marker sits. */
+  markers?: Record<LoopId, { x: number; y: number }>;
+  viewBox?: [number, number, number, number];
 };
 
 /** One chart over one model, embeddable in markdown as [patchwork:<documentId>/stock-flow-chart]. */

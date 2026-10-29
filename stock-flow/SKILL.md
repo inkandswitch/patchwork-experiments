@@ -14,7 +14,9 @@ Patchwork shows the artifacts; you change them with `sf`. Run it from this packa
 - **stock-flow-scenario**: a card describing one scenario of a model.
 - **markdown**: the analysis. Embed charts and cards with `[patchwork:<id>/stock-flow-chart]` and `[patchwork:<id>/stock-flow-scenario]`, where `<id>` is the URL without `automerge:`.
 
-There is no separate causal loop diagram. The loop view (Loops tab, `sf graph`) is derived from the equations; annotations only name loops (`cut`: the links whose gain set to 0 switches the loop off) and explain links.
+There is no separate causal loop diagram. The Loops and Stock and flow tabs (and `sf graph`) derive links, signs, delays and loops from the equations; annotations only name loops (`cut`: the links whose gain set to 0 switches the loop off) and explain links.
+
+The optional `layout` places the two diagrams: `layout.loops` and `layout.stockFlow`, each with `nodes` (the variables shown, with `x`, `y` and optional `lines` for the label), `bends` per link (pixels the arrow bows to the right of its direction), `markers` per named loop, and a `viewBox`. Variables left out, stocks included, are folded into the arrows between the ones shown. Without a layout the diagrams are laid out automatically. `sf graph <model> --view loops` lists exactly the links a view draws, and `sf check` warns about bends on links that aren't drawn. Readers tweak delays, loop strengths and input curves on the Stock and flow tab; that stays in their view and never changes the document.
 
 ## Workflow
 

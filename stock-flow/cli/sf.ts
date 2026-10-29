@@ -37,7 +37,7 @@ Models
 
 Running (offline when <model> is a .json file)
   sf run <model> <scenario> [--series a,b] [--years 2000-2025] [--every 1] [--set k=v,k=v] [--csv]
-  sf graph <model> [--scenario ref] [--all] [--svg out.svg]
+  sf graph <model> [--scenario ref] [--all | --view loops|stockFlow] [--svg out.svg]
 
 Documents to embed in markdown
   sf chart new <model-url> --series a,b --scenarios ref,ref [--title t] [--data id,id] [--sweep k=1,2] [--years 2000-2040] [--guide "6 label"]
@@ -66,6 +66,7 @@ const OPTIONS = {
   every: { type: "string" },
   set: { type: "string" },
   scenario: { type: "string" },
+  view: { type: "string" },
   scenarios: { type: "string" },
   svg: { type: "string" },
   title: { type: "string" },
@@ -168,7 +169,10 @@ const COMMANDS: Record<string, Command> = {
     const model = await readModel(required(target, "model"));
     const reference = options.scenario ?? orderedScenarios(model)[0]?.[0] ?? "balanced";
     const settings = scenarioSettings(model, reference);
-    const graph = causalGraph(model, simulate(model, settings), settings, { all: options.all });
+    const view = options.view as keyof NonNullable<StockFlowModelDoc["layout"]> | undefined;
+    if (view && !model.layout?.[view]) throw new Error(`The model has no "${options.view}" layout; it has ${Object.keys(model.layout ?? {}).join(", ") || "none"}`);
+    const visible = view ? Object.keys(model.layout![view]!.nodes) : undefined;
+    const graph = causalGraph(model, simulate(model, settings), settings, visible ? { visible } : { all: options.all });
     if (options.svg) {
       writeFileSync(options.svg, diagramSvg(model, graph, layoutDiagram(model, graph), true));
       print(`Wrote ${options.svg}`);

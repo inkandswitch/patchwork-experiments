@@ -1,14 +1,15 @@
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { formatter, modelPoints, type ChartSpec, type Series } from "../charts/resolve.ts";
 import { element, escapeHtml, renderChart } from "../charts/svg.ts";
-import { causalGraph, type CausalGraph, type GraphLink, type GraphLoop } from "../engine/graph.ts";
-import { cachedRun, orderedScenarios, scenarioSettings, withKnob } from "../engine/scenarios.ts";
+import { cachedRun, orderedScenarios, scenarioSettings } from "../engine/scenarios.ts";
 import { resolveParameters } from "../engine/simulate.ts";
-import { diagramSvg, key, layoutDiagram } from "../views/diagram.ts";
 import { formatParameter, formatVariable } from "../views/format.ts";
 import { scenarioCard } from "../views/scenario-card.ts";
+import { renderLoopsPage } from "./loops-page.ts";
+import { currentSettings, initialState, isTweaked, resetTweaks, type Context, type Tab, type ViewState } from "./model-state.ts";
 import { errorMessage, mount, onResize, watch } from "./shared.ts";
-import type { LoopId, Run, Settings, StockFlowModelDoc, VariableId } from "../types.ts";
+import { renderStockFlowPage } from "./stock-flow-page.ts";
+import type { Run, StockFlowModelDoc, VariableId } from "../types.ts";
 
 export const ModelTool: ToolRender<StockFlowModelDoc> = (handle, element) => {
   const { root, unmount } = mount(element, "sf-model");
@@ -21,10 +22,9 @@ export const ModelTool: ToolRender<StockFlowModelDoc> = (handle, element) => {
   };
 };
 
-type Tab = "loops" | "run" | "equations" | "parameters" | "scenarios" | "data";
-
 const TABS: [Tab, string][] = [
   ["loops", "Loops"],
+  ["stock-flow", "Stock and flow"],
   ["run", "Run"],
   ["equations", "Equations"],
   ["parameters", "Parameters"],
@@ -32,21 +32,8 @@ const TABS: [Tab, string][] = [
   ["data", "Data"],
 ];
 
-/** What the reader has picked. Kept in the view only: the document is changed through the CLI. */
-type ViewState = {
-  tab: Tab;
-  scenario?: string;
-  cuts: Set<LoopId>;
-  overrides: Record<string, number>;
-  allVariables: boolean;
-  charted?: VariableId[];
-  year?: number;
-};
-
-type Context = { model: StockFlowModelDoc; state: ViewState; settings: Settings; run: Run; rerender: () => void };
-
 function createModelView(root: HTMLElement) {
-  const state: ViewState = { tab: "loops", cuts: new Set(), overrides: {}, allVariables: false };
+  const state = initialState();
   const header = element("header");
   const body = element("div", { class: "sf-body" });
   const tooltip = element("div", { class: "sf-tooltip" });
@@ -79,13 +66,6 @@ function createModelView(root: HTMLElement) {
   };
 }
 
-function currentSettings(model: StockFlowModelDoc, state: ViewState): Settings {
-  const reference = state.cuts.size ? `${state.scenario} without ${[...state.cuts].join(" and ")}` : state.scenario!;
-  let settings = scenarioSettings(model, reference);
-  for (const [knob, value] of Object.entries(state.overrides)) settings = withKnob(model, settings, knob, value);
-  return settings;
-}
-
 function renderHeader(header: HTMLElement, model: StockFlowModelDoc, state: ViewState, rerender: () => void): void {
   const tabs = element("nav", { class: "sf-tabs", role: "tablist" });
   for (const [id, label] of TABS) {
@@ -104,6 +84,7 @@ function renderHeader(header: HTMLElement, model: StockFlowModelDoc, state: View
   }
   scenarios.addEventListener("change", () => {
     state.scenario = scenarios.value;
+    state.inputs = {};
     rerender();
   });
   const knockouts = element("div", { class: "sf-knockouts" });
@@ -121,11 +102,10 @@ function renderHeader(header: HTMLElement, model: StockFlowModelDoc, state: View
   }
   const bar = element("div", { class: "sf-bar" });
   bar.append(tabs, scenarios, knockouts);
-  if (state.cuts.size || Object.keys(state.overrides).length) {
+  if (isTweaked(state)) {
     const reset = element("button", { title: "Back to the scenario as written" }, "Reset");
     reset.addEventListener("click", () => {
-      state.cuts.clear();
-      state.overrides = {};
+      resetTweaks(state);
       rerender();
     });
     bar.append(reset);
@@ -134,112 +114,14 @@ function renderHeader(header: HTMLElement, model: StockFlowModelDoc, state: View
 }
 
 const TAB_RENDERERS: Record<Tab, (body: HTMLElement, context: Context, tooltip: HTMLElement) => void> = {
-  loops: renderLoops,
+  loops: renderLoopsPage,
+  "stock-flow": renderStockFlowPage,
   run: renderRun,
   equations: renderEquations,
   parameters: renderParameters,
   scenarios: renderScenarios,
   data: renderData,
 };
-
-/** The causal loop diagram, derived from the equations, and the loops in it. */
-function renderLoops(body: HTMLElement, { model, state, settings, run, rerender }: Context, tooltip: HTMLElement): void {
-  const graph = causalGraph(model, run, settings, { all: state.allVariables });
-  const layout = layoutDiagram(model, graph);
-  const panel = element("div", { class: "sf-diagram-panel" });
-  panel.innerHTML = diagramSvg(model, graph, layout);
-  const svg = panel.querySelector("svg")!;
-  const highlight = (loop: GraphLoop | null) => {
-    svg.classList.toggle("highlighting", Boolean(loop));
-    for (const node of svg.querySelectorAll<SVGGElement>("[data-link], [data-node]")) {
-      const on = loop ? loop.links.includes(node.dataset.link ?? "") || loop.variables.includes(node.dataset.node ?? "") : false;
-      node.classList.toggle("on", on);
-    }
-  };
-  const links = new Map(graph.links.map((link) => [key(link), link]));
-  for (const edge of svg.querySelectorAll<SVGGElement>("[data-link]")) {
-    edge.addEventListener("mousemove", (event) => showTooltip(tooltip, linkTooltip(model, settings, links.get(edge.dataset.link!)!), event));
-    edge.addEventListener("mouseleave", () => (tooltip.hidden = true));
-  }
-
-  const side = element("aside", { class: "sf-loop-list" });
-  const every = element("label", { class: "sf-muted" });
-  const box = element("input", { type: "checkbox" });
-  box.checked = state.allVariables;
-  box.addEventListener("change", () => {
-    state.allVariables = box.checked;
-    rerender();
-  });
-  every.append(box, " Show every variable instead of folding the ones in between");
-  side.append(
-    every,
-    element("p", { class: "sf-muted" }, `Signs and loop types as they act in "${model.scenarios[state.scenario!]?.label ?? state.scenario}". 0: the link never acts in this run.`),
-  );
-
-  for (const [id, annotation] of Object.entries(model.annotations.loops)) {
-    const cycles = graph.loops.filter((loop) => loop.named.includes(id));
-    const item = element("article", { class: "sf-loop" });
-    const type = cycles[0]?.polarity ?? "inactive";
-    item.innerHTML = `<header><span class="sf-badge ${type}">${escapeHtml(annotation.label)}</span><strong>${escapeHtml(annotation.name)}</strong>
-      ${state.cuts.has(id) ? `<span class="sf-muted">switched off</span>` : ""}</header><p>${escapeHtml(annotation.story)}</p>`;
-    for (const cycle of cycles) item.append(cycleLine(model, cycle, highlight));
-    if (!cycles.length) item.append(element("div", { class: "sf-cycle" }, "No cycle passes through its links in this view."));
-    item.addEventListener("mouseenter", () => highlight(cycles.length ? merge(cycles) : null));
-    item.addEventListener("mouseleave", () => highlight(null));
-    side.append(item);
-  }
-  const unnamed = graph.loops.filter((loop) => !loop.named.length);
-  if (unnamed.length) {
-    side.append(element("h2", {}, `Other loops (${unnamed.length})`));
-    const item = element("article", { class: "sf-loop" });
-    for (const cycle of unnamed.slice(0, 40)) item.append(cycleLine(model, cycle, highlight));
-    if (unnamed.length > 40) item.append(element("div", { class: "sf-cycle" }, `and ${unnamed.length - 40} more`));
-    side.append(item);
-  }
-  const grid = element("div", { class: "sf-loops" });
-  grid.append(panel, side);
-  body.append(grid);
-}
-
-function cycleLine(model: StockFlowModelDoc, cycle: GraphLoop, highlight: (loop: GraphLoop | null) => void): HTMLElement {
-  const letter = { balancing: "B", reinforcing: "R", mixed: "±", inactive: "0" }[cycle.polarity];
-  const line = element("div", { class: "sf-cycle" });
-  line.innerHTML = `<span class="sf-badge ${cycle.polarity}">${letter}</span> ${cycle.variables.map((id) => escapeHtml(model.variables[id].label)).join(" → ")}`;
-  line.addEventListener("mouseenter", (event) => {
-    event.stopPropagation();
-    highlight(cycle);
-  });
-  return line;
-}
-
-function merge(cycles: GraphLoop[]): GraphLoop {
-  return { ...cycles[0], links: cycles.flatMap((cycle) => cycle.links), variables: cycles.flatMap((cycle) => cycle.variables) };
-}
-
-function linkTooltip(model: StockFlowModelDoc, settings: Settings, link: GraphLink): string {
-  const label = (id: VariableId) => escapeHtml(model.variables[id].label);
-  const sign = { "+": "More of one, more of the other", "−": "More of one, less of the other", "±": "Its sign changes during the run", "0": "Never acts in this run" }[
-    link.polarity
-  ];
-  const explanation = model.annotations.links[key(link)];
-  const parameters = resolveParameters(model, settings);
-  const delays = link.delays.map((id) => `${escapeHtml(model.parameters[id].meaning)} (${formatParameter(parameters[id], "years")})`);
-  const cutBy = Object.values(model.annotations.loops).filter((loop) => loop.cut.some((cut) => link.via.includes(cut)));
-  const between = [...new Set(link.via.flatMap((via) => via.split("→")))].filter((id) => id !== link.from && id !== link.to);
-  return `<strong>${label(link.from)} → ${label(link.to)}</strong> <b>${link.polarity}</b>
-    <p>${sign}.</p>
-    ${explanation ? `<p>${escapeHtml(explanation)}</p>` : ""}
-    ${delays.length ? `<p>Delayed: ${delays.join(", ")}.</p>` : ""}
-    ${between.length ? `<p class="sf-muted">Through ${between.map(label).join(", ")}.</p>` : ""}
-    ${cutBy.length ? `<p class="sf-muted">Switching off ${cutBy.map((loop) => `${escapeHtml(loop.label)} ${escapeHtml(loop.name)}`).join(" or ")} cuts it.</p>` : ""}`;
-}
-
-function showTooltip(tooltip: HTMLElement, html: string, event: MouseEvent): void {
-  tooltip.innerHTML = html;
-  tooltip.hidden = false;
-  tooltip.style.left = `${Math.min(event.clientX + 14, window.innerWidth - 310)}px`;
-  tooltip.style.top = `${Math.min(event.clientY + 14, window.innerHeight - tooltip.offsetHeight - 8)}px`;
-}
 
 /** Charts of chosen variables for the scenario with the reader's knockouts and slider settings, against the data. */
 function renderRun(body: HTMLElement, { model, state, settings, run, rerender }: Context): void {

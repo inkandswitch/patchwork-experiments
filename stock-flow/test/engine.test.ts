@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import { checkModel } from "../src/engine/check.ts";
 import { causalGraph } from "../src/engine/graph.ts";
 import { scenarioSettings, withKnob } from "../src/engine/scenarios.ts";
-import { simulate } from "../src/engine/simulate.ts";
+import { resolveParameters, simulate } from "../src/engine/simulate.ts";
+import { delayYears } from "../src/views/stock-flow-diagram.ts";
 import type { Run, StockFlowModelDoc } from "../src/types.ts";
 import expected from "../examples/aachen/expected.json" with { type: "json" };
 import aachen from "../examples/aachen/model.json" with { type: "json" };
@@ -61,6 +62,39 @@ describe("the loop view", () => {
     const knocked = causalGraph(model, simulate(model, cut), cut);
     const spillover = knocked.loops.filter((loop) => loop.named.includes("spillover"));
     expect(spillover.every((loop) => loop.polarity === "inactive")).toBe(true);
+  });
+});
+
+describe("views that hide stocks", () => {
+  const settings = scenarioSettings(model, "real");
+  const run = simulate(model, settings);
+  const graphFor = (view: "loops" | "stockFlow") => causalGraph(model, run, settings, { visible: Object.keys(model.layout![view]!.nodes) });
+  const linkIn = (graph: ReturnType<typeof graphFor>, key: string) => graph.links.find((candidate) => `${candidate.from}→${candidate.to}` === key);
+
+  test("show exactly the variables of the layout", () => {
+    expect(graphFor("loops").nodes).not.toContain("permitted");
+    expect(graphFor("stockFlow").nodes).toContain("permitted");
+  });
+
+  test("join the links through a hidden stock, multiplying signs and keeping delays", () => {
+    const loops = graphFor("loops");
+    const throughPermitted = linkIn(loops, "starts→underConstruction");
+    expect(throughPermitted?.polarity).toBe("+");
+    expect(throughPermitted?.delays).toEqual(["construction"]);
+    expect(throughPermitted?.via).toEqual(expect.arrayContaining(["starts→permitted", "permitted→buildingBegins", "buildingBegins→underConstruction"]));
+    expect(loops.links.some((link) => link.from === "permitted" || link.to === "permitted")).toBe(false);
+  });
+
+  test("keep the named loops", () => {
+    const loops = graphFor("loops");
+    for (const id of ["supply", "spillover", "land", "policy", "pipeline"]) expect(loops.loops.some((loop) => loop.named.includes(id)), id).toBe(true);
+  });
+
+  test("label each construction stage with its own time constant", () => {
+    const parameters = resolveParameters(model, settings);
+    const stockFlow = graphFor("stockFlow");
+    expect(delayYears(model, linkIn(stockFlow, "permitted→underConstruction")!, parameters)).toBe(1.5);
+    expect(delayYears(model, linkIn(stockFlow, "notionalVacancy→perceivedPressure")!, parameters)).toBe(4);
   });
 });
 

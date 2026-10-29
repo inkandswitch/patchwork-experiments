@@ -23,8 +23,9 @@ describe("views", () => {
     const element = toolElement();
     const cleanup = ModelTool(handle, element);
     const tabs = [...element.querySelectorAll<HTMLButtonElement>("nav button")];
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Loops", "Run", "Equations", "Parameters", "Scenarios", "Data"]);
-    expect(element.querySelector("svg [data-node=rent]")).not.toBeNull();
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Loops", "Stock and flow", "Run", "Equations", "Parameters", "Scenarios", "Data"]);
+    expect(element.querySelector(".sf-cld .node[data-id=rent]")).not.toBeNull();
+    expect(element.querySelector(".sf-cld .node[data-id=permitted]")).toBeNull();
     for (const tab of tabs) {
       tab.click();
       expect(element.querySelector(".sf-error")).toBeNull();
@@ -32,6 +33,41 @@ describe("views", () => {
     }
     cleanup();
     expect(element.children.length).toBe(0);
+  });
+
+  it("the stock and flow page tweaks parameters, loops and inputs locally", async () => {
+    const handle = repo.create<StockFlowModelDoc>(structuredClone(model));
+    const element = toolElement();
+    const cleanup = ModelTool(handle, element);
+    const tab = () => [...element.querySelectorAll<HTMLButtonElement>("nav button")].find((button) => button.textContent === "Stock and flow")!;
+    tab().click();
+    const spark = () => element.querySelector(".sf-sfd .spark[data-id=rent] .spark-line")!.getAttribute("d");
+    const before = spark();
+    expect(element.querySelector(".sf-sfd .spark-reference")).toBeNull();
+
+    const construction = [...element.querySelectorAll<HTMLLabelElement>(".sf-field")].find((field) => field.textContent?.startsWith("Construction"))!;
+    const slider = construction.querySelector("input")!;
+    slider.value = "6";
+    slider.dispatchEvent(new Event("input"));
+    expect(construction.querySelector("output")!.textContent).toBe("6 years");
+    expect(element.querySelector(".sf-sfd .link[data-from=permitted][data-to=underConstruction] .delay-label")!.textContent).toBe("3 y");
+    expect(spark()).not.toBe(before);
+    expect(element.querySelector(".sf-sfd .spark-reference")).not.toBeNull();
+
+    const supply = [...element.querySelectorAll(".sf-loop-card")].find((card) => card.textContent?.includes("Supply response"))!;
+    const toggle = supply.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event("change"));
+    expect(element.querySelector(".sf-sfd .link[data-from=rent][data-to=profitability]")!.classList.contains("cut")).toBe(true);
+
+    element.querySelector<HTMLButtonElement>(".sf-input-editor[data-input=intake] .sf-input-reset")!.click();
+    expect(element.querySelector(".sf-input-intro")!.textContent).toContain("Your own curves for New students / year");
+
+    [...element.querySelectorAll<HTMLButtonElement>("header button")].find((button) => button.textContent === "Reset")!.click();
+    expect(element.querySelector(".sf-sfd .link[data-from=rent][data-to=profitability]")!.classList.contains("cut")).toBe(false);
+    expect(element.querySelector(".sf-sfd .spark-reference")).toBeNull();
+    expect(handle.doc().parameters.construction).toEqual(model.parameters.construction);
+    cleanup();
   });
 
   it("a chart renders a line per scenario and follows model edits", async () => {

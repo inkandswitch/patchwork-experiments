@@ -25,14 +25,37 @@ export type GraphLoop = {
 
 export type CausalGraph = { nodes: VariableId[]; links: GraphLink[]; loops: GraphLoop[] };
 
+export type GraphOptions = {
+  /** Every variable is a node. */
+  all?: boolean;
+  /** Exactly these variables are nodes; links fold in the rest, stocks included. */
+  visible?: VariableId[];
+};
+
 /**
  * The feedback structure of a model, read from its equations. With `all`, every variable is a node; otherwise only
  * key variables are, and the links between them fold in the variables in between.
  */
-export function causalGraph(model: StockFlowModelDoc, run: Run, settings: Settings, options: { all?: boolean } = {}): CausalGraph {
+export function causalGraph(model: StockFlowModelDoc, run: Run, settings: Settings, options: GraphOptions = {}): CausalGraph {
   const ids = Object.keys(model.variables);
+  if (options.visible) {
+    const visible = new Set(options.visible);
+    const stocks = ids.filter((id) => model.variables[id].kind === "stock");
+    const links = keyLinks(model, run, settings, new Set([...visible, ...stocks]));
+    const nodes = ids.filter((id) => visible.has(id));
+    const folded = foldStocks(links, stocks.filter((id) => !visible.has(id)));
+    return { nodes, links: folded, loops: findLoops(model, nodes, folded) };
+  }
   const flagged = ids.filter((id) => model.variables[id].key);
   const keys = new Set(options.all || !flagged.length ? ids : flagged);
+  const links = keyLinks(model, run, settings, keys);
+  const nodes = ids.filter((id) => keys.has(id));
+  return { nodes, links, loops: findLoops(model, nodes, links) };
+}
+
+/** Links between the key variables, folding in the other flows and auxiliaries. Stocks are never folded here. */
+function keyLinks(model: StockFlowModelDoc, run: Run, settings: Settings, keys: Set<VariableId>): GraphLink[] {
+  const ids = Object.keys(model.variables);
   const dependents = dependentsOf(model);
   const readers = new Map(ids.map((id) => [id, dependencies(model, id)]));
   const hidden = (id: VariableId) => !keys.has(id) && model.variables[id].kind !== "stock";
@@ -58,8 +81,48 @@ export function causalGraph(model: StockFlowModelDoc, run: Run, settings: Settin
       });
     }
   }
-  const nodes = ids.filter((id) => keys.has(id));
-  return { nodes, links, loops: findLoops(model, nodes, links) };
+  return links;
+}
+
+/**
+ * Removes stocks from the diagram by joining each link into a stock with each link out of it. The sign of a chain is
+ * the product of its signs; chains that join the same two variables merge, and loops through a stock alone vanish.
+ */
+function foldStocks(links: GraphLink[], hidden: VariableId[]): GraphLink[] {
+  let current = links;
+  for (const stock of hidden) {
+    const into = current.filter((link) => link.to === stock && link.from !== stock);
+    const out = current.filter((link) => link.from === stock && link.to !== stock);
+    const rest = new Map(current.filter((link) => link.from !== stock && link.to !== stock).map((link) => [`${link.from}→${link.to}`, link]));
+    for (const first of into) {
+      for (const second of out) {
+        if (first.from === second.to) continue;
+        const chain: GraphLink = {
+          from: first.from,
+          to: second.to,
+          polarity: chainPolarity(first.polarity, second.polarity),
+          delays: [...new Set([...first.delays, ...second.delays])],
+          via: [...new Set([...first.via, ...second.via])],
+        };
+        const key = `${chain.from}→${chain.to}`;
+        const existing = rest.get(key);
+        rest.set(key, existing ? mergeLinks(existing, chain) : chain);
+      }
+    }
+    current = [...rest.values()];
+  }
+  return current;
+}
+
+function chainPolarity(a: Polarity, b: Polarity): Polarity {
+  if (a === "0" || b === "0") return "0";
+  if (a === "±" || b === "±") return "±";
+  return a === b ? "+" : "−";
+}
+
+function mergeLinks(a: GraphLink, b: GraphLink): GraphLink {
+  const polarity = a.polarity === "0" ? b.polarity : b.polarity === "0" || a.polarity === b.polarity ? a.polarity : "±";
+  return { ...a, polarity, delays: [...new Set([...a.delays, ...b.delays])], via: [...new Set([...a.via, ...b.via])] };
 }
 
 /** Every link written in an equation or a stock's flows, as "from→to". */

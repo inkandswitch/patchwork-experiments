@@ -8,6 +8,7 @@ export const styles = `${diagramStyles}
   --sf-panel: #f8f9fa;
   --sf-border: #dee2e6;
   --sf-accent: #4c6ef5;
+  --sf-active: #e8590c;
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--sf-ink);
   background: #fff;
@@ -40,17 +41,102 @@ export const styles = `${diagramStyles}
 .sf-badge.inactive, .sf-badge.mixed { background: var(--sf-line); }
 .sf-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; }
 
-.sf-loops { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
-.sf-loops .sf-diagram-panel { overflow: auto; border: 1px solid var(--sf-border); border-radius: 10px; padding: 6px; }
-.sf-loops .sf-diagram { max-width: 100%; height: auto; display: block; margin: 0 auto; }
-.sf-loop-list { display: grid; gap: 8px; }
-.sf-loop { border: 1px solid var(--sf-border); border-radius: 8px; padding: 8px 10px; font-size: 0.82rem; cursor: default; }
-.sf-loop:hover { border-color: var(--sf-line); background: var(--sf-panel); }
-.sf-loop header { display: flex; gap: 6px; align-items: center; }
-.sf-loop p { margin: 4px 0 0; color: var(--sf-muted); }
-.sf-loop .sf-cycle { font-size: 0.75rem; color: var(--sf-muted); margin-top: 3px; }
 .sf-tooltip { position: fixed; z-index: 10; max-width: 300px; background: #fff; border: 1px solid var(--sf-border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 14px rgba(0,0,0,.12); font-size: 0.8rem; pointer-events: none; }
 .sf-tooltip p { margin: 4px 0 0; }
+.sf .sf-hint { font-size: 0.75rem; color: var(--sf-muted); margin: 4px 2px 0; }
+.sf .sf-cut-note { color: #c92a2a; }
+.sf .sf-pill { font-size: 0.7rem; font-weight: 700; border: 1.2px solid var(--sf-ink); border-radius: 999px; padding: 0 6px; }
+.sf-loop .sf-cycle, .sf .sf-cycle { font-size: 0.75rem; color: var(--sf-muted); margin-top: 3px; }
+
+/* Loops page */
+.sf-loops-view { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+.sf-loops-view > svg { width: 100%; height: auto; max-height: calc(100vh - 170px); display: block; user-select: none; }
+.sf-loops-side { background: var(--sf-panel); border-radius: 8px; padding: 2px 14px 14px; font-size: 0.8rem; }
+.sf-legend-loop { background: #fff; border: 1px solid var(--sf-border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; display: block; }
+.sf-legend-loop:hover { border-color: var(--sf-active); }
+.sf-legend-loop.off { opacity: 0.6; }
+.sf-legend-loop p { margin: 4px 0 0; color: var(--sf-muted); }
+.sf-legend-loop summary, .sf-cycles summary { cursor: pointer; color: var(--sf-muted); font-size: 0.75rem; }
+.sf-cycles { margin-top: 4px; }
+.sf-key { list-style: none; margin: 0; padding: 0; line-height: 1.7; }
+.sf-key strong { display: inline-block; width: 18px; }
+.sf-check { display: flex; gap: 6px; align-items: flex-start; margin-top: 12px; }
+
+/* Stock and flow page */
+.sf-model-box { display: grid; grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: auto auto; gap: 6px 10px; border: 1.5px solid var(--sf-line); border-radius: 10px; padding: 8px; }
+.sf-controls-panel { background: var(--sf-panel); border-radius: 8px; padding: 2px 12px 12px; align-self: start; }
+.sf-field { display: block; font-size: 0.78rem; margin-bottom: 6px; border-radius: 4px; }
+.sf-field:hover { color: var(--sf-active); }
+.sf-field output { float: right; color: var(--sf-muted); }
+.sf-field input[type="range"] { display: block; width: 100%; margin-top: 1px; }
+.sf-loop-card { background: #fff; border: 1px solid var(--sf-border); border-radius: 8px; padding: 7px 10px 4px; margin-bottom: 8px; }
+.sf-loop-card:hover { border-color: var(--sf-active); }
+.sf-loop-card.off .sf-strength { opacity: 0.45; }
+.sf-toggle { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.sf-loop-title { font-weight: 600; font-size: 0.85rem; }
+.sf-strength { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; }
+.sf-strength input { flex: 1; min-width: 0; }
+.sf-strength output { color: var(--sf-muted); width: 2.4em; text-align: right; }
+.sf-diagram-panel { display: flex; flex-direction: column; min-width: 0; }
+.sf-diagram-panel > svg { width: 100%; height: auto; max-height: calc(100vh - 330px); display: block; user-select: none; }
+.sf-diagram-panel > .sf-hint { margin: 0; font-size: 0.68rem; }
+.sf-input-strip { grid-column: 1 / -1; border-top: 1px solid var(--sf-border); padding: 4px 4px 0; }
+.sf-input-controls { display: grid; grid-template-columns: 210px repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
+.sf-input-intro h2 { margin: 2px 0 4px; }
+.sf-input-intro .sf-hint { margin: 0; font-size: 0.68rem; line-height: 1.35; }
+.sf-input-head { display: flex; align-items: baseline; gap: 6px; font-size: 0.78rem; }
+.sf-input-head span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sf .sf-input-reset { margin-left: auto; border: 0; background: none; padding: 0; color: var(--sf-muted); cursor: pointer; }
+.sf .sf-input-reset:hover { color: var(--sf-ink); }
+.sf-input-editor svg { display: block; width: 100%; height: 38px; background: #fff; border: 1px solid var(--sf-border); border-radius: 4px; cursor: crosshair; touch-action: none; }
+.sf-input-editor:hover svg { border-color: var(--sf-accent); }
+.sf-input-editor .input-line { fill: none; stroke: var(--sf-accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+.sf-input-editor .input-area { fill: var(--sf-accent); opacity: 0.12; }
+.sf-input-editor .input-balance { stroke: var(--sf-muted); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.sf-input-editor .input-cursor { stroke: var(--sf-muted); vector-effect: non-scaling-stroke; }
+.sf-input-axis { display: flex; gap: 6px; font-size: 0.62rem; color: var(--sf-muted); }
+.sf-input-axis output { flex: 1; min-width: 0; text-align: center; color: var(--sf-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+
+/* Both diagrams */
+.sf-cld .arrowhead, .sf-sfd .arrowhead { fill: var(--sf-line); }
+.sf-cld .link .line, .sf-sfd .link .line { fill: none; stroke: var(--sf-line); stroke-width: 1.6; }
+.sf-cld .link .hit, .sf-sfd .link .hit { fill: none; stroke: transparent; stroke-width: 14; cursor: help; }
+.sf-cld .link .delay line, .sf-sfd .link .delay line { stroke: var(--sf-ink); stroke-width: 1.6; }
+.sf-cld .link.zero .line, .sf-sfd .link.zero .line { stroke-dasharray: 3 3; opacity: 0.6; }
+.sf-cld .link.zero .sign, .sf-sfd .link.zero .sign { fill: var(--sf-muted); font-weight: 400; }
+.sf-cld .cld-loop, .sf-sfd .cld-loop { cursor: help; }
+.sf-cld .cld-loop .hit, .sf-sfd .cld-loop .hit { fill: transparent; }
+.sf-cld .cld-loop .loop-arrow, .sf-sfd .cld-loop .loop-arrow { fill: none; stroke: var(--sf-ink); stroke-width: 1.4; }
+.sf-cld .cld-loop .loop-label, .sf-sfd .cld-loop .loop-label { font-size: 13px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
+.sf-cld .cld-loop .loop-name { font-size: 12px; fill: var(--sf-muted); text-anchor: middle; dominant-baseline: middle; }
+.sf-cld .cld-loop.off, .sf-sfd .cld-loop.off { opacity: 0.3; }
+
+/* Loop diagram */
+.sf-cld .node { font-size: 16px; text-anchor: middle; dominant-baseline: middle; fill: var(--sf-ink); }
+.sf-cld .node.input { font-style: italic; fill: var(--sf-muted); }
+.sf-cld .link .sign { font-size: 16px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; fill: var(--sf-ink); }
+.sf-cld.highlighting .link:not(.active), .sf-cld.highlighting .node:not(.active), .sf-cld.highlighting .cld-loop:not(.active) { opacity: 0.3; }
+.sf-cld.highlighting .link.active .line { stroke: var(--sf-active); stroke-width: 2.2; }
+
+/* Stock and flow diagram */
+.sf-sfd .link .sign { font-size: 15px; font-weight: 600; fill: var(--sf-ink); text-anchor: middle; dominant-baseline: middle; }
+.sf-sfd .link .delay-label { font-size: 10px; fill: var(--sf-muted); text-anchor: middle; dominant-baseline: middle; }
+.sf-sfd .link .cut-mark { display: none; fill: #c92a2a; font-size: 16px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
+.sf-sfd .link.cut .line { stroke-dasharray: 4 4; opacity: 0.5; }
+.sf-sfd .link.cut .cut-mark { display: inline; }
+.sf-sfd .node { cursor: pointer; }
+.sf-sfd .node rect { fill: #fff; stroke: none; }
+.sf-sfd .node:hover rect { stroke: var(--sf-line); }
+.sf-sfd .node.expanded:not(.stock) rect { stroke: var(--sf-border); }
+.sf-sfd .node.stock rect { fill: #edf2ff; stroke: var(--sf-accent); stroke-width: 1.8; }
+.sf-sfd .node .label { font-size: 15px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; fill: var(--sf-ink); }
+.sf-sfd .node.input .label { font-style: italic; fill: var(--sf-muted); }
+.sf-sfd .spark-line { fill: none; stroke: var(--sf-accent); stroke-width: 1.8; }
+.sf-sfd .node:not(.stock) .spark-line { stroke: var(--sf-muted); }
+.sf-sfd .spark-reference { fill: none; stroke: var(--sf-line); stroke-width: 1.4; stroke-dasharray: 3 3; }
+.sf-sfd.highlighting .link:not(.active), .sf-sfd.highlighting .node:not(.active), .sf-sfd.highlighting .cld-loop:not(.active) { opacity: 0.2; }
+.sf-sfd.highlighting .link.active .line { stroke: var(--sf-active); stroke-width: 2.6; }
+.sf-sfd.highlighting .node.focus rect { stroke: var(--sf-active); stroke-width: 2.4; }
 
 .sf-run { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
 .sf-run .sf-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }

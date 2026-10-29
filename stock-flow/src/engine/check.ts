@@ -103,6 +103,10 @@ function structuralIssues(model: StockFlowModelDoc): Issue[] {
     }
     for (const key of Object.keys(scenario.changes.linkGain ?? {})) checkLink(where, key);
   }
+  for (const [view, layout] of Object.entries(model.layout ?? {})) {
+    for (const id of Object.keys(layout.nodes)) if (!(id in variables)) error(`layout.${view}.nodes`, `"${id}" is not a variable`);
+    for (const id of Object.keys(layout.markers ?? {})) if (!(id in model.annotations.loops)) error(`layout.${view}.markers`, `"${id}" is not a named loop`);
+  }
   return issues;
 }
 
@@ -150,6 +154,13 @@ function runIssues(model: StockFlowModelDoc): Issue[] {
     const named = new Set(graph.loops.flatMap((loop) => loop.named));
     for (const id of Object.keys(model.annotations.loops)) {
       if (!named.has(id)) issues.push({ severity: "warning", where: `annotations.loops.${id}`, message: "No cycle passes through its cut links" });
+    }
+    for (const [view, layout] of Object.entries(model.layout ?? {})) {
+      const drawn = causalGraph(model, coarse, settings, { visible: Object.keys(layout.nodes) });
+      const links = new Set(drawn.links.map((link) => `${link.from}→${link.to}`));
+      for (const key of Object.keys(layout.bends ?? {})) {
+        if (!links.has(key)) issues.push({ severity: "warning", where: `layout.${view}.bends`, message: `"${key}" is not a link in this view` });
+      }
     }
   }
   return issues;
