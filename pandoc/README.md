@@ -34,8 +34,7 @@ via [pandoc](https://pandoc.org) compiled to WebAssembly
 ## Context sidebar
 
 The module also registers a **context-sidebar** variant (`pandoc-context`,
-tagged `context-tool`, bound to the account doc) that follows whatever document
-you currently have focused:
+tagged `context-tool`) that follows whatever document you currently have focused:
 
 - It subscribes to `patchwork:selected-doc` and turns the focused document into a
   pandoc input automatically — file docs use their content directly; structured
