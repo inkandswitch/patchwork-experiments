@@ -1,6 +1,59 @@
 import type { AutomergeUrl as RepoUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import type { ToolRender } from "@inkandswitch/patchwork-plugins";
+import { element } from "../charts/svg.ts";
 import { styles } from "../views/styles.ts";
 import type { AutomergeUrl, StockFlowModelDoc } from "../types.ts";
+
+/**
+ * A tool for a document that points at a model: re-renders `view(model, doc)` whenever either changes, with a footer
+ * that opens the model. The chart, tests, sensitivity and attribution tools are all this shape.
+ */
+export function modelBoundTool<Doc extends { model: AutomergeUrl }>(className: string, view: (model: StockFlowModelDoc, doc: Doc) => HTMLElement): ToolRender<Doc> {
+  return (handle, toolElement) => {
+    const { root, unmount } = mount(toolElement, className);
+    let doc: Doc | undefined;
+    let model: StockFlowModelDoc | undefined;
+    let problem: string | undefined;
+
+    const render = () => {
+      if (problem) return root.replaceChildren(element("p", { class: "sf-error" }, problem));
+      if (!doc || !model) return root.replaceChildren(element("p", { class: "sf-muted" }, "Loading the model…"));
+      let body: HTMLElement;
+      try {
+        body = view(model, doc);
+      } catch (error) {
+        body = element("p", { class: "sf-error" }, errorMessage(error));
+      }
+      const open = element("button", { title: "Open the model this runs on" }, model.title);
+      open.addEventListener("click", () => openDocument(root, doc!.model));
+      const footer = element("footer");
+      footer.append("Model:", open);
+      root.replaceChildren(body, footer);
+    };
+
+    const follow = watchModel(
+      toolElement.repo,
+      () => doc?.model,
+      (next, error) => {
+        model = next;
+        problem = error;
+        render();
+      },
+    );
+    const stop = watch(handle, (next) => {
+      doc = next;
+      follow.refresh();
+      render();
+    });
+    const stopResize = onResize(root, render);
+    return () => {
+      stop();
+      follow.stop();
+      stopResize();
+      unmount();
+    };
+  };
+}
 
 /** A root element with the shared styles, removed again by the returned cleanup. */
 export function mount(element: HTMLElement, className: string): { root: HTMLDivElement; unmount: () => void } {

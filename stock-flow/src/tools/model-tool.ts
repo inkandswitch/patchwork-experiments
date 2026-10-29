@@ -9,7 +9,7 @@ import { renderLoopsPage } from "./loops-page.ts";
 import { currentSettings, initialState, isTweaked, resetTweaks, type Context, type Tab, type ViewState } from "./model-state.ts";
 import { errorMessage, mount, onResize, watch } from "./shared.ts";
 import { renderStockFlowPage } from "./stock-flow-page.ts";
-import type { Run, StockFlowModelDoc, VariableId } from "../types.ts";
+import type { DataSource, Run, StockFlowModelDoc, VariableId } from "../types.ts";
 
 export const ModelTool: ToolRender<StockFlowModelDoc> = (handle, element) => {
   const { root, unmount } = mount(element, "sf-model");
@@ -30,6 +30,7 @@ const TABS: [Tab, string][] = [
   ["parameters", "Parameters"],
   ["scenarios", "Scenarios"],
   ["data", "Data"],
+  ["sources", "Sources"],
 ];
 
 function createModelView(root: HTMLElement) {
@@ -121,6 +122,7 @@ const TAB_RENDERERS: Record<Tab, (body: HTMLElement, context: Context, tooltip: 
   parameters: renderParameters,
   scenarios: renderScenarios,
   data: renderData,
+  sources: renderSources,
 };
 
 /** Charts of chosen variables for the scenario with the reader's knockouts and slider settings, against the data. */
@@ -253,14 +255,16 @@ function renderParameters(body: HTMLElement, { model, settings }: Context): void
   for (const entry of Object.entries(model.parameters)) groups.set(entry[1].group, [...(groups.get(entry[1].group) ?? []), entry]);
   for (const [group, entries] of groups) {
     const table = element("table");
-    table.innerHTML = `<thead><tr><th>Parameter</th><th>Value</th><th>Meaning</th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>Parameter</th><th>Value</th><th>Meaning</th><th>Source</th></tr></thead>`;
     const tbody = element("tbody");
     for (const [id, parameter] of entries) {
       const row = element("tr");
       const formula = "derived" in parameter ? `<br><code>= ${escapeHtml(parameter.derived)}</code>` : "";
       const delay = parameter.delay ? `<br><span class="sf-muted">${escapeHtml(parameter.delay.kind)} delay. ${escapeHtml(parameter.delay.shape)}</span>` : "";
+      const unit = parameter.unit ? ` <span class="sf-muted">${escapeHtml(parameter.unit)}</span>` : "";
       row.innerHTML = `<td><code>${escapeHtml(id)}</code>${parameter.label !== id ? `<br><span class="sf-muted">${escapeHtml(parameter.label)}</span>` : ""}</td>
-        <td class="num">${formatParameter(values[id], parameter.format)}</td><td>${escapeHtml(parameter.meaning)}${formula}${delay}</td>`;
+        <td class="num">${formatParameter(values[id], parameter.format)}${unit}</td><td>${escapeHtml(parameter.meaning)}${formula}${delay}</td>
+        <td class="sf-source"><span class="sf-badge ${provenanceKind(parameter)}">${escapeHtml(provenanceKind(parameter))}</span> ${escapeHtml(sourceText(parameter))}${estimatedText(parameter)}</td>`;
       tbody.append(row);
     }
     table.append(tbody);
@@ -284,6 +288,95 @@ function renderScenarios(body: HTMLElement, { model, state, rerender }: Context)
     }
   }
   body.append(grid);
+}
+
+/** Every data source once, with the series that come from it, then the parameters grouped by where their values come from. */
+function renderSources(body: HTMLElement, { model }: Context): void {
+  const bySource = new Map<string, { source: DataSource; series: string[] }>();
+  for (const [id, series] of Object.entries(model.data)) {
+    const key = `${series.source.publisher}|${series.source.title}|${series.source.table ?? ""}`;
+    const entry = bySource.get(key) ?? { source: series.source, series: [] };
+    entry.series.push(id);
+    bySource.set(key, entry);
+  }
+  const data = element("table");
+  data.innerHTML = `<thead><tr><th>Publisher</th><th>Table</th><th>Retrieved</th><th>How</th><th>Series</th></tr></thead>`;
+  const dataBody = element("tbody");
+  for (const { source, series } of [...bySource.values()].sort((a, b) => a.source.publisher.localeCompare(b.source.publisher))) {
+    const row = element("tr");
+    row.innerHTML = `<td>${escapeHtml(source.publisher)}</td>
+      <td><a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.title)}</a>${source.table ? `<br><code>${escapeHtml(source.table)}</code>` : ""}${source.location ? `<br><span class="sf-muted">${escapeHtml(source.location)}</span>` : ""}</td>
+      <td>${escapeHtml(source.retrieved)}</td><td>${escapeHtml(source.method)}</td>
+      <td>${series.map((id) => `<code>${escapeHtml(id)}</code>`).join(", ")}</td>`;
+    dataBody.append(row);
+  }
+  data.append(dataBody);
+  body.append(element("h2", {}, `Data: ${bySource.size} sources, ${Object.keys(model.data).length} series`), data);
+
+  const kinds = new Map<string, [string, StockFlowModelDoc["parameters"][string]][]>();
+  for (const entry of Object.entries(model.parameters)) {
+    const kind = provenanceKind(entry[1]);
+    kinds.set(kind, [...(kinds.get(kind) ?? []), entry]);
+  }
+  const order = ["estimated", "data", "literature", "assumption", "switch", "definition", "derived", "unsourced"];
+  for (const kind of order) {
+    const entries = kinds.get(kind);
+    if (!entries) continue;
+    const table = element("table");
+    table.innerHTML = `<thead><tr><th>Parameter</th><th>Value</th><th>${kind === "estimated" ? "Estimation" : "Source"}</th></tr></thead>`;
+    const tbody = element("tbody");
+    for (const [id, parameter] of entries) {
+      const row = element("tr");
+      const value = "value" in parameter ? formatParameter(parameter.value, parameter.format) : `<code>= ${escapeHtml(parameter.derived)}</code>`;
+      row.innerHTML = `<td><code>${escapeHtml(id)}</code><br><span class="sf-muted">${escapeHtml(parameter.label)}</span></td>
+        <td class="num">${value}${parameter.unit ? ` <span class="sf-muted">${escapeHtml(parameter.unit)}</span>` : ""}</td>
+        <td>${escapeHtml(sourceText(parameter))}${estimatedText(parameter)}</td>`;
+      tbody.append(row);
+    }
+    table.append(tbody);
+    body.append(element("h2", {}, `${PROVENANCE_TITLES[kind]} (${entries.length})`), table);
+  }
+}
+
+const PROVENANCE_TITLES: Record<string, string> = {
+  estimated: "Estimated from data",
+  data: "Read off data",
+  literature: "From the literature",
+  assumption: "Assumptions, covered by sensitivity ranges",
+  switch: "Switches",
+  definition: "Definitions",
+  derived: "Derived from other parameters",
+  unsourced: "No source yet",
+};
+
+/** Where a parameter's value comes from, read from its `estimated` record or the first word of its source text. */
+export function provenanceKind(parameter: StockFlowModelDoc["parameters"][string]): string {
+  if (parameter.estimated) return "estimated";
+  if (!parameter.source) return "derived" in parameter ? "derived" : "unsourced";
+  if (typeof parameter.source !== "string") return "data";
+  const first = parameter.source.split(/[\s:,]/)[0].toLowerCase();
+  if (first.startsWith("estimat")) return "estimated";
+  if (first.startsWith("data") || first.startsWith("approximate") || first.startsWith("census")) return "data";
+  if (first.startsWith("literature")) return "literature";
+  if (first.startsWith("assumption")) return "assumption";
+  if (first.startsWith("switch")) return "switch";
+  if (first.startsWith("definition")) return "definition";
+  if (first.startsWith("derived")) return "derived";
+  return "derived" in parameter ? "derived" : "assumption";
+}
+
+function sourceText(parameter: StockFlowModelDoc["parameters"][string]): string {
+  const source = parameter.source;
+  if (!source) return "";
+  if (typeof source === "string") return source;
+  return `${source.publisher}: ${source.title}${source.table ? ` (${source.table})` : ""}, ${source.method}, retrieved ${source.retrieved}.`;
+}
+
+function estimatedText(parameter: StockFlowModelDoc["parameters"][string]): string {
+  const e = parameter.estimated;
+  if (!e) return "";
+  const range = e.range ? ` within ${e.range.min}–${e.range.max}` : "";
+  return `<br><span class="sf-muted">Estimated against ${e.from.map((id) => `<code>${escapeHtml(id)}</code>`).join(", ")} over ${e.years[0]}–${e.years[1]}${range}. ${escapeHtml(e.method)}</span>`;
 }
 
 function renderData(body: HTMLElement, { model, run }: Context): void {

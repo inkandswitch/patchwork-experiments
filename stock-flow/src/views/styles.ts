@@ -176,6 +176,54 @@ export const styles = `${diagramStyles}
 .sf .hover-line { stroke: var(--sf-line); }
 .sf-chart footer, .sf-scenario footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.75rem; color: var(--sf-muted); }
 
+.sf-fit { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.75rem; color: var(--sf-muted); font-variant-numeric: tabular-nums; }
+.sf-fit li { margin: 2px 0; }
+.sf-fit strong { color: var(--sf-ink); font-weight: 600; }
+.sf-attribution svg .whisker { stroke: #333; stroke-width: 1.2; }
+.sf-attribution td.band { color: #666; white-space: nowrap; }
+.sf-tests-tool footer, .sf-sensitivity-tool footer, .sf-attribution-tool footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.75rem; color: var(--sf-muted); }
+
+/* Tests */
+.sf-tests header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.sf-tally { font-size: 0.78rem; color: var(--sf-muted); }
+.sf-tally .pass { color: #2b8a3e; } .sf-tally .warn { color: #e67700; } .sf-tally .fail { color: #c92a2a; }
+.sf-tests td.sf-status { width: 14px; padding-right: 0; }
+.sf-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--sf-line); }
+.sf-tests tr.pass .sf-dot { background: #2b8a3e; }
+.sf-tests tr.warn .sf-dot { background: #e67700; }
+.sf-tests tr.fail .sf-dot { background: #c92a2a; }
+.sf-tests tr.fail td { background: #fff5f5; }
+.sf-tests tr.warn td { background: #fff9db; }
+.sf-tests details { margin-top: 3px; font-size: 0.72rem; }
+.sf-tests details summary { cursor: pointer; color: var(--sf-muted); }
+.sf-tests details code { display: block; white-space: pre; margin-top: 2px; }
+
+/* Sensitivity */
+.sf-tornadoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 12px; margin-top: 8px; }
+.sf-tornado { margin: 0; border: 1px solid var(--sf-border); border-radius: 8px; padding: 8px 10px; }
+.sf-tornado figcaption { font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }
+.sf-tornado svg { width: 100%; height: auto; display: block; overflow: visible; }
+.sf-tornado .centre { stroke: var(--sf-ink); stroke-width: 1; }
+.sf-tornado rect.low { fill: #4c6ef5; opacity: 0.8; }
+.sf-tornado rect.high { fill: #e8590c; opacity: 0.8; }
+.sf-tornado .bar-label { font-size: 11px; fill: var(--sf-ink); }
+.sf-tornado .end-label { font-size: 10px; fill: var(--sf-muted); }
+.sf-ranking ul { list-style: none; margin: 4px 0 0; padding: 0; font-size: 0.82rem; }
+.sf-ranking li { position: relative; padding: 4px 8px; margin: 2px 0; }
+.sf-win-bar { position: absolute; left: 0; top: 0; bottom: 0; background: #edf2ff; border-radius: 4px; z-index: -1; }
+.sf-ranking li { isolation: isolate; }
+
+/* Attribution */
+.sf-attribution svg { width: 100%; max-width: 560px; height: auto; display: block; margin: 8px 0; overflow: visible; }
+.sf-attribution rect.level { fill: var(--sf-ink); opacity: 0.75; }
+.sf-attribution rect.up { fill: #e8590c; }
+.sf-attribution rect.down { fill: #0c8599; }
+.sf-attribution .zero { stroke: var(--sf-line); }
+.sf-attribution .connector { stroke: var(--sf-line); stroke-dasharray: 2 2; }
+.sf-attribution .value { font-size: 10.5px; fill: var(--sf-ink); font-variant-numeric: tabular-nums; }
+.sf-attribution .label { font-size: 10px; fill: var(--sf-muted); }
+.sf-attribution tfoot td { font-weight: 600; border-top: 1px solid var(--sf-line); }
+
 /* Scenario card */
 .sf-scenario { border: 1px solid var(--sf-border); border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; }
 .sf-scenario header { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }

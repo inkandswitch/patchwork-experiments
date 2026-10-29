@@ -2,6 +2,7 @@ import { causalGraph, equationLinks } from "./graph.ts";
 import { names, parse, type Node } from "./expr.ts";
 import { balancedSettings, orderedScenarios, scenarioSettings } from "./scenarios.ts";
 import { evaluationOrder, simulate, splitLink } from "./simulate.ts";
+import { unitIssues } from "./units.ts";
 import type { StockFlowModelDoc } from "../types.ts";
 
 export type Issue = { severity: "error" | "warning"; where: string; message: string };
@@ -10,7 +11,7 @@ export type Issue = { severity: "error" | "warning"; where: string; message: str
 export function checkModel(model: StockFlowModelDoc): Issue[] {
   const issues = structuralIssues(model);
   if (issues.some((issue) => issue.severity === "error")) return issues;
-  return [...issues, ...runIssues(model)];
+  return [...issues, ...unitIssues(model), ...runIssues(model)];
 }
 
 function structuralIssues(model: StockFlowModelDoc): Issue[] {

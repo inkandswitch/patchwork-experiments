@@ -8,20 +8,41 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
 import { chartSpec, formatter } from "../src/charts/resolve.ts";
+import { attribute, type AttributionFields } from "../src/engine/attribution.ts";
 import { checkModel } from "../src/engine/check.ts";
+import { estimate, type EstimateSpec } from "../src/engine/estimate.ts";
+import { describeFit, fitStats } from "../src/engine/fit.ts";
 import { causalGraph } from "../src/engine/graph.ts";
 import { orderedScenarios, scenarioLabel, scenarioSettings, withKnob } from "../src/engine/scenarios.ts";
+import { runSensitivity, type SensitivityFields } from "../src/engine/sensitivity.ts";
 import { simulate } from "../src/engine/simulate.ts";
+import { checkTests, runTests, type TestFields } from "../src/engine/tests.ts";
 import { diagramSvg, layoutDiagram } from "../src/views/diagram.ts";
-import { convertFences, parseGuide, parseSweep, parseYears, type Block, type ChartFields } from "./notebook.ts";
+import {
+  convertFences,
+  hasFences,
+  parseAttribution,
+  parseFit,
+  parseGuide,
+  parseSensitivity,
+  parseSweep,
+  parseTests,
+  parseYears,
+  type Block,
+  type ChartFields,
+} from "./notebook.ts";
+import { attributionReport, sensitivityReport, table, testsReport } from "./report.ts";
 import { closeRepo, findDoc, openRepo, patchworkLink, waitForServerSync } from "./repo.ts";
 import type {
   AutomergeUrl,
   FolderDoc,
   MarkdownDoc,
+  StockFlowAttributionDoc,
   StockFlowChartDoc,
   StockFlowModelDoc,
   StockFlowScenarioDoc,
+  StockFlowSensitivityDoc,
+  StockFlowTestsDoc,
 } from "../src/types.ts";
 
 const HELP = `sf: stock and flow models in Patchwork
@@ -38,11 +59,22 @@ Models
 Running (offline when <model> is a .json file)
   sf run <model> <scenario> [--series a,b] [--years 2000-2025] [--every 1] [--set k=v,k=v] [--csv]
   sf graph <model> [--scenario ref] [--all | --view loops|stockFlow] [--svg out.svg]
+  sf fit <model> <scenario> --data id,id [--years 2010-2024]      RMSE, MAPE, R², Theil U and its split against data series
+  sf estimate <model> <scenario> --params a=5..6.5,b --data id,id*2 --years 2005-2019 [--write]
+                                            bounded least squares (Nelder–Mead) over the fit window; a parameter without
+                                            bounds uses its range or ±50%; *2 doubles a series' weight. --write puts the
+                                            values and an "estimated" note into the model (file or document)
+
+Validation (offline with a .json model and --spec; or pass the document's URL)
+  sf tests <model> --spec <file>            Sterman's test battery: structure, equilibrium, integration, extreme, knockout, fit, holdout
+  sf sensitivity <model> --spec <file>      one-at-a-time or Latin hypercube over parameter ranges, outcomes read off each run
+  sf attribution <model> --spec <file>      Shapley shares of a change across drivers
+  <file> is a fence body, or a markdown file whose first matching fence is used. Syntax: see SKILL.md.
 
 Documents to embed in markdown
-  sf chart new <model-url> --series a,b --scenarios ref,ref [--title t] [--data id,id] [--sweep k=1,2] [--years 2000-2040] [--guide "6 label"]
+  sf chart new <model-url> --series a,b --scenarios ref,ref [--title t] [--data id,id] [--sweep k=1,2] [--years 2000-2040] [--guide "6 label"] [--fit]
   sf scenario new <model-url> <scenario-id>
-  sf md new <file.md> [--model <model-url>]     a markdown document; \`\`\`chart and \`\`\`scenario fences become embeds
+  sf md new <file.md> [--model <model-url>]     a markdown document; chart, scenario, tests, sensitivity and attribution fences become embeds
   sf md put <md-url> <file.md> [--model <model-url>]
   sf md get <md-url>
   sf folder new <title> <url>...                a folder listing documents
@@ -74,6 +106,10 @@ const OPTIONS = {
   sweep: { type: "string" },
   guide: { type: "string" },
   model: { type: "string" },
+  spec: { type: "string" },
+  fit: { type: "boolean" },
+  params: { type: "string" },
+  write: { type: "boolean" },
 } as const;
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
@@ -165,6 +201,85 @@ const COMMANDS: Record<string, Command> = {
     print(`Units: ${series.map((id) => `${id} ${model.variables[id].unit}`).join("; ")}`);
   },
 
+  fit: async ([target, reference], options) => {
+    const model = await readModel(required(target, "model"));
+    const ref = required(reference, "scenario");
+    const run = simulate(model, scenarioSettings(model, ref));
+    const ids = list(options.data);
+    if (!ids.length) throw new Error("Name the data series to fit against with --data id,id");
+    const years = options.years ? parseYears(options.years) : undefined;
+    print(`${scenarioLabel(model, ref)} against data${years ? ` ${years[0]}–${years[1]}` : ""}`);
+    for (const id of ids) {
+      if (!(id in model.data)) throw new Error(`Unknown data series "${id}"`);
+      print(`  ${id} (${model.variables[model.data[id].variable].label}): ${describeFit(fitStats(model, run, id, years), formatter(model.data[id].unit))}`);
+    }
+  },
+
+  estimate: async ([target, reference], options) => {
+    const file = required(target, "model");
+    const model = await readModel(file);
+    const spec = estimateSpec(model, required(reference, "scenario"), options);
+    const result = estimate(model, spec);
+    print(`${scenarioLabel(model, spec.scenario)}: ${Object.keys(spec.parameters).length} parameters against ${spec.data.map((d) => d.series).join(", ")} ${spec.years[0]}–${spec.years[1]}`);
+    print(`Loss ${result.loss.initial.toPrecision(4)} → ${result.loss.final.toPrecision(4)} in ${result.evaluations} runs`);
+    print(
+      table(
+        ["parameter", "before", "after", "bounds"],
+        Object.entries(result.values).map(([id, value]) => [
+          id + (result.atBound.includes(id) ? " (at bound)" : ""),
+          String(tidyNumber(result.initial[id])),
+          String(tidyNumber(value)),
+          `${spec.parameters[id].min}–${spec.parameters[id].max}`,
+        ]),
+      ),
+    );
+    for (const [id, stats] of Object.entries(result.fits)) print(`  ${id}: ${describeFit(stats, formatter(model.data[id].unit))}`);
+    if (!options.write) return;
+    const estimated = {
+      from: spec.data.map((d) => d.series),
+      years: spec.years,
+      method: `Bounded least squares (Nelder–Mead) on normalised squared error, sf estimate, ${new Date().toISOString().slice(0, 10)}`,
+    };
+    if (file.startsWith("automerge:")) {
+      await withRepo(async (repo) => {
+        const handle = await findDoc<StockFlowModelDoc>(repo, file);
+        handle.change((doc) => {
+          for (const [id, value] of Object.entries(result.values)) {
+            (doc.parameters[id] as { value: number }).value = tidyNumber(value);
+            doc.parameters[id].estimated = { ...estimated, range: spec.parameters[id] };
+          }
+        });
+        await waitForServerSync(repo, handle);
+      });
+    } else {
+      const json = JSON.parse(readFileSync(file, "utf8")) as StockFlowModelDoc;
+      for (const [id, value] of Object.entries(result.values)) {
+        (json.parameters[id] as { value: number }).value = tidyNumber(value);
+        json.parameters[id].estimated = { ...estimated, range: spec.parameters[id] };
+      }
+      writeFileSync(file, JSON.stringify(json, null, 1) + "\n");
+    }
+    print(`Wrote ${Object.keys(result.values).length} estimated values to ${file}`);
+  },
+
+  tests: async ([target], options) => {
+    const { model, fields } = await validationInput<TestFields>(target, options, "tests", parseTests);
+    checkTests(model, fields);
+    const results = runTests(model, fields);
+    print(testsReport(results));
+    if (results.some((result) => result.status === "fail")) process.exitCode = 1;
+  },
+
+  sensitivity: async ([target], options) => {
+    const { model, fields } = await validationInput<SensitivityFields>(target, options, "sensitivity", parseSensitivity);
+    print(sensitivityReport(model, fields, runSensitivity(model, fields)));
+  },
+
+  attribution: async ([target], options) => {
+    const { model, fields } = await validationInput<AttributionFields>(target, options, "attribution", parseAttribution);
+    print(attributionReport(model, fields, attribute(model, fields)));
+  },
+
   graph: async ([target], options) => {
     const model = await readModel(required(target, "model"));
     const reference = options.scenario ?? orderedScenarios(model)[0]?.[0] ?? "balanced";
@@ -203,6 +318,7 @@ const COMMANDS: Record<string, Command> = {
         ...(options.sweep ? { sweep: parseSweep(options.sweep.replace(/^([^=]+)=/, "$1 = ")) } : {}),
         ...(options.years ? { years: parseYears(options.years) } : {}),
         ...(options.guide ? { guide: parseGuide(options.guide) } : {}),
+        ...(options.fit ? { fit: parseFit("true") } : {}),
       };
       const handle = await createChart(repo, model, modelUrl, fields);
       await report(repo, handle, "Chart");
@@ -261,17 +377,33 @@ async function createChart(repo: Repo, model: StockFlowModelDoc, modelUrl: Autom
   return repo.create<StockFlowChartDoc>(stamped<StockFlowChartDoc>({ "@patchwork": { type: "stock-flow-chart" }, model: modelUrl, ...fields }));
 }
 
-/** Turns chart and scenario fences into documents embedded in the markdown. */
+/** Turns chart, scenario, tests, sensitivity and attribution fences into documents embedded in the markdown. */
 async function markdownWithEmbeds(repo: Repo, markdown: string, modelUrl: string | undefined): Promise<string> {
-  if (!/```(chart|scenario)/.test(markdown)) return markdown;
-  if (!modelUrl) throw new Error("This markdown has chart or scenario blocks; pass --model <model-url> for them to run");
+  if (!hasFences(markdown)) return markdown;
+  if (!modelUrl) throw new Error("This markdown has chart, scenario or validation blocks; pass --model <model-url> for them to run");
   const model = await readModel(modelUrl, repo);
   const created: DocHandle<unknown>[] = [];
+  const url = modelUrl as AutomergeUrl;
   const content = await convertFences(markdown, model, async (block: Block) => {
     if (block.kind === "chart") {
-      const handle = await createChart(repo, model, modelUrl as AutomergeUrl, block.fields);
+      const handle = await createChart(repo, model, url, block.fields);
       created.push(handle);
       return embedSyntax(handle.url, "stock-flow-chart");
+    }
+    if (block.kind === "tests") {
+      const handle = repo.create<StockFlowTestsDoc>(stamped<StockFlowTestsDoc>({ "@patchwork": { type: "stock-flow-tests" }, title: "", model: url, ...block.fields }));
+      created.push(handle);
+      return embedSyntax(handle.url, "stock-flow-tests");
+    }
+    if (block.kind === "sensitivity") {
+      const handle = repo.create<StockFlowSensitivityDoc>(stamped<StockFlowSensitivityDoc>({ "@patchwork": { type: "stock-flow-sensitivity" }, title: "", model: url, ...block.fields }));
+      created.push(handle);
+      return embedSyntax(handle.url, "stock-flow-sensitivity");
+    }
+    if (block.kind === "attribution") {
+      const handle = repo.create<StockFlowAttributionDoc>(stamped<StockFlowAttributionDoc>({ "@patchwork": { type: "stock-flow-attribution" }, title: "", model: url, ...block.fields }));
+      created.push(handle);
+      return embedSyntax(handle.url, "stock-flow-attribution");
     }
     const embeds = block.scenarios.map((scenario) => {
       const handle = repo.create<StockFlowScenarioDoc>(
@@ -285,6 +417,31 @@ async function markdownWithEmbeds(repo: Repo, markdown: string, modelUrl: string
   for (const handle of created) await waitForServerSync(repo, handle);
   print(`Created ${created.length} embedded documents.`);
   return content;
+}
+
+type ValidationKind = "tests" | "sensitivity" | "attribution";
+
+/**
+ * The model and fields for a validation command: from a stock-flow-<kind> document's URL, or from a model plus a
+ * --spec file holding a fence body or a markdown file with a matching fence.
+ */
+async function validationInput<Fields>(target: string | undefined, options: Options, kind: ValidationKind, parse: (source: string) => Fields): Promise<{ model: StockFlowModelDoc; fields: Fields }> {
+  const where = required(target, `model or ${kind} url`);
+  if (where.startsWith("automerge:")) {
+    const doc = await readAny(where);
+    const type = doc["@patchwork"]?.type;
+    if (type === `stock-flow-${kind}`) {
+      const { "@patchwork": _, title, model: modelUrl, ...fields } = doc;
+      return { model: await readModel(modelUrl), fields: fields as Fields };
+    }
+    if (type !== "stock-flow-model") throw new Error(`${where} is a ${type ?? "unknown"} document, not a model or stock-flow-${kind}`);
+  }
+  const model = await readModel(where);
+  if (!options.spec) throw new Error(`Pass --spec <file> with a ${kind} fence body (or a markdown file containing one)`);
+  if (!existsSync(options.spec)) throw new Error(`No such file: ${options.spec}`);
+  const text = readFileSync(options.spec, "utf8");
+  const fence = new RegExp("```" + kind + "[^\\S\\n]*\\n([\\s\\S]*?)```").exec(text);
+  return { model, fields: parse(fence ? fence[1] : text) };
 }
 
 async function folderEntries(repo: Repo, urls: string[]): Promise<FolderDoc["docs"]> {
@@ -362,6 +519,37 @@ function defaultSeries(model: StockFlowModelDoc): string[] {
   const ids = Object.keys(model.variables);
   const keyStocks = ids.filter((id) => model.variables[id].kind === "stock" && model.variables[id].key);
   return (keyStocks.length ? keyStocks : ids.filter((id) => model.variables[id].kind === "stock")).slice(0, 6);
+}
+
+/** --params a=5..6.5,b  --data rent,vacancy*2  --years 2005-2019 */
+function estimateSpec(model: StockFlowModelDoc, scenario: string, options: Options): EstimateSpec {
+  const settings = scenarioSettings(model, scenario);
+  const parameters = Object.fromEntries(
+    list(options.params).map((entry) => {
+      const [id, bounds] = entry.split("=");
+      const parameter = model.parameters[id];
+      if (!parameter) throw new Error(`Unknown parameter "${id}"`);
+      if (bounds) {
+        const [min, max] = bounds.split("..").map(Number);
+        if (!Number.isFinite(min) || !Number.isFinite(max)) throw new Error(`Bounds for ${id} must look like 5..6.5`);
+        return [id, { min, max }];
+      }
+      if (parameter.range) return [id, { min: parameter.range.min, max: parameter.range.max }];
+      const value = settings.parameters[id] ?? ("value" in parameter ? parameter.value : NaN);
+      return [id, { min: Math.min(value * 0.5, value * 1.5), max: Math.max(value * 0.5, value * 1.5) }];
+    }),
+  );
+  if (!Object.keys(parameters).length) throw new Error("Name the parameters to estimate with --params a,b");
+  const data = list(options.data).map((entry) => {
+    const [series, weight] = entry.split("*");
+    return { series, weight: weight ? Number(weight) : 1 };
+  });
+  if (!options.years) throw new Error("Give the fit window with --years 2005-2019");
+  return { scenario, parameters, data, years: parseYears(options.years) };
+}
+
+function tidyNumber(value: number): number {
+  return Number(value.toPrecision(4));
 }
 
 async function readModel(target: string, repo?: Repo): Promise<StockFlowModelDoc> {
@@ -472,12 +660,6 @@ function list(text: string | undefined): string[] {
 function required(value: string | undefined, name: string): string {
   if (!value) throw new Error(`Missing <${name}>. Run sf --help.`);
   return value;
-}
-
-function table(header: string[], rows: string[][]): string {
-  const widths = header.map((title, column) => Math.max(title.length, ...rows.map((row) => row[column].length)));
-  const line = (cells: string[]) => cells.map((cell, column) => (column ? cell.padStart(widths[column]) : cell.padEnd(widths[column]))).join("  ");
-  return [line(header), ...rows.map(line)].join("\n");
 }
 
 function print(text: string): void {

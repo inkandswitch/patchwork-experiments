@@ -43,7 +43,110 @@ export type StockFlowChartDoc = {
   sweep?: { knob: string; values: number[] };
   years?: [number, number];
   guide?: { value: number; label: string };
+  /** Print fit statistics for each data series under the chart, over the chart's years or the given window. */
+  fit?: boolean | { years: [number, number] };
 };
+
+/** Sterman's test battery over one model, recomputed live. Embeddable as [patchwork:<documentId>/stock-flow-tests]. */
+export type StockFlowTestsDoc = {
+  "@patchwork": PatchworkMeta<"stock-flow-tests">;
+  title: string;
+  model: AutomergeUrl;
+  /** Scenario reference the behaviour tests run on. */
+  scenario: string;
+  tests: TestSpec[];
+};
+
+export type TestSpec =
+  /** What `sf check` finds, plus parameters with neither a source nor an estimation note. */
+  | { kind: "structure" }
+  /** Every stock stays put with no inputs and no cuts. */
+  | { kind: "equilibrium"; tolerance?: number }
+  /** Halving dt changes no stock by more than `tolerance` (share of its range). */
+  | { kind: "integration"; tolerance?: number }
+  /** Parameters set and inputs held at a constant multiplier; each expectation is a predicate over the run. */
+  | { kind: "extreme"; label: string; set?: Record<string, number>; inputs?: Record<VariableId, number>; expect: Expectation[] }
+  /** Knocking out a loop must move the variable by at least `minEffect` (share of its range), or the loop is inert. */
+  | { kind: "knockout"; loop: LoopId; variable: VariableId; minEffect: number }
+  /** Model against a data series over a window; `max` bounds the statistics. */
+  | { kind: "fit"; data: SeriesId; years?: [number, number]; max?: Partial<FitStats> }
+  /** Model against data on years the parameters were not estimated on. */
+  | { kind: "holdout"; data: SeriesId; fitYears: [number, number]; testYears: [number, number]; max?: Partial<FitStats> };
+
+/**
+ * min/max: every value at or above/below `value`. between: every value within [a, b]. finite: no NaN or ±∞.
+ * settles: the final value is within 1% of the variable's range of `value`. Values are in the units charts show.
+ */
+export type Expectation = { variable: VariableId; check: "min" | "max" | "between" | "finite" | "settles"; value?: number | [number, number] };
+
+/** Behaviour reproduction statistics (Sterman §21.4.7). bias + variation + covariation = 1. */
+export type FitStats = {
+  n: number;
+  rmse: number;
+  /** Mean absolute percentage error, as a share. */
+  mape: number;
+  r2: number;
+  /** Theil's inequality coefficient, 0 (perfect) to 1. */
+  theilU: number;
+  /** Share of the squared error from unequal means. */
+  bias: number;
+  /** Share from unequal variances. */
+  variation: number;
+  /** Share from imperfect correlation: unsystematic. */
+  covariation: number;
+};
+
+/** Computed, never stored. */
+export type TestResult = { spec: TestSpec; status: "pass" | "warn" | "fail"; summary: string; details?: Record<string, number> };
+
+/** How answers move with parameter uncertainty. Embeddable as [patchwork:<documentId>/stock-flow-sensitivity]. */
+export type StockFlowSensitivityDoc = {
+  "@patchwork": PatchworkMeta<"stock-flow-sensitivity">;
+  title: string;
+  model: AutomergeUrl;
+  scenario: string;
+  /** Parameters to vary, each with an explicit range or a symmetric spread (share of its value). */
+  parameters: Record<ParameterId, { min: number; max: number } | { spread: number }>;
+  method: { kind: "one-at-a-time" } | { kind: "latin-hypercube"; samples: number; seed: number };
+  outcomes: Outcome[];
+  /** Compare scenarios on one outcome (index into `outcomes`) and report how often each wins. */
+  ranking?: { scenarios: string[]; outcome: number; lowerIsBetter: boolean };
+};
+
+/** A number read off a run. Levels and values are in the units charts show (the variable's scale applied). */
+export type Outcome =
+  | { kind: "value"; variable: VariableId; year: number }
+  | { kind: "peak"; variable: VariableId; years?: [number, number] }
+  /** The first year after `after` the variable crosses `level`; NaN if it never does. */
+  | { kind: "crossing"; variable: VariableId; level: number; after?: number }
+  | { kind: "change"; variable: VariableId; from: number; to: number; relative?: boolean };
+
+/** Shapley attribution of a change to the drivers that caused it. Embeddable as [patchwork:<documentId>/stock-flow-attribution]. */
+export type StockFlowAttributionDoc = {
+  "@patchwork": PatchworkMeta<"stock-flow-attribution">;
+  title: string;
+  model: AutomergeUrl;
+  /** The scenario with every driver on. */
+  scenario: string;
+  outcome: Outcome;
+  /** A driver "off" holds its inputs at their year-0 multiplier and sets its parameters to the given values. */
+  drivers: Record<string, { label: string; inputs?: VariableId[]; parameters?: Record<ParameterId, number> }>;
+  /** Repeat the attribution over a Latin hypercube of these parameters to put bands on the shares. */
+  uncertainty?: { parameters: Record<ParameterId, { min: number; max: number } | { spread: number }>; samples: number; seed: number };
+};
+
+/** Computed. The shares sum to `total`; `interaction` is how far the one-at-a-time effects fall short of it. */
+export type Attribution = {
+  baseline: number;
+  total: number;
+  shares: Record<string, number>;
+  oneAtATime: Record<string, number>;
+  interaction: number;
+  /** 5th, 50th and 95th percentile of each share (and of the total) over the uncertainty samples. */
+  bands?: { samples: number; shares: Record<string, Quantiles>; total: Quantiles };
+};
+
+export type Quantiles = { low: number; median: number; high: number };
 
 /** A scenario's question, expectation, input curves and changes, embeddable as [patchwork:<documentId>/stock-flow-scenario]. */
 export type StockFlowScenarioDoc = {
@@ -95,11 +198,17 @@ export type Parameter = {
   /** Grouping in the parameter table: "Students", "Land", "Delays", … */
   group: string;
   meaning: string;
+  /** For the unit check, e.g. "dwellings per year"; percentages and indices are dimensionless. */
+  unit?: string;
   format: "number" | "percent" | "years" | "currency";
   /** Shown as a slider in the viewer. */
   range?: { min: number; max: number; step: number };
   /** A delay time. The links it delays are found from the equations that mention it. */
   delay?: { kind: string; shape: string };
+  /** Where the value comes from. The structure test counts parameters with neither this nor `estimated`. */
+  source?: DataSource | string;
+  /** How the value was estimated from data, when it was. */
+  estimated?: { from: SeriesId[]; years: [number, number]; method: string; range?: { min: number; max: number } };
 } & ({ value: number } | { derived: Expr });
 
 export type DataSeries = {

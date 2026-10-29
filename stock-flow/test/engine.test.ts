@@ -98,8 +98,11 @@ describe("views that hide stocks", () => {
   });
 });
 
-test("the model passes its checks", () => {
-  expect(checkModel(model)).toEqual([]);
+test("the model passes its checks apart from unit warnings", () => {
+  // The v1 example predates parameter units and mixes households with dwellings; the unit checker is meant to say so.
+  const issues = checkModel(model);
+  expect(issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  expect(issues.filter((issue) => !issue.message.includes("unit") && !issue.message.startsWith("Units:"))).toEqual([]);
 });
 
 function compare(run: Run, values: Record<string, number[]>): void {

@@ -1,5 +1,12 @@
 import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
-import type { StockFlowChartDoc, StockFlowModelDoc, StockFlowScenarioDoc } from "./types.ts";
+import type {
+  StockFlowAttributionDoc,
+  StockFlowChartDoc,
+  StockFlowModelDoc,
+  StockFlowScenarioDoc,
+  StockFlowSensitivityDoc,
+  StockFlowTestsDoc,
+} from "./types.ts";
 
 export const ModelDatatype: DatatypeImplementation<StockFlowModelDoc> = {
   init(doc) {
@@ -36,4 +43,34 @@ export const ScenarioDatatype: DatatypeImplementation<StockFlowScenarioDoc> = {
     Object.assign(doc, { "@patchwork": { type: "stock-flow-scenario" }, scenario: "" });
   },
   getTitle: (doc) => (doc.scenario ? `Scenario ${doc.scenario}` : "Scenario"),
+};
+
+export const TestsDatatype: DatatypeImplementation<StockFlowTestsDoc> = {
+  init(doc) {
+    Object.assign(doc, { "@patchwork": { type: "stock-flow-tests" }, title: "", scenario: "", tests: [] });
+  },
+  getTitle: (doc) => doc.title || "Model tests",
+  setTitle(doc, title) {
+    doc.title = title;
+  },
+};
+
+export const SensitivityDatatype: DatatypeImplementation<StockFlowSensitivityDoc> = {
+  init(doc) {
+    Object.assign(doc, { "@patchwork": { type: "stock-flow-sensitivity" }, title: "", scenario: "", parameters: {}, method: { kind: "one-at-a-time" }, outcomes: [] });
+  },
+  getTitle: (doc) => doc.title || "Sensitivity",
+  setTitle(doc, title) {
+    doc.title = title;
+  },
+};
+
+export const AttributionDatatype: DatatypeImplementation<StockFlowAttributionDoc> = {
+  init(doc) {
+    Object.assign(doc, { "@patchwork": { type: "stock-flow-attribution" }, title: "", scenario: "", drivers: {} });
+  },
+  getTitle: (doc) => doc.title || "Attribution",
+  setTitle(doc, title) {
+    doc.title = title;
+  },
 };

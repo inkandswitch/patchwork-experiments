@@ -1,7 +1,7 @@
 import { scenarioSettings, withKnob } from "../engine/scenarios.ts";
 import type { LoopId, Run, Settings, StockFlowModelDoc, VariableId } from "../types.ts";
 
-export type Tab = "loops" | "stock-flow" | "run" | "equations" | "parameters" | "scenarios" | "data";
+export type Tab = "loops" | "stock-flow" | "run" | "equations" | "parameters" | "scenarios" | "data" | "sources";
 
 /** What the reader has picked and tweaked. Kept in the view only: the document is changed through the CLI. */
 export type ViewState = {

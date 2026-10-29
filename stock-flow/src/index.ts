@@ -31,6 +31,36 @@ export const plugins: Plugin<any>[] = [
     },
   } as Datatype,
   {
+    type: "patchwork:datatype",
+    id: "stock-flow-tests",
+    name: "Stock and Flow Tests",
+    icon: "ClipboardCheck",
+    unlisted: true,
+    async load() {
+      return (await import("./datatypes.ts")).TestsDatatype;
+    },
+  } as Datatype,
+  {
+    type: "patchwork:datatype",
+    id: "stock-flow-sensitivity",
+    name: "Stock and Flow Sensitivity",
+    icon: "SlidersHorizontal",
+    unlisted: true,
+    async load() {
+      return (await import("./datatypes.ts")).SensitivityDatatype;
+    },
+  } as Datatype,
+  {
+    type: "patchwork:datatype",
+    id: "stock-flow-attribution",
+    name: "Stock and Flow Attribution",
+    icon: "ChartBarBig",
+    unlisted: true,
+    async load() {
+      return (await import("./datatypes.ts")).AttributionDatatype;
+    },
+  } as Datatype,
+  {
     type: "patchwork:tool",
     id: "stock-flow-model",
     name: "Stock and Flow Model",
@@ -58,6 +88,36 @@ export const plugins: Plugin<any>[] = [
     supportedDatatypes: ["stock-flow-scenario"],
     async load() {
       return (await import("./tools/scenario-tool.ts")).ScenarioTool;
+    },
+  } as Tool,
+  {
+    type: "patchwork:tool",
+    id: "stock-flow-tests",
+    name: "Tests",
+    icon: "ClipboardCheck",
+    supportedDatatypes: ["stock-flow-tests"],
+    async load() {
+      return (await import("./tools/tests-tool.ts")).TestsTool;
+    },
+  } as Tool,
+  {
+    type: "patchwork:tool",
+    id: "stock-flow-sensitivity",
+    name: "Sensitivity",
+    icon: "SlidersHorizontal",
+    supportedDatatypes: ["stock-flow-sensitivity"],
+    async load() {
+      return (await import("./tools/sensitivity-tool.ts")).SensitivityTool;
+    },
+  } as Tool,
+  {
+    type: "patchwork:tool",
+    id: "stock-flow-attribution",
+    name: "Attribution",
+    icon: "ChartBarBig",
+    supportedDatatypes: ["stock-flow-attribution"],
+    async load() {
+      return (await import("./tools/attribution-tool.ts")).AttributionTool;
     },
   } as Tool,
 ];
