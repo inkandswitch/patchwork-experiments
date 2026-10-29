@@ -6,7 +6,7 @@ import { measure, parseOutcome } from "../src/engine/outcomes.ts";
 import { scenarioSettings } from "../src/engine/scenarios.ts";
 import { latinHypercube, runSensitivity } from "../src/engine/sensitivity.ts";
 import { simulate } from "../src/engine/simulate.ts";
-import { checkTests, runTests } from "../src/engine/tests.ts";
+import { checkTests, holdInputs, runTests } from "../src/engine/tests.ts";
 import type { StockFlowModelDoc } from "../src/types.ts";
 import aachen from "../examples/aachen/model.json" with { type: "json" };
 
@@ -106,6 +106,100 @@ holdout askingRentReal fit 2010–2019 test 2020–2024`);
     expect(() => parseTestLine("knockout supply")).toThrow();
     expect(() => parseTestLine("fit askingRentReal mape")).toThrow();
     expect(() => parseTestLine("wobble")).toThrow();
+  });
+
+  test("parses indexed fits and knockouts that set a switch", () => {
+    expect(parseTestLine("fit askingRentReal 2010–2019 index 2010 mape 0.1")).toEqual({ kind: "fit", data: "askingRentReal", years: [2010, 2019], index: 2010, max: { mape: 0.1 } });
+    expect(parseTestLine("holdout askingRentReal fit 2010–2019 test 2020–2024 index mean")).toEqual({
+      kind: "holdout",
+      data: "askingRentReal",
+      fitYears: [2010, 2019],
+      testYears: [2020, 2024],
+      index: "mean",
+    });
+    expect(parseTestLine("knockout growthResponse=0 starts 0.05")).toEqual({ kind: "knockout", set: { growthResponse: 0 }, variable: "starts", minEffect: 0.05 });
+    expect(() => parseTestLine("fit askingRentReal index soon")).toThrow();
+    expect(parseTestLine("fit completions 2005–2018 index mean lead 0–1 rmse 0.4")).toEqual({
+      kind: "fit",
+      data: "completions",
+      years: [2005, 2018],
+      index: "mean",
+      lead: [0, 1],
+      max: { rmse: 0.4 },
+    });
+    expect(() => parseTestLine("fit completions lead 1–0")).toThrow();
+  });
+
+  test("a lead compares the data with the model that many years later and keeps the best", () => {
+    const shifted = structuredClone(model);
+    const variable = model.data.dwellings.variable;
+    shifted.data.dwellings.points = model.data.dwellings.points.map(([year]) => [year - 1, valueAt(real, variable, year) * (model.variables[variable].scale ?? 1)]);
+    const [result] = runTests(shifted, { scenario: "real", tests: [{ kind: "fit", data: "dwellings", years: [2004, 2018], lead: [0, 2] }] });
+    expect(result.details!.lead).toBe(1);
+    expect(result.details!.rmse).toBeCloseTo(0);
+  });
+
+  test("an indexed fit compares changes, not levels", () => {
+    const doubled = structuredClone(model);
+    doubled.data.askingRentReal.points = doubled.data.askingRentReal.points.map(([year, value]) => [year, value * 2]);
+    const level = fitStats(doubled, real, "askingRentReal", [2010, 2019]);
+    const byYear = fitStats(doubled, real, "askingRentReal", [2010, 2019], { index: 2010 });
+    const byMean = fitStats(doubled, real, "askingRentReal", [2010, 2019], { index: "mean" });
+    expect(byYear.rmse).toBeLessThan(level.rmse / 10);
+    expect(byMean.mape).toBeCloseTo(fitStats(model, real, "askingRentReal", [2010, 2019], { index: "mean" }).mape);
+    expect(() => fitStats(model, real, "askingRentReal", [2010, 2019], { index: 1990 })).toThrow(/1990/);
+  });
+
+  test("parses extremes held from a year and inert switches", () => {
+    expect(parseTestLine('extreme "late flood" inputs intake=3 from 2012 expect rent finite')).toEqual({
+      kind: "extreme",
+      label: "late flood",
+      inputs: { intake: 3 },
+      from: 2012,
+      expect: [{ variable: "rent", check: "finite" }],
+    });
+    expect(parseTestLine("inert growthResponse=0 rent,flats inputs population=1 0.02")).toEqual({
+      kind: "inert",
+      set: { growthResponse: 0 },
+      inputs: { population: 1 },
+      variables: ["rent", "flats"],
+      maxEffect: 0.02,
+    });
+    expect(() => parseTestLine("inert rent flats")).toThrow();
+  });
+
+  test("an input held from a year follows the scenario until then", () => {
+    const settings = scenarioSettings(model, "real");
+    const held = holdInputs(model, settings, { intake: 3 }, 2012);
+    const index = 2012 - model.simulation.startYear;
+    expect(held.inputs.intake.slice(0, index)).toEqual(settings.inputs.intake.slice(0, index));
+    expect(held.inputs.intake.slice(index).every((value) => value === 3)).toBe(true);
+  });
+
+  test("an inert test passes when the switch changes nothing it should not", () => {
+    const [still, moved] = runTests(model, {
+      scenario: "real",
+      tests: [
+        { kind: "inert", set: { growthResponse: 1 }, variables: ["rent", "starts"], maxEffect: 0 },
+        { kind: "inert", set: { growthResponse: 0 }, variables: ["rent", "starts"], maxEffect: 0.02 },
+      ],
+    });
+    expect(still.status).toBe("pass");
+    expect(moved.status).toBe("fail");
+  });
+
+  test("a knockout that sets a switch compares against the run as it is", () => {
+    const [moved, still] = runTests(model, {
+      scenario: "real",
+      tests: [
+        { kind: "knockout", set: { growthResponse: 0 }, variable: "starts", minEffect: 0.05 },
+        { kind: "knockout", set: { growthResponse: 1 }, variable: "starts", minEffect: 0.05 },
+      ],
+    });
+    expect(moved.status).toBe("pass");
+    expect(moved.summary).toMatch(/^Setting growthResponse=0 moves starts/);
+    expect(still.status).toBe("fail");
+    expect(still.details!.effect).toBe(0);
   });
 
   test("checks references before running", () => {

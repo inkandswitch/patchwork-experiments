@@ -56,8 +56,13 @@ equilibrium                                    stocks stay put with no inputs; o
 integration 0.02                               halving dt changes no stock by more than this share
 extreme "no students" inputs intake=0 expect students settles 0, rent min 0
 extreme "no land" set landYears=1 inputs landDesignated=0 expect buildableLand min 0, flats finite
+extreme "late flood" inputs intake=3 from 2012 expect rent finite    inputs held from 2012 on, as recorded before
 knockout supply starts 0.05                    cutting the loop must move the variable by this share of its range
+knockout growthResponse=0 starts 0.05          the same for a switch that is not a loop
+inert growthResponse=0 rent,flats inputs population=1 0.001    the switch may move none of them by more than this
 fit askingRentReal 2010–2024 mape 0.1          limits: rmse mape r2 theilU bias variation covariation
+fit landPriceIndex 2010–2019 index 2010        both divided by their 2010 value (or `index mean`): changes, not levels
+fit landSales 2007–2018 index mean lead 0–1    data compared with the model 0 or 1 years later, the better kept
 holdout askingRentReal fit 2010–2019 test 2020–2024
 ```
 

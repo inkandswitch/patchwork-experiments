@@ -3,7 +3,7 @@ import { attribute, type AttributionFields } from "../src/engine/attribution.ts"
 import { parseOutcome } from "../src/engine/outcomes.ts";
 import { runSensitivity, type SensitivityFields } from "../src/engine/sensitivity.ts";
 import { checkTests, type TestFields } from "../src/engine/tests.ts";
-import type { Expectation, FitStats, StockFlowChartDoc, StockFlowModelDoc, TestSpec } from "../src/types.ts";
+import type { Expectation, FitIndex, FitStats, StockFlowChartDoc, StockFlowModelDoc, TestSpec } from "../src/types.ts";
 
 export type ChartFields = Omit<StockFlowChartDoc, "@patchwork" | "model">;
 
@@ -91,10 +91,11 @@ export function parseChart(source: string): ChartFields {
 /**
  * A `scenario:` line, then one test per line:
  *   structure | equilibrium [tolerance] | integration [tolerance]
- *   extreme "label" [set k=v,…] [inputs k=v,…] expect var check [value], …     checks: min max between finite settles
- *   knockout <loop> <variable> [minEffect]
- *   fit <data> [from–to] [stat limit]…                                          stats: rmse mape r2 theilU bias variation covariation
- *   holdout <data> fit from–to test from–to [stat limit]…
+ *   extreme "label" [set k=v,…] [inputs k=v,…] [from YEAR] expect var check [value], …   checks: min max between finite settles
+ *   knockout <loop | k=v,…> <variable> [minEffect]                             k=v sets switches for a channel that is not a loop
+ *   inert <k=v,…> <variable,…> [inputs k=v,…] [maxEffect]                      the switch moves none of them by more than maxEffect
+ *   fit <data> [from–to] [index <year>|mean] [lead a–b] [stat limit]…          stats: rmse mape r2 theilU bias variation covariation
+ *   holdout <data> fit from–to test from–to [index <year>|mean] [lead a–b] [stat limit]…
  */
 export function parseTests(source: string): TestFields {
   const { fields, lines } = keyValues(source, "tests", ["scenario"]);
@@ -115,35 +116,50 @@ export function parseTestLine(line: string): TestSpec {
       return { kind, ...(tail ? { tolerance: number(tail, line) } : {}) };
     case "extreme": {
       const match = /^"([^"]+)"\s*(.*)$/.exec(tail);
-      if (!match) throw new Error(`Write an extreme test as: extreme "label" [set k=v] [inputs k=v] expect var check value — not "${line}"`);
+      if (!match) throw new Error(`Write an extreme test as: extreme "label" [set k=v] [inputs k=v] [from YEAR] expect var check value — not "${line}"`);
       const [, label, body] = match;
-      const clauses = /^(?:set\s+(\S+))?\s*(?:inputs\s+(\S+))?\s*expect\s+(.+)$/.exec(body);
+      const clauses = /^(?:set\s+(\S+))?\s*(?:inputs\s+(\S+))?\s*(?:from\s+(\d{4}))?\s*expect\s+(.+)$/.exec(body);
       if (!clauses) throw new Error(`An extreme test needs an expect clause: "${line}"`);
-      const [, set, inputs, expectations] = clauses;
+      const [, set, inputs, from, expectations] = clauses;
       return {
         kind,
         label,
         ...(set ? { set: assignments(set, line) } : {}),
         ...(inputs ? { inputs: assignments(inputs, line) } : {}),
+        ...(from ? { from: Number(from) } : {}),
         expect: expectations.split(",").map((text) => parseExpectation(text, line)),
+      };
+    }
+    case "inert": {
+      const match = /^(\S+)\s+(\S+)(?:\s+inputs\s+(\S+))?(?:\s+(\S+))?$/.exec(tail);
+      if (!match || !match[1].includes("=")) throw new Error(`Write an inert test as: inert <k=v,…> <variable,…> [inputs k=v,…] [maxEffect] — not "${line}"`);
+      const [, set, variables, inputs, maxEffect] = match;
+      return {
+        kind,
+        set: assignments(set, line),
+        ...(inputs ? { inputs: assignments(inputs, line) } : {}),
+        variables: variables.split(","),
+        maxEffect: maxEffect ? number(maxEffect, line) : 0.001,
       };
     }
     case "knockout": {
       const [loop, variable, minEffect] = rest;
-      if (!loop || !variable) throw new Error(`Write a knockout test as: knockout <loop> <variable> [minEffect] — not "${line}"`);
-      return { kind, loop, variable, minEffect: minEffect ? number(minEffect, line) : 0.05 };
+      if (!loop || !variable) throw new Error(`Write a knockout test as: knockout <loop | k=v,…> <variable> [minEffect] — not "${line}"`);
+      const cut = loop.includes("=") ? { set: assignments(loop, line) } : { loop };
+      return { kind, ...cut, variable, minEffect: minEffect ? number(minEffect, line) : 0.05 };
     }
     case "fit": {
       const [data, ...options] = rest;
-      if (!data) throw new Error(`Write a fit test as: fit <data> [from–to] [stat limit]… — not "${line}"`);
+      if (!data) throw new Error(`Write a fit test as: fit <data> [from–to] [index <year>|mean] [lead a–b] [stat limit]… — not "${line}"`);
       const years = options[0] && /^\d{4}\s*[–-]\s*\d{4}$/.test(options[0]) ? parseYears(options.shift()!) : undefined;
-      return { kind, data, ...(years ? { years } : {}), ...limits(options, line) };
+      return { kind, data, ...(years ? { years } : {}), ...fitIndex(options, line), ...fitLead(options, line), ...limits(options, line) };
     }
     case "holdout": {
       const match = /^(\S+)\s+fit\s+(\d{4}\s*[–-]\s*\d{4})\s+test\s+(\d{4}\s*[–-]\s*\d{4})\s*(.*)$/.exec(tail);
-      if (!match) throw new Error(`Write a holdout test as: holdout <data> fit from–to test from–to [stat limit]… — not "${line}"`);
-      const [, data, fitYears, testYears, options] = match;
-      return { kind, data, fitYears: parseYears(fitYears), testYears: parseYears(testYears), ...limits(options.split(/\s+/).filter(Boolean), line) };
+      if (!match) throw new Error(`Write a holdout test as: holdout <data> fit from–to test from–to [index <year>|mean] [lead a–b] [stat limit]… — not "${line}"`);
+      const [, data, fitYears, testYears, rest] = match;
+      const options = rest.split(/\s+/).filter(Boolean);
+      return { kind, data, fitYears: parseYears(fitYears), testYears: parseYears(testYears), ...fitIndex(options, line), ...fitLead(options, line), ...limits(options, line) };
     }
     default:
       throw new Error(`Unknown test "${kind}" in "${line}"; use structure, equilibrium, integration, extreme, knockout, fit or holdout`);
@@ -167,6 +183,27 @@ function parseExpectation(text: string, line: string): Expectation {
     default:
       throw new Error(`Unknown check "${check}" in "${text}"; use min, max, between, finite or settles`);
   }
+}
+
+/** Takes a leading `index <year>` or `index mean` off the options. */
+function fitIndex(options: string[], line: string): { index?: FitIndex } {
+  if (options[0] !== "index") return {};
+  const [, value] = options.splice(0, 2);
+  if (value === "mean") return { index: "mean" };
+  if (!value || !/^\d{4}$/.test(value)) throw new Error(`"index" takes a year or "mean": "${line}"`);
+  return { index: Number(value) };
+}
+
+/** Takes a leading `lead a–b` (whole years, data ahead of the model) off the options. */
+function fitLead(options: string[], line: string): { lead?: [number, number] } {
+  if (options[0] !== "lead") return {};
+  const [, value] = options.splice(0, 2);
+  const match = value && /^(\d+)(?:\s*[–-]\s*(\d+))?$/.exec(value);
+  if (!match) throw new Error(`"lead" takes whole years, one or a range like 0–1: "${line}"`);
+  const from = Number(match[1]);
+  const to = match[2] === undefined ? from : Number(match[2]);
+  if (to < from) throw new Error(`"lead" range runs backwards: "${line}"`);
+  return { lead: [from, to] };
 }
 
 const STATS: (keyof FitStats)[] = ["rmse", "mape", "r2", "theilU", "bias", "variation", "covariation"];

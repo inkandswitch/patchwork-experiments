@@ -1,18 +1,41 @@
-import type { FitStats, Run, SeriesId, StockFlowModelDoc } from "../types.ts";
+import type { FitIndex, FitStats, Run, SeriesId, StockFlowModelDoc } from "../types.ts";
+
+/**
+ * `index` compares changes instead of levels; `reference` is the window an index on the mean is taken over (default:
+ * `years`); `lead` compares data in year Y with the model in Y + lead.
+ */
+export type FitOptions = { index?: FitIndex; reference?: [number, number]; lead?: number };
 
 /**
  * Behaviour reproduction statistics (Sterman §21.4.7) for a run against one data series, over the data's years or a window.
  * Model values are scaled the way charts show them, so they are in the data's units.
  */
-export function fitStats(model: StockFlowModelDoc, run: Run, data: SeriesId, years?: [number, number]): FitStats {
+export function fitStats(model: StockFlowModelDoc, run: Run, data: SeriesId, years?: [number, number], options: FitOptions = {}): FitStats {
   const series = model.data[data];
   if (!series) throw new Error(`Unknown data series "${data}"`);
   const scale = model.variables[series.variable]?.scale ?? 1;
-  const pairs = series.points
-    .filter(([year]) => !years || (year >= years[0] && year <= years[1]))
-    .map(([year, actual]) => [valueAt(run, series.variable, year) * scale, actual] as [number, number])
-    .filter(([simulated]) => Number.isFinite(simulated));
-  return statistics(pairs);
+  const lead = options.lead ?? 0;
+  const simulatedAt = (year: number) => valueAt(run, series.variable, year + lead) * scale;
+  const within = (window?: [number, number]) => series.points.filter(([year]) => !window || (year >= window[0] && year <= window[1]));
+  const paired = (points: [number, number][]) =>
+    points.map(([year, actual]) => [simulatedAt(year), actual] as [number, number]).filter(([simulated]) => Number.isFinite(simulated));
+  const [simulatedBase, actualBase] = indexBase(paired(within(options.reference ?? years)), options.index, data, series.points, simulatedAt);
+  return statistics(paired(within(years)).map(([simulated, actual]) => [simulated / simulatedBase, actual / actualBase]));
+}
+
+/** What model and data are divided by: 1 for levels, their value in the index year, or their means over the reference window. */
+function indexBase(
+  reference: [number, number][],
+  index: FitIndex | undefined,
+  data: SeriesId,
+  points: [number, number][],
+  simulatedAt: (year: number) => number,
+): [number, number] {
+  if (index === undefined) return [1, 1];
+  if (index === "mean") return [mean(reference.map(([simulated]) => simulated)), mean(reference.map(([, actual]) => actual))];
+  const actual = points.find(([year]) => year === index)?.[1];
+  if (actual === undefined) throw new Error(`"${data}" has no value in ${index} to index on`);
+  return [simulatedAt(index), actual];
 }
 
 /** The run's value of a variable at a year, interpolated between recorded points; NaN outside the run. */

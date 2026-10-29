@@ -1,7 +1,7 @@
 import { checkModel } from "./check.ts";
 import { describeFit, fitStats } from "./fit.ts";
 import { balancedSettings, cachedRun, scenarioSettings, withKnob } from "./scenarios.ts";
-import type { Expectation, FitStats, Run, Settings, StockFlowModelDoc, StockFlowTestsDoc, TestResult, TestSpec } from "../types.ts";
+import type { Expectation, FitIndex, FitStats, Run, Settings, StockFlowModelDoc, StockFlowTestsDoc, TestResult, TestSpec } from "../types.ts";
 
 export type TestFields = Pick<StockFlowTestsDoc, "scenario" | "tests">;
 
@@ -25,18 +25,21 @@ export function checkTests(model: StockFlowModelDoc, fields: TestFields): void {
   for (const spec of fields.tests) {
     const where = testLabel(spec);
     if (spec.kind === "knockout") {
-      if (!(spec.loop in model.annotations.loops)) throw new Error(`Unknown loop "${spec.loop}" in ${where}`);
+      if ("set" in spec) for (const knob of Object.keys(spec.set)) knownKnob(model, knob, where);
+      else if (!(spec.loop in model.annotations.loops)) throw new Error(`Unknown loop "${spec.loop}" in ${where}`);
       variable(spec.variable, where);
-    } else if (spec.kind === "extreme") {
-      for (const knob of Object.keys(spec.set ?? {})) {
-        if (knob !== "dt" && !(knob in model.parameters) && !(knob in model.annotations.loops)) throw new Error(`Unknown knob "${knob}" in ${where}`);
-      }
+    } else if (spec.kind === "extreme" || spec.kind === "inert") {
+      for (const knob of Object.keys(spec.set ?? {})) knownKnob(model, knob, where);
       for (const id of Object.keys(spec.inputs ?? {})) if (model.variables[id]?.kind !== "input") throw new Error(`"${id}" is not an input in ${where}`);
-      for (const expectation of spec.expect) variable(expectation.variable, where);
+      for (const id of spec.kind === "extreme" ? spec.expect.map((expectation) => expectation.variable) : spec.variables) variable(id, where);
     } else if (spec.kind === "fit" || spec.kind === "holdout") {
       if (!(spec.data in model.data)) throw new Error(`Unknown data series "${spec.data}" in ${where}`);
     }
   }
+}
+
+function knownKnob(model: StockFlowModelDoc, knob: string, where: string): void {
+  if (knob !== "dt" && !(knob in model.parameters) && !(knob in model.annotations.loops)) throw new Error(`Unknown knob "${knob}" in ${where}`);
 }
 
 export function runTest(model: StockFlowModelDoc, scenario: string, spec: TestSpec): TestResult {
@@ -51,6 +54,8 @@ export function runTest(model: StockFlowModelDoc, scenario: string, spec: TestSp
       return extreme(model, scenario, spec);
     case "knockout":
       return knockout(model, scenario, spec);
+    case "inert":
+      return inert(model, scenario, spec);
     case "fit":
       return fit(model, scenario, spec);
     case "holdout":
@@ -69,12 +74,29 @@ export function testLabel(spec: TestSpec): string {
     case "extreme":
       return `Extreme: ${spec.label}`;
     case "knockout":
-      return `Knockout ${spec.loop} moves ${spec.variable}`;
+      return `Knockout ${"set" in spec ? knobs(spec.set) : spec.loop} moves ${spec.variable}`;
+    case "inert":
+      return `Setting ${knobs(spec.set)}${spec.inputs ? ` with ${knobs(spec.inputs)}` : ""} leaves ${spec.variables.join(", ")} in place`;
     case "fit":
-      return `Fit to ${spec.data}${spec.years ? ` ${spec.years[0]}–${spec.years[1]}` : ""}`;
+      return `Fit to ${spec.data}${spec.years ? ` ${spec.years[0]}–${spec.years[1]}` : ""}${indexLabel(spec.index)}${leadRange(spec.lead)}`;
     case "holdout":
-      return `Holdout ${spec.data}: fit ${spec.fitYears[0]}–${spec.fitYears[1]}, test ${spec.testYears[0]}–${spec.testYears[1]}`;
+      return `Holdout ${spec.data}: fit ${spec.fitYears[0]}–${spec.fitYears[1]}, test ${spec.testYears[0]}–${spec.testYears[1]}${indexLabel(spec.index)}${leadRange(spec.lead)}`;
   }
+}
+
+function indexLabel(index: FitIndex | undefined): string {
+  if (index === undefined) return "";
+  return index === "mean" ? ", each relative to its mean" : `, each indexed to ${index}`;
+}
+
+function leadRange(lead: [number, number] | undefined): string {
+  return lead ? `, data leading by ${lead[0]}–${lead[1]} years` : "";
+}
+
+function knobs(set: Record<string, number>): string {
+  return Object.entries(set)
+    .map(([knob, value]) => `${knob}=${value}`)
+    .join(", ");
 }
 
 function structure(model: StockFlowModelDoc, spec: TestSpec): TestResult {
@@ -138,7 +160,7 @@ function integration(model: StockFlowModelDoc, scenario: string, spec: Extract<T
 function extreme(model: StockFlowModelDoc, scenario: string, spec: Extract<TestSpec, { kind: "extreme" }>): TestResult {
   let settings = scenarioSettings(model, scenario);
   for (const [knob, value] of Object.entries(spec.set ?? {})) settings = withKnob(model, settings, knob, value);
-  settings = holdInputs(model, settings, spec.inputs ?? {});
+  settings = holdInputs(model, settings, spec.inputs ?? {}, spec.from);
   const run = cachedRun(model, settings);
   const failures = spec.expect.flatMap((expectation) => {
     const problem = checkExpectation(model, run, expectation);
@@ -152,46 +174,100 @@ function extreme(model: StockFlowModelDoc, scenario: string, spec: Extract<TestS
 }
 
 function knockout(model: StockFlowModelDoc, scenario: string, spec: Extract<TestSpec, { kind: "knockout" }>): TestResult {
-  if (!(spec.loop in model.annotations.loops)) throw new Error(`Unknown loop "${spec.loop}"`);
   if (!(spec.variable in model.variables)) throw new Error(`Unknown variable "${spec.variable}"`);
   const base = cachedRun(model, scenarioSettings(model, scenario));
-  const cut = cachedRun(model, scenarioSettings(model, `${scenario} without ${spec.loop}`));
+  const { settings, what } = knockedOut(model, scenario, spec);
+  const cut = cachedRun(model, settings);
   const values = base.values[spec.variable];
   const range = Math.max(...values) - Math.min(...values) || Math.abs(values[0]) || 1;
   const effect = Math.max(...values.map((value, index) => Math.abs(cut.values[spec.variable][index] - value))) / range;
-  const label = model.annotations.loops[spec.loop];
   return {
     spec,
     status: effect >= spec.minEffect ? "pass" : "fail",
-    summary: `Cutting ${label.label} ${label.name} moves ${spec.variable} by up to ${(effect * 100).toFixed(1)}% of its range (needs ${(spec.minEffect * 100).toFixed(0)}%)`,
+    summary: `${what} moves ${spec.variable} by up to ${(effect * 100).toFixed(1)}% of its range (needs ${(spec.minEffect * 100).toFixed(0)}%)`,
     details: { effect },
   };
 }
 
+function inert(model: StockFlowModelDoc, scenario: string, spec: Extract<TestSpec, { kind: "inert" }>): TestResult {
+  const held = holdInputs(model, scenarioSettings(model, scenario), spec.inputs ?? {});
+  let switched = held;
+  for (const [knob, value] of Object.entries(spec.set)) switched = withKnob(model, switched, knob, value);
+  const base = cachedRun(model, held);
+  const other = cachedRun(model, switched);
+  const effects = spec.variables.map((id) => {
+    if (!(id in model.variables)) throw new Error(`Unknown variable "${id}"`);
+    const values = base.values[id];
+    const range = Math.max(...values) - Math.min(...values) || Math.abs(values[0]) || 1;
+    return { id, effect: Math.max(...values.map((value, index) => Math.abs(other.values[id][index] - value))) / range };
+  });
+  const moved = effects.filter(({ effect }) => !(effect <= spec.maxEffect));
+  const largest = effects.reduce((a, b) => (b.effect > a.effect ? b : a));
+  return {
+    spec,
+    status: moved.length ? "fail" : "pass",
+    summary: `Setting ${knobs(spec.set)} moves ${largest.id} by up to ${(largest.effect * 100).toPrecision(2)}% of its range (at most ${(spec.maxEffect * 100).toFixed(0)}% allowed)${moved.length ? `; too much: ${moved.map(({ id }) => id).join(", ")}` : ""}`,
+    details: Object.fromEntries(effects.map(({ id, effect }) => [id, effect])),
+  };
+}
+
+function knockedOut(model: StockFlowModelDoc, scenario: string, spec: Extract<TestSpec, { kind: "knockout" }>): { settings: Settings; what: string } {
+  if ("set" in spec) {
+    let settings = scenarioSettings(model, scenario);
+    for (const [knob, value] of Object.entries(spec.set)) settings = withKnob(model, settings, knob, value);
+    return { settings, what: `Setting ${knobs(spec.set)}` };
+  }
+  if (!(spec.loop in model.annotations.loops)) throw new Error(`Unknown loop "${spec.loop}"`);
+  const label = model.annotations.loops[spec.loop];
+  return { settings: scenarioSettings(model, `${scenario} without ${spec.loop}`), what: `Cutting ${label.label} ${label.name}` };
+}
+
 function fit(model: StockFlowModelDoc, scenario: string, spec: Extract<TestSpec, { kind: "fit" }>): TestResult {
   const run = cachedRun(model, scenarioSettings(model, scenario));
-  const stats = fitStats(model, run, spec.data, spec.years);
+  const lead = bestLead(model, run, spec.data, spec.years, spec.index, spec.lead);
+  const stats = fitStats(model, run, spec.data, spec.years, { index: spec.index, lead });
   const exceeded = exceededLimits(stats, spec.max);
   return {
     spec,
     status: !stats.n ? "fail" : exceeded.length ? "fail" : "pass",
-    summary: `${describeFit(stats)}${exceeded.length ? `. Over the limit: ${exceeded.join(", ")}` : ""}`,
-    details: { ...stats },
+    summary: `${leadLabel(spec.lead, lead)}${describeFit(stats)}${exceeded.length ? `. Over the limit: ${exceeded.join(", ")}` : ""}`,
+    details: { ...stats, ...(spec.lead ? { lead } : {}) },
   };
 }
 
 function holdout(model: StockFlowModelDoc, scenario: string, spec: Extract<TestSpec, { kind: "holdout" }>): TestResult {
   const run = cachedRun(model, scenarioSettings(model, scenario));
-  const inSample = fitStats(model, run, spec.data, spec.fitYears);
-  const outOfSample = fitStats(model, run, spec.data, spec.testYears);
+  const lead = bestLead(model, run, spec.data, spec.fitYears, spec.index, spec.lead);
+  const options = { index: spec.index, reference: spec.fitYears, lead };
+  const inSample = fitStats(model, run, spec.data, spec.fitYears, options);
+  const outOfSample = fitStats(model, run, spec.data, spec.testYears, options);
   const exceeded = exceededLimits(outOfSample, spec.max);
   const estimated = Object.values(model.parameters).some((parameter) => parameter.estimated);
   return {
     spec,
     status: !outOfSample.n ? "fail" : exceeded.length ? "fail" : estimated ? "pass" : "warn",
-    summary: `In sample: ${describeFit(inSample)}. Out of sample: ${describeFit(outOfSample)}${exceeded.length ? `. Over the limit: ${exceeded.join(", ")}` : ""}${estimated ? "" : ". No parameter records an estimation, so nothing was held out yet"}`,
-    details: Object.fromEntries([...Object.entries(inSample).map(([key, value]) => [`fit.${key}`, value]), ...Object.entries(outOfSample).map(([key, value]) => [`test.${key}`, value])]),
+    summary: `${leadLabel(spec.lead, lead)}In sample: ${describeFit(inSample)}. Out of sample: ${describeFit(outOfSample)}${exceeded.length ? `. Over the limit: ${exceeded.join(", ")}` : ""}${estimated ? "" : ". No parameter records an estimation, so nothing was held out yet"}`,
+    details: Object.fromEntries([
+      ...Object.entries(inSample).map(([key, value]) => [`fit.${key}`, value]),
+      ...Object.entries(outOfSample).map(([key, value]) => [`test.${key}`, value]),
+      ...(spec.lead ? [["lead", lead]] : []),
+    ]),
   };
+}
+
+/** The whole-year lead in the range with the lowest RMSE over the fit window; 0 without a range. */
+function bestLead(model: StockFlowModelDoc, run: Run, data: string, years: [number, number] | undefined, index: FitIndex | undefined, range: [number, number] | undefined): number {
+  if (!range) return 0;
+  let best = { lead: range[0], rmse: Infinity };
+  for (let lead = range[0]; lead <= range[1]; lead++) {
+    const { rmse } = fitStats(model, run, data, years, { index, reference: years, lead });
+    if (rmse < best.rmse) best = { lead, rmse };
+  }
+  return best.lead;
+}
+
+function leadLabel(range: [number, number] | undefined, lead: number): string {
+  return range ? `Data leading the model by ${lead} ${lead === 1 ? "year" : "years"} (best of ${range[0]}–${range[1]}): ` : "";
 }
 
 function exceededLimits(stats: FitStats, max: Partial<FitStats> | undefined): string[] {
@@ -201,12 +277,17 @@ function exceededLimits(stats: FitStats, max: Partial<FitStats> | undefined): st
   });
 }
 
-/** Holds each named input at a constant multiplier for the whole run. */
-export function holdInputs(model: StockFlowModelDoc, settings: Settings, multipliers: Record<string, number>): Settings {
+/**
+ * Holds each named input at a constant multiplier for the whole run, or from the year `from` on; the inputs are
+ * yearly points read in between, so the change from the year before is spread over that year.
+ */
+export function holdInputs(model: StockFlowModelDoc, settings: Settings, multipliers: Record<string, number>, from?: number): Settings {
   const next = structuredClone(settings);
+  const first = from === undefined ? 0 : from - model.simulation.startYear;
   for (const [id, multiplier] of Object.entries(multipliers)) {
     if (model.variables[id]?.kind !== "input") throw new Error(`"${id}" is not an input`);
-    next.inputs[id] = Array.from({ length: model.simulation.years + 1 }, () => multiplier);
+    const before = next.inputs[id];
+    next.inputs[id] = Array.from({ length: model.simulation.years + 1 }, (_, year) => (year >= first ? multiplier : (before?.[year] ?? 1)));
   }
   return next;
 }

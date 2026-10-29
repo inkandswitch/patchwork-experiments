@@ -65,13 +65,31 @@ export type TestSpec =
   /** Halving dt changes no stock by more than `tolerance` (share of its range). */
   | { kind: "integration"; tolerance?: number }
   /** Parameters set and inputs held at a constant multiplier; each expectation is a predicate over the run. */
-  | { kind: "extreme"; label: string; set?: Record<string, number>; inputs?: Record<VariableId, number>; expect: Expectation[] }
+  /** Inputs are held at constant multipliers for the whole run, or from the year `from` on (before it they follow the scenario). */
+  | { kind: "extreme"; label: string; set?: Record<string, number>; inputs?: Record<VariableId, number>; from?: number; expect: Expectation[] }
+  /**
+   * Setting switches must move none of the variables by more than `maxEffect` (share of its range): the switch is
+   * clean when what it switches is held still. Inputs, if given, are held for both runs.
+   */
+  | { kind: "inert"; set: Record<string, number>; inputs?: Record<VariableId, number>; variables: VariableId[]; maxEffect: number }
   /** Knocking out a loop must move the variable by at least `minEffect` (share of its range), or the loop is inert. */
   | { kind: "knockout"; loop: LoopId; variable: VariableId; minEffect: number }
-  /** Model against a data series over a window; `max` bounds the statistics. */
-  | { kind: "fit"; data: SeriesId; years?: [number, number]; max?: Partial<FitStats> }
+  /** The same for a channel that is not a loop: setting switches (parameters, loops or dt) instead of cutting a loop. */
+  | { kind: "knockout"; set: Record<string, number>; variable: VariableId; minEffect: number }
+  /**
+   * Model against a data series over a window; `max` bounds the statistics. `lead` lets the data run ahead: data in
+   * year Y is compared with the model in Y + lead, for each whole year in the range, keeping the lead with the lowest
+   * RMSE over the fit window.
+   */
+  | { kind: "fit"; data: SeriesId; years?: [number, number]; index?: FitIndex; lead?: [number, number]; max?: Partial<FitStats> }
   /** Model against data on years the parameters were not estimated on. */
-  | { kind: "holdout"; data: SeriesId; fitYears: [number, number]; testYears: [number, number]; max?: Partial<FitStats> };
+  | { kind: "holdout"; data: SeriesId; fitYears: [number, number]; testYears: [number, number]; index?: FitIndex; lead?: [number, number]; max?: Partial<FitStats> };
+
+/**
+ * Compare changes instead of levels: model and data are each divided by their own value in that year, or by their
+ * own mean over the fit window ("mean").
+ */
+export type FitIndex = number | "mean";
 
 /**
  * min/max: every value at or above/below `value`. between: every value within [a, b]. finite: no NaN or ±∞.
