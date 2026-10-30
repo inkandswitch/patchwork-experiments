@@ -64,8 +64,7 @@ function fakeFrame({ selected = null, open = [], storageUrl = null } = {}) {
     } else if (selector.type === "patchwork:open-views") {
       ports.open.add(port)
       send(port, open)
-    } else if (selector.type === "patchwork:tool-storage" && storageUrl) {
-      expect(selector.toolId).toBe(STORAGE_TOOL_ID)
+    } else if (selector.type === "patchwork:tool-storage" && storageUrl && selector.toolId === STORAGE_TOOL_ID) {
       send(port, storageUrl)
     }
   })

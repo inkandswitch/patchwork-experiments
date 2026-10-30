@@ -24,7 +24,15 @@ import { ensureRunner as ensureSharedRunner, attachView } from "./runners.js"
 import { connectWorkerRunner } from "./worker-client.js"
 import { createEvents } from "./events.js"
 import { buildToolset } from "./tools/index.js"
-import { getProvider, readKey, writeKey, loadCatalogue, modelInfo } from "./providers/index.js"
+import {
+  getProvider,
+  readKey,
+  writeKey,
+  onKeyChange,
+  connectAccountKeys,
+  loadCatalogue,
+  modelInfo,
+} from "./providers/index.js"
 import { listSecrets, writeSecret } from "./secrets.js"
 import { describeModel, describeDefaults } from "./providers/openrouter.js"
 import { hostImport } from "./tools/host.js"
@@ -179,7 +187,11 @@ export function AgentTool(handle, element, options = {}) {
   keyInput.autocomplete = "off"
   const saveKey = el("button", null, "Save")
   saveKey.dataset.variant = "primary"
-  const keyNote = el("p", null, "Stored in this browser only — never written to the document, so it is not synced to anyone you share this session with.")
+  const keyNote = el(
+    "p",
+    null,
+    "Stored with your account's LLM settings, shared with your other LLM tools — never written to this session, so it is not synced to anyone you share it with."
+  )
 
   // Credentials for authenticated sources. Same rule as the API key: this
   // device only, never the document, and the agent only ever learns the name.
@@ -276,6 +288,8 @@ export function AgentTool(handle, element, options = {}) {
   let runner = null
   let detachView = null
   let disposed = false
+  // Whether the account's LLM settings have answered, or failed to.
+  let keysSettled = false
 
   const subjectUrl = () => handle.doc()?.subject ?? options.subject ?? null
 
@@ -893,7 +907,9 @@ export function AgentTool(handle, element, options = {}) {
                   ? "Working… Enter to steer, Stop to interrupt"
                   : "")
 
-    if (!hasKey && settings.style.display === "none" && !doc.turns?.length) {
+    // Not before the account has had its say: the key is usually there, and
+    // opening the panel only to have it found a moment later is just noise.
+    if (keysSettled && !hasKey && settings.style.display === "none" && !doc.turns?.length) {
       settings.style.display = "flex"
     }
 
@@ -921,6 +937,20 @@ export function AgentTool(handle, element, options = {}) {
     }
   }
   handle.on("change", onChange)
+
+  // The key can change under us — found in the account a moment after mount,
+  // or replaced from another LLM tool or device — and the worker cannot read
+  // the account for itself, so it is handed each new one.
+  const offKeys = onKeyChange(() => {
+    if (disposed) return
+    workerRunner?.setKey(readKey(handle.doc()?.config?.providerId ?? "openrouter"))
+    render()
+  })
+  connectAccountKeys(element, repo).then(() => {
+    keysSettled = true
+    render()
+  })
+
   render()
   // Only needed once there is something installable; reading it eagerly would
   // fetch a document most sessions never touch.
@@ -936,6 +966,7 @@ export function AgentTool(handle, element, options = {}) {
   return () => {
     disposed = true
     handle.off("change", onChange)
+    offKeys()
     // Detach this view; deliberately NOT runner.stop(). Navigating away from a
     // session must not abort the work it is doing. The runner keeps its lease
     // and keeps writing to the document, so reopening the session — here or in

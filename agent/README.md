@@ -609,11 +609,19 @@ picks them up.
 
 ## Keys
 
-The API key lives in `localStorage`, per device, and **never** in the session
-document. A session document syncs to every peer it is shared with and to the
-sync server; a key in one would be handed to everyone who can open it. Model
-and parameter choice *do* live in the document — they are part of the session's
-meaning and should travel with it.
+The API key **never** lives in the session document. A session document syncs
+to every peer it is shared with and to the sync server; a key in one would be
+handed to everyone who can open it. Model and parameter choice *do* live in the
+document — they are part of the session's meaning and should travel with it.
+
+The key lives in the account's LLM settings instead: the document the `llm`
+library's model picker writes, found through `patchwork:tool-storage` under the
+id `llm`, at `openrouter.apiKey`. It is private to the account and follows it
+across devices, and one key serves every LLM tool. Until that document answers,
+and outside Patchwork, the key falls back to this device's `localStorage`; a key
+found there is moved into the account the first time it does. The worker runner
+cannot reach the account, so the view hands it each key as it changes; the node
+runner still takes `OPENROUTER_API_KEY`.
 
 Paste a key into the panel's settings (the button showing the model name).
 
