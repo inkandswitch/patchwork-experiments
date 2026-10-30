@@ -211,7 +211,8 @@ const COMMANDS: Record<string, Command> = {
     print(`${scenarioLabel(model, ref)} against data${years ? ` ${years[0]}–${years[1]}` : ""}`);
     for (const id of ids) {
       if (!(id in model.data)) throw new Error(`Unknown data series "${id}"`);
-      print(`  ${id} (${model.variables[model.data[id].variable].label}): ${describeFit(fitStats(model, run, id, years), formatter(model.data[id].unit))}`);
+      const stats = fitStats(model, run, id, years);
+      print(`  ${id} (${model.variables[model.data[id].variable!].label}): ${describeFit(stats, formatter(model.data[id].unit))}`);
     }
   },
 
@@ -510,7 +511,7 @@ function summarize(doc: Record<string, any>, section?: string): string {
   }
   if (section === "links") for (const [key, text] of Object.entries(model.annotations.links)) lines.push(`  ${key}: ${text}`);
   if (section === "data") {
-    for (const [id, series] of Object.entries(model.data)) lines.push(`  ${id}: ${series.label} [${series.unit}] vs ${series.variable}, ${series.points.length} points`);
+    for (const [id, series] of Object.entries(model.data)) lines.push(`  ${id}: ${series.label} [${series.unit}] ${series.variable === undefined ? "not compared" : `vs ${series.variable}`}, ${series.points.length} points`);
   }
   return lines.join("\n");
 }

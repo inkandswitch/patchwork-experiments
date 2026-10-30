@@ -384,10 +384,11 @@ function renderData(body: HTMLElement, { model, run }: Context): void {
   body.append(grid);
   for (const [id, series] of Object.entries(model.data)) {
     const card = element("article", { class: "sf-series" });
-    const variable = model.variables[series.variable];
+    const variable = series.variable === undefined ? undefined : model.variables[series.variable];
     const source = series.source;
+    const compared = series.variable === undefined ? "shown for reference, not compared with the model" : `compared with ${escapeHtml(variable?.label ?? series.variable)}`;
     card.innerHTML = `<h3>${escapeHtml(series.label)}</h3>
-      <div class="sf-muted"><code>${escapeHtml(id)}</code> · ${escapeHtml(series.unit)} · compared with ${escapeHtml(variable?.label ?? series.variable)}</div>
+      <div class="sf-muted"><code>${escapeHtml(id)}</code> · ${escapeHtml(series.unit)} · ${compared}</div>
       <p><a href="${escapeHtml(source.url)}" target="_blank" rel="noreferrer">${escapeHtml(source.publisher)}: ${escapeHtml(source.title)}</a>${source.table ? ` (${escapeHtml(source.table)})` : ""}.
         ${escapeHtml(source.method)}, retrieved ${escapeHtml(source.retrieved)}.</p>
       <ul>${series.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>`;
@@ -396,7 +397,7 @@ function renderData(body: HTMLElement, { model, run }: Context): void {
     card.append(box);
     grid.append(card);
     const points: Series[] = [{ label: `${series.label} (data)`, points: series.points, color: "#495057", markers: true }];
-    if (variable && variable.unit === series.unit) points.unshift({ label: "Model", points: modelPoints(model, run, series.variable), color: "#4c6ef5" });
+    if (series.variable !== undefined && variable && variable.unit === series.unit) points.unshift({ label: "Model", points: modelPoints(model, run, series.variable), color: "#4c6ef5" });
     renderChart(box, { title: "", series: points, format: formatter(series.unit) });
   }
 }

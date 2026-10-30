@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { convertFences, parseAttribution, parseChart, parseSensitivity, parseTestLine, parseTests } from "../cli/notebook.ts";
 import { attribute } from "../src/engine/attribution.ts";
+import { checkModel } from "../src/engine/check.ts";
+import { estimate } from "../src/engine/estimate.ts";
 import { fitStats, statistics, valueAt } from "../src/engine/fit.ts";
 import { measure, parseOutcome } from "../src/engine/outcomes.ts";
 import { scenarioSettings } from "../src/engine/scenarios.ts";
@@ -132,7 +134,7 @@ holdout askingRentReal fit 2010–2019 test 2020–2024`);
 
   test("a lead compares the data with the model that many years later and keeps the best", () => {
     const shifted = structuredClone(model);
-    const variable = model.data.dwellings.variable;
+    const variable = model.data.dwellings.variable!;
     shifted.data.dwellings.points = model.data.dwellings.points.map(([year]) => [year - 1, valueAt(real, variable, year) * (model.variables[variable].scale ?? 1)]);
     const [result] = runTests(shifted, { scenario: "real", tests: [{ kind: "fit", data: "dwellings", years: [2004, 2018], lead: [0, 2] }] });
     expect(result.details!.lead).toBe(1);
@@ -206,6 +208,17 @@ holdout askingRentReal fit 2010–2019 test 2020–2024`);
     expect(() => checkTests(model, fields)).not.toThrow();
     expect(() => checkTests(model, { scenario: "real", tests: [{ kind: "knockout", loop: "gravity", variable: "rent", minEffect: 0.1 }] })).toThrow(/gravity/);
     expect(() => checkTests(model, { scenario: "real", tests: [{ kind: "fit", data: "nope" }] })).toThrow(/nope/);
+  });
+
+  test("a series without a variable is shown for reference and never compared", () => {
+    const reference = structuredClone(model);
+    const { variable: _, ...rest } = reference.data.askingRentReal;
+    reference.data.askingRentReal = rest;
+    expect(checkModel(reference).filter((issue) => issue.where === "data.askingRentReal")).toEqual([]);
+    expect(() => fitStats(reference, real, "askingRentReal")).toThrow(/not compared/);
+    expect(() => checkTests(reference, { scenario: "real", tests: [{ kind: "fit", data: "askingRentReal" }] })).toThrow(/not compared/);
+    const spec = { scenario: "real", parameters: { rentSensitivity: { min: 0.1, max: 0.5 } }, data: [{ series: "askingRentReal" }], years: [2010, 2019] as [number, number] };
+    expect(() => estimate(reference, spec)).toThrow(/not compared/);
   });
 
   test("runs and reports what the v1 model does", () => {

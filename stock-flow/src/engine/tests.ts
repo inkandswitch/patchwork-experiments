@@ -34,6 +34,7 @@ export function checkTests(model: StockFlowModelDoc, fields: TestFields): void {
       for (const id of spec.kind === "extreme" ? spec.expect.map((expectation) => expectation.variable) : spec.variables) variable(id, where);
     } else if (spec.kind === "fit" || spec.kind === "holdout") {
       if (!(spec.data in model.data)) throw new Error(`Unknown data series "${spec.data}" in ${where}`);
+      if (model.data[spec.data].variable === undefined) throw new Error(`"${spec.data}" is not compared with a model variable, in ${where}`);
     }
   }
 }

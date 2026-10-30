@@ -13,9 +13,11 @@ export type FitOptions = { index?: FitIndex; reference?: [number, number]; lead?
 export function fitStats(model: StockFlowModelDoc, run: Run, data: SeriesId, years?: [number, number], options: FitOptions = {}): FitStats {
   const series = model.data[data];
   if (!series) throw new Error(`Unknown data series "${data}"`);
-  const scale = model.variables[series.variable]?.scale ?? 1;
+  const variable = series.variable;
+  if (variable === undefined) throw new Error(`"${data}" is not compared with a model variable`);
+  const scale = model.variables[variable]?.scale ?? 1;
   const lead = options.lead ?? 0;
-  const simulatedAt = (year: number) => valueAt(run, series.variable, year + lead) * scale;
+  const simulatedAt = (year: number) => valueAt(run, variable, year + lead) * scale;
   const within = (window?: [number, number]) => series.points.filter(([year]) => !window || (year >= window[0] && year <= window[1]));
   const paired = (points: [number, number][]) =>
     points.map(([year, actual]) => [simulatedAt(year), actual] as [number, number]).filter(([simulated]) => Number.isFinite(simulated));

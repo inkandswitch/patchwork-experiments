@@ -65,7 +65,10 @@ export function checkSpec(model: StockFlowModelDoc, spec: EstimateSpec): void {
     if (!(range.min < range.max)) throw new Error(`"${id}" needs min < max`);
   }
   if (!spec.data.length) throw new Error("Name at least one data series to fit");
-  for (const { series } of spec.data) if (!model.data[series]) throw new Error(`Unknown data series "${series}"`);
+  for (const { series } of spec.data) {
+    if (!model.data[series]) throw new Error(`Unknown data series "${series}"`);
+    if (model.data[series].variable === undefined) throw new Error(`"${series}" is not compared with a model variable`);
+  }
   if (!(spec.years[0] < spec.years[1])) throw new Error("The fit window needs a start before its end");
 }
 
@@ -75,13 +78,15 @@ export function loss(model: StockFlowModelDoc, settings: Settings, spec: Estimat
   let total = 0;
   for (const { series, weight = 1 } of spec.data) {
     const data = model.data[series];
-    const scale = model.variables[data.variable]?.scale ?? 1;
+    const variable = data.variable;
+    if (variable === undefined) throw new Error(`"${series}" is not compared with a model variable`);
+    const scale = model.variables[variable]?.scale ?? 1;
     const points = data.points.filter(([year]) => year >= spec.years[0] && year <= spec.years[1]);
     if (!points.length) continue;
     const mean = points.reduce((sum, [, value]) => sum + Math.abs(value), 0) / points.length || 1;
     let squares = 0;
     for (const [year, actual] of points) {
-      const simulated = valueAt(run, data.variable, year) * scale;
+      const simulated = valueAt(run, variable, year) * scale;
       squares += Number.isFinite(simulated) ? ((simulated - actual) / mean) ** 2 : 1e6;
     }
     total += (weight * squares) / points.length;

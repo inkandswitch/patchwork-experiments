@@ -89,7 +89,7 @@ function structuralIssues(model: StockFlowModelDoc): Issue[] {
     for (const key of loop.cut) checkLink(`annotations.loops.${id}.cut`, key);
   }
   for (const [id, series] of Object.entries(model.data)) {
-    if (!(series.variable in variables)) error(`data.${id}`, `Compared with "${series.variable}", which is not a variable`);
+    if (series.variable !== undefined && !(series.variable in variables)) error(`data.${id}`, `Compared with "${series.variable}", which is not a variable`);
   }
   for (const [id, scenario] of Object.entries(model.scenarios)) {
     const where = `scenarios.${id}`;

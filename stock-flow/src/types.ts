@@ -232,8 +232,8 @@ export type Parameter = {
 export type DataSeries = {
   label: string;
   unit: string;
-  /** The model variable it is compared with. */
-  variable: VariableId;
+  /** The model variable it is compared with; left out for a series shown for reference that measures something else. */
+  variable?: VariableId;
   points: [year: number, value: number][];
   source: DataSource;
   notes: string[];
