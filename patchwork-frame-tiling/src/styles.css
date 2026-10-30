@@ -443,6 +443,21 @@ patchwork-view {
   position: relative;
 }
 
+/* A panel's content lives in a frame-owned container that's moved between
+   slots as the layout changes (so tools aren't remounted); it fills the body. */
+.tile-panel__content {
+  position: absolute;
+  inset: 0;
+}
+
+.tile-panel__content-inner {
+  display: contents;
+}
+
+.tile-park {
+  display: none;
+}
+
 .tile-panel__view {
   position: absolute;
   inset: 0;
@@ -498,6 +513,30 @@ patchwork-view {
 }
 
 .tile-panel__grip:active {
+  cursor: grabbing;
+}
+
+/* The datatype icon before the title: a drag handle for the document. */
+.tile-panel__doc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--tile-fg);
+  opacity: 0.7;
+  cursor: grab;
+  border-radius: 5px;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.tile-panel__doc-icon:hover {
+  opacity: 1;
+  background: var(--tile-fill-sunk);
+}
+
+.tile-panel__doc-icon:active {
   cursor: grabbing;
 }
 

@@ -21,10 +21,12 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
   Panel,
@@ -56,6 +58,8 @@ import {
 import { TopBar } from "./TopBar";
 import { FrameProviders, type OpenView } from "./FrameProviders";
 import { DraftScope, useDraftsAvailable } from "./drafts";
+import { DocIcon } from "./DocIcon";
+import { setPatchworkDragData } from "./dnd";
 import "./styles.css";
 import type {
   DropSide,
@@ -68,6 +72,7 @@ import type {
   ToolPreferences,
 } from "./types";
 import {
+  useDatatypeIcon,
   useDocTitle,
   useEffectiveTool,
   useTaggedComponents,
@@ -313,6 +318,13 @@ type LayoutOps = {
   selectedLeafId: string | null;
   /** URL of the current selected document (what context panels describe). */
   selectedDocUrl: AutomergeUrl | undefined;
+  /**
+   * The long-lived element a panel's content renders into (see
+   * `PanelContent`). Created on first request and kept for the panel's life.
+   */
+  getContainer: (leafId: string) => HTMLDivElement;
+  /** Hold a container off-screen while its panel's slot is being rebuilt. */
+  parkContainer: (container: HTMLDivElement) => void;
   /** Whether the draft providers are installed (wrap content panels in them). */
   draftsAvailable: boolean;
   /** Report a content panel's ready draft scope (or its removal). */
@@ -635,6 +647,27 @@ const TilePanel = ({
     ops.toolPreferences,
   );
 
+  // The body is only a slot: the content lives in a container owned by the
+  // frame (see `PanelContent`), moved in here on mount and parked on unmount.
+  // A rearrangement rebuilds this panel, but the content just moves across.
+  const slotRef = useRef<HTMLDivElement>(null);
+  const { getContainer, parkContainer } = ops;
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    if (!slot) return;
+    const container = getContainer(leaf.id);
+    moveInto(slot, container);
+    return () => {
+      if (container.parentNode === slot) parkContainer(container);
+    };
+  }, [leaf.id, getContainer, parkContainer]);
+
+  // The datatype's icon doubles as a drag handle for the *document* (as
+  // opposed to the grip, which drags the panel): drop it into a folder, a
+  // canvas, another doc, or out of the app as a link.
+  const datatypeIcon = useDatatypeIcon(type);
+  const dragDocUrl = !isContext && !isEmpty ? resolvedUrl : undefined;
+
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = ops.draggingId === leaf.id;
   const isDropTarget = ops.draggingId !== null && !isDragging;
@@ -650,114 +683,190 @@ const TilePanel = ({
       }`}
       onMouseDownCapture={() => focusLeaf(leaf.id)}
     >
-      <div className="tile-panel__header">
-        <button
-          className="tile-panel__grip"
-          title="Drag to rearrange"
-          aria-label="Drag to rearrange panel"
+    <div className="tile-panel__header">
+      <button
+        className="tile-panel__grip"
+        title="Drag to rearrange"
+        aria-label="Drag to rearrange panel"
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", leaf.id);
+          if (panelRef.current) {
+            event.dataTransfer.setDragImage(panelRef.current, 24, 16);
+          }
+          ops.beginDrag(leaf.id);
+        }}
+        onDragEnd={() => ops.endDrag()}
+      >
+        <GripIcon />
+      </button>
+      <button
+        className="tile-panel__icon-btn"
+        title="Back"
+        disabled={leaf.history.length === 0}
+        onClick={() => ops.goBack(leaf.id)}
+      >
+        <BackIcon />
+      </button>
+      {dragDocUrl && (
+        <span
+          className="tile-panel__doc-icon"
+          title="Drag document"
           draggable
           onDragStart={(event) => {
-            event.dataTransfer.effectAllowed = "move";
-            event.dataTransfer.setData("text/plain", leaf.id);
-            if (panelRef.current) {
-              event.dataTransfer.setDragImage(panelRef.current, 24, 16);
-            }
-            ops.beginDrag(leaf.id);
+            // Not a panel move: keep the frame's own drag handling out of it.
+            event.stopPropagation();
+            setPatchworkDragData(
+              event.dataTransfer,
+              {
+                url: dragDocUrl,
+                name: title,
+                type,
+                toolId: effectiveToolId,
+              },
+              "patchwork-frame-tiling",
+            );
           }}
-          onDragEnd={() => ops.endDrag()}
         >
-          <GripIcon />
+          <DocIcon name={datatypeIcon} />
+        </span>
+      )}
+      <span className="tile-panel__title" title={title}>
+        {title}
+      </span>
+      {isContext && <SubjectChip ops={ops} />}
+      <div className="tile-panel__actions">
+        {!isContext && !isRootFolder && !isEmpty && (
+          <ContextLauncher leaf={leaf} ops={ops} />
+        )}
+        {!isContext && !isEmpty && (
+          <ToolPicker
+            leaf={leaf}
+            ops={ops}
+            tools={tools}
+            fallbackId={fallbackId}
+            type={type}
+            selected={effectiveToolId}
+            url={resolvedUrl}
+          />
+        )}
+        <button
+          className="tile-panel__icon-btn"
+          title="Split right"
+          onClick={() => ops.split(leaf.id, "horizontal")}
+        >
+          <SplitRightIcon />
         </button>
         <button
           className="tile-panel__icon-btn"
-          title="Back"
-          disabled={leaf.history.length === 0}
-          onClick={() => ops.goBack(leaf.id)}
+          title="Split down"
+          onClick={() => ops.split(leaf.id, "vertical")}
         >
-          <BackIcon />
+          <SplitDownIcon />
         </button>
-        <span className="tile-panel__title" title={title}>
-          {title}
-        </span>
-        {isContext && <SubjectChip ops={ops} />}
-        <div className="tile-panel__actions">
-          {!isContext && !isRootFolder && !isEmpty && (
-            <ContextLauncher leaf={leaf} ops={ops} />
-          )}
-          {!isContext && !isEmpty && (
-            <ToolPicker
-              leaf={leaf}
-              ops={ops}
-              tools={tools}
-              fallbackId={fallbackId}
-              type={type}
-              selected={effectiveToolId}
-              url={resolvedUrl}
-            />
-          )}
+        {canClose && (
           <button
-            className="tile-panel__icon-btn"
-            title="Split right"
-            onClick={() => ops.split(leaf.id, "horizontal")}
+            className="tile-panel__icon-btn tile-panel__icon-btn--close"
+            title="Close panel"
+            onClick={() => ops.close(leaf.id)}
           >
-            <SplitRightIcon />
+            <CloseIcon />
           </button>
-          <button
-            className="tile-panel__icon-btn"
-            title="Split down"
-            onClick={() => ops.split(leaf.id, "vertical")}
-          >
-            <SplitDownIcon />
-          </button>
-          {canClose && (
-            <button
-              className="tile-panel__icon-btn tile-panel__icon-btn--close"
-              title="Close panel"
-              onClick={() => ops.close(leaf.id)}
-            >
-              <CloseIcon />
-            </button>
-          )}
-        </div>
+        )}
       </div>
-      <div className="tile-panel__body">
-        {isEmpty ? (
-          <div className="tile-panel__empty">
-            <p>No document open</p>
-            <span>Open one from the folder, or use + in the top bar.</span>
-          </div>
-        ) : isContext ? (
+    </div>
+    <div className="tile-panel__body" ref={slotRef}>
+      {isDropTarget && <DropZones leaf={leaf} ops={ops} />}
+    </div>
+  </div>
+);
+};
+
+/**
+ * Move `node` under `parent`, keeping it alive. `moveBefore` relocates a
+ * connected subtree without disconnecting it, so `<patchwork-view>` (which
+ * implements `connectedMoveCallback`) keeps its tool mounted and iframes keep
+ * their state. Where it's unsupported, or for a node that isn't connected yet,
+ * fall back to `appendChild`: a remount, as before.
+ */
+const moveInto = (parent: Element, node: Element): void => {
+if (node.parentNode === parent) return;
+const moveBefore = (
+  parent as Element & { moveBefore?: (node: Node, child: Node | null) => void }
+).moveBefore;
+if (moveBefore && node.isConnected && parent.isConnected) {
+  try {
+    moveBefore.call(parent, node, null);
+    return;
+  } catch {
+    // Different roots, or similar: fall through to a plain move.
+  }
+}
+parent.appendChild(node);
+};
+
+/**
+ * A panel's content (its document or context tool). Rendered from a flat list
+ * keyed by leaf id, so it stays mounted however the layout tree is rearranged;
+ * it portals into the panel's long-lived container, which `TilePanel` moves
+ * into whichever slot currently shows that panel.
+ */
+const PanelContent = ({ leaf, ops }: { leaf: LeafNode; ops: LayoutOps }) => {
+const isContext = leaf.view.role === "context";
+const isRootFolder = leaf.view.role === "root-folder";
+const resolvedUrl = isRootFolder ? ops.rootFolderUrl : leaf.view.url;
+const isEmpty = !isContext && !isRootFolder && !resolvedUrl;
+const { toolId: effectiveToolId } = useEffectiveTool(
+  resolvedUrl,
+  leaf.view.toolId,
+  ops.toolPreferences,
+);
+const { focusLeaf } = ops;
+
+// React events follow the component tree, not the DOM, so the panel's own
+// focus-on-mousedown never hears clicks in here: repeat it.
+return createPortal(
+  <div
+    className="tile-panel__content-inner"
+    onMouseDownCapture={() => focusLeaf(leaf.id)}
+  >
+      {isEmpty ? (
+        <div className="tile-panel__empty">
+          <p>No document open</p>
+          <span>Open one from the folder, or use + in the top bar.</span>
+        </div>
+      ) : isContext ? (
+        <patchwork-view
+          key={leaf.id}
+          className="tile-panel__view"
+          component={leaf.view.toolId}
+        />
+      ) : ops.draftsAvailable && !isRootFolder && resolvedUrl ? (
+        // Each content panel is its own draft scope; keyed on the url
+        // because the draft-state provider binds its doc once at mount.
+        <DraftScope
+          key={`${leaf.id}:${resolvedUrl}`}
+          leafId={leaf.id}
+          url={resolvedUrl}
+          onScope={ops.setDraftScope}
+        >
           <patchwork-view
-            key={leaf.id}
-            className="tile-panel__view"
-            component={leaf.view.toolId}
-          />
-        ) : ops.draftsAvailable && !isRootFolder && resolvedUrl ? (
-          // Each content panel is its own draft scope; keyed on the url
-          // because the draft-state provider binds its doc once at mount.
-          <DraftScope
-            key={`${leaf.id}:${resolvedUrl}`}
-            leafId={leaf.id}
-            url={resolvedUrl}
-            onScope={ops.setDraftScope}
-          >
-            <patchwork-view
-              className="tile-panel__view"
-              doc-url={resolvedUrl}
-              tool-id={effectiveToolId}
-            />
-          </DraftScope>
-        ) : (
-          <patchwork-view
-            key={leaf.id}
             className="tile-panel__view"
             doc-url={resolvedUrl}
             tool-id={effectiveToolId}
           />
-        )}
-        {isDropTarget && <DropZones leaf={leaf} ops={ops} />}
-      </div>
-    </div>
+        </DraftScope>
+      ) : (
+        <patchwork-view
+          key={leaf.id}
+          className="tile-panel__view"
+          doc-url={resolvedUrl}
+          tool-id={effectiveToolId}
+        />
+      )}
+    </div>,
+    ops.getContainer(leaf.id),
   );
 };
 
@@ -1549,6 +1658,44 @@ export const PatchworkFrame = ({
     if (newId) focusLeaf(newId);
   }, [rootFolderUrl, focusLeaf, change]);
 
+  // Each panel's content container, by leaf id (see `PanelContent`), and an
+  // off-screen park to hold one while its panel is rebuilt mid-commit.
+  const containersRef = useRef(new Map<string, HTMLDivElement>());
+  const parkRef = useRef<HTMLDivElement>(null);
+  const getContainer = useCallback((leafId: string) => {
+    let container = containersRef.current.get(leafId);
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "tile-panel__content";
+      containersRef.current.set(leafId, container);
+    }
+    return container;
+  }, []);
+  const parkContainer = useCallback((container: HTMLDivElement) => {
+    if (parkRef.current) moveInto(parkRef.current, container);
+    else container.remove();
+  }, []);
+
+  // Every panel, in a fixed order (by id) so React never reorders — and so
+  // never moves — their portals as the tree is rearranged.
+  const leaves = useMemo(() => {
+    if (!layout) return [];
+    return collectLeafIds(layout)
+      .sort()
+      .map((id) => findLeaf(layout, id))
+      .filter((leaf): leaf is LeafNode => !!leaf);
+  }, [layout]);
+
+  // Drop containers for closed panels (React has already emptied them).
+  useEffect(() => {
+    const live = new Set(leaves.map((leaf) => leaf.id));
+    for (const [id, container] of containersRef.current) {
+      if (live.has(id)) continue;
+      container.remove();
+      containersRef.current.delete(id);
+    }
+  }, [leaves]);
+
   const ops: LayoutOps = {
     activeLeafId,
     focusLeaf,
@@ -1567,6 +1714,8 @@ export const PatchworkFrame = ({
     rootFolderUrl,
     selectedLeafId,
     selectedDocUrl,
+    getContainer,
+    parkContainer,
     draftsAvailable,
     setDraftScope,
     toolPreferences: accountDoc.toolPreferences,
@@ -1596,6 +1745,10 @@ export const PatchworkFrame = ({
           onOpen={openFromChrome}
         />
         <div className="tile-frame">
+          <div className="tile-park" ref={parkRef} hidden />
+          {leaves.map((leaf) => (
+            <PanelContent key={leaf.id} leaf={leaf} ops={ops} />
+          ))}
           {layout ? (
             <LayoutView
               node={layout}
