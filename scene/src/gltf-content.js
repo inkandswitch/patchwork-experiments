@@ -14,11 +14,12 @@
 // - Scene material rules (material-rules.js) are applied on top of the GLB's
 //   values, and can be re-applied when they change.
 
-import { Box3, BufferAttribute, DoubleSide, InstancedMesh, Matrix4 } from "three";
+import { Box3, BufferAttribute, DoubleSide, InstancedMesh, Matrix4, Vector3 } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { toArrayBuffer } from "./file-content.js";
 import { resolveMaterialSet } from "./material-rules.js";
+import { sanitizeSnapPoints } from "./hand.js";
 
 let loader = null;
 
@@ -224,6 +225,33 @@ export function findLegend(root) {
   return found;
 }
 
+/**
+ * Snap points from any node's (or the scene's) `extras.snapPoints`, moved into
+ * root's frame (a yaw turns with its node), with the first
+ * `extras.snapRadius` found. Read before instancing collapses meshes, which
+ * drops their userData. Root at identity.
+ * @returns {{ points: { position: number[], yaw: number | null }[], radius: number | null }}
+ */
+export function findSnapPoints(root) {
+  root.updateMatrixWorld(true);
+  const points = [];
+  let radius = null;
+  const v = new Vector3();
+  root.traverse((o) => {
+    const raw = o.userData?.snapPoints;
+    if (raw) {
+      const e = o.matrixWorld.elements;
+      const turn = Math.atan2(e[8], e[10]); // the node's own yaw: where its +Z points
+      for (const p of sanitizeSnapPoints(raw)) {
+        points.push({ position: v.fromArray(p.position).applyMatrix4(o.matrixWorld).toArray(), yaw: p.yaw == null ? null : p.yaw + turn });
+      }
+    }
+    const r = Number(o.userData?.snapRadius);
+    if (radius == null && raw && Number.isFinite(r) && r > 0) radius = r;
+  });
+  return { points, radius };
+}
+
 /** Triangles drawn, counting instances. */
 export function countTriangles(root) {
   let n = 0;
@@ -283,10 +311,12 @@ export async function prepareGLB(bytes, rules = []) {
   const dequantized = dequantizePositions(content);
   const materials = prepareMaterials(content, gltf.parser);
   applyMaterialRules(materials, rules);
+  const snap = findSnapPoints(content);
   const inst = collapseInstances(content);
   return {
     content,
     materials,
+    snap,
     legend: findLegend(content),
     box: localBox(content),
     parts: localParts(content),

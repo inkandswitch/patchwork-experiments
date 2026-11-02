@@ -20,6 +20,7 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `scene` | the composition (listed) |
 | `patchwork:datatype` | `scene-render` | one per scene object (unlisted) |
+| `patchwork:datatype` | `scene-secrets` | what a scene's hidden objects really are (unlisted) |
 | `patchwork:tool` | `scene` | the scene host |
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
@@ -77,6 +78,64 @@ scene's outline is refused.
   leaves its attachments where they were, now at the scene root.
 - **Viewport**: orbit/pan/zoom, click to select, move/rotate gizmo (`G` / `R`),
   **Frame all** (`F`).
+- **Hand** (`H`, or *Hand* in the gizmo menu): pick objects up and put them
+  down elsewhere, like pieces on a table. Press on an object and drag: it
+  floats just above the spot under the pointer (the table, or the top of a
+  stack) and a ring shows where it will land. Let go and it rests on the
+  highest surface under its footprint, or on the ground. If another object
+  has **snap points** (from its GLB, below) near that spot, it goes to the
+  nearest one (accent ring) — hold **Alt** to put it down exactly where you
+  are, or untick **Snap** to turn snapping off for this scene. A snap point
+  with a yaw turns the piece to face that way. **Q** / **E** turn it 45°
+  while carried, **F** turns it over (about its own length, as a card goes
+  face down); **Esc** puts it back. A press that doesn't move
+  is still a click (select), and a press on empty space or on a **locked**
+  object orbits. There is no physics: nothing tips or slides, and only the
+  final pose is written. While it's carried, other people see it move (over
+  `handle.broadcast`, below). A scene can open in the hand
+  (`view.defaultGizmo`); after that the menu is yours alone.
+- **Locked** (inspector): a locked object can't be carried or given the
+  gizmo — a game board, say. Everything else about it still works.
+- **Seats** (the menu beside the units, when the scene has seats): sit in one
+  to see what's in that seat's private zone — your hand of cards — or watch.
+  Sitting is written to the doc (`seats[id].player`), so others see the seat
+  as taken; a seat with a `camera` moves your view there when you sit.
+
+### Hidden objects
+
+A scene can hide what some of its objects really are: a deck of cards face
+down, or a hand only its player should see. The scene doc says only what
+everyone may see — a hidden card is a card back, named "Card" — and
+`secretsUrl` points at a `scene-secrets` doc that says what each one really is:
+
+```ts
+{ "@patchwork": { type: "scene-secrets" }, title, objects: { [objectId]: { sourceUrl: AutomergeUrl, name: string } } }
+```
+
+Each viewer works out for themselves which secrets to show (`src/secrets.js`):
+
+- an object inside a **private zone** — any object with
+  `zone: { seat, min: [x,y,z], max: [x,y,z] }`, a box in that object's own
+  frame; an object is in it when its origin is — is shown as itself only to
+  whoever sits in that seat, whichever way up it is;
+- otherwise an object that is **face up** (its own +Y points up in the world)
+  is shown as itself to everyone;
+- anything else keeps its public look and name.
+
+So drawing a card is carrying it from the deck into your zone, playing it is
+putting it down face up, and turning one over (F while carrying) reveals it.
+Only passthrough objects (GLB files) can be hidden this way. A revealed name
+shows in the outline and inspector and is never written back.
+
+**What this protects against.** This is a table, not a vault: the secrets doc
+is an ordinary document, and anyone who opens it (or the inspector) can read
+every card, as anyone at a real table can peek. What it does guarantee is that
+the scene itself — the outline, the inspector, ids, groups, order, the GLBs
+fetched — gives nothing away. Real secrecy goes behind the same seam: secrets
+split into one doc per audience (a seat's hand readable by that player alone,
+with keyhive access control), and a deck nobody can read, which needs a
+cryptographic shuffle. The scene would only need to read more than one secrets
+doc; nothing else about it changes.
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
   depth labels.
@@ -102,7 +161,12 @@ differently as you orbit), a weak headlight fill, and a dim sky/ground and
 room environment, kept near 1 in total so light baked colours don't clip.
 
 Selection and hover are shared with other people in the scene over
-`handle.broadcast`; nothing about presence is written to the doc.
+`handle.broadcast`; nothing about presence is written to the doc. So is an
+object in someone's hand: `{ type: "scene:carry", id, transform }` (its local
+transform, at most every 50 ms) while it moves, and `transform: null` when it
+is put down or the carry is cancelled. Peers show it there instead of where
+the doc says; the put-down shows the doc's pose as soon as the doc has it (or
+after a second), and a carry that goes quiet for 3 s is put back.
 
 ## Writing a provider
 
@@ -197,6 +261,17 @@ extension; hosts that don't know it fall back to the rule above).
   object colour replaces the base colour only, so a material's metalness and
   roughness survive it (a white metal part tinted bronze stays metal), and
   `KHR_materials_unlit` draws baked colours exactly.
+- Optional **snap points**: `extras.snapPoints = [[x, y, z], …]` (or
+  `{ position: [x, y, z], yaw }`, yaw in radians about +Y: whatever snaps
+  there turns to face that way, so a card in the far player's column reads
+  right for them) on any node (or on the glTF scene), in that node's frame,
+  and optionally
+  `extras.snapRadius` (metres, in the GLB's frame). When the hand puts
+  something down near one — the centre of its footprint within the radius,
+  in plan — it goes there; height is still decided by what is underneath, so
+  pieces stack on a board's spaces. Without a radius it is 0.71 × the closest
+  spacing between the points, so every part of a square grid's cell, corners
+  included, snaps to that cell. Malformed points are ignored.
 - Optional colour legend: put `extras.legend = { title, unit, min, max, stops }`
   on a mesh, `stops` being 2–32 `#rrggbb` colours spaced evenly from `min` to
   `max`. The scene draws it as a bar with three ticks. Anything else in it is
@@ -282,12 +357,19 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
     parent?: string | null,         // another objectId (object or group); absent = null
     infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
+    locked?: boolean,               // true: the hand and the gizmo leave it where it is
+    zone?: { seat: string, min: [x,y,z], max: [x,y,z] },  // a seat's private area: this box, in its own frame
     hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
   } },
   order: string[],
   dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
-  view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean },
+  view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
+          snap?: boolean,                                  // the hand snaps (absent = true)
+          defaultGizmo?: "translate" | "rotate" | "hand" }, // what the gizmo menu opens on (absent = translate)
   camera: { position: [x,y,z], target: [x,y,z] } | null,
+  seats?: { [seatId]: { name: string, player: string | null,     // a contact URL (or a browser's own id)
+                        camera?: { position, target } } },        // where its player looks from
+  secretsUrl?: AutomergeUrl,        // a scene-secrets doc (Hidden objects, above)
   materialRules?: MaterialRule[]
 }
 Anchor = { objectId: string | null, local: [x,y,z] | null, world: [x,y,z] }
@@ -357,8 +439,10 @@ MaterialRule = {
 | `src/stl.js`, `src/sources/*` | STL parsing and the two file providers |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
+| `src/secrets.js` | hidden objects: private zones, face up, which secrets a viewer may see (pure) |
+| `src/hand.js` | the hand's pure parts: snap points, default radius, nearest snap, footprint samples, resting height |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes: `scene-probe.html` mounts the built tool in headless Chrome against an in-memory repo; `attach-probe.html` drives the real viewport with a parent and a child; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `drag-probe.html` + `drag-run.mjs` drive real mouse drags into and within the outline |
+| `probes/` | browser probes: `scene-probe.html` mounts the built tool in headless Chrome against an in-memory repo; `attach-probe.html` drives the real viewport with a parent and a child; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `drag-probe.html` + `drag-run.mjs` drive real mouse drags into and within the outline; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand between two peers (below) |
 
 ### Browser probe
 
@@ -388,6 +472,26 @@ are each object's own geometry, that hiding a parent leaves the child visible,
 that a gizmo drag on a child of a rotated, scaled parent moves it along the
 world axis and reports a local transform whose world pose matches, and that
 detaching, and removing the parent, keep the child's world pose.
+
+### The hand
+
+```
+pnpm build
+node probes/hand-run.mjs        # --show to watch
+```
+
+Two scene tools on one doc (each one's broadcasts reach only the other, and
+`element.viewerId` makes them two viewers), a locked 5×5 board GLB with
+`extras.snapPoints`, four blocks, two pawns, a tray that is a seat's private
+zone and two hidden cards. A
+real mouse over CDP carries a block onto a space released off-centre (it
+snaps, and rests on the board; the other peer sees it in the air, then where
+it landed), stacks two more blocks on it, puts a pawn down with Alt (exactly
+where dropped), another off the board (on the ground), drags the locked
+board (it stays; the camera orbits) and cancels a carry with Esc. Then: with
+nobody seated both viewers show both cards' backs; once A sits, A shows the
+card in the tray as itself and B still its back; the face-down card is
+carried, turned over with F and put down, and both show its face.
 
 ### At scale: the Solander 38 probe
 

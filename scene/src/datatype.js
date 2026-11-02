@@ -1,6 +1,6 @@
 // The two datatypes this package owns. See README.md for the document shapes.
 
-export const DEFAULT_VIEW = Object.freeze({ units: "m", grid: true, axes: true, bounds: false });
+export const DEFAULT_VIEW = Object.freeze({ units: "m", grid: true, axes: true, bounds: false, snap: true });
 
 export const SceneDatatype = {
   init(doc) {
@@ -54,5 +54,20 @@ export const SceneRenderDatatype = {
   setTitle(doc, title) {
     const t = String(title ?? "");
     doc.title = t.endsWith(RENDER_SUFFIX) ? t.slice(0, -RENDER_SUFFIX.length) : t;
+  },
+};
+
+// What the hidden objects of a scene really are (see README, "Hidden objects").
+// { title, objects: { [objectId]: { sourceUrl, name } } }
+export const SceneSecretsDatatype = {
+  init(doc) {
+    doc.title = "Scene secrets";
+    doc.objects = {};
+  },
+  getTitle(doc) {
+    return doc?.title || "Scene secrets";
+  },
+  setTitle(doc, title) {
+    doc.title = title;
   },
 };

@@ -227,6 +227,14 @@
   cursor: pointer;
 }
 
+.scene-tool .viewport[data-hand][data-grabbable]:not([data-measuring]) .canvas {
+  cursor: grab;
+}
+
+.scene-tool .viewport[data-carrying] .canvas {
+  cursor: grabbing;
+}
+
 .scene-tool .canvas:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   inset: 0;

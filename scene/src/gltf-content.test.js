@@ -232,3 +232,38 @@ describe("gltf content", () => {
     expect(alu.userData.baseTransparent).toBe(false);
   });
 });
+
+describe("snap points (extras.snapPoints)", () => {
+  it("reads them from the scene and from nodes, in the GLB's own frame, even off meshes that get instanced", async () => {
+    const glb = encodeGLB({
+      meshes: [{ name: "tile", positions: tri, color: "#808080" }],
+      nodes: [
+        { name: "board", children: [1, 2], translation: [0, 0.01, 0], extras: { snapPoints: [[0, 0.02, 0]] } },
+        { mesh: 0, translation: [1, 0, 0], extras: { snapPoints: [[0, 0, 0], "junk"], snapRadius: 0.4 } },
+        { mesh: 0, translation: [2, 0, 0] },
+      ],
+      extras: { snapPoints: [{ position: [5, 0, 5] }] },
+    });
+    const prepared = await prepareGLB(glb);
+    const pts = prepared.snap.points.map((p) => p.position.map((v) => +v.toFixed(6)));
+    expect(pts).toContainEqual([0, 0.03, 0]);
+    expect(pts).toContainEqual([1, 0.01, 0]);
+    expect(pts).toContainEqual([5, 0, 5]);
+    expect(pts).toHaveLength(3);
+    expect(prepared.snap.radius).toBe(0.4);
+  });
+
+  it("keeps a point's yaw, turned with its node", async () => {
+    const q = [0, Math.sin(Math.PI / 4), 0, Math.cos(Math.PI / 4)]; // a quarter turn about +Y
+    const glb = encodeGLB({ meshes: [], nodes: [{ rotation: q, extras: { snapPoints: [{ position: [0, 0, 1], yaw: Math.PI / 2 }, [1, 0, 0]] } }] });
+    const { points } = (await prepareGLB(glb)).snap;
+    expect(points[0].yaw).toBeCloseTo(Math.PI);
+    expect(points[0].position.map((x) => +x.toFixed(6))).toEqual([1, 0, 0]);
+    expect(points[1].yaw).toBeNull();
+  });
+
+  it("is empty for a GLB without any", async () => {
+    const prepared = await prepareGLB(encodeGLB({ meshes: [{ positions: tri }] }));
+    expect(prepared.snap).toEqual({ points: [], radius: null });
+  });
+});

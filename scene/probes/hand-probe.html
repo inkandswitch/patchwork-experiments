@@ -1,0 +1,152 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene hand probe</title>
+<!-- Also hidden objects: a seat with a private zone (a tray), and two cards
+     whose real look is in a secrets doc — one in the tray, one face down on
+     the table. Viewer A and viewer B are told apart by element.viewerId. -->
+<!-- Driven by probes/hand-run.mjs: two scene tools on one doc (each peer's
+     broadcasts reach only the other), a 5×5 board GLB with extras.snapPoints
+     (locked), blocks and pawns, all loaded through the BUILT tool (dist/). The
+     runner carries pieces with a real mouse over CDP. -->
+<script type="importmap">
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; gap: 8px; }
+  #a { width: 860px; height: 640px; flex: none; position: relative; }
+  #b { width: 520px; height: 420px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { encodeGLB } from "../src/glb.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// two peers on one doc: each tool gets a view of the handle whose broadcasts reach only the other
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+try {
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const repo = new FakeRepo();
+  window.repo = repo;
+  // a box standing on y = 0 as six quads (no normals needed: flat shading is fine for probing)
+  const box = (w, h, d, color, at = [0, 0, 0]) => {
+    const [x, y, z] = at, a = w / 2, c = d / 2;
+    const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
+    const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+    return { positions: f.flat().flatMap((i) => v[i]), color };
+  };
+  const file = (name, scene) => repo.add({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(scene) });
+  const snapPoints = [];
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) snapPoints.push([i * 0.06, 0.04, j * 0.06]);
+  const boardGLB = file("board.glb", { meshes: [box(0.32, 0.04, 0.32, "#78a656")], extras: { snapPoints } });
+  const blockGLB = file("block.glb", { meshes: [box(0.05, 0.032, 0.05, "#f1ede3")] });
+  const pawnGLB = file("pawn.glb", { meshes: [box(0.016, 0.03, 0.016, "#3a78d8")] });
+  const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
+  const objects = { board: obj("Board", boardGLB, [0, 0, 0], { locked: true }) };
+  for (let i = 0; i < 4; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.06, 0, -0.1]);
+  for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25]);
+  // hidden objects: a tray that is seat 1's private zone, and two cards that are really "Red 7"
+  const trayGLB = file("tray.glb", { meshes: [box(0.2, 0.002, 0.08, "#2f4a3a")] });
+  const backGLB = file("back.glb", { meshes: [box(0.04, 0.002, 0.06, "#6b3e26")] });
+  const faceGLB = file("red-7.glb", { meshes: [box(0.04, 0.002, 0.06, "#c4452f")] });
+  objects.tray = obj("Seat 1's tray", trayGLB, [-0.25, 0, 0.25], { locked: true, zone: { seat: "s1", min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] } });
+  objects.inTray = obj("Card", backGLB, [-0.25, 0.002, 0.25]);
+  objects.faceDown = obj("Card", backGLB, [0.25, 0.002, 0.15]);
+  objects.faceDown.transform.rotation = [0, 0, Math.PI];
+  const secretsDoc = repo.add({ "@patchwork": { type: "scene-secrets" }, title: "secrets", objects: { inTray: { sourceUrl: faceGLB.url, name: "Red 7" }, faceDown: { sourceUrl: faceGLB.url, name: "Red 7" } } });
+  const scene = repo.add({
+    "@patchwork": { type: "scene" }, title: "Hand probe", objects, order: Object.keys(objects), dimensions: {},
+    seats: { s1: { name: "Seat 1", player: null } }, secretsUrl: secretsDoc.url,
+    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultGizmo: "hand" },
+    camera: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] },
+  });
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hostA = document.getElementById("a"), hostB = document.getElementById("b");
+  hostA.repo = repo; hostB.repo = repo;
+  hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
+  Tool(A, hostA);
+  const dbgA = hostA.querySelector(".scene-tool").__sceneDebug;
+  Tool(B, hostB);
+  const dbgB = hostB.querySelector(".scene-tool").__sceneDebug;
+  const total = Object.values(scene.doc().objects).filter((o) => o.kind !== "group").length;
+  for (let i = 0; i < 300; i++) {
+    if (dbgA.stats().loaded === total && dbgB.stats().loaded === total) break;
+    await sleep(50);
+  }
+  const vp = dbgA.viewport;
+  const byName = (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0];
+  window.__probeScene = scene;
+  window.__table = {
+    errors,
+    total,
+    loaded: () => [dbgA.stats().loaded, dbgB.stats().loaded],
+    id: byName,
+    /** page coords of a world point in viewport A */
+    screen: (w) => {
+      vp.camera.updateMatrixWorld();
+      const p = vp.project(new vp.camera.position.constructor(...w));
+      const r = vp.canvas.getBoundingClientRect();
+      return p && [r.left + p.x, r.top + p.y];
+    },
+    /** page coords of the top centre of an object's box in A */
+    top: (id) => {
+      const b = vp.objectBox(id, { hints: false });
+      return window.__table.screen([(b.min.x + b.max.x) / 2, b.max.y - 0.002, (b.min.z + b.max.z) / 2]);
+    },
+    /** page coords to release at so a piece grabbed on its top lands on (x, rest, z): the hand carries the grabbed point, lifted */
+    aim: (id, [x, rest, z]) => {
+      const b = vp.objectBox(id, { hints: false });
+      const h = b.max.y - b.min.y;
+      const lift = Math.max(0.004, Math.min(0.05, h * 0.5));
+      return window.__table.screen([x, rest + lift + h - 0.002, z]);
+    },
+    pos: (id) => scene.doc().objects[id].transform.position,
+    worldB: (id) => {
+      const e = dbgB.viewport.objects.get(id);
+      return e.group.getWorldPosition(new e.group.position.constructor()).toArray();
+    },
+    carrying: () => vp.carry?.id ?? null,
+    carryInfo: () => vp.carry && { offset: vp.carry.offset.toArray(), spot: vp.carry.landing?.spot, snapped: vp.carry.landing?.snapped, snaps: vp.carry.snaps.length, last: vp.carry.last },
+    camera: () => vp.getCamera(),
+    /** "face" or "back": which look a viewer is showing for a hidden object */
+    look: (who, id) => {
+      const url = (who === "a" ? dbgA : dbgB).queue.state(id)?.url;
+      return url === faceGLB.url ? "face" : url === backGLB.url ? "back" : url;
+    },
+    sit: (who, seat) => {
+      const sel = (who === "a" ? hostA : hostB).querySelector(".seat");
+      sel.value = seat;
+      sel.dispatchEvent(new Event("change"));
+    },
+    settled: () => dbgA.queue.pending() === 0 && dbgB.queue.pending() === 0,
+    rot: (id) => scene.doc().objects[id].transform.rotation,
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack || err}`);
+  window.__ready = true;
+}
+</script>

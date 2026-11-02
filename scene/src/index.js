@@ -34,6 +34,16 @@ export const plugins = [
     },
   },
   {
+    type: "patchwork:datatype",
+    id: "scene-secrets",
+    name: "Scene secrets",
+    icon: "EyeOff",
+    unlisted: true,
+    async load() {
+      return (await import("./datatype.js")).SceneSecretsDatatype;
+    },
+  },
+  {
     type: "patchwork:tool",
     id: "scene",
     name: "Scene",

@@ -45,6 +45,7 @@ import { applyMaterialRules, prepareGLB } from "./gltf-content.js";
 import { rulesKey, sanitizeRules } from "./material-rules.js";
 import { buildBVH, installLazyBVH, wantsBVH } from "./pick-accel.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "./surface.js";
+import { defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, yawDelta } from "./hand.js";
 import { onThemeChange, resolveCssColor } from "./theme.js";
 
 const TRIAD_PX = 96;
@@ -78,6 +79,8 @@ const THEME_VARS = {
 };
 
 const color = (rgb) => new Color().setRGB(rgb[0], rgb[1], rgb[2], SRGBColorSpace);
+/** Which way a world matrix's +Z points, as a yaw about +Y. */
+const yawOf = (m) => Math.atan2(m.elements[8], m.elements[10]);
 const v3 = (a) => new Vector3(a[0], a[1], a[2]);
 
 /** Does this matrix rotate (or shear) anything, beyond per-axis scale and translation? */
@@ -347,13 +350,20 @@ export class Viewport {
    * @param {(ev: PointerEvent | null, vp: Viewport) => void} [o.onHover]  rAF-throttled; null on leave
    * @param {(objectId, transform) => void} [o.onTransformEnd]
    * @param {(camera) => void} [o.onCameraEnd]
+   * @param {(objectId) => boolean} [o.canDrag]     may the hand pick this object up?
+   * @param {(objectId, transform | null) => void} [o.onDragMove]  a carried object's local pose while it moves (rAF-throttled); null when it's put down or the carry is cancelled
+   * @param {(objectId, transform) => void} [o.onDragEnd]  where a carried object was put down (local transform)
    */
-  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onCameraEnd }) {
+  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd }) {
     this.host = host;
     this.themeRoot = themeRoot;
-    this.cb = { onClick, onHover, onTransformEnd, onCameraEnd };
+    this.cb = { onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd };
+    /** the object being carried by the hand: { id, … } (see wireHand) */
+    this.carry = null;
+    /** objectId → a peer's in-flight pose for it, shown instead of the doc's */
+    this.remotePoses = new Map();
     this.objects = new Map(); // id → { group, body, content, gen, display, parentId }
-    this.view = { grid: true, axes: true, bounds: false, units: "m" };
+    this.view = { grid: true, axes: true, bounds: false, units: "m", snap: true };
     this.selection = null;
     this.remoteSelections = [];
     /** content → its geometry in object-local arrays, for anchorGap */
@@ -478,6 +488,7 @@ export class Viewport {
     this.readTheme();
     this.buildTriad();
     this.wirePointer();
+    this.wireHand();
 
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(host);
@@ -640,6 +651,7 @@ export class Viewport {
         inherited: { visible: true, opacity: 1 },
         materials: [],
         legend: null,
+        snap: null, // { points: [x,y,z][] in body space, radius } from extras.snapPoints
         box: null, // content's box in body space, cached per GLB
         parts: [], // its pieces' boxes, for a rotated body (see objectBox)
         hint: null, // a Box3 from hint.bounds, shown (and framed) until the GLB arrives
@@ -670,6 +682,8 @@ export class Viewport {
     const entry = this.objects.get(id);
     if (!entry) return;
     if (this.gizmo?.object === entry.group) this.gizmo.detach();
+    if (this.carry?.id === id) this.endCarry({ cancel: true });
+    this.remotePoses.delete(id);
     entry.gen++;
     // Attached objects outlive their parent: move them to the root (the scene
     // doc gives them their new transforms).
@@ -777,6 +791,8 @@ export class Viewport {
     entry.content = prepared.content;
     entry.materials = prepared.materials;
     entry.legend = sanitizeLegend(prepared.legend);
+    const points = prepared.snap?.points ?? [];
+    entry.snap = points.length ? { points, radius: prepared.snap.radius ?? defaultSnapRadius(points) } : null;
     entry.box = prepared.box;
     entry.parts = prepared.parts ?? [];
     entry.stats = prepared.stats;
@@ -857,8 +873,10 @@ export class Viewport {
       entry.body.visible = obj.visible !== false;
     }
     const t = obj.transform ?? {};
-    const dragging = this.gizmo.dragging && this.gizmo.object === g;
-    if (!dragging) {
+    const dragging = (this.gizmo.dragging && this.gizmo.object === g) || this.carry?.id === id;
+    const remote = this.remotePoses.get(id);
+    if (remote && !dragging) this.placeLocal(g, remote);
+    else if (!dragging) {
       g.position.fromArray(t.position ?? [0, 0, 0]);
       const rot = t.rotation ?? [0, 0, 0];
       g.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0, "XYZ");
@@ -1084,7 +1102,7 @@ export class Viewport {
     this.refreshHelpers();
   }
 
-  /** "translate" | "rotate" | null */
+  /** "translate" | "rotate" | "hand" | null */
   setGizmoMode(mode) {
     this.gizmoMode = mode;
     this.updateGizmo();
@@ -1093,7 +1111,7 @@ export class Viewport {
   updateGizmo() {
     if (!this.ok) return;
     const entry = this.selection ? this.objects.get(this.selection) : null;
-    if (entry && this.gizmoMode && !this.measure) {
+    if (entry && this.gizmoMode && this.gizmoMode !== "hand" && !this.measure && !entry.display?.locked) {
       this.gizmo.setMode(this.gizmoMode);
       if (this.gizmo.object !== entry.group) this.gizmo.attach(entry.group);
     } else if (this.gizmo.object) {
@@ -1542,6 +1560,330 @@ export class Viewport {
       this.canvas.removeEventListener("pointerup", onUp);
       this.canvas.removeEventListener("pointermove", onMove);
       this.canvas.removeEventListener("pointerleave", onLeave);
+    });
+  }
+
+  // ─── the hand: carrying objects across the table ──────────────────────────
+  //
+  // In hand mode a press on an object the tool says can be dragged (not
+  // locked, not a group) picks it up once the pointer has moved a few pixels
+  // (a press without moving is still a click). While carried it follows the
+  // pointer over whatever is under it, floats a little above where it would
+  // land, and a ring on the table shows the spot: the snap point it will go
+  // to, if one is near (hold Alt, or turn snapping off, to place freely).
+  // Put down, it rests on the highest surface under its footprint. Q / E turn
+  // it 45° while carried; Esc puts it back. Only the final pose is the tool's
+  // to write; the in-flight one is reported for peers (onDragMove).
+
+  /** Set a group's local transform from a { position, rotation, scale }. */
+  placeLocal(g, t) {
+    g.position.fromArray(t.position ?? [0, 0, 0]);
+    const rot = t.rotation ?? [0, 0, 0];
+    g.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0, "XYZ");
+    const sc = Number(t.scale) || 1;
+    g.scale.set(sc, sc, sc);
+  }
+
+  localTransform(g) {
+    return { position: g.position.toArray(), rotation: [g.rotation.x, g.rotation.y, g.rotation.z], scale: g.scale.x };
+  }
+
+  /** Show a peer's in-flight pose for an object (local transform), or null to go back to the doc's. */
+  setRemotePose(id, t) {
+    if (!this.ok) return;
+    const entry = this.objects.get(id);
+    if (t) this.remotePoses.set(id, t);
+    else if (!this.remotePoses.delete(id)) return;
+    if (!entry || this.carry?.id === id) return;
+    this.placeLocal(entry.group, t ?? entry.display?.transform ?? {});
+    this.refreshHelpers();
+    this.invalidate();
+  }
+
+  /** Is `o` inside the subtree of `group` (or it)? */
+  static within(o, group) {
+    for (let n = o; n; n = n.parent) if (n === group) return true;
+    return false;
+  }
+
+  /** Bodies the carried object can land on or be aimed at: everything shown but itself and what's attached to it. */
+  tableBodies(carried) {
+    const out = [];
+    for (const e of this.objects.values()) {
+      if (e.kind === "group" || !e.content || !this.isShown(e)) continue;
+      if (Viewport.within(e.group, carried.group)) continue;
+      out.push(e);
+    }
+    return out;
+  }
+
+  /** The nearest visible hit of a ray against these bodies, or null. */
+  castAt(bodies, origin, dir) {
+    this.raycaster.set(origin, dir);
+    const hits = this.raycaster.intersectObjects(bodies, true);
+    for (const h of hits) {
+      let shown = true;
+      for (let o = h.object; o; o = o.parent) if (!o.visible) shown = false;
+      if (shown) return h;
+    }
+    return null;
+  }
+
+  /** The pointer's ray, in world. */
+  pointerRay(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    return this.raycaster.ray.clone();
+  }
+
+  /** Where the pointer points on the table: the first of these bodies it meets, else the ground; null looking at the sky. */
+  tablePoint(clientX, clientY, bodies) {
+    const ray = this.pointerRay(clientX, clientY);
+    const hit = this.castAt(bodies, ray.origin, ray.direction);
+    if (hit) return hit.point.clone();
+    const p = new Vector3();
+    return ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), p) ? p : null;
+  }
+
+  /** Pick up `id`, grabbed where the press was (`down`: clientX / clientY), and carry it to the pointer (`e`). */
+  startCarry(id, down, e) {
+    const entry = this.objects.get(id);
+    const box = this.objectBox(id, { hints: false });
+    if (!entry || !box) return false;
+    const g = entry.group;
+    const bodies = this.tableBodies(entry).map((x) => x.body);
+    // The pointer says where on the table it goes (the spot under it, the top
+    // of a stack), the piece floating just above. Grabbed off-centre, it keeps
+    // that offset in plan, so it doesn't jump on pickup.
+    const grab = this.pick(down.clientX, down.clientY, { snapPx: 0 });
+    const center = box.getCenter(new Vector3());
+    const offset = grab?.objectId === id ? new Vector3(center.x - grab.world[0], 0, center.z - grab.world[2]) : new Vector3();
+    const snaps = [];
+    if (this.view.snap !== false) {
+      for (const other of this.tableBodies(entry)) {
+        if (!other.snap) continue;
+        other.body.updateWorldMatrix(true, false);
+        const m = other.body.matrixWorld;
+        const s = new Vector3().setFromMatrixScale(m);
+        const radius = (other.snap.radius ?? 0) * Math.max(s.x, s.z);
+        if (!(radius > 0)) continue;
+        const turn = yawOf(m);
+        for (const p of other.snap.points) {
+          snaps.push({ world: v3(p.position).applyMatrix4(m).toArray(), yaw: p.yaw == null ? null : p.yaw + turn, radius, objectId: other.group.userData.objectId });
+        }
+      }
+    }
+    this.carry = {
+      id,
+      entry,
+      start: this.localTransform(g),
+      offset,
+      bodies,
+      snaps,
+      last: { clientX: e.clientX, clientY: e.clientY, altKey: e.altKey },
+      landing: null,
+      marker: null,
+    };
+    this.host.dataset.carrying = "";
+    this.moveCarry(e);
+    return true;
+  }
+
+  /**
+   * Where the carried object would land if put down with the pointer here:
+   * the world translation to apply to it now, and the ring's spot.
+   */
+  landingFor(c, ev) {
+    const box = this.objectBox(c.id, { hints: false });
+    if (!box) return null;
+    const at = this.tablePoint(ev.clientX, ev.clientY, c.bodies);
+    if (!at) return null;
+    const center = box.getCenter(new Vector3());
+    const size = box.getSize(new Vector3());
+    let tx = at.x + c.offset.x;
+    let tz = at.z + c.offset.z;
+    const snap = ev.altKey ? null : nearestSnap(c.snaps, tx, tz);
+    if (snap) {
+      tx = snap.world[0];
+      tz = snap.world[2];
+    }
+    const dx = tx - center.x;
+    const dz = tz - center.z;
+    const sceneTop = this.sceneBox({ hints: false }).max.y;
+    const top = Math.max(box.max.y, Number.isFinite(sceneTop) ? sceneTop : 0) + 1;
+    const down = new Vector3(0, -1, 0);
+    const heights = footprintSamples([box.min.x + dx, 0, box.min.z + dz], [box.max.x + dx, 0, box.max.z + dz]).map(([x, z]) => {
+      const h = this.castAt(c.bodies, new Vector3(x, top, z), down);
+      return h ? h.point.y : null;
+    });
+    const rest = restHeight(heights, 0);
+    return { delta: new Vector3(dx, rest - box.min.y, dz), rest, spot: [tx, rest, tz], radius: Math.max(size.x, size.z) / 2, snapped: !!snap, yaw: snap?.yaw ?? null, lift: liftFor(size.y) };
+  }
+
+  /**
+   * Where the carried object lands from this pointer: a snap point with a yaw
+   * turns it to face that way first (its box changes, so land again).
+   */
+  settle(c, ev) {
+    let land = this.landingFor(c, ev);
+    const g = c.entry.group;
+    if (land?.yaw != null) {
+      g.updateMatrixWorld(true);
+      const turn = yawDelta(yawOf(g.matrixWorld), land.yaw);
+      if (turn) {
+        g.rotateOnWorldAxis(new Vector3(0, 1, 0), turn);
+        g.updateMatrixWorld(true);
+        land = this.landingFor(c, ev) ?? land;
+      }
+    }
+    return land;
+  }
+
+  /** Turn the carried object over, about its own length (+Z): a card goes face down. */
+  flipCarried() {
+    const g = this.carry?.entry.group;
+    if (!g) return;
+    g.updateMatrixWorld(true);
+    const axis = new Vector3().setFromMatrixColumn(g.matrixWorld, 2).normalize();
+    g.rotateOnWorldAxis(axis, Math.PI);
+    g.updateMatrixWorld(true);
+  }
+
+  /** Move the carried group by a world translation (it may be attached to a moved or rotated parent). */
+  translateWorld(g, delta) {
+    const wp = g.getWorldPosition(new Vector3()).add(delta);
+    if (g.parent) g.parent.worldToLocal(wp);
+    g.position.copy(wp);
+    g.updateMatrixWorld(true);
+  }
+
+  moveCarry(ev) {
+    const c = this.carry;
+    if (!c) return;
+    c.last = { clientX: ev.clientX, clientY: ev.clientY, altKey: ev.altKey };
+    const land = this.settle(c, ev);
+    if (!land) return;
+    // float it: land.delta puts it down; lift it a little above that
+    this.translateWorld(c.entry.group, land.delta.clone().add(new Vector3(0, land.lift, 0)));
+    c.landing = land;
+    this.drawLandingMarker(land);
+    this.cb.onDragMove?.(c.id, this.localTransform(c.entry.group));
+    this.refreshHelpers();
+    this.invalidate();
+  }
+
+  drawLandingMarker(land) {
+    const c = this.carry;
+    if (c.marker) {
+      c.marker.removeFromParent();
+      disposeObject(c.marker);
+    }
+    const n = 48;
+    const pts = [];
+    const r = land.radius * 1.1;
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      pts.push([land.spot[0] + Math.cos(a) * r, land.spot[1] + 0.0005, land.spot[2] + Math.sin(a) * r]);
+    }
+    const ring = new Line(
+      lineGeometry(pts),
+      new LineBasicMaterial({ color: color(land.snapped ? this.theme.accent : this.theme.muted), depthTest: false, transparent: true }),
+    );
+    ring.renderOrder = 12;
+    ring.raycast = () => {};
+    c.marker = ring;
+    this.overlay.add(ring);
+  }
+
+  /** Put it down where it would land (or back where it was, on cancel); returns its local transform. */
+  endCarry({ cancel = false } = {}) {
+    const c = this.carry;
+    if (!c) return null;
+    this.carry = null;
+    delete this.host.dataset.carrying;
+    if (c.marker) {
+      c.marker.removeFromParent();
+      disposeObject(c.marker);
+    }
+    const g = c.entry.group;
+    if (cancel || !c.landing) this.placeLocal(g, c.start);
+    else {
+      // re-land from the last pointer: Q / E / F may have turned it since
+      const land = this.settle(c, c.last) ?? c.landing;
+      this.translateWorld(g, land.delta);
+    }
+    const t = this.localTransform(g);
+    this.cb.onDragMove?.(c.id, null);
+    if (!cancel) this.cb.onDragEnd?.(c.id, t);
+    this.refreshHelpers();
+    this.invalidate();
+    return t;
+  }
+
+  wireHand() {
+    let press = null; // { id, x, y, pointerId } until it moves far enough to be a carry
+    const onDown = (e) => {
+      if (this.gizmoMode !== "hand" || this.measure || e.button !== 0 || this.carry) return;
+      const hit = this.pick(e.clientX, e.clientY, { snapPx: 0 });
+      const id = hit?.objectId;
+      if (!id || !this.cb.canDrag?.(id)) return;
+      // capture phase, ahead of OrbitControls: a press on a piece doesn't orbit
+      this.controls.enabled = false;
+      press = { id, x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+      try {
+        this.canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // synthetic pointers can't be captured
+      }
+    };
+    const onMove = (e) => {
+      if (this.carry) return void this.moveCarry(e);
+      if (!press || Math.hypot(e.clientX - press.x, e.clientY - press.y) <= 4) return;
+      const { id } = press;
+      if (!this.startCarry(id, { clientX: press.x, clientY: press.y }, e)) this.controls.enabled = true;
+      press = null;
+    };
+    const onUp = () => {
+      press = null;
+      if (this.carry) this.endCarry();
+      this.controls.enabled = true;
+    };
+    const onKey = (e) => {
+      if (!this.carry) return;
+      if (e.key === "Escape") {
+        this.endCarry({ cancel: true });
+        this.controls.enabled = true;
+      } else if (e.key === "q" || e.key === "Q" || e.key === "e" || e.key === "E") {
+        const g = this.carry.entry.group;
+        g.rotateOnWorldAxis(new Vector3(0, 1, 0), ((e.key.toLowerCase() === "q" ? 1 : -1) * Math.PI) / 4);
+        g.updateMatrixWorld(true);
+        this.moveCarry({ ...this.carry.last, altKey: e.altKey || this.carry.last.altKey });
+      } else if (e.key === "f" || e.key === "F") {
+        this.flipCarried();
+        this.moveCarry({ ...this.carry.last });
+      } else if (e.key === "Alt") {
+        this.moveCarry({ ...this.carry.last, altKey: true });
+      } else return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const onKeyUp = (e) => {
+      if (this.carry && e.key === "Alt") this.moveCarry({ ...this.carry.last, altKey: false });
+    };
+    this.host.addEventListener("pointerdown", onDown, { capture: true });
+    this.canvas.addEventListener("pointermove", onMove);
+    this.canvas.addEventListener("pointerup", onUp);
+    this.canvas.addEventListener("pointercancel", onUp);
+    window.addEventListener("keydown", onKey, { capture: true });
+    window.addEventListener("keyup", onKeyUp, { capture: true });
+    this.disposers.push(() => {
+      this.host.removeEventListener("pointerdown", onDown, { capture: true });
+      this.canvas.removeEventListener("pointermove", onMove);
+      this.canvas.removeEventListener("pointerup", onUp);
+      this.canvas.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("keydown", onKey, { capture: true });
+      window.removeEventListener("keyup", onKeyUp, { capture: true });
     });
   }
 

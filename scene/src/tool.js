@@ -28,8 +28,15 @@ import { UNIT_OPTIONS, formatLength, fromUnits, roundForDisplay, toUnits } from 
 import { REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
 import { fileBytes } from "./file-content.js";
+import { revealedSecrets, seatOf } from "./secrets.js";
 
 const PRESENCE = "scene:presence";
+// a piece in someone's hand: { type, id, transform | null }, never stored
+const CARRY = "scene:carry";
+const CARRY_SEND_MS = 50;
+// a peer's carry that has gone quiet (they left mid-drag) is put back
+const CARRY_TTL_MS = 3_000;
+const GIZMO_MODES = new Set(["translate", "rotate", "hand"]);
 const PEER_TTL_MS = 15_000;
 const HEARTBEAT_MS = 5_000;
 const DEG = 180 / Math.PI;
@@ -67,11 +74,14 @@ const TEMPLATE = `
       <label class="toggle" title="Grid"><input type="checkbox" data-view="grid"> Grid</label>
       <label class="toggle" title="Axes"><input type="checkbox" data-view="axes"> Axes</label>
       <label class="toggle" title="Bounding-box dimensions"><input type="checkbox" data-view="bounds"> Bounds</label>
-      <select class="gizmo" title="Transform gizmo (G / R)" aria-label="Transform gizmo">
+      <select class="gizmo" title="Transform gizmo (G / R), or the hand (H): drag pieces across the table" aria-label="Transform gizmo">
         <option value="translate">Move</option>
         <option value="rotate">Rotate</option>
+        <option value="hand">Hand</option>
         <option value="">No gizmo</option>
       </select>
+      <label class="toggle snap-toggle" title="Put pieces down on the nearest snap point (hold Alt to place freely)"><input type="checkbox" data-view="snap"> Snap</label>
+      <select class="seat" title="Where you sit: what's in your seat's private zone (your hand) is shown to you alone" aria-label="Seat" hidden></select>
       <select class="units" title="Display units" aria-label="Display units">
         ${UNIT_OPTIONS.map((u) => `<option value="${u.value}">${u.label}</option>`).join("")}
       </select>
@@ -146,7 +156,7 @@ function docUrl(v) {
 /** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
 function displayKey(o, parent, inh) {
   const t = o.transform ?? {};
-  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh.visible}|${inh.opacity}`;
+  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh.visible}|${inh.opacity}`;
 }
 
 function hintVolume(o) {
@@ -174,6 +184,20 @@ function timings(size = 400) {
   };
 }
 
+/** This browser's own viewer id, kept in localStorage (a fresh one each time if that's unavailable). */
+function localViewer() {
+  const fresh = `viewer:${Math.random().toString(36).slice(2, 12)}`;
+  try {
+    const ls = globalThis.localStorage;
+    const v = ls?.getItem("scene-viewer");
+    if (v) return v;
+    ls?.setItem("scene-viewer", fresh);
+  } catch {
+    // private window: a viewer for this session only
+  }
+  return fresh;
+}
+
 export default function SceneTool(handle, element) {
   const repo = element.repo ?? globalThis.repo;
   const style = document.createElement("style");
@@ -190,11 +214,17 @@ export default function SceneTool(handle, element) {
   let selectedDim = null;
   let hoverId = null;
   let measure = null; // { a: Anchor | null, hover: {world, snapped} | null }
-  let gizmoMode = "translate";
+  // what the scene opens with (view.defaultGizmo, e.g. "hand" for a game table); yours alone after that
+  let gizmoMode = GIZMO_MODES.has(handle.doc()?.view?.defaultGizmo) ? handle.doc().view.defaultGizmo : "translate";
   let dead = false;
   let autoFrame = !handle.doc()?.camera;
   let registry = null;
   let filterQuery = "";
+  // Who is looking, for seats: the account's contact, else this browser's own
+  // id. (element.viewerId lets a probe put two viewers on one page.)
+  const viewer = element.viewerId ?? globalThis.accountDocHandle?.doc?.()?.contactUrl ?? localViewer();
+  let secrets = null; // { url, handle, off } — the scene's secrets doc, once found
+  let revealed = new Map(); // objectId → its secret { sourceUrl, name }, where this viewer may see it
   const objState = new Map();
   const outlineRows = new Map(); // objectId → the outline row's elements
   const displayKeys = new Map(); // objectId → displayKey last applied
@@ -331,7 +361,17 @@ export default function SceneTool(handle, element) {
         o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
       }),
     onCameraEnd: (cam) => saveCamera(cam),
+    canDrag: (id) => {
+      const o = doc().objects?.[id];
+      return !!o && !isGroup(o) && !o.locked;
+    },
+    onDragMove: (id, t) => sendCarry(id, t),
+    onDragEnd: (id, t) =>
+      updateObject(id, (o) => {
+        o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
+      }),
   });
+  viewport.setGizmoMode(gizmoMode);
   if (!viewport.ok) {
     const msg = $(".no-webgl");
     msg.hidden = false;
@@ -709,8 +749,63 @@ export default function SceneTool(handle, element) {
     }
   }
 
+  // ─── pieces in other people's hands ───────────────────────────────────────
+  let carrySent = 0;
+  let carryTimer = null;
+  let carryPending = null;
+  function sendCarry(id, transform) {
+    carryPending = { id, transform };
+    clearTimeout(carryTimer);
+    const flush = () => {
+      carryTimer = null;
+      if (dead || !carryPending) return;
+      carrySent = Date.now();
+      try {
+        handle.broadcast?.({ type: CARRY, ...carryPending });
+      } catch {
+        // best effort
+      }
+      carryPending = null;
+    };
+    // the put-down goes at once; moves at most every CARRY_SEND_MS
+    const wait = transform ? CARRY_SEND_MS - (Date.now() - carrySent) : 0;
+    if (wait <= 0) flush();
+    else carryTimer = setTimeout(flush, wait);
+  }
+  cleanups.push(() => clearTimeout(carryTimer));
+
+  // objectId → { timer, landed, from }: `from` is the doc's transform when the
+  // carry began; the timer puts the piece back if the peer goes quiet
+  const remoteCarries = new Map();
+  const transformKey = (id) => JSON.stringify(doc().objects?.[id]?.transform ?? null);
+  function endRemoteCarry(id) {
+    const c = remoteCarries.get(id);
+    if (!c) return;
+    clearTimeout(c.timer);
+    remoteCarries.delete(id);
+    viewport.setRemotePose(id, null);
+  }
+  function onRemoteCarry(msg) {
+    const id = msg.id;
+    if (typeof id !== "string" || !doc().objects?.[id]) return;
+    const prev = remoteCarries.get(id);
+    clearTimeout(prev?.timer);
+    const from = prev?.from ?? transformKey(id);
+    const t = msg.transform ? normalizeTransform(msg.transform) : null;
+    if (t) viewport.setRemotePose(id, t);
+    // Put down: if the doc already says where, show that now. The put-down
+    // can also overtake the doc change that records it: then keep showing the
+    // last pose until that change arrives (sync ends it), or a moment.
+    else if (transformKey(id) !== from) return endRemoteCarry(id);
+    remoteCarries.set(id, { from, landed: !t, timer: setTimeout(() => endRemoteCarry(id), t ? CARRY_TTL_MS : 1_000) });
+  }
+  cleanups.push(() => {
+    for (const c of remoteCarries.values()) clearTimeout(c.timer);
+  });
+
   const onEphemeral = (payload) => {
     const msg = payload?.message;
+    if (msg?.type === CARRY) return onRemoteCarry(msg);
     if (msg?.type !== PRESENCE) return;
     const sender = payload.senderId ?? "peer";
     peers.set(sender, { selected: msg.selected ?? null, hover: msg.hover ?? null, at: Date.now() });
@@ -777,6 +872,8 @@ export default function SceneTool(handle, element) {
       updateMeasure();
     }
     viewportEl.toggleAttribute("data-hovering", !!hit?.objectId);
+    const o = hit?.objectId ? doc().objects?.[hit.objectId] : null;
+    viewportEl.toggleAttribute("data-grabbable", !!o && !isGroup(o) && !o.locked);
   }
 
   function setMeasuring(on) {
@@ -1022,7 +1119,7 @@ export default function SceneTool(handle, element) {
         if (sw.value !== colour) sw.value = colour;
         sw.toggleAttribute("data-auto", !o.color);
       }
-      const label = o.name || (group ? "Group" : "Object");
+      const label = nameOf(id, o) || (group ? "Group" : "Object");
       if (name.textContent !== label) name.textContent = label;
       if (count) {
         const n = String(kids.get(id)?.length ?? 0);
@@ -1205,6 +1302,8 @@ export default function SceneTool(handle, element) {
     visible.addEventListener("change", () => updateObject(id, (x) => (x.visible = visible.checked)));
     const wire = group ? null : el("input", { type: "checkbox" });
     wire?.addEventListener("change", () => updateObject(id, (x) => (x.wireframe = wire.checked)));
+    const locked = group ? null : el("input", { type: "checkbox" });
+    locked?.addEventListener("change", () => updateObject(id, (x) => (x.locked = locked.checked)));
     const colorIn = group ? null : el("input", { type: "color" });
     colorIn?.addEventListener("input", () => updateObject(id, (x) => (x.color = colorIn.value)));
     const resetColor = group ? null : el("button", { type: "button", class: "button link", onclick: () => updateObject(id, (x) => (x.color = null)) }, "Auto");
@@ -1234,7 +1333,7 @@ export default function SceneTool(handle, element) {
     const parts = [
       el("h3", { class: "panel-title" }, group ? "Group" : "Object"),
       name,
-      el("div", { class: "cluster" }, el("label", { class: "toggle" }, visible, " Visible"), wire ? el("label", { class: "toggle" }, wire, " Wireframe") : null),
+      el("div", { class: "cluster" }, el("label", { class: "toggle" }, visible, " Visible"), wire ? el("label", { class: "toggle" }, wire, " Wireframe") : null, locked ? el("label", { class: "toggle", title: "A locked object can't be moved with the hand or the gizmo (a game board, say)" }, locked, " Locked") : null),
       group ? null : el("div", { class: "cluster" }, el("label", { class: "toggle" }, "Colour ", colorIn), resetColor),
       el("label", { class: "field" }, el("span", {}, "Opacity"), opacity),
       el("label", { class: "field", title: "Attached objects move with the object or group they're attached to; their position is relative to it" }, el("span", {}, group ? "Inside" : "Attached to"), attach),
@@ -1265,6 +1364,7 @@ export default function SceneTool(handle, element) {
       name,
       visible,
       wire,
+      locked,
       colorIn,
       opacity,
       attach,
@@ -1296,9 +1396,12 @@ export default function SceneTool(handle, element) {
     const setVal = (input, v) => {
       if (input && document.activeElement !== input) input.value = v;
     };
-    setVal(inspector.name, o.name ?? "");
+    setVal(inspector.name, nameOf(inspector.id, o) ?? "");
+    // a revealed secret's name is shown, never written back as the public one
+    inspector.name.readOnly = revealed.has(inspector.id);
     inspector.visible.checked = o.visible !== false;
     if (inspector.wire) inspector.wire.checked = !!o.wireframe;
+    if (inspector.locked) inspector.locked.checked = !!o.locked;
     setVal(inspector.colorIn, o.color || "#9aa3b5");
     setVal(inspector.opacity, String(o.opacity ?? 1));
     const t = normalizeTransform(o.transform);
@@ -1314,7 +1417,7 @@ export default function SceneTool(handle, element) {
       if (!allowed.has(tid)) continue;
       const x = objects[tid];
       if (isGroup(x)) groupOpts.push([tid, `${" ".repeat(Math.min(depth, 8))}${x.name || "Group"}`]);
-      else objectOpts.push([tid, x?.name || "Object"]);
+      else objectOpts.push([tid, nameOf(tid, x) || "Object"]);
     }
     const targets = [...groupOpts, ...objectOpts];
     const attachKey = JSON.stringify(targets);
@@ -1386,6 +1489,8 @@ export default function SceneTool(handle, element) {
     for (const input of root.querySelectorAll("[data-view]")) input.checked = !!v[input.dataset.view];
     $(".units").value = v.units;
     $(".gizmo").value = gizmoMode ?? "";
+    $(".snap-toggle").hidden = gizmoMode !== "hand";
+    viewportEl.toggleAttribute("data-hand", gizmoMode === "hand");
   }
 
   for (const input of root.querySelectorAll("[data-view]")) {
@@ -1395,6 +1500,7 @@ export default function SceneTool(handle, element) {
   $(".gizmo").addEventListener("change", (e) => {
     gizmoMode = e.target.value || null;
     viewport.setGizmoMode(gizmoMode);
+    updateToolbar();
   });
   $('[data-action="frame"]').addEventListener("click", () => viewport.frameAll());
   $('[data-action="measure"]').addEventListener("click", () => setMeasuring(!measure));
@@ -1494,8 +1600,8 @@ export default function SceneTool(handle, element) {
     } else if (e.key === "m" || e.key === "M") setMeasuring(!measure);
     else if (e.key === "f" || e.key === "F") viewport.frameAll();
     else if (e.key === "p" || e.key === "P") setPanel(root.hasAttribute("data-panel-hidden"));
-    else if (e.key === "g" || e.key === "r") {
-      gizmoMode = e.key === "g" ? "translate" : "rotate";
+    else if (e.key === "g" || e.key === "r" || e.key === "h") {
+      gizmoMode = e.key === "g" ? "translate" : e.key === "r" ? "rotate" : "hand";
       viewport.setGizmoMode(gizmoMode);
       updateToolbar();
     }
@@ -1698,6 +1804,57 @@ export default function SceneTool(handle, element) {
       .catch((err) => console.warn("[scene] rebuild failed to start", err));
   });
 
+  // ─── hidden objects and seats ─────────────────────────────────────────────
+  /** An object's name as this viewer may see it. */
+  function nameOf(id, o) {
+    return revealed.get(id)?.name ?? o?.name;
+  }
+
+  /** Follow the scene's secrets doc (it may arrive, or change, at any time). */
+  function watchSecrets(url) {
+    if ((secrets?.url ?? null) === url) return;
+    secrets?.off?.();
+    secrets = url ? { url, handle: null, off: null } : null;
+    if (!url) return;
+    const mine = secrets;
+    Promise.resolve(repo?.find?.(url))
+      .then((h) => {
+        if (dead || secrets !== mine || !h) return;
+        const onChange = () => sync();
+        h.on("change", onChange);
+        mine.handle = h;
+        mine.off = () => h.off("change", onChange);
+        sync();
+      })
+      .catch((err) => console.warn("[scene] secrets doc unavailable", err));
+  }
+  cleanups.push(() => secrets?.off?.());
+
+  function renderSeat() {
+    const select = $(".seat");
+    const seats = Object.entries(doc().seats ?? {});
+    select.hidden = !seats.length;
+    if (!seats.length) return;
+    const mine = seatOf(doc().seats, viewer) ?? "";
+    const options = [["", "Watching"], ...seats.map(([id, s]) => [id, `${s?.name || id}${s?.player && s.player !== viewer ? " (taken)" : ""}`])];
+    const key = JSON.stringify(options);
+    if (select.dataset.key !== key) {
+      select.dataset.key = key;
+      select.replaceChildren(...options.map(([v, t]) => el("option", { value: v }, t)));
+    }
+    select.value = mine;
+  }
+  $(".seat").addEventListener("change", (e) => {
+    const seat = e.target.value || null;
+    handle.change((d) => {
+      for (const s of Object.values(d.seats ?? {})) if (s.player === viewer) s.player = null;
+      if (seat && d.seats?.[seat]) d.seats[seat].player = viewer;
+    });
+    // each seat can say where its player looks from
+    const cam = seat ? doc().seats?.[seat]?.camera : null;
+    if (cam) viewport.setCamera(cam);
+  });
+
   // ─── doc → everything ─────────────────────────────────────────────────────
   let framedFromHints = false;
   function sync() {
@@ -1705,6 +1862,9 @@ export default function SceneTool(handle, element) {
     const t0 = now();
     const m = derive();
     const { d, objects, parents, tree, inherited } = m;
+    watchSecrets(docUrl(d.secretsUrl));
+    revealed = revealedSecrets(objects, secrets?.handle?.doc()?.objects, seatOf(d.seats, viewer));
+    renderSeat();
     viewport.setMaterialRules(d.materialRules);
     const tracked = new Set(manager.ids());
     let hinted = false;
@@ -1721,6 +1881,8 @@ export default function SceneTool(handle, element) {
       const key = displayKey(o, parent, inh);
       if (displayKeys.get(id) !== key) {
         displayKeys.set(id, key);
+        // a peer's put-down has arrived in the doc: show the doc's pose now
+        if (remoteCarries.get(id)?.landed) endRemoteCarry(id);
         viewport.applyDisplay(id, o, parent, inh);
       }
       if (isGroup(o)) {
@@ -1735,7 +1897,8 @@ export default function SceneTool(handle, element) {
         if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl });
         continue;
       }
-      const src = docUrl(o.sourceUrl);
+      // what this viewer may see: the secret's look, or the object's own
+      const src = docUrl(revealed.get(id)?.sourceUrl ?? o.sourceUrl);
       if (!src) continue;
       if (tracked.has(id)) manager.untrack(id);
       const b = o.hint?.bounds;
