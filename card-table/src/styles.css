@@ -1,0 +1,41 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --secure-deck-bg: var(--editor-fill, white);
+    --secure-deck-fg: var(--editor-line, black);
+    --secure-deck-muted: var(--editor-line-offset-50, #888);
+    --secure-deck-border: var(--editor-fill-offset-20, #ddd);
+    --secure-deck-family: var(--editor-family-sans, system-ui, sans-serif);
+  }
+}
+
+.secure-deck {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: var(--studio-space-lg, 1.5rem);
+  background: var(--secure-deck-bg);
+  color: var(--secure-deck-fg);
+  font-family: var(--secure-deck-family);
+  font-size: 14px;
+}
+
+.secure-deck h2 {
+  margin: 0 0 var(--studio-space-sm, 0.5rem);
+  font-size: 20px;
+}
+
+.secure-deck table {
+  border-collapse: collapse;
+}
+
+.secure-deck td {
+  padding: 3px 12px 3px 0;
+  border-bottom: 1px solid var(--secure-deck-border);
+}
+
+.secure-deck .muted {
+  color: var(--secure-deck-muted);
+  max-width: 40em;
+}
