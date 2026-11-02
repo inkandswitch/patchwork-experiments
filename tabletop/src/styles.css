@@ -1,0 +1,222 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --tabletop-bg: var(--editor-fill, white);
+    --tabletop-fg: var(--editor-line, black);
+    --tabletop-muted: var(--editor-line-offset-50, #888);
+    --tabletop-border: var(--editor-fill-offset-20, #ddd);
+    --tabletop-field: var(--editor-fill-offset-10, #f6f6f6);
+    --tabletop-accent: var(--studio-primary-fill, var(--studio-primary, #35f7ca));
+    --tabletop-accent-ink: var(--studio-primary-line, black);
+    --tabletop-family: var(--editor-family-sans, system-ui, sans-serif);
+    --tabletop-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+.tabletop-game {
+  box-sizing: border-box;
+  height: 100%;
+  overflow: auto;
+  padding: var(--studio-space-lg, 1.5rem);
+  background: var(--tabletop-bg);
+  color: var(--tabletop-fg);
+  font-family: var(--tabletop-family);
+  font-size: 14px;
+}
+
+.tabletop-game > * + * {
+  margin-top: var(--studio-space, 0.75rem);
+}
+
+.tabletop-game .head {
+  display: flex;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: center;
+}
+
+.tabletop-game .title {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 2px 4px;
+}
+
+.tabletop-game .title:hover,
+.tabletop-game .title:focus {
+  border-color: var(--tabletop-border);
+}
+
+.tabletop-game h3 {
+  margin: 0 0 var(--studio-space-xs, 0.375rem);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tabletop-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tabletop-game .muted {
+  color: var(--tabletop-muted);
+}
+
+.tabletop-game .status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 12px;
+}
+
+.tabletop-game textarea,
+.tabletop-game input[type="text"],
+.tabletop-game input[type="number"] {
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--tabletop-field);
+  border: 1px solid var(--tabletop-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 4px 6px;
+}
+
+.tabletop-game .head .title {
+  background: none;
+}
+
+.tabletop-game .about {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.tabletop-game .json {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--tabletop-family-code);
+  font-size: 12px;
+}
+
+.tabletop-game table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.tabletop-game td,
+.tabletop-game th {
+  padding: 3px 6px 3px 0;
+  text-align: left;
+  font-weight: normal;
+}
+
+.tabletop-game th {
+  color: var(--tabletop-muted);
+  font-size: 12px;
+}
+
+.tabletop-game td input[type="text"] {
+  width: 100%;
+}
+
+.tabletop-game td input[type="number"] {
+  width: 5em;
+}
+
+.tabletop-game .swatches {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.tabletop-game .swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 2px;
+  border-radius: 50%;
+  border: 1px solid var(--tabletop-border);
+  vertical-align: middle;
+}
+
+.tabletop-game .toggle {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.tabletop-game .cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: center;
+  margin-top: var(--studio-space-xs, 0.375rem);
+}
+
+.tabletop-game .button {
+  font: inherit;
+  color: inherit;
+  background: var(--tabletop-field);
+  border: 1px solid var(--tabletop-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.tabletop-game .button.primary {
+  background: var(--tabletop-accent);
+  color: var(--tabletop-accent-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.tabletop-game .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.tabletop-game .tables ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.tabletop-game .tables a {
+  color: inherit;
+}
+
+.tabletop-game .definition summary {
+  cursor: pointer;
+  color: var(--tabletop-muted);
+}
+
+.tabletop-game .empty {
+  padding: var(--studio-space, 0.75rem);
+  border: 1px dashed var(--tabletop-border);
+  border-radius: var(--studio-radius, 8px);
+}
+
+.tabletop-game .games {
+  list-style: none;
+  margin: var(--studio-space-sm, 0.5rem) 0;
+  padding: 0;
+}
+
+.tabletop-game .games li {
+  display: flex;
+  gap: var(--studio-space-sm, 0.5rem);
+  align-items: baseline;
+  margin-top: var(--studio-space-xs, 0.375rem);
+}
+
+.tabletop-game .games .button {
+  min-width: 9em;
+  text-align: left;
+}
+
+.tabletop-game .deck summary {
+  cursor: pointer;
+  margin-top: var(--studio-space-xs, 0.375rem);
+}
