@@ -34,7 +34,7 @@ Draw the top card of the deck, or the top card of any discard pile except the on
 
 The game ends when the last card of the deck is drawn. Each expedition you started scores the sum of its numbers minus 20, times one more than the number of wagers in it; one with 8 or more cards scores 20 more. Expeditions you never started score nothing.
 
-In this scene: choose your seat in the top bar. Your hand is the tray at your edge, and only you see its faces. Carry the top card of the deck to your tray to draw it. A card played face up is seen by everyone. F flips a card while you carry it.`;
+In this scene: choose your seat in the top bar. Once both players are seated, your two clients shuffle the deck between them (a few seconds) so that neither of you knows its order. Your hand is the tray at your edge, and only you see its faces; a card's face appears for you once the other player's client has handed over its key, so play with both of you at the table. Carry the top card of the deck to your tray to draw it. A card played face up is seen by everyone. F flips a card while you carry it.`;
 
 /** The underside every card shares: a back panel with a gold diamond. */
 const underside = () => [
@@ -136,7 +136,7 @@ export function fill(d) {
     p2: { name: "Player 2", camera: { position: [0, 0.5, -0.95], target: [0, 0, -0.16] } },
   };
   d.decks = {
-    main: { name: "Deck", at: [0.3, 0], yaw: 0, faceDown: true, deal: [{ to: "hand1", count: 8 }, { to: "hand2", count: 8 }] },
+    main: { name: "Deck", at: [0.3, 0], yaw: 0, faceDown: true, secure: true, deal: [{ to: "hand1", count: 8 }, { to: "hand2", count: 8 }] },
   };
   d.camera = { position: [0.95, 0.7, 0], target: [0, 0, 0] };
   if (!d.tables) d.tables = [];

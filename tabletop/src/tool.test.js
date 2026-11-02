@@ -132,7 +132,7 @@ describe("the tabletop-game tool", () => {
     cleanup();
   });
 
-  it("sets up Lost Cities with its secrets in a doc of their own", async () => {
+  it("sets up Lost Cities with its deck in a doc of its own, for the players to shuffle", async () => {
     const repo = fakeRepo();
     const init = {};
     TabletopGameDatatype.init(init);
@@ -145,13 +145,14 @@ describe("the tabletop-game tool", () => {
     await until(() => button(element, "Lost Cities"));
     button(element, "Lost Cities").click();
     await until(() => game.doc().title === "Lost Cities");
-    expect(element.querySelector(".deck summary").textContent).toMatch(/60 cards of 50 kinds, shuffled face down; deals 8 to Player 1's hand, 8 to Player 2's hand/);
+    expect(element.querySelector(".deck summary").textContent).toMatch(/60 cards of 50 kinds, shuffled by the players face down; deals 8 to Player 1's hand, 8 to Player 2's hand/);
     button(element, "Set up a table").click();
     await until(() => opened.length === 1, 4000);
     const scene = (await repo.find(opened[0].url)).doc();
-    const secrets = (await repo.find(scene.secretsUrl)).doc();
-    expect(Object.keys(secrets.objects)).toHaveLength(60);
-    for (const id of Object.keys(secrets.objects)) expect(scene.objects[id].name).toBe("Card");
+    const deck = (await repo.find(scene.secretsUrl)).doc();
+    expect(deck["@patchwork"].type).toBe("secure-deck");
+    expect(deck.faces).toHaveLength(60);
+    for (const id of Object.keys(deck.slots)) expect(scene.objects[id].name).toBe("Card");
     cleanup();
   });
 });

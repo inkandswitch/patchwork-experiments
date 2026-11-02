@@ -127,15 +127,40 @@ putting it down face up, and turning one over (F while carrying) reveals it.
 Only passthrough objects (GLB files) can be hidden this way. A revealed name
 shows in the outline and inspector and is never written back.
 
-**What this protects against.** This is a table, not a vault: the secrets doc
-is an ordinary document, and anyone who opens it (or the inspector) can read
-every card, as anyone at a real table can peek. What it does guarantee is that
-the scene itself — the outline, the inspector, ids, groups, order, the GLBs
-fetched — gives nothing away. Real secrecy goes behind the same seam: secrets
-split into one doc per audience (a seat's hand readable by that player alone,
-with keyhive access control), and a deck nobody can read, which needs a
-cryptographic shuffle. The scene would only need to read more than one secrets
-doc; nothing else about it changes.
+**Resolvers.** The scene reads the secrets doc through a resolver. A plain
+`scene-secrets` doc (above) has a built-in one. For any other kind of doc it
+looks for a `scene:secrets` plugin whose `supportedDatatypes` include the
+doc's type (a late-bound lookup, like `scene:source`):
+
+```js
+{ type: "scene:secrets", id, name, supportedDatatypes: ["secure-deck"],
+  async load() { return { createResolver } } }
+
+createResolver({ repo, handle /* the secrets doc */, viewer, onChange }) → {
+  update(ctx),        // on every scene change, with
+                      //   { objects, seats, viewer, players /* seated, in seat order */,
+                      //     openSeats /* names of seats nobody has taken */,
+                      //     visibleTo(player | null) → Set of object ids that player
+                      //       (null: everyone) may see, by the rule above,
+                      //     nameOf(player) → their seat's name }
+  looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
+  status(),           // → a line for the HUD (a shuffle in progress, keys awaited), or null
+  dispose(),
+}
+```
+
+Call `onChange` when `looks()` or `status()` changes. `src/secrets.js` has the
+rule (`visibility`) and the plain resolver.
+
+**What this protects against.** With a plain secrets doc: this is a table,
+not a vault. The doc is an ordinary document, and anyone who opens it (or the
+inspector) can read every card, as anyone at a real table can peek. What is
+guaranteed is that the scene itself — the outline, the inspector, ids, groups,
+order, the GLBs fetched — gives nothing away. With a `secure-deck` from the
+card-table package, the seated players shuffle the deck between them
+(mental poker): nobody knows its order, and a card's face can only be
+decrypted by the players the rule above lets see it. See card-table's README
+for how, and for what it doesn't do yet.
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
   depth labels.

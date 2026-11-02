@@ -216,16 +216,21 @@ describe("Lost Cities", () => {
     }
   });
 
-  async function table(seed = 3) {
+  /** A Lost Cities table; `secure: false` for the plain secrets doc. */
+  async function table(seed = 3, { secure = true } = {}) {
     const repo = fakeRepo();
     const game = await newGame(repo, loadLostCities);
+    if (!secure) game.change((d) => (d.decks.main.secure = false));
     await ensurePieceGLBs(repo, game);
-    return { game: game.doc(), ...tableScene(game.doc(), game.url, { rng: seeded(seed) }) };
+    const t = tableScene(game.doc(), game.url, { rng: seeded(seed) });
+    // which object is which card, as far as setup knows (before any shuffle by the players)
+    const truth = t.secrets.objects ?? Object.fromEntries(Object.entries(t.secrets.slots).map(([id, k]) => [id, t.secrets.faces[k]]));
+    return { game: game.doc(), ...t, truth };
   }
 
   it("deals 8 face up into each hand tray, stacks the other 44 face down, and seats two", async () => {
-    const { game, scene, secrets } = await table();
-    const cards = Object.entries(scene.objects).filter(([id]) => secrets.objects[id]);
+    const { game, scene, truth } = await table();
+    const cards = Object.entries(scene.objects).filter(([id]) => truth[id]);
     expect(cards).toHaveLength(60);
     const at = (z) => cards.filter(([, o]) => Math.abs(o.transform.position[2] - z) < 0.01);
     const hand1 = at(0.5);
@@ -249,7 +254,7 @@ describe("Lost Cities", () => {
   });
 
   it("says nothing in the scene about which card is which", async () => {
-    const { game, scene, secrets } = await table();
+    const { game, scene, truth } = await table();
     const text = JSON.stringify(scene);
     for (const [kind, p] of Object.entries(game.pieces)) {
       if (!p.hidden) continue;
@@ -258,21 +263,42 @@ describe("Lost Cities", () => {
       expect(text).not.toContain(kind);
     }
     // the cards are all just "Card", and in one group named for the deck
-    const cards = Object.entries(scene.objects).filter(([id]) => secrets.objects[id]);
+    const cards = Object.entries(scene.objects).filter(([id]) => truth[id]);
     expect(new Set(cards.map(([, o]) => o.name))).toEqual(new Set(["Card"]));
     expect(new Set(cards.map(([, o]) => o.sourceUrl))).toEqual(new Set([game.pieces.back.glbUrl]));
     expect(scene.objects[cards[0][1].parent].name).toBe("Deck (60)");
     // and the secrets say exactly which 60
-    const names = Object.values(secrets.objects).map((x) => x.name);
+    const names = Object.values(truth).map((x) => x.name);
     expect(names.filter((n) => n === "Red wager")).toHaveLength(3);
     expect(names.filter((n) => n === "Blue 7")).toHaveLength(1);
+  });
+
+  it("a secure deck becomes a secure-deck doc for the players to shuffle: every card, one slot each", async () => {
+    const { scene, secrets } = await table();
+    expect(secrets).toMatchObject({ "@patchwork": { type: "secure-deck" }, group: "rfc3526-2048", phase: "waiting", participants: [], cards: null });
+    expect(secrets.faces).toHaveLength(60);
+    expect(Object.values(secrets.slots).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, k) => k));
+    for (const id of Object.keys(secrets.slots)) expect(scene.objects[id].name).toBe("Card");
+  });
+
+  it("an ordinary deck gets a plain secrets doc", async () => {
+    const { secrets } = await table(3, { secure: false });
     expect(secrets["@patchwork"].type).toBe("scene-secrets");
+    expect(Object.keys(secrets.objects)).toHaveLength(60);
+  });
+
+  it("refuses a secure deck alongside another deck", async () => {
+    const repo = fakeRepo();
+    const game = await newGame(repo, loadLostCities);
+    game.change((d) => (d.decks.other = { name: "Other", at: [0, 0] }));
+    await ensurePieceGLBs(repo, game);
+    expect(() => tableScene(game.doc(), game.url)).toThrow(/one secure deck/);
   });
 
   it("shuffles differently each time", async () => {
     const a = await table(3);
     const b = await table(11);
-    const handOf = (t) => Object.entries(t.scene.objects).filter(([id, o]) => t.secrets.objects[id] && o.transform.position[2] > 0.4).map(([id]) => t.secrets.objects[id].name).sort();
+    const handOf = (t) => Object.entries(t.scene.objects).filter(([id, o]) => t.truth[id] && o.transform.position[2] > 0.4).map(([id]) => t.truth[id].name).sort();
     expect(handOf(a)).not.toEqual(handOf(b));
   });
 });

@@ -12,6 +12,11 @@
 //   In the scene each is its `back` piece (name, GLB, box): which card it
 //   really is goes only in the secrets doc, and ids follow deck order, so
 //   nothing in the scene says which is which.
+// - A `secure` deck's secrets doc is a `secure-deck` (the card-table
+//   package's; card-table/README.md): it lists the cards and which object is
+//   which position in the deck, and the seated players shuffle it between
+//   them so that nobody knows the order. One per table: the shuffle mixes
+//   every card in it.
 // - A piece with a `zone` makes its copy a seat's private area.
 // - The scene opens in the hand, with snapping on, the grid and axes off.
 
@@ -162,6 +167,29 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
   }
 
   const hasSecrets = Object.keys(secretObjects).length > 0;
+  const secure = Object.entries(game?.decks ?? {}).filter(([, deck]) => deck?.secure);
+  let secrets = null;
+  if (hasSecrets && secure.length) {
+    if (Object.keys(game.decks).length > 1) throw new Error("a table can have one secure deck, and no other decks, for now");
+    // positions in the deck are the objects in the order they were made; the players' shuffle decides which card each is
+    const ids = Object.keys(secretObjects);
+    secrets = {
+      "@patchwork": { type: "secure-deck" },
+      title: `${title ?? `${game?.title || "Game"} table`}: ${secure[0][1].name || secure[0][0]}`,
+      group: "rfc3526-2048",
+      faces: ids.map((oid) => ({ ...secretObjects[oid] })),
+      slots: Object.fromEntries(ids.map((oid, k) => [oid, k])),
+      phase: "waiting",
+      participants: [],
+      pass: null,
+      turn: 0,
+      working: null,
+      cards: null,
+      shares: {},
+    };
+  } else if (hasSecrets) {
+    secrets = { "@patchwork": { type: "scene-secrets" }, title: `${title ?? `${game?.title || "Game"} table`}: hidden cards`, objects: secretObjects };
+  }
   const seats = {};
   for (const [sid, s] of Object.entries(game?.seats ?? {})) {
     seats[sid] = { name: s?.name || sid, player: null, ...(s?.camera ? { camera: JSON.parse(JSON.stringify(s.camera)) } : {}) };
@@ -178,6 +206,6 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       camera: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
       ...(Object.keys(seats).length ? { seats } : {}),
     },
-    secrets: hasSecrets ? { "@patchwork": { type: "scene-secrets" }, title: `${name}: hidden cards`, objects: secretObjects } : null,
+    secrets,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isFaceUp, revealedSecrets, seatAt, seatOf, zoneRegions } from "./secrets.js";
+import { isFaceUp, plainResolver, revealedSecrets, seatAt, seatOf, seatedPlayers, visibility, zoneRegions } from "./secrets.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
 const objects = {
@@ -64,5 +64,42 @@ describe("seatOf", () => {
     expect(seatOf(seats, "automerge:me")).toBe("p1");
     expect(seatOf(seats, "automerge:you")).toBeNull();
     expect(seatOf(seats, null)).toBeNull();
+  });
+});
+
+describe("visibility", () => {
+  const seats = { p1: { name: "Player 1", player: "automerge:me" }, p2: { name: "Player 2", player: "automerge:you" } };
+  it("is the zone rule, per player; null is what everyone sees", () => {
+    const v = visibility(objects, seats);
+    // (each tray is inside its own zone, so it counts as its seat's; harmless, it isn't hidden)
+    expect([...v("automerge:me")].sort()).toEqual(["faceUp", "hand1", "inHand1", "onTray", "public"]);
+    expect([...v("automerge:you")].sort()).toEqual(["faceUp", "hand2", "inHand2Flipped", "public"]);
+    expect([...v(null)].sort()).toEqual(["faceUp", "public"]);
+    expect([...v("automerge:stranger")]).toEqual([...v(null)]);
+  });
+  it("lists who is seated", () => {
+    expect(seatedPlayers(seats)).toEqual(["automerge:me", "automerge:you"]);
+    expect(seatedPlayers({ a: { player: null } })).toEqual([]);
+  });
+});
+
+describe("plainResolver", () => {
+  it("looks up what the viewer may see, and says when that changes", () => {
+    let doc = { objects: secrets };
+    const listeners = new Set();
+    const handle = { doc: () => doc, on: (_, f) => listeners.add(f), off: (_, f) => listeners.delete(f) };
+    let changes = 0;
+    const r = plainResolver({ handle, viewer: "automerge:me", onChange: () => changes++ });
+    const seats = { p1: { name: "Player 1", player: "automerge:me" } };
+    r.update({ visibleTo: visibility(objects, seats) });
+    expect([...r.looks().values()].map((s) => s.name).sort()).toEqual(["Green 10", "Red 7", "Yellow wager"]);
+    doc = { objects: { ...secrets, faceUp: secret("Blue 9") } };
+    for (const f of listeners) f();
+    expect(changes).toBe(1);
+    expect(r.looks().get("faceUp").name).toBe("Blue 9");
+    for (const f of listeners) f(); // nothing new
+    expect(changes).toBe(1);
+    r.dispose();
+    expect(listeners.size).toBe(0);
   });
 });

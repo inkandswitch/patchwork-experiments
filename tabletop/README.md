@@ -77,9 +77,12 @@ tool by id. Without the scene installed the tables are just documents.
   goes only into the table's `scene-secrets` doc. Cards are created in deck
   order and grouped by deck, not by kind, so ids, groups and order say
   nothing. A seat's hand tray is a piece with a `zone`, and becomes a private
-  zone in the scene. The secrets doc is readable by anyone who opens it — see
-  the scene's README, "What this protects against", for that and the way
-  forward.
+  zone in the scene. For an ordinary deck the secrets doc is a plain
+  `scene-secrets` doc, readable by anyone who opens it. For a `secure` deck
+  it's a `secure-deck` (the card-table package's): setup lists the cards and
+  which object is which position, and the seated players' clients shuffle it
+  between them once every seat is taken, so nobody knows the order. Lost
+  Cities uses one; the game page has a toggle.
 
 ## Documents
 
@@ -101,6 +104,8 @@ Deck = {
   name: string,
   at: [x, z], yaw?: number,          // where the undealt cards stack
   faceDown?: boolean,
+  secure?: boolean,                  // the players shuffle it between them (card-table's secure deck);
+                                     // one per table, and no other decks with it, for now
   deal?: { to: kind, count: number }[]   // dealt face up onto that piece's snap points, in order
 }
 
@@ -162,9 +167,8 @@ grid and axes off and units in cm.
 
 ## Not yet
 
-- Real secrecy (per-seat secrets docs with access control; a cryptographic
-  shuffle for the deck). Today's hiding is honest about what it is: the
-  scene gives nothing away, the secrets doc does.
+- Signed docs (keyhive) for the secure deck, so a turn or a key can't be
+  forged; see card-table's README for its other limits.
 - Shuffling a pile during play, and a bag to draw from (tiles, chits).
 - Santorini's god powers, as face-up cards.
 - Printed faces (textures): card faces are made of boxes for now.

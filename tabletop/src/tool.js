@@ -176,7 +176,13 @@ export default function TabletopGameTool(handle, element) {
       return el(
         "details",
         { class: "deck" },
-        el("summary", {}, `${deck.name || deckId}: ${total} cards of ${inDeck.length} kinds, shuffled${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
+        el("summary", {}, `${deck.name || deckId}: ${total} cards of ${inDeck.length} kinds, shuffled${deck.secure ? " by the players" : ""}${deck.faceDown ? " face down" : ""}${deals ? `; deals ${deals}` : ""}`),
+        el(
+          "label",
+          { class: "toggle", title: "With the card-table package installed: the seated players' own clients shuffle the deck, encrypted, so nobody knows its order and nobody can read a card they aren't shown. Without it, the cards are hidden from the table but listed in an ordinary document." },
+          el("input", { type: "checkbox", checked: !!deck.secure, onchange: (e) => handle.change((g) => (g.decks[deckId].secure = e.target.checked)) }),
+          " The players shuffle it between them (needs every player at the table)",
+        ),
         table(inDeck),
       );
     });

@@ -28,7 +28,7 @@ import { UNIT_OPTIONS, formatLength, fromUnits, roundForDisplay, toUnits } from 
 import { REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
 import { fileBytes } from "./file-content.js";
-import { revealedSecrets, seatOf } from "./secrets.js";
+import { plainResolver, seatOf, seatedPlayers, visibility } from "./secrets.js";
 
 const PRESENCE = "scene:presence";
 // a piece in someone's hand: { type, id, transform | null }, never stored
@@ -223,7 +223,7 @@ export default function SceneTool(handle, element) {
   // Who is looking, for seats: the account's contact, else this browser's own
   // id. (element.viewerId lets a probe put two viewers on one page.)
   const viewer = element.viewerId ?? globalThis.accountDocHandle?.doc?.()?.contactUrl ?? localViewer();
-  let secrets = null; // { url, handle, off } — the scene's secrets doc, once found
+  let secrets = null; // { url, resolver } — the scene's secrets doc and what reads it, once found
   let revealed = new Map(); // objectId → its secret { sourceUrl, name }, where this viewer may see it
   const objState = new Map();
   const outlineRows = new Map(); // objectId → the outline row's elements
@@ -1159,6 +1159,9 @@ export default function SceneTool(handle, element) {
     }
     if (building) bits.push(el("span", { class: "pill", dataset: { state: "building" } }, `Building ${building}…`));
     if (errors) bits.push(el("span", { class: "pill", dataset: { state: "error" } }, `${errors} error${errors > 1 ? "s" : ""}`));
+    // what the hidden objects are waiting on (a shuffle, another player's keys)
+    const secret = secrets?.problem ?? secrets?.resolver?.status?.();
+    if (secret) bits.push(el("span", { class: "pill", dataset: { state: secrets?.problem ? "error" : "loading" } }, secret));
     $(".hud").replaceChildren(...bits);
   }
 
@@ -1810,25 +1813,42 @@ export default function SceneTool(handle, element) {
     return revealed.get(id)?.name ?? o?.name;
   }
 
-  /** Follow the scene's secrets doc (it may arrive, or change, at any time). */
+  /**
+   * Follow the scene's secrets doc, through a resolver: the built-in one for a
+   * plain `scene-secrets` doc, else a `scene:secrets` plugin for its datatype
+   * (an encrypted deck, say). It may arrive, or change, at any time.
+   */
   function watchSecrets(url) {
     if ((secrets?.url ?? null) === url) return;
-    secrets?.off?.();
-    secrets = url ? { url, handle: null, off: null } : null;
+    secrets?.resolver?.dispose?.();
+    secrets = url ? { url, resolver: null, problem: null } : null;
     if (!url) return;
     const mine = secrets;
-    Promise.resolve(repo?.find?.(url))
-      .then((h) => {
-        if (dead || secrets !== mine || !h) return;
-        const onChange = () => sync();
-        h.on("change", onChange);
-        mine.handle = h;
-        mine.off = () => h.off("change", onChange);
-        sync();
-      })
-      .catch((err) => console.warn("[scene] secrets doc unavailable", err));
+    (async () => {
+      const h = await repo.find(url);
+      if (dead || secrets !== mine || !h) return;
+      const type = h.doc()?.["@patchwork"]?.type ?? null;
+      let create = null;
+      if (!type || type === "scene-secrets") create = plainResolver;
+      else {
+        const registry = (await registryReady)?.getRegistry?.("scene:secrets");
+        const provider = registry?.filter?.((p) => Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(type))?.[0];
+        if (provider) create = (await registry.load(provider.id))?.module?.createResolver ?? null;
+      }
+      if (dead || secrets !== mine) return;
+      if (!create) {
+        mine.problem = `Hidden objects can't be shown: nothing installed reads “${type}” documents.`;
+        return void schedule("hud");
+      }
+      mine.resolver = create({ repo, handle: h, viewer, onChange: () => sync() });
+      sync();
+    })().catch((err) => {
+      console.warn("[scene] secrets unavailable", err);
+      mine.problem = `Hidden objects can't be shown: ${err?.message ?? err}`;
+      schedule("hud");
+    });
   }
-  cleanups.push(() => secrets?.off?.());
+  cleanups.push(() => secrets?.resolver?.dispose?.());
 
   function renderSeat() {
     const select = $(".seat");
@@ -1863,7 +1883,18 @@ export default function SceneTool(handle, element) {
     const m = derive();
     const { d, objects, parents, tree, inherited } = m;
     watchSecrets(docUrl(d.secretsUrl));
-    revealed = revealedSecrets(objects, secrets?.handle?.doc()?.objects, seatOf(d.seats, viewer));
+    if (secrets?.resolver) {
+      secrets.resolver.update({
+        objects,
+        seats: d.seats ?? {},
+        viewer,
+        players: seatedPlayers(d.seats),
+        openSeats: Object.entries(d.seats ?? {}).filter(([, s]) => !s?.player).map(([id, s]) => s?.name || id),
+        visibleTo: visibility(objects, d.seats),
+        nameOf: (player) => Object.values(d.seats ?? {}).find((s) => s?.player === player)?.name ?? "someone",
+      });
+      revealed = secrets.resolver.looks();
+    } else revealed = new Map();
     renderSeat();
     viewport.setMaterialRules(d.materialRules);
     const tracked = new Set(manager.ids());
