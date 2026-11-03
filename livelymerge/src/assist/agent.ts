@@ -36,6 +36,26 @@ export type AgentEvent =
 
 type Content = Anthropic.Beta.BetaContentBlockParam[];
 
+/** The API's stand-in text for a progress update cut off by max_tokens; never spoken. */
+const INTERRUPTED_SENTINEL = 'This part of the response was interrupted before it finished.';
+/** What gets spoken when the model stops: at most this many characters, whole sentences. */
+export const CLOSING_SPEECH_MAX = 220;
+
+/** The first sentence(s) of `text`, up to `max` chars — the part that is spoken aloud. */
+export function capSpeech(text: string, max = CLOSING_SPEECH_MAX): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const sentences = t.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) ?? [t];
+  let out = '';
+  for (const sentence of sentences) {
+    if (out && (out + sentence).trim().length > max) break;
+    out += sentence;
+    if (out.trim().length > max) break;
+  }
+  out = out.trim();
+  return out.length > max ? out.slice(0, max - 1).trimEnd() + '…' : out;
+}
+
 function storage(): Storage | null {
   try {
     return window.localStorage;
@@ -197,10 +217,16 @@ export class Agent {
         this.emit({ kind: 'request', turn });
         let response: Anthropic.Beta.BetaMessage;
         try {
+          const haiku = model.startsWith('claude-haiku');
+          const betas: string[] = [];
           // Haiku has no server-side refusal fallback; the others get the default chain.
-          const fallback = model.startsWith('claude-haiku')
-            ? {}
-            : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const };
+          const fallback = haiku ? {} : { fallbacks: 'default' as const };
+          if (!haiku) betas.push('server-side-fallback-2026-07-01');
+          // The notes the model writes between tool calls ("let me open its halo") come
+          // back as progress-update thinking blocks, EMPTY unless we ask for them. They
+          // are what the user hears while the model works.
+          const thinking = haiku ? {} : { thinking: { type: 'adaptive' as const, display: 'updates' as const } };
+          if (!haiku) betas.push('thinking-display-updates-2026-08-18');
           response = await client.beta.messages.create({
             model,
             max_tokens: 8000,
@@ -208,7 +234,9 @@ export class Agent {
             tools: TOOLS,
             messages,
             output_config: { effort: opts.effort ?? 'medium' },
+            ...thinking,
             ...fallback,
+            ...(betas.length ? { betas } : {}),
           });
         } catch (err) {
           let text: string;
@@ -249,7 +277,15 @@ export class Agent {
         const texts: string[] = [];
         const toolUses: Anthropic.Beta.BetaToolUseBlock[] = [];
         for (const block of response.content) {
-          if (block.type === 'text') {
+          if (block.type === 'thinking') {
+            // Under display: "updates" a non-empty thinking block is a progress update.
+            const t = (block.thinking ?? '').trim();
+            if (t && t !== INTERRUPTED_SENTINEL) {
+              texts.push(t);
+              console.log('%cprogress:', 'color:#ff6a00', t);
+              this.emit({ kind: 'text', text: t });
+            }
+          } else if (block.type === 'text') {
             texts.push(block.text);
             console.log('%csays:', 'color:#ff6a00', block.text);
             this.emit({ kind: 'text', text: block.text });
@@ -268,9 +304,14 @@ export class Agent {
         }
         messages.push({ role: 'assistant', content: response.content });
         if (toolUses.length === 0 || response.stop_reason === 'end_turn') {
-          // Plain text at the end is the model talking to the user: say it.
+          // The model is done: speak the gist (whole sentences, hard-capped), not the
+          // essay — the full text stays in the transcript and the console.
           const closing = texts.join(' ').trim();
-          if (closing) await this.sayText(closing);
+          if (closing) {
+            const spoken = capSpeech(closing);
+            if (spoken.length < closing.length) console.log('%cclosing (spoken part):', 'color:#ff6a00', spoken);
+            await this.sayText(spoken);
+          }
           return;
         }
         // Text alongside tool calls is narration: speak it while the tools run.
@@ -318,7 +359,13 @@ export class Agent {
         case 'perform': {
           const steps = Array.isArray(input.steps) ? (input.steps as Step[]) : [];
           status('Talk & Draw — performing…');
+          // A narration field is spoken as the steps start (it takes the voice over
+          // from any turn-level progress update still playing).
+          const narration = typeof input.narration === 'string' ? input.narration.trim() : '';
+          const narrating = narration ? this.executor.narrate(narration).catch(() => {}) : Promise.resolve();
+          if (narration) this.emit({ kind: 'text', text: narration });
           const r = await this.executor.perform(steps, { scale });
+          await narrating;
           const summary = r.steps.map((s) => ({
             index: s.index,
             type: s.type,

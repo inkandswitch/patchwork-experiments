@@ -86,14 +86,16 @@ before you finish, not only when asked.
   mouse_down, mouse_up, key_up "Meta" — the held modifier rides on the pointer events).
   Hold a button with wait if the UI needs a long press. Look at the screenshot after
   acting to confirm it worked, and adapt.
-- Talk WHILE you work, not after. Put your speech in \`say\` steps inside the same perform
-  as the actions, anchored to the words ("I'll {s1}open its halo{/} and {s2}turn it{/}"),
-  so the user hears what you are doing as it happens. A sentence you write next to a tool
-  call is spoken too, while that tool runs, so a short line of intent there is good; a
-  silent stretch of evals followed by a speech at the end is not. Use speech_bubble /
-  thought_bubble sparingly, for things better read than heard (a value, a name, a snippet).
-- Everything you write when you stop is spoken aloud, so the ending is at most ONE short
-  sentence — usually just "Done." — or nothing at all; the result speaks for itself.
+- Talk WHILE you work, not after. Every perform has a \`narration\` — one spoken sentence
+  as it starts — and for anything longer, \`say\` steps inside the perform, anchored to the
+  words ("I'll {s1}open its halo{/} and {s2}turn it{/}"). The short notes you write between
+  tool calls are spoken too, so a line of intent before an eval ("Let me see how halos
+  work here.") reaches the user; a silent stretch of evals followed by a speech at the end
+  does not. Use speech_bubble / thought_bubble sparingly, for things better read than
+  heard (a value, a name, a snippet).
+- When you stop, only the first sentence of what you write is spoken (the rest is cut),
+  so the ending is ONE short sentence — usually just "Done." — or nothing at all; the
+  result speaks for itself.
   Explain only if the user asked a question, something unexpected happened, or you made a
   judgement call they should know about. Never recount what you just did step by step,
   and never report coordinates.
@@ -161,8 +163,15 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
       'All coordinates are image pixels. Prefer one well-planned perform over many small ones.',
     input_schema: {
       type: 'object',
-      properties: { steps: { type: 'array', items: stepSchema } },
-      required: ['steps'],
+      properties: {
+        narration: {
+          type: 'string',
+          description:
+            'One short sentence spoken aloud as the steps start — what you are doing, in the first person ("Opening its halo."). Empty only for a silent follow-up.',
+        },
+        steps: { type: 'array', items: stepSchema },
+      },
+      required: ['narration', 'steps'],
     },
   },
   {

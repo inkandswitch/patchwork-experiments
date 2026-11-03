@@ -287,3 +287,23 @@ describe('bubbleTail', () => {
     expect(bubbleTail(100, 100, 200, 60, { x: 150, y: 130 })).toBeNull();
   });
 });
+
+// ---- closing speech cap ----------------------------------------------------------
+
+import { capSpeech } from './agent';
+
+describe('capSpeech', () => {
+  it('keeps short text, cuts long text at a sentence boundary, never exceeds the cap by much', () => {
+    expect(capSpeech('Done.')).toBe('Done.');
+    const long =
+      'I rotated the ladybug by 45 degrees counterclockwise using the halo. ' +
+      'First I opened the halo with a cmd-click, then I dragged the R handle around the center, ' +
+      'and finally I clicked on the background to dismiss it. Let me know if you want more!';
+    const cut = capSpeech(long, 120);
+    expect(cut).toBe('I rotated the ladybug by 45 degrees counterclockwise using the halo.');
+    const oneHuge = 'word '.repeat(80).trim();
+    expect(capSpeech(oneHuge, 50).length).toBeLessThanOrEqual(50);
+    expect(capSpeech(oneHuge, 50).endsWith('…')).toBe(true);
+  });
+});
+
