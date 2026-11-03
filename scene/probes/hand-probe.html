@@ -71,13 +71,18 @@ try {
   const backGLB = file("back.glb", { meshes: [box(0.04, 0.002, 0.06, "#6b3e26")] });
   const faceGLB = file("red-7.glb", { meshes: [box(0.04, 0.002, 0.06, "#c4452f")] });
   objects.tray = obj("Seat 1's tray", trayGLB, [-0.25, 0, 0.25], { locked: true, zone: { seat: "s1", min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] } });
-  objects.inTray = obj("Card", backGLB, [-0.25, 0.002, 0.25]);
-  objects.faceDown = obj("Card", backGLB, [0.25, 0.002, 0.15]);
+  const blueGLB = file("blue-3.glb", { meshes: [box(0.04, 0.002, 0.06, "#2f6db5")] });
+  const secretsDoc = repo.add({ "@patchwork": { type: "scene-secrets" }, title: "secrets", objects: { inTray: { sourceUrl: faceGLB.url, name: "Red 7" }, faceDown: { sourceUrl: faceGLB.url, name: "Red 7" }, under: { sourceUrl: blueGLB.url, name: "Blue 3" } } });
+  const hidden = { hidden: { by: secretsDoc.url } };
+  objects.inTray = obj("Card", backGLB, [-0.25, 0.002, 0.25], hidden);
+  // a pile of two, face down, on the table: "under" and "faceDown" on top
+  objects.under = obj("Card", backGLB, [0.25, 0.002, 0.15], hidden);
+  objects.under.transform.rotation = [0, 0, Math.PI];
+  objects.faceDown = obj("Card", backGLB, [0.25, 0.004, 0.15], hidden);
   objects.faceDown.transform.rotation = [0, 0, Math.PI];
-  const secretsDoc = repo.add({ "@patchwork": { type: "scene-secrets" }, title: "secrets", objects: { inTray: { sourceUrl: faceGLB.url, name: "Red 7" }, faceDown: { sourceUrl: faceGLB.url, name: "Red 7" } } });
   const scene = repo.add({
     "@patchwork": { type: "scene" }, title: "Hand probe", objects, order: Object.keys(objects), dimensions: {},
-    seats: { s1: { name: "Seat 1", player: null } }, secretsUrl: secretsDoc.url,
+    seats: { s1: { name: "Seat 1", player: null } },
     view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultGizmo: "hand" },
     camera: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] },
   });
@@ -134,7 +139,7 @@ try {
     /** "face" or "back": which look a viewer is showing for a hidden object */
     look: (who, id) => {
       const url = (who === "a" ? dbgA : dbgB).queue.state(id)?.url;
-      return url === faceGLB.url ? "face" : url === backGLB.url ? "back" : url;
+      return url === faceGLB.url || url === blueGLB.url ? "face" : url === backGLB.url ? "back" : url;
     },
     sit: (who, seat) => {
       const sel = (who === "a" ? hostA : hostB).querySelector(".seat");
@@ -143,6 +148,13 @@ try {
     },
     settled: () => dbgA.queue.pending() === 0 && dbgB.queue.pending() === 0,
     rot: (id) => scene.doc().objects[id].transform.rotation,
+    /** what the plain deck says each card is */
+    secretNames: () => Object.fromEntries(Object.entries(secretsDoc.doc().objects).map(([id, s]) => [id, s.name])),
+    toast: () => hostA.querySelector(".toast")?.textContent ?? "",
+    hover: (id) => {
+      const b = vp.objectBox(id, { hints: false });
+      return window.__table.screen([(b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2]);
+    },
   };
   window.__ready = true;
 } catch (err) {

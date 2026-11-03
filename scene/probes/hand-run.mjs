@@ -143,6 +143,16 @@ try {
   await settle();
   check("sitting in seat 1, A sees the card in its tray; B doesn't", (await look("a", "inTray")) === "face" && (await look("b", "inTray")) === "back", [await look("a", "inTray"), await look("b", "inTray")]);
   check("a face-down card stays hidden from both", (await look("a", "faceDown")) === "back" && (await look("b", "faceDown")) === "back");
+
+  // S over a pile shuffles it through its deck: the two cards' secrets trade places, or not, at random
+  const pile = await T("hover('faceDown')");
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pile[0], y: pile[1], buttons: 0 });
+  await sleep(300);
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "s", code: "KeyS", text: "s" });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "s", code: "KeyS" });
+  await sleep(200);
+  const names = await T("secretNames()");
+  check("S shuffles the pile under the pointer (2 cards), through its deck", /Shuffling 2 cards/.test(await T("toast()")) && [names.faceDown, names.under].sort().join() === "Blue 3,Red 7", { toast: await T("toast()"), names });
   await carry(await T('top("faceDown")'), await T("screen([0.25, 0, 0.05])"), {
     beforeRelease: () => send("Input.dispatchKeyEvent", { type: "keyDown", key: "f", code: "KeyF" }).then(() => send("Input.dispatchKeyEvent", { type: "keyUp", key: "f", code: "KeyF" })),
   });

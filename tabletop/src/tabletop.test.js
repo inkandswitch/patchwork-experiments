@@ -4,7 +4,7 @@ import { meshesBounds, partGeometry, pieceMeshes } from "./shapes.js";
 import { ensurePieceGLBs, glbKey, pieceGLB } from "./pieces.js";
 import { fill as loadSantorini, santoriniPieces } from "./games/santorini.js";
 import { EXPEDITIONS, fill as loadLostCities, lostCitiesPieces } from "./games/lost-cities.js";
-import { shuffle, supplySpot, tableScene } from "./setup.js";
+import { linkDecks, shuffle, supplySpot, tableScene } from "./setup.js";
 import { TabletopGameDatatype } from "./datatype.js";
 
 /** A doc handle and repo that keep docs in memory. */
@@ -180,12 +180,12 @@ describe("setting up a table", () => {
     expect(() => tableScene(d, "automerge:x")).toThrow(/no GLB/);
   });
 
-  it("a game with nothing hidden has no secrets and no seats", async () => {
+  it("a game with nothing hidden has no decks and no seats", async () => {
     const repo = fakeRepo();
     const game = await newGame(repo);
     await ensurePieceGLBs(repo, game);
     const t = tableScene(game.doc(), game.url);
-    expect(t.secrets).toBeNull();
+    expect(t.decks).toEqual({});
     expect(t.scene.seats).toBeUndefined();
   });
 });
@@ -224,7 +224,9 @@ describe("Lost Cities", () => {
     await ensurePieceGLBs(repo, game);
     const t = tableScene(game.doc(), game.url, { rng: seeded(seed) });
     // which object is which card, as far as setup knows (before any shuffle by the players)
-    const truth = t.secrets.objects ?? Object.fromEntries(Object.entries(t.secrets.slots).map(([id, k]) => [id, t.secrets.faces[k]]));
+    const secrets = t.decks.main;
+    const truth = secrets.objects ?? Object.fromEntries(Object.entries(secrets.slots).map(([id, k]) => [id, secrets.faces[k]]));
+    t.secrets = secrets;
     return { game: game.doc(), ...t, truth };
   }
 
@@ -275,7 +277,9 @@ describe("Lost Cities", () => {
 
   it("a secure deck becomes a secure-deck doc for the players to shuffle: every card, one slot each", async () => {
     const { scene, secrets } = await table();
-    expect(secrets).toMatchObject({ "@patchwork": { type: "secure-deck" }, group: "rfc3526-2048", phase: "waiting", participants: [], cards: null });
+    expect(secrets).toMatchObject({ "@patchwork": { type: "secure-deck" }, group: "rfc3526-2048", phase: "waiting", participants: [], cards: null, epochs: {}, queue: [], op: null });
+    expect(secrets.back).toMatchObject({ name: "Card" });
+    expect(secrets.back.sourceUrl).toMatch(/^automerge:/);
     expect(secrets.faces).toHaveLength(60);
     expect(Object.values(secrets.slots).sort((a, b) => a - b)).toEqual(Array.from({ length: 60 }, (_, k) => k));
     for (const id of Object.keys(secrets.slots)) expect(scene.objects[id].name).toBe("Card");
@@ -287,12 +291,28 @@ describe("Lost Cities", () => {
     expect(Object.keys(secrets.objects)).toHaveLength(60);
   });
 
-  it("refuses a secure deck alongside another deck", async () => {
+  it("gives every deck a doc of its own, each card pointing at its deck's", async () => {
     const repo = fakeRepo();
     const game = await newGame(repo, loadLostCities);
-    game.change((d) => (d.decks.other = { name: "Other", at: [0, 0] }));
+    // a second deck: the wagers, kept apart and not secure
+    game.change((d) => {
+      d.decks.wagers = { name: "Wagers", at: [-0.3, 0], faceDown: true };
+      for (const ex of EXPEDITIONS) d.pieces[`${ex.key}-wager`].deck = "wagers";
+    });
     await ensurePieceGLBs(repo, game);
-    expect(() => tableScene(game.doc(), game.url)).toThrow(/one secure deck/);
+    const { scene, decks } = tableScene(game.doc(), game.url, { rng: seeded(5) });
+    expect(Object.keys(decks).sort()).toEqual(["main", "wagers"]);
+    expect(decks.main["@patchwork"].type).toBe("secure-deck");
+    expect(decks.main.faces).toHaveLength(45);
+    expect(decks.wagers["@patchwork"].type).toBe("scene-secrets");
+    expect(Object.keys(decks.wagers.objects)).toHaveLength(15);
+    // before linking, each card names its deck by id; after, by url
+    const cards = Object.values(scene.objects).filter((o) => o.hidden);
+    expect(cards).toHaveLength(60);
+    expect(new Set(cards.map((o) => o.hidden.by))).toEqual(new Set(["deck:main", "deck:wagers"]));
+    linkDecks(scene, { main: "automerge:main", wagers: "automerge:wagers" });
+    expect(new Set(Object.values(scene.objects).filter((o) => o.hidden).map((o) => o.hidden.by))).toEqual(new Set(["automerge:main", "automerge:wagers"]));
+    expect(() => linkDecks(tableScene(game.doc(), game.url).scene, { main: "automerge:main" })).toThrow(/wagers/);
   });
 
   it("shuffles differently each time", async () => {

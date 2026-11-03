@@ -1,5 +1,5 @@
-// A game → a fresh `scene` doc with every piece where it starts, and (if the
-// game hides anything) the scene's secrets doc. Pure. The doc shapes are the
+// A game → a fresh `scene` doc with every piece where it starts, and a doc
+// for each of its decks. Pure. The doc shapes are the
 // scene package's (scene/README.md: "scene — the composition", "Hidden
 // objects"); this package only writes them, it never imports the scene.
 //
@@ -9,14 +9,14 @@
 //   the game as its About (infoUrl), and the kind's box as its load hint.
 // - Hidden kinds (`hidden: true`) go into their deck: shuffled together, dealt
 //   onto the snap points of the pieces the deck deals to, the rest stacked.
-//   In the scene each is its `back` piece (name, GLB, box): which card it
-//   really is goes only in the secrets doc, and ids follow deck order, so
-//   nothing in the scene says which is which.
-// - A `secure` deck's secrets doc is a `secure-deck` (the card-table
-//   package's; card-table/README.md): it lists the cards and which object is
-//   which position in the deck, and the seated players shuffle it between
-//   them so that nobody knows the order. One per table: the shuffle mixes
-//   every card in it.
+//   In the scene each is its `back` piece (name, GLB, box) with `hidden: {
+//   by: <its deck's doc> }`: which card it really is goes only in that doc,
+//   and ids follow deck order, so nothing in the scene says which is which.
+// - Each deck is a doc of its own, so a table has as many as the game does:
+//   a plain `scene-secrets` doc, or for a `secure` deck a `secure-deck` (the
+//   card-table package's; card-table/README.md), which lists the cards and
+//   which object is which position, and which the seated players shuffle
+//   between them so that nobody knows the order.
 // - A piece with a `zone` makes its copy a seat's private area.
 // - The scene opens in the hand, with snapping on, the grid and axes off.
 
@@ -58,15 +58,15 @@ export function shuffle(list, rng = Math.random) {
  * @param {object} game     the tabletop-game doc; every piece must have its glbUrl
  * @param {string} gameUrl
  * @param {{ newId?: (prefix: string) => string, title?: string, rng?: () => number }} [o]
- * @returns {{ scene: object, secrets: object | null }} docs ready for repo.create2;
- *   if `secrets` isn't null, create it first and set the scene's `secretsUrl` to it
+ * @returns {{ scene: object, decks: { [deckId]: object } }} docs ready for repo.create2:
+ *   create each deck, then pass their urls to linkDecks(scene, urls) before creating the scene
  */
 export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = {}) {
   let n = 0;
   const id = newId ?? ((prefix) => `${prefix}${(n++).toString(36).padStart(4, "0")}`);
   const objects = {};
   const order = [];
-  const secretObjects = {};
+  const deckDocs = {};
   const pieces = game?.pieces ?? {};
   const base = (name, parent) => ({ name, parent, visible: true, color: null, opacity: 1, wireframe: false });
   const drawn = (kind) => {
@@ -134,8 +134,10 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
     for (const k of cards) drawn(k);
     const parent = group(`${deck.name || deckId} (${cards.length})`);
     const shuffled = shuffle(cards, rng);
+    const secretObjects = {};
     const card = (kind, transform) => {
       const oid = place(back, { name: back.name || "Card", parent, transform });
+      objects[oid].hidden = { by: `${DECK_PREFIX}${deckId}` };
       secretObjects[oid] = { sourceUrl: pieces[kind].glbUrl, name: pieces[kind].name || kind };
     };
     // dealt face up onto the first copy of each target's snap points
@@ -164,32 +166,30 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
         scale: 1,
       });
     }
+    const deckTitle = deck.name || deckId;
+    if (deck.secure) {
+      // positions in the deck are its objects in the order they were made; the players' shuffle decides which card each is
+      const ids = Object.keys(secretObjects);
+      deckDocs[deckId] = {
+        "@patchwork": { type: "secure-deck" },
+        title: deckTitle,
+        group: "rfc3526-2048",
+        faces: ids.map((oid) => ({ ...secretObjects[oid] })),
+        back: { sourceUrl: back.glbUrl, name: back.name || "Card", ...(back.bounds ? { bounds: { min: [...back.bounds.min], max: [...back.bounds.max] } } : {}) },
+        slots: Object.fromEntries(ids.map((oid, k) => [oid, k])),
+        phase: "waiting",
+        participants: [],
+        cards: null,
+        epochs: {},
+        queue: [],
+        op: null,
+        shares: {},
+      };
+    } else {
+      deckDocs[deckId] = { "@patchwork": { type: "scene-secrets" }, title: deckTitle, objects: secretObjects };
+    }
   }
 
-  const hasSecrets = Object.keys(secretObjects).length > 0;
-  const secure = Object.entries(game?.decks ?? {}).filter(([, deck]) => deck?.secure);
-  let secrets = null;
-  if (hasSecrets && secure.length) {
-    if (Object.keys(game.decks).length > 1) throw new Error("a table can have one secure deck, and no other decks, for now");
-    // positions in the deck are the objects in the order they were made; the players' shuffle decides which card each is
-    const ids = Object.keys(secretObjects);
-    secrets = {
-      "@patchwork": { type: "secure-deck" },
-      title: `${title ?? `${game?.title || "Game"} table`}: ${secure[0][1].name || secure[0][0]}`,
-      group: "rfc3526-2048",
-      faces: ids.map((oid) => ({ ...secretObjects[oid] })),
-      slots: Object.fromEntries(ids.map((oid, k) => [oid, k])),
-      phase: "waiting",
-      participants: [],
-      pass: null,
-      turn: 0,
-      working: null,
-      cards: null,
-      shares: {},
-    };
-  } else if (hasSecrets) {
-    secrets = { "@patchwork": { type: "scene-secrets" }, title: `${title ?? `${game?.title || "Game"} table`}: hidden cards`, objects: secretObjects };
-  }
   const seats = {};
   for (const [sid, s] of Object.entries(game?.seats ?? {})) {
     seats[sid] = { name: s?.name || sid, player: null, ...(s?.camera ? { camera: JSON.parse(JSON.stringify(s.camera)) } : {}) };
@@ -206,6 +206,21 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       camera: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
       ...(Object.keys(seats).length ? { seats } : {}),
     },
-    secrets,
+    decks: deckDocs,
   };
+}
+
+const DECK_PREFIX = "deck:";
+
+/** Point each hidden object at its deck's doc, now that the decks exist (in place; returns the scene). */
+export function linkDecks(scene, urls) {
+  for (const o of Object.values(scene.objects)) {
+    const by = o.hidden?.by;
+    if (typeof by === "string" && by.startsWith(DECK_PREFIX)) {
+      const url = urls[by.slice(DECK_PREFIX.length)];
+      if (!url) throw new Error(`no doc for deck “${by.slice(DECK_PREFIX.length)}”`);
+      o.hidden = { by: url };
+    }
+  }
+  return scene;
 }

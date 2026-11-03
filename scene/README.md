@@ -101,66 +101,6 @@ scene's outline is refused.
   Sitting is written to the doc (`seats[id].player`), so others see the seat
   as taken; a seat with a `camera` moves your view there when you sit.
 
-### Hidden objects
-
-A scene can hide what some of its objects really are: a deck of cards face
-down, or a hand only its player should see. The scene doc says only what
-everyone may see — a hidden card is a card back, named "Card" — and
-`secretsUrl` points at a `scene-secrets` doc that says what each one really is:
-
-```ts
-{ "@patchwork": { type: "scene-secrets" }, title, objects: { [objectId]: { sourceUrl: AutomergeUrl, name: string } } }
-```
-
-Each viewer works out for themselves which secrets to show (`src/secrets.js`):
-
-- an object inside a **private zone** — any object with
-  `zone: { seat, min: [x,y,z], max: [x,y,z] }`, a box in that object's own
-  frame; an object is in it when its origin is — is shown as itself only to
-  whoever sits in that seat, whichever way up it is;
-- otherwise an object that is **face up** (its own +Y points up in the world)
-  is shown as itself to everyone;
-- anything else keeps its public look and name.
-
-So drawing a card is carrying it from the deck into your zone, playing it is
-putting it down face up, and turning one over (F while carrying) reveals it.
-Only passthrough objects (GLB files) can be hidden this way. A revealed name
-shows in the outline and inspector and is never written back.
-
-**Resolvers.** The scene reads the secrets doc through a resolver. A plain
-`scene-secrets` doc (above) has a built-in one. For any other kind of doc it
-looks for a `scene:secrets` plugin whose `supportedDatatypes` include the
-doc's type (a late-bound lookup, like `scene:source`):
-
-```js
-{ type: "scene:secrets", id, name, supportedDatatypes: ["secure-deck"],
-  async load() { return { createResolver } } }
-
-createResolver({ repo, handle /* the secrets doc */, viewer, onChange }) → {
-  update(ctx),        // on every scene change, with
-                      //   { objects, seats, viewer, players /* seated, in seat order */,
-                      //     openSeats /* names of seats nobody has taken */,
-                      //     visibleTo(player | null) → Set of object ids that player
-                      //       (null: everyone) may see, by the rule above,
-                      //     nameOf(player) → their seat's name }
-  looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
-  status(),           // → a line for the HUD (a shuffle in progress, keys awaited), or null
-  dispose(),
-}
-```
-
-Call `onChange` when `looks()` or `status()` changes. `src/secrets.js` has the
-rule (`visibility`) and the plain resolver.
-
-**What this protects against.** With a plain secrets doc: this is a table,
-not a vault. The doc is an ordinary document, and anyone who opens it (or the
-inspector) can read every card, as anyone at a real table can peek. What is
-guaranteed is that the scene itself — the outline, the inspector, ids, groups,
-order, the GLBs fetched — gives nothing away. With a `secure-deck` from the
-card-table package, the seated players shuffle the deck between them
-(mental poker): nobody knows its order, and a card's face can only be
-decrypted by the players the rule above lets see it. See card-table's README
-for how, and for what it doesn't do yet.
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
   depth labels.
@@ -192,6 +132,79 @@ transform, at most every 50 ms) while it moves, and `transform: null` when it
 is put down or the carry is cancelled. Peers show it there instead of where
 the doc says; the put-down shows the doc's pose as soon as the doc has it (or
 after a second), and a carry that goes quiet for 3 s is put back.
+
+### Hidden objects and decks
+
+A scene can hide what some of its objects really are: a deck of cards face
+down, or a hand only its player should see. The scene doc says only what
+everyone may see — a hidden card is a card back, named "Card" — and each
+hidden object names the **deck** that knows what it really is:
+`hidden: { by: <deck doc url> }`. A scene can have any number of decks, and a
+deck is added to a scene like anything else: drop (or paste) one that isn't
+on a table yet, and its provider lays its cards out face down, in a group
+named for it. The simplest deck is a plain `scene-secrets` doc:
+
+```ts
+{ "@patchwork": { type: "scene-secrets" }, title, objects: { [objectId]: { sourceUrl: AutomergeUrl, name: string } } }
+```
+
+Each viewer works out for themselves which secrets to show (`src/secrets.js`):
+
+- an object inside a **private zone** — any object with
+  `zone: { seat, min: [x,y,z], max: [x,y,z] }`, a box in that object's own
+  frame; an object is in it when its origin is — is shown as itself only to
+  whoever sits in that seat, whichever way up it is;
+- otherwise an object that is **face up** (its own +Y points up in the world)
+  is shown as itself to everyone;
+- anything else keeps its public look and name.
+
+So drawing a card is carrying it from the deck into your zone, playing it is
+putting it down face up, and turning one over (F while carrying) reveals it.
+**Shuffle** (`S` over a card, or *Shuffle pile* in the inspector) shuffles
+the pile it's in — the cards of the same deck whose footprints overlap it by
+half or more — through its deck: a plain deck permutes its entries; a secure
+deck has the players reshuffle them. Only passthrough objects (GLB files) can
+be hidden. A revealed name shows in the outline and inspector and is never
+written back.
+
+**Resolvers.** The scene reads each deck through its own resolver. A plain
+`scene-secrets` doc has a built-in one. For any other kind of doc it looks for
+a `scene:secrets` plugin whose `supportedDatatypes` include the doc's type (a
+late-bound lookup, like `scene:source`):
+
+```js
+{ type: "scene:secrets", id, name, supportedDatatypes: ["secure-deck"],
+  async load() { return { createResolver, placement?, bind? } } }
+
+createResolver({ repo, handle /* the deck doc */, viewer, onChange }) → {
+  update(ctx),        // on every scene change, with
+                      //   { objects, seats, viewer, players /* seated, in seat order */,
+                      //     openSeats /* names of seats nobody has taken */,
+                      //     visibleTo(player | null) → Set of object ids that player
+                      //       (null: everyone) may see, by the rule above,
+                      //     nameOf(player) → their seat's name }
+  looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
+                      //   (only the deck's own objects are taken from it)
+  status(),           // → a line for the HUD (a shuffle in progress, keys awaited), or null
+  shuffle(ids),       // shuffle these objects' cards among themselves → how many (0: nothing to do)
+  dispose(),
+}
+placement(doc) → { name, count, look: { sourceUrl, name }, bounds? } | null   // to lay a dropped deck out
+bind(handle, ids)   // the objects made for it, in deck order
+```
+
+Call `onChange` when `looks()` or `status()` changes. `src/secrets.js` has the
+rule (`visibility`) and the plain resolver.
+
+**What this protects against.** With a plain deck: this is a table, not a
+vault. Its doc is an ordinary document, and anyone who opens it (or the
+inspector) can read every card, as anyone at a real table can peek. What is
+guaranteed is that the scene itself — the outline, the inspector, ids, groups,
+order, the GLBs fetched — gives nothing away. With a `secure-deck` from the
+card-table package, the seated players shuffle the deck between them (mental
+poker), with keys from their accounts: nobody knows which card is where, and a
+card's face can only be decrypted by the players the rule above lets see it.
+See card-table's README for how, and for what it doesn't do yet.
 
 ## Writing a provider
 
@@ -384,6 +397,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
     locked?: boolean,               // true: the hand and the gizmo leave it where it is
     zone?: { seat: string, min: [x,y,z], max: [x,y,z] },  // a seat's private area: this box, in its own frame
+    hidden?: { by: AutomergeUrl },  // what it really is comes from this deck (Hidden objects and decks, above)
     hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
   } },
   order: string[],
@@ -394,7 +408,6 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   camera: { position: [x,y,z], target: [x,y,z] } | null,
   seats?: { [seatId]: { name: string, player: string | null,     // a contact URL (or a browser's own id)
                         camera?: { position, target } } },        // where its player looks from
-  secretsUrl?: AutomergeUrl,        // a scene-secrets doc (Hidden objects, above)
   materialRules?: MaterialRule[]
 }
 Anchor = { objectId: string | null, local: [x,y,z] | null, world: [x,y,z] }
@@ -516,7 +529,8 @@ where dropped), another off the board (on the ground), drags the locked
 board (it stays; the camera orbits) and cancels a carry with Esc. Then: with
 nobody seated both viewers show both cards' backs; once A sits, A shows the
 card in the tray as itself and B still its back; the face-down card is
-carried, turned over with F and put down, and both show its face.
+carried, turned over with F and put down, and both show its face. S over a
+pile of two face-down cards shuffles it through their (plain) deck.
 
 ### At scale: the Solander 38 probe
 

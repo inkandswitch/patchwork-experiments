@@ -223,7 +223,8 @@ export default function SceneTool(handle, element) {
   // Who is looking, for seats: the account's contact, else this browser's own
   // id. (element.viewerId lets a probe put two viewers on one page.)
   const viewer = element.viewerId ?? globalThis.accountDocHandle?.doc?.()?.contactUrl ?? localViewer();
-  let secrets = null; // { url, resolver } — the scene's secrets doc and what reads it, once found
+  // the decks (secrets docs) hidden objects belong to: url → { resolver, problem }, once found
+  const decks = new Map();
   let revealed = new Map(); // objectId → its secret { sourceUrl, name }, where this viewer may see it
   const objState = new Map();
   const outlineRows = new Map(); // objectId → the outline row's elements
@@ -650,6 +651,8 @@ export default function SceneTool(handle, element) {
     const sourceDoc = source.doc();
     const info = describeSource(sourceDoc);
     await registryReady;
+    // a deck: laid out as its cards, not shown as one object
+    if (await placeDeck(url, sourceDoc, source, hint)) return null;
     const providers = matchProviders(listProviders(), info);
     if (!providers.length) return toast(`No scene provider is installed for ${describeForHumans(info)}.`, "error");
     const name = hint.name || (await titleOf(sourceDoc, info.datatype));
@@ -1160,8 +1163,10 @@ export default function SceneTool(handle, element) {
     if (building) bits.push(el("span", { class: "pill", dataset: { state: "building" } }, `Building ${building}…`));
     if (errors) bits.push(el("span", { class: "pill", dataset: { state: "error" } }, `${errors} error${errors > 1 ? "s" : ""}`));
     // what the hidden objects are waiting on (a shuffle, another player's keys)
-    const secret = secrets?.problem ?? secrets?.resolver?.status?.();
-    if (secret) bits.push(el("span", { class: "pill", dataset: { state: secrets?.problem ? "error" : "loading" } }, secret));
+    for (const deck of decks.values()) {
+      const line = deck.problem ?? deck.resolver?.status?.();
+      if (line) bits.push(el("span", { class: "pill", dataset: { state: deck.problem ? "error" : "loading" } }, line));
+    }
     $(".hud").replaceChildren(...bits);
   }
 
@@ -1336,6 +1341,7 @@ export default function SceneTool(handle, element) {
     const parts = [
       el("h3", { class: "panel-title" }, group ? "Group" : "Object"),
       name,
+      o.hidden?.by ? el("div", { class: "cluster" }, el("button", { type: "button", class: "button", title: "Shuffle the pile this card is in (S)", onclick: () => shuffleStack(id) }, "Shuffle pile")) : null,
       el("div", { class: "cluster" }, el("label", { class: "toggle" }, visible, " Visible"), wire ? el("label", { class: "toggle" }, wire, " Wireframe") : null, locked ? el("label", { class: "toggle", title: "A locked object can't be moved with the hand or the gizmo (a game board, say)" }, locked, " Locked") : null),
       group ? null : el("div", { class: "cluster" }, el("label", { class: "toggle" }, "Colour ", colorIn), resetColor),
       el("label", { class: "field" }, el("span", {}, "Opacity"), opacity),
@@ -1603,6 +1609,7 @@ export default function SceneTool(handle, element) {
     } else if (e.key === "m" || e.key === "M") setMeasuring(!measure);
     else if (e.key === "f" || e.key === "F") viewport.frameAll();
     else if (e.key === "p" || e.key === "P") setPanel(root.hasAttribute("data-panel-hidden"));
+    else if ((e.key === "s" || e.key === "S") && (hoverId || selected)) shuffleStack(hoverId ?? selected);
     else if (e.key === "g" || e.key === "r" || e.key === "h") {
       gizmoMode = e.key === "g" ? "translate" : e.key === "r" ? "rotate" : "hand";
       viewport.setGizmoMode(gizmoMode);
@@ -1814,41 +1821,141 @@ export default function SceneTool(handle, element) {
   }
 
   /**
-   * Follow the scene's secrets doc, through a resolver: the built-in one for a
-   * plain `scene-secrets` doc, else a `scene:secrets` plugin for its datatype
-   * (an encrypted deck, say). It may arrive, or change, at any time.
+   * Which resolver reads a deck (secrets) doc: the built-in one for a plain
+   * `scene-secrets` doc, else the `scene:secrets` plugin for its datatype (an
+   * encrypted deck, say). → { create, module } or null
    */
-  function watchSecrets(url) {
-    if ((secrets?.url ?? null) === url) return;
-    secrets?.resolver?.dispose?.();
-    secrets = url ? { url, resolver: null, problem: null } : null;
-    if (!url) return;
-    const mine = secrets;
-    (async () => {
-      const h = await repo.find(url);
-      if (dead || secrets !== mine || !h) return;
-      const type = h.doc()?.["@patchwork"]?.type ?? null;
-      let create = null;
-      if (!type || type === "scene-secrets") create = plainResolver;
-      else {
-        const registry = (await registryReady)?.getRegistry?.("scene:secrets");
-        const provider = registry?.filter?.((p) => Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(type))?.[0];
-        if (provider) create = (await registry.load(provider.id))?.module?.createResolver ?? null;
-      }
-      if (dead || secrets !== mine) return;
-      if (!create) {
-        mine.problem = `Hidden objects can't be shown: nothing installed reads “${type}” documents.`;
-        return void schedule("hud");
-      }
-      mine.resolver = create({ repo, handle: h, viewer, onChange: () => sync() });
-      sync();
-    })().catch((err) => {
-      console.warn("[scene] secrets unavailable", err);
-      mine.problem = `Hidden objects can't be shown: ${err?.message ?? err}`;
-      schedule("hud");
+  async function deckProvider(type) {
+    if (!type || type === "scene-secrets") return { create: plainResolver, module: null };
+    const registry = (await registryReady)?.getRegistry?.("scene:secrets");
+    const provider = registry?.filter?.((p) => Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(type))?.[0];
+    if (!provider) return null;
+    const module = (await registry.load(provider.id))?.module ?? null;
+    return module?.createResolver ? { create: module.createResolver, module } : null;
+  }
+
+  /**
+   * Follow every deck the scene's hidden objects belong to (`hidden.by`), each
+   * through its own resolver. Decks come and go with the objects that name them.
+   */
+  function watchDecks(urls) {
+    for (const [url, deck] of decks) {
+      if (urls.has(url)) continue;
+      deck.resolver?.dispose?.();
+      decks.delete(url);
+    }
+    for (const url of urls) {
+      if (decks.has(url)) continue;
+      const deck = { resolver: null, problem: null };
+      decks.set(url, deck);
+      (async () => {
+        const h = await repo.find(url);
+        if (dead || decks.get(url) !== deck || !h) return;
+        const type = h.doc()?.["@patchwork"]?.type ?? null;
+        const provider = await deckProvider(type);
+        if (dead || decks.get(url) !== deck) return;
+        if (!provider) {
+          deck.problem = `Some hidden objects can't be shown: nothing installed reads “${type}” documents.`;
+          return void schedule("hud");
+        }
+        deck.resolver = provider.create({ repo, handle: h, viewer, onChange: () => sync() });
+        sync();
+      })().catch((err) => {
+        console.warn("[scene] deck unavailable", url, err);
+        deck.problem = `Some hidden objects can't be shown: ${err?.message ?? err}`;
+        schedule("hud");
+      });
+    }
+  }
+  cleanups.push(() => {
+    for (const deck of decks.values()) deck.resolver?.dispose?.();
+  });
+
+  /**
+   * The pile an object is in: the objects of the same deck whose footprints
+   * overlap its own by at least half (in plan), itself included.
+   */
+  function stackOf(id) {
+    const objects = doc().objects ?? {};
+    const by = objects[id]?.hidden?.by;
+    if (!by) return [];
+    const same = Object.keys(objects).filter((x) => objects[x]?.hidden?.by === by);
+    const box = viewport.ok ? viewport.objectBox(id, { hints: true }) : null;
+    if (!box) {
+      // no geometry to go by: the same spot on the table
+      const at = worldMatrix(objects, id);
+      return same.filter((x) => {
+        const m = worldMatrix(objects, x);
+        return Math.hypot(m[12] - at[12], m[14] - at[14]) < 0.005;
+      });
+    }
+    const area = (b) => Math.max(0, b.max.x - b.min.x) * Math.max(0, b.max.z - b.min.z);
+    return same.filter((x) => {
+      const b = x === id ? box : viewport.objectBox(x, { hints: true });
+      if (!b) return false;
+      const ox = Math.min(b.max.x, box.max.x) - Math.max(b.min.x, box.min.x);
+      const oz = Math.min(b.max.z, box.max.z) - Math.max(b.min.z, box.min.z);
+      return ox > 0 && oz > 0 && ox * oz >= 0.5 * Math.min(area(b), area(box));
     });
   }
-  cleanups.push(() => secrets?.resolver?.dispose?.());
+
+  /** Shuffle the pile this object is in, through its deck. */
+  function shuffleStack(id) {
+    const by = doc().objects?.[id]?.hidden?.by;
+    const deck = by ? decks.get(docUrl(by)) : null;
+    if (!deck?.resolver?.shuffle) return toast(by ? "This deck can't be shuffled." : "Only hidden objects (cards in a deck) can be shuffled.", "error");
+    const pile = stackOf(id);
+    const n = deck.resolver.shuffle(pile);
+    if (!n) return toast("There's nothing here to shuffle with it.", "error");
+    toast(`Shuffling ${n} card${n === 1 ? "" : "s"}…`);
+  }
+
+  /**
+   * A deck dropped on the scene, if its provider can lay it out: one hidden
+   * object per card, face down in a stack, in a group named for the deck.
+   * Returns false if the doc isn't a deck it can lay out.
+   */
+  async function placeDeck(url, sourceDoc, sourceHandle, hint = {}) {
+    const provider = await deckProvider(sourceDoc?.["@patchwork"]?.type ?? null).catch(() => null);
+    const place = provider?.module?.placement?.(sourceDoc);
+    if (!place) {
+      if (provider?.module?.placement) toast("That deck is already on a table.", "error");
+      return !!provider?.module?.placement;
+    }
+    const b = place.bounds;
+    const h = b ? Math.max(1e-4, b.max[1] - b.min[1]) : 0.001;
+    const gid = newId("g");
+    const ids = Array.from({ length: place.count }, () => newId("o"));
+    const into = hint.parent && doc().objects?.[hint.parent] ? hint.parent : null;
+    handle.change((d) => {
+      if (!d.objects) d.objects = {};
+      if (!d.order) d.order = [];
+      d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, sourceUrl: null, providerId: null, renderUrl: null, parent: into, visible: true, color: null, opacity: 1, wireframe: false, transform: IDENTITY() };
+      d.order.push(gid);
+      ids.forEach((oid, j) => {
+        d.objects[oid] = {
+          name: place.look.name,
+          sourceUrl: place.look.sourceUrl,
+          providerId: "file-glb",
+          renderUrl: null,
+          parent: gid,
+          visible: true,
+          color: null,
+          opacity: 1,
+          wireframe: false,
+          // face down, a card's height apart: turned about its length, a card stands on its top
+          transform: { position: [0, +((j + 1) * h).toFixed(6), 0], rotation: [0, 0, Math.PI], scale: 1 },
+          hidden: { by: url },
+          ...(b ? { hint: { bounds: { min: [...b.min], max: [...b.max] } } } : {}),
+        };
+        d.order.push(oid);
+      });
+    });
+    provider.module.bind?.(sourceHandle, ids);
+    setExpanded(gid, false);
+    select(gid);
+    return true;
+  }
 
   function renderSeat() {
     const select = $(".seat");
@@ -1882,9 +1989,16 @@ export default function SceneTool(handle, element) {
     const t0 = now();
     const m = derive();
     const { d, objects, parents, tree, inherited } = m;
-    watchSecrets(docUrl(d.secretsUrl));
-    if (secrets?.resolver) {
-      secrets.resolver.update({
+    // hidden objects: each deck they belong to, and what this viewer may see of them
+    const deckUrls = new Set();
+    for (const o of Object.values(objects)) {
+      const by = docUrl(o?.hidden?.by);
+      if (by) deckUrls.add(by);
+    }
+    watchDecks(deckUrls);
+    revealed = new Map();
+    if (deckUrls.size) {
+      const ctx = {
         objects,
         seats: d.seats ?? {},
         viewer,
@@ -1892,9 +2006,14 @@ export default function SceneTool(handle, element) {
         openSeats: Object.entries(d.seats ?? {}).filter(([, s]) => !s?.player).map(([id, s]) => s?.name || id),
         visibleTo: visibility(objects, d.seats),
         nameOf: (player) => Object.values(d.seats ?? {}).find((s) => s?.player === player)?.name ?? "someone",
-      });
-      revealed = secrets.resolver.looks();
-    } else revealed = new Map();
+      };
+      for (const [url, deck] of decks) {
+        if (!deck.resolver) continue;
+        deck.resolver.update(ctx);
+        // a deck speaks only for its own objects
+        for (const [id, look] of deck.resolver.looks()) if (docUrl(objects[id]?.hidden?.by) === url) revealed.set(id, look);
+      }
+    }
     renderSeat();
     viewport.setMaterialRules(d.materialRules);
     const tracked = new Set(manager.ids());

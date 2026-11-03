@@ -102,4 +102,15 @@ describe("plainResolver", () => {
     r.dispose();
     expect(listeners.size).toBe(0);
   });
+
+  it("shuffles by permuting the entries of the objects asked for, and nothing else", () => {
+    let doc = { objects: { a: secret("A"), b: secret("B"), c: secret("C"), d: secret("D") } };
+    const handle = { doc: () => doc, change(fn) { const x = structuredClone(doc); fn(x); doc = x; }, on() {}, off() {} };
+    const r = plainResolver({ handle, viewer: null, onChange: () => {} });
+    expect(r.shuffle(["a", "b", "c", "missing"], () => 0)).toBe(3);
+    expect(Object.values(doc.objects).map((s) => s.name).sort()).toEqual(["A", "B", "C", "D"]);
+    expect(doc.objects.d.name).toBe("D");
+    expect(["a", "b", "c"].map((id) => doc.objects[id].name)).not.toEqual(["A", "B", "C"]);
+    expect(r.shuffle(["a"])).toBe(0);
+  });
 });

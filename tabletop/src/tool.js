@@ -5,7 +5,7 @@
 
 import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
-import { orderedKinds, tableScene } from "./setup.js";
+import { linkDecks, orderedKinds, tableScene } from "./setup.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const DRAW_DEBOUNCE_MS = 400;
@@ -110,9 +110,11 @@ export default function TabletopGameTool(handle, element) {
       const d = doc();
       const n = (d.tables?.length ?? 0) + 1;
       const title = `${d.title || "Game"} table ${n}`;
-      const { scene: table, secrets } = tableScene(d, handle.url, { title });
-      // the secrets first, so the scene never exists without them
-      if (secrets) table.secretsUrl = (await repo.create2(secrets)).url;
+      const { scene: table, decks } = tableScene(d, handle.url, { title });
+      // the decks first, so the scene never names one that isn't there
+      const urls = {};
+      for (const [deckId, deck] of Object.entries(decks)) urls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
+      linkDecks(table, urls);
       const scene = await repo.create2(table);
       handle.change((g) => {
         if (!g.tables) g.tables = [];

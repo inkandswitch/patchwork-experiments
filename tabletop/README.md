@@ -147,7 +147,8 @@ as JSON at the bottom of the game page; applying it keeps each kind's GLB doc.
 A `scene` doc, made fresh each time: one group per visible kind with more than
 one copy, every copy at its supply spot, the board at the top level; each deck
 shuffled into one group, dealt, and the rest stacked. Its seats, empty. If
-anything is hidden, a `scene-secrets` doc made first (the scene's `secretsUrl`).
+anything is hidden, a doc per deck, made first, which its cards name
+(`hidden: { by }`).
 Its view opens in the hand (`view.defaultGizmo: "hand"`) with snapping on, the
 grid and axes off and units in cm.
 

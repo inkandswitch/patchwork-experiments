@@ -6,11 +6,11 @@
 //     whoever sits in that seat sees it, whichever way up it is;
 //   - otherwise, it is face up (its own +Y points up in the world): everyone does.
 // Anything else stays hidden. What a hidden object really is comes from the
-// scene's secrets doc (`scene.secretsUrl`), through a resolver: the built-in
-// one reads a plain `scene-secrets` doc ({ objects: { [id]: { sourceUrl, name } } },
-// readable by anyone who opens it); a `scene:secrets` plugin can supply one
-// for another kind of doc, such as an encrypted deck (see README, "Hidden
-// objects").
+// deck it belongs to (`hidden: { by: url }` on the object), through a
+// resolver: the built-in one reads a plain `scene-secrets` doc ({ objects: {
+// [id]: { sourceUrl, name } } }, readable by anyone who opens it); a
+// `scene:secrets` plugin can supply one for another kind of doc, such as an
+// encrypted deck (see README, "Hidden objects and decks"). A scene has any number.
 
 import { applyMatrix, invertMatrix } from "./transform.js";
 import { resolveParents, worldMatrix } from "./hierarchy.js";
@@ -78,8 +78,9 @@ export function seatedPlayers(seats) {
 
 /**
  * The built-in resolver, for a plain `scene-secrets` doc: whatever this viewer
- * may see, looked up. (A resolver: update(ctx) on every scene change, looks()
- * → Map id → { sourceUrl, name }, status() → string | null, dispose().)
+ * may see, looked up; shuffling permutes the entries. (A resolver: update(ctx)
+ * on every scene change, looks() → Map id → { sourceUrl, name }, status() →
+ * string | null, shuffle(ids) → how many, dispose().)
  */
 export function plainResolver({ handle, viewer, onChange }) {
   let ctx = null;
@@ -101,6 +102,19 @@ export function plainResolver({ handle, viewer, onChange }) {
     },
     looks: () => current,
     status: () => null,
+    shuffle(ids, random = Math.random) {
+      const listed = [...new Set(ids)].filter((id) => handle.doc()?.objects?.[id]);
+      if (listed.length < 2) return 0;
+      handle.change((d) => {
+        const entries = listed.map((id) => ({ ...d.objects[id] }));
+        for (let i = entries.length - 1; i > 0; i--) {
+          const j = Math.floor(random() * (i + 1));
+          [entries[i], entries[j]] = [entries[j], entries[i]];
+        }
+        listed.forEach((id, i) => (d.objects[id] = entries[i]));
+      });
+      return listed.length;
+    },
     dispose: () => handle.off?.("change", onDoc),
   };
 }

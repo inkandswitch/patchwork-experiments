@@ -149,7 +149,9 @@ describe("the tabletop-game tool", () => {
     button(element, "Set up a table").click();
     await until(() => opened.length === 1, 4000);
     const scene = (await repo.find(opened[0].url)).doc();
-    const deck = (await repo.find(scene.secretsUrl)).doc();
+    const urls = new Set(Object.values(scene.objects).filter((o) => o.hidden).map((o) => o.hidden.by));
+    expect(urls.size).toBe(1);
+    const deck = (await repo.find([...urls][0])).doc();
     expect(deck["@patchwork"].type).toBe("secure-deck");
     expect(deck.faces).toHaveLength(60);
     for (const id of Object.keys(deck.slots)) expect(scene.objects[id].name).toBe("Card");

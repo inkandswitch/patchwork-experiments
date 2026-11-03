@@ -57,7 +57,7 @@ export const SceneRenderDatatype = {
   },
 };
 
-// What the hidden objects of a scene really are (see README, "Hidden objects").
+// A plain deck: what its hidden objects really are (see README, "Hidden objects and decks").
 // { title, objects: { [objectId]: { sourceUrl, name } } }
 export const SceneSecretsDatatype = {
   init(doc) {
