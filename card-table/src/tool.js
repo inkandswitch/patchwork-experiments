@@ -14,7 +14,7 @@ const el = (tag, props = {}, ...children) => {
   return n;
 };
 
-const PHASES = { waiting: "Waiting for the players to join the shuffle", shuffling: "Shuffling", ready: "Shuffled" };
+const PHASES = { waiting: "Waiting for the players to join", playing: "In play" };
 
 export default function SecureDeckTool(handle, element) {
   const style = document.createElement("style");
@@ -29,22 +29,32 @@ export default function SecureDeckTool(handle, element) {
     const rows = (d.participants ?? []).map((p, i) => {
       let open = 0;
       let sealed = 0;
-      for (const byPlayer of Object.values(shares)) {
-        const s = byPlayer?.[p.id];
+      for (const [k, s0] of Object.entries(shares)) {
+        if (s0?.epoch !== Number(d.epochs?.[k] ?? 0)) continue;
+        const s = s0.by?.[p.id];
         if (s?.open) open++;
         sealed += Object.keys(s?.to ?? {}).length;
       }
-      const turn = d.phase === "shuffling" && d.turn === i ? ` · ${d.pass === "forward" ? "shuffling" : "re-keying"} now` : "";
+      const turn = d.op && d.op.turn === i ? ` · ${d.op.pass} now` : "";
       return el("tr", {}, el("td", {}, p.id), el("td", {}, `${open} shown to all, ${sealed} to one player${turn}`));
     });
+    const shuffles = Object.values(d.epochs ?? {}).reduce((a, b) => Math.max(a, Number(b) || 0), 0);
     root.replaceChildren(
       el("h2", {}, d.title || "Secure deck"),
-      el("p", {}, `${n} cards. ${PHASES[d.phase] ?? d.phase ?? ""}${d.phase === "shuffling" ? ` (pass ${d.pass === "forward" ? 1 : 2} of 2)` : ""}.`),
+      el(
+        "p",
+        {},
+        `${n} cards. ${PHASES[d.phase] ?? d.phase ?? ""}.`,
+        d.op ? ` Shuffling ${d.op.offsets.length} of them (${d.op.pass}).` : "",
+        d.queue?.length ? ` ${d.queue.length} shuffle${d.queue.length > 1 ? "s" : ""} waiting.` : "",
+        shuffles ? ` The most-shuffled card has been shuffled ${shuffles} time${shuffles > 1 ? "s" : ""}.` : "",
+        Object.keys(d.slots ?? {}).length ? "" : " Not on a table yet: drop it on a scene.",
+      ),
       rows.length ? el("table", {}, el("tbody", {}, rows)) : el("p", { class: "muted" }, "Nobody has joined yet."),
       el(
         "p",
         { class: "muted" },
-        "Nobody can read the order of this deck. A player's key for a card is handed over only when the table shows that card in someone's hand or face up; keys stay on each player's device.",
+        "Nobody can tell which card is where. A player's key for a card is handed over only when the table shows that card in someone's hand or face up. Keys come from each player's account, so any of their devices can play.",
       ),
     );
   }

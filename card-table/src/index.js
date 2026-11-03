@@ -23,7 +23,7 @@ export const plugins = [
     },
   },
   {
-    // A scene whose secretsUrl is a secure deck reads its hidden objects through this.
+    // A scene reads the cards of a secure deck (objects with hidden.by = its url) through this.
     type: "scene:secrets",
     id: "secure-deck",
     name: "Secure deck",

@@ -10,7 +10,8 @@
 // - A key is an exponent e with its inverse d = e⁻¹ mod Q. Encrypting is
 //   m^e mod P; keys commute, so players can encrypt in turn and decrypt in
 //   any order.
-// - Randomness is crypto.getRandomValues, never Math.random.
+// - Randomness is crypto.getRandomValues, never Math.random. Players' keys
+//   are derived from their secret (derive.js), not drawn here.
 
 /** RFC 3526 §3, the 2048-bit MODP group (group 14). */
 export const P = BigInt(
@@ -25,6 +26,8 @@ export const P = BigInt(
     "3995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF",
 );
 export const Q = (P - 1n) / 2n;
+/** RFC 3526's generator: 2 is a quadratic residue mod P, so it generates the order-Q subgroup. */
+export const G = 2n;
 export const GROUP_ID = "rfc3526-2048";
 
 export function modpow(base, exp, mod = P) {

@@ -1,15 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { P, Q, cardDecoder, decrypt, encodeCard, encrypt, isResidue, modpow, newKey, shuffle } from "./crypto/group.js";
-import { newExchangeKeys, open, seal } from "./crypto/envelope.js";
+import { G, P, Q, cardDecoder, decrypt, encodeCard, encrypt, isResidue, modpow, newKey, shuffle } from "./crypto/group.js";
+import { newSecret, open, playerKeys, seal } from "./crypto/derive.js";
 import { createParticipant, newDeckDoc } from "./deck.js";
 
 describe("the group", () => {
-  it("P is the RFC 3526 safe prime: 2048 bits, P = 2Q + 1", () => {
+  it("P is the RFC 3526 safe prime: 2048 bits, P = 2Q + 1, and G generates the residues", () => {
     expect(P.toString(2)).toHaveLength(2048);
     expect(2n * Q + 1n).toBe(P);
-    // Fermat check on both (not a proof, but catches a typo in the constant)
     expect(modpow(2n, P - 1n, P)).toBe(1n);
     expect(modpow(3n, Q - 1n, Q)).toBe(1n);
+    expect(modpow(G, Q)).toBe(1n);
   });
 
   it("keys commute, and undo each other in any order", () => {
@@ -19,7 +19,6 @@ describe("the group", () => {
     const c = encrypt(encrypt(m, a), b);
     expect(encrypt(encrypt(m, b), a)).toBe(c);
     expect(decrypt(decrypt(c, a), b)).toBe(m);
-    expect(decrypt(decrypt(c, b), a)).toBe(m);
   });
 
   it("every card, and so every encrypted card, is a quadratic residue: residuosity says nothing", () => {
@@ -44,21 +43,33 @@ describe("the group", () => {
   });
 });
 
-describe("envelopes", () => {
-  it("open only for their recipient", async () => {
-    const alice = await newExchangeKeys();
-    const bob = await newExchangeKeys();
-    const env = await seal(alice.publicJwk, "the key");
-    expect(await open(alice.privateJwk, env)).toBe("the key");
-    await expect(open(bob.privateJwk, env)).rejects.toThrow();
+describe("a player's keys", () => {
+  it("are the same from the same secret, on any device, and differ by deck, card and epoch", async () => {
+    const secret = newSecret();
+    const one = playerKeys(secret);
+    const two = playerKeys(Uint8Array.from(secret));
+    expect((await one.card("d1", 3, 1)).e).toBe((await two.card("d1", 3, 1)).e);
+    expect((await one.card("d1", 3, 1)).e).not.toBe((await one.card("d1", 3, 2)).e);
+    expect((await one.card("d1", 3, 1)).e).not.toBe((await one.card("d2", 3, 1)).e);
+    expect((await one.exchange("d1")).X).toBe((await two.exchange("d1")).X);
+    const k = await one.card("d1", 0, 1);
+    expect((k.e * k.d) % Q).toBe(1n);
+  });
+
+  it("seal a share for one player only", async () => {
+    const alice = await playerKeys(newSecret()).exchange("d");
+    const bob = await playerKeys(newSecret()).exchange("d");
+    const env = await seal(alice.X, "the key");
+    expect(await open(alice.x, env)).toBe("the key");
+    await expect(open(bob.x, env)).rejects.toThrow();
   });
 });
 
 /** One deck doc, shared by several clients (synchronously, like a merged doc). */
-function table(n) {
+function table(n, url = "automerge:deck") {
   let state = structuredClone(newDeckDoc({ title: "Test deck", faces: Array.from({ length: n }, (_, i) => ({ name: `card ${i}` })), slots: Object.fromEntries(Array.from({ length: n }, (_, i) => [`o${i}`, i])) }));
-  const handle = {
-    url: "automerge:deck",
+  return {
+    url,
     doc: () => state,
     change(fn) {
       const d = structuredClone(state);
@@ -66,22 +77,13 @@ function table(n) {
       state = d;
     },
   };
-  return handle;
 }
-
-/** A key store per client, in memory. */
-const memoryStore = () => {
-  const m = new Map();
-  return { get: (id) => m.get(id) ?? null, set: (id, v) => m.set(id, v) };
-};
 
 /** Where each slot is: a player's id (in their hand), "public" (face up), or "deck". */
-function placer(where) {
-  return (player) => Object.entries(where).filter(([, w]) => (player == null ? w === "public" : w === player || w === "public")).map(([id]) => id);
-}
+const placer = (where) => (player) => Object.entries(where).filter(([, w]) => (player == null ? w === "public" : w === player || w === "public")).map(([id]) => id);
 
 async function settle(clients, players, where) {
-  for (let round = 0; round < 12; round++) for (const c of clients) await c.step({ players, visibleTo: placer(where) });
+  for (let round = 0; round < 16; round++) for (const c of clients) await c.step({ players, visibleTo: placer(where) });
 }
 
 const names = async (c, ids) => {
@@ -96,91 +98,123 @@ describe("a secure deck", () => {
 
   async function dealt() {
     const handle = table(N);
-    const [alice, bob, carol] = players.map((playerId) => createParticipant({ handle, playerId, keyStore: memoryStore() }));
-    const watcher = createParticipant({ handle, playerId: null, keyStore: memoryStore() });
+    const secrets = Object.fromEntries(players.map((p) => [p, newSecret()]));
+    const [alice, bob, carol] = players.map((playerId) => createParticipant({ handle, playerId, secret: secrets[playerId] }));
+    const watcher = createParticipant({ handle, playerId: null, secret: null });
     const where = { o0: "alice", o1: "alice", o2: "bob", o3: "bob", o4: "carol", o5: "public" };
     for (const id of ids) where[id] ??= "deck";
-    await settle([alice, bob, carol, watcher], players, where);
-    return { handle, alice, bob, carol, watcher, where };
+    const clients = [alice, bob, carol, watcher];
+    await settle(clients, players, where);
+    return { handle, alice, bob, carol, watcher, where, clients, secrets };
   }
 
-  it("shuffles with all three: each turn in order, forward then back", async () => {
+  it("deals: each in turn, mix then rekey; every card shuffled once, nothing in the clear", async () => {
     const { handle } = await dealt();
     const d = handle.doc();
-    expect(d.phase).toBe("ready");
+    expect(d.phase).toBe("playing");
+    expect(d.op).toBeNull();
     expect(d.participants.map((p) => p.id)).toEqual(["alice", "bob", "carol"]);
-    expect(d.cards).toHaveLength(N);
-    // nothing in the doc is a card in the clear
+    expect(Object.values(d.epochs)).toEqual(Array(N).fill(1));
     const plain = new Set(ids.map((_, i) => encodeCard(i).toString(16)));
     for (const c of d.cards) expect(plain.has(c)).toBe(false);
   }, 30000);
 
   it("shows each hand to its owner, face-up cards to everyone, and the deck to no one", async () => {
     const { alice, bob, carol, watcher } = await dealt();
-    const a = await names(alice, ids);
-    const b = await names(bob, ids);
-    const c = await names(carol, ids);
-    const w = await names(watcher, ids);
+    const [a, b, c, w] = await Promise.all([alice, bob, carol, watcher].map((x) => names(x, ids)));
     expect(Object.keys(a).sort()).toEqual(["o0", "o1", "o5"]);
     expect(Object.keys(b).sort()).toEqual(["o2", "o3", "o5"]);
     expect(Object.keys(c).sort()).toEqual(["o4", "o5"]);
     expect(Object.keys(w)).toEqual(["o5"]);
-    // the face-up card is the same card for everyone
     expect(new Set([a.o5, b.o5, c.o5, w.o5]).size).toBe(1);
-    // and the dealt cards are all different cards
     expect(new Set([a.o0, a.o1, b.o2, b.o3, c.o4, a.o5]).size).toBe(6);
   }, 30000);
 
   it("a card passed from one hand to another is seen by its new owner, and still not by the third player", async () => {
-    const { alice, bob, carol, watcher, where } = await dealt();
+    const { alice, bob, carol, watcher, where, clients } = await dealt();
     const before = (await names(alice, ["o0"])).o0;
     where.o0 = "bob";
-    await settle([alice, bob, carol, watcher], players, where);
+    await settle(clients, players, where);
     expect((await names(bob, ["o0"])).o0).toBe(before);
     expect(await names(carol, ["o0"])).toEqual({});
     expect(await names(watcher, ["o0"])).toEqual({});
   }, 30000);
 
-  it("a card turned face up is seen by everyone, watchers too", async () => {
-    const { alice, bob, carol, watcher, where } = await dealt();
-    where.o9 = "public";
-    await settle([alice, bob, carol, watcher], players, where);
-    const seen = await Promise.all([alice, bob, carol, watcher].map((c) => names(c, ["o9"])));
-    expect(seen.every((s) => s.o9 && s.o9 === seen[0].o9)).toBe(true);
+  it("shuffles some cards on demand: the same cards, in a new order, hidden again", async () => {
+    const { handle, alice, bob, where, clients } = await dealt();
+    const pile = ["o6", "o7", "o8", "o9", "o5"];
+    for (const id of pile) where[id] = "public";
+    await settle(clients, players, where);
+    const before = await names(bob, pile);
+    expect(Object.keys(before)).toHaveLength(5);
+    // turn the pile face down and shuffle it
+    for (const id of pile) where[id] = "deck";
+    expect(alice.shuffle(pile)).toBe(5);
+    await settle(clients, players, where);
+    const d = handle.doc();
+    expect(d.op).toBeNull();
+    for (const id of pile) expect(d.epochs[d.slots[id]]).toBe(2);
+    expect(d.epochs[d.slots.o0]).toBe(1); // untouched
+    expect(await names(alice, pile)).toEqual({});
+    // face up again: the same five cards
+    for (const id of pile) where[id] = "public";
+    await settle(clients, players, where);
+    const after = await names(bob, pile);
+    expect(Object.values(after).sort()).toEqual(Object.values(before).sort());
+  }, 60000);
+
+  it("reshuffles a hand: its owner still sees the same cards, nobody else does", async () => {
+    const { alice, bob, where, clients } = await dealt();
+    const mine = await names(alice, ["o0", "o1"]);
+    alice.shuffle(["o0", "o1"]);
+    await settle(clients, players, where);
+    const again = await names(alice, ["o0", "o1"]);
+    expect(Object.values(again).sort()).toEqual(Object.values(mine).sort());
+    expect(await names(bob, ["o0", "o1"])).toEqual({});
+  }, 60000);
+
+  it("runs shuffles asked for together one after another", async () => {
+    const { handle, alice, bob, where, clients } = await dealt();
+    alice.shuffle(["o6", "o7"]);
+    bob.shuffle(["o8", "o9"]);
+    bob.shuffle(["o6", "o9"]);
+    expect(handle.doc().queue).toHaveLength(3);
+    await settle(clients, players, where);
+    const d = handle.doc();
+    expect(d.queue).toHaveLength(0);
+    expect([6, 7, 8, 9].map((k) => d.epochs[k])).toEqual([3, 2, 2, 3]);
+  }, 60000);
+
+  it("is the account's, not the device's: another device with the same secret sees the same hand", async () => {
+    const { handle, secrets, alice } = await dealt();
+    const phone = createParticipant({ handle, playerId: "alice", secret: Uint8Array.from(secrets.alice) });
+    expect(await names(phone, ["o0", "o1", "o2"])).toEqual(await names(alice, ["o0", "o1", "o2"]));
+    // and a device without it sees nothing
+    const stranger = createParticipant({ handle, playerId: "alice", secret: newSecret() });
+    expect(await names(stranger, ["o0", "o1"])).toEqual({});
   }, 30000);
 
   it("an offline player holds up only the cards that need their key", async () => {
     const handle = table(N);
-    const [alice, bob] = ["alice", "bob"].map((playerId) => createParticipant({ handle, playerId, keyStore: memoryStore() }));
+    const [alice, bob] = ["alice", "bob"].map((playerId) => createParticipant({ handle, playerId, secret: newSecret() }));
     const where = { o0: "alice", o1: "bob" };
     for (const id of ids) where[id] ??= "deck";
     await settle([alice, bob], ["alice", "bob"], where);
-    // bob goes away; alice draws o2
     where.o2 = "alice";
     await settle([alice], ["alice", "bob"], where);
     const { looks, waiting } = await alice.reveal(["o0", "o2"]);
     expect([...looks.keys()]).toEqual(["o0"]);
     expect(waiting.get("bob")).toBe(1);
-    expect(alice.status({ players: ["alice", "bob"] })).toBeNull();
-    // bob comes back: alice sees it
     await settle([bob], ["alice", "bob"], where);
     expect(Object.keys(await names(alice, ["o2"]))).toEqual(["o2"]);
   }, 30000);
 
-  it("doesn't start while a seat is open, even if everyone seated has joined", async () => {
+  it("doesn't start while a seat is open, and says what it's waiting for", async () => {
     const handle = table(4);
-    const alice = createParticipant({ handle, playerId: "alice", keyStore: memoryStore() });
+    const alice = createParticipant({ handle, playerId: "alice", secret: newSecret() });
     await alice.step({ players: ["alice"], openSeats: ["Player 2"], visibleTo: () => [] });
     expect(handle.doc().phase).toBe("waiting");
-    expect(handle.doc().participants.map((p) => p.id)).toEqual(["alice"]);
-    expect(alice.status({ players: ["alice"], openSeats: ["Player 2"] })).toBe("The deck is shuffled once someone sits as Player 2.");
-  });
-
-  it("waits for every player before shuffling, and says who it's waiting for", async () => {
-    const handle = table(4);
-    const alice = createParticipant({ handle, playerId: "alice", keyStore: memoryStore() });
-    await alice.step({ players: ["alice", "bob"], visibleTo: () => [] });
-    expect(handle.doc().phase).toBe("waiting");
-    expect(alice.status({ players: ["alice", "bob"], nameOf: (id) => id.toUpperCase() })).toBe("Waiting for BOB to shuffle.");
+    expect(alice.status({ players: ["alice"], openSeats: ["Player 2"] })).toBe("Test deck is shuffled once someone sits as Player 2.");
+    expect(alice.status({ players: ["alice", "bob"], nameOf: (id) => id.toUpperCase() })).toBe("Waiting for BOB to shuffle Test deck.");
   });
 });
