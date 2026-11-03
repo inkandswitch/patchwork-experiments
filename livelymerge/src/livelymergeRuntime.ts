@@ -323,6 +323,16 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
         invalidateMat('global');
       }
     }
+    // `global` and `globalThis` both name the global object (the datatype seeds them
+    // for new documents; older documents get them here).
+    for (const alias of ['global', 'globalThis']) {
+      const globalObj = doc.objectTable['global'] as Obj;
+      const key = '@' + alias;
+      if (!globalObj[key]) {
+        globalObj[key] = wrapStoredVal({ $type: 'ref', $id: 'global' });
+        invalidateMat('global');
+      }
+    }
   }
 
   function ensureObjectPrototype(): void {

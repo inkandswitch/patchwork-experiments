@@ -126,3 +126,15 @@ const p1 = new Pt(1, 2);`);
     });
   });
 });
+
+describe('global aliases', () => {
+  it('global and globalThis are the global object, in new and upgraded documents', () => {
+    const rt = createFreshRuntime();
+    expect(rt.eval('global === $global')).toBe(true);
+    expect(rt.eval('globalThis === $global')).toBe(true);
+    expect(rt.eval('globalThis === global')).toBe(true);
+    rt.eval('let viaAlias = 7');
+    expect(rt.eval('globalThis.viaAlias')).toBe(7);
+    expect(rt.eval('Object.keys(globalThis).includes("viaAlias")')).toBe(true);
+  });
+});

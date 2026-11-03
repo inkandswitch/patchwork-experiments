@@ -45,6 +45,10 @@ converts to canvas pixels using the scale in the header. Never do that conversio
   on a function or class. Change state through eval only when the UI offers no reasonable
   way (adding a method to a class, say) or the user asked you to write code. Everything you
   change is live and shared with the other users of this document — be deliberate.
+  LM's dialect: declare with \`let\` or \`const\` — \`var\` is rejected. The globals live on
+  \`global\` (\`globalThis\` is the same object): \`Object.keys(global)\` lists them, and a
+  top-level \`let\` creates a new one. Classes are plain JS classes; \`SomeClass.toString()\`
+  gives their source and \`new SomeClass()\` works as usual.
 
 ## How to act
 - Do things the way the user would: through the UI, with the mouse and keyboard, visibly,
