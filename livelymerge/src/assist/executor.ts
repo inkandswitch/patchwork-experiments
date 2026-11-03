@@ -55,6 +55,48 @@ export interface PerformOptions {
 }
 
 const CURSOR_HIDE_MS = 1500;
+/** settle(): give up waiting for the canvas to stop changing after this long. */
+const SETTLE_MAX_MS = 500;
+const SETTLE_POLL_MS = 50;
+
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+/**
+ * Waits for the UI to catch up with the events we dispatched: LM UIs drain their
+ * input queue and redraw on a 30 Hz frame loop, so a screenshot taken right after
+ * the last event shows the state BEFORE it (the model then concludes "nothing
+ * happened"). Two frames let the queue drain and render; then the canvas is
+ * sampled at low resolution until two consecutive samples match, capped so a
+ * running animation can't stall us.
+ */
+export async function settle(lmCanvas: HTMLCanvasElement, maxMs = SETTLE_MAX_MS): Promise<void> {
+  await nextFrame();
+  await nextFrame();
+  const w = 64;
+  const h = Math.max(1, Math.round((w * lmCanvas.height) / Math.max(1, lmCanvas.width)));
+  const probe = document.createElement('canvas');
+  probe.width = w;
+  probe.height = h;
+  const ctx = probe.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return;
+  const sample = () => {
+    ctx.drawImage(lmCanvas, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h).data;
+  };
+  const same = (a: Uint8ClampedArray, b: Uint8ClampedArray) => {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) return false;
+    return true;
+  };
+  const start = performance.now();
+  let prev = sample();
+  while (performance.now() - start < maxMs) {
+    await sleep(SETTLE_POLL_MS);
+    const cur = sample();
+    if (same(prev, cur)) return;
+    prev = cur;
+  }
+}
 
 export class Executor {
   /** image → canvas: canvas = image / scale. Set per session from its ImageScale. */
@@ -108,10 +150,16 @@ export class Executor {
       this.input.releaseAll();
       this.cursorTimer = window.setTimeout(() => this.overlay.setAiCursor(null), CURSOR_HIDE_MS);
     }
-    return { steps: results, canceled: this.canceled, screenshot: this.takeScreenshot(scale, 'after perform') };
+    return { steps: results, canceled: this.canceled, screenshot: await this.captureScreenshot(scale, 'after perform') };
   }
 
-  /** The canvas plus whatever ink is visible, at the given image scale. */
+  /** A screenshot for the model: waits for the UI to settle first (see settle). */
+  async captureScreenshot(scale: number, label: string): Promise<Snapshot> {
+    await settle(this.lmCanvas);
+    return this.takeScreenshot(scale, label);
+  }
+
+  /** The canvas plus whatever ink is visible, at the given image scale — right now. */
   takeScreenshot(scale: number, label: string): Snapshot {
     const img = imageScale(this.lmCanvas.width, this.lmCanvas.height);
     img.scale = scale;
@@ -203,7 +251,7 @@ export class Executor {
         return rt.printIt(step.source);
       }
       case 'screenshot':
-        return this.takeScreenshot(s, 'screenshot').dataUrl;
+        return (await this.captureScreenshot(s, 'screenshot')).dataUrl;
     }
   }
 

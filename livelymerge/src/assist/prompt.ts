@@ -93,6 +93,8 @@ before you finish, not only when asked.
   or with nothing at all — the result speaks for itself. Explain only if the user asked a
   question, something unexpected happened, or you made a judgement call they should know
   about. Never recount what you just did step by step, and never report coordinates.
+- Leave the UI as you found it: dismiss halos, menus or dialogs you opened once the job
+  is done, the way a person would.
 - When you are done, stop calling tools.
 
 ## Vibe

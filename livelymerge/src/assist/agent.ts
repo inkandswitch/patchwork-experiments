@@ -334,7 +334,7 @@ export class Agent {
           return { type: 'tool_result', tool_use_id: tu.id, content };
         }
         case 'screenshot': {
-          const shot = this.executor.takeScreenshot(scale, 'screenshot');
+          const shot = await this.executor.captureScreenshot(scale, 'screenshot');
           this.emit({ kind: 'tool_result', name: 'screenshot', text: '', images: [shot.dataUrl] });
           return { type: 'tool_result', tool_use_id: tu.id, content: [imageBlock(shot.dataUrl)] };
         }
