@@ -28,7 +28,7 @@ import { UNIT_OPTIONS, formatLength, fromUnits, roundForDisplay, toUnits } from 
 import { REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
 import { fileBytes } from "./file-content.js";
-import { plainResolver, seatOf, seatedPlayers, visibility } from "./secrets.js";
+import { plainResolver, seatAt, seatOf, seatedPlayers, visibility, zoneRegions } from "./secrets.js";
 
 const PRESENCE = "scene:presence";
 // a piece in someone's hand: { type, id, transform | null }, never stored
@@ -352,6 +352,7 @@ export default function SceneTool(handle, element) {
   }
 
   // ─── viewport ─────────────────────────────────────────────────────────────
+  let zones = null; // this snapshot's private zones, for the hand (worked out when first wanted; reset by sync)
   const viewport = new Viewport({
     host: viewportEl,
     themeRoot: root,
@@ -371,6 +372,12 @@ export default function SceneTool(handle, element) {
       updateObject(id, (o) => {
         o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
       }),
+    facesYou: (id, world) => {
+      const seat = seatOf(doc().seats, viewer);
+      if (!seat || !doc().objects?.[id]?.hidden) return false;
+      zones ??= zoneRegions(doc().objects);
+      return seatAt(zones, world) === seat;
+    },
   });
   viewport.setGizmoMode(gizmoMode);
   if (!viewport.ok) {
@@ -1986,6 +1993,7 @@ export default function SceneTool(handle, element) {
   let framedFromHints = false;
   function sync() {
     if (dead) return;
+    zones = null;
     const t0 = now();
     const m = derive();
     const { d, objects, parents, tree, inherited } = m;

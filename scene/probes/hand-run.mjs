@@ -160,6 +160,12 @@ try {
   check("flipped (F) while carried and put down, it is face up", Math.abs((await T('rot("faceDown")'))[2]) < 1e-3, await T('rot("faceDown")'));
   check("and both see its face", (await look("a", "faceDown")) === "face" && (await look("b", "faceDown")) === "face", [await look("a", "faceDown"), await look("b", "faceDown")]);
 
+  // drawing: a face-down card carried into your own tray turns face up for you, and stays hidden from B
+  await carry(await T('top("under")'), await T("screen([-0.18, 0.002, 0.25])"));
+  await settle();
+  check("drawn into your tray, a face-down card lands face up", Math.abs((await T('rot("under")'))[2]) < 1e-3, await T('rot("under")'));
+  check("and A sees it, B doesn't", (await look("a", "under")) === "face" && (await look("b", "under")) === "back", [await look("a", "under"), await look("b", "under")]);
+
   const shot = await send("Page.captureScreenshot", { format: "png" });
   report.screenshot = join(profile, "..", "scene-hand-probe.png");
   writeFileSync(report.screenshot, Buffer.from(shot.data, "base64"));

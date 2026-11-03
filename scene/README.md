@@ -160,6 +160,9 @@ Each viewer works out for themselves which secrets to show (`src/secrets.js`):
 
 So drawing a card is carrying it from the deck into your zone, playing it is
 putting it down face up, and turning one over (F while carrying) reveals it.
+A hidden card carried into your own zone from outside it turns face up as it
+arrives, so you see what you drew, and back over if you carry it out again
+(press F to decide for yourself).
 **Shuffle** (`S` over a card, or *Shuffle pile* in the inspector) shuffles
 the pile it's in — the cards of the same deck whose footprints overlap it by
 half or more — through its deck: a plain deck permutes its entries; a secure
