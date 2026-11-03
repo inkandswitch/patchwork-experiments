@@ -273,6 +273,9 @@ export class Agent {
           if (closing) await this.sayText(closing);
           return;
         }
+        // Text alongside tool calls is narration: speak it while the tools run.
+        const narration = texts.join(' ').trim();
+        const narrating = narration ? this.executor.narrate(narration).catch(() => {}) : Promise.resolve();
         const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
         for (const tu of toolUses) {
           if (this.canceled) {
@@ -281,6 +284,7 @@ export class Agent {
           }
           results.push(await this.runTool(tu, scale, status));
         }
+        await narrating;
         messages.push({ role: 'user', content: results });
       }
       if (this.canceled) reason = 'canceled';

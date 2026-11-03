@@ -159,6 +159,24 @@ export class Executor {
     return { steps: results, canceled: this.canceled, screenshot: await this.captureScreenshot(scale, 'after perform') };
   }
 
+  /**
+   * Speaks `text` (with a bubble) WITHOUT taking the perform lock, so it can run
+   * alongside a performance or an eval — the model's "let me open the halo" plays
+   * while its hands work. A `say` step inside the performance takes over the voice.
+   * Honors cancel and fast-forward.
+   */
+  async narrate(text: string): Promise<void> {
+    const parsed = parseAnchors(text);
+    if (!parsed.text.trim()) return;
+    const id = `narr${++this.bubbleSeq}`;
+    this.overlay.showBubble({ id, kind: 'speech', text: parsed.text, at: null });
+    try {
+      await speak(parsed, {}, this.speakOptions, () => this.canceled, () => this.fastForward);
+    } finally {
+      window.setTimeout(() => this.overlay.hideBubble(id), 2000);
+    }
+  }
+
   /** A screenshot for the model: waits for the UI to settle first (see settle). */
   async captureScreenshot(scale: number, label: string): Promise<Snapshot> {
     await settle(this.lmCanvas);
