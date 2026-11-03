@@ -258,7 +258,21 @@ right third of the tool at full height:
 - Header buttons: Re-send last, Cancel. `talkAndDraw.drawer(true|false)` from the console.
 - ❓ Storing the prompt in the document (shared) rather than per browser is still open.
 
-## 11. Deferred and open
+## 11. Shared notes — built
+
+`src/assist/notes.ts`. Agents keep a manual of THIS document's UI in a persistent LM
+global, `aiNotes`: an array of `{topic, text, author, when}` objects (separate objects
+so concurrent users' additions merge; one big string would be a single Automerge op and
+overwrite). The host reads it through the runtime's transpiling eval at the start of
+every run and puts it in the first user turn — no tool call spent — and the model gets
+`remember(topic, text)` (upsert by topic) and `forget(topic)`. The prompt tells it to
+record how the UI works (gestures, handles, classes, globals), never task facts or screen
+positions, and to fix notes that turn out wrong. The drawer shows the notes with a × to
+prune, and "Max turns" (default 24, per browser) replaces the fixed 12. A UI can seed the
+manual by defining `aiNotes` itself; knowledge is per document, since each document
+carries its own defs.
+
+## 12. Deferred and open
 
 - ⏸ `objectsUnder(points)` hook returning `{ref, description}` pairs (`ref` = an
   expression the model can `eval`). Decide after seeing how the model does without it.
@@ -268,7 +282,7 @@ right third of the tool at full height:
 - ⏸ Interrupting the AI mid-performance with a new spoken request.
 - ❓ Whisper inside Patchwork's page (CDN import, huggingface.co fetch, mic prompt) — §7.
 
-## 12. Milestones
+## 13. Milestones
 
 1. **M1 — record & show.** ✅ Overlay, hotkey, mouse steal, ink + dissolve, audio
    recording, per-stroke/final snapshots, timeline logged to the console with a stubbed

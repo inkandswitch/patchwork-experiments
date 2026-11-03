@@ -237,12 +237,13 @@ describe('agent message', () => {
       ],
       timeline: 'Timeline (seconds from session start):\n[0.00] move',
     });
-    expect(content.map((c) => c.type)).toEqual(['text', 'text', 'image', 'text', 'image']);
+    expect(content.map((c) => c.type)).toEqual(['text', 'text', 'text', 'image', 'text', 'image']);
+    expect((content[1] as { type: 'text'; text: string }).text).toContain('Shared notes about this system: none yet');
     const head = content[0] as { type: 'text'; text: string };
     expect(head.text).toContain('Canvas 1440x900, images 1280x800 (scale 0.889)');
     expect(head.text).toContain('Transcript: "move this"');
     expect(head.text).toContain('[0.00] move');
-    const img = content[2] as { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+    const img = content[3] as { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
     expect(img.source).toEqual({ type: 'base64', media_type: 'image/png', data: 'AAAA' });
   });
   it('says when the transcript is missing', () => {
@@ -255,7 +256,7 @@ describe('agent message', () => {
     expect(head.text).toContain('Transcript: unavailable (failed: boom)');
   });
   it('tools: perform/screenshot/eval, and the step enum covers every executor step type', () => {
-    expect(TOOLS.map((t) => t.name)).toEqual(['perform', 'screenshot', 'eval']);
+    expect(TOOLS.map((t) => t.name)).toEqual(['perform', 'screenshot', 'remember', 'forget', 'eval']);
     const schema = TOOLS[0].input_schema as any;
     const types: string[] = schema.properties.steps.items.properties.type.enum;
     for (const t of ['mouse_move', 'mouse_down', 'mouse_up', 'scroll', 'key_down', 'key_up', 'type', 'wait', 'pen', 'say', 'speech_bubble', 'thought_bubble', 'dismiss', 'eval', 'screenshot']) {

@@ -11,7 +11,8 @@ import { isEndHotkey, isStartHotkey } from './hotkey';
 import type { InkPoint, Stroke } from './ink';
 import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage } from './message';
 import { formatTimeline } from './message';
-import { Agent, MODELS, clearApiKey, getApiKey, getModel, getSystemPrompt, hasApiKey, setModel, setSystemPrompt } from './agent';
+import { Agent, MODELS, clearApiKey, getApiKey, getMaxTurns, getModel, getSystemPrompt, hasApiKey, setMaxTurns, setModel, setSystemPrompt } from './agent';
+import { forgetNote, readNotes, type Note } from './notes';
 import { Executor, type PerformOptions, type PerformResult, type Step } from './executor';
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
@@ -65,6 +66,8 @@ export interface AssistHandle {
   getSystemPrompt(): string;
   /** Open or close the drawer (toggles when omitted). */
   drawer(open?: boolean): void;
+  /** The shared notes (`aiNotes` in the document) as plain objects. */
+  notes(): Note[];
   readonly ui: AssistUI;
 }
 
@@ -87,6 +90,10 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     clearApiKey,
     resend: () => void handle.ask().catch((e) => console.warn('Talk & Draw:', e.message)),
     cancel: () => handle.cancel(),
+    getMaxTurns,
+    setMaxTurns,
+    getNotes: readNotes,
+    forgetNote: (topic) => void forgetNote(topic),
   });
   const agent = new Agent(executor, (t) => ui.setStatus(t, t ? 'working' : 'idle'));
   agent.addListener((e) => ui.logEvent(e));
@@ -367,6 +374,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     setSystemPrompt,
     getSystemPrompt,
     drawer: (open) => ui.toggleDrawer(open),
+    notes: readNotes,
     ui,
     dispose() {
       ui.dispose();

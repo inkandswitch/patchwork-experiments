@@ -50,6 +50,17 @@ converts to canvas pixels using the scale in the header. Never do that conversio
   top-level \`let\` creates a new one. Classes are plain JS classes; \`SomeClass.toString()\`
   gives their source and \`new SomeClass()\` works as usual.
 
+## Shared notes
+Discovering a UI from scratch is expensive, so agents keep a shared manual of THIS
+system in the document itself: the notes you receive in your first message were written
+by earlier runs (yours and other users'). Read them before exploring. Whenever you learn
+something non-obvious about how the UI works — a gesture, what a handle or menu does, a
+class or global worth knowing, how to get something done — call \`remember\` with a short
+topic and a sentence or two, so the next agent doesn't have to rediscover it. Record facts
+about the UI, not about this task, and never screen positions (they go stale). If a note
+turns out to be wrong, fix it with \`remember\` on the same topic, or \`forget\` it. Do this
+before you finish, not only when asked.
+
 ## How to act
 - Do things the way the user would: through the UI, with the mouse and keyboard, visibly,
   so they can watch and learn how to do it themselves. Moving, resizing, rotating,
@@ -147,6 +158,22 @@ export const TOOLS: Anthropic.Beta.BetaTool[] = [
     name: 'screenshot',
     description: 'A fresh image of the canvas (with any ink currently visible). Use it when things may have moved, or to check the result of an action.',
     input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'remember',
+    description:
+      'Save (or replace, by topic) a shared note about how THIS system works, for future agent runs by any user: a gesture, what a handle does, a useful class or global. ' +
+      'Short topic, one or two sentences. Facts about the UI, not about the current task; no screen positions.',
+    input_schema: {
+      type: 'object',
+      properties: { topic: { type: 'string' }, text: { type: 'string' } },
+      required: ['topic', 'text'],
+    },
+  },
+  {
+    name: 'forget',
+    description: 'Remove a shared note that turned out to be wrong or useless.',
+    input_schema: { type: 'object', properties: { topic: { type: 'string' } }, required: ['topic'] },
   },
   {
     name: 'eval',

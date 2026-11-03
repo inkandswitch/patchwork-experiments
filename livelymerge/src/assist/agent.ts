@@ -11,6 +11,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Executor, Step } from './executor';
 import type { TalkAndDrawMessage } from './message';
 import { formatHeader } from './message';
+import { forgetNote, formatNotes, readNotes, rememberNote, type Note } from './notes';
 import { DEFAULT_SYSTEM_PROMPT, TOOLS } from './prompt';
 
 export const API_KEY_STORAGE = 'talkAndDraw.anthropicApiKey';
@@ -19,7 +20,8 @@ export const SYSTEM_PROMPT_STORAGE = 'talkAndDraw.systemPrompt';
 export const DEFAULT_MODEL = 'claude-opus-5-5';
 /** What the drawer offers. */
 export const MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'];
-const MAX_TURNS = 12;
+export const MAX_TURNS_STORAGE = 'talkAndDraw.maxTurns';
+export const DEFAULT_MAX_TURNS = 24;
 
 /** What the agent reports as it goes (console + drawer transcript). */
 export type AgentEvent =
@@ -75,6 +77,16 @@ export function setSystemPrompt(prompt: string | null): void {
   else storage()?.removeItem(SYSTEM_PROMPT_STORAGE);
 }
 
+export function getMaxTurns(): number {
+  const n = Number(storage()?.getItem(MAX_TURNS_STORAGE));
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_MAX_TURNS;
+}
+
+export function setMaxTurns(n: number | null): void {
+  if (n && Number.isFinite(n) && n >= 1 && n !== DEFAULT_MAX_TURNS) storage()?.setItem(MAX_TURNS_STORAGE, String(Math.floor(n)));
+  else storage()?.removeItem(MAX_TURNS_STORAGE);
+}
+
 export function hasApiKey(): boolean {
   return !!storage()?.getItem(API_KEY_STORAGE);
 }
@@ -89,7 +101,7 @@ function imageBlock(dataUrl: string): Anthropic.Beta.BetaImageBlockParam {
 }
 
 /** The session as the model's first user turn: header, transcript, timeline, images. */
-export function buildUserContent(m: TalkAndDrawMessage): Content {
+export function buildUserContent(m: TalkAndDrawMessage, notes: readonly Note[] = []): Content {
   const content: Content = [];
   const transcript =
     m.transcriptStatus === 'whisper'
@@ -99,6 +111,7 @@ export function buildUserContent(m: TalkAndDrawMessage): Content {
     type: 'text',
     text: `${formatHeader(m)}\nThe user drew ${m.strokes.length} stroke(s) in purple over ${(m.durationMs / 1000).toFixed(1)}s.\n${transcript}\n\n${m.timeline}`,
   });
+  content.push({ type: 'text', text: formatNotes(notes) });
   for (const img of m.images) {
     content.push({ type: 'text', text: `Image "${img.label}" (${(img.t / 1000).toFixed(2)}s):` });
     content.push(imageBlock(img.dataUrl));
@@ -163,14 +176,21 @@ export class Agent {
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const model = getModel();
     const system = getSystemPrompt();
-    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: buildUserContent(m) }];
+    let notes: Note[] = [];
+    try {
+      notes = readNotes();
+    } catch (err) {
+      console.warn('Talk & Draw: could not read shared notes', err);
+    }
+    const maxTurns = getMaxTurns();
+    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: buildUserContent(m, notes) }];
     const scale = m.image.scale;
     let reason: Extract<AgentEvent, { kind: 'done' }>['reason'] = 'end';
     console.group('%cTalk & Draw agent', 'color:#ff6a00;font-weight:bold');
-    console.log(`model ${model}, ${m.images.length} images, scale ${scale.toFixed(3)}`);
+    console.log(`model ${model}, ${m.images.length} images, scale ${scale.toFixed(3)}, ${notes.length} shared notes, max ${maxTurns} turns`);
     this.emit({ kind: 'start', model, message: m });
     try {
-      for (let turn = 0; turn < MAX_TURNS && !this.canceled; turn++) {
+      for (let turn = 0; turn < maxTurns && !this.canceled; turn++) {
         status('Talk & Draw — thinking…');
         this.emit({ kind: 'request', turn });
         let response: Anthropic.Beta.BetaMessage;
@@ -264,8 +284,8 @@ export class Agent {
       if (this.canceled) reason = 'canceled';
       else {
         reason = 'max_turns';
-        console.warn(`Talk & Draw: stopped after ${MAX_TURNS} turns.`);
-        this.emit({ kind: 'error', text: `Stopped after ${MAX_TURNS} turns.` });
+        console.warn(`Talk & Draw: stopped after ${maxTurns} turns (raise it in the drawer).`);
+        this.emit({ kind: 'error', text: `Stopped after ${maxTurns} turns (raise the limit in the drawer).` });
       }
     } finally {
       this.running = false;
@@ -317,6 +337,22 @@ export class Agent {
           const shot = this.executor.takeScreenshot(scale, 'screenshot');
           this.emit({ kind: 'tool_result', name: 'screenshot', text: '', images: [shot.dataUrl] });
           return { type: 'tool_result', tool_use_id: tu.id, content: [imageBlock(shot.dataUrl)] };
+        }
+        case 'remember': {
+          const topic = String(input.topic ?? '').trim();
+          const text = String(input.text ?? '').trim();
+          if (!topic || !text) throw new Error('remember needs a topic and a text');
+          const author = (window as any)._lmUserName ? String((window as any)._lmUserName) : undefined;
+          const count = rememberNote(topic, text, author);
+          console.log('%cremember:', 'color:#ff6a00', topic, '—', text);
+          this.emit({ kind: 'tool_result', name: 'remember', text: `${topic}: ${text}`, images: [] });
+          return { type: 'tool_result', tool_use_id: tu.id, content: `saved (${count} notes now)` };
+        }
+        case 'forget': {
+          const topic = String(input.topic ?? '').trim();
+          const removed = forgetNote(topic);
+          this.emit({ kind: 'tool_result', name: 'forget', text: removed ? `removed "${topic}"` : `no note "${topic}"`, images: [] });
+          return { type: 'tool_result', tool_use_id: tu.id, content: removed ? 'removed' : 'no such note' };
         }
         case 'eval': {
           const rt = (window as any).runtime;

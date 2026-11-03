@@ -6,6 +6,7 @@
  * the overlay is ignoring the pointer.
  */
 import type { AgentEvent } from './agent';
+import type { Note } from './notes';
 import { DEFAULT_SYSTEM_PROMPT } from './prompt';
 
 export type BadgeState = 'idle' | 'listening' | 'working' | 'error';
@@ -21,6 +22,10 @@ export interface UiHooks {
   clearApiKey(): void;
   resend(): void;
   cancel(): void;
+  getMaxTurns(): number;
+  setMaxTurns(n: number | null): void;
+  getNotes(): Note[];
+  forgetNote(topic: string): void;
 }
 
 const IDLE_TEXT = 'Talk & Draw · ⌃Space to talk';
@@ -50,6 +55,15 @@ const CSS = `
 .lm-assist-drawer .row{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #eee}
 .lm-assist-drawer .row label{width:72px;color:#666}
 .lm-assist-drawer select{font:12px system-ui,sans-serif;padding:2px 4px;flex:1}
+.lm-assist-drawer input[type=number]{font:12px system-ui,sans-serif;padding:2px 4px;width:64px}
+.lm-assist-drawer .notes{max-height:170px;overflow:auto;padding:2px 10px 6px;border-bottom:1px solid #eee}
+.lm-assist-drawer .note{display:flex;gap:6px;align-items:flex-start;padding:3px 0;border-top:1px solid #f0f0f0}
+.lm-assist-drawer .note:first-child{border-top:none}
+.lm-assist-drawer .note .body{flex:1;overflow-wrap:anywhere}
+.lm-assist-drawer .note b{color:#444}
+.lm-assist-drawer .note .meta{color:#999;font-size:10px}
+.lm-assist-drawer .note button.x{font-size:13px;color:#999}
+.lm-assist-drawer .notes .empty{color:#999;padding:4px 0}
 .lm-assist-drawer .sec{display:flex;align-items:center;gap:8px;padding:6px 10px 2px;color:#666}
 .lm-assist-drawer .sec span{flex:1}
 .lm-assist-drawer .sec em{font-style:normal;color:#999}
@@ -78,6 +92,8 @@ export class AssistUI {
   private readonly promptNote: HTMLElement;
   private readonly keyNote: HTMLElement;
   private readonly modelSelect: HTMLSelectElement;
+  private readonly turnsInput: HTMLInputElement;
+  private readonly notesEl: HTMLDivElement;
   private saveTimer: number | null = null;
 
   constructor(
@@ -131,6 +147,25 @@ export class AssistUI {
     modelRow.appendChild(this.modelSelect);
     d.appendChild(modelRow);
 
+    const turnsRow = el('div', 'row');
+    const tl0 = document.createElement('label');
+    tl0.textContent = 'Max turns';
+    turnsRow.appendChild(tl0);
+    this.turnsInput = document.createElement('input');
+    this.turnsInput.type = 'number';
+    this.turnsInput.min = '1';
+    this.turnsInput.max = '200';
+    this.turnsInput.addEventListener('change', () => {
+      hooks.setMaxTurns(Number(this.turnsInput.value) || null);
+      this.turnsInput.value = String(hooks.getMaxTurns());
+    });
+    turnsRow.appendChild(this.turnsInput);
+    const tnote = el('span', '');
+    tnote.style.color = '#999';
+    tnote.textContent = 'model calls per request';
+    turnsRow.appendChild(tnote);
+    d.appendChild(turnsRow);
+
     const keyRow = el('div', 'row');
     const kl = document.createElement('label');
     kl.textContent = 'API key';
@@ -176,6 +211,18 @@ export class AssistUI {
     });
     d.appendChild(this.promptArea);
 
+    const ns = el('div', 'sec');
+    const nl = document.createElement('span');
+    nl.textContent = 'Shared notes ';
+    const nnote = document.createElement('em');
+    nnote.textContent = '(aiNotes in the document)';
+    nl.appendChild(nnote);
+    ns.appendChild(nl);
+    ns.appendChild(button('Refresh', () => this.renderNotes()));
+    d.appendChild(ns);
+    this.notesEl = el('div', 'notes');
+    d.appendChild(this.notesEl);
+
     const ts = el('div', 'sec');
     const tl = document.createElement('span');
     tl.textContent = 'Transcript';
@@ -195,6 +242,46 @@ export class AssistUI {
     this.keyNote.textContent = this.hooks.hasApiKey() ? 'set (kept in this browser)' : 'not set — asked for on first use';
     if (document.activeElement !== this.promptArea) this.promptArea.value = this.hooks.getSystemPrompt();
     this.updatePromptNote();
+    this.turnsInput.value = String(this.hooks.getMaxTurns());
+    this.renderNotes();
+  }
+
+  renderNotes(): void {
+    let notes: Note[] = [];
+    try {
+      notes = this.hooks.getNotes();
+    } catch {
+      notes = [];
+    }
+    this.notesEl.textContent = '';
+    if (notes.length === 0) {
+      const e = el('div', 'empty');
+      e.textContent = 'None yet — agents add notes as they learn the UI.';
+      this.notesEl.appendChild(e);
+      return;
+    }
+    for (const n of notes) {
+      const row = el('div', 'note');
+      const body = el('div', 'body');
+      const b = document.createElement('b');
+      b.textContent = n.topic + ': ';
+      body.appendChild(b);
+      body.appendChild(document.createTextNode(n.text));
+      if (n.author || n.when) {
+        const meta = el('div', 'meta');
+        meta.textContent = [n.author, n.when?.slice(0, 10)].filter(Boolean).join(' · ');
+        body.appendChild(meta);
+      }
+      row.appendChild(body);
+      const x = button('×', () => {
+        this.hooks.forgetNote(n.topic);
+        this.renderNotes();
+      });
+      x.className = 'x';
+      x.title = 'Forget this note';
+      row.appendChild(x);
+      this.notesEl.appendChild(row);
+    }
   }
 
   private updatePromptNote(): void {
@@ -282,6 +369,7 @@ export class AssistUI {
       }
       case 'done':
         this.meta(`done (${e.reason})`);
+        this.renderNotes();
         break;
     }
     this.log.scrollTop = this.log.scrollHeight;
