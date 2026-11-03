@@ -21,6 +21,7 @@ import { createRoot } from 'react-dom/client';
 import type { ToolElement, ToolImplementation } from '@inkandswitch/patchwork-plugins';
 import './styles.css';
 import { createLivelymergeRuntime, type LivelymergeRuntime } from './livelymergeRuntime';
+import { startAssist } from './assist/session';
 
 let runtime: LivelymergeRuntime;
 /** The runtime whose initUI() has run. Per runtime (one per mounted document), not per
@@ -229,7 +230,11 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
     const ro = new ResizeObserver(syncCanvasSize);
     ro.observe(canvas);
     window.addEventListener('resize', syncCanvasSize);
+    // Talk & Draw: the disappearing-ink overlay and its session hotkeys (host-level,
+    // UI-independent; see TALK_AND_DRAW.md).
+    const assist = startAssist(canvas);
     return () => {
+      assist.dispose();
       ro.disconnect();
       window.removeEventListener('resize', syncCanvasSize);
       delete (window as any).canvas;

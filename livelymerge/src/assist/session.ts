@@ -1,0 +1,291 @@
+/**
+ * A Talk & Draw session: hotkey → record audio + disappearing-ink strokes + snapshots
+ * → Esc → build the model message (M1: dump it to the console).
+ *
+ * Lives entirely in the host. The UI running in the LM canvas is never touched: the
+ * overlay sits above it and takes the pointer while a session is active, the overlay
+ * takes keyboard focus so the canvas's key listeners go quiet, and Esc is caught in
+ * the capture phase on `window`. The UI keeps running underneath (no freeze).
+ */
+import { isEndHotkey, isStartHotkey } from './hotkey';
+import type { InkPoint, Stroke } from './ink';
+import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage } from './message';
+import { formatTimeline } from './message';
+import { InkOverlay } from './overlay';
+import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
+
+interface AudioCapture {
+  stream: MediaStream | null;
+  recorder: MediaRecorder | null;
+  chunks: Blob[];
+  startedAtRel: number | null;
+  error: string | null;
+  /** Resolves with the final blob once the recorder has stopped. */
+  stopped: Promise<Blob | null> | null;
+}
+
+interface Session {
+  t0: number;
+  startedAt: Date;
+  image: ImageScale;
+  strokes: Stroke[];
+  active: Stroke | null;
+  nextId: number;
+  snapshots: Snapshot[];
+  audio: AudioCapture;
+  ending: boolean;
+}
+
+const STATUS_LISTENING = 'Talk & Draw — listening · Esc to finish';
+
+export interface AssistHandle {
+  dispose(): void;
+  /** Programmatic start/end, handy from the console. */
+  start(): void;
+  end(): Promise<void>;
+  isActive(): boolean;
+}
+
+export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
+  const overlay = new InkOverlay(lmCanvas);
+  let session: Session | null = null;
+
+  const now = () => performance.now();
+  const rel = () => (session ? now() - session.t0 : 0);
+
+  function canvasPoint(e: PointerEvent): InkPoint {
+    const rect = overlay.el.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top, t: rel() };
+  }
+
+  function snapshot(label: string): void {
+    if (!session) return;
+    session.snapshots.push(compositeSnapshot(lmCanvas, session.strokes, session.image, label, rel()));
+  }
+
+  // ---- keyboard ------------------------------------------------------------
+
+  function onKeyDown(e: KeyboardEvent): void {
+    if (!session) {
+      if (isStartHotkey(e)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        start();
+      }
+      return;
+    }
+    // Everything is ours while a session is active.
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (isEndHotkey(e) && !session.ending) void end();
+  }
+
+  function swallowWhileActive(e: KeyboardEvent): void {
+    if (!session) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+
+  // ---- pointer -------------------------------------------------------------
+
+  function onPointerDown(e: PointerEvent): void {
+    if (!session || session.active) return;
+    try {
+      overlay.el.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    const p = canvasPoint(e);
+    const stroke: Stroke = { id: session.nextId++, points: [p], t0: p.t, t1: null };
+    session.active = stroke;
+    session.strokes.push(stroke);
+    overlay.beginStroke(stroke);
+    e.preventDefault();
+  }
+
+  function onPointerMove(e: PointerEvent): void {
+    if (!session || !session.active) return;
+    const evts: PointerEvent[] =
+      typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length > 0
+        ? e.getCoalescedEvents()
+        : [e];
+    for (const ce of evts) session.active.points.push(canvasPoint(ce));
+    overlay.strokeChanged();
+    e.preventDefault();
+  }
+
+  function onPointerUp(e: PointerEvent): void {
+    if (!session || !session.active) return;
+    endActiveStroke(canvasPoint(e));
+    try {
+      overlay.el.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    e.preventDefault();
+  }
+
+  function endActiveStroke(last?: InkPoint): void {
+    if (!session || !session.active) return;
+    const stroke = session.active;
+    if (last) stroke.points.push(last);
+    stroke.t1 = rel();
+    session.active = null;
+    overlay.endStroke(stroke);
+    // Synchronous, between the UI's frames: the canvas holds a complete frame.
+    snapshot(`after stroke ${stroke.id}`);
+  }
+
+  // ---- audio ---------------------------------------------------------------
+
+  function startAudio(s: Session): void {
+    const a = s.audio;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      a.error = 'MediaRecorder/getUserMedia unavailable';
+      overlay.setStatus(`${STATUS_LISTENING} (no mic)`);
+      return;
+    }
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
+      .then((stream) => {
+        if (session !== s || s.ending) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        a.stream = stream;
+        const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) =>
+          MediaRecorder.isTypeSupported(m),
+        );
+        const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        a.recorder = rec;
+        rec.ondataavailable = (ev) => {
+          if (ev.data && ev.data.size > 0) a.chunks.push(ev.data);
+        };
+        rec.onstart = () => {
+          a.startedAtRel = now() - s.t0;
+        };
+        a.stopped = new Promise<Blob | null>((resolve) => {
+          rec.onstop = () => resolve(a.chunks.length ? new Blob(a.chunks, { type: rec.mimeType }) : null);
+          rec.onerror = () => resolve(null);
+        });
+        rec.start();
+      })
+      .catch((err) => {
+        a.error = err && err.message ? String(err.message) : String(err);
+        if (session === s) overlay.setStatus(`${STATUS_LISTENING} (no mic: ${a.error})`);
+      });
+  }
+
+  async function stopAudio(s: Session): Promise<AudioInfo> {
+    const a = s.audio;
+    let blob: Blob | null = null;
+    if (a.recorder && a.recorder.state !== 'inactive') {
+      a.recorder.stop();
+      blob = a.stopped ? await a.stopped : null;
+    }
+    a.stream?.getTracks().forEach((t) => t.stop());
+    const stoppedAtRel = now() - s.t0;
+    if (blob) {
+      return {
+        status: 'recorded',
+        mimeType: blob.type,
+        bytes: blob.size,
+        offsetMs: a.startedAtRel ?? undefined,
+        durationMs: a.startedAtRel != null ? stoppedAtRel - a.startedAtRel : undefined,
+        blob,
+      };
+    }
+    return { status: a.error ? 'unavailable' : 'none', error: a.error ?? undefined };
+  }
+
+  // ---- lifecycle -----------------------------------------------------------
+
+  function start(): void {
+    if (session) return;
+    const s: Session = {
+      t0: now(),
+      startedAt: new Date(),
+      image: imageScale(lmCanvas.width, lmCanvas.height),
+      strokes: [],
+      active: null,
+      nextId: 1,
+      snapshots: [],
+      audio: { stream: null, recorder: null, chunks: [], startedAtRel: null, error: null, stopped: null },
+      ending: false,
+    };
+    session = s;
+    overlay.setActive(true);
+    overlay.setStatus(STATUS_LISTENING);
+    overlay.el.focus({ preventScroll: true });
+    snapshot('start');
+    startAudio(s);
+  }
+
+  async function end(): Promise<void> {
+    const s = session;
+    if (!s || s.ending) return;
+    s.ending = true;
+    endActiveStroke();
+    snapshot('final');
+    overlay.setActive(false);
+    overlay.setStatus('Talk & Draw — finishing…');
+    const audio = await stopAudio(s);
+    overlay.setStatus(null);
+    session = null;
+    lmCanvas.focus({ preventScroll: true });
+
+    const durationMs = now() - s.t0;
+    const strokes = s.strokes.map(summarizeStroke);
+    const transcript: TalkAndDrawMessage['transcript'] = []; // M2: Whisper
+    const m: TalkAndDrawMessage = {
+      version: 1,
+      startedAt: s.startedAt.toISOString(),
+      durationMs,
+      canvas: { width: lmCanvas.width, height: lmCanvas.height },
+      image: s.image,
+      transcript,
+      transcriptStatus: 'stubbed',
+      audio,
+      strokes,
+      images: s.snapshots,
+      timeline: formatTimeline(transcript, strokes, s.snapshots, durationMs / 1000),
+    };
+    dumpToConsole(m);
+  }
+
+  function abort(): void {
+    const s = session;
+    if (!s) return;
+    s.ending = true;
+    session = null;
+    if (s.audio.recorder && s.audio.recorder.state !== 'inactive') s.audio.recorder.stop();
+    s.audio.stream?.getTracks().forEach((t) => t.stop());
+    overlay.clear();
+    overlay.setActive(false);
+    overlay.setStatus(null);
+  }
+
+  window.addEventListener('keydown', onKeyDown, { capture: true });
+  window.addEventListener('keyup', swallowWhileActive, { capture: true });
+  window.addEventListener('keypress', swallowWhileActive, { capture: true });
+  overlay.el.addEventListener('pointerdown', onPointerDown);
+  overlay.el.addEventListener('pointermove', onPointerMove);
+  overlay.el.addEventListener('pointerup', onPointerUp);
+  overlay.el.addEventListener('pointercancel', onPointerUp);
+
+  const handle: AssistHandle = {
+    start,
+    end,
+    isActive: () => session != null,
+    dispose() {
+      abort();
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
+      window.removeEventListener('keyup', swallowWhileActive, { capture: true });
+      window.removeEventListener('keypress', swallowWhileActive, { capture: true });
+      overlay.dispose();
+      if ((window as any).talkAndDraw === handle) delete (window as any).talkAndDraw;
+    },
+  };
+  (window as any).talkAndDraw = handle;
+  return handle;
+}
