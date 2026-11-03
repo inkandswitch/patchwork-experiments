@@ -101,6 +101,24 @@ export interface LivelymergeRuntime {
   externalChangeCount(): number;
 }
 
+/**
+ * The declared name of a Fun, as `fn.name` would give in plain JS: from the stored
+ * code (`() => function Name(...)`), else from the display source — declarations are
+ * stored anonymous but shown as `function foo() {}`; classes as `class Foo`; methods
+ * as `name(args) {`. '' for arrows and anonymous functions.
+ */
+export function funNameFromCode(code: string, show = ''): string {
+  const fromCode = /^\s*\(\)\s*=>\s*(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)?/.exec(code);
+  if (fromCode?.[1]) return fromCode[1];
+  const fromFunction = /^\s*(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/.exec(show);
+  if (fromFunction) return fromFunction[1];
+  const fromClass = /^\s*class\s+([A-Za-z_$][\w$]*)/.exec(show);
+  if (fromClass) return fromClass[1];
+  const fromMethod = /^\s*(?:static\s+)?(?:async\s+)?(?:get\s+|set\s+)?\*?\s*([A-Za-z_$][\w$]*)\s*\(/.exec(show);
+  if (fromMethod && fromMethod[1] !== 'function') return fromMethod[1];
+  return '';
+}
+
 export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): LivelymergeRuntime {
   // docHandle from factory parameter
   let doc: LivelymergeDoc;
@@ -1494,6 +1512,14 @@ export function createLivelymergeRuntime(docHandle: LivelymergeDocHandle): Livel
             return getFunPrototype(live, funProxy);
           case 'toString':
             return () => live.$codeForShow;
+          case 'name': {
+            // As in plain JS: the declared name, read off the stored code (classes
+            // and methods compile to `() => function Name(...)`; arrows have none).
+            // An own `name` property, if someone set one, wins.
+            const own = lmGetOwn(live, 'name');
+            if (own !== undefined) return deserialize(own);
+            return funNameFromCode(strVal(live.$code), strVal(live.$codeForShow));
+          }
           case 'call':
             return (thisArg: unknown, ...args: unknown[]) => fn().apply(thisArg, args);
           case 'apply':
