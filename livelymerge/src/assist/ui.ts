@@ -319,6 +319,12 @@ export class AssistUI {
         ];
         n.appendChild(text(lines.join('\n')));
         n.appendChild(pre(m.timeline));
+        const det = document.createElement('details');
+        const sum = document.createElement('summary');
+        sum.textContent = `${e.notes.length} shared note(s) sent`;
+        det.appendChild(sum);
+        det.appendChild(pre(e.notes.length ? e.notes.map((x) => `- ${x.topic}: ${x.text}`).join('\n') : '(none)'));
+        n.appendChild(det);
         for (const img of m.images) n.appendChild(thumb(img.dataUrl, img.label));
         break;
       }

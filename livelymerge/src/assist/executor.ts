@@ -16,10 +16,10 @@ import { parseAnchors, speak, type SpeakOptions } from './say';
 import { compositeSnapshot, imageScale, type Snapshot } from './snapshot';
 
 export type Step =
-  | { type: 'mouse_move'; x: number; y: number; duration?: number }
-  | { type: 'mouse_down'; button?: number }
-  | { type: 'mouse_up'; button?: number }
-  | { type: 'scroll'; dx: number; dy: number; x?: number; y?: number }
+  | { type: 'mouse_move'; x: number; y: number; duration?: number; modifiers?: Modifiers }
+  | { type: 'mouse_down'; button?: number; modifiers?: Modifiers }
+  | { type: 'mouse_up'; button?: number; modifiers?: Modifiers }
+  | { type: 'scroll'; dx: number; dy: number; x?: number; y?: number; modifiers?: Modifiers }
   | { type: 'key_down'; key: string; code?: string; modifiers?: Modifiers }
   | { type: 'key_up'; key: string; code?: string; modifiers?: Modifiers }
   | { type: 'type'; text: string; perCharMs?: number }
@@ -152,16 +152,16 @@ export class Executor {
     const isCanceled = () => this.canceled;
     switch (step.type) {
       case 'mouse_move':
-        await this.input.move(cv(step.x), cv(step.y), step.duration, isCanceled);
+        await this.input.move(cv(step.x), cv(step.y), step.duration, isCanceled, step.modifiers ?? {});
         return undefined;
       case 'mouse_down':
-        this.input.down(step.button ?? 0);
+        this.input.down(step.button ?? 0, step.modifiers ?? {});
         return undefined;
       case 'mouse_up':
-        this.input.up(step.button ?? 0);
+        this.input.up(step.button ?? 0, step.modifiers ?? {});
         return undefined;
       case 'scroll':
-        this.input.wheel(step.dx, step.dy, step.x != null ? cv(step.x) : undefined, step.y != null ? cv(step.y) : undefined);
+        this.input.wheel(step.dx, step.dy, step.x != null ? cv(step.x) : undefined, step.y != null ? cv(step.y) : undefined, step.modifiers ?? {});
         return undefined;
       case 'key_down':
         this.input.keyDown(step.key, step.code, step.modifiers ?? {});

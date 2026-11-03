@@ -48,7 +48,9 @@ converts to canvas pixels using the scale in the header. Never do that conversio
   LM's dialect: declare with \`let\` or \`const\` — \`var\` is rejected. The globals live on
   \`global\` (\`globalThis\` is the same object): \`Object.keys(global)\` lists them, and a
   top-level \`let\` creates a new one. Classes are plain JS classes; \`SomeClass.toString()\`
-  gives their source and \`new SomeClass()\` works as usual.
+  gives their source and \`new SomeClass()\` works as usual. \`JSON.stringify\` does not
+  work on LM objects — build strings by hand (\`Object.keys(x)\` first; fields may be data
+  rather than methods). Keep evals small and targeted: one question per eval.
 
 ## Shared notes
 Discovering a UI from scratch is expensive, so agents keep a shared manual of THIS
@@ -80,8 +82,10 @@ before you finish, not only when asked.
 - Mouse and keyboard are RAW: mouse_move, mouse_down, mouse_up, scroll, key_down, key_up,
   type. The UI decides what a click, a double click, a long press or a drag means — you
   produce the same events a human would, with sensible timing (a drag is mouse_move,
-  mouse_down, mouse_move with a duration, mouse_up). Hold a button with wait if the UI
-  needs a long press. Look at the screenshot after acting to confirm it worked, and adapt.
+  mouse_down, mouse_move with a duration, mouse_up; a cmd-click is key_down "Meta",
+  mouse_down, mouse_up, key_up "Meta" — the held modifier rides on the pointer events).
+  Hold a button with wait if the UI needs a long press. Look at the screenshot after
+  acting to confirm it worked, and adapt.
 - Don't narrate every step. One short sentence of intent, then do it, then a short
   confirmation. Use speech_bubble / thought_bubble sparingly, for things better read than
   heard (a value, a name, a snippet).
@@ -104,10 +108,11 @@ const stepSchema = {
   type: 'object',
   description:
     'One step. Which other fields apply depends on `type`:\n' +
-    '- mouse_move {x, y, duration?ms}: move the pointer there over time (default ~1500 px/s).\n' +
-    '- mouse_down {button?} / mouse_up {button?}: 0 = left, 1 = middle, 2 = right.\n' +
-    '- scroll {dx, dy, x?, y?}: a wheel event at (x, y) or the current pointer.\n' +
-    '- key_down {key, code?, modifiers?} / key_up: a KeyboardEvent (key like "a", "Enter", "ArrowLeft", "Escape").\n' +
+    '- mouse_move {x, y, duration?ms, modifiers?}: move the pointer there over time (default ~1500 px/s).\n' +
+    '- mouse_down {button?, modifiers?} / mouse_up {button?, modifiers?}: 0 = left, 1 = middle, 2 = right. ' +
+    'modifiers = {meta?, shift?, ctrl?, alt?}; a modifier held with key_down ("Meta", "Shift", …) is carried by every pointer event until key_up, so a cmd-click is key_down Meta, mouse_down, mouse_up, key_up Meta.\n' +
+    '- scroll {dx, dy, x?, y?, modifiers?}: a wheel event at (x, y) or the current pointer.\n' +
+    '- key_down {key, code?, modifiers?} / key_up: a KeyboardEvent (key like "a", "Enter", "ArrowLeft", "Escape", "Meta").\n' +
     '- type {text, perCharMs?}: type text as key events.\n' +
     '- wait {ms}.\n' +
     '- pen {shape: "polyline"|"circle"|"arrow"|"box"|"underline", duration?ms, style?: "crisp"|"hand-drawn", linger?ms}: ' +

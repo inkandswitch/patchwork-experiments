@@ -23,9 +23,34 @@ export interface MouseState {
   x: number;
   y: number;
   buttons: number;
+  /** modifier keys currently held (via keyDown/keyUp) */
+  held: Modifiers;
 }
 
 const BUTTON_MASK = [1, 4, 2, 8, 16];
+
+/** Canonical KeyboardEvent.key for a modifier, or null. Accepts the common aliases. */
+export function modifierOf(key: string): keyof Modifiers | null {
+  switch (key.toLowerCase()) {
+    case 'shift':
+      return 'shift';
+    case 'control':
+    case 'ctrl':
+      return 'ctrl';
+    case 'alt':
+    case 'option':
+      return 'alt';
+    case 'meta':
+    case 'cmd':
+    case 'command':
+    case 'os':
+      return 'meta';
+    default:
+      return null;
+  }
+}
+
+const MODIFIER_KEY_NAME: Record<keyof Modifiers, string> = { shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' };
 
 export class SyntheticInput {
   state: MouseState;
@@ -34,13 +59,24 @@ export class SyntheticInput {
     private readonly canvas: HTMLCanvasElement,
     private readonly onMouse?: (s: MouseState) => void,
   ) {
-    this.state = { x: Math.round(canvas.width / 2), y: Math.round(canvas.height / 2), buttons: 0 };
+    this.state = { x: Math.round(canvas.width / 2), y: Math.round(canvas.height / 2), buttons: 0, held: {} };
   }
 
-  private pointerInit(type: string, button: number): PointerEventInit {
+  /** The modifiers an event carries: those held via keyDown plus any passed explicitly. */
+  private mods(extra: Modifiers = {}): Modifiers {
+    const h = this.state.held;
+    return { shift: !!(h.shift || extra.shift), ctrl: !!(h.ctrl || extra.ctrl), alt: !!(h.alt || extra.alt), meta: !!(h.meta || extra.meta) };
+  }
+
+  private pointerInit(type: string, button: number, extra: Modifiers = {}): PointerEventInit {
     const r = this.canvas.getBoundingClientRect();
     const { x, y, buttons } = this.state;
+    const m = this.mods(extra);
     return {
+      shiftKey: m.shift,
+      ctrlKey: m.ctrl,
+      altKey: m.alt,
+      metaKey: m.meta,
       bubbles: true,
       cancelable: true,
       composed: true,
@@ -58,8 +94,8 @@ export class SyntheticInput {
     };
   }
 
-  private dispatchPointer(type: string, button = 0): void {
-    this.canvas.dispatchEvent(new PointerEvent(type, this.pointerInit(type, button)));
+  private dispatchPointer(type: string, button = 0, extra: Modifiers = {}): void {
+    this.canvas.dispatchEvent(new PointerEvent(type, this.pointerInit(type, button, extra)));
     this.onMouse?.(this.state);
   }
 
@@ -69,7 +105,7 @@ export class SyntheticInput {
   }
 
   /** Moves the pointer to (x, y) over `durationMs`, dispatching a pointermove per frame. */
-  move(x: number, y: number, durationMs?: number, isCanceled: () => boolean = () => false): Promise<void> {
+  move(x: number, y: number, durationMs?: number, isCanceled: () => boolean = () => false, extra: Modifiers = {}): Promise<void> {
     const from = { x: this.state.x, y: this.state.y };
     const dist = Math.hypot(x - from.x, y - from.y);
     const dur = durationMs ?? SyntheticInput.moveDuration(dist);
@@ -81,7 +117,7 @@ export class SyntheticInput {
         const e = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2; // ease in-out
         this.state.x = from.x + (x - from.x) * e;
         this.state.y = from.y + (y - from.y) * e;
-        this.dispatchPointer('pointermove');
+        this.dispatchPointer('pointermove', 0, extra);
         if (f >= 1) return resolve();
         requestAnimationFrame(tick);
       };
@@ -89,31 +125,40 @@ export class SyntheticInput {
     });
   }
 
-  down(button = 0): void {
+  down(button = 0, extra: Modifiers = {}): void {
     this.state.buttons |= BUTTON_MASK[button] ?? 1;
-    this.dispatchPointer('pointerdown', button);
+    this.dispatchPointer('pointerdown', button, extra);
   }
 
-  up(button = 0): void {
+  up(button = 0, extra: Modifiers = {}): void {
     this.state.buttons &= ~(BUTTON_MASK[button] ?? 1);
-    this.dispatchPointer('pointerup', button);
+    this.dispatchPointer('pointerup', button, extra);
   }
 
-  /** Releases any held buttons (after a cancel, so the UI isn't left mid-drag). */
+  /** Releases any held buttons and modifier keys (after a performance or a cancel,
+   *  so the UI isn't left mid-drag or with Meta stuck down). */
   releaseAll(): void {
     for (let b = 0; b < BUTTON_MASK.length; b++) {
       if (this.state.buttons & BUTTON_MASK[b]) this.up(b);
     }
+    for (const m of Object.keys(this.state.held) as (keyof Modifiers)[]) {
+      if (this.state.held[m]) this.keyUp(MODIFIER_KEY_NAME[m]);
+    }
   }
 
-  wheel(dx: number, dy: number, x?: number, y?: number): void {
+  wheel(dx: number, dy: number, x?: number, y?: number, extra: Modifiers = {}): void {
     if (x != null && y != null) {
       this.state.x = x;
       this.state.y = y;
     }
     const r = this.canvas.getBoundingClientRect();
+    const m = this.mods(extra);
     this.canvas.dispatchEvent(
       new WheelEvent('wheel', {
+        shiftKey: m.shift,
+        ctrlKey: m.ctrl,
+        altKey: m.alt,
+        metaKey: m.meta,
         bubbles: true,
         cancelable: true,
         composed: true,
@@ -129,6 +174,7 @@ export class SyntheticInput {
   }
 
   private keyInit(key: string, code: string | undefined, mods: Modifiers): KeyboardEventInit {
+    const m = this.mods(mods);
     return {
       bubbles: true,
       cancelable: true,
@@ -136,10 +182,10 @@ export class SyntheticInput {
       view: window,
       key,
       code: code ?? codeFor(key),
-      shiftKey: !!mods.shift,
-      ctrlKey: !!mods.ctrl,
-      altKey: !!mods.alt,
-      metaKey: !!mods.meta,
+      shiftKey: m.shift,
+      ctrlKey: m.ctrl,
+      altKey: m.alt,
+      metaKey: m.meta,
       repeat: false,
     };
   }
@@ -154,6 +200,13 @@ export class SyntheticInput {
 
   keyDown(key: string, code?: string, mods: Modifiers = {}): void {
     this.focus();
+    // Pressing a modifier holds it: every pointer, wheel and key event until the
+    // matching keyUp carries it, the way a real cmd-click does.
+    const mod = modifierOf(key);
+    if (mod) {
+      key = MODIFIER_KEY_NAME[mod];
+      this.state.held[mod] = true;
+    }
     this.canvas.dispatchEvent(new KeyboardEvent('keydown', this.keyInit(key, code, mods)));
     if (key.length === 1 && !mods.ctrl && !mods.meta) {
       this.canvas.dispatchEvent(
@@ -163,6 +216,11 @@ export class SyntheticInput {
   }
 
   keyUp(key: string, code?: string, mods: Modifiers = {}): void {
+    const mod = modifierOf(key);
+    if (mod) {
+      key = MODIFIER_KEY_NAME[mod];
+      this.state.held[mod] = false;
+    }
     this.canvas.dispatchEvent(new KeyboardEvent('keyup', this.keyInit(key, code, mods)));
   }
 
@@ -185,6 +243,7 @@ export function codeFor(key: string): string {
     if (/[0-9]/.test(key)) return 'Digit' + key;
     if (key === ' ') return 'Space';
   }
+  if (key === 'Meta' || key === 'Control' || key === 'Alt' || key === 'Shift') return key + 'Left';
   return key;
 }
 

@@ -25,7 +25,7 @@ export const DEFAULT_MAX_TURNS = 24;
 
 /** What the agent reports as it goes (console + drawer transcript). */
 export type AgentEvent =
-  | { kind: 'start'; model: string; message: TalkAndDrawMessage }
+  | { kind: 'start'; model: string; message: TalkAndDrawMessage; notes: Note[] }
   | { kind: 'request'; turn: number }
   | { kind: 'response'; turn: number; stopReason: string | null; inputTokens: number; outputTokens: number; servedBy?: string }
   | { kind: 'text'; text: string }
@@ -188,7 +188,7 @@ export class Agent {
     let reason: Extract<AgentEvent, { kind: 'done' }>['reason'] = 'end';
     console.group('%cTalk & Draw agent', 'color:#ff6a00;font-weight:bold');
     console.log(`model ${model}, ${m.images.length} images, scale ${scale.toFixed(3)}, ${notes.length} shared notes, max ${maxTurns} turns`);
-    this.emit({ kind: 'start', model, message: m });
+    this.emit({ kind: 'start', model, message: m, notes });
     try {
       for (let turn = 0; turn < maxTurns && !this.canceled; turn++) {
         status('Talk & Draw — thinking…');
