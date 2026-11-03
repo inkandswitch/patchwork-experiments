@@ -230,9 +230,9 @@ the screenshot taken after its last step; the loop runs until the model stops ca
 tools (max 12 turns). Closing text is spoken with a bubble; a refusal is spoken too.
 The hotkey cancels the loop and the current performance.
 
-- ✅ Model: `claude-fable-5-1` (computer-use training; `effort: medium` for latency),
-  with the server-side refusal fallback chain enabled (`fallbacks: "default"`).
-  Override: `talkAndDraw.setModel('claude-opus-5-5')` (stored per browser).
+- ✅ Model: `claude-opus-5-5` by default (`effort: medium` for latency), with the
+  server-side refusal fallback chain enabled (`fallbacks: "default"`; not for Haiku).
+  Pick another in the drawer or `talkAndDraw.setModel(...)` (stored per browser).
 - ✅ API key: asked for with a prompt the first time it is needed (the first Esc), kept
   in `localStorage` for this origin, never in the document. A rejected key is cleared
   automatically; `talkAndDraw.clearApiKey()` clears it by hand.
@@ -241,13 +241,22 @@ The hotkey cancels the loop and the current performance.
   console group.
 - ❓ Not yet verified against a live model from inside Patchwork.
 
-## 10. Vibe / system prompt (M5)
+## 10. The drawer (M5, first cut) — built
 
-The system prompt frames the response as a **performance**: point, then talk, then act.
-It sets the agent's "vibe" — e.g. hand-drawn wobbly ink and a conversational voice for a
-human-collaborator feel, or crisp ink and a flat voice for a clear "computer voice". The
-prompt is editable in a pull-out drawer like the Workspace drawer; ❓ stored per document
-(shared, in the Automerge doc) or per user.
+`src/assist/ui.ts`. The Talk & Draw badge (bottom right, DOM, always visible; purple
+pulse while listening, orange while the model thinks or performs) opens a drawer on the
+right third of the tool at full height:
+- **Model** picker: Haiku 5.5, Sonnet 5.5, Opus 5.5 (default), Fable 5.1. Stored per browser.
+- **API key**: status, Set… (prompt), Clear.
+- **System prompt**: the whole prompt, editable; saved per browser as you type, with
+  Restore default. It frames the response as a performance (point, then talk, then act)
+  and ends with a "vibe" paragraph — hand-drawn and conversational by default; edit it for
+  a flat "computer voice" instead.
+- **Transcript**: what went to the model (header, transcript, timeline, snapshot
+  thumbnails) and what came back (text, tool calls with their inputs, results with
+  screenshots, evals, errors, token counts). The console group stays as well.
+- Header buttons: Re-send last, Cancel. `talkAndDraw.drawer(true|false)` from the console.
+- ❓ Storing the prompt in the document (shared) rather than per browser is still open.
 
 ## 11. Deferred and open
 
@@ -270,4 +279,4 @@ prompt is editable in a pull-out drawer like the Workspace drawer; ❓ stored pe
    scripts from the console, no model yet.
 4. **M4 — agent.** ✅ Model call with the tools, `perform` scripts, screenshot loop, key
    handling.
-5. **M5 — polish.** Vibe drawer, ElevenLabs, eval gating, hand-drawn style.
+5. **M5 — polish.** ✅ Drawer (model, key, prompt, transcript). Still to do: ElevenLabs, eval gating.

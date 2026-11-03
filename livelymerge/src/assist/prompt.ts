@@ -68,6 +68,9 @@ converts to canvas pixels using the scale in the header. Never do that conversio
 ${vibe}`;
 }
 
+/** The whole default system prompt; the drawer edits this text and stores it per browser. */
+export const DEFAULT_SYSTEM_PROMPT = systemPrompt(DEFAULT_VIBE);
+
 const pt = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] };
 
 const stepSchema = {

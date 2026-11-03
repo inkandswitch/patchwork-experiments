@@ -64,7 +64,6 @@ export class InkOverlay {
   private cursor: AiCursor | null = null;
   private cursorHiddenAt: number | null = null;
   private active = false;
-  private status: string | null = null;
   private rafId: number | null = null;
   private readonly ro: ResizeObserver | null;
   private disposed = false;
@@ -109,11 +108,6 @@ export class InkOverlay {
   setActive(active: boolean): void {
     this.active = active;
     this.el.style.pointerEvents = active ? 'auto' : 'none';
-    this.requestFrame();
-  }
-
-  setStatus(text: string | null): void {
-    this.status = text;
     this.requestFrame();
   }
 
@@ -241,10 +235,6 @@ export class InkOverlay {
       if (this.cursor) this.drawCursor(ctx, this.cursor, alpha);
     }
 
-    if (this.status) {
-      this.drawStatus(ctx, now);
-      animating = true;
-    }
     if (animating) this.requestFrame();
   }
 
@@ -342,40 +332,6 @@ export class InkOverlay {
     }
     ctx.fillStyle = '#222';
     lines.forEach((l, i) => ctx.fillText(l, x + pad, y + pad + i * lineH));
-    ctx.restore();
-  }
-
-  private drawStatus(ctx: CanvasRenderingContext2D, now: number): void {
-    const text = this.status!;
-    // Bottom right: the top right belongs to the Automerge doc-stats widget.
-    const { width, height } = this.lmCanvas.getBoundingClientRect();
-    ctx.save();
-    ctx.font = '12px system-ui, sans-serif';
-    ctx.textBaseline = 'middle';
-    const padX = 10;
-    const dotR = 4;
-    const tw = ctx.measureText(text).width;
-    const w = padX + dotR * 2 + 8 + tw + padX;
-    const h = 26;
-    const x = width - w - 12;
-    const y = height - h - 12;
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.strokeStyle = USER_INK_COLOR;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 13);
-    ctx.fill();
-    ctx.stroke();
-    // Pulsing dot: 0.4..1 alpha on a ~1.2s cycle.
-    const pulse = 0.7 + 0.3 * Math.sin((now / 1200) * Math.PI * 2);
-    ctx.globalAlpha = pulse;
-    ctx.fillStyle = USER_INK_COLOR;
-    ctx.beginPath();
-    ctx.arc(x + padX + dotR, y + h / 2, dotR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#222';
-    ctx.fillText(text, x + padX + dotR * 2 + 8, y + h / 2 + 0.5);
     ctx.restore();
   }
 

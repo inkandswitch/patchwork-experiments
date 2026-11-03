@@ -11,14 +11,26 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { Executor, Step } from './executor';
 import type { TalkAndDrawMessage } from './message';
 import { formatHeader } from './message';
-import type { InkOverlay } from './overlay';
-import { DEFAULT_VIBE, TOOLS, systemPrompt } from './prompt';
+import { DEFAULT_SYSTEM_PROMPT, TOOLS } from './prompt';
 
 export const API_KEY_STORAGE = 'talkAndDraw.anthropicApiKey';
 export const MODEL_STORAGE = 'talkAndDraw.model';
-export const VIBE_STORAGE = 'talkAndDraw.vibe';
-export const DEFAULT_MODEL = 'claude-fable-5-1';
+export const SYSTEM_PROMPT_STORAGE = 'talkAndDraw.systemPrompt';
+export const DEFAULT_MODEL = 'claude-opus-5-5';
+/** What the drawer offers. */
+export const MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'];
 const MAX_TURNS = 12;
+
+/** What the agent reports as it goes (console + drawer transcript). */
+export type AgentEvent =
+  | { kind: 'start'; model: string; message: TalkAndDrawMessage }
+  | { kind: 'request'; turn: number }
+  | { kind: 'response'; turn: number; stopReason: string | null; inputTokens: number; outputTokens: number; servedBy?: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'tool_use'; name: string; input: unknown }
+  | { kind: 'tool_result'; name: string; text: string; images: string[]; isError?: boolean }
+  | { kind: 'error'; text: string }
+  | { kind: 'done'; reason: 'end' | 'canceled' | 'refusal' | 'error' | 'max_turns' | 'no_key' };
 
 type Content = Anthropic.Beta.BetaContentBlockParam[];
 
@@ -53,13 +65,18 @@ export function setModel(model: string | null): void {
   else storage()?.removeItem(MODEL_STORAGE);
 }
 
-export function getVibe(): string {
-  return storage()?.getItem(VIBE_STORAGE) || DEFAULT_VIBE;
+export function getSystemPrompt(): string {
+  return storage()?.getItem(SYSTEM_PROMPT_STORAGE) || DEFAULT_SYSTEM_PROMPT;
 }
 
-export function setVibe(vibe: string | null): void {
-  if (vibe) storage()?.setItem(VIBE_STORAGE, vibe);
-  else storage()?.removeItem(VIBE_STORAGE);
+/** null restores the default. */
+export function setSystemPrompt(prompt: string | null): void {
+  if (prompt && prompt.trim() && prompt !== DEFAULT_SYSTEM_PROMPT) storage()?.setItem(SYSTEM_PROMPT_STORAGE, prompt);
+  else storage()?.removeItem(SYSTEM_PROMPT_STORAGE);
+}
+
+export function hasApiKey(): boolean {
+  return !!storage()?.getItem(API_KEY_STORAGE);
 }
 
 function imageBlock(dataUrl: string): Anthropic.Beta.BetaImageBlockParam {
@@ -91,17 +108,34 @@ export function buildUserContent(m: TalkAndDrawMessage): Content {
 
 export interface AgentOptions {
   effort?: 'low' | 'medium' | 'high';
-  onStatus?: (text: string | null) => void;
 }
 
 export class Agent {
   private canceled = false;
   private running = false;
+  private listeners: ((e: AgentEvent) => void)[] = [];
 
   constructor(
     private readonly executor: Executor,
-    private readonly overlay: InkOverlay,
+    private readonly setStatus: (text: string | null) => void,
   ) {}
+
+  addListener(fn: (e: AgentEvent) => void): () => void {
+    this.listeners.push(fn);
+    return () => {
+      this.listeners = this.listeners.filter((f) => f !== fn);
+    };
+  }
+
+  private emit(e: AgentEvent): void {
+    for (const fn of this.listeners) {
+      try {
+        fn(e);
+      } catch (err) {
+        console.error('Talk & Draw: listener failed', err);
+      }
+    }
+  }
 
   isRunning(): boolean {
     return this.running;
@@ -116,29 +150,35 @@ export class Agent {
   async run(m: TalkAndDrawMessage, opts: AgentOptions = {}): Promise<void> {
     if (this.running) this.cancel();
     while (this.running) await new Promise((r) => setTimeout(r, 20));
-    const status = (t: string | null) => {
-      this.overlay.setStatus(t);
-      opts.onStatus?.(t);
-    };
+    const status = this.setStatus;
     const apiKey = getApiKey();
     if (!apiKey) {
       console.warn('Talk & Draw: no API key; the message was logged but not sent.');
+      this.emit({ kind: 'error', text: 'No API key: the message was logged but not sent.' });
+      this.emit({ kind: 'done', reason: 'no_key' });
       return;
     }
     this.running = true;
     this.canceled = false;
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const model = getModel();
-    const system = systemPrompt(getVibe());
+    const system = getSystemPrompt();
     const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: buildUserContent(m) }];
     const scale = m.image.scale;
+    let reason: Extract<AgentEvent, { kind: 'done' }>['reason'] = 'end';
     console.group('%cTalk & Draw agent', 'color:#ff6a00;font-weight:bold');
     console.log(`model ${model}, ${m.images.length} images, scale ${scale.toFixed(3)}`);
+    this.emit({ kind: 'start', model, message: m });
     try {
       for (let turn = 0; turn < MAX_TURNS && !this.canceled; turn++) {
         status('Talk & Draw — thinking…');
+        this.emit({ kind: 'request', turn });
         let response: Anthropic.Beta.BetaMessage;
         try {
+          // Haiku has no server-side refusal fallback; the others get the default chain.
+          const fallback = model.startsWith('claude-haiku')
+            ? {}
+            : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const };
           response = await client.beta.messages.create({
             model,
             max_tokens: 8000,
@@ -146,45 +186,62 @@ export class Agent {
             tools: TOOLS,
             messages,
             output_config: { effort: opts.effort ?? 'medium' },
-            // Fable's safety classifiers may decline; the default fallback chain reruns
-            // the request on another model inside the same call.
-            betas: ['server-side-fallback-2026-07-01'],
-            fallbacks: 'default',
+            ...fallback,
           });
         } catch (err) {
+          let text: string;
           if (err instanceof Anthropic.AuthenticationError) {
             clearApiKey();
-            console.error('Talk & Draw: the API key was rejected and has been cleared; you will be asked again next time.');
+            text = 'The API key was rejected and has been cleared; you will be asked again next time.';
           } else if (err instanceof Anthropic.RateLimitError) {
-            console.error('Talk & Draw: rate limited; try again shortly.', err.message);
+            text = `Rate limited; try again shortly. ${err.message}`;
           } else if (err instanceof Anthropic.APIError) {
-            console.error(`Talk & Draw: API error ${err.status}:`, err.message);
+            text = `API error ${err.status}: ${err.message}`;
           } else {
-            console.error('Talk & Draw: request failed', err);
+            text = `Request failed: ${err instanceof Error ? err.message : String(err)}`;
           }
+          console.error('Talk & Draw:', text, err);
+          this.emit({ kind: 'error', text });
           status('Talk & Draw — error (see console)');
+          reason = 'error';
           await new Promise((r) => setTimeout(r, 2500));
           return;
         }
-        if (this.canceled) return;
+        if (this.canceled) {
+          reason = 'canceled';
+          return;
+        }
+        const servedBy = response.model !== model ? response.model : undefined;
         console.log(
           `turn ${turn + 1}: stop=${response.stop_reason}, in=${response.usage.input_tokens} out=${response.usage.output_tokens}` +
-            (response.model !== model ? ` (served by ${response.model})` : ''),
+            (servedBy ? ` (served by ${servedBy})` : ''),
         );
+        this.emit({
+          kind: 'response',
+          turn,
+          stopReason: response.stop_reason,
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+          servedBy,
+        });
         const texts: string[] = [];
         const toolUses: Anthropic.Beta.BetaToolUseBlock[] = [];
         for (const block of response.content) {
           if (block.type === 'text') {
             texts.push(block.text);
             console.log('%csays:', 'color:#ff6a00', block.text);
+            this.emit({ kind: 'text', text: block.text });
           } else if (block.type === 'tool_use') {
             toolUses.push(block);
             console.log(`%ctool ${block.name}:`, 'color:#ff6a00', block.input);
+            this.emit({ kind: 'tool_use', name: block.name, input: block.input });
           }
         }
         if (response.stop_reason === 'refusal') {
           console.warn('Talk & Draw: the model declined this request.', response.stop_details);
+          this.emit({ kind: 'error', text: `The model declined this request (${response.stop_details?.category ?? 'no category'}).` });
           await this.sayText("Sorry, I can't help with that one.");
+          reason = 'refusal';
           return;
         }
         messages.push({ role: 'assistant', content: response.content });
@@ -196,16 +253,25 @@ export class Agent {
         }
         const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
         for (const tu of toolUses) {
-          if (this.canceled) return;
+          if (this.canceled) {
+            reason = 'canceled';
+            return;
+          }
           results.push(await this.runTool(tu, scale, status));
         }
         messages.push({ role: 'user', content: results });
       }
-      if (!this.canceled) console.warn(`Talk & Draw: stopped after ${MAX_TURNS} turns.`);
+      if (this.canceled) reason = 'canceled';
+      else {
+        reason = 'max_turns';
+        console.warn(`Talk & Draw: stopped after ${MAX_TURNS} turns.`);
+        this.emit({ kind: 'error', text: `Stopped after ${MAX_TURNS} turns.` });
+      }
     } finally {
       this.running = false;
       status(null);
       console.groupEnd();
+      this.emit({ kind: 'done', reason });
     }
   }
 
@@ -239,10 +305,17 @@ export class Agent {
               content.push({ type: 'text', text: `Screenshot from step ${s.index}:` }, imageBlock(s.value));
             }
           }
+          this.emit({
+            kind: 'tool_result',
+            name: 'perform',
+            text: text.replace(/\nScreenshot after the last step:$/, ''),
+            images: [r.screenshot.dataUrl, ...r.steps.filter((s) => s.type === 'screenshot' && typeof s.value === 'string').map((s) => s.value as string)],
+          });
           return { type: 'tool_result', tool_use_id: tu.id, content };
         }
         case 'screenshot': {
           const shot = this.executor.takeScreenshot(scale, 'screenshot');
+          this.emit({ kind: 'tool_result', name: 'screenshot', text: '', images: [shot.dataUrl] });
           return { type: 'tool_result', tool_use_id: tu.id, content: [imageBlock(shot.dataUrl)] };
         }
         case 'eval': {
@@ -250,19 +323,18 @@ export class Agent {
           if (!rt || typeof rt.printIt !== 'function') throw new Error('no runtime');
           const source = String(input.source ?? '');
           console.log('%ceval:', 'color:#ff6a00', source);
-          const out = String(rt.printIt(source));
-          return { type: 'tool_result', tool_use_id: tu.id, content: out.slice(0, 20000) };
+          const out = String(rt.printIt(source)).slice(0, 20000);
+          this.emit({ kind: 'tool_result', name: 'eval', text: out, images: [] });
+          return { type: 'tool_result', tool_use_id: tu.id, content: out };
         }
         default:
+          this.emit({ kind: 'tool_result', name: tu.name, text: `unknown tool ${tu.name}`, images: [], isError: true });
           return { type: 'tool_result', tool_use_id: tu.id, content: `unknown tool ${tu.name}`, is_error: true };
       }
     } catch (err) {
-      return {
-        type: 'tool_result',
-        tool_use_id: tu.id,
-        content: err instanceof Error ? err.message : String(err),
-        is_error: true,
-      };
+      const text = err instanceof Error ? err.message : String(err);
+      this.emit({ kind: 'tool_result', name: tu.name, text, images: [], isError: true });
+      return { type: 'tool_result', tool_use_id: tu.id, content: text, is_error: true };
     }
   }
 }

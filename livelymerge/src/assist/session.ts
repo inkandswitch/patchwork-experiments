@@ -11,11 +11,12 @@ import { isEndHotkey, isStartHotkey } from './hotkey';
 import type { InkPoint, Stroke } from './ink';
 import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage } from './message';
 import { formatTimeline } from './message';
-import { Agent, clearApiKey, getModel, setModel, setVibe } from './agent';
+import { Agent, MODELS, clearApiKey, getApiKey, getModel, getSystemPrompt, hasApiKey, setModel, setSystemPrompt } from './agent';
 import { Executor, type PerformOptions, type PerformResult, type Step } from './executor';
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
 import { loadWhisper, transcribe } from './transcribe';
+import { AssistUI } from './ui';
 
 interface AudioCapture {
   stream: MediaStream | null;
@@ -60,15 +61,35 @@ export interface AssistHandle {
   clearApiKey(): void;
   setModel(model: string | null): void;
   getModel(): string;
-  setVibe(vibe: string | null): void;
+  setSystemPrompt(prompt: string | null): void;
+  getSystemPrompt(): string;
+  /** Open or close the drawer (toggles when omitted). */
+  drawer(open?: boolean): void;
+  readonly ui: AssistUI;
 }
 
 export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
   const overlay = new InkOverlay(lmCanvas);
   const executor = new Executor(lmCanvas, overlay);
-  const agent = new Agent(executor, overlay);
   let session: Session | null = null;
   let lastMessage: TalkAndDrawMessage | null = null;
+  const ui = new AssistUI(lmCanvas.parentElement ?? document.body, {
+    models: MODELS,
+    getModel,
+    setModel,
+    getSystemPrompt,
+    setSystemPrompt,
+    hasApiKey,
+    askApiKey: () => {
+      clearApiKey();
+      getApiKey(true);
+    },
+    clearApiKey,
+    resend: () => void handle.ask().catch((e) => console.warn('Talk & Draw:', e.message)),
+    cancel: () => handle.cancel(),
+  });
+  const agent = new Agent(executor, (t) => ui.setStatus(t, t ? 'working' : 'idle'));
+  agent.addListener((e) => ui.logEvent(e));
 
   const now = () => performance.now();
   const rel = () => (session ? now() - session.t0 : 0);
@@ -162,7 +183,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     const a = s.audio;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       a.error = 'MediaRecorder/getUserMedia unavailable';
-      overlay.setStatus(`${STATUS_LISTENING} (no mic)`);
+      ui.setStatus(`${STATUS_LISTENING} (no mic)`, 'listening');
       return;
     }
     navigator.mediaDevices
@@ -192,7 +213,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
       })
       .catch((err) => {
         a.error = err && err.message ? String(err.message) : String(err);
-        if (session === s) overlay.setStatus(`${STATUS_LISTENING} (no mic: ${a.error})`);
+        if (session === s) ui.setStatus(`${STATUS_LISTENING} (no mic: ${a.error})`, 'listening');
       });
   }
 
@@ -238,14 +259,14 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     session = s;
     executor.scale = s.image.scale;
     overlay.setActive(true);
-    overlay.setStatus(STATUS_LISTENING);
+    ui.setStatus(STATUS_LISTENING, 'listening');
     overlay.el.focus({ preventScroll: true });
     snapshot('start');
     startAudio(s);
     // Warm up Whisper so it is (hopefully) loaded by the time the user presses Esc.
     // Progress shows in the badge; failures are reported at transcription time.
     loadWhisper((p) => {
-      if (session === s && !s.ending) overlay.setStatus(`${STATUS_LISTENING} · ${p}`);
+      if (session === s && !s.ending) ui.setStatus(`${STATUS_LISTENING} · ${p}`, 'listening');
     }).catch(() => {});
   }
 
@@ -256,7 +277,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     endActiveStroke();
     snapshot('final');
     overlay.setActive(false);
-    overlay.setStatus('Talk & Draw — finishing…');
+    ui.setStatus('Talk & Draw — finishing…');
     const audio = await stopAudio(s);
     const durationMs = now() - s.t0;
     session = null;
@@ -269,10 +290,10 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     let transcriptText: string | undefined;
     let transcriptInfo: string | undefined;
     if (audio.blob) {
-      overlay.setStatus('Talk & Draw — transcribing…');
+      ui.setStatus('Talk & Draw — transcribing…');
       try {
         const r = await transcribe(audio.blob, audio.offsetMs ?? 0, (p) => {
-          if (!session) overlay.setStatus(`Talk & Draw — ${p}`);
+          if (!session) ui.setStatus(`Talk & Draw — ${p}`);
         });
         transcript = r.words;
         transcriptText = r.text;
@@ -284,7 +305,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
         console.error('Talk & Draw: transcription failed', err);
       }
     }
-    if (!session) overlay.setStatus(null);
+    if (!session) ui.setStatus(null);
 
     const strokes = s.strokes.map(summarizeStroke);
     const m: TalkAndDrawMessage = {
@@ -316,7 +337,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     s.audio.stream?.getTracks().forEach((t) => t.stop());
     overlay.clear();
     overlay.setActive(false);
-    overlay.setStatus(null);
+    ui.setStatus(null);
   }
 
   window.addEventListener('keydown', onKeyDown, { capture: true });
@@ -343,8 +364,12 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     clearApiKey,
     setModel,
     getModel,
-    setVibe,
+    setSystemPrompt,
+    getSystemPrompt,
+    drawer: (open) => ui.toggleDrawer(open),
+    ui,
     dispose() {
+      ui.dispose();
       abort();
       agent.cancel();
       executor.cancel();
