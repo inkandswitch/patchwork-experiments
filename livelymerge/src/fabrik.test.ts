@@ -427,6 +427,14 @@ describe('Fabrik', () => {
           star.shape.vertices.length === protoStar.vertices.length;
         if (line && line.updateHoverHandles) line.updateHoverHandles(line.boundsInWorld().center());
         let noHandles = !(line && line.$vertexHandles && line.$vertexHandles.length);
+        let lineHitBox = line && line.fullBounds && line.fullBounds();
+        let lineHit =
+          !!lineHitBox &&
+          lineHitBox.height() >= 24 &&
+          line.includesPt(lineHitBox.center());
+        let lineCopy = line ? fabrikStamp(line, Lively, pt(80, 80)) : null;
+        let lineCloned = !!(lineCopy && lineCopy.className === 'LineMorph' && lineCopy.owner === Lively);
+        if (lineCopy && lineCopy.remove) lineCopy.remove();
         let parts = bin.$binCats.parts;
         let partKids = 0;
         let hiddenKids = 0;
@@ -476,7 +484,7 @@ describe('Fabrik', () => {
           Math.abs(bb.topLeft.x + bb.width() + 10 - worldR) < 8,
           Math.abs(bin.getBounds().topLeft.x - binXBefore) < 1,
           !!starMatch,
-          noHandles,
+          noHandles && lineHit && lineCloned,
           !!(parts && parts.length === 5),
           partKids === 12 && hiddenKids === 0,
           partSrc.indexOf('browserCategoryNames') >= 0,
@@ -504,6 +512,89 @@ describe('Fabrik', () => {
         ].join(',');
       })()`),
     ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('stamped line vertex handles reshape without scaling, and be curved keeps vertices', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let proto = Lively.get('fabrikBin').findKind('line');
+        let line = fabrikStamp(proto, Lively, pt(80, 80));
+        line.dragEnded = fabrikPartDragEnded;
+        fabrikEstablishPartFrames(line);
+        let verts = line.shape.vertices;
+        let dx0 = verts[1].x - verts[0].x;
+        let dy0 = verts[1].y - verts[0].y;
+        let sc = line.transform.scale;
+        let snapKept = verts.length === 2 && dx0 > 30 && Math.abs(dy0) < 6;
+        let scaleOk = !!(sc && Math.abs(sc.x - 1) < 0.01 && Math.abs(sc.y - 1) < 0.01);
+        let noFabrikDown = line.onPointerDown !== fabrikPartOnPointerDown;
+        let endLocal = verts[1];
+        let endW = line.globalize(endLocal);
+        line.updateHoverHandles(endW);
+        let handlesOn = !!(line.$vertexHandles && line.$vertexHandles.length === 2);
+        Lively.onPointerDown(endW, { actorID: 't' });
+        let dragPt = pt(endW.x + 24, endW.y + 16);
+        Lively.onPointerMove(dragPt, { actorID: 't' });
+        Lively.onPointerUp(dragPt, { actorID: 't' });
+        let sc1 = line.transform.scale;
+        let scaleStill = !!(sc1 && Math.abs(sc1.x - 1) < 0.01 && Math.abs(sc1.y - 1) < 0.01);
+        let end1 = line.globalize(line.shape.vertices[1]);
+        let endMoved = Math.abs(end1.x - endW.x) > 8 || Math.abs(end1.y - endW.y) > 8;
+        line.updateHoverHandles(line.globalize(line.shape.vertices[0].addPt(line.shape.vertices[1]).scaleBy(0.5)));
+        let mid = line.$midpointHandles && line.$midpointHandles[0];
+        let midW = mid ? line.globalize(mid.getBounds().center()) : null;
+        if (midW) {
+          Lively.onPointerDown(midW, { actorID: 't' });
+          Lively.onPointerMove(pt(midW.x, midW.y - 28), { actorID: 't' });
+          Lively.onPointerUp(pt(midW.x, midW.y - 28), { actorID: 't' });
+        }
+        let nSeg = line.shape.vertices.length;
+        let curvedOk = false;
+        let curved = false;
+        let vertsKept = false;
+        try {
+          let menu = line.morphMenu();
+          menu.onSelect('be curved', line);
+          curved = !!(line.shape && line.shape.curved);
+          vertsKept = !!(line.shape.vertices && line.shape.vertices.length >= 3);
+          Lively.renderOn(ctx);
+          curvedOk = true;
+        } catch (e) {
+          curvedOk = false;
+        }
+        return [snapKept, scaleOk, noFabrikDown, handlesOn, scaleStill, endMoved, nSeg >= 3, curved, vertsKept, curvedOk].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('parts-bin line be curved via halo menu pointer-up does not throw', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let proto = Lively.get('fabrikBin').findKind('line');
+        let line = fabrikStamp(proto, Lively, pt(80, 80));
+        let err = '';
+        let curved = false;
+        try {
+          line.showMorphMenuAt(pt(120, 40), { fleeting: true });
+          let menu = line.menu;
+          if (!menu) return 'no-menu';
+          let b = menu.getBounds();
+          let lh = (menu.shape && menu.shape.lineHeight) || 16;
+          let insetY = menu.shape && menu.shape.inset ? menu.shape.inset.y : 2;
+          let p = pt(b.topLeft.x + 24, b.topLeft.y + insetY + lh * 0.5);
+          menu.onPointerDown(p, { actorID: 't', shiftKey: false });
+          menu.onPointerUp(p, { actorID: 't', shiftKey: false });
+          curved = !!(line.shape && line.shape.curved);
+        } catch (e) {
+          err = String(e && e.message ? e.message : e);
+        }
+        return [err === '', curved, err].join('|');
+      })()`),
+    ).toBe('true|true|');
   }, 20000);
 
   it('starts from populateLively; Open Fabrik rebuilds the browser test', () => {
@@ -707,7 +798,7 @@ describe('Fabrik', () => {
         Lively.onPointerUp(pt(body.x + 20, body.y + 12), { actorID: 't' });
         let listUntouched = Math.abs(src.getBounds().topLeft.x - x0) < 4;
         srcB = src.boundsInWorld();
-        let moveH = pt(srcB.topLeft.x + srcB.width() - 2, srcB.topLeft.y + 2);
+        let moveH = pt(srcB.topLeft.x + 2, srcB.topLeft.y + 2);
         Lively.onPointerDown(moveH, { actorID: 't' });
         Lively.onPointerMove(pt(moveH.x + 24, moveH.y + 16), { actorID: 't' });
         Lively.onPointerUp(pt(moveH.x + 24, moveH.y + 16), { actorID: 't' });
@@ -735,7 +826,7 @@ describe('Fabrik', () => {
         fabrikEstablishPartFrames(stamped);
         let framesAtDrop = !!fabrikGetLayout(stamped, 'edit') && !fabrikGetLayout(stamped, 'layout');
         let tb = stamped.boundsInWorld();
-        let stampMove = pt(tb.topLeft.x + tb.width() - 2, tb.topLeft.y + 2);
+        let stampMove = pt(tb.topLeft.x + 2, tb.topLeft.y + 2);
         let stampX0 = stamped.getBounds().topLeft.x;
         Lively.onPointerDown(stampMove, { actorID: 't' });
         Lively.onPointerMove(pt(stampMove.x + 32, stampMove.y), { actorID: 't' });
@@ -816,6 +907,37 @@ describe('Fabrik', () => {
         ].join(',');
       })()`),
     ).toBe('true,true,true,true,true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('layout-mode panel dashed frame tracks Z scale 1:1', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('layout', Lively);
+        let cats = Lively.get('categories');
+        let defn = Lively.get('methodDefinition');
+        let panel = fabrikMakeNewPanel(Lively);
+        let u = cats.boundsInWorld().union(defn.boundsInWorld());
+        panel.setBounds(rect(u.topLeft.x - 8, u.topLeft.y - 30, u.width() + 16, u.height() + 40));
+        let sh0 = panel.shape.getBounds();
+        let prev0 = panel.previewFrameLocal();
+        let atRest = Math.abs(prev0.width() - sh0.width()) < 2 && Math.abs(prev0.height() - sh0.height()) < 2;
+        panel.beginEphemeralTransform();
+        panel.transform.scale.x = 2;
+        panel.transform.scale.y = 2;
+        if (panel.syncBoundsFromGeometry) panel.syncBoundsFromGeometry();
+        let sh = panel.shape.getBounds();
+        let prev = panel.previewFrameLocal();
+        let localMatch = Math.abs(prev.width() - sh.width()) < 2 && Math.abs(prev.height() - sh.height()) < 2;
+        let dashBR = panel.globalize(prev.bottomRight());
+        let worldB = panel.boundsInWorld();
+        let tracks =
+          Math.abs(dashBR.x - worldB.bottomRight().x) < 3 &&
+          Math.abs(dashBR.y - worldB.bottomRight().y) < 3;
+        let notDouble = Math.abs(prev.width() - sh.width() * 2) > 8;
+        return [atRest, localMatch, tracks, notDouble].join(',');
+      })()`),
+    ).toBe('true,true,true,true');
   }, 20000);
 
   it('parts-bin category clicks and proto clicks do not grow the doc', () => {

@@ -1,8 +1,8 @@
-//written on 2026-11-02 15:20 EST
+//written on 2026-11-03 11:22 EST
 // Fabrik — application construction set on newdefs (Livelymerge Morphic).
 // Parts bin, pins, wires, and a system browser with edit / layout / user view.
 //
-let FABRIK_WRITTEN_ON = '2026-11-02 15:20 EST';
+let FABRIK_WRITTEN_ON = '2026-11-03 11:22 EST';
 let FABRIK_EDIT_GAP = 48;
 let FABRIK_PIN_W = 14;
 let FABRIK_PIN_H = 12;
@@ -375,6 +375,11 @@ function fabrikBinFootprint(m) {
       expand(pb.topLeft.x + tx, pb.topLeft.y + ty, pb.topLeft.x + pb.width() + tx, pb.topLeft.y + pb.height() + ty);
     }
   }
+  if (m.className === 'LineMorph' && maxy - miny < 28) {
+    let mid = (miny + maxy) / 2;
+    miny = mid - 14;
+    maxy = mid + 14;
+  }
   return rect(minx, miny, maxx - minx, maxy - miny);
 }
 
@@ -383,6 +388,10 @@ function fabrikSnapMorph(m) {
   let b = m.getBounds();
   let x = fabrikGrid(b.topLeft.x);
   let y = fabrikGrid(b.topLeft.y);
+  if (m.className === 'LineMorph') {
+    if (b.topLeft.x !== x || b.topLeft.y !== y) fabrikSetPos(m, x, y);
+    return;
+  }
   let w = Math.max(FABRIK_GRID, fabrikGrid(b.width()));
   let h = Math.max(FABRIK_GRID, fabrikGrid(b.height()));
   let same = b.topLeft.x === x && b.topLeft.y === y && b.width() === w && b.height() === h;
@@ -438,18 +447,18 @@ function fabrikShouldShowHandles(host) {
 }
 
 function fabrikHandleHit(host, localP) {
-  /** 'grow' = bottom-right, 'move' = top-right, else null. */
+  /** 'grow' = bottom-right, 'move' = top-left, else null. */
   if (!host || !localP) return null;
+  if (host.className === 'LineMorph') return null;
   let sh = host.shape;
   let ox = sh && sh.topLeft ? sh.topLeft.x : 0;
   let oy = sh && sh.topLeft ? sh.topLeft.y : 0;
   let w = sh && sh.extent ? sh.extent.x : host.getBounds().width();
   let h = sh && sh.extent ? sh.extent.y : host.getBounds().height();
   let s = FABRIK_CORNER;
-  let x1 = ox + w;
-  if (localP.x < x1 - s || localP.x > x1) return null;
-  if (localP.y >= oy + h - s && localP.y <= oy + h) return 'grow';
-  if (localP.y >= oy && localP.y <= oy + s) return 'move';
+  if (localP.x >= ox + w - s && localP.x <= ox + w && localP.y >= oy + h - s && localP.y <= oy + h)
+    return 'grow';
+  if (localP.x >= ox && localP.x <= ox + s && localP.y >= oy && localP.y <= oy + s) return 'move';
   return null;
 }
 
@@ -466,18 +475,19 @@ function fabrikDrawHandles(ctx, host) {
   let sh = host.shape;
   if (!sh || !sh.topLeft || !sh.extent) return;
   let s = FABRIK_CORNER;
-  let x = sh.topLeft.x + sh.extent.x - s;
+  let xL = sh.topLeft.x;
+  let xR = sh.topLeft.x + sh.extent.x - s;
   let y0 = sh.topLeft.y;
   let y1 = sh.topLeft.y + sh.extent.y - s;
   ctx.save();
-  fabrikDrawHandleBox(ctx, x, y1, s);
+  fabrikDrawHandleBox(ctx, xR, y1, s);
   ctx.beginPath();
-  ctx.moveTo(x + 2, y1 + s - 2);
-  ctx.lineTo(x + s - 2, y1 + s - 2);
-  ctx.lineTo(x + s - 2, y1 + 2);
+  ctx.moveTo(xR + 2, y1 + s - 2);
+  ctx.lineTo(xR + s - 2, y1 + s - 2);
+  ctx.lineTo(xR + s - 2, y1 + 2);
   ctx.stroke();
-  fabrikDrawHandleBox(ctx, x, y0, s);
-  let cx = x + s / 2;
+  fabrikDrawHandleBox(ctx, xL, y0, s);
+  let cx = xL + s / 2;
   let cy = y0 + s / 2;
   ctx.beginPath();
   ctx.moveTo(cx - 3, cy);
@@ -511,29 +521,42 @@ function fabrikPartOnPointerDown(p, evt) {
   if (!this.fullBounds().includesPt(p)) return false;
   let world = this.world();
   let localP = this.relativize(p);
+  if (fabrikCanMoveParts(world)) {
+    let hitEarly = fabrikHandleHit(this, localP);
+    if (hitEarly) {
+      this.$fabrikResizing = hitEarly === 'grow';
+      this.$fabrikMoving = hitEarly === 'move';
+      this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
+      this.beginPointerDrag(p, evt);
+      let b0 = this.getBounds();
+      this.$fabrikGridOX = b0.topLeft.x;
+      this.$fabrikGridOY = b0.topLeft.y;
+      this.$fabrikResizeOW = b0.width();
+      this.$fabrikResizeOH = b0.height();
+      this.$fabrikGridDX = 0;
+      this.$fabrikGridDY = 0;
+      return true;
+    }
+  }
   if (fabrikEditMode(world)) {
     let pins = this.fabrikPins || [];
     for (let i = 0; i < pins.length; i++) {
       if (pins[i].fullBounds().includesPt(localP) && pins[i].onPointerDown(localP, evt)) return true;
     }
   }
-  if (fabrikCanMoveParts(world)) {
-    let hit = fabrikHandleHit(this, localP);
-    let layoutBody = !hit && fabrikLayoutMode(world);
-    if (hit || layoutBody) {
-      this.$fabrikResizing = hit === 'grow';
-      this.$fabrikMoving = hit === 'move' || layoutBody;
-      this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
-      this.beginPointerDrag(p, evt);
-      let b = this.getBounds();
-      this.$fabrikGridOX = b.topLeft.x;
-      this.$fabrikGridOY = b.topLeft.y;
-      this.$fabrikResizeOW = b.width();
-      this.$fabrikResizeOH = b.height();
-      this.$fabrikGridDX = 0;
-      this.$fabrikGridDY = 0;
-      return true;
-    }
+  if (fabrikCanMoveParts(world) && fabrikLayoutMode(world)) {
+    this.$fabrikResizing = false;
+    this.$fabrikMoving = true;
+    this.$pickUpOnDrag = this.owner != null && this.owner !== this.world();
+    this.beginPointerDrag(p, evt);
+    let b = this.getBounds();
+    this.$fabrikGridOX = b.topLeft.x;
+    this.$fabrikGridOY = b.topLeft.y;
+    this.$fabrikResizeOW = b.width();
+    this.$fabrikResizeOH = b.height();
+    this.$fabrikGridDX = 0;
+    this.$fabrikGridDY = 0;
+    return true;
   }
   return Morph.prototype.onPointerDown.call(this, p, evt);
 }
@@ -1137,16 +1160,20 @@ function fabrikPartDragEnded(p, evt, wasDrag) {
   if (this.owner && this.owner !== world)
     this.reparentToOwnerPreservingWorldAnchor(world, this.relativize(p));
   if (this.$fabrikResizing) {
-    let w = Math.max(FABRIK_GRID * 2, fabrikGrid((this.$fabrikResizeOW || 0) + (this.$fabrikGridDX || 0)));
-    let h = Math.max(FABRIK_GRID * 2, fabrikGrid((this.$fabrikResizeOH || 0) + (this.$fabrikGridDY || 0)));
     let sc = this.transform && this.transform.scale;
     if (sc) {
       sc.x = 1;
       sc.y = 1;
     }
-    this.$fabrikReframing = true;
-    this.setBounds(rect(this.$fabrikGridOX, this.$fabrikGridOY, w, h));
-    this.$fabrikReframing = false;
+    if (this.className !== 'LineMorph') {
+      let w = Math.max(FABRIK_GRID * 2, fabrikGrid((this.$fabrikResizeOW || 0) + (this.$fabrikGridDX || 0)));
+      let h = Math.max(FABRIK_GRID * 2, fabrikGrid((this.$fabrikResizeOH || 0) + (this.$fabrikGridDY || 0)));
+      this.$fabrikReframing = true;
+      this.setBounds(rect(this.$fabrikGridOX, this.$fabrikGridOY, w, h));
+      this.$fabrikReframing = false;
+    } else {
+      fabrikSnapMorph(this);
+    }
   } else {
     fabrikSnapMorph(this);
   }
@@ -1342,17 +1369,18 @@ function fabrikRenderHostOn(host, ctx) {
   ctx.lineWidth = FABRIK_BORDER_W;
   ctx.strokeRect(x, y, w, h);
   ctx.restore();
-  fabrikDrawHandles(ctx, host);
-  if (!fabrikPaneShowsPins(host)) return;
-  let pins = host.fabrikPins || [];
-  for (let i = 0; i < pins.length; i++) {
-    let each = pins[i];
-    ctx.save();
-    let tfm = each.transform;
-    ctx.translate(tfm.translation.x, tfm.translation.y);
-    each.renderOn(ctx);
-    ctx.restore();
+  if (fabrikPaneShowsPins(host)) {
+    let pins = host.fabrikPins || [];
+    for (let i = 0; i < pins.length; i++) {
+      let each = pins[i];
+      ctx.save();
+      let tfm = each.transform;
+      ctx.translate(tfm.translation.x, tfm.translation.y);
+      each.renderOn(ctx);
+      ctx.restore();
+    }
   }
+  fabrikDrawHandles(ctx, host);
 }
 
 function fabrikEmit(host, pinName, value) {
@@ -2389,7 +2417,10 @@ class FabrikBin extends PanelMorph {
         let t = m.transform && m.transform.translation;
         let tx = t ? t.x : body.topLeft.x;
         let ty = t ? t.y : body.topLeft.y;
-        fabrikSetPos(m, tx + (x + pin - body.topLeft.x), ty + (y - body.topLeft.y));
+        let ny = y;
+        if (m.className === 'LineMorph' && needH > body.height())
+          ny = y + (needH - body.height()) / 2;
+        fabrikSetPos(m, tx + (x + pin - body.topLeft.x), ty + (ny - body.topLeft.y));
         m.$fabrikBinPlaced = true;
         x = x + need + gap;
         if (needH > rowH) rowH = needH;
@@ -2480,13 +2511,24 @@ class FabrikPanel extends PanelMorph {
     };
   }
   previewFrameLocal() {
+    /**
+     * Dashed frame in *local* coords. Parent render already applied this
+     * panel's transform (halo Z / Fabrik grow), so the rect must be the
+     * unscaled shape — using world widths here doubled the live scale.
+     */
+    let sh = this.shape.getBounds().copy();
+    if (this.$fabrikWrapped) return sh;
+    if (fabrikViewMode(this.world()) === 'layout') return sh;
+    let sc = this.transform && this.transform.scale;
+    if (sc && (Math.abs((sc.x || 1) - 1) > 0.001 || Math.abs((sc.y || 1) - 1) > 0.001)) return sh;
     let views = fabrikWrappableViewsIn(this);
-    if (!views.length) return this.shape.getBounds().copy();
+    if (!views.length) return sh;
     let u = null;
     for (let i = 0; i < views.length; i++) {
       let wr = views[i].boundsInWorld();
       let tl = this.localize(wr.topLeft);
-      let local = rect(tl.x, tl.y, wr.width(), wr.height());
+      let br = this.localize(wr.bottomRight());
+      let local = rect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
       u = u ? u.union(local) : local;
     }
     return u;
@@ -2538,7 +2580,7 @@ class FabrikPanel extends PanelMorph {
   renderOn(ctx) {
     if (this.$fabrikWrapped) {
       Morph.prototype.renderOn.call(this, ctx);
-      if (fabrikViewMode(this.world()) !== 'user') fabrikStrokeDashedFrame(ctx, this.shape.getBounds());
+      if (fabrikViewMode(this.world()) !== 'user') fabrikStrokeDashedFrame(ctx, this.previewFrameLocal());
       return;
     }
     if (this.titleBar) {
@@ -2668,6 +2710,7 @@ function fabrikWorldPtInBin(world, worldP) {
   return x >= b.topLeft.x && y >= b.topLeft.y && x <= b.topLeft.x + b.width() && y <= b.topLeft.y + b.height();
 }
 
+
 function fabrikStamp(proto, dest, at) {
   let m = null;
   let kind = proto.fabrikKind;
@@ -2703,19 +2746,17 @@ function fabrikStamp(proto, dest, at) {
   }
   if (m.className !== 'LineMorph') fabrikSnapMorph(m);
   m.dragMovedBy = fabrikPartDragMovedBy;
-  if (kind === 'box' || kind === 'oval' || kind === 'star' || kind === 'line') {
+  if (kind === 'box' || kind === 'oval' || kind === 'star') {
     m.onPointerDown = fabrikPartOnPointerDown;
     m.setBounds = function (b) {
       b = fabrikMaybeSnapBounds(this, b);
       Morph.prototype.setBounds.call(this, b);
       if (!this.$fabrikApplyingLayout) fabrikRememberCurrentLayout(this);
     };
-    if (kind !== 'line') {
-      m.renderOn = function (ctx) {
-        Morph.prototype.renderOn.call(this, ctx);
-        fabrikDrawHandles(ctx, this);
-      };
-    }
+    m.renderOn = function (ctx) {
+      Morph.prototype.renderOn.call(this, ctx);
+      fabrikDrawHandles(ctx, this);
+    };
   }
   m.$fabrikNeedsBothFrames = true;
   return m;
@@ -2922,6 +2963,11 @@ function fabrikBinProtoPointerDown(p, evt) {
   if (!this.includesPt(p)) return false;
   let proto = fabrikBinProtoOf(this);
   if (!proto) return false;
+  if (typeof effectiveMetaKey === 'function' && effectiveMetaKey(evt)) {
+    consumeSoftMetaKey();
+    if (proto.showHalo) proto.showHalo();
+    return false;
+  }
   let worldP = this.owner ? this.owner.globalize(p) : p;
   proto.$fabrikStampP = worldP;
   proto.$fabrikStampEvt = evt;
@@ -2969,8 +3015,24 @@ function fabrikArmBinProto(morph) {
   let prevI = morph.includesPt;
   morph.includesPt = function (p) {
     if (this.$fabrikHidden) return false;
+    if (this.className === 'LineMorph') return this.fullBounds().includesPt(p);
     return prevI ? prevI.call(this, p) : Morph.prototype.includesPt.call(this, p);
   };
+  if (morph.className === 'LineMorph') {
+    let prevFB = morph.fullBounds;
+    morph.fullBounds = function () {
+      let b = prevFB ? prevFB.call(this) : Morph.prototype.fullBounds.call(this);
+      let pad = 8;
+      let minH = 28;
+      let h = b.height();
+      let y = b.topLeft.y;
+      if (h < minH) {
+        y = y + h / 2 - minH / 2;
+        h = minH;
+      }
+      return rect(b.topLeft.x - pad, y - pad, b.width() + 2 * pad, h + 2 * pad);
+    };
+  }
 }
 
 function fabrikStyleBinProto(morph) {
@@ -3596,4 +3658,4 @@ function fabrikBuildWorld(world) {
 
 if (typeof Lively === 'object' && Lively) fabrikOfferOpenMenu(Lively);
 
-//written on 2026-11-02 15:20 EST
+//written on 2026-11-03 11:22 EST

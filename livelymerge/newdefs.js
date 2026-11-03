@@ -1,4 +1,4 @@
-//written on 2026-10-27 11:29 PDT
+//written on 2026-11-03 11:22 EST
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -2954,7 +2954,7 @@ class PolyLine extends Shape {
   }
   drawBezierThrough(ctx, verts, closed) {
     /** Smooth cubic Bézier through vertices (Catmull–Rom style). If `closed`, includes last→first segment. */
-    if (verts.length < 2) return;
+    if (!verts || verts.length < 2) return;
     let n = verts.length;
     ctx.moveTo(verts[0].x, verts[0].y);
     if (n === 2) {
@@ -3054,13 +3054,18 @@ class PolyLine extends Shape {
     });
   }
   setBounds(newBnds) {
+    let verts = this.vertices;
+    if (!verts || verts.length < 1) {
+      super.setBounds(newBnds);
+      return;
+    }
     let oldBnds = this.getBounds();
     let oldCtr = oldBnds.center();
     let newCtr = newBnds.center();
     let ow = Math.max(oldBnds.width(), 0.001);
     let oh = Math.max(oldBnds.height(), 0.001);
     let scale = pt(newBnds.width() / ow, newBnds.height() / oh);
-    this.vertices = this.vertices.map((vert) => {
+    this.vertices = verts.map((vert) => {
       return vert.subPt(oldCtr).scaleBy(scale).addPt(newCtr);
     });
     super.setBounds(this.boundsForVertices(this.vertices, this.borderWidth));
@@ -5980,21 +5985,23 @@ class LineMorph extends Morph {
   }
   beClosed(on) {
     /** Connect last vertex back to first. `line.beClosed(true)` or read `line.beClosed()`. */
-    if (on === undefined) return !!(this.shape && this.shape.closed);
-    if (this.shape) this.shape.closed = !!on;
-    this.changed();
+    let sh = this.shape;
+    if (on === undefined) return !!(sh && sh.closed);
+    if (sh) sh.closed = !!on;
+    this.hasChanged = true;
     let world = this.world();
-    if (world && world.changed) world.changed();
+    if (world) world.hasChanged = true;
     this.syncShapeFromVertices();
     return this;
   }
   beCurved(on) {
     /** Smooth Bézier vs straight segments. `line.beCurved(true)` or read `line.beCurved()`. */
-    if (on === undefined) return !!(this.shape && this.shape.curved);
-    if (this.shape) this.shape.curved = !!on;
-    this.changed();
+    let sh = this.shape;
+    if (on === undefined) return !!(sh && sh.curved);
+    if (sh) sh.curved = !!on;
+    this.hasChanged = true;
     let world = this.world();
-    if (world && world.changed) world.changed();
+    if (world) world.hasChanged = true;
     return this;
   }
   beginEphemeralTransform() {
@@ -6008,6 +6015,7 @@ class LineMorph extends Morph {
     if (this.$transform == null) return; // legacy/shadowed morph: stay on the direct path
     let sh = this.shape;
     if (sh == null || sh.$vertices != null) return; // no shape, or adopted remote overlay
+    if (!sh.vertices || !sh.vertices.length) return;
     let eph = sh.vertices.map((v) => v.copy());
     sh.$vertices = eph;
     // A shape from a pre-getter document carries an own `vertices` data property
@@ -6075,7 +6083,8 @@ class LineMorph extends Morph {
     });
   }
   ensureVertexHandles() {
-    let verts = this.shape.vertices;
+    let verts = this.shape && this.shape.vertices;
+    if (!verts || verts.length < 1) return;
     let r = this.handleRadius;
     let needRebuild =
       !this.$vertexHandles ||
@@ -6123,8 +6132,8 @@ class LineMorph extends Morph {
     mids.forEach((m, i) => this.$midpointHandles[i].positionAt(m.pt));
   }
   layoutVertexHandles() {
-    let verts = this.shape.vertices;
-    if (!this.$vertexHandles || this.$vertexHandles.length !== verts.length) return;
+    let verts = this.shape && this.shape.vertices;
+    if (!verts || !this.$vertexHandles || this.$vertexHandles.length !== verts.length) return;
     verts.forEach((v, i) => this.$vertexHandles[i].positionAtVertex(v));
   }
   mergeDraggedVertexWithNeighbor() {
@@ -6206,8 +6215,9 @@ class LineMorph extends Morph {
     return super.remove();
   }
   segmentMidpoints() {
-    let verts = this.shape.vertices;
+    let verts = this.shape && this.shape.vertices;
     let mids = [];
+    if (!verts || verts.length < 2) return mids;
     for (let i = 0; i < verts.length - 1; i++) {
       mids.push({
         segmentIndex: i,
@@ -6251,6 +6261,7 @@ class LineMorph extends Morph {
     this.syncBoundsFromGeometry();
   }
   syncShapeFromVertices() {
+    if (!this.shape || !this.shape.vertices) return;
     this.syncGeometryFromVertices();
     let n = this.shape.vertices.length;
     if (!this.$vertexHandles || this.$vertexHandles.length !== n) this.ensureVertexHandles();
@@ -14623,6 +14634,6 @@ function inspectString(obj) {
   }
 }
 // Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
-let NEWDEFS_WRITTEN_ON = '2026-10-27 11:29 PDT';
+let NEWDEFS_WRITTEN_ON = '2026-11-03 11:22 EST';
 init()
-//written on 2026-10-27 11:29 PDT
+//written on 2026-11-03 11:22 EST
