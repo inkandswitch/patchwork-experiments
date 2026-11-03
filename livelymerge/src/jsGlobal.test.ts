@@ -138,3 +138,21 @@ describe('global aliases', () => {
     expect(rt.eval('Object.keys(globalThis).includes("viaAlias")')).toBe(true);
   });
 });
+
+describe('class prototypes link back to their class', () => {
+  it('instance.constructor is the class, through subclasses and Object.create', () => {
+    const rt = createFreshRuntime();
+    rt.eval('class A { m() { return 1; } }');
+    rt.eval('class B extends A { }');
+    expect(rt.eval('A.prototype.constructor === A')).toBe(true);
+    expect(rt.eval('new A().constructor === A')).toBe(true);
+    expect(rt.eval('new B().constructor === B')).toBe(true);
+    expect(rt.eval('Object.create(A.prototype).constructor === A')).toBe(true);
+    expect(rt.eval('new B().className')).toBe('B');
+    // The link survives a browser-style constructor replacement.
+    rt.eval("replaceMethod('A', 'constructor() { this.k = 9; }')");
+    expect(rt.eval('new A().k')).toBe(9);
+    expect(rt.eval('new A().constructor === A')).toBe(true);
+  });
+});
+
