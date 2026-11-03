@@ -175,6 +175,7 @@ export function animatePath(
   durationMs: number,
   emit: (pts: Pt[]) => void,
   isCanceled: () => boolean = () => false,
+  isFast: () => boolean = () => false,
 ): Promise<void> {
   const fine = resample(path, 3);
   const total = pathLength(path);
@@ -186,7 +187,7 @@ export function animatePath(
     let next = 0;
     const tick = () => {
       if (isCanceled()) return resolve();
-      const f = durationMs <= 0 ? 1 : Math.min(1, (performance.now() - start) / durationMs);
+      const f = durationMs <= 0 || isFast() ? 1 : Math.min(1, (performance.now() - start) / durationMs);
       const reach = f * total;
       const batch: Pt[] = [];
       let acc = 0;

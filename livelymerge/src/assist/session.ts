@@ -90,6 +90,9 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     clearApiKey,
     resend: () => void handle.ask().catch((e) => console.warn('Talk & Draw:', e.message)),
     cancel: () => handle.cancel(),
+    fastForward: () => {
+      executor.fastForward = true;
+    },
     getMaxTurns,
     setMaxTurns,
     getNotes: readNotes,

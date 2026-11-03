@@ -101,6 +101,11 @@ export async function settle(lmCanvas: HTMLCanvasElement, maxMs = SETTLE_MAX_MS)
 export class Executor {
   /** image → canvas: canvas = image / scale. Set per session from its ImageScale. */
   scale = 1;
+  /** Skip ahead: speech is cut (anchored steps still fire), pen strokes and waits
+   *  complete at once, mouse moves take a couple of frames. Cleared when the
+   *  performance ends unless `holdFastForward` is set (the agent holds it for a run). */
+  fastForward = false;
+  holdFastForward = false;
   penStyle: PenStyle = 'crisp';
   speakOptions: SpeakOptions = {};
   private readonly input: SyntheticInput;
@@ -147,6 +152,7 @@ export class Executor {
       await this.runSteps(script, { scale, style, speakOpts, hintMs: 0 }, results);
     } finally {
       this.running--;
+      if (!this.holdFastForward) this.fastForward = false;
       this.input.releaseAll();
       this.cursorTimer = window.setTimeout(() => this.overlay.setAiCursor(null), CURSOR_HIDE_MS);
     }
@@ -198,9 +204,10 @@ export class Executor {
     const cv = (v: number) => v / s;
     const cp = (p: Pt): Pt => ({ x: p.x / s, y: p.y / s });
     const isCanceled = () => this.canceled;
+    const isFast = () => this.fastForward;
     switch (step.type) {
       case 'mouse_move':
-        await this.input.move(cv(step.x), cv(step.y), step.duration, isCanceled, step.modifiers ?? {});
+        await this.input.move(cv(step.x), cv(step.y), step.duration, isCanceled, step.modifiers ?? {}, isFast);
         return undefined;
       case 'mouse_down':
         this.input.down(step.button ?? 0, step.modifiers ?? {});
@@ -220,9 +227,14 @@ export class Executor {
       case 'type':
         await this.input.type(step.text, step.perCharMs, isCanceled);
         return undefined;
-      case 'wait':
-        await sleep(step.ms);
+      case 'wait': {
+        // In chunks, so fast-forward and cancel cut a long wait short.
+        const until = performance.now() + step.ms;
+        while (performance.now() < until && !this.canceled && !this.fastForward) {
+          await sleep(Math.min(50, until - performance.now()));
+        }
         return undefined;
+      }
       case 'pen':
         return this.pen(step, ctx);
       case 'say':
@@ -295,6 +307,7 @@ export class Executor {
           this.overlay.strokeChanged();
         },
         () => this.canceled,
+        () => this.fastForward,
       );
       stroke.t1 = performance.now();
       this.overlay.endStroke(stroke);
@@ -323,6 +336,7 @@ export class Executor {
       },
       { ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate },
       () => this.canceled,
+      () => this.fastForward,
     );
     await Promise.all(pending);
     if (bubbleId) window.setTimeout(() => this.overlay.hideBubble(bubbleId), 2000);

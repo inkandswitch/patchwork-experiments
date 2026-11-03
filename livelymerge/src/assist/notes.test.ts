@@ -41,3 +41,30 @@ describe('shared notes store', () => {
     expect(text).toContain('- x: y');
   });
 });
+
+// ---- the seed newdefs ships -------------------------------------------------------
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+describe('newdefs seedAiNotes', () => {
+  it('adds the starter topics once and never overwrites an existing topic', () => {
+    const src = readFileSync(join(__dirname, '..', '..', 'newdefs.js'), 'utf8');
+    const m = /function seedAiNotes\(\) \{[\s\S]*?\n\}\n/.exec(src);
+    expect(m).not.toBeNull();
+    const rt = createLivelymergeRuntime(createAutomergeTestDocHandle());
+    rt.eval(m![0]);
+    expect(rt.eval(readSource())).toBeNull();
+    rt.eval('seedAiNotes()');
+    const first = read(rt);
+    expect(first.length).toBeGreaterThanOrEqual(7);
+    expect(first.map((n) => n.topic)).toContain('rotating a morph');
+    expect(first.every((n) => n.author === 'newdefs (seed)')).toBe(true);
+    // Idempotent, and an agent's correction survives a re-seed.
+    rt.eval(rememberSource({ topic: 'rotating a morph', text: 'corrected by an agent' }));
+    rt.eval('seedAiNotes()');
+    const again = read(rt);
+    expect(again.length).toBe(first.length);
+    expect(again.find((n) => n.topic === 'rotating a morph')!.text).toBe('corrected by an agent');
+  });
+});

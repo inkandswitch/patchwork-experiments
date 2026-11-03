@@ -173,6 +173,8 @@ export class Agent {
     }
     this.running = true;
     this.canceled = false;
+    this.executor.fastForward = false;
+    this.executor.holdFastForward = true;
     const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
     const model = getModel();
     const system = getSystemPrompt();
@@ -289,6 +291,8 @@ export class Agent {
       }
     } finally {
       this.running = false;
+      this.executor.holdFastForward = false;
+      this.executor.fastForward = false;
       status(null);
       console.groupEnd();
       this.emit({ kind: 'done', reason });

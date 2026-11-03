@@ -268,9 +268,15 @@ every run and puts it in the first user turn — no tool call spent — and the 
 `remember(topic, text)` (upsert by topic) and `forget(topic)`. The prompt tells it to
 record how the UI works (gestures, handles, classes, globals), never task facts or screen
 positions, and to fix notes that turn out wrong. The drawer shows the notes with a × to
-prune, and "Max turns" (default 24, per browser) replaces the fixed 12. A UI can seed the
-manual by defining `aiNotes` itself; knowledge is per document, since each document
-carries its own defs.
+prune, and "Max turns" (default 24, per browser) replaces the fixed 12. Knowledge is per
+document, since each document carries its own defs — so a UI seeds the manual itself:
+newdefs' `seedAiNotes()` (called from `initUI`) adds starter topics about halos (opening,
+handle positions, what each handle does), rotating, moving, text focus and the globals,
+adding only topics that are missing, so an agent's corrections and a user's pruning
+survive. The ⏩ button beside the badge skips ahead through a playing response: speech is
+cut (anchored steps still fire), pen strokes and waits finish at once, mouse moves keep a
+couple of frames so the UI still sees a drag. The transcript only follows new entries when
+you are already at the bottom.
 
 ## 12. Deferred and open
 

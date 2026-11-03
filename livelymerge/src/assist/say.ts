@@ -89,6 +89,7 @@ export function speak(
   handlers: SpeakHandlers,
   opts: SpeakOptions = {},
   isCanceled: () => boolean = () => false,
+  isFast: () => boolean = () => false,
 ): Promise<void> {
   const cps = opts.estimatedCharsPerSec ?? 15;
   const starts = new Map<number, AnchorSpan[]>();
@@ -140,6 +141,13 @@ export function speak(
     if (!synth || !parsed.text.trim()) {
       schedule();
       timers.push(setTimeout(end, (parsed.text.length / cps) * 1000 + 50));
+      const fastPoll = setInterval(() => {
+        if (done) clearInterval(fastPoll);
+        else if (isFast() || isCanceled()) {
+          clearInterval(fastPoll);
+          end();
+        }
+      }, 50);
       return;
     }
     const u = new SpeechSynthesisUtterance(parsed.text);
@@ -158,7 +166,8 @@ export function speak(
     u.onend = end;
     u.onerror = end;
     const poll = setInterval(() => {
-      if (isCanceled()) {
+      if (isCanceled() || isFast()) {
+        // Canceled: stop. Fast-forward: stop talking, but still fire what was anchored.
         synth.cancel();
         clearInterval(poll);
         end();

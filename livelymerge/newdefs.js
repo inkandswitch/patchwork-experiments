@@ -1379,7 +1379,53 @@ function morphNamed(name) {
   return Lively.get(name);
 }
 
+function seedAiNotes() {
+  /** Starter entries for the shared manual that Talk & Draw agents read and extend
+   * (`aiNotes`, a persistent global: an array of {topic, text, author, when} — see
+   * src/assist/notes.ts). Only topics that are missing are added, so notes an agent
+   * has corrected or a user has pruned are never overwritten; a document that already
+   * has every topic costs no writes. Facts about the UI, never screen positions. */
+  let seeds = [
+    [
+      'halos: opening and closing',
+      'Cmd-click (meta-click) a morph to open its halo: a green frame around the morph with lettered round handles. Cmd-click the same spot again to move the halo to the enclosing (owner) morph; a long press (about 0.7 s without moving) also opens a halo. A plain click on empty background, or on any morph, dismisses the halo and clears keyboard focus. Cmd-click the empty background to get the world halo (M, B, I only).',
+    ],
+    [
+      'halos: handle positions',
+      'Handles sit on the halo frame, clockwise: R (Rotate) at the bottom-left corner, then S (Style), C (Copy) up the left edge, M (Menu) at the top-left corner; G (Grab), D (Drag) along the top edge, X (Delete) at the top-right corner; B (Browse), I (Inspect) down the right edge, Z (Scale) at the bottom-right corner; P (Persist) on the bottom edge when present. Each handle is a small circle about 20 px across with its letter inside — read exact positions off the screenshot.',
+    ],
+    [
+      'halos: what the handles do',
+      'Click handles: S restyles the morph, M opens its menu (or the world menu), X deletes it, B opens a class browser on its class, I opens an inspector, P makes an ephemeral morph persistent. Drag handles: D moves the morph; G picks it up and drops it where released (re-parenting into whatever is under it); C drags off a copy; Z resizes (shift-drag scales the transform instead); R rotates. Click handles close the halo when used.',
+    ],
+    [
+      'rotating a morph',
+      'Open the halo, press on the R handle, and drag it around the morph\'s center: the morph turns by the angle the pointer sweeps around the center (clockwise drag = clockwise rotation). Release to finish, then click empty background to dismiss the halo. Rotate 90° by sweeping a quarter turn around the center at a comfortable radius.',
+    ],
+    [
+      'moving morphs',
+      'Press on a morph and drag it: that moves it. A morph nested inside another is picked up to the world on the first move (drag = carry). Alt-click picks a morph up into your hand; alt-click again to drop it.',
+    ],
+    [
+      'text and keyboard focus',
+      'Click inside a text morph to give it keyboard focus; typing then goes there. Clicking empty background clears the focus. The scroll wheel scrolls the pane under the pointer.',
+    ],
+    [
+      'globals worth knowing',
+      'Lively is the world (a WorldMorph); Lively.submorphs are the top-level morphs. Every morph has className, owner, submorphs, shape (shape.getBounds() is its local rectangle), transform (translation, rotation in radians, scale), and getBounds() for its rectangle in the owner. Classes are globals (Morph, TextMorph, EmojiMorph, HaloMorph, ...); SomeClass.toString() shows their source. Prefer gestures over calling methods.',
+    ],
+  ];
+  if (typeof aiNotes === 'undefined' || aiNotes == null) aiNotes = [];
+  for (let k = 0; k < seeds.length; k++) {
+    let topic = seeds[k][0];
+    let present = false;
+    for (let j = 0; j < aiNotes.length; j++) if (aiNotes[j].topic === topic) present = true;
+    if (!present) aiNotes.push({ topic: topic, text: seeds[k][1], author: 'newdefs (seed)', when: '2026-11-03' });
+  }
+}
+
 function initUI() {
+  seedAiNotes();
   // Per-user UI state: ephemeral (never in the Automerge document), survives across
   // transactions, reset on reload. `eventListeners` keeps the listener closures (and
   // their captured scopes) alive across transactions; without it the GC would collect

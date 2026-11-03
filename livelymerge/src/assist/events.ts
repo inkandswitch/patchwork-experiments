@@ -105,7 +105,14 @@ export class SyntheticInput {
   }
 
   /** Moves the pointer to (x, y) over `durationMs`, dispatching a pointermove per frame. */
-  move(x: number, y: number, durationMs?: number, isCanceled: () => boolean = () => false, extra: Modifiers = {}): Promise<void> {
+  move(
+    x: number,
+    y: number,
+    durationMs?: number,
+    isCanceled: () => boolean = () => false,
+    extra: Modifiers = {},
+    isFast: () => boolean = () => false,
+  ): Promise<void> {
     const from = { x: this.state.x, y: this.state.y };
     const dist = Math.hypot(x - from.x, y - from.y);
     const dur = durationMs ?? SyntheticInput.moveDuration(dist);
@@ -113,7 +120,9 @@ export class SyntheticInput {
       const start = performance.now();
       const tick = () => {
         if (isCanceled()) return resolve();
-        const f = dur <= 0 ? 1 : Math.min(1, (performance.now() - start) / dur);
+        // Fast-forward keeps a couple of frames of motion so the UI still sees a drag.
+        const d = isFast() ? Math.min(dur, 60) : dur;
+        const f = d <= 0 ? 1 : Math.min(1, (performance.now() - start) / d);
         const e = f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2; // ease in-out
         this.state.x = from.x + (x - from.x) * e;
         this.state.y = from.y + (y - from.y) * e;

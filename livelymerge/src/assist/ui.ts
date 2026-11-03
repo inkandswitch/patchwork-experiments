@@ -22,6 +22,8 @@ export interface UiHooks {
   clearApiKey(): void;
   resend(): void;
   cancel(): void;
+  /** Skip ahead through the current response (speech cut, animations finished). */
+  fastForward(): void;
   getMaxTurns(): number;
   setMaxTurns(n: number | null): void;
   getNotes(): Note[];
@@ -37,6 +39,12 @@ const CSS = `
   transition:right .25s cubic-bezier(.32,.72,0,1)}
 .lm-assist-badge:hover{background:#fff}
 .lm-assist-badge .dot{width:8px;height:8px;border-radius:50%;background:#aaa}
+.lm-assist-ff{position:absolute;bottom:12px;z-index:31;height:26px;padding:0 10px;border-radius:13px;border:1px solid #ff6a00;
+  background:rgba(255,255,255,.94);color:#ff6a00;font:13px system-ui,sans-serif;cursor:pointer;user-select:none;
+  box-shadow:0 1px 4px rgba(0,0,0,.08);transition:right .25s cubic-bezier(.32,.72,0,1)}
+.lm-assist-ff:hover{background:#fff}
+.lm-assist-ff[hidden]{display:none}
+.lm-assist-ff.on{background:#ff6a00;color:#fff}
 .lm-assist-badge[data-state=listening] .dot{background:#b400ff;animation:lm-assist-pulse 1.2s ease-in-out infinite}
 .lm-assist-badge[data-state=working]{border-color:#ff6a00}
 .lm-assist-badge[data-state=working] .dot{background:#ff6a00;animation:lm-assist-pulse 1.2s ease-in-out infinite}
@@ -85,6 +93,7 @@ const CSS = `
 
 export class AssistUI {
   readonly badge: HTMLButtonElement;
+  readonly ff: HTMLButtonElement;
   readonly drawer: HTMLDivElement;
   private readonly badgeText: HTMLSpanElement;
   private readonly log: HTMLDivElement;
@@ -117,6 +126,17 @@ export class AssistUI {
     this.badge.appendChild(this.badgeText);
     this.badge.addEventListener('click', () => this.toggleDrawer());
     container.appendChild(this.badge);
+
+    this.ff = el('button', 'lm-assist-ff');
+    this.ff.type = 'button';
+    this.ff.textContent = '⏩';
+    this.ff.title = 'Skip ahead: cut the speech, finish the animations';
+    this.ff.hidden = true;
+    this.ff.addEventListener('click', () => {
+      hooks.fastForward();
+      this.ff.classList.add('on');
+    });
+    container.appendChild(this.ff);
 
     const d = (this.drawer = el('div', 'lm-assist-drawer'));
     d.hidden = true;
@@ -291,14 +311,25 @@ export class AssistUI {
   setStatus(text: string | null, state: BadgeState = text ? 'working' : 'idle'): void {
     this.badgeText.textContent = text ?? IDLE_TEXT;
     this.badge.dataset.state = state;
+    // The skip-ahead button only exists while the model's response is playing.
+    this.ff.hidden = state !== 'working';
+    if (state !== 'working') this.ff.classList.remove('on');
+    this.placeButtons();
+  }
+
+  private placeButtons(): void {
+    const open = !this.drawer.hidden;
+    const base = open ? Math.round(this.drawer.getBoundingClientRect().width) + 12 : 12;
+    this.badge.style.right = open ? `${base}px` : '';
+    this.ff.style.right = `${base + Math.round(this.badge.getBoundingClientRect().width) + 8}px`;
   }
 
   toggleDrawer(open?: boolean): void {
     const show = open ?? this.drawer.hidden;
     this.drawer.hidden = !show;
     this.badge.classList.toggle('drawer-open', show);
-    // Keep the badge just left of the drawer, whatever width the drawer ended up with.
-    this.badge.style.right = show ? `${Math.round(this.drawer.getBoundingClientRect().width) + 12}px` : '';
+    // Keep the badge (and the skip button) just left of the drawer, whatever width it got.
+    this.placeButtons();
     if (show) this.refresh();
   }
 
@@ -309,6 +340,9 @@ export class AssistUI {
   // ---- transcript ------------------------------------------------------------
 
   logEvent(e: AgentEvent): void {
+    // Follow new entries only when the reader is already at the bottom; otherwise
+    // leave them where they are reading.
+    const atBottom = this.log.scrollHeight - this.log.scrollTop - this.log.clientHeight < 24;
     switch (e.kind) {
       case 'start': {
         const m = e.message;
@@ -378,7 +412,7 @@ export class AssistUI {
         this.renderNotes();
         break;
     }
-    this.log.scrollTop = this.log.scrollHeight;
+    if (atBottom) this.log.scrollTop = this.log.scrollHeight;
     while (this.log.childElementCount > 400) this.log.firstElementChild?.remove();
   }
 
@@ -402,6 +436,7 @@ export class AssistUI {
   dispose(): void {
     if (this.saveTimer != null) clearTimeout(this.saveTimer);
     this.badge.remove();
+    this.ff.remove();
     this.drawer.remove();
   }
 }
