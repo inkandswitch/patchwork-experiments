@@ -11,6 +11,7 @@ import { isEndHotkey, isStartHotkey } from './hotkey';
 import type { InkPoint, Stroke } from './ink';
 import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage } from './message';
 import { formatTimeline } from './message';
+import { Agent, clearApiKey, getModel, setModel, setVibe } from './agent';
 import { Executor, type PerformOptions, type PerformResult, type Step } from './executor';
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
@@ -51,12 +52,23 @@ export interface AssistHandle {
   perform(script: Step[], opts?: PerformOptions): Promise<PerformResult>;
   cancel(): void;
   readonly executor: Executor;
+  readonly agent: Agent;
+  /** When false, a session only logs its message (M1 behaviour). */
+  agentEnabled: boolean;
+  /** Re-send the last session's message to the model. */
+  ask(): Promise<void>;
+  clearApiKey(): void;
+  setModel(model: string | null): void;
+  getModel(): string;
+  setVibe(vibe: string | null): void;
 }
 
 export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
   const overlay = new InkOverlay(lmCanvas);
   const executor = new Executor(lmCanvas, overlay);
+  const agent = new Agent(executor, overlay);
   let session: Session | null = null;
+  let lastMessage: TalkAndDrawMessage | null = null;
 
   const now = () => performance.now();
   const rel = () => (session ? now() - session.t0 : 0);
@@ -210,6 +222,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
 
   function start(): void {
     if (session) return;
+    agent.cancel();
     executor.cancel();
     const s: Session = {
       t0: now(),
@@ -290,6 +303,8 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
       timeline: formatTimeline(transcript, strokes, s.snapshots, durationMs / 1000),
     };
     dumpToConsole(m);
+    lastMessage = m;
+    if (handle.agentEnabled) await agent.run(m);
   }
 
   function abort(): void {
@@ -317,10 +332,21 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     end,
     isActive: () => session != null,
     perform: (script, opts) => executor.perform(script, opts),
-    cancel: () => executor.cancel(),
+    cancel: () => {
+      agent.cancel();
+      executor.cancel();
+    },
     executor,
+    agent,
+    agentEnabled: true,
+    ask: () => (lastMessage ? agent.run(lastMessage) : Promise.reject(new Error('no session yet'))),
+    clearApiKey,
+    setModel,
+    getModel,
+    setVibe,
     dispose() {
       abort();
+      agent.cancel();
       executor.cancel();
       window.removeEventListener('keydown', onKeyDown, { capture: true });
       window.removeEventListener('keyup', swallowWhileActive, { capture: true });

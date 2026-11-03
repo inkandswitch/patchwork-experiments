@@ -108,10 +108,11 @@ export class Executor {
       this.input.releaseAll();
       this.cursorTimer = window.setTimeout(() => this.overlay.setAiCursor(null), CURSOR_HIDE_MS);
     }
-    return { steps: results, canceled: this.canceled, screenshot: this.screenshot(scale, 'after perform') };
+    return { steps: results, canceled: this.canceled, screenshot: this.takeScreenshot(scale, 'after perform') };
   }
 
-  private screenshot(scale: number, label: string): Snapshot {
+  /** The canvas plus whatever ink is visible, at the given image scale. */
+  takeScreenshot(scale: number, label: string): Snapshot {
     const img = imageScale(this.lmCanvas.width, this.lmCanvas.height);
     img.scale = scale;
     img.width = Math.max(1, Math.round(this.lmCanvas.width * scale));
@@ -202,7 +203,7 @@ export class Executor {
         return rt.printIt(step.source);
       }
       case 'screenshot':
-        return this.screenshot(s, 'screenshot').dataUrl;
+        return this.takeScreenshot(s, 'screenshot').dataUrl;
     }
   }
 

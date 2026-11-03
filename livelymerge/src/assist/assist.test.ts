@@ -212,3 +212,56 @@ describe('events', () => {
     expect(codeFor('Enter')).toBe('Enter');
   });
 });
+
+// ---- M4: what the model receives ------------------------------------------------
+
+import { buildUserContent } from './agent';
+import { TOOLS, systemPrompt } from './prompt';
+
+describe('agent message', () => {
+  it('turns a session into text + labelled image blocks', () => {
+    const content = buildUserContent({
+      version: 1,
+      startedAt: '2026-11-03T18:00:00.000Z',
+      durationMs: 2400,
+      canvas: { width: 1440, height: 900 },
+      image: { width: 1280, height: 800, scale: 0.889 },
+      transcript: [{ word: 'move', t0: 0, t1: 0.2 }],
+      transcriptStatus: 'whisper',
+      transcriptText: 'move this',
+      audio: { status: 'recorded' },
+      strokes: [],
+      images: [
+        { label: 'start', t: 0, width: 1280, height: 800, dataUrl: 'data:image/png;base64,AAAA' },
+        { label: 'final', t: 2400, width: 1280, height: 800, dataUrl: 'data:image/png;base64,BBBB' },
+      ],
+      timeline: 'Timeline (seconds from session start):\n[0.00] move',
+    });
+    expect(content.map((c) => c.type)).toEqual(['text', 'text', 'image', 'text', 'image']);
+    const head = content[0] as { type: 'text'; text: string };
+    expect(head.text).toContain('Canvas 1440x900, images 1280x800 (scale 0.889)');
+    expect(head.text).toContain('Transcript: "move this"');
+    expect(head.text).toContain('[0.00] move');
+    const img = content[2] as { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+    expect(img.source).toEqual({ type: 'base64', media_type: 'image/png', data: 'AAAA' });
+  });
+  it('says when the transcript is missing', () => {
+    const head = buildUserContent({
+      version: 1, startedAt: '2026-11-03T18:00:00.000Z', durationMs: 1000,
+      canvas: { width: 10, height: 10 }, image: { width: 10, height: 10, scale: 1 },
+      transcript: [], transcriptStatus: 'failed', transcriptInfo: 'boom', audio: { status: 'none' },
+      strokes: [], images: [], timeline: '',
+    })[0] as { type: 'text'; text: string };
+    expect(head.text).toContain('Transcript: unavailable (failed: boom)');
+  });
+  it('tools: perform/screenshot/eval, and the step enum covers every executor step type', () => {
+    expect(TOOLS.map((t) => t.name)).toEqual(['perform', 'screenshot', 'eval']);
+    const schema = TOOLS[0].input_schema as any;
+    const types: string[] = schema.properties.steps.items.properties.type.enum;
+    for (const t of ['mouse_move', 'mouse_down', 'mouse_up', 'scroll', 'key_down', 'key_up', 'type', 'wait', 'pen', 'say', 'speech_bubble', 'thought_bubble', 'dismiss', 'eval', 'screenshot']) {
+      expect(types).toContain(t);
+    }
+    expect(systemPrompt('BE WEIRD')).toContain('## Vibe\nBE WEIRD');
+    expect(systemPrompt()).toContain('IMAGE pixels');
+  });
+});

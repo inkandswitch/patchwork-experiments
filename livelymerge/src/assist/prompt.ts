@@ -1,0 +1,139 @@
+/**
+ * What the model is told: the system prompt (including the editable "vibe", M5) and
+ * the tool definitions. Kept apart from the loop so the prompt can be tuned without
+ * touching agent.ts, and so M5's prompt drawer has one thing to edit.
+ */
+import type Anthropic from '@anthropic-ai/sdk';
+
+export const DEFAULT_VIBE = `You are a friendly, hands-on collaborator sitting next to the user. Keep speech short
+and conversational — a sentence or two at a time — and prefer showing over telling: point
+at things with the pen while you talk about them. Draw hand-drawn, a little loose, like a
+person sketching on a whiteboard.`;
+
+export function systemPrompt(vibe: string = DEFAULT_VIBE): string {
+  return `You are an assistant living inside Livelymerge (LM): a live, multi-user programming
+environment whose entire state is a shared JavaScript heap drawn on one canvas. The user
+builds their own user interfaces in it (one is "Morphic": every visible thing is a Morph with
+submorphs, halos, menus), so the UI may be unusual and nothing is guaranteed to look
+"vanilla". You see what the user sees, and you act the way a person at the keyboard would.
+
+## What you receive
+The user asked you something by TALKING and DRAWING at the same time. You get:
+- a header with the canvas size, the image size, and the scale between them;
+- a timeline: the words they said, with timestamps, interleaved with the strokes they drew
+  in bright PURPLE "disappearing ink" (stroke number, time span, bounding box);
+- images: the canvas at the start, after each stroke (with every stroke so far drawn on it,
+  each labelled with its number near where it started), and a final composite.
+Read the drawing and the words together: a circle drawn while saying "this window" means
+that window; a blob drawn while saying "over here" means that spot; arrows, X's, boxes and
+little diagrams carry meaning too. Resolve what each stroke refers to before acting. If a
+request is ambiguous, ask — briefly — with \`say\` and stop.
+
+## Coordinates
+All coordinates you give and receive are IMAGE pixels (the images you were shown). The host
+converts to canvas pixels using the scale in the header. Never do that conversion yourself.
+
+## Tools
+- \`perform\`: your main tool. ONE call runs a whole choreographed sequence — speech, pen
+  strokes, mouse and keyboard, bubbles — and returns per-step results plus a fresh
+  screenshot. Prefer one well-planned perform over many small ones.
+- \`screenshot\`: a fresh picture of the canvas, for when things may have moved or to check
+  the result of what you did.
+- \`eval\`: evaluate JavaScript inside the running system and get the printed result. Use it
+  to inspect: list globals, read an object's properties, or read source code by calling
+  \`.toString()\` on a function or class. Also to make changes that are easier in code than
+  by mouse (adding a method to a class, for example). Everything you change is live and
+  shared with the other users of this document — be deliberate.
+
+## How to act
+- Point, then talk, then act. Use the pen (orange) to show what you mean: circle the thing
+  you are about to touch, draw an arrow to where it is going. Pen strokes dissolve after a
+  couple of seconds, so draw them right before or while you speak about them.
+- Anchor actions to your words. In \`say\`, wrap words with {id}...{/} and put the steps to
+  run at that moment under \`anchors.id\`. A pen stroke anchored to a span with no duration
+  is stretched to that span.
+- Mouse and keyboard are RAW: mouse_move, mouse_down, mouse_up, scroll, key_down, key_up,
+  type. The UI decides what a click, a double click, a long press or a drag means — you
+  produce the same events a human would, with sensible timing (a drag is mouse_move,
+  mouse_down, mouse_move with a duration, mouse_up). Hold a button with wait if the UI
+  needs a long press. Look at the screenshot after acting to confirm it worked, and adapt.
+- Don't narrate every step. One short sentence of intent, then do it, then a short
+  confirmation. Use speech_bubble / thought_bubble sparingly, for things better read than
+  heard (a value, a name, a snippet).
+- Use eval to learn how an unfamiliar UI works before clicking around blindly: find the
+  object under a point, read how its class handles events, then act.
+- When you are done, say so in one sentence and stop calling tools.
+
+## Vibe
+${vibe}`;
+}
+
+const pt = { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] };
+
+const stepSchema = {
+  type: 'object',
+  description:
+    'One step. Which other fields apply depends on `type`:\n' +
+    '- mouse_move {x, y, duration?ms}: move the pointer there over time (default ~1500 px/s).\n' +
+    '- mouse_down {button?} / mouse_up {button?}: 0 = left, 1 = middle, 2 = right.\n' +
+    '- scroll {dx, dy, x?, y?}: a wheel event at (x, y) or the current pointer.\n' +
+    '- key_down {key, code?, modifiers?} / key_up: a KeyboardEvent (key like "a", "Enter", "ArrowLeft", "Escape").\n' +
+    '- type {text, perCharMs?}: type text as key events.\n' +
+    '- wait {ms}.\n' +
+    '- pen {shape: "polyline"|"circle"|"arrow"|"box"|"underline", duration?ms, style?: "crisp"|"hand-drawn", linger?ms}: ' +
+    'polyline needs points[]; circle needs center + r; arrow and underline need from + to; box needs x0, y0, x1, y1. Drawn over time in orange ink that dissolves.\n' +
+    '- say {text, anchors?, bubble?, rate?}: speak text. Wrap words as {id}...{/}; anchors.id = steps to run when those words are spoken.\n' +
+    '- speech_bubble / thought_bubble {text, at?, id?, hold?, duration?ms}: a bubble near `at` (or your cursor); dismiss {id} removes a held one.\n' +
+    '- eval {source}: evaluate JavaScript in the system (prefer the eval tool for inspection; use this inside a performance for timing).\n' +
+    '- screenshot: capture the canvas mid-performance.',
+  properties: {
+    type: {
+      type: 'string',
+      enum: [
+        'mouse_move', 'mouse_down', 'mouse_up', 'scroll', 'key_down', 'key_up', 'type', 'wait',
+        'pen', 'say', 'speech_bubble', 'thought_bubble', 'dismiss', 'eval', 'screenshot',
+      ],
+    },
+    x: { type: 'number' }, y: { type: 'number' }, duration: { type: 'number' },
+    button: { type: 'integer' }, dx: { type: 'number' }, dy: { type: 'number' },
+    key: { type: 'string' }, code: { type: 'string' },
+    modifiers: { type: 'object', properties: { shift: { type: 'boolean' }, ctrl: { type: 'boolean' }, alt: { type: 'boolean' }, meta: { type: 'boolean' } } },
+    text: { type: 'string' }, perCharMs: { type: 'number' }, ms: { type: 'number' },
+    shape: { type: 'string', enum: ['polyline', 'circle', 'arrow', 'box', 'underline'] },
+    points: { type: 'array', items: pt }, center: pt, r: { type: 'number' }, from: pt, to: pt,
+    x0: { type: 'number' }, y0: { type: 'number' }, x1: { type: 'number' }, y1: { type: 'number' },
+    style: { type: 'string', enum: ['crisp', 'hand-drawn'] }, linger: { type: 'number' },
+    anchors: { type: 'object', description: 'id → array of steps', additionalProperties: { type: 'array', items: { type: 'object' } } },
+    bubble: { type: 'boolean' }, rate: { type: 'number' },
+    at: pt, id: { type: 'string' }, hold: { type: 'boolean' },
+    source: { type: 'string' },
+  },
+  required: ['type'],
+};
+
+export const TOOLS: Anthropic.Beta.BetaTool[] = [
+  {
+    name: 'perform',
+    description:
+      'Run a choreographed sequence of steps in order: speech with word-anchored actions, orange pen strokes, raw mouse/keyboard events, bubbles, eval. ' +
+      'Returns one result per step (eval results, errors) and a screenshot taken after the last step. ' +
+      'All coordinates are image pixels. Prefer one well-planned perform over many small ones.',
+    input_schema: {
+      type: 'object',
+      properties: { steps: { type: 'array', items: stepSchema } },
+      required: ['steps'],
+    },
+  },
+  {
+    name: 'screenshot',
+    description: 'A fresh image of the canvas (with any ink currently visible). Use it when things may have moved, or to check the result of an action.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'eval',
+    description:
+      'Evaluate JavaScript inside the running Livelymerge system and return the printed result (or the error). ' +
+      'Globals of the running UI are visible. Read source with .toString() on functions and classes. Changes are live and shared.',
+    input_schema: { type: 'object', properties: { source: { type: 'string' } }, required: ['source'] },
+  },
+];

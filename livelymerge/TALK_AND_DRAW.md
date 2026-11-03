@@ -219,11 +219,27 @@ bridge's arm/disarm gating.
 **Screenshot:** `screenshot` returns the current composite (canvas + live ink of both
 colors) as a data URL; every `perform` also returns one at the end.
 
-## 9. Agent loop (M4)
+## 9. Agent loop (M4) — built
 
-message → model → `perform` → screenshot + results → … until the model stops. Key
-handling: `editable-llm-chat` bakes a key in at build time; we need something better
-(a field in the drawer, stored locally, never in the doc).
+`src/assist/agent.ts` + `prompt.ts`. At Esc, after transcription, the session's message
+becomes the first user turn — header, transcript, timeline, then every snapshot as a
+labelled image block — and goes to Claude through the official SDK, called directly from
+the browser (`dangerouslyAllowBrowser`). Tools: `perform` (the M3 script, one call per
+choreographed turn), `screenshot`, `eval`. Each `perform` returns per-step results plus
+the screenshot taken after its last step; the loop runs until the model stops calling
+tools (max 12 turns). Closing text is spoken with a bubble; a refusal is spoken too.
+The hotkey cancels the loop and the current performance.
+
+- ✅ Model: `claude-fable-5-1` (computer-use training; `effort: medium` for latency),
+  with the server-side refusal fallback chain enabled (`fallbacks: "default"`).
+  Override: `talkAndDraw.setModel('claude-opus-5-5')` (stored per browser).
+- ✅ API key: asked for with a prompt the first time it is needed (the first Esc), kept
+  in `localStorage` for this origin, never in the document. A rejected key is cleared
+  automatically; `talkAndDraw.clearApiKey()` clears it by hand.
+- ✅ `talkAndDraw.agentEnabled = false` goes back to logging only; `talkAndDraw.ask()`
+  re-sends the last session; the agent's turns, tool calls and evals are logged in a
+  console group.
+- ❓ Not yet verified against a live model from inside Patchwork.
 
 ## 10. Vibe / system prompt (M5)
 
@@ -252,6 +268,6 @@ prompt is editable in a pull-out drawer like the Workspace drawer; ❓ stored pe
 3. **M3 — executor.** ✅ Pen primitives, `say` (speechSynthesis first), bubbles, raw
    events with mouse physics and the AI cursor, word anchors. Driven by hand-written
    scripts from the console, no model yet.
-4. **M4 — agent.** Model call with the tools, `perform` scripts, screenshot loop, key
+4. **M4 — agent.** ✅ Model call with the tools, `perform` scripts, screenshot loop, key
    handling.
 5. **M5 — polish.** Vibe drawer, ElevenLabs, eval gating, hand-drawn style.

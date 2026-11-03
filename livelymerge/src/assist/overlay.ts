@@ -347,7 +347,8 @@ export class InkOverlay {
 
   private drawStatus(ctx: CanvasRenderingContext2D, now: number): void {
     const text = this.status!;
-    const { width } = this.lmCanvas.getBoundingClientRect();
+    // Bottom right: the top right belongs to the Automerge doc-stats widget.
+    const { width, height } = this.lmCanvas.getBoundingClientRect();
     ctx.save();
     ctx.font = '12px system-ui, sans-serif';
     ctx.textBaseline = 'middle';
@@ -357,7 +358,7 @@ export class InkOverlay {
     const w = padX + dotR * 2 + 8 + tw + padX;
     const h = 26;
     const x = width - w - 12;
-    const y = 12;
+    const y = height - h - 12;
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.strokeStyle = USER_INK_COLOR;
     ctx.lineWidth = 1;
