@@ -265,3 +265,24 @@ describe('agent message', () => {
     expect(systemPrompt()).toContain('IMAGE pixels');
   });
 });
+
+// ---- bubble tails ----------------------------------------------------------------
+
+import { bubbleTail } from './overlay';
+
+describe('bubbleTail', () => {
+  it('starts on the edge facing the anchor and stays short', () => {
+    const below = bubbleTail(100, 100, 200, 60, { x: 150, y: 400 })!;
+    expect(below.base).toEqual({ x: 150, y: 160 });
+    expect(Math.hypot(below.tip.x - below.base.x, below.tip.y - below.base.y)).toBeLessThanOrEqual(22.001);
+    expect(below.tip.y).toBeGreaterThan(160);
+    const above = bubbleTail(100, 100, 200, 60, { x: 50, y: 10 })!;
+    expect(above.base.y).toBe(100);
+    expect(above.base.x).toBe(116); // clamped away from the corner
+    expect(above.tip.y).toBeLessThan(100);
+    const left = bubbleTail(100, 100, 200, 60, { x: 20, y: 130 })!;
+    expect(left.base).toEqual({ x: 100, y: 130 });
+    expect(left.tip.x).toBeLessThan(100);
+    expect(bubbleTail(100, 100, 200, 60, { x: 150, y: 130 })).toBeNull();
+  });
+});

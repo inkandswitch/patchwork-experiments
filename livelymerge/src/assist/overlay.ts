@@ -274,11 +274,11 @@ export class InkOverlay {
     ctx.restore();
   }
 
-  private bubbleAnchor(b: Bubble): { x: number; y: number } {
+  /** Where a bubble's tail points: its own `at`, else the AI cursor, else nowhere. */
+  private bubbleAnchor(b: Bubble): { x: number; y: number } | null {
     if (b.at) return b.at;
-    if (this.cursor) return { x: this.cursor.x, y: this.cursor.y };
-    const { width } = this.lmCanvas.getBoundingClientRect();
-    return { x: width / 2, y: 90 };
+    if (this.cursor && this.cursorHiddenAt == null) return { x: this.cursor.x, y: this.cursor.y };
+    return null;
   }
 
   private drawBubble(ctx: CanvasRenderingContext2D, b: Bubble, alpha: number): void {
@@ -293,39 +293,62 @@ export class InkOverlay {
     const w = Math.min(BUBBLE_MAX_W, Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2);
     const h = lines.length * lineH + pad * 2;
     const a = this.bubbleAnchor(b);
-    // Above and to the right of the anchor, kept inside the canvas.
-    let x = a.x + 18;
-    let y = a.y - h - 26;
-    if (x + w > cw - 8) x = Math.max(8, a.x - w - 18);
-    if (y < 8) y = Math.min(ch - h - 8, a.y + 30);
+    let x: number;
+    let y: number;
+    if (a) {
+      // Above and to the right of the anchor, kept inside the canvas.
+      x = a.x + 18;
+      y = a.y - h - 26;
+      if (x + w > cw - 8) x = Math.max(8, a.x - w - 18);
+      if (y < 8) y = Math.min(ch - h - 8, a.y + 30);
+    } else {
+      // Nothing to point at: centered near the top, no tail.
+      x = Math.max(8, (cw - w) / 2);
+      y = 16;
+    }
+    x = Math.min(Math.max(8, x), Math.max(8, cw - w - 8));
+    y = Math.min(Math.max(8, y), Math.max(8, ch - h - 8));
+
+    // The tail starts on the edge facing the anchor and is short (≤ 22 px): a bubble
+    // far from its anchor gets a stub pointing the right way, never a long spike.
+    const tail = a ? bubbleTail(x, y, w, h, a) : null;
+    const body = () => {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 10);
+    };
     ctx.fillStyle = 'rgba(255,255,255,0.96)';
     ctx.strokeStyle = AI_INK_COLOR;
     ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 10);
-    ctx.fill();
-    ctx.stroke();
-    // Tail: a triangle for speech, three shrinking circles for thought.
-    const bx = Math.min(Math.max(a.x, x + 14), x + w - 14);
-    const by = y + h;
-    if (b.kind === 'speech') {
+    ctx.lineJoin = 'round';
+    if (tail && b.kind === 'speech') {
       ctx.beginPath();
-      ctx.moveTo(bx - 7, by - 1);
-      ctx.lineTo(a.x, a.y - 4);
-      ctx.lineTo(bx + 7, by - 1);
+      ctx.moveTo(tail.b1.x, tail.b1.y);
+      ctx.lineTo(tail.tip.x, tail.tip.y);
+      ctx.lineTo(tail.b2.x, tail.b2.y);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.96)';
-      ctx.fillRect(bx - 6, by - 2, 12, 3);
-    } else {
-      for (const [f, r] of [
-        [0.25, 5],
-        [0.55, 3.5],
-        [0.8, 2],
+    }
+    body();
+    ctx.fill();
+    ctx.stroke();
+    if (tail && b.kind === 'speech') {
+      // Hide the body's border where the tail joins it.
+      ctx.beginPath();
+      ctx.moveTo(tail.b1.x, tail.b1.y);
+      ctx.lineTo(tail.tip.x, tail.tip.y);
+      ctx.lineTo(tail.b2.x, tail.b2.y);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (tail && b.kind === 'thought') {
+      for (const [d, r] of [
+        [8, 4.5],
+        [18, 3],
+        [27, 2],
       ] as const) {
         ctx.beginPath();
-        ctx.arc(bx + (a.x - bx) * f, by + (a.y - 6 - by) * f, r, 0, Math.PI * 2);
+        ctx.arc(tail.base.x + tail.dir.x * d, tail.base.y + tail.dir.y * d, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
@@ -342,6 +365,48 @@ export class InkOverlay {
     this.ro?.disconnect();
     this.el.remove();
   }
+}
+
+/** Tail geometry for a bubble at (x, y, w, h) pointing at `a`; null when `a` is inside. */
+export function bubbleTail(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  a: { x: number; y: number },
+): { base: { x: number; y: number }; b1: { x: number; y: number }; b2: { x: number; y: number }; tip: { x: number; y: number }; dir: { x: number; y: number } } | null {
+  const inside = a.x >= x && a.x <= x + w && a.y >= y && a.y <= y + h;
+  if (inside) return null;
+  const clampX = Math.min(Math.max(a.x, x + 16), x + w - 16);
+  const clampY = Math.min(Math.max(a.y, y + 16), y + h - 16);
+  let base: { x: number; y: number };
+  let along: { x: number; y: number }; // unit vector along the edge
+  if (a.y > y + h) {
+    base = { x: clampX, y: y + h };
+    along = { x: 1, y: 0 };
+  } else if (a.y < y) {
+    base = { x: clampX, y };
+    along = { x: 1, y: 0 };
+  } else if (a.x < x) {
+    base = { x, y: clampY };
+    along = { x: 0, y: 1 };
+  } else {
+    base = { x: x + w, y: clampY };
+    along = { x: 0, y: 1 };
+  }
+  const dx = a.x - base.x;
+  const dy = a.y - base.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const dir = { x: dx / dist, y: dy / dist };
+  const len = Math.min(22, dist - 4);
+  const half = 6;
+  return {
+    base,
+    dir,
+    b1: { x: base.x - along.x * half, y: base.y - along.y * half },
+    b2: { x: base.x + along.x * half, y: base.y + along.y * half },
+    tip: { x: base.x + dir.x * Math.max(len, 6), y: base.y + dir.y * Math.max(len, 6) },
+  };
 }
 
 export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] {
