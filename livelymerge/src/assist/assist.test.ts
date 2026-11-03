@@ -109,3 +109,106 @@ describe('formatTimeline', () => {
     );
   });
 });
+
+// ---- M3: pen geometry, word anchors, synthetic input helpers -----------------
+
+import { animatePath, naturalDurationMs, pathLength, pointAt, resample, shapeToPaths, wobble } from './pen';
+import { parseAnchors, spanWords, speak } from './say';
+import { codeFor } from './events';
+
+describe('pen', () => {
+  it('pathLength / pointAt / resample', () => {
+    const p = [
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+      { x: 30, y: 40 },
+    ];
+    expect(pathLength(p)).toBe(70);
+    expect(pointAt(p, 0)).toEqual({ x: 0, y: 0 });
+    expect(pointAt(p, 50)).toEqual({ x: 30, y: 20 });
+    expect(pointAt(p, 999)).toEqual({ x: 30, y: 40 });
+    const r = resample(p, 10);
+    expect(r.length).toBe(8);
+    expect(r[r.length - 1]).toEqual({ x: 30, y: 40 });
+    expect(r[3]).toEqual({ x: 30, y: 0 });
+  });
+  it('shapes: circle closes, arrow has shaft + head, box closes, underline is a line', () => {
+    const [c] = shapeToPaths({ shape: 'circle', center: { x: 100, y: 100 }, r: 50 }, 'crisp');
+    expect(c.length).toBe(57);
+    expect(c[0].x).toBeCloseTo(c[c.length - 1].x, 6);
+    expect(c[0].y).toBeCloseTo(c[c.length - 1].y, 6);
+    for (const p of c) expect(Math.hypot(p.x - 100, p.y - 100)).toBeCloseTo(50, 6);
+    const arrow = shapeToPaths({ shape: 'arrow', from: { x: 0, y: 0 }, to: { x: 100, y: 0 } }, 'crisp');
+    expect(arrow.length).toBe(2);
+    expect(arrow[0]).toEqual([{ x: 0, y: 0 }, { x: 100, y: 0 }]);
+    expect(arrow[1][1]).toEqual({ x: 100, y: 0 });
+    expect(arrow[1][0].x).toBeLessThan(100);
+    expect(arrow[1][2].x).toBeLessThan(100);
+    expect(Math.sign(arrow[1][0].y)).toBe(-Math.sign(arrow[1][2].y));
+    expect(Math.abs(arrow[1][0].y)).toBeGreaterThan(5);
+    const [box] = shapeToPaths({ shape: 'box', x0: 1, y0: 2, x1: 11, y1: 22 }, 'crisp');
+    expect(box.length).toBe(5);
+    expect(box[4]).toEqual({ x: 1, y: 2 });
+    expect(shapeToPaths({ shape: 'underline', from: { x: 0, y: 5 }, to: { x: 9, y: 5 } }, 'crisp')).toEqual([
+      [{ x: 0, y: 5 }, { x: 9, y: 5 }],
+    ]);
+  });
+  it('hand-drawn wobble stays close to the path and overshoots the circle', () => {
+    let seed = 1;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const w = wobble([{ x: 0, y: 0 }, { x: 200, y: 0 }], 1.6, rnd);
+    expect(w.length).toBeGreaterThan(30);
+    for (const p of w) expect(Math.abs(p.y)).toBeLessThan(3);
+    const [c] = shapeToPaths({ shape: 'circle', center: { x: 0, y: 0 }, r: 40 }, 'hand-drawn', rnd);
+    expect(pathLength(c)).toBeGreaterThan(2 * Math.PI * 40 * 1.03);
+  });
+  it('naturalDurationMs paces at the default speed with a floor', () => {
+    expect(naturalDurationMs([[{ x: 0, y: 0 }, { x: 10, y: 0 }]])).toBe(300);
+    expect(naturalDurationMs([[{ x: 0, y: 0 }, { x: 800, y: 0 }]])).toBe(2000);
+  });
+  it('animatePath with duration 0 emits the whole path at once', async () => {
+    const got: { x: number; y: number }[] = [];
+    await animatePath([{ x: 0, y: 0 }, { x: 9, y: 0 }], 0, (pts) => got.push(...pts));
+    expect(got[0]).toEqual({ x: 0, y: 0 });
+    expect(got[got.length - 1]).toEqual({ x: 9, y: 0 });
+  });
+});
+
+describe('say anchors', () => {
+  it('parses spans and point markers out of the text', () => {
+    const p = parseAnchors("I'll move {s1}this window{/} over {p2}here{/}. Then {x}spin it.");
+    expect(p.text).toBe("I'll move this window over here. Then spin it.");
+    expect(p.spans).toEqual([
+      { id: 's1', start: 10, end: 21 },
+      { id: 'p2', start: 27, end: 31 },
+      { id: 'x', start: 38, end: 42 },
+    ]);
+    expect(spanWords(p, p.spans[0])).toEqual({ first: 2, last: 3 });
+    expect(spanWords(p, p.spans[1])).toEqual({ first: 5, last: 5 });
+    expect(spanWords(p, p.spans[2])).toEqual({ first: 7, last: 7 });
+  });
+  it('without a speech engine, estimated pacing still fires anchors in order', async () => {
+    const p = parseAnchors('{a}one{/} two {b}three{/}');
+    const log: string[] = [];
+    await speak(
+      p,
+      {
+        onWord: (i) => log.push(`w${i}`),
+        onSpanStart: (s) => log.push(`+${s.id}`),
+        onSpanEnd: (s) => log.push(`-${s.id}`),
+      },
+      { estimatedCharsPerSec: 400 },
+    );
+    expect(log).toEqual(['w0', '+a', '-a', 'w1', 'w2', '+b', '-b']);
+  });
+});
+
+describe('events', () => {
+  it('codeFor maps printable keys to KeyboardEvent codes', () => {
+    expect(codeFor('a')).toBe('KeyA');
+    expect(codeFor('Z')).toBe('KeyZ');
+    expect(codeFor('5')).toBe('Digit5');
+    expect(codeFor(' ')).toBe('Space');
+    expect(codeFor('Enter')).toBe('Enter');
+  });
+});

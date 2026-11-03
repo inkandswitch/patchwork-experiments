@@ -123,8 +123,8 @@ export function drawStrokeLabel(
 }
 
 /** Alpha of a finished stroke `sinceEndMs` after its end: 1, then a linear dissolve. */
-export function dissolveAlpha(sinceEndMs: number): number {
-  if (sinceEndMs < LINGER_MS) return 1;
-  const f = (sinceEndMs - LINGER_MS) / FADE_MS;
+export function dissolveAlpha(sinceEndMs: number, lingerMs = LINGER_MS): number {
+  if (sinceEndMs < lingerMs) return 1;
+  const f = (sinceEndMs - lingerMs) / FADE_MS;
   return f >= 1 ? 0 : 1 - f;
 }

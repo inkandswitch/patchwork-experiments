@@ -11,6 +11,7 @@ import { isEndHotkey, isStartHotkey } from './hotkey';
 import type { InkPoint, Stroke } from './ink';
 import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage } from './message';
 import { formatTimeline } from './message';
+import { Executor, type PerformOptions, type PerformResult, type Step } from './executor';
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
 import { loadWhisper, transcribe } from './transcribe';
@@ -45,10 +46,16 @@ export interface AssistHandle {
   start(): void;
   end(): Promise<void>;
   isActive(): boolean;
+  /** Run an AI script (M3). Coordinates are image px at `opts.scale` (default: the
+   *  last session's scale, or 1 — i.e. canvas px — before any session). */
+  perform(script: Step[], opts?: PerformOptions): Promise<PerformResult>;
+  cancel(): void;
+  readonly executor: Executor;
 }
 
 export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
   const overlay = new InkOverlay(lmCanvas);
+  const executor = new Executor(lmCanvas, overlay);
   let session: Session | null = null;
 
   const now = () => performance.now();
@@ -203,6 +210,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
 
   function start(): void {
     if (session) return;
+    executor.cancel();
     const s: Session = {
       t0: now(),
       startedAt: new Date(),
@@ -215,6 +223,7 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
       ending: false,
     };
     session = s;
+    executor.scale = s.image.scale;
     overlay.setActive(true);
     overlay.setStatus(STATUS_LISTENING);
     overlay.el.focus({ preventScroll: true });
@@ -307,8 +316,12 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     start,
     end,
     isActive: () => session != null,
+    perform: (script, opts) => executor.perform(script, opts),
+    cancel: () => executor.cancel(),
+    executor,
     dispose() {
       abort();
+      executor.cancel();
       window.removeEventListener('keydown', onKeyDown, { capture: true });
       window.removeEventListener('keyup', swallowWhileActive, { capture: true });
       window.removeEventListener('keypress', swallowWhileActive, { capture: true });

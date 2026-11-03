@@ -35,12 +35,19 @@ export interface Snapshot {
   dataUrl: string;
 }
 
+/** Extra ink drawn as-is (e.g. the AI's live strokes for its screenshot tool). */
+export interface ExtraInk {
+  points: readonly Stroke['points'][number][];
+  color: string;
+}
+
 export function compositeSnapshot(
   lmCanvas: HTMLCanvasElement,
   strokes: readonly Stroke[],
   img: ImageScale,
   label: string,
   t: number,
+  extra: readonly ExtraInk[] = [],
 ): Snapshot {
   const out = document.createElement('canvas');
   out.width = img.width;
@@ -54,5 +61,6 @@ export function compositeSnapshot(
     drawSmoothPath(ctx, s.points, USER_INK_COLOR, SNAPSHOT_INK_WIDTH, 1);
   }
   for (const s of strokes) drawStrokeLabel(ctx, s, USER_INK_COLOR);
+  for (const e of extra) drawSmoothPath(ctx, e.points, e.color, SNAPSHOT_INK_WIDTH, 1);
   return { label, t, width: out.width, height: out.height, dataUrl: out.toDataURL('image/png') };
 }

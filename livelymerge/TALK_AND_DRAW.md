@@ -145,51 +145,79 @@ Timeline (seconds from session start):
 - Fallbacks if Patchwork fights it: Web Speech API in Chrome (phrase-level
   timestamps), a local whisper server over `fetch`.
 
-## 8. The AI's channels (tools)
+## 8. The AI's channels (tools) — M3 built
 
 All coordinates in image space. The response is **one `perform(script)` call**: an
 ordered list of steps; a `say` step runs its anchored sub-steps concurrently; the host
-executes, paces raw events across the UI's 30 Hz frames, then returns one screenshot
-plus any errors. One model call does a whole gesture, which also amortizes latency.
-The executor is cancelable (user hotkey).
+executes, paces raw events across the UI's 30 Hz frames, then returns one result per
+step plus a screenshot. One model call does a whole gesture, which also amortizes
+latency. The executor is cancelable (user hotkey, or `cancel()`): speech stops, any
+held mouse button is released, remaining steps are skipped.
+
+Implementation: `src/assist/executor.ts` (steps), `pen.ts` (shapes, wobble, animation),
+`events.ts` (synthetic input + mouse physics), `say.ts` (anchors + speechSynthesis),
+`overlay.ts` (AI ink, cursor, bubbles). From the console:
+`talkAndDraw.perform(script, { scale?, penStyle? })`, `talkAndDraw.cancel()`.
+✅ Verified 2026-11-03 in a scratch page with a fake canvas UI: a synthetic drag moved
+its box (offsetX/Y correct, ~50 pointermoves over 700 ms), typed keys carried shift
+and charCode, eval errors came back as step results, cancel released the button.
+
+```js
+talkAndDraw.perform([
+  { type: 'say', text: "I'll move {s1}this window{/} over {p2}here{/}.", bubble: true,
+    anchors: { s1: [{ type: 'pen', shape: 'circle', center: {x: 380, y: 250}, r: 95, style: 'hand-drawn' }],
+               p2: [{ type: 'pen', shape: 'circle', center: {x: 700, y: 450}, r: 10 }] } },
+  { type: 'pen', shape: 'arrow', from: {x: 480, y: 300}, to: {x: 660, y: 420} },
+  { type: 'mouse_move', x: 380, y: 250 }, { type: 'mouse_down' },
+  { type: 'mouse_move', x: 700, y: 450, duration: 700 }, { type: 'mouse_up' },
+  { type: 'thought_bubble', text: 'Done.', at: {x: 700, y: 450} },
+  { type: 'eval', source: '6 * 7' },
+])
+```
 
 **Raw events** (vocabulary mirrors Anthropic's computer-use tool so it matches training):
-- `mouse_move(x, y, duration?)` — interpolated `pointermove`s over real time (never
-  teleport); moves while a button is held carry `buttons`.
-- `mouse_down(button)`, `mouse_up(button)`, `scroll(x, y, dx, dy)` (wheel event),
-  `key_down(key, modifiers)`, `key_up(key, modifiers)`, `type(text)` (per-char
-  keydown/keypress/keyup — still raw), `wait(ms)`.
-- Dispatched on the LM canvas as `PointerEvent` / `KeyboardEvent` / `WheelEvent` with a
-  dedicated `pointerId`. Gotchas: `isTrusted` is false; `setPointerCapture` on a
-  synthetic event may throw (the Kit guards it, newdefs doesn't call it); focus the
-  canvas before key events.
+- `mouse_move {x, y, duration?}` — interpolated `pointermove`s over real time (never
+  teleport; default ~1500 px/s, eased); moves while a button is held carry `buttons`.
+- `mouse_down {button?}`, `mouse_up {button?}`, `scroll {dx, dy, x?, y?}` (wheel event),
+  `key_down {key, code?, modifiers?}`, `key_up`, `type {text}` (per-char
+  keydown/keypress/keyup — still raw), `wait {ms}`.
+- Dispatched on the LM canvas as `PointerEvent` / `KeyboardEvent` / `WheelEvent` with
+  `pointerId` 7777 and real `clientX/Y` (both UIs read `offsetX/Y`, which the browser
+  derives from those). Gotchas: `isTrusted` is false; `setPointerCapture` on a
+  synthetic event may throw (the Kit guards it, newdefs doesn't call it); the canvas is
+  focused before key events.
 - The host tracks the virtual mouse (position, buttons) and draws a **visible AI
-  cursor** on the overlay at all times.
+  cursor** on the overlay (orange arrow with an "AI" tag, a ring while a button is
+  down); it fades 1.5 s after the performance ends.
 
-**Pen** (our overlay, so shape primitives are fair game):
-- `polyline(points, duration?)`, `circle(center, r)`, `arrow(from, to)`, `box`,
-  `underline`. Default pace ~400 px/s with a minimum of a few hundred ms, so the model
-  may omit timing. Strokes animate over their duration — they are gestures, not stamps.
-- `style: 'crisp' | 'hand-drawn'` (jitter + wobble applied by the host). Distinct color
-  from the user's ink. Same dissolve rule (2 s linger, configurable per stroke).
+**Pen** (`{type: 'pen', shape, duration?, style?, linger?}`; our overlay, so shape
+primitives are fair game):
+- `polyline {points}`, `circle {center, r}`, `arrow {from, to}` (shaft + head, two
+  strokes), `box {x0, y0, x1, y1}`, `underline {from, to}`. Default pace 400 px/s with a
+  300 ms floor, so the model may omit timing. Strokes animate — gestures, not stamps.
+- `style: 'crisp' | 'hand-drawn'` (low-frequency wobble + jitter, circles overshoot
+  ~6% and breathe in radius). Orange, distinct from the user's purple. Same dissolve
+  rule (2 s linger then fade; `linger` overrides per stroke).
 
-**Say:** ElevenLabs (with character timestamps) for quality; browser `speechSynthesis`
-with `onboundary` word events as the zero-setup fallback (M3 starts here).
+**Say** (`{type: 'say', text, anchors?, bubble?, rate?}`): browser `speechSynthesis`
+for now, word boundary events drive the anchors; when a voice gives no boundaries an
+estimate (15 chars/s) paces them. ElevenLabs with character timestamps later.
+`bubble: true` shows the text as a speech bubble while speaking (dissolves 2 s after).
 
-**Word anchors:** the model's speech carries inline markers referencing other steps,
-e.g. `"I'll move {s1}this window{/} over {p2}here{/}."` — the host fires `s1`/`p2`
-when the TTS reaches those words and stretches a stroke to the word span when it has
-no duration. Absolute `wait`/`duration` remain for things not tied to speech.
+**Word anchors:** `"I'll move {s1}this window{/} over {p2}here{/}."` — `anchors.s1`
+runs when the TTS reaches "this"; a pen stroke inside with no duration is stretched to
+the span's estimated length. `{id}` without `{/}` marks the single next word.
 
-**Bubbles:** `speech_bubble(text, at?)`, `thought_bubble(text, at?)`, anchored to the
-AI cursor by default. Lifetime: while the matching speech plays, then dissolve after
-2 s. `hold: true` keeps one up (e.g. waiting on the user) until `dismiss(id)`.
+**Bubbles:** `speech_bubble` / `thought_bubble {text, at?, id?, hold?, duration?}`,
+anchored to `at`, else the AI cursor. Auto-dismiss after ~60 ms/char + 2 s unless
+`hold`; `dismiss {id}` removes one.
 
-**Eval / inspect:** `eval(source)` via `runtime.eval`, returning the printed result or
-the error. Source reading through the existing class/method introspection. Note every
-eval writes to all peers; ⏸ reuse the pwm bridge's arm/disarm gating.
+**Eval / inspect:** `eval {source}` via `runtime.printIt`, returning the printed result
+or the error as the step's result. Note every eval writes to all peers; ⏸ reuse the pwm
+bridge's arm/disarm gating.
 
-**Screenshot:** `screenshot()` returns the current composite (canvas + live ink).
+**Screenshot:** `screenshot` returns the current composite (canvas + live ink of both
+colors) as a data URL; every `perform` also returns one at the end.
 
 ## 9. Agent loop (M4)
 
@@ -221,9 +249,9 @@ prompt is editable in a pull-out drawer like the Workspace drawer; ❓ stored pe
    recording, per-stroke/final snapshots, timeline logged to the console with a stubbed
    transcript.
 2. **M2 — transcript.** ✅ Whisper; real word-timestamped transcript in the timeline.
-3. **M3 — executor.** Pen primitives, `say` (speechSynthesis first), bubbles, raw events
-   with mouse physics and the AI cursor, word anchors. Driven by hand-written scripts
-   from the console, no model yet.
+3. **M3 — executor.** ✅ Pen primitives, `say` (speechSynthesis first), bubbles, raw
+   events with mouse physics and the AI cursor, word anchors. Driven by hand-written
+   scripts from the console, no model yet.
 4. **M4 — agent.** Model call with the tools, `perform` scripts, screenshot loop, key
    handling.
 5. **M5 — polish.** Vibe drawer, ElevenLabs, eval gating, hand-drawn style.
