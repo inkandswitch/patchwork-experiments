@@ -126,15 +126,24 @@ Timeline (seconds from session start):
   as data URLs / `console.log('%c', 'background:url(...)')` thumbnails), with a stubbed
   transcript and the recorded audio duration.
 
-## 7. Transcription (M2)
+## 7. Transcription (M2) — built
 
-- ✅ Transformers.js running Whisper, `return_timestamps: 'word'`, run **after Esc** on
-  the whole recording (simpler than streaming; matches the flow).
-- ❓ **Biggest unknown — spike before building on it:** model download (~40–150 MB) and
-  caching, ONNX wasm/WebGPU loading under Patchwork's page, worker bundling through
-  pushwork, mic permission where the tool renders.
-- Fallbacks, in order: Web Speech API in Chrome (phrase-level timestamps; stroke order
-  probably disambiguates well enough), a local whisper server over `fetch`, a stub.
+- ✅ Transformers.js (v4) running Whisper, `return_timestamps: 'word'`, run **after Esc**
+  on the whole recording. Model: `onnx-community/whisper-base.en_timestamped` — word
+  timestamps need the `_timestamped` exports (cross-attentions); the plain exports
+  throw. Base's timing is noticeably better than tiny's.
+- ✅ Verified 2026-11-03 in node and in the browser (`src/assist/transcribe.ts`):
+  WebGPU with wasm fallback; first load ≈30 s (model download, cached afterwards),
+  then ≈2 s to transcribe 5 s of speech. The model starts loading at session start so
+  it is usually ready by Esc; the badge shows progress.
+- ✅ The library is loaded from jsDelivr at runtime, not bundled: bundling emitted a
+  26 MB ONNX wasm into `dist` (pushwork would push it into the document) and its
+  onnxruntime-node postinstall broke `pnpm install`. Model files come from
+  huggingface.co either way.
+- ❓ Not yet verified inside Patchwork itself: that its page lets the tool import from
+  jsDelivr and fetch from huggingface.co, and that the mic prompt appears.
+- Fallbacks if Patchwork fights it: Web Speech API in Chrome (phrase-level
+  timestamps), a local whisper server over `fetch`.
 
 ## 8. The AI's channels (tools)
 
@@ -204,14 +213,14 @@ prompt is editable in a pull-out drawer like the Workspace drawer; ❓ stored pe
   via the lm-eph channel; the AI could literally be a peer hand.
 - ⏸ Persisting sessions/transcripts in the doc.
 - ⏸ Interrupting the AI mid-performance with a new spoken request.
-- ❓ Whisper-in-Patchwork feasibility (§7).
+- ❓ Whisper inside Patchwork's page (CDN import, huggingface.co fetch, mic prompt) — §7.
 
 ## 12. Milestones
 
-1. **M1 — record & show.** Overlay, hotkey, mouse steal, ink + dissolve, audio
+1. **M1 — record & show.** ✅ Overlay, hotkey, mouse steal, ink + dissolve, audio
    recording, per-stroke/final snapshots, timeline logged to the console with a stubbed
    transcript.
-2. **M2 — transcript.** Whisper spike; real word-timestamped transcript in the timeline.
+2. **M2 — transcript.** ✅ Whisper; real word-timestamped transcript in the timeline.
 3. **M3 — executor.** Pen primitives, `say` (speechSynthesis first), bubbles, raw events
    with mouse physics and the AI cursor, word anchors. Driven by hand-written scripts
    from the console, no model yet.

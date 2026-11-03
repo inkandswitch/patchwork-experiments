@@ -13,6 +13,7 @@ import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage
 import { formatTimeline } from './message';
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
+import { loadWhisper, transcribe } from './transcribe';
 
 interface AudioCapture {
   stream: MediaStream | null;
@@ -219,6 +220,11 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     overlay.el.focus({ preventScroll: true });
     snapshot('start');
     startAudio(s);
+    // Warm up Whisper so it is (hopefully) loaded by the time the user presses Esc.
+    // Progress shows in the badge; failures are reported at transcription time.
+    loadWhisper((p) => {
+      if (session === s && !s.ending) overlay.setStatus(`${STATUS_LISTENING} · ${p}`);
+    }).catch(() => {});
   }
 
   async function end(): Promise<void> {
@@ -230,13 +236,35 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     overlay.setActive(false);
     overlay.setStatus('Talk & Draw — finishing…');
     const audio = await stopAudio(s);
-    overlay.setStatus(null);
+    const durationMs = now() - s.t0;
     session = null;
     lmCanvas.focus({ preventScroll: true });
 
-    const durationMs = now() - s.t0;
+    // Transcribe after the session (M2). The badge keeps showing progress; a new
+    // session may start meanwhile and simply takes the badge over.
+    let transcript: TalkAndDrawMessage['transcript'] = [];
+    let transcriptStatus: TalkAndDrawMessage['transcriptStatus'] = 'stubbed';
+    let transcriptText: string | undefined;
+    let transcriptInfo: string | undefined;
+    if (audio.blob) {
+      overlay.setStatus('Talk & Draw — transcribing…');
+      try {
+        const r = await transcribe(audio.blob, audio.offsetMs ?? 0, (p) => {
+          if (!session) overlay.setStatus(`Talk & Draw — ${p}`);
+        });
+        transcript = r.words;
+        transcriptText = r.text;
+        transcriptStatus = 'whisper';
+        transcriptInfo = `${r.model} on ${r.device}, ${r.ms.toFixed(0)}ms`;
+      } catch (err) {
+        transcriptStatus = 'failed';
+        transcriptInfo = err instanceof Error ? err.message : String(err);
+        console.error('Talk & Draw: transcription failed', err);
+      }
+    }
+    if (!session) overlay.setStatus(null);
+
     const strokes = s.strokes.map(summarizeStroke);
-    const transcript: TalkAndDrawMessage['transcript'] = []; // M2: Whisper
     const m: TalkAndDrawMessage = {
       version: 1,
       startedAt: s.startedAt.toISOString(),
@@ -244,7 +272,9 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
       canvas: { width: lmCanvas.width, height: lmCanvas.height },
       image: s.image,
       transcript,
-      transcriptStatus: 'stubbed',
+      transcriptStatus,
+      transcriptText,
+      transcriptInfo,
       audio,
       strokes,
       images: s.snapshots,

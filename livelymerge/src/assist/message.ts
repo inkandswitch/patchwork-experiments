@@ -42,7 +42,11 @@ export interface TalkAndDrawMessage {
   canvas: { width: number; height: number };
   image: ImageScale;
   transcript: TranscriptWord[];
-  transcriptStatus: 'stubbed' | 'whisper';
+  transcriptStatus: 'stubbed' | 'whisper' | 'failed';
+  /** The whole transcript as one string (Whisper's `text`). */
+  transcriptText?: string;
+  /** e.g. "onnx-community/whisper-base.en_timestamped on webgpu, 812ms" */
+  transcriptInfo?: string;
   audio: AudioInfo;
   strokes: StrokeSummary[];
   images: Snapshot[];
@@ -122,8 +126,9 @@ export function dumpToConsole(m: TalkAndDrawMessage): void {
       (m.audio.bytes != null ? `, ${(m.audio.bytes / 1024).toFixed(0)} KB ${m.audio.mimeType ?? ''}` : '') +
       (m.audio.offsetMs != null ? `, started ${m.audio.offsetMs.toFixed(0)}ms after t0` : '') +
       (m.audio.error ? ` (${m.audio.error})` : '') +
-      `. Transcript: ${m.transcriptStatus}.`,
+      `. Transcript: ${m.transcriptStatus}${m.transcriptInfo ? ` (${m.transcriptInfo})` : ''}.`,
   );
+  if (m.transcriptText) console.log(`Transcript: "${m.transcriptText}"`);
   console.log(m.timeline);
   for (const img of m.images) {
     const tw = Math.min(320, img.width);
