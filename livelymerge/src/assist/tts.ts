@@ -10,8 +10,14 @@
 export const ELEVEN_KEY_STORAGE = 'talkAndDraw.elevenLabsApiKey';
 export const ELEVEN_ON_STORAGE = 'talkAndDraw.elevenLabs';
 export const ELEVEN_VOICE_STORAGE = 'talkAndDraw.elevenLabsVoice';
-export const ELEVEN_MODEL = 'eleven_flash_v2_5';
+export const ELEVEN_MODEL_STORAGE = 'talkAndDraw.elevenLabsModel';
+/** Flash and Turbo cost the same (cheapest tier); Turbo sounds better for ~200 ms more
+ *  latency; Multilingual v2 is the best of these and twice the price per character. */
+export const ELEVEN_MODELS = ['eleven_flash_v2_5', 'eleven_turbo_v2_5', 'eleven_multilingual_v2'];
+export const DEFAULT_ELEVEN_MODEL = 'eleven_turbo_v2_5';
 export const DEFAULT_VOICE_NAME = 'Hope';
+/** What the previous sentence was, so the next one continues its prosody. */
+let previousText = '';
 const API = 'https://api.elevenlabs.io';
 
 export interface WordTime {
@@ -107,6 +113,16 @@ export function hasElevenKey(): boolean {
   return !!storage()?.getItem(ELEVEN_KEY_STORAGE);
 }
 
+export function getElevenModel(): string {
+  const m = storage()?.getItem(ELEVEN_MODEL_STORAGE);
+  return m && ELEVEN_MODELS.includes(m) ? m : DEFAULT_ELEVEN_MODEL;
+}
+
+export function setElevenModel(m: string | null): void {
+  if (m && ELEVEN_MODELS.includes(m) && m !== DEFAULT_ELEVEN_MODEL) storage()?.setItem(ELEVEN_MODEL_STORAGE, m);
+  else storage()?.removeItem(ELEVEN_MODEL_STORAGE);
+}
+
 export function getVoiceName(): string {
   return storage()?.getItem(ELEVEN_VOICE_STORAGE) || DEFAULT_VOICE_NAME;
 }
@@ -126,7 +142,7 @@ export function elevenStatus(): string {
   if (!hasElevenKey()) return 'on — key asked for on first use';
   if (disabledReason) return `fell back to the browser voice: ${disabledReason}`;
   if (voiceNote) return `on — ${voiceNote}`;
-  return `on — voice "${getVoiceName()}", ${ELEVEN_MODEL}`;
+  return `on — voice "${getVoiceName()}", ${getElevenModel()}`;
 }
 
 /** Turns the voice off for this page load and reports why (once, to the console and `notify`). */
@@ -231,10 +247,15 @@ export async function synthesize(text: string, notify?: (text: string) => void):
       disable('no usable voice in your account', notify);
       return null;
     }
-    const res = await fetch(`${API}/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_64`, {
+    const res = await fetch(`${API}/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_128`, {
       method: 'POST',
       headers: { 'xi-api-key': key, 'content-type': 'application/json' },
-      body: JSON.stringify({ text, model_id: ELEVEN_MODEL }),
+      body: JSON.stringify({
+        text,
+        model_id: getElevenModel(),
+        // The sentence before this one, so prosody carries over instead of resetting.
+        ...(previousText ? { previous_text: previousText.slice(-300) } : {}),
+      }),
     });
     if (!res.ok) {
       const detail = await errorDetail(res);
@@ -257,6 +278,7 @@ export async function synthesize(text: string, notify?: (text: string) => void):
     }
     const data = (await res.json()) as { audio_base64?: string; alignment?: any };
     if (!data.audio_base64) return null;
+    previousText = text;
     const bytes = Uint8Array.from(atob(data.audio_base64), (c) => c.charCodeAt(0));
     return { blob: new Blob([bytes], { type: 'audio/mpeg' }), words: wordsFromAlignment(text, data.alignment) };
   } catch (err) {

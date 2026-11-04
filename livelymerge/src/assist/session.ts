@@ -17,7 +17,7 @@ import { Executor, type PerformOptions, type PerformResult, type Step } from './
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
 import { loadWhisper, transcribe } from './transcribe';
-import { clearElevenKey, elevenEnabled, elevenStatus, getElevenKey, getVoiceName, setElevenEnabled, setVoiceName } from './tts';
+import { ELEVEN_MODELS, clearElevenKey, elevenEnabled, elevenStatus, getElevenKey, getElevenModel, getVoiceName, setElevenEnabled, setElevenModel, setVoiceName } from './tts';
 import { AssistUI } from './ui';
 
 interface AudioCapture {
@@ -107,6 +107,9 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
       status: elevenStatus,
       getVoiceName,
       setVoiceName,
+      models: ELEVEN_MODELS,
+      getModel: getElevenModel,
+      setModel: setElevenModel,
       askKey: () => {
         clearElevenKey();
         setElevenEnabled(true);

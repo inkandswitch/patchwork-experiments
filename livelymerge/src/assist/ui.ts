@@ -37,6 +37,9 @@ export interface UiHooks {
     status(): string;
     getVoiceName(): string;
     setVoiceName(name: string | null): void;
+    models: string[];
+    getModel(): string;
+    setModel(m: string | null): void;
     askKey(): void;
     clearKey(): void;
   };
@@ -141,6 +144,7 @@ export class AssistUI {
   private readonly voiceOn: HTMLInputElement;
   private readonly voiceName: HTMLInputElement;
   private readonly voiceStatus: HTMLElement;
+  private readonly voiceModel: HTMLSelectElement;
   private readonly notesEl: HTMLDivElement;
   private saveTimer: number | null = null;
 
@@ -290,6 +294,20 @@ export class AssistUI {
       this.refresh();
     });
     voiceRow.appendChild(this.voiceName);
+    this.voiceModel = document.createElement('select');
+    this.voiceModel.title = 'ElevenLabs model: flash = fastest; turbo = same price, better; multilingual v2 = best, twice the price';
+    for (const m of hooks.voice.models) {
+      const o = document.createElement('option');
+      o.value = m;
+      o.textContent = m.replace('eleven_', '').replace(/_/g, ' ');
+      this.voiceModel.appendChild(o);
+    }
+    this.voiceModel.style.flex = '0 0 auto';
+    this.voiceModel.addEventListener('change', () => {
+      hooks.voice.setModel(this.voiceModel.value);
+      this.refresh();
+    });
+    voiceRow.appendChild(this.voiceModel);
     this.voiceStatus = el('span', 'st');
     voiceRow.appendChild(this.voiceStatus);
     voiceRow.appendChild(
@@ -365,6 +383,7 @@ export class AssistUI {
     this.effortSelect.value = this.hooks.getEffort();
     this.voiceOn.checked = this.hooks.voice.enabled();
     if (document.activeElement !== this.voiceName) this.voiceName.value = this.hooks.voice.getVoiceName();
+    this.voiceModel.value = this.hooks.voice.getModel();
     this.voiceStatus.textContent = this.hooks.voice.status();
     this.voiceStatus.title = this.voiceStatus.textContent ?? '';
     this.renderNotes();
