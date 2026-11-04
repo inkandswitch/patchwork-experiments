@@ -199,10 +199,14 @@ primitives are fair game):
   ~6% and breathe in radius). Orange, distinct from the user's purple. Same dissolve
   rule (2 s linger then fade; `linger` overrides per stroke).
 
-**Say** (`{type: 'say', text, anchors?, bubble?, rate?}`): browser `speechSynthesis`
-for now, word boundary events drive the anchors; when a voice gives no boundaries an
-estimate (15 chars/s) paces them. ElevenLabs with character timestamps later.
-`bubble: true` shows the text as a speech bubble while speaking (dissolves 2 s after).
+**Say** (`{type: 'say', text, anchors?, bubble?, rate?}`): ElevenLabs by default
+(`src/assist/tts.ts`: Flash v2.5, voice "Hope" or any name in your My Voices, key asked for
+on first use and kept per browser, word times from the API's character alignment so the
+anchors line up). The browser's `speechSynthesis` is the fallback — automatically, for the
+rest of the page load, when the key is missing or a request fails on quota/auth, with a
+note in the transcript. External clips play one at a time from a queue; a `say` step
+(takeover) empties it; cancel and ⏩ stop it. The drawer's Voice row toggles it and sets
+the voice name. `bubble: true` shows the text as a speech bubble while speaking.
 
 **Word anchors:** `"I'll move {s1}this window{/} over {p2}here{/}."` — `anchors.s1`
 runs when the TTS reaches "this"; a pen stroke inside with no duration is stretched to
@@ -299,4 +303,4 @@ you are already at the bottom.
    scripts from the console, no model yet.
 4. **M4 — agent.** ✅ Model call with the tools, `perform` scripts, screenshot loop, key
    handling.
-5. **M5 — polish.** ✅ Drawer (model, key, prompt, transcript). Still to do: ElevenLabs, eval gating.
+5. **M5 — polish.** ✅ Drawer (model, key, prompt, transcript), ✅ ElevenLabs voice. Still to do: eval gating.
