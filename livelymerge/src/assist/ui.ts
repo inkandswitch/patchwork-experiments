@@ -72,7 +72,7 @@ function setCollapsed(key: string, value: boolean): void {
   }
 }
 
-const IDLE_TEXT = 'Talk & Draw · ⌃Space to talk';
+const IDLE_TEXT = 'Talk & Draw';
 
 const CSS = `
 .lm-assist-badge{position:absolute;right:12px;bottom:12px;z-index:31;display:flex;align-items:center;gap:8px;
