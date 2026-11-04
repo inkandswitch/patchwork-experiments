@@ -29,6 +29,11 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `tabletop-game` | a game (listed) |
 | `patchwork:tool` | `tabletop-game` | its page: about, pieces, set up a table, the tables set up so far, the definition as JSON |
 | `tabletop:game` | `santorini`, `lost-cities` | games an empty tabletop-game can start from |
+| `scene:extension` | `tabletop` | what makes a scene a table: seats, private zones, hidden cards and their decks, shuffling (Tables, below) |
+| `patchwork:datatype` | `plain-deck` | a deck anyone can read (unlisted: a table makes it) |
+
+Other packages add kinds of deck as **`tabletop:deck`** plugins (card-table's
+secure deck is one; Tables, below).
 
 ## Adding a game
 
@@ -72,17 +77,106 @@ tool by id. Without the scene installed the tables are just documents.
 - The board is set up **locked**, so dragging it orbits instead.
 - Each copy's About (`infoUrl`) is the game, so selecting a piece in the scene
   shows the rules.
-- **Hidden pieces** (cards) use the scene's hidden objects. In the scene each
-  one is its `back` piece, called by the back's name; which card it really is
-  goes only into the table's `scene-secrets` doc. Cards are created in deck
-  order and grouped by deck, not by kind, so ids, groups and order say
-  nothing. A seat's hand tray is a piece with a `zone`, and becomes a private
-  zone in the scene. For an ordinary deck the secrets doc is a plain
-  `scene-secrets` doc, readable by anyone who opens it. For a `secure` deck
+- Seats, private zones and hidden cards are this package's own, added to the
+  scene by its scene extension (Tables, below); the scene doesn't know about
+  them.
+- **Hidden pieces** (cards): in the scene each one is its `back` piece, called
+  by the back's name; which card it really is goes only into its deck's doc.
+  Cards are created in deck order and grouped by deck, not by kind, so ids,
+  groups and order say nothing. A seat's hand tray is a piece with a `zone`,
+  and becomes a private zone in the scene. For an ordinary deck the doc is a
+  `plain-deck`, readable by anyone who opens it. For a `secure` deck
   it's a `secure-deck` (the card-table package's): setup lists the cards and
   which object is which position, and the seated players' clients shuffle it
   between them once every seat is taken, so nobody knows the order. Lost
   Cities uses one; the game page has a toggle.
+
+## Tables
+
+A table is a scene with this package's traits on it, which its scene
+extension (`src/table/extension.js`) understands. The scene itself knows none
+of this (scene/README, "Extensions"), and a scene without the tabletop
+package installed shows a table's cards as their backs and nothing else.
+
+| trait | on | |
+|---|---|---|
+| `tabletop.seats` | the scene | `{ [seatId]: { name, player: <contact url> \| null, camera?: { position, target } } }` |
+| `tabletop.zone` | an object | `{ seat, min: [x,y,z], max: [x,y,z] }`: a seat's private area, a box in the object's own frame |
+| `tabletop.hidden` | an object | `{ by: <deck url> }`: what it really is comes from that deck |
+
+**Who sees what** (`src/table/visibility.js`). A hidden object is drawn as
+itself — its public look, a card back — except:
+
+- inside a **private zone** (its origin is), it's shown as what it really is
+  only to whoever sits in that seat, whichever way up it is;
+- otherwise, **face up** (its own +Y points up in the world), it's shown as
+  what it is to everyone.
+
+So drawing a card is carrying it from the deck into your zone, playing it is
+putting it down face up, and turning one over (F while carrying) reveals it.
+A hidden card carried into your own zone from outside it turns face up as it
+arrives, so you see what you drew, and back over if you carry it out again
+(F decides for yourself). A revealed name shows in the outline and inspector
+and is never written back.
+
+**The Table panel**: pick your seat (or watch; sitting is written to the
+doc, so others see the seat as taken, and a seat with a `camera` moves your
+view there) and see what each deck is doing. A table opens on it.
+
+**Shuffle** (`S` over a card, or *Shuffle pile* in the inspector) shuffles
+the pile it's in — the cards of the same deck whose footprints overlap it by
+half or more — through its deck: a plain deck permutes its entries; a secure
+deck has the players reshuffle them.
+
+**Decks.** A table can have any number, each a document of its own that its
+cards name. A plain deck is read here:
+
+```ts
+{ "@patchwork": { type: "plain-deck" }, title, objects: { [objectId]: { sourceUrl: AutomergeUrl, name: string } } }
+```
+
+Any other kind through the `tabletop:deck` plugin whose `supportedDatatypes`
+include its type (a late-bound lookup):
+
+```js
+{ type: "tabletop:deck", id, name, supportedDatatypes: ["secure-deck"],
+  async load() { return { createResolver, placement?, bind? } } }
+
+createResolver({ repo, handle /* the deck doc */, viewer, onChange }) → {
+  update(ctx),        // on every scene change, with
+                      //   { objects, seats, viewer, players /* seated, in seat order */,
+                      //     openSeats /* names of seats nobody has taken */,
+                      //     visibleTo(player | null) → Set of object ids that player
+                      //       (null: everyone) may see, by the rule above,
+                      //     nameOf(player) → their seat's name }
+  looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
+                      //   (only the deck's own objects are taken from it)
+  status(),           // → a line for the HUD and the Table panel, or null
+  shuffle(ids),       // shuffle these objects' cards among themselves → how many (0: nothing to do)
+  dispose(),
+}
+placement(doc) → { name, count, look: { sourceUrl, name }, bounds? } | null   // to lay a dropped deck out
+bind(handle, ids)   // the objects made for it, in deck order
+```
+
+Call `onChange` when `looks()` or `status()` changes. A deck with
+`placement` can be dropped (or pasted) onto any scene that isn't already
+showing it: its cards are laid out face down in a group named for it.
+
+**What this protects against.** With a plain deck: this is a table, not a
+vault. Its doc is an ordinary document, and anyone who opens it (or the
+inspector) can read every card, as anyone at a real table can peek. What is
+guaranteed is that the scene itself — the outline, the inspector, ids, groups,
+order, the GLBs fetched — gives nothing away. With a `secure-deck` from the
+card-table package, the seated players shuffle the deck between them (mental
+poker), with keys from their accounts: nobody knows which card is where, and a
+card's face can only be decrypted by the players the rule above lets see it.
+See card-table's README for how, and for what it doesn't do yet.
+
+**Older tables.** Tables made before this package had a scene extension kept
+these as top-level fields (`seats`, `zone`, `hidden`) and their plain decks as
+`scene-secrets` docs; the extension moves them into traits (and renames the
+deck's type) the first time a table is opened.
 
 ## Documents
 
@@ -146,11 +240,11 @@ as JSON at the bottom of the game page; applying it keeps each kind's GLB doc.
 
 A `scene` doc, made fresh each time: one group per visible kind with more than
 one copy, every copy at its supply spot, the board at the top level; each deck
-shuffled into one group, dealt, and the rest stacked. Its seats, empty. If
-anything is hidden, a doc per deck, made first, which its cards name
-(`hidden: { by }`).
-Its view opens in the hand (`view.defaultGizmo: "hand"`) with snapping on, the
-grid and axes off and units in cm.
+shuffled into one group, dealt, and the rest stacked. Its seats, empty
+(`tabletop.seats`). If anything is hidden, a doc per deck, made first, which
+its cards name (`tabletop.hidden`).
+Its view opens in the hand (`view.defaultMode: "hand"`) with snapping on, the
+grid and axes off, units in cm, and the Table panel first (`view.panels`).
 
 ## Layout
 
@@ -163,14 +257,17 @@ grid and axes off and units in cm.
 | `src/glyphs.js` | numbers made of boxes, for card faces |
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
-| `src/setup.js` | a game → a fresh scene doc and its secrets: shuffle, deal, stack (pure) |
+| `src/setup.js` | a game → a fresh scene doc and its decks: shuffle, deal, stack (pure) |
+| `src/table/extension.js` | the scene extension: decks, the Table panel, Shuffle, laying out a dropped deck, drawing face up, upgrading old tables |
+| `src/table/visibility.js` | who may see what: zones, seats, face up (pure) |
+| `src/table/plain-deck.js` | the plain deck: its datatype and resolver |
 | `src/glb.js` | the GLB encoder, copied from the scene package |
 
 ## Not yet
 
 - Signed docs (keyhive) for the secure deck, so a turn or a key can't be
   forged; see card-table's README for its other limits.
-- Shuffling a pile during play, and a bag to draw from (tiles, chits).
+- A bag to draw from (tiles, chits).
 - Santorini's god powers, as face-up cards.
 - Printed faces (textures): card faces are made of boxes for now.
 - Rules. A move could be checked (or suggested) by reading where pieces are

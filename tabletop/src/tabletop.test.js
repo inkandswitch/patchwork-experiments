@@ -141,7 +141,7 @@ describe("setting up a table", () => {
     expect(pieces).toHaveLength(1 + 22 + 18 + 14 + 18 + 6);
     expect(objects.filter((o) => o.kind === "group").map((g) => g.name)).toContain("Level 1 (22)");
     expect(scene.order).toHaveLength(objects.length);
-    expect(scene.view).toMatchObject({ defaultGizmo: "hand", snap: true });
+    expect(scene.view).toMatchObject({ defaultMode: "hand", snap: true, panels: ["tabletop.table", "inspector"] });
 
     const board = pieces.find((o) => o.name === "Island board");
     expect(board).toMatchObject({ locked: true, parent: null, providerId: "file-glb", renderUrl: null, sourceUrl: game.doc().pieces.board.glbUrl, infoUrl: game.url });
@@ -186,7 +186,7 @@ describe("setting up a table", () => {
     await ensurePieceGLBs(repo, game);
     const t = tableScene(game.doc(), game.url);
     expect(t.decks).toEqual({});
-    expect(t.scene.seats).toBeUndefined();
+    expect(t.scene.traits).toBeUndefined();
   });
 });
 
@@ -249,9 +249,9 @@ describe("Lost Cities", () => {
     const h = game.pieces.back.bounds.max[1];
     ys.forEach((y, j) => expect(y).toBeCloseTo((j + 1) * h, 6));
 
-    expect(scene.seats).toEqual({ p1: expect.objectContaining({ name: "Player 1", player: null }), p2: expect.objectContaining({ name: "Player 2", player: null }) });
-    const zones = Object.values(scene.objects).filter((o) => o.zone);
-    expect(zones.map((o) => o.zone.seat).sort()).toEqual(["p1", "p2"]);
+    expect(scene.traits["tabletop.seats"]).toEqual({ p1: expect.objectContaining({ name: "Player 1", player: null }), p2: expect.objectContaining({ name: "Player 2", player: null }) });
+    const zones = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.zone"]);
+    expect(zones.map((o) => o.traits["tabletop.zone"].seat).sort()).toEqual(["p1", "p2"]);
     expect(zones.every((o) => o.locked)).toBe(true);
   });
 
@@ -287,7 +287,7 @@ describe("Lost Cities", () => {
 
   it("an ordinary deck gets a plain secrets doc", async () => {
     const { secrets } = await table(3, { secure: false });
-    expect(secrets["@patchwork"].type).toBe("scene-secrets");
+    expect(secrets["@patchwork"].type).toBe("plain-deck");
     expect(Object.keys(secrets.objects)).toHaveLength(60);
   });
 
@@ -304,14 +304,14 @@ describe("Lost Cities", () => {
     expect(Object.keys(decks).sort()).toEqual(["main", "wagers"]);
     expect(decks.main["@patchwork"].type).toBe("secure-deck");
     expect(decks.main.faces).toHaveLength(45);
-    expect(decks.wagers["@patchwork"].type).toBe("scene-secrets");
+    expect(decks.wagers["@patchwork"].type).toBe("plain-deck");
     expect(Object.keys(decks.wagers.objects)).toHaveLength(15);
     // before linking, each card names its deck by id; after, by url
-    const cards = Object.values(scene.objects).filter((o) => o.hidden);
+    const cards = Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]);
     expect(cards).toHaveLength(60);
-    expect(new Set(cards.map((o) => o.hidden.by))).toEqual(new Set(["deck:main", "deck:wagers"]));
+    expect(new Set(cards.map((o) => o.traits["tabletop.hidden"].by))).toEqual(new Set(["deck:main", "deck:wagers"]));
     linkDecks(scene, { main: "automerge:main", wagers: "automerge:wagers" });
-    expect(new Set(Object.values(scene.objects).filter((o) => o.hidden).map((o) => o.hidden.by))).toEqual(new Set(["automerge:main", "automerge:wagers"]));
+    expect(new Set(Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]).map((o) => o.traits["tabletop.hidden"].by))).toEqual(new Set(["automerge:main", "automerge:wagers"]));
     expect(() => linkDecks(tableScene(game.doc(), game.url).scene, { main: "automerge:main" })).toThrow(/wagers/);
   });
 
