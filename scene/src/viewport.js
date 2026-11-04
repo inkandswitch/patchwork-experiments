@@ -387,11 +387,10 @@ export class Viewport {
 
     const tc0 = performance.now();
     try {
-      // Logarithmic depth: precision in proportion to distance, so layers a
-      // fraction of a millimetre apart (a card's face on its body) don't
-      // fight, at any zoom. A plain depth buffer with this near plane
-      // resolves only about 0.1 mm at a metre.
-      this.renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false, logarithmicDepthBuffer: true });
+      // no logarithmic depth: it writes depth from the shader, which turns off
+      // the GPU's hidden-surface removal (a close look at a 60-card deck went
+      // from 20 to 250 ms a frame on an M4). Precision comes from the near plane (render()).
+      this.renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
     } catch (err) {
       this.error = err;
       return;
@@ -564,10 +563,14 @@ export class Viewport {
   render() {
     const tStart = performance.now();
     const r = this.renderer;
-    // keep depth precision sensible across mm parts and 20 m hulls
+    // keep depth precision sensible across mm parts and 20 m hulls: the near
+    // plane halfway to the nearest of the scene (depth precision goes with
+    // near / distance, and a card's layers are 0.1 mm apart), never closer
+    // than dist / 2000 (the camera among the objects)
     const dist = this.camera.position.distanceTo(this.controls.target);
     const radius = this.sceneRadius ?? 1;
-    this.camera.near = Math.max(dist / 2000, 1e-5);
+    const clear = this.depthBox ? this.depthBox.distanceToPoint(this.camera.position) : 0;
+    this.camera.near = Math.max(dist / 2000, clear / 2, 1e-5);
     this.camera.far = Math.max(dist * 100, dist + radius * 20, 10);
     this.camera.updateProjectionMatrix();
 
@@ -1154,6 +1157,10 @@ export class Viewport {
     this.gridInfo = grid;
     this.sceneRadius = box.isEmpty() ? 1 : box.getBoundingSphere(new Sphere()).radius;
     const half = grid.size / 2;
+    // what the near plane must not cut: the objects (with room for a piece
+    // lifted in the hand) and the grid
+    this.depthBox = box.isEmpty() ? null : box.clone().expandByScalar(Math.max(0.05, this.sceneRadius * 0.05));
+    if (this.depthBox && this.view.grid) this.depthBox.union(new Box3(new Vector3(-half, 0, -half), new Vector3(half, 0, half)));
 
     const gridLabels = [];
     if (this.view.grid) {
