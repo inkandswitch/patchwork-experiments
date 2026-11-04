@@ -72,6 +72,12 @@ export interface SpeakHandlers {
   onSpanEnd?(span: AnchorSpan): void;
 }
 
+export interface TtsWord {
+  charIndex: number;
+  t0: number;
+  t1: number;
+}
+
 export interface SpeakOptions {
   rate?: number;
   voiceName?: string;
@@ -80,6 +86,26 @@ export interface SpeakOptions {
   /** Cut whatever is speaking or queued and start now (say steps, whose anchors must
    *  line up with actions). Default: queue behind what is already speaking. */
   takeover?: boolean;
+  /** An external voice (ElevenLabs): audio plus word times. null → the browser's engine. */
+  tts?: (text: string) => Promise<{ blob: Blob; words: TtsWord[] } | null>;
+}
+
+// ---- external-audio queue: one clip at a time, in order; a takeover empties it ----
+
+interface Playing {
+  audio: HTMLAudioElement;
+  stop: () => void;
+}
+let playing: Playing | null = null;
+let queueTail: Promise<void> = Promise.resolve();
+let queueGeneration = 0;
+
+/** Stops every voice: the browser engine and any external clip, queued or playing. */
+export function stopAllSpeech(): void {
+  queueGeneration++;
+  queueTail = Promise.resolve();
+  if (playing) playing.stop();
+  if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }
 
 /**
@@ -87,7 +113,127 @@ export interface SpeakOptions {
  * with no boundary events (some voices, no engine) an estimate paces them instead.
  * Resolves when speech ends or `isCanceled()` turns true.
  */
-export function speak(
+export async function speak(
+  parsed: ParsedSay,
+  handlers: SpeakHandlers,
+  opts: SpeakOptions = {},
+  isCanceled: () => boolean = () => false,
+  isFast: () => boolean = () => false,
+): Promise<void> {
+  if (opts.tts && parsed.text.trim()) {
+    // Synthesize right away (the network round trip overlaps whatever is still
+    // playing), then take a slot in the playback queue.
+    let clip: { blob: Blob; words: TtsWord[] } | null = null;
+    try {
+      clip = await opts.tts(parsed.text);
+    } catch {
+      clip = null;
+    }
+    if (isCanceled()) return;
+    if (clip) return playClip(clip, parsed, handlers, opts, isCanceled, isFast);
+  }
+  return speakWithBrowser(parsed, handlers, opts, isCanceled, isFast);
+}
+
+function anchorTables(parsed: ParsedSay) {
+  const starts = new Map<number, AnchorSpan[]>();
+  const ends = new Map<number, AnchorSpan[]>();
+  for (const s of parsed.spans) {
+    const { first, last } = spanWords(parsed, s);
+    (starts.get(first) ?? starts.set(first, []).get(first)!).push(s);
+    (ends.get(last) ?? ends.set(last, []).get(last)!).push(s);
+  }
+  return { starts, ends };
+}
+
+async function playClip(
+  clip: { blob: Blob; words: TtsWord[] },
+  parsed: ParsedSay,
+  handlers: SpeakHandlers,
+  opts: SpeakOptions,
+  isCanceled: () => boolean,
+  isFast: () => boolean,
+): Promise<void> {
+  const { starts, ends } = anchorTables(parsed);
+  let reached = -1;
+  const reach = (i: number) => {
+    for (let w = reached + 1; w <= i && w < parsed.words.length; w++) {
+      if (w > 0) for (const s of ends.get(w - 1) ?? []) handlers.onSpanEnd?.(s);
+      handlers.onWord?.(w);
+      for (const s of starts.get(w) ?? []) handlers.onSpanStart?.(s);
+      reached = w;
+    }
+  };
+  const finish = () => {
+    reach(parsed.words.length - 1);
+    if (reached >= 0 && reached < parsed.words.length) for (const s of ends.get(reached) ?? []) handlers.onSpanEnd?.(s);
+    reached = parsed.words.length;
+  };
+  // Word start times by word index (words the alignment missed inherit the previous).
+  const wordStart: number[] = parsed.words.map(() => 0);
+  for (const w of clip.words) {
+    const i = parsed.words.findIndex((x) => x.start === w.charIndex);
+    if (i >= 0) wordStart[i] = w.t0;
+  }
+  for (let i = 1; i < wordStart.length; i++) if (wordStart[i] < wordStart[i - 1]) wordStart[i] = wordStart[i - 1];
+
+  if (opts.takeover) stopAllSpeech();
+  const gen = queueGeneration;
+  const mySlot = queueTail;
+  let release!: () => void;
+  queueTail = new Promise<void>((r) => (release = r));
+  try {
+    await mySlot;
+    if (gen !== queueGeneration || isCanceled()) return;
+    await new Promise<void>((resolve) => {
+      const url = URL.createObjectURL(clip.blob);
+      const audio = new Audio(url);
+      let done = false;
+      let raf: number | null = null;
+      const end = () => {
+        if (done) return;
+        done = true;
+        if (raf != null) cancelAnimationFrame(raf);
+        clearInterval(poll);
+        if (playing && playing.audio === audio) playing = null;
+        URL.revokeObjectURL(url);
+        finish();
+        resolve();
+      };
+      const stop = () => {
+        try {
+          audio.pause();
+        } catch {
+          /* ignore */
+        }
+        end();
+      };
+      playing = { audio, stop };
+      const tick = () => {
+        if (done) return;
+        const t = audio.currentTime;
+        let i = reached;
+        while (i + 1 < wordStart.length && wordStart[i + 1] <= t + 0.02) i++;
+        if (i > reached) reach(i);
+        raf = requestAnimationFrame(tick);
+      };
+      const poll = setInterval(() => {
+        if (done) return;
+        if (isCanceled() || isFast()) stop();
+      }, 50);
+      audio.onended = end;
+      audio.onerror = end;
+      audio.onplay = () => {
+        raf = requestAnimationFrame(tick);
+      };
+      audio.play().catch(() => end());
+    });
+  } finally {
+    release();
+  }
+}
+
+function speakWithBrowser(
   parsed: ParsedSay,
   handlers: SpeakHandlers,
   opts: SpeakOptions = {},

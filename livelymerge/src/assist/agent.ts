@@ -13,6 +13,7 @@ import type { TalkAndDrawMessage } from './message';
 import { formatHeader } from './message';
 import { forgetNote, formatNotes, readNotes, rememberNote, type Note } from './notes';
 import { DEFAULT_SYSTEM_PROMPT, TOOLS } from './prompt';
+import { elevenEnabled, getElevenKey } from './tts';
 
 export const API_KEY_STORAGE = 'talkAndDraw.anthropicApiKey';
 export const MODEL_STORAGE = 'talkAndDraw.model';
@@ -43,7 +44,7 @@ type Content = Anthropic.Beta.BetaContentBlockParam[];
 /** The API's stand-in text for a progress update cut off by max_tokens; never spoken. */
 const INTERRUPTED_SENTINEL = 'This part of the response was interrupted before it finished.';
 /** What gets spoken when the model stops: at most this many characters, whole sentences. */
-export const CLOSING_SPEECH_MAX = 220;
+export const CLOSING_SPEECH_MAX = 160;
 
 /** The first sentence(s) of `text`, up to `max` chars — the part that is spoken aloud. */
 export function capSpeech(text: string, max = CLOSING_SPEECH_MAX): string {
@@ -205,6 +206,8 @@ export class Agent {
       this.emit({ kind: 'done', reason: 'no_key' });
       return;
     }
+    // The voice's key, asked for once (cancelling the prompt turns ElevenLabs off).
+    if (elevenEnabled()) getElevenKey(true);
     this.running = true;
     this.canceled = false;
     this.executor.fastForward = false;

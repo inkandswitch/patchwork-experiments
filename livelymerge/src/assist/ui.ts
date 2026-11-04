@@ -31,6 +31,33 @@ export interface UiHooks {
   setEffort(e: string | null): void;
   getNotes(): Note[];
   forgetNote(topic: string): void;
+  voice: {
+    enabled(): boolean;
+    setEnabled(on: boolean): void;
+    status(): string;
+    getVoiceName(): string;
+    setVoiceName(name: string | null): void;
+    askKey(): void;
+    clearKey(): void;
+  };
+}
+
+const COLLAPSE_STORAGE = 'talkAndDraw.drawerCollapsed';
+
+function collapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem(COLLAPSE_STORAGE) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+function setCollapsed(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSE_STORAGE, JSON.stringify({ ...collapsed(), [key]: value }));
+  } catch {
+    /* ignore */
+  }
 }
 
 const IDLE_TEXT = 'Talk & Draw · ⌃Space to talk';
@@ -78,6 +105,11 @@ const CSS = `
 .lm-assist-drawer .sec{display:flex;align-items:center;gap:8px;padding:6px 10px 2px;color:#666}
 .lm-assist-drawer .sec span{flex:1}
 .lm-assist-drawer .sec em{font-style:normal;color:#999}
+.lm-assist-drawer .sec .tog{cursor:pointer;user-select:none}
+.lm-assist-drawer .sec .tog::before{content:'▾ ';color:#999}
+.lm-assist-drawer .sec.closed .tog::before{content:'▸ '}
+.lm-assist-drawer .row input[type=text]{font:12px system-ui,sans-serif;padding:2px 4px;width:90px}
+.lm-assist-drawer .row .st{color:#999;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lm-assist-drawer textarea{margin:4px 10px 8px;height:170px;resize:vertical;font:11px ui-monospace,Menlo,monospace;
   padding:6px;border:1px solid #ddd;border-radius:6px;line-height:1.4}
 .lm-assist-drawer .log{flex:1;overflow:auto;padding:4px 10px 12px;border-top:1px solid #eee;display:flex;
@@ -106,6 +138,9 @@ export class AssistUI {
   private readonly modelSelect: HTMLSelectElement;
   private readonly turnsInput: HTMLInputElement;
   private readonly effortSelect: HTMLSelectElement;
+  private readonly voiceOn: HTMLInputElement;
+  private readonly voiceName: HTMLInputElement;
+  private readonly voiceStatus: HTMLElement;
   private readonly notesEl: HTMLDivElement;
   private saveTimer: number | null = null;
 
@@ -230,9 +265,46 @@ export class AssistUI {
     );
     d.appendChild(keyRow);
 
+    const voiceRow = el('div', 'row');
+    const vl = document.createElement('label');
+    vl.textContent = 'Voice';
+    voiceRow.appendChild(vl);
+    this.voiceOn = document.createElement('input');
+    this.voiceOn.type = 'checkbox';
+    this.voiceOn.title = 'Use ElevenLabs for speech (falls back to the browser voice on failure)';
+    this.voiceOn.addEventListener('change', () => {
+      hooks.voice.setEnabled(this.voiceOn.checked);
+      if (this.voiceOn.checked) hooks.voice.askKey();
+      this.refresh();
+    });
+    voiceRow.appendChild(this.voiceOn);
+    const von = document.createElement('span');
+    von.textContent = 'ElevenLabs';
+    voiceRow.appendChild(von);
+    this.voiceName = document.createElement('input');
+    this.voiceName.type = 'text';
+    this.voiceName.placeholder = 'voice name';
+    this.voiceName.title = 'A voice in your ElevenLabs "My Voices"';
+    this.voiceName.addEventListener('change', () => {
+      hooks.voice.setVoiceName(this.voiceName.value);
+      this.refresh();
+    });
+    voiceRow.appendChild(this.voiceName);
+    this.voiceStatus = el('span', 'st');
+    voiceRow.appendChild(this.voiceStatus);
+    voiceRow.appendChild(
+      button('Key…', () => {
+        hooks.voice.askKey();
+        this.refresh();
+      }),
+    );
+    d.appendChild(voiceRow);
+
     const ps = el('div', 'sec');
     const pl = document.createElement('span');
-    pl.textContent = 'System prompt ';
+    const ptog = el('span', 'tog');
+    ptog.textContent = 'System prompt ';
+    pl.appendChild(ptog);
     this.promptNote = document.createElement('em');
     pl.appendChild(this.promptNote);
     ps.appendChild(pl);
@@ -253,10 +325,13 @@ export class AssistUI {
       }, 300);
     });
     d.appendChild(this.promptArea);
+    makeCollapsible('prompt', ps, ptog, [this.promptArea], true);
 
     const ns = el('div', 'sec');
     const nl = document.createElement('span');
-    nl.textContent = 'Shared notes ';
+    const ntog = el('span', 'tog');
+    ntog.textContent = 'Shared notes ';
+    nl.appendChild(ntog);
     const nnote = document.createElement('em');
     nnote.textContent = '(aiNotes in the document)';
     nl.appendChild(nnote);
@@ -265,6 +340,7 @@ export class AssistUI {
     d.appendChild(ns);
     this.notesEl = el('div', 'notes');
     d.appendChild(this.notesEl);
+    makeCollapsible('notes', ns, ntog, [this.notesEl], false);
 
     const ts = el('div', 'sec');
     const tl = document.createElement('span');
@@ -287,6 +363,10 @@ export class AssistUI {
     this.updatePromptNote();
     this.turnsInput.value = String(this.hooks.getMaxTurns());
     this.effortSelect.value = this.hooks.getEffort();
+    this.voiceOn.checked = this.hooks.voice.enabled();
+    if (document.activeElement !== this.voiceName) this.voiceName.value = this.hooks.voice.getVoiceName();
+    this.voiceStatus.textContent = this.hooks.voice.status();
+    this.voiceStatus.title = this.voiceStatus.textContent ?? '';
     this.renderNotes();
   }
 
@@ -464,6 +544,20 @@ export class AssistUI {
     this.ff.remove();
     this.drawer.remove();
   }
+}
+
+/** Clicking `toggle` hides/shows `body`; the state is remembered per browser. */
+function makeCollapsible(key: string, header: HTMLElement, toggle: HTMLElement, body: HTMLElement[], defaultClosed: boolean): void {
+  const apply = (closed: boolean) => {
+    header.classList.toggle('closed', closed);
+    for (const b of body) b.hidden = closed;
+  };
+  apply(collapsed()[key] ?? defaultClosed);
+  toggle.addEventListener('click', () => {
+    const closed = !header.classList.contains('closed');
+    setCollapsed(key, closed);
+    apply(closed);
+  });
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string): HTMLElementTagNameMap[K] {

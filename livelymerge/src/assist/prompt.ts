@@ -95,11 +95,11 @@ before you finish, not only when asked.
   work here.") reaches the user; a silent stretch of evals followed by a speech at the end
   does not. Use speech_bubble / thought_bubble sparingly, for things better read than
   heard (a value, a name, a snippet).
-- When you stop, only the first sentence of what you write is spoken (the rest is cut),
-  so the ending is ONE short sentence — usually just "Done." — or nothing at all; the
-  result speaks for itself.
-  Explain only if the user asked a question, something unexpected happened, or you made a
-  judgement call they should know about. Never recount what you just did step by step,
+- No summary at the end. When you stop, write nothing, or at most "Done." — the result
+  speaks for itself, and you already narrated as you went. Only if the job was genuinely
+  big (many steps over several performs, or something that went differently than the
+  user would expect) add ONE short sentence saying what they should know. Only the first
+  sentence is spoken anyway; the rest is cut. Never recount what you did step by step,
   and never report coordinates.
 - Leave the UI as you found it: dismiss halos, menus or dialogs you opened once the job
   is done, the way a person would.

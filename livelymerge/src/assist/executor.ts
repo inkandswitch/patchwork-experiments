@@ -12,7 +12,8 @@ import { AI_INK_COLOR, AI_INK_WIDTH, animatePath, naturalDurationMs, shapeToPath
 import { SyntheticInput, sleep, type Modifiers } from './events';
 import type { Stroke } from './ink';
 import type { InkOverlay } from './overlay';
-import { parseAnchors, speak, type SpeakOptions } from './say';
+import { parseAnchors, speak, stopAllSpeech, type SpeakOptions } from './say';
+import { synthesize } from './tts';
 import { compositeSnapshot, imageScale, type Snapshot } from './snapshot';
 
 export type Step =
@@ -107,7 +108,9 @@ export class Executor {
   fastForward = false;
   holdFastForward = false;
   penStyle: PenStyle = 'crisp';
-  speakOptions: SpeakOptions = {};
+  /** Something the user should know (e.g. the voice fell back); wired to the transcript. */
+  onNotice: ((text: string) => void) | null = null;
+  speakOptions: SpeakOptions = { tts: (text) => synthesize(text, (t) => this.onNotice?.(t)) };
   private readonly input: SyntheticInput;
   private canceled = false;
   private running = 0;
@@ -132,7 +135,7 @@ export class Executor {
 
   /** Stops the current performance: speech, animations, and any held mouse button. */
   cancel(): void {
-    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    stopAllSpeech();
     if (!this.running) return;
     this.canceled = true;
     this.input.releaseAll();

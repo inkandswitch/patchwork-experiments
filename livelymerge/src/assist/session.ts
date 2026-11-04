@@ -17,6 +17,7 @@ import { Executor, type PerformOptions, type PerformResult, type Step } from './
 import { InkOverlay } from './overlay';
 import { compositeSnapshot, imageScale, type ImageScale, type Snapshot } from './snapshot';
 import { loadWhisper, transcribe } from './transcribe';
+import { clearElevenKey, elevenEnabled, elevenStatus, getElevenKey, getVoiceName, setElevenEnabled, setVoiceName } from './tts';
 import { AssistUI } from './ui';
 
 interface AudioCapture {
@@ -100,7 +101,21 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     setEffort: (e) => setEffort(e as Effort | null),
     getNotes: readNotes,
     forgetNote: (topic) => void forgetNote(topic),
+    voice: {
+      enabled: elevenEnabled,
+      setEnabled: setElevenEnabled,
+      status: elevenStatus,
+      getVoiceName,
+      setVoiceName,
+      askKey: () => {
+        clearElevenKey();
+        setElevenEnabled(true);
+        getElevenKey(true);
+      },
+      clearKey: clearElevenKey,
+    },
   });
+  executor.onNotice = (text) => ui.logEvent({ kind: 'error', text });
   const agent = new Agent(executor, (t) => ui.setStatus(t, t ? 'working' : 'idle'));
   agent.addListener((e) => ui.logEvent(e));
 
