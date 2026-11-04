@@ -353,12 +353,12 @@ export class Viewport {
    * @param {(objectId) => boolean} [o.canDrag]     may the hand pick this object up?
    * @param {(objectId, transform | null) => void} [o.onDragMove]  a carried object's local pose while it moves (rAF-throttled); null when it's put down or the carry is cancelled
    * @param {(objectId, transform) => void} [o.onDragEnd]  where a carried object was put down (local transform)
-   * @param {(objectId, world: number[]) => boolean} [o.facesYou]  would this object, with its origin here, be in your hand (so carried in from elsewhere, it turns face up)?
+   * @param {(objectId, world: number[]) => { faceUp?: boolean } | null} [o.landing]  how the carried object should lie if put down with its origin here: faceUp turns it face up while it's there (carried in from elsewhere)
    */
-  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, facesYou }) {
+  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing }) {
     this.host = host;
     this.themeRoot = themeRoot;
-    this.cb = { onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, facesYou };
+    this.cb = { onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing };
     /** the object being carried by the hand: { id, … } (see wireHand) */
     this.carry = null;
     /** objectId → a peer's in-flight pose for it, shown instead of the doc's */
@@ -1696,8 +1696,8 @@ export class Viewport {
       last: { clientX: e.clientX, clientY: e.clientY, altKey: e.altKey },
       landing: null,
       marker: null,
-      // picked up outside your hand: it turns to face you while over it
-      faceYou: !this.cb.facesYou?.(id, g.getWorldPosition(new Vector3()).toArray()),
+      // picked up where nothing asks it to face up: it turns face up while over somewhere that does
+      faceYou: !this.cb.landing?.(id, g.getWorldPosition(new Vector3()).toArray())?.faceUp,
       turned: false,
     };
     this.host.dataset.carrying = "";
@@ -1752,10 +1752,11 @@ export class Viewport {
         land = this.landingFor(c, ev) ?? land;
       }
     }
-    // A face-down card drawn into your hand turns face up, and back over if
-    // it leaves again (so it can't go down face up on the table by accident).
+    // Somewhere that asks for it face up (a card drawn into your hand, say)
+    // turns it face up, and back over if it leaves again (so it can't go down
+    // face up elsewhere by accident).
     if (land && c.faceYou) {
-      const want = !!this.cb.facesYou?.(c.id, g.getWorldPosition(new Vector3()).add(land.delta).toArray());
+      const want = !!this.cb.landing?.(c.id, g.getWorldPosition(new Vector3()).add(land.delta).toArray())?.faceUp;
       g.updateMatrixWorld(true);
       if (want ? !c.turned && g.matrixWorld.elements[5] <= 1e-6 : c.turned) {
         this.flipCarried();

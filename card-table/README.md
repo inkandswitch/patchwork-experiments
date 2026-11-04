@@ -7,8 +7,9 @@ revealed only to whoever the table says may see it. No trusted dealer, no
 server.
 
 A deck is something you add to a [scene](../scene/README.md), and a scene can
-have any number: each hidden card names its deck (`hidden: { by: <deck url> }`),
-and this package is the scene's `scene:secrets` provider for `secure-deck`
+have any number: each hidden card names its deck (the tabletop trait
+`tabletop.hidden: { by: <deck url> }`), and this package is the tabletop's
+`tabletop:deck` provider for `secure-deck`
 docs. Drop a deck that isn't on a table yet onto a scene and its cards are
 laid out there, face down. The [tabletop](../tabletop/README.md) package sets
 tables up with a doc per deck, secure for a deck marked `secure` (Lost Cities'
@@ -25,7 +26,7 @@ pnpm bench [cards] [players]     # what a shuffle costs on this machine
 |---|---|---|
 | `patchwork:datatype` | `secure-deck` | a deck (unlisted: a table makes it) |
 | `patchwork:tool` | `secure-deck` | the deck on its own: shuffles under way and waiting, who is in it, how many keys each has handed over. No faces. |
-| `scene:secrets` | `secure-deck` | a scene's resolver for this deck's cards, and how to lay the deck out when it's dropped on a scene |
+| `tabletop:deck` | `secure-deck` | a table's resolver for this deck's cards, and how to lay the deck out when it's dropped on a table |
 
 ## How it works
 
@@ -56,7 +57,7 @@ in one fixed group: the quadratic residues of RFC 3526's 2048-bit safe prime.
   current epoch. A player's client hands over its key only when the host says
   another player may see that card: sealed to that player for a card in their
   hand, in the open for a card face up on the table. In a scene that's the
-  scene's own rule (scene/README, "Hidden objects and decks"): a card in your seat's
+  table's own rule (tabletop/README, "Tables"): a card in your seat's
   zone, or face up outside every zone. There are no requests: nobody can ask
   for a card they can't see, and every reveal follows something visible at
   the table.

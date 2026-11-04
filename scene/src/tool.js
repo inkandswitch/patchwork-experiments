@@ -28,7 +28,9 @@ import { UNIT_OPTIONS, formatLength, fromUnits, roundForDisplay, toUnits } from 
 import { REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
 import { fileBytes } from "./file-content.js";
-import { plainResolver, seatAt, seatOf, seatedPlayers, visibility, zoneRegions } from "./secrets.js";
+import { createExtensionHost } from "./extensions.js";
+import { applyMatrix, invertMatrix } from "./transform.js";
+import { migrateCore, needsCoreMigration } from "./migrate.js";
 
 const PRESENCE = "scene:presence";
 // a piece in someone's hand: { type, id, transform | null }, never stored
@@ -36,7 +38,8 @@ const CARRY = "scene:carry";
 const CARRY_SEND_MS = 50;
 // a peer's carry that has gone quiet (they left mid-drag) is put back
 const CARRY_TTL_MS = 3_000;
-const GIZMO_MODES = new Set(["translate", "rotate", "hand"]);
+// view.defaultMode → the gizmo menu's value
+const MODES = { move: "translate", rotate: "rotate", hand: "hand", select: null };
 const PEER_TTL_MS = 15_000;
 const HEARTBEAT_MS = 5_000;
 const DEG = 180 / Math.PI;
@@ -81,7 +84,6 @@ const TEMPLATE = `
         <option value="">No gizmo</option>
       </select>
       <label class="toggle snap-toggle" title="Put pieces down on the nearest snap point (hold Alt to place freely)"><input type="checkbox" data-view="snap"> Snap</label>
-      <select class="seat" title="Where you sit: what's in your seat's private zone (your hand) is shown to you alone" aria-label="Seat" hidden></select>
       <select class="units" title="Display units" aria-label="Display units">
         ${UNIT_OPTIONS.map((u) => `<option value="${u.value}">${u.label}</option>`).join("")}
       </select>
@@ -102,9 +104,9 @@ const TEMPLATE = `
       <div class="no-webgl" hidden></div>
     </div>
     <aside class="sidebar">
-      <section class="panel outline">
+      <section class="panel outline" data-panel="objects">
         <div class="panel-head">
-          <h3 class="panel-title">Objects</h3>
+          <h3 class="panel-title" data-collapse>Objects</h3>
           <button type="button" class="button link new-group" title="New group (inside the selected group, if one is selected)">New group</button>
         </div>
         <div class="outline-search" hidden>
@@ -114,9 +116,9 @@ const TEMPLATE = `
         </div>
         <ul class="object-list" role="tree" aria-label="Objects"></ul>
       </section>
-      <section class="panel inspector" hidden></section>
-      <section class="panel dimensions">
-        <h3 class="panel-title">Dimensions</h3>
+      <section class="panel inspector" data-panel="inspector" hidden></section>
+      <section class="panel dimensions" data-panel="dimensions">
+        <div class="panel-head"><h3 class="panel-title" data-collapse>Dimensions</h3></div>
         <ul class="dimension-list"></ul>
       </section>
     </aside>
@@ -214,18 +216,17 @@ export default function SceneTool(handle, element) {
   let selectedDim = null;
   let hoverId = null;
   let measure = null; // { a: Anchor | null, hover: {world, snapped} | null }
-  // what the scene opens with (view.defaultGizmo, e.g. "hand" for a game table); yours alone after that
-  let gizmoMode = GIZMO_MODES.has(handle.doc()?.view?.defaultGizmo) ? handle.doc().view.defaultGizmo : "translate";
+  // what the scene opens with (view.defaultMode, e.g. "hand" for a game table); yours alone after that
+  const openMode = handle.doc()?.view?.defaultMode ?? handle.doc()?.view?.defaultGizmo;
+  let gizmoMode = openMode in MODES ? MODES[openMode] : ["translate", "rotate", "hand"].includes(openMode) ? openMode : "translate";
   let dead = false;
   let autoFrame = !handle.doc()?.camera;
   let registry = null;
   let filterQuery = "";
-  // Who is looking, for seats: the account's contact, else this browser's own
-  // id. (element.viewerId lets a probe put two viewers on one page.)
+  // Who is looking (extensions' business: seats, say): the account's contact,
+  // else this browser's own id. (element.viewerId lets a probe put two viewers on one page.)
   const viewer = element.viewerId ?? globalThis.accountDocHandle?.doc?.()?.contactUrl ?? localViewer();
-  // the decks (secrets docs) hidden objects belong to: url → { resolver, problem }, once found
-  const decks = new Map();
-  let revealed = new Map(); // objectId → its secret { sourceUrl, name }, where this viewer may see it
+  let looks = new Map(); // objectId → { sourceUrl?, name? }: what this viewer sees instead (extensions' lenses)
   const objState = new Map();
   const outlineRows = new Map(); // objectId → the outline row's elements
   const displayKeys = new Map(); // objectId → displayKey last applied
@@ -352,7 +353,6 @@ export default function SceneTool(handle, element) {
   }
 
   // ─── viewport ─────────────────────────────────────────────────────────────
-  let zones = null; // this snapshot's private zones, for the hand (worked out when first wanted; reset by sync)
   const viewport = new Viewport({
     host: viewportEl,
     themeRoot: root,
@@ -372,11 +372,14 @@ export default function SceneTool(handle, element) {
       updateObject(id, (o) => {
         o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
       }),
-    facesYou: (id, world) => {
-      const seat = seatOf(doc().seats, viewer);
-      if (!seat || !doc().objects?.[id]?.hidden) return false;
-      zones ??= zoneRegions(doc().objects);
-      return seatAt(zones, world) === seat;
+    // how a carried object would lie put down here: what the extensions say (last word wins)
+    landing: (id, world) => {
+      let out = null;
+      for (const x of extensions.instances()) {
+        const l = x.landing?.(id, world);
+        if (l) out = { ...out, ...l };
+      }
+      return out;
     },
   });
   viewport.setGizmoMode(gizmoMode);
@@ -658,8 +661,11 @@ export default function SceneTool(handle, element) {
     const sourceDoc = source.doc();
     const info = describeSource(sourceDoc);
     await registryReady;
-    // a deck: laid out as its cards, not shown as one object
-    if (await placeDeck(url, sourceDoc, source, hint)) return null;
+    // an extension may lay it out its own way (a deck as its cards, say)
+    for (const x of await extensions.forDrop(info.datatype ?? null)) {
+      if (dead) return null;
+      if (await x.drop?.({ url, doc: sourceDoc, handle: source, parent: hint.parent && doc().objects?.[hint.parent] ? hint.parent : null })) return null;
+    }
     const providers = matchProviders(listProviders(), info);
     if (!providers.length) return toast(`No scene provider is installed for ${describeForHumans(info)}.`, "error");
     const name = hint.name || (await titleOf(sourceDoc, info.datatype));
@@ -1169,10 +1175,9 @@ export default function SceneTool(handle, element) {
     }
     if (building) bits.push(el("span", { class: "pill", dataset: { state: "building" } }, `Building ${building}…`));
     if (errors) bits.push(el("span", { class: "pill", dataset: { state: "error" } }, `${errors} error${errors > 1 ? "s" : ""}`));
-    // what the hidden objects are waiting on (a shuffle, another player's keys)
-    for (const deck of decks.values()) {
-      const line = deck.problem ?? deck.resolver?.status?.();
-      if (line) bits.push(el("span", { class: "pill", dataset: { state: deck.problem ? "error" : "loading" } }, line));
+    // what extensions want said (a deck waiting on another player, say)
+    for (const x of extensions.instances()) {
+      for (const item of x.hud?.() ?? []) if (item?.text) bits.push(el("span", { class: "pill", dataset: { state: item.state ?? "loading" } }, item.text));
     }
     $(".hud").replaceChildren(...bits);
   }
@@ -1348,7 +1353,7 @@ export default function SceneTool(handle, element) {
     const parts = [
       el("h3", { class: "panel-title" }, group ? "Group" : "Object"),
       name,
-      o.hidden?.by ? el("div", { class: "cluster" }, el("button", { type: "button", class: "button", title: "Shuffle the pile this card is in (S)", onclick: () => shuffleStack(id) }, "Shuffle pile")) : null,
+      commandButtons(id),
       el("div", { class: "cluster" }, el("label", { class: "toggle" }, visible, " Visible"), wire ? el("label", { class: "toggle" }, wire, " Wireframe") : null, locked ? el("label", { class: "toggle", title: "A locked object can't be moved with the hand or the gizmo (a game board, say)" }, locked, " Locked") : null),
       group ? null : el("div", { class: "cluster" }, el("label", { class: "toggle" }, "Colour ", colorIn), resetColor),
       el("label", { class: "field" }, el("span", {}, "Opacity"), opacity),
@@ -1414,7 +1419,7 @@ export default function SceneTool(handle, element) {
     };
     setVal(inspector.name, nameOf(inspector.id, o) ?? "");
     // a revealed secret's name is shown, never written back as the public one
-    inspector.name.readOnly = revealed.has(inspector.id);
+    inspector.name.readOnly = looks.get(inspector.id)?.name != null;
     inspector.visible.checked = o.visible !== false;
     if (inspector.wire) inspector.wire.checked = !!o.wireframe;
     if (inspector.locked) inspector.locked.checked = !!o.locked;
@@ -1616,12 +1621,11 @@ export default function SceneTool(handle, element) {
     } else if (e.key === "m" || e.key === "M") setMeasuring(!measure);
     else if (e.key === "f" || e.key === "F") viewport.frameAll();
     else if (e.key === "p" || e.key === "P") setPanel(root.hasAttribute("data-panel-hidden"));
-    else if ((e.key === "s" || e.key === "S") && (hoverId || selected)) shuffleStack(hoverId ?? selected);
     else if (e.key === "g" || e.key === "r" || e.key === "h") {
       gizmoMode = e.key === "g" ? "translate" : e.key === "r" ? "rotate" : "hand";
       viewport.setGizmoMode(gizmoMode);
       updateToolbar();
-    }
+    } else if (runKeyCommand(e.key)) e.preventDefault();
   };
   root.addEventListener("keydown", onKey);
   viewportEl.addEventListener("pointerdown", () => viewportEl.focus({ preventScroll: true }));
@@ -1821,208 +1825,191 @@ export default function SceneTool(handle, element) {
       .catch((err) => console.warn("[scene] rebuild failed to start", err));
   });
 
-  // ─── hidden objects and seats ─────────────────────────────────────────────
-  /** An object's name as this viewer may see it. */
+  // ─── extensions ───────────────────────────────────────────────────────────
+  /** An object's name as this viewer sees it (an extension's lens may say otherwise). */
   function nameOf(id, o) {
-    return revealed.get(id)?.name ?? o?.name;
+    return looks.get(id)?.name ?? o?.name;
   }
 
-  /**
-   * Which resolver reads a deck (secrets) doc: the built-in one for a plain
-   * `scene-secrets` doc, else the `scene:secrets` plugin for its datatype (an
-   * encrypted deck, say). → { create, module } or null
-   */
-  async function deckProvider(type) {
-    if (!type || type === "scene-secrets") return { create: plainResolver, module: null };
-    const registry = (await registryReady)?.getRegistry?.("scene:secrets");
-    const provider = registry?.filter?.((p) => Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(type))?.[0];
-    if (!provider) return null;
-    const module = (await registry.load(provider.id))?.module ?? null;
-    return module?.createResolver ? { create: module.createResolver, module } : null;
-  }
-
-  /**
-   * Follow every deck the scene's hidden objects belong to (`hidden.by`), each
-   * through its own resolver. Decks come and go with the objects that name them.
-   */
-  function watchDecks(urls) {
-    for (const [url, deck] of decks) {
-      if (urls.has(url)) continue;
-      deck.resolver?.dispose?.();
-      decks.delete(url);
-    }
-    for (const url of urls) {
-      if (decks.has(url)) continue;
-      const deck = { resolver: null, problem: null };
-      decks.set(url, deck);
-      (async () => {
-        const h = await repo.find(url);
-        if (dead || decks.get(url) !== deck || !h) return;
-        const type = h.doc()?.["@patchwork"]?.type ?? null;
-        const provider = await deckProvider(type);
-        if (dead || decks.get(url) !== deck) return;
-        if (!provider) {
-          deck.problem = `Some hidden objects can't be shown: nothing installed reads “${type}” documents.`;
-          return void schedule("hud");
-        }
-        deck.resolver = provider.create({ repo, handle: h, viewer, onChange: () => sync() });
-        sync();
-      })().catch((err) => {
-        console.warn("[scene] deck unavailable", url, err);
-        deck.problem = `Some hidden objects can't be shown: ${err?.message ?? err}`;
-        schedule("hud");
-      });
-    }
-  }
-  cleanups.push(() => {
-    for (const deck of decks.values()) deck.resolver?.dispose?.();
-  });
-
-  /**
-   * The pile an object is in: the objects of the same deck whose footprints
-   * overlap its own by at least half (in plan), itself included.
-   */
-  function stackOf(id) {
-    const objects = doc().objects ?? {};
-    const by = objects[id]?.hidden?.by;
-    if (!by) return [];
-    const same = Object.keys(objects).filter((x) => objects[x]?.hidden?.by === by);
-    const box = viewport.ok ? viewport.objectBox(id, { hints: true }) : null;
-    if (!box) {
-      // no geometry to go by: the same spot on the table
-      const at = worldMatrix(objects, id);
-      return same.filter((x) => {
-        const m = worldMatrix(objects, x);
-        return Math.hypot(m[12] - at[12], m[14] - at[14]) < 0.005;
-      });
-    }
-    const area = (b) => Math.max(0, b.max.x - b.min.x) * Math.max(0, b.max.z - b.min.z);
-    return same.filter((x) => {
-      const b = x === id ? box : viewport.objectBox(x, { hints: true });
-      if (!b) return false;
-      const ox = Math.min(b.max.x, box.max.x) - Math.max(b.min.x, box.min.x);
-      const oz = Math.min(b.max.z, box.max.z) - Math.max(b.min.z, box.min.z);
-      return ox > 0 && oz > 0 && ox * oz >= 0.5 * Math.min(area(b), area(box));
-    });
-  }
-
-  /** Shuffle the pile this object is in, through its deck. */
-  function shuffleStack(id) {
-    const by = doc().objects?.[id]?.hidden?.by;
-    const deck = by ? decks.get(docUrl(by)) : null;
-    if (!deck?.resolver?.shuffle) return toast(by ? "This deck can't be shuffled." : "Only hidden objects (cards in a deck) can be shuffled.", "error");
-    const pile = stackOf(id);
-    const n = deck.resolver.shuffle(pile);
-    if (!n) return toast("There's nothing here to shuffle with it.", "error");
-    toast(`Shuffling ${n} card${n === 1 ? "" : "s"}…`);
-  }
-
-  /**
-   * A deck dropped on the scene, if its provider can lay it out: one hidden
-   * object per card, face down in a stack, in a group named for the deck.
-   * Returns false if the doc isn't a deck it can lay out.
-   */
-  async function placeDeck(url, sourceDoc, sourceHandle, hint = {}) {
-    const provider = await deckProvider(sourceDoc?.["@patchwork"]?.type ?? null).catch(() => null);
-    const place = provider?.module?.placement?.(sourceDoc);
-    if (!place) {
-      if (provider?.module?.placement) toast("That deck is already on a table.", "error");
-      return !!provider?.module?.placement;
-    }
-    const b = place.bounds;
-    const h = b ? Math.max(1e-4, b.max[1] - b.min[1]) : 0.001;
-    const gid = newId("g");
-    const ids = Array.from({ length: place.count }, () => newId("o"));
-    const into = hint.parent && doc().objects?.[hint.parent] ? hint.parent : null;
-    handle.change((d) => {
-      if (!d.objects) d.objects = {};
-      if (!d.order) d.order = [];
-      d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, sourceUrl: null, providerId: null, renderUrl: null, parent: into, visible: true, color: null, opacity: 1, wireframe: false, transform: IDENTITY() };
-      d.order.push(gid);
-      ids.forEach((oid, j) => {
-        d.objects[oid] = {
-          name: place.look.name,
-          sourceUrl: place.look.sourceUrl,
-          providerId: "file-glb",
-          renderUrl: null,
-          parent: gid,
-          visible: true,
-          color: null,
-          opacity: 1,
-          wireframe: false,
-          // face down, a card's height apart: turned about its length, a card stands on its top
-          transform: { position: [0, +((j + 1) * h).toFixed(6), 0], rotation: [0, 0, Math.PI], scale: 1 },
-          hidden: { by: url },
-          ...(b ? { hint: { bounds: { min: [...b.min], max: [...b.max] } } } : {}),
+  // What an extension gets. Writes go through the scene doc like the tool's
+  // own; reads are snapshots. See README, "Extensions".
+  let refreshQueued = false;
+  const api = {
+    repo,
+    handle,
+    viewer,
+    doc,
+    /** this snapshot's objects with their attachment resolved: world(id) is a column-major 4×4, toLocal(id, p) a world point in id's frame */
+    scene() {
+      const m = derive();
+      if (!m.api) {
+        const worlds = new Map();
+        const world = (id) => {
+          let w = worlds.get(id);
+          if (!w) worlds.set(id, (w = worldMatrix(m.objects, id, m.parents)));
+          return w;
         };
-        d.order.push(oid);
+        const inverses = new Map();
+        const toLocal = (id, p) => {
+          let inv = inverses.get(id);
+          if (inv === undefined) inverses.set(id, (inv = invertMatrix(world(id))));
+          return inv ? applyMatrix(inv, p) : null;
+        };
+        m.api = { d: m.d, objects: m.objects, ids: m.ids, parents: m.parents, traits: m.d.traits ?? {}, world, toLocal };
+      }
+      return m.api;
+    },
+    change: (fn) => handle.change(fn),
+    newId,
+    select: (id) => select(id ?? null),
+    selected: () => selected,
+    hovered: () => hoverId,
+    toast,
+    /** the extension's output changed (its lens, HUD or panel): go through the doc again */
+    refresh() {
+      if (refreshQueued || dead) return;
+      refreshQueued = true;
+      queueMicrotask(() => {
+        refreshQueued = false;
+        sync();
       });
-    });
-    provider.module.bind?.(sourceHandle, ids);
-    setExpanded(gid, false);
-    select(gid);
+    },
+    /** an object's world box ({ min, max }), from its geometry or hint; null if neither */
+    box(id) {
+      const b = viewport.ok ? viewport.objectBox(id, { hints: true }) : null;
+      return b && !b.isEmpty() ? { min: b.min.toArray(), max: b.max.toArray() } : null;
+    },
+    setCamera: (cam) => viewport.setCamera(cam),
+    /** a registry of another plugin type (null without one) */
+    async registry(type) {
+      return (await registryReady)?.getRegistry?.(type) ?? null;
+    },
+  };
+  const extensions = createExtensionHost({
+    registry: async () => (await registryReady)?.getRegistry?.("scene:extension") ?? null,
+    api,
+    onActive: () => api.refresh(),
+  });
+  cleanups.push(() => extensions.dispose());
+
+  // an extension upgrades the scene's old fields to its own shape, once each (a bug can't make it loop)
+  const migrations = new WeakMap(); // instance → attempts
+  function migrateExtensions(d) {
+    for (const x of extensions.instances()) {
+      if (!x.migrate || !x.needsMigration?.(d)) continue;
+      const n = migrations.get(x) ?? 0;
+      if (n >= 3) continue;
+      migrations.set(x, n + 1);
+      handle.change((dd) => x.migrate(dd));
+    }
+  }
+
+  /** The extensions' commands that apply to this object. */
+  function commandsFor(id) {
+    const out = [];
+    for (const x of extensions.instances()) for (const c of x.commands ?? []) if (c?.run && (!c.appliesTo || c.appliesTo(id))) out.push(c);
+    return out;
+  }
+  function commandButtons(id) {
+    const cs = commandsFor(id);
+    if (!cs.length) return null;
+    return el("div", { class: "cluster commands" }, ...cs.map((c) => el("button", { type: "button", class: "button", title: c.title ?? "", onclick: () => c.run(id) }, c.name)));
+  }
+  /** A key an extension's command answers to, for what's under the pointer (else what's selected). */
+  function runKeyCommand(key) {
+    const target = hoverId ?? selected;
+    if (!target) return false;
+    const c = commandsFor(target).find((x) => x.key && x.key.toLowerCase() === key.toLowerCase());
+    if (!c) return false;
+    c.run(target);
     return true;
   }
 
-  function renderSeat() {
-    const select = $(".seat");
-    const seats = Object.entries(doc().seats ?? {});
-    select.hidden = !seats.length;
-    if (!seats.length) return;
-    const mine = seatOf(doc().seats, viewer) ?? "";
-    const options = [["", "Watching"], ...seats.map(([id, s]) => [id, `${s?.name || id}${s?.player && s.player !== viewer ? " (taken)" : ""}`])];
-    const key = JSON.stringify(options);
-    if (select.dataset.key !== key) {
-      select.dataset.key = key;
-      select.replaceChildren(...options.map(([v, t]) => el("option", { value: v }, t)));
-    }
-    select.value = mine;
+  // ─── panels ───────────────────────────────────────────────────────────────
+  // The sidebar's panels: the scene's own (objects, inspector, dimensions) and
+  // the extensions'. view.panels lists those that start open, in order; the
+  // rest follow, folded. Folding after that is yours alone (localStorage).
+  const extPanels = new Map(); // panel id → { section, body, view: { update, dispose } }
+  const panelsKey = `scene-panels:${handle.url ?? "scene"}`;
+  const folded = new Map();
+  try {
+    const saved = JSON.parse(globalThis.localStorage?.getItem(panelsKey) ?? "null");
+    if (saved && typeof saved === "object") for (const [k, v] of Object.entries(saved)) if (typeof v === "boolean") folded.set(k, v);
+  } catch {
+    // defaults only
   }
-  $(".seat").addEventListener("change", (e) => {
-    const seat = e.target.value || null;
-    handle.change((d) => {
-      for (const s of Object.values(d.seats ?? {})) if (s.player === viewer) s.player = null;
-      if (seat && d.seats?.[seat]) d.seats[seat].player = viewer;
-    });
-    // each seat can say where its player looks from
-    const cam = seat ? doc().seats?.[seat]?.camera : null;
-    if (cam) viewport.setCamera(cam);
+  const sidebar = $(".sidebar");
+  sidebar.addEventListener("click", (e) => {
+    const title = e.target?.closest?.("[data-collapse]");
+    const section = title?.closest?.("[data-panel]");
+    if (!section) return;
+    folded.set(section.dataset.panel, !section.hasAttribute("data-folded"));
+    try {
+      globalThis.localStorage?.setItem(panelsKey, JSON.stringify(Object.fromEntries(folded)));
+    } catch {
+      // best effort
+    }
+    arrangePanels();
   });
+  cleanups.push(() => {
+    for (const p of extPanels.values()) p.view?.dispose?.();
+  });
+  let panelsKeyLast = "";
+  function arrangePanels() {
+    for (const x of extensions.instances()) {
+      for (const p of x.panels ?? []) {
+        if (!p?.id || extPanels.has(p.id)) continue;
+        const body = el("div", { class: "panel-body" });
+        const section = el("section", { class: "panel ext-panel", dataset: { panel: p.id } }, el("div", { class: "panel-head" }, el("h3", { class: "panel-title", "data-collapse": true }, p.title ?? p.id)), body);
+        extPanels.set(p.id, { section, body, view: p.mount?.(body) ?? null });
+      }
+    }
+    const listed = Array.isArray(view().panels) ? view().panels.filter((x) => typeof x === "string") : null;
+    const sections = [...sidebar.children].filter((x) => x.dataset?.panel);
+    const all = sections.map((x) => x.dataset.panel);
+    for (const id of extPanels.keys()) if (!all.includes(id)) all.push(id);
+    const order = listed ? [...listed.filter((id) => all.includes(id)), ...all.filter((id) => !listed.includes(id))] : all;
+    const key = JSON.stringify([order, listed, [...folded]]);
+    if (key === panelsKeyLast) return;
+    panelsKeyLast = key;
+    const sectionOf = (id) => extPanels.get(id)?.section ?? sections.find((x) => x.dataset.panel === id);
+    for (const id of order) {
+      const section = sectionOf(id);
+      if (!section) continue;
+      sidebar.append(section);
+      if (id === "inspector") continue; // follows the selection; never folded
+      const fold = folded.has(id) ? folded.get(id) : !!listed && !listed.includes(id);
+      section.toggleAttribute("data-folded", fold);
+    }
+  }
+  function updatePanels() {
+    arrangePanels();
+    for (const p of extPanels.values()) p.view?.update?.();
+  }
 
   // ─── doc → everything ─────────────────────────────────────────────────────
   let framedFromHints = false;
   function sync() {
     if (dead) return;
-    zones = null;
+    // the scene's own old shapes first, so extensions see the current one
+    if (needsCoreMigration(doc())) return void handle.change((dd) => migrateCore(dd));
     const t0 = now();
     const m = derive();
     const { d, objects, parents, tree, inherited } = m;
-    // hidden objects: each deck they belong to, and what this viewer may see of them
-    const deckUrls = new Set();
-    for (const o of Object.values(objects)) {
-      const by = docUrl(o?.hidden?.by);
-      if (by) deckUrls.add(by);
-    }
-    watchDecks(deckUrls);
-    revealed = new Map();
-    if (deckUrls.size) {
-      const ctx = {
-        objects,
-        seats: d.seats ?? {},
-        viewer,
-        players: seatedPlayers(d.seats),
-        openSeats: Object.entries(d.seats ?? {}).filter(([, s]) => !s?.player).map(([id, s]) => s?.name || id),
-        visibleTo: visibility(objects, d.seats),
-        nameOf: (player) => Object.values(d.seats ?? {}).find((s) => s?.player === player)?.name ?? "someone",
-      };
-      for (const [url, deck] of decks) {
-        if (!deck.resolver) continue;
-        deck.resolver.update(ctx);
-        // a deck speaks only for its own objects
-        for (const [id, look] of deck.resolver.looks()) if (docUrl(objects[id]?.hidden?.by) === url) revealed.set(id, look);
+    extensions.activate(d);
+    migrateExtensions(d);
+    if (m.d !== doc()) return; // a migration changed it: that change syncs again
+    // what this viewer sees instead, per the extensions (a card's face, say)
+    looks = new Map();
+    const snapshot = api.scene();
+    for (const x of extensions.instances()) {
+      try {
+        x.update?.(snapshot);
+        for (const [id, look] of x.looks?.() ?? []) if (objects[id] && look) looks.set(id, look);
+      } catch (err) {
+        console.warn("[scene] extension update failed", err);
       }
     }
-    renderSeat();
     viewport.setMaterialRules(d.materialRules);
     const tracked = new Set(manager.ids());
     let hinted = false;
@@ -2055,8 +2042,8 @@ export default function SceneTool(handle, element) {
         if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl });
         continue;
       }
-      // what this viewer may see: the secret's look, or the object's own
-      const src = docUrl(revealed.get(id)?.sourceUrl ?? o.sourceUrl);
+      // what this viewer sees: an extension's look, or the object's own
+      const src = docUrl(looks.get(id)?.sourceUrl ?? o.sourceUrl);
       if (!src) continue;
       if (tracked.has(id)) manager.untrack(id);
       const b = o.hint?.bounds;
@@ -2093,6 +2080,7 @@ export default function SceneTool(handle, element) {
     viewport.setView(view());
     updateMeasure();
     updateToolbar();
+    updatePanels();
     const parts = ["dims", "outline", "hud", "legends"];
     if (inspector && inspector.id === selected) parts.push("inspector");
     // at once while cheap this frame, else coalesced (see UI_BUDGET_MS)

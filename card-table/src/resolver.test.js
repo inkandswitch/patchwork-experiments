@@ -34,8 +34,8 @@ const until = async (fn, ms = 20000) => {
 };
 
 describe("the scene resolver", () => {
-  it("registers as the scene's secrets provider for secure decks, worker-safe", () => {
-    const p = plugins.find((x) => x.type === "scene:secrets");
+  it("registers as the tabletop's deck provider for secure decks, worker-safe", () => {
+    const p = plugins.find((x) => x.type === "tabletop:deck");
     expect(p.supportedDatatypes).toEqual(["secure-deck"]);
     for (const x of plugins) expect(() => structuredClone({ ...x, load: undefined })).not.toThrow();
   });

@@ -7,10 +7,11 @@
 // Carries a block onto a space (it snaps and rests on the board; the other
 // peer sees it in the air, then where it landed), stacks two more on it,
 // puts a pawn down freely with Alt, one on the table off the board, drags the
-// locked board (it orbits instead) and cancels a carry with Esc. Then hidden
-// objects: a card in seat 1's tray shows its face to whoever sits there and
-// its back to everyone else, and a face-down card picked up, flipped (F) and
-// put down shows its face to both. Prints a
+// locked board (it orbits instead) and cancels a carry with Esc. Then a scene
+// extension (the probe page's own): its lens shows a card in the tray to
+// whoever sits there and its back to everyone else, its S command shuffles a
+// pile, a face-down card picked up, flipped (F) and put down shows its face to
+// both, and its landing hook turns a card drawn into the tray face up. Prints a
 // JSON report and a screenshot path; exits non-zero if any check fails.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -138,7 +139,8 @@ try {
   const look = (who, id) => T(`look("${who}", "${id}")`);
   await settle();
   check("seated nowhere, both see backs", [await look("a", "inTray"), await look("b", "inTray"), await look("a", "faceDown"), await look("b", "faceDown")].every((x) => x === "back"));
-  await T('sit("a", "s1")');
+  check("an extension's panel is in the sidebar", (await T('panel("a")'))?.includes("probe panel"), await T('panel("a")'));
+  await T('sit("a")');
   await sleep(100);
   await settle();
   check("sitting in seat 1, A sees the card in its tray; B doesn't", (await look("a", "inTray")) === "face" && (await look("b", "inTray")) === "back", [await look("a", "inTray"), await look("b", "inTray")]);

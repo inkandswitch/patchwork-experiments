@@ -1,9 +1,12 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>scene hand probe</title>
-<!-- Also hidden objects: a seat with a private zone (a tray), and two cards
-     whose real look is in a secrets doc — one in the tray, one face down on
-     the table. Viewer A and viewer B are told apart by element.viewerId. -->
+<!-- Also a scene extension (registered here, as a `scene:extension` plugin):
+     a lens that shows a card's secret face to whoever sits at the tray (a
+     scene trait) when it's in the tray, and to everyone when it's face up; a
+     Shuffle command on S; a landing hook that turns a card face up over the
+     tray; a panel. A stand-in for the tabletop package's, which this package
+     can't import. Viewer A and viewer B are told apart by element.viewerId. -->
 <!-- Driven by probes/hand-run.mjs: two scene tools on one doc (each peer's
      broadcasts reach only the other), a 5×5 board GLB with extras.snapPoints
      (locked), blocks and pawns, all loaded through the BUILT tool (dist/). The
@@ -70,20 +73,61 @@ try {
   const trayGLB = file("tray.glb", { meshes: [box(0.2, 0.002, 0.08, "#2f4a3a")] });
   const backGLB = file("back.glb", { meshes: [box(0.04, 0.002, 0.06, "#6b3e26")] });
   const faceGLB = file("red-7.glb", { meshes: [box(0.04, 0.002, 0.06, "#c4452f")] });
-  objects.tray = obj("Seat 1's tray", trayGLB, [-0.25, 0, 0.25], { locked: true, zone: { seat: "s1", min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] } });
+  objects.tray = obj("Seat 1's tray", trayGLB, [-0.25, 0, 0.25], { locked: true });
   const blueGLB = file("blue-3.glb", { meshes: [box(0.04, 0.002, 0.06, "#2f6db5")] });
-  const secretsDoc = repo.add({ "@patchwork": { type: "scene-secrets" }, title: "secrets", objects: { inTray: { sourceUrl: faceGLB.url, name: "Red 7" }, faceDown: { sourceUrl: faceGLB.url, name: "Red 7" }, under: { sourceUrl: blueGLB.url, name: "Blue 3" } } });
-  const hidden = { hidden: { by: secretsDoc.url } };
-  objects.inTray = obj("Card", backGLB, [-0.25, 0.002, 0.25], hidden);
+  const secret = (sourceUrl, name) => ({ traits: { "probe.secret": { sourceUrl, name } } });
+  objects.inTray = obj("Card", backGLB, [-0.25, 0.002, 0.25], secret(faceGLB.url, "Red 7"));
   // a pile of two, face down, on the table: "under" and "faceDown" on top
-  objects.under = obj("Card", backGLB, [0.25, 0.002, 0.15], hidden);
+  objects.under = obj("Card", backGLB, [0.25, 0.002, 0.15], secret(blueGLB.url, "Blue 3"));
   objects.under.transform.rotation = [0, 0, Math.PI];
-  objects.faceDown = obj("Card", backGLB, [0.25, 0.004, 0.15], hidden);
+  objects.faceDown = obj("Card", backGLB, [0.25, 0.004, 0.15], secret(faceGLB.url, "Red 7"));
   objects.faceDown.transform.rotation = [0, 0, Math.PI];
+
+  // the probe's extension: who sits at the tray is the scene trait probe.seat
+  const TRAY = { min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] };
+  getRegistry("scene:extension").register({
+    type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
+    load: async () => ({
+      create(api) {
+        let scene = null;
+        let looks = new Map();
+        const inTray = (p) => { const l = scene.toLocal("tray", p); return !!l && l.every((v, k) => v >= TRAY.min[k] - 1e-9 && v <= TRAY.max[k] + 1e-9); };
+        const seated = () => scene?.traits?.["probe.seat"] === api.viewer;
+        const secretOf = (id) => scene?.objects[id]?.traits?.["probe.secret"];
+        return {
+          update(s) {
+            scene = s;
+            looks = new Map();
+            for (const id of Object.keys(s.objects)) {
+              const sec = secretOf(id);
+              if (!sec) continue;
+              const m = s.world(id);
+              if (inTray([m[12], m[13], m[14]]) ? seated() : m[5] > 1e-6) looks.set(id, sec);
+            }
+          },
+          looks: () => looks,
+          landing: (id, p) => (secretOf(id) && seated() && inTray(p) ? { faceUp: true } : null),
+          commands: [{
+            id: "shuffle", name: "Shuffle pile", key: "s", appliesTo: (id) => !!secretOf(id),
+            run(id) {
+              const at = scene.world(id);
+              const pile = Object.keys(scene.objects).filter((x) => { const m = scene.world(x); return secretOf(x) && Math.hypot(m[12] - at[12], m[14] - at[14]) < 0.005; });
+              api.change((d) => {
+                const secrets = pile.map((x) => ({ ...d.objects[x].traits["probe.secret"] }));
+                secrets.push(secrets.shift());
+                pile.forEach((x, i) => (d.objects[x].traits["probe.secret"] = secrets[i]));
+              });
+              api.toast(`Shuffling ${pile.length} cards…`);
+            },
+          }],
+          panels: [{ id: "probe.panel", title: "Probe", mount(el) { el.textContent = "probe panel"; return {}; } }],
+        };
+      },
+    }),
+  });
   const scene = repo.add({
     "@patchwork": { type: "scene" }, title: "Hand probe", objects, order: Object.keys(objects), dimensions: {},
-    seats: { s1: { name: "Seat 1", player: null } },
-    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultGizmo: "hand" },
+    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand" },
     camera: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] },
   });
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
@@ -141,15 +185,15 @@ try {
       const url = (who === "a" ? dbgA : dbgB).queue.state(id)?.url;
       return url === faceGLB.url || url === blueGLB.url ? "face" : url === backGLB.url ? "back" : url;
     },
-    sit: (who, seat) => {
-      const sel = (who === "a" ? hostA : hostB).querySelector(".seat");
-      sel.value = seat;
-      sel.dispatchEvent(new Event("change"));
-    },
+    sit: (who) => scene.change((d) => {
+      if (!d.traits) d.traits = {};
+      d.traits["probe.seat"] = who === "a" ? hostA.viewerId : hostB.viewerId;
+    }),
+    panel: (who) => (who === "a" ? hostA : hostB).querySelector('[data-panel="probe.panel"]')?.textContent ?? null,
     settled: () => dbgA.queue.pending() === 0 && dbgB.queue.pending() === 0,
     rot: (id) => scene.doc().objects[id].transform.rotation,
-    /** what the plain deck says each card is */
-    secretNames: () => Object.fromEntries(Object.entries(secretsDoc.doc().objects).map(([id, s]) => [id, s.name])),
+    /** what each card really is */
+    secretNames: () => Object.fromEntries(Object.entries(scene.doc().objects).filter(([, o]) => o.traits?.["probe.secret"]).map(([id, o]) => [id, o.traits["probe.secret"].name])),
     toast: () => hostA.querySelector(".toast")?.textContent ?? "",
     hover: (id) => {
       const b = vp.objectBox(id, { hints: false });

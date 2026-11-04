@@ -149,7 +149,7 @@ describe("the tabletop-game tool", () => {
     button(element, "Set up a table").click();
     await until(() => opened.length === 1, 4000);
     const scene = (await repo.find(opened[0].url)).doc();
-    const urls = new Set(Object.values(scene.objects).filter((o) => o.hidden).map((o) => o.hidden.by));
+    const urls = new Set(Object.values(scene.objects).filter((o) => o.traits?.["tabletop.hidden"]).map((o) => o.traits["tabletop.hidden"].by));
     expect(urls.size).toBe(1);
     const deck = (await repo.find([...urls][0])).doc();
     expect(deck["@patchwork"].type).toBe("secure-deck");

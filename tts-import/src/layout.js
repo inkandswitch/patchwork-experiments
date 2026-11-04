@@ -2,7 +2,7 @@
 //
 //   plan(save, options)                 what goes where, in TTS world space, and
 //                                       the distinct kinds to draw (kinds.js)
-//   secretsDocs(plan, built)            a scene-secrets doc per hidden deck
+//   secretsDocs(plan, built)            a plain-deck doc per hidden deck
 //   sceneDoc(plan, built, options)      the `scene` doc (scene/README.md)
 //
 // `built` maps a kind key to { glbUrl, bounds } once the GLBs exist.
@@ -16,13 +16,15 @@
 //     beside it (shown from the outline when wanted; costs nothing until then);
 //   - an object's other States are a hidden group where it is;
 //   - a table under it all (the mod's table image, if it has one) carrying the
-//     mod's free snap points; HandTriggers become seats.
+//     mod's free snap points; HandTriggers become seats (the tabletop
+//     package's scene trait tabletop.seats).
 //
 // Hidden cards: a face-down card shows only its back (a kind drawn with the
 // back on both sides) and is named "Card"; what it really is goes in a
-// `scene-secrets` doc, one per TTS deck (and one for loose face-down cards).
-// The scene object says which with `hidden: { by: <secrets doc url> }` (see
-// hideObject: the one place that knows that shape).
+// `plain-deck` doc (the tabletop package's), one per TTS deck (and one for
+// loose face-down cards). The scene object says which with the trait
+// tabletop.hidden: { by: <deck url> } (see hideObject: the one place that
+// knows that shape).
 
 import { convertPosition, convertTransform, readTransform, ttsUp } from "./convert.js";
 import { CARD, kindKey, kindOf } from "./kinds.js";
@@ -33,7 +35,7 @@ const r = (v, p = 5) => +Number(v).toFixed(p);
 
 /** The scene object's hidden-ness: the one function to change if that contract moves. */
 export function hideObject(obj, secretsUrl) {
-  obj.hidden = { by: secretsUrl };
+  obj.traits = { ...(obj.traits ?? {}), "tabletop.hidden": { by: secretsUrl } };
   return obj;
 }
 
@@ -201,7 +203,7 @@ export function secretKeys(p) {
   return [...seen].map(([key, name]) => ({ key, name }));
 }
 
-/** The scene-secrets docs: [{ key, doc }], to create before the scene. */
+/** The plain-deck docs: [{ key, doc }], to create before the scene. */
 export function secretsDocs(p, built, { title = p.title } = {}) {
   return secretKeys(p).map(({ key, name }) => {
     const objects = {};
@@ -210,7 +212,7 @@ export function secretsDocs(p, built, { title = p.title } = {}) {
         const glb = built.get(o.secret.key)?.glbUrl;
         if (glb) objects[o.id] = { sourceUrl: glb, name: o.secret.name };
       }
-    return { key, doc: { "@patchwork": { type: "scene-secrets" }, title: `${title}: ${name}`, objects } };
+    return { key, doc: { "@patchwork": { type: "plain-deck" }, title: `${title}: ${name}`, objects } };
   });
 }
 
@@ -358,9 +360,9 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     objects,
     order,
     dimensions: {},
-    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultGizmo: "hand" },
+    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand", ...(Object.keys(seats).length ? { panels: ["tabletop.table", "inspector", "objects"] } : {}) },
     camera: { position: [centre[0], r(span * 1.1), r(centre[2] + span * 1.0)], target: centre },
-    ...(Object.keys(seats).length ? { seats } : {}),
+    ...(Object.keys(seats).length ? { traits: { "tabletop.seats": seats } } : {}),
   };
   return { scene, stats: { tableY, skipped } };
 }

@@ -56,18 +56,3 @@ export const SceneRenderDatatype = {
     doc.title = t.endsWith(RENDER_SUFFIX) ? t.slice(0, -RENDER_SUFFIX.length) : t;
   },
 };
-
-// A plain deck: what its hidden objects really are (see README, "Hidden objects and decks").
-// { title, objects: { [objectId]: { sourceUrl, name } } }
-export const SceneSecretsDatatype = {
-  init(doc) {
-    doc.title = "Scene secrets";
-    doc.objects = {};
-  },
-  getTitle(doc) {
-    return doc?.title || "Scene secrets";
-  },
-  setTitle(doc, title) {
-    doc.title = title;
-  },
-};

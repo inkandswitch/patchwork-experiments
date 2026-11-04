@@ -1,7 +1,8 @@
 // A game → a fresh `scene` doc with every piece where it starts, and a doc
-// for each of its decks. Pure. The doc shapes are the
-// scene package's (scene/README.md: "scene — the composition", "Hidden
-// objects"); this package only writes them, it never imports the scene.
+// for each of its decks. Pure. The scene doc's shape is the scene package's
+// (scene/README.md, "scene — the composition"), with this package's traits
+// on it (src/table/visibility.js); this package only writes it, it never
+// imports the scene.
 //
 // - Each visible piece kind with more than one copy gets a group, so the
 //   outline stays short; a single piece (the board) sits at the top level.
@@ -9,16 +10,18 @@
 //   the game as its About (infoUrl), and the kind's box as its load hint.
 // - Hidden kinds (`hidden: true`) go into their deck: shuffled together, dealt
 //   onto the snap points of the pieces the deck deals to, the rest stacked.
-//   In the scene each is its `back` piece (name, GLB, box) with `hidden: {
-//   by: <its deck's doc> }`: which card it really is goes only in that doc,
+//   In the scene each is its `back` piece (name, GLB, box) with the trait
+//   tabletop.hidden: { by: <its deck's doc> }: which card it really is goes only in that doc,
 //   and ids follow deck order, so nothing in the scene says which is which.
 // - Each deck is a doc of its own, so a table has as many as the game does:
-//   a plain `scene-secrets` doc, or for a `secure` deck a `secure-deck` (the
+//   a `plain-deck` doc, or for a `secure` deck a `secure-deck` (the
 //   card-table package's; card-table/README.md), which lists the cards and
 //   which object is which position, and which the seated players shuffle
 //   between them so that nobody knows the order.
-// - A piece with a `zone` makes its copy a seat's private area.
-// - The scene opens in the hand, with snapping on, the grid and axes off.
+// - A piece with a `zone` makes its copy a seat's private area (trait tabletop.zone).
+// - The game's seats become the scene's (trait tabletop.seats).
+// - The scene opens in the hand, with snapping on, the grid and axes off, and
+//   the Table panel first.
 
 const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
 
@@ -113,7 +116,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
         transform: { position: supplySpot(piece.supply, i), rotation: [0, yaw, 0], scale: 1 },
       });
       const z = piece.zone;
-      if (z?.seat && Array.isArray(z.min) && Array.isArray(z.max)) objects[oid].zone = { seat: z.seat, min: [...z.min], max: [...z.max] };
+      if (z?.seat && Array.isArray(z.min) && Array.isArray(z.max)) objects[oid].traits = { "tabletop.zone": { seat: z.seat, min: [...z.min], max: [...z.max] } };
     }
   }
 
@@ -137,7 +140,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
     const secretObjects = {};
     const card = (kind, transform) => {
       const oid = place(back, { name: back.name || "Card", parent, transform });
-      objects[oid].hidden = { by: `${DECK_PREFIX}${deckId}` };
+      objects[oid].traits = { "tabletop.hidden": { by: `${DECK_PREFIX}${deckId}` } };
       secretObjects[oid] = { sourceUrl: pieces[kind].glbUrl, name: pieces[kind].name || kind };
     };
     // dealt face up onto the first copy of each target's snap points
@@ -186,7 +189,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
         shares: {},
       };
     } else {
-      deckDocs[deckId] = { "@patchwork": { type: "scene-secrets" }, title: deckTitle, objects: secretObjects };
+      deckDocs[deckId] = { "@patchwork": { type: "plain-deck" }, title: deckTitle, objects: secretObjects };
     }
   }
 
@@ -202,9 +205,9 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       objects,
       order,
       dimensions: {},
-      view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultGizmo: "hand" },
+      view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand", panels: ["tabletop.table", "inspector"] },
       camera: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
-      ...(Object.keys(seats).length ? { seats } : {}),
+      ...(Object.keys(seats).length ? { traits: { "tabletop.seats": seats } } : {}),
     },
     decks: deckDocs,
   };
@@ -215,11 +218,11 @@ const DECK_PREFIX = "deck:";
 /** Point each hidden object at its deck's doc, now that the decks exist (in place; returns the scene). */
 export function linkDecks(scene, urls) {
   for (const o of Object.values(scene.objects)) {
-    const by = o.hidden?.by;
+    const by = o.traits?.["tabletop.hidden"]?.by;
     if (typeof by === "string" && by.startsWith(DECK_PREFIX)) {
       const url = urls[by.slice(DECK_PREFIX.length)];
       if (!url) throw new Error(`no doc for deck “${by.slice(DECK_PREFIX.length)}”`);
-      o.hidden = { by: url };
+      o.traits["tabletop.hidden"] = { by: url };
     }
   }
   return scene;

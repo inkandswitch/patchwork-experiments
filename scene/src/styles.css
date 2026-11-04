@@ -681,6 +681,43 @@
   gap: 6px;
 }
 
+/* a panel folds and unfolds from its title */
+.scene-tool [data-collapse]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: pointer;
+  user-select: none;
+}
+
+.scene-tool [data-collapse]:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  content: "▾ ";
+}
+
+.scene-tool .panel[data-folded] [data-collapse]:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  content: "▸ ";
+}
+
+.scene-tool .panel[data-folded] > :not(.panel-head):where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .panel[data-folded] > .panel-head > :not(.panel-title):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-tool .panel-body:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* an extension's controls shrink with the sidebar rather than widen it */
+.scene-tool .panel-body select:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-tool .panel-body input:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scene-tool .panel-body .field:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  grid-template-columns: 5rem minmax(0, 1fr);
+}
+
 .scene-tool .outline-search:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: flex;
   align-items: center;

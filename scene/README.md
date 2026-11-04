@@ -20,7 +20,6 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `scene` | the composition (listed) |
 | `patchwork:datatype` | `scene-render` | one per scene object (unlisted) |
-| `patchwork:datatype` | `scene-secrets` | what a scene's hidden objects really are (unlisted) |
 | `patchwork:tool` | `scene` | the scene host |
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
@@ -92,14 +91,14 @@ scene's outline is refused.
   is still a click (select), and a press on empty space or on a **locked**
   object orbits. There is no physics: nothing tips or slides, and only the
   final pose is written. While it's carried, other people see it move (over
-  `handle.broadcast`, below). A scene can open in the hand
-  (`view.defaultGizmo`); after that the menu is yours alone.
+  `handle.broadcast`, below). An extension can ask for the piece to go
+  down another way where it's put (tabletop turns a card face up in your
+  hand). A scene can open in the hand (`view.defaultMode`); after that the
+  menu is yours alone.
 - **Locked** (inspector): a locked object can't be carried or given the
   gizmo — a game board, say. Everything else about it still works.
-- **Seats** (the menu beside the units, when the scene has seats): sit in one
-  to see what's in that seat's private zone — your hand of cards — or watch.
-  Sitting is written to the doc (`seats[id].player`), so others see the seat
-  as taken; a seat with a `camera` moves your view there when you sit.
+- **Panels**: the sidebar's panels fold from their titles; extensions add
+  their own (a game table's Table panel: where you sit, and the decks).
 
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
@@ -133,81 +132,64 @@ is put down or the carry is cancelled. Peers show it there instead of where
 the doc says; the put-down shows the doc's pose as soon as the doc has it (or
 after a second), and a carry that goes quiet for 3 s is put back.
 
-### Hidden objects and decks
+## Extensions
 
-A scene can hide what some of its objects really are: a deck of cards face
-down, or a hand only its player should see. The scene doc says only what
-everyone may see — a hidden card is a card back, named "Card" — and each
-hidden object names the **deck** that knows what it really is:
-`hidden: { by: <deck doc url> }`. A scene can have any number of decks, and a
-deck is added to a scene like anything else: drop (or paste) one that isn't
-on a table yet, and its provider lays its cards out face down, in a group
-named for it. The simplest deck is a plain `scene-secrets` doc:
-
-```ts
-{ "@patchwork": { type: "scene-secrets" }, title, objects: { [objectId]: { sourceUrl: AutomergeUrl, name: string } } }
-```
-
-Each viewer works out for themselves which secrets to show (`src/secrets.js`):
-
-- an object inside a **private zone** — any object with
-  `zone: { seat, min: [x,y,z], max: [x,y,z] }`, a box in that object's own
-  frame; an object is in it when its origin is — is shown as itself only to
-  whoever sits in that seat, whichever way up it is;
-- otherwise an object that is **face up** (its own +Y points up in the world)
-  is shown as itself to everyone;
-- anything else keeps its public look and name.
-
-So drawing a card is carrying it from the deck into your zone, playing it is
-putting it down face up, and turning one over (F while carrying) reveals it.
-A hidden card carried into your own zone from outside it turns face up as it
-arrives, so you see what you drew, and back over if you carry it out again
-(press F to decide for yourself).
-**Shuffle** (`S` over a card, or *Shuffle pile* in the inspector) shuffles
-the pile it's in — the cards of the same deck whose footprints overlap it by
-half or more — through its deck: a plain deck permutes its entries; a secure
-deck has the players reshuffle them. Only passthrough objects (GLB files) can
-be hidden. A revealed name shows in the outline and inspector and is never
-written back.
-
-**Resolvers.** The scene reads each deck through its own resolver. A plain
-`scene-secrets` doc has a built-in one. For any other kind of doc it looks for
-a `scene:secrets` plugin whose `supportedDatatypes` include the doc's type (a
-late-bound lookup, like `scene:source`):
+The scene doesn't know what it's for. A **`scene:extension`** plugin adds
+behaviour to it without the scene knowing what that behaviour means: the
+tabletop package's makes a scene a game table (seats, private zones, hidden
+cards and their decks, shuffling); a CAD package's could add its own tools.
+An extension is late-bound like a provider: a scene that names one that isn't
+installed still opens, and its data rides along untouched.
 
 ```js
-{ type: "scene:secrets", id, name, supportedDatatypes: ["secure-deck"],
-  async load() { return { createResolver, placement?, bind? } } }
-
-createResolver({ repo, handle /* the deck doc */, viewer, onChange }) → {
-  update(ctx),        // on every scene change, with
-                      //   { objects, seats, viewer, players /* seated, in seat order */,
-                      //     openSeats /* names of seats nobody has taken */,
-                      //     visibleTo(player | null) → Set of object ids that player
-                      //       (null: everyone) may see, by the rule above,
-                      //     nameOf(player) → their seat's name }
-  looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
-                      //   (only the deck's own objects are taken from it)
-  status(),           // → a line for the HUD (a shuffle in progress, keys awaited), or null
-  shuffle(ids),       // shuffle these objects' cards among themselves → how many (0: nothing to do)
-  dispose(),
-}
-placement(doc) → { name, count, look: { sourceUrl, name }, bounds? } | null   // to lay a dropped deck out
-bind(handle, ids)   // the objects made for it, in deck order
+{ type: "scene:extension", id: "tabletop", name: "Tabletop",
+  traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],  // keys it owns
+  legacy: { scene: ["seats"], objects: ["zone", "hidden"] },         // old top-level fields it upgrades
+  drops: ["*"],                                                      // datatypes it may lay out when dropped
+  always: false,                                                     // start it in every scene?
+  async load() { return { create(api) { return instance } } } }
 ```
 
-Call `onChange` when `looks()` or `status()` changes. `src/secrets.js` has the
-rule (`visibility`) and the plain resolver.
+A scene starts an extension when it has one of its traits (on the scene or on
+an object) or one of its legacy fields, or `always`; and, when a document is
+dropped or pasted, every extension whose `drops` name its datatype (or `"*"`)
+before the scene's own providers. It's never stopped while the tool is open.
 
-**What this protects against.** With a plain deck: this is a table, not a
-vault. Its doc is an ordinary document, and anyone who opens it (or the
-inspector) can read every card, as anyone at a real table can peek. What is
-guaranteed is that the scene itself — the outline, the inspector, ids, groups,
-order, the GLBs fetched — gives nothing away. With a `secure-deck` from the
-card-table package, the seated players shuffle the deck between them (mental
-poker), with keys from their accounts: nobody knows which card is where, and a
-card's face can only be decrypted by the players the rule above lets see it.
-See card-table's README for how, and for what it doesn't do yet.
+**Traits** are an extension's data: `traits: { "<extension>.<name>": value }`
+on the scene doc and on any object, namespaced so extensions don't collide.
+The scene keeps them, copies them with the object, and otherwise ignores them.
+
+**`api`**, what an extension gets:
+
+| | |
+|---|---|
+| `repo`, `handle`, `viewer` | the repo, the scene's handle, who is looking (the account's contact, else this browser's id) |
+| `doc()`, `change(fn)`, `newId(prefix)` | read and write the scene doc like the tool does |
+| `scene()` | this snapshot: `{ objects, ids, parents, traits, world(id) → column-major 4×4, toLocal(id, worldPoint) → point in id's frame }` |
+| `select(id)`, `selected()`, `hovered()` | the selection and what's under the pointer |
+| `box(id)` | an object's world box `{ min, max }` (geometry, else its hint), or null |
+| `setCamera({ position, target })`, `toast(text, kind)` | |
+| `refresh()` | something it shows changed: the scene goes through the doc again |
+| `registry(type)` | another plugin registry (tabletop finds deck providers this way) |
+
+**`instance`**, every part optional:
+
+| | |
+|---|---|
+| `needsMigration(doc)`, `migrate(doc)` | upgrade its old fields in place (inside a change); run when the first says so, at most three times a session |
+| `update(scene)` | on every doc snapshot, before anything is drawn |
+| `looks()` | `Map objectId → { sourceUrl?, name? }`: what this viewer sees instead (a lens). The scene loads that GLB and shows that name; a name from a lens is never written back |
+| `hud()` | `[{ text, state }]` pills in the viewport's corner |
+| `panels` | `[{ id, title, mount(el) → { update?, dispose? } }]` sidebar panels, `update` called on every sync |
+| `commands` | `[{ id, name, title?, key?, appliesTo?(id), run(id) }]`: buttons in the inspector for what they apply to, and the key over (or with) such an object |
+| `drop({ url, doc, handle, parent })` | lay out a dropped document its own way → true if it did |
+| `landing(id, worldPoint)` | how the hand should put this object down there: `{ faceUp: true }` turns it face up while it's over that spot (and back if it leaves) |
+| `dispose()` | |
+
+**Panels.** The sidebar's panels are the scene's own (`objects`, `inspector`,
+`dimensions`) and the extensions'. `view.panels` lists the ones a scene opens
+with, in order; the rest follow, folded. Folding and unfolding after that
+(click a panel's title) is yours alone, kept in this browser.
 
 ## Writing a provider
 
@@ -399,18 +381,17 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
     infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
     locked?: boolean,               // true: the hand and the gizmo leave it where it is
-    zone?: { seat: string, min: [x,y,z], max: [x,y,z] },  // a seat's private area: this box, in its own frame
-    hidden?: { by: AutomergeUrl },  // what it really is comes from this deck (Hidden objects and decks, above)
+    traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
     hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
   } },
   order: string[],
   dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // the hand snaps (absent = true)
-          defaultGizmo?: "translate" | "rotate" | "hand" }, // what the gizmo menu opens on (absent = translate)
+          defaultMode?: "move" | "rotate" | "hand" | "select", // what the mode menu opens on (absent = move)
+          panels?: string[] },                             // the sidebar panels that start open, in order (absent = all)
   camera: { position: [x,y,z], target: [x,y,z] } | null,
-  seats?: { [seatId]: { name: string, player: string | null,     // a contact URL (or a browser's own id)
-                        camera?: { position, target } } },        // where its player looks from
+  traits?: { [key: string]: any },  // extensions' data on the scene itself
   materialRules?: MaterialRule[]
 }
 Anchor = { objectId: string | null, local: [x,y,z] | null, world: [x,y,z] }
@@ -480,7 +461,8 @@ MaterialRule = {
 | `src/stl.js`, `src/sources/*` | STL parsing and the two file providers |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
-| `src/secrets.js` | hidden objects: private zones, face up, which secrets a viewer may see (pure) |
+| `src/extensions.js` | `scene:extension` plugins: which a scene calls for, starting them, their instances |
+| `src/migrate.js` | upgrading a scene doc written in an older shape, in place, on open |
 | `src/hand.js` | the hand's pure parts: snap points, default radius, nearest snap, footprint samples, resting height |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
 | `probes/` | browser probes: `scene-probe.html` mounts the built tool in headless Chrome against an in-memory repo; `attach-probe.html` drives the real viewport with a parent and a child; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `drag-probe.html` + `drag-run.mjs` drive real mouse drags into and within the outline; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand between two peers (below) |
@@ -523,17 +505,22 @@ node probes/hand-run.mjs        # --show to watch
 
 Two scene tools on one doc (each one's broadcasts reach only the other, and
 `element.viewerId` makes them two viewers), a locked 5×5 board GLB with
-`extras.snapPoints`, four blocks, two pawns, a tray that is a seat's private
-zone and two hidden cards. A
-real mouse over CDP carries a block onto a space released off-centre (it
-snaps, and rests on the board; the other peer sees it in the air, then where
-it landed), stacks two more blocks on it, puts a pawn down with Alt (exactly
-where dropped), another off the board (on the ground), drags the locked
-board (it stays; the camera orbits) and cancels a carry with Esc. Then: with
-nobody seated both viewers show both cards' backs; once A sits, A shows the
-card in the tray as itself and B still its back; the face-down card is
-carried, turned over with F and put down, and both show its face. S over a
-pile of two face-down cards shuffles it through their (plain) deck.
+`extras.snapPoints`, four blocks, two pawns, a tray and three cards, and a
+`scene:extension` the probe page registers itself (a stand-in for tabletop's,
+which this package can't import): a lens that shows a card's face to whoever
+sits at the tray (a scene trait) when it's in the tray and to everyone when
+it's face up, a Shuffle command on S, a landing hook that turns a card face up
+over the tray, and a panel. A real mouse over CDP carries a block onto a space
+released off-centre (it snaps, and rests on the board; the other peer sees it
+in the air, then where it landed), stacks two more blocks on it, puts a pawn
+down with Alt (exactly where dropped), another off the board (on the ground),
+drags the locked board (it stays; the camera orbits) and cancels a carry with
+Esc. Then the extension: its panel is in the sidebar; with nobody seated both
+viewers show both cards' backs; once A sits, A shows the card in the tray as
+itself and B still its back; S over a pile of two face-down cards runs its
+command; a face-down card is carried, turned over with F and put down, and
+both show its face; another carried into the tray lands face up, seen by A
+alone.
 
 ### At scale: the Solander 38 probe
 

@@ -23,8 +23,8 @@ export const plugins = [
     },
   },
   {
-    // A scene reads the cards of a secure deck (objects with hidden.by = its url) through this.
-    type: "scene:secrets",
+    // A table reads the cards of a secure deck (objects whose tabletop.hidden trait names it) through this.
+    type: "tabletop:deck",
     id: "secure-deck",
     name: "Secure deck",
     supportedDatatypes: ["secure-deck"],

@@ -52,7 +52,7 @@ describe("runImport on the tiny fixture", () => {
 
   it("lays out the table: every object a passthrough GLB at its transform, in the hand", async () => {
     const { scene, report, doc } = await importFixture();
-    expect(scene.view).toMatchObject({ defaultGizmo: "hand", snap: true, grid: false });
+    expect(scene.view).toMatchObject({ defaultMode: "hand", snap: true, grid: false });
     const objs = Object.entries(scene.objects);
     for (const [, o] of objs.filter(([, o]) => o.kind !== "group")) {
       expect(o.providerId).toBe("file-glb");
@@ -84,21 +84,21 @@ describe("runImport on the tiny fixture", () => {
     expect(coins).toHaveLength(3);
     expect(coins[1] - coins[0]).toBeCloseTo(0.1 * U, 6);
     // a seat from the HandTrigger
-    expect(scene.seats.white).toMatchObject({ name: "White", player: null });
-    expect(scene.seats.white.camera.position[2]).toBeGreaterThan(0); // the hand is at TTS -z: the scene's near side
+    expect(scene.traits["tabletop.seats"].white).toMatchObject({ name: "White", player: null });
+    expect(scene.traits["tabletop.seats"].white.camera.position[2]).toBeGreaterThan(0); // the hand is at TTS -z: the scene's near side
     expect(report.counts.tableY).toBeGreaterThan(0.9);
   });
 
-  it("a face-down deck is a stack of hidden cards backed by its own scene-secrets doc", async () => {
+  it("a face-down deck is a stack of hidden cards backed by its own plain-deck doc", async () => {
     const { scene, doc } = await importFixture();
     const group = Object.entries(scene.objects).find(([, o]) => o.kind === "group" && o.name === "Draw pile (3)");
     expect(group[1].visible).toBe(true);
     const cards = Object.entries(scene.objects).filter(([, o]) => o.parent === group[0]);
     expect(cards).toHaveLength(3);
-    const by = new Set(cards.map(([, o]) => o.hidden?.by));
+    const by = new Set(cards.map(([, o]) => o.traits?.["tabletop.hidden"]?.by));
     expect(by.size).toBe(1);
     const secrets = doc([...by][0]);
-    expect(secrets["@patchwork"].type).toBe("scene-secrets");
+    expect(secrets["@patchwork"].type).toBe("plain-deck");
     expect(Object.keys(secrets.objects).sort()).toEqual(cards.map(([id]) => id).sort());
     // the scene says only "Card", with one look for all three; the secrets say which is which
     expect(cards.map(([, o]) => o.name)).toEqual(["Card", "Card", "Card"]);
@@ -114,12 +114,12 @@ describe("runImport on the tiny fixture", () => {
     expect(scene.secretsUrl).toBeUndefined();
     // a face-up lone card is just itself
     const yellow = Object.values(scene.objects).find((o) => o.name === "Yellow Four");
-    expect(yellow.hidden).toBeUndefined();
+    expect(yellow.traits?.["tabletop.hidden"]).toBeUndefined();
   });
 
   it("hideFaceDown off: the deck's cards are themselves", async () => {
     const { scene } = await importFixture({ settings: { hideFaceDown: false } });
-    expect(Object.values(scene.objects).some((o) => o.hidden)).toBe(false);
+    expect(Object.values(scene.objects).some((o) => o.traits?.["tabletop.hidden"])).toBe(false);
     expect(Object.values(scene.objects).map((o) => o.name)).toContain("Red One");
   });
 
@@ -167,7 +167,7 @@ describe("runImport on the tiny fixture", () => {
   });
 
   it("hideObject is the one place that knows the hidden shape", () => {
-    expect(hideObject({ name: "Card" }, "automerge:deck")).toEqual({ name: "Card", hidden: { by: "automerge:deck" } });
+    expect(hideObject({ name: "Card" }, "automerge:deck")).toEqual({ name: "Card", traits: { "tabletop.hidden": { by: "automerge:deck" } } });
   });
 
   it("the fixture's JSON is a real file on disk", () => {

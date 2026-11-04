@@ -32,9 +32,11 @@ card-face texture size.
 | `patchwork:datatype` | `tts-import` | one import: settings, progress, report (listed) |
 | `patchwork:tool` | `tts-import` | drop zone, progress, report, *Open the table* |
 
-It doesn't depend on the scene package: it writes `scene`, `scene-secrets` and
-`file` docs in the shapes the scene documents and opens the result with the
-`scene` tool by id.
+It doesn't depend on the scene or tabletop packages: it writes `scene`,
+`plain-deck` and `file` docs in the shapes they document (the scene's, with
+the tabletop's traits for seats and hidden cards) and opens the result with
+the `scene` tool by id. A table needs the tabletop package installed for its
+seats and hidden cards to work.
 
 ## Getting the assets
 
@@ -141,7 +143,7 @@ cards, often 4096² px) in every card's file. A cropped face is a few tens of kB
 
 **Hidden cards.** A face-down deck's cards (and face-down loose cards) are the
 scene's hidden objects: each shows the deck's back on both sides and is named
-"Card", with `hidden: { by: <url> }` naming a `scene-secrets` doc made for
+"Card", with the trait `tabletop.hidden: { by: <url> }` naming a `plain-deck` doc made for
 that TTS deck (one per deck, one more for loose cards) that says what each
 really is. `hideObject()` in `src/layout.js` is the one place that writes that
 shape.
@@ -178,9 +180,9 @@ shape.
 - a `file` doc per raw asset found: `{ "@patchwork": { type: "file" }, name, extension, mimeType, content }`
   (an OBJ as text, images and PDFs as bytes; one over `maxStoredBytes`, 32 MB, is used but not kept);
 - a `file` doc per kind: the GLB (`extension: "glb"`, `mimeType: "model/gltf-binary"`);
-- a `scene-secrets` doc per face-down TTS deck: `{ "@patchwork": { type: "scene-secrets" }, title, objects: { [objectId]: { sourceUrl, name } } }`;
+- a `plain-deck` doc per face-down TTS deck: `{ "@patchwork": { type: "plain-deck" }, title, objects: { [objectId]: { sourceUrl, name } } }`;
 - the `scene`: passthrough objects (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with
-  `hint.bounds`, groups for decks / stacks / bag contents / states, `locked`, `hidden`, `infoUrl` = the
+  `hint.bounds`, groups for decks / stacks / bag contents / states, `locked`, traits (`tabletop.hidden` on hidden cards, `tabletop.seats` on the scene), `infoUrl` = the
   import doc (the PDF's file doc for a `Custom_PDF`), `seats`, `view: { units: "cm", snap: true,
   defaultGizmo: "hand", grid: false, axes: false }` and a camera over the table from the near side.
 

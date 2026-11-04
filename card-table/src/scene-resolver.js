@@ -1,5 +1,5 @@
-// The secure deck in a scene: the `scene:secrets` provider for "secure-deck"
-// docs (see scene/README.md, "Hidden objects and decks"). A scene can hold any number
+// The secure deck on a table: the `tabletop:deck` provider for "secure-deck"
+// docs (see tabletop/README.md, "Tables"). A scene can hold any number
 // of decks; each gets its own resolver. The scene says who is seated and who
 // may see which object; this runs the deck's protocol for this viewer and
 // hands back the faces it can decrypt.
