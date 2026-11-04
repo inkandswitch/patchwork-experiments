@@ -28,3 +28,14 @@ describe('wordsFromAlignment', () => {
     expect(wordsFromAlignment(text, null)).toEqual([]);
   });
 });
+
+import { isVoiceId } from './tts';
+
+describe('isVoiceId', () => {
+  it('tells a voice id from a name', () => {
+    expect(isVoiceId('21m00Tcm4TlvDq8ikWAM')).toBe(true);
+    expect(isVoiceId(' 21m00Tcm4TlvDq8ikWAM ')).toBe(true);
+    expect(isVoiceId('Hope')).toBe(false);
+    expect(isVoiceId('Hope Smith')).toBe(false);
+  });
+});

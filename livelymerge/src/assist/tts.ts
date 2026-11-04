@@ -29,6 +29,15 @@ export interface TtsResult {
 
 /** Why ElevenLabs is off for this page load (quota, bad key, …), or null. */
 let disabledReason: string | null = null;
+/** A note about the voice lookup (e.g. the key can't list voices), or null. */
+let voiceNote: string | null = null;
+/** A premade voice every key can use, for when the chosen one can't be looked up. */
+export const FALLBACK_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // "Rachel"
+
+/** ElevenLabs voice ids are 20 alphanumerics; the Voice field takes either a name or an id. */
+export function isVoiceId(s: string): boolean {
+  return /^[A-Za-z0-9]{20,}$/.test(s.trim());
+}
 
 function storage(): Storage | null {
   try {
@@ -76,6 +85,7 @@ export function setVoiceName(name: string | null): void {
   if (n && n !== DEFAULT_VOICE_NAME) storage()?.setItem(ELEVEN_VOICE_STORAGE, n);
   else storage()?.removeItem(ELEVEN_VOICE_STORAGE);
   disabledReason = null;
+  voiceNote = null;
 }
 
 /** One line for the drawer: on/off, voice, and why it fell back if it did. */
@@ -83,6 +93,7 @@ export function elevenStatus(): string {
   if (!elevenEnabled()) return 'off — using the browser voice';
   if (!hasElevenKey()) return 'on — key asked for on first use';
   if (disabledReason) return `fell back to the browser voice: ${disabledReason}`;
+  if (voiceNote) return `on — ${voiceNote}`;
   return `on — voice "${getVoiceName()}", ${ELEVEN_MODEL}`;
 }
 
@@ -95,11 +106,24 @@ function disable(reason: string, notify?: (text: string) => void): void {
 }
 
 async function resolveVoiceId(key: string, name: string): Promise<string | null> {
+  if (isVoiceId(name)) return name.trim();
   const cacheKey = `${ELEVEN_VOICE_STORAGE}Id:${name.toLowerCase()}`;
   const cached = storage()?.getItem(cacheKey);
   if (cached) return cached;
   const res = await fetch(`${API}/v1/voices`, { headers: { 'xi-api-key': key } });
-  if (!res.ok) throw new Error(`voices: HTTP ${res.status} ${await errorDetail(res)}`);
+  if (!res.ok) {
+    const detail = await errorDetail(res);
+    if (res.status === 401 && /permission/i.test(detail)) {
+      // A restricted key: it can speak but not list voices. Keep talking with a
+      // premade voice, and say how to get the wanted one.
+      if (!voiceNote) {
+        voiceNote = `key can't list voices (needs the "Voices: read" permission), so "${name}" can't be looked up; using the default voice. Paste the voice's ID into the Voice field to use it.`;
+        console.warn('Talk & Draw: ElevenLabs —', voiceNote);
+      }
+      return FALLBACK_VOICE_ID;
+    }
+    throw new Error(`voices: HTTP ${res.status} ${detail}`);
+  }
   const data = (await res.json()) as { voices?: { voice_id: string; name: string }[] };
   const voices = data.voices ?? [];
   const hit =

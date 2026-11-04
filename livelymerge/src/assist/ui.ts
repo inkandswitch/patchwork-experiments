@@ -283,8 +283,8 @@ export class AssistUI {
     voiceRow.appendChild(von);
     this.voiceName = document.createElement('input');
     this.voiceName.type = 'text';
-    this.voiceName.placeholder = 'voice name';
-    this.voiceName.title = 'A voice in your ElevenLabs "My Voices"';
+    this.voiceName.placeholder = 'voice name or ID';
+    this.voiceName.title = 'A voice in your ElevenLabs "My Voices", or a voice ID (works with keys that cannot list voices)';
     this.voiceName.addEventListener('change', () => {
       hooks.voice.setVoiceName(this.voiceName.value);
       this.refresh();
