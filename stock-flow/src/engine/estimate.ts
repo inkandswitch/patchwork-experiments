@@ -109,7 +109,7 @@ function valueAt(run: { years: number[]; values: Record<string, number[]> }, var
 }
 
 /** Nelder–Mead from the start, then again from each result with a fresh simplex until it stops improving. */
-function restarted(f: (point: number[]) => number, start: number[], maxEvaluations: number): number[] {
+export function restarted(f: (point: number[]) => number, start: number[], maxEvaluations: number): number[] {
   let best = start;
   let bestValue = f(start);
   let used = 1;
@@ -168,11 +168,11 @@ export function nelderMead(f: (point: number[]) => number, start: number[], maxE
   return simplex[bestIndex];
 }
 
-function logistic(x: number): number {
+export function logistic(x: number): number {
   return 1 / (1 + Math.exp(-x));
 }
 
-function logit(u: number): number {
+export function logit(u: number): number {
   return Math.log(u / (1 - u));
 }
 

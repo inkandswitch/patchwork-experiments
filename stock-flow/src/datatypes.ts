@@ -2,9 +2,11 @@ import type { DatatypeImplementation } from "@inkandswitch/patchwork-plugins";
 import type {
   StockFlowAttributionDoc,
   StockFlowChartDoc,
+  StockFlowFitDoc,
   StockFlowModelDoc,
   StockFlowScenarioDoc,
   StockFlowSensitivityDoc,
+  StockFlowTableDoc,
   StockFlowTestsDoc,
 } from "./types.ts";
 
@@ -63,6 +65,23 @@ export const SensitivityDatatype: DatatypeImplementation<StockFlowSensitivityDoc
   setTitle(doc, title) {
     doc.title = title;
   },
+};
+
+export const TableDatatype: DatatypeImplementation<StockFlowTableDoc> = {
+  init(doc) {
+    Object.assign(doc, { "@patchwork": { type: "stock-flow-table" }, label: "", unit: "", inputs: {}, query: "", result: [], annotations: [] });
+  },
+  getTitle: (doc) => doc.label || "Table",
+  setTitle(doc, title) {
+    doc.label = title;
+  },
+};
+
+export const FitDatatype: DatatypeImplementation<StockFlowFitDoc> = {
+  init(doc) {
+    Object.assign(doc, { "@patchwork": { type: "stock-flow-fit" }, title: "", models: [], scenario: "", restarts: [], values: {}, comparisons: [], annotations: [] });
+  },
+  getTitle: (doc) => doc.title || "Fit run",
 };
 
 export const AttributionDatatype: DatatypeImplementation<StockFlowAttributionDoc> = {

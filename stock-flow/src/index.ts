@@ -61,6 +61,46 @@ export const plugins: Plugin<any>[] = [
     },
   } as Datatype,
   {
+    type: "patchwork:datatype",
+    id: "stock-flow-table",
+    name: "Stock and Flow Table",
+    icon: "Table",
+    unlisted: true,
+    async load() {
+      return (await import("./datatypes.ts")).TableDatatype;
+    },
+  } as Datatype,
+  {
+    type: "patchwork:datatype",
+    id: "stock-flow-fit",
+    name: "Stock and Flow Fit Run",
+    icon: "Target",
+    unlisted: true,
+    async load() {
+      return (await import("./datatypes.ts")).FitDatatype;
+    },
+  } as Datatype,
+  {
+    type: "patchwork:tool",
+    id: "stock-flow-table",
+    name: "Table",
+    icon: "Table",
+    supportedDatatypes: ["stock-flow-table"],
+    async load() {
+      return (await import("./tools/table-tool.ts")).TableTool;
+    },
+  } as Tool,
+  {
+    type: "patchwork:tool",
+    id: "stock-flow-fit",
+    name: "Fit run",
+    icon: "Target",
+    supportedDatatypes: ["stock-flow-fit"],
+    async load() {
+      return (await import("./tools/fit-tool.ts")).FitTool;
+    },
+  } as Tool,
+  {
     type: "patchwork:tool",
     id: "stock-flow-model",
     name: "Stock and Flow Model",

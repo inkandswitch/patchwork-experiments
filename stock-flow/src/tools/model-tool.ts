@@ -7,14 +7,17 @@ import { formatParameter, formatVariable } from "../views/format.ts";
 import { scenarioCard } from "../views/scenario-card.ts";
 import { renderLoopsPage } from "./loops-page.ts";
 import { currentSettings, initialState, isTweaked, resetTweaks, type Context, type Tab, type ViewState } from "./model-state.ts";
-import { errorMessage, mount, onResize, watch } from "./shared.ts";
+import { errorMessage, mount, onResize, resolving, watch } from "./shared.ts";
 import { renderStockFlowPage } from "./stock-flow-page.ts";
 import type { DataSource, Run, StockFlowModelDoc, VariableId } from "../types.ts";
 
 export const ModelTool: ToolRender<StockFlowModelDoc> = (handle, element) => {
   const { root, unmount } = mount(element, "sf-model");
   const view = createModelView(root);
-  const stop = watch(handle, view.update);
+  const stop = watch(
+    handle,
+    resolving(element.repo, (model, error) => (model ? view.update(model) : view.fail(error ?? "Can't read the model"))),
+  );
   return () => {
     stop();
     view.destroy();
@@ -62,6 +65,9 @@ function createModelView(root: HTMLElement) {
     update(doc: StockFlowModelDoc) {
       model = doc;
       render();
+    },
+    fail(message: string) {
+      body.replaceChildren(element("p", { class: "sf-error" }, message));
     },
     destroy: stopResize,
   };

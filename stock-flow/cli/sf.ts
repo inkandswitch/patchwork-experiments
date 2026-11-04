@@ -3,7 +3,8 @@
  * sf: work on stock and flow models in Patchwork from the command line, so any LLM with a shell can build models,
  * run scenarios, and write analyses that embed live charts.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import type { DocHandle, Repo } from "@automerge/automerge-repo";
@@ -12,7 +13,9 @@ import { attribute, type AttributionFields } from "../src/engine/attribution.ts"
 import { checkModel } from "../src/engine/check.ts";
 import { estimate, type EstimateSpec } from "../src/engine/estimate.ts";
 import { describeFit, fitStats } from "../src/engine/fit.ts";
+import { fitRun, type FitRunSpec } from "../src/engine/fit-run.ts";
 import { causalGraph } from "../src/engine/graph.ts";
+import { isLinkedModel, resolveModel, type Loader } from "../src/engine/links.ts";
 import { orderedScenarios, scenarioLabel, scenarioSettings, withKnob } from "../src/engine/scenarios.ts";
 import { runSensitivity, type SensitivityFields } from "../src/engine/sensitivity.ts";
 import { simulate } from "../src/engine/simulate.ts";
@@ -31,12 +34,17 @@ import {
   type Block,
   type ChartFields,
 } from "./notebook.ts";
+import { LocalDocs } from "./local.ts";
+import { checkProvenance } from "./provenance.ts";
 import { attributionReport, sensitivityReport, table, testsReport } from "./report.ts";
 import { closeRepo, findDoc, openRepo, patchworkLink, waitForServerSync } from "./repo.ts";
+import { buildTable, checkTable } from "./tables.ts";
 import type {
   AutomergeUrl,
   FolderDoc,
+  LinkedModelDoc,
   MarkdownDoc,
+  StockFlowFitDoc,
   StockFlowAttributionDoc,
   StockFlowChartDoc,
   StockFlowModelDoc,
@@ -80,6 +88,17 @@ Documents to embed in markdown
   sf folder new <title> <url>...                a folder listing documents
   sf folder add <folder-url> <url>...
 
+Linked projects (a pushwork folder: models link to tables and fit runs by URL; every command above reads them too)
+  sf link <path> [--pin]                        the document URL of a file in the folder, pinned to its heads with --pin
+  sf table build <table.json>...                run each table's DuckDB query over its inputs, pin the inputs, store the result
+  sf table check <table.json>...                run the query again: does it still give the stored result?
+  sf estimate <model.json> <scenario> --params a=1..3,b --compare id,id*2 --years 2005-2019 [--holdout 2020-2024]
+             [--models other.json,…] [--starts 8] [--seed 1] [--profile] [--out fits/x.json] [--title t] [--write]
+                                            a fit run document: every start and its end, residuals in and out of sample,
+                                            profiles; --models fits a panel sharing the parameters; --write points the
+                                            parameters of every model at the run
+  sf check --provenance [folder]            raw hashes, tables reproduce, links resolve, holdouts kept out, sources given
+
 Scenario references: "real", "real without spillover and land", "real without rent→profitability".
 Paths use dots, or slashes when a key has dots: data/students.cityDefinition/label.
 Embed a document in markdown with [patchwork:<id without automerge:>/<tool>]; the chart and scenario commands print it.
@@ -110,6 +129,15 @@ const OPTIONS = {
   fit: { type: "boolean" },
   params: { type: "string" },
   write: { type: "boolean" },
+  compare: { type: "string" },
+  holdout: { type: "string" },
+  models: { type: "string" },
+  starts: { type: "string" },
+  seed: { type: "string" },
+  profile: { type: "boolean" },
+  out: { type: "string" },
+  pin: { type: "boolean" },
+  provenance: { type: "boolean" },
 } as const;
 
 type Options = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
@@ -149,7 +177,30 @@ const COMMANDS: Record<string, Command> = {
   show: async ([target, section], options) => {
     const doc = await readAny(required(target, "url"));
     if (options.json) return print(JSON.stringify(section ? at(doc, section) : doc, null, 2));
-    print(summarize(doc, section));
+    print(summarize(isLinkedModel(doc) ? await resolveModel(doc, linkLoader(target!)) : doc, section));
+  },
+
+  link: async ([file], options) => {
+    const target = required(file, "path");
+    print(localDocs(target).urlOf(target, { pin: options.pin }));
+  },
+
+  "table build": async (files) => {
+    if (!files.length) throw new Error("Name the table files to build");
+    for (const file of files) {
+      const table = await buildTable(file, localDocs(file));
+      print(`${file}: ${table.result.length} rows${table.result[0] ? ` (${Object.keys(table.result[0]).join(", ")})` : ""}`);
+    }
+  },
+
+  "table check": async (files) => {
+    if (!files.length) throw new Error("Name the table files to check");
+    for (const file of files) {
+      const { reproduces, moved, unpinned } = await checkTable(file, localDocs(file));
+      const notes = [...moved.map((name) => `${name} changed since the build`), ...unpinned.map((name) => `${name} not pinned`)];
+      print(`${reproduces ? "ok   " : "FAIL "} ${file}${reproduces ? "" : ": the query gives a different result; run sf table build"}${notes.length ? `  (${notes.join("; ")})` : ""}`);
+      if (!reproduces) process.exitCode = 1;
+    }
   },
 
   get: async ([url, docPath]) => print(JSON.stringify(at(await readAny(required(url, "url")), required(docPath, "path")), null, 2)),
@@ -169,7 +220,14 @@ const COMMANDS: Record<string, Command> = {
       await report(repo, handle, "Changed");
     }),
 
-  check: async ([target]) => {
+  check: async ([target], options) => {
+    if (options.provenance) {
+      const issues = await checkProvenance(localDocs(target ?? "."));
+      if (!issues.length) return print("Provenance holds: hashes match, tables reproduce, links resolve, holdouts are clean, every number has a source.");
+      for (const issue of issues) print(`${issue.severity === "error" ? "error  " : "warning"} ${issue.where}: ${issue.message}`);
+      if (issues.some((issue) => issue.severity === "error")) process.exitCode = 1;
+      return;
+    }
     const model = await readModel(required(target, "model"));
     const issues = checkModel(model);
     if (!issues.length) return print("No issues.");
@@ -218,6 +276,7 @@ const COMMANDS: Record<string, Command> = {
 
   estimate: async ([target, reference], options) => {
     const file = required(target, "model");
+    if (isLinkedModel(await readAny(file))) return estimateLinked(file, required(reference, "scenario"), options);
     const model = await readModel(file);
     const spec = estimateSpec(model, required(reference, "scenario"), options);
     const result = estimate(model, spec);
@@ -373,6 +432,113 @@ const COMMANDS: Record<string, Command> = {
     }),
 };
 
+/**
+ * A fit run over one linked model or a panel of them: written as a stock-flow-fit document next to the models, with
+ * the fitted versions pinned. With --write, the fitted parameters of every model link to the run's values.
+ */
+async function estimateLinked(file: string, scenario: string, options: Options): Promise<void> {
+  const files = [file, ...list(options.models)];
+  const docs = localDocs(file);
+  const models = await Promise.all(files.map((model) => readModel(model)));
+  const spec: FitRunSpec = {
+    scenario,
+    parameters: fitBounds(models[0], scenario, options.params),
+    compare: weights(options.compare ?? options.data),
+    years: parseYears(required(options.years, "years, e.g. --years 2005-2019")),
+    ...(options.holdout ? { holdout: parseYears(options.holdout) } : {}),
+    starts: Number(options.starts ?? 8),
+    seed: Number(options.seed ?? 1),
+    profile: Boolean(options.profile),
+  };
+  const result = fitRun(models, spec);
+  const modelUrls = files.map((model) => docs.urlOf(model, { pin: true }));
+  const fit: StockFlowFitDoc = {
+    "@patchwork": { type: "stock-flow-fit" },
+    title: options.title ?? `${Object.keys(spec.parameters).join(", ")} against ${Object.keys(spec.compare).join(", ")}, ${spec.years.join("–")}`,
+    models: modelUrls,
+    scenario,
+    objective: { compare: spec.compare, years: spec.years },
+    ...(spec.holdout ? { holdout: { years: spec.holdout } } : {}),
+    bounds: spec.parameters,
+    method: { kind: "nelder-mead", starts: spec.starts, seed: spec.seed, maxEvaluations: result.maxEvaluations },
+    restarts: result.restarts,
+    values: result.values,
+    objectiveValue: result.objectiveValue,
+    atBound: result.atBound,
+    comparisons: result.comparisons.map(({ model, ...comparison }) => ({ model: modelUrls[model], ...comparison })),
+    ...(result.profiles ? { profiles: result.profiles } : {}),
+    run: { command: ["sf", ...process.argv.slice(2).map(shellQuote)].join(" "), version: toolVersion(), at: new Date().toISOString() },
+    annotations: [],
+  };
+  const out = options.out ?? path.join(docs.root, "fits", `${scenario}-${fit.run.at.slice(0, 16).replace(/[:T]/g, "")}.json`);
+  mkdirSync(path.dirname(out), { recursive: true });
+  writeFileSync(out, JSON.stringify(fit, null, 2) + "\n");
+
+  print(`${fit.title}${files.length > 1 ? ` (panel of ${files.length})` : ""}`);
+  print(table(["start", "objective", ...Object.keys(spec.parameters)], [...result.restarts].sort((a, b) => a.objective - b.objective).map((restart, index) => [String(index + 1), restart.objective.toPrecision(4), ...Object.values(restart.end).map(String)])));
+  for (const [id, value] of Object.entries(result.values)) {
+    print(`  ${id} = ${value}  bounds ${spec.parameters[id].min}–${spec.parameters[id].max}${result.atBound.includes(id) ? "  AT A BOUND" : ""}`);
+  }
+  for (const comparison of fit.comparisons) {
+    const unit = formatter(models[modelUrls.indexOf(comparison.model)].data[comparison.compare].unit);
+    print(`  ${comparison.compare}: in sample ${describeFit(comparison.inSample, unit)}${comparison.holdout ? `; holdout ${describeFit(comparison.holdout, unit)}` : ""}`);
+  }
+  print(`Wrote ${path.relative(process.cwd(), out)}`);
+  if (options.write) {
+    const fitUrl = docs.urlOf(out);
+    for (const model of files) {
+      const json = JSON.parse(readFileSync(model, "utf8")) as LinkedModelDoc;
+      for (const id of Object.keys(spec.parameters)) json.parameters[id].value = `${fitUrl}/values/${id}`;
+      writeFileSync(model, JSON.stringify(json, null, 2) + "\n");
+    }
+    print(`Pointed ${Object.keys(spec.parameters).join(", ")} in ${files.join(", ")} at ${fitUrl}`);
+  }
+  print("Run pushwork sync to publish.");
+}
+
+/** --params a=1..3,b: explicit bounds, or ±50% of the value the scenario runs with. */
+function fitBounds(model: StockFlowModelDoc, scenario: string, params: string | undefined): Record<string, { min: number; max: number }> {
+  const settings = scenarioSettings(model, scenario);
+  const entries = list(params).map((entry): [string, { min: number; max: number }] => {
+    const [id, bounds] = entry.split("=");
+    if (!(id in model.parameters)) throw new Error(`Unknown parameter "${id}"`);
+    if (bounds) {
+      const [min, max] = bounds.split("..").map(Number);
+      if (!Number.isFinite(min) || !Number.isFinite(max)) throw new Error(`Bounds for ${id} must look like 1..3`);
+      return [id, { min, max }];
+    }
+    const value = settings.parameters[id];
+    return [id, { min: Math.min(value * 0.5, value * 1.5), max: Math.max(value * 0.5, value * 1.5) }];
+  });
+  if (!entries.length) throw new Error("Name the parameters to estimate with --params a,b");
+  return Object.fromEntries(entries);
+}
+
+/** id,id*2 → { id: 1, id: 2 } */
+function weights(text: string | undefined): Record<string, number> {
+  const entries = list(text).map((entry): [string, number] => {
+    const [id, weight] = entry.split("*");
+    return [id, weight ? Number(weight) : 1];
+  });
+  if (!entries.length) throw new Error("Name the comparisons to fit with --compare id,id");
+  return Object.fromEntries(entries);
+}
+
+function shellQuote(arg: string): string {
+  return /^[\w./=,:@%+*-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`;
+}
+
+/** The package version and the commit it ran from, with "+changes" when the working tree differs. */
+function toolVersion(): string {
+  const pkg = JSON.parse(readFileSync(path.join(import.meta.dirname, "..", "package.json"), "utf8")) as { name: string; version: string };
+  try {
+    const git = (args: string[]) => execFileSync("git", args, { cwd: import.meta.dirname, encoding: "utf8" }).trim();
+    return `${pkg.name} ${pkg.version} (${git(["rev-parse", "--short", "HEAD"])}${git(["status", "--porcelain", "--", "."]) ? "+changes" : ""})`;
+  } catch {
+    return `${pkg.name} ${pkg.version}`;
+  }
+}
+
 async function createChart(repo: Repo, model: StockFlowModelDoc, modelUrl: AutomergeUrl, fields: ChartFields): Promise<DocHandle<StockFlowChartDoc>> {
   chartSpec(model, fields);
   return repo.create<StockFlowChartDoc>(stamped<StockFlowChartDoc>({ "@patchwork": { type: "stock-flow-chart" }, model: modelUrl, ...fields }));
@@ -428,15 +594,14 @@ type ValidationKind = "tests" | "sensitivity" | "attribution";
  */
 async function validationInput<Fields>(target: string | undefined, options: Options, kind: ValidationKind, parse: (source: string) => Fields): Promise<{ model: StockFlowModelDoc; fields: Fields }> {
   const where = required(target, `model or ${kind} url`);
-  if (where.startsWith("automerge:")) {
-    const doc = await readAny(where);
-    const type = doc["@patchwork"]?.type;
-    if (type === `stock-flow-${kind}`) {
-      const { "@patchwork": _, title, model: modelUrl, ...fields } = doc;
-      return { model: await readModel(modelUrl), fields: fields as Fields };
-    }
-    if (type !== "stock-flow-model") throw new Error(`${where} is a ${type ?? "unknown"} document, not a model or stock-flow-${kind}`);
+  const doc = await readAny(where);
+  const type = doc["@patchwork"]?.type;
+  if (type === `stock-flow-${kind}`) {
+    const { "@patchwork": _, title, model: modelUrl, annotations, ...fields } = doc;
+    const local = where.startsWith("automerge:") ? undefined : LocalDocs.near(where)?.pathOf(modelUrl);
+    return { model: await readModel(local ?? modelUrl), fields: fields as Fields };
   }
+  if (type !== "stock-flow-model") throw new Error(`${where} is a ${type ?? "unknown"} document, not a model or stock-flow-${kind}`);
   const model = await readModel(where);
   if (!options.spec) throw new Error(`Pass --spec <file> with a ${kind} fence body (or a markdown file containing one)`);
   if (!existsSync(options.spec)) throw new Error(`No such file: ${options.spec}`);
@@ -556,7 +721,21 @@ function tidyNumber(value: number): number {
 async function readModel(target: string, repo?: Repo): Promise<StockFlowModelDoc> {
   const doc = repo && target.startsWith("automerge:") ? plain((await findDoc(repo, target)).doc()) : await readAny(target);
   if ((doc as any)["@patchwork"]?.type !== "stock-flow-model") throw new Error(`${target} is not a stock-flow-model`);
+  if (isLinkedModel(doc)) return resolveModel(doc, linkLoader(target));
   return doc as StockFlowModelDoc;
+}
+
+/** Documents a linked model links to: from disk when the model sits in a pushwork folder, else from the sync server. */
+function linkLoader(target: string): Loader {
+  const network: Loader = (url) => withRepo(async (repo) => plain((await findDoc(repo, url)).doc()));
+  const local = target.startsWith("automerge:") ? undefined : LocalDocs.near(target);
+  return local ? local.loader(network) : network;
+}
+
+function localDocs(target: string): LocalDocs {
+  const docs = LocalDocs.near(target);
+  if (!docs) throw new Error(`${target} is not in a pushwork folder (no .pushwork above it); run pushwork init there first`);
+  return docs;
 }
 
 async function readAny(target: string): Promise<Record<string, any>> {
@@ -569,6 +748,7 @@ async function readAny(target: string): Promise<Record<string, any>> {
 
 function readModelFile(file: string): StockFlowModelDoc {
   const model = JSON.parse(readFileSync(file, "utf8")) as StockFlowModelDoc;
+  if (isLinkedModel(model)) throw new Error(`${file} is a linked model; it is published by pushwork sync in its folder, not by sf model new/put`);
   model["@patchwork"] = { type: "stock-flow-model" };
   const errors = checkModel(model).filter((issue) => issue.severity === "error");
   if (errors.length) throw new Error(`The model has errors:\n${errors.map((issue) => `  ${issue.where}: ${issue.message}`).join("\n")}`);

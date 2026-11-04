@@ -303,3 +303,97 @@ export type Run = { years: number[]; values: Record<VariableId, number[]> };
 export type MarkdownDoc = { "@patchwork": { type: "markdown" }; content: string };
 
 export type FolderDoc = { "@patchwork": { type: "folder" }; title: string; docs: { name: string; type: string; url: AutomergeUrl }[] };
+
+/**
+ * Linked documents. A linked model takes its numbers from table and fit-run documents by URL, so every value can be
+ * followed back to a raw file or a report page; `resolveModel` (engine/links.ts) turns it into a StockFlowModelDoc
+ * for the engine. URLs may carry a path into the document (`automerge:<id>/values/startTime`) and heads that pin a
+ * version (`automerge:<id>#<heads>`).
+ */
+export type LinkedModelDoc = {
+  "@patchwork": PatchworkMeta<"stock-flow-model">;
+  title: string;
+  simulation: Simulation;
+  variables: Record<VariableId, LinkedVariable>;
+  parameters: Record<ParameterId, LinkedParameter>;
+  /** Tables the model is checked against, by the ids charts and tests use. */
+  compare: Record<CompareId, { table: AutomergeUrl; variable: VariableId }>;
+  scenarios: Record<ScenarioId, LinkedScenario>;
+  /** Named loops and the links whose cut switches them off. */
+  loops: Record<LoopId, { label: string; name: string; cut: LinkKey[] }>;
+  layout?: Layouts;
+  annotations: Annotation[];
+};
+
+export type LinkedVariable = { label: string; unit: string; scale?: number; key?: boolean } & VariableKind;
+
+/** A number, a table (one number, or a value per year), or a number inside a fit run. Sources of plain numbers are annotations. */
+export type LinkedParameter = { label: string; unit: string; value: number | AutomergeUrl };
+
+export type LinkedScenario = {
+  label: string;
+  question: string;
+  /** What you expect to happen, written before running it. */
+  expectation?: string;
+  base?: ScenarioId;
+  changes: {
+    parameters?: Record<ParameterId, number | AutomergeUrl>;
+    /** Curves a reader draws; drivers that come from data are parameters linked to tables. */
+    inputs?: Record<VariableId, number[]>;
+    linkGain?: Record<LinkKey, number>;
+    dt?: number;
+  };
+};
+
+export type CompareId = string;
+
+/** A note on a document or a part of one: `.` is this document, `./<path>` a part of it, `automerge:<id>/<path>` a part of another one. */
+export type Annotation = { target: "." | `./${string}` | AutomergeUrl; text: string };
+
+export type TableValue = number | string | null;
+
+/** One DuckDB query over named inputs; the result is stored and checked by running the query again. */
+export type StockFlowTableDoc = {
+  "@patchwork": PatchworkMeta<"stock-flow-table">;
+  label: string;
+  unit: string;
+  /** Raw files, transcriptions or other tables; each is a table of that name in the query. */
+  inputs: Record<string, AutomergeUrl>;
+  /** One SELECT. A table a parameter or comparison reads returns `year, value`, or a single number. */
+  query: string;
+  result: Record<string, TableValue>[];
+  annotations: Annotation[];
+};
+
+/** One estimation run over one model or a panel of models sharing the parameters. Written once, never edited. */
+export type StockFlowFitDoc = {
+  "@patchwork": PatchworkMeta<"stock-flow-fit">;
+  title: string;
+  /** Pinned: the versions that were fitted. */
+  models: AutomergeUrl[];
+  scenario: string;
+  /** Weight per comparison, and the fit window. */
+  objective: { compare: Record<CompareId, number>; years: [number, number] };
+  holdout?: { years: [number, number] };
+  bounds: Record<ParameterId, { min: number; max: number }>;
+  method: { kind: "nelder-mead"; starts: number; seed: number; maxEvaluations: number };
+  restarts: FitRestart[];
+  values: Record<ParameterId, number>;
+  objectiveValue: number;
+  atBound: ParameterId[];
+  comparisons: FitComparison[];
+  /** The objective along each parameter's range with the others re-fitted: flat means not identified. */
+  profiles?: Record<ParameterId, { value: number; objective: number }[]>;
+  run: { command: string; version: string; at: string };
+  annotations: Annotation[];
+};
+
+export type FitRestart = { start: Record<ParameterId, number>; end: Record<ParameterId, number>; objective: number };
+
+export type FitComparison = {
+  model: AutomergeUrl;
+  compare: CompareId;
+  inSample: FitStats;
+  holdout?: FitStats;
+  residuals: { year: number; model: number; data: number; inSample: boolean }[];
+};

@@ -240,4 +240,16 @@ export const styles = `${diagramStyles}
 .sf-changes { margin: 8px 0 0; padding-left: 18px; font-size: 0.8rem; }
 .sf-changes:empty { display: none; }
 .sf-derived { margin-top: 6px; font-size: 0.78rem; color: var(--sf-muted); }
+.sf-linked { padding: 12px 16px; }
+.sf-linked > header p { margin: 2px 0 8px; }
+.sf-linked h3 { font-size: 0.85rem; margin: 12px 0 2px; }
+.sf .sf-query { background: var(--sf-panel); padding: 8px 10px; border-radius: 4px; font-size: 0.78rem; white-space: pre-wrap; margin: 0; }
+.sf-notes, .sf-inputs { margin: 0; padding-left: 18px; font-size: 0.82rem; }
+.sf-notes li, .sf-inputs li { margin: 2px 0; }
+.sf-notes code { font-size: 0.75rem; color: var(--sf-muted); }
+.sf-inputs button { font-size: 0.8rem; }
+.sf-profiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.sf-profiles caption { text-align: left; font-weight: 600; font-size: 0.8rem; }
+.sf-bar-cell { width: 50%; }
+.sf-bar { height: 8px; background: #1c7ed6; border-radius: 2px; }
 `;

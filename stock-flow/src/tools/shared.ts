@@ -1,6 +1,7 @@
-import type { AutomergeUrl as RepoUrl, DocHandle, Repo } from "@automerge/automerge-repo";
+import type { AutomergeUrl as RepoUrl, DocHandle, Repo, UrlHeads } from "@automerge/automerge-repo";
 import type { ToolRender } from "@inkandswitch/patchwork-plugins";
 import { element } from "../charts/svg.ts";
+import { isLinkedModel, parseRef, resolveModel, type Loader } from "../engine/links.ts";
 import { styles } from "../views/styles.ts";
 import type { AutomergeUrl, StockFlowModelDoc } from "../types.ts";
 
@@ -98,11 +99,14 @@ export function watchModel(
     stopWatching();
     stopWatching = () => {};
     if (!next) return onChange(undefined, "This document doesn't name a model.");
+    const deliver = resolving(repo, (model, error) => {
+      if (!stopped && current === next) onChange(model, error);
+    });
     repo
       .find<StockFlowModelDoc>(next as RepoUrl)
       .then((handle) => {
         if (stopped || current !== next) return;
-        stopWatching = watch(handle, (model) => onChange(model));
+        stopWatching = watch(handle, deliver);
       })
       .catch((error: unknown) => onChange(undefined, `Can't load the model: ${error instanceof Error ? error.message : String(error)}`));
   };
@@ -113,6 +117,31 @@ export function watchModel(
       stopped = true;
       stopWatching();
     },
+  };
+}
+
+/**
+ * Passes each version of a model document on as the engine's model: a linked model once its tables and fit runs are
+ * read, any other as it is. A version that resolves after a newer one arrived is dropped.
+ */
+export function resolving(repo: Repo, onChange: (model: StockFlowModelDoc | undefined, error?: string) => void): (doc: unknown) => void {
+  let version = 0;
+  return (doc) => {
+    const mine = ++version;
+    if (!isLinkedModel(doc)) return onChange(doc as StockFlowModelDoc);
+    resolveModel(structuredClone(doc), repoLoader(repo)).then(
+      (model) => mine === version && onChange(model),
+      (error: unknown) => mine === version && onChange(undefined, `Can't read the model's links: ${errorMessage(error)}`),
+    );
+  };
+}
+
+/** Linked documents from the repo, at their pinned heads when the URL has them. */
+export function repoLoader(repo: Repo): Loader {
+  return async (url) => {
+    const ref = parseRef(url);
+    const handle = await repo.find(`automerge:${ref.documentId}` as RepoUrl);
+    return (ref.heads ? handle.view(ref.heads as UrlHeads) : handle).doc();
   };
 }
 
