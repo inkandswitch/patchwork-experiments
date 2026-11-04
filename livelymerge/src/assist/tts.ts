@@ -22,27 +22,35 @@ export interface VoiceSettings {
   style?: number;
 }
 
-export function getVoiceSettings(): VoiceSettings {
+/** The website's slider defaults; sent explicitly so a voice's own stored settings
+ *  don't change its character between the site and here. */
+export const DEFAULT_VOICE_SETTINGS: Required<VoiceSettings> = { stability: 0.5, similarity_boost: 0.75, style: 0 };
+
+export function getVoiceSettings(): Required<VoiceSettings> {
   try {
     const v = JSON.parse(storage()?.getItem(ELEVEN_SETTINGS_STORAGE) ?? '{}');
-    return v && typeof v === 'object' ? v : {};
+    return { ...DEFAULT_VOICE_SETTINGS, ...(v && typeof v === 'object' ? v : {}) };
   } catch {
-    return {};
+    return { ...DEFAULT_VOICE_SETTINGS };
   }
 }
 
-/** Numbers 0..1; an undefined/NaN field means "the voice's default". */
+/** Numbers 0..1; an undefined/NaN field goes back to the default. */
 export function setVoiceSettings(v: VoiceSettings): void {
   const clean: VoiceSettings = {};
   for (const k of ['stability', 'similarity_boost', 'style'] as const) {
     const n = v[k];
-    if (typeof n === 'number' && Number.isFinite(n)) clean[k] = Math.min(1, Math.max(0, n));
+    if (typeof n === 'number' && Number.isFinite(n)) {
+      const c = Math.min(1, Math.max(0, n));
+      if (c !== DEFAULT_VOICE_SETTINGS[k]) clean[k] = c;
+    }
   }
   if (Object.keys(clean).length) storage()?.setItem(ELEVEN_SETTINGS_STORAGE, JSON.stringify(clean));
   else storage()?.removeItem(ELEVEN_SETTINGS_STORAGE);
 }
 export const DEFAULT_ELEVEN_MODEL = 'eleven_turbo_v2_5';
-export const DEFAULT_VOICE_NAME = 'Hope';
+/** A premade voice, usable on every plan; "Hope" is a library voice (paid plans only). */
+export const DEFAULT_VOICE_NAME = 'Sarah';
 /** What the previous sentence was, so the next one continues its prosody. */
 let previousText = '';
 const API = 'https://api.elevenlabs.io';
@@ -111,13 +119,30 @@ function storage(): Storage | null {
   }
 }
 
+export type VoiceMode = 'elevenlabs' | 'browser' | 'mute';
+export const VOICE_MODES: VoiceMode[] = ['elevenlabs', 'browser', 'mute'];
+export const VOICE_MODE_STORAGE = 'talkAndDraw.voiceMode';
+
+/** ElevenLabs (default; browser voice as fallback), the browser voice, or mute —
+ *  in which case speech shows as bubbles instead. */
+export function getVoiceMode(): VoiceMode {
+  const m = storage()?.getItem(VOICE_MODE_STORAGE) as VoiceMode | null;
+  if (m && VOICE_MODES.includes(m)) return m;
+  // Older setting: ElevenLabs on/off.
+  return (storage()?.getItem(ELEVEN_ON_STORAGE) ?? 'on') === 'off' ? 'browser' : 'elevenlabs';
+}
+
+export function setVoiceMode(m: VoiceMode): void {
+  storage()?.setItem(VOICE_MODE_STORAGE, VOICE_MODES.includes(m) ? m : 'elevenlabs');
+  if (m === 'elevenlabs') disabledReason = null;
+}
+
 export function elevenEnabled(): boolean {
-  return (storage()?.getItem(ELEVEN_ON_STORAGE) ?? 'on') !== 'off';
+  return getVoiceMode() === 'elevenlabs';
 }
 
 export function setElevenEnabled(on: boolean): void {
-  storage()?.setItem(ELEVEN_ON_STORAGE, on ? 'on' : 'off');
-  if (on) disabledReason = null;
+  setVoiceMode(on ? 'elevenlabs' : 'browser');
 }
 
 export function getElevenKey(ask: boolean): string | null {
@@ -163,13 +188,22 @@ export function setVoiceName(name: string | null): void {
   voiceStandIn = null;
 }
 
-/** One line for the drawer: on/off, voice, and why it fell back if it did. */
+/** For the drawer: a one-line summary, and a longer note when something is off. */
+export function elevenStatusDetail(): { summary: string; detail: string | null; kind: 'ok' | 'note' | 'off' } {
+  const model = getElevenModel().replace('eleven_', '').replace(/_/g, ' ');
+  const mode = getVoiceMode();
+  if (mode === 'mute') return { summary: 'muted — speech shows as bubbles', detail: null, kind: 'off' };
+  if (mode === 'browser') return { summary: 'browser voice', detail: null, kind: 'off' };
+  if (!hasElevenKey()) return { summary: 'ElevenLabs: key will be asked for on first use', detail: null, kind: 'ok' };
+  if (disabledReason) return { summary: 'browser voice for now (ElevenLabs failed)', detail: disabledReason, kind: 'note' };
+  if (voiceStandIn) return { summary: `ElevenLabs: "${PREMADE_STANDIN}" standing in for "${getVoiceName()}" · ${model}`, detail: voiceNote, kind: 'note' };
+  if (voiceNote) return { summary: `ElevenLabs: default voice · ${model}`, detail: voiceNote, kind: 'note' };
+  return { summary: `ElevenLabs: "${getVoiceName()}" · ${model}`, detail: null, kind: 'ok' };
+}
+
 export function elevenStatus(): string {
-  if (!elevenEnabled()) return 'off — using the browser voice';
-  if (!hasElevenKey()) return 'on — key asked for on first use';
-  if (disabledReason) return `fell back to the browser voice: ${disabledReason}`;
-  if (voiceNote) return `on — ${voiceNote}`;
-  return `on — voice "${getVoiceName()}", ${getElevenModel()}`;
+  const d = elevenStatusDetail();
+  return d.detail ? `${d.summary} — ${d.detail}` : d.summary;
 }
 
 /** Turns the voice off for this page load and reports why (once, to the console and `notify`). */
@@ -279,7 +313,7 @@ export async function synthesize(text: string, notify?: (text: string) => void):
       model_id: getElevenModel(),
       // The sentence before this one, so prosody carries over instead of resetting.
       ...(previousText ? { previous_text: previousText.slice(-300) } : {}),
-      ...(Object.keys(getVoiceSettings()).length ? { voice_settings: getVoiceSettings() } : {}),
+      voice_settings: { ...getVoiceSettings(), use_speaker_boost: true },
     };
     const post = (path: string) =>
       fetch(`${API}/v1/text-to-speech/${voiceId}${path}?output_format=mp3_44100_128`, {

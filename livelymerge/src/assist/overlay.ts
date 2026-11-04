@@ -247,10 +247,52 @@ export class InkOverlay {
   }
 
   /**
-   * Where a new bubble of size w×h goes. Anchored: the usual spot above-right of the
-   * anchor, else the other three corners around it; unanchored: centered at the top.
-   * Any spot that would overlap a bubble already up is skipped; failing all, it goes
-   * below the lowest bubble it collides with.
+   * A coarse map of where the UI has content: the canvas sampled at CELL px per
+   * cell, each cell 1 when it differs from the dominant background colour, else 0.
+   * Built per placement (a bubble is placed once), so it is cheap enough.
+   */
+  private activityMap(): { cols: number; rows: number; cell: number; at: (cx: number, cy: number) => number } | null {
+    const CELL = 8;
+    const cols = Math.max(1, Math.floor(this.lmCanvas.width / CELL));
+    const rows = Math.max(1, Math.floor(this.lmCanvas.height / CELL));
+    const probe = document.createElement('canvas');
+    probe.width = cols;
+    probe.height = rows;
+    const ctx = probe.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    let data: Uint8ClampedArray;
+    try {
+      ctx.drawImage(this.lmCanvas, 0, 0, cols, rows);
+      data = ctx.getImageData(0, 0, cols, rows).data;
+    } catch {
+      return null;
+    }
+    // Dominant colour (quantized) = background.
+    const counts = new Map<number, number>();
+    for (let i = 0; i < data.length; i += 4) {
+      const k = ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    let bg = 0;
+    let best = -1;
+    for (const [k, n] of counts) if (n > best) (best = n), (bg = k);
+    const br = ((bg >> 8) & 15) << 4;
+    const bgc = ((bg >> 4) & 15) << 4;
+    const bb = (bg & 15) << 4;
+    const active = new Uint8Array(cols * rows);
+    for (let i = 0, c = 0; i < data.length; i += 4, c++) {
+      const d = Math.abs(data[i] - br) + Math.abs(data[i + 1] - bgc) + Math.abs(data[i + 2] - bb);
+      active[c] = d > 60 ? 1 : 0;
+    }
+    return { cols, rows, cell: CELL, at: (cx, cy) => (cx < 0 || cy < 0 || cx >= cols || cy >= rows ? 0 : active[cy * cols + cx]) };
+  }
+
+  /**
+   * Where a new bubble of size w×h goes: the spot that covers the least UI content
+   * (per the activity map), keeps clear of bubbles already up, and — when anchored —
+   * stays near the anchor without covering it. Candidates: positions around the anchor
+   * at a few distances and directions; or, unanchored, a grid over the whole canvas
+   * with a mild preference for the top.
    */
   private placeBubble(w: number, h: number, a: { x: number; y: number } | null, taken: { x: number; y: number; w: number; h: number }[]): { x: number; y: number } {
     const { width: cw, height: ch } = this.lmCanvas.getBoundingClientRect();
@@ -258,29 +300,58 @@ export class InkOverlay {
       x: Math.min(Math.max(8, p.x), Math.max(8, cw - w - 8)),
       y: Math.min(Math.max(8, p.y), Math.max(8, ch - h - 8)),
     });
-    const free = (p: { x: number; y: number }) => !taken.some((t) => overlaps({ x: p.x, y: p.y, w, h }, t));
-    const candidates: { x: number; y: number }[] = a
-      ? [
-          { x: a.x + 18, y: a.y - h - 26 },
-          { x: a.x - w - 18, y: a.y - h - 26 },
-          { x: a.x + 18, y: a.y + 30 },
-          { x: a.x - w - 18, y: a.y + 30 },
-        ]
-      : [{ x: (cw - w) / 2, y: 16 }];
+    const map = this.activityMap();
+    const activity = (p: { x: number; y: number }) => {
+      if (!map) return 0;
+      const x0 = Math.floor(p.x / map.cell);
+      const y0 = Math.floor(p.y / map.cell);
+      const x1 = Math.ceil((p.x + w) / map.cell);
+      const y1 = Math.ceil((p.y + h) / map.cell);
+      let n = 0;
+      let on = 0;
+      for (let cy = y0; cy < y1; cy++) for (let cx = x0; cx < x1; cx++) (n++, (on += map.at(cx, cy)));
+      return n ? on / n : 0;
+    };
+    const candidates: { x: number; y: number }[] = [];
+    if (a) {
+      // Around the anchor: 8 directions × 3 distances, the bubble placed so its
+      // nearest edge is `dist` away from the anchor along that direction.
+      for (const dist of [36, 80, 140]) {
+        for (let k = 0; k < 8; k++) {
+          const ang = (k / 8) * Math.PI * 2;
+          const dx = Math.cos(ang);
+          const dy = Math.sin(ang);
+          const cx = a.x + dx * (dist + w / 2);
+          const cy = a.y + dy * (dist + h / 2);
+          candidates.push({ x: cx - w / 2, y: cy - h / 2 });
+        }
+      }
+    } else {
+      const stepX = Math.max(40, w / 2);
+      const stepY = Math.max(30, h / 2);
+      for (let y = 16; y + h <= ch - 8; y += stepY) for (let x = 8; x + w <= cw - 8; x += stepX) candidates.push({ x, y });
+      if (candidates.length === 0) candidates.push({ x: (cw - w) / 2, y: 16 });
+    }
+    let bestP = clamp(candidates[0]);
+    let bestScore = Infinity;
     for (const c of candidates) {
       const p = clamp(c);
-      if (free(p)) return p;
+      let score = activity(p) * 3;
+      for (const t of taken) if (overlaps({ x: p.x, y: p.y, w, h }, t)) score += 4;
+      if (a) {
+        const coversAnchor = a.x >= p.x - 6 && a.x <= p.x + w + 6 && a.y >= p.y - 6 && a.y <= p.y + h + 6;
+        if (coversAnchor) score += 4;
+        const d = Math.hypot(p.x + w / 2 - a.x, p.y + h / 2 - a.y);
+        score += d / 500;
+      } else {
+        score += (p.y / Math.max(1, ch)) * 0.6;
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        bestP = p;
+      }
     }
-    // Stack: step down past whatever is in the way, as far as the canvas allows.
-    let p = clamp(candidates[0]);
-    for (let i = 0; i < 20; i++) {
-      const hit = taken.filter((t) => overlaps({ x: p.x, y: p.y, w, h }, t));
-      if (hit.length === 0) return p;
-      const below = Math.max(...hit.map((t) => t.y + t.h)) + BUBBLE_GAP;
-      if (below + h > ch - 8) break;
-      p = { x: p.x, y: below };
-    }
-    return p;
+    return bestP;
   }
 
   hideBubble(id: string): void {

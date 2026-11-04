@@ -87,6 +87,8 @@ export function spanWords(p: ParsedSay, s: AnchorSpan): { first: number; last: n
 }
 
 export interface SpeakHandlers {
+  /** Called when the speech actually starts playing (after any queue wait). */
+  onStart?(): void;
   /** Called as each word starts (index into parsed.words). */
   onWord?(index: number): void;
   onSpanStart?(span: AnchorSpan): void;
@@ -109,6 +111,8 @@ export interface SpeakOptions {
   takeover?: boolean;
   /** An external voice (ElevenLabs): audio plus word times. null → the browser's engine. */
   tts?: (text: string) => Promise<{ blob: Blob; words: TtsWord[] } | null>;
+  /** No sound at all: anchors are paced by the estimate, onStart fires at once. */
+  mute?: boolean;
 }
 
 // ---- external-audio queue: one clip at a time, in order; a takeover empties it ----
@@ -120,12 +124,16 @@ interface Playing {
 let playing: Playing | null = null;
 let queueTail: Promise<void> = Promise.resolve();
 let queueGeneration = 0;
+/** The silent (muted) sentence being paced right now, if any. */
+let pacing: { stop: () => void } | null = null;
 
-/** Stops every voice: the browser engine and any external clip, queued or playing. */
+/** Stops every voice: the browser engine, any external clip (queued or playing), and
+ *  a muted sentence being paced. */
 export function stopAllSpeech(): void {
   queueGeneration++;
   queueTail = Promise.resolve();
   if (playing) playing.stop();
+  if (pacing) pacing.stop();
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
 }
 
@@ -141,6 +149,7 @@ export async function speak(
   isCanceled: () => boolean = () => false,
   isFast: () => boolean = () => false,
 ): Promise<void> {
+  if (opts.mute) return speakSilently(parsed, handlers, opts, isCanceled, isFast);
   if (opts.tts && parsed.text.trim()) {
     // Synthesize right away (the network round trip overlaps whatever is still
     // playing), then take a slot in the playback queue.
@@ -256,11 +265,77 @@ async function playClip(
         estimateFromDuration(audio.duration);
         raf = requestAnimationFrame(tick);
       };
+      handlers.onStart?.();
       audio.play().catch(() => end());
     });
   } finally {
     release();
   }
+}
+
+/** Mute: no engine; the words are paced by the estimate so anchored steps still happen,
+ *  one sentence at a time through the same queue as the audio clips (so bubbles come
+ *  one after another, not all at once). */
+async function speakSilently(
+  parsed: ParsedSay,
+  handlers: SpeakHandlers,
+  opts: SpeakOptions,
+  isCanceled: () => boolean,
+  isFast: () => boolean,
+): Promise<void> {
+  if (opts.takeover) stopAllSpeech();
+  const gen = queueGeneration;
+  const mySlot = queueTail;
+  let release!: () => void;
+  queueTail = new Promise<void>((r) => (release = r));
+  try {
+    await mySlot;
+    if (gen !== queueGeneration || isCanceled()) return;
+    await paceSilently(parsed, handlers, opts, isCanceled, isFast);
+  } finally {
+    release();
+  }
+}
+
+function paceSilently(
+  parsed: ParsedSay,
+  handlers: SpeakHandlers,
+  opts: SpeakOptions,
+  isCanceled: () => boolean,
+  isFast: () => boolean,
+): Promise<void> {
+  const cps = opts.estimatedCharsPerSec ?? 15;
+  const { starts, ends } = anchorTables(parsed);
+  let reached = -1;
+  const reach = (i: number) => {
+    for (let w = reached + 1; w <= i && w < parsed.words.length; w++) {
+      if (w > 0) for (const s of ends.get(w - 1) ?? []) handlers.onSpanEnd?.(s);
+      handlers.onWord?.(w);
+      for (const s of starts.get(w) ?? []) handlers.onSpanStart?.(s);
+      reached = w;
+    }
+  };
+  return new Promise((resolve) => {
+    let done = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const end = () => {
+      if (done) return;
+      done = true;
+      timers.forEach((t) => clearTimeout(t));
+      clearInterval(poll);
+      if (pacing && pacing.stop === end) pacing = null;
+      reach(parsed.words.length - 1);
+      if (reached >= 0 && reached < parsed.words.length) for (const s of ends.get(reached) ?? []) handlers.onSpanEnd?.(s);
+      resolve();
+    };
+    pacing = { stop: end };
+    handlers.onStart?.();
+    for (let i = 0; i < parsed.words.length; i++) timers.push(setTimeout(() => reach(i), (parsed.words[i].start / cps) * 1000));
+    timers.push(setTimeout(end, (parsed.text.length / cps) * 1000 + 50));
+    const poll = setInterval(() => {
+      if (isCanceled() || isFast()) end();
+    }, 50);
+  });
 }
 
 function speakWithBrowser(
@@ -318,6 +393,7 @@ function speakWithBrowser(
     };
     const synth = typeof speechSynthesis !== 'undefined' ? speechSynthesis : null;
     if (!synth || !parsed.text.trim()) {
+      handlers.onStart?.();
       schedule();
       timers.push(setTimeout(end, (parsed.text.length / cps) * 1000 + 50));
       const fastPoll = setInterval(() => {
@@ -335,7 +411,10 @@ function speakWithBrowser(
       const v = synth.getVoices().find((v) => v.name === opts.voiceName);
       if (v) u.voice = v;
     }
-    u.onstart = () => schedule();
+    u.onstart = () => {
+      handlers.onStart?.();
+      schedule();
+    };
     u.onboundary = (ev) => {
       if (ev.name && ev.name !== 'word') return;
       sawBoundary = true;

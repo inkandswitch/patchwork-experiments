@@ -13,7 +13,7 @@ import { SyntheticInput, sleep, type Modifiers } from './events';
 import type { Stroke } from './ink';
 import type { InkOverlay } from './overlay';
 import { parseAnchors, speak, stopAllSpeech, type SpeakOptions } from './say';
-import { synthesize } from './tts';
+import { getVoiceMode, synthesize } from './tts';
 import { compositeSnapshot, imageScale, type Snapshot } from './snapshot';
 
 export type Step =
@@ -110,7 +110,23 @@ export class Executor {
   penStyle: PenStyle = 'crisp';
   /** Something the user should know (e.g. the voice fell back); wired to the transcript. */
   onNotice: ((text: string) => void) | null = null;
-  speakOptions: SpeakOptions = { tts: (text) => synthesize(text, (t) => this.onNotice?.(t)) };
+  speakOptions: SpeakOptions = {};
+
+  /** Speech options for right now: the voice mode is read per sentence. */
+  private voiceOptions(extra: Partial<SpeakOptions> = {}): SpeakOptions {
+    const mode = getVoiceMode();
+    return {
+      ...this.speakOptions,
+      ...extra,
+      mute: mode === 'mute',
+      tts: mode === 'elevenlabs' ? (text) => synthesize(text, (t) => this.onNotice?.(t)) : undefined,
+    };
+  }
+
+  /** With a voice on, speech is heard, not read: bubbles for it only when muted. */
+  private speechBubbles(): boolean {
+    return getVoiceMode() === 'mute';
+  }
   private readonly input: SyntheticInput;
   private canceled = false;
   private running = 0;
@@ -172,12 +188,26 @@ export class Executor {
     const parsed = parseAnchors(text);
     if (!parsed.text.trim()) return;
     const id = `narr${++this.bubbleSeq}`;
-    this.overlay.showBubble({ id, kind: 'speech', text: parsed.text, at: null });
+    let shown = false;
     try {
       // Queued, never a takeover: narration plays back to back while the model thinks.
-      await speak(parsed, {}, { ...this.speakOptions, takeover: false }, () => this.canceled, () => this.fastForward);
+      // The bubble (muted only) appears when this sentence actually starts.
+      await speak(
+        parsed,
+        {
+          onStart: () => {
+            if (this.speechBubbles()) {
+              shown = true;
+              this.overlay.showBubble({ id, kind: 'speech', text: parsed.text, at: null });
+            }
+          },
+        },
+        this.voiceOptions({ takeover: false }),
+        () => this.canceled,
+        () => this.fastForward,
+      );
     } finally {
-      window.setTimeout(() => this.overlay.hideBubble(id), 2000);
+      if (shown) window.setTimeout(() => this.overlay.hideBubble(id), 2000);
     }
   }
 
@@ -342,13 +372,19 @@ export class Executor {
     results: StepResult[],
   ): Promise<unknown> {
     const parsed = parseAnchors(step.text);
-    const bubbleId = step.bubble ? `say${++this.bubbleSeq}` : null;
-    if (bubbleId) this.overlay.showBubble({ id: bubbleId, kind: 'speech', text: parsed.text, at: null });
+    const bubbleId = `say${++this.bubbleSeq}`;
+    let shown = false;
     const pending: Promise<void>[] = [];
     const cps = ctx.speakOpts.estimatedCharsPerSec ?? 15;
     await speak(
       parsed,
       {
+        onStart: () => {
+          if (this.speechBubbles()) {
+            shown = true;
+            this.overlay.showBubble({ id: bubbleId, kind: 'speech', text: parsed.text, at: null });
+          }
+        },
         onSpanStart: (span) => {
           const steps = step.anchors?.[span.id];
           if (!steps) return;
@@ -357,12 +393,12 @@ export class Executor {
         },
       },
       // A say step takes the voice over: its anchors must line up with its actions.
-      { ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate, takeover: true },
+      this.voiceOptions({ ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate, takeover: true }),
       () => this.canceled,
       () => this.fastForward,
     );
     await Promise.all(pending);
-    if (bubbleId) window.setTimeout(() => this.overlay.hideBubble(bubbleId), 2000);
+    if (shown) window.setTimeout(() => this.overlay.hideBubble(bubbleId), 2000);
     return parsed.text;
   }
 }

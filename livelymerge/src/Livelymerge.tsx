@@ -442,7 +442,12 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
       <AutomergeDocStats handle={docHandle} />
 
       {!drawerInDom && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center pb-2">
+        <div
+          className="pointer-events-none absolute left-0 bottom-0 z-10 flex justify-center pb-2"
+          // The Talk & Draw drawer (src/assist/ui.ts) sets this variable to its width while
+          // open, so the Workspace button stays centered in the space left of it.
+          style={{ right: 'var(--lm-assist-drawer-w, 0px)' }}
+        >
           <div className="pointer-events-auto flex items-center gap-2">
             <button
               type="button"
@@ -459,8 +464,10 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
 
       {drawerInDom && (
         <div
-          className="absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
+          className="absolute left-0 bottom-0 z-20 flex flex-col overflow-hidden border-t border-base-300 bg-base-200 shadow-[0_-4px_24px_rgba(0,0,0,0.08)]"
           style={{
+            // Ends where the Talk & Draw drawer starts (see the variable above).
+            right: 'var(--lm-assist-drawer-w, 0px)',
             height: drawerShellHeight,
             transition: dragging ? 'none' : 'height 0.32s cubic-bezier(0.32, 0.72, 0, 1)',
           }}

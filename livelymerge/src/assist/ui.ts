@@ -34,7 +34,14 @@ export interface UiHooks {
   voice: {
     enabled(): boolean;
     setEnabled(on: boolean): void;
+    modes: string[];
+    hasKey(): boolean;
+    /** Ask for the key only if there is none. */
+    ensureKey(): void;
+    getMode(): string;
+    setMode(m: string): void;
     status(): string;
+    statusDetail(): { summary: string; detail: string | null; kind: 'ok' | 'note' | 'off' };
     getVoiceName(): string;
     setVoiceName(name: string | null): void;
     models: string[];
@@ -114,8 +121,16 @@ const CSS = `
 .lm-assist-drawer .sec .tog::before{content:'▾ ';color:#999}
 .lm-assist-drawer .sec.closed .tog::before{content:'▸ '}
 .lm-assist-drawer .row input[type=text]{font:12px system-ui,sans-serif;padding:2px 4px;width:90px}
-.lm-assist-drawer .vstatus{color:#999;font-size:11px;line-height:14px;max-height:28px;overflow:auto;padding:0 10px 6px;
-  user-select:text;-webkit-user-select:text;border-bottom:1px solid #eee}
+.lm-assist-drawer .vstatus{margin:4px 10px 8px;border-radius:8px;padding:5px 8px;font-size:11px;line-height:15px;
+  background:#f5f5f5;border:1px solid #e5e5e5;color:#555;user-select:text;-webkit-user-select:text}
+.lm-assist-drawer .vstatus.note{background:#fff2e8;border-color:#ffd2b3}
+.lm-assist-drawer .vstatus summary{cursor:pointer;list-style:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm-assist-drawer .vstatus summary::-webkit-details-marker{display:none}
+.lm-assist-drawer .vstatus summary::before{content:'▸ ';color:#999}
+.lm-assist-drawer .vstatus[open] summary::before{content:'▾ '}
+.lm-assist-drawer .vstatus summary.plain{cursor:default}
+.lm-assist-drawer .vstatus summary.plain::before{content:''}
+.lm-assist-drawer .vstatus .body{margin-top:4px;overflow-wrap:anywhere;color:#444}
 .lm-assist-drawer .row input.num{font:12px system-ui,sans-serif;padding:2px 4px;width:44px}
 .lm-assist-drawer .row .lbl{color:#666}
 .lm-assist-drawer textarea{margin:4px 10px 8px;height:170px;resize:vertical;font:11px ui-monospace,Menlo,monospace;
@@ -146,9 +161,11 @@ export class AssistUI {
   private readonly modelSelect: HTMLSelectElement;
   private readonly turnsInput: HTMLInputElement;
   private readonly effortSelect: HTMLSelectElement;
-  private readonly voiceOn: HTMLInputElement;
+  private readonly voiceMode: HTMLSelectElement;
   private readonly voiceName: HTMLInputElement;
-  private readonly voiceStatus: HTMLElement;
+  private readonly voiceStatus: HTMLDetailsElement;
+  private readonly voiceStatusSummary: HTMLElement;
+  private readonly voiceStatusBody: HTMLElement;
   private readonly voiceModel: HTMLSelectElement;
   private settingInputs: Map<string, HTMLInputElement> = new Map();
   private readonly notesEl: HTMLDivElement;
@@ -279,18 +296,22 @@ export class AssistUI {
     const vl = document.createElement('label');
     vl.textContent = 'Voice';
     voiceRow.appendChild(vl);
-    this.voiceOn = document.createElement('input');
-    this.voiceOn.type = 'checkbox';
-    this.voiceOn.title = 'Use ElevenLabs for speech (falls back to the browser voice on failure)';
-    this.voiceOn.addEventListener('change', () => {
-      hooks.voice.setEnabled(this.voiceOn.checked);
-      if (this.voiceOn.checked) hooks.voice.askKey();
+    this.voiceMode = document.createElement('select');
+    this.voiceMode.style.flex = '0 0 auto';
+    this.voiceMode.title = 'ElevenLabs (browser voice as fallback), the browser voice, or mute — muted, speech shows as bubbles';
+    const modeLabels: Record<string, string> = { elevenlabs: 'ElevenLabs', browser: 'browser voice', mute: 'mute (bubbles)' };
+    for (const m of hooks.voice.modes) {
+      const o = document.createElement('option');
+      o.value = m;
+      o.textContent = modeLabels[m] ?? m;
+      this.voiceMode.appendChild(o);
+    }
+    this.voiceMode.addEventListener('change', () => {
+      hooks.voice.setMode(this.voiceMode.value);
+      if (this.voiceMode.value === 'elevenlabs' && !hooks.voice.hasKey()) hooks.voice.ensureKey();
       this.refresh();
     });
-    voiceRow.appendChild(this.voiceOn);
-    const von = document.createElement('span');
-    von.textContent = 'ElevenLabs';
-    voiceRow.appendChild(von);
+    voiceRow.appendChild(this.voiceMode);
     this.voiceName = document.createElement('input');
     this.voiceName.type = 'text';
     this.voiceName.placeholder = 'voice name or ID';
@@ -342,8 +363,7 @@ export class AssistUI {
       inp.min = '0';
       inp.max = '1';
       inp.step = '0.05';
-      inp.placeholder = '–';
-      inp.title = `${label}, 0 to 1; blank uses the voice's default`;
+      inp.title = `${label}, 0 to 1 (website defaults: stability 0.5, similarity 0.75, style 0); blank restores the default`;
       inp.addEventListener('change', () => {
         const v: Record<string, number | undefined> = {};
         for (const [k] of fields) {
@@ -355,10 +375,25 @@ export class AssistUI {
       inputs.set(key, inp);
       setRow.appendChild(inp);
     }
+    setRow.appendChild(
+      button('Restore defaults', () => {
+        hooks.voice.setSettings({});
+        this.refresh();
+      }),
+    );
     d.appendChild(setRow);
     this.settingInputs = inputs;
-    this.voiceStatus = el('div', 'vstatus');
+    // The voice's state: one line, expandable when there is something to explain.
+    this.voiceStatus = document.createElement('details');
+    this.voiceStatus.className = 'vstatus';
+    this.voiceStatusSummary = document.createElement('summary');
+    this.voiceStatus.appendChild(this.voiceStatusSummary);
+    this.voiceStatusBody = el('div', 'body');
+    this.voiceStatus.appendChild(this.voiceStatusBody);
     d.appendChild(this.voiceStatus);
+    this.voiceStatusSummary.addEventListener('click', (e) => {
+      if (this.voiceStatusSummary.classList.contains('plain')) e.preventDefault();
+    });
 
     const ps = el('div', 'sec');
     const pl = document.createElement('span');
@@ -423,13 +458,19 @@ export class AssistUI {
     this.updatePromptNote();
     this.turnsInput.value = String(this.hooks.getMaxTurns());
     this.effortSelect.value = this.hooks.getEffort();
-    this.voiceOn.checked = this.hooks.voice.enabled();
+    this.voiceMode.value = this.hooks.voice.getMode();
     if (document.activeElement !== this.voiceName) this.voiceName.value = this.hooks.voice.getVoiceName();
     this.voiceModel.value = this.hooks.voice.getModel();
     const st = this.hooks.voice.getSettings() as Record<string, number | undefined>;
-    for (const [k, inp] of this.settingInputs) if (document.activeElement !== inp) inp.value = st[k] == null ? '' : String(st[k]);
-    this.voiceStatus.textContent = this.hooks.voice.status();
-    this.voiceStatus.title = this.voiceStatus.textContent ?? '';
+    for (const [k, inp] of this.settingInputs) if (document.activeElement !== inp) inp.value = String(st[k] ?? '');
+    const vs = this.hooks.voice.statusDetail();
+    this.voiceStatusSummary.textContent = vs.summary;
+    this.voiceStatusSummary.title = vs.detail ?? vs.summary;
+    this.voiceStatusSummary.classList.toggle('plain', !vs.detail);
+    this.voiceStatusBody.textContent = vs.detail ?? '';
+    this.voiceStatusBody.hidden = !vs.detail;
+    if (!vs.detail) this.voiceStatus.open = false;
+    this.voiceStatus.classList.toggle('note', vs.kind === 'note');
     this.renderNotes();
   }
 
@@ -495,6 +536,9 @@ export class AssistUI {
     const show = open ?? this.drawer.hidden;
     this.drawer.hidden = !show;
     this.badge.classList.toggle('drawer-open', show);
+    // Tell the rest of the tool (the Workspace drawer and button) how much of the
+    // right side is ours: the same width rule as the drawer's CSS, so it tracks resizes.
+    this.container.style.setProperty('--lm-assist-drawer-w', show ? 'max(33.333%, 340px)' : '0px');
     // Keep the badge (and the skip button) just left of the drawer, whatever width it got.
     this.placeButtons();
     if (show) this.refresh();
@@ -603,6 +647,7 @@ export class AssistUI {
 
   dispose(): void {
     if (this.saveTimer != null) clearTimeout(this.saveTimer);
+    this.container.style.removeProperty('--lm-assist-drawer-w');
     this.badge.remove();
     this.ff.remove();
     this.drawer.remove();
