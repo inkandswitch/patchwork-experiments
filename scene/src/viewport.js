@@ -387,7 +387,11 @@ export class Viewport {
 
     const tc0 = performance.now();
     try {
-      this.renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
+      // Logarithmic depth: precision in proportion to distance, so layers a
+      // fraction of a millimetre apart (a card's face on its body) don't
+      // fight, at any zoom. A plain depth buffer with this near plane
+      // resolves only about 0.1 mm at a metre.
+      this.renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false, logarithmicDepthBuffer: true });
     } catch (err) {
       this.error = err;
       return;
