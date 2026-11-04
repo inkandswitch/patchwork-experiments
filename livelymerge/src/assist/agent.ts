@@ -21,13 +21,17 @@ export const DEFAULT_MODEL = 'claude-opus-5-5';
 /** What the drawer offers. */
 export const MODELS = ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'];
 export const MAX_TURNS_STORAGE = 'talkAndDraw.maxTurns';
+export const EFFORT_STORAGE = 'talkAndDraw.effort';
+export type Effort = 'low' | 'medium' | 'high';
+export const EFFORTS: Effort[] = ['low', 'medium', 'high'];
+export const DEFAULT_EFFORT: Effort = 'low';
 export const DEFAULT_MAX_TURNS = 24;
 
 /** What the agent reports as it goes (console + drawer transcript). */
 export type AgentEvent =
   | { kind: 'start'; model: string; message: TalkAndDrawMessage; notes: Note[] }
   | { kind: 'request'; turn: number }
-  | { kind: 'response'; turn: number; stopReason: string | null; inputTokens: number; outputTokens: number; servedBy?: string }
+  | { kind: 'response'; turn: number; stopReason: string | null; inputTokens: number; outputTokens: number; cachedTokens: number; ms: number; servedBy?: string }
   | { kind: 'text'; text: string }
   | { kind: 'tool_use'; name: string; input: unknown }
   | { kind: 'tool_result'; name: string; text: string; images: string[]; isError?: boolean }
@@ -107,6 +111,16 @@ export function setMaxTurns(n: number | null): void {
   else storage()?.removeItem(MAX_TURNS_STORAGE);
 }
 
+export function getEffort(): Effort {
+  const e = storage()?.getItem(EFFORT_STORAGE) as Effort | null;
+  return e && EFFORTS.includes(e) ? e : DEFAULT_EFFORT;
+}
+
+export function setEffort(e: Effort | null): void {
+  if (e && EFFORTS.includes(e) && e !== DEFAULT_EFFORT) storage()?.setItem(EFFORT_STORAGE, e);
+  else storage()?.removeItem(EFFORT_STORAGE);
+}
+
 export function hasApiKey(): boolean {
   return !!storage()?.getItem(API_KEY_STORAGE);
 }
@@ -140,7 +154,7 @@ export function buildUserContent(m: TalkAndDrawMessage, notes: readonly Note[] =
 }
 
 export interface AgentOptions {
-  effort?: 'low' | 'medium' | 'high';
+  effort?: Effort;
 }
 
 export class Agent {
@@ -216,6 +230,7 @@ export class Agent {
         status('Talk & Draw — thinking…');
         this.emit({ kind: 'request', turn });
         let response: Anthropic.Beta.BetaMessage;
+        const tCall = performance.now();
         try {
           const haiku = model.startsWith('claude-haiku');
           const betas: string[] = [];
@@ -230,10 +245,15 @@ export class Agent {
           response = await client.beta.messages.create({
             model,
             max_tokens: 8000,
+            // Cache the conversation prefix (system, tools, every earlier turn with its
+            // images): each turn then re-reads it at a tenth of the cost, faster.
+            cache_control: { type: 'ephemeral' },
             system,
             tools: TOOLS,
             messages,
-            output_config: { effort: opts.effort ?? 'medium' },
+            // Low effort by default: this is interactive, and lower effort means fewer,
+            // more consolidated tool calls and shorter pauses between them.
+            output_config: { effort: opts.effort ?? getEffort() },
             ...thinking,
             ...fallback,
             ...(betas.length ? { betas } : {}),
@@ -262,8 +282,10 @@ export class Agent {
           return;
         }
         const servedBy = response.model !== model ? response.model : undefined;
+        const ms = performance.now() - tCall;
+        const cachedTokens = response.usage.cache_read_input_tokens ?? 0;
         console.log(
-          `turn ${turn + 1}: stop=${response.stop_reason}, in=${response.usage.input_tokens} out=${response.usage.output_tokens}` +
+          `turn ${turn + 1}: stop=${response.stop_reason}, in=${response.usage.input_tokens} (+${cachedTokens} cached) out=${response.usage.output_tokens}, ${(ms / 1000).toFixed(1)}s` +
             (servedBy ? ` (served by ${servedBy})` : ''),
         );
         this.emit({
@@ -272,6 +294,8 @@ export class Agent {
           stopReason: response.stop_reason,
           inputTokens: response.usage.input_tokens,
           outputTokens: response.usage.output_tokens,
+          cachedTokens,
+          ms,
           servedBy,
         });
         const texts: string[] = [];
@@ -314,9 +338,10 @@ export class Agent {
           }
           return;
         }
-        // Text alongside tool calls is narration: speak it while the tools run.
+        // Text alongside tool calls is narration: speak it while the tools run — and
+        // never wait for it to finish; it keeps playing while the model thinks next.
         const narration = texts.join(' ').trim();
-        const narrating = narration ? this.executor.narrate(narration).catch(() => {}) : Promise.resolve();
+        if (narration) void this.executor.narrate(narration).catch(() => {});
         const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
         for (const tu of toolUses) {
           if (this.canceled) {
@@ -325,7 +350,6 @@ export class Agent {
           }
           results.push(await this.runTool(tu, scale, status));
         }
-        await narrating;
         messages.push({ role: 'user', content: results });
       }
       if (this.canceled) reason = 'canceled';
@@ -344,8 +368,9 @@ export class Agent {
     }
   }
 
+  /** Spoken after anything still queued (never cutting a narration short). */
   private async sayText(text: string): Promise<void> {
-    await this.executor.perform([{ type: 'say', text, bubble: true }]);
+    await this.executor.narrate(text);
   }
 
   private async runTool(
@@ -362,10 +387,11 @@ export class Agent {
           // A narration field is spoken as the steps start (it takes the voice over
           // from any turn-level progress update still playing).
           const narration = typeof input.narration === 'string' ? input.narration.trim() : '';
-          const narrating = narration ? this.executor.narrate(narration).catch(() => {}) : Promise.resolve();
-          if (narration) this.emit({ kind: 'text', text: narration });
+          if (narration) {
+            this.emit({ kind: 'text', text: narration });
+            void this.executor.narrate(narration).catch(() => {});
+          }
           const r = await this.executor.perform(steps, { scale });
-          await narrating;
           const summary = r.steps.map((s) => ({
             index: s.index,
             type: s.type,

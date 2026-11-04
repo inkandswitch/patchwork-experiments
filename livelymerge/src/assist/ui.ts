@@ -26,6 +26,9 @@ export interface UiHooks {
   fastForward(): void;
   getMaxTurns(): number;
   setMaxTurns(n: number | null): void;
+  efforts: string[];
+  getEffort(): string;
+  setEffort(e: string | null): void;
   getNotes(): Note[];
   forgetNote(topic: string): void;
 }
@@ -102,6 +105,7 @@ export class AssistUI {
   private readonly keyNote: HTMLElement;
   private readonly modelSelect: HTMLSelectElement;
   private readonly turnsInput: HTMLInputElement;
+  private readonly effortSelect: HTMLSelectElement;
   private readonly notesEl: HTMLDivElement;
   private saveTimer: number | null = null;
 
@@ -166,6 +170,25 @@ export class AssistUI {
     this.modelSelect.addEventListener('change', () => hooks.setModel(this.modelSelect.value));
     modelRow.appendChild(this.modelSelect);
     d.appendChild(modelRow);
+
+    const effortRow = el('div', 'row');
+    const el0 = document.createElement('label');
+    el0.textContent = 'Effort';
+    effortRow.appendChild(el0);
+    this.effortSelect = document.createElement('select');
+    for (const e of hooks.efforts) {
+      const o = document.createElement('option');
+      o.value = e;
+      o.textContent = e;
+      this.effortSelect.appendChild(o);
+    }
+    this.effortSelect.addEventListener('change', () => hooks.setEffort(this.effortSelect.value));
+    effortRow.appendChild(this.effortSelect);
+    const enote = el('span', '');
+    enote.style.color = '#999';
+    enote.textContent = 'low = quickest replies';
+    effortRow.appendChild(enote);
+    d.appendChild(effortRow);
 
     const turnsRow = el('div', 'row');
     const tl0 = document.createElement('label');
@@ -263,6 +286,7 @@ export class AssistUI {
     if (document.activeElement !== this.promptArea) this.promptArea.value = this.hooks.getSystemPrompt();
     this.updatePromptNote();
     this.turnsInput.value = String(this.hooks.getMaxTurns());
+    this.effortSelect.value = this.hooks.getEffort();
     this.renderNotes();
   }
 
@@ -367,7 +391,8 @@ export class AssistUI {
         break;
       case 'response':
         this.meta(
-          `← ${e.stopReason ?? '?'} · ${e.inputTokens} in / ${e.outputTokens} out` + (e.servedBy ? ` · served by ${e.servedBy}` : ''),
+          `← ${e.stopReason ?? '?'} · ${(e.ms / 1000).toFixed(1)}s · ${e.inputTokens} in (+${e.cachedTokens} cached) / ${e.outputTokens} out` +
+            (e.servedBy ? ` · served by ${e.servedBy}` : ''),
         );
         break;
       case 'text': {

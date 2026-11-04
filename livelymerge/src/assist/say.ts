@@ -77,6 +77,9 @@ export interface SpeakOptions {
   voiceName?: string;
   /** chars/s used to estimate word timing when the engine gives no boundary events */
   estimatedCharsPerSec?: number;
+  /** Cut whatever is speaking or queued and start now (say steps, whose anchors must
+   *  line up with actions). Default: queue behind what is already speaking. */
+  takeover?: boolean;
 }
 
 /**
@@ -165,15 +168,31 @@ export function speak(
     };
     u.onend = end;
     u.onerror = end;
+    // The engine does not always report an utterance that was cut (synth.cancel()
+    // from a takeover) or one that was still queued when it happened: no onend, no
+    // onerror. So also finish when the engine has been silent for a moment.
+    let quietMs = 0;
     const poll = setInterval(() => {
+      if (done) {
+        clearInterval(poll);
+        return;
+      }
       if (isCanceled() || isFast()) {
         // Canceled: stop. Fast-forward: stop talking, but still fire what was anchored.
         synth.cancel();
         clearInterval(poll);
         end();
-      } else if (done) clearInterval(poll);
+        return;
+      }
+      if (!synth.speaking && !synth.pending) {
+        quietMs += 50;
+        if (quietMs >= 300) {
+          clearInterval(poll);
+          end();
+        }
+      } else quietMs = 0;
     }, 50);
-    synth.cancel(); // drop anything still queued from a canceled performance
+    if (opts.takeover) synth.cancel();
     synth.speak(u);
   });
 }

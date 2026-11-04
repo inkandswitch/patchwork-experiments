@@ -56,8 +56,8 @@ export interface PerformOptions {
 
 const CURSOR_HIDE_MS = 1500;
 /** settle(): give up waiting for the canvas to stop changing after this long. */
-const SETTLE_MAX_MS = 500;
-const SETTLE_POLL_MS = 50;
+const SETTLE_MAX_MS = 250;
+const SETTLE_POLL_MS = 40;
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
 
@@ -132,9 +132,9 @@ export class Executor {
 
   /** Stops the current performance: speech, animations, and any held mouse button. */
   cancel(): void {
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     if (!this.running) return;
     this.canceled = true;
-    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
     this.input.releaseAll();
   }
 
@@ -171,7 +171,8 @@ export class Executor {
     const id = `narr${++this.bubbleSeq}`;
     this.overlay.showBubble({ id, kind: 'speech', text: parsed.text, at: null });
     try {
-      await speak(parsed, {}, this.speakOptions, () => this.canceled, () => this.fastForward);
+      // Queued, never a takeover: narration plays back to back while the model thinks.
+      await speak(parsed, {}, { ...this.speakOptions, takeover: false }, () => this.canceled, () => this.fastForward);
     } finally {
       window.setTimeout(() => this.overlay.hideBubble(id), 2000);
     }
@@ -352,7 +353,8 @@ export class Executor {
           pending.push(this.runSteps(steps, { ...ctx, hintMs }, results));
         },
       },
-      { ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate },
+      // A say step takes the voice over: its anchors must line up with its actions.
+      { ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate, takeover: true },
       () => this.canceled,
       () => this.fastForward,
     );

@@ -11,7 +11,7 @@ import { isEndHotkey, isStartHotkey } from './hotkey';
 import type { InkPoint, Stroke } from './ink';
 import { dumpToConsole, summarizeStroke, type AudioInfo, type TalkAndDrawMessage } from './message';
 import { formatTimeline } from './message';
-import { Agent, MODELS, clearApiKey, getApiKey, getMaxTurns, getModel, getSystemPrompt, hasApiKey, setMaxTurns, setModel, setSystemPrompt } from './agent';
+import { Agent, EFFORTS, MODELS, clearApiKey, getApiKey, getEffort, getMaxTurns, getModel, getSystemPrompt, hasApiKey, setEffort, setMaxTurns, setModel, setSystemPrompt, type Effort } from './agent';
 import { forgetNote, readNotes, type Note } from './notes';
 import { Executor, type PerformOptions, type PerformResult, type Step } from './executor';
 import { InkOverlay } from './overlay';
@@ -95,6 +95,9 @@ export function startAssist(lmCanvas: HTMLCanvasElement): AssistHandle {
     },
     getMaxTurns,
     setMaxTurns,
+    efforts: EFFORTS,
+    getEffort,
+    setEffort: (e) => setEffort(e as Effort | null),
     getNotes: readNotes,
     forgetNote: (topic) => void forgetNote(topic),
   });

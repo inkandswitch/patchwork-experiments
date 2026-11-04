@@ -84,8 +84,10 @@ before you finish, not only when asked.
   produce the same events a human would, with sensible timing (a drag is mouse_move,
   mouse_down, mouse_move with a duration, mouse_up; a cmd-click is key_down "Meta",
   mouse_down, mouse_up, key_up "Meta" — the held modifier rides on the pointer events).
-  Hold a button with wait if the UI needs a long press. Look at the screenshot after
-  acting to confirm it worked, and adapt.
+  Hold a button with wait if the UI needs a long press. Otherwise no pauses: do not add
+  wait steps for effect or "to let things settle" — the host already waits for the UI
+  before every screenshot. Look at the screenshot after acting to confirm it worked, and
+  adapt.
 - Talk WHILE you work, not after. Every perform has a \`narration\` — one spoken sentence
   as it starts — and for anything longer, \`say\` steps inside the perform, anchored to the
   words ("I'll {s1}open its halo{/} and {s2}turn it{/}"). The short notes you write between
