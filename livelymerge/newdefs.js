@@ -599,7 +599,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     ),
   );
 
-  Lively.showWorldMenuAt(pt(20, 40));
+  Lively.showWorldMenuAt(pt(130, 40));
 
   testTransforms();
 
@@ -13225,7 +13225,7 @@ class WorldMorph extends Morph {
   showWorldMenuAt(pos, optsIfAny) {
     /**
      * World menu with label+action items (editable live via findItem / addItem* / removeItem).
-     * Answers the menu morph — e.g. wm = Lively.showWorldMenuAt(pt(20, 40))
+     * Answers the menu morph — e.g. wm = Lively.showWorldMenuAt(pt(130, 40))
      *   wm.removeItem(wm.findItem('todo'))
      *   wm.addItemBefore('transcript', 'Quick Brown Fox', () => openQBF())
      */

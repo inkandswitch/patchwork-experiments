@@ -336,9 +336,12 @@ export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl
         if (firstInit && typeof g?.initUI === 'function') {
           g.initUI();
         }
-        if (firstInit && typeof g?.populateLively === 'function') {
+        // Populate only a document that has no world yet (a fresh Kit/Fabrik doc, whose
+        // boot source drops newdefs' trailing init()). firstInit is per page load, so
+        // without the Lively check a reload would rebuild the world and lose every morph.
+        if (firstInit && !g?.Lively && typeof g?.populateLively === 'function') {
           g.populateLively();
-        } else if (g?.Lively && g.Lively.isFabrikWorld && typeof g?.openFabrik === 'function') {
+        } else if (!firstInit && g?.Lively && g.Lively.isFabrikWorld && typeof g?.openFabrik === 'function') {
           g.openFabrik();
         } else if (typeof g?.fabrikOfferOpenMenu === 'function') {
           g.fabrikOfferOpenMenu();
