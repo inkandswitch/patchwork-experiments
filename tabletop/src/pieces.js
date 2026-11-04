@@ -7,7 +7,8 @@ import { encodeGLB } from "./glb.js";
 import { meshesBounds, pieceMeshes } from "./shapes.js";
 
 // bump when the way parts become geometry changes, so existing GLBs are redrawn
-const GEOMETRY_VERSION = 1;
+// 2: snap points written as the scene's connectors (redraws older pieces once)
+const GEOMETRY_VERSION = 2;
 
 /** Everything a piece's GLB is made from, as one string. */
 export function glbKey(piece) {
@@ -19,11 +20,20 @@ export function glbKey(piece) {
   });
 }
 
-/** A piece → { glb, bounds }. Snap points go in the scene's `extras.snapPoints` (see scene/README). */
+/** A piece's snap points ([x, y, z] or { position, yaw }) as the scene's connectors: { position, rotation? }. */
+export function connectorsOf(points) {
+  return (points ?? []).map((p) => {
+    const position = [...(Array.isArray(p) ? p : p?.position ?? [0, 0, 0])].map(Number);
+    const yaw = Array.isArray(p) ? null : p?.yaw;
+    return yaw == null ? { position } : { position, rotation: [0, Number(yaw), 0] };
+  });
+}
+
+/** A piece → { glb, bounds }. Snap points go in as the scene's `extras.connectors` (see scene/README). */
 export function pieceGLB(piece) {
   const meshes = pieceMeshes(piece?.parts);
   const extras = {};
-  if (Array.isArray(piece?.snapPoints) && piece.snapPoints.length) extras.snapPoints = JSON.parse(JSON.stringify(piece.snapPoints));
+  if (Array.isArray(piece?.snapPoints) && piece.snapPoints.length) extras.connectors = connectorsOf(piece.snapPoints);
   if (Number(piece?.snapRadius) > 0) extras.snapRadius = Number(piece.snapRadius);
   const glb = encodeGLB({
     generator: "patchwork tabletop",
