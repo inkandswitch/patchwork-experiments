@@ -34,8 +34,36 @@ let voiceNote: string | null = null;
 /** A premade voice every key can use, for when the chosen one can't be looked up. */
 export const FALLBACK_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // "Rachel"
 
-/** Voices known by name, so the default needs no lookup (and no voices_read permission). */
-export const KNOWN_VOICES: Record<string, string> = { hope: 'tnSpp4vdxKPjI9w0GnoV' };
+/**
+ * Voices known by name, so no lookup (and no voices_read permission) is needed. The
+ * premade ones are usable on every plan; library voices such as "Hope" need a paid
+ * plan when used through the API.
+ */
+export const KNOWN_VOICES: Record<string, string> = {
+  hope: 'tnSpp4vdxKPjI9w0GnoV', // library voice
+  rachel: '21m00Tcm4TlvDq8ikWAM',
+  sarah: 'EXAVITQu4vr4xnSDxMaL',
+  laura: 'FGY2WhTYpPnrIDTdsKH5',
+  charlie: 'IKne3meq5aSn9XLyUdCD',
+  george: 'JBFqnCBsd6RMkjVDRZzb',
+  callum: 'N2lVS1w4EtoT3dr4eOWO',
+  river: 'SAz9YHcvj6GT2YYXdXww',
+  liam: 'TX3LPaxmHKxFdv7VOQHJ',
+  alice: 'Xb7hH8MSUJpSbSDYk0k2',
+  matilda: 'XrExE9yKIg1WjnnlVkGX',
+  will: 'bIHbv24MWmeRgasZH58o',
+  jessica: 'cgSgspJ2msm6clMCkdW9',
+  eric: 'cjVigY5qzO86Huf0OWal',
+  chris: 'iP95p4xoKVk53GoZ742B',
+  brian: 'nPczCjzI2devNBz1zQrb',
+  daniel: 'onwK4e9ZLuTAKqWW03F9',
+  lily: 'pFZP5JQG7iQjIQuC4Bku',
+  bill: 'pqHfZKP75CvOlQylNhV4',
+};
+/** The premade voice used when the chosen one is a library voice the plan can't use. */
+export const PREMADE_STANDIN = 'sarah';
+/** Set when the chosen voice was refused as a library voice; a premade one is used instead. */
+let voiceStandIn: string | null = null;
 
 /** ElevenLabs voice ids are 20 alphanumerics; the Voice field takes either a name or an id. */
 export function isVoiceId(s: string): boolean {
@@ -89,6 +117,7 @@ export function setVoiceName(name: string | null): void {
   else storage()?.removeItem(ELEVEN_VOICE_STORAGE);
   disabledReason = null;
   voiceNote = null;
+  voiceStandIn = null;
 }
 
 /** One line for the drawer: on/off, voice, and why it fell back if it did. */
@@ -109,6 +138,7 @@ function disable(reason: string, notify?: (text: string) => void): void {
 }
 
 async function resolveVoiceId(key: string, name: string): Promise<string | null> {
+  if (voiceStandIn) return voiceStandIn;
   if (isVoiceId(name)) return name.trim();
   const known = KNOWN_VOICES[name.trim().toLowerCase()];
   if (known) return known;
@@ -208,6 +238,15 @@ export async function synthesize(text: string, notify?: (text: string) => void):
     });
     if (!res.ok) {
       const detail = await errorDetail(res);
+      if (/library voice/i.test(detail) && !voiceStandIn) {
+        // The plan can't use this (library) voice through the API: speak with a
+        // premade one instead, say so once, and retry this sentence right away.
+        voiceStandIn = KNOWN_VOICES[PREMADE_STANDIN];
+        voiceNote = `"${getVoiceName()}" is a library voice your plan can't use via the API; speaking with the premade voice "${PREMADE_STANDIN}". Pick a premade voice (${Object.keys(KNOWN_VOICES).filter((n) => n !== 'hope').join(', ')}) or upgrade.`;
+        console.warn('Talk & Draw: ElevenLabs —', voiceNote);
+        notify?.(`ElevenLabs: ${voiceNote}`);
+        return synthesize(text, notify);
+      }
       // Quota, bad key, or rate limit: stop trying for this page load.
       if (res.status === 401 || res.status === 402 || res.status === 429 || /quota|credit|limit/i.test(detail)) {
         disable(`HTTP ${res.status} ${detail}`.trim(), notify);

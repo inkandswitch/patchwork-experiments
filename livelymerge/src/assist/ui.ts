@@ -284,7 +284,7 @@ export class AssistUI {
     this.voiceName = document.createElement('input');
     this.voiceName.type = 'text';
     this.voiceName.placeholder = 'voice name or ID';
-    this.voiceName.title = 'A voice in your ElevenLabs "My Voices", or a voice ID (works with keys that cannot list voices)';
+    this.voiceName.title = 'A premade ElevenLabs voice (rachel, sarah, laura, charlie, george, callum, river, liam, alice, matilda, will, jessica, eric, chris, brian, daniel, lily, bill), a voice in your My Voices, or a voice ID. Library voices like Hope need a paid plan.';
     this.voiceName.addEventListener('change', () => {
       hooks.voice.setVoiceName(this.voiceName.value);
       this.refresh();
