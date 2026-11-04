@@ -168,6 +168,11 @@ try {
   check("drawn into your tray, a face-down card lands face up", Math.abs((await T('rot("under")'))[2]) < 1e-3, await T('rot("under")'));
   check("and A sees it, B doesn't", (await look("a", "under")) === "face" && (await look("b", "under")) === "back", [await look("a", "under"), await look("b", "under")]);
 
+  // a group moves what's in it: the gizmo holds its pivot, and both pawns move with it (one change)
+  const gm = await T("moveGroup(0.1)");
+  check("a selected group gets the move gizmo, on its pivot", gm.held, gm);
+  check("moving the group moves both pawns by the same amount", gm.after.every((p, i) => Math.abs(p[0] - gm.before[i][0] - 0.1) < 1e-6 && Math.abs(p[2] - gm.before[i][2]) < 1e-6), gm);
+
   const shot = await send("Page.captureScreenshot", { format: "png" });
   report.screenshot = join(profile, "..", "scene-hand-probe.png");
   writeFileSync(report.screenshot, Buffer.from(shot.data, "base64"));

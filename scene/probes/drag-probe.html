@@ -46,15 +46,15 @@ try {
   (await getRegistry("patchwork:datatype").load("scene")).module.init(sceneDoc);
   const scene = repo.add({ "@patchwork": { type: "scene" }, ...sceneDoc });
 
-  // The stage: a group G (at x=1, scaled 2) holding an empty group G2, and
-  // three loose leaves after it. Leaves are hidden so nothing needs loading.
+  // The stage: a group G holding an empty group G2, and three loose leaves
+  // after it. Leaves are hidden so nothing needs loading.
   const T = (x = 0, scale = 1) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale });
   const base = { sourceUrl: null, providerId: null, renderUrl: null, visible: true, color: null, opacity: 1, wireframe: false };
   scene.change((d) => {
-    d.objects.G = { ...base, kind: "group", name: "G", parent: null, transform: T(1, 2) };
-    d.objects.G2 = { ...base, kind: "group", name: "G2", parent: "G", transform: T() };
+    d.objects.G = { kind: "group", name: "G", group: null, visible: true, opacity: 1 };
+    d.objects.G2 = { kind: "group", name: "G2", group: "G", visible: true, opacity: 1 };
     for (const [id, x] of [["L1", 0], ["L2", 3], ["L3", 6]]) {
-      d.objects[id] = { ...base, kind: "object", name: id, providerId: "file-stl", visible: false, parent: null, transform: T(x) };
+      d.objects[id] = { ...base, kind: "object", name: id, providerId: "file-stl", visible: false, parent: null, group: null, transform: T(x) };
     }
     d.order = ["G", "G2", "L1", "L2", "L3"];
   });

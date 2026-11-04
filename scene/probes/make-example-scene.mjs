@@ -47,7 +47,9 @@ const groupIds = new Map() // "set\0A\0B" -> id
 let n = 0
 const nextId = (prefix) => `${prefix}${String(++n).padStart(4, "0")}`
 
-const base = (visible, parent, name) => ({
+// a group organises (no transform); every layer is filed in one, attached to nothing
+const groupOf = (visible, group, name) => ({ kind: "group", name, group, visible, opacity: 1 })
+const layerOf = (visible, group, name) => ({
   name,
   sourceUrl: null,
   providerId: null,
@@ -57,7 +59,8 @@ const base = (visible, parent, name) => ({
   opacity: 1,
   wireframe: false,
   transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
-  parent,
+  parent: null,
+  group,
 })
 
 /** The wrapper group for a set, when it has one. Made once, on first use. */
@@ -67,7 +70,7 @@ const wrapperFor = (set) => {
   if (!groupIds.has(key)) {
     const id = nextId("g")
     groupIds.set(key, id)
-    objects[id] = { kind: "group", ...base(set.visible, null, set.wrap) }
+    objects[id] = groupOf(set.visible, null, set.wrap)
     order.push(id)
   }
   return groupIds.get(key)
@@ -85,7 +88,7 @@ const groupFor = (set, parts) => {
       // Only the topmost group of a hidden set is hidden: hiding a group hides
       // everything below it, so marking the children too would be noise.
       const hideThis = i === 0 && !top ? set.visible : true
-      objects[id] = { kind: "group", ...base(hideThis, parent, parts[i]) }
+      objects[id] = groupOf(hideThis, parent, parts[i])
       order.push(id)
     }
     parent = groupIds.get(key)
@@ -102,7 +105,7 @@ for (const set of SETS) {
     const id = nextId("o")
     objects[id] = {
       kind: "object",
-      ...base(true, parent, name),
+      ...layerOf(true, parent, name),
       // What solander-probe.html rewrites into a file doc served from /geom/.
       sourceUrl: `pending:${encodeURIComponent(`glb:${set.key}/${file}`)}`,
       providerId: "file-glb",

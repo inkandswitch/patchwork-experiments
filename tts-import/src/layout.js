@@ -30,7 +30,6 @@ import { convertPosition, convertTransform, readTransform, ttsUp } from "./conve
 import { CARD, kindKey, kindOf } from "./kinds.js";
 import { walk } from "./tts.js";
 
-const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
 const r = (v, p = 5) => +Number(v).toFixed(p);
 
 /** The scene object's hidden-ness: the one function to change if that contract moves. */
@@ -287,9 +286,10 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
   const tableY = tableHeight(p, built, unit);
   const objects = {};
   const order = [];
-  const base = (name, parent, visible = true) => ({ name, parent, visible, color: null, opacity: 1, wireframe: false });
+  // the plan's parents are all groups: filed there, never attached to another object
+  const base = (name, group, visible = true) => ({ name, parent: null, group: group ?? null, visible, color: null, opacity: 1, wireframe: false });
   for (const g of p.groups) {
-    objects[g.id] = { ...base(g.name, g.parent, g.visible), kind: "group", sourceUrl: null, providerId: null, renderUrl: null, transform: IDENTITY() };
+    objects[g.id] = { kind: "group", name: g.name, group: g.parent ?? null, visible: g.visible, opacity: 1 };
     order.push(g.id);
   }
   if (table) {

@@ -219,7 +219,7 @@ try {
   await sleep(300);
   await stable();
   const effVisible = (() => {
-    const inh = (id) => { for (let p = objects[id].parent; p; p = objects[p].parent) if (objects[p].kind === "group" && !objects[p].visible) return false; return true; };
+    const inh = (id) => { for (let p = objects[id].group; p; p = objects[p].group) if (objects[p].kind === "group" && !objects[p].visible) return false; return true; };
     return ids((o) => o.kind === "object" && o.visible).filter((id) => inh(id)).length;
   })();
   P.open = {

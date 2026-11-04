@@ -1,14 +1,64 @@
-// Group objects (SCENE-CONTRACT v3 §7) and the outline's tree view, as pure
-// functions over the scene doc's `objects` map. No DOM, no three.
+// Groups and the outline's tree view, as pure functions over the scene doc's
+// `objects` map. No DOM, no three.
 //
-// A group is an object with `kind: "group"`: no geometry, but a transform, a
-// visibility and an opacity that cascade to everything below it. Non-group
-// parents keep v2 §5 semantics: hiding an object doesn't hide what is attached
-// to it. `parents` is always resolveParents(objects) (cycles already broken).
+// A group (`kind: "group"`) organises: no geometry and no transform, but a
+// visibility and an opacity that cascade to everything filed in it. An
+// object's or a group's `group` says which group it's in. That is separate
+// from attachment (`parent`, hierarchy.js), which is where an object is: an
+// object attached to another moves with it, whatever group either is in, and
+// hiding an object doesn't hide what is attached to it.
+//
+// The outline shows one tree: groups hold what's in them, and an object
+// attached to another in the same group sits under it. Most functions here
+// take that tree's parents (outlineParents) as `parents`.
 
-import { reparentTransform, resolveParents } from "./hierarchy.js";
+import { resolveLinks, resolveParents } from "./hierarchy.js";
 
 export const isGroup = (o) => o?.kind === "group";
+
+/** The group as written, if it names a group (other than itself) that exists; else null. */
+export function rawGroup(objects, id) {
+  const g = objects?.[id]?.group;
+  return typeof g === "string" && g !== id && isGroup(objects?.[g]) ? g : null;
+}
+
+/** Map id → the group it's in (or null), with any loop of groups broken deterministically. */
+export function resolveGroups(objects) {
+  return resolveLinks(objects, (id) => rawGroup(objects, id));
+}
+
+/** Groups whose written group resolveGroups ignores to break a loop (clear them on a local write). */
+export function brokenGroups(objects, groups = resolveGroups(objects)) {
+  return Object.keys(objects ?? {}).filter((id) => rawGroup(objects, id) != null && groups.get(id) == null);
+}
+
+/**
+ * The outline's tree: a group's parent is the group it's in; an object's is
+ * what it's attached to if that is in the same group, else its group.
+ * @param {Map} parents  resolveParents(objects)
+ * @param {Map} groups   resolveGroups(objects)
+ */
+export function outlineParents(objects, parents = resolveParents(objects), groups = resolveGroups(objects)) {
+  const out = new Map();
+  for (const id of Object.keys(objects ?? {})) {
+    const g = groups.get(id) ?? null;
+    const p = isGroup(objects[id]) ? null : parents.get(id) ?? null;
+    out.set(id, p != null && (groups.get(p) ?? null) === g ? p : g);
+  }
+  return out;
+}
+
+/** Every group `id` is in, nearest first. */
+export function groupChain(groups, id) {
+  const out = [];
+  for (let g = groups.get(id); g != null; g = groups.get(g)) out.push(g);
+  return out;
+}
+
+/** The groups `id` (a group) may go into: every other one that isn't in it. */
+export function groupTargets(objects, id, groups = resolveGroups(objects)) {
+  return Object.keys(objects ?? {}).filter((g) => isGroup(objects[g]) && g !== id && !groupChain(groups, g).includes(id));
+}
 
 const clamp01 = (v) => {
   const n = Number(v);
@@ -33,7 +83,7 @@ export function childrenMap(parents, ids = [...parents.keys()]) {
  * ancestor is visible; opacity = the product of their opacities.
  * @returns {Map<string, { visible: boolean, opacity: number }>}
  */
-export function inheritedDisplay(objects, parents = resolveParents(objects)) {
+export function inheritedDisplay(objects, parents = outlineParents(objects)) {
   const memo = new Map();
   const ROOT = Object.freeze({ visible: true, opacity: 1 });
   const get = (id) => {
@@ -73,7 +123,7 @@ export function effectivelyVisible(objects, id, inherited) {
  * `visible` is false, at any depth): their checkbox shows indeterminate.
  * @returns {Set<string>}
  */
-export function groupsWithHidden(objects, parents = resolveParents(objects)) {
+export function groupsWithHidden(objects, parents = outlineParents(objects)) {
   const out = new Set();
   for (const [id, o] of Object.entries(objects ?? {})) {
     if (o?.visible !== false) continue;
@@ -99,37 +149,38 @@ export function descendantsOf(kids, id) {
 }
 
 /** What "Remove" takes away: a group with everything below it; an object alone. */
-export function removalSet(objects, id, parents = resolveParents(objects)) {
+export function removalSet(objects, id, parents = outlineParents(objects)) {
   if (!objects?.[id]) return [];
   if (!isGroup(objects[id])) return [id];
   return [id, ...descendantsOf(childrenMap(parents), id)];
 }
 
 /**
- * Ungroup: each direct child moves to the group's parent (or the root),
- * keeping its world pose and how it looks: the group's own visibility and
- * opacity (which it no longer inherits) fold into the child's, so a hidden
- * group's contents stay hidden and an x-rayed one's stay translucent.
- * @returns {{ parent: string | null, children: { [childId]: transform },
- *   display: { [childId]: { visible?: false, opacity?: number } } }}  display: only what changes
+ * Ungroup: what's in the group moves to the group the group is in (or none),
+ * looking as it did: the group's own visibility and opacity (which it no
+ * longer inherits) fold into each member's, so a hidden group's contents stay
+ * hidden and an x-rayed one's stay translucent. Nothing moves: a group has no
+ * transform.
+ * @returns {{ group: string | null, members: string[],
+ *   display: { [memberId]: { visible?: false, opacity?: number } } }}  display: only what changes
  */
-export function ungroupPlan(objects, id, parents = resolveParents(objects)) {
-  const parent = parents.get(id) ?? null;
+export function ungroupPlan(objects, id, groups = resolveGroups(objects)) {
+  const into = groups.get(id) ?? null;
   const group = objects?.[id];
   const hidden = group?.visible === false;
   const alpha = clamp01(group?.opacity ?? 1);
-  const children = {};
+  const members = [];
   const display = {};
-  for (const [child, p] of parents) {
-    if (p !== id) continue;
-    children[child] = reparentTransform(objects, child, parent, parents);
+  for (const [child, g] of groups) {
+    if (g !== id) continue;
+    members.push(child);
     const c = objects[child];
     const d = {};
     if (hidden && c?.visible !== false) d.visible = false;
     if (alpha < 1) d.opacity = clamp01(c?.opacity ?? 1) * alpha;
     if (Object.keys(d).length) display[child] = d;
   }
-  return { parent, children, display };
+  return { group: into, members, display };
 }
 
 /** Names of an object's ancestors, root first. */
@@ -147,7 +198,7 @@ export const searchTerms = (query) => String(query ?? "").toLowerCase().split(/\
  * and its full group path. View-only.
  * @returns {{ matches: Set<string>, shown: Set<string>, first: string | null }}  shown = matches + their ancestors
  */
-export function searchOutline(objects, query, parents = resolveParents(objects), orderedIds = Object.keys(objects ?? {})) {
+export function searchOutline(objects, query, parents = outlineParents(objects), orderedIds = Object.keys(objects ?? {})) {
   const terms = searchTerms(query);
   const matches = new Set();
   const shown = new Set();

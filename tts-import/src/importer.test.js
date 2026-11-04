@@ -93,7 +93,7 @@ describe("runImport on the tiny fixture", () => {
     const { scene, doc } = await importFixture();
     const group = Object.entries(scene.objects).find(([, o]) => o.kind === "group" && o.name === "Draw pile (3)");
     expect(group[1].visible).toBe(true);
-    const cards = Object.entries(scene.objects).filter(([, o]) => o.parent === group[0]);
+    const cards = Object.entries(scene.objects).filter(([, o]) => o.group === group[0]);
     expect(cards).toHaveLength(3);
     const by = new Set(cards.map(([, o]) => o.traits?.["tabletop.hidden"]?.by));
     expect(by.size).toBe(1);
@@ -127,7 +127,7 @@ describe("runImport on the tiny fixture", () => {
     const { scene } = await importFixture();
     const [gid, g] = Object.entries(scene.objects).find(([, o]) => o.name === "Pouch: contents (2)");
     expect(g.visible).toBe(false);
-    const inside = Object.values(scene.objects).filter((o) => o.parent === gid);
+    const inside = Object.values(scene.objects).filter((o) => o.group === gid);
     expect(inside.map((o) => o.name)).toEqual(["Token in the bag", "Lost model"]);
     const pouch = Object.values(scene.objects).find((o) => o.name === "Pouch");
     for (const o of inside) {

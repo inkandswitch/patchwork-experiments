@@ -349,16 +349,21 @@ export class Viewport {
    * @param {(ev: PointerEvent, vp: Viewport) => void} [o.onClick]   a click (not a drag, not on the gizmo)
    * @param {(ev: PointerEvent | null, vp: Viewport) => void} [o.onHover]  rAF-throttled; null on leave
    * @param {(objectId, transform) => void} [o.onTransformEnd]
+   * @param {(moved: Map<objectId, transform>) => void} [o.onGroupTransformEnd]  a group moved with the gizmo: its members' new local transforms
    * @param {(camera) => void} [o.onCameraEnd]
    * @param {(objectId) => boolean} [o.canDrag]     may the hand pick this object up?
    * @param {(objectId, transform | null) => void} [o.onDragMove]  a carried object's local pose while it moves (rAF-throttled); null when it's put down or the carry is cancelled
    * @param {(objectId, transform) => void} [o.onDragEnd]  where a carried object was put down (local transform)
    * @param {(objectId, world: number[]) => { faceUp?: boolean } | null} [o.landing]  how the carried object should lie if put down with its origin here: faceUp turns it face up while it's there (carried in from elsewhere)
    */
-  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing }) {
+  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onGroupTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing }) {
     this.host = host;
     this.themeRoot = themeRoot;
-    this.cb = { onClick, onHover, onTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing };
+    this.cb = { onClick, onHover, onTransformEnd, onGroupTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing };
+    /** group id → the ids of the objects in it (at any depth): a group has no node of its own */
+    this.groupMembers = new Map();
+    /** the gizmo's handle for a selected group: { node, gid, start } (start while dragging) */
+    this.pivot = null;
     /** the object being carried by the hand: { id, … } (see wireHand) */
     this.carry = null;
     /** objectId → a peer's in-flight pose for it, shown instead of the doc's */
@@ -463,9 +468,17 @@ export class Viewport {
     this.gizmoHelper = this.gizmo.getHelper();
     this.scene.add(this.gizmoHelper);
     this.gizmoMode = "translate";
-    this.gizmo.addEventListener("change", () => this.invalidate());
+    this.gizmo.addEventListener("change", () => {
+      if (this.gizmo.dragging && this.pivot?.start) this.dragGroup();
+      this.invalidate();
+    });
     this.gizmo.addEventListener("dragging-changed", (e) => {
       this.controls.enabled = !e.value;
+      if (this.pivot && this.gizmo.object === this.pivot.node) {
+        if (e.value) this.startGroupDrag();
+        else this.endGroupDrag();
+        return;
+      }
       if (!e.value && this.gizmo.object) {
         const g = this.gizmo.object;
         this.cb.onTransformEnd?.(g.userData.objectId, {
@@ -878,10 +891,11 @@ export class Viewport {
       entry.body.visible = true;
     } else {
       g.visible = true;
-      entry.body.visible = obj.visible !== false;
+      // a group hides what's filed in it (it has no node above it to do so)
+      entry.body.visible = obj.visible !== false && entry.inherited.visible !== false;
     }
     const t = obj.transform ?? {};
-    const dragging = (this.gizmo.dragging && this.gizmo.object === g) || this.carry?.id === id;
+    const dragging = (this.gizmo.dragging && (this.gizmo.object === g || !!this.pivot?.start?.roots.some((r) => r.id === id))) || this.carry?.id === id;
     const remote = this.remotePoses.get(id);
     if (remote && !dragging) this.placeLocal(g, remote);
     else if (!dragging) {
@@ -999,9 +1013,10 @@ export class Viewport {
    * group, the union of its shown descendants' boxes.
    */
   objectBox(id, { hints = true } = {}) {
+    if (this.groupMembers.has(id)) return this.groupBox(id, { hints });
     const entry = this.objects.get(id);
     if (!entry) return null;
-    if (entry.kind === "group") return this.groupBox(entry, { hints });
+    if (entry.kind === "group") return null;
     if (!this.isShown(entry)) return null;
     const local = entry.content ? entry.box : hints ? entry.hint : null;
     if (!local) return null;
@@ -1021,22 +1036,27 @@ export class Viewport {
     return box.isEmpty() ? null : box;
   }
 
-  groupBox(groupEntry, { hints = true } = {}) {
+  /** A group's box: the union of what's shown of what's in it. */
+  groupBox(gid, { hints = true } = {}) {
     const box = new Box3();
-    for (const [id, e] of this.objects) {
-      if (e.kind === "group") continue;
-      let inside = false;
-      for (let o = e.group.parent; o && o !== this.content; o = o.parent) {
-        if (o === groupEntry.group) {
-          inside = true;
-          break;
-        }
-      }
-      if (!inside) continue;
+    for (const id of this.groupMembers.get(gid) ?? []) {
       const b = this.objectBox(id, { hints });
       if (b) box.union(b);
     }
     return box.isEmpty() ? null : box;
+  }
+
+  /** Who is in each group (group id → object ids, at any depth). */
+  setGroups(members) {
+    const next = new Map([...members].map(([g, ids]) => [g, [...ids]]));
+    const same = next.size === this.groupMembers.size && [...next].every(([g, ids]) => {
+      const was = this.groupMembers.get(g);
+      return was && was.length === ids.length && was.every((x, i) => x === ids[i]);
+    });
+    if (same) return;
+    this.groupMembers = next;
+    this.updateGizmo();
+    this.refreshHelpers();
   }
 
   sceneBox({ hints = true } = {}) {
@@ -1118,14 +1138,85 @@ export class Viewport {
 
   updateGizmo() {
     if (!this.ok) return;
-    const entry = this.selection ? this.objects.get(this.selection) : null;
-    if (entry && this.gizmoMode && this.gizmoMode !== "hand" && !this.measure && !entry.display?.locked) {
+    const modeOk = this.gizmoMode && this.gizmoMode !== "hand" && !this.measure;
+    const gid = this.selection && this.groupMembers.has(this.selection) ? this.selection : null;
+    const entry = this.selection && !gid ? this.objects.get(this.selection) : null;
+    if (gid && modeOk && this.groupRoots(gid).length) {
+      // a group moves what's in it: the gizmo holds a pivot at its centre
+      if (this.pivot?.start) return; // mid-drag: leave it be
+      const box = this.groupBox(gid, { hints: true });
+      if (!box) return void this.detachGizmo();
+      if (!this.pivot) {
+        const node = new Group();
+        node.name = "group-pivot";
+        this.scene.add(node);
+        this.pivot = { node, gid, start: null };
+      }
+      this.pivot.gid = gid;
+      this.pivot.node.position.copy(box.getCenter(new Vector3()));
+      this.pivot.node.quaternion.identity();
+      this.pivot.node.scale.set(1, 1, 1);
+      this.pivot.node.updateMatrixWorld(true);
+      this.gizmo.setMode(this.gizmoMode);
+      if (this.gizmo.object !== this.pivot.node) this.gizmo.attach(this.pivot.node);
+    } else if (entry && modeOk && !entry.display?.locked) {
       this.gizmo.setMode(this.gizmoMode);
       if (this.gizmo.object !== entry.group) this.gizmo.attach(entry.group);
-    } else if (this.gizmo.object) {
-      this.gizmo.detach();
-    }
+    } else this.detachGizmo();
     this.invalidate();
+  }
+
+  detachGizmo() {
+    if (this.gizmo.object) this.gizmo.detach();
+    this.invalidate();
+  }
+
+  /** The objects a group's move moves: its members that aren't attached to another member (they follow), and aren't locked. */
+  groupRoots(gid) {
+    const members = new Set(this.groupMembers.get(gid) ?? []);
+    const out = [];
+    for (const id of members) {
+      const e = this.objects.get(id);
+      if (!e || e.display?.locked) continue;
+      if (e.parentId && members.has(e.parentId)) continue;
+      out.push(id);
+    }
+    return out;
+  }
+
+  startGroupDrag() {
+    const p = this.pivot;
+    p.node.updateMatrixWorld(true);
+    const roots = this.groupRoots(p.gid).map((id) => {
+      const g = this.objects.get(id).group;
+      g.updateMatrixWorld(true);
+      return { id, g, world: g.matrixWorld.clone() };
+    });
+    p.start = { inverse: p.node.matrixWorld.clone().invert(), roots };
+  }
+
+  /** Each root keeps its pose relative to the pivot as the gizmo moves it. */
+  dragGroup() {
+    const p = this.pivot;
+    p.node.updateMatrixWorld(true);
+    const delta = new Matrix4().multiplyMatrices(p.node.matrixWorld, p.start.inverse);
+    for (const r of p.start.roots) {
+      const world = new Matrix4().multiplyMatrices(delta, r.world);
+      const parentInv = r.g.parent ? r.g.parent.matrixWorld.clone().invert() : new Matrix4();
+      new Matrix4().multiplyMatrices(parentInv, world).decompose(r.g.position, r.g.quaternion, r.g.scale);
+      r.g.updateMatrixWorld(true);
+    }
+    this.refreshHelpers();
+  }
+
+  endGroupDrag() {
+    const p = this.pivot;
+    const start = p.start;
+    p.start = null;
+    if (!start) return;
+    const moved = new Map(start.roots.map((r) => [r.id, this.localTransform(r.g)]));
+    this.cb.onGroupTransformEnd?.(moved);
+    this.refreshHelpers();
   }
 
   // ─── view helpers: grid, axes, bounds, selection boxes ────────────────────
@@ -1219,7 +1310,7 @@ export class Viewport {
     if (this.selection) boxFor(this.selection, this.theme.accent, "selection");
     for (const id of this.remoteSelections) if (id !== this.selection) boxFor(id, this.theme.remote, "remote");
     if (this.view.bounds) {
-      const ids = this.selection && this.objects.has(this.selection) ? [this.selection] : [...this.objects.keys()].filter((id) => this.objects.get(id).kind !== "group");
+      const ids = this.selection && (this.objects.has(this.selection) || this.groupMembers.has(this.selection)) ? [this.selection] : [...this.objects.keys()].filter((id) => this.objects.get(id).kind !== "group");
       for (const id of ids) {
         const b = id === this.selection ? this.objectBox(id, { hints: false }) : boxFor(id, this.theme.muted, "bounds");
         if (!b) continue;

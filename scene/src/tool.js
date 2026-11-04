@@ -20,10 +20,10 @@ import { newRenderDoc, DEFAULT_VIEW } from "./datatype.js";
 import { defaultParams } from "./staleness.js";
 import { describeForHumans, describeSource, extensionOf, matchProviders } from "./providers.js";
 import { hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "./dnd.js";
-import { canMove, dropIntent, isMove, placementFor, spliceOrder } from "./tree-drop.js";
+import { dropIntent, isMove, placementFor, spliceOrder } from "./tree-drop.js";
 import { detachAnchor, distance, makeAnchor, normalizeTransform, resolveAnchor } from "./anchors.js";
 import { attachTargets, brokenParents, orphanTransforms, planAttach, resolveParents, treeOrder, worldMatrix } from "./hierarchy.js";
-import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, removalSet, searchOutline, ungroupPlan, visibleRows } from "./groups.js";
+import { brokenGroups, childrenMap, defaultExpanded, groupChain, groupTargets, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, removalSet, resolveGroups, searchOutline, ungroupPlan, visibleRows } from "./groups.js";
 import { UNIT_OPTIONS, formatLength, fromUnits, roundForDisplay, toUnits } from "./units.js";
 import { REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
@@ -246,21 +246,28 @@ export default function SceneTool(handle, element) {
     if (model && model.d === d) return model;
     const objects = d.objects ?? {};
     const ids = orderedIds(d);
+    // two trees: attachment (where things are) and the outline (groups, and
+    // attachments within a group)
     const parents = resolveParents(objects);
+    const groups = resolveGroups(objects);
+    const outline = outlineParents(objects, parents, groups);
     model = {
       d,
       objects,
       ids,
       parents,
-      tree: treeOrder(objects, ids, parents),
-      kids: childrenMap(parents, ids),
-      inherited: inheritedDisplay(objects, parents),
+      groups,
+      outline,
+      tree: treeOrder(objects, ids, outline),
+      attachOrder: treeOrder(objects, ids, parents),
+      kids: childrenMap(outline, ids),
+      inherited: inheritedDisplay(objects, outline),
       mixed: null,
       search: null,
     };
     return model;
   }
-  const mixedOf = (m) => (m.mixed ??= groupsWithHidden(m.objects, m.parents));
+  const mixedOf = (m) => (m.mixed ??= groupsWithHidden(m.objects, m.outline));
   const shownIn = (m, id) => {
     const o = m.objects[id];
     return !!o && o.visible !== false && (m.inherited.get(id)?.visible ?? true);
@@ -361,6 +368,14 @@ export default function SceneTool(handle, element) {
     onTransformEnd: (id, t) =>
       updateObject(id, (o) => {
         o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
+      }),
+    // a group moved with the gizmo: each of its members that moved, as one change
+    onGroupTransformEnd: (moved) =>
+      handle.change((d) => {
+        for (const [id, t] of moved) {
+          const o = d.objects?.[id];
+          if (o) o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
+        }
       }),
     onCameraEnd: (cam) => saveCamera(cam),
     canDrag: (id) => {
@@ -477,13 +492,18 @@ export default function SceneTool(handle, element) {
   }
 
   /**
-   * Inside a change: clear the parent edges a merged cycle left behind (see
-   * brokenParents), so the tree the doc says is the tree everyone sees.
+   * Inside a change: clear the parent and group edges a merged cycle left
+   * behind (see brokenParents, brokenGroups), so the trees the doc says are
+   * the trees everyone sees.
    */
-  function repairCycles(d, broken) {
+  function repairCycles(d, broken, brokenG = []) {
     for (const bid of broken) {
       const o = d.objects?.[bid];
       if (o) o.parent = null;
+    }
+    for (const bid of brokenG) {
+      const o = d.objects?.[bid];
+      if (o) o.group = null;
     }
   }
 
@@ -505,7 +525,8 @@ export default function SceneTool(handle, element) {
     const snapshot = doc().objects ?? {};
     if (!snapshot[id]) return;
     const parents = resolveParents(snapshot);
-    const gone = new Set(removalSet(snapshot, id, parents));
+    const groups = resolveGroups(snapshot);
+    const gone = new Set(removalSet(snapshot, id, outlineParents(snapshot, parents, groups)));
     if (gone.size > 1) {
       const n = gone.size - 1;
       if (!confirmRemove(`Remove “${snapshot[id].name || "Group"}” and the ${n} object${n === 1 ? "" : "s"} in it?`)) return;
@@ -514,8 +535,9 @@ export default function SceneTool(handle, element) {
     const orphans = {};
     for (const g of gone) for (const [c, t] of Object.entries(orphanTransforms(snapshot, g, parents))) if (!gone.has(c)) orphans[c] = t;
     const broken = brokenParents(snapshot, parents);
+    const brokenG = brokenGroups(snapshot, groups);
     handle.change((d) => {
-      repairCycles(d, broken);
+      repairCycles(d, broken, brokenG);
       for (const [child, transform] of Object.entries(orphans)) {
         const o = d.objects?.[child];
         if (!o) continue;
@@ -533,20 +555,19 @@ export default function SceneTool(handle, element) {
     if (gone.has(selected)) select(null);
   }
 
-  /** Ungroup: the group's children move up to its parent, keeping their world pose; the group goes. */
+  /** Ungroup: what's in the group moves up to the group it's in, looking as it did; the group goes. */
   function ungroup(id) {
     const snapshot = doc().objects ?? {};
     if (!isGroup(snapshot[id])) return;
-    const parents = resolveParents(snapshot);
-    const plan = ungroupPlan(snapshot, id, parents);
-    const broken = brokenParents(snapshot, parents);
+    const groups = resolveGroups(snapshot);
+    const plan = ungroupPlan(snapshot, id, groups);
+    const brokenG = brokenGroups(snapshot, groups);
     handle.change((d) => {
-      repairCycles(d, broken);
-      for (const [child, transform] of Object.entries(plan.children)) {
+      repairCycles(d, [], brokenG);
+      for (const child of plan.members) {
         const o = d.objects?.[child];
         if (!o) continue;
-        o.parent = plan.parent;
-        o.transform = transform;
+        o.group = plan.group;
         const look = plan.display[child];
         if (look?.visible === false) o.visible = false;
         if (look?.opacity !== undefined) o.opacity = look.opacity;
@@ -558,37 +579,24 @@ export default function SceneTool(handle, element) {
   }
 
   /**
-   * A new, empty group: inside `into` (a group id), or — with `around` — in
-   * place of that object, which moves into it (the group is at identity, so
-   * nothing moves in the world).
+   * A new, empty group: inside `into` (a group id), or — with `around` — where
+   * that object (or group) is filed, which goes into it. Nothing moves.
    */
   function newGroup({ into = null, around = null } = {}) {
     const snapshot = doc().objects ?? {};
-    const parents = resolveParents(snapshot);
+    const groups = resolveGroups(snapshot);
     const id = newId("g");
-    const parent = around && snapshot[around] ? parents.get(around) ?? null : into && isGroup(snapshot[into]) ? into : null;
-    const broken = brokenParents(snapshot, parents);
+    const inGroup = around && snapshot[around] ? groups.get(around) ?? null : into && isGroup(snapshot[into]) ? into : null;
+    const brokenG = brokenGroups(snapshot, groups);
     handle.change((d) => {
-      repairCycles(d, broken);
+      repairCycles(d, [], brokenG);
       if (!d.objects) d.objects = {};
       if (!d.order) d.order = [];
-      d.objects[id] = {
-        kind: "group",
-        name: "Group",
-        sourceUrl: null,
-        providerId: null,
-        renderUrl: null,
-        parent,
-        visible: true,
-        color: null,
-        opacity: 1,
-        wireframe: false,
-        transform: IDENTITY(),
-      };
+      d.objects[id] = { kind: "group", name: "Group", group: inGroup, visible: true, opacity: 1 };
       const at = around ? d.order.indexOf(around) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
       else d.order.push(id);
-      if (around && d.objects[around]) d.objects[around].parent = id;
+      if (around && d.objects[around]) d.objects[around].group = id;
     });
     setExpanded(id, true);
     select(id);
@@ -661,10 +669,15 @@ export default function SceneTool(handle, element) {
     const sourceDoc = source.doc();
     const info = describeSource(sourceDoc);
     await registryReady;
-    // an extension may lay it out its own way (a deck as its cards, say)
+    // an extension may lay it out its own way (a deck as its cards, say), in
+    // the group it was dropped into (or the dropped-on object's group)
+    const dropGroup = (() => {
+      const t = hint.parent && doc().objects?.[hint.parent] ? hint.parent : null;
+      return !t ? null : isGroup(doc().objects[t]) ? t : derive().groups.get(t) ?? null;
+    })();
     for (const x of await extensions.forDrop(info.datatype ?? null)) {
       if (dead) return null;
-      if (await x.drop?.({ url, doc: sourceDoc, handle: source, parent: hint.parent && doc().objects?.[hint.parent] ? hint.parent : null })) return null;
+      if (await x.drop?.({ url, doc: sourceDoc, handle: source, group: dropGroup })) return null;
     }
     const providers = matchProviders(listProviders(), info);
     if (!providers.length) return toast(`No scene provider is installed for ${describeForHumans(info)}.`, "error");
@@ -676,11 +689,13 @@ export default function SceneTool(handle, element) {
       ? null
       : await repo.create2(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }));
     const id = newId("o");
-    // Only an object that is still there can be a parent: the drag may have
-    // started before someone else deleted it. A non-group parent is an
-    // attachment (v3 §5) — the line was drawn among its children, so that is
-    // where it goes, just as a row moved to the same line would.
+    // Only what is still there can be a place: the drag may have started before
+    // someone else deleted it. A group files it there; an object attaches it
+    // (in that object's group) — the line was drawn among its children, so
+    // that is where it goes, just as a row moved to the same line would.
     const into = hint.parent && doc().objects?.[hint.parent] ? hint.parent : null;
+    const intoGroup = into && isGroup(doc().objects[into]);
+    const where = !into ? {} : intoGroup ? { group: into } : { parent: into, group: derive().groups.get(into) ?? null };
     if (!orderedIds(doc()).length) autoFrame = true;
     handle.change((d) => {
       if (!d.objects) d.objects = {};
@@ -690,7 +705,8 @@ export default function SceneTool(handle, element) {
         sourceUrl: url,
         providerId: provider.id,
         renderUrl: renderHandle?.url ?? null,
-        parent: into,
+        parent: null,
+        ...where,
         visible: true,
         color: null,
         opacity: 1,
@@ -1016,7 +1032,7 @@ export default function SceneTool(handle, element) {
     const m = derive();
     let changed = false;
     const depthOf = new Map(m.tree.map((r) => [r.id, r.depth]));
-    for (let p = m.parents.get(id); p != null; p = m.parents.get(p)) {
+    for (let p = m.outline.get(id); p != null; p = m.outline.get(p)) {
       if (!isExpanded(m, p, depthOf.get(p) ?? 0)) {
         expandedOverrides.set(p, true);
         changed = true;
@@ -1087,12 +1103,12 @@ export default function SceneTool(handle, element) {
     if (dead) return;
     const t0 = now();
     const m = derive();
-    const { objects, ids, tree, kids, parents } = m;
+    const { objects, ids, tree, kids, outline } = m;
     const searchBox = $(".outline-search");
     searchBox.hidden = ids.length < SEARCH_FROM && !filterQuery;
     let search = null;
     if (filterQuery) {
-      if (m.search?.q !== filterQuery) m.search = { q: filterQuery, ...searchOutline(objects, filterQuery, parents, ids) };
+      if (m.search?.q !== filterQuery) m.search = { q: filterQuery, ...searchOutline(objects, filterQuery, outline, ids) };
       search = m.search;
     }
     const rows = visibleRows(tree, {
@@ -1120,7 +1136,7 @@ export default function SceneTool(handle, element) {
       li.toggleAttribute("data-remote-hover", !peerSel.has(id) && peerHover.has(id));
       li.toggleAttribute("data-hidden", !shownIn(m, id));
       li.toggleAttribute("data-context", !!search && !search.matches.has(id));
-      const p = parents.get(id);
+      const p = outline.get(id);
       li.toggleAttribute("data-attached", p != null && !isGroup(objects[p]));
       li.toggleAttribute("data-leaf", !hasChildren);
       if (hasChildren) {
@@ -1266,9 +1282,8 @@ export default function SceneTool(handle, element) {
     const o = m.objects[id];
     const own = docUrl(o?.infoUrl);
     if (own) return { url: own, toolId: o.infoToolId || null, label: "About", from: id };
-    for (let p = m.parents.get(id); p != null; p = m.parents.get(p)) {
+    for (const p of groupChain(m.groups, id)) {
       const g = m.objects[p];
-      if (!isGroup(g)) continue;
       const u = docUrl(g.infoUrl);
       if (u) return { url: u, toolId: g.infoToolId || null, label: `About ${g.name || "group"}`, from: p };
     }
@@ -1329,8 +1344,10 @@ export default function SceneTool(handle, element) {
     const resetColor = group ? null : el("button", { type: "button", class: "button link", onclick: () => updateObject(id, (x) => (x.color = null)) }, "Auto");
     const opacity = el("input", { type: "range", min: "0", max: "1", step: "0.01", "aria-label": "Opacity" });
     opacity.addEventListener("input", () => updateObject(id, (x) => (x.opacity = Number(opacity.value))));
-    const attach = el("select", { class: "attach", "aria-label": "Attached to" });
-    attach.addEventListener("change", () => attachTo(id, attach.value || null));
+    const attach = group ? null : el("select", { class: "attach", "aria-label": "Attached to" });
+    attach?.addEventListener("change", () => attachTo(id, attach.value || null));
+    const groupSel = el("select", { class: "in-group", "aria-label": "In group" });
+    groupSel.addEventListener("change", () => fileIn(id, groupSel.value || null));
 
     const setT = (kind, i, v) =>
       updateObject(id, (x) => {
@@ -1357,10 +1374,11 @@ export default function SceneTool(handle, element) {
       el("div", { class: "cluster" }, el("label", { class: "toggle" }, visible, " Visible"), wire ? el("label", { class: "toggle" }, wire, " Wireframe") : null, locked ? el("label", { class: "toggle", title: "A locked object can't be moved with the hand or the gizmo (a game board, say)" }, locked, " Locked") : null),
       group ? null : el("div", { class: "cluster" }, el("label", { class: "toggle" }, "Colour ", colorIn), resetColor),
       el("label", { class: "field" }, el("span", {}, "Opacity"), opacity),
-      el("label", { class: "field", title: "Attached objects move with the object or group they're attached to; their position is relative to it" }, el("span", {}, group ? "Inside" : "Attached to"), attach),
-      el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Position ", posUnit), el("div", { class: "triple" }, ...pos.map((f) => f.row))),
-      el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Rotation °"), el("div", { class: "triple" }, ...rot.map((f) => f.row))),
-      el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Scale"), el("div", { class: "triple" }, scale.row)),
+      el("label", { class: "field", title: "Which group it's filed in: groups organise, and hide or fade what's in them; nothing moves" }, el("span", {}, "In group"), groupSel),
+      group ? null : el("label", { class: "field", title: "Attached objects move with the object they're attached to; their position is relative to it" }, el("span", {}, "Attached to"), attach),
+      group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Position ", posUnit), el("div", { class: "triple" }, ...pos.map((f) => f.row))),
+      group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Rotation °"), el("div", { class: "triple" }, ...rot.map((f) => f.row))),
+      group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Scale"), el("div", { class: "triple" }, scale.row)),
       // Status, "Open source" and "Rebuild now" live in the embedded controls
       // below; only what they can't know (build notes, GLB load errors) is here.
       el(
@@ -1390,6 +1408,8 @@ export default function SceneTool(handle, element) {
       opacity,
       attach,
       attachKey: null,
+      groupSel,
+      groupKey: null,
       pos,
       rot,
       scale,
@@ -1427,35 +1447,32 @@ export default function SceneTool(handle, element) {
     setVal(inspector.opacity, String(o.opacity ?? 1));
     const t = normalizeTransform(o.transform);
     const units = view().units;
-    const parents = m.parents;
-    const parent = parents.get(inspector.id) ?? null;
-    // "None", then every group (as a tree), then every object this one could
-    // be attached to (not itself, nothing below it)
-    const allowed = new Set(attachTargets(objects, inspector.id, parents));
-    const groupOpts = [];
-    const objectOpts = [];
-    for (const { id: tid, depth } of m.tree) {
-      if (!allowed.has(tid)) continue;
-      const x = objects[tid];
-      if (isGroup(x)) groupOpts.push([tid, `${" ".repeat(Math.min(depth, 8))}${x.name || "Group"}`]);
-      else objectOpts.push([tid, nameOf(tid, x) || "Object"]);
+    const parent = m.parents.get(inspector.id) ?? null;
+    const opt = ([tid, label]) => el("option", { value: tid }, label);
+    // the groups it can be filed in, as a tree (a group can't go in itself)
+    const allowedGroups = new Set(inspector.group ? groupTargets(objects, inspector.id, m.groups) : Object.keys(objects).filter((x) => isGroup(objects[x])));
+    const groupOpts = m.tree.filter(({ id: tid }) => allowedGroups.has(tid)).map(({ id: tid }) => [tid, `${" ".repeat(Math.min(groupChain(m.groups, tid).length, 8))}${objects[tid].name || "Group"}`]);
+    const groupKey = JSON.stringify(groupOpts);
+    if (inspector.groupKey !== groupKey && document.activeElement !== inspector.groupSel) {
+      inspector.groupKey = groupKey;
+      inspector.groupSel.replaceChildren(el("option", { value: "" }, "None"), ...groupOpts.map(opt));
     }
-    const targets = [...groupOpts, ...objectOpts];
-    const attachKey = JSON.stringify(targets);
-    if (inspector.attachKey !== attachKey && document.activeElement !== inspector.attach) {
-      inspector.attachKey = attachKey;
-      const opt = ([tid, label]) => el("option", { value: tid }, label);
-      const children = [el("option", { value: "" }, "None")];
-      if (groupOpts.length && objectOpts.length) {
-        children.push(el("optgroup", { label: "Groups" }, ...groupOpts.map(opt)), el("optgroup", { label: "Objects" }, ...objectOpts.map(opt)));
-      } else children.push(...targets.map(opt));
-      inspector.attach.replaceChildren(...children);
+    setVal(inspector.groupSel, m.groups.get(inspector.id) ?? "");
+    if (!inspector.group) {
+      // "None", then every object this one could be attached to (not itself, nothing attached to it)
+      const allowed = new Set(attachTargets(objects, inspector.id, m.parents));
+      const objectOpts = m.attachOrder.filter(({ id: tid }) => allowed.has(tid) && !isGroup(objects[tid])).map(({ id: tid }) => [tid, nameOf(tid, objects[tid]) || "Object"]);
+      const attachKey = JSON.stringify(objectOpts);
+      if (inspector.attachKey !== attachKey && document.activeElement !== inspector.attach) {
+        inspector.attachKey = attachKey;
+        inspector.attach.replaceChildren(el("option", { value: "" }, "None"), ...objectOpts.map(opt));
+      }
+      setVal(inspector.attach, parent ?? "");
+      inspector.posUnit.textContent = parent ? `(${units}, relative to ${objects[parent]?.name || "parent"})` : `(${units})`;
+      inspector.pos.forEach((f, i) => setVal(f.input, String(roundForDisplay(toUnits(t.position[i], units), 6))));
+      inspector.rot.forEach((f, i) => setVal(f.input, String(roundForDisplay(t.rotation[i] * DEG, 6))));
+      setVal(inspector.scale.input, String(t.scale));
     }
-    setVal(inspector.attach, parent ?? "");
-    inspector.posUnit.textContent = parent ? `(${units}, relative to ${objects[parent]?.name || "parent"})` : `(${units})`;
-    inspector.pos.forEach((f, i) => setVal(f.input, String(roundForDisplay(toUnits(t.position[i], units), 6))));
-    inspector.rot.forEach((f, i) => setVal(f.input, String(roundForDisplay(t.rotation[i] * DEG, 6))));
-    setVal(inspector.scale.input, String(t.scale));
     updateAbout();
     const s = objState.get(inspector.id) ?? {};
     // replaceChildren() turns a null argument into the text "null": pass only nodes.
@@ -1482,6 +1499,24 @@ export default function SceneTool(handle, element) {
     }
     inspector.status.replaceChildren(...parts);
     inspector.status.hidden = !parts.length;
+  }
+
+  /** File `id` in `group` (null = none). Nothing moves. */
+  function fileIn(id, group) {
+    const objects = doc().objects ?? {};
+    const groups = resolveGroups(objects);
+    if (group && (!isGroup(objects[group]) || group === id || groupChain(groups, group).includes(id))) {
+      toast("A group can't go inside itself.", "error");
+      updateInspector();
+      return;
+    }
+    const brokenG = brokenGroups(objects, groups);
+    handle.change((d) => {
+      repairCycles(d, [], brokenG);
+      const o = d.objects?.[id];
+      if (o) o.group = group;
+    });
+    if (group) setExpanded(group, true);
   }
 
   /** Attach `id` to `parent` (null = detach), keeping it where it is in the world. */
@@ -1581,7 +1616,7 @@ export default function SceneTool(handle, element) {
         toggleExpanded(id, false);
         focusRow(outlineRows.get(id)?.li);
       } else {
-        const p = derive().parents.get(id);
+        const p = derive().outline.get(id);
         if (p) focusRow(outlineRows.get(p)?.li);
       }
     }
@@ -1741,9 +1776,9 @@ export default function SceneTool(handle, element) {
     const dt = e.dataTransfer;
     const snapshot = doc();
     const objects = snapshot.objects ?? {};
-    const parents = resolveParents(objects);
+    const outline = outlineParents(objects);
     const order = orderedIds(snapshot);
-    const place = placementFor(objects, order, target.id, target.intent, parents, { expanded: target.expanded });
+    const place = placementFor(objects, order, target.id, target.intent, outline, { expanded: target.expanded });
 
     const isRow = [...(dt?.types ?? [])].includes(ROW_MIME);
     if (isRow) {
@@ -1755,7 +1790,7 @@ export default function SceneTool(handle, element) {
       if (!objects[drag.id]) return toast("That object is no longer in this scene.", "error");
       // Released on its own row: a click that wobbled, whichever band it hit.
       if (drag.id === target.id) return select(drag.id);
-      return moveRow(drag.id, place, objects, parents, order);
+      return moveRow(drag.id, place, objects, order);
     }
     if (!hasPatchworkDrop(dt)) return;
     const items = parsePatchworkDrop(dt);
@@ -1768,42 +1803,57 @@ export default function SceneTool(handle, element) {
   });
 
   /**
-   * Move `id` to where a drop asked for, keeping its world pose.
+   * Move `id` to where a drop asked for, keeping its world pose. The row it's
+   * dropped among says both things the outline shows: a group's rows file it
+   * in that group (and detach it), an object's attach it to that object (in
+   * that object's group). A group goes only into another group.
    *
-   * hierarchy.js owns both halves of that: whether the move is legal, and what
-   * the local transform has to become so nothing visibly shifts.
+   * hierarchy.js decides whether an attachment is legal, and what the local
+   * transform has to become so nothing visibly shifts.
    */
-  function moveRow(id, place, objects, parents, order) {
+  function moveRow(id, place, objects, order) {
+    const parents = resolveParents(objects);
+    const groups = resolveGroups(objects);
+    const outline = outlineParents(objects, parents, groups);
     // A row released on itself, or on the line it already sits at, is a
     // click that wobbled: nothing to write.
-    if (!isMove(objects, order, id, place, parents)) return select(id);
-    if (!canMove(objects, id, place.parent, parents)) {
-      return toast("A group can't go inside itself.", "error");
+    if (!isMove(objects, order, id, place, outline)) return select(id);
+    const target = place.parent && objects[place.parent] ? place.parent : null;
+    const toGroup = !target || isGroup(objects[target]);
+    const group = toGroup ? target : groups.get(target) ?? null;
+    let plan = null;
+    if (isGroup(objects[id])) {
+      if (!toGroup) return toast("A group can only go inside another group.", "error");
+      if (target && (target === id || groupChain(groups, target).includes(id))) return toast("A group can't go inside itself.", "error");
+    } else {
+      plan = planAttach(objects, id, toGroup ? null : target, parents);
+      if (!plan) return toast("Can't attach an object to something attached to it.", "error");
     }
-    const plan = planAttach(objects, id, place.parent, parents);
-    if (!plan) return toast("A group can't go inside itself.", "error");
-    const reparent = plan.parent !== (parents.get(id) ?? null);
-    const t = plan.transform;
-    // planAttach works on the resolved tree; make the doc say that tree first,
-    // or an edge a merged cycle left behind comes back once this move makes it
+    const reparent = !!plan && plan.parent !== (parents.get(id) ?? null);
+    const regroup = (groups.get(id) ?? null) !== group;
+    // planAttach works on the resolved trees; make the doc say them first, or
+    // an edge a merged cycle left behind comes back once this move makes it
     // acyclic, and moves an object nobody touched (see brokenParents).
     const broken = brokenParents(objects, parents);
+    const brokenG = brokenGroups(objects, groups);
     handle.change((d) => {
-      repairCycles(d, broken);
+      repairCycles(d, broken, brokenG);
       const o = d.objects?.[id];
       if (!o) return;
-      // A reorder within the same parent leaves parent and transform alone,
+      // A reorder within the same place leaves parent and transform alone,
       // so it can't win last-writer-wins over a peer's gizmo move.
       if (reparent) {
         o.parent = plan.parent;
         // Fresh arrays and a fresh object: automerge refuses a value that is
         // already inside the document.
+        const t = plan.transform;
         o.transform = { position: [...t.position], rotation: [...t.rotation], scale: t.scale };
       }
+      if (regroup) o.group = group;
       if (!d.order) d.order = [];
       spliceOrder(d.order, id, place.before);
     });
-    if (plan.parent) setExpanded(plan.parent, true);
+    if (target) setExpanded(target, true);
     select(id);
   }
 
@@ -1855,7 +1905,7 @@ export default function SceneTool(handle, element) {
           if (inv === undefined) inverses.set(id, (inv = invertMatrix(world(id))));
           return inv ? applyMatrix(inv, p) : null;
         };
-        m.api = { d: m.d, objects: m.objects, ids: m.ids, parents: m.parents, traits: m.d.traits ?? {}, world, toLocal };
+        m.api = { d: m.d, objects: m.objects, ids: m.ids, parents: m.parents, groups: m.groups, traits: m.d.traits ?? {}, world, toLocal };
       }
       return m.api;
     },
@@ -1995,7 +2045,7 @@ export default function SceneTool(handle, element) {
     if (needsCoreMigration(doc())) return void handle.change((dd) => migrateCore(dd));
     const t0 = now();
     const m = derive();
-    const { d, objects, parents, tree, inherited } = m;
+    const { d, objects, parents, attachOrder, inherited } = m;
     extensions.activate(d);
     migrateExtensions(d);
     if (m.d !== doc()) return; // a migration changed it: that change syncs again
@@ -2013,15 +2063,34 @@ export default function SceneTool(handle, element) {
     viewport.setMaterialRules(d.materialRules);
     const tracked = new Set(manager.ids());
     let hinted = false;
-    // Parents before children (hierarchy order, roots first), so each group's
-    // new parent is already where it belongs when the group is attached to it.
+    // groups: no geometry and no transform; the viewport only needs who's in
+    // each (to box, frame and move them together)
+    const members = new Map();
+    for (const id of Object.keys(objects)) {
+      if (isGroup(objects[id])) {
+        if (!members.has(id)) members.set(id, []);
+        continue;
+      }
+      for (const g of groupChain(m.groups, id)) {
+        if (!members.has(g)) members.set(g, []);
+        members.get(g).push(id);
+      }
+    }
+    viewport.setGroups(members);
+    // Parents before children (attachment order, roots first), so each
+    // object's new parent is already where it belongs when it's attached to it.
     // In plain `order`, a change that inverts an edge (A under B becomes B
     // under A) would briefly look like a loop to the viewport, which then
     // leaves the object at the root.
-    for (const { id } of tree) {
+    for (const { id } of attachOrder) {
       const o = objects[id];
       const parent = parents.get(id) ?? null;
       const inh = inherited.get(id);
+      if (isGroup(o)) {
+        if (tracked.has(id)) manager.untrack(id);
+        queue.remove(id);
+        continue;
+      }
       // placed even without geometry, so whatever is attached to it sits right
       const key = displayKey(o, parent, inh);
       if (displayKeys.get(id) !== key) {
@@ -2029,11 +2098,6 @@ export default function SceneTool(handle, element) {
         // a peer's put-down has arrived in the doc: show the doc's pose now
         if (remoteCarries.get(id)?.landed) endRemoteCarry(id);
         viewport.applyDisplay(id, o, parent, inh);
-      }
-      if (isGroup(o)) {
-        if (tracked.has(id)) manager.untrack(id);
-        queue.remove(id);
-        continue;
       }
       const shown = o.visible !== false && inh.visible;
       if (o.renderUrl) {

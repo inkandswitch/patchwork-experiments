@@ -1,6 +1,7 @@
 // Scene-object attachment (`scene.objects[id].parent`), as pure functions over
 // the scene doc's `objects` map. A child's transform is relative to its parent:
-// world = parentWorld · local. Pure; no three.
+// world = parentWorld · local. Only an object can be a parent: groups
+// (groups.js) organise, they have no transform. Pure; no three.
 //
 // The doc can hold a cycle even though the UI never writes one (two people
 // attach A→B and B→A at the same moment and both merge). Everything here reads
@@ -9,16 +10,25 @@
 
 import { composeMatrix, decomposeMatrix, IDENTITY_MATRIX, invertMatrix, multiplyMatrices, normalizeTransform } from "./transform.js";
 
-/** The parent as written, if it names another object that exists; else null. */
+/** The parent as written, if it names another object (not a group) that exists; else null. */
 export function rawParent(objects, id) {
   const p = objects?.[id]?.parent;
-  return typeof p === "string" && p !== id && objects?.[p] ? p : null;
+  return typeof p === "string" && p !== id && objects?.[p] && objects[p].kind !== "group" ? p : null;
 }
 
 /** Map id → effective parent id (or null), with any cycle broken deterministically. */
 export function resolveParents(objects) {
+  return resolveLinks(objects, (id) => rawParent(objects, id));
+}
+
+/**
+ * Map id → what `link(id)` names (or null), for every id in `objects`, with
+ * any cycle broken at its smallest id (which links to null instead), so every
+ * peer resolves the same tree.
+ */
+export function resolveLinks(objects, link) {
   const ids = Object.keys(objects ?? {});
-  const parents = new Map(ids.map((id) => [id, rawParent(objects, id)]));
+  const parents = new Map(ids.map((id) => [id, link(id)]));
   const state = new Map(); // id → 1 visiting, 2 done
   for (const start of ids) {
     if (state.get(start) === 2) continue;

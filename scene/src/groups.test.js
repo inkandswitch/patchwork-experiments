@@ -1,29 +1,61 @@
 import { describe, it, expect } from "vitest";
-import { childrenMap, defaultExpanded, descendantsOf, groupsWithHidden, inheritedDisplay, removalSet, searchOutline, ungroupPlan, visibleRows } from "./groups.js";
-import { resolveParents, treeOrder, worldMatrix } from "./hierarchy.js";
-import { applyMatrix } from "./transform.js";
+import { brokenGroups, childrenMap, defaultExpanded, descendantsOf, groupChain, groupTargets, groupsWithHidden, inheritedDisplay, outlineParents, removalSet, resolveGroups, searchOutline, ungroupPlan, visibleRows } from "./groups.js";
+import { resolveParents, treeOrder } from "./hierarchy.js";
 
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
-const group = (name, parent = null, extra = {}) => ({ kind: "group", name, parent, visible: true, opacity: 1, transform: T(), ...extra });
-const obj = (name, parent = null, extra = {}) => ({ name, parent, visible: true, opacity: 1, transform: T(), ...extra });
+const group = (name, inGroup = null, extra = {}) => ({ kind: "group", name, group: inGroup, visible: true, opacity: 1, ...extra });
+const obj = (name, inGroup = null, extra = {}) => ({ name, group: inGroup, parent: null, visible: true, opacity: 1, transform: T(), ...extra });
 
 // vessel ─┬─ body ─┬─ hull
 //         │        └─ deck (hidden)
-//         └─ rig   ── mast ── flag (attached to mast, not a group)
+//         └─ rig   ── mast ── flag (attached to mast, in RIG too)
 // battery (hidden) ── cell
 function scene() {
   return {
-    vessel: group("Solander 38", null, { transform: T([0, -0.7, 0]) }),
+    vessel: group("Solander 38"),
     body: group("BODY", "vessel", { opacity: 0.5 }),
     hull: obj("HULL", "body"),
     deck: obj("DECK", "body", { visible: false }),
     rig: group("RIG", "vessel"),
     mast: obj("mast", "rig", { visible: false }),
-    flag: obj("flag", "mast", { opacity: 0.5 }),
+    flag: obj("flag", "rig", { parent: "mast", opacity: 0.5 }),
     battery: group("Battery (display)", null, { visible: false }),
     cell: obj("CELL", "battery"),
   };
 }
+
+describe("groups and attachment are separate", () => {
+  it("a group is never a parent; an object's group is any group", () => {
+    const o = { ...scene(), stray: obj("stray", "hull", { parent: "body" }) };
+    expect(resolveParents(o).get("stray")).toBeNull(); // body is a group: not a parent
+    expect(resolveGroups(o).get("stray")).toBeNull(); // hull is an object: not a group
+    expect(resolveGroups(o).get("hull")).toBe("body");
+    expect(groupChain(resolveGroups(o), "hull")).toEqual(["body", "vessel"]);
+  });
+
+  it("the outline: groups hold what's in them; an attachment sits under its parent when they share a group, else in its own", () => {
+    const o = { ...scene(), streamer: obj("streamer", "body", { parent: "mast" }) };
+    const out = outlineParents(o);
+    expect(out.get("flag")).toBe("mast"); // both in RIG
+    expect(out.get("streamer")).toBe("body"); // attached to the mast, filed in BODY
+    expect(out.get("mast")).toBe("rig");
+    expect(out.get("body")).toBe("vessel");
+    expect(out.get("vessel")).toBeNull();
+  });
+
+  it("a loop of groups (two concurrent edits) breaks the same way for everyone, and is reported for repair", () => {
+    const o = { a: group("A", "b"), b: group("B", "a"), x: obj("x", "a") };
+    const groups = resolveGroups(o);
+    expect(groups.get("a")).toBeNull(); // the smallest id in the loop is the root
+    expect(groups.get("b")).toBe("a");
+    expect(brokenGroups(o, groups)).toEqual(["a"]);
+  });
+
+  it("a group can go in any group but itself and those in it", () => {
+    expect(groupTargets(scene(), "vessel").sort()).toEqual(["battery"]);
+    expect(groupTargets(scene(), "body").sort()).toEqual(["battery", "rig", "vessel"]);
+  });
+});
 
 describe("groups", () => {
   it("cascades visibility and opacity through group ancestors only", () => {
@@ -31,7 +63,7 @@ describe("groups", () => {
     const inh = inheritedDisplay(o);
     expect(inh.get("hull")).toEqual({ visible: true, opacity: 0.5 });
     expect(inh.get("cell").visible).toBe(false);
-    // flag hangs off an object: the hidden mast doesn't hide it (v2 §5), but RIG's state still reaches it
+    // flag is attached to the mast: the hidden mast doesn't hide it, but RIG's state still reaches it
     expect(inh.get("flag")).toEqual({ visible: true, opacity: 1 });
     expect(inh.get("vessel")).toEqual({ visible: true, opacity: 1 });
     o.vessel.visible = false;
@@ -48,20 +80,15 @@ describe("groups", () => {
     expect(removalSet(o, "vessel").sort()).toEqual(["body", "deck", "flag", "hull", "mast", "rig", "vessel"]);
     expect(removalSet(o, "mast")).toEqual(["mast"]);
     expect(removalSet(o, "nope")).toEqual([]);
-    expect(descendantsOf(childrenMap(resolveParents(o)), "rig").sort()).toEqual(["flag", "mast"]);
+    expect(descendantsOf(childrenMap(outlineParents(o)), "rig").sort()).toEqual(["flag", "mast"]);
   });
 
-  it("ungroups to the group's parent, keeping world poses", () => {
-    const o = scene();
-    o.body.transform = T([1, 2, 3], [0, Math.PI / 2, 0], 2);
-    o.hull.transform = T([1, 0, 0]);
-    const before = applyMatrix(worldMatrix(o, "hull"), [0, 0, 0]);
-    const plan = ungroupPlan(o, "body");
-    expect(plan.parent).toBe("vessel");
-    expect(Object.keys(plan.children).sort()).toEqual(["deck", "hull"]);
-    const after = { ...o, hull: { ...o.hull, parent: "vessel", transform: plan.children.hull } };
-    delete after.body;
-    applyMatrix(worldMatrix(after, "hull"), [0, 0, 0]).forEach((v, i) => expect(v).toBeCloseTo(before[i], 9));
+  it("ungroups into the group's own group; nothing moves", () => {
+    const plan = ungroupPlan(scene(), "body");
+    expect(plan.group).toBe("vessel");
+    expect(plan.members.sort()).toEqual(["deck", "hull"]);
+    expect(plan.transforms).toBeUndefined();
+    expect(ungroupPlan(scene(), "vessel").members.sort()).toEqual(["body", "rig"]);
   });
 
   it("ungrouping keeps how the children look: a hidden group's stay hidden, a translucent one's stay translucent", () => {
@@ -75,7 +102,7 @@ describe("groups", () => {
     // effective display is the same after as before
     const plan = ungroupPlan(o, "body");
     const after = { ...o };
-    for (const [c, t] of Object.entries(plan.children)) after[c] = { ...o[c], parent: plan.parent, transform: t, ...plan.display[c] };
+    for (const c of plan.members) after[c] = { ...o[c], group: plan.group, ...plan.display[c] };
     delete after.body;
     const before = inheritedDisplay(o);
     const now = inheritedDisplay(after);
@@ -98,7 +125,7 @@ describe("groups", () => {
 
   it("shows roots open, deeper groups closed, and skips collapsed subtrees", () => {
     const o = scene();
-    const parents = resolveParents(o);
+    const parents = outlineParents(o);
     const ids = Object.keys(o);
     const tree = treeOrder(o, ids, parents);
     const kids = childrenMap(parents, ids);
@@ -124,7 +151,7 @@ describe("groups", () => {
     for (let g = 0; g < 129; g++) o[`g${g}`] = group(`G${g}`, g ? `g${Math.floor((g - 1) / 3)}` : null);
     for (let i = 0; i < 378; i++) o[`o${i}`] = obj(`layer ${i}`, `g${i % 129}`, { visible: i % 5 !== 0 });
     const t0 = performance.now();
-    const parents = resolveParents(o);
+    const parents = outlineParents(o);
     const ids = Object.keys(o);
     const tree = treeOrder(o, ids, parents);
     inheritedDisplay(o, parents);

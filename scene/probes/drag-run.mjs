@@ -166,10 +166,10 @@ try {
     await sleep(400);
     const d = await P("doc()");
     const added = Object.keys(d.objects).find((id) => !["G", "G2", "L1", "L2", "L3"].includes(id));
-    check("sidebarDropLandsInGroup", added && d.objects[added].parent === "G", {
+    check("sidebarDropLandsInGroup", added && d.objects[added].group === "G", {
       dragTypes: types,
       markOverG: seen.at(-1)?.mark,
-      added: added && { name: d.objects[added].name, parent: d.objects[added].parent, providerId: d.objects[added].providerId },
+      added: added && { name: d.objects[added].name, group: d.objects[added].group, providerId: d.objects[added].providerId },
     });
     check("hintShownOverViewport", hintOverViewport);
     check("hintDownAfterTreeDrop", await P("hintHidden()"));
@@ -197,7 +197,7 @@ try {
     const dest = at(l1, 0.25);
     const { seen, types } = await drag(l3.main.x + 10, l3.main.y + l3.main.h / 2, towards(center(l3.li), dest, 5), { during: async () => P("mark()") });
     const d = await P("doc()");
-    const roots = d.order.filter((id) => (d.objects[id]?.parent ?? null) === null);
+    const roots = d.order.filter((id) => (d.objects[id]?.group ?? null) === null);
     check("rowReorders", roots.indexOf("L3") === roots.indexOf("L1") - 1, { roots, mark: seen.at(-1), dragTypes: types });
     check("indicatorBeforeRow", JSON.stringify(seen.at(-1)) === JSON.stringify({ id: "L1", drop: "before" }));
     check("reorderKeepsTransform", JSON.stringify(d.objects.L3.transform) === JSON.stringify(before));
@@ -211,16 +211,16 @@ try {
     check("selfDropWritesNothing", (await P("heads()")) === heads);
   }
 
-  // 5. Reparent: drag L2 (world x=3) into G (x=1, scale 2): local x=1, scale 0.5.
+  // 5. File L2 (at x=3) in G: it's in the group, and hasn't moved (a group has no transform).
   {
     const l2 = await P(`row("L2")`);
     const g = await P(`row("G")`);
     const { seen } = await drag(l2.main.x + 10, l2.main.y + l2.main.h / 2, towards(center(l2.li), at(g, 0.5), 6), { during: async () => P("marks()") });
     const o = (await P("doc()")).objects.L2;
     check("indicatorFollowsPointer", JSON.stringify(seen.at(-1)) === JSON.stringify(["G:into"]) && seen.every((m) => m.length <= 1));
-    check("rowReparentsIntoGroup", o.parent === "G" && Math.abs(o.transform.position[0] - 1) < 1e-6 && Math.abs(o.transform.scale - 0.5) < 1e-6, {
+    check("rowFiledInGroupWhereItWas", o.group === "G" && (o.parent ?? null) === null && Math.abs(o.transform.position[0] - 3) < 1e-6 && Math.abs(o.transform.scale - 1) < 1e-6, {
       marksAlongPath: seen,
-      parent: o.parent,
+      group: o.group,
       transform: o.transform,
     });
   }
@@ -232,7 +232,7 @@ try {
     const g2 = await P(`row("G2")`);
     const heads = await P("heads()");
     const { seen } = await drag(g.main.x + 10, g.main.y + g.main.h / 2, towards(center(g.li), at(g2, 0.5), 5), { during: async () => P("mark()") });
-    check("cycleRefused", (await P("heads()")) === heads && (await P("doc()")).objects.G.parent == null, { mark: seen.at(-1), toast: await P("toast()") });
+    check("cycleRefused", (await P("heads()")) === heads && (await P("doc()")).objects.G.group == null, { mark: seen.at(-1), toast: await P("toast()") });
     check("indicatorIntoChildGroup", JSON.stringify(seen.at(-1)) === JSON.stringify({ id: "G2", drop: "into" }));
     check("cycleToast", /inside itself/.test((await P("toast()")) ?? ""));
   }

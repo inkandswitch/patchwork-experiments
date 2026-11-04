@@ -332,11 +332,7 @@ describe("scene tool (mounted, no WebGL)", () => {
 
   function addGroup(gid = "g1") {
     scene.change((d) => {
-      d.objects[gid] = {
-        kind: "group", name: "G", parent: null, sourceUrl: null, providerId: null, renderUrl: null,
-        visible: true, color: null, opacity: 1, wireframe: false,
-        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 },
-      };
+      d.objects[gid] = { kind: "group", name: "G", group: null, visible: true, opacity: 1 };
       d.order.push(gid);
     });
     return gid;
@@ -349,11 +345,11 @@ describe("scene tool (mounted, no WebGL)", () => {
     return e;
   };
 
-  /** A plain object at the root, at `x`, without going through a provider. */
-  function addLeaf(id, { parent = null, x = 0 } = {}) {
+  /** A plain object at `x`, attached to `parent` and filed in `group`, without going through a provider. */
+  function addLeaf(id, { parent = null, group = null, x = 0 } = {}) {
     scene.change((d) => {
       d.objects[id] = {
-        kind: "object", name: id, parent, sourceUrl: null, providerId: "file-stl", renderUrl: null,
+        kind: "object", name: id, parent, group, sourceUrl: null, providerId: "file-stl", renderUrl: null,
         visible: false, color: null, opacity: 1, wireframe: false,
         transform: { position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 },
       };
@@ -371,7 +367,8 @@ describe("scene tool (mounted, no WebGL)", () => {
     const objects = scene.doc().objects;
     const added = Object.keys(objects).find((id) => id !== g);
     expect(added, "nothing was added").toBeTruthy();
-    expect(objects[added].parent).toBe(g);
+    expect(objects[added].group).toBe(g);
+    expect(objects[added].parent ?? null).toBe(null);
   });
 
   it("dropped at a row's edge it goes beside it, not inside", async () => {
@@ -387,32 +384,57 @@ describe("scene tool (mounted, no WebGL)", () => {
     expect(scene.doc().order.indexOf(added)).toBeLessThan(scene.doc().order.indexOf(g));
   });
 
-  it("dragging a row onto a group reparents it and keeps its world pose", async () => {
-    await addByUrl(file.url);
-    const [a] = scene.doc().order;
+  it("dragging a row onto a group files it there and moves nothing; out of its parent's rows it's detached, where it is", async () => {
+    addLeaf("hull", { x: 1 });
+    scene.change((d) => (d.objects.hull.transform.scale = 2));
+    addLeaf("cleat", { parent: "hull", x: 1 }); // attached: world x 1 + 2·1 = 3
     const g = addGroup();
-    scene.change((d) => {
-      d.objects[g].transform = { position: [1, 0, 0], rotation: [0, 0, 0], scale: 2 };
-      d.objects[a].transform = { position: [3, 0, 0], rotation: [0, 0, 0], scale: 1 };
-    });
     await flush();
-    atRow(g, 0.5, () => rowDrag(a));
+    atRow(g, 0.5, () => rowDrag("hull"));
     await flush();
-    const o = scene.doc().objects[a];
-    expect(o.parent).toBe(g);
-    // The group is at x=1 scaled 2, so staying at world x=3 means local x=1.
-    expect(o.transform.position[0]).toBeCloseTo(1, 6);
-    expect(o.transform.scale).toBeCloseTo(0.5, 6);
+    expect(scene.doc().objects.hull).toMatchObject({ group: g, parent: null });
+    expect(scene.doc().objects.hull.transform.position[0]).toBe(1);
+    // the cleat is still attached to the hull, but filed elsewhere: dropping it into the group detaches it
+    atRow(g, 0.5, () => rowDrag("cleat"));
+    await flush();
+    const c = scene.doc().objects.cleat;
+    expect(c).toMatchObject({ group: g, parent: null });
+    expect(c.transform.position[0]).toBeCloseTo(3, 6);
+    expect(c.transform.scale).toBeCloseTo(2, 6);
+  });
+
+  it("dropped on the line under an attached row, a row is attached to the same object, in its group", async () => {
+    const g = addGroup();
+    addLeaf("hull", { group: g });
+    addLeaf("cleat", { parent: "hull", group: g, x: 1 });
+    addLeaf("winch", { x: 5 });
+    await flush();
+    atRow("cleat", 0.8, () => rowDrag("winch"));
+    await flush();
+    expect(scene.doc().objects.winch).toMatchObject({ parent: "hull", group: g });
+    expect(scene.doc().objects.winch.transform.position[0]).toBeCloseTo(5, 6); // hull is at the origin
+  });
+
+  it("a group can't go among an object's attachments", async () => {
+    addLeaf("hull");
+    addLeaf("cleat", { parent: "hull" });
+    const g = addGroup();
+    await flush();
+    const heads = scene.heads();
+    atRow("cleat", 0.8, () => rowDrag(g));
+    await flush();
+    expect(scene.heads()).toEqual(heads);
+    expect(element.querySelector(".toast").textContent).toMatch(/only go inside another group/);
   });
 
   it("refuses to put a group inside its own child, and changes nothing", async () => {
     const g = addGroup("g1");
     const child = addGroup("g2");
-    scene.change((d) => (d.objects[child].parent = g));
+    scene.change((d) => (d.objects[child].group = g));
     await flush();
     atRow(child, 0.5, () => rowDrag(g));
     await flush();
-    expect(scene.doc().objects[g].parent ?? null).toBe(null);
+    expect(scene.doc().objects[g].group ?? null).toBe(null);
     expect(element.querySelector(".toast").textContent).toMatch(/inside itself/);
   });
 
@@ -500,12 +522,12 @@ describe("scene tool (mounted, no WebGL)", () => {
 
   it("below an open group, a drop goes in at the top — where the line is drawn", async () => {
     const g = addGroup();
-    addLeaf("k", { parent: g });
+    addLeaf("k", { group: g });
     addLeaf("z");
     await flush();
     atRow(g, 0.9, () => rowDrag("z"));
     await flush();
-    expect(scene.doc().objects.z.parent).toBe(g);
+    expect(scene.doc().objects.z.group).toBe(g);
     expect(scene.doc().order.indexOf("z")).toBeLessThan(scene.doc().order.indexOf("k"));
   });
 

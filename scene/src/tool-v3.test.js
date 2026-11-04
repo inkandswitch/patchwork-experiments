@@ -214,21 +214,29 @@ describe("scene tool v3 (mounted, no WebGL)", () => {
     expect(scene.doc().dimensions.d1.a).toEqual({ objectId: null, local: null, world: [0, -0.7, 0] });
   });
 
-  it("ungroups in the inspector, keeping world poses", async () => {
+  it("upgrades groups with transforms on open (their transforms baked into what's in them), and ungroups without moving anything", async () => {
     const { scene } = vesselScene();
     scene.change((d) => {
       d.objects.body.transform = T([1, 0, 0], [0, Math.PI / 2, 0], 2);
       d.objects.hull.transform = T([0, 0, 1]);
     });
-    const before = applyMatrix(worldMatrix(scene.doc().objects, "hull"), [0, 0, 0]);
+    // hull's world origin, under vessel (down 0.7) · body (at x 1, turned 90°, ×2) · its own (z 1)
+    const was = [3, -0.7, 0];
     mount(scene);
+    let objects = scene.doc().objects;
+    expect(objects.vessel.transform).toBeUndefined();
+    expect(objects.body).toMatchObject({ kind: "group", group: "vessel" });
+    expect(objects.body.parent).toBeUndefined();
+    expect(objects.hull).toMatchObject({ group: "body", parent: null });
+    applyMatrix(worldMatrix(objects, "hull"), [0, 0, 0]).forEach((v, i) => expect(v).toBeCloseTo(was[i], 9));
     row("body").querySelector(".row-main").click();
     expect(element.querySelector(".inspector .panel-title").textContent).toBe("Group");
+    expect(element.querySelector(".inspector select.attach")).toBeNull(); // a group isn't attached to anything
     [...element.querySelectorAll(".inspector button")].find((b) => b.textContent === "Ungroup").click();
-    const objects = scene.doc().objects;
+    objects = scene.doc().objects;
     expect(objects.body).toBeUndefined();
-    expect(objects.hull.parent).toBe("vessel");
-    applyMatrix(worldMatrix(objects, "hull"), [0, 0, 0]).forEach((v, i) => expect(v).toBeCloseTo(before[i], 9));
+    expect(objects.hull.group).toBe("vessel");
+    applyMatrix(worldMatrix(objects, "hull"), [0, 0, 0]).forEach((v, i) => expect(v).toBeCloseTo(was[i], 9));
   });
 
   it("filters the outline over name and path, with a count; Enter selects the first match, Esc clears", async () => {
@@ -283,25 +291,32 @@ describe("scene tool v3 (mounted, no WebGL)", () => {
     expect(element.querySelector(".inspector .about").hidden).toBe(true);
   });
 
-  it("'Attached to' lists groups first, as a tree; New group and Group wrap without moving anything", async () => {
+  it("'In group' lists the groups as a tree and 'Attached to' only objects; filing in a group moves nothing; New group and Group wrap", async () => {
     const { scene } = vesselScene();
     mount(scene);
     row("bhd").querySelector(".row-main").click();
+    const inGroup = element.querySelector(".inspector select.in-group");
+    expect([...inGroup.options].map((o) => o.value)).toEqual(["", "vessel", "body", "battery"]);
+    expect(inGroup.querySelector('option[value="body"]').textContent).toMatch(/^\s+BODY$/);
+    expect(inGroup.value).toBe("vessel");
     const attach = element.querySelector(".inspector select.attach");
-    const groupsOpt = attach.querySelector('optgroup[label="Groups"]');
-    expect([...groupsOpt.querySelectorAll("option")].map((o) => o.value)).toEqual(["vessel", "body", "battery"]);
-    expect(groupsOpt.querySelector('option[value="body"]').textContent).toMatch(/^\s+BODY$/);
+    expect([...attach.options].map((o) => o.value).sort()).toEqual(["", "cell", "deck", "hull"]);
     const before = applyMatrix(worldMatrix(scene.doc().objects, "bhd"), [0, 0, 0]);
+    // file it in the battery group: nothing moves
+    inGroup.value = "battery";
+    inGroup.dispatchEvent(new Event("change"));
+    expect(scene.doc().objects.bhd.group).toBe("battery");
+    applyMatrix(worldMatrix(scene.doc().objects, "bhd"), [0, 0, 0]).forEach((v, i) => expect(v).toBeCloseTo(before[i], 9));
     [...element.querySelectorAll(".inspector button")].find((b) => b.textContent === "Group").click();
     const objects = scene.doc().objects;
-    const gid = objects.bhd.parent;
-    expect(objects[gid]).toMatchObject({ kind: "group", parent: "vessel", renderUrl: null, sourceUrl: null });
+    const gid = objects.bhd.group;
+    expect(objects[gid]).toEqual({ kind: "group", name: "Group", group: "battery", visible: true, opacity: 1 });
     expect(scene.doc().order.indexOf(gid)).toBe(scene.doc().order.indexOf("bhd") - 1);
     applyMatrix(worldMatrix(objects, "bhd"), [0, 0, 0]).forEach((v, i) => expect(v).toBeCloseTo(before[i], 9));
     // New group goes inside the selected group
     element.querySelector(".new-group").click();
     const added = Object.keys(scene.doc().objects).find((k) => !objects[k]);
-    expect(scene.doc().objects[added].parent).toBe(gid);
+    expect(scene.doc().objects[added].group).toBe(gid);
   });
 
   it("toggles one of 507 objects quickly and fetches only the shown ones", async () => {

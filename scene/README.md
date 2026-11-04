@@ -6,9 +6,11 @@ datatype keeps its own canonical format; its package registers a
 to a small **`scene-render`** doc that records how it was built, rebuilds it
 when the source or the build params change, and shows the result with grid,
 axes, bounding-box dimensions and point-to-point measurements. A GLB file is
-shown as it is, with no render doc (a *passthrough* provider). Objects can be
-arranged in **groups**, and a scene of hundreds of parts only loads what is
-shown.
+shown as it is, with no render doc (a *passthrough* provider). Objects are
+filed in **groups** (which organise, and hide or fade what's in them) and
+**attached** to one another (which is where they are: an attachment moves
+with its parent), two separate things; a scene of hundreds of parts only
+loads what is shown.
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -36,19 +38,24 @@ at the top level: on a group's row it goes inside that group, and near a row's
 top or bottom edge it goes before or after that row instead. The row under the
 pointer says which it will be. Below an open row with children the line sits
 between that row and its first child, and that is where the drop goes: inside,
-at the top. Beside an object that is attached to another (rather than in a
-group), a dropped document is attached to the same object. Rows can be dragged
-by their name to move them the same way — that is the same thing the
-inspector's **Attached to** does, and like it, re-parenting keeps the object's
-world pose, so nothing moves on screen. A row released where it already sits
-writes nothing, and a reorder among siblings changes only `order` (spliced, so
-a collaborator's concurrent add survives the merge). A group can't be dropped
-into itself or into anything inside it, and a row dragged in from another
-scene's outline is refused.
+at the top. Beside an object that is attached to another, a dropped document
+is attached to the same object (and filed in its group). Rows can be dragged
+by their name to move them the same way: among a group's rows a row is filed
+in that group and detached from whatever it was attached to; among an
+object's attachments it's attached to that object. Either way it stays
+exactly where it is on screen (a group has no transform; attaching and
+detaching rewrite the object's transform to keep its world pose). A row
+released where it already sits writes nothing, and a reorder among siblings
+changes only `order` (spliced, so a collaborator's concurrent add survives the
+merge). A group can't be dropped into itself or anything inside it, or among
+an object's attachments, and a row dragged in from another scene's outline is
+refused.
 
 - **Outline**: visibility, colour, remove; click to select, double-click to frame.
-  Groups and attached objects are listed (indented, 10 px a level up to 8)
-  under their parent, and anything with children folds open and shut (the
+  What's in a group is listed under it, and an object attached to another in
+  the same group under that object (indented, 10 px a level up to 8); an
+  object attached to something filed elsewhere is listed in its own group.
+  Anything with children folds open and shut (the
   chevron, or ← / → on a focused row; ↑ / ↓ move). What's open is yours alone,
   kept in this browser (`localStorage`, `scene-outline:<scene url>`), never in
   the doc; by default a visible top-level group is open and everything deeper is
@@ -60,12 +67,14 @@ scene's outline is refused.
   word, case-insensitively, against each object's name and its group path, and
   shows the matches with their groups (dimmed) and a count ("12 of 507").
   Enter selects and frames the first match; Esc clears. It never touches the doc.
-- **Inspector**: name, colour, opacity, wireframe, **Attached to** (groups
-  first, as a tree, then objects), position (display units), rotation
-  (degrees), scale; **Group** puts the object in a new group where it is;
-  for a group, **Ungroup** moves its contents up a level, where they are and
-  as they look (a hidden group's contents stay hidden, a translucent one's
-  keep its opacity), and removes it. **About** shows the object's `infoUrl` document (or its nearest
+- **Inspector**: name, colour, opacity, wireframe, **In group** (the groups,
+  as a tree; filing moves nothing), **Attached to** (objects), position
+  (display units), rotation (degrees), scale; **Group** puts the object in a
+  new group where it's filed; for a group, name, visibility, opacity and the
+  group it's in, and **Ungroup** moves its contents up a level, as they look
+  (a hidden group's contents stay hidden, a translucent one's keep its
+  opacity), and removes it. Commands from extensions (*Shuffle pile* at a game
+  table, say) are buttons here too. **About** shows the object's `infoUrl` document (or its nearest
   group's, labelled "About <group>") in an embedded `<patchwork-view>`, with
   **Open**. Then the embedded build controls, for objects that have a render doc.
 - **Attaching**: pick an object under *Attached to* and this one moves with it
@@ -76,7 +85,9 @@ scene's outline is refused.
   Hiding an object doesn't hide what's attached to it. Removing an object
   leaves its attachments where they were, now at the scene root.
 - **Viewport**: orbit/pan/zoom, click to select, move/rotate gizmo (`G` / `R`),
-  **Frame all** (`F`).
+  **Frame all** (`F`). The gizmo on a selected group sits at the middle of
+  what's in it and moves all of it (what's attached to a member follows the
+  member; locked members stay), written as one change.
 - **Hand** (`H`, or *Hand* in the gizmo menu): pick objects up and put them
   down elsewhere, like pieces on a table. Press on an object and drag: it
   floats just above the spot under the pointer (the table, or the top of a
@@ -182,7 +193,7 @@ The scene keeps them, copies them with the object, and otherwise ignores them.
 | `hud()` | `[{ text, state }]` pills in the viewport's corner |
 | `panels` | `[{ id, title, mount(el) → { update?, dispose? } }]` sidebar panels, `update` called on every sync |
 | `commands` | `[{ id, name, title?, key?, appliesTo?(id), run(id) }]`: buttons in the inspector for what they apply to, and the key over (or with) such an object |
-| `drop({ url, doc, handle, parent })` | lay out a dropped document its own way → true if it did |
+| `drop({ url, doc, handle, group })` | lay out a dropped document its own way (in `group`, where it was dropped) → true if it did |
 | `landing(id, worldPoint)` | how the hand should put this object down there: `{ faceUp: true }` turns it face up while it's over that spot (and back if it leaves) |
 | `dispose()` | |
 
@@ -370,21 +381,8 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
 ```ts
 {
   title: string,
-  objects: { [objectId]: {
-    kind?: "object" | "group",      // absent = "object"
-    name: string,
-    sourceUrl: AutomergeUrl | null, providerId: string | null,
-    renderUrl: AutomergeUrl | null, // null: passthrough (shown from sourceUrl) or a group
-    visible: boolean, color: string | null, opacity: number, wireframe: boolean,
-    transform: { position: [x,y,z], rotation: [x,y,z] /* Euler XYZ, radians */, scale: number },
-    parent?: string | null,         // another objectId (object or group); absent = null
-    infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
-    infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
-    locked?: boolean,               // true: the hand and the gizmo leave it where it is
-    traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
-    hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
-  } },
-  order: string[],
+  objects: { [objectId]: Object | Group },
+  order: string[],                  // objects and groups, as the outline lists them
   dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // the hand snaps (absent = true)
@@ -393,6 +391,28 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   camera: { position: [x,y,z], target: [x,y,z] } | null,
   traits?: { [key: string]: any },  // extensions' data on the scene itself
   materialRules?: MaterialRule[]
+}
+Object = {
+    kind?: "object",                // absent = an object
+    name: string,
+    sourceUrl: AutomergeUrl | null, providerId: string | null,
+    renderUrl: AutomergeUrl | null, // null: passthrough (shown from sourceUrl)
+    visible: boolean, color: string | null, opacity: number, wireframe: boolean,
+    transform: { position: [x,y,z], rotation: [x,y,z] /* Euler XYZ, radians */, scale: number },
+    parent?: string | null,         // the object it's attached to (never a group); absent = null
+    group?: string | null,          // the group it's filed in; absent = none
+    infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
+    infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
+    locked?: boolean,               // true: the hand and the gizmo leave it where it is
+    traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
+    hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
+}
+Group = {
+    kind: "group", name: string,
+    group?: string | null,          // the group it's in; absent = none
+    visible: boolean, opacity: number,
+    infoUrl?: AutomergeUrl | null, infoToolId?: string | null,
+    traits?: { [key: string]: any },
 }
 Anchor = { objectId: string | null, local: [x,y,z] | null, world: [x,y,z] }
 MaterialRule = {
@@ -406,12 +426,19 @@ MaterialRule = {
   no GLB copy are made, the scene shows `sourceUrl`'s bytes directly and never
   builds it. An object that has a `renderUrl` keeps the render-doc path, so
   GLBs added before passthrough still work.
-- **Groups** (`kind: "group"`) have no geometry: `sourceUrl`, `providerId`,
-  `renderUrl` and `color` are null and `wireframe` false. They are parents like
-  any object (transforms compose). Unlike an object, hiding a group hides
-  everything below it, and its opacity multiplies into everything below it.
-  A group is never picked and can't anchor a dimension; its box (Frame,
-  selection) is the union of what's shown inside it.
+- **Groups** (`kind: "group"`) organise: no geometry and no transform.
+  Hiding a group hides everything filed in it (at any depth), and its opacity
+  multiplies into everything filed in it. A group is never picked, never a
+  parent and can't anchor a dimension; its box (Frame, selection, the gizmo's
+  pivot) is the union of what's shown inside it. Moving it with the gizmo
+  writes each member's transform. A loop of groups (two concurrent edits) is
+  broken the same way on every peer, like an attachment cycle.
+- **Older scenes**, whose groups were parents with transforms, are upgraded
+  the first time a current scene tool opens them (`src/migrate.js`): each
+  object is filed in the nearest group it was under, attached to the nearest
+  object it was under, and keeps its world pose (what the groups between
+  contributed is baked into its transform). `view.defaultGizmo` becomes
+  `view.defaultMode`.
 - `hint` is written by importers: `bounds` (metres, in the GLB's own frame)
   is drawn as a placeholder until the GLB loads and decides load order (bigger
   first, the selected object before everything).

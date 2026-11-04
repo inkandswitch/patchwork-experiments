@@ -14,7 +14,6 @@ import { HIDDEN, SEATS, ZONE, docUrl, hiddenBy, seatAt, seatOf, seatedPlayers, s
 import { LEGACY_PLAIN_DECK, PLAIN_DECK, plainResolver } from "./plain-deck.js";
 
 export const PANEL = "tabletop.table";
-const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
 
 const el = (tag, props = {}, ...children) => {
   const e = document.createElement(tag);
@@ -150,7 +149,7 @@ export default {
     }
 
     /** A deck dropped on the table: its cards, face down in a stack, in a group named for it. */
-    async function drop({ url, doc, handle, parent }) {
+    async function drop({ url, doc, handle, group }) {
       const type = doc?.["@patchwork"]?.type ?? null;
       if (type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return false; // it has no layout of its own
       const provider = await deckProvider(type).catch(() => null);
@@ -167,7 +166,7 @@ export default {
       api.change((d) => {
         if (!d.objects) d.objects = {};
         if (!d.order) d.order = [];
-        d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, sourceUrl: null, providerId: null, renderUrl: null, parent: parent ?? null, visible: true, color: null, opacity: 1, wireframe: false, transform: IDENTITY() };
+        d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, group: group ?? null, visible: true, opacity: 1 };
         d.order.push(gid);
         ids.forEach((oid, j) => {
           d.objects[oid] = {
@@ -175,7 +174,8 @@ export default {
             sourceUrl: place.look.sourceUrl,
             providerId: "file-glb",
             renderUrl: null,
-            parent: gid,
+            parent: null,
+            group: gid,
             visible: true,
             color: null,
             opacity: 1,

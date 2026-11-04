@@ -7,10 +7,10 @@ import { canMove, dropIntent, isMove, moveInOrder, placementFor, siblings, splic
 //     b
 //   c
 const objects = {
-  g1: { kind: "group", name: "g1", parent: null },
-  a: { kind: "object", name: "a", parent: "g1" },
-  b: { kind: "object", name: "b", parent: "g1" },
-  c: { kind: "object", name: "c", parent: null },
+  g1: { kind: "group", name: "g1", group: null },
+  a: { kind: "object", name: "a", group: "g1", parent: null },
+  b: { kind: "object", name: "b", group: "g1", parent: null },
+  c: { kind: "object", name: "c", group: null, parent: null },
 };
 const order = ["g1", "a", "b", "c"];
 

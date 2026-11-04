@@ -5,8 +5,11 @@
 // parent, and where among its children. Keeping that answer here, as a
 // function of the row under the pointer, is what lets it be tested without a
 // browser; tool.js only supplies the geometry and applies the result.
+//
+// "Parent" here is the outline's (groups.js outlineParents): a group, or the
+// object a row is attached to within its group.
 
-import { resolveParents, wouldCycle } from "./hierarchy.js";
+import { isGroup, outlineParents } from "./groups.js";
 
 /** A group's middle band means "inside it". A leaf has no middle. */
 export const INTO_BAND = 0.25;
@@ -40,7 +43,7 @@ export function dropIntent(isGroup, fraction) {
  * inserting in front of a descendant would land inside the very subtree we are
  * trying to follow.
  */
-export function placementFor(objects, order, rowId, intent, parents = resolveParents(objects), { expanded = false } = {}) {
+export function placementFor(objects, order, rowId, intent, parents = outlineParents(objects), { expanded = false } = {}) {
   if (!rowId || !objects?.[rowId]) return { parent: null, before: null };
   if (intent === "into") return { parent: rowId, before: null };
   const ids = order ?? [];
@@ -76,7 +79,7 @@ function nextSibling(objects, order, id, parent, parents) {
  * interleaved with it), so this is what a drop is compared on to decide
  * whether it moved anything.
  */
-export function siblings(objects, order, parent, parents = resolveParents(objects)) {
+export function siblings(objects, order, parent, parents = outlineParents(objects)) {
   return (order ?? []).filter((id) => objects?.[id] && (parents.get(id) ?? null) === parent);
 }
 
@@ -85,7 +88,7 @@ export function siblings(objects, order, parent, parents = resolveParents(object
  * that parent and its position among that parent's children stays the same —
  * including the drop of a row on itself, or on the line it already sits at.
  */
-export function isMove(objects, order, id, place, parents = resolveParents(objects)) {
+export function isMove(objects, order, id, place, parents = outlineParents(objects)) {
   if (!objects?.[id]) return false;
   const parent = place.parent && objects[place.parent] ? place.parent : null;
   if ((parents.get(id) ?? null) !== parent) return true;
@@ -96,16 +99,19 @@ export function isMove(objects, order, id, place, parents = resolveParents(objec
 }
 
 /**
- * Can `id` be moved to `parent`?
- *
- * Cycles are the real constraint and hierarchy.js already decides them. The
- * extra case is moving something onto itself, which is not a cycle by that
- * definition but is still not a move.
+ * Can `id` be moved to `parent` (a row of the outline)? Not onto itself, not
+ * into anything below it, and a group only into a group. (Whether an
+ * attachment would loop is hierarchy.js's to say; below it in the outline is
+ * the same question for what the outline shows.)
  */
-export function canMove(objects, id, parent, parents = resolveParents(objects)) {
+export function canMove(objects, id, parent, parents = outlineParents(objects)) {
   if (!objects?.[id]) return false;
-  if (parent === id) return false;
-  return !wouldCycle(objects, id, parent && objects[parent] ? parent : null, parents);
+  const target = parent && objects[parent] ? parent : null;
+  if (target == null) return true;
+  if (target === id) return false;
+  if (isGroup(objects[id]) && !isGroup(objects[target])) return false;
+  for (let p = target; p != null; p = parents.get(p)) if (p === id) return false;
+  return true;
 }
 
 /**

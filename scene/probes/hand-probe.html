@@ -195,6 +195,32 @@ try {
     /** what each card really is */
     secretNames: () => Object.fromEntries(Object.entries(scene.doc().objects).filter(([, o]) => o.traits?.["probe.secret"]).map(([id, o]) => [id, o.traits["probe.secret"].name])),
     toast: () => hostA.querySelector(".toast")?.textContent ?? "",
+    /** file both pawns in a new group, select it with the move gizmo, and move the gizmo's pivot by dx through the calls a gizmo drag makes */
+    async moveGroup(dx) {
+      const p0 = byName("Pawn 1"), p1 = byName("Pawn 2");
+      scene.change((d) => {
+        d.objects.pawns = { kind: "group", name: "Pawns", group: null, visible: true, opacity: 1 };
+        d.order.push("pawns");
+        d.objects[p0].group = "pawns";
+        d.objects[p1].group = "pawns";
+      });
+      await sleep(100);
+      hostA.querySelector('.object-row[data-id="pawns"] .row-main').click();
+      const gizmo = hostA.querySelector(".gizmo");
+      gizmo.value = "translate";
+      gizmo.dispatchEvent(new Event("change"));
+      await sleep(100);
+      const held = vp.gizmo.object === vp.pivot?.node;
+      const before = [p0, p1].map((id) => [...scene.doc().objects[id].transform.position]);
+      vp.startGroupDrag();
+      vp.pivot.node.position.x += dx;
+      vp.pivot.node.updateMatrixWorld(true);
+      vp.dragGroup();
+      vp.endGroupDrag();
+      await sleep(100);
+      const after = [p0, p1].map((id) => [...scene.doc().objects[id].transform.position]);
+      return { held, before, after };
+    },
     hover: (id) => {
       const b = vp.objectBox(id, { hints: false });
       return window.__table.screen([(b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2]);

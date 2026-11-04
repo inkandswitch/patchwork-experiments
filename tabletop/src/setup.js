@@ -23,7 +23,6 @@
 // - The scene opens in the hand, with snapping on, the grid and axes off, and
 //   the Table panel first.
 
-const IDENTITY = () => ({ position: [0, 0, 0], rotation: [0, 0, 0], scale: 1 });
 
 /** Where the i-th copy of a piece starts: a grid of `cols` from `at`, `gap` apart. [x, 0, z] */
 export function supplySpot(supply, i) {
@@ -71,7 +70,8 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
   const order = [];
   const deckDocs = {};
   const pieces = game?.pieces ?? {};
-  const base = (name, parent) => ({ name, parent, visible: true, color: null, opacity: 1, wireframe: false });
+  // every piece is filed in a group (or none), never attached to another
+  const base = (name, group) => ({ name, parent: null, group, visible: true, color: null, opacity: 1, wireframe: false });
   const drawn = (kind) => {
     const p = pieces[kind];
     if (!p?.glbUrl) throw new Error(`“${p?.name || kind}” has no GLB yet`);
@@ -79,7 +79,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
   };
   const group = (name) => {
     const gid = id("g");
-    objects[gid] = { ...base(name, null), kind: "group", sourceUrl: null, providerId: null, renderUrl: null, transform: IDENTITY() };
+    objects[gid] = { kind: "group", name, group: null, visible: true, opacity: 1 };
     order.push(gid);
     return gid;
   };
