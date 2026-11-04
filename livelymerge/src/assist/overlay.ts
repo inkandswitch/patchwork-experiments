@@ -64,6 +64,8 @@ function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: num
 const BUBBLE_FADE_MS = 400;
 const BUBBLE_MAX_W = 260;
 const BUBBLE_FONT = '13px system-ui, sans-serif';
+/** The dismiss button: a circle this big at a bubble's top-right corner, shown on hover. */
+const BUBBLE_X_R = 9;
 
 export class InkOverlay {
   readonly el: HTMLCanvasElement;
@@ -72,6 +74,13 @@ export class InkOverlay {
   private bubbles: Bubble[] = [];
   private cursor: AiCursor | null = null;
   private cursorHiddenAt: number | null = null;
+  /** The bubble under the user's pointer (shows its ×). */
+  private hoveredId: string | null = null;
+  private swallowUp = false;
+  private readonly hoverTarget: HTMLElement;
+  private readonly onHoverMove = (e: PointerEvent) => this.hoverMove(e);
+  private readonly onHoverDown = (e: PointerEvent) => this.hoverDown(e);
+  private readonly onHoverUp = (e: PointerEvent) => this.hoverUp(e);
   private active = false;
   private rafId: number | null = null;
   private readonly ro: ResizeObserver | null;
@@ -99,6 +108,65 @@ export class InkOverlay {
     this.syncSize();
     this.ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => this.syncSize()) : null;
     this.ro?.observe(lmCanvas);
+    // Hover and the × click come from capture-phase listeners on the container: the
+    // overlay itself ignores the pointer when idle (so the UI underneath keeps
+    // working), and only a click on a bubble's × is taken away from the UI.
+    this.hoverTarget = lmCanvas.parentElement ?? lmCanvas;
+    this.hoverTarget.addEventListener('pointermove', this.onHoverMove, { capture: true });
+    this.hoverTarget.addEventListener('pointerdown', this.onHoverDown, { capture: true });
+    this.hoverTarget.addEventListener('pointerup', this.onHoverUp, { capture: true });
+  }
+
+  private pointIn(e: PointerEvent): { x: number; y: number } {
+    const r = this.lmCanvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  /** Topmost shown bubble containing the point (with a margin for the ×), if any. */
+  private bubbleAt(p: { x: number; y: number }): Bubble | null {
+    for (let i = this.bubbles.length - 1; i >= 0; i--) {
+      const b = this.bubbles[i];
+      const r = b.rect;
+      if (!r || b.hiddenAt != null) continue;
+      if (p.x >= r.x - BUBBLE_X_R && p.x <= r.x + r.w + BUBBLE_X_R && p.y >= r.y - BUBBLE_X_R && p.y <= r.y + r.h) return b;
+    }
+    return null;
+  }
+
+  private onX(b: Bubble, p: { x: number; y: number }): boolean {
+    const r = b.rect!;
+    return Math.hypot(p.x - (r.x + r.w), p.y - r.y) <= BUBBLE_X_R + 3;
+  }
+
+  private hoverMove(e: PointerEvent): void {
+    if (e.pointerId === 7777) return; // the AI's own pointer never hovers bubbles
+    const b = this.bubbleAt(this.pointIn(e));
+    const id = b ? b.id : null;
+    if (id !== this.hoveredId) {
+      this.hoveredId = id;
+      this.requestFrame();
+    }
+  }
+
+  private hoverDown(e: PointerEvent): void {
+    if (e.pointerId === 7777) return;
+    const p = this.pointIn(e);
+    const b = this.bubbleAt(p);
+    if (!b || !this.onX(b, p)) return;
+    // Dismiss at once, and keep this click (and its release) from the UI underneath.
+    this.bubbles = this.bubbles.filter((x) => x !== b);
+    this.hoveredId = null;
+    this.swallowUp = true;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    this.requestFrame();
+  }
+
+  private hoverUp(e: PointerEvent): void {
+    if (!this.swallowUp) return;
+    this.swallowUp = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
   }
 
   private syncSize(): void {
@@ -394,6 +462,26 @@ export class InkOverlay {
     }
     ctx.fillStyle = '#222';
     lines.forEach((l, i) => ctx.fillText(l, x + pad, y + pad + i * lineH));
+    if (b.id === this.hoveredId) {
+      // The dismiss button, at the top-right corner.
+      const cx = x + w;
+      const cy = y;
+      ctx.beginPath();
+      ctx.arc(cx, cy, BUBBLE_X_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = AI_INK_COLOR;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx - 3.5, cy - 3.5);
+      ctx.lineTo(cx + 3.5, cy + 3.5);
+      ctx.moveTo(cx + 3.5, cy - 3.5);
+      ctx.lineTo(cx - 3.5, cy + 3.5);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -402,6 +490,9 @@ export class InkOverlay {
     if (this.rafId != null) cancelAnimationFrame(this.rafId);
     this.rafId = null;
     this.ro?.disconnect();
+    this.hoverTarget.removeEventListener('pointermove', this.onHoverMove, { capture: true });
+    this.hoverTarget.removeEventListener('pointerdown', this.onHoverDown, { capture: true });
+    this.hoverTarget.removeEventListener('pointerup', this.onHoverUp, { capture: true });
     this.el.remove();
   }
 }
