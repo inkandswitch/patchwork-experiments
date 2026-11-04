@@ -28,8 +28,8 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `flow-field` | the flow (icon `Wind`) |
 | `patchwork:tool` | `flow-field` | top-down editor |
-| `scene:source` | `flow-field-streamlines` | RK4 streamlines from a seed rake, as stream tubes or lines |
-| `scene:source` | `flow-field-slice` | a horizontal plane coloured by Cp or speed |
+| `scene:source` | `flow-field-streamlines` | RK4 streamlines from a seed rake, as stream tubes or lines; the rake's height is a handle in the scene |
+| `scene:source` | `flow-field-slice` | a horizontal plane coloured by Cp or speed; its height is a handle in the scene (drag it up and down) |
 
 ## The editor
 
