@@ -127,7 +127,8 @@ d12, d20 matches the saves seen (`Type: 1` on six-sided dice with six
 | `Custom_PDF` | a sheet whose About is the PDF's file doc |
 | chess / checkers / blocks / pawns | simple stand-in shapes |
 | `HandTrigger` | a seat (with a camera from that hand) |
-| `AttachedSnapPoints`, `SnapPoints` | `extras.snapPoints` in the object's GLB (a rotation's yaw too), and in the table's for the free ones |
+| `AttachedSnapPoints`, `SnapPoints` | the scene's connectors (`extras.connectors`) in the object's GLB, and in the table's for the free ones: position, rotation (converted like any other) and tags |
+| `Tags` | `tags` on the object: a tagged snap point takes only objects with one of its tags, as in Tabletop Simulator |
 | `Locked` | `locked` |
 | triggers, `3DText`, `Notecard` | left out (listed in the report) |
 | the table | a locked slab under everything, the mod's `TableURL` on top |

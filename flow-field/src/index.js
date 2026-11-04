@@ -60,6 +60,8 @@ export const plugins = [
       { key: "hugLines", label: "Lines past a linked body (per side)", kind: "integer", default: 3, min: 0, max: 8, step: 1, cost: "cheap" },
       { key: "bodyModel", label: "Linked body model", kind: "enum", default: "doc", options: BODY_MODEL, cost: "cheap" },
     ],
+    // dragged in the scene: the seed rake's height, up the field's z (the GLB's +Y)
+    handles: [{ param: "seedHeight", axis: [0, 1, 0], label: "Seed height" }],
     async load() {
       return (await import("./scene-streamlines.js")).default;
     },
@@ -82,6 +84,8 @@ export const plugins = [
       { key: "fade", label: "Fade undisturbed flow", kind: "number", default: 0, min: 0, max: 1, step: 0.05, cost: "cheap" },
       { key: "bodyModel", label: "Linked body model", kind: "enum", default: "doc", options: BODY_MODEL, cost: "cheap" },
     ],
+    // dragged in the scene: the slice plane's height, up the field's z (the GLB's +Y)
+    handles: [{ param: "height", axis: [0, 1, 0], label: "Slice height" }],
     async load() {
       return (await import("./scene-slice.js")).default;
     },

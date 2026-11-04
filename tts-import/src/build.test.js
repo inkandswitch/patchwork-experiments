@@ -82,9 +82,9 @@ describe("buildKind", () => {
     expect(parseGLB(out.glb).json.images).toBeUndefined();
   });
 
-  it("sizes a tile by its image (stretch), sits it on its bottom face, bakes scale, and carries snap points", async () => {
+  it("sizes a tile by its image (stretch), sits it on its bottom face, bakes scale, and carries snap points as connectors (rotation, tags)", async () => {
     const img = solidPNG(20, 10, [200, 200, 200, 255]);
-    const kind = { type: "tile", scale: [3, 1, 3], top: "t", bottom: null, thickness: 0.2, tileType: 0, stretch: true, color: "#336699", snaps: [{ position: [0.5, 0.2, -0.5], yaw: 90 }, { position: [0, 0.2, 0], yaw: null }] };
+    const kind = { type: "tile", scale: [3, 1, 3], top: "t", bottom: null, thickness: 0.2, tileType: 0, stretch: true, color: "#336699", snaps: [{ position: [0.5, 0.2, -0.5], rotation: [0, 90, 0], tags: ["Coin"] }, { position: [0, 0.2, 0], rotation: null, tags: [] }] };
     const out = await buildKind(kind, ctxFor({ t: img }));
     // 2·aspect × 2 at scale 1 → 12 × 6 units at scale 3; 0.2 thick from y = 0
     expect(out.bounds.max[0] - out.bounds.min[0]).toBeCloseTo(12 * U, 6);
@@ -92,10 +92,11 @@ describe("buildKind", () => {
     expect(out.bounds.min[1]).toBeCloseTo(0, 6);
     expect(out.bounds.max[1]).toBeCloseTo(0.2 * U, 6);
     const { json } = parseGLB(out.glb);
-    const [a, b] = json.scenes[0].extras.snapPoints;
+    const [a, b] = json.scenes[0].extras.connectors;
     expect(a.position).toEqual([+(1.5 * U).toFixed(5), +(0.2 * U).toFixed(5), +(1.5 * U).toFixed(5)]);
-    expect(a.yaw).toBeCloseTo(-Math.PI / 2, 5);
-    expect(b).toEqual([0, +(0.2 * U).toFixed(5), 0]);
+    expect(a.rotation[1]).toBeCloseTo(-Math.PI / 2, 5); // TTS +90° about Y is the scene's −90° (mirrored z)
+    expect(a.tags).toEqual(["Coin"]);
+    expect(b).toEqual({ position: [0, +(0.2 * U).toFixed(5), 0] });
   });
 
   it("tokens: a round alpha image becomes a disc, cut out with an alpha mask", async () => {

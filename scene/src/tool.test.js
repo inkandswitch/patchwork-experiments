@@ -140,6 +140,8 @@ describe("scene tool (mounted, no WebGL)", () => {
     expect(scene.doc().objects[id].color).toBe("#00ff00");
     expect(element.querySelector(".object-row .swatch")).toBe(swatch);
     scene.change((d) => (d.objects[id].name = "renamed"));
+    // drawn at once while this frame's UI budget lasts, else on the next frame (tool.js, UI_BUDGET_MS)
+    await new Promise((r) => requestAnimationFrame(() => r()));
     expect(element.querySelector(".object-row .name").textContent).toBe("renamed");
     expect(element.querySelector(".object-row .swatch")).toBe(swatch);
   });
@@ -591,5 +593,32 @@ describe("scene tool (mounted, no WebGL)", () => {
     expect(scene.listenerCount("change")).toBe(0);
     expect(scene.listenerCount("ephemeral-message")).toBe(0);
     for (const h of repo.handles.values()) expect(h.listenerCount("change")).toBe(0);
+  });
+  it("a provider's handles: the selected object's, at its render doc's values; letting one go writes its param there", async () => {
+    const { encodeGLB, computeNormals } = await import("./glb.js");
+    const tri = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const glb = encodeGLB({ meshes: [{ name: "t", positions: tri, normals: computeNormals(tri) }] });
+    getRegistry("scene:source").register({
+      type: "scene:source",
+      id: "slice-test",
+      name: "Slice",
+      supportedDatatypes: ["slicey"],
+      params: [{ key: "height", label: "Height", kind: "number", default: 0.2, min: -1, max: 1, step: 0.1, cost: "cheap" }],
+      handles: [{ param: "height", axis: [0, 1, 0] }],
+      load: async () => ({ build: async () => ({ kind: "glb", glb }) }),
+    });
+    const slicey = repo.add({ "@patchwork": { type: "slicey" }, title: "Flow" });
+    await addByUrl(slicey.url);
+    const [id] = Object.keys(scene.doc().objects);
+    const debug = element.querySelector(".scene-tool").__sceneDebug;
+    for (let i = 0; i < 5 && !debug.handles().length; i++) await flush();
+    expect(debug.handles()).toEqual([{ key: "height", label: "Height", axis: [0, 1, 0], value: 0.2, min: -1, max: 1, step: 0.1, integer: false }]);
+    debug.viewport.cb.onHandleEnd(id, "height", 0.6);
+    const render = await repo.find(scene.doc().objects[id].renderUrl);
+    expect(render.doc().params.height).toBe(0.6);
+    expect(debug.handles()[0].value).toBe(0.6); // follows the render doc
+    // nothing selected: no handles
+    element.querySelector(".scene-tool").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(debug.handles()).toEqual([]);
   });
 });

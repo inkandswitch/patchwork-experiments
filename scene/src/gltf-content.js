@@ -19,7 +19,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import { toArrayBuffer } from "./file-content.js";
 import { resolveMaterialSet } from "./material-rules.js";
-import { sanitizeSnapPoints } from "./hand.js";
+import { sanitizeConnectors } from "./hand.js";
 
 let loader = null;
 
@@ -226,11 +226,11 @@ export function findLegend(root) {
 }
 
 /**
- * Snap points from any node's (or the scene's) `extras.snapPoints`, moved into
- * root's frame (a yaw turns with its node), with the first
- * `extras.snapRadius` found. Read before instancing collapses meshes, which
- * drops their userData. Root at identity.
- * @returns {{ points: { position: number[], yaw: number | null }[], radius: number | null }}
+ * Connectors from any node's (or the scene's) `extras.connectors` and older
+ * `extras.snapPoints`, moved into root's frame (a yaw turns with its node),
+ * with the first `extras.snapRadius` found. Read before instancing collapses
+ * meshes, which drops their userData. Root at identity.
+ * @returns {{ points: { position: number[], yaw: number | null, tags: string[] }[], radius: number | null }}
  */
 export function findSnapPoints(root) {
   root.updateMatrixWorld(true);
@@ -238,16 +238,16 @@ export function findSnapPoints(root) {
   let radius = null;
   const v = new Vector3();
   root.traverse((o) => {
-    const raw = o.userData?.snapPoints;
-    if (raw) {
+    const raw = [...(Array.isArray(o.userData?.connectors) ? o.userData.connectors : []), ...(Array.isArray(o.userData?.snapPoints) ? o.userData.snapPoints : [])];
+    if (raw.length) {
       const e = o.matrixWorld.elements;
       const turn = Math.atan2(e[8], e[10]); // the node's own yaw: where its +Z points
-      for (const p of sanitizeSnapPoints(raw)) {
-        points.push({ position: v.fromArray(p.position).applyMatrix4(o.matrixWorld).toArray(), yaw: p.yaw == null ? null : p.yaw + turn });
+      for (const p of sanitizeConnectors(raw)) {
+        points.push({ position: v.fromArray(p.position).applyMatrix4(o.matrixWorld).toArray(), yaw: p.yaw == null ? null : p.yaw + turn, tags: p.tags });
       }
     }
     const r = Number(o.userData?.snapRadius);
-    if (radius == null && raw && Number.isFinite(r) && r > 0) radius = r;
+    if (radius == null && raw.length && Number.isFinite(r) && r > 0) radius = r;
   });
   return { points, radius };
 }

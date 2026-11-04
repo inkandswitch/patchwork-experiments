@@ -1,14 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeSnapPoints, yawDelta } from "./hand.js";
+import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, sanitizeConnectors, sanitizeSnapPoints, yawDelta, yawOfEuler } from "./hand.js";
 
-describe("sanitizeSnapPoints", () => {
-  it("keeps finite [x, y, z] and { position, yaw } points, drops the rest", () => {
+describe("connectors", () => {
+  it("keeps finite [x, y, z] and { position, yaw } snap points (the older shape), drops the rest", () => {
     expect(sanitizeSnapPoints([[1, 2, 3], { position: [4, 5, 6], yaw: Math.PI }, { position: [7, 8, 9], yaw: "x" }, [1, 2], ["a", 0, 0], null, [0, 0, Infinity]])).toEqual([
-      { position: [1, 2, 3], yaw: null },
-      { position: [4, 5, 6], yaw: Math.PI },
-      { position: [7, 8, 9], yaw: null },
+      { position: [1, 2, 3], yaw: null, tags: [] },
+      { position: [4, 5, 6], yaw: Math.PI, tags: [] },
+      { position: [7, 8, 9], yaw: null, tags: [] },
     ]);
     expect(sanitizeSnapPoints("nope")).toEqual([]);
+  });
+
+  it("a connector's rotation gives the yaw a piece set down there faces; its tags say what it takes", () => {
+    const [a, b, c, d] = sanitizeConnectors([
+      { position: [0, 0, 0], rotation: [0, Math.PI / 2, 0], tags: ["Meeple", "", 3] },
+      { position: [0, 0, 0], rotation: [Math.PI, 0, 0] }, // +Z turned to -Z, upside down
+      { position: [0, 0, 0], rotation: [-Math.PI / 2, 0, 0] }, // +Z pointing straight up: no yaw
+      { position: [0, 0, 0], rotation: ["x", 0, 0], yaw: 1 }, // a bad rotation falls back to the yaw
+    ]);
+    expect(a.yaw).toBeCloseTo(Math.PI / 2);
+    expect(a.tags).toEqual(["Meeple"]);
+    expect(Math.abs(b.yaw)).toBeCloseTo(Math.PI);
+    expect(c.yaw).toBeNull();
+    expect(d.yaw).toBe(1);
+    expect(yawOfEuler([0.3, 0, 0])).toBeCloseTo(0); // a tilt doesn't turn it
+  });
+
+  it("an untagged connector takes anything; a tagged one only objects sharing a tag", () => {
+    expect(accepts([], undefined)).toBe(true);
+    expect(accepts(["Card"], ["Card", "Red"])).toBe(true);
+    expect(accepts(["Card"], ["Meeple"])).toBe(false);
+    expect(accepts(["Card"], undefined)).toBe(false);
   });
   it("turns the short way round", () => {
     expect(yawDelta(0, Math.PI / 2)).toBeCloseTo(Math.PI / 2);

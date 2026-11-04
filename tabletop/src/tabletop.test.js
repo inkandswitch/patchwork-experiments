@@ -94,8 +94,8 @@ describe("piece GLBs", () => {
   it("the board carries its 25 spaces as snap points on the scene", async () => {
     const { glb, bounds } = pieceGLB(santoriniPieces().board);
     const gltf = await loadGLB(glb);
-    expect(gltf.scene.userData.snapPoints).toHaveLength(25);
-    expect(gltf.scene.userData.snapPoints).toContainEqual([0.06, 0.04, -0.12]);
+    expect(gltf.scene.userData.connectors).toHaveLength(25);
+    expect(gltf.scene.userData.connectors).toContainEqual({ position: [0.06, 0.04, -0.12] });
     // the spaces sit on the board's top surface
     expect(bounds.max[1]).toBeCloseTo(0.04);
   });

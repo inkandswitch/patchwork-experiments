@@ -221,6 +221,27 @@ try {
       const after = [p0, p1].map((id) => [...scene.doc().objects[id].transform.position]);
       return { held, before, after };
     },
+    /** move an object with the gizmo, as TransformControls does it (dragging, change events), without letting go: where B shows it */
+    async gizmoDrag(id, dx) {
+      hostA.querySelector(`.object-row[data-id="${id}"] .row-main`).click();
+      const gizmo = hostA.querySelector(".gizmo");
+      gizmo.value = "translate";
+      gizmo.dispatchEvent(new Event("change"));
+      await sleep(50);
+      const g = vp.objects.get(id).group;
+      const was = scene.doc().objects[id].transform.position[0];
+      vp.gizmo.dragging = true;
+      g.position.x += dx;
+      vp.gizmo.dispatchEvent({ type: "change" });
+      await sleep(150);
+      const seenByB = dbgB.viewport.objects.get(id).group.position.x;
+      const inDoc = scene.doc().objects[id].transform.position[0];
+      // let go
+      vp.gizmo.dragging = false;
+      vp.gizmo.dispatchEvent({ type: "dragging-changed", value: false });
+      await sleep(150);
+      return { was, seenByB, inDocWhileDragging: inDoc, inDocAfter: scene.doc().objects[id].transform.position[0], bAfter: dbgB.viewport.objects.get(id).group.position.x };
+    },
     hover: (id) => {
       const b = vp.objectBox(id, { hints: false });
       return window.__table.screen([(b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2]);

@@ -70,15 +70,15 @@ describe("runImport on the tiny fixture", () => {
     expect(board.transform.position[1]).toBeLessThan(0.002);
     expect(board.transform.rotation[1]).toBeCloseTo(Math.PI, 5);
     expect(board.infoUrl).toBe("automerge:import");
-    // its snap points went into its GLB, scaled
-    const snaps = parseGLB(doc(board.sourceUrl).content).json.scenes[0].extras.snapPoints;
+    // its snap points went into its GLB as connectors, scaled
+    const snaps = parseGLB(doc(board.sourceUrl).content).json.scenes[0].extras.connectors;
     expect(snaps).toHaveLength(4);
     expect(snaps[0].position[0]).toBeCloseTo(-0.4 * 3 * U, 5);
     // the table, locked, under everything, carrying the mod's own snap points
     const table = scene.objects.table;
     expect(table.locked).toBe(true);
     expect(scene.order[0]).toBe("table");
-    expect(parseGLB(doc(table.sourceUrl).content).json.scenes[0].extras.snapPoints).toHaveLength(2);
+    expect(parseGLB(doc(table.sourceUrl).content).json.scenes[0].extras.connectors).toHaveLength(2);
     // the stack of three coins, one above the other
     const coins = objs.filter(([, o]) => o.name === "Coins" && o.kind !== "group").map(([, o]) => o.transform.position[1]);
     expect(coins).toHaveLength(3);

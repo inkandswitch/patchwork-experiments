@@ -29,6 +29,7 @@ import { REBUILD_EVENT } from "./controls-tool.js";
 import { legendModel } from "./legend.js";
 import { fileBytes } from "./file-content.js";
 import { createExtensionHost } from "./extensions.js";
+import { handleSpecs } from "./handles.js";
 import { applyMatrix, invertMatrix } from "./transform.js";
 import { migrateCore, needsCoreMigration } from "./migrate.js";
 
@@ -158,7 +159,7 @@ function docUrl(v) {
 /** Everything applyDisplay reads, as one string: an object is re-applied only when this changes. */
 function displayKey(o, parent, inh) {
   const t = o.transform ?? {};
-  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh.visible}|${inh.opacity}`;
+  return `${o.kind === "group" ? "g" : "o"}|${o.visible !== false}|${o.color ?? ""}|${o.opacity ?? 1}|${!!o.wireframe}|${!!o.locked}|${o.tags ?? ""}|${t.position}|${t.rotation}|${t.scale}|${parent ?? ""}|${inh.visible}|${inh.opacity}`;
 }
 
 function hintVolume(o) {
@@ -334,6 +335,7 @@ export default function SceneTool(handle, element) {
       const off = registry.on?.("changed", () => {
         manager.providersChanged();
         schedule("outline");
+        updateHandles();
       });
       if (typeof off === "function") cleanups.push(off);
       return m;
@@ -387,6 +389,16 @@ export default function SceneTool(handle, element) {
       updateObject(id, (o) => {
         o.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
       }),
+    // a handle let go: its param on the object's render doc (which rebuilds it)
+    onHandleEnd: (id, key, value) => {
+      // you're working on it now: a rebuild no longer reframes the view
+      autoFrame = false;
+      const sub = handleSub?.id === id ? handleSub : null;
+      sub?.handle.change((d) => {
+        if (!d.params) d.params = {};
+        d.params[key] = value;
+      });
+    },
     // how a carried object would lie put down here: what the extensions say (last word wins)
     landing: (id, world) => {
       let out = null;
@@ -748,10 +760,47 @@ export default function SceneTool(handle, element) {
     if (id) queue.setPriority(id, SELECTED_PRIORITY);
     if (reveal && id) revealInOutline(id);
     viewport.setSelection(id);
+    updateHandles();
     buildInspector();
     renderOutline();
     broadcastPresence();
   }
+
+  // ─── handles: the selected object's provider's params, dragged in place ────
+  let handleSub = null; // { id, handle: the render doc's, provider, off }
+  let lastHandles = [];
+  function dropHandles() {
+    handleSub?.off();
+    handleSub = null;
+    lastHandles = [];
+    viewport.setHandles(null, null);
+  }
+  async function updateHandles() {
+    const id = selected;
+    const o = id ? doc().objects?.[id] : null;
+    const provider = o?.renderUrl && o.providerId ? listProviders().find((p) => p.id === o.providerId) : null;
+    if (!provider?.handles?.length) return dropHandles();
+    if (handleSub?.id !== id || handleSub.url !== o.renderUrl) {
+      dropHandles();
+      let h;
+      try {
+        h = await repo.find(o.renderUrl);
+      } catch {
+        return;
+      }
+      if (dead || selected !== id || handleSub) return;
+      const on = () => push();
+      h.on("change", on);
+      handleSub = { id, url: o.renderUrl, handle: h, provider, off: () => h.off("change", on) };
+    }
+    push();
+    function push() {
+      if (!handleSub) return;
+      lastHandles = handleSpecs(handleSub.provider, handleSub.handle.doc()?.params ?? {});
+      viewport.setHandles(handleSub.id, lastHandles);
+    }
+  }
+  cleanups.push(() => handleSub?.off());
 
   function selectDim(id) {
     selectedDim = id;
@@ -781,23 +830,25 @@ export default function SceneTool(handle, element) {
     }
   }
 
-  // ─── pieces in other people's hands ───────────────────────────────────────
+  // ─── objects in other people's hands (or on their gizmo) ──────────────────
   let carrySent = 0;
   let carryTimer = null;
-  let carryPending = null;
+  const carryPending = new Map(); // objectId → local transform | null (put down): a group's members move together
   function sendCarry(id, transform) {
-    carryPending = { id, transform };
+    carryPending.set(id, transform);
     clearTimeout(carryTimer);
     const flush = () => {
       carryTimer = null;
-      if (dead || !carryPending) return;
+      if (dead || !carryPending.size) return;
       carrySent = Date.now();
-      try {
-        handle.broadcast?.({ type: CARRY, ...carryPending });
-      } catch {
-        // best effort
+      for (const [cid, t] of carryPending) {
+        try {
+          handle.broadcast?.({ type: CARRY, id: cid, transform: t });
+        } catch {
+          // best effort
+        }
       }
-      carryPending = null;
+      carryPending.clear();
     };
     // the put-down goes at once; moves at most every CARRY_SEND_MS
     const wait = transform ? CARRY_SEND_MS - (Date.now() - carrySent) : 0;
@@ -2168,6 +2219,8 @@ export default function SceneTool(handle, element) {
     queue,
     manager,
     perf,
+    /** the selected object's handles, as given to the viewport */
+    handles: () => lastHandles,
     stats: () => ({
       render: { ...viewport.stats },
       queue: queue.stats(),

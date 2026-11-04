@@ -32,6 +32,7 @@ import {
   Raycaster,
   Scene,
   Sphere,
+  SphereGeometry,
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -45,7 +46,8 @@ import { applyMaterialRules, prepareGLB } from "./gltf-content.js";
 import { rulesKey, sanitizeRules } from "./material-rules.js";
 import { buildBVH, installLazyBVH, wantsBVH } from "./pick-accel.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "./surface.js";
-import { defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, yawDelta } from "./hand.js";
+import { clampValue, closestOnLine, handleBase } from "./handles.js";
+import { accepts, defaultSnapRadius, footprintSamples, liftFor, nearestSnap, restHeight, yawDelta } from "./hand.js";
 import { onThemeChange, resolveCssColor } from "./theme.js";
 
 const TRIAD_PX = 96;
@@ -354,12 +356,15 @@ export class Viewport {
    * @param {(objectId) => boolean} [o.canDrag]     may the hand pick this object up?
    * @param {(objectId, transform | null) => void} [o.onDragMove]  a carried object's local pose while it moves (rAF-throttled); null when it's put down or the carry is cancelled
    * @param {(objectId, transform) => void} [o.onDragEnd]  where a carried object was put down (local transform)
+   * @param {(objectId, key: string, value: number) => void} [o.onHandleEnd]  a handle (handles.js) let go: its param's new value
    * @param {(objectId, world: number[]) => { faceUp?: boolean } | null} [o.landing]  how the carried object should lie if put down with its origin here: faceUp turns it face up while it's there (carried in from elsewhere)
    */
-  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onGroupTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing }) {
+  constructor({ host, themeRoot, onClick, onHover, onTransformEnd, onGroupTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, onHandleEnd, landing }) {
     this.host = host;
     this.themeRoot = themeRoot;
-    this.cb = { onClick, onHover, onTransformEnd, onGroupTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, landing };
+    this.cb = { onClick, onHover, onTransformEnd, onGroupTransformEnd, onCameraEnd, canDrag, onDragMove, onDragEnd, onHandleEnd, landing };
+    /** the selected object's handles: { id, specs, drag: { key, value } | null, node } (handles.js) */
+    this.handles = null;
     /** group id → the ids of the objects in it (at any depth): a group has no node of its own */
     this.groupMembers = new Map();
     /** the gizmo's handle for a selected group: { node, gid, start } (start while dragging) */
@@ -470,6 +475,11 @@ export class Viewport {
     this.gizmoMode = "translate";
     this.gizmo.addEventListener("change", () => {
       if (this.gizmo.dragging && this.pivot?.start) this.dragGroup();
+      else if (this.gizmo.dragging && this.gizmo.object?.userData.objectId) {
+        // peers see it move, as they do a piece in the hand
+        const g = this.gizmo.object;
+        this.cb.onDragMove?.(g.userData.objectId, this.localTransform(g));
+      }
       this.invalidate();
     });
     this.gizmo.addEventListener("dragging-changed", (e) => {
@@ -481,6 +491,7 @@ export class Viewport {
       }
       if (!e.value && this.gizmo.object) {
         const g = this.gizmo.object;
+        this.cb.onDragMove?.(g.userData.objectId, null);
         this.cb.onTransformEnd?.(g.userData.objectId, {
           position: g.position.toArray(),
           rotation: [g.rotation.x, g.rotation.y, g.rotation.z],
@@ -504,6 +515,7 @@ export class Viewport {
     this.bvhTimer = null;
     this.readTheme();
     this.buildTriad();
+    this.wireHandles();
     this.wirePointer();
     this.wireHand();
 
@@ -1205,6 +1217,7 @@ export class Viewport {
       const parentInv = r.g.parent ? r.g.parent.matrixWorld.clone().invert() : new Matrix4();
       new Matrix4().multiplyMatrices(parentInv, world).decompose(r.g.position, r.g.quaternion, r.g.scale);
       r.g.updateMatrixWorld(true);
+      this.cb.onDragMove?.(r.id, this.localTransform(r.g));
     }
     this.refreshHelpers();
   }
@@ -1215,6 +1228,7 @@ export class Viewport {
     p.start = null;
     if (!start) return;
     const moved = new Map(start.roots.map((r) => [r.id, this.localTransform(r.g)]));
+    for (const id of moved.keys()) this.cb.onDragMove?.(id, null);
     this.cb.onGroupTransformEnd?.(moved);
     this.refreshHelpers();
   }
@@ -1325,7 +1339,146 @@ export class Viewport {
       }
     }
     this.labels.sync("bounds", boundsLabels);
+    this.drawHandles();
     this.invalidate();
+  }
+
+  // ─── handles: a provider's params dragged in place (handles.js) ───────────
+
+  /** The selected object's handles (null or [] clears). */
+  setHandles(id, specs) {
+    const drag = this.handles?.id === id ? this.handles.drag : null;
+    this.handles = id && specs?.length ? { id, specs, drag, node: this.handles?.node ?? null } : null;
+    if (!this.handles) this.clearHandles();
+    this.refreshHelpers();
+  }
+
+  clearHandles() {
+    if (this.handleNode) {
+      this.handleNode.removeFromParent();
+      disposeObject(this.handleNode);
+      this.handleNode = null;
+    }
+    this.labels?.sync("handles", []);
+  }
+
+  /** A handle's line in world space: base point and one unit of its param, or null before the object has geometry. */
+  handleLine(spec) {
+    const entry = this.handles ? this.objects.get(this.handles.id) : null;
+    if (!entry?.content || !entry.box || !this.isShown(entry)) return null;
+    entry.body.updateWorldMatrix(true, false);
+    const m = entry.body.matrixWorld;
+    const local = v3(handleBase(entry.box.getCenter(new Vector3()).toArray(), spec.axis));
+    const base = local.clone().applyMatrix4(m);
+    const unit = local.clone().add(v3(spec.axis)).applyMatrix4(m).sub(base);
+    // the object's size in the world (its box's diagonal, scaled)
+    return { base, unit, size: entry.box.getSize(new Vector3()).length() * new Vector3().setFromMatrixScale(m).x };
+  }
+
+  handleValue(spec) {
+    return this.handles?.drag?.key === spec.key ? this.handles.drag.value : spec.value;
+  }
+
+  drawHandles() {
+    this.clearHandles();
+    const h = this.handles;
+    if (!h || !this.ok || this.gizmoMode === "hand" || this.measure) return;
+    const node = new Group();
+    node.name = "handles";
+    const labels = [];
+    for (const spec of h.specs) {
+      const line = this.handleLine(spec);
+      if (!line) continue;
+      const value = this.handleValue(spec);
+      const at = line.base.clone().addScaledVector(line.unit, value);
+      // the range it can go, or the object's own extent along it
+      const span = line.size / Math.max(1e-9, line.unit.length());
+      const lo = spec.min ?? value - span / 2;
+      const hi = spec.max ?? value + span / 2;
+      const track = new Line(
+        lineGeometry([line.base.clone().addScaledVector(line.unit, Math.max(lo, value - span)).toArray(), line.base.clone().addScaledVector(line.unit, Math.min(hi, value + span)).toArray()]),
+        new LineBasicMaterial({ color: color(this.theme.accent), depthTest: false, transparent: true, opacity: 0.5 }),
+      );
+      const knob = new Mesh(new SphereGeometry(Math.max(1e-4, line.size * 0.015), 16, 12), new MeshBasicMaterial({ color: color(this.theme.accent), depthTest: false, transparent: true }));
+      knob.position.copy(at);
+      for (const o of [track, knob]) {
+        o.renderOrder = 13;
+        o.raycast = () => {};
+        node.add(o);
+      }
+      labels.push({ key: spec.key, world: at.toArray(), text: `${spec.label}: ${roundForDisplay(value, 4)}`, className: "handle-label" });
+    }
+    this.handleNode = node;
+    this.overlay.add(node);
+    this.labels.sync("handles", labels);
+  }
+
+  /** The handle under the pointer (within 12 px of its knob), or null. */
+  handleAt(clientX, clientY) {
+    if (!this.handles || this.gizmoMode === "hand" || this.measure) return null;
+    const r = this.canvas.getBoundingClientRect();
+    for (const spec of this.handles.specs) {
+      const line = this.handleLine(spec);
+      if (!line) continue;
+      const p = this.project(line.base.clone().addScaledVector(line.unit, this.handleValue(spec)));
+      if (p && Math.hypot(r.left + p.x - clientX, r.top + p.y - clientY) <= 12) return spec;
+    }
+    return null;
+  }
+
+  wireHandles() {
+    let dragging = null; // { spec, pointerId }
+    const onDown = (e) => {
+      if (e.button !== 0 || dragging) return;
+      const spec = this.handleAt(e.clientX, e.clientY);
+      if (!spec) return;
+      // ahead of the gizmo and the orbit: this press is the handle's
+      e.stopPropagation();
+      this.controls.enabled = false;
+      dragging = { spec, pointerId: e.pointerId };
+      this.handles.drag = { key: spec.key, value: spec.value };
+      try {
+        this.canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // synthetic pointers can't be captured
+      }
+    };
+    const onMove = (e) => {
+      if (!dragging || !this.handles) return;
+      const line = this.handleLine(dragging.spec);
+      if (!line) return;
+      const ray = this.pointerRay(e.clientX, e.clientY);
+      const s = closestOnLine(line.base.toArray(), line.unit.toArray(), ray.origin.toArray(), ray.direction.toArray());
+      if (s == null) return;
+      this.handles.drag = { key: dragging.spec.key, value: clampValue(dragging.spec, s) };
+      this.drawHandles();
+      this.invalidate();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      const { spec } = dragging;
+      dragging = null;
+      this.controls.enabled = true;
+      const h = this.handles;
+      const value = h?.drag?.value;
+      if (h) {
+        // shown where it was let go until the doc says so
+        spec.value = value ?? spec.value;
+        h.drag = null;
+      }
+      if (h && value != null && value !== undefined) this.cb.onHandleEnd?.(h.id, spec.key, value);
+      this.refreshHelpers();
+    };
+    this.host.addEventListener("pointerdown", onDown, { capture: true });
+    this.canvas.addEventListener("pointermove", onMove);
+    this.canvas.addEventListener("pointerup", onUp);
+    this.canvas.addEventListener("pointercancel", onUp);
+    this.disposers.push(() => {
+      this.host.removeEventListener("pointerdown", onDown, { capture: true });
+      this.canvas.removeEventListener("pointermove", onMove);
+      this.canvas.removeEventListener("pointerup", onUp);
+      this.canvas.removeEventListener("pointercancel", onUp);
+    });
   }
 
   buildTriad() {
@@ -1763,6 +1916,8 @@ export class Viewport {
     const center = box.getCenter(new Vector3());
     const offset = grab?.objectId === id ? new Vector3(center.x - grab.world[0], 0, center.z - grab.world[2]) : new Vector3();
     const snaps = [];
+    // a tagged connector takes only objects with one of its tags
+    const tags = Array.isArray(entry.display?.tags) ? entry.display.tags : [];
     if (this.view.snap !== false) {
       for (const other of this.tableBodies(entry)) {
         if (!other.snap) continue;
@@ -1773,6 +1928,7 @@ export class Viewport {
         if (!(radius > 0)) continue;
         const turn = yawOf(m);
         for (const p of other.snap.points) {
+          if (!accepts(p.tags, tags)) continue;
           snaps.push({ world: v3(p.position).applyMatrix4(m).toArray(), yaw: p.yaw == null ? null : p.yaw + turn, radius, objectId: other.group.userData.objectId });
         }
       }

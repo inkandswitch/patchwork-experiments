@@ -168,6 +168,11 @@ try {
   check("drawn into your tray, a face-down card lands face up", Math.abs((await T('rot("under")'))[2]) < 1e-3, await T('rot("under")'));
   check("and A sees it, B doesn't", (await look("a", "under")) === "face" && (await look("b", "under")) === "back", [await look("a", "under"), await look("b", "under")]);
 
+  // the gizmo, like the hand: the other peer sees an object move before it's written
+  const gd = await T(`gizmoDrag("${await T('id("Block 4")')}", 0.05)`);
+  check("while the gizmo drags it, the other peer sees it move (the doc doesn't yet)", Math.abs(gd.seenByB - gd.was - 0.05) < 1e-6 && Math.abs(gd.inDocWhileDragging - gd.was) < 1e-9, gd);
+  check("let go, it's written, and the other peer shows the doc's pose", Math.abs(gd.inDocAfter - gd.was - 0.05) < 1e-6 && Math.abs(gd.bAfter - gd.inDocAfter) < 1e-6, gd);
+
   // a group moves what's in it: the gizmo holds its pivot, and both pawns move with it (one change)
   const gm = await T("moveGroup(0.1)");
   check("a selected group gets the move gizmo, on its pivot", gm.held, gm);

@@ -28,7 +28,8 @@ const scaleOf = (node) => {
   return s;
 };
 const url = (v) => String(v ?? "").trim();
-const snaps = (node) => node.snapPoints.map((s) => ({ position: s.position.map(r4), yaw: s.rotation ? r4(s.rotation[1]) : null }));
+// a snap point: where, which way (TTS degrees, or null), and what it takes (its tags)
+const snaps = (node) => node.snapPoints.map((s) => ({ position: s.position.map(r4), rotation: s.rotation ? s.rotation.map(r4) : null, tags: s.tags ?? [] }));
 
 /** Built-in pieces (no assets): a shape and a default colour, by Name. */
 export function pieceLook(name) {

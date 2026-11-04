@@ -93,8 +93,8 @@ refused.
   floats just above the spot under the pointer (the table, or the top of a
   stack) and a ring shows where it will land. Let go and it rests on the
   highest surface under its footprint, or on the ground. If another object
-  has **snap points** (from its GLB, below) near that spot, it goes to the
-  nearest one (accent ring) — hold **Alt** to put it down exactly where you
+  has **connectors** (snap points, from its GLB, below) near that spot that
+  take it, it goes to the nearest one (accent ring) — hold **Alt** to put it down exactly where you
   are, or untick **Snap** to turn snapping off for this scene. A snap point
   with a yaw turns the piece to face that way. **Q** / **E** turn it 45°
   while carried, **F** turns it over (about its own length, as a card goes
@@ -137,9 +137,10 @@ room environment, kept near 1 in total so light baked colours don't clip.
 
 Selection and hover are shared with other people in the scene over
 `handle.broadcast`; nothing about presence is written to the doc. So is an
-object in someone's hand: `{ type: "scene:carry", id, transform }` (its local
-transform, at most every 50 ms) while it moves, and `transform: null` when it
-is put down or the carry is cancelled. Peers show it there instead of where
+object in someone's hand or on their gizmo (and each member of a group being
+moved): `{ type: "scene:carry", id, transform }` (its local transform, at
+most every 50 ms) while it moves, and `transform: null` when it is put down,
+let go or the carry is cancelled. Peers show it there instead of where
 the doc says; the put-down shows the doc's pose as soon as the doc has it (or
 after a second), and a carry that goes quiet for 3 s is put back.
 
@@ -217,9 +218,26 @@ except `load` must survive `structuredClone`) with the code behind `load()`:
   supportedDatatypes: ["camber-hull"], // datatype ids; ["file"] for file docs
   extensions: ["stl"],                 // ONLY for file providers: lower-case, no dot
   params: [ParamSpec, ...],            // build params, optional
+  handles: [Handle, ...],              // params to drag in the viewport, optional (below)
   async load() { return (await import("./scene-source.js")).default },
 }
 ```
+
+**Handles.** A number or integer param that is a position along an axis of
+the object (a slice's height, a rake's) can be dragged in place:
+
+```ts
+type Handle = { param: string, axis: [x, y, z], label?: string }  // axis: in the object's (GLB's) frame
+```
+
+While the object is selected (not in the hand, not measuring), the scene
+draws a knob for each on the line through the middle of its geometry along
+`axis`, at the param's value (from its render doc, else the default), with
+its label, and a track over its range. Drag the knob: it follows the pointer
+along the line, held to the param's `min`, `max` and `step`; let go and the
+value is written to the render doc's params, which rebuilds the object like
+any other param change (`src/handles.js`). flow-field's slice (height) and
+streamlines (seed height) have one.
 
 ```ts
 type ParamSpec = {
@@ -295,17 +313,23 @@ extension; hosts that don't know it fall back to the rule above).
   object colour replaces the base colour only, so a material's metalness and
   roughness survive it (a white metal part tinted bronze stays metal), and
   `KHR_materials_unlit` draws baked colours exactly.
-- Optional **snap points**: `extras.snapPoints = [[x, y, z], …]` (or
-  `{ position: [x, y, z], yaw }`, yaw in radians about +Y: whatever snaps
-  there turns to face that way, so a card in the far player's column reads
-  right for them) on any node (or on the glTF scene), in that node's frame,
-  and optionally
-  `extras.snapRadius` (metres, in the GLB's frame). When the hand puts
-  something down near one — the centre of its footprint within the radius,
-  in plan — it goes there; height is still decided by what is underneath, so
-  pieces stack on a board's spaces. Without a radius it is 0.71 × the closest
-  spacing between the points, so every part of a square grid's cell, corners
-  included, snaps to that cell. Malformed points are ignored.
+- Optional **connectors**: `extras.connectors = [{ position: [x, y, z],
+  rotation?: [x, y, z], tags?: string[] }, …]` on any node (or on the glTF
+  scene), in that node's frame: places where something goes. `rotation`
+  (Euler XYZ, radians) is the connector's frame; the hand turns whatever it
+  puts there to face where that frame turns +Z, seen from above (so a card in
+  the far player's column reads right for them), and keeps the rest for
+  whatever comes to use a whole frame (a CAD mate, say). A connector with
+  `tags` takes only objects whose `tags` share one (none: anything), as
+  Tabletop Simulator's tagged snap points do. The older `extras.snapPoints =
+  [[x, y, z] | { position, yaw }, …]` (yaw in radians about +Y) are read as
+  untagged connectors. Optionally `extras.snapRadius` (metres, in the GLB's
+  frame). When the hand puts something down near one — the centre of its
+  footprint within the radius, in plan — it goes there; height is still
+  decided by what is underneath, so pieces stack on a board's spaces. Without
+  a radius it is 0.71 × the closest spacing between the points, so every part
+  of a square grid's cell, corners included, snaps to that cell. Malformed
+  connectors are ignored.
 - Optional colour legend: put `extras.legend = { title, unit, min, max, stops }`
   on a mesh, `stops` being 2–32 `#rrggbb` colours spaced evenly from `min` to
   `max`. The scene draws it as a bar with three ticks. Anything else in it is
@@ -404,6 +428,7 @@ Object = {
     infoUrl?: AutomergeUrl | null,  // a document about it, any datatype (the About section)
     infoToolId?: string | null,     // the tool to show it with; absent = the shell's default
     locked?: boolean,               // true: the hand and the gizmo leave it where it is
+    tags?: string[],                // what tagged connectors it fits (GLB conventions, below)
     traits?: { [key: string]: any }, // extensions' data, "<extension>.<name>" (Extensions, above)
     hint?: { bounds?: { min: [x,y,z], max: [x,y,z] }, triangles?: number, bytes?: number }
 }
@@ -490,7 +515,8 @@ MaterialRule = {
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
 | `src/extensions.js` | `scene:extension` plugins: which a scene calls for, starting them, their instances |
 | `src/migrate.js` | upgrading a scene doc written in an older shape, in place, on open |
-| `src/hand.js` | the hand's pure parts: snap points, default radius, nearest snap, footprint samples, resting height |
+| `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
+| `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
 | `probes/` | browser probes: `scene-probe.html` mounts the built tool in headless Chrome against an in-memory repo; `attach-probe.html` drives the real viewport with a parent and a child; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `drag-probe.html` + `drag-run.mjs` drive real mouse drags into and within the outline; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand between two peers (below) |
 

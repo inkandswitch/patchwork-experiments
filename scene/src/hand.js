@@ -2,23 +2,39 @@
 // table, the way a piece is moved in a board game. Pure (no three.js), so it
 // can be tested; the viewport supplies the points and the ray hits.
 //
-// - Snap points come from GLBs (`extras.snapPoints`, see README). A dropped
-//   object's footprint centre goes to the nearest one within its radius, in
-//   plan (x, z) only: height is decided by what is underneath.
+// - Connectors come from GLBs (`extras.connectors`, and the older
+//   `extras.snapPoints`; see README). A dropped object's footprint centre goes
+//   to the nearest one within its radius that accepts it (its tags), in plan
+//   (x, z) only: height is decided by what is underneath.
 // - Resting: the object is lowered until its box sits on the highest surface
 //   under its footprint (a few rays straight down), or on the ground. No
 //   physics: nothing tips, slides or bounces, and only the final pose is
 //   written to the doc.
 
 /**
- * Clean `extras.snapPoints` from a provider: a list of [x, y, z] or
- * { position: [x, y, z], yaw? } with finite coordinates. A yaw (radians about
- * +Y, in the same frame) turns whatever snaps there to face that way: a card
- * in the far player's column reads the right way up for them. Anything else is
- * dropped.
- * @returns {{ position: number[], yaw: number | null }[]}
+ * The yaw (radians about +Y) a rotation turns +Z to, seen from above: where
+ * something set down facing that way faces. Euler XYZ radians (R = Rx·Ry·Rz).
+ * null if it turns +Z straight up or down.
  */
-export function sanitizeSnapPoints(raw) {
+export function yawOfEuler(rotation) {
+  const [x, y] = rotation.map(Number);
+  const fx = Math.sin(y);
+  const fz = Math.cos(x) * Math.cos(y);
+  return Math.hypot(fx, fz) < 1e-9 ? null : Math.atan2(fx, fz);
+}
+
+/**
+ * Clean connectors from a GLB: `extras.connectors`, a list of
+ * { position: [x, y, z], rotation?: [x, y, z] (Euler XYZ radians), tags?:
+ * string[] }, or the older `extras.snapPoints`, a list of [x, y, z] or
+ * { position, yaw? }. The rotation is the connector's frame; the hand uses
+ * its yaw (where it turns +Z, seen from above) to turn whatever is set down
+ * there to face that way — a card in the far player's column reads the right
+ * way up for them. A connector with tags takes only objects with one of them
+ * (none: anything). Anything malformed is dropped.
+ * @returns {{ position: number[], yaw: number | null, tags: string[] }[]}
+ */
+export function sanitizeConnectors(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
   for (const p of raw) {
@@ -26,10 +42,21 @@ export function sanitizeSnapPoints(raw) {
     if (!v || v.length < 3) continue;
     const xyz = [Number(v[0]), Number(v[1]), Number(v[2])];
     if (!xyz.every(Number.isFinite)) continue;
-    const yaw = Array.isArray(p) || p.yaw == null ? null : Number(p.yaw);
-    out.push({ position: xyz, yaw: Number.isFinite(yaw) ? yaw : null });
+    const rot = !Array.isArray(p) && Array.isArray(p?.rotation) && p.rotation.length >= 3 && p.rotation.slice(0, 3).every((r) => Number.isFinite(Number(r))) ? p.rotation : null;
+    const yaw = rot ? yawOfEuler(rot) : Array.isArray(p) || p.yaw == null ? null : Number(p.yaw);
+    const tags = !Array.isArray(p) && Array.isArray(p?.tags) ? p.tags.filter((t) => typeof t === "string" && t) : [];
+    out.push({ position: xyz, yaw: Number.isFinite(yaw) ? yaw : null, tags });
   }
   return out;
+}
+
+/** The older name: snap points are connectors. */
+export const sanitizeSnapPoints = sanitizeConnectors;
+
+/** Does a connector with these tags take an object with those? (No tags on the connector: anything.) */
+export function accepts(connectorTags, objectTags) {
+  if (!connectorTags?.length) return true;
+  return Array.isArray(objectTags) && objectTags.some((t) => connectorTags.includes(t));
 }
 
 /** The smallest turn (radians, −π..π) from yaw a to yaw b. */

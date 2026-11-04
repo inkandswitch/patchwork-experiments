@@ -13,7 +13,7 @@
 //   ctx.sizes                        max texture sizes { card, tile, board, model }
 
 import { bake, box, ellipseOutline, hexOutline, lathe, partsBounds, polyhedron, rectOutline, roundedOutline, slab, translateParts } from "./shapes.js";
-import { bakePoint, convertYaw, unityRotation, transpose, applyMat3 } from "./convert.js";
+import { bakePoint, convertRotation, unityRotation, transpose, applyMat3 } from "./convert.js";
 import { computeNormals, encodeGLB } from "./glb.js";
 import { BOARD_HALF, CARD, DIE6 } from "./kinds.js";
 
@@ -309,9 +309,10 @@ export async function buildKind(kind, ctx) {
   });
   const extras = {};
   if (snapPoints.length) {
-    extras.snapPoints = snapPoints.map((s) => {
+    // the scene's connectors: where, which way (its frame, converted like any rotation), and what it takes
+    extras.connectors = snapPoints.map((s) => {
       const position = bakePoint([s.position[0] * snapFrameX, s.position[1], s.position[2]], kind.scale ?? [1, 1, 1], unit).map((v) => +v.toFixed(5));
-      return s.yaw == null ? position : { position, yaw: convertYaw(s.yaw) };
+      return { position, ...(s.rotation ? { rotation: convertRotation(s.rotation) } : {}), ...(s.tags?.length ? { tags: [...s.tags] } : {}) };
     });
   }
   const glb = encodeGLB({ generator: "patchwork tts-import", images, meshes, ...(Object.keys(extras).length ? { extras } : {}) });

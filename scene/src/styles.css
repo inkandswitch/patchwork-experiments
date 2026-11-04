@@ -321,6 +321,15 @@
   z-index: 1;
 }
 
+/* a handle's label: what dragging it changes, and its value */
+.scene-tool .handle-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--studio-primary, #1a73e8);
+  color: var(--studio-primary-fg, white);
+  /* labels are centred on their point by an inline transform: start it beside the knob instead */
+  margin-left: 5em;
+  z-index: 2;
+}
+
 .scene-tool .dimension-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
   z-index: 2;
   pointer-events: auto;

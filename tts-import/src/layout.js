@@ -89,7 +89,7 @@ export function plan(save, { includeContents = true, includeStates = true, hideF
     const key = useKind(kind, name);
     if (kind.type === "placeholder") counts.approximated[node.name || "?"] = (counts.approximated[node.name || "?"] ?? 0) + 1;
     if (kind.type === "piece") counts.approximated[node.name] = (counts.approximated[node.name] ?? 0) + 1;
-    const p = { id: id("o"), name, key, at, rest, parent, locked: node.locked, pdf: node.kind === "pdf" ? String(node.pdf?.PDFUrl ?? "").trim() || null : null };
+    const p = { id: id("o"), name, key, at, rest, parent, locked: node.locked, tags: node.tags?.length ? [...node.tags] : null, pdf: node.kind === "pdf" ? String(node.pdf?.PDFUrl ?? "").trim() || null : null };
     if (hiddenBy && hideFaceDown) {
       const pub = kindOf(scaled, { deck, publicCard: true });
       p.secret = { by: hiddenBy, key, name };
@@ -269,7 +269,7 @@ export function tableKind(p, extent) {
     hx: extent.hx,
     hz: extent.hz,
     image: p.tableURL || null,
-    snaps: (p.snapPoints ?? []).map((s) => ({ position: [r(s.position[0] - extent.cx, 4), 0, r(s.position[2] - extent.cz, 4)], yaw: s.rotation ? r(s.rotation[1], 4) : null })),
+    snaps: (p.snapPoints ?? []).map((s) => ({ position: [r(s.position[0] - extent.cx, 4), 0, r(s.position[2] - extent.cz, 4)], rotation: s.rotation ? s.rotation.map((v) => r(v, 4)) : null, tags: s.tags ?? [] })),
   };
 }
 
@@ -333,6 +333,8 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
       transform,
       ...info,
       ...(o.locked ? { locked: true } : {}),
+      // what a tagged snap point will take (the scene's connectors)
+      ...(o.tags ? { tags: [...o.tags] } : {}),
       ...(b.bounds ? { hint: { bounds: b.bounds } } : {}),
     };
     if (o.secret && secretUrls.get(o.secret.by)) hideObject(obj, secretUrls.get(o.secret.by));
