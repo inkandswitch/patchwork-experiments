@@ -147,7 +147,7 @@ describe("setting up a table", () => {
     expect(board).toMatchObject({ locked: true, parent: null, providerId: "file-glb", renderUrl: null, sourceUrl: game.doc().pieces.board.glbUrl, infoUrl: game.url });
     for (const p of pieces) {
       expect(p.hint.bounds.min[1]).toBeCloseTo(0, 6);
-      if (p !== board) expect(scene.objects[p.parent].kind).toBe("group");
+      if (p !== board) expect(scene.objects[p.group].kind).toBe("group");
     }
   });
 
@@ -268,7 +268,7 @@ describe("Lost Cities", () => {
     const cards = Object.entries(scene.objects).filter(([id]) => truth[id]);
     expect(new Set(cards.map(([, o]) => o.name))).toEqual(new Set(["Card"]));
     expect(new Set(cards.map(([, o]) => o.sourceUrl))).toEqual(new Set([game.pieces.back.glbUrl]));
-    expect(scene.objects[cards[0][1].parent].name).toBe("Deck (60)");
+    expect(scene.objects[cards[0][1].group].name).toBe("Deck (60)");
     // and the secrets say exactly which 60
     const names = Object.values(truth).map((x) => x.name);
     expect(names.filter((n) => n === "Red wager")).toHaveLength(3);
