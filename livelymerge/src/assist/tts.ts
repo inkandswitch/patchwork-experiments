@@ -34,6 +34,9 @@ let voiceNote: string | null = null;
 /** A premade voice every key can use, for when the chosen one can't be looked up. */
 export const FALLBACK_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // "Rachel"
 
+/** Voices known by name, so the default needs no lookup (and no voices_read permission). */
+export const KNOWN_VOICES: Record<string, string> = { hope: 'tnSpp4vdxKPjI9w0GnoV' };
+
 /** ElevenLabs voice ids are 20 alphanumerics; the Voice field takes either a name or an id. */
 export function isVoiceId(s: string): boolean {
   return /^[A-Za-z0-9]{20,}$/.test(s.trim());
@@ -107,6 +110,8 @@ function disable(reason: string, notify?: (text: string) => void): void {
 
 async function resolveVoiceId(key: string, name: string): Promise<string | null> {
   if (isVoiceId(name)) return name.trim();
+  const known = KNOWN_VOICES[name.trim().toLowerCase()];
+  if (known) return known;
   const cacheKey = `${ELEVEN_VOICE_STORAGE}Id:${name.toLowerCase()}`;
   const cached = storage()?.getItem(cacheKey);
   if (cached) return cached;
