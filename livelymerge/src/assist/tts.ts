@@ -13,7 +13,34 @@ export const ELEVEN_VOICE_STORAGE = 'talkAndDraw.elevenLabsVoice';
 export const ELEVEN_MODEL_STORAGE = 'talkAndDraw.elevenLabsModel';
 /** Flash and Turbo cost the same (cheapest tier); Turbo sounds better for ~200 ms more
  *  latency; Multilingual v2 is the best of these and twice the price per character. */
-export const ELEVEN_MODELS = ['eleven_flash_v2_5', 'eleven_turbo_v2_5', 'eleven_multilingual_v2'];
+export const ELEVEN_MODELS = ['eleven_flash_v2_5', 'eleven_turbo_v2_5', 'eleven_multilingual_v2', 'eleven_v3'];
+export const ELEVEN_SETTINGS_STORAGE = 'talkAndDraw.elevenLabsSettings';
+
+export interface VoiceSettings {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+}
+
+export function getVoiceSettings(): VoiceSettings {
+  try {
+    const v = JSON.parse(storage()?.getItem(ELEVEN_SETTINGS_STORAGE) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Numbers 0..1; an undefined/NaN field means "the voice's default". */
+export function setVoiceSettings(v: VoiceSettings): void {
+  const clean: VoiceSettings = {};
+  for (const k of ['stability', 'similarity_boost', 'style'] as const) {
+    const n = v[k];
+    if (typeof n === 'number' && Number.isFinite(n)) clean[k] = Math.min(1, Math.max(0, n));
+  }
+  if (Object.keys(clean).length) storage()?.setItem(ELEVEN_SETTINGS_STORAGE, JSON.stringify(clean));
+  else storage()?.removeItem(ELEVEN_SETTINGS_STORAGE);
+}
 export const DEFAULT_ELEVEN_MODEL = 'eleven_turbo_v2_5';
 export const DEFAULT_VOICE_NAME = 'Hope';
 /** What the previous sentence was, so the next one continues its prosody. */
@@ -247,23 +274,36 @@ export async function synthesize(text: string, notify?: (text: string) => void):
       disable('no usable voice in your account', notify);
       return null;
     }
-    const res = await fetch(`${API}/v1/text-to-speech/${voiceId}/with-timestamps?output_format=mp3_44100_128`, {
-      method: 'POST',
-      headers: { 'xi-api-key': key, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        model_id: getElevenModel(),
-        // The sentence before this one, so prosody carries over instead of resetting.
-        ...(previousText ? { previous_text: previousText.slice(-300) } : {}),
-      }),
-    });
+    const body = {
+      text,
+      model_id: getElevenModel(),
+      // The sentence before this one, so prosody carries over instead of resetting.
+      ...(previousText ? { previous_text: previousText.slice(-300) } : {}),
+      ...(Object.keys(getVoiceSettings()).length ? { voice_settings: getVoiceSettings() } : {}),
+    };
+    const post = (path: string) =>
+      fetch(`${API}/v1/text-to-speech/${voiceId}${path}?output_format=mp3_44100_128`, {
+        method: 'POST',
+        headers: { 'xi-api-key': key, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    let res = await post('/with-timestamps');
+    let withTimestamps = true;
+    if (!res.ok && (res.status === 400 || res.status === 422)) {
+      // Some models have no timestamps endpoint: plain synthesis, word times estimated.
+      const detail = await errorDetail(res.clone());
+      if (/timestamp|alignment|model/i.test(detail)) {
+        res = await post('');
+        withTimestamps = false;
+      }
+    }
     if (!res.ok) {
       const detail = await errorDetail(res);
       if (/library voice/i.test(detail) && !voiceStandIn) {
         // The plan can't use this (library) voice through the API: speak with a
         // premade one instead, say so once, and retry this sentence right away.
         voiceStandIn = KNOWN_VOICES[PREMADE_STANDIN];
-        voiceNote = `"${getVoiceName()}" is a library voice your plan can't use via the API; speaking with the premade voice "${PREMADE_STANDIN}". Pick a premade voice (${Object.keys(KNOWN_VOICES).filter((n) => n !== 'hope').join(', ')}) or upgrade.`;
+        voiceNote = `"${getVoiceName()}" is a library voice (paid plans only via the API); using "${PREMADE_STANDIN}" instead. Premade voices work on every plan — see the Voice field's tooltip.`;
         console.warn('Talk & Draw: ElevenLabs —', voiceNote);
         notify?.(`ElevenLabs: ${voiceNote}`);
         return synthesize(text, notify);
@@ -276,9 +316,10 @@ export async function synthesize(text: string, notify?: (text: string) => void):
       }
       return null;
     }
+    previousText = text;
+    if (!withTimestamps) return { blob: await res.blob(), words: [] };
     const data = (await res.json()) as { audio_base64?: string; alignment?: any };
     if (!data.audio_base64) return null;
-    previousText = text;
     const bytes = Uint8Array.from(atob(data.audio_base64), (c) => c.charCodeAt(0));
     return { blob: new Blob([bytes], { type: 'audio/mpeg' }), words: wordsFromAlignment(text, data.alignment) };
   } catch (err) {

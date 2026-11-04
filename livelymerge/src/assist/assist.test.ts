@@ -307,3 +307,18 @@ describe('capSpeech', () => {
   });
 });
 
+
+// ---- speakable text ----------------------------------------------------------------
+
+import { speakable } from './say';
+
+describe('speakable', () => {
+  it('turns symbols speech engines mangle into words, and keeps anchors aligned', () => {
+    expect(speakable('Rotate it by 180° clockwise.')).toBe('Rotate it by 180 degrees clockwise.');
+    expect(speakable('It is 20°C, about 68°F.')).toBe('It is 20 degrees Celsius, about 68 degrees Fahrenheit.');
+    expect(speakable('A 64×64 box, 3px wide → done ≈ now')).toBe('A 64 by 64 box, 3 pixels wide to done about now');
+    const p = parseAnchors('Turn {r}this 90°{/} now');
+    expect(p.text).toBe('Turn this 90 degrees now');
+    expect(p.spans[0]).toEqual({ id: 'r', start: 5, end: 20 });
+  });
+});

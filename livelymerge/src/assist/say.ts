@@ -18,8 +18,29 @@ export interface ParsedSay {
   words: { start: number; end: number }[];
 }
 
+/**
+ * Symbols read badly by speech engines ("180°" came out as "degreerrrs"), turned into
+ * words. Applied before anchor parsing so word offsets stay consistent.
+ */
+export function speakable(raw: string): string {
+  return raw
+    .replace(/(\d)\s*°\s*C\b/g, '$1 degrees Celsius')
+    .replace(/(\d)\s*°\s*F\b/g, '$1 degrees Fahrenheit')
+    .replace(/(\d)\s*°/g, '$1 degrees')
+    .replace(/°/g, ' degrees')
+    .replace(/(\d)\s*px\b/g, '$1 pixels')
+    .replace(/(\d)\s*×\s*(\d)/g, '$1 by $2')
+    .replace(/×/g, ' times ')
+    .replace(/→/g, ' to ')
+    .replace(/≈/g, ' about ')
+    .replace(/≤/g, ' at most ')
+    .replace(/≥/g, ' at least ')
+    .replace(/[ \t]{2,}/g, ' ');
+}
+
 /** Strips `{id}` / `{/}` markers and records the spans they delimit. */
 export function parseAnchors(raw: string): ParsedSay {
+  raw = speakable(raw);
   let text = '';
   const spans: AnchorSpan[] = [];
   const open: AnchorSpan[] = [];
@@ -176,6 +197,13 @@ async function playClip(
     if (i >= 0) wordStart[i] = w.t0;
   }
   for (let i = 1; i < wordStart.length; i++) if (wordStart[i] < wordStart[i - 1]) wordStart[i] = wordStart[i - 1];
+  // No alignment (a model without timestamps): spread the words over the clip's
+  // duration by character position, once the duration is known.
+  const estimateFromDuration = (duration: number) => {
+    if (clip.words.length > 0 || !Number.isFinite(duration) || duration <= 0) return;
+    const total = Math.max(1, parsed.text.length);
+    for (let i = 0; i < parsed.words.length; i++) wordStart[i] = (parsed.words[i].start / total) * duration;
+  };
 
   if (opts.takeover) stopAllSpeech();
   const gen = queueGeneration;
@@ -223,7 +251,9 @@ async function playClip(
       }, 50);
       audio.onended = end;
       audio.onerror = end;
+      audio.onloadedmetadata = () => estimateFromDuration(audio.duration);
       audio.onplay = () => {
+        estimateFromDuration(audio.duration);
         raf = requestAnimationFrame(tick);
       };
       audio.play().catch(() => end());

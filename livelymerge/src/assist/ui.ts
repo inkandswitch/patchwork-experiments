@@ -40,6 +40,8 @@ export interface UiHooks {
     models: string[];
     getModel(): string;
     setModel(m: string | null): void;
+    getSettings(): { stability?: number; similarity_boost?: number; style?: number };
+    setSettings(v: { stability?: number; similarity_boost?: number; style?: number }): void;
     askKey(): void;
     clearKey(): void;
   };
@@ -112,7 +114,10 @@ const CSS = `
 .lm-assist-drawer .sec .tog::before{content:'▾ ';color:#999}
 .lm-assist-drawer .sec.closed .tog::before{content:'▸ '}
 .lm-assist-drawer .row input[type=text]{font:12px system-ui,sans-serif;padding:2px 4px;width:90px}
-.lm-assist-drawer .row .st{color:#999;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lm-assist-drawer .vstatus{color:#999;font-size:11px;line-height:14px;max-height:28px;overflow:auto;padding:0 10px 6px;
+  user-select:text;-webkit-user-select:text;border-bottom:1px solid #eee}
+.lm-assist-drawer .row input.num{font:12px system-ui,sans-serif;padding:2px 4px;width:44px}
+.lm-assist-drawer .row .lbl{color:#666}
 .lm-assist-drawer textarea{margin:4px 10px 8px;height:170px;resize:vertical;font:11px ui-monospace,Menlo,monospace;
   padding:6px;border:1px solid #ddd;border-radius:6px;line-height:1.4}
 .lm-assist-drawer .log{flex:1;overflow:auto;padding:4px 10px 12px;border-top:1px solid #eee;display:flex;
@@ -145,6 +150,7 @@ export class AssistUI {
   private readonly voiceName: HTMLInputElement;
   private readonly voiceStatus: HTMLElement;
   private readonly voiceModel: HTMLSelectElement;
+  private settingInputs: Map<string, HTMLInputElement> = new Map();
   private readonly notesEl: HTMLDivElement;
   private saveTimer: number | null = null;
 
@@ -308,8 +314,6 @@ export class AssistUI {
       this.refresh();
     });
     voiceRow.appendChild(this.voiceModel);
-    this.voiceStatus = el('span', 'st');
-    voiceRow.appendChild(this.voiceStatus);
     voiceRow.appendChild(
       button('Key…', () => {
         hooks.voice.askKey();
@@ -317,6 +321,44 @@ export class AssistUI {
       }),
     );
     d.appendChild(voiceRow);
+    // Stability / similarity / style, like the website's sliders; blank = the voice's default.
+    const setRow = el('div', 'row');
+    const sl = document.createElement('label');
+    sl.textContent = 'Voice tuning';
+    setRow.appendChild(sl);
+    const fields: [keyof ReturnType<typeof hooks.voice.getSettings>, string][] = [
+      ['stability', 'stability'],
+      ['similarity_boost', 'similarity'],
+      ['style', 'style'],
+    ];
+    const inputs = new Map<string, HTMLInputElement>();
+    for (const [key, label] of fields) {
+      const l = el('span', 'lbl');
+      l.textContent = label;
+      setRow.appendChild(l);
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.className = 'num';
+      inp.min = '0';
+      inp.max = '1';
+      inp.step = '0.05';
+      inp.placeholder = '–';
+      inp.title = `${label}, 0 to 1; blank uses the voice's default`;
+      inp.addEventListener('change', () => {
+        const v: Record<string, number | undefined> = {};
+        for (const [k] of fields) {
+          const raw = inputs.get(k)!.value.trim();
+          v[k] = raw === '' ? undefined : Number(raw);
+        }
+        hooks.voice.setSettings(v);
+      });
+      inputs.set(key, inp);
+      setRow.appendChild(inp);
+    }
+    d.appendChild(setRow);
+    this.settingInputs = inputs;
+    this.voiceStatus = el('div', 'vstatus');
+    d.appendChild(this.voiceStatus);
 
     const ps = el('div', 'sec');
     const pl = document.createElement('span');
@@ -384,6 +426,8 @@ export class AssistUI {
     this.voiceOn.checked = this.hooks.voice.enabled();
     if (document.activeElement !== this.voiceName) this.voiceName.value = this.hooks.voice.getVoiceName();
     this.voiceModel.value = this.hooks.voice.getModel();
+    const st = this.hooks.voice.getSettings() as Record<string, number | undefined>;
+    for (const [k, inp] of this.settingInputs) if (document.activeElement !== inp) inp.value = st[k] == null ? '' : String(st[k]);
     this.voiceStatus.textContent = this.hooks.voice.status();
     this.voiceStatus.title = this.voiceStatus.textContent ?? '';
     this.renderNotes();
