@@ -50,6 +50,15 @@ export interface Bubble {
   at: { x: number; y: number } | null;
   /** performance.now() when hide() was called; null while shown */
   hiddenAt: number | null;
+  /** Chosen once, on first draw, avoiding the bubbles already up; then kept, so a
+   *  bubble never jumps when a neighbour disappears. */
+  rect?: { x: number; y: number; w: number; h: number; lines: string[] };
+}
+
+const BUBBLE_GAP = 8;
+
+function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
+  return a.x < b.x + b.w + BUBBLE_GAP && a.x + a.w + BUBBLE_GAP > b.x && a.y < b.y + b.h + BUBBLE_GAP && a.y + a.h + BUBBLE_GAP > b.y;
 }
 
 const BUBBLE_FADE_MS = 400;
@@ -163,10 +172,47 @@ export class InkOverlay {
     this.requestFrame();
   }
 
-  showBubble(b: Omit<Bubble, 'hiddenAt'>): void {
+  showBubble(b: Omit<Bubble, 'hiddenAt' | 'rect'>): void {
     this.bubbles = this.bubbles.filter((x) => x.id !== b.id);
     this.bubbles.push({ ...b, hiddenAt: null });
     this.requestFrame();
+  }
+
+  /**
+   * Where a new bubble of size w×h goes. Anchored: the usual spot above-right of the
+   * anchor, else the other three corners around it; unanchored: centered at the top.
+   * Any spot that would overlap a bubble already up is skipped; failing all, it goes
+   * below the lowest bubble it collides with.
+   */
+  private placeBubble(w: number, h: number, a: { x: number; y: number } | null, taken: { x: number; y: number; w: number; h: number }[]): { x: number; y: number } {
+    const { width: cw, height: ch } = this.lmCanvas.getBoundingClientRect();
+    const clamp = (p: { x: number; y: number }) => ({
+      x: Math.min(Math.max(8, p.x), Math.max(8, cw - w - 8)),
+      y: Math.min(Math.max(8, p.y), Math.max(8, ch - h - 8)),
+    });
+    const free = (p: { x: number; y: number }) => !taken.some((t) => overlaps({ x: p.x, y: p.y, w, h }, t));
+    const candidates: { x: number; y: number }[] = a
+      ? [
+          { x: a.x + 18, y: a.y - h - 26 },
+          { x: a.x - w - 18, y: a.y - h - 26 },
+          { x: a.x + 18, y: a.y + 30 },
+          { x: a.x - w - 18, y: a.y + 30 },
+        ]
+      : [{ x: (cw - w) / 2, y: 16 }];
+    for (const c of candidates) {
+      const p = clamp(c);
+      if (free(p)) return p;
+    }
+    // Stack: step down past whatever is in the way, as far as the canvas allows.
+    let p = clamp(candidates[0]);
+    for (let i = 0; i < 20; i++) {
+      const hit = taken.filter((t) => overlaps({ x: p.x, y: p.y, w, h }, t));
+      if (hit.length === 0) return p;
+      const below = Math.max(...hit.map((t) => t.y + t.h)) + BUBBLE_GAP;
+      if (below + h > ch - 8) break;
+      p = { x: p.x, y: below };
+    }
+    return p;
   }
 
   hideBubble(id: string): void {
@@ -288,26 +334,19 @@ export class InkOverlay {
     ctx.font = BUBBLE_FONT;
     ctx.textBaseline = 'top';
     const pad = 10;
-    const lines = wrapText(ctx, b.text, BUBBLE_MAX_W - pad * 2);
     const lineH = 17;
-    const w = Math.min(BUBBLE_MAX_W, Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2);
-    const h = lines.length * lineH + pad * 2;
     const a = this.bubbleAnchor(b);
-    let x: number;
-    let y: number;
-    if (a) {
-      // Above and to the right of the anchor, kept inside the canvas.
-      x = a.x + 18;
-      y = a.y - h - 26;
-      if (x + w > cw - 8) x = Math.max(8, a.x - w - 18);
-      if (y < 8) y = Math.min(ch - h - 8, a.y + 30);
-    } else {
-      // Nothing to point at: centered near the top, no tail.
-      x = Math.max(8, (cw - w) / 2);
-      y = 16;
+    if (!b.rect) {
+      const lines = wrapText(ctx, b.text, BUBBLE_MAX_W - pad * 2);
+      const w = Math.min(BUBBLE_MAX_W, Math.max(...lines.map((l) => ctx.measureText(l).width)) + pad * 2);
+      const h = lines.length * lineH + pad * 2;
+      const taken = this.bubbles.filter((o) => o !== b && o.rect).map((o) => o.rect!);
+      const p = this.placeBubble(w, h, a, taken);
+      b.rect = { x: p.x, y: p.y, w, h, lines };
     }
-    x = Math.min(Math.max(8, x), Math.max(8, cw - w - 8));
-    y = Math.min(Math.max(8, y), Math.max(8, ch - h - 8));
+    const { x, y, w, h, lines } = b.rect;
+    void cw;
+    void ch;
 
     // The tail starts on the edge facing the anchor and is short (≤ 22 px): a bubble
     // far from its anchor gets a stub pointing the right way, never a long spike.
