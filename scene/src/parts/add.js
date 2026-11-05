@@ -15,7 +15,7 @@
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
 
 import css from "./add.css?inline";
-import { ROW_MIME, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
+import { ROW_MIME, hasPatchworkDrop, parseAutomergeLink, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
 import { fromEmbed } from "../embed.js";
 
@@ -135,13 +135,16 @@ function create(api) {
 
   /**
    * Add one document: an extension's layout, else a provider's object.
-   * @param {string} input  an automerge URL (or anything parseAutomergeUrl reads)
-   * @param {{ name?: string, at?: { point, hitId } | null }} [o]
+   * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
+   * @param {{ name?: string, at?: { point, hitId } | null, heads?: string[] }} [o]
+   *   heads (or heads in the URL): the object is added fixed at that version
    * @returns {Promise<string | null>} the new object's id (null when an extension laid it out, or nothing was added)
    */
-  async function add(input, { name, at = null } = {}) {
-    const url = parseAutomergeUrl(input);
-    if (!url) return fail("That doesn't look like an automerge URL.");
+  async function add(input, { name, at = null, heads = null } = {}) {
+    const link = parseAutomergeLink(input);
+    if (!link) return fail("That doesn't look like an automerge URL.");
+    const url = link.url;
+    const version = heads?.length ? heads : link.heads;
     if (url === api.url) return fail("A scene can't contain itself.");
     let source;
     try {
@@ -160,7 +163,7 @@ function create(api) {
     if (!provider || !live()) return null;
     let id;
     try {
-      id = await api.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}) });
+      id = await api.addObject(url, { providerId: provider.id, group: null, ...(name ? { name } : {}), ...(version?.length ? { heads: version } : {}) });
     } catch (err) {
       return fail(err?.message ?? String(err));
     }
@@ -195,7 +198,7 @@ function create(api) {
   async function addAll(items, at) {
     for (const item of items) {
       if (!live()) return;
-      await add(item.url, { name: item.name, at });
+      await add(item.url, { name: item.name, at, heads: item.heads ?? null });
     }
   }
 

@@ -10,7 +10,10 @@
 // extension's Frame, Group and Ungroup first. Then About (the object's
 // infoUrl, else its nearest group's, in a <patchwork-view> inside
 // .about-embed), the embedded build controls (scene-render-controls on the
-// render doc) and the status line.
+// render doc), the Version row (what version of its source a render-doc
+// object shows: Latest, or Fixed at… with Fix at this version / Follow
+// latest, which are also this extension's commands for the menu) and the
+// status line.
 //
 // Every write goes through api.ops; a refusal (plan.ok === false) is said
 // with api.notify and the field shows the doc again. Fields being typed in
@@ -24,6 +27,7 @@ import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
 import { EMBED_ATTR } from "../embed.js";
+import { atKey, normalizeAt } from "../staleness.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, isPassthrough, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 
 const ID = "scene.inspector";
@@ -47,6 +51,11 @@ function el(tag, attrs = {}, ...children) {
 }
 
 const canEmbed = () => !!globalThis.customElements?.get?.("patchwork-view");
+
+/** Heads, shortened for display: the first 8 characters of each. */
+function shortHeads(heads) {
+  return (heads ?? []).map((h) => String(h).slice(0, 8)).join(" + ");
+}
 
 function openDocument(from, url, toolId = null) {
   from.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: { url, ...(toolId ? { toolId } : {}) }, bubbles: true, composed: true }));
@@ -84,6 +93,20 @@ function create(api) {
   }
   const setField = (id, key, value) => apply(api.ops.setField(api.scene(), id, key, value));
   const setPart = (id, kind, i, v) => apply(api.ops.setTransformPart(api.scene(), id, kind, i, v));
+  // ─── fixed versions (`at`) ───────────────────────────────────────────────
+
+  /** Where api.fixPoint would fix it (null: not built here yet, or no fixPoint in this stage). */
+  const fixPointOf = (id) => (typeof api.fixPoint === "function" ? api.fixPoint(id) : null);
+
+  /** Fix an object at exactly what its render was last built from. */
+  function fixVersion(id) {
+    const point = fixPointOf(id);
+    if (!point) return void api.notify("It hasn't been built here yet, so there's no version to fix.", "error");
+    apply(api.ops.setField(api.scene(), id, "at", point));
+  }
+
+  const followLatest = (id) => apply(api.ops.setField(api.scene(), id, "at", undefined));
+
   const select = (id) => api.local.swap((m) => ((m.selected ?? null) === (id ?? null) ? m : { ...m, selected: id ?? null }));
 
   // ─── the panel ────────────────────────────────────────────────────────────
@@ -180,6 +203,15 @@ function create(api) {
     const openFile = isPassthrough(o) ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
     const about = el("section", { class: "about", hidden: true });
     const controls = o.renderUrl ? el("div", { class: "controls-embed" }) : null;
+    // Which version of the source it shows (`at`); only a render doc can be fixed.
+    const version = o.renderUrl
+      ? {
+          text: el("span", { class: "version-text" }),
+          fix: el("button", { type: "button", class: "button fix-version", onclick: () => fixVersion(id) }, "Fix at this version"),
+          follow: el("button", { type: "button", class: "button follow-latest", title: "Follow edits to the source again", onclick: () => followLatest(id) }, "Follow latest"),
+          key: null,
+        }
+      : null;
     const status = el("div", { class: "status-line", hidden: true });
 
     const root = el(
@@ -205,6 +237,8 @@ function create(api) {
       openFile ? el("div", { class: "cluster" }, openFile) : null,
       about,
       controls ? el("div", { class: "panel-head build-head" }, el("h3", { class: "panel-title" }, "Build")) : null,
+      version ? el("div", { class: "field version-row" }, el("span", {}, "Version"), version.text) : null,
+      version ? el("div", { class: "cluster version-actions" }, version.fix, version.follow) : null,
       controls,
       status,
     );
@@ -235,6 +269,7 @@ function create(api) {
       unmountAbout: null,
       status,
       statusKey: null,
+      version,
       unmountControls: controls ? mountControls(controls, o.renderUrl) : null,
     };
   }
@@ -287,6 +322,32 @@ function create(api) {
     fillCommands(scene, local);
     fillAbout(scene);
     fillStatus(scene, local, o);
+    fillVersion(o);
+  }
+
+  /** The Version row: Latest or Fixed at…, and which button makes sense. */
+  function fillVersion(o) {
+    const v = view.version;
+    if (!v) return;
+    const s = api.loadState(view.id) ?? {};
+    const at = normalizeAt(o.at);
+    const key = atKey(at);
+    let text = "Latest";
+    let title = "Follows edits to its source";
+    if (at) {
+      const builtThere = s.builtAt != null && (s.builtHeads ?? []).join(",") === at.heads.join(",");
+      text = `Fixed at ${shortHeads(at.heads)}`;
+      if (builtThere) text += ` · built ${new Date(s.builtAt).toLocaleString()}`;
+      if (s.versionMissing) text += " · waiting for that version to sync";
+      const deps = Object.keys(at.deps).length;
+      title = `Source heads ${at.heads.join(", ")}${deps ? `; ${deps} linked document${deps > 1 ? "s" : ""} fixed too` : ""}`;
+    }
+    if (v.text.textContent !== text) v.text.textContent = text;
+    if (v.text.title !== title) v.text.title = title;
+    const point = fixPointOf(view.id);
+    v.fix.disabled = !point || atKey(point) === key;
+    v.fix.title = !point ? "Not built here yet: nothing to fix" : "Keep showing exactly what is built now, whatever later edits to the source do";
+    v.follow.disabled = !at;
   }
 
   function fillCommands(scene, local) {
@@ -408,6 +469,28 @@ function create(api) {
   const objectOf = (target, scene) => (target != null ? scene?.objects?.[target] ?? null : null);
 
   const commands = [
+    {
+      id: "fix-version",
+      name: "Fix at this version",
+      show: ["menu"],
+      state: (target, { scene }) => {
+        const o = objectOf(target, scene);
+        if (!o || isGroup(o) || !o.renderUrl || normalizeAt(o.at)) return null;
+        const point = fixPointOf(target);
+        return point ? { title: "Keep showing exactly what is built now, whatever later edits to the source do" } : { title: "Not built here yet: nothing to fix", disabled: true };
+      },
+      run: (target) => fixVersion(target),
+    },
+    {
+      id: "follow-latest",
+      name: "Follow latest",
+      show: ["menu"],
+      state: (target, { scene }) => {
+        const o = objectOf(target, scene);
+        return o && !isGroup(o) && o.renderUrl && normalizeAt(o.at) ? { title: "Follow edits to the source again" } : null;
+      },
+      run: (target) => followLatest(target),
+    },
     {
       id: "frame",
       name: "Frame",

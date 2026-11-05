@@ -29,7 +29,7 @@ export function boundsProblem(b) {
   return null;
 }
 
-/** Plain-number copy of usable bounds, or the defaults. */
+/** Plain-number copy of usable bounds, or the defaults (never use this to key a build: see boundsKey). */
 export function normalizeBounds(b) {
   if (boundsProblem(b)) return { min: [...DEFAULT_BOUNDS.min], max: [...DEFAULT_BOUNDS.max] };
   return { min: [0, 1, 2].map((i) => Number(b.min[i])), max: [0, 1, 2].map((i) => Number(b.max[i])) };
@@ -52,16 +52,39 @@ export function hashString(str, seed = 0) {
   return n.toString(16).padStart(14, "0");
 }
 
-/** Bump when the mesher's output changes for the same input, so old renders go stale. */
+/**
+ * The prefix of every fingerprint. Frozen at 1: do NOT bump it when the
+ * mesher's output changes. Bump the provider's integer `version` in
+ * src/index.js instead. The scene host records that with each build and makes
+ * only renders from an *older* version stale, so collaborators on two
+ * versions don't rebuild over each other (a changed fingerprint would).
+ */
 export const MESHER_VERSION = 1;
 
 /**
- * Everything build() reads from the doc: the source, the bounds, and the
- * title (which names the mesh in the scene outline).
+ * Bounds as they go into the fingerprint: the normalised numbers when usable,
+ * otherwise "invalid:" plus the raw value. Invalid bounds must never collide
+ * with the default box (which normalizeBounds substitutes for them). If they
+ * did, going from valid to invalid would silently keep the old render, and
+ * fixing invalid bounds to exactly the default would not retry the build.
+ */
+export function boundsKey(b) {
+  if (!boundsProblem(b)) return JSON.stringify(normalizeBounds(b));
+  let raw;
+  try {
+    raw = JSON.stringify(b, (_k, v) => (typeof v === "number" && !Number.isFinite(v) ? String(v) : v));
+  } catch {
+    raw = "?";
+  }
+  return `invalid:${raw}`;
+}
+
+/**
+ * Everything build() reads from the doc: the source and the bounds. Not the
+ * title (the mesh has a fixed name, so a rename never remeshes) and not the
+ * notes.
  */
 export function fingerprintDoc(doc) {
   const source = String(doc?.source ?? "");
-  const b = normalizeBounds(doc?.bounds);
-  const title = String(doc?.title ?? "");
-  return `v${MESHER_VERSION}:${hashString(`${source}\u0000${JSON.stringify(b)}\u0000${title}`)}`;
+  return `v${MESHER_VERSION}:${hashString(`${source}\u0000${boundsKey(doc?.bounds)}`)}`;
 }

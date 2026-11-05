@@ -194,6 +194,9 @@ describe("the stage's pure helpers", () => {
     expect(statusOf(card(), { passthrough: true, phase: "ready" })).toBeNull();
     expect(statusOf(card(), { phase: "no-provider", providerId: "x" }).state).toBe("warn");
     expect(statusOf({ kind: "group" }, { phase: "error" })).toBeNull();
+    // a failed build that will be retried says so (contract v3 build retries)
+    expect(statusOf(card(), { phase: "ready", status: "error", error: "boom", retryAt: 123 }).title).toBe("boom · retrying automatically");
+    expect(statusOf(card(), { phase: "ready", status: "error", error: "boom", retryAt: null }).title).toBe("boom");
   });
 });
 

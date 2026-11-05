@@ -1,7 +1,17 @@
 // A mesh job: source + bounds + params -> GLB bytes. Pure; runs in the mesh
-// worker or on the main thread. It is a generator so the main-thread fallback
+// worker or on the main thread. It comes in two stages, so the provider can
+// cache the expensive one:
+//
+//   meshSurface(job)            evaluate the field, surface nets, field normals
+//                               and curvature. Depends only on the source, the
+//                               bounds and the resolution. Expensive.
+//   finishMesh(surface, opts)   flat normals (unweld), material, GLB encode,
+//                               notes. Depends on smoothNormals, finish, name.
+//                               Cheap, and never mutates `surface`.
+//
+// meshJob(job) runs both. All three are generators so the main-thread fallback
 // can yield between steps (surface-nets layers, blocks of normals, chunks of
-// the unweld); the worker just drains it. Only encodeGLB runs in one piece.
+// the unweld); the worker just drains them. Only encodeGLB runs in one piece.
 
 import { compile, formatError, ImplicitError } from "../lang/index.js";
 import { makeEvaluator } from "../lang/eval.js";
@@ -9,14 +19,19 @@ import { boundsProblem, normalizeBounds } from "../doc.js";
 import { clippedSampler, fieldNormalsSteps, gridFor, surfaceNets } from "./surface-nets.js";
 import { computeBounds, encodeGLB } from "./glb.js";
 
-export const MIN_RESOLUTION = 8;
+// The provider's `resolution` ParamSpec in src/index.js is the source of truth
+// (the scene host clamps to it before build()); these repeat it for direct
+// callers, and index.test.js checks that they agree.
 // Every build the Scene keeps is a new file doc in synced storage, and GLB
 // size grows with resolution², so both are capped: 160 cells across, and
 // 48 MB of GLB. The gyroid example is 30 MB at 160 with smooth normals (flat
 // normals unweld the mesh and roughly triple that, so it is refused there).
+export const MIN_RESOLUTION = 16;
 export const MAX_RESOLUTION = 160;
 export const DEFAULT_RESOLUTION = 96;
 export const MAX_GLB_BYTES = 48_000_000;
+/** Name of the one mesh in the GLB. Fixed, so renaming the doc never remeshes. */
+export const MESH_NAME = "Implicit surface";
 const UNWELD_CHUNK = 60_000; // triangle corners per step
 
 /**
@@ -42,17 +57,24 @@ export function clampResolution(r) {
 }
 
 /**
- * @param {{ source: string, bounds: any, resolution?: number, smoothNormals?: boolean, finish?: "matte" | "satin" | "metal", name?: string, maxBytes?: number }} job
- * @returns {Generator<{ layer: number, of: number }, { glb: Uint8Array, bounds: any, notes: string, stats: object }>}
+ * @typedef {{ positions: Float32Array, indices: Uint32Array, normals: Float32Array, curvature: Float32Array,
+ *   bounds: { min: number[], max: number[] }, resolution: number, cell: number, instructions: number, ms: number }} Surface
  */
-export function* meshJob(job) {
+
+/**
+ * The expensive stage: compile, evaluate, surface nets, field normals and
+ * curvature. The result depends only on source, bounds and resolution; it
+ * throws early (before normals) if the mesh would be over the size limit
+ * with the job's smoothNormals.
+ * @param {{ source: string, bounds: any, resolution?: number, smoothNormals?: boolean, maxBytes?: number }} job
+ * @returns {Generator<object, Surface>}
+ */
+export function* meshSurface(job) {
   const t0 = Date.now();
   const problem = boundsProblem(job.bounds);
   if (problem) throw new Error(problem);
   const bounds = normalizeBounds(job.bounds);
   const resolution = clampResolution(job.resolution ?? DEFAULT_RESOLUTION);
-  const smooth = job.smoothNormals !== false;
-  const name = String(job.name || "Implicit surface");
 
   let compiled;
   try {
@@ -65,22 +87,42 @@ export function* meshJob(job) {
   const sample = clippedSampler(evaluator, bounds);
   const grid = gridFor(bounds, resolution);
   const mesh = yield* surfaceNets(sample, grid);
-  const meshTriangles = mesh.indices.length / 3;
-  const estimate = glbBytes(mesh.positions.length / 3, meshTriangles, smooth);
-  const maxBytes = job.maxBytes ?? MAX_GLB_BYTES;
-  if (estimate > maxBytes) {
-    throw new Error(
-      `At resolution ${resolution} this mesh would be ${formatBytes(estimate)} ` +
-        `(${meshTriangles.toLocaleString("en-US")} triangles), over the ${formatBytes(maxBytes)} limit. ` +
-        `Lower the resolution, tighten the bounds${smooth ? "" : ", or turn smooth normals back on"}.`,
-    );
-  }
-  const { normals: fieldN, curvature } = yield* fieldNormalsSteps(sample, mesh.positions, grid.h * 0.5);
+  // refuse an oversized mesh before spending time on its normals (finishMesh
+  // checks again, for whichever normals it is asked for)
+  checkSize(mesh.positions.length / 3, mesh.indices.length / 3, job.smoothNormals !== false, resolution, job.maxBytes);
+  const { normals, curvature } = yield* fieldNormalsSteps(sample, mesh.positions, grid.h * 0.5);
+  return {
+    positions: mesh.positions,
+    indices: mesh.indices,
+    normals,
+    curvature,
+    bounds,
+    resolution,
+    cell: grid.h,
+    instructions: compiled.ir.count,
+    ms: Date.now() - t0,
+  };
+}
 
-  let positions = mesh.positions;
-  let indices = mesh.indices;
-  let normals = fieldN;
-  let curv = curvature;
+/**
+ * The cheap stage: normals (smooth, or flat and unwelded), material, GLB.
+ * Reads `surface` and never writes it, so a cached surface can be finished
+ * any number of ways.
+ * @param {Surface} surface
+ * @param {{ smoothNormals?: boolean, finish?: string, name?: string, maxBytes?: number, cached?: boolean }} [opts]
+ * @returns {Generator<object, { glb: Uint8Array, bounds: any, notes: string, stats: object }>}
+ */
+export function* finishMesh(surface, opts = {}) {
+  const t0 = Date.now();
+  const smooth = opts.smoothNormals !== false;
+  const name = String(opts.name || MESH_NAME);
+  const { resolution, cell } = surface;
+  checkSize(surface.positions.length / 3, surface.indices.length / 3, smooth, resolution, opts.maxBytes);
+
+  let positions = surface.positions;
+  let indices = surface.indices;
+  let normals = surface.normals;
+  let curv = surface.curvature;
   if (!smooth) {
     // unweld: every triangle gets its own corners and a flat face normal
     const corners = indices.length;
@@ -92,7 +134,7 @@ export function* meshJob(job) {
       p2[i * 3] = positions[v * 3];
       p2[i * 3 + 1] = positions[v * 3 + 1];
       p2[i * 3 + 2] = positions[v * 3 + 2];
-      c2[i] = curvature[v];
+      c2[i] = curv[v];
       if (i % 3 === 2) flatNormal(p2, n2, i - 2);
       if (i % UNWELD_CHUNK === UNWELD_CHUNK - 1) yield { unweld: i + 1, of: corners };
     }
@@ -103,26 +145,62 @@ export function* meshJob(job) {
   }
 
   const triangles = (indices ? indices.length : positions.length / 3) / 3;
-  const primitive = { positions, normals, attributes: { _CURVATURE: curv }, ...finishMaterial(job.finish) };
+  const primitive = { positions, normals, attributes: { _CURVATURE: curv }, ...finishMaterial(opts.finish) };
   if (indices) primitive.indices = indices;
   const glb = encodeGLB({
     generator: "patchwork implicit-surface (surface nets)",
     meshes: [{ name, primitives: [primitive] }],
-    extras: { source: "implicit-surface", resolution, cell: grid.h },
+    extras: { source: "implicit-surface", resolution, cell },
   });
   const meshBounds = computeBounds(positions);
-  const ms = Date.now() - t0;
-  const cellMm = grid.h * 1000;
+  const finishMs = Date.now() - t0;
+  const cellMm = cell * 1000;
+  const timing = opts.cached ? `mesh reused, finished in ${finishMs} ms` : `${surface.ms + finishMs} ms`;
   const notes =
     triangles === 0
       ? `Nothing inside the bounds at resolution ${resolution} — the shape may be empty, outside the bounds, or thinner than a cell (${cellMm.toFixed(1)} mm).`
-      : `${triangles.toLocaleString("en-US")} triangles · ${formatBytes(glb.byteLength)} GLB · surface nets at ${resolution} (cell ${cellMm.toFixed(cellMm < 10 ? 2 : 1)} mm) · ${ms} ms`;
+      : `${triangles.toLocaleString("en-US")} triangles · ${formatBytes(glb.byteLength)} GLB · surface nets at ${resolution} (cell ${cellMm.toFixed(cellMm < 10 ? 2 : 1)} mm) · ${timing}`;
   return {
     glb,
-    bounds: meshBounds ?? bounds,
+    bounds: meshBounds ?? surface.bounds,
     notes,
-    stats: { triangles, vertices: positions.length / 3, resolution, cell: grid.h, ms, instructions: compiled.ir.count },
+    stats: {
+      triangles,
+      vertices: positions.length / 3,
+      resolution,
+      cell,
+      ms: opts.cached ? finishMs : surface.ms + finishMs,
+      instructions: surface.instructions,
+      cached: !!opts.cached,
+    },
   };
+}
+
+/**
+ * Both stages.
+ * @param {{ source: string, bounds: any, resolution?: number, smoothNormals?: boolean, finish?: "matte" | "satin" | "metal", name?: string, maxBytes?: number }} job
+ * @returns {Generator<object, { glb: Uint8Array, bounds: any, notes: string, stats: object }>}
+ */
+export function* meshJob(job) {
+  const surface = yield* meshSurface(job);
+  return yield* finishMesh(surface, job);
+}
+
+/** Throw a message that says what to change if the GLB would be over `maxBytes`. */
+function checkSize(vertices, meshTriangles, smooth, resolution, maxBytes = MAX_GLB_BYTES) {
+  const estimate = glbBytes(vertices, meshTriangles, smooth);
+  if (estimate > maxBytes) {
+    throw new Error(
+      `At resolution ${resolution} this mesh would be ${formatBytes(estimate)} ` +
+        `(${meshTriangles.toLocaleString("en-US")} triangles), over the ${formatBytes(maxBytes)} limit. ` +
+        `Lower the resolution, tighten the bounds${smooth ? "" : ", or turn smooth normals back on"}.`,
+    );
+  }
+}
+
+/** Bytes a surface holds in memory (for the provider's cache budget). */
+export function surfaceBytes(s) {
+  return s.positions.byteLength + s.indices.byteLength + s.normals.byteLength + s.curvature.byteLength;
 }
 
 /** Write triangle t's (corners t, t+1, t+2) face normal into all three corners of n. */

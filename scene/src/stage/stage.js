@@ -37,12 +37,12 @@ import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
 import { createGLBQueue, isLoadingPhase } from "../glb-queue.js";
 import { newRenderDoc } from "../datatype.js";
-import { defaultParams } from "../staleness.js";
+import { atKey, defaultParams } from "../staleness.js";
 import { describeForHumans, describeSource, matchProviders } from "../providers.js";
-import { parseAutomergeUrl } from "../dnd.js";
+import { parseAutomergeLink, parseAutomergeUrl } from "../dnd.js";
 import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
-import { REBUILD_EVENT } from "../controls-tool.js";
+import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, invertMatrix, normalizeTransform } from "../transform.js";
 import { migrateCore, needsCoreMigration } from "../migrate.js";
@@ -210,7 +210,7 @@ export function statusOf(o, s) {
   if (s.phase === "no-provider") return { state: "warn", text: "no provider", title: `Provider “${s.providerId}” is not installed` };
   if (s.phase === "error") return { state: "error", text: "error", title: s.error };
   if (s.building || s.status === "building") return { state: "building", text: "building", title: "Rebuilding…" };
-  if (s.status === "error") return { state: "error", text: "error", title: s.error };
+  if (s.status === "error") return { state: "error", text: "error", title: s.retryAt ? `${s.error} · retrying automatically` : s.error };
   if (s.glbError || s.parseError) return { state: "error", text: "error", title: s.glbError || s.parseError };
   if (s.stale && s.depsUnavailable?.length) return { state: "stale", reason: "deps", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
   if (s.stale && s.contested) return { state: "stale", reason: "contested", text: "stale", title: contestedText(s) };
@@ -428,7 +428,7 @@ export default function Stage(handle, element) {
     if (!sourceRegistry?.has?.(id)) return null;
     const p = await sourceRegistry.load(id);
     if (!p?.module) return null;
-    return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, module: p.module };
+    return { id, name: p.name ?? id, params: p.params ?? [], cost: p.cost, version: p.version, module: p.module };
   }
 
   // ─── derived structure, once per doc snapshot ─────────────────────────────
@@ -497,6 +497,9 @@ export default function Stage(handle, element) {
   const objState = new Map(); // id → what the manager or the queue last said
   const displayKeys = new Map(); // id → displayKey last applied
   const hintKeys = new Map(); // id → hint bounds last given to the viewport
+  // render docs this scene made itself, this session: nothing to wait to sync before building
+  const createdHere = new Set();
+  const atKeys = new Map(); // render url → atKey of its object's `at`, for the embedded controls
   let statusDirty = false;
   let contentDirty = false;
   const focusBy = new Map(); // extension id → Set of object ids it wants first
@@ -523,7 +526,13 @@ export default function Stage(handle, element) {
     repo,
     loadProvider,
     onState: (id, s) => {
+      const before = objState.get(id)?.bounds;
       objState.set(id, s);
+      // a render doc's own bounds stand in until its GLB loads (unless the scene has a hint)
+      if (String(before?.min) + String(before?.max) !== String(s.bounds?.min) + String(s.bounds?.max)) {
+        const o = doc()?.objects?.[id];
+        if (o && !isGroup(o) && !o.hint?.bounds) applyHint(id, s.bounds);
+      }
       statusChanged();
     },
     onGLB: async (id, bytes) => {
@@ -572,6 +581,36 @@ export default function Stage(handle, element) {
 
   // ─── the doc → the viewport ───────────────────────────────────────────────
 
+  /** Give the viewport a placeholder box (only when it changed); true if there is one. */
+  function applyHint(id, b) {
+    const hk = b ? `${b.min}|${b.max}` : "";
+    if (hintKeys.get(id) !== hk) {
+      hintKeys.set(id, hk);
+      viewport.setHint(id, b ?? null);
+    }
+    return !!hk;
+  }
+
+  // The embedded build controls (controls-tool.js) judge staleness themselves,
+  // against the object's `at`, which they ask for with CONTEXT_EVENT (below).
+  // When an object is fixed, refixed or let go, tell them to ask again.
+  let contextQueued = false;
+  function noteAt(o) {
+    const key = atKey(o.at);
+    const was = atKeys.get(o.renderUrl);
+    atKeys.set(o.renderUrl, key);
+    if (was === undefined || was === key || contextQueued) return;
+    contextQueued = true;
+    queueMicrotask(() => {
+      contextQueued = false;
+      if (dead) return;
+      for (const c of root.querySelectorAll(".scene-render-controls")) c.dispatchEvent(new CustomEvent(CONTEXT_CHANGED_EVENT));
+    });
+  }
+
+  /** What the manager tracks an object with: its docs, whether this scene made the render, and its fixed version. */
+  const trackSpec = (o) => ({ sourceUrl: o.sourceUrl, renderUrl: o.renderUrl, createdHere: createdHere.has(o.renderUrl), at: o.at ?? null });
+
   // Display state, then hydration: only what is shown is loaded, and once
   // loaded it stays loaded. Parents before children (attachment order), so
   // each object's new parent is already in place when it's attached to it.
@@ -598,19 +637,17 @@ export default function Stage(handle, element) {
       const shown = o.visible !== false && inh.visible;
       if (o.renderUrl) {
         queue.remove(id);
-        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: o.renderUrl });
+        applyHint(id, o.hint?.bounds ?? objState.get(id)?.bounds);
+        // hydrate only what is shown; once loaded it stays loaded
+        if (o.sourceUrl && (shown || tracked.has(id))) manager.track(id, trackSpec(o));
+        noteAt(o);
         continue;
       }
       // what this viewer sees: a lens's source, or the object's own
       const src = docUrl(looks.get(id)?.sourceUrl ?? o.sourceUrl);
       if (!src) continue;
       if (tracked.has(id)) manager.untrack(id);
-      const b = o.hint?.bounds;
-      const hk = b ? `${b.min}|${b.max}` : "";
-      if (hintKeys.get(id) !== hk) {
-        hintKeys.set(id, hk);
-        viewport.setHint(id, b ?? null);
-      }
+      applyHint(id, o.hint?.bounds);
       if (shown) queue.ensure(id, src, priorityOf(id, o));
       else if (queue.cancel(id)) {
         // dropped before it loaded: "not asked for" again, not loading or failing
@@ -974,15 +1011,18 @@ export default function Stage(handle, element) {
    * Add a document to the scene as an object (tool.js addFromUrl without the
    * UI): through `providerId` (else the best match), as a render doc, or
    * straight through for a passthrough provider.
-   * @param {string} input  an automerge URL (or anything parseAutomergeUrl reads)
-   * @param {{ providerId?, name?, group?, parent?, before?, transform? }} [opts]
+   * @param {string} input  an automerge URL (or anything parseAutomergeLink reads)
+   * @param {{ providerId?, name?, group?, parent?, before?, transform?, heads? }} [opts]
    *   parent: attach to that object (and join its group, unless `group` says);
-   *   group: file in that group; before: its place in the order
+   *   group: file in that group; before: its place in the order; heads (or
+   *   heads in the URL itself): add it fixed at that version of its source (`at`)
    * @returns {Promise<string>} the new object's id; rejects with a sentence to show
    */
   async function addObject(input, opts = {}) {
-    const url = parseAutomergeUrl(input);
-    if (!url) throw new Error("That doesn't look like an automerge URL.");
+    const link = parseAutomergeLink(input);
+    if (!link) throw new Error("That doesn't look like an automerge URL.");
+    const url = link.url;
+    const heads = opts.heads?.length ? opts.heads : link.heads;
     if (url === handle.url) throw new Error("A scene can't contain itself.");
     let source;
     try {
@@ -1003,6 +1043,7 @@ export default function Stage(handle, element) {
     const name = opts.name || (await titleOf(sourceDoc, info.datatype));
     // A passthrough provider's source already is a GLB: no render doc, no copy (v3 §6).
     const renderHandle = provider.passthrough ? null : await repo.create2(newRenderDoc({ title: name, parent: url, providerId: provider.id, params: defaultParams(provider.params) }));
+    if (renderHandle) createdHere.add(renderHandle.url);
     if (dead) throw new Error("The scene was closed.");
     const id = newId("o");
     const transform = opts.transform ? normalizeTransform(opts.transform) : IDENTITY();
@@ -1026,6 +1067,9 @@ export default function Stage(handle, element) {
         wireframe: false,
         transform: { position: [...transform.position], rotation: [...transform.rotation], scale: transform.scale },
       };
+      // A URL with heads names a version: show that one. (A passthrough
+      // object is shown straight from its file, so it has nothing to fix.)
+      if (heads?.length && renderHandle) d.objects[id].at = { heads: [...heads] };
       const at = opts.before ? d.order.indexOf(opts.before) : -1;
       if (at >= 0) d.order.splice(at, 0, id);
       else d.order.push(id);
@@ -1045,7 +1089,7 @@ export default function Stage(handle, element) {
     // It then stays tracked, like anything that has loaded.
     if (!o.sourceUrl) return false;
     const url = o.renderUrl;
-    Promise.resolve(manager.track(id, { sourceUrl: o.sourceUrl, renderUrl: url }))
+    Promise.resolve(manager.track(id, trackSpec(o)))
       .then(() => {
         if (!dead && doc().objects?.[id]?.renderUrl === url) manager.rebuild(id);
       })
@@ -1063,6 +1107,33 @@ export default function Stage(handle, element) {
   };
   root.addEventListener(REBUILD_EVENT, onRebuild);
   cleanups.push(() => root.removeEventListener(REBUILD_EVENT, onRebuild));
+
+  // embedded controls asking whether their render's object is fixed at a version
+  const onContext = (e) => {
+    const url = e.detail?.renderUrl;
+    if (!url) return;
+    const o = Object.values(doc().objects ?? {}).find((x) => x?.renderUrl === url);
+    if (o) e.detail.at = o.at ?? null;
+  };
+  root.addEventListener(CONTEXT_EVENT, onContext);
+  cleanups.push(() => root.removeEventListener(CONTEXT_EVENT, onContext));
+
+  /**
+   * The `at` that would fix an object at exactly what its render was last
+   * built from, or null (not built here yet, not tracked, or passthrough).
+   * Writing it is the caller's: `ops.setField(scene, id, "at", point)`.
+   */
+  function fixPoint(id) {
+    const o = doc().objects?.[id];
+    if (!o?.renderUrl || !manager.ids().includes(id)) return null;
+    const point = manager.fixPoint(id);
+    if (!point) return null;
+    // fresh arrays: automerge won't take a value that is already in a document
+    const out = { heads: [...point.heads] };
+    const deps = Object.entries(point.deps ?? {});
+    if (deps.length) out.deps = Object.fromEntries(deps.map(([u, h]) => [u, [...h]]));
+    return out;
+  }
 
   /** What a drop handler gets (STAGE.md, "Drops"): reads and writes, nothing to acquire. */
   function makeDropContext(id) {
@@ -1194,6 +1265,7 @@ export default function Stage(handle, element) {
       providersFor,
       addObject,
       rebuild,
+      fixPoint,
       drop: (info) => host.drop(info),
 
       // picking and camera

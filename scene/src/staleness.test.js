@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, heldDeps, inputsKey, isContested, isStale, normalizeDeps, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
+import { atFromBuilt, atKey, normalizeAt, builtInputsKey, changedKeys, currentInputsKey, debounceFor, defaultParams, depsKey, effectiveParams, heldDeps, inputsKey, isContested, isStale, normalizeDeps, olderVersion, paramsKey, sameDeps, staleReason, withDefaults } from "./staleness.js";
 
 const built = (params, heads, fingerprint = null) => ({ params, builtFrom: { heads, fingerprint, paramsKey: paramsKey(params) } });
 
@@ -163,5 +163,77 @@ describe("peers that disagree about dependencies", () => {
     const loaded = (u) => u === "automerge:c";
     expect(heldDeps(built, cur, loaded)).toEqual(["automerge:a"]);
     expect(heldDeps(undefined, cur, loaded)).toEqual([]);
+  });
+});
+
+describe("provider versions", () => {
+  it("only an older (or unversioned) build is stale", () => {
+    expect(olderVersion(undefined, 1)).toBe(true);
+    expect(olderVersion(1, 2)).toBe(true);
+    expect(olderVersion(2, 2)).toBe(false);
+    expect(olderVersion(3, 2)).toBe(false);
+    expect(olderVersion(1, undefined)).toBe(false);
+    expect(olderVersion(1, "nope")).toBe(false);
+  });
+  it("staleReason says provider, after params and before the fingerprint", () => {
+    const r = built({ a: 1 }, ["h"], "fp");
+    expect(staleReason(r, { heads: ["h"], fingerprint: "fp", providerVersion: 1 })).toBe("provider");
+    r.builtFrom.providerVersion = 1;
+    expect(staleReason(r, { heads: ["h"], fingerprint: "fp", providerVersion: 1 })).toBeNull();
+    expect(staleReason(r, { heads: ["h"], fingerprint: "other", providerVersion: 2 })).toBe("provider");
+    expect(staleReason({ ...r, params: { a: 2 } }, { heads: ["h"], fingerprint: "fp", providerVersion: 2 })).toBe("params");
+  });
+  it("a version change is a new inputsKey (so a failed build is tried again)", () => {
+    const r = built({}, ["h"]);
+    expect(inputsKey(r, { heads: ["h"], providerVersion: 1 })).not.toBe(inputsKey(r, { heads: ["h"], providerVersion: 2 }));
+  });
+});
+
+describe("effectiveParams", () => {
+  const specs = [
+    { key: "n", kind: "number", default: 1, min: 0, max: 5 },
+    { key: "i", kind: "integer", default: 2 },
+    { key: "e", kind: "enum", default: "a", options: [{ value: "a" }, { value: "b" }] },
+    { key: "c", kind: "color", default: "#000000" },
+    { key: "b", kind: "boolean", default: false },
+  ];
+  it("fills defaults, clamps, rounds and coerces", () => {
+    expect(effectiveParams(specs, { n: 9, i: 2.6, e: "b", c: "#ABCDEF", b: 1 })).toEqual({ n: 5, i: 3, e: "b", c: "#abcdef", b: true });
+  });
+  it("falls back to the default for values that aren't of the spec's kind", () => {
+    expect(effectiveParams(specs, { n: "lots", i: null, e: "z", c: "red" })).toEqual({ n: 1, i: 2, e: "a", c: "#000000", b: false });
+  });
+  it("passes through keys it has no spec for", () => {
+    expect(effectiveParams(specs, { extra: { x: 1 } }).extra).toEqual({ x: 1 });
+  });
+});
+
+describe("fixed versions (at)", () => {
+  it("normalizes: absent/empty follows the latest; heads sorted; keyed deps dropped", () => {
+    expect(normalizeAt(null)).toBeNull();
+    expect(normalizeAt({ heads: [] })).toBeNull();
+    expect(normalizeAt({ heads: ["b", "a"] })).toEqual({ heads: ["a", "b"], deps: {} });
+    expect(normalizeAt({ heads: ["a"], deps: { "automerge:x": ["d2", "d1"], "automerge:y": ["fp:k"], "automerge:z": [] } })).toEqual({
+      heads: ["a"],
+      deps: { "automerge:x": ["d1", "d2"] },
+    });
+  });
+  it("keys the same version the same way", () => {
+    expect(atKey(null)).toBe("");
+    expect(atKey({ heads: ["b", "a"], deps: { u: ["2", "1"] } })).toBe(atKey({ heads: ["a", "b"], deps: { u: ["1", "2"] } }));
+    expect(atKey({ heads: ["a"] })).not.toBe(atKey({ heads: ["a"], deps: { u: ["1"] } }));
+  });
+  it("atFromBuilt freezes what a build read", () => {
+    expect(atFromBuilt(null)).toBeNull();
+    const builtFrom = { heads: ["h2", "h1"], paramsKey: "{}", fingerprint: null, deps: { a: ["x"], r: ["fp:glb"] } };
+    expect(atFromBuilt(builtFrom)).toEqual({ heads: ["h1", "h2"], deps: { a: ["x"] } });
+    expect(atFromBuilt(builtFrom, { r: ["rh"] })).toEqual({ heads: ["h1", "h2"], deps: { a: ["x"], r: ["rh"] } });
+  });
+  it("a fixed source judged at its fixed heads isn't stale from edits; params still are", () => {
+    // the render manager hands staleReason the view's heads (= at.heads), never the live ones
+    const r = built({ size: 1 }, ["h1"]);
+    const at = normalizeAt({ heads: ["h1"] });
+    expect(staleReason(r, { heads: at.heads })).toBeNull();
+    expect(staleReason({ ...r, params: { size: 2 } }, { heads: at.heads })).toBe("params");
   });
 });

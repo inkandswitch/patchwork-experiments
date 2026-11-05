@@ -1,35 +1,9 @@
 // A form built from ParamSpec metadata. Vanilla DOM; builds once per spec list
 // and then only updates values, so typing into a field is never clobbered.
 
-import { stableStringify } from "./staleness.js";
+import { coerceParam, stableStringify } from "./staleness.js";
 
-const clampNum = (v, spec) => {
-  let n = Number(v);
-  if (!Number.isFinite(n)) return null;
-  if (spec.kind === "integer") n = Math.round(n);
-  if (spec.min != null) n = Math.max(spec.min, n);
-  if (spec.max != null) n = Math.min(spec.max, n);
-  return n;
-};
-
-/** Convert a raw input value to the spec's type, or null if it isn't one. */
-export function coerceParam(spec, raw) {
-  switch (spec.kind) {
-    case "number":
-    case "integer":
-      return clampNum(raw, spec);
-    case "boolean":
-      return !!raw;
-    case "enum": {
-      const opt = (spec.options ?? []).find((o) => String(o.value) === String(raw));
-      return opt ? opt.value : null;
-    }
-    case "color":
-      return /^#[0-9a-f]{6}$/i.test(String(raw)) ? String(raw).toLowerCase() : null;
-    default:
-      return String(raw ?? "");
-  }
-}
+export { coerceParam };
 
 // log sliders map 0..1000 onto [min, max] exponentially
 const SLIDER_STEPS = 1000;

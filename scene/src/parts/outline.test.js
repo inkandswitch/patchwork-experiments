@@ -344,6 +344,53 @@ describe("scene.outline: dragging rows", () => {
     expect(readRowDrag({ getData: (t) => data[t] })).toEqual({ scene: s.handle.url, id: "a" });
   });
 
+  it("a dragged row carries its render doc (or GLB file) for other tools; a group carries only the row", async () => {
+    const R = "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u";
+    const F = "automerge:3k9knn3DsFnFYDFvXkyMu4UHyp7u";
+    await mount({ objects: { a: leafAt("a"), p: leaf("p", { sourceUrl: F, visible: false }), g: grp("G") }, order: ["a", "p", "g"] });
+    s.change((d) => {
+      d.objects.a.sourceUrl = F;
+      d.objects.a.renderUrl = R;
+    });
+    await pass();
+    const drag = (id) => {
+      const data = {};
+      const e = new Event("dragstart", { bubbles: true });
+      e.dataTransfer = { setData: (t, v) => (data[t] = v), effectAllowed: "" };
+      row(id).querySelector(".row-main").dispatchEvent(e);
+      return { data, allowed: e.dataTransfer.effectAllowed };
+    };
+    const a = drag("a");
+    expect(readRowDrag({ getData: (t) => a.data[t] })).toEqual({ scene: s.handle.url, id: "a" });
+    expect(JSON.parse(a.data["text/x-patchwork-urls"])).toEqual([R]);
+    expect(a.data["text/plain"]).toBe(R);
+    expect(JSON.parse(a.data["text/x-patchwork-dnd"]).items[0]).toMatchObject({ url: R, type: "scene-render", name: "a" });
+    expect(a.allowed).toBe("copyMove");
+    const p = drag("p");
+    expect(p.data["text/plain"]).toBe(F);
+    expect(JSON.parse(p.data["text/x-patchwork-dnd"]).items[0].type).toBeUndefined();
+    const g = drag("g");
+    expect(Object.keys(g.data)).toEqual([ROW_MIME]);
+    expect(g.allowed).toBe("move");
+  });
+
+  it("an object fixed at a version shows a ◷ fixed tag (display only)", async () => {
+    const H = "MZke2MePENdwYFcp4a4Q61S1uEQtJDadpkQc9B6Q78CXrpy4q";
+    await mount({ objects: { a: leafAt("a", {}), b: leafAt("b") }, order: ["a", "b"] });
+    s.change((d) => {
+      d.objects.a.renderUrl = "automerge:2j9knn3DsFnFYDFvXkyMu4UHyp7u";
+      d.objects.a.at = { heads: [H] };
+    });
+    await pass();
+    const mark = row("a").querySelector(".fixed-mark");
+    expect(mark?.textContent).toBe("◷ fixed");
+    expect(mark.title).toMatch(/^Fixed at version MZke2MeP;/);
+    expect(row("b").querySelector(".fixed-mark")).toBeNull();
+    s.change((d) => delete d.objects.a.at);
+    await pass();
+    expect(row("a").querySelector(".fixed-mark")).toBeNull();
+  });
+
   it("onto a group files it there and moves nothing; out of its parent's rows it's detached, where it is", async () => {
     const hull = leafAt("hull", { x: 1 });
     hull.transform.scale = 2;

@@ -1,0 +1,7 @@
+// Three rounded strands, twisted around each other and blended onto a base.
+// Try the twist (5 radians per metre), the strand radius (24mm) or the blend (16mm).
+let strand(a) = rotateY(a, translate(45mm, 0, 0, capsule(24mm, 0.26)))
+let twisted = twist(5, smoothUnion(16mm, strand(0deg), strand(120deg), strand(240deg)))
+let base = translate(0, -0.15, 0, roundBox(0.16, 18mm, 0.16, 8mm))
+
+smoothUnion(14mm, twisted, base)

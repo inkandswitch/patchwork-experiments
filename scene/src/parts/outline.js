@@ -21,7 +21,7 @@ import css from "./outline.css?inline";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
-import { ROW_MIME, hasPatchworkDrop, parsePatchworkDrop } from "../dnd.js";
+import { DND_MIME, ROW_MIME, URLS_MIME, hasPatchworkDrop, parsePatchworkDrop } from "../dnd.js";
 import { peerCss } from "../peers.js";
 
 /** The filter field appears once there are this many objects. */
@@ -42,6 +42,30 @@ const SELECT_EXT = "scene.select";
 /** A colour for an object with none of its own (the swatch shows it faded). */
 const AUTO_COLOUR = "#9aa3b5";
 const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+/** True when an object is fixed at a version of its source (`at`), cheaply. */
+export function isFixed(o) {
+  return !!o?.renderUrl && Array.isArray(o.at?.heads) && o.at.heads.length > 0;
+}
+
+/** Heads, shortened for display: the first 8 characters of each. */
+function shortHeads(heads) {
+  return (heads ?? []).map((h) => String(h).slice(0, 8)).join(" + ");
+}
+
+/**
+ * What a row is as a document outside the scene: its render doc (the way the
+ * sidebar's own drags look, so a slicer or a flow field's body slot can take
+ * it; see README "Consuming a render"), or for a passthrough object its GLB
+ * file. null for a group or an object with neither.
+ * @returns {{ url: string, name?: string, type?: string } | null}
+ */
+export function rowDocument(o) {
+  if (!o || isGroup(o)) return null;
+  const url = o.renderUrl ?? o.sourceUrl ?? null;
+  if (typeof url !== "string" || !url.startsWith("automerge:")) return null;
+  return o.renderUrl ? { url, name: o.name, type: "scene-render" } : { url, name: o.name };
+}
 
 /** A row-drag payload, or null if there is none (or it isn't ours). */
 export function readRowDrag(dt) {
@@ -277,7 +301,7 @@ export default {
       if (api.signal.aborted) return;
       try {
         const where = intoGroup ? { group: into } : into ? { parent: into } : { group: null };
-        const id = await api.addObject(item.url, { name: item.name, ...where, before: place.before ?? null });
+        const id = await api.addObject(item.url, { name: item.name, ...where, before: place.before ?? null, ...(item.heads?.length ? { heads: item.heads } : {}) });
         if (api.signal.aborted) return;
         pendingReveal = id;
         select(id);
@@ -452,17 +476,29 @@ export default {
         const name = el("span", { class: "name" });
         const count = group ? el("span", { class: "count" }) : null;
         const pill = el("span", { class: "pill" });
+        const fixedMark = group ? null : el("span", { class: "tag fixed-mark" }, "◷ fixed");
         const remove = el("button", { type: "button", class: "icon-button remove", title: group ? "Remove group and everything in it" : "Remove from scene", "aria-label": "Remove from scene", onclick: () => removeRow(id) }, "×");
         const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (select(id), frameRow(id)) }, name, count);
         // The name is the grab handle. Making the whole row draggable would
         // fight the colour input and the visibility checkbox inside it.
         main.draggable = true;
         main.addEventListener("dragstart", (e) => {
-          e.dataTransfer?.setData(ROW_MIME, JSON.stringify({ scene: api.url, id }));
-          if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+          const dt = e.dataTransfer;
+          if (!dt) return;
+          dt.setData(ROW_MIME, JSON.stringify({ scene: api.url, id }));
+          // Outside this scene the row is its geometry (rowDocument): a slicer
+          // or a flow field's body slot can take it. This scene, and others,
+          // ignore these types on a row drag (scene.add refuses ROW_MIME).
+          const item = rowDocument(api.scene().objects[id]);
+          if (item) {
+            dt.setData(DND_MIME, JSON.stringify({ source: "scene", items: [item] }));
+            dt.setData(URLS_MIME, JSON.stringify([item.url]));
+            dt.setData("text/plain", item.url);
+            dt.effectAllowed = "copyMove";
+          } else dt.effectAllowed = "move";
         });
         const li = el("li", { class: "object-row", role: "treeitem", dataset: { id, ...(group ? { kind: "group" } : {}) } }, twisty, vis, sw, main, remove);
-        row = { li, twisty, vis, sw, name, count, pill, remove, main, group, label: null };
+        row = { li, twisty, vis, sw, name, count, pill, fixedMark, remove, main, group, label: null };
         rows.set(id, row);
         return row;
       }
@@ -508,7 +544,7 @@ export default {
           const o = objects[id];
           const group = isGroup(o);
           const row = rowFor(id, group);
-          const { li, twisty, vis, sw, count, pill, remove } = row;
+          const { li, twisty, vis, sw, count, pill, fixedMark, remove } = row;
           if (li.dataset.depth !== String(depth)) {
             li.dataset.depth = String(depth);
             li.style.setProperty("--depth", String(depth));
@@ -554,6 +590,14 @@ export default {
             if (pill.textContent !== (st.text ?? "")) pill.textContent = st.text ?? "";
             if (pill.parentNode !== li) li.insertBefore(pill, remove);
           } else pill.remove();
+          if (fixedMark) {
+            // display only: the inspector's Version row changes it
+            if (isFixed(o)) {
+              const t = `Fixed at version ${shortHeads(o.at.heads)}; doesn't follow edits to its source`;
+              if (fixedMark.title !== t) fixedMark.title = t;
+              if (fixedMark.parentNode !== li) li.insertBefore(fixedMark, pill.parentNode === li ? pill : remove);
+            } else fixedMark.remove();
+          }
           return li;
         });
         if (!ids.length) els.push((emptyRow ??= el("li", { class: "empty-row" }, "Nothing here yet.")));

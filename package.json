@@ -8,6 +8,7 @@
     "build:static:fresh": "node scripts/build-static.mjs --build",
     "build:tools:ci": "node scripts/build-static.mjs --install",
     "bundle": "node scripts/bundle.mjs",
+    "check:kit": "node scripts/check-kit.mjs",
     "serve:tools": "node scripts/serve-tools.mjs",
     "dev:tools": "pnpm build:static:fresh && pnpm serve:tools",
     "deploy:tools": "pnpm build:static:fresh && pnpm dlx netlify-cli deploy --dir=static-dist --prod"

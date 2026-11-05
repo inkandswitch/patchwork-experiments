@@ -4,6 +4,7 @@ import type {Mesh} from "three"
 import {parseGLB} from "./glb.js"
 import {parseSTL, zUpToYUpMeters} from "./stl"
 import {createOpenscadSource, dependencies, fingerprint, stlToGLB} from "./source"
+import {createRenderCache} from "../render/engine"
 import type {OpenscadDoc} from "../types"
 import type {AutomergeUrl} from "@automerge/automerge-repo"
 
@@ -175,7 +176,7 @@ describe("dependencies", () => {
 
 describe("the SourceImpl", () => {
 	function setup(stl = boxSTL([20, 20, 20])) {
-		const render = vi.fn(async (_source: string, _imports: {name: string; json: string}[]) => ({
+		const render = vi.fn(async (_source: string, _imports?: {name: string; json: string}[]) => ({
 			stl,
 			logs: ["WARNING: something"],
 			elapsedMillis: 1200,
@@ -222,15 +223,42 @@ describe("the SourceImpl", () => {
 		expect(b.glb).toEqual(a.glb)
 	})
 
-	it("re-encodes a unit change without running OpenSCAD again", async () => {
+	it("keeps no cache of its own: every build asks the renderer", async () => {
 		const {render, impl} = setup()
 		const doc: OpenscadDoc = {source: "cube(20);"}
 		await impl.build({doc, params: {unit: "mm"}})
+		await impl.build({doc, params: {unit: "cm"}})
+		expect(render).toHaveBeenCalledTimes(2)
+	})
+
+	it("through the engine's shared cache, re-encodes a unit change without running OpenSCAD again", async () => {
+		const {render} = setup()
+		const shared = createRenderCache(render)
+		const impl = createOpenscadSource(async () => shared)
+		const doc: OpenscadDoc = {source: "cube(20);"}
+		const mm = await impl.build({doc, params: {unit: "mm"}})
+		expect(mm.meta?.notes).toContain("rendered in 1.2 s")
 		const cm = await impl.build({doc, params: {unit: "cm"}})
 		expect(render).toHaveBeenCalledTimes(1)
 		expect(cm.meta?.bounds?.max[0]).toBeCloseTo(0.2)
+		expect(cm.meta?.notes).not.toContain("rendered in")
 		await impl.build({doc: {source: "cube(21);"}, params: {unit: "cm"}})
 		expect(render).toHaveBeenCalledTimes(2)
+	})
+
+	it("reuses a render the editor already did, and joins one it is still doing", async () => {
+		const {render} = setup()
+		const shared = createRenderCache(render)
+		const impl = createOpenscadSource(async () => shared)
+		const repo = {find: async () => ({doc: () => ({w: 3})})}
+		const doc: OpenscadDoc = {source: "cube(data.w);", imports: [{name: "data", docUrl: url("a")}]}
+		// the editor binds imports the same way: docToJsonString of the doc
+		const editor = shared("cube(data.w);", [{name: "data", json: '{"w":3}'}])
+		const [, built] = await Promise.all([editor, impl.build({doc, repo})])
+		expect(render).toHaveBeenCalledTimes(1)
+		expect(built.kind).toBe("glb")
+		await impl.build({doc, repo, params: {unit: "in"}})
+		expect(render).toHaveBeenCalledTimes(1)
 	})
 
 	it("falls back to millimetres for an unknown unit", async () => {

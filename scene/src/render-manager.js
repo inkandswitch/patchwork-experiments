@@ -1,11 +1,16 @@
 // Keeps every object in a scene built: watches each object's source doc and
 // render doc, decides when a render is stale, debounces, builds, and hands the
 // current GLB bytes to the view. No three.js here, so it is testable with fakes.
+//
+// An object fixed at a version (scene object `at`) is built from a read-only
+// view of its source at those heads, and from views of the dependencies `at`
+// lists; staleness is judged against those views, so edits to the live docs
+// never make it stale. Params and provider versions still do.
 
 import { fileBytes } from "./file-content.js";
-import { dependenciesOf, errorMessage, fingerprintOf, runBuild } from "./build.js";
+import { dependenciesOf, dependencyKeyOf, errorMessage, fingerprintOf, knowsHeads, pinnedRepo, runBuild, validBounds, viewAt } from "./build.js";
 import { createDependencyWatcher } from "./deps.js";
-import { builtInputsKey, changedKeys, debounceFor, heldDeps, inputsKey, isContested, sortedHeads, staleReason } from "./staleness.js";
+import { atFromBuilt, atKey, builtInputsKey, changedKeys, debounceFor, heldDeps, inputsKey, isContested, normalizeAt, sortedHeads, staleReason } from "./staleness.js";
 
 // How long to hold off building inputs a peer says (or the doc says) it is building.
 export const REMOTE_BUILD_GRACE_MS = 20_000;
@@ -29,6 +34,18 @@ const PEER_MEMORY_MS = 30 * 60_000;
 // was already built from (recorded with heads): that is never rebuilt over
 // until this client can read it (see heldDeps).
 export const DEP_WAIT_MS = 5_000;
+// A build that throws is retried automatically after each of these waits (its
+// inputs unchanged), then left alone until they change or someone presses
+// Rebuild. Covers the transient failures inside build(): a CDN fetch, a worker
+// that ran out of memory once, a dependency that answered late.
+export const RETRY_BACKOFF_MS = Object.freeze([5_000, 30_000, 120_000]);
+// A render doc this client didn't just create may be handed over before its
+// history has synced: a fresh peer can see the seed (builtFrom: null) for a
+// moment and would rebuild something that is already built (seen in Patchwork:
+// every new viewer rebuilt "never-built" renders at once). So no automatic
+// build starts sooner than this after the render doc was opened. Every change
+// re-evaluates, so when the real builtFrom arrives the build is called off.
+export const SYNC_SETTLE_MS = 2_500;
 
 function parseKey(key) {
   try {
@@ -42,13 +59,14 @@ function parseKey(key) {
  * @param {object} o
  * @param {object} o.repo
  * @param {(providerId: string) => Promise<object | null>} o.loadProvider
- *        resolves to { id, name, params, cost?, module } or null if not installed
+ *        resolves to { id, name, params, cost?, version?, module } or null if not installed
  * @param {(objectId: string, state: object) => void} o.onState
  * @param {(objectId: string, bytes: Uint8Array, glbUrl: string) => void} o.onGLB
  * @param {{ setTimeout, clearTimeout }} [o.timers]
  * @param {() => number} [o.now]
+ * @param {number} [o.syncSettleMs]  see SYNC_SETTLE_MS
  */
-export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now }) {
+export function createRenderManager({ repo, loadProvider, onState, onGLB, timers = globalThis, now = Date.now, syncSettleMs = SYNC_SETTLE_MS }) {
   const entries = new Map();
   let disposed = false;
   const selfId = repo?.peerId ?? null;
@@ -84,24 +102,41 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
   }
 
   /**
+   * The source as build() reads it: the live handle, or for a fixed object a
+   * read-only view at `at.heads` (null until this replica has those heads).
+   */
+  function sourceView(entry) {
+    const live = entry.sourceHandle;
+    if (!live || !entry.at) return live ?? null;
+    const c = entry.viewCache;
+    if (c && c.live === live && c.key === entry.atKey) return c.view;
+    const view = viewAt(live, entry.at.heads);
+    if (view) entry.viewCache = { live, key: entry.atKey, view };
+    return view;
+  }
+
+  /**
    * Ask the provider which other docs build() reads, and watch exactly those.
    * Only when the source (or the provider) has changed since the last ask.
    */
   function refreshDeps(entry) {
-    if (!entry.provider || !entry.sourceHandle) return;
-    const heads = sortedHeads(entry.sourceHandle.heads?.() ?? []).join(",");
+    const src = sourceView(entry);
+    if (!entry.provider || !src) return;
+    const heads = sortedHeads(src.heads?.() ?? []).join(",");
     if (entry.depsAsked && entry.depsAsked.provider === entry.provider && entry.depsAsked.heads === heads) return;
     entry.depsAsked = { provider: entry.provider, heads };
-    entry.deps.set(dependenciesOf(entry.provider.module, entry.sourceHandle.doc(), entry.sourceUrl));
+    entry.deps.set(dependenciesOf(entry.provider.module, src.doc(), entry.sourceUrl));
   }
 
   function sourceInfo(entry) {
-    const doc = entry.sourceHandle?.doc();
+    const src = sourceView(entry);
+    const doc = src?.doc();
     return {
       doc,
-      heads: entry.sourceHandle?.heads?.() ?? [],
+      heads: src?.heads?.() ?? [],
       fingerprint: fingerprintOf(entry.provider?.module, doc),
       deps: entry.deps.snapshot(),
+      providerVersion: entry.provider?.version,
     };
   }
 
@@ -132,8 +167,30 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
   function judge(entry, render, source) {
     const reason = staleReason(render, source);
     const contested = isContested(render, source, entry.lastBuilt);
-    const held = reason === "deps" ? heldDeps(render.builtFrom?.deps, source.deps, (u) => !!entry.deps.handle(u)) : [];
-    return { reason, contested, held };
+    const held = reason === "deps" ? heldDeps(render.builtFrom?.deps, source.deps, (u) => entry.deps.ready(u)) : [];
+    return { reason, contested, held, behind: isBehind(entry, render, reason) };
+  }
+
+  /**
+   * The render was built from changes to its source (or a dependency it records
+   * by heads) that this client hasn't synced yet: a peer that is ahead built
+   * it. It only *looks* stale here; rebuilding would replace a newer build with
+   * one made from an older version, and that peer would rebuild straight back
+   * (seen in Patchwork: a client missing one edit to a flow doc and a client
+   * with it took turns rebuilding the flow, every time either opened the scene).
+   * Never auto-rebuilt; a change to the source or the dependency re-evaluates.
+   * Not for objects fixed at a version (`at`), which wait for their heads anyway.
+   */
+  function isBehind(entry, render, reason) {
+    if (reason !== "fingerprint" && reason !== "heads" && reason !== "deps") return false;
+    if (entry.at) return false;
+    const built = render.builtFrom;
+    if (!knowsHeads(entry.sourceHandle, built?.heads)) return true;
+    for (const [url, heads] of Object.entries(built?.deps ?? {})) {
+      const h = entry.deps.handle(url);
+      if (h && Array.isArray(heads) && !knowsHeads(h, heads)) return true;
+    }
+    return false;
   }
 
   function settleStatus(entry) {
@@ -172,6 +229,11 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       building: entry.building,
       providerId: render.providerId,
       providerName: entry.provider?.name ?? render.providerId,
+      bounds: validBounds(render.bounds),
+      retryAt: entry.retryTimer != null ? entry.retryAt : null,
+      fixed: !!entry.at,
+      at: entry.at,
+      builtHeads: sortedHeads(render.builtFrom?.heads),
     };
 
     if (!entry.sourceHandle) return emit(entry, { ...base, phase: "loading" });
@@ -184,9 +246,13 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       });
     }
 
+    // Fixed at heads this replica doesn't have yet: the source's "change"
+    // brings them, and evaluates again.
+    if (!sourceView(entry)) return emit(entry, { ...base, phase: "loading", versionMissing: true, stale: false, reason: null });
+
     refreshDeps(entry);
     const source = sourceInfo(entry);
-    const { reason, contested, held } = judge(entry, render, source);
+    const { reason, contested, held, behind } = judge(entry, render, source);
     const key = inputsKey(render, source);
     const depsPendingSince = entry.deps.pendingSince();
     // Built from a dependency that we tried and failed to load here.
@@ -196,8 +262,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     emit(entry, {
       ...base,
       phase: "ready",
-      stale: !!reason && !unsure,
-      reason: unsure ? null : reason,
+      versionMissing: false,
+      stale: !!reason && !unsure && !behind,
+      reason: unsure || behind ? null : reason,
+      behind,
       contested,
       // built by a scene host from before dependencies (SCENE-CONTRACT v2 §1)
       // existed: it records no `deps` at all, where this one always does
@@ -218,7 +286,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
 
     if (!reason) {
       clearTimer(entry);
+      clearTimer(entry, "retryTimer");
       entry.failedKey = null;
+      entry.failureKey = null;
+      entry.failures = 0;
       // Up to date, but the doc still says a (superseded) build failed: e.g. an
       // edit broke the build and a later edit put the source back.
       if (render.status === "error" || (render.status === "idle" && render.error != null)) settleStatus(entry);
@@ -227,6 +298,11 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     if (contested && !entry.forceNext) {
       // Same source and params as our own last build; only a peer's differing
       // fingerprint says otherwise. Rebuilding would just flip it back. Manual only.
+      clearTimer(entry);
+      return;
+    }
+    if (behind && !entry.forceNext) {
+      // A peer built it from changes we don't have yet: wait for them to sync.
       clearTimer(entry);
       return;
     }
@@ -260,7 +336,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       changed: reason === "params" ? changedKeys(parseKey(render.builtFrom?.paramsKey), render.params ?? {}) : [],
     });
     if (entry.forceNext) delay = 0;
-    else delay += peerStagger();
+    else {
+      delay += peerStagger();
+      if (!entry.createdHere && entry.openedAt != null) delay = Math.max(delay, entry.openedAt + syncSettleMs - now());
+    }
     // Someone else said they are building exactly this; give them a chance.
     if (!entry.forceNext) {
       for (const hint of [entry.remote, entry.statusHint]) {
@@ -277,18 +356,24 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
   async function build(entry) {
     if (disposed || entry.dead || entry.building) return;
     const render = entry.renderHandle.doc();
+    const sourceHandle = sourceView(entry);
+    if (!sourceHandle) return evaluate(entry); // fixed at heads not here yet
     refreshDeps(entry);
     const source = sourceInfo(entry); // dependency heads as read for this build
     const force = entry.forceNext;
     entry.forceNext = false;
     // Re-check: a peer may have finished while we waited, or the source may
     // now list a dependency that is still loading (evaluate waits for it).
+    let why = "forced";
     if (!force) {
-      const { reason, contested, held } = judge(entry, render, source);
-      if (!reason || contested || held.length || render.pinned) return;
+      const { reason, contested, held, behind } = judge(entry, render, source);
+      if (!reason || contested || held.length || behind || render.pinned) return;
+      if (!entry.createdHere && entry.openedAt != null && now() < entry.openedAt + syncSettleMs) return evaluate(entry);
       const pending = entry.deps.pendingSince();
       if (pending != null && pending + DEP_WAIT_MS > now()) return evaluate(entry);
+      why = reason;
     }
+    console.info(`[scene] building ${render.title ?? entry.objectId} (${why})`);
     const key = inputsKey(render, source);
 
     entry.building = true;
@@ -299,9 +384,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       // presence is best effort
     }
     const result = await runBuild({
-      repo,
+      // a fixed object reads its listed dependencies at their fixed heads too
+      repo: entry.at ? pinnedRepo(repo, entry.at.deps) : repo,
       renderHandle: entry.renderHandle,
-      sourceHandle: entry.sourceHandle,
+      sourceHandle,
       provider: entry.provider,
       deps: source.deps,
       // A dependency that was still loading when the build started and loaded
@@ -319,8 +405,31 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     });
     entry.building = false;
     if (entry.dead) return;
-    if (result.ok) entry.lastBuilt = builtInputsKey(result.builtFrom);
-    entry.failedKey = result.ok ? null : key;
+    if (result.ok) {
+      entry.lastBuilt = builtInputsKey(result.builtFrom);
+      entry.failedKey = null;
+      entry.failureKey = null;
+      entry.failures = 0;
+      clearTimer(entry, "retryTimer");
+    } else if (result.aborted) {
+      // cancelled by the provider, not failed: evaluate again below
+    } else {
+      // Don't hammer a failing build, but don't give up on it at once either.
+      // counted against failureKey, which (unlike failedKey) the retry timer leaves alone
+      entry.failures = entry.failureKey === key ? entry.failures + 1 : 1;
+      entry.failureKey = key;
+      entry.failedKey = key;
+      clearTimer(entry, "retryTimer");
+      const wait = RETRY_BACKOFF_MS[entry.failures - 1];
+      if (wait != null) {
+        entry.retryAt = now() + wait;
+        entry.retryTimer = timers.setTimeout(() => {
+          entry.retryTimer = null;
+          if (entry.failedKey === key) entry.failedKey = null; // the next evaluate may build it again
+          evaluate(entry);
+        }, wait);
+      }
+    }
     emit(entry, { building: false, notes: result.ok ? result.meta?.notes ?? null : entry.state.notes ?? null });
     if (entry.forceNext) {
       // A rebuild was asked for while this one ran; it still has to happen.
@@ -330,15 +439,42 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     evaluate(entry);
   }
 
-  async function track(objectId, { sourceUrl, renderUrl }) {
+  /**
+   * @param {string} objectId
+   * @param {object} o
+   * @param {string} o.sourceUrl
+   * @param {string} o.renderUrl
+   * @param {boolean} [o.createdHere]
+   * @param {{ heads: string[], deps?: { [url]: string[] } } | null} [o.at]
+   *        the scene object's fixed version; absent/null = follow the latest
+   */
+  async function track(objectId, { sourceUrl, renderUrl, createdHere = false, at = null }) {
     const existing = entries.get(objectId);
-    if (existing && existing.sourceUrl === sourceUrl && existing.renderUrl === renderUrl) return;
+    const fixed = normalizeAt(at);
+    const fixedKey = atKey(fixed);
+    if (existing && existing.sourceUrl === sourceUrl && existing.renderUrl === renderUrl) {
+      if (existing.atKey === fixedKey) return;
+      // Fixed, refixed or let go: same docs, read at other heads. Re-ask for
+      // dependencies and judge again; nothing else about the entry changes.
+      existing.at = fixed;
+      existing.atKey = fixedKey;
+      existing.viewCache = null;
+      existing.depsAsked = null;
+      existing.failedKey = null;
+      evaluate(existing);
+      return;
+    }
     if (existing) untrack(objectId);
 
     const entry = {
       objectId,
       sourceUrl,
       renderUrl,
+      createdHere,
+      at: fixed,
+      atKey: fixedKey,
+      viewCache: null,
+      openedAt: null,
       state: { phase: "loading", stale: false, building: false },
       timer: null,
       statusTimer: null,
@@ -348,6 +484,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       depsAsked: null,
       building: false,
       failedKey: null,
+      failures: 0,
+      failureKey: null,
+      retryTimer: null,
+      retryAt: null,
       forceNext: false,
       lastBuilt: null,
       buildingSeenAt: null,
@@ -364,6 +504,10 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       repo,
       timers,
       now,
+      // read at snapshot time, so it follows the provider once that has loaded
+      keyOf: (url, handle) => dependencyKeyOf(entry.provider?.module, url, handle.doc?.()),
+      // a fixed object's listed dependencies are read at their fixed heads
+      fixedHeadsOf: (url) => entry.at?.deps?.[url] ?? null,
       // a dependency loaded, failed or changed: same as a source edit
       onChange: () => {
         if (!entry.building) evaluate(entry);
@@ -378,6 +522,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
       if (entry.dead) return;
       entry.renderHandle = renderHandle;
       entry.sourceHandle = sourceHandle;
+      entry.openedAt = now();
       renderHandle.on("change", onChange);
       sourceHandle.on("change", onChange);
       const onMsg = (payload) => {
@@ -428,6 +573,7 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     clearTimer(entry, "statusTimer");
     clearTimer(entry, "glbTimer");
     clearTimer(entry, "depTimer");
+    clearTimer(entry, "retryTimer");
     entry.deps.dispose();
     for (const c of entry.cleanups) c();
     entries.delete(objectId);
@@ -439,6 +585,26 @@ export function createRenderManager({ repo, loadProvider, onState, onGLB, timers
     /** Ids currently tracked. */
     ids: () => [...entries.keys()],
     state: (objectId) => (entries.get(objectId) ? { ...entries.get(objectId).state } : null),
+    /**
+     * The `at` that fixes this object at exactly what its render was last
+     * built from (atFromBuilt), or null if it was never built or isn't
+     * tracked. A dependency recorded by key has no heads in builtFrom; while
+     * its key is still the one built from, its current heads stand in.
+     */
+    fixPoint(objectId) {
+      const entry = entries.get(objectId);
+      const built = entry?.renderHandle?.doc()?.builtFrom;
+      if (!built) return null;
+      const snap = entry.deps.snapshot();
+      const keyed = {};
+      for (const [url, h] of Object.entries(built.deps ?? {})) {
+        const k = Array.isArray(h) && h.length === 1 && String(h[0]).startsWith("fp:") ? String(h[0]) : null;
+        if (!k || snap[url]?.[0] !== k) continue;
+        const heads = entry.at?.deps?.[url] ?? entry.deps.handle(url)?.heads?.();
+        if (heads?.length) keyed[url] = heads;
+      }
+      return atFromBuilt(built, keyed);
+    },
     /** Build now, even if pinned or fresh. */
     rebuild(objectId) {
       const entry = entries.get(objectId);

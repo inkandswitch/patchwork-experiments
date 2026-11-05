@@ -16,7 +16,7 @@ export const RANKINE_SEED = Object.freeze({
     stern: { kind: "sink", position: [9.3, 0, 0], strength: 12.4 },
   },
   domain: { min: [-6, -6, -4], max: [16, 6, 4] },
-  seeds: { count: 15, plane: "upstream" },
+  seeds: { count: 15 },
 });
 
 const clone = (v) => JSON.parse(JSON.stringify(v));

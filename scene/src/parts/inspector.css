@@ -163,3 +163,10 @@
   display: block;
   min-height: 100%;
 }
+
+/* which version of its source a render-doc object shows (scene object `at`) */
+.scene-stage .inspector .version-text:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}

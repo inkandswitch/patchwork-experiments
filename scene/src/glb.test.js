@@ -155,3 +155,32 @@ describe("helpers", () => {
     expect(computeBounds([])).toBeNull();
   });
 });
+
+describe("v2 additions", () => {
+  it("records the units in asset.extras (metres unless told otherwise)", () => {
+    expect(parseGLB(encodeGLB({ meshes: [tri] })).json.asset.extras).toEqual({ units: "m" });
+    expect(parseGLB(encodeGLB({ meshes: [tri], units: "mm" })).json.asset.extras).toEqual({ units: "mm" });
+  });
+
+  it("writes per-vertex colours as COLOR_0, rgb or rgba", async () => {
+    const rgb = parseGLB(encodeGLB({ meshes: [{ ...tri, colors: [1, 0, 0, 0, 1, 0, 0, 0, 1] }] })).json;
+    expect(rgb.accessors[rgb.meshes[0].primitives[0].attributes.COLOR_0].type).toBe("VEC3");
+    const rgba = { array: new Float32Array(12).fill(0.5), itemSize: 4 };
+    const json = parseGLB(encodeGLB({ meshes: [{ ...tri, colors: rgba }] })).json;
+    expect(json.accessors[json.meshes[0].primitives[0].attributes.COLOR_0].type).toBe("VEC4");
+    expect(() => encodeGLB({ meshes: [{ ...tri, colors: [1, 0, 0] }] })).toThrow(/colors/);
+    const gltf = await load(encodeGLB({ meshes: [{ ...tri, colors: [1, 0, 0, 0, 1, 0, 0, 0, 1] }] }));
+    let mesh;
+    gltf.scene.traverse((o) => { if (o.isMesh) mesh = o; });
+    expect(mesh.geometry.getAttribute("color").count).toBe(3);
+  });
+
+  it("makes a material for unlit or blend even with no colour", () => {
+    const unlit = parseGLB(encodeGLB({ meshes: [{ ...tri, unlit: true }] })).json;
+    expect(unlit.materials[0].extensions).toEqual({ KHR_materials_unlit: {} });
+    expect(unlit.extensionsUsed).toEqual(["KHR_materials_unlit"]);
+    const blend = parseGLB(encodeGLB({ meshes: [{ ...tri, blend: true }] })).json;
+    expect(blend.materials[0].alphaMode).toBe("BLEND");
+    expect(blend.extensionsUsed).toBeUndefined();
+  });
+});

@@ -324,12 +324,13 @@ that extension.
 |---|---|
 | `nameOf(id)` | what this viewer sees, lenses applied |
 | `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test); never change it |
-| `loadState(id)` | a copy of what the render manager or GLB queue last said about it (notes, phase, contested, providerId…), or null |
+| `loadState(id)` | a copy of what the render manager or GLB queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…), or null |
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix (held poses included) |
 | `focus(ids)` | load these first |
-| `providersFor(url, doc)`, `addObject(url, opts)` → id | |
+| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`) |
 | `rebuild(id)` | |
+| `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, passthrough). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info)` | |
 
 **Picking and camera**
@@ -427,7 +428,7 @@ have that field, in running order. The stage never reads the value.
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds |
 | `stage/host.js` | starting and stopping extensions, the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, migrations, content loading, lenses, status, prefs, kits, camera saving), the default layout (port and edges) |
+| `stage/stage.js` | the mount and the doc loop (derive, migrations, content loading, lenses, status, prefs, kits, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old

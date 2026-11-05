@@ -67,9 +67,10 @@ export default {
       lastBox = k;
       api.camera.frame(box);
       left = api.camera.get();
-      // From hints the view is already where things will be; otherwise keep
-      // following the content until all of it has loaded (or failed).
-      const hinted = shown.some((id) => scene.objects[id]?.hint?.bounds);
+      // From hints (the doc's, or a render doc's own bounds) the view is
+      // already where things will be; otherwise keep following the content
+      // until all of it has loaded (or failed).
+      const hinted = shown.some((id) => scene.objects[id]?.hint?.bounds || api.loadState?.(id)?.bounds);
       const settled = shown.every((id) => api.content(id)?.loaded || ["error", "warn"].includes(local.status?.[id]?.state));
       if (hinted || settled) auto = false;
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compile, makeEvaluator } from "../lang/index.js";
 import { clippedSampler, drain, fieldNormals, gridFor, surfaceNets } from "./surface-nets.js";
-import { clampResolution, meshJob } from "./job.js";
+import { clampResolution, finishMesh, meshJob, meshSurface, surfaceBytes } from "./job.js";
 import { parseGLB } from "./glb.js";
 
 const B = { min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] };
@@ -163,8 +163,26 @@ describe("meshJob", () => {
     expect(r.notes).toMatch(/Nothing inside the bounds/);
     expect(parseGLB(r.glb).json.asset.version).toBe("2.0");
   });
-  it("clamps resolution", () => {
-    expect(clampResolution(1)).toBe(8);
+  it("names the mesh 'Implicit surface' unless told otherwise", () => {
+    const r = drain(meshJob({ source: "sphere(0.2)", bounds: B, resolution: 16 }));
+    expect(parseGLB(r.glb).json.meshes[0].name).toBe("Implicit surface");
+  });
+  it("splits into a surface stage and a finish stage that gives the same bytes", () => {
+    const job = { source: "sphere(0.2)", bounds: B, resolution: 20, smoothNormals: false, finish: "metal" };
+    const surface = drain(meshSurface(job));
+    expect(surface).toMatchObject({ resolution: 20, bounds: B });
+    expect(surface.normals.length).toBe(surface.positions.length);
+    expect(surface.curvature.length).toBe(surface.positions.length / 3);
+    expect(surfaceBytes(surface)).toBeGreaterThan(0);
+    const finished = drain(finishMesh(surface, job));
+    expect(finished.glb).toEqual(drain(meshJob(job)).glb);
+    // the finish stage refuses an oversized flat mesh on its own, too
+    expect(() => drain(finishMesh(surface, { smoothNormals: false, maxBytes: 1000 }))).toThrow(/or turn smooth normals back on/);
+    expect(drain(finishMesh(surface, { cached: true })).notes).toMatch(/mesh reused, finished in \d+ ms/);
+  });
+  it("clamps resolution to the ParamSpec's 16–160", () => {
+    expect(clampResolution(1)).toBe(16);
+    expect(clampResolution(8)).toBe(16);
     expect(clampResolution(10_000)).toBe(160);
     expect(clampResolution("abc")).toBe(96);
     expect(clampResolution(100.4)).toBe(100);

@@ -1,0 +1,348 @@
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --slicer-bg: var(--editor-fill, white);
+    --slicer-fg: var(--editor-line, black);
+    --slicer-muted: var(--editor-line-offset-50, #888);
+    --slicer-border: var(--editor-fill-offset-20, #ddd);
+    --slicer-surface: var(--editor-fill-offset-10, #f4f4f4);
+    --slicer-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 6%);
+    --slicer-label: color-mix(in oklch, var(--editor-line, black) 72%, var(--editor-fill, white));
+    --slicer-viewport-bg: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --slicer-bed: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 10%);
+    --slicer-grid: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 30%);
+    --slicer-model: color-mix(in oklch, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 45%), var(--studio-link, steelblue) 35%);
+    --slicer-wall: color-mix(in oklch, var(--studio-danger, crimson) 85%, var(--editor-line, black));
+    --slicer-solid: color-mix(in oklch, var(--studio-warning, orange) 85%, var(--editor-line, black));
+    --slicer-infill: color-mix(in oklch, var(--studio-added, seagreen) 85%, var(--editor-line, black));
+    --slicer-accent-fill: var(--studio-primary-fill, #35f7ca);
+    --slicer-accent-line: var(--studio-primary-line, black);
+    --slicer-accent-text: var(--editor-primary-text, var(--studio-primary, teal));
+    --slicer-danger-text: var(--editor-danger-text, var(--studio-danger, crimson));
+    --slicer-warning-text: var(--editor-warning-text, var(--studio-warning, darkorange));
+    --slicer-ok-text: color-mix(in oklch, var(--studio-added, seagreen) 80%, var(--editor-line, black));
+    --slicer-warning-bg: color-mix(in oklch, var(--studio-warning, orange), var(--editor-fill, white) 85%);
+    --slicer-danger-bg: color-mix(in oklch, var(--studio-danger, crimson), var(--editor-fill, white) 88%);
+    --slicer-overlay-bg: color-mix(in oklch, var(--editor-fill, white) 85%, transparent);
+    --slicer-drop: color-mix(in oklch, var(--studio-primary, teal), transparent 80%);
+    --slicer-family: var(--editor-family-sans, system-ui, sans-serif);
+    --slicer-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+/* ─── composition ─────────────────────────────────────────────────────────── */
+
+.patchwork-slicer .cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+.patchwork-slicer .flow > * + * {
+  margin-top: var(--flow-space, var(--studio-space-xs, 0.375rem));
+}
+
+/* ─── block ───────────────────────────────────────────────────────────────── */
+
+.patchwork-slicer {
+  container-type: inline-size;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  background: var(--slicer-bg);
+  color: var(--slicer-fg);
+  font-family: var(--slicer-family);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.patchwork-slicer .layout {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.patchwork-slicer *,
+.patchwork-slicer *::before,
+.patchwork-slicer *::after {
+  box-sizing: border-box;
+}
+
+.patchwork-slicer .view {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--slicer-viewport-bg);
+}
+
+.patchwork-slicer .canvas-host {
+  position: absolute;
+  inset: 0;
+}
+
+.patchwork-slicer .side {
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--slicer-border);
+  padding: var(--studio-space-sm, 0.5rem) var(--studio-space-md, 0.75rem) var(--studio-space-lg, 1rem);
+}
+
+.patchwork-slicer .side h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-slicer .section {
+  border-top: 1px solid var(--slicer-border);
+  padding-top: var(--studio-space-sm, 0.5rem);
+  margin-top: var(--studio-space-sm, 0.5rem);
+}
+
+.patchwork-slicer .section-title,
+.patchwork-slicer summary {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--slicer-muted);
+  margin: 0 0 var(--studio-space-2xs, 0.25rem);
+}
+
+.patchwork-slicer summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.patchwork-slicer .note {
+  color: var(--slicer-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-slicer .source-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-slicer .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+  margin: 3px 0;
+  color: var(--slicer-label);
+}
+
+.patchwork-slicer .row input[type="checkbox"] {
+  justify-self: start;
+}
+
+.patchwork-slicer .row input:not([type="checkbox"]),
+.patchwork-slicer .row select {
+  width: 100%;
+  font: inherit;
+  color: var(--slicer-fg);
+  background: var(--slicer-bg);
+  border: 1px solid var(--slicer-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 2px 5px;
+}
+
+.patchwork-slicer .row[data-wide] {
+  grid-template-columns: minmax(0, 1fr) 150px;
+}
+
+.patchwork-slicer .button {
+  font: inherit;
+  color: inherit;
+  background: var(--slicer-surface);
+  border: 1px solid var(--slicer-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--studio-transition-fast, 0.1s ease);
+}
+
+.patchwork-slicer .button:hover {
+  background: var(--slicer-hover);
+}
+
+.patchwork-slicer .button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.patchwork-slicer .button[data-primary] {
+  background: var(--slicer-accent-fill);
+  color: var(--slicer-accent-line);
+  border-color: var(--slicer-accent-fill);
+  font-weight: 600;
+}
+
+.patchwork-slicer .button[data-link] {
+  background: none;
+  border-color: transparent;
+  color: var(--slicer-accent-text);
+  padding: 3px 4px;
+}
+
+.patchwork-slicer .status {
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--slicer-surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.patchwork-slicer .status[data-state="fresh"] {
+  color: var(--slicer-ok-text);
+}
+
+.patchwork-slicer .status[data-state="stale"],
+.patchwork-slicer .status[data-state="waiting"] {
+  background: var(--slicer-warning-bg);
+  color: var(--slicer-warning-text);
+}
+
+.patchwork-slicer .status[data-state="error"],
+.patchwork-slicer .status[data-state="unsupported"] {
+  background: var(--slicer-danger-bg);
+  color: var(--slicer-danger-text);
+}
+
+.patchwork-slicer .warning {
+  color: var(--slicer-warning-text);
+  font-size: 12px;
+}
+
+.patchwork-slicer .stats {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--studio-space-sm, 0.5rem);
+  margin: 0;
+  color: var(--slicer-label);
+}
+
+.patchwork-slicer .stats dt {
+  margin: 0;
+}
+
+.patchwork-slicer .stats dd {
+  margin: 0;
+  color: var(--slicer-fg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.patchwork-slicer .legend,
+.patchwork-slicer .layer-bar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: var(--studio-space-sm, 0.5rem);
+  background: var(--slicer-overlay-bg);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.patchwork-slicer .legend {
+  top: var(--studio-space-sm, 0.5rem);
+  left: var(--studio-space-sm, 0.5rem);
+}
+
+.patchwork-slicer .layer-bar {
+  left: var(--studio-space-sm, 0.5rem);
+  right: var(--studio-space-sm, 0.5rem);
+  bottom: var(--studio-space-sm, 0.5rem);
+}
+
+.patchwork-slicer .layer-bar input {
+  flex: 1;
+  min-width: 0;
+}
+
+.patchwork-slicer .layer-bar .layer-label {
+  font-variant-numeric: tabular-nums;
+  min-width: 8ch;
+}
+
+.patchwork-slicer .legend[hidden],
+.patchwork-slicer .layer-bar[hidden],
+.patchwork-slicer .drop-hint[hidden] {
+  display: none;
+}
+
+.patchwork-slicer .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.patchwork-slicer .swatch[data-feature="wall"] {
+  background: var(--slicer-wall);
+}
+
+.patchwork-slicer .swatch[data-feature="solid"] {
+  background: var(--slicer-solid);
+}
+
+.patchwork-slicer .swatch[data-feature="infill"] {
+  background: var(--slicer-infill);
+}
+
+.patchwork-slicer .drop-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--slicer-drop);
+  outline: 2px dashed var(--slicer-accent-text);
+  outline-offset: -6px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.patchwork-slicer .empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: var(--studio-space-lg, 1rem);
+  color: var(--slicer-muted);
+  pointer-events: none;
+}
+
+.patchwork-slicer .empty[hidden] {
+  display: none;
+}
+
+.patchwork-slicer code {
+  font-family: var(--slicer-family-code);
+  font-size: 11px;
+}
+
+/* narrow: viewer on top, panel below, the whole thing scrolls */
+@container (max-width: 640px) {
+  .patchwork-slicer .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(260px, 55%) auto;
+    overflow-y: auto;
+  }
+
+  .patchwork-slicer .side {
+    border-left: 0;
+    border-top: 1px solid var(--slicer-border);
+    overflow-y: visible;
+  }
+}

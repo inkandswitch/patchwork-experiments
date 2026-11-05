@@ -267,3 +267,9 @@
 .scene-stage .scene-outline .object-row[data-drop="after"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after {
   inset-block-end: -1px;
 }
+
+/* an object fixed at a version (scene object `at`); display only */
+.scene-stage .scene-outline .fixed-mark:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  white-space: nowrap;
+}
