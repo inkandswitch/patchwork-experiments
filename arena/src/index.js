@@ -45,8 +45,11 @@ export const plugins = [
       "arena.spawn": { name: "Spawn point", on: "object", blurb: "Where players start, facing the way it faces" },
     },
     // playing brings no editor, so it says what it needs: Enter to play
-    // goes through the key map, and notices
-    requires: ["scene.keys", "scene.notices"],
+    // goes through the key map, notices, and the camera framing the level as
+    // it loads (a joiner's camera starts untouched, wherever the stage puts
+    // it, which in an arena can be inside a wall). While playing, the game
+    // holds the camera and takes every input, so framing stands aside.
+    requires: ["scene.keys", "scene.notices", "scene.frame"],
     async load() {
       return (await import("./play.js")).default;
     },

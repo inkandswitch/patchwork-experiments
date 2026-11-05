@@ -7,7 +7,7 @@
 // (two views of one doc: A makes it and plays, B joins and watches), picks
 // "Arena level" on the empty scene's start screen, which lays out the sample
 // arena and starts the scene in play: A, and B joining after, are both in the
-// game, with no editor.
+// game, with no editor, each camera framing the whole level.
 // A switches to Edit (the editor and the arena's edit commands) and back to
 // Play, presses Play, walks with W/A/S/D, runs into a wall, climbs the ramp
 // onto the tower, jumps, turns to a target and shoots it with a click, stops
@@ -138,6 +138,16 @@ async function walkTo([x, z], { ms = 8000, tol = 0.6 } = {}) {
 const r3 = (p) => p.map((v) => +v.toFixed(2));
 /** Is it there and laid out (a hidden element has no size)? */
 const shown = async (sel, w = "a") => { const r = await P(`rect('${sel}', '${w}')`); return !!r && r.w > 0 && r.h > 0; };
+/** Wait for an element to be shown and stay put (the editor's edges arrive one by one, moving what's centred in the view). */
+async function steady(sel, w = "a", ms = 6000) {
+  for (let last = null, same = 0, t0 = Date.now(); Date.now() - t0 < ms; await sleep(100)) {
+    const now = JSON.stringify(await P(`rect('${sel}', '${w}')`));
+    same = now === last && now !== "null" && JSON.parse(now).w > 0 ? same + 1 : 0;
+    if (same >= 3) return true;
+    last = now;
+  }
+  return false;
+}
 /** Wait for a view's running set to stop changing (lingering parts each stop on their own timer). */
 async function settled(w, ms = 4000) {
   for (let last = null, t0 = Date.now(); ; await sleep(100)) {
@@ -159,9 +169,10 @@ try {
   // an empty scene: only editing is offered (no switcher), and the add
   // part's start screen offers the templates
   const startBtn = `.add-template[data-template="arena-level"]`;
-  const haveStart = await until(`!!window.__p.hostA.querySelector('${startBtn}')`);
+  const haveStart = (await until(`!!window.__p.hostA.querySelector('${startBtn}')`)) && (await steady(startBtn));
   check("an empty scene's start screen offers the Arena level template, and Blank", haveStart && (await shown(startBtn)) && (await shown('.add-template[data-template=""]')), await P("text('.add-template')"));
   check("an empty scene offers only editing, so no Play | Edit switch", JSON.stringify(await P("activities('a')")) === '["edit"]' && (await P("activity('a')")) === "edit" && !(await shown(".activity-switch")), { activities: await P("activities('a')"), running: await P("running('a')") });
+  await shot("start");
   await click(await P(`rect('${startBtn}')`));
   await until("window.__p.objects().length >= 29");
   // B joins the level A just made
@@ -180,8 +191,8 @@ try {
   // Both views start where the doc says, in play: A, who chose the template
   // (a template starts its maker as joining does), and B, who joined the
   // level. Each runs only what playing calls for: the arena, what it requires
-  // (keys, notices) and the switcher.
-  const GAME = ["arena", "scene.activity", "scene.keys", "scene.notices"];
+  // (keys, notices, framing) and the switcher.
+  const GAME = ["arena", "scene.activity", "scene.frame", "scene.keys", "scene.notices"];
   const inGame = async (w) => {
     const ok = (await until(`!window.__p.running('${w}').includes('scene.toolbar')`, 6000)) && (await settled(w));
     return { ok, activity: await P(`activity('${w}')`), run: await sorted(w) };
@@ -195,6 +206,13 @@ try {
   check("player B sees no toolbar, sidebar or start screen, no grid or axes: the level, the HUD's Play and a small Play | Edit switch", !bView.toolbar && !bView.sidebar && !bView.start && bView.play && !!bView.switch && bView.switch.w > 0 && bView.switch.w < 200 && bView.switch.h < 44 && !bView.layers.some((l) => /grid|axes|bounds|gizmo|handles/.test(l)), bView);
   const options = await js(`[...window.__p.hostA.querySelectorAll(".activity-option")].map((b) => [b.dataset.activity, b.textContent.trim(), b.getAttribute("aria-pressed")])`);
   check("the switch offers Play and Edit, with Play pressed", JSON.stringify(options) === JSON.stringify([["play", "Play", "true"], ["edit", "Edit", "false"]]), options);
+  // and neither opens staring into a wall: framing came with the arena, so
+  // each untouched camera frames the level as it loads (from outside it,
+  // every corner of the level on screen)
+  const framed = (w) => js(`(() => { const v = window.__p.${w}.viewport, b = v.sceneBox(), c = v.getCamera().position; if (b.isEmpty()) return { box: null }; const lo = b.min.toArray(), hi = b.max.toArray(); const inside = [0, 1, 2].every((i) => c[i] > lo[i] && c[i] < hi[i]); const corners = []; for (const x of [lo[0], hi[0]]) for (const z of [lo[2], hi[2]]) corners.push(v.project([x, lo[1], z])?.visible ?? false); return { inside, corners, camera: c.map((n) => +n.toFixed(2)) }; })()`);
+  await until("(() => { const v = window.__p.B.viewport, b = v.sceneBox(), c = v.getCamera().position; return !b.isEmpty() && ![0, 1, 2].every((i) => c[i] > b.min.toArray()[i] && c[i] < b.max.toArray()[i]); })()", 4000);
+  const fA = await framed("A"), fB = await framed("B");
+  check("both open framing the whole level, not inside it", [fA, fB].every((f) => f.inside === false && f.corners.length === 4 && f.corners.every(Boolean)), { A: fA, B: fB });
   await shot("game");
 
   // ─── the designer edits, and comes back ──────────────────────────────────
@@ -325,6 +343,9 @@ try {
   for (let i = 0; i < 10; i++) { await sleep(50); samples.push((await P("drawn('b')")).avatars[0]); }
   await keyUp("KeyS");
   await sleep(1200); // landed (walking back may step off the tower), and a presence tick later
+  // a fall off the tower can still be landing: give B a few more ticks to catch up
+  const caughtUp = async () => { const s = await P("drawn('b')"), p = await eye(); return s.avatars.length === 1 && Math.hypot(s.avatars[0][0] - p[0], s.avatars[0][2] - p[2]) < 0.05 && Math.abs(s.avatars[0][1] - (p[1] - 1.6)) < 0.05; };
+  for (let t0 = Date.now(); Date.now() - t0 < 2000 && !(await caughtUp()); ) await sleep(100);
   const seen1 = await P("drawn('b')");
   const pos1 = await eye();
   const distinct = new Set(samples.map((s) => JSON.stringify(s))).size;

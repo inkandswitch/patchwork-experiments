@@ -123,6 +123,11 @@ describe("the arena's activities", () => {
     expect(byId("arena.edit").traits).toEqual(byId("arena").traits);
   });
 
+  it("brings what playing needs without the editor: keys, notices, and framing as the level loads", () => {
+    expect(byId("arena").requires).toEqual(["scene.keys", "scene.notices", "scene.frame"]);
+    expect(byId("arena.edit").requires).toBeUndefined();
+  });
+
   it("has no kits and no old build extension", () => {
     expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
     expect(byId("arena.build")).toBeUndefined();
