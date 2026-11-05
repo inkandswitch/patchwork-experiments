@@ -153,7 +153,7 @@ export default {
       api.notify(`Shuffling ${n} card${n === 1 ? "" : "s"}…`);
     }
 
-    // ── where you sit: a picker over the table, since a table has no sidebar ──
+    // ── where you sit: a picker over the table (top right: the notices take the top left), since a table has no sidebar ──
     const overlay = api.overlay();
     overlay.classList.add("tabletop-overlay");
     const seatPicker = el("select", { class: "tabletop-seat", "aria-label": "Seat", title: "Where you sit: what's in your seat's private zone (your hand) is shown to you alone" });
@@ -343,7 +343,7 @@ async function deckProviderFor(registry, type) {
 const SEAT_CSS = `
 .scene-stage .tabletop-overlay:where(:not(.about-embed *), .about-embed .scene-tool *) { position: absolute; inset: 0; pointer-events: none; }
 .scene-stage .tabletop-seatbar:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; align-items: center;
+  position: absolute; top: 10px; right: 10px; display: flex; gap: 6px; align-items: center;
   padding: 4px 6px 4px 10px; border-radius: 999px; pointer-events: auto;
   background: var(--scene-panel-bg, rgb(255 255 255 / 0.9)); color: var(--scene-fg, #222);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.15); font: 13px system-ui, sans-serif;

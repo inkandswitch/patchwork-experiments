@@ -523,42 +523,43 @@ MaterialRule = {
 | `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes: `scene-probe.html` mounts the built tool in headless Chrome against an in-memory repo; `attach-probe.html` drives the real viewport with a parent and a child; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `drag-probe.html` + `drag-run.mjs` drive real mouse drags into and within the outline; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand between two peers (below) |
+| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor (the model kit) between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand, and a scene extension of the page's own; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server |
 
-### Browser probe
+### The editor probe
 
 ```
 pnpm build
-node probes/probe-server.mjs . 4457 &     # prints the JSON report and exits
-open http://localhost:4457/probes/scene-probe.html
-node probes/shoot.mjs http://localhost:4457/probes/scene-probe.html shot.png   # screenshot over CDP
+node probes/editor-run.mjs     # --show to watch, --shots <dir> for the screenshots
 ```
 
-It adds a 20 mm STL cube and a GLB box, waits for both to build, checks the
-bounds labels (30/10/15 mm and 20/20/20 mm), finds the objects by hovering,
-selects one, measures between two picked points, moves the cube and checks the
-dimension follows, then switches the STL's unit param to cm through the
-embedded controls and checks it rebuilds at 200 mm. Serve a root that also has
-`themes/theme.css` and `themes/gloom.css` (copied from `theming/src`) to see it
-in the real light theme, and add `?theme=gloom` for dark.
-
-```
-node probes/probe-server.mjs . 4458 &
-node probes/shoot.mjs http://localhost:4458/probes/attach-probe.html shot.png
-```
-
-`attach-probe.html` needs no build (it imports `src/`, and three from
-`node_modules`). It checks that a child's box follows its parent, that boxes
-are each object's own geometry, that hiding a parent leaves the child visible,
-that a gizmo drag on a child of a rotated, scaled parent moves it along the
-world axis and reports a local transform whose world pose matches, and that
-detaching, and removing the parent, keep the child's world pose.
+Two views of one doc (A, and a small B; each one's broadcasts reach only the
+other): a locked 5×5 board with connectors, three blocks, two pawns, and an
+STL file in the repo. A real mouse and keyboard over CDP check the layout
+(toolbar along the top in one row, the sidebar at the right with Objects, then
+Dimensions, the canvas filling the rest); a click selects (the outline row is
+marked, the inspector shows it, B draws A's selection box and marks the row);
+Escape and a click on nothing deselect; G / R / H and the toolbar's buttons
+switch tools, Grid / Axes / Bounds toggle (per viewer, never the doc); a drag
+on the gizmo's X arrow (found by hovering) moves a block, B seeing the pose
+mid-drag and then the landed transform; the hand carries a block onto a
+connector, Q turns it 45°, Esc puts it back, Alt puts one down between
+connectors; dragging the locked board orbits and writes nothing; F frames
+everything; M and two clicks on the board write a 24 cm dimension (label on
+the canvas and in the panel); Delete removes the selection; P hides and shows
+the sidebar; a double-click frames an object; a right-click opens the menu
+(Select and Remove work); the Kits button turns Model off (no toolbar, no
+sidebar, the canvas fills the view) and on again; pasted automerge URLs add a
+GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
+200 mm when its unit param changes in the inspector's embedded controls; an
+object attached through the inspector keeps its world pose and follows its
+parent's gizmo drag. Paste is the one synthetic event (headless Chrome won't
+give a page the system clipboard).
 
 ### The hand
 
 ```
 pnpm build
-node probes/hand-run.mjs        # --show to watch
+node probes/hand-run.mjs        # --show to watch, --shots <dir>
 ```
 
 Two scene tools on one doc (each one's broadcasts reach only the other, and
@@ -579,6 +580,11 @@ itself and B still its back; S over a pile of two face-down cards runs its
 command; a face-down card is carried, turned over with F and put down, and
 both show its face; another carried into the tray lands face up, seen by A
 alone.
+Last, the gizmo with a real drag on its X arrow: B sees the block move
+before the doc does, then the written pose; and on a group's pivot, both
+pawns move by the same amount. The page's extension is written to
+[STAGE.md](STAGE.md)'s contract (`looks`, `landing`, commands with `state`,
+`panels`, `api.notify`).
 
 ### At scale: the Solander 38 probe
 

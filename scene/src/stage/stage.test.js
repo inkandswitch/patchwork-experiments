@@ -288,6 +288,21 @@ describe("the stage, mounted", () => {
     expect(r.updates.length).toBe(n + 2);
   });
 
+  it("what's shown changing in the same flush as local state still gets a content update (prev === scene, local)", async () => {
+    const h = newScene({ traits: { "t.scene": {} }, objects: { a: card() }, order: ["a"] });
+    const m = mount(h);
+    await settle();
+    const r = exts["t.scene"];
+    const n = r.updates.length;
+    // one tick: a pose held (what's shown changes) and a local swap (a status, say)
+    r.api.pose.hold("a", { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 });
+    m.local.swap(assoc("hovered", "a"));
+    await settle();
+    const after = r.updates.slice(n);
+    expect(after.some((u) => u.prev.local !== u.local)).toBe(true);
+    expect(after.some((u) => u.prev.scene === u.scene && u.prev.local === u.local && u.local.hovered === "a")).toBe(true);
+  });
+
   it("lenses: nameOf shows what this viewer sees", async () => {
     exts["t.scene"] = recorder("t.scene", () => ({ looks: () => new Map([["a", { name: "Ace of spades" }]]) }));
     exts["t.always"] = recorder("t.always", () => ({ looks: () => new Map([["a", { sourceUrl: null }], ["b", { name: "B!" }]]) }));
@@ -509,6 +524,24 @@ describe("the stage, mounted", () => {
     button.click();
     await settle();
     expect(document.activeElement).toBe(m.root);
+  });
+
+  it("a focused element blurred while it stays connected (Chrome, when it's moved) gives focus back, unless the press was outside", async () => {
+    const m = mount(newScene());
+    await settle();
+    const button = document.createElement("button");
+    m.root.append(button);
+    // moved: Chrome blurs it, still connected, with focus on <body>, and fires no click
+    button.focus();
+    button.blur();
+    await settle();
+    expect(document.activeElement).toBe(m.root);
+    // someone clicked the page outside: that's theirs
+    button.focus();
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    button.blur();
+    await settle();
+    expect(document.activeElement).not.toBe(m.root);
   });
 
   it("widgetAt: the widget's owner is offered the press first; its open session keeps it busy", async () => {

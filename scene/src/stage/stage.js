@@ -748,11 +748,17 @@ export default function Stage(handle, element) {
     const running = host.instances();
     for (const r of running) {
       const was = seen.get(r.instance);
-      if (was && was.scene === snap && was.local === loc && !content) continue;
+      const changed = !was || was.scene !== snap || was.local !== loc;
+      if (!changed && !content) continue;
       seen.set(r.instance, { scene: snap, local: loc });
       if (typeof r.instance.update !== "function") continue;
       try {
         r.instance.update(snap, loc, was ?? { scene: null, local: null });
+        // What's shown changed in the same flush as the doc or local state
+        // (a rebuilt GLB lands with its status going back to idle): say so
+        // too, the one way the contract has (prev === this scene and local),
+        // or a part that skips a status-only change never sees the new box.
+        if (content && changed && was) r.instance.update(snap, loc, { scene: snap, local: loc });
       } catch (err) {
         console.warn(`[scene] extension “${r.id}”: update failed`, err);
       }
@@ -1438,19 +1444,35 @@ export default function Stage(handle, element) {
 
   // Keys are heard on the root, so focus that left an element inside the
   // stage for nowhere (the clicked button was replaced, as a HUD's Play is
-  // once pressed, or hidden) comes back to the root, and keys keep working.
+  // once pressed, or hidden, or moved: an outline row re-filed under its new
+  // parent) comes back to the root, and keys keep working. Chrome blurs a
+  // moved element with the element still connected and focus on <body>, just
+  // as when someone clicks the page outside the stage; only the click tells
+  // the two apart, so a press outside (or the window losing focus) means it
+  // left for the page.
+  let pressedOutside = -Infinity;
+  const onPressAnywhere = (e) => {
+    if (!root.contains(e.target)) pressedOutside = performance.now();
+  };
+  document.addEventListener("pointerdown", onPressAnywhere, true);
   const refocus = (e) => {
+    // focus on its way to something (it gets there after this event's microtasks)
+    if (e.type === "focusout" && e.relatedTarget) return;
     queueMicrotask(() => {
       if (dead || !root.isConnected) return;
       const a = document.activeElement;
       if (a && a !== document.body) return;
-      if (e.type === "focusout" && e.target?.isConnected && root.contains(e.target) && !e.target.hidden) return; // left for the page
+      if (e.type === "focusout") {
+        if (performance.now() - pressedOutside < 1000) return; // left for the page
+        if (typeof document.hasFocus === "function" && !document.hasFocus()) return; // the window went
+      }
       root.focus({ preventScroll: true });
     });
   };
   root.addEventListener("click", refocus);
   root.addEventListener("focusout", refocus);
   cleanups.push(() => {
+    document.removeEventListener("pointerdown", onPressAnywhere, true);
     root.removeEventListener("click", refocus);
     root.removeEventListener("focusout", refocus);
   });

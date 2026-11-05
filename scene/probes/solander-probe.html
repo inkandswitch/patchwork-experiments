@@ -8,7 +8,7 @@
      so "docs fetched on open" is the number of HTTP GETs. Exposes
      window.__probe for the driver: phases, stats and actions. -->
 <script type="importmap">
-{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js", "@automerge/automerge": "./automerge-stub.js" } }
 </script>
 <style>
   html, body { margin: 0; height: 100%; background: #fff; }
@@ -116,20 +116,22 @@ try {
   P.phase = "mounting";
   const tMount = performance.now();
   P.tMount = tMount;
-  // per-frame sampler: renderOutline calls per animation frame
-  const outlinePerFrame = [];
-  let lastOutline = 0;
+  // per-frame sampler: UI flushes (each one updates every extension, the
+  // outline among them) per animation frame. The stage keeps no outline-only
+  // timing since the outline became a part (scene.outline).
+  const flushPerFrame = [];
+  let lastFlush = 0;
   let sampling = true;
   const sample = () => {
     if (!sampling) return;
     const dbg = window.__sceneDebug;
-    if (dbg) { const t = dbg.perf.outline.total; outlinePerFrame.push(t - lastOutline); lastOutline = t; }
+    if (dbg) { const t = dbg.perf.flush.total; flushPerFrame.push(t - lastFlush); lastFlush = t; }
     requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
   P.cleanup = tool(scene, host);
   const dbg = window.__sceneDebug;
-  lastOutline = dbg.perf.outline.total;
+  lastFlush = dbg.perf.flush.total;
   P.mountMs = +(performance.now() - tMount).toFixed(1);
   const vp = dbg.viewport;
   const gl = vp.renderer?.getContext?.();
@@ -167,9 +169,9 @@ try {
       const gx = (i % 20) / 19, gy = Math.floor(i / 20) / 19;
       const x = rect.left + rect.width * (0.15 + 0.7 * gx), y = rect.top + rect.height * (0.15 + 0.7 * gy);
       const t0 = performance.now();
-      const hit = vp.pick(x, y, opts);
+      const hit = vp.pick(x - rect.left, y - rect.top, opts); // port-local px
       times.push(performance.now() - t0);
-      if (hit?.objectId) hits++;
+      if (hit?.id) hits++;
     }
     return { ...summary(times), hits };
   }
@@ -243,9 +245,8 @@ try {
     drawCalls: vp.stats.calls,
     render: renderStats(),
     gpu: geometryBytes(),
-    outlinePerFrameMax: Math.max(0, ...outlinePerFrame),
-    outlineCallsDuringLoad: dbg.perf.outline.total,
-    outlineMs: summary(dbg.perf.outline.values()),
+    flushPerFrameMax: Math.max(0, ...flushPerFrame),
+    flushesDuringLoad: dbg.perf.flush.total,
     flushMs: summary(dbg.perf.flush.values()),
     syncMs: summary(dbg.perf.sync.values()),
     slowFrames: vp.perf.slowFrames.filter((f) => f.at >= tMount),
@@ -257,7 +258,7 @@ try {
     const pick = pickBench();
     const layer = byName("railing flanges") ?? P.hullId;
     const group = ids((o) => o.kind === "group" && o.name === "BODY")[0];
-    const outlineBefore = dbg.perf.outline.values().length;
+    const flushBefore = dbg.perf.flush.values().length;
     const toggleLayer = toggleBench(layer);
     const toggleGroup = toggleBench(group);
     await stable();
@@ -269,15 +270,15 @@ try {
     const measureHover = measureBench(200);
     // a burst: 50 doc changes in one task (a peer's catch-up): how many outline passes, how long a task
     await stable();
-    const o0 = dbg.perf.outline.total, b0 = performance.now();
+    const o0 = dbg.perf.flush.total, b0 = performance.now();
     for (let i = 0; i < 50; i++) scene.change((d) => (d.objects[layer].name = d.objects[layer].name));
     for (let i = 0; i < 50; i++) scene.change((d) => (d.objects[layer].opacity = i % 2 ? 1 : 0.999));
     const burstTaskMs = performance.now() - b0;
-    const outlineInTask = dbg.perf.outline.total - o0;
+    const flushesInTask = dbg.perf.flush.total - o0;
     await frame(); await frame();
-    const burst = { changes: 100, taskMs: +burstTaskMs.toFixed(1), outlineInTask, outlineAfterTwoFrames: dbg.perf.outline.total - o0, syncMs: summary(dbg.perf.sync.values().slice(-100)) };
+    const burst = { changes: 100, taskMs: +burstTaskMs.toFixed(1), flushesInTask, flushesAfterTwoFrames: dbg.perf.flush.total - o0, syncMs: summary(dbg.perf.sync.values().slice(-100)) };
     scene.change((d) => (d.objects[layer].opacity = 1));
-    return { idleFramesPerSecond, pick, measureHover, burst, toggleLayer, toggleGroup, outlineMsAfterToggles: summary(dbg.perf.outline.values().slice(outlineBefore)), syncMs: summary(dbg.perf.sync.values().slice(-20)) };
+    return { idleFramesPerSecond, pick, measureHover, burst, toggleLayer, toggleGroup, flushMsAfterToggles: summary(dbg.perf.flush.values().slice(flushBefore)), syncMs: summary(dbg.perf.sync.values().slice(-20)) };
   };
   P.setXray = (on) => scene.change((d) => {
     for (const name of ["HULL", "DECK", "ctr beam inside surfaces", "ctr beam outside surfaces"]) {
@@ -306,14 +307,14 @@ try {
     const t = await untilLoaded(); await sleep(200); await stable();
     return { toggleMs: +toggleMs.toFixed(2), loadMs: t ? +(t - t0).toFixed(1) : null, docsFetched: net.gets - gets0, bytes: net.bytes - bytes0, longTasks: longSince(t0), render: renderStats(), drawCalls: vp.stats.calls, gpu: geometryBytes(), pick: pickBench(200), measureHover: measureBench(200) };
   };
-  P.frameAll = async () => { vp.frameAll(); await stable(); };
+  P.frameAll = async () => { const b = vp.sceneBox(); if (b) vp.frame(b); await stable(); };
   P.setCamera = async (cam) => { vp.setCamera(cam); await stable(); };
   // ── phase 3: everything shown ────────────────────────────────────────────
   P.showAll = async () => {
     const t0 = performance.now(); const gets0 = net.gets;
     scene.change((d) => { for (const o of Object.values(d.objects)) o.visible = true; });
     const t = await untilLoaded(); await sleep(200); await stable();
-    return { loadMs: t ? +(t - t0).toFixed(1) : null, docsFetched: net.gets - gets0, totalDocsFetched: net.gets, totalBytes: net.bytes, longTasks: longSince(t0), render: renderStats(), drawCalls: vp.stats.calls, gpu: geometryBytes(), pick: pickBench(200), measureHover: measureBench(200), outlineMs: summary(dbg.perf.outline.values()), errors: [...P.errors] };
+    return { loadMs: t ? +(t - t0).toFixed(1) : null, docsFetched: net.gets - gets0, totalDocsFetched: net.gets, totalBytes: net.bytes, longTasks: longSince(t0), render: renderStats(), drawCalls: vp.stats.calls, gpu: geometryBytes(), pick: pickBench(200), measureHover: measureBench(200), flushMs: summary(dbg.perf.flush.values()), errors: [...P.errors] };
   };
   P.selectFirst = (name) => { const id = byName(name); const row = document.querySelector(`.object-row[data-id="${id}"] .row-main`); if (row) row.click(); return !!row; };
   P.expand = (name) => { const id = ids((o) => o.name === name)[0]; document.querySelector(`.object-row[data-id="${id}"] .twisty`)?.click(); };
@@ -329,7 +330,7 @@ try {
     const selectMs = performance.now() - t0;
     await stable();
     await sleep(200);
-    return { count, selectMs: +selectMs.toFixed(2), selected: document.querySelector(".object-row[data-selected] .name")?.textContent, about: document.querySelector(".inspector .about-title")?.textContent ?? null };
+    return { count, selectMs: +selectMs.toFixed(2), selected: document.querySelector(".object-row[data-selected] .name")?.textContent, about: document.querySelector(".about-title")?.textContent ?? null };
   };
   P.clearSearch = async () => {
     const input = document.querySelector(".outline-filter");
@@ -338,7 +339,7 @@ try {
     return { rows: document.querySelectorAll(".object-row").length };
   };
   P.deselect = async () => {
-    document.querySelector(".scene-tool").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    document.querySelector(".scene-stage").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await stable();
   };
 } catch (err) {

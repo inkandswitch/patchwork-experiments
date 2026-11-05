@@ -180,7 +180,16 @@ function create(api) {
         kits: Object.freeze({ on: Object.freeze([]), off: Object.freeze([]) }),
       }));
     });
+    // Rebuilding drops whatever had focus in here (the box just ticked), and
+    // focus that leaves the stage's DOM for nowhere goes back to its root:
+    // Escape would no longer close this, nor Space tick the box again. Keep it
+    // on the same control.
+    const had = pop.contains(document.activeElement) ? document.activeElement : null;
+    const kit = had?.dataset?.kit;
+    const wasSuggest = had?.classList?.contains("kits-suggest");
     pop.replaceChildren(head, list, suggest);
+    const again = kit != null ? [...list.querySelectorAll("input[data-kit]")].find((b) => b.dataset.kit === kit) : wasSuggest && !suggest.disabled ? suggest : had ? pop.querySelector("input") : null;
+    again?.focus({ preventScroll: true });
   }
 
   return {

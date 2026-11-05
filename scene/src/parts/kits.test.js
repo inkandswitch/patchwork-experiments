@@ -64,6 +64,17 @@ describe("scene.kits", () => {
     expect(s.root.querySelector(".kits-suggest").disabled).toBe(true);
   });
 
+  it("a ticked box keeps focus when the list is made again, so Escape still closes it", async () => {
+    await openList();
+    box("table").focus();
+    box("table").checked = true;
+    box("table").dispatchEvent(new Event("change"));
+    await s.settle();
+    expect(document.activeElement).toBe(box("table"));
+    box("table").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(s.root.querySelector(".kits-pop").hidden).toBe(true);
+  });
+
   it("turning kits on and off is this viewer's change to the suggestion", async () => {
     await openList();
     box("table").checked = true;

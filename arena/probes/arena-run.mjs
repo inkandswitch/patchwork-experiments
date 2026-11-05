@@ -41,7 +41,7 @@ const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chro
   [SHOW ? "" : "--headless=new", "--no-first-run", "--no-default-browser-check", `--user-data-dir=${profile}`, `--remote-debugging-port=${CDP}`,
    "--window-size=1400,700", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "about:blank"].filter(Boolean), { stdio: "ignore" });
 const stop = (code) => { try { chrome.kill(); } catch {} server.close(); setTimeout(() => { try { rmSync(profile, { recursive: true, force: true }); } catch {} process.exit(code); }, 300); };
-setTimeout(() => { console.error("TIMEOUT"); console.log(JSON.stringify(report, null, 2)); stop(2); }, 240_000);
+setTimeout(() => { console.error("TIMEOUT"); console.log(JSON.stringify(report, null, 2)); stop(2); }, 360_000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let target;
 for (let i = 0; i < 100 && !target; i++) { try { target = (await (await fetch(`http://127.0.0.1:${CDP}/json/list`)).json()).find((t) => t.type === "page"); } catch {} if (!target) await sleep(100); }
@@ -64,7 +64,7 @@ const errorsNow = async () => (await P("errors")).filter((e) => !EXPECTED.test(e
 const checks = {}, report = { checks, steps: {} };
 let failed = false;
 const check = (name, ok, detail) => { checks[name] = !!ok; if (!ok) failed = true; if (detail !== undefined) report.steps[name] = detail; };
-const shot = async (name) => { const s = await send("Page.captureScreenshot", { format: "png" }); const f = join(SHOTS, `arena-${name}.png`); writeFileSync(f, Buffer.from(s.data, "base64")); (report.shots ??= []).push(f); };
+const shot = async (name, clip) => { const s = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) }); const f = join(SHOTS, `arena-${name}.png`); writeFileSync(f, Buffer.from(s.data, "base64")); (report.shots ??= []).push(f); };
 
 const mouse = (type, x, y, buttons = 0) => send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount: 1 });
 async function click({ x, y }) {
@@ -153,6 +153,22 @@ try {
   await until("window.__p.running('a').includes('arena') && window.__p.running('b').includes('arena')");
   check("the arena runs in both views (the level trait)", (await P("running('a')")).includes("arena") && (await P("running('b')")).includes("arena"), { a: await P("running('a')"), b: await P("running('b')") });
   check("the HUD shows Play and 8 standing (and nothing stray)", (await P("text('.arena-count')"))[0] === "8 of 8 targets standing" && !!(await P("rect('.arena-play')")) && !/null/.test((await P("text('.arena-hud')"))[0]), await P("text('.arena-hud')"));
+
+  // ─── a level opens as a game ─────────────────────────────────────────────
+  // Sample arena writes view.kits = []: B, who never chose kits, loses the
+  // editor (after the 2 s a doc-caused stop lingers) and keeps only what the
+  // level brings: the arena, what it requires (keys, notices) and the
+  // always-on kit chooser. A turned the arena-level kit on, so A keeps it.
+  check("Sample arena suggests no kits (doc.view.kits = [])", Array.isArray((await P("doc()")).view?.kits) && (await P("doc()")).view.kits.length === 0, (await P("doc()")).view);
+  const bSettled = await until("!window.__p.running('b').includes('scene.toolbar')", 6000);
+  const bRun = [...(await P("running('b')"))].sort();
+  check("player B runs only the game: arena, its requires (keys, notices) and the kit chooser", bSettled && JSON.stringify(bRun) === JSON.stringify(["arena", "scene.keys", "scene.kits", "scene.notices"]), bRun);
+  const bChrome = await P("chrome('b')");
+  const bView = { toolbar: !!(await P("rect('.toolbar', 'b')")), sidebar: !!(await P("rect('.sidebar', 'b')")), kits: await P("rect('.kits-button', 'b')"), play: !!(await P("rect('.arena-play', 'b')")), layers: await P("layers('b')"), chrome: bChrome };
+  check("player B sees no toolbar, no sidebar, no grid or axes: the level, the HUD's Play and a small Kits button", !bView.toolbar && !bView.sidebar && bView.play && !!bView.kits && bView.kits.w < 140 && bView.kits.h < 44 && !bView.layers.some((l) => /grid|axes|bounds|gizmo|handles/.test(l)), bView);
+  const aRun = await P("running('a')");
+  check("designer A keeps the editor (the arena-level kit): toolbar, sidebar, grid, the build commands", ["scene.toolbar", "scene.sidebar", "scene.grid", "arena.build", "arena"].every((id) => aRun.includes(id)) && !!(await P("rect('.toolbar')")) && !!(await P(`rect('${sampleBtn}')`)), aRun);
+
   await js("window.__p.A.viewport.frame(window.__p.A.viewport.sceneBox())");
   await sleep(400);
   await shot("level");
@@ -205,11 +221,14 @@ try {
 
   // jump
   const yBefore = (await eye())[1];
+  // a tap, not a hold: held Space hops again on landing, and at swiftshader's
+  // frame rate (dt clamped to 50 ms) a long hold outlasts the first hop
   await keyDown("Space");
   let peak = yBefore;
-  for (let i = 0; i < 12; i++) { await sleep(40); peak = Math.max(peak, (await eye())[1]); }
+  for (let i = 0; i < 2; i++) { await sleep(40); peak = Math.max(peak, (await eye())[1]); }
   await keyUp("Space");
-  await sleep(600);
+  for (let i = 0; i < 12; i++) { await sleep(40); peak = Math.max(peak, (await eye())[1]); }
+  await until(`Math.abs(window.__p.cam().position[1] - ${yBefore}) < 0.01`, 3000);
   const yAfter = (await eye())[1];
   check("Space jumps (about 0.8 m) and lands back", peak - yBefore > 0.5 && Math.abs(yAfter - yBefore) < 0.05, { peak: +(peak - yBefore).toFixed(2), back: +yAfter.toFixed(2) });
 
@@ -230,22 +249,25 @@ try {
   await face(aimYaw(here, tpos), Math.atan2(tpos[1] + 1.55 - here[1], dist));
   const aimed = await js("(() => { const c = window.__p.A.viewport.getCamera(); const d = c.target.map((v, i) => v - c.position[i]); return window.__p.A.viewport.raycast(c.position, d)?.id ?? null; })()");
   check("turned to face it, the crosshair is on the target", aimed === tid, { aimed, tid });
-  const before = (await P("drawn('b')")).tracers;
+  await P("watchTracers('a')"); await P("watchTracers('b')");
+  const before = { a: await P("tracersSeen('a')"), b: await P("tracersSeen('b')") };
   const c = await P("canvasCentre()");
   if (turnMode === "drag") await click(c);
   else { await mouse("mousePressed", c.x, c.y, 1); await sleep(30); await mouse("mouseReleased", c.x, c.y, 0); }
   await sleep(40);
-  const tracerA = (await P("drawn('a')")).tracers;
-  const tracerB = (await P("drawn('b')")).tracers;
   await sleep(300);
+  const tracerA = await P("tracersSeen('a')");
+  const tracerB = await P("tracersSeen('b')");
   const tdoc = await js(`window.__p.doc().objects['${tid}']`);
   check("a click shoots the target over: down.by is you", tdoc.traits["arena.target"].down?.by === "viewer:a" && !!tdoc.traits["arena.target"].stand, tdoc.traits["arena.target"]);
   check("its transform is knocked over (tilted ~90°)", Math.abs(Math.cos(tdoc.transform.rotation[0]) * Math.cos(tdoc.transform.rotation[2])) < 0.1, tdoc.transform.rotation);
-  check("you see your tracer, and so does B", tracerA >= 1 && tracerB > before, { tracerA, tracerB, before });
+  check("you see your tracer, and so does B", tracerA > before.a && tracerB > before.b, { tracerA, tracerB, before });
   const hud = await P("text('.arena-hud')");
   check("the HUD shows 7 of 8 standing, your score and 11 rounds", /7 of 8 standing/.test(hud[0]) && /You1/.test(hud[0]) && /11 \/ 12/.test(hud[0]), hud);
   check("B's view of the scores counts it too", /Player1|Someone1/.test((await P("text('.arena-hud', 'b')"))[0] ?? "") || (await P("text('.arena-count', 'b')"))[0] === "7 of 8 targets standing", await P("text('.arena-hud', 'b')"));
   await shot("shot");
+  // B isn't playing, so nothing of B's own prunes per frame: the tracer must still go
+  check("the tracer goes from B's view in a moment (B only watching)", await until("window.__p.drawn('b').tracers === 0", 1500), await P("drawn('b')"));
 
   // the other view sees the avatar move, at presence rate
   const seen0 = await P("drawn('b')");
@@ -296,6 +318,49 @@ try {
   await sleep(200);
   const reset = await js(`window.__p.doc().objects['${tid}']`);
   check("Stand them up stands it back where it was", !reset.traits["arena.target"].down && reset.transform.rotation.every((v, i) => Math.abs(v - [0, tdoc.traits["arena.target"].stand?.rotation?.[1] ?? 0, 0][i]) < 1e-6), reset.transform);
+
+  // ─── the player plays: B, who has only the game ──────────────────────────
+  // B gets the big view for this (A shrinks); the stage follows its port's size
+  await P("resize('a', 320, 240)");
+  const vh = await js("window.innerHeight");
+  await P(`resize('b', 1060, ${vh})`);
+  await sleep(800);
+  const bRect = await P("viewRect('b')");
+  const bCan = await js("(() => { const r = window.__p.B.viewport.canvas.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })()");
+  check("player B's view follows its new size", Math.abs(bCan[0] - 1060) < 4 && Math.abs(bCan[1] - vh) < 4, { bCan, vh });
+  await js("window.__p.B.viewport.frame(window.__p.B.viewport.sceneBox())");
+  await sleep(500);
+  await shot("player-lobby", bRect);
+  report.steps.playerLobby = { chrome: await P("chrome('b')"), hud: await P("text('.arena-hud', 'b')") };
+  // a click in B's view brings the keys there; Enter is the play command's key (scene.keys, required by the arena)
+  const bc = await P("canvasCentre('b')");
+  await click({ x: bc.x + 200, y: bc.y + 150 });
+  await js("Math.random = () => 0");
+  await hold("Enter", 50);
+  await sleep(500);
+  const bPlay = { armed: await P("armed('b')"), held: await P("held('b')"), aArmed: await P("armed('a')"), focus: await js("document.activeElement?.closest?.('#a, #b')?.id ?? null"), eye: r3((await P("cam('b')")).position) };
+  check("Enter plays in B's view (the key map came with the arena's requires), and not in A's", bPlay.armed === "arena" && bPlay.held && bPlay.aArmed === null, bPlay);
+  const be0 = (await P("cam('b')")).position;
+  await hold("KeyW", 700);
+  await sleep(300);
+  const be1 = (await P("cam('b')")).position;
+  check("W walks B forward", Math.hypot(be1[0] - be0[0], be1[2] - be0[2]) > 1.5 && Math.abs(be1[1] - 1.6) < 0.06, { from: r3(be0), to: r3(be1) });
+  await shot("player-play", bRect);
+  // shoot (unlocked: a tap shoots), and A sees B's avatar
+  const bTr0 = await P("tracersSeen('b')");
+  await click(await P("canvasCentre('b')"));
+  await shot("player-shot", bRect);
+  await sleep(400);
+  const bTr1 = await P("tracersSeen('b')");
+  const aSees = await P("drawn('a')");
+  check("B shoots (a tracer, 11 rounds), and A sees B's avatar", bTr1 > bTr0 && /11 \/ 12/.test((await P("text('.arena-hud', 'b')"))[0]) && aSees.avatars.length === 1, { bTr0, bTr1, hud: await P("text('.arena-hud', 'b')"), aSees });
+  report.steps.playerPlaying = { chrome: await P("chrome('b')"), layers: await P("layers('b')") };
+  check("playing, B still shows no editor (no toolbar, sidebar, grid)", !(await P("rect('.toolbar', 'b')")) && !(await P("rect('.sidebar', 'b')")) && !(await P("layers('b')")).some((l) => /grid|axes/.test(l)), report.steps.playerPlaying);
+  await hold("Escape", 50);
+  await sleep(300);
+  check("Esc stops B's play: Play is back", (await P("armed('b')")) === null && !(await P("held('b')")) && !!(await P("rect('.arena-play', 'b')")));
+  await shot("player-after", bRect);
+
   check("no errors in the arena run", (await errorsNow()).length === 0, await errorsNow());
 
   // ─── hybrid: a deck that knows nothing about arenas ──────────────────────

@@ -95,6 +95,34 @@ export default {
       world.add(line);
       tracers.push({ line, until: performance.now() + 120 });
       api.invalidate();
+      // playing, tick() prunes them; watching, a loop of their own does (else
+      // a peer's shot hangs in the air until you play)
+      if (!playing) pruneLater();
+    }
+    let tracerLoop = null;
+
+    function pruneLater() {
+      if (!tracerLoop && tracers.length) {
+        tracerLoop = api.loop(() => {
+          pruneTracers();
+          if (tracers.length && !playing) return;
+          const off = tracerLoop;
+          tracerLoop = null;
+          off?.();
+          api.invalidate();
+        });
+      }
+    }
+
+    function pruneTracers() {
+      const now = performance.now();
+      for (let i = tracers.length - 1; i >= 0; i--) {
+        if (now < tracers[i].until) continue;
+        tracers[i].line.removeFromParent();
+        tracers[i].line.geometry.dispose();
+        tracers[i].line.material.dispose();
+        tracers.splice(i, 1);
+      }
     }
 
     function avatarFor(session, hue) {
@@ -265,14 +293,7 @@ export default {
       }
       placeCamera();
       api.presence.set("avatar", { feet: body.feet.map((v) => +v.toFixed(3)), yaw: +body.yaw.toFixed(3), pitch: +body.pitch.toFixed(3) });
-      const now = performance.now();
-      for (let i = tracers.length - 1; i >= 0; i--) {
-        if (now < tracers[i].until) continue;
-        tracers[i].line.removeFromParent();
-        tracers[i].line.geometry.dispose();
-        tracers[i].line.material.dispose();
-        tracers.splice(i, 1);
-      }
+      pruneTracers();
       render();
     }
 
@@ -446,6 +467,7 @@ export default {
       releaseCamera = null;
       api.presence.set("avatar", undefined);
       api.presence.rate(0);
+      pruneLater(); // your last shots' tracers
       render();
     }
 

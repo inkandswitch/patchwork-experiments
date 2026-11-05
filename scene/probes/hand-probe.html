@@ -6,13 +6,15 @@
      scene trait) when it's in the tray, and to everyone when it's face up; a
      Shuffle command on S; a landing hook that turns a card face up over the
      tray; a panel. A stand-in for the tabletop package's, which this package
-     can't import. Viewer A and viewer B are told apart by element.viewerId. -->
+     can't import. Viewer A and viewer B are told apart by element.viewerId.
+     Written to STAGE.md's extension contract (looks, landing, commands with
+     state, panels, api.notify). -->
 <!-- Driven by probes/hand-run.mjs: two scene tools on one doc (each peer's
      broadcasts reach only the other), a 5×5 board GLB with extras.snapPoints
      (locked), blocks and pawns, all loaded through the BUILT tool (dist/). The
      runner carries pieces with a real mouse over CDP. -->
 <script type="importmap">
-{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js", "@automerge/automerge": "./automerge-stub.js" } }
 </script>
 <style>
   html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
@@ -83,44 +85,46 @@ try {
   objects.faceDown = obj("Card", backGLB, [0.25, 0.004, 0.15], secret(faceGLB.url, "Red 7"));
   objects.faceDown.transform.rotation = [0, 0, Math.PI];
 
-  // the probe's extension: who sits at the tray is the scene trait probe.seat
+  // the probe's extension (STAGE.md's contract): who sits at the tray is the scene trait probe.seat
   const TRAY = { min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] };
   getRegistry("scene:extension").register({
     type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
     load: async () => ({
       create(api) {
-        let scene = null;
         let looks = new Map();
-        const inTray = (p) => { const l = scene.toLocal("tray", p); return !!l && l.every((v, k) => v >= TRAY.min[k] - 1e-9 && v <= TRAY.max[k] + 1e-9); };
-        const seated = () => scene?.traits?.["probe.seat"] === api.viewer;
-        const secretOf = (id) => scene?.objects[id]?.traits?.["probe.secret"];
+        const scene = () => api.scene();
+        const inTray = (p) => { const l = scene().toLocal("tray", p); return !!l && l.every((v, k) => v >= TRAY.min[k] - 1e-9 && v <= TRAY.max[k] + 1e-9); };
+        const seated = () => scene()?.traits?.["probe.seat"] === api.viewer;
+        const secretOf = (id) => scene()?.objects[id]?.traits?.["probe.secret"];
         return {
           update(s) {
-            scene = s;
-            looks = new Map();
-            for (const id of Object.keys(s.objects)) {
-              const sec = secretOf(id);
+            const next = new Map();
+            for (const id of s.ids) {
+              const sec = s.objects[id]?.traits?.["probe.secret"];
               if (!sec) continue;
               const m = s.world(id);
-              if (inTray([m[12], m[13], m[14]]) ? seated() : m[5] > 1e-6) looks.set(id, sec);
+              if (inTray([m[12], m[13], m[14]]) ? seated() : m[5] > 1e-6) next.set(id, sec);
             }
+            looks = next;
           },
           looks: () => looks,
           landing: (id, p) => (secretOf(id) && seated() && inTray(p) ? { faceUp: true } : null),
           commands: [{
-            id: "shuffle", name: "Shuffle pile", key: "s", appliesTo: (id) => !!secretOf(id),
+            id: "shuffle", name: "Shuffle pile", key: "s",
+            state: (id) => (id != null && secretOf(id) ? {} : null),
             run(id) {
-              const at = scene.world(id);
-              const pile = Object.keys(scene.objects).filter((x) => { const m = scene.world(x); return secretOf(x) && Math.hypot(m[12] - at[12], m[14] - at[14]) < 0.005; });
+              const s = scene();
+              const at = s.world(id);
+              const pile = s.ids.filter((x) => { const m = s.world(x); return secretOf(x) && Math.hypot(m[12] - at[12], m[14] - at[14]) < 0.005; });
               api.change((d) => {
                 const secrets = pile.map((x) => ({ ...d.objects[x].traits["probe.secret"] }));
                 secrets.push(secrets.shift());
                 pile.forEach((x, i) => (d.objects[x].traits["probe.secret"] = secrets[i]));
               });
-              api.toast(`Shuffling ${pile.length} cards…`);
+              api.notify(`Shuffling ${pile.length} cards…`);
             },
           }],
-          panels: [{ id: "probe.panel", title: "Probe", mount(el) { el.textContent = "probe panel"; return {}; } }],
+          panels: [{ id: "probe.panel", title: "Probe", mount(el) { el.textContent = "probe panel"; return { update() {}, dispose() {} }; } }],
         };
       },
     }),
@@ -130,6 +134,7 @@ try {
     view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand" },
     camera: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] },
   });
+  try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
   const A = peer(scene), B = peer(scene);
   A.other = B; B.other = A;
@@ -137,9 +142,9 @@ try {
   hostA.repo = repo; hostB.repo = repo;
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   Tool(A, hostA);
-  const dbgA = hostA.querySelector(".scene-tool").__sceneDebug;
+  const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
   Tool(B, hostB);
-  const dbgB = hostB.querySelector(".scene-tool").__sceneDebug;
+  const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
   const total = Object.values(scene.doc().objects).filter((o) => o.kind !== "group").length;
   for (let i = 0; i < 300; i++) {
     if (dbgA.stats().loaded === total && dbgB.stats().loaded === total) break;
@@ -147,38 +152,24 @@ try {
   }
   const vp = dbgA.viewport;
   const byName = (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0];
+  const pageOf = (v, w) => { const p = v.project(w); const r = v.canvas.getBoundingClientRect(); return p && [r.left + p.x, r.top + p.y]; };
   window.__probeScene = scene;
   window.__table = {
+    A: dbgA, B: dbgB, hostA, hostB,
     errors,
     total,
     loaded: () => [dbgA.stats().loaded, dbgB.stats().loaded],
     id: byName,
     /** page coords of a world point in viewport A */
-    screen: (w) => {
-      vp.camera.updateMatrixWorld();
-      const p = vp.project(new vp.camera.position.constructor(...w));
-      const r = vp.canvas.getBoundingClientRect();
-      return p && [r.left + p.x, r.top + p.y];
-    },
+    screen: (w) => pageOf(vp, w),
     /** page coords of the top centre of an object's box in A */
     top: (id) => {
       const b = vp.objectBox(id, { hints: false });
-      return window.__table.screen([(b.min.x + b.max.x) / 2, b.max.y - 0.002, (b.min.z + b.max.z) / 2]);
-    },
-    /** page coords to release at so a piece grabbed on its top lands on (x, rest, z): the hand carries the grabbed point, lifted */
-    aim: (id, [x, rest, z]) => {
-      const b = vp.objectBox(id, { hints: false });
-      const h = b.max.y - b.min.y;
-      const lift = Math.max(0.004, Math.min(0.05, h * 0.5));
-      return window.__table.screen([x, rest + lift + h - 0.002, z]);
+      return pageOf(vp, [(b.min.x + b.max.x) / 2, b.max.y - 0.0005, (b.min.z + b.max.z) / 2]);
     },
     pos: (id) => scene.doc().objects[id].transform.position,
-    worldB: (id) => {
-      const e = dbgB.viewport.objects.get(id);
-      return e.group.getWorldPosition(new e.group.position.constructor()).toArray();
-    },
-    carrying: () => vp.carry?.id ?? null,
-    carryInfo: () => vp.carry && { offset: vp.carry.offset.toArray(), spot: vp.carry.landing?.spot, snapped: vp.carry.landing?.snapped, snaps: vp.carry.snaps.length, last: vp.carry.last },
+    worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
+    carrying: () => dbgA.host.instanceOf("scene.hand") && dbgA.local.get().armed,
     camera: () => vp.getCamera(),
     /** "face" or "back": which look a viewer is showing for a hidden object */
     look: (who, id) => {
@@ -189,14 +180,14 @@ try {
       if (!d.traits) d.traits = {};
       d.traits["probe.seat"] = who === "a" ? hostA.viewerId : hostB.viewerId;
     }),
-    panel: (who) => (who === "a" ? hostA : hostB).querySelector('[data-panel="probe.panel"]')?.textContent ?? null,
+    panel: (who) => [...(who === "a" ? hostA : hostB).querySelectorAll(".sidebar section")].map((s) => s.textContent).find((t) => t.includes("probe panel")) ?? null,
     settled: () => dbgA.queue.pending() === 0 && dbgB.queue.pending() === 0,
     rot: (id) => scene.doc().objects[id].transform.rotation,
     /** what each card really is */
     secretNames: () => Object.fromEntries(Object.entries(scene.doc().objects).filter(([, o]) => o.traits?.["probe.secret"]).map(([id, o]) => [id, o.traits["probe.secret"].name])),
-    toast: () => hostA.querySelector(".toast")?.textContent ?? "",
-    /** file both pawns in a new group, select it with the move gizmo, and move the gizmo's pivot by dx through the calls a gizmo drag makes */
-    async moveGroup(dx) {
+    toast: () => [...hostA.querySelectorAll(".toast")].map((e) => e.textContent).join(" | "),
+    /** file both pawns in a new group */
+    groupPawns() {
       const p0 = byName("Pawn 1"), p1 = byName("Pawn 2");
       scene.change((d) => {
         d.objects.pawns = { kind: "group", name: "Pawns", group: null, visible: true, opacity: 1 };
@@ -204,47 +195,14 @@ try {
         d.objects[p0].group = "pawns";
         d.objects[p1].group = "pawns";
       });
-      await sleep(100);
-      hostA.querySelector('.object-row[data-id="pawns"] .row-main').click();
-      const gizmo = hostA.querySelector(".gizmo");
-      gizmo.value = "translate";
-      gizmo.dispatchEvent(new Event("change"));
-      await sleep(100);
-      const held = vp.gizmo.object === vp.pivot?.node;
-      const before = [p0, p1].map((id) => [...scene.doc().objects[id].transform.position]);
-      vp.startGroupDrag();
-      vp.pivot.node.position.x += dx;
-      vp.pivot.node.updateMatrixWorld(true);
-      vp.dragGroup();
-      vp.endGroupDrag();
-      await sleep(100);
-      const after = [p0, p1].map((id) => [...scene.doc().objects[id].transform.position]);
-      return { held, before, after };
+      return [p0, p1];
     },
-    /** move an object with the gizmo, as TransformControls does it (dragging, change events), without letting go: where B shows it */
-    async gizmoDrag(id, dx) {
-      hostA.querySelector(`.object-row[data-id="${id}"] .row-main`).click();
-      const gizmo = hostA.querySelector(".gizmo");
-      gizmo.value = "translate";
-      gizmo.dispatchEvent(new Event("change"));
-      await sleep(50);
-      const g = vp.objects.get(id).group;
-      const was = scene.doc().objects[id].transform.position[0];
-      vp.gizmo.dragging = true;
-      g.position.x += dx;
-      vp.gizmo.dispatchEvent({ type: "change" });
-      await sleep(150);
-      const seenByB = dbgB.viewport.objects.get(id).group.position.x;
-      const inDoc = scene.doc().objects[id].transform.position[0];
-      // let go
-      vp.gizmo.dragging = false;
-      vp.gizmo.dispatchEvent({ type: "dragging-changed", value: false });
-      await sleep(150);
-      return { was, seenByB, inDocWhileDragging: inDoc, inDocAfter: scene.doc().objects[id].transform.position[0], bAfter: dbgB.viewport.objects.get(id).group.position.x };
-    },
+    row: (id) => { const e = hostA.querySelector(`.object-row[data-id="${id}"] .row-main`) ?? hostA.querySelector(`.object-row[data-id="${id}"]`); const r = e?.getBoundingClientRect(); return r && [r.x + Math.min(40, r.width / 2), r.y + r.height / 2]; },
+    /** where the gizmo's proxy is (world) and the axis it's hovering */
+    gizmo: () => { const g = dbgA.host.instanceOf("scene.gizmo")?.debug; if (!g?.tc || g.tc.object !== g.proxy) return null; g.proxy.updateMatrixWorld(); const e = g.proxy.matrixWorld.elements; return { at: [e[12], e[13], e[14]], axis: g.tc.axis ?? null, target: g.target }; },
     hover: (id) => {
       const b = vp.objectBox(id, { hints: false });
-      return window.__table.screen([(b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2]);
+      return pageOf(vp, [(b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2]);
     },
   };
   window.__ready = true;

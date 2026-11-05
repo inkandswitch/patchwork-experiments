@@ -127,7 +127,7 @@ try {
   report.screens = { default: await c.shot("default.png") };
   report.benchDefault = await c.evaluate("window.__probe.benchDefault()");
   report.search = await c.evaluate(`window.__probe.searchSelect("mesh hull")`);
-  report.search.clickedHull = await c.evaluate(`(async () => { const ok = window.__probe.selectFirst("HULL"); await new Promise((r) => setTimeout(r, 300)); return { ok, about: document.querySelector(".inspector .about-title")?.textContent ?? null, status: document.querySelector(".inspector .status-line")?.textContent ?? null }; })()`);
+  report.search.clickedHull = await c.evaluate(`(async () => { const ok = window.__probe.selectFirst("HULL"); await new Promise((r) => setTimeout(r, 300)); return { ok, about: document.querySelector(".about-title")?.textContent ?? null, status: document.querySelector(".inspector-body .status-line")?.textContent ?? null }; })()`);
   report.screens.inspector = await c.shot("inspector-hull.png");
   report.search.afterEsc = await c.evaluate("window.__probe.clearSearch()");
   report.screens.outline = await c.shot("outline-revealed.png");

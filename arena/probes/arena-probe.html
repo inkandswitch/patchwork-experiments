@@ -99,6 +99,7 @@ try {
   const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
   const dbgOf = (w) => (w === "b" ? dbgB : dbgA);
   const hostOf = (w) => (w === "b" ? hostB : hostA);
+  const tracerCount = {};
   window.__p = {
     A: dbgA, B: dbgB, hostA, hostB, errors, scene, mode,
     doc: () => scene.doc(),
@@ -137,10 +138,38 @@ try {
       }
       return out;
     },
+    /** how many tracers (lines) the arena has ever drawn in a view: they live
+        120 ms, too short to catch by looking (counted from watchTracers() on) */
+    watchTracers(w) {
+      for (const g of dbgOf(w).viewport.layers.get("arena") ?? []) {
+        if (g.__counted) continue;
+        g.__counted = true;
+        const add = g.add.bind(g);
+        g.add = (...objs) => { for (const o of objs) if (o.isLine) tracerCount[w ?? "a"] = (tracerCount[w ?? "a"] ?? 0) + 1; return add(...objs); };
+      }
+    },
+    tracersSeen: (w) => tracerCount[w ?? "a"] ?? 0,
     /** another view's presence keys, as this view sees them */
     peerKeys: (w) => Object.values(dbgOf(w).presence.get()).map((p) => ({ viewer: p.viewer, keys: p.keys })),
     labels: (w) => [...hostOf(w).querySelectorAll(".label")].map((e) => e.textContent.trim()).filter(Boolean),
     notices: (w) => (dbgOf(w).local.get().notices ?? []).map((n) => n.text),
+    /** the extensions drawing in the world (viewport layers with anything in them) */
+    layers: (w) => [...dbgOf(w).viewport.layers.entries()].filter(([, s]) => [...s].some((g) => g.children.length)).map(([k]) => k),
+    /** what's on screen besides the canvas: the stage root's visible element children, by class */
+    chrome(w) {
+      const root = hostOf(w).querySelector(".scene-stage");
+      const out = [];
+      for (const e of root.querySelectorAll("*")) {
+        if (e.tagName === "CANVAS" || !e.className || typeof e.className !== "string") continue;
+        const r = e.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2 || getComputedStyle(e).visibility === "hidden") continue;
+        if (e.parentElement !== root && e.parentElement?.parentElement !== root) continue; // top two levels
+        out.push(e.className);
+      }
+      return out;
+    },
+    viewRect(w) { const r = hostOf(w).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
+    resize(w, width, height) { const h = hostOf(w); h.style.width = `${width}px`; h.style.height = `${height}px`; },
     kitsOn(id, w) {
       dbgOf(w).local.swap((l) => ({ ...l, kits: { on: [...new Set([...(l.kits?.on ?? []), id])], off: (l.kits?.off ?? []).filter((k) => k !== id) } }));
     },

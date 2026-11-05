@@ -62,6 +62,16 @@ try {
   const blockGLB = file("block.glb", { meshes: [box(0.05, 0.032, 0.05, "#e9b44c")] });
   const pawnGLB = file("pawn.glb", { meshes: [box(0.016, 0.03, 0.016, "#3a78d8")] });
   window.blockUrl = blockGLB.url;
+  // a 20 mm cube as binary STL, Z-up, on z = 0: built by the file-stl source
+  const cubeSTL = (n = 20) => {
+    const v = [[0,0,0],[n,0,0],[n,n,0],[0,n,0],[0,0,n],[n,0,n],[n,n,n],[0,n,n]];
+    const f = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]];
+    const buf = new ArrayBuffer(84 + f.length * 50), dv = new DataView(buf);
+    dv.setUint32(80, f.length, true);
+    f.forEach((tri, i) => tri.forEach((vi, k) => v[vi].forEach((c, j) => dv.setFloat32(84 + i * 50 + 12 + (k * 3 + j) * 4, c, true))));
+    return new Uint8Array(buf);
+  };
+  window.stlUrl = repo.add({ "@patchwork": { type: "file" }, name: "cube.stl", extension: "stl", mimeType: "model/stl", content: cubeSTL() }).url;
   const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
   const objects = { board: obj("Board", boardGLB, [0, 0, 0], { locked: true }) };
   for (let i = 0; i < 3; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.07, 0, -0.1]);
@@ -99,6 +109,7 @@ try {
       const r = dbg.viewport.canvas.getBoundingClientRect();
       return { x: r.left + p.x, y: r.top + p.y };
     },
+    repo,
     loaded: (dbg = dbgA) => ["board", "b0", "b1", "b2", "p0", "p1"].every((id) => dbg.viewport.contentOf(id)?.loaded),
     running: (dbg = dbgA) => dbg.local.get().running.map((r) => r.id),
     text: (sel, host = hostA) => [...host.querySelectorAll(sel)].map((e) => e.textContent.trim()),

@@ -273,14 +273,18 @@ export const plugins = [
       "scene.keys",
       "scene.menu",
       "scene.frame",
+      // The sidebar shows panels in running order: Objects, Inspector, then
+      // Dimensions, as the old tool had them. So these two come before
+      // measure (which brings dimensions in right after it). Neither claims
+      // canvas input, so being early changes nothing else.
+      "scene.outline",
+      "scene.inspector",
       "scene.measure",
       "scene.handles",
       "scene.gizmo",
       "scene.hand",
       "scene.dimensions",
       "scene.select",
-      "scene.outline",
-      "scene.inspector",
       "scene.grid",
       "scene.axes",
       "scene.bounds",
