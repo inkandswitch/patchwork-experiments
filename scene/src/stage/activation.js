@@ -11,18 +11,14 @@ const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") :
 export const traitKeys = (o) => (o?.traits && typeof o.traits === "object" ? Object.keys(o.traits) : []);
 
 /**
- * Why the doc calls for this extension: "scene" (a scene trait or legacy
- * scene field), "objects" (only object traits or legacy object fields), or
- * null. (`always` and kits are the viewer's reasons: see activeSet.)
+ * Why the doc calls for this extension: "scene" (a scene trait), "objects"
+ * (only object traits), or null. (`always` and kits are the viewer's reasons: see activeSet.)
  */
 export function docReason(meta, d) {
   const traits = new Set(list(meta?.traits));
-  if (list(meta?.legacy?.scene).some((k) => d?.[k] != null)) return "scene";
   for (const k of traitKeys(d)) if (traits.has(k)) return "scene";
-  const legacyObjects = list(meta?.legacy?.objects);
   for (const o of Object.values(d?.objects ?? {})) {
     if (!o) continue;
-    if (legacyObjects.some((k) => o[k] != null)) return "objects";
     for (const k of traitKeys(o)) if (traits.has(k)) return "objects";
   }
   return null;

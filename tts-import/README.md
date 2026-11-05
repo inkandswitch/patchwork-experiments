@@ -184,8 +184,8 @@ shape.
 - a `plain-deck` doc per face-down TTS deck: `{ "@patchwork": { type: "plain-deck" }, title, objects: { [objectId]: { sourceUrl, name } } }`;
 - the `scene`: passthrough objects (`providerId: "file-glb"`, `renderUrl: null`) at their transforms with
   `hint.bounds`, groups for decks / stacks / bag contents / states, `locked`, traits (`tabletop.hidden` on hidden cards, `tabletop.seats` on the scene), `infoUrl` = the
-  import doc (the PDF's file doc for a `Custom_PDF`), `seats`, `view: { units: "cm", snap: true,
-  defaultGizmo: "hand", grid: false, axes: false }` and a camera over the table from the near side.
+  import doc (the PDF's file doc for a `Custom_PDF`), and `view: { units: "cm", snap: true,
+  tool: "hand", grid: false, axes: false, home }`, `home` being a view over the table from the near side.
 
 ## Not yet
 

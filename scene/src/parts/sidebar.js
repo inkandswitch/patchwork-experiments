@@ -1,10 +1,8 @@
 // scene.sidebar: the panel stack at the right (old tool.js "panels", ~2029-2089).
 //
 // It presents every running extension's `panels` ([{ id, title, pinned?, mount(el) }]):
-// each a <section> with a title that folds it. The order is doc.view.panels
-// first (old docs: the panels that start open, in that order), then running
-// order. A panel the doc lists nowhere starts folded when the doc lists any;
-// after that, folding is this viewer's alone (localStorage
+// each a <section> with a title that folds it, in running order. Every panel
+// starts open; folding is this viewer's alone (localStorage
 // "scene-panels:<url>"). A `pinned` panel (the inspector's) never folds.
 //
 // mount(body, { head, section }) is called once per panel object; what it
@@ -39,23 +37,9 @@ function writeFolds(key, folds) {
   }
 }
 
-/**
- * The panel order: the doc's list first (ids that are there), then the rest
- * in the order given. Pure.
- * @param {string[]} ids  in running order
- * @param {string[] | null} listed  doc.view.panels
- */
-export function panelOrder(ids, listed) {
-  if (!Array.isArray(listed)) return [...ids];
-  const l = listed.filter((x) => typeof x === "string");
-  return [...l.filter((id) => ids.includes(id)), ...ids.filter((id) => !l.includes(id))];
-}
-
-/** Is this panel folded: never if pinned; else the viewer's choice, else folded when the doc lists others but not it. Pure. */
-export function isFolded(id, folds, listed, pinned = false) {
-  if (pinned) return false;
-  if (folds.has(id)) return folds.get(id);
-  return Array.isArray(listed) && !listed.includes(id);
+/** Is this panel folded: never if pinned; else the viewer's choice, else open. Pure. */
+export function isFolded(id, folds, pinned = false) {
+  return !pinned && folds.get(id) === true;
 }
 
 function create(api) {
@@ -80,7 +64,7 @@ function create(api) {
     if (!entry || entry.panel.pinned) return;
     folds.set(id, !entry.section.hasAttribute("data-folded"));
     writeFolds(foldKey, folds);
-    layout(api.doc().view?.panels ?? null, true);
+    layout(true);
   }
 
   function mount(ext, panel) {
@@ -150,10 +134,9 @@ function create(api) {
   }
 
   // Order and folding, touched only when they change.
-  function layout(listed, force = false) {
-    const ids = [...mounted.keys()];
-    const order = panelOrder(ids, listed);
-    const key = JSON.stringify([order, Array.isArray(listed) ? listed : null, [...folds]]);
+  function layout(force = false) {
+    const order = [...mounted.keys()];
+    const key = JSON.stringify([order, [...folds]]);
     if (!force && key === lastLayout) return;
     lastLayout = key;
     const orderKey = order.join("\u0000");
@@ -163,7 +146,7 @@ function create(api) {
     }
     for (const id of order) {
       const { section, title, panel } = mounted.get(id);
-      const fold = isFolded(id, folds, listed, !!panel.pinned);
+      const fold = isFolded(id, folds, !!panel.pinned);
       section.toggleAttribute("data-folded", fold);
       if (title.dataset.collapse != null) title.setAttribute("aria-expanded", String(!fold));
     }
@@ -188,7 +171,7 @@ function create(api) {
       const isHidden = hidden();
       if (edge.hidden !== isHidden) edge.hidden = isHidden;
       reconcile();
-      layout(scene?.d?.view?.panels ?? null);
+      layout();
       // a hidden sidebar's panels wait until it's shown again
       if (isHidden) return;
       refresh(scene, local);

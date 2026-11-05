@@ -102,7 +102,7 @@ try {
     });
     if (o.infoUrl) o.infoUrl = mapUrl(o.infoUrl, (key) => repo.add({ "@patchwork": { type: "markdown" }, content: `# ${key}\n\n(probe stand-in for the imported markdown doc)` }).url);
   }
-  if (params.get("camera") === "none") sceneJson.camera = null;
+  if (params.get("camera") === "none") delete sceneJson.view?.home;
   const scene = repo.add(sceneJson);
   P.sceneUrl = scene.url;
   const ids = (pred) => Object.entries(objects).filter(([, o]) => pred(o)).map(([id]) => id);

@@ -130,9 +130,9 @@ try {
     }),
   });
   const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Hand probe", objects, order: Object.keys(objects), dimensions: {},
-    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand" },
-    camera: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] },
+    "@patchwork": { type: "scene" }, title: "Hand probe", objects, order: Object.keys(objects), dimensions: {}, traits: {},
+    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
+            home: { position: [0.05, 0.55, 0.6], target: [0.05, 0, 0] } },
   });
   try { localStorage.clear(); } catch {}
   const Tool = (await getRegistry("patchwork:tool").load("scene")).module;

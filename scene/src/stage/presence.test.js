@@ -57,7 +57,7 @@ function fakeBus() {
       on: (ev, fn) => ev === "ephemeral-message" && listeners.add(fn),
       off: (ev, fn) => listeners.delete(fn),
       listeners,
-      // a message from outside (an old peer, a forged one)
+      // a message from outside (a forged or broken one)
       inject: (message) => [...listeners].forEach((fn) => fn({ message, senderId: "x" })),
     };
     handles.push(h);
@@ -241,19 +241,19 @@ describe("presence state", () => {
     expect(sent("A", "scene:presence").length).toBe(n);
   });
 
-  it("ignores old-format, malformed and own messages", () => {
+  it("ignores malformed and own messages", () => {
     const fn = vi.fn();
     b.watch(fn);
     const holds = vi.fn();
     b.watchHolds(holds);
     for (const m of [
-      { type: "scene:presence", selected: "o1", hover: null },
-      { type: "scene:carry", id: "o1", transform: { position: [1, 2, 3] } },
+      { type: "scene:presence", selected: "o1", hover: null }, // no session
       { type: "scene:presence", session: "sz", seq: "1", keys: {} },
       { type: "scene:presence", session: "sz", seq: 1, keys: "nope" },
       { type: "scene:presence", session: "sb", viewer: "bob", seq: 99, keys: {} }, // b's own session
       { type: "scene:pose", session: "sz", id: "o1", transform: 3, seq: 1 },
       { type: "scene:pose", session: "sz", transform: {}, seq: 1 },
+      { type: "scene:pose", session: "sz", id: "o1", transform: { position: [1, 2, 3] }, seq: 1 }, // a hold with no stamp
       { type: "scene:send", session: "sz", ext: "x", data: 1, n: 1 },
       null,
       "hello",
@@ -372,7 +372,7 @@ describe("pose holds", () => {
 
   it("drops a hold not refreshed for 3 s (the holder went silent)", () => {
     // forged peer that never refreshes
-    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o1", parent: null, transform: T(1), seq: 1 });
+    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o1", parent: null, transform: T(1), since: 1, seq: 1 });
     expect(b.heldBy("o1")).toBe("sz");
     clock.advance(HOLD_TTL_MS);
     expect(b.heldBy("o1")).toBe(null);
@@ -389,7 +389,7 @@ describe("pose holds", () => {
   it("heldBy and remoteHolds report the earliest of two holders", () => {
     a.hold("hand", "o1", null, T(1));
     clock.advance(100);
-    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o1", parent: null, transform: T(9), seq: 1 });
+    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o1", parent: null, transform: T(9), since: 50, seq: 1 });
     expect(b.heldBy("o1")).toBe("sa");
     expect(b.remoteHolds().get("o1").transform).toEqual(T(1));
     a.release("hand", "o1");

@@ -19,9 +19,9 @@
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
 //   - the router (router.js): DOM input → events, down the chain.
-//   - the doc loop: core migration, derive, the running set, extension
-//     migrations, display and content; then the update flush (once per UI
-//     pass): each instance's update(), scheduled work, lenses, atmosphere.
+//   - the doc loop: derive, the running set, display and content; then the
+//     update flush (once per UI pass): each instance's update(), scheduled
+//     work, lenses, atmosphere.
 
 import css from "./stage.css?inline";
 import * as THREE from "three";
@@ -45,7 +45,6 @@ import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } 
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
 import { applyMatrix, invertMatrix, normalizeTransform } from "../transform.js";
-import { migrateCore, needsCoreMigration } from "../migrate.js";
 
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
@@ -197,11 +196,11 @@ export function cleanCamera(c) {
 
 /**
  * Where the camera starts (STAGE.md, "Saving"): this viewer's saved camera,
- * else the doc's suggested home, else the doc's old shared camera, else null
+ * else the doc's suggested home, else null
  * (a frame extension frames on first content).
  */
 export function initialCamera({ stored = null, doc = null } = {}) {
-  return cleanCamera(stored) ?? cleanCamera(doc?.view?.home) ?? cleanCamera(doc?.camera) ?? null;
+  return cleanCamera(stored) ?? cleanCamera(doc?.view?.home) ?? null;
 }
 
 function contestedText(s) {
@@ -394,7 +393,7 @@ export default function Stage(handle, element) {
   }
 
   // The camera is this viewer's: from localStorage, else the doc's home, else
-  // the doc's old camera, else left for a frame extension.
+  // left for a frame extension.
   let cameraRestored = false;
   {
     const cam = initialCamera({ stored: readJSON(cameraKey), doc: doc() });
@@ -1453,8 +1452,8 @@ export default function Stage(handle, element) {
 
   // ─── the host ─────────────────────────────────────────────────────────────
 
-  // An extension started or stopped: the doc loop runs again (its migrations,
-  // and the update flush that first shows it the scene).
+  // An extension started or stopped: the doc loop runs again (and the update
+  // flush that first shows it the scene).
   let resyncQueued = false;
   function resync() {
     if (resyncQueued || dead) return;
@@ -1511,7 +1510,7 @@ export default function Stage(handle, element) {
     const widget = ev.widget;
     const hit = ev.hit;
     const chain = hit?.id && m.objects[hit.id] ? hitChain(hit.id, m.parents, m.groups, m.objects) : [];
-    const holders = holdersFor(running, chain, (oid) => traitKeys(m.objects[oid]), (oid) => m.objects[oid]);
+    const holders = holdersFor(running, chain, (oid) => traitKeys(m.objects[oid]));
     const order = chainOrder({ running, widgetOwner: widgetWins(widget, hit) ? widget.owner : null, holders });
     return { order, holderOf: (id) => holders.get(id) ?? null };
   }
@@ -1608,13 +1607,9 @@ export default function Stage(handle, element) {
   function sync() {
     if (dead) return;
     const d = doc();
-    // the scene's own old shapes first, so extensions see the current one
-    if (needsCoreMigration(d)) return void handle.change((dd) => migrateCore(dd));
     const t0 = now();
     const m = derive();
     host.sync(d);
-    // a migration's change runs this loop again, with the doc it made
-    if (host.migrate(d, (fn) => handle.change(fn))) return;
     applyDoc(m);
     // other views' holds: a landed one the doc has caught up with goes, and a
     // hold whose parent the doc changed is shown (or not) again

@@ -180,12 +180,12 @@ describe("the stage's pure helpers", () => {
     expect(sameTransform({ position: [1, 2, 3] }, { position: [1, 2, 3.1] })).toBe(false);
     expect(sameTransform(null, {})).toBe(false);
   });
-  it("the camera: this viewer's, else the doc's home, else the old shared camera", () => {
+  it("the camera: this viewer's, else the doc's home, else none (a top-level doc.camera is not a home)", () => {
     const home = { position: [1, 1, 1], target: [0, 0, 0] };
-    const old = { position: [2, 2, 2], target: [0, 0, 0] };
-    expect(initialCamera({ stored: { position: [3, 3, 3], target: [0, 1, 0], fov: 30 }, doc: { view: { home }, camera: old } })).toEqual({ position: [3, 3, 3], target: [0, 1, 0], fov: 30 });
-    expect(initialCamera({ stored: { position: "nope" }, doc: { view: { home }, camera: old } })).toEqual(home);
-    expect(initialCamera({ doc: { camera: old } })).toEqual(old);
+    const stray = { position: [2, 2, 2], target: [0, 0, 0] };
+    expect(initialCamera({ stored: { position: [3, 3, 3], target: [0, 1, 0], fov: 30 }, doc: { view: { home } } })).toEqual({ position: [3, 3, 3], target: [0, 1, 0], fov: 30 });
+    expect(initialCamera({ stored: { position: "nope" }, doc: { view: { home } } })).toEqual(home);
+    expect(initialCamera({ doc: { camera: stray } })).toBeNull();
     expect(initialCamera({ doc: {} })).toBeNull();
   });
   it("status: what's loading, building or broken", () => {

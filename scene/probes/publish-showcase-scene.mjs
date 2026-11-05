@@ -30,7 +30,6 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { newRenderDoc, DEFAULT_VIEW } from "../src/datatype.js"
 import { defaultParams } from "../src/staleness.js"
-import { needsCoreMigration } from "../src/migrate.js"
 import { isGroup, resolveGroups } from "../src/groups.js"
 import { resolveParents, worldMatrix } from "../src/hierarchy.js"
 import { applyMatrix } from "../src/transform.js"
@@ -215,12 +214,11 @@ const sceneDoc = {
     kits: ["model"], // the editor; a viewer can turn kits on and off for themselves
     home: { position: [3.9, 2.9, 3.4], target: [0.3, 0.22, -1.15] },
   },
-  camera: null,
 }
 
 // ─── checks: the stage opens this as it is ───────────────────────────────────
 const problems = []
-if (needsCoreMigration(sceneDoc)) problems.push("the stage would migrate it (an old shape somewhere)")
+for (const k of ["traits", "view", "dimensions"]) if (sceneDoc[k] == null) problems.push(`no ${k} map (every scene is made with one)`)
 const groups = resolveGroups(objects)
 for (const [id, o] of Object.entries(objects)) {
   if (isGroup(o) && ("transform" in o || "parent" in o)) problems.push(`group ${id} has a transform or parent`)

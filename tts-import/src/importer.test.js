@@ -52,7 +52,9 @@ describe("runImport on the tiny fixture", () => {
 
   it("lays out the table: every object a passthrough GLB at its transform, in the hand", async () => {
     const { scene, report, doc } = await importFixture();
-    expect(scene.view).toMatchObject({ defaultMode: "hand", snap: true, grid: false });
+    expect(scene.view).toMatchObject({ tool: "hand", snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.camera).toBeUndefined();
+    expect(scene.traits).toEqual(expect.any(Object));
     const objs = Object.entries(scene.objects);
     for (const [, o] of objs.filter(([, o]) => o.kind !== "group")) {
       expect(o.providerId).toBe("file-glb");

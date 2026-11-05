@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
-import sidebar, { panelOrder, isFolded } from "./sidebar.js";
+import sidebar, { isFolded } from "./sidebar.js";
 import keys from "./keys.js";
 
 /** An extension contributing panels, recording what the sidebar asked of them. */
@@ -37,14 +37,12 @@ function panelsExt(ids, calls) {
   };
 }
 
-describe("panel order and folding (pure)", () => {
-  it("lists the doc's panels first, then the rest; folds the unlisted ones unless the viewer says", () => {
-    expect(panelOrder(["objects", "inspector", "dimensions", "t"], ["t", "inspector"])).toEqual(["t", "inspector", "objects", "dimensions"]);
-    expect(panelOrder(["a", "b"], null)).toEqual(["a", "b"]);
-    expect(isFolded("objects", new Map(), ["t"])).toBe(true);
-    expect(isFolded("objects", new Map([["objects", false]]), ["t"])).toBe(false);
-    expect(isFolded("inspector", new Map([["inspector", true]]), ["t"], true)).toBe(false); // pinned
-    expect(isFolded("objects", new Map(), null)).toBe(false);
+describe("folding (pure)", () => {
+  it("open unless the viewer folded it; a pinned panel never folds", () => {
+    expect(isFolded("objects", new Map())).toBe(false);
+    expect(isFolded("objects", new Map([["objects", true]]))).toBe(true);
+    expect(isFolded("objects", new Map([["objects", false]]))).toBe(false);
+    expect(isFolded("inspector", new Map([["inspector", true]]), true)).toBe(false); // pinned
   });
 });
 
@@ -80,21 +78,21 @@ describe("scene.sidebar", () => {
   const sections = () => [...s.root.querySelectorAll(".sidebar > [data-panel]")];
   const section = (id) => s.root.querySelector(`.sidebar > [data-panel="${id}"]`);
 
-  it("orders panels by view.panels, folding the ones it doesn't list; unfolding is the viewer's", async () => {
-    await mount({ panels: ["test.table", "inspector"] });
-    expect(sections().map((x) => x.dataset.panel)).toEqual(["test.table", "inspector", "objects", "dimensions"]);
-    expect(section("objects").hasAttribute("data-folded")).toBe(true);
-    expect(section("test.table").hasAttribute("data-folded")).toBe(false);
+  it("orders panels by running order, all open; folding is the viewer's and remembered", async () => {
+    // a doc's view.panels is not read
+    await mount({ panels: ["inspector"] });
+    expect(sections().map((x) => x.dataset.panel)).toEqual(["test.table", "objects", "inspector", "dimensions"]);
+    expect(sections().some((x) => x.hasAttribute("data-folded"))).toBe(false);
     expect(section("test.table").textContent).toContain("test.table here");
     // the panel's head is its own to add to
     expect(section("objects").querySelector(".panel-head .new-group")).toBeTruthy();
     section("objects").querySelector("[data-collapse]").click();
-    expect(section("objects").hasAttribute("data-folded")).toBe(false);
-    expect(JSON.parse(localStorage.getItem(`scene-panels:${s.handle.url}`))).toEqual({ objects: false });
+    expect(section("objects").hasAttribute("data-folded")).toBe(true);
+    expect(JSON.parse(localStorage.getItem(`scene-panels:${s.handle.url}`))).toEqual({ objects: true });
     // and it's remembered
     s.unmount();
     await mount({}, s);
-    expect(section("objects").hasAttribute("data-folded")).toBe(false);
+    expect(section("objects").hasAttribute("data-folded")).toBe(true);
   }, 30_000);
 
   it("never folds the inspector, which hides itself without a selection", async () => {

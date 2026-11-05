@@ -70,12 +70,12 @@ const stateOf = (id, target = null) => command(id).state(target, { scene: s.api(
 const transformOf = (id) => JSON.parse(JSON.stringify(s.doc().objects[id].transform));
 
 describe("the effective tool", () => {
-  it("is local, else the doc's suggestion (old names too), else move", () => {
+  it("is local, else the doc's suggestion (view.tool only), else move", () => {
     expect(effectiveTool({}, {})).toBe("move");
-    expect(effectiveTool({}, { view: { defaultMode: "hand" } })).toBe("hand");
-    expect(effectiveTool({}, { view: { defaultGizmo: "translate" } })).toBe("move");
-    expect(effectiveTool({}, { view: { tool: "rotate", defaultMode: "hand" } })).toBe("rotate");
-    expect(effectiveTool({ tool: "select" }, { view: { defaultMode: "hand" } })).toBe("select");
+    expect(effectiveTool({}, { view: { tool: "hand" } })).toBe("hand");
+    expect(effectiveTool({ tool: "select" }, { view: { tool: "hand" } })).toBe("select");
+    // retired names suggest nothing
+    expect(effectiveTool({}, { view: { defaultMode: "hand", defaultGizmo: "hand" } })).toBe("move");
   });
 });
 
@@ -91,7 +91,7 @@ describe("scene.hand commands", () => {
   });
 
   it("Hand is checked when the doc opens in the hand", async () => {
-    await mount({ doc: { view: { defaultMode: "hand" } } });
+    await mount({ doc: { view: { tool: "hand" } } });
     expect(stateOf("hand")).toMatchObject({ checked: true });
   });
 
@@ -111,7 +111,7 @@ describe("scene.hand commands", () => {
   });
 
   it("Snap follows the doc's suggestion until this viewer chooses", async () => {
-    await mount({ doc: { view: { defaultMode: "hand", snap: false } } });
+    await mount({ doc: { view: { tool: "hand", snap: false } } });
     expect(stateOf("snap")).toMatchObject({ checked: false });
   });
 });
@@ -145,7 +145,7 @@ describe("scene.hand input", () => {
   });
 
   it("a press that doesn't move is a tap it doesn't take (the click goes on), and holds nothing", async () => {
-    const { x, stub } = await mount({ doc: { view: { defaultMode: "hand" } } });
+    const { x, stub } = await mount({ doc: { view: { tool: "hand" } } });
     const session = x().input.press(press("a"));
     expect(session.tap(press("a"))).toBe(false);
     session.cancel();
@@ -156,7 +156,7 @@ describe("scene.hand input", () => {
 
 describe("scene.hand carrying", () => {
   it("lifts on the first move, follows the pointer floating, and writes only the final transform", async () => {
-    const { x, stub } = await mount({ doc: { view: { defaultMode: "hand" }, objects: { a: object({ name: "A", color: "#ff0000" }) } } });
+    const { x, stub } = await mount({ doc: { view: { tool: "hand" }, objects: { a: object({ name: "A", color: "#ff0000" }) } } });
     const session = x().input.press(press("a"));
     session.move(move(1, 2));
     expect(stub.holds.length).toBe(1);
@@ -175,7 +175,7 @@ describe("scene.hand carrying", () => {
   });
 
   it("rests on the highest surface under its footprint", async () => {
-    const { x, stub } = await mount({ doc: { view: { defaultMode: "hand" }, objects: { b: object({ name: "Block" }) } } });
+    const { x, stub } = await mount({ doc: { view: { tool: "hand" }, objects: { b: object({ name: "Block" }) } } });
     stub.surfaces.push({ id: "b", top: 0.4, min: [1.5, 1.5], max: [2.5, 2.5] });
     const session = x().input.press(press("a"));
     session.move(move(2, 2));
@@ -185,7 +185,7 @@ describe("scene.hand carrying", () => {
   });
 
   it("never lands on itself or what's attached to it", async () => {
-    const { x, stub } = await mount({ doc: { view: { defaultMode: "hand" }, objects: { kid: object({ parent: "a" }) } } });
+    const { x, stub } = await mount({ doc: { view: { tool: "hand" }, objects: { kid: object({ parent: "a" }) } } });
     stub.surfaces.push({ id: "a", top: 0.5, min: [-9, -9], max: [9, 9] }, { id: "kid", top: 0.7, min: [-9, -9], max: [9, 9] });
     const session = x().input.press(press("a"));
     session.move(move(1, 1));
@@ -195,7 +195,7 @@ describe("scene.hand carrying", () => {
   });
 
   it("Escape (the router's cancel) puts it back: a plain release, nothing written", async () => {
-    const { x, stub } = await mount({ doc: { view: { defaultMode: "hand" } } });
+    const { x, stub } = await mount({ doc: { view: { tool: "hand" } } });
     const session = x().input.press(press("a"));
     session.move(move(1, 1));
     expect(session.key({ key: "Escape" })).toBe(false); // left to the router, which cancels
@@ -207,7 +207,7 @@ describe("scene.hand carrying", () => {
 
   it("snaps to another object's connector, turning to its yaw; Alt and the pref place freely", async () => {
     const content = { board: { connectors: [{ position: [1, 0, 0], yaw: Math.PI / 2, tags: [] }], snapRadius: 0.5 } };
-    const { x } = await mount({ doc: { view: { defaultMode: "hand" }, objects: { board: object({ name: "Board" }) } }, content });
+    const { x } = await mount({ doc: { view: { tool: "hand" }, objects: { board: object({ name: "Board" }) } }, content });
     let session = x().input.press(press("a"));
     session.move(move(1.2, 0.1));
     session.end(move(1.2, 0.1));
@@ -235,7 +235,7 @@ describe("scene.hand carrying", () => {
 
   it("a tagged connector takes only objects with one of its tags", async () => {
     const content = { board: { connectors: [{ position: [1, 0, 0], yaw: null, tags: ["card"] }], snapRadius: 0.5 } };
-    const { x } = await mount({ doc: { view: { defaultMode: "hand" }, objects: { board: object(), c: object({ tags: ["card"] }) } }, content });
+    const { x } = await mount({ doc: { view: { tool: "hand" }, objects: { board: object(), c: object({ tags: ["card"] }) } }, content });
     let session = x().input.press(press("a"));
     session.move(move(1.2, 0));
     session.end(move(1.2, 0));
@@ -248,7 +248,7 @@ describe("scene.hand carrying", () => {
   });
 
   it("Q / E turn it 45° and F turns it over while carried", async () => {
-    const { x } = await mount({ doc: { view: { defaultMode: "hand" } } });
+    const { x } = await mount({ doc: { view: { tool: "hand" } } });
     let session = x().input.press(press("a"));
     expect(session.key({ key: "q" })).toBe(false); // not lifted yet
     session.move(move(1, 1));
@@ -270,7 +270,7 @@ describe("scene.hand carrying", () => {
   });
 
   it("other keys go on down the chain", async () => {
-    const { x } = await mount({ doc: { view: { defaultMode: "hand" } } });
+    const { x } = await mount({ doc: { view: { tool: "hand" } } });
     const session = x().input.press(press("a"));
     session.move(move(1, 1));
     expect(session.key({ key: "h" })).toBe(false);
@@ -284,7 +284,7 @@ describe("scene.hand carrying", () => {
       module: { create: () => ({ landing: (id, p, hitId) => (asked.push({ id, p, hitId }), p[0] > 2 ? { faceUp: true } : null) }) },
     };
     const { x } = await mount({
-      doc: { view: { defaultMode: "hand" }, objects: { a: object({ transform: { position: [0, 0.1, 0], rotation: [0, 0, Math.PI], scale: 1 } }) } },
+      doc: { view: { tool: "hand" }, objects: { a: object({ transform: { position: [0, 0.1, 0], rotation: [0, 0, Math.PI], scale: 1 } }) } },
       extensions: [rules],
       kit: ["scene.hand", "t.rules"],
     });
@@ -305,7 +305,7 @@ describe("scene.hand carrying", () => {
 
   it("writes the transform under its doc parent", async () => {
     const { x } = await mount({
-      doc: { view: { defaultMode: "hand" }, objects: { p: object({ transform: { position: [5, 0, 0], rotation: [0, 0, 0], scale: 1 } }), a: object({ parent: "p" }) } },
+      doc: { view: { tool: "hand" }, objects: { p: object({ transform: { position: [5, 0, 0], rotation: [0, 0, 0], scale: 1 } }), a: object({ parent: "p" }) } },
     });
     // grabbed at its middle (a grab off-centre keeps that offset)
     const session = x().input.press(press("a", { hit: { id: "a", point: [5, 0.1, 0], distance: 1 } }));
@@ -317,7 +317,7 @@ describe("scene.hand carrying", () => {
 
   it("draws the landing ring on its world layer, accent when snapped, and hides it after", async () => {
     const content = { board: { connectors: [{ position: [1, 0, 0], yaw: null, tags: [] }], snapRadius: 0.5 } };
-    const { api, x } = await mount({ doc: { view: { defaultMode: "hand" }, objects: { board: object() } }, content });
+    const { api, x } = await mount({ doc: { view: { tool: "hand" }, objects: { board: object() } }, content });
     const layers = [];
     const world = api.world;
     api.world = (o) => {
@@ -389,7 +389,7 @@ describe("scene.hand carrying", () => {
 
 describe("scene.hand grab offset", () => {
   it("keeps where it was grabbed, in plan, so it doesn't jump on pickup", async () => {
-    const { x } = await mount({ doc: { view: { defaultMode: "hand" } } });
+    const { x } = await mount({ doc: { view: { tool: "hand" } } });
     const session = x().input.press(press("a", { hit: { id: "a", point: [0.05, 0.1, -0.05], distance: 1 } }));
     session.move(move(1, 1));
     session.end(move(1, 1));

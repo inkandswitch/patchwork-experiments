@@ -175,12 +175,6 @@ poker), with keys from their accounts: nobody knows which card is where, and a
 card's face can only be decrypted by the players the rule above lets see it.
 See card-table's README for how, and for what it doesn't do yet.
 
-**Older tables.** Tables made before this package had a scene extension kept
-these as top-level fields (`seats`, `zone`, `hidden`) and their plain decks as
-`scene-secrets` docs; the extension moves them into traits (and renames the
-deck's type) the first time a table is opened; a table with no `view.kits`
-gets `[]`, so it opens without the editor's toolbar and sidebar.
-
 ## Documents
 
 ### `tabletop-game`
@@ -246,8 +240,9 @@ one copy, every copy at its supply spot, the board at the top level; each deck
 shuffled into one group, dealt, and the rest stacked. Its seats, empty
 (`tabletop.seats`). If anything is hidden, a doc per deck, made first, which
 its cards name (`tabletop.hidden`).
-Its view opens in the hand (`view.defaultMode: "hand"`) with snapping on, the
-grid and axes off, units in cm, and suggests no kits (`view.kits: []`): a
+Its view opens in the hand (`view.tool: "hand"`) with snapping on, the
+grid and axes off, units in cm, looking from the game's `camera`
+(`view.home`), and suggests no kits (`view.kits: []`): a
 table opens with no toolbar or sidebar, just the seat picker, the scene's
 notices and its Kits button (where a viewer can turn the editor on for
 themselves). The extension `requires` what playing needs: the scene's hand,
@@ -265,7 +260,7 @@ key map, right-click menu, framing and notices.
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
 | `src/setup.js` | a game → a fresh scene doc and its decks: shuffle, deal, stack (pure) |
-| `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, laying out a dropped deck, drawing face up, upgrading old tables |
+| `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, laying out a dropped deck, drawing face up |
 | `src/table/visibility.js` | who may see what: zones, seats, face up (pure) |
 | `src/table/plain-deck.js` | the plain deck: its datatype and resolver |
 | `src/glb.js` | the GLB encoder, copied from the scene package |

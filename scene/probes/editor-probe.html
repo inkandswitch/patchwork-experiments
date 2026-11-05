@@ -77,9 +77,9 @@ try {
   for (let i = 0; i < 3; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.07, 0, -0.1]);
   for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25]);
   const scene = repo.add({
-    "@patchwork": { type: "scene" }, title: "Editor probe", objects, order: Object.keys(objects), dimensions: {},
-    view: { units: "cm", grid: true, axes: true, bounds: false, snap: true },
-    camera: { position: [0.1, 0.6, 0.75], target: [0.1, 0, 0] },
+    "@patchwork": { type: "scene" }, title: "Editor probe", objects, order: Object.keys(objects), dimensions: {}, traits: {},
+    view: { units: "cm", grid: true, axes: true, bounds: false, snap: true,
+            home: { position: [0.1, 0.6, 0.75], target: [0.1, 0, 0] } },
   });
   window.sceneHandle = scene;
   try { localStorage.clear(); } catch {}

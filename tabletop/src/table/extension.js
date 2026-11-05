@@ -16,8 +16,8 @@
 // module has createResolver({ repo, handle, viewer, onChange }) and, to be
 // laid out when dropped, placement(doc) and bind(handle, ids).
 
-import { HIDDEN, SEATS, ZONE, docUrl, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf, visibility, zones } from "./visibility.js";
-import { LEGACY_PLAIN_DECK, PLAIN_DECK, plainResolver } from "./plain-deck.js";
+import { HIDDEN, SEATS, docUrl, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf, visibility, zones } from "./visibility.js";
+import { PLAIN_DECK, plainResolver } from "./plain-deck.js";
 
 
 const el = (tag, props = {}, ...children) => {
@@ -31,38 +31,6 @@ const el = (tag, props = {}, ...children) => {
   e.append(...children.filter((c) => c != null));
   return e;
 };
-
-/** Does this scene doc still have the fields the scene used to own? */
-export function needsMigration(d) {
-  if (d?.seats !== undefined) return true;
-  // a table suggests no kits: playing needs none of the editing UI
-  if (d?.traits?.[SEATS] && d.view && d.view.kits === undefined) return true;
-  return Object.values(d?.objects ?? {}).some((o) => o && (o.zone !== undefined || o.hidden !== undefined));
-}
-
-/** Move them into traits (inside a change). A table also opens on its own panel. */
-export function migrate(d) {
-  if (d.seats !== undefined) {
-    if (!d.traits) d.traits = {};
-    if (d.traits[SEATS] === undefined && d.seats) d.traits[SEATS] = JSON.parse(JSON.stringify(d.seats));
-    delete d.seats;
-  }
-  if (d.traits?.[SEATS] && d.view && d.view.kits === undefined) d.view.kits = [];
-  for (const o of Object.values(d.objects ?? {})) {
-    if (!o) continue;
-    for (const [field, key] of [
-      ["zone", ZONE],
-      ["hidden", HIDDEN],
-    ]) {
-      if (o[field] === undefined) continue;
-      if (o[field] != null) {
-        if (!o.traits) o.traits = {};
-        if (o.traits[key] === undefined) o.traits[key] = JSON.parse(JSON.stringify(o[field]));
-      }
-      delete o[field];
-    }
-  }
-}
 
 export default {
   create(api) {
@@ -94,14 +62,7 @@ export default {
         (async () => {
           const h = await repo.find(url);
           if (dead || decks.get(url) !== deck || !h) return;
-          let type = h.doc()?.["@patchwork"]?.type ?? null;
-          // a plain deck from before tabletop owned it
-          if (type === LEGACY_PLAIN_DECK) {
-            h.change((d) => {
-              if (d["@patchwork"]?.type === LEGACY_PLAIN_DECK) d["@patchwork"].type = PLAIN_DECK;
-            });
-            type = PLAIN_DECK;
-          }
+          const type = h.doc()?.["@patchwork"]?.type ?? null;
           deck.title = h.doc()?.title ?? null;
           const provider = await deckProvider(type);
           if (dead || decks.get(url) !== deck) return;
@@ -230,8 +191,6 @@ export default {
     }
 
     return {
-      needsMigration,
-      migrate,
       update(snapshot, local, prev) {
         if (snapshot === prev?.scene) return;
         scene = snapshot;
@@ -287,7 +246,7 @@ export default {
    */
   async drop(ctx, { url, doc, handle, group }) {
     const type = doc?.["@patchwork"]?.type ?? null;
-    if (type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return false; // it has no layout of its own
+    if (type === PLAIN_DECK) return false; // it has no layout of its own
     const provider = await deckProviderFor(ctx.registry, type).catch(() => null);
     if (!provider?.module?.placement) return false;
     const place = provider.module.placement(doc);
@@ -332,7 +291,7 @@ export default {
 
 /** The resolver factory for a deck doc's datatype: { create, module } or null. */
 async function deckProviderFor(registry, type) {
-  if (!type || type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return { create: plainResolver, module: null };
+  if (!type || type === PLAIN_DECK) return { create: plainResolver, module: null };
   const reg = await registry("tabletop:deck");
   const p = reg?.filter?.((x) => Array.isArray(x.supportedDatatypes) && x.supportedDatatypes.includes(type))?.[0];
   if (!p) return null;

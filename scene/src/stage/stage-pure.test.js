@@ -26,7 +26,6 @@ describe("activation", () => {
     { id: "outline", requires: ["sidebar"] },
     { id: "sidebar" },
     { id: "kits", always: true },
-    { id: "old", legacy: { objects: ["zone"] } },
   ];
   const kits = [
     { id: "model", extensions: ["select", "outline", "hand", "missing"] },
@@ -56,7 +55,6 @@ describe("activation", () => {
   it("an object trait is the objects' reason; a scene trait the scene's", () => {
     expect(docReason(metas[0], { objects: { a: { traits: { "tabletop.hidden": {} } } } })).toBe("objects");
     expect(docReason(metas[0], { traits: { "tabletop.seats": {} }, objects: {} })).toBe("scene");
-    expect(docReason(metas[8], { objects: { a: { zone: 1 } } })).toBe("objects");
     expect(docReason(metas[4], { objects: {} })).toBeNull();
   });
 
@@ -94,13 +92,6 @@ describe("the input chain", () => {
   it("holders: the nearest object up the hit chain with one of the extension's traits", () => {
     expect([...holders(["table", "card", "crate"])]).toEqual([["tabletop", "card"], ["arena", "crate"]]);
     expect(holders([]).size).toBe(0);
-  });
-
-  it("holders: an object with an old field the extension reads (legacy.objects) holds too", () => {
-    const old = [{ id: "table", meta: { traits: ["tabletop.seats"], legacy: { objects: ["zone"] } }, scope: "objects" }];
-    const objects = { card: { zone: "p1" }, box: {} };
-    expect([...holdersFor(old, ["box", "card"], () => [], (id) => objects[id])]).toEqual([["table", "card"]]);
-    expect(holdersFor(old, ["box"], () => [], (id) => objects[id]).size).toBe(0);
   });
 
   it("offers until something claims it; a failing handler is skipped", () => {

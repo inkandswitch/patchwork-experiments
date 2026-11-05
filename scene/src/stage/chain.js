@@ -25,30 +25,22 @@ export function chainOrder({ running, armed = null, widgetOwner = null, holders 
 }
 
 /**
- * For each running extension with traits (or old object fields it reads,
- * `legacy.objects`), the nearest object in the hit chain (the hit object,
- * what it's attached to, then its groups, nearest first) that carries one of
- * them.
+ * For each running extension with traits, the nearest object in the hit chain
+ * (the hit object, what it's attached to, then its groups, nearest first)
+ * that carries one of them.
  * @param {{ id: string, meta: object }[]} running
  * @param {string[]} hitChain  object ids, nearest first
  * @param {(id: string) => string[]} traitsOf  an object's trait keys
- * @param {(id: string) => object | undefined} [objectOf]  the object itself (for legacy fields)
  * @returns {Map<string, string>} extension id → object id
  */
-export function holdersFor(running, hitChain, traitsOf, objectOf = null) {
+export function holdersFor(running, hitChain, traitsOf) {
   const out = new Map();
   if (!hitChain?.length) return out;
   for (const r of running) {
     const mine = Array.isArray(r.meta?.traits) ? r.meta.traits : [];
-    const legacy = objectOf && Array.isArray(r.meta?.legacy?.objects) ? r.meta.legacy.objects : [];
-    if (!mine.length && !legacy.length) continue;
-    for (const oid of hitChain) {
-      const o = legacy.length ? objectOf(oid) : null;
-      if (traitsOf(oid).some((t) => mine.includes(t)) || (o && legacy.some((k) => o[k] != null))) {
-        out.set(r.id, oid);
-        break;
-      }
-    }
+    if (!mine.length) continue;
+    const oid = hitChain.find((id) => traitsOf(id).some((t) => mine.includes(t)));
+    if (oid != null) out.set(r.id, oid);
   }
   return out;
 }

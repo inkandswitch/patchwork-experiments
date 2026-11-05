@@ -22,11 +22,6 @@ import { activeSet, chosenKits, takesDrop } from "./activation.js";
 export const LINGER_MS = 2_000;
 /** While a lingering extension is busy, how often to look again. */
 export const BUSY_RECHECK_MS = 250;
-/** How many times one extension may migrate the doc in a session. */
-export const MAX_MIGRATIONS = 3;
-
-const MIGRATING_SCOPES = new Set(["scene", "objects"]);
-
 const listOf = (reg) => {
   try {
     return reg?.filter?.(() => true) ?? [];
@@ -100,7 +95,6 @@ export function createHost({
   let order = []; // running order: every rec's id
   let lastDoc = null; // the doc the running set was last worked out for
   let pending = null; // a doc sync() was given before the registries arrived
-  const attempts = new Map(); // id → migrations tried this session
   const offs = [];
 
   const ready = Promise.all([
@@ -323,40 +317,6 @@ export function createHost({
   const inputOf = (id) => instanceOf(id)?.input ?? undefined;
 
   /**
-   * Run the first migration this doc needs, from a `scene` or `objects`
-   * extension, in running order; each extension at most MAX_MIGRATIONS times
-   * a session (so a bug can't make it loop). A viewer-only extension never
-   * migrates.
-   * @param {object} doc
-   * @param {(fn: (draft: object) => void) => void} change
-   * @returns {boolean} whether it changed the doc (the caller syncs again from that change)
-   */
-  function migrate(doc, change) {
-    for (const r of running()) {
-      if (!MIGRATING_SCOPES.has(r.scope)) continue;
-      const x = r.instance;
-      if (typeof x.migrate !== "function" || typeof x.needsMigration !== "function") continue;
-      let needs = false;
-      try {
-        needs = !!x.needsMigration(doc);
-      } catch (err) {
-        console.warn(`[scene] extension “${r.id}”: needsMigration failed`, err);
-      }
-      if (!needs) continue;
-      const n = attempts.get(r.id) ?? 0;
-      if (n >= MAX_MIGRATIONS) continue;
-      attempts.set(r.id, n + 1);
-      try {
-        change((draft) => x.migrate(draft));
-        return true;
-      } catch (err) {
-        console.warn(`[scene] extension “${r.id}”: migrate failed`, err);
-      }
-    }
-    return false;
-  }
-
-  /**
    * Lay out a dropped doc: load each module (registry order) whose `drops`
    * match its datatype and call its drop(ctx, info) until one says true.
    * Nothing is added to the running set here: the traits the drop writes
@@ -411,7 +371,6 @@ export function createHost({
     instanceOf,
     collect,
     inputOf,
-    migrate,
     drop,
     /** the record of an extension being started, running or lingering (for probes) */
     record: (id) => recs.get(id) ?? null,

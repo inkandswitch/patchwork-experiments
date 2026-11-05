@@ -73,8 +73,7 @@ instance per holder. Per-holder instances look simpler, but they make
 cross-scope moves awkward (a card carried from one table to another, or
 onto the deck), they duplicate shared resources (deck resolvers), and they
 multiply overlays and HUD lines. The `scene`, `objects` and `viewer` labels
-stay in `local.running` as a summary (and still decide who may migrate), but
-input stops reading them.
+stay in `local.running` as a summary, but input stops reading them.
 
 **Code.** `api.holders()` returns the ids carrying any of this extension's
 traits, with `null` for the scene. `api.holderOf(id)` returns the nearest
@@ -149,8 +148,8 @@ the editor it should move. *Option:* `api.pref(key, fallback, at?)` reads
 *Recommendation:* do it, but only for keys a part asks about with a target
 (`tool`). The camera and display toggles stay per view.
 
-**Code.** Tabletop: seats move to `tabletop.seats` on a table object, with
-a migration that leaves old scenes on the scene placement (still valid).
+**Code.** Tabletop: seats move to `tabletop.seats` on a table object; a
+scene placement stays valid (no migration: older scenes are replaced).
 `seatsOf` and `isFaceUp` become per holder. The seat picker becomes a
 "Sit here" command on the table (from the menu) plus a picker for the table
 you're at. Stage: `pref` takes `at`. `effectiveTool` takes the doc view it
@@ -228,7 +227,7 @@ while it moves:
 
 `requires` lends no scope, so a required part is `viewer` scope and runs
 everywhere. In the sailing scene the tabletop requires `scene.hand`, a
-table's doc suggests the hand as the tool (`view.defaultMode: "hand"`), and
+table's doc suggests the hand as the tool (`view.tool: "hand"`), and
 now a drag carries the arena's walls.
 
 **Options.**
@@ -268,7 +267,7 @@ arena each add a few lines.
 | `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world |
 | `parts/hand.js` | `carryable`; attach on landing; displayed world for moving parents |
 | `parts/menu.js` | sections by holder, nearest first |
-| tabletop | seats on the table object, per-holder seats, zones and face-up; migration |
+| tabletop | seats on the table object, per-holder seats, zones and face-up |
 | arena | the walker's body relative to what it stands on; `carryable` for blocks |
 | STAGE.md | "Activation" and "The input chain" rewritten around placements |
 

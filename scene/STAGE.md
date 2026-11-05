@@ -59,7 +59,7 @@ this view and by the stage.
 | `kits` | kit surfaces | `{ on: [], off: [] }` this viewer's change to the doc's suggested kits (persisted per scene) |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
-| `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? doc.view.defaultMode ?? doc.view.defaultGizmo ?? "move"`, old values (`"translate"`) mapped |
+| `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? "move"` |
 
 Private local state lives in the extension's closure, or under a key prefixed
 `<id>.`. Another extension doesn't write it: it runs one of the owner's
@@ -75,7 +75,6 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
 ```js
 { type: "scene:extension", id, name,
   traits?:   string[],                // active when the scene or any object has one of these trait keys
-  legacy?:   { scene?: string[], objects?: string[] },  // or one of these old fields
   drops?:    string[],                // may lay out a dropped doc of this datatype ("*": any)
   always?:   boolean,
   requires?: string[],                // ids that run whenever this does
@@ -105,8 +104,8 @@ Each running extension has a **scope**, from its own reasons:
 
 | Scope | Reason | Offered input at |
 |---|---|---|
-| `scene` | a scene trait, or a `legacy.scene` field | step 5, every event |
-| `objects` | only object traits or `legacy.objects` | step 4, and only when the event's hit chain reaches one of its objects (one with its trait, or one of its `legacy.objects` fields) |
+| `scene` | a scene trait | step 5, every event |
+| `objects` | only object traits | step 4, and only when the event's hit chain reaches one of its objects (one with its trait) |
 | `viewer` | a kit, `always`, or only `requires` | step 6 |
 
 If several reasons apply, the earliest step wins. `requires` makes an
@@ -198,18 +197,17 @@ When an extension stops:
 `api.signal` aborts at the start of this. After that, every call through its
 api that acquires something is a no-op.
 
-**Migrations.** Only extensions with `scene` or `objects` scope may migrate.
-A viewer-only extension's `migrate` is ignored. The stage runs core
-migrations first, then the extensions' in running order, each extension at
-most three times a session.
+**No migrations.** The stage reads only the current doc shape: it never
+upgrades a doc, and an extension has no hook to. A scene in an older shape is
+replaced, not read.
 
-Rules for a migration:
-- It must be idempotent.
-- It must not create a map or list at a key that another peer might also
-  create. The scene datatype's `init` and the core migration pre-create
-  `traits`, `view` and `dimensions` (the core migration runs on any scene doc
-  missing one), so an extension's `if (!d.traits) d.traits = {}` is only ever
-  a fallback.
+**Shared maps.** Nothing writes a map or list at a key that another peer
+might also create (two peers each making one at once would leave one peer's
+writes in a map that loses the merge). Every scene doc is made with
+`traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
+and so does every tool that writes a scene doc whole (tabletop's tables, the
+TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
+a fallback.
 
 ## The input chain
 
@@ -398,7 +396,7 @@ How the camera parts behave:
   limits intersect.
 - **Saving.** The camera is this viewer's. It is kept in `localStorage`
   (`scene-camera:<url>`). On open it comes from there, else
-  `doc.view.home`, else `doc.camera` (older docs), else a framing.
+  `doc.view.home`, else a framing.
 
 **Drawing**
 
@@ -433,7 +431,6 @@ How poses and loops behave:
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
-| `needsMigration(doc)`, `migrate(draft)` | the stage |
 | `commands` | surfaces and key maps |
 | `panels` | sidebars: `[{ id, title, pinned?, mount(body, { head, section }) → { update(scene, local), dispose() } }]`. A body set `hidden` hides its section; a `pinned` panel never folds |
 | `hud()` → `[{ text, state }]` | status surfaces |
@@ -533,7 +530,7 @@ atmosphere() → null | {
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds |
 | `stage/host.js` | starting and stopping extensions, the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, migrations, content loading, lenses, atmosphere, status, prefs, kits, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, kits, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old

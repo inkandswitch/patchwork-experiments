@@ -19,7 +19,6 @@ export const plugins = [
     id: "tabletop",
     name: "Tabletop",
     traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
-    legacy: { scene: ["seats"], objects: ["zone", "hidden"] },
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
     // shapes). A zone's box is plain JSON for now.

@@ -7,11 +7,11 @@ export const SceneDatatype = {
     doc.title = "Untitled scene";
     doc.objects = {};
     doc.order = [];
+    // every map a scene has is made here, so no two peers ever create one at
+    // once (STAGE.md, "Shared maps")
     doc.dimensions = {};
-    // made here, so no two peers ever create it at once (STAGE.md, "Migrations")
     doc.traits = {};
     doc.view = { ...DEFAULT_VIEW };
-    doc.camera = null;
   },
   getTitle(doc) {
     return doc?.title || "Untitled scene";

@@ -57,14 +57,12 @@ const state = (s, id, target = null) => cmd(s, id).state(target, { scene: s.debu
 describe("scene.gizmo: the tool", () => {
   it("reads the local tool, then the doc's suggestion, then move", () => {
     expect(effectiveTool({}, {})).toBe("move");
-    expect(effectiveTool({}, { view: { defaultMode: "rotate" } })).toBe("rotate");
-    expect(effectiveTool({}, { view: { defaultGizmo: "translate" } })).toBe("move");
-    expect(effectiveTool({}, { view: { tool: "hand", defaultMode: "rotate" } })).toBe("hand");
-    expect(effectiveTool({ tool: "select" }, { view: { defaultMode: "hand" } })).toBe("select");
+    expect(effectiveTool({}, { view: { tool: "rotate" } })).toBe("rotate");
+    expect(effectiveTool({ tool: "select" }, { view: { tool: "hand" } })).toBe("select");
   });
 
   it("Move, Rotate and No gizmo set local.tool, checked by the tool in effect", async () => {
-    const s = await mount({ view: { defaultMode: "rotate" } });
+    const s = await mount({ view: { tool: "rotate" } });
     expect(state(s, "rotate").checked).toBe(true);
     expect(state(s, "move").checked).toBe(false);
     expect(cmd(s, "move").key).toBe("g");
@@ -99,7 +97,7 @@ describe("scene.gizmo: when it shows", () => {
     expect(gizmoTarget(sc, { selected: null })).toBeNull();
     expect(gizmoTarget(sc, { selected: "gone" })).toBeNull();
     expect(gizmoTarget(sc, { selected: "dimension:d1" })).toBeNull(); // a ref isn't an object
-    expect(gizmoTarget(snap({ a: object() }, { defaultGizmo: "hand" }), { selected: "a" })).toBeNull();
+    expect(gizmoTarget(snap({ a: object() }, { tool: "hand" }), { selected: "a" })).toBeNull();
   });
 
   it("on a group with something it can move", () => {

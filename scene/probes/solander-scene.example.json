@@ -11246,11 +11246,11 @@
     "o0507"
   ],
   "dimensions": {},
+  "traits": {},
   "view": {
     "units": "m",
     "grid": true,
     "axes": true,
     "bounds": false
-  },
-  "camera": null
+  }
 }

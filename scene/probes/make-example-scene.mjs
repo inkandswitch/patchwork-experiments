@@ -120,8 +120,8 @@ const doc = {
   objects,
   order,
   dimensions: {},
+  traits: {},
   view: { units: "m", grid: true, axes: true, bounds: false },
-  camera: null,
 }
 
 mkdirSync(dirname(out), { recursive: true })

@@ -15,8 +15,8 @@
 //
 // Every message carries the sending view's `session`, a random id made when
 // the presence is, so two tabs of the same viewer are two peers. Messages
-// without one (the old {type:"scene:presence", selected, hover} and
-// {type:"scene:carry"}) are ignored, as are our own.
+// without one are ignored, as are our own, and so is a hold without its
+// `since` stamp.
 //
 // Nothing here knows what a key means or what a transform looks like: the
 // stage shows poses and extensions read keys. Time comes in through now /
@@ -433,7 +433,7 @@ export function createPresence({
     const id = msg.id;
     if (!isStr(id) || typeof msg.seq !== "number" || gone.has(s)) return;
     const t = msg.transform;
-    if (t !== null && !isObj(t)) return;
+    if (t !== null && (!isObj(t) || !Number.isFinite(msg.since))) return;
     let seqs = lastPose.get(s);
     if (!seqs) lastPose.set(s, (seqs = new Map()));
     if (msg.seq <= (seqs.get(id) ?? 0)) return; // overtaken by a later pose or release
@@ -448,10 +448,9 @@ export function createPresence({
       prev.timer = setTimer(() => dropHold(id, s), HOLD_TTL_MS);
       return holdsChanged([id]);
     }
-    // the hold's stamp, as its holder says (so every view ranks it the same);
-    // a peer that doesn't say ranks after every stamp we know
+    // the hold's stamp, as its holder says (so every view ranks it the same)
     observe(msg.since);
-    const since = Number.isFinite(msg.since) ? msg.since : lamport + 1;
+    const since = msg.since;
     const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since, timer: null };
     if (prev && prev !== h) clearTimer(prev.timer);
     h.viewer = typeof msg.viewer === "string" ? msg.viewer : null;

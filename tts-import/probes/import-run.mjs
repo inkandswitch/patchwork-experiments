@@ -107,7 +107,7 @@ try {
   check("import finished", probe.status === "done");
   check("Open the table opened the scene with the scene tool", probe.opened?.[0]?.toolId === "scene");
   check("every visible object loaded", probe.sceneStats && probe.sceneStats.loaded >= probe.sceneStats.visible);
-  check("scene opens in the hand", probe.scene?.view?.defaultGizmo === "hand");
+  check("scene opens in the hand", probe.scene?.view?.tool === "hand");
   report.shots.push(await shoot("overview.png"));
   // closer looks, from the near side (+Z), at the middle of the table
   const cam = probe.camera;

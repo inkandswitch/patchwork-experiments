@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createAtom } from "./atom.js";
-import { createHost, mergeOrder, LINGER_MS, BUSY_RECHECK_MS, MAX_MIGRATIONS } from "./host.js";
+import { createHost, mergeOrder, LINGER_MS, BUSY_RECHECK_MS } from "./host.js";
 import { fakeTimers, flush } from "../test/fake-repo.js";
 
 // A registry of plugin metadata whose modules come from `mods` (id → module),
@@ -185,24 +185,6 @@ describe("the host", () => {
     await timers.advance(LINGER_MS * 2);
     expect(log).not.toContain("dispose:seats");
     expect(log.filter((l) => l === "create:seats")).toHaveLength(1);
-  });
-
-  it("lets only scene and objects extensions migrate, each at most three times", async () => {
-    const needs = () => true;
-    const migrated = [];
-    const { host } = make({
-      instances: {
-        seats: { needsMigration: needs, migrate: (d) => migrated.push(["seats", d]) },
-        select: { needsMigration: needs, migrate: () => migrated.push(["select"]) },
-      },
-    });
-    const d = doc({ traits: { seats: {} } });
-    host.sync(d);
-    await flush();
-    const change = (fn) => fn({ draft: true });
-    for (let i = 0; i < MAX_MIGRATIONS + 2; i++) host.migrate(d, change);
-    expect(migrated.map((m) => m[0])).toEqual(["seats", "seats", "seats"]);
-    expect(migrated[0][1]).toEqual({ draft: true });
   });
 
   it("drop: loads only the modules that take the datatype, without running them", async () => {

@@ -70,9 +70,7 @@ afterEach(() => {
 describe("scene.handles: pure helpers", () => {
   it("reads the effective tool, the doc's suggestion under the viewer's choice", () => {
     expect(effectiveTool({}, {})).toBe("move");
-    expect(effectiveTool({}, { view: { defaultGizmo: "translate" } })).toBe("move");
-    expect(effectiveTool({}, { view: { defaultGizmo: "hand" } })).toBe("hand");
-    expect(effectiveTool({}, { view: { defaultMode: "rotate", defaultGizmo: "hand" } })).toBe("rotate");
+    expect(effectiveTool({}, { view: { tool: "hand" } })).toBe("hand");
     expect(effectiveTool({ tool: "hand" }, { view: { tool: "move" } })).toBe("hand");
   });
   it("finds the provider by id", () => {
@@ -171,7 +169,7 @@ describe("scene.handles on the stage", () => {
   });
 
   it("the doc's suggested tool counts too", async () => {
-    const { s } = await setup({ view: { defaultGizmo: "hand" } });
+    const { s } = await setup({ view: { tool: "hand" } });
     current = s;
     await select(s, "a");
     expect(labelTexts(s)).toEqual([]);

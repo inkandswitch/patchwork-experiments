@@ -130,7 +130,7 @@ themselves never add a dragged row.
   final pose is written. While it's carried, other people see it move (over
   `handle.broadcast`, below). An extension can ask for the piece to go
   down another way where it's put (tabletop turns a card face up in your
-  hand). A scene can open in the hand (`view.defaultMode`); after that the
+  hand). A scene can open in the hand (`view.tool`); after that the
   menu is yours alone.
 - **Locked** (inspector): a locked object can't be carried or given the
   gizmo — a game board, say. Everything else about it still works.
@@ -179,7 +179,6 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 ```js
 { type: "scene:extension", id: "tabletop", name: "Tabletop",
   traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],  // trait keys that start it
-  legacy: { scene: ["seats"], objects: ["zone", "hidden"] },         // old fields that start it (it upgrades them)
   drops: ["*"],                                                      // datatypes it may lay out when dropped
   requires: ["scene.hand", "scene.keys"],                            // what must run with it
   always: false,
@@ -189,8 +188,8 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 ```
 
 - **What runs** is a function of the registry, the doc and this viewer's
-  kits: an extension runs when the scene or an object has one of its traits
-  or legacy fields, when a kit the viewer has on lists it, when it's
+  kits: an extension runs when the scene or an object has one of its traits,
+  when a kit the viewer has on lists it, when it's
   `always`, or when a running one `requires` it. The doc suggests kits
   (`view.kits`, else `["model"]`); each viewer turns kits on and off for
   themselves.
@@ -511,12 +510,10 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   // defaults for each viewer (each can change their own): display, snapping, the starting tool
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // the hand snaps (absent = true)
-          defaultMode?: "move" | "rotate" | "hand" | "select", // the tool a viewer starts with (absent = move)
+          tool?: "move" | "rotate" | "hand" | "select" | string, // the tool a viewer starts with (absent = move)
           kits?: string[],                                 // the kits a viewer starts with (absent = ["model"])
-          panels?: string[],                               // the sidebar panels that start open, in order (absent = all)
           home?: { position, target, fov? } },             // where a viewer with no saved camera starts
-  camera: { position: [x,y,z], target: [x,y,z] } | null,  // older docs: a home view, read only
-  traits?: { [key: string]: any },  // extensions' data on the scene itself
+  traits: { [key: string]: any },   // extensions' data on the scene itself
   materialRules?: MaterialRule[]
 }
 Object = {
@@ -562,12 +559,11 @@ MaterialRule = {
   pivot) is the union of what's shown inside it. Moving it with the gizmo
   writes each member's transform. A loop of groups (two concurrent edits) is
   broken the same way on every peer, like an attachment cycle.
-- **Older scenes**, whose groups were parents with transforms, are upgraded
-  the first time a current scene tool opens them (`src/migrate.js`): each
-  object is filed in the nearest group it was under, attached to the nearest
-  object it was under, and keeps its world pose (what the groups between
-  contributed is baked into its transform). `view.defaultGizmo` becomes
-  `view.defaultMode`.
+- **Only this shape is read.** Nothing upgrades a scene written in an
+  older one (groups with transforms, `view.defaultGizmo` or
+  `view.defaultMode`, a top-level `camera`), and extensions read only their
+  traits: such a scene is replaced, not read. `traits`, `view` and
+  `dimensions` are made with the doc (STAGE.md, "Shared maps").
 - `hint` is written by importers: `bounds` (metres, in the GLB's own frame)
   is drawn as a placeholder until the GLB loads and decides load order (bigger
   first, the selected object before everything).
@@ -585,9 +581,7 @@ MaterialRule = {
   object with the smallest id in the loop is treated as a root). Attaching and
   detaching rewrite `transform` so the world pose is unchanged. Removing an
   object sets each of its children's `parent` to null and their `transform` to
-  their world pose. (A peer running an older scene that removes a parent
-  doesn't do that, and its children then jump to their local transform at the
-  root.) The move/rotate gizmo edits the local transform.
+  their world pose. The move/rotate gizmo edits the local transform.
 - An anchor with an `objectId` whose object still exists resolves through that
   object's current world matrix (so it follows whatever the object is attached
   to); otherwise it uses `world`. Removing an object freezes its anchors at
@@ -596,8 +590,7 @@ MaterialRule = {
   object's own geometry (not including what is attached to it).
 - The camera is each viewer's own, kept in this browser per scene. A viewer
   with no saved camera starts at `view.home` (set with *Set home view*),
-  else at an older doc's `camera`, else framing what's there. Orbiting never
-  writes the doc.
+  else framing what's there. Orbiting never writes the doc.
 
 ### Fixed versions (`at`)
 
@@ -677,7 +670,6 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/stl.js`, `src/sources/*` | STL parsing and the two file providers |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
-| `src/migrate.js` | upgrading a scene doc written in an older shape, in place, on open (the stage's own; extensions upgrade their own fields) |
 | `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
