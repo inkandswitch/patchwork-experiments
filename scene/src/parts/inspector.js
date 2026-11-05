@@ -5,24 +5,38 @@
 // Locked, Colour (+ Auto), Opacity, In group (the groups as a tree), Attached
 // to (objects), Position (display units, the pref "units"), Rotation (°),
 // Scale; "Open file" for a passthrough GLB. For a group: name, Visible,
-// Opacity, In group. Then the commands that apply to it (every running
-// extension's, shown on "inspector" or on every surface) as buttons: this
-// extension's Frame, Group and Ungroup first. Then About (the object's
-// infoUrl, else its nearest group's, in a <patchwork-view> inside
-// .about-embed), the embedded build controls (scene-render-controls on the
-// render doc), the Version row (what version of its source a render-doc
-// object shows: Latest, or Fixed at… with Fix at this version / Follow
-// latest, which are also this extension's commands for the menu) and the
-// status line.
+// Opacity, In group. Then its Behaviours (below). Then the commands that
+// apply to it (every running extension's, shown on "inspector" or on every
+// surface) as buttons: this extension's Frame, Group and Ungroup first. Then
+// About (the object's infoUrl, else its nearest group's, in a
+// <patchwork-view> inside .about-embed), the embedded build controls
+// (scene-render-controls on the render doc), the Version row (what version of
+// its source a render-doc object shows: Latest, or Fixed at… with Fix at this
+// version / Follow latest, which are also this extension's commands for the
+// menu) and the status line.
 //
-// Every write goes through api.ops; a refusal (plan.ok === false) is said
-// with api.notify and the field shows the doc again. Fields being typed in
-// are never overwritten.
+// Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
+// Opens with: the kits the scene suggests to everyone (doc.view.kits), as
+// checkboxes over the scene:kit registry; each viewer still changes their own
+// from the Kits button.
 //
-// Nothing selected, or a selection that isn't a scene object (a ref such as
-// a dimension: its owner shows it, in its own panel): the panel body is
-// hidden (the sidebar then hides the section) and holds only the hint
-// "Nothing selected".
+// Behaviours are traits, authored without a script: the ones the holder has
+// (each with its described fields and a ×), and "Add behaviour…", offering
+// every trait some scene:extension plugin describes for that place
+// (`describes`, STAGE.md "Describing traits"; inspector-traits.js). That is
+// metadata, so nothing is started to offer it: adding the trait is what
+// starts its extension, through activation. Writes are field by field: a
+// trait's key, a field in it, an entry in a map trait (a seat); never the
+// whole traits map.
+//
+// Every write goes through api.ops (or, for traits and kits, a field-level
+// api.change); a refusal (plan.ok === false) is said with api.notify and the
+// field shows the doc again. Fields being typed in are never overwritten.
+//
+// A selection that isn't a scene object (a ref such as a dimension: its owner
+// shows it, in its own panel), or one that's gone: the panel body is hidden
+// (the sidebar then hides the section) and holds only the hint "Nothing
+// selected".
 
 import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
@@ -30,6 +44,9 @@ import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
 import { EMBED_ATTR } from "../embed.js";
 import { atKey, normalizeAt } from "../staleness.js";
+import { createParamForm } from "../param-form.js";
+import { suggestedKits } from "../kits.js";
+import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, isPassthrough, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 
 const ID = "scene.inspector";
@@ -111,6 +128,202 @@ function create(api) {
 
   const select = (id) => api.local.swap((m) => ((m.selected ?? null) === (id ?? null) ? m : { ...m, selected: id ?? null }));
 
+  // ─── what's installed: described traits, and kits ───────────────────────
+
+  let described = new Map(); // trait key → its description (inspector-traits.js)
+  let kitList = []; // scene:kit metadata, registry order
+
+  /** Read a registry's metadata now and whenever it changes, and show it. */
+  function watchRegistry(type, take) {
+    Promise.resolve(api.registry(type))
+      .then((reg) => {
+        if (api.signal.aborted || !reg) return;
+        const read = () => {
+          let list = [];
+          try {
+            list = reg.filter?.(() => true) ?? [];
+          } catch {
+            list = [];
+          }
+          take(list.filter((p) => p && typeof p.id === "string"));
+          if (api.signal.aborted) return;
+          last = null; // what's offered changed, though neither doc nor local did
+          refreshNow();
+        };
+        read();
+        try {
+          const off = reg.on?.("changed", read);
+          if (typeof off === "function") api.signal.addEventListener("abort", off, { once: true });
+        } catch {
+          // what's installed now is what's offered
+        }
+      })
+      .catch(() => {});
+  }
+  watchRegistry("scene:extension", (list) => (described = describedTraits(list)));
+  watchRegistry("scene:kit", (list) => (kitList = list));
+
+  // ─── traits and kits, field by field ────────────────────────────────────
+
+  const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const copy = (v) => JSON.parse(JSON.stringify(v));
+  /** The object (or, for null, the doc) a trait lives on, in a draft. */
+  const holderIn = (d, id) => (id == null ? d : d.objects?.[id] ?? null);
+
+  function addTrait(id, desc) {
+    api.change((d) => {
+      const h = holderIn(d, id);
+      if (!h) return;
+      // the scene's map is pre-created (STAGE.md, Migrations); an object's
+      // first trait makes its own
+      if (!isMap(h.traits)) h.traits = {};
+      if (!(desc.key in h.traits)) h.traits[desc.key] = newValue(desc);
+    });
+  }
+
+  function removeTrait(id, key) {
+    api.change((d) => {
+      const t = holderIn(d, id)?.traits;
+      if (isMap(t) && key in t) delete t[key];
+    });
+  }
+
+  /** Write one field of a trait (or of one of its entries, a seat), as the form gave it. */
+  function writeTraitField(id, key, entry, field, formValue) {
+    const w = fieldWrite(field, formValue);
+    if (w.error) {
+      api.notify(w.error, "error");
+      last = null;
+      refreshNow(true);
+      return;
+    }
+    api.change((d) => {
+      let at = holderIn(d, id)?.traits?.[key];
+      if (entry != null) at = isMap(at) ? at[entry] : null;
+      if (!isMap(at)) return; // gone meanwhile, or not a map of fields
+      if (w.remove) {
+        if (field.key in at) delete at[field.key];
+      } else at[field.key] = copy(w.value);
+    });
+  }
+
+  function addEntry(id, key, entries) {
+    const eid = api.newId(entries.prefix);
+    api.change((d) => {
+      const t = holderIn(d, id)?.traits?.[key];
+      if (isMap(t) && !(eid in t)) t[eid] = newValue(entries);
+    });
+  }
+
+  function removeEntry(id, key, eid) {
+    api.change((d) => {
+      const t = holderIn(d, id)?.traits?.[key];
+      if (isMap(t) && eid in t) delete t[eid];
+    });
+  }
+
+  /** Suggest a kit to everyone, or stop: an edit of doc.view.kits in place (the default list is written out first). */
+  function suggestKit(kit, want) {
+    api.change((d) => {
+      if (!d.view) d.view = {};
+      if (!Array.isArray(d.view.kits)) {
+        const list = suggestedKits(d).filter((k) => k !== kit);
+        d.view.kits = want ? [...list, kit] : list;
+        return;
+      }
+      const list = d.view.kits;
+      if (want && !list.includes(kit)) list.push(kit);
+      if (!want) for (let i = list.length - 1; i >= 0; i--) if (list[i] === kit) list.splice(i, 1);
+    });
+  }
+
+  /**
+   * The Behaviours section for a holder (an object id, or null for the
+   * scene): its traits with their fields and a ×, then "Add behaviour…". It
+   * is laid out again only when what it shows changes shape (a trait, an
+   * entry or a field's options come or go); otherwise only values are
+   * filled, and the param form leaves a field being typed in alone.
+   */
+  function behavioursView(holder, place) {
+    const list = el("div", { class: "behaviour-list" });
+    const picker = el("select", { class: "behaviour-add", "aria-label": "Add behaviour" });
+    picker.addEventListener("change", () => {
+      const desc = described.get(picker.value);
+      picker.value = "";
+      if (desc) addTrait(holder, desc);
+    });
+    const section = el("div", { class: "field-group behaviours" }, el("span", { class: "group-label" }, "Behaviours"), list, picker);
+    let key = null;
+    let forms = []; // [{ form, fields, specs, read(traits) → value }]
+    const dispose = () => {
+      for (const f of forms) f.form.dispose();
+      forms = [];
+    };
+
+    function formFor(container, fields, specs, read, write) {
+      const byKey = new Map(fields.map((f) => [f.key, f]));
+      const form = createParamForm(container, specs, (k, v) => write(byKey.get(k), v));
+      forms.push({ form, fields, specs, read });
+    }
+
+    function lay(rows, addable) {
+      dispose();
+      const boxes = rows.map(({ key: tk, desc, value, specs, entries }) => {
+        const name = desc?.name ?? tk;
+        const box = el(
+          "div",
+          { class: "behaviour", dataset: { trait: tk } },
+          el(
+            "div",
+            { class: "behaviour-head" },
+            el("span", { class: "behaviour-name", title: desc ? desc.blurb || tk : `${tk} (nothing installed describes it)` }, name),
+            el("button", { type: "button", class: "button link behaviour-remove", title: `Remove ${name}`, "aria-label": `Remove ${name}`, onclick: () => removeTrait(holder, tk) }, "×"),
+          ),
+        );
+        if (specs) formFor(box, desc.fields, specs, (t) => t?.[tk], (f, v) => writeTraitField(holder, tk, null, f, v));
+        if (entries) {
+          const e = desc.entries;
+          const wrap = el("div", { class: "behaviour-entries" }, el("span", { class: "entries-label" }, e.label));
+          for (const { id: eid, specs: es } of entries) {
+            const row = el("div", { class: "behaviour-entry", dataset: { entry: eid } });
+            formFor(row, e.fields, es, (t) => t?.[tk]?.[eid], (f, v) => writeTraitField(holder, tk, eid, f, v));
+            row.append(el("button", { type: "button", class: "button link entry-remove", title: `Remove this ${e.noun}`, "aria-label": `Remove this ${e.noun}`, onclick: () => removeEntry(holder, tk, eid) }, "×"));
+            wrap.append(row);
+          }
+          wrap.append(el("button", { type: "button", class: "button link entry-add", onclick: () => addEntry(holder, tk, e) }, `Add ${e.noun}`));
+          box.append(wrap);
+        }
+        return box;
+      });
+      list.replaceChildren(...boxes);
+      picker.replaceChildren(el("option", { value: "" }, "Add behaviour…"), ...addable.map((d) => el("option", { value: d.key, title: d.blurb || null }, d.name)));
+      picker.value = "";
+      picker.hidden = !addable.length;
+    }
+
+    function update(scene) {
+      const traits = holder == null ? scene.d?.traits : scene.objects?.[holder]?.traits;
+      const ctx = { scene, self: holder, nameOf: api.nameOf };
+      const rows = traitRows(traits, described).map((r) => {
+        const fields = r.desc?.fields ?? [];
+        // fields need a map to write into; a trait set to `true` just shows
+        const specs = fields.length && (isMap(r.value) || r.value == null) ? formSpecs(fields, ctx) : null;
+        const entries = r.desc?.entries && (isMap(r.value) || r.value == null) ? entriesOf(r.value).map(([id]) => ({ id, specs: formSpecs(r.desc.entries.fields, ctx) })) : null;
+        return { ...r, specs, entries };
+      });
+      const addable = addableTraits(described, place, traits);
+      const k = layoutKey([rows.map((r) => [r.key, r.desc?.name ?? null, r.desc?.blurb ?? null, r.specs, r.entries, r.desc?.entries?.label ?? null]), addable.map((d) => [d.key, d.name, d.blurb])]);
+      if (k !== key) {
+        key = k;
+        lay(rows, addable);
+      }
+      for (const f of forms) f.form.update(shownValues(f.fields, f.specs, f.read(traits)));
+      section.hidden = !rows.length && !addable.length;
+    }
+
+    return { section, update, dispose };
+  }
+
   // ─── the panel ────────────────────────────────────────────────────────────
 
   let body = null; // the panel body, while mounted
@@ -129,6 +342,7 @@ function create(api) {
   }
 
   function teardown() {
+    view?.behaviours?.dispose();
     view?.unmountControls?.();
     view?.unmountAbout?.();
     view = null;
@@ -201,6 +415,7 @@ function create(api) {
     const scale = group ? null : numberField("×", (v) => setPart(id, "scale", 0, v));
     const posUnit = group ? null : el("span", { class: "unit" });
 
+    const behaviours = behavioursView(id, "object");
     const commands = el("div", { class: "cluster commands" });
     const openFile = isPassthrough(o) ? el("button", { type: "button", class: "button link open-file", title: "Open the GLB file", onclick: (e) => openDocument(e.currentTarget, api.doc().objects?.[id]?.sourceUrl) }, "Open file") : null;
     const about = el("section", { class: "about", hidden: true });
@@ -235,6 +450,7 @@ function create(api) {
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Position ", posUnit), el("div", { class: "triple" }, ...pos.map((f) => f.row))),
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Rotation °"), el("div", { class: "triple" }, ...rot.map((f) => f.row))),
       group ? null : el("div", { class: "field-group" }, el("span", { class: "group-label" }, "Scale"), el("div", { class: "triple" }, scale.row)),
+      behaviours.section,
       commands,
       openFile ? el("div", { class: "cluster" }, openFile) : null,
       about,
@@ -264,6 +480,7 @@ function create(api) {
       rot,
       scale,
       posUnit,
+      behaviours,
       commands,
       commandsKey: null,
       about,
@@ -274,6 +491,44 @@ function create(api) {
       version,
       unmountControls: controls ? mountControls(controls, o.renderUrl) : null,
     };
+  }
+
+  /** Nothing selected: the scene's own Behaviours, and the kits it opens with. */
+  function buildScene() {
+    teardown();
+    const behaviours = behavioursView(null, "scene");
+    const kits = el("div", { class: "opens-with" });
+    const root = el(
+      "div",
+      { class: "inspector", dataset: { kind: "scene" } },
+      el("div", { class: "inspector-kind" }, "Scene"),
+      behaviours.section,
+      el(
+        "div",
+        { class: "field-group opens-with-group" },
+        el("span", { class: "group-label", title: "The kits this scene suggests to everyone who opens it" }, "Opens with"),
+        kits,
+        el("p", { class: "hint opens-with-note" }, "Suggested to everyone who opens this scene. Each viewer can still turn kits on or off for themselves, from Kits."),
+      ),
+    );
+    body.replaceChildren(root);
+    view = { id: null, scene: true, root, behaviours, kits, kitsKey: null };
+  }
+
+  function fillScene(scene) {
+    view.behaviours.update(scene);
+    const key = JSON.stringify(kitList.map((k) => [k.id, k.name ?? null]));
+    if (key !== view.kitsKey) {
+      view.kitsKey = key;
+      const rows = kitList.map((k) => {
+        const box = el("input", { type: "checkbox", dataset: { kit: k.id } });
+        box.addEventListener("change", () => suggestKit(k.id, box.checked));
+        return el("label", { class: "toggle" }, box, ` ${k.name ?? k.id}`);
+      });
+      view.kits.replaceChildren(...(rows.length ? rows : [el("p", { class: "hint" }, "No kits are installed.")]));
+    }
+    const suggested = suggestedKits(scene.d);
+    for (const box of view.kits.querySelectorAll("input[data-kit]")) box.checked = suggested.includes(box.dataset.kit);
   }
 
   // the field shows `v`, unless someone is typing in it (or `force`)
@@ -321,6 +576,7 @@ function create(api) {
       setVal(view.scale.input, String(t.scale), force);
     }
 
+    view.behaviours.update(scene);
     fillCommands(scene, local);
     fillAbout(scene);
     fillStatus(scene, local, o);
@@ -435,6 +691,15 @@ function create(api) {
   function refresh(scene, local, force = false) {
     if (!body) return;
     const id = selectedOf(local);
+    if (id == null && scene) {
+      if (body.hidden) body.hidden = false;
+      const fresh = !view?.scene;
+      if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local)) return;
+      if (fresh) buildScene();
+      last = { scene, local, name: null, content: "" };
+      fillScene(scene);
+      return;
+    }
     const o = id ? scene?.objects?.[id] : null;
     if (!o) {
       last = null;
@@ -461,7 +726,7 @@ function create(api) {
     namesQueued = true;
     queueMicrotask(() => {
       namesQueued = false;
-      if (api.signal.aborted || !view || !last) return;
+      if (api.signal.aborted || !view || view.scene || !last) return;
       if (api.nameOf(view.id) !== last.name) refreshNow();
     });
   }

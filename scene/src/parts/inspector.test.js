@@ -79,10 +79,11 @@ const fire = (input, value, type = "change") => {
 };
 
 describe("scene.inspector: the panel", () => {
-  it("is hidden with a hint when nothing is selected, and shows the selection", async () => {
+  it("shows the scene when nothing is selected, the selection when there is one, and hides for a ref", async () => {
     await mount({ objects: { a: object({ name: "A", opacity: 0.5, color: "#ff0000", wireframe: true }) } });
-    expect(body().hidden).toBe(true);
-    expect(body().textContent).toBe("Nothing selected");
+    expect(body().hidden).toBe(false);
+    expect($(".inspector").dataset.kind).toBe("scene");
+    expect($(".inspector-kind").textContent).toBe("Scene");
     await select("a");
     expect(body().hidden).toBe(false);
     expect($(".inspector-kind").textContent).toBe("Object");
@@ -99,10 +100,15 @@ describe("scene.inspector: the panel", () => {
     expect(body().textContent).toBe("Nothing selected");
     await select("a");
     expect(body().hidden).toBe(false);
-    // the object goes: the panel empties
+    // the object goes while selected: the panel empties
     s.change((d) => delete d.objects.a);
     await settle();
     expect(body().hidden).toBe(true);
+    expect(body().textContent).toBe("Nothing selected");
+    // and with nothing selected it's the scene again
+    await select(null);
+    expect(body().hidden).toBe(false);
+    expect($(".inspector").dataset.kind).toBe("scene");
   });
 
   it("writes plain fields through ops: name, visible, wireframe, locked, colour (and Auto), opacity", async () => {
@@ -240,7 +246,7 @@ describe("scene.inspector: the panel", () => {
     expect(o.hull.opacity).toBe(0.5); // the group's fade folded in
     expect(s.local.get().selected).toBeNull();
     await settle();
-    expect(body().hidden).toBe(true);
+    expect($(".inspector").dataset.kind).toBe("scene");
   });
 
   it("Group wraps the object in a new group, filed where it was, and selects it", async () => {

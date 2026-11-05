@@ -79,6 +79,7 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
   drops?:    string[],                // may lay out a dropped doc of this datatype ("*": any)
   always?:   boolean,
   requires?: string[],                // ids that run whenever this does
+  describes?: { [traitKey]: description },  // what its traits are, for authoring them (below)
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean> } } }
 
 { type: "scene:kit", id, name, icon?, extensions: string[], kits?: string[] }
@@ -93,6 +94,9 @@ doc or kit change, starts what's new and stops what's gone.
 - *Suggested kits* are `doc.view.kits ?? ["model"]`.
 - *This viewer's kits* are `(suggested ∪ local.kits.on) \ local.kits.off`,
   so a later change to the suggestion still reaches everyone.
+- The suggestion is the doc's, edited by anyone: the inspector's "Opens
+  with" (nothing selected) edits `doc.view.kits` in place, and the Kits
+  button's "Suggest for everyone" writes this viewer's list there.
 - Both are `src/kits.js` (pure), for the stage and any kit surface. Another
   tab of the same viewer changing them (or prefs) is picked up from
   `localStorage`'s `storage` event.
@@ -128,6 +132,50 @@ and calls its `drop(ctx, info)` until one returns true, where:
 
 A drop writes traits into the doc, and those traits are what activate the
 extension.
+
+**Describing traits.** `describes` says what an extension's traits are, so a
+surface can write them without a script (the inspector's Behaviours and "Add
+behaviour…"). It is metadata like the rest: plain data that survives
+`structuredClone`, read from the registry, so offering a trait starts
+nothing; adding it is what starts the extension. The first plugin in
+registry order to describe a key wins.
+
+```js
+describes: {
+  "arena.target": { name: "Target", on: "object", blurb?: "Can be shot down" },
+  "arena.level":  { name: "Arena level", on: "scene",
+                    fields: [{ key: "look", label: "Look", kind: "enum", default: "",
+                               options: [{ value: "", label: "The scene's own" }, { value: "arena", label: "Sky, haze and sun" }] }] },
+  "tabletop.seats": { name: "Seats", on: "scene",
+                      entries: { label: "Seats", noun: "seat", prefix: "seat",
+                                 fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }],
+                                 init: { player: null } } },
+}
+```
+
+- `on`: `"object"` (the default), `"scene"`, or both as a list: where it may
+  be added. A trait already on a holder is listed wherever it is.
+- `fields`: ParamSpecs (`src/param-form.js`): `number`, `integer`, `string`,
+  `boolean`, `enum`, `color`, each reading `value[key]` and showing `default`
+  when it's missing, plus four kinds of the inspector's:
+  `object` (an object or group id in this scene), `entry` (`of: traitKey`: a
+  key of that scene trait's map, labelled by the entry's `name`; a zone's
+  seat), `url` (an automerge URL, as text) and `json` (any value, as JSON
+  text; also what an unknown kind is taken for). Clearing an `object`,
+  `entry`, `url` or `json` field deletes its key.
+- `entries`: the trait's value is a map of entries, id → `{ …fields }` (the
+  seats). Each entry has the `fields`; adding one writes `init` plus their
+  defaults under `api.newId(prefix)`.
+- `init`: what a new trait starts as, before its fields' defaults are
+  filled in. Keys nothing describes (a target's `down`, play state) are never
+  shown and never touched.
+- **Writes are field by field**: a trait's key on its holder, one field in it,
+  one entry in it; never the whole traits map, and a trait's undescribed keys
+  survive an edit. The scene's `traits` map always exists; an object's is
+  made by its first trait (so two peers giving the same bare object its
+  first trait at once keep only one).
+- The code that reads a trait must take a missing field as its default: only
+  `init` and the defaults present when it was added are written.
 
 **Stopping:**
 - An extension that leaves the running set because of a kit change stops at

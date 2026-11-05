@@ -170,3 +170,130 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+/* Behaviours: the traits on the object (or, with nothing selected, the
+   scene), each a small card with its fields (the param form) and a ×, then
+   the "Add behaviour…" picker */
+.scene-stage .inspector .behaviours[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .inspector .behaviour-add[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .inspector .behaviour-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-stage .inspector .behaviour:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 4px 6px 6px;
+}
+
+.scene-stage .inspector .behaviour-head:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .inspector .behaviour-entry:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.scene-stage .inspector .behaviour-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.scene-stage .inspector :is(.behaviour-remove, .entry-remove):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 0 0 auto;
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector :is(.behaviour-remove, .entry-remove):hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+}
+
+.scene-stage .inspector .behaviour-entries:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.scene-stage .inspector .entries-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  font-size: 12px;
+}
+
+.scene-stage .inspector .behaviour-entry > .param-form:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-stage .inspector .entry-add:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  align-self: flex-start;
+}
+
+/* the param form, as the build controls lay it out */
+.scene-stage .inspector .behaviour .param-form:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.scene-stage .inspector .behaviour .param:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-stage .inspector .behaviour .param[data-kind="boolean"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+}
+
+.scene-stage .inspector .behaviour .param-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+}
+
+.scene-stage .inspector .behaviour .param :is(input:not([type="checkbox"]), select):where(:not(.about-embed *), .about-embed .scene-tool *) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.scene-stage .inspector .behaviour .param-number:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-stage .inspector .behaviour .param-number input[type="range"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+}
+
+.scene-stage .inspector .behaviour .param-number input[type="number"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: 5rem;
+  flex: 0 0 auto;
+}
+
+/* Opens with: the kits the scene suggests to everyone */
+.scene-stage .inspector .opens-with:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.scene-stage .inspector .opens-with-note:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .inspector .opens-with .hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--scene-muted);
+}

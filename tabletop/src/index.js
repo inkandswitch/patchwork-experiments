@@ -20,6 +20,34 @@ export const plugins = [
     name: "Tabletop",
     traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
     legacy: { scene: ["seats"], objects: ["zone", "hidden"] },
+    // what the traits are, for the scene's inspector ("Add behaviour…"), so a
+    // table can be set up without a script (src/table/visibility.js has the
+    // shapes). A zone's box is plain JSON for now.
+    describes: {
+      "tabletop.seats": {
+        name: "Seats",
+        on: "scene",
+        blurb: "The places players sit at this table",
+        entries: { label: "Seats", noun: "seat", prefix: "seat", fields: [{ key: "name", label: "Name", kind: "string", default: "Seat" }], init: { player: null } },
+      },
+      "tabletop.zone": {
+        name: "Private zone",
+        on: "object",
+        blurb: "Hidden cards in this box (in the object's own frame, metres) are shown only to whoever sits in its seat",
+        fields: [
+          { key: "seat", label: "Seat", kind: "entry", of: "tabletop.seats" },
+          { key: "min", label: "Box min", kind: "json" },
+          { key: "max", label: "Box max", kind: "json" },
+        ],
+        init: { min: [-0.1, 0, -0.05], max: [0.1, 0.05, 0.05] },
+      },
+      "tabletop.hidden": {
+        name: "Hidden card",
+        on: "object",
+        blurb: "Drawn as itself (a card back) unless its deck says who may see what it really is",
+        fields: [{ key: "by", label: "Deck", kind: "url" }],
+      },
+    },
     drops: ["*"],
     // playing needs these and nothing else: carry pieces, keys for verbs, a
     // right-click menu, framing, and somewhere for notices
