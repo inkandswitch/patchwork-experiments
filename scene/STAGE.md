@@ -464,8 +464,11 @@ taken out. It keeps the following:
     `{ session, bye: true }`;
   - `scene:send` carries `{ session, viewer, ext, type, data }`;
   - `scene:pose` carries `{ session, id, parent, transform | null, since, landed? }`,
-    `since` being when the hold began on the holder's clock, so every view
-    ranks two holds of one object alike;
+    `since` being the hold's Lamport stamp: one past every stamp its holder
+    had seen. Of two holds on one object the lower stamp wins, then the lower
+    session id, so every view agrees, and a hold begun after hearing of
+    another always ranks after it. No clock is involved; it's the same kind
+    of rule Automerge uses to settle concurrent writes;
 - **behaviour:** each presence message is this view's whole state. There is
   a heartbeat every 5 s, a TTL of 15 s and a bye on dispose, and on
   `pagehide` (Patchwork doesn't run the cleanup when a tab closes); a page

@@ -380,9 +380,10 @@ describe("pose holds", () => {
 
   it("keeps a still hold alive with resends", () => {
     a.hold("hand", "o1", null, T(1));
+    const stamp = b.remoteHolds().get("o1").since;
     clock.advance(HOLD_TTL_MS * 3);
     expect(b.heldBy("o1")).toBe("sa");
-    expect(b.remoteHolds().get("o1").since).toBeLessThanOrEqual(clock.now() - HOLD_TTL_MS * 3);
+    expect(b.remoteHolds().get("o1").since).toBe(stamp); // resends keep the hold's stamp
   });
 
   it("heldBy and remoteHolds report the earliest of two holders", () => {
@@ -396,13 +397,28 @@ describe("pose holds", () => {
     expect(b.remoteHolds().get("o1").transform).toEqual(T(9));
   });
 
-  it("every view ranks two holds alike, whatever order it heard them in (the holder's own clock)", () => {
+  it("every view ranks two holds alike, whatever order it heard them in (the holder's stamp)", () => {
     const pose = (session, since) => ({ type: "scene:pose", session, viewer: session, id: "o9", parent: null, transform: T(1), since, seq: 1 });
     // b hears the later grab first
     hb.inject(pose("late", 2_000));
     hb.inject(pose("early", 1_500));
     expect(b.heldBy("o9")).toBe("early");
     expect(b.remoteHolds().get("o9").session).toBe("early");
+  });
+
+  it("concurrent holds (neither holder had heard of the other) fall to the session id, on every view", () => {
+    const pose = (session, since) => ({ type: "scene:pose", session, viewer: session, id: "o8", parent: null, transform: T(1), since, seq: 1 });
+    hb.inject(pose("s2", 1));
+    hb.inject(pose("s1", 1));
+    expect(b.heldBy("o8")).toBe("s1");
+  });
+
+  it("a hold begun after hearing of another ranks after it, whatever the clocks say", () => {
+    a.hold("hand", "o1", null, T(1));
+    // b's clock is far behind a's: stamps, not times, decide
+    b.hold("hand", "o1", null, T(2));
+    expect(b.heldBy("o1")).toBe("sa");
+    expect(sent("B", "scene:pose")[0].since).toBeGreaterThan(sent("A", "scene:pose")[0].since);
   });
 
   it("while this view holds it too, only a peer that took it first counts", () => {

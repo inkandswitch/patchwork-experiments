@@ -75,8 +75,12 @@ export function cleanKeys(keys) {
 
 /**
  * Which of several peers' holds on one object counts: one still held beats a
- * landed one, then the earliest, then the lower session id. `since` is the
- * holder's own clock, sent with every pose, so every view picks the same.
+ * landed one, then the lower `since`, then the lower session id. `since` is a
+ * Lamport stamp, not a time: a hold begun after its holder heard of another
+ * gets a higher one, so the order follows what each holder knew, and
+ * concurrent holds fall to the session id. Every view sees the same stamps,
+ * so every view picks the same winner, the way Automerge settles concurrent
+ * writes by operation id rather than by anyone's clock.
  * @param {{ session: string, since: number, landed: object | null }[]} holds
  */
 export function winningHold(holds) {
@@ -148,6 +152,11 @@ export function createPresence({
   const rates = new Map(); // ext → hz
   let seq = 0;
   let sentAt = -Infinity;
+  // the Lamport clock for holds: past every stamp this view has seen
+  let lamport = 0;
+  const observe = (stamp) => {
+    if (Number.isFinite(stamp) && stamp > lamport) lamport = stamp;
+  };
   let sendTimer = null; // a coalesced send waiting for its turn
   let heartbeat = null;
 
@@ -317,8 +326,8 @@ export function createPresence({
     if (dead || !isStr(ext) || !isStr(id) || !isObj(transform)) return;
     let h = held.get(id);
     if (!h) {
-      // since: when this hold began, on our clock; every peer ranks holds by it
-      h = { ext, id, parent: null, transform: null, since: now(), sentAt: -Infinity, timer: null, dirty: false };
+      // since: this hold's Lamport stamp, after every hold we've heard of; every peer ranks holds by it
+      h = { ext, id, parent: null, transform: null, since: ++lamport, sentAt: -Infinity, timer: null, dirty: false };
       held.set(id, h);
     }
     h.ext = ext; // the latest holder owns the release
@@ -439,9 +448,10 @@ export function createPresence({
       prev.timer = setTimer(() => dropHold(id, s), HOLD_TTL_MS);
       return holdsChanged([id]);
     }
-    // when the hold began, as its holder says (so every view ranks it the
-    // same); an older peer that doesn't say: when we first heard of it
-    const since = Number.isFinite(msg.since) ? msg.since : now();
+    // the hold's stamp, as its holder says (so every view ranks it the same);
+    // a peer that doesn't say ranks after every stamp we know
+    observe(msg.since);
+    const since = Number.isFinite(msg.since) ? msg.since : lamport + 1;
     const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since, timer: null };
     if (prev && prev !== h) clearTimer(prev.timer);
     h.viewer = typeof msg.viewer === "string" ? msg.viewer : null;
