@@ -120,7 +120,8 @@ themselves never add a dragged row.
   Hiding an object doesn't hide what's attached to it. Removing an object
   leaves its attachments where they were, now at the scene root.
 - **Viewport**: orbit/pan/zoom, click to select, move/rotate gizmo (`G` / `R`),
-  **Frame all** (`F`). The gizmo on a selected group sits at the middle of
+  **Frame all** (`F`; editing only — a game table keeps F for flipping, and
+  takes just the camera framing the scene as it loads). The gizmo on a selected group sits at the middle of
   what's in it and moves all of it (what's attached to a member follows the
   member; locked members stay), written as one change.
 - **Hand** (`H`, or *Hand* in the gizmo menu): pick objects up and put them
@@ -133,7 +134,11 @@ themselves never add a dragged row.
   are, or untick **Snap** to turn snapping off for this scene. A snap point
   with a yaw turns the piece to face that way. **Q** / **E** turn it 45°
   while carried, **F** turns it over (about its own length, as a card goes
-  face down); **Esc** puts it back. A press that doesn't move
+  face down, turning in the air rather than snapping); **Esc** puts it back.
+  **F** over a piece that's lying there (or *Flip* in its right-click menu)
+  turns it over where it lies: it rises, turns and comes back down on
+  whatever is under it, and only where it lands is written. With the hand as
+  the tool, a selected piece takes F before **Frame all** does. A press that doesn't move
   is still a click (select), and a press on empty space or on a **locked**
   object orbits. There is no physics: nothing tips or slides, and only the
   final pose is written. While it's carried, other people see it move (over

@@ -44,6 +44,59 @@ export function rotateAbout(m, axis, angle) {
 /** Turn it over about its own length (+Z in world): a card goes face down. */
 export const flipMatrix = (m) => rotateAbout(m, [m[8], m[9], m[10]], Math.PI);
 
+/**
+ * How far its body sweeps out from its own length (+Z) as it turns over:
+ * how high it must rise to turn without cutting the table. Pure.
+ */
+export function turnRadius(box, m) {
+  const len = Math.hypot(m[8], m[9], m[10]) || 1;
+  const a = [m[8] / len, m[9] / len, m[10] / len];
+  let r = 0;
+  for (let i = 0; i < 8; i++) {
+    const p = [i & 1 ? box.max[0] : box.min[0], i & 2 ? box.max[1] : box.min[1], i & 4 ? box.max[2] : box.min[2]];
+    const v = [0, 1, 2].map((k) => m[k] * p[0] + m[4 + k] * p[1] + m[8 + k] * p[2]);
+    const along = v[0] * a[0] + v[1] * a[1] + v[2] * a[2];
+    r = Math.max(r, Math.hypot(v[0] - along * a[0], v[1] - along * a[1], v[2] - along * a[2]));
+  }
+  return r;
+}
+
+/**
+ * Part way (t from 0 to 1) through turning over into `m`: at 0 it hasn't
+ * turned yet, at 1 it is `m`, and in between it rises `lift` (most at half
+ * way) so it turns in the air. Pure.
+ */
+export function turning(m, t, lift = 0) {
+  const k = Math.min(1, Math.max(0, t));
+  const out = rotateAbout(m, [m[8], m[9], m[10]], -Math.PI * (1 - k));
+  out[13] += lift * Math.sin(Math.PI * k);
+  return out;
+}
+
+/**
+ * Turning a resting object over where it is (no carry): the world matrix it
+ * ends at, flipped and set back down on whatever is under its footprint
+ * (raycast must skip it), and how high it rises on the way. Pure.
+ * @returns {{ to: number[], lift: number }}
+ */
+export function flipInPlace({ W, box, raycast, sceneTop = null }) {
+  const turned = flipMatrix(W);
+  const b = worldBox(box, turned);
+  const centre = [(b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2];
+  const top = Math.max(b.max[1], Number.isFinite(sceneTop) ? sceneTop : 0) + 1;
+  const land = landingFor({ W: turned, box, ray: { origin: [centre[0], top, centre[1]], dir: [0, -1, 0] }, raycast, sceneTop });
+  const size = b.max[1] - b.min[1];
+  return { to: land ? translate(turned, land.delta) : turned, lift: turnRadius(box, W) + liftFor(size) };
+}
+
+/** Part way through `flipInPlace`: from `from` to `to`, rising `lift` as it turns. Pure. */
+export function flipAt(from, to, t, lift) {
+  const k = Math.min(1, Math.max(0, t));
+  const m = to.slice();
+  for (let i = 12; i < 15; i++) m[i] = from[i] + (to[i] - from[i]) * k;
+  return turning(m, k, lift);
+}
+
 /** Move a world matrix by a world translation. */
 export function translate(m, d) {
   const out = m.slice();
@@ -185,6 +238,7 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
     // picked up where nothing asks it to face up: it turns face up while over somewhere that does
     faceYou: !landing(id, W.slice(12, 15), null)?.faceUp,
     turned: false,
+    flips: 0, // times it has turned over: the part shows each one turning in the air
   };
   const landFrom = (ray, alt) => landingFor({ W: state.W, box, ray, offset, alt, snaps, raycast, sceneTop: sceneTop() });
 
@@ -205,6 +259,7 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
       const want = !!landing(id, p, land.on)?.faceUp;
       if (want ? !state.turned && state.W[5] <= 1e-6 : state.turned) {
         state.W = flipMatrix(state.W);
+        state.flips++;
         state.turned = want;
         land = landFrom(ray, alt) ?? land;
       }
@@ -237,6 +292,7 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
     /** Turn it over; it's up to you now, so nowhere turns it face up any more. */
     flip() {
       state.W = flipMatrix(state.W);
+      state.flips++;
       state.faceYou = false;
       return again();
     },

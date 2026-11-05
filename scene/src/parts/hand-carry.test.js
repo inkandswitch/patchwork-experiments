@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createCarry, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, worldBox, yawOfMatrix } from "./hand-carry.js";
+import { createCarry, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./hand-carry.js";
 import { composeMatrix } from "../transform.js";
 
 const I = composeMatrix({});
@@ -150,7 +150,56 @@ describe("hand-carry maths", () => {
     expect(c.state.W[5]).toBeLessThan(0);
   });
 
+  it("counts each time it turns over, by F or by a landing rule", () => {
+    const landing = (id, p) => (p[0] > 2 ? { faceUp: true } : null);
+    const c = createCarry({ id: "card", W: flipMatrix(I), box: BOX, raycast: ground, landing });
+    c.move(down(1, 0));
+    expect(c.state.flips).toBe(0);
+    c.move(down(3, 0));
+    expect(c.state.flips).toBe(1);
+    c.flip();
+    expect(c.state.flips).toBe(2);
+  });
+
   it("has nothing to put down before it moved", () => {
     expect(createCarry({ id: "a", W: I, box: BOX, raycast: ground }).put()).toBe(null);
+  });
+});
+
+describe("turning over in the air", () => {
+  // a card: 0.06 wide, 0.002 thick, 0.09 long (its length along +Z), origin at its middle
+  const CARD = { min: [-0.03, -0.001, -0.045], max: [0.03, 0.001, 0.045] };
+  const lying = composeMatrix({ position: [0.5, 0.001, 0.2] });
+
+  it("sweeps out as far as its body reaches from its length", () => {
+    expect(turnRadius(CARD, lying)).toBeCloseTo(Math.hypot(0.03, 0.001));
+    expect(turnRadius(CARD, composeMatrix({ scale: 2 }))).toBeCloseTo(2 * Math.hypot(0.03, 0.001));
+  });
+
+  it("goes from not turned to turned, highest half way", () => {
+    const to = flipMatrix(lying);
+    expect(close(turning(to, 0, 0.1), lying)).toBe(true);
+    expect(close(turning(to, 1, 0.1), to)).toBe(true);
+    const mid = turning(to, 0.5, 0.1);
+    expect(mid[13]).toBeCloseTo(lying[13] + 0.1);
+    expect(mid[5]).toBeCloseTo(0); // on its edge
+    expect(mid[10]).toBeCloseTo(1); // turning about its length
+  });
+
+  it("turns a lying card over where it is, rising clear of the table on the way", () => {
+    const { to, lift } = flipInPlace({ W: lying, box: CARD, raycast: ground });
+    expect(to[5]).toBeCloseTo(-1); // face down
+    expect(to.slice(12, 15).map((v) => +v.toFixed(9))).toEqual([0.5, 0.001, 0.2]); // where it was
+    expect(lift).toBeGreaterThan(turnRadius(CARD, lying));
+    // never through the table: its lowest corner stays above it all the way
+    for (let t = 0; t <= 1.0001; t += 0.05) expect(worldBox(CARD, flipAt(lying, to, t, lift)).min[1]).toBeGreaterThan(-1e-9);
+  });
+
+  it("comes down on whatever is under it, the top of a pile", () => {
+    const pile = (origin) => (origin[1] > 0.01 ? { id: "pile", point: [origin[0], 0.01, origin[2]] } : null);
+    const { to } = flipInPlace({ W: lying, box: CARD, raycast: pile });
+    expect(to[13]).toBeCloseTo(0.011);
+    expect(close(flipAt(lying, to, 0, 0.1), lying)).toBe(true);
+    expect(close(flipAt(lying, to, 1, 0.1), to)).toBe(true);
   });
 });

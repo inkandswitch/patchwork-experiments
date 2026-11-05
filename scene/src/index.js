@@ -150,6 +150,17 @@ export const plugins = [
     },
   },
   {
+    // an untouched camera follows the content in as it loads; no verbs, so
+    // a game can require it without the editor's framing keys
+    type: "scene:extension",
+    id: "scene.autoframe",
+    name: "Frame on open",
+    activities: ["edit"],
+    async load() {
+      return (await import("./parts/autoframe.js")).default;
+    },
+  },
+  {
     type: "scene:extension",
     id: "scene.outline",
     name: "Objects",

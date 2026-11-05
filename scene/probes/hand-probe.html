@@ -89,6 +89,9 @@ try {
   const TRAY = { min: [-0.1, 0, -0.04], max: [0.1, 0.1, 0.04] };
   getRegistry("scene:extension").register({
     type: "scene:extension", id: "probe", name: "Probe", traits: ["probe.secret"],
+    // played as well as edited, needing what a game table does (tabletop's own list)
+    activities: ["play", "edit"],
+    requires: ["scene.hand", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     load: async () => ({
       create(api) {
         let looks = new Map();
@@ -171,6 +174,9 @@ try {
     worldB: (id) => dbgB.viewport.worldOf(id)?.slice(12, 15) ?? null,
     carrying: () => dbgA.host.instanceOf("scene.hand") && dbgA.local.get().armed,
     camera: () => vp.getCamera(),
+    /** switch a viewer's activity; what each is running */
+    activity: (who, id) => (who === "a" ? dbgA : dbgB).local.swap((m) => ({ ...m, activity: id })),
+    running: (who) => ((who === "a" ? dbgA : dbgB).local.get().running ?? []).map((r) => r.id),
     /** "face" or "back": which look a viewer is showing for a hidden object */
     look: (who, id) => {
       const url = (who === "a" ? dbgA : dbgB).queue.state(id)?.url;

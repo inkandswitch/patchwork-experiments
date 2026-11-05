@@ -8,10 +8,15 @@
 // where it would land, and a ring on the table shows the spot: accent when
 // it will go to a connector (another object's, that takes its tags), muted
 // when it will go down where it is. Alt, or the Snap pref off, places
-// freely. Q / E turn it 45°, F turns it over; Escape puts it back. Every
+// freely. Q / E turn it 45°, F turns it over (in the air: it rises and
+// turns, rather than snapping); Escape puts it back. Every
 // running extension's `landing` may ask for it face up where it's going (a
 // card carried into your own hand). Put down, it rests on the highest
 // surface under its footprint, and only that final pose is written.
+//
+// Flip (F over a piece, or the menu) turns one over where it lies: it rises,
+// turns over in the air and comes back down on whatever is under it, peers
+// seeing it turn through the pose hold, and only where it lands is written.
 //
 // Other extensions can start a carry too: `carry(id, ev, opts)` (collect
 // "carry") returns the session to give back from their press.
@@ -20,12 +25,13 @@
 // rays and raycasts, the pose hold peers see, the ring, the doc write.
 
 import { isGroup } from "../groups.js";
-import { createCarry, localTransform, snapCandidates, worldBox } from "./hand-carry.js";
+import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./hand-carry.js";
 import { effectiveTool } from "../current-tool.js";
 
 export { effectiveTool };
 
 const TURN = Math.PI / 4;
+const TURN_OVER = 0.3; // seconds to turn something over
 const RING_SEGMENTS = 48;
 
 /** Can the hand pick this up: there, not a group, not locked? (A peer's hold is checked separately.) */
@@ -37,12 +43,13 @@ export default {
   create(api) {
     const THREE = api.THREE;
     let open = null; // the open carry's session (one at a time)
+    const flipping = new Map(); // id → stop: pieces turning over where they lie
     let layer = null;
     let ring = null;
 
     const doc = () => api.doc() ?? {};
     const toolNow = () => effectiveTool(api.local.get(), doc());
-    const canCarry = (id) => id != null && carryableObject(doc().objects?.[id]) && api.heldBy(id) == null;
+    const canCarry = (id) => id != null && carryableObject(doc().objects?.[id]) && api.heldBy(id) == null && !flipping.has(id);
 
     // ─── the ring ───────────────────────────────────────────────────────────
 
@@ -107,6 +114,15 @@ export default {
       };
     }
 
+    // Its pose is local to its doc parent as the doc has it now (a peer may
+    // re-attach it, or move the parent, while it's carried), by the doc's
+    // own world for that parent, not one a peer is holding for the moment.
+    function localNow(id, W) {
+      const s = api.scene();
+      const parentId = s.parents.get(id) ?? null;
+      return localTransform(parentId ? s.world(parentId) : null, W);
+    }
+
     /** Every other shown object's connectors that take these tags, in world. */
     function snapsFor(id, skip) {
       const s = api.scene();
@@ -166,19 +182,33 @@ export default {
         });
       }
 
-      // Its pose is local to its doc parent as the doc has it now (a peer may
-      // re-attach it, or move the parent, while it's carried), by the doc's
-      // own world for that parent, not one a peer is holding for the moment.
-      function localNow(W) {
-        const s = api.scene();
-        const parentId = s.parents.get(id) ?? null;
-        return localTransform(parentId ? s.world(parentId) : null, W);
+      // Turning over shows as a turn in the air (`spin`: how far through),
+      // though the carry has already turned: where it lands never waits on it.
+      let spin = null;
+      let flips = 0;
+      let stopSpin = null;
+      const held = () => (spin ? turning(c.state.W, spin.t, turnRadius(box, c.state.W)) : c.state.W);
+      function spinning() {
+        if (c.state.flips === flips) return;
+        flips = c.state.flips;
+        spin = { t: 0 };
+        stopSpin ??= api.loop((dt) => {
+          if (done || !spin) return;
+          spin.t += dt / TURN_OVER;
+          if (spin.t >= 1) {
+            spin = null;
+            stopSpin?.();
+            stopSpin = null;
+          }
+          api.pose.hold(id, localNow(id, held()));
+        });
       }
 
       // after the carry moved it: hold it there (peers see it) and show the ring
       function shown(land) {
         if (!land || done) return;
-        api.pose.hold(id, localNow(c.state.W));
+        spinning();
+        api.pose.hold(id, localNow(id, held()));
         showRing(land);
       }
 
@@ -193,6 +223,8 @@ export default {
 
       function finish() {
         done = true;
+        stopSpin?.();
+        stopSpin = null;
         if (open === session) open = null;
         hideRing();
       }
@@ -216,7 +248,7 @@ export default {
             if (c) api.pose.release(id);
             return;
           }
-          api.change(api.ops.setTransform(api.scene(), id, localNow(W)));
+          api.change(api.ops.setTransform(api.scene(), id, localNow(id, W)));
           api.pose.release(id, { landed: true });
         },
         // a press that didn't move: not a carry, so the click goes on (to selection)
@@ -250,6 +282,38 @@ export default {
       return session;
     }
 
+    // ─── turning over where it lies ─────────────────────────────────────────
+
+    /** Turn `id` over where it lies: up, over and down again, then written. @returns whether it started */
+    function flip(id) {
+      if (api.signal.aborted || !canCarry(id)) return false;
+      const W0 = api.worldOf(id);
+      const box = api.content(id)?.box ?? null;
+      if (!W0 || !box) return false;
+      const skip = carriedBy(id);
+      const { to, lift } = flipInPlace({ W: W0, box, raycast: (origin, dir) => api.raycast(origin, dir, { skip }), sceneTop: api.sceneBox()?.max?.[1] ?? null });
+      let t = 0;
+      const end = (W) => {
+        flipping.get(id)?.();
+        flipping.delete(id);
+        if (!W) return api.pose.release(id);
+        api.change(api.ops.setTransform(api.scene(), id, localNow(id, W)));
+        api.pose.release(id, { landed: true });
+      };
+      flipping.set(
+        id,
+        api.loop((dt) => {
+          // removed meanwhile, or a peer picked it up first: it's theirs
+          if (!doc().objects?.[id] || api.heldBy(id) != null) return end(null);
+          t += dt / TURN_OVER;
+          if (t >= 1) return end(to);
+          api.pose.hold(id, localNow(id, flipAt(W0, to, t, lift)));
+        }),
+      );
+      api.pose.hold(id, localNow(id, W0));
+      return true;
+    }
+
     // ─── commands ───────────────────────────────────────────────────────────
 
     const commands = [
@@ -264,6 +328,18 @@ export default {
         run() {
           api.local.swap((m) => (m.tool === "hand" ? m : { ...m, tool: "hand" }));
         },
+      },
+      {
+        id: "flip",
+        name: "Flip",
+        key: "f",
+        show: ["menu"],
+        // the hand's verb, so only while the hand is the tool (in the editor F is Frame all)
+        state(target, { scene, local }) {
+          if (target == null || effectiveTool(local, scene?.d) !== "hand" || !canCarry(target)) return null;
+          return { title: "Turn it over (F)" };
+        },
+        run: (id) => flip(id),
       },
       {
         id: "snap",
@@ -299,6 +375,8 @@ export default {
         },
       },
       dispose() {
+        for (const stop of flipping.values()) stop();
+        flipping.clear();
         open = null;
         ring = null;
         layer = null;

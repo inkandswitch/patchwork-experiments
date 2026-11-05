@@ -12,7 +12,9 @@
 // card in the tray to whoever sits there and its back to everyone else, its S
 // command shuffles the pile under the pointer, a face-down card picked up,
 // flipped (F) and put down shows its face to both, and its landing hook turns
-// a card drawn into the tray face up. Last, the gizmo: a real drag on its X
+// a card drawn into the tray face up. Then, playing (the probe's extension
+// takes part in play as a table does), F over a card lying there turns it
+// over in the air where it lies, without moving the view. Last, the gizmo: a real drag on its X
 // arrow (B sees the pose before the doc changes), and on a group's pivot
 // (both members move). Prints a JSON report; exits non-zero on a failure.
 import { join, resolve } from "node:path";
@@ -160,6 +162,35 @@ try {
   check("drawn into your tray, a face-down card lands face up", Math.abs((await T('rot("under")'))[2]) < 1e-3, await T('rot("under")'));
   check("and A sees it, B doesn't", (await look("a", "under")) === "face" && (await look("b", "under")) === "back", [await look("a", "under"), await look("b", "under")]);
   await shot("2-cards");
+
+  // playing at the table: F over a card lying there turns it over where it
+  // lies, rising and turning in the air (B sees it go up), and nothing frames
+  await T('activity("a", "play")');
+  check("playing, A runs the hand and no Frame all", await b.waitFor(`(() => { const r = window.__table.running("a"); return r.includes("scene.hand") && !r.includes("scene.frame") && !r.includes("scene.toolbar"); })()`, 5000), await T('running("a")'));
+  await settle();
+  const restFlip = await T('worldB("faceDown")');
+  const posFlip = await T('pos("faceDown")');
+  const camFlip = await T("camera()");
+  const atFlip = await T("hover('faceDown')");
+  await b.move(atFlip[0], atFlip[1]);
+  await sleep(300);
+  await b.key("f");
+  let peakFlip = -Infinity;
+  for (let i = 0; i < 16; i++) {
+    await sleep(20);
+    const w = await T('worldB("faceDown")');
+    if (w) peakFlip = Math.max(peakFlip, w[1]);
+  }
+  await sleep(200);
+  await settle();
+  check("F over a card at the table turns it over in the air: B sees it rise", peakFlip > restFlip[1] + 0.01, { rest: restFlip, peak: peakFlip });
+  const posFlipped = await T('pos("faceDown")');
+  check("it comes down where it lay, face down for both", near([posFlipped[0], posFlipped[2]], [posFlip[0], posFlip[2]], 1e-4) && (await look("a", "faceDown")) === "back" && (await look("b", "faceDown")) === "back", { posFlip, posFlipped, a: await look("a", "faceDown"), b: await look("b", "faceDown") });
+  const camFlipped = await T("camera()");
+  check("and F at the table doesn't move the view", near(camFlip.position, camFlipped.position, 1e-4) && near(camFlip.target, camFlipped.target, 1e-4), { camFlip, camFlipped });
+  await T('activity("a", "edit")');
+  await b.waitFor(`window.__table.running("a").includes("scene.toolbar")`, 5000);
+  await settle();
 
   // 9. the gizmo, with a real drag on its X arrow: B sees the pose before the doc changes
   await b.key("g");

@@ -1,30 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object } from "../test/stage-harness.js";
-import frame, { frameTarget, sameCamera, shownObjects } from "./frame.js";
+import { fakeCamera } from "../test/fake-camera.js";
+import frame, { frameTarget } from "./frame.js";
 
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
-
-/** A camera rig standing in for the stage's (no WebGL here): frame() moves it to look at the box. */
-function fakeCamera({ touched = false } = {}) {
-  const cam = { position: [5, 5, 5], target: [0, 0, 0], fov: 45 };
-  const frames = [];
-  const rig = {
-    object: null,
-    get: () => ({ position: [...cam.position], target: [...cam.target], fov: cam.fov }),
-    set: () => {},
-    frame(box) {
-      frames.push(box);
-      cam.target = box ? box.min.map((v, i) => (v + box.max[i]) / 2) : [0, 0.5, 0];
-      cam.position = cam.target.map((v) => v + 3);
-    },
-    hold: () => () => {},
-    limit: () => () => {},
-    touched: () => touched,
-    watch: () => () => {},
-  };
-  return { cam, frames, rig };
-}
 
 /**
  * Mount scene.frame with a stubbed camera, scene box and content (the stage's
@@ -47,13 +27,6 @@ const B2 = { min: [0, 0, 0], max: [2, 1, 1] };
 const B3 = { min: [-1, 0, 0], max: [2, 1, 1] };
 
 describe("scene.frame (pure)", () => {
-  it("tells whether the camera is where it was left", () => {
-    const a = { position: [0, 0, 10], target: [0, 0, 0] };
-    expect(sameCamera(a, { position: [0, 0, 10.0000001], target: [0, 0, 0] })).toBe(true);
-    expect(sameCamera(a, { position: [0, 0, 10.1], target: [0, 0, 0] })).toBe(false);
-    expect(sameCamera(a, { position: [0, 0, 10], target: [0, 1, 0] })).toBe(false);
-    expect(sameCamera(a, null)).toBe(false);
-  });
   it("frames the selected group a double-clicked object is in, else the object", () => {
     const objects = { a: object(), g: group(), b: object() };
     const scene = { objects, groups: new Map([["a", "g"]]) };
@@ -62,10 +35,6 @@ describe("scene.frame (pure)", () => {
     expect(frameTarget(scene, "b", "g")).toBe("b");
     expect(frameTarget(scene, "gone", null)).toBe(null);
     expect(frameTarget(scene, "a", "dimension:d1")).toBe("a"); // a ref selection is no group
-  });
-  it("counts what is shown: not hidden, not in a hidden group, not a group", () => {
-    const objects = { a: object(), b: object({ visible: false }), c: object({ group: "g" }), g: group({ visible: false }) };
-    expect(shownObjects({ objects, ids: ["a", "b", "c", "g"], parents: new Map(), groups: new Map([["c", "g"]]) })).toEqual(["a"]);
   });
 });
 
@@ -112,114 +81,6 @@ describe("scene.frame: commands and double-click", () => {
     expect(run(s, "set-home")).toBe(true);
     expect(s.doc().view.home).toEqual({ position: [5, 5, 5], target: [0, 0, 0], fov: 45 });
     s.unmount();
-  });
-});
-
-describe("scene.frame: auto-framing", () => {
-  it("frames once from hint bounds, then leaves the camera alone as content loads", async () => {
-    const { s, world, camera } = await mount();
-    world.box = B1;
-    s.change((d) => {
-      d.objects.a = object({ hint: { bounds: { min: [0, 0, 0], max: [1, 1, 1] } } });
-    });
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    world.box = B2;
-    world.loaded.add("a");
-    s.change((d) => (d.title = "loaded"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    s.unmount();
-  });
-
-  it("without hints, follows the content as it arrives until all of it has loaded", async () => {
-    const { s, world, camera } = await mount();
-    s.change((d) => {
-      d.objects.a = object();
-      d.objects.b = object();
-    });
-    await s.settle();
-    expect(camera.frames).toEqual([]); // nothing to see yet
-    world.box = B1;
-    world.loaded.add("a");
-    s.change((d) => (d.title = "a loaded"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    // a hover is no reason to frame again
-    s.local.swap((m) => ({ ...m, hovered: "a" }));
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    // nor is a pose held mid-drag, though it moves the box
-    world.box = B3;
-    s.api("scene.frame").pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
-    await s.settle();
-    s.api("scene.frame").pose.release("a");
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    world.box = B2;
-    world.loaded.add("b");
-    s.change((d) => (d.title = "b loaded"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1, B2]);
-    // everything is in: a rebuild later doesn't reframe
-    world.box = B3;
-    s.change((d) => (d.title = "rebuilt"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1, B2]);
-    s.unmount();
-  });
-
-  it("stops once the person moves the camera", async () => {
-    const { s, world, camera } = await mount();
-    s.change((d) => {
-      d.objects.a = object();
-      d.objects.b = object();
-    });
-    world.box = B1;
-    world.loaded.add("a");
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    camera.cam.position = [9, 9, 9]; // an orbit
-    world.box = B2;
-    s.change((d) => (d.title = "more"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    s.unmount();
-  });
-
-  it("starts again when objects arrive in an empty scene", async () => {
-    const { s, world, camera } = await mount({ objects: { a: object() }, order: ["a"] });
-    world.box = B1;
-    world.loaded.add("a");
-    s.change((d) => (d.title = "a loaded"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1]);
-    camera.cam.position = [9, 9, 9];
-    s.change((d) => {
-      delete d.objects.a;
-      d.order = [];
-    });
-    world.box = null;
-    await s.settle();
-    s.change((d) => {
-      d.objects.b = object();
-    });
-    await s.settle();
-    world.box = B2;
-    world.loaded.add("b");
-    s.change((d) => (d.title = "b loaded"));
-    await s.settle();
-    expect(camera.frames).toEqual([B1, B2]);
-    s.unmount();
-  });
-
-  it("never frames a camera this viewer had already placed", () => {
-    const camera = fakeCamera({ touched: true });
-    const api = { camera: camera.rig, sceneBox: () => B1, content: () => ({ loaded: true }), local: { get: () => ({}) } };
-    const x = frame.create(api);
-    const scene = { objects: { a: object() }, ids: ["a"], parents: new Map(), groups: new Map() };
-    x.update(scene, {}, { scene: null, local: null });
-    expect(camera.frames).toEqual([]);
   });
 });
 

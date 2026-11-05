@@ -59,6 +59,13 @@ async function mount({ doc = {}, before = [], extensions = [], content = {} } = 
     hold: (id, t) => holds.push([id, t]),
     release: (id, opts) => releases.push([id, opts ?? {}]),
   };
+  // frame loops, run by hand: stub.tick(dt)
+  const loops = new Set();
+  api.loop = (fn) => (loops.add(fn), () => loops.delete(fn));
+  stub.loops = loops;
+  stub.tick = (dt = 0.05, n = 1) => {
+    for (let i = 0; i < n; i++) for (const fn of [...loops]) fn(dt);
+  };
   return { api, x: () => s.instance("scene.hand"), stub };
 }
 
@@ -268,6 +275,27 @@ describe("scene.hand carrying", () => {
     expect(transformOf("a").position[1]).toBeCloseTo(0.1); // its box is below its origin now: lifted to rest on the ground
   });
 
+  it("shows F turning it over in the air, though where it lands is already turned", async () => {
+    const { x, stub } = await mount({ doc: { view: { tool: "hand" } } });
+    const session = x().input.press(press("a"));
+    session.move(move(1, 1));
+    const before = stub.holds.at(-1)[1];
+    session.key({ key: "f" });
+    // the first pose held is the turn's start: not yet over
+    expect(composeMatrix(stub.holds.at(-1)[1])[5]).toBeCloseTo(composeMatrix(before)[5]);
+    expect(stub.loops.size).toBe(1);
+    stub.tick(0.15);
+    const mid = stub.holds.at(-1)[1];
+    expect(Math.abs(composeMatrix(mid)[5])).toBeLessThan(0.1); // on its edge
+    expect(mid.position[1]).toBeGreaterThan(before.position[1]); // and up in the air
+    stub.tick(0.2);
+    expect(composeMatrix(stub.holds.at(-1)[1])[5]).toBeCloseTo(-1);
+    expect(stub.loops.size).toBe(0); // done turning
+    session.end(move(1, 1));
+    await settle();
+    expect(composeMatrix(transformOf("a"))[5]).toBeCloseTo(-1);
+  });
+
   it("other keys go on down the chain", async () => {
     const { x } = await mount({ doc: { view: { tool: "hand" } } });
     const session = x().input.press(press("a"));
@@ -393,5 +421,64 @@ describe("scene.hand grab offset", () => {
     session.end(move(1, 1));
     await settle();
     expect(transformOf("a").position.map((v) => +v.toFixed(9))).toEqual([0.95, 0, 1.05]);
+  });
+});
+
+describe("Flip: turning a piece over where it lies", () => {
+  const lying = { position: [0.5, 0, 0.2], rotation: [0, 0, 0], scale: 1 };
+  const run = () => s.api("scene.hand").run({ ext: "scene.hand", command: "flip", target: "a" });
+
+  it("is the hand's: on a piece, with the hand as the tool, from the menu or F", async () => {
+    await mount({ doc: { view: { tool: "hand" } } });
+    expect(command("flip").key).toBe("f");
+    expect(command("flip").show).toEqual(["menu"]);
+    expect(stateOf("flip", "a")).toMatchObject({ title: expect.stringContaining("(F)") });
+    expect(stateOf("flip", null)).toBe(null);
+    s.local.swap((m) => ({ ...m, tool: "move" }));
+    expect(stateOf("flip", "a")).toBe(null); // in the editor, F is Frame all's
+  });
+
+  it("rises, turns over in the air and comes down where it was; only the landing is written", async () => {
+    const { stub } = await mount({ doc: { view: { tool: "hand" }, objects: { a: object({ transform: lying }) } } });
+    expect(run()).toBe(true);
+    expect(stateOf("flip", "a")).toBe(null); // not again while it's turning
+    const writes = [];
+    s.handle.on("change", () => writes.push(transformOf("a")));
+    stub.tick(0.15);
+    const mid = stub.holds.at(-1)[1];
+    expect(mid.position[1]).toBeGreaterThan(0.1); // up in the air
+    expect(writes).toEqual([]);
+    stub.tick(0.05, 4);
+    await settle();
+    expect(stub.loops.size).toBe(0);
+    expect(stub.releases.at(-1)).toEqual(["a", { landed: true }]);
+    const m = composeMatrix(transformOf("a"));
+    expect(m[5]).toBeCloseTo(-1); // face down
+    expect(transformOf("a").position[0]).toBeCloseTo(0.5);
+    expect(transformOf("a").position[2]).toBeCloseTo(0.2);
+    expect(transformOf("a").position[1]).toBeCloseTo(0.1); // its box is below its origin now: resting on the ground
+    expect(stateOf("flip", "a")).not.toBe(null);
+  });
+
+  it("gives way to a peer who picks it up meanwhile: nothing is written", async () => {
+    const { api, stub } = await mount({ doc: { view: { tool: "hand" }, objects: { a: object({ transform: lying }) } } });
+    run();
+    stub.tick(0.1);
+    api.heldBy = () => "peer";
+    stub.tick(0.1);
+    await settle();
+    expect(stub.loops.size).toBe(0);
+    expect(stub.releases.at(-1)).toEqual(["a", {}]);
+    expect(transformOf("a")).toEqual(lying);
+  });
+
+  it("F over a piece flips it at a table, where nothing else answers F", async () => {
+    const { default: keys } = await import("./keys.js");
+    const { stub } = await mount({ doc: { view: { tool: "hand" }, objects: { a: object({ transform: lying }) } }, before: [{ meta: { id: "scene.keys" }, module: keys }] });
+    s.local.swap((m) => ({ ...m, hovered: "a" }));
+    s.key("f");
+    stub.tick(0.05, 8);
+    await settle();
+    expect(composeMatrix(transformOf("a"))[5]).toBeCloseTo(-1);
   });
 });

@@ -192,7 +192,7 @@ try {
   // (a template starts its maker as joining does), and B, who joined the
   // level. Each runs only what playing calls for: the arena, what it requires
   // (keys, notices, framing) and the switcher.
-  const GAME = ["arena", "scene.activity", "scene.frame", "scene.keys", "scene.notices"];
+  const GAME = ["arena", "scene.activity", "scene.autoframe", "scene.keys", "scene.notices"];
   const inGame = async (w) => {
     const ok = (await until(`!window.__p.running('${w}').includes('scene.toolbar')`, 6000)) && (await settled(w));
     return { ok, activity: await P(`activity('${w}')`), run: await sorted(w) };

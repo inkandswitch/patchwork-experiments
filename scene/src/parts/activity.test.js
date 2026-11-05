@@ -89,6 +89,7 @@ describe("the scene package's own extensions", () => {
       "scene.keys",
       "scene.menu",
       "scene.frame",
+      "scene.autoframe",
       "scene.outline",
       "scene.inspector",
       "scene.measure",
