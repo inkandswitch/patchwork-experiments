@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BODY, look, lookDir, step, wishVelocity } from "./walk.js";
 import { KINDS, PALETTE, knockedOver, sampleArena, yawThenTilt } from "./level.js";
-import { ART, kindGLB, kindKey } from "./build.js";
+import { ART, kindGLB, kindKey } from "./layout.js";
 import { parseGLB } from "./glb.js";
 
 /** A world of axis-aligned boxes, answered the way the scene's raycasts would be. */

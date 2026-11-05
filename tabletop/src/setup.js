@@ -208,7 +208,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
       traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
       view: {
-        units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", kits: [],
+        units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity: "play",
         home: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
       },
     },

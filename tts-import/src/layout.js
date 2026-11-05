@@ -366,7 +366,9 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
     view: {
       units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
-      ...(Object.keys(seats).length ? { kits: [] } : {}),
+      // a table with seats is for playing: it starts there (the scene's
+      // activity switcher gets anyone into editing)
+      ...(Object.keys(seats).length ? { activity: "play" } : {}),
       home: { position: [centre[0], r(span * 1.1), r(centre[2] + span * 1.0)], target: centre },
     },
   };

@@ -19,6 +19,9 @@ export const plugins = [
     id: "tabletop",
     name: "Tabletop",
     traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
+    // a table is played, and edited too: while editing, hidden cards still
+    // stay hidden (only their deck says who may see them)
+    activities: ["play", "edit"],
     // what the traits are, for the scene's inspector ("Add behaviour…"), so a
     // table can be set up without a script (src/table/visibility.js has the
     // shapes). A zone's box is plain JSON for now.

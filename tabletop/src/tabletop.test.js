@@ -141,7 +141,7 @@ describe("setting up a table", () => {
     expect(pieces).toHaveLength(1 + 22 + 18 + 14 + 18 + 6);
     expect(objects.filter((o) => o.kind === "group").map((g) => g.name)).toContain("Level 1 (22)");
     expect(scene.order).toHaveLength(objects.length);
-    expect(scene.view).toMatchObject({ tool: "hand", snap: true, kits: [], home: { position: expect.any(Array), target: expect.any(Array) } });
+    expect(scene.view).toMatchObject({ tool: "hand", snap: true, activity: "play", home: { position: expect.any(Array), target: expect.any(Array) } });
     expect(scene.camera).toBeUndefined();
 
     const board = pieces.find((o) => o.name === "Island board");

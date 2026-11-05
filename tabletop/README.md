@@ -242,11 +242,13 @@ shuffled into one group, dealt, and the rest stacked. Its seats, empty
 its cards name (`tabletop.hidden`).
 Its view opens in the hand (`view.tool: "hand"`) with snapping on, the
 grid and axes off, units in cm, looking from the game's `camera`
-(`view.home`), and suggests no kits (`view.kits: []`): a
+(`view.home`), and starts in play (`view.activity: "play"`): a
 table opens with no toolbar or sidebar, just the seat picker, the scene's
-notices and its Kits button (where a viewer can turn the editor on for
-themselves). The extension `requires` what playing needs: the scene's hand,
-key map, right-click menu, framing and notices.
+notices and its Play | Edit switch (where a viewer can step into the editor
+for themselves). The extension takes part in both activities (`activities:
+["play", "edit"]`), so hidden cards stay hidden while someone edits, and it
+`requires` what playing needs: the scene's hand, key map, right-click menu,
+framing and notices.
 
 ## Layout
 

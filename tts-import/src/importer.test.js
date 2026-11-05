@@ -55,6 +55,10 @@ describe("runImport on the tiny fixture", () => {
     expect(scene.view).toMatchObject({ tool: "hand", snap: true, grid: false, home: { position: expect.any(Array), target: expect.any(Array) } });
     expect(scene.camera).toBeUndefined();
     expect(scene.traits).toEqual(expect.any(Object));
+    // a table with seats (this one has White's) starts in play
+    expect(scene.traits["tabletop.seats"]).toBeDefined();
+    expect(scene.view.activity).toBe("play");
+    expect(scene.view.kits).toBeUndefined();
     const objs = Object.entries(scene.objects);
     for (const [, o] of objs.filter(([, o]) => o.kind !== "group")) {
       expect(o.providerId).toBe("file-glb");

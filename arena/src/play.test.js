@@ -75,7 +75,7 @@ function fakeApi(doc) {
     viewer: "me",
     repo: { find: async () => ({ doc: () => ({}) }) },
     style() {},
-    overlay: () => document.createElement("div"),
+    overlay: () => (calls.overlay = document.createElement("div")),
     world: () => world,
     labels: () => ({ set: (items) => (calls.labels = items) }),
     listen: (target, type, fn) => (calls.listen[type] = fn),
@@ -159,11 +159,13 @@ describe("playing", () => {
     expect(JSON.stringify(doc.objects.t1)).toBe(before);
   });
 
-  it("standing the targets up puts them back where they stood", () => {
+  it("the lobby's Stand them up puts knocked-over targets back where they stood", () => {
     doc.objects.t1.traits["arena.target"] = { down: { by: "me", at: 1 }, stand: T([0, 0, -5]) };
     doc.objects.t1.transform = { position: [0, 0, -5], rotation: [1.5, 0, 0], scale: 1 };
     x.update(scene(doc), {}, { scene: null });
-    x.commands.find((c) => c.id === "reset").run(null);
+    // editing has its own command for this (edit.js); playing has the button
+    expect(x.commands.map((c) => c.id)).toEqual(["play"]);
+    f.calls.overlay.querySelector(".arena-reset").click();
     expect(doc.objects.t1.transform.rotation).toEqual([0, 0, 0]);
     expect(doc.objects.t1.traits["arena.target"].down).toBeUndefined();
   });
