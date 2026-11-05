@@ -1,8 +1,14 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.
+ * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.  [kit: glb.js v2]
  *
  * COPY THIS FILE into your package; do not import it across packages. It has no
  * imports and no DOM use, so it runs anywhere (main thread, worker, node).
+ * The canonical copy is patchwork-experiments/scene/src/glb.js; copy it whole,
+ * never edit a copy (`node scripts/check-kit.mjs` fails on a copy that differs).
+ *
+ * v2 (from flow-field's fork): per-vertex `colors` (COLOR_0), `unlit`
+ * (KHR_materials_unlit), `blend` (alphaMode BLEND), and `asset.extras.units`,
+ * so a consumer reading the GLB outside a scene knows it is in metres.
  *
  * ─── API ──────────────────────────────────────────────────────────────────────
  *
@@ -13,6 +19,7 @@
  *     nodes?: Node[],               // optional; default = one root node per mesh
  *     extras?: object,              // copied onto the glTF scene's `extras`
  *     generator?: string,           // asset.generator (default "patchwork glb.js")
+ *     units?: string,               // asset.extras.units (default "m", the scene convention)
  *   }
  *
  *   Mesh = {
@@ -25,6 +32,9 @@
  *   Primitive = {
  *     positions: Float32Array | number[],   // xyz xyz …  (Y-up, metres, by convention)
  *     normals?:  Float32Array | number[],   // xyz per vertex, unit length
+ *     colors?:   Float32Array | number[] | { array, itemSize: 3 | 4 },
+ *                                           // COLOR_0, LINEAR rgb(a) 0..1 per vertex
+ *                                           // (a bare array is rgb)
  *     indices?:  Uint32Array | Uint16Array | number[],  // stored as u16 when they fit
  *     mode?:     number,                    // MODE.TRIANGLES (default), LINES, LINE_STRIP…
  *     attributes?: { [name]: Float32Array | number[] | { array, itemSize } },
@@ -37,6 +47,8 @@
  *     metallic?: number,                    // default 0
  *     roughness?: number,                   // default 0.8
  *     doubleSided?: boolean,                // default true
+ *     unlit?: boolean,                      // KHR_materials_unlit
+ *     blend?: boolean,                      // alphaMode BLEND, e.g. for COLOR_0 alpha
  *   }
  *
  *   Node = {
@@ -86,7 +98,7 @@ const ARRAY_BUFFER = 34962;
 const ELEMENT_ARRAY_BUFFER = 34963;
 const TYPE_BY_SIZE = { 1: "SCALAR", 2: "VEC2", 3: "VEC3", 4: "VEC4" };
 
-const PRIMITIVE_KEYS = ["positions", "normals", "indices", "mode", "attributes", "color"];
+const PRIMITIVE_KEYS = ["positions", "normals", "colors", "indices", "mode", "attributes", "color"];
 
 /** sRGB channel (0..1) → linear. */
 export function srgbToLinear(c) {
@@ -217,7 +229,7 @@ function normalizeMesh(mesh, i) {
   if (Array.isArray(mesh.primitives)) return mesh;
   if (mesh.positions) {
     const prim = {};
-    for (const k of PRIMITIVE_KEYS.concat(["metallic", "roughness", "doubleSided"])) {
+    for (const k of PRIMITIVE_KEYS.concat(["metallic", "roughness", "doubleSided", "unlit", "blend"])) {
       if (mesh[k] !== undefined) prim[k] = mesh[k];
     }
     return { name: mesh.name, extras: mesh.extras, primitives: [prim] };
@@ -240,7 +252,7 @@ export function encodeGLB(scene) {
 
   const material = (prim) => {
     const color = toColor(prim.color);
-    if (!color && prim.metallic == null && prim.roughness == null) return undefined;
+    if (!color && prim.metallic == null && prim.roughness == null && !prim.unlit && !prim.blend) return undefined;
     const m = {
       pbrMetallicRoughness: {
         baseColorFactor: color ?? [1, 1, 1, 1],
@@ -249,7 +261,8 @@ export function encodeGLB(scene) {
       },
       doubleSided: prim.doubleSided ?? true,
     };
-    if (m.pbrMetallicRoughness.baseColorFactor[3] < 1) m.alphaMode = "BLEND";
+    if (m.pbrMetallicRoughness.baseColorFactor[3] < 1 || prim.blend) m.alphaMode = "BLEND";
+    if (prim.unlit) m.extensions = { KHR_materials_unlit: {} };
     const key = JSON.stringify(m);
     if (!materialKeys.has(key)) {
       materialKeys.set(key, materials.length);
@@ -289,6 +302,26 @@ export function encodeGLB(scene) {
         checkFinite(normals, `${where} normals`);
         accessors.push({ bufferView: bin.add(normals, ARRAY_BUFFER), componentType: FLOAT, count, type: "VEC3" });
         attributes.NORMAL = accessors.length - 1;
+      }
+
+      // per-vertex colours as the standard COLOR_0
+      if (prim.colors) {
+        const spec = prim.colors;
+        const isObj = !Array.isArray(spec) && !ArrayBuffer.isView(spec);
+        const itemSize = isObj ? spec.itemSize ?? 3 : 3;
+        if (itemSize !== 3 && itemSize !== 4) throw new Error(`glb: ${where} colors itemSize must be 3 or 4`);
+        const arr = asFloat32(isObj ? spec.array : spec, `${where} colors`);
+        if (arr.length !== count * itemSize) {
+          throw new Error(`glb: ${where} colors has ${arr.length} values, expected ${count * itemSize}`);
+        }
+        checkFinite(arr, `${where} colors`);
+        accessors.push({
+          bufferView: bin.add(arr, ARRAY_BUFFER),
+          componentType: FLOAT,
+          count,
+          type: TYPE_BY_SIZE[itemSize],
+        });
+        attributes.COLOR_0 = accessors.length - 1;
       }
 
       for (const [name, spec] of Object.entries(prim.attributes ?? {})) {
@@ -374,13 +407,14 @@ export function encodeGLB(scene) {
   const roots = nodes.map((_, i) => i).filter((i) => !childOf.has(i));
 
   const gltf = {
-    asset: { version: "2.0", generator: scene.generator ?? "patchwork glb.js" },
+    asset: { version: "2.0", generator: scene.generator ?? "patchwork glb.js", extras: { units: scene.units ?? "m" } },
     scene: 0,
     scenes: [{ nodes: roots, ...(scene.extras ? { extras: scene.extras } : {}) }],
   };
   if (nodes.length) gltf.nodes = nodes;
   if (gltfMeshes.length) gltf.meshes = gltfMeshes;
   if (materials.length) gltf.materials = materials;
+  if (materials.some((m) => m.extensions?.KHR_materials_unlit)) gltf.extensionsUsed = ["KHR_materials_unlit"];
   if (accessors.length) gltf.accessors = accessors;
   const binBytes = bin.bytes();
   if (bin.views.length) {
