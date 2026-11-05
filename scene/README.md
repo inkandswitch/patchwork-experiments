@@ -12,6 +12,16 @@ filed in **groups** (which organise, and hide or fade what's in them) and
 with its parent), two separate things; a scene of hundreds of parts only
 loads what is shown.
 
+The tool itself is a **stage** with no UI of its own: it keeps the doc,
+loads and builds content, renders, picks and routes input. Everything you
+see or do in a scene comes from **extensions** (`scene:extension` plugins),
+and the editor described under "Using it" is the **model kit**: 20 of them
+that this package ships (selection, gizmo, hand, outline, inspector,
+toolbar…), each its own module in `src/parts/`. Other packages add more
+(tabletop's game table, arena's first-person level), and any kit can be
+turned on or off per viewer. [STAGE.md](STAGE.md) is the contract between
+the stage and extensions; [DESIGN.md](DESIGN.md) says why it's built this way.
+
 ```
 pnpm install && pnpm build && pnpm test
 ```
@@ -22,12 +32,20 @@ pnpm install && pnpm build && pnpm test
 |---|---|---|
 | `patchwork:datatype` | `scene` | the composition (listed) |
 | `patchwork:datatype` | `scene-render` | one per scene object (unlisted) |
-| `patchwork:tool` | `scene` | the scene host |
+| `patchwork:tool` | `scene` | the stage (`src/stage/stage.js`) |
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
+| `scene:extension` | `scene.*` (21) | the parts in `src/parts/`, listed under "Layout" |
+| `scene:kit` | `model` | the scene editor: every part but `scene.kits`, in the order input is offered to them |
+
+`scene.kits` (the Kits button, which turns kits on and off for you) runs in
+every scene.
 
 ## Using it
+
+This is the model kit, which a scene opens with unless its doc suggests
+other kits (`view.kits`; a game table suggests none).
 
 Make a Scene, then drop documents onto it from the sidebar (or drop `.stl` /
 `.glb` files from the desktop, or paste an automerge URL anywhere outside a
@@ -108,12 +126,13 @@ refused.
   menu is yours alone.
 - **Locked** (inspector): a locked object can't be carried or given the
   gizmo — a game board, say. Everything else about it still works.
-- **Panels**: the sidebar's panels fold from their titles; extensions add
-  their own (a game table's Table panel: where you sit, and the decks).
+- **Panels**: the sidebar's panels fold from their titles; any extension
+  can contribute one.
 
 - **Grid / Axes / Bounds** toggles and a units selector (mm, cm, m, in, ft).
   With **Bounds** on, the selected object (or every object) gets width / height /
-  depth labels.
+  depth labels. These are yours: the doc's `view` only gives their defaults,
+  and changing one changes it for you alone.
 - **Panel** (`P`) hides the side panel for a full-width view. It is yours
   alone, not saved in the doc.
 - **Legends**: an object whose GLB says how it was coloured (below) gets a
@@ -146,62 +165,42 @@ after a second), and a carry that goes quiet for 3 s is put back.
 
 ## Extensions
 
-The scene doesn't know what it's for. A **`scene:extension`** plugin adds
-behaviour to it without the scene knowing what that behaviour means: the
-tabletop package's makes a scene a game table (seats, private zones, hidden
-cards and their decks, shuffling); a CAD package's could add its own tools.
-An extension is late-bound like a provider: a scene that names one that isn't
-installed still opens, and its data rides along untouched.
+A `scene:extension` adds behaviour or UI to a scene without the scene
+knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 
 ```js
 { type: "scene:extension", id: "tabletop", name: "Tabletop",
-  traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],  // keys it owns
-  legacy: { scene: ["seats"], objects: ["zone", "hidden"] },         // old top-level fields it upgrades
+  traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],  // trait keys that start it
+  legacy: { scene: ["seats"], objects: ["zone", "hidden"] },         // old fields that start it (it upgrades them)
   drops: ["*"],                                                      // datatypes it may lay out when dropped
-  always: false,                                                     // start it in every scene?
-  async load() { return { create(api) { return instance } } } }
+  requires: ["scene.hand", "scene.keys"],                            // what must run with it
+  always: false,
+  async load() { return { create(api) { return instance }, drop?(ctx, info) } } }
+
+{ type: "scene:kit", id: "model", name: "Model", extensions: [...], kits?: [...] }
 ```
 
-A scene starts an extension when it has one of its traits (on the scene or on
-an object) or one of its legacy fields, or `always`; and, when a document is
-dropped or pasted, every extension whose `drops` name its datatype (or `"*"`)
-before the scene's own providers. It's never stopped while the tool is open.
-
-**Traits** are an extension's data: `traits: { "<extension>.<name>": value }`
-on the scene doc and on any object, namespaced so extensions don't collide.
-The scene keeps them, copies them with the object, and otherwise ignores them.
-
-**`api`**, what an extension gets:
-
-| | |
-|---|---|
-| `repo`, `handle`, `viewer` | the repo, the scene's handle, who is looking (the account's contact, else this browser's id) |
-| `doc()`, `change(fn)`, `newId(prefix)` | read and write the scene doc like the tool does |
-| `scene()` | this snapshot: `{ objects, ids, parents, traits, world(id) → column-major 4×4, toLocal(id, worldPoint) → point in id's frame }` |
-| `select(id)`, `selected()`, `hovered()` | the selection and what's under the pointer |
-| `box(id)` | an object's world box `{ min, max }` (geometry, else its hint), or null |
-| `setCamera({ position, target })`, `toast(text, kind)` | |
-| `refresh()` | something it shows changed: the scene goes through the doc again |
-| `registry(type)` | another plugin registry (tabletop finds deck providers this way) |
-
-**`instance`**, every part optional:
-
-| | |
-|---|---|
-| `needsMigration(doc)`, `migrate(doc)` | upgrade its old fields in place (inside a change); run when the first says so, at most three times a session |
-| `update(scene)` | on every doc snapshot, before anything is drawn |
-| `looks()` | `Map objectId → { sourceUrl?, name? }`: what this viewer sees instead (a lens). The scene loads that GLB and shows that name; a name from a lens is never written back |
-| `hud()` | `[{ text, state }]` pills in the viewport's corner |
-| `panels` | `[{ id, title, mount(el) → { update?, dispose? } }]` sidebar panels, `update` called on every sync |
-| `commands` | `[{ id, name, title?, key?, appliesTo?(id), run(id) }]`: buttons in the inspector for what they apply to, and the key over (or with) such an object |
-| `drop({ url, doc, handle, group })` | lay out a dropped document its own way (in `group`, where it was dropped) → true if it did |
-| `landing(id, worldPoint)` | how the hand should put this object down there: `{ faceUp: true }` turns it face up while it's over that spot (and back if it leaves) |
-| `dispose()` | |
-
-**Panels.** The sidebar's panels are the scene's own (`objects`, `inspector`,
-`dimensions`) and the extensions'. `view.panels` lists the ones a scene opens
-with, in order; the rest follow, folded. Folding and unfolding after that
-(click a panel's title) is yours alone, kept in this browser.
+- **What runs** is a function of the registry, the doc and this viewer's
+  kits: an extension runs when the scene or an object has one of its traits
+  or legacy fields, when a kit the viewer has on lists it, when it's
+  `always`, or when a running one `requires` it. The doc suggests kits
+  (`view.kits`, else `["model"]`); each viewer turns kits on and off for
+  themselves.
+- **State** lives in three places: the doc (shared, kept), presence (shared,
+  passing: selections, carries, avatars) and local (this view only:
+  selection, the current tool, display prefs). Extensions talk to each other
+  through local keys, commands and contributions, never by importing one
+  another.
+- **Input** is offered down a chain: the armed extension (measure, a game),
+  the widget under the pointer, the extensions whose traits are on the object
+  under it, the scene's, then the viewer's kits in order. A press nobody
+  claims orbits.
+- **Commands** are verbs with a target (an object, or null for the scene).
+  Surfaces (toolbar, inspector, menu, key map) show and run them; the
+  extension that owns a verb doesn't know which surfaces exist.
+- **Everything acquired through `api`** (layers, overlays, listeners,
+  loops, pose holds, presence keys) is the extension's, and goes when it
+  stops.
 
 ## Writing a provider
 
@@ -408,11 +407,14 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   objects: { [objectId]: Object | Group },
   order: string[],                  // objects and groups, as the outline lists them
   dimensions: { [id]: { a: Anchor, b: Anchor, label: string | null } },
+  // defaults for each viewer (each can change their own): display, snapping, the starting tool
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // the hand snaps (absent = true)
-          defaultMode?: "move" | "rotate" | "hand" | "select", // what the mode menu opens on (absent = move)
-          panels?: string[] },                             // the sidebar panels that start open, in order (absent = all)
-  camera: { position: [x,y,z], target: [x,y,z] } | null,
+          defaultMode?: "move" | "rotate" | "hand" | "select", // the tool a viewer starts with (absent = move)
+          kits?: string[],                                 // the kits a viewer starts with (absent = ["model"])
+          panels?: string[],                               // the sidebar panels that start open, in order (absent = all)
+          home?: { position, target, fov? } },             // where a viewer with no saved camera starts
+  camera: { position: [x,y,z], target: [x,y,z] } | null,  // older docs: a home view, read only
   traits?: { [key: string]: any },  // extensions' data on the scene itself
   materialRules?: MaterialRule[]
 }
@@ -490,7 +492,10 @@ MaterialRule = {
   their current world position.
 - Bounds, **Frame all** and selection boxes are world-space boxes of each
   object's own geometry (not including what is attached to it).
-- `camera` is written 1.5 s after you stop orbiting and read once on open.
+- The camera is each viewer's own, kept in this browser per scene. A viewer
+  with no saved camera starts at `view.home` (set with *Set home view*),
+  else at an older doc's `camera`, else framing what's there. Orbiting never
+  writes the doc.
 
 ## Layout
 
@@ -498,8 +503,9 @@ MaterialRule = {
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
-| `src/tool.js` | scene host: doc ↔ viewport ↔ render manager / GLB queue ↔ sidebar |
-| `src/viewport.js` | three.js: renderer, controls, grid/axes/triad, bounds, dimensions, picking, placeholders |
+| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
+| `src/parts/` | the model kit's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add`, and `kits` (always on) |
+| `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
 | `src/pick-accel.js` | lazy three-mesh-bvh for big meshes (built in idle time or on the first ray that crosses one) |
 | `src/render-manager.js` | per-object watch / stale / debounce / build / load loop (render-doc objects) |
@@ -513,8 +519,7 @@ MaterialRule = {
 | `src/stl.js`, `src/sources/*` | STL parsing and the two file providers |
 | `src/staleness.js`, `src/units.js`, `src/anchors.js`, `src/providers.js`, `src/dnd.js` | pure logic, unit-tested |
 | `src/transform.js`, `src/hierarchy.js` | transform matrices (compose / decompose / invert) and attachment (world matrices, cycle checks, re-parenting that keeps the world pose) |
-| `src/extensions.js` | `scene:extension` plugins: which a scene calls for, starting them, their instances |
-| `src/migrate.js` | upgrading a scene doc written in an older shape, in place, on open |
+| `src/migrate.js` | upgrading a scene doc written in an older shape, in place, on open (the stage's own; extensions upgrade their own fields) |
 | `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
