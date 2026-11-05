@@ -98,6 +98,7 @@ describe("scene.gizmo: when it shows", () => {
     expect(gizmoTarget(sc, { selected: "l" })).toBeNull();
     expect(gizmoTarget(sc, { selected: null })).toBeNull();
     expect(gizmoTarget(sc, { selected: "gone" })).toBeNull();
+    expect(gizmoTarget(sc, { selected: "dimension:d1" })).toBeNull(); // a ref isn't an object
     expect(gizmoTarget(snap({ a: object() }, { defaultGizmo: "hand" }), { selected: "a" })).toBeNull();
   });
 

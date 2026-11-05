@@ -2,13 +2,16 @@
 //
 // - A click on an object selects it; a click on nothing clears the selection
 //   (a group is never hit: groups are selected from the outline).
-// - local.selected is this view's selection (object or group id, or null);
-//   it is pruned when its object goes.
+// - local.selected is this view's selection: a target (STAGE.md, "Targets
+//   and refs"), an object or group id, or a ref such as "dimension:<id>" that
+//   another extension made selectable, or null. A click on nothing clears
+//   whatever it is. An object selection is pruned when its object goes; a
+//   ref is its owner's to let go of.
 // - Draws the selection box (accent) and each peer's (their colour) in a
 //   world layer; the boxes follow held poses (checked after each frame).
 // - Tells peers what is selected and hovered (presence "selected", "hovered").
-// - Asks the stage to load the selection first (api.focus).
-// - Commands: Deselect (Escape), Remove (Delete, Backspace), Select.
+// - Asks the stage to load the selection first (api.focus), if it's an object.
+// - Commands: Deselect (Escape), Remove (Delete, Backspace; objects only), Select.
 //
 // Ported from tool.js select() / setHover / broadcastPresence / removeObject
 // and viewport.js setSelection / setRemoteSelections / the boxes in
@@ -21,6 +24,8 @@ const REMOTE = [0.6, 0.4, 0.9];
 const EPS = 1e-9;
 
 const isGroupObj = (o) => o?.kind === "group";
+// "<kind>:<id>": a target another extension owns (an object id has no colon)
+const isRef = (target) => typeof target === "string" && target.includes(":");
 const sameBox = (a, b) => !!a && !!b && a.min.every((v, i) => Math.abs(v - b.min[i]) <= EPS) && a.max.every((v, i) => Math.abs(v - b.max[i]) <= EPS);
 const sameRgb = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
@@ -130,15 +135,17 @@ export function create(api) {
 
   function update(scene, local, prev) {
     const sel = local.selected ?? null;
-    // the selection's object went (removed here or by a peer)
-    if (sel != null && !scene.objects?.[sel]) {
+    // the selection's object went (removed here or by a peer); a ref that
+    // names no object is left to the extension that made it
+    if (sel != null && !scene.objects?.[sel] && (!isRef(sel) || prev?.scene?.objects?.[sel])) {
       select(null);
       return;
     }
     const was = prev?.local;
     if (!was || sel !== (was.selected ?? null)) {
+      // peers are told any target; their surfaces mark only what they know
       api.presence.set("selected", sel ?? undefined);
-      api.focus(sel ? [sel] : []);
+      api.focus(sel != null && scene.objects?.[sel] ? [sel] : []);
     }
     if (!was || local.hovered !== was.hovered) api.presence.set("hovered", local.hovered ?? undefined);
     // only the hover (or something else of no concern here) changed

@@ -6,13 +6,13 @@
 // A key runs the first command whose `key` matches (letters in either case)
 // that applies to, in turn, the selection, the scene, then the hovered object
 // (STAGE.md, "A command"); within one target, in running order then command
-// order. What you chose comes first; then scene-wide commands (Escape; Delete
-// for a selected dimension, which is never selected together with an
-// object); the object under the pointer only last, for scenes where nothing
-// gets selected (a game table: S shuffles the pile you're pointing at). So
-// Delete removes the selection, never something you merely passed over while
-// something was selected. Keys work
-// whatever a command's `show` says. With ctrl or meta held a key is the
+// order. What you chose comes first, whatever kind of target it is (an
+// object, or a ref such as a dimension: its owner's commands answer for it);
+// then scene-wide commands (Escape); the object under the pointer only last,
+// for scenes where nothing gets selected (a game table: S shuffles the pile
+// you're pointing at). So Delete removes the selection, never something you
+// merely passed over while something was selected. Keys work whatever a
+// command's `show` says. With ctrl or meta held a key is the
 // browser's (copy, reload…). An auto-repeated key that matches is claimed but
 // not run again, so holding M doesn't flicker the measure tool and holding
 // Delete doesn't remove one thing after another.
@@ -33,7 +33,7 @@ export function invocationFor(collected, key, ctx) {
   const targets = [];
   const sel = ctx.local?.selected;
   const hov = ctx.local?.hovered;
-  if (sel != null && objects[sel]) targets.push(sel);
+  if (sel != null) targets.push(sel);
   targets.push(null);
   if (hov != null && objects[hov] && hov !== sel) targets.push(hov);
   for (const target of targets) {

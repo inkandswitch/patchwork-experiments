@@ -30,6 +30,7 @@ describe("scene.bounds (pure)", () => {
     expect(boundsTargets(scene, null)).toEqual(["a", "b"]);
     expect(boundsTargets(scene, "g")).toEqual(["g"]);
     expect(boundsTargets(scene, "gone")).toEqual(["a", "b"]);
+    expect(boundsTargets(scene, "dimension:d1")).toEqual(["a", "b"]); // a ref isn't an object: as if nothing were selected
   });
 });
 

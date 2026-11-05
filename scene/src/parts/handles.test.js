@@ -130,6 +130,10 @@ describe("scene.handles on the stage", () => {
     // a group has none
     await select(s, "g");
     expect(labelTexts(s)).toEqual([]);
+    // nor a ref (a selected dimension)
+    await select(s, "dimension:d1");
+    expect(inst.handles()).toEqual([]);
+    expect(labelTexts(s)).toEqual([]);
   });
 
   it("draws nothing before the object's content arrives", async () => {

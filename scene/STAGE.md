@@ -58,7 +58,7 @@ this view and by the stage.
 | `notices` | stage, via `notify` | `[{ id, text, kind, at }]` |
 | `kits` | kit surfaces | `{ on: [], off: [] }` this viewer's change to the doc's suggested kits (persisted per scene) |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
-| `selected` | any (selection, the outline, add, a game) | the selected id, or null |
+| `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
 | `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? doc.view.defaultMode ?? doc.view.defaultGizmo ?? "move"`, old values (`"translate"`) mapped |
 
 Private local state lives in the extension's closure, or under a key prefixed
@@ -66,9 +66,9 @@ Private local state lives in the extension's closure, or under a key prefixed
 commands instead (measure saves through `scene.dimensions`' `add`).
 
 Presence keys are the extension's own too, with one shared convention: the
-selection extension (`scene.select`) publishes `selected` and `hovered`, and
-surfaces (the outline) read them to mark peers' rows. Peer colours come from
-`src/peers.js`, so a peer's box and row match.
+selection extension (`scene.select`) publishes `selected` (any target) and
+`hovered`, and surfaces (the outline) read them to mark peers' rows (objects
+only). Peer colours come from `src/peers.js`, so a peer's box and row match.
 
 ## Activation
 
@@ -251,8 +251,9 @@ so nothing stays open, held and following the bare pointer.
 **Ordering.** Running order decides only between extensions that would both
 claim the same event. An extension that handles an event without claiming it
 (returns false, to observe it) only hears it if it comes before the one that
-claims it: `scene.dimensions` lets go of its selection on a click, so the
-model kit lists it before `scene.select`.
+claims it, so nothing should depend on observing that way. The selection is
+one value for this reason: a click that selects an object, or clears, replaces
+a selected dimension too, whatever order the two run in.
 
 **Keys:**
 - They are heard on the tool's root, so only the focused view gets them.
@@ -404,13 +405,34 @@ A **command**:
 - `state` returning null (or false) means the command doesn't apply to that
   target. Keys work whatever `show` says.
 - A command without `state` applies only to the null target, the scene.
-- A **target** is an object or group id, or null.
+- A **target** is an object or group id, a ref, or null (the scene). See
+  "Targets and refs" below.
 - Surfaces call `api.run({ ext, command, target, value })`.
 - Toolbars show commands for the null target.
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
 - A key map tries the selection, then the scene, then the hovered object
-  (so Delete removes what you chose, never what you merely passed over).
+  (so Delete removes what you chose, never what you merely passed over),
+  whatever kind of target the selection is.
+
+**Targets and refs.** A target is a string, or null for the scene:
+- an **object or group id** names that object;
+- a **ref**, `"<kind>:<id>"`, names something an extension makes selectable
+  that isn't a scene object: a dimension is `"dimension:<id>"`. Object ids
+  have no colon, and an id that names an object always means the object.
+
+`local.selected` is one target, so there is only ever one selection and
+nothing to reconcile: selecting a dimension replaces the selected object,
+and selecting an object (or clicking on nothing) replaces the dimension.
+- The extension that owns a kind makes its refs, answers for them in its
+  commands' `state` (`scene.dimensions`' Delete and Escape apply to a
+  `"dimension:…"` target), and lets go of a selected ref whose thing is gone.
+- Everything that only cares about objects checks `scene.objects[target]`
+  and treats any other target as nothing selected: the gizmo, handles,
+  bounds, the outline's marks, the inspector, the selection box. Commands on
+  objects (Remove) don't apply to refs.
+- `scene.select` prunes a selected object that's gone, and leaves refs to
+  their owners.
 
 `api.collect(name)` returns `[{ id, value }]` from running extensions that
 have that field, in running order. The stage never reads the value.

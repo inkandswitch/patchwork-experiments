@@ -1,7 +1,8 @@
 // scene.bounds: each object's bounding box and its X/Y/Z size in the current
 // units, while the viewer's `bounds` pref is on (ported from the old
-// viewport's rebuildHelpers). With something selected only its sizes are
-// labelled, and no box is drawn for it (the selection draws its own);
+// viewport's rebuildHelpers). With an object selected only its sizes are
+// labelled, and no box is drawn for it (the selection draws its own); a
+// selection that isn't an object (a dimension's ref) counts as none;
 // otherwise every shown object gets a faint box and its sizes. Boxes are of
 // loaded geometry only (no hints), from api.box.
 

@@ -10,9 +10,12 @@
 // (the object was rebuilt with another shape) is "off surface". The
 // Dimensions panel lists them, to select and delete.
 //
-// The selected dimension is local["scene.dimensions.selected"]. Selecting one
-// clears the object selection (local.selected) and selecting an object clears
-// it, so Delete and Escape always mean one thing.
+// A dimension is selectable though it isn't a scene object: selecting one
+// sets local.selected, the one selection, to its ref "dimension:<id>"
+// (STAGE.md, "Targets and refs"), so selecting an object (or anything else)
+// lets go of it with nothing to reconcile. Delete and Escape are commands on
+// that ref; a click elsewhere in the view is scene.select's to clear. This
+// extension lets go of a ref whose dimension went.
 
 import css from "./dimensions.css?inline";
 import { detachAnchor, distance } from "../anchors.js";
@@ -20,7 +23,24 @@ import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 import { distanceToPrimitives, onSurfaceTolerance } from "../surface.js";
 
-export const SELECTED = "scene.dimensions.selected";
+/** The ref kind for dimensions: a selected dimension is the target "dimension:<id>". */
+export const KIND = "dimension";
+const PREFIX = `${KIND}:`;
+
+/** The target that names a dimension. */
+export const dimensionRef = (id) => PREFIX + id;
+
+/**
+ * The dimension id a target names, or null: a "dimension:<id>" ref, unless an
+ * object has that id (an object id always means the object). Whether that
+ * dimension still exists is the caller's to ask. Pure.
+ * @param {string | null} target
+ * @param {object} [objects]  scene.objects
+ */
+export function dimensionIdOf(target, objects = null) {
+  if (typeof target !== "string" || !target.startsWith(PREFIX) || objects?.[target]) return null;
+  return target.slice(PREFIX.length) || null;
+}
 
 const vec3 = (w) => (Array.isArray(w) ? [0, 1, 2].map((i) => Number(w[i]) || 0) : [0, 0, 0]);
 
@@ -182,10 +202,12 @@ export function create(api) {
   let poseKey = ""; // the displayed world matrices of the objects anchors sit on
   const panels = new Set(); // mounted panel renderers
 
-  const selectedOf = (scene, local) => {
-    const id = local?.[SELECTED] ?? null;
+  /** The dimension a target names, if it's in the doc. */
+  const dimensionOf = (target, scene) => {
+    const id = dimensionIdOf(target, scene?.objects);
     return id != null && scene?.d?.dimensions?.[id] ? id : null;
   };
+  const selectedOf = (scene, local) => dimensionOf(local?.selected ?? null, scene);
   const unitsOf = (scene, local) => local?.prefs?.units ?? scene?.d?.view?.units ?? "m";
   const gap = (oid, local) => surfaceGap(api.content(oid)?.root ?? null, local);
 
@@ -209,12 +231,13 @@ export function create(api) {
     return k;
   }
 
+  /** Select a dimension (its ref is the selection); null lets go of the selected one, if a dimension is selected. */
   function select(id) {
     api.local.swap((m) => {
-      const next = id ?? null;
-      if ((m[SELECTED] ?? null) === next && (next == null || m.selected == null)) return m;
-      // one selection at a time: a dimension or an object
-      return next == null ? { ...m, [SELECTED]: null } : { ...m, [SELECTED]: next, selected: null };
+      const cur = m.selected ?? null;
+      if (id == null) return dimensionIdOf(cur, api.scene().objects) != null ? { ...m, selected: null } : m;
+      const next = dimensionRef(id);
+      return cur === next ? m : { ...m, selected: next };
     });
   }
 
@@ -238,7 +261,7 @@ export function create(api) {
     api.change((d) => {
       if (d.dimensions?.[id]) delete d.dimensions[id];
     });
-    if (api.local.get()[SELECTED] === id) select(null);
+    if (api.local.get().selected === dimensionRef(id)) select(null);
   }
 
   function clearLayer() {
@@ -333,19 +356,11 @@ export function create(api) {
 
   function update(scene, local, prev) {
     const was = prev?.local ?? null;
-    const sel = local[SELECTED] ?? null;
+    const target = local.selected ?? null;
     // the selected dimension went (deleted here or by a peer)
-    if (sel != null && !scene.d?.dimensions?.[sel]) {
-      api.local.swap((m) => (m[SELECTED] === sel ? { ...m, [SELECTED]: null } : m));
-      return;
-    }
-    // one selection at a time (measure selects the dimension it made; the
-    // selection extension selects objects)
-    if (sel != null && local.selected != null) {
-      const selChanged = !was || sel !== (was[SELECTED] ?? null);
-      const objChanged = !was || local.selected !== was.selected;
-      if (objChanged && !selChanged) api.local.swap((m) => ({ ...m, [SELECTED]: null }));
-      else api.local.swap((m) => ({ ...m, selected: null }));
+    const id = dimensionIdOf(target, scene.objects);
+    if (id != null && !scene.d?.dimensions?.[id]) {
+      api.local.swap((m) => (m.selected === target ? { ...m, selected: null } : m));
       return;
     }
     // same scene and local: content loaded, so "off surface" may have changed
@@ -407,7 +422,9 @@ export function create(api) {
     };
   }
 
-  const applies = (target, { scene, local } = {}) => target == null && selectedOf(scene ?? api.scene(), local ?? api.local.get()) != null;
+  // Delete and Escape apply to a dimension's ref (the key map offers them
+  // the selection first), never to the scene or an object.
+  const applies = (target, { scene } = {}) => dimensionOf(target, scene ?? api.scene()) != null;
 
   const commands = [
     {
@@ -423,16 +440,18 @@ export function create(api) {
       name: "Delete dimension",
       key: ["Delete", "Backspace"],
       show: [],
-      state: (target, ctx) => (applies(target, ctx) ? { title: "Delete the selected dimension" } : null),
-      run: () => remove(api.local.get()[SELECTED] ?? null),
+      state: (target, ctx) => (applies(target, ctx) ? { title: "Delete this dimension" } : null),
+      run: (target) => remove(dimensionOf(target, api.scene())),
     },
     {
       id: "deselect",
       name: "Deselect dimension",
       key: "Escape",
       show: [],
-      state: (target, ctx) => (applies(target, ctx) ? { title: "Clear the dimension selection" } : null),
-      run: () => select(null),
+      state: (target, ctx) => (applies(target, ctx) && (ctx?.local ?? api.local.get())?.selected === target ? { title: "Clear the dimension selection" } : null),
+      run: (target) => {
+        if ((api.local.get().selected ?? null) === target) select(null);
+      },
     },
   ];
 
@@ -440,14 +459,6 @@ export function create(api) {
     update,
     commands,
     panels: [{ id: "dimensions", title: "Dimensions", mount: mountPanel }],
-    input: {
-      // a click in the view (not on a label) lets go of the dimension, as
-      // the old tool did; it's never claimed, so selection still hears it
-      click() {
-        if (api.local.get()[SELECTED] != null) select(null);
-        return false;
-      },
-    },
     beforeRemove(draft, ids) {
       detachEnds(draft, ids, api.scene().objects);
     },

@@ -90,6 +90,30 @@ describe("scene.select: keeping the selection honest", () => {
     expect(sel()).toBeNull();
   });
 
+  it("leaves a ref (another extension's target) to its owner, and drops a gone object even if its id looks like one", async () => {
+    await mount({ objects: { a: object({ name: "A" }), "odd:id": object({ name: "Odd" }) } });
+    s.local.swap((m) => ({ ...m, selected: "dimension:d1" }));
+    await settle();
+    expect(sel()).toBe("dimension:d1");
+    expect(helpers()).toEqual([]); // nothing to box
+    // a click on nothing lets go of it, as of anything selected
+    hitOn(null);
+    s.click(20, 20);
+    expect(sel()).toBeNull();
+    // an object whose id has a colon is still an object, pruned when it goes
+    s.local.swap((m) => ({ ...m, selected: "odd:id" }));
+    await settle();
+    s.change((d) => {
+      delete d.objects["odd:id"];
+    });
+    await settle();
+    expect(sel()).toBeNull();
+    // a plain id that names nothing is let go of at once
+    s.local.swap((m) => ({ ...m, selected: "zzz" }));
+    await settle();
+    expect(sel()).toBeNull();
+  });
+
   it("asks the stage to load the selection first", async () => {
     await mount();
     const api = s.api("scene.select");
@@ -97,6 +121,11 @@ describe("scene.select: keeping the selection honest", () => {
     s.local.swap((m) => ({ ...m, selected: "b" }));
     await settle();
     expect(focus).toHaveBeenLastCalledWith(["b"]);
+    s.local.swap((m) => ({ ...m, selected: "dimension:d1" })); // not an object: nothing to load
+    await settle();
+    expect(focus).toHaveBeenLastCalledWith([]);
+    s.local.swap((m) => ({ ...m, selected: "b" }));
+    await settle();
     s.local.swap((m) => ({ ...m, selected: null }));
     await settle();
     expect(focus).toHaveBeenLastCalledWith([]);
@@ -196,6 +225,9 @@ describe("scene.select: commands", () => {
     expect(state("deselect", "a")).toBeNull();
     expect(run("deselect")).toBe(true);
     expect(sel()).toBeNull();
+    s.local.swap((m) => ({ ...m, selected: "dimension:d1" })); // any target
+    expect(run("deselect")).toBe(true);
+    expect(sel()).toBeNull();
   });
 
   it("Select selects the object it's run on", async () => {
@@ -215,6 +247,7 @@ describe("scene.select: commands", () => {
     expect(c.key).toEqual(["Delete", "Backspace"]);
     expect(c.show).toEqual(["menu", "inspector"]);
     expect(state("remove")).toBeNull();
+    expect(state("remove", "dimension:d1")).toBeNull(); // objects only
     s.local.swap((m) => ({ ...m, selected: "a" }));
     const ask = vi.spyOn(globalThis, "confirm");
     expect(run("remove", "a")).toBe(true);

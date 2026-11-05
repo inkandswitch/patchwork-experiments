@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import measure, { anchorFor, anchorWorld, HINT_FIRST, HINT_SECOND } from "./measure.js";
-import dimensions, { SELECTED as DIM_SELECTED } from "./dimensions.js";
+import dimensions, { dimensionRef } from "./dimensions.js";
 
 const MEASURE = { meta: { id: "scene.measure" }, module: measure };
 const DIMENSIONS = { meta: { id: "scene.dimensions" }, module: dimensions };
@@ -80,7 +80,7 @@ describe("scene.measure", () => {
     const dims = s.doc().dimensions;
     const [id] = Object.keys(dims);
     expect(dims[id]).toEqual({ a: { objectId: "a", local: [0.5, 0, 0], world: [1.5, 0, 0] }, b: { objectId: null, local: null, world: [1.5, 0, 2] }, label: null });
-    expect(s.local.get()[DIM_SELECTED]).toBe(id);
+    expect(s.local.get().selected).toBe(dimensionRef(id));
     expect(state()).toMatchObject({ checked: true });
     expect(hint().textContent).toBe(HINT_FIRST);
   });

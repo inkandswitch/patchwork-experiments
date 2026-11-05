@@ -2,11 +2,15 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import * as THREE from "three";
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
-import dimensions, { SELECTED, detachEnds, dimensionList, resolveEnd, surfaceGapper } from "./dimensions.js";
+import dimensions, { detachEnds, dimensionIdOf, dimensionList, dimensionRef, resolveEnd, surfaceGapper } from "./dimensions.js";
 import measure from "./measure.js";
+import select from "./select.js";
+import keys from "./keys.js";
 
 const DIMS = { meta: { id: "scene.dimensions" }, module: dimensions };
 const MEASURE = { meta: { id: "scene.measure" }, module: measure };
+const SELECT = { meta: { id: "scene.select" }, module: select };
+const KEYS = { meta: { id: "scene.keys" }, module: keys };
 const KIT = { id: "model", extensions: ["scene.dimensions"] };
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const free = (world) => ({ objectId: null, local: null, world });
@@ -31,7 +35,9 @@ const state = (command, target = null) => inst().commands.find((c) => c.id === c
 const labels = () => [...s.port.querySelectorAll(".labels .dimension-label")];
 const label = (id) => s.port.querySelector(`.labels .dimension-label[data-id="${id}"]`);
 const layer = () => [...(s.debug.viewport.layers.get("scene.dimensions") ?? [])].flatMap((g) => g.children);
-const selectedDim = () => s.local.get()[SELECTED] ?? null;
+/** The selected dimension's id, from the one selection (its ref), or null. */
+const selectedDim = () => dimensionIdOf(s.local.get().selected ?? null);
+const selectDim = (id) => s.local.swap((m) => ({ ...m, selected: dimensionRef(id) }));
 function panel() {
   const host = document.createElement("div");
   s.root.append(host);
@@ -67,6 +73,16 @@ describe("pure helpers", () => {
     expect(detachEnds(draft, ["a"], objects)).toBe(1);
     expect(draft.dimensions.d1.a).toEqual(free([1, 1, 0]));
     expect(draft.dimensions.d1.b).toEqual(on("b", [0, 0, 0]));
+  });
+
+  it("a dimension's target is the ref dimension:<id>; an object with that id is the object", () => {
+    expect(dimensionRef("d1")).toBe("dimension:d1");
+    expect(dimensionIdOf("dimension:d1")).toBe("d1");
+    expect(dimensionIdOf("d1")).toBeNull();
+    expect(dimensionIdOf("other:d1")).toBeNull();
+    expect(dimensionIdOf("dimension:")).toBeNull();
+    expect(dimensionIdOf(null)).toBeNull();
+    expect(dimensionIdOf("dimension:d1", { "dimension:d1": {} })).toBeNull();
   });
 
   it("measures how far a point is from an object's geometry", () => {
@@ -152,23 +168,47 @@ describe("scene.dimensions", () => {
     expect(lines[1].geometry.getAttribute("position").count).toBe(2);
   });
 
-  it("Delete dimension and Deselect dimension apply only while one is selected, and are keys only", async () => {
+  it("Delete dimension and Deselect dimension take a dimension's ref as their target, and are keys only", async () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
     const cmd = (id) => inst().commands.find((c) => c.id === id);
+    const ref = dimensionRef("d1");
     expect(cmd("delete")).toMatchObject({ name: "Delete dimension", key: ["Delete", "Backspace"], show: [] });
     expect(cmd("deselect")).toMatchObject({ name: "Deselect dimension", key: "Escape", show: [] });
-    expect(state("delete")).toBeNull();
-    expect(state("deselect")).toBeNull();
-    s.local.swap((m) => ({ ...m, [SELECTED]: "d1" }));
-    expect(state("delete")).toBeTruthy();
-    expect(state("delete", "a")).toBeNull(); // the scene's, not an object's
-    expect(run("deselect")).toBe(true);
+    expect(state("delete", ref)).toBeTruthy(); // any dimension, selected or not
+    expect(state("deselect", ref)).toBeNull(); // only the selected one
+    expect(state("delete")).toBeNull(); // not the scene's
+    expect(state("delete", "a")).toBeNull(); // nor an object's
+    expect(state("delete", dimensionRef("gone"))).toBeNull();
+    selectDim("d1");
+    expect(state("delete")).toBeNull(); // still not the scene's: the key map offers the selection first
+    expect(state("deselect", ref)).toBeTruthy();
+    expect(run("deselect", ref)).toBe(true);
     expect(selectedDim()).toBeNull();
-    s.local.swap((m) => ({ ...m, [SELECTED]: "d1" }));
-    expect(run("delete")).toBe(true);
+    selectDim("d1");
+    expect(run("delete", ref)).toBe(true);
     expect(s.doc().dimensions.d1).toBeUndefined();
     expect(selectedDim()).toBeNull();
-    expect(run("delete")).toBe(false);
+    expect(run("delete", ref)).toBe(false);
+  });
+
+  it("Delete and Escape reach the selected dimension through the key map", async () => {
+    await mount({
+      dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null }, d2: { a: free([0, 0, 0]), b: free([0, 0, 2]), label: null } },
+      extensions: [SELECT, KEYS],
+      kits: [{ id: "model", extensions: ["scene.keys", "scene.select", "scene.dimensions"] }],
+    });
+    selectDim("d1");
+    s.local.swap((m) => ({ ...m, hovered: "a" }));
+    await settle();
+    s.key("Delete", { code: "Delete" });
+    await settle();
+    expect(s.doc().dimensions.d1).toBeUndefined();
+    expect(s.doc().objects.a).toBeTruthy(); // not what was merely under the pointer
+    expect(s.local.get().selected).toBeNull();
+    selectDim("d2");
+    s.key("Escape", { code: "Escape" });
+    expect(s.local.get().selected).toBeNull();
+    expect(s.doc().dimensions.d2).toBeTruthy();
   });
 
   it("the Dimensions panel lists them, selects on a click and deletes with ×", async () => {
@@ -203,42 +243,70 @@ describe("scene.dimensions", () => {
 
   it("forgets the selected dimension when it goes (a peer deleted it)", async () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
-    s.local.swap((m) => ({ ...m, [SELECTED]: "d1" }));
+    selectDim("d1");
     await settle();
     s.change((d) => {
       delete d.dimensions.d1;
     });
     await settle();
-    expect(selectedDim()).toBeNull();
+    expect(s.local.get().selected).toBeNull();
   });
 
-  it("one selection at a time: a dimension or an object", async () => {
+  it("leaves an object selection alone, and a ref of another kind", async () => {
+    await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
+    s.local.swap((m) => ({ ...m, selected: "a" }));
+    await settle();
+    expect(s.local.get().selected).toBe("a");
+    expect(label("d1").hasAttribute("data-selected")).toBe(false);
+    s.local.swap((m) => ({ ...m, selected: "other:d1" }));
+    await settle();
+    expect(s.local.get().selected).toBe("other:d1");
+    expect(label("d1").hasAttribute("data-selected")).toBe(false);
+  });
+
+  it("one selection: a dimension's ref and an object replace each other in local.selected", async () => {
     await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     label("d1").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     await settle();
-    expect(selectedDim()).toBe("d1");
-    expect(s.local.get().selected).toBeNull();
+    expect(s.local.get().selected).toBe("dimension:d1");
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     expect(selectedDim()).toBeNull();
     expect(s.local.get().selected).toBe("a");
-    // a dimension selected by someone else (measure) wins over the object
-    s.local.swap((m) => ({ ...m, [SELECTED]: "d1" }));
-    await settle();
-    expect(selectedDim()).toBe("d1");
-    expect(s.local.get().selected).toBeNull();
+    expect(label("d1").hasAttribute("data-selected")).toBe(false);
   });
 
-  it("a click in the view lets go of the dimension without claiming the click", async () => {
-    const clicks = [];
-    const sel = { meta: { id: "t.select" }, module: { create: () => ({ input: { click: () => (clicks.push(1), true) } }) } };
-    await mount({ dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } }, extensions: [sel], kits: [{ id: "model", extensions: ["scene.dimensions", "t.select"] }] });
-    s.local.swap((m) => ({ ...m, [SELECTED]: "d1" }));
+  // The model kit lists dimensions before select; with one selection that
+  // order carries no meaning, so here it's the other way round.
+  it("with selection listed first: a label click selects the dimension, a click on an object or on nothing replaces it", async () => {
+    await mount({
+      dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } },
+      extensions: [SELECT],
+      kits: [{ id: "model", extensions: ["scene.select", "scene.dimensions"] }],
+    });
+    expect(s.local.get().running.map((r) => r.id)).toEqual(["scene.select", "scene.dimensions"]);
+    s.local.swap((m) => ({ ...m, selected: "a" }));
+    await settle();
+    const l = label("d1");
+    for (const type of ["pointerdown", "pointerup", "click"]) l.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true }));
+    await settle();
+    expect(s.local.get().selected).toBe("dimension:d1");
+    expect(label("d1").hasAttribute("data-selected")).toBe(true);
+    // a click on an object selects it instead
+    s.debug.viewport.pick = () => ({ id: "a", point: [0, 0, 0], normal: [0, 1, 0], distance: 1 });
     s.click();
-    expect(selectedDim()).toBeNull();
-    expect(clicks).toEqual([1]);
+    await settle();
+    expect(s.local.get().selected).toBe("a");
+    expect(label("d1").hasAttribute("data-selected")).toBe(false);
+    // and a click on nothing lets go of a selected dimension
+    selectDim("d1");
+    await settle();
+    s.debug.viewport.pick = () => null;
+    s.click();
+    await settle();
+    expect(s.local.get().selected).toBeNull();
   });
 
   it("removing an object detaches its dimensions instead of deleting them (tool.test)", async () => {
@@ -280,8 +348,7 @@ describe("measure and dimensions together", () => {
     s.click();
     await settle();
     const [id] = Object.keys(s.doc().dimensions);
-    expect(selectedDim()).toBe(id);
-    expect(s.local.get().selected).toBeNull();
+    expect(s.local.get().selected).toBe(dimensionRef(id)); // in place of the object
     expect(label(id).textContent).toBe("1 m");
     expect(label(id).hasAttribute("data-selected")).toBe(true);
     expect(p.rows().map((r) => r.dataset.id)).toEqual([id]);

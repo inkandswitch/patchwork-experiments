@@ -156,6 +156,10 @@ describe("scene.outline", () => {
     await pass();
     expect(rows()).toEqual(["vessel", "body", "hull", "deck", "bhd", "battery"]);
     expect(row("hull").hasAttribute("data-selected")).toBe(true);
+    // a selection that isn't an object (a dimension's ref) marks no row
+    s.local.swap((l) => ({ ...l, selected: "dimension:d1" }));
+    await pass();
+    expect(s.root.querySelectorAll(".object-row[data-selected]").length).toBe(0);
   });
 
   it("shows the viewport's hover on its row", async () => {

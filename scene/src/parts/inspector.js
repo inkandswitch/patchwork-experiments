@@ -19,8 +19,10 @@
 // with api.notify and the field shows the doc again. Fields being typed in
 // are never overwritten.
 //
-// Nothing selected: the panel body is hidden (the sidebar then hides the
-// section) and holds only the hint "Nothing selected".
+// Nothing selected, or a selection that isn't a scene object (a ref such as
+// a dimension: its owner shows it, in its own panel): the panel body is
+// hidden (the sidebar then hides the section) and holds only the hint
+// "Nothing selected".
 
 import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";

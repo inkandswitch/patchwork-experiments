@@ -75,6 +75,11 @@ describe("invocationFor (pure)", () => {
     ).toEqual({ ext: "x", command: "remove", target: "b" });
     expect(invocationFor(cmds([]), "Delete", { scene, local: {} })).toBeNull();
     expect(invocationFor(cmds([]), "n", { scene, local: {} })).toBeNull();
+    // a selection that isn't an object (a ref) is offered first all the same:
+    // its owner's command answers for it, never the hovered object's
+    expect(invocationFor(cmds([]), "Delete", { scene, local: { hovered: "b", selected: "dimension:d1" } })).toEqual({ ext: "x", command: "remove", target: "dimension:d1" });
+    const objectsOnly = [{ id: "z", value: [{ id: "remove", name: "Remove", key: "Delete", state: (t, { scene: sc }) => (sc.objects[t] ? {} : null), run() {} }] }];
+    expect(invocationFor(objectsOnly, "Delete", { scene, local: { hovered: "b", selected: "dimension:d1" } })).toEqual({ ext: "z", command: "remove", target: "b" });
     // a hovered id that isn't in the scene is passed over
     expect(invocationFor(cmds([]), "k", { scene, local: { hovered: "gone" } })).toEqual({ ext: "x", command: "scene-k", target: null });
   });

@@ -61,6 +61,7 @@ describe("scene.frame (pure)", () => {
     expect(frameTarget(scene, "a", "g")).toBe("g");
     expect(frameTarget(scene, "b", "g")).toBe("b");
     expect(frameTarget(scene, "gone", null)).toBe(null);
+    expect(frameTarget(scene, "a", "dimension:d1")).toBe("a"); // a ref selection is no group
   });
   it("counts what is shown: not hidden, not in a hidden group, not a group", () => {
     const objects = { a: object(), b: object({ visible: false }), c: object({ group: "g" }), g: group({ visible: false }) };

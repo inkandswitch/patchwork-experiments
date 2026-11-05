@@ -93,6 +93,12 @@ describe("scene.inspector: the panel", () => {
     expect($(".wireframe").checked).toBe(true);
     expect($(".visible").checked).toBe(true);
     expect(body().textContent).not.toMatch(/null|undefined/);
+    // a selection that isn't an object (a dimension's ref): nothing to inspect
+    await select("dimension:d1");
+    expect(body().hidden).toBe(true);
+    expect(body().textContent).toBe("Nothing selected");
+    await select("a");
+    expect(body().hidden).toBe(false);
     // the object goes: the panel empties
     s.change((d) => delete d.objects.a);
     await settle();
