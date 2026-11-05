@@ -193,7 +193,7 @@ describe("merged cycles and re-parenting order", () => {
   });
 
   it("re-parenting roots-first gives the viewport the resolved tree when an edge inverts", async () => {
-    const { Viewport } = await import("./viewport.js");
+    const { Viewport } = await import("./stage/viewport.js");
     const { Group } = await import("three");
     // just enough of a Viewport for setParent: groups under a content root
     const fake = () => {

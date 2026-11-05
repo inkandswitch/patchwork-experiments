@@ -1,0 +1,64 @@
+/* scene.add: the empty-scene hint, the drop hint and the provider chooser,
+   over the view (old styles.css .empty, .drop-hint and .chooser). The hints
+   never take the pointer: a drop lands on the canvas under them. */
+
+.scene-stage .stage-overlay.add-layer > .add-empty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: var(--studio-space-lg, 1.5rem);
+  color: var(--scene-muted);
+  pointer-events: none;
+}
+
+.scene-stage .add-empty p:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0.25em 0;
+}
+
+.scene-stage .add-empty .hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  font-size: 12px;
+}
+
+.scene-stage .stage-overlay.add-layer > .add-drop-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 8px;
+  display: grid;
+  place-content: center;
+  border: 2px dashed var(--scene-accent);
+  border-radius: var(--studio-radius-md, 8px);
+  background: color-mix(in oklch, var(--scene-bg) 70%, transparent);
+  color: var(--scene-fg);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* The chooser is a question: above every other overlay. */
+.scene-stage > .viewport > .stage-overlay.add-chooser-layer {
+  z-index: 3;
+}
+
+.scene-stage .add-chooser:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--studio-space-md, 1rem);
+  min-width: 14rem;
+  max-width: calc(100% - 16px);
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-md, 8px);
+  box-shadow: var(--studio-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.2));
+}
+
+.scene-stage .add-chooser-title:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0 0 4px;
+  font-weight: 600;
+}

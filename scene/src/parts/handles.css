@@ -1,0 +1,9 @@
+/* scene.handles: the "label: value" tag beside a provider handle's knob. */
+.scene-stage .handle-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+  /* labels are centred on their point by an inline transform: start it beside the knob instead */
+  margin-left: 5em;
+  z-index: 2;
+}

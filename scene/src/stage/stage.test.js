@@ -414,7 +414,7 @@ describe("the stage, mounted", () => {
     await settle();
     const api = exts["t.always"].api;
     const file = repo.add({ "@patchwork": { type: "file" }, name: "part.glb", extension: "glb", mimeType: "model/gltf-binary", content: new Uint8Array([1]) });
-    expect(api.providersFor(file.url, file.doc()).map((p) => p.id)).toEqual(["file-glb"]);
+    expect((await api.providersFor(file.url, file.doc())).map((p) => p.id)).toEqual(["file-glb"]);
     const id = await api.addObject(file.url, { name: "Part", group: "g", before: "p", transform: { position: [1, 2, 3] } });
     const o = h.doc().objects[id];
     expect(o).toMatchObject({ name: "Part", sourceUrl: file.url, providerId: "file-glb", renderUrl: null, group: "g", parent: null });

@@ -1,0 +1,119 @@
+/* scene.menu: the context menu at the pointer. */
+
+.scene-stage
+  .context-menu:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  min-width: 10rem;
+  max-width: 18rem;
+  max-height: calc(100% - 8px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-md, 6px);
+  box-shadow: var(--scene-shadow);
+  font-size: 12px;
+  z-index: 10;
+}
+
+.scene-stage
+  .context-menu
+  .menu-title:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage
+  .context-menu
+  .menu-heading:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--scene-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-stage
+  .context-menu
+  .menu-item:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.scene-stage
+  .context-menu
+  .menu-item:hover:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage
+  .context-menu
+  .menu-item:focus-visible:where(
+    :not(.about-embed *),
+    .about-embed .scene-tool *
+  ) {
+  background: var(--scene-hover);
+  outline: none;
+}
+
+.scene-stage
+  .context-menu
+  .menu-item:disabled:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scene-stage
+  .context-menu
+  .menu-item[aria-checked]:where(
+    :not(.about-embed *),
+    .about-embed .scene-tool *
+  )::before {
+  content: "";
+  width: 1em;
+  flex: none;
+  order: -1;
+}
+
+.scene-stage
+  .context-menu
+  .menu-item[aria-checked="true"]:where(
+    :not(.about-embed *),
+    .about-embed .scene-tool *
+  )::before {
+  content: "✓";
+}
+
+.scene-stage
+  .context-menu
+  .menu-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-stage
+  .context-menu
+  .menu-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-family: var(--scene-family-code);
+  font-size: 10px;
+  color: var(--scene-muted);
+}
+
+.scene-stage
+  .context-menu
+  .menu-separator:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--scene-border);
+}

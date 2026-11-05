@@ -480,6 +480,9 @@ export class Viewport {
       this.renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
     } catch (err) {
       this.error = err;
+      // no renderer, but still a scene and a camera: extensions that only
+      // need the camera's maths (the gizmo) still work, and tests run
+      this.initScene();
       return;
     }
     this.ok = true;

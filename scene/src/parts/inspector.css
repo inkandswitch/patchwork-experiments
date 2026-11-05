@@ -1,0 +1,165 @@
+/* scene.inspector (old styles.css "inspector", 906-1003, and the About
+   section, 754-774). Every descendant rule keeps out of the documents the
+   inspector embeds (.about-embed), except a scene embedded in one. */
+
+.scene-stage .inspector:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-stage .inspector-kind:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector-empty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 12px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector .name-input:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  box-sizing: border-box;
+  width: 100%;
+  font-weight: 600;
+}
+
+.scene-stage .inspector .name-input[readonly]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector .field:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-stage .inspector .field > span:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+}
+
+.scene-stage .inspector .field select:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-width: 0;
+}
+
+.scene-stage .inspector .field-group:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scene-stage .inspector .group-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  font-size: 12px;
+}
+
+.scene-stage .inspector .unit:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+}
+
+.scene-stage .inspector .triple:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.scene-stage .inspector .num:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.scene-stage .inspector .num > span:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  font-size: 11px;
+  width: 0.9em;
+}
+
+.scene-stage .inspector .num input:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-stage .inspector .commands[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+/* status line: build notes, load stats, errors */
+.scene-stage .inspector .status-line:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector .status-line[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .inspector .notes:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  color: var(--scene-muted);
+}
+
+.scene-stage .inspector p.warn:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--scene-label);
+  border-left: 3px solid var(--scene-warning);
+  padding-left: 6px;
+}
+
+.scene-stage .inspector p.error:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  width: 100%;
+  color: var(--scene-danger-text);
+  font-family: var(--scene-family-code);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* the embedded build controls (scene-render-controls on the render doc) */
+.scene-stage .inspector .controls-embed:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-height: 2rem;
+}
+
+.scene-stage .inspector .controls-embed > patchwork-view:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: block;
+}
+
+/* the object's (or its group's) infoUrl document, height-capped */
+.scene-stage .inspector .about:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--scene-border);
+  padding-top: var(--studio-space-xs, 0.375rem);
+}
+
+.scene-stage .inspector .about[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+/* the embed box itself is ours; what's inside it is the embedded tool's */
+.scene-stage .inspector .about-embed {
+  height: min(50vh, 28rem);
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.scene-stage .inspector .about-embed > patchwork-view {
+  display: block;
+  min-height: 100%;
+}

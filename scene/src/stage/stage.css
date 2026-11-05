@@ -254,3 +254,32 @@
   transform-origin: 0 0;
   pointer-events: none;
 }
+
+/* status pills: shared by every part that shows an object's state */
+.scene-stage .pill[data-state="building"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  animation: scene-pulse 1.2s ease-in-out infinite;
+}
+
+.scene-stage .pill[data-state="error"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-danger);
+  color: var(--scene-bg);
+}
+
+.scene-stage .pill[data-state="loading"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+.scene-stage .pill[data-state="stale"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .pill[data-state="warn"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-warning) 30%, var(--scene-bg));
+  color: var(--scene-fg);
+}
+
+@keyframes scene-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+

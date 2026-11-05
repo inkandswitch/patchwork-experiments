@@ -449,6 +449,8 @@ export function createRouter(o) {
   function onPointerLeave() {
     cancelHover();
     o.onHover?.(null);
+    const t = top();
+    if (t) call(t.owner, t.handlers, "leave");
   }
 
   function onDblClick(e) {
@@ -478,7 +480,18 @@ export function createRouter(o) {
 
   const keyEvent = (type, e) => make(type, e, { noHit: true });
 
+  /** Is this key from a document embedded in the stage (the inspector's About)? Then it's that tool's. */
+  function fromEmbed(e) {
+    const path = e.composedPath?.() ?? [];
+    for (const n of path.length ? path : [e.target]) {
+      if (n === keyRoot) return false;
+      if (n?.classList?.contains?.("about-embed")) return true;
+    }
+    return !!e.target?.closest?.(".about-embed");
+  }
+
   function onKeyDown(e) {
+    if (fromEmbed(e)) return;
     const target = e.composedPath?.()[0] ?? e.target;
     if (isTyping(target)) {
       if (e.key === "Escape") target.blur?.();
@@ -515,6 +528,7 @@ export function createRouter(o) {
   }
 
   function onKeyUp(e) {
+    if (fromEmbed(e)) return;
     const code = e.code || e.key;
     const c = down.get(code);
     if (!c) return;

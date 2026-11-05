@@ -1,0 +1,23 @@
+/* scene.grid: the ruler labels and the caption. */
+
+.scene-stage .grid-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  font-size: 11px;
+  /* a halo of the background keeps tick numbers legible over grid lines and meshes */
+  text-shadow:
+    0 0 2px var(--scene-viewport-bg),
+    0 0 2px var(--scene-viewport-bg),
+    0 0 3px var(--scene-viewport-bg);
+}
+
+.scene-stage .stage-overlay > .grid-caption:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  right: var(--studio-space-xs, 0.375rem);
+  bottom: var(--studio-space-xs, 0.375rem);
+  padding: 1px 6px;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--scene-label-bg);
+  color: var(--scene-muted);
+  font-size: 11px;
+  pointer-events: none;
+}

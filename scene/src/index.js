@@ -1,5 +1,10 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
+//
+// The `scene` tool is the stage (src/stage/stage.js): a scene with no UI of
+// its own. Everything you see or do in it comes from `scene:extension`
+// plugins, and the ones this package ships are below; the "model" kit is
+// those that together make the scene editor. See STAGE.md.
 
 const SOURCE_UNITS = [
   { value: "mm", label: "Millimetres" },
@@ -40,7 +45,7 @@ export const plugins = [
     icon: "Box",
     supportedDatatypes: ["scene"],
     async load() {
-      return (await import("./tool.js")).default;
+      return (await import("./stage/stage.js")).default;
     },
   },
   {
@@ -83,5 +88,205 @@ export const plugins = [
     async load() {
       return (await import("./sources/file-stl.js")).default;
     },
+  },
+  // ─── extensions: the parts the scene editor is made of ───
+  {
+    type: "scene:extension",
+    id: "scene.toolbar",
+    name: "Toolbar",
+    async load() {
+      return (await import("./parts/toolbar.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.sidebar",
+    name: "Side panel",
+    async load() {
+      return (await import("./parts/sidebar.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.notices",
+    name: "Notices",
+    async load() {
+      return (await import("./parts/notices.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.keys",
+    name: "Keyboard shortcuts",
+    async load() {
+      return (await import("./parts/keys.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.menu",
+    name: "Context menu",
+    async load() {
+      return (await import("./parts/menu.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.frame",
+    name: "Frame",
+    async load() {
+      return (await import("./parts/frame.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.measure",
+    name: "Measure",
+    requires: ["scene.dimensions"],
+    async load() {
+      return (await import("./parts/measure.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.handles",
+    name: "Handles",
+    async load() {
+      return (await import("./parts/handles.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.gizmo",
+    name: "Transform gizmo",
+    async load() {
+      return (await import("./parts/gizmo.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.hand",
+    name: "Hand",
+    async load() {
+      return (await import("./parts/hand.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.dimensions",
+    name: "Dimensions",
+    async load() {
+      return (await import("./parts/dimensions.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.select",
+    name: "Selection",
+    async load() {
+      return (await import("./parts/select.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.outline",
+    name: "Objects",
+    async load() {
+      return (await import("./parts/outline.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.inspector",
+    name: "Inspector",
+    async load() {
+      return (await import("./parts/inspector.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.grid",
+    name: "Grid",
+    async load() {
+      return (await import("./parts/grid.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.axes",
+    name: "Axes",
+    async load() {
+      return (await import("./parts/axes.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.bounds",
+    name: "Bounds",
+    async load() {
+      return (await import("./parts/bounds.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.units",
+    name: "Units",
+    async load() {
+      return (await import("./parts/units.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.legends",
+    name: "Legends",
+    async load() {
+      return (await import("./parts/legends.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.add",
+    name: "Add documents",
+    async load() {
+      return (await import("./parts/add.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.kits",
+    name: "Kits",
+    always: true,
+    async load() {
+      return (await import("./parts/kits.js")).default;
+    },
+  },
+  // the scene editor: in this order, which is the order input is offered in
+  {
+    type: "scene:kit",
+    id: "model",
+    name: "Model",
+    icon: "Box",
+    extensions: [
+      "scene.toolbar",
+      "scene.sidebar",
+      "scene.notices",
+      "scene.keys",
+      "scene.menu",
+      "scene.frame",
+      "scene.measure",
+      "scene.handles",
+      "scene.gizmo",
+      "scene.hand",
+      "scene.dimensions",
+      "scene.select",
+      "scene.outline",
+      "scene.inspector",
+      "scene.grid",
+      "scene.axes",
+      "scene.bounds",
+      "scene.units",
+      "scene.legends",
+      "scene.add",
+    ],
   },
 ];

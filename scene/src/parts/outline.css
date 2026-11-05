@@ -1,0 +1,269 @@
+/* scene.outline: the object tree (ported from ../styles.css's outline rules).
+   Every rule is scoped like stage.css's, so an embedded tool's DOM (the
+   inspector's About) never picks them up. */
+
+.scene-stage .scene-outline:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-stage .scene-outline .outline-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-stage .scene-outline .new-group:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin-left: auto;
+  flex: none;
+}
+
+.scene-stage .scene-outline .outline-search:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-stage .scene-outline .outline-filter:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 6px;
+}
+
+.scene-stage .scene-outline .match-count:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  font-size: 11px;
+  color: var(--scene-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-stage .scene-outline .object-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* groups and attached objects nest under their parent: 10px a level, at most 8 levels */
+.scene-stage .scene-outline .object-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  padding-left: calc(2px + min(var(--depth, 0), 8) * 10px);
+  border-radius: var(--studio-radius-sm, 4px);
+  border-left: 3px solid transparent;
+}
+
+.scene-stage .scene-outline .object-row:hover:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .scene-outline .object-row[data-hover]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+}
+
+.scene-stage .scene-outline .object-row[data-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-accent) 22%, var(--scene-bg));
+}
+
+/* a peer's selection (their colour), or a fainter mark where they hover */
+.scene-stage .scene-outline .object-row[data-remote-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-left-color: var(--peer-colour, var(--scene-remote));
+}
+
+.scene-stage .scene-outline .object-row[data-remote-hover]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-left-color: color-mix(in oklch, var(--peer-colour, var(--scene-remote)) 45%, transparent);
+}
+
+.scene-stage .scene-outline .object-row[data-hidden] .name:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .scene-outline .object-row[data-context] .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+}
+
+.scene-stage .scene-outline .object-row[data-kind="group"] .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+}
+
+.scene-stage .scene-outline .object-row[data-attached] .row-main:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  content: "↳";
+  color: var(--scene-faint);
+  flex: none;
+}
+
+.scene-stage .scene-outline .twisty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  width: 16px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--scene-muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.scene-stage .scene-outline .twisty:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  content: "▸";
+  display: inline-block;
+  transition: transform var(--studio-transition-fast, 0.1s ease);
+}
+
+.scene-stage .scene-outline .twisty[aria-expanded="true"]:where(:not(.about-embed *), .about-embed .scene-tool *)::before {
+  transform: rotate(90deg);
+}
+
+.scene-stage .scene-outline .twisty:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+  color: var(--scene-fg);
+}
+
+.scene-stage .scene-outline .object-row[data-leaf] .twisty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  visibility: hidden;
+}
+
+.scene-stage .scene-outline .swatch-spacer:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  width: 18px;
+}
+
+.scene-stage .scene-outline .swatch:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  background: none;
+  cursor: pointer;
+}
+
+.scene-stage .scene-outline .swatch[data-auto]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.45;
+}
+
+.scene-stage .scene-outline .row-main:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+/* The name is the grab handle for moving a row. */
+.scene-stage .scene-outline .row-main[draggable="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: grab;
+}
+
+.scene-stage .scene-outline .row-main .name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-stage .scene-outline .row-main .count:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--scene-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-stage .scene-outline .icon-button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--scene-muted);
+  background: none;
+  border: none;
+  padding: 2px 5px;
+  border-radius: var(--studio-radius-sm, 4px);
+  cursor: pointer;
+}
+
+.scene-stage .scene-outline .icon-button:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+  background: var(--scene-hover);
+}
+
+.scene-stage .scene-outline .empty-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  padding: 2px 4px;
+}
+
+/* load and build state (the pill's base look is stage.css's) */
+.scene-stage .scene-outline .pill[data-state="building"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  animation: scene-outline-pulse 1.2s ease-in-out infinite;
+}
+
+.scene-stage .scene-outline .pill[data-state="error"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-danger);
+  color: var(--scene-bg);
+}
+
+.scene-stage .scene-outline .pill[data-state="loading"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+}
+
+.scene-stage .scene-outline .pill[data-state="stale"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .scene-outline .pill[data-state="warn"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-warning) 30%, var(--scene-bg));
+  color: var(--scene-fg);
+}
+
+@keyframes scene-outline-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Where a drag would land. A group takes the drop inside it, which is a wash
+   over the whole row; before and after are a line on the edge the thing would
+   be inserted at (data-drop on the row under the pointer). */
+.scene-stage .scene-outline .object-row[data-drop]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: relative;
+}
+
+.scene-stage .scene-outline .object-row[data-drop="into"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--pw-surface-selected, color-mix(in srgb, currentColor 10%, transparent));
+  outline: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+.scene-stage .scene-outline .object-row[data-drop="before"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after,
+.scene-stage .scene-outline .object-row[data-drop="after"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  block-size: 2px;
+  background: currentColor;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.scene-stage .scene-outline .object-row[data-drop="before"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after {
+  inset-block-start: -1px;
+}
+
+.scene-stage .scene-outline .object-row[data-drop="after"]:where(:not(.about-embed *), .about-embed .scene-tool *)::after {
+  inset-block-end: -1px;
+}

@@ -472,7 +472,7 @@ export default function Stage(handle, element) {
         if (inv === undefined) inverses.set(id, (inv = invertMatrix(world(id))));
         return inv ? applyMatrix(inv, p) : null;
       };
-      m.snapshot = Object.freeze({ d: m.d, objects: m.objects, ids: m.ids, parents: m.parents, groups: m.groups, traits: m.d.traits ?? {}, world, toLocal });
+      m.snapshot = Object.freeze({ d: m.d, objects: m.objects, ids: m.ids, parents: m.parents, groups: m.groups, members: m.members, traits: m.d.traits ?? {}, world, toLocal });
     }
     return m.snapshot;
   }
@@ -492,6 +492,14 @@ export default function Stage(handle, element) {
   }
 
   function afterGLB() {
+    contentDirty = true;
+    requestFlush();
+  }
+
+  // What's shown changed without the doc or local state changing (a pose
+  // held or let go, a lens): every extension's update runs again, with the
+  // same scene and local, as after a GLB arrives.
+  function displayChanged() {
     contentDirty = true;
     requestFlush();
   }
@@ -631,6 +639,8 @@ export default function Stage(handle, element) {
       viewport.setPose(id, t);
       remotePosed.add(id);
     } else if (remotePosed.delete(id)) viewport.setPose(id, null);
+    else return;
+    displayChanged();
   }
   cleanups.push(presence.watchHolds((_holds, ids) => ids.forEach(applyRemoteHold)));
   cleanups.push(
@@ -656,6 +666,7 @@ export default function Stage(handle, element) {
     remotePosed.delete(id);
     presence.hold(extId, id, m.parents.get(id) ?? null, t);
     viewport.setPose(id, t);
+    displayChanged();
   }
 
   function releasePose(extId, own, id, landed) {
@@ -666,6 +677,7 @@ export default function Stage(handle, element) {
     presence.release(extId, id, t ? JSON.parse(JSON.stringify(normalizeTransform(t))) : undefined);
     viewport.setPose(id, null);
     applyRemoteHold(id);
+    displayChanged();
   }
 
   // ─── the update flush ─────────────────────────────────────────────────────
@@ -758,6 +770,8 @@ export default function Stage(handle, element) {
       lastLooksKey = key;
       looks = next;
       applyDoc(m);
+      // names through a lens changed: let every extension read them again
+      displayChanged();
     }
     const ms = now() - t0;
     spend(ms);
@@ -907,8 +921,9 @@ export default function Stage(handle, element) {
     }
   }
 
-  function providersFor(url, sourceDoc) {
+  async function providersFor(url, sourceDoc) {
     if (url && parseAutomergeUrl(url) === handle.url) return [];
+    await plugins;
     return matchProviders(listProviders(), describeSource(sourceDoc));
   }
 
@@ -1090,6 +1105,14 @@ export default function Stage(handle, element) {
       ops,
       remove,
       registry: getRegistry,
+      /** the element the canvas fills, and the stage's root (for DOM listeners: drops, paste) */
+      port,
+      root,
+      /** what the manager or the queue last said about an object's content (notes, contested, providerId…) */
+      loadState: (oid) => {
+        const s = objState.get(oid);
+        return s ? Object.freeze({ ...s }) : null;
+      },
 
       // local, prefs, presence
       local: Object.freeze({
@@ -1158,17 +1181,23 @@ export default function Stage(handle, element) {
         limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
         touched: () => viewport.touched() || cameraRestored,
         watch: (fn) => acquire(own.offs, () => viewport.watchCamera(fn)),
+        /** someone finished moving the camera (an orbit, a zoom); never while it's held */
+        onEnd: (fn) => acquire(own.offs, () => viewport.onCameraEnd(fn)),
       }),
 
       // drawing
       THREE,
       world: ({ onTop = false } = {}) => (live() ? viewport.worldLayer(id, { onTop }) : new THREE.Group()),
-      labels: () =>
-        Object.freeze({
+      // each call is its own set (an extension may keep several)
+      labels: () => {
+        const key = `${id}#${(own.labelSets = (own.labelSets ?? 0) + 1)}`;
+        own.labelKeys = [...(own.labelKeys ?? []), key];
+        return Object.freeze({
           set: (items) => {
-            if (live()) viewport.labels.sync(id, items ?? []);
+            if (live()) viewport.labels.sync(key, items ?? []);
           },
-        }),
+        });
+      },
       overlay: () => {
         const el = document.createElement("div");
         el.className = "stage-overlay";
@@ -1265,7 +1294,7 @@ export default function Stage(handle, element) {
       // 6: its world groups
       viewport.removeLayers(id);
       // 7: labels, overlays, edges, styles, listeners and watchers, cursor, extent, focus
-      viewport.labels.clear(id);
+      for (const key of own.labelKeys ?? []) viewport.labels.clear(key);
       for (const el of own.els) el.remove();
       own.els.clear();
       for (const give of [...own.offs]) give();

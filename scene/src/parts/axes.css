@@ -1,0 +1,25 @@
+/* scene.axes: the world axes' labels and the triad's. */
+
+.scene-stage .axis-label:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .triad-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 700;
+  font-size: 12px;
+  text-shadow:
+    0 0 2px var(--scene-viewport-bg),
+    0 0 3px var(--scene-viewport-bg);
+}
+
+.scene-stage .axis-label[data-axis="x"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .triad-label[data-axis="x"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-axis-x);
+}
+
+.scene-stage .axis-label[data-axis="y"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .triad-label[data-axis="y"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-axis-y);
+}
+
+.scene-stage .axis-label[data-axis="z"]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .triad-label[data-axis="z"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-axis-z);
+}

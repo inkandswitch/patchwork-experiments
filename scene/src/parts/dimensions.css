@@ -1,0 +1,100 @@
+/* scene.dimensions: dimension labels in the view and the Dimensions panel
+   (ported from styles.css: .dimension-label, the dimension list and its rows). */
+
+/* Dimensions are the thing the user made on purpose: above other labels, and opaque. */
+.scene-stage .dimension-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  z-index: 2;
+  pointer-events: auto;
+  cursor: pointer;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-dimension);
+  font-weight: 600;
+  box-shadow: var(--scene-shadow);
+}
+
+.scene-stage .dimension-label[data-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  z-index: 3;
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+}
+
+.scene-stage .dimension-label[data-detached]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-style: dotted;
+}
+
+/* an anchor no longer on its (rebuilt) object: this measures the old shape */
+.scene-stage .dimension-label[data-offsurface]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-style: dashed;
+  border-color: var(--scene-warning);
+  opacity: 0.8;
+}
+
+.scene-stage .dimension-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scene-stage .dimension-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: var(--studio-radius-sm, 4px);
+  border-left: 3px solid transparent;
+}
+
+.scene-stage .dimension-row:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+}
+
+.scene-stage .dimension-row[data-selected]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-accent) 22%, var(--scene-bg));
+}
+
+.scene-stage .dimension-list .row-main:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.scene-stage .dimension-list .icon-button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--scene-muted);
+  background: none;
+  border: none;
+  padding: 2px 5px;
+  border-radius: var(--studio-radius-sm, 4px);
+  cursor: pointer;
+}
+
+.scene-stage .dimension-list .icon-button:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+  background: var(--scene-hover);
+}
+
+.scene-stage .dimension-list .empty-row:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-faint);
+  padding: 2px 4px;
+}
+
+.scene-stage .dimension-list .tag[data-tone="warn"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-label);
+  border-color: var(--scene-warning);
+  background: color-mix(in oklch, var(--scene-warning) 20%, transparent);
+}

@@ -5,7 +5,7 @@ import { encodeGLB, computeNormals, parseGLB, MODE } from "./glb.js";
 import { applyMaterialRules, authoredMaterials, collapseInstances, dequantizePositions, loadGLTF, localParts, prepareGLB, prepareMaterials, sharedLoader } from "./gltf-content.js";
 import { Box3, Euler, Matrix4, Group } from "three";
 import { sanitizeRules } from "./material-rules.js";
-import { nearestScreenVertex } from "./viewport.js";
+import { nearestScreenVertex } from "./stage/viewport.js";
 
 // Two unmodified files from solander38.com (CC BY 4.0, Rising Tide Research
 // Foundation; see test/fixtures/README.md): EXT_meshopt_compression +

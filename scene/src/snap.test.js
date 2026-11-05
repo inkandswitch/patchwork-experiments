@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nearestScreenVertex } from "./viewport.js";
+import { nearestScreenVertex } from "./stage/viewport.js";
 
 // Column-major identity: clip = model = world, w = 1, so a vertex at (x, y)
 // lands on screen at ((x + 1) / 2 · W, (1 − y) / 2 · H).
@@ -55,7 +55,7 @@ describe("Viewport.nearestVertex culling and BVH", () => {
   it("finds the same vertex as a brute-force scan over every vertex", async () => {
     const { Group, IcosahedronGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Matrix4, InstancedMesh, TorusKnotGeometry } = await import("three");
     const { MeshBVH } = await import("three-mesh-bvh");
-    const { Viewport } = await import("./viewport.js");
+    const { Viewport } = await import("./stage/viewport.js");
     const cam = new PerspectiveCamera(45, 1.6, 0.01, 1000);
     cam.position.set(3, 2, 6);
     cam.lookAt(0, 0, 0);

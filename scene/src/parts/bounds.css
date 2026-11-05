@@ -1,0 +1,9 @@
+/* scene.bounds: the size labels (as the old styles.css had them; the
+   dimension labels set their own, higher z-index). */
+
+.scene-stage .bounds-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: color-mix(in oklch, var(--scene-bg) 92%, transparent);
+  color: var(--scene-label);
+  border: 1px solid var(--scene-border);
+  z-index: 1;
+}

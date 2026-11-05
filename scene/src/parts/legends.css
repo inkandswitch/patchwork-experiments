@@ -1,0 +1,52 @@
+/* scene.legends: colour legends, from each object's GLB (extras.legend), in
+   the port's bottom-left corner. */
+
+.scene-stage .stage-overlay > .legends:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: var(--studio-space-sm, 0.5rem);
+  bottom: var(--studio-space-sm, 0.5rem);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--studio-space-xs, 0.375rem);
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
+
+.scene-stage .legend:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  gap: 3px;
+  min-width: 12rem;
+  max-width: 22rem;
+  padding: 6px 8px 5px;
+  border-radius: var(--studio-radius-sm, 6px);
+  background: var(--scene-label-bg);
+  border: 1px solid var(--scene-border);
+  box-shadow: var(--scene-shadow);
+  font-size: 11px;
+  color: var(--scene-fg);
+}
+
+.scene-stage .legend-label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-stage .legend-tint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-muted);
+  font-weight: normal;
+}
+
+.scene-stage .legend-bar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  height: 9px;
+  border-radius: 2px;
+}
+
+.scene-stage .legend-ticks:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  justify-content: space-between;
+  color: var(--scene-label);
+  font-variant-numeric: tabular-nums;
+}

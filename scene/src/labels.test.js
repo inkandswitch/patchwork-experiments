@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { declutter, placeDimensionLabel } from "./viewport.js";
+import { declutter, placeDimensionLabel } from "./stage/viewport.js";
 
 function label(cls, x, y, w = 40, h = 14) {
   const el = document.createElement("div");

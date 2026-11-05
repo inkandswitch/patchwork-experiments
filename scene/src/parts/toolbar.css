@@ -1,0 +1,31 @@
+/* scene.toolbar: the row of scene commands along the top (old styles.css
+   .toolbar). Buttons and toggles use the stage's .button primitive. */
+
+.scene-stage .toolbar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--studio-space-xs, 0.375rem);
+  padding: var(--studio-space-xs, 0.375rem) var(--studio-space-sm, 0.5rem);
+  border-bottom: 1px solid var(--scene-border);
+  background: var(--scene-bg);
+}
+
+.scene-stage
+  .toolbar
+  .picker:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  color: inherit;
+  background: var(--scene-surface);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 2px 4px;
+  max-width: 12rem;
+}
+
+.scene-stage
+  .toolbar
+  .picker:disabled:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.5;
+}

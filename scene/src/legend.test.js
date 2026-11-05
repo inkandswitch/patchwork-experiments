@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { legendModel, formatTick, tintStop } from "./legend.js";
-import { sanitizeLegend } from "./viewport.js";
+import { sanitizeLegend } from "./parts/legends.js";
 
 describe("legends", () => {
   it("turns a provider's legend into a label, a gradient and three ticks", () => {
