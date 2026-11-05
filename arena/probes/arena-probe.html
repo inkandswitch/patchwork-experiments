@@ -5,7 +5,9 @@
      stage and its parts) with the BUILT arena plugins (arena/dist) in a stub
      registry, on an in-memory repo. Two views of one doc (each view's
      broadcasts reach only the other): A plays, B watches.
-       ?mode=empty   an empty scene (the runner lays out the sample arena)
+       ?mode=empty   an empty scene (the runner starts it from the Arena level
+                     template); B joins when the runner calls joinB(), so it
+                     joins a level, not an empty scene
        ?mode=hybrid  a big tilted "deck" (a GLB that knows nothing of arenas)
      The runner drives it with a real mouse and keyboard over CDP. -->
 <script type="importmap">
@@ -95,13 +97,18 @@ try {
   hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
   Tool(A, hostA);
   const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
-  Tool(B, hostB);
-  const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
+  let dbgB = null;
+  const joinB = () => {
+    if (dbgB) return;
+    Tool(B, hostB);
+    dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
+    window.__p.B = dbgB;
+  };
   const dbgOf = (w) => (w === "b" ? dbgB : dbgA);
   const hostOf = (w) => (w === "b" ? hostB : hostA);
   const tracerCount = {};
   window.__p = {
-    A: dbgA, B: dbgB, hostA, hostB, errors, scene, mode,
+    A: dbgA, B: dbgB, hostA, hostB, errors, scene, mode, joinB,
     doc: () => scene.doc(),
     running: (w) => dbgOf(w).local.get().running.map((r) => r.id),
     armed: (w) => dbgOf(w).local.get().armed ?? null,
@@ -170,8 +177,16 @@ try {
     },
     viewRect(w) { const r = hostOf(w).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
     resize(w, width, height) { const h = hostOf(w); h.style.width = `${width}px`; h.style.height = `${height}px`; },
-    kitsOn(id, w) {
-      dbgOf(w).local.swap((l) => ({ ...l, kits: { on: [...new Set([...(l.kits?.on ?? []), id])], off: (l.kits?.off ?? []).filter((k) => k !== id) } }));
+    /** what this view is doing, and what the scene offers (the stage's local.activities) */
+    activity: (w) => dbgOf(w).local.get().activities?.current ?? null,
+    activities: (w) => dbgOf(w).local.get().activities?.available ?? [],
+    /** pick a behaviour from the inspector's "Add behaviour…" (a native select: CDP can't open its list) */
+    addBehaviour(key, w) {
+      const sel = hostOf(w).querySelector(".behaviour-add");
+      if (!sel || ![...sel.options].some((o) => o.value === key)) return false;
+      sel.value = key;
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
     },
     /** the camera's yaw (0 looks down -Z; turning left is positive) and pitch */
     yawPitch(w) {
@@ -187,6 +202,7 @@ try {
       cv.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true, pointerId: 1, pointerType: "mouse", clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, movementX: dx, movementY: dy }));
     },
   };
+  if (mode !== "empty") joinB();
   window.__ready = true;
 } catch (err) {
   errors.push(`setup: ${err?.stack ?? err}`);
