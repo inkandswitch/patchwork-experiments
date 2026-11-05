@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { HIDDEN, SEATS, ZONE, docUrl, isFaceUp, seatAt, seatOf, seatedPlayers, visibility, zones } from "./visibility.js";
 import { plainResolver } from "./plain-deck.js";
-import Extension, { migrate, needsMigration } from "./extension.js";
+import Extension from "./extension.js";
 import { testScene } from "./test-scene.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
@@ -72,26 +72,6 @@ describe("the plain deck", () => {
   });
 });
 
-describe("old scenes", () => {
-  it("move seats, zones and hidden into traits, and open on the Table panel", () => {
-    const d = {
-      view: { units: "cm" },
-      seats: seats("alice"),
-      objects: { tray: { name: "Tray", zone: { seat: "p1", min: [0, 0, 0], max: [1, 1, 1] } }, card: { name: "Card", hidden: { by: DECK } }, board: { name: "Board" } },
-    };
-    expect(needsMigration(d)).toBe(true);
-    migrate(d);
-    expect(needsMigration(d)).toBe(false);
-    expect(d.seats).toBeUndefined();
-    expect(d.traits[SEATS].p1.player).toBe("alice");
-    expect(d.objects.tray.traits[ZONE].seat).toBe("p1");
-    expect(d.objects.card.traits[HIDDEN].by).toBe(DECK);
-    expect(d.objects.card.hidden).toBeUndefined();
-    expect(d.objects.board.traits).toBeUndefined();
-    expect(d.view.kits).toEqual([]); // a table suggests no editing kits
-  });
-});
-
 /** An in-memory repo with real-looking urls, whose handles emit "change". */
 function fakeRepo() {
   const handles = new Map();
@@ -123,11 +103,11 @@ function fakeRepo() {
 }
 
 /** The extension against a stand-in for the scene's api. */
-function mount({ viewer = "alice", registries = {} } = {}) {
+function mount({ viewer = "alice", registries = {}, deckType = "plain-deck" } = {}) {
   const repo = fakeRepo();
   let doc = { objects: objects(), traits: { [SEATS]: seats(viewer) } };
   const deck = repo.add(
-    { "@patchwork": { type: "scene-secrets" }, objects: Object.fromEntries(["inHand1", "inHand2Flipped", "faceUp", "faceDown", "onTray"].map((id) => [id, { sourceUrl: `automerge:${id}`, name: `Face of ${id}` }])) },
+    { "@patchwork": { type: deckType }, objects: Object.fromEntries(["inHand1", "inHand2Flipped", "faceUp", "faceDown", "onTray"].map((id) => [id, { sourceUrl: `automerge:${id}`, name: `Face of ${id}` }])) },
     DECK,
   );
   const calls = { toasts: [], refreshes: 0, selected: null, camera: null };
@@ -159,11 +139,19 @@ function mount({ viewer = "alice", registries = {} } = {}) {
 const settle = () => new Promise((r) => setTimeout(r, 10));
 
 describe("the table extension", () => {
-  it("reads a deck and shows this viewer what they may see (an old plain deck is renamed)", async () => {
+  it("reads only a plain-deck doc as a plain deck (scene-secrets is no longer a name for one)", async () => {
+    const m = mount({ deckType: "scene-secrets" });
+    m.x.update(m.api.scene());
+    await settle();
+    expect(m.deck.doc()["@patchwork"].type).toBe("scene-secrets");
+    expect(m.x.looks().size).toBe(0);
+    expect(m.x.hud()).toEqual([{ text: expect.stringContaining("scene-secrets"), state: "error" }]);
+  });
+
+  it("reads a deck and shows this viewer what they may see", async () => {
     const m = mount();
     m.x.update(m.api.scene());
     await settle();
-    expect(m.deck.doc()["@patchwork"].type).toBe("plain-deck");
     expect(m.calls.refreshes).toBeGreaterThan(0);
     m.x.update(m.api.scene());
     expect([...m.x.looks().keys()].sort()).toEqual(["faceUp", "inHand1", "onTray"]);

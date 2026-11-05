@@ -3,8 +3,6 @@
 // (A secure deck, which no one can read alone, is card-table's.)
 
 export const PLAIN_DECK = "plain-deck";
-// what it was called when the scene itself read it
-export const LEGACY_PLAIN_DECK = "scene-secrets";
 
 export const PlainDeckDatatype = {
   init(doc) {
