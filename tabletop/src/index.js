@@ -52,8 +52,9 @@ export const plugins = [
     },
     drops: ["*"],
     // playing needs these and nothing else: carry pieces, keys for verbs, a
-    // right-click menu, framing, and somewhere for notices
-    requires: ["scene.hand", "scene.keys", "scene.menu", "scene.frame", "scene.notices"],
+    // right-click menu, a camera that opens on the table, and somewhere for
+    // notices (not scene.frame: F is the hand's flip at a table)
+    requires: ["scene.hand", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     async load() {
       return (await import("./table/extension.js")).default;
     },

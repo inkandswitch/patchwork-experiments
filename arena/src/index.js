@@ -48,8 +48,9 @@ export const plugins = [
     // goes through the key map, notices, and the camera framing the level as
     // it loads (a joiner's camera starts untouched, wherever the stage puts
     // it, which in an arena can be inside a wall). While playing, the game
-    // holds the camera and takes every input, so framing stands aside.
-    requires: ["scene.keys", "scene.notices", "scene.frame"],
+    // holds the camera and takes every input, so framing stands aside. Not
+    // scene.frame: Frame all and double-click to frame are editing's.
+    requires: ["scene.keys", "scene.notices", "scene.autoframe"],
     async load() {
       return (await import("./play.js")).default;
     },
