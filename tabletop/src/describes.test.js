@@ -13,6 +13,13 @@ const fresh = (desc) => {
   return out;
 };
 
+describe("tabletop: activities", () => {
+  it("runs in play and in edit, so hidden cards stay hidden while someone edits", () => {
+    expect(table.activities).toEqual(["play", "edit"]);
+    expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
+  });
+});
+
 describe("tabletop: describes its traits", () => {
   it("describes every trait it runs on, as plain data", () => {
     expect(Object.keys(d).sort()).toEqual([...table.traits].sort());

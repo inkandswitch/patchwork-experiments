@@ -19,7 +19,7 @@
 
 import css from "./play.css?inline";
 import { BODY, look, lookDir, step } from "./walk.js";
-import { knockedOver } from "./level.js";
+import { knockedOver, standTargetsUp } from "./level.js";
 
 const TARGET = "arena.target";
 const SPAWN = "arena.spawn";
@@ -370,18 +370,7 @@ export default {
     }
 
     function resetTargets() {
-      api.change((d) => {
-        for (const o of Object.values(d.objects ?? {})) {
-          const tr = o?.traits?.[TARGET];
-          if (!tr?.down) continue;
-          if (tr.stand) {
-            o.transform.position = [...tr.stand.position];
-            o.transform.rotation = [...tr.stand.rotation];
-          }
-          delete tr.down;
-          delete tr.stand;
-        }
-      });
+      api.change((d) => standTargetsUp(d));
     }
 
     function turn(dx, dy) {
@@ -529,7 +518,6 @@ export default {
       },
       commands: [
         { id: "play", name: "Play", key: "Enter", show: ["toolbar", "menu"], state: () => (playing ? null : { title: "Walk the level in first person (Enter)" }), run: () => start() },
-        { id: "reset", name: "Stand targets up", show: ["menu"], state: (target, { scene: sc }) => (Object.values(sc?.objects ?? {}).some(isDown) ? {} : null), run: () => resetTargets() },
       ],
       hud: () => [],
       // only a laid-out level has the arena's look (see the top): adding a

@@ -331,3 +331,23 @@ export function yawThenTilt(yaw, tilt) {
   if (Math.abs(m13) < 0.9999999) return [Math.atan2(sa, cy * ca), y, Math.atan2(-sy * sa, cy)];
   return [Math.atan2(cy * sa, ca), y, 0];
 }
+
+/**
+ * Stand every knocked-over target back up where it stood (inside a change).
+ * Playing and editing both offer it, so it lives here with the doc's shape.
+ */
+export function standTargetsUp(d) {
+  for (const o of Object.values(d.objects ?? {})) {
+    const tr = o?.traits?.["arena.target"];
+    if (!tr?.down) continue;
+    if (tr.stand) {
+      o.transform.position = [...tr.stand.position];
+      o.transform.rotation = [...tr.stand.rotation];
+    }
+    delete tr.down;
+    delete tr.stand;
+  }
+}
+
+/** Whether any target in the scene is knocked over. */
+export const anyDown = (objects) => Object.values(objects ?? {}).some((o) => !!o?.traits?.["arena.target"]?.down);
