@@ -1,8 +1,8 @@
-//written on 2026-11-03 11:22 EST
+//written on 2026-11-05 13:28 EST
 // Fabrik — application construction set on newdefs (Livelymerge Morphic).
 // Parts bin, pins, wires, and a system browser with edit / layout / user view.
 //
-let FABRIK_WRITTEN_ON = '2026-11-03 11:22 EST';
+let FABRIK_WRITTEN_ON = '2026-11-05 13:28 EST';
 let FABRIK_EDIT_GAP = 48;
 let FABRIK_PIN_W = 14;
 let FABRIK_PIN_H = 12;
@@ -171,7 +171,7 @@ function fabrikFitBinProto(m) {
     fabrikFitFunctionView(m);
     return;
   }
-  if (m.className !== 'FabrikListView' && m.className !== 'FabrikTextView') return;
+  if (m.className !== 'FabrikListView' && m.className !== 'FabrikTextView' && m.className !== 'FabrikEvalView') return;
   let o = m.getBounds().topLeft;
   let pad = fabrikHostPad(m);
   let w = fabrikBinProtoHugWidth(m);
@@ -187,13 +187,35 @@ function fabrikFitBinProto(m) {
   fabrikLayoutPins(m);
 }
 
+function fabrikFunctionInputCount(fv) {
+  if (!fv) return 0;
+  if (fv.fabrikInputs && fv.fabrikInputs.length) return fv.fabrikInputs.length;
+  let n = 0;
+  let pins = fv.fabrikPins || [];
+  for (let i = 0; i < pins.length; i++) {
+    if (pins[i].pinDir === 'in' || pins[i].pinDir === 'bi') n = n + 1;
+  }
+  return n;
+}
+
+function fabrikFunctionMinHeight(fv) {
+  /** 2*grid inset plus n*pinWidth so left-side inputs sit in from the edge without overlapping. */
+  let n = fabrikFunctionInputCount(fv);
+  let need = 2 * FABRIK_GRID + n * FABRIK_PIN_W;
+  let h = fabrikGrid(need);
+  if (h < need) h = h + FABRIK_GRID;
+  return h;
+}
+
 function fabrikFitFunctionView(fv) {
   if (!fv) return;
   let o = fv.getBounds().topLeft;
   let w = fv.getBounds().width();
+  let pinH = fabrikFunctionMinHeight(fv);
   if (fv.isFabrikProto) {
     let h = fv.getBounds().height();
     if (!(h > 20)) h = 32;
+    if (h < pinH) h = pinH;
     w = fabrikHeadingPixelWidth(fabrikBinProtoLabel(fv));
     Morph.prototype.setBounds.call(fv, rect(o.x, o.y, w, h));
     fabrikLayoutPins(fv);
@@ -204,7 +226,7 @@ function fabrikFitFunctionView(fv) {
   fv.contentPane.setBounds(rect(pad.l, 0, Math.max(20, w - pad.l - pad.r), 20));
   fabrikGrowContent(fv);
   let textH = fv.contentPane.shape && fv.contentPane.shape.extent ? fv.contentPane.shape.extent.y : 20;
-  let needH = Math.max(32, textH);
+  let needH = Math.max(32, textH, pinH);
   Morph.prototype.setBounds.call(fv, rect(o.x, o.y, w, needH));
   fv.contentPane.setBounds(rect(pad.l, 0, Math.max(20, w - pad.l - pad.r), textH));
   fabrikLayoutPins(fv);
@@ -394,6 +416,10 @@ function fabrikSnapMorph(m) {
   }
   let w = Math.max(FABRIK_GRID, fabrikGrid(b.width()));
   let h = Math.max(FABRIK_GRID, fabrikGrid(b.height()));
+  if (m.className === 'FabrikFunctionView') {
+    let minH = fabrikFunctionMinHeight(m);
+    if (h < minH) h = minH;
+  }
   let same = b.topLeft.x === x && b.topLeft.y === y && b.width() === w && b.height() === h;
   if (!same) {
     m.$fabrikSnapping = true;
@@ -447,7 +473,7 @@ function fabrikShouldShowHandles(host) {
 }
 
 function fabrikHandleHit(host, localP) {
-  /** 'grow' = bottom-right, 'move' = top-left, else null. */
+  /** 'grow' = bottom-right, 'move' = top-right, else null. */
   if (!host || !localP) return null;
   if (host.className === 'LineMorph') return null;
   let sh = host.shape;
@@ -458,7 +484,7 @@ function fabrikHandleHit(host, localP) {
   let s = FABRIK_CORNER;
   if (localP.x >= ox + w - s && localP.x <= ox + w && localP.y >= oy + h - s && localP.y <= oy + h)
     return 'grow';
-  if (localP.x >= ox && localP.x <= ox + s && localP.y >= oy && localP.y <= oy + s) return 'move';
+  if (localP.x >= ox + w - s && localP.x <= ox + w && localP.y >= oy && localP.y <= oy + s) return 'move';
   return null;
 }
 
@@ -475,7 +501,6 @@ function fabrikDrawHandles(ctx, host) {
   let sh = host.shape;
   if (!sh || !sh.topLeft || !sh.extent) return;
   let s = FABRIK_CORNER;
-  let xL = sh.topLeft.x;
   let xR = sh.topLeft.x + sh.extent.x - s;
   let y0 = sh.topLeft.y;
   let y1 = sh.topLeft.y + sh.extent.y - s;
@@ -486,8 +511,8 @@ function fabrikDrawHandles(ctx, host) {
   ctx.lineTo(xR + s - 2, y1 + s - 2);
   ctx.lineTo(xR + s - 2, y1 + 2);
   ctx.stroke();
-  fabrikDrawHandleBox(ctx, xL, y0, s);
-  let cx = xL + s / 2;
+  fabrikDrawHandleBox(ctx, xR, y0, s);
+  let cx = xR + s / 2;
   let cy = y0 + s / 2;
   ctx.beginPath();
   ctx.moveTo(cx - 3, cy);
@@ -587,6 +612,10 @@ function fabrikPartDragMovedBy(delta, p, evt) {
     this.$fabrikGridDY = (this.$fabrikGridDY || 0) + delta.y;
     let w = Math.max(FABRIK_GRID * 2, fabrikGrid((this.$fabrikResizeOW || 0) + this.$fabrikGridDX));
     let h = Math.max(FABRIK_GRID * 2, fabrikGrid((this.$fabrikResizeOH || 0) + this.$fabrikGridDY));
+    if (this.className === 'FabrikFunctionView') {
+      let minH = fabrikFunctionMinHeight(this);
+      if (h < minH) h = minH;
+    }
     fabrikPreviewExtent(this, w, h);
     return;
   }
@@ -667,6 +696,13 @@ function fabrikViewApplyBounds(view, paneBounds) {
   let y = paneBounds.topLeft.y;
   let w = paneBounds.width();
   let h = paneBounds.height();
+  if (view && view.className === 'FabrikFunctionView') {
+    let minH = fabrikFunctionMinHeight(view);
+    if (h < minH) {
+      h = minH;
+      paneBounds = rect(x, y, w, h);
+    }
+  }
   if (!(b && b.topLeft && b.topLeft.x === x && b.topLeft.y === y && b.width() === w && b.height() === h))
     Morph.prototype.setBounds.call(view, paneBounds);
   return paneBounds;
@@ -763,6 +799,7 @@ function fabrikIsScrollPane(m) {
     n === 'TranscriptTextPane' ||
     n === 'FabrikListView' ||
     n === 'FabrikTextView' ||
+    n === 'FabrikEvalView' ||
     n === 'FabrikFunctionView' ||
     n === 'FabrikBinPartsPane'
   );
@@ -868,8 +905,8 @@ function fabrikMorphLocalToWorld(morph, lx, ly, out) {
     y = y * sy;
     let r = t && t.rotation ? t.rotation : 0;
     if (r) {
-      let c = Math.cos(-r);
-      let s = Math.sin(-r);
+      let c = Math.cos(r);
+      let s = Math.sin(r);
       let nx = x * c - y * s;
       let ny = x * s + y * c;
       x = nx;
@@ -885,6 +922,40 @@ function fabrikMorphLocalToWorld(morph, lx, ly, out) {
   }
   out.x = x;
   out.y = y;
+  return out;
+}
+
+function fabrikMorphDeltaToWorld(morph, dx, dy, out) {
+  /** Direction through the same scale+rotate as local-to-world, then unit-length. */
+  let m = morph;
+  let x = dx;
+  let y = dy;
+  while (m && m.owner) {
+    let t = m.transform;
+    let sc = t && t.scale;
+    let sx = sc && sc.x != null ? sc.x : 1;
+    let sy = sc && sc.y != null ? sc.y : 1;
+    x = x * sx;
+    y = y * sy;
+    let r = t && t.rotation ? t.rotation : 0;
+    if (r) {
+      let c = Math.cos(r);
+      let s = Math.sin(r);
+      let nx = x * c - y * s;
+      let ny = x * s + y * c;
+      x = nx;
+      y = ny;
+    }
+    m = m.owner;
+  }
+  let len = Math.sqrt(x * x + y * y);
+  if (len > 1e-6) {
+    out.x = x / len;
+    out.y = y / len;
+  } else {
+    out.x = x;
+    out.y = y;
+  }
   return out;
 }
 
@@ -948,6 +1019,11 @@ function fabrikPinAwayInto(pin, out) {
   return out;
 }
 
+function fabrikPinAwayWorldInto(pin, out) {
+  fabrikPinAwayInto(pin, out);
+  return fabrikMorphDeltaToWorld(pin, out.x, out.y, out);
+}
+
 function fabrikPinAttachLocal(pin, out) {
   let e = pin && pin.shape && pin.shape.extent ? pin.shape.extent : null;
   let w = e && e.x != null ? e.x : FABRIK_PIN_W;
@@ -990,14 +1066,14 @@ function fabrikPinAwayX(pin) {
 function fabrikWireStubWorld(pin) {
   /** 20px straight out from the pin, along its away direction. */
   let p = fabrikPinCenterInto(pin, fabrikHostXY(0));
-  let a = fabrikPinAwayInto(pin, fabrikHostXY(8));
+  let a = fabrikPinAwayWorldInto(pin, fabrikHostXY(8));
   return pt(p.x + a.x * 20, p.y + a.y * 20);
 }
 
 function fabrikWireHeadedBack(fromPin, toPin, fromEnd) {
   let a = fabrikPinCenterInto(fromPin, fabrikHostXY(0));
   let b = fabrikPinCenterInto(toPin, fabrikHostXY(1));
-  let away = fabrikPinAwayInto(fromEnd ? fromPin : toPin, fabrikHostXY(8));
+  let away = fabrikPinAwayWorldInto(fromEnd ? fromPin : toPin, fabrikHostXY(8));
   let otherDx = fromEnd ? b.x - a.x : a.x - b.x;
   let otherDy = fromEnd ? b.y - a.y : a.y - b.y;
   return otherDx * away.x + otherDy * away.y < 0;
@@ -1005,7 +1081,7 @@ function fabrikWireHeadedBack(fromPin, toPin, fromEnd) {
 
 function fabrikWireControlInto(fromPin, toPin, fromEnd, ax, ay, bx, by, stubX, stubY, out) {
   let pin = fromEnd ? fromPin : toPin;
-  let away = fabrikPinAwayInto(pin, fabrikHostXY(8));
+  let away = fabrikPinAwayWorldInto(pin, fabrikHostXY(8));
   let otherDx = fromEnd ? bx - ax : ax - bx;
   let otherDy = fromEnd ? by - ay : ay - by;
   let headedBack = otherDx * away.x + otherDy * away.y < 0;
@@ -1021,7 +1097,7 @@ function fabrikWireControlInto(fromPin, toPin, fromEnd, ax, ay, bx, by, stubX, s
       hb.topLeft.y + hb.extent.y / 2,
       fabrikHostXY(4),
     );
-    if (away.x !== 0) yOff = (stubY < mid.y ? -1 : 1) * 28;
+    if (away.x * away.x >= away.y * away.y) yOff = (stubY < mid.y ? -1 : 1) * 28;
     else xOff = (stubX < mid.x ? -1 : 1) * 28;
   }
   out.x = stubX + away.x * extra + xOff;
@@ -1038,7 +1114,7 @@ function fabrikWireControlWorld(fromPin, toPin, fromEnd) {
   let a = fabrikPinCenterInto(fromPin, fabrikHostXY(0));
   let b = fabrikPinCenterInto(toPin, fabrikHostXY(1));
   let pin = fromEnd ? fromPin : toPin;
-  let away = fabrikPinAwayInto(pin, fabrikHostXY(8));
+  let away = fabrikPinAwayWorldInto(pin, fabrikHostXY(8));
   let stubX = (fromEnd ? a.x : b.x) + away.x * 20;
   let stubY = (fromEnd ? a.y : b.y) + away.y * 20;
   let o = fabrikWireControlInto(fromPin, toPin, fromEnd, a.x, a.y, b.x, b.y, stubX, stubY, fabrikHostXY(2));
@@ -1081,8 +1157,8 @@ function fabrikWireRefreshGeom(wire) {
   let b = fabrikPinCenterInto(toPin, fabrikHostXY(1));
   if (wire.$gReady && wire.$ax === a.x && wire.$ay === a.y && wire.$bx === b.x && wire.$by === b.y)
     return true;
-  let awayA = fabrikPinAwayInto(fromPin, fabrikHostXY(8));
-  let awayB = fabrikPinAwayInto(toPin, fabrikHostXY(9));
+  let awayA = fabrikPinAwayWorldInto(fromPin, fabrikHostXY(8));
+  let awayB = fabrikPinAwayWorldInto(toPin, fabrikHostXY(9));
   let a2x = a.x + awayA.x * 20;
   let a2y = a.y + awayA.y * 20;
   let b2x = b.x + awayB.x * 20;
@@ -1282,19 +1358,25 @@ function fabrikLayoutPins(host) {
       continue;
     }
     let d = pins[i].pinDir;
-    if (d === 'in' || d === 'bi') ins.push(pins[i]);
-    if (d === 'out' || d === 'bi') outs.push(pins[i]);
+    if (d === 'out') outs.push(pins[i]);
+    else ins.push(pins[i]);
   }
   let b = host.getBounds();
   let place = function (list, outsideLeft) {
     if (list.length === 0) return;
-    let gap = b.height() / (list.length + 1);
-    for (let i = 0; i < list.length; i++) {
+    let n = list.length;
+    let inset = FABRIK_GRID;
+    let minSlot = FABRIK_PIN_W;
+    let usable = b.height() - 2 * inset;
+    if (usable < n * minSlot) usable = n * minSlot;
+    let step = usable / n;
+    if (step < minSlot) step = minSlot;
+    for (let i = 0; i < n; i++) {
       let p = list[i];
       p.$fabrikPinSide = outsideLeft ? 'l' : 'r';
       let pw = fabrikPinExtentW(p.$fabrikPinSide);
       let ph = fabrikPinExtentH(p.$fabrikPinSide);
-      let y = gap * (i + 1) - ph / 2;
+      let y = inset + step * i + (step - ph) / 2;
       let x = outsideLeft ? -pw : b.width();
       fabrikSetFrame(p, x, y, pw, ph);
     }
@@ -1314,7 +1396,19 @@ function fabrikHostFullBounds(host) {
       b = b.union(host.fabrikPins[i].getBounds());
     }
   }
-  return b.translatedBy(host.transform.translation);
+  let t = host.transform;
+  let rot = t && t.rotation ? t.rotation : 0;
+  let sc = t && t.scale;
+  let sx = sc && sc.x != null ? sc.x : 1;
+  let sy = sc && sc.y != null ? sc.y : 1;
+  if (Math.abs(rot) < 1e-10 && Math.abs(sx - 1) < 1e-10 && Math.abs(sy - 1) < 1e-10)
+    return b.translatedBy(t && t.translation ? t.translation : pt(0, 0));
+  let pts = new window.Array();
+  pts.push(t.transformPt(b.topLeft));
+  pts.push(t.transformPt(b.topRight()));
+  pts.push(t.transformPt(b.bottomRight()));
+  pts.push(t.transformPt(b.bottomLeft()));
+  return unionPts(pts);
 }
 
 function fabrikRenderHostOn(host, ctx) {
@@ -2034,6 +2128,15 @@ class FabrikListView extends ListPane {
   onPointerUp(p, evt) {
     return fabrikViewOnPointerUp(this, p, evt);
   }
+  morphCopy(asChild) {
+    let copy = new FabrikListView(fabrikCopyHostFrame(this));
+    if (this.fabrikList) {
+      copy.fabrikList = this.fabrikList;
+      copy.setList(this.fabrikList);
+    }
+    fabrikAdoptCopiedHost(this, copy, asChild);
+    return copy;
+  }
   static new(...args) {
     return new this(...args);
   }
@@ -2110,6 +2213,261 @@ class FabrikTextView extends TextPane {
   }
   onPointerUp(p, evt) {
     return fabrikViewOnPointerUp(this, p, evt);
+  }
+  morphCopy(asChild) {
+    let copy = new FabrikTextView(fabrikCopyHostFrame(this));
+    copy.setText(fabrikViewText(this), { force: true });
+    fabrikAdoptCopiedHost(this, copy, asChild);
+    return copy;
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+function fabrikViewText(view) {
+  let sh = view && view.contentPane && view.contentPane.shape;
+  return sh && sh.string != null ? '' + sh.string : '';
+}
+
+function fabrikMarkViewSaved(view) {
+  let src = fabrikViewText(view);
+  if (view.contentPane && view.contentPane._savedTextSnapshot !== undefined) view.contentPane._savedTextSnapshot = src;
+  if (view.contentPane && view.contentPane.shape) view.contentPane.shape.editorID = null;
+}
+
+function fabrikAcceptTextView(tv) {
+  if (!tv) return '';
+  let src = fabrikViewText(tv);
+  fabrikEmit(tv, 'textOut', src);
+  fabrikMarkViewSaved(tv);
+  return src;
+}
+
+function fabrikPrintNumber(n) {
+  if (n !== n) return 'NaN';
+  if (n === Infinity) return 'Infinity';
+  if (n === -Infinity) return '-Infinity';
+  let r = Math.round(n * 1000) / 1000;
+  if (r === 0) r = 0;
+  return '' + r;
+}
+
+function fabrikPrintValue(v) {
+  if (v == null) return 'nil';
+  if (typeof v === 'number') return fabrikPrintNumber(v);
+  if (typeof v === 'boolean') return '' + v;
+  return fabrikAsText(v);
+}
+
+function fabrikSliderOf(view) {
+  if (!view) return null;
+  if (view.slider && view.slider.className === 'SliderMorph') return view.slider;
+  let subs = view.submorphs || [];
+  for (let i = 0; i < (subs.length || 0); i++) {
+    let m = subs.at ? subs.at(i) : subs[i];
+    if (m && m.className === 'SliderMorph') return m;
+  }
+  return null;
+}
+
+function fabrikCopyHostFrame(src) {
+  let b = src && src.shape ? src.shape.getBounds() : src.getBounds();
+  return rect(0, 0, b.width(), b.height());
+}
+
+function fabrikAdoptCopiedHost(src, copy, asChild) {
+  if (!src || !copy) return copy;
+  copy.owner = null;
+  if (asChild) copy.applyAffineAsLocalTransform(affineFromSimpleTransform(src.transform, 0));
+  else copy.applyAffineAsLocalTransform(src.localToWorldAffine());
+  if (src.zIndex != null) copy.zIndex = src.zIndex;
+  if (src.copyPartNameTo) src.copyPartNameTo(copy);
+  if (src.fabrikKind) copy.fabrikKind = src.fabrikKind;
+  return copy;
+}
+
+function fabrikEvalSource(src) {
+  src = src == null ? '' : '' + src;
+  if (src === '' || src === 'nil') return null;
+  try {
+    return eval(src);
+  } catch (err) {
+    return String(err && err.message ? err.message : err);
+  }
+}
+
+function fabrikAcceptEvalView(ev) {
+  if (!ev) return null;
+  let result = fabrikEvalSource(fabrikViewText(ev));
+  fabrikEmit(ev, 'out', result);
+  fabrikMarkViewSaved(ev);
+  return result;
+}
+
+class FabrikEvalView extends TextPane {
+  constructor(bounds) {
+    super(bounds, rect(0, 0, 1, 1));
+    fabrikStripScrollBar(this);
+    fabrikStyleHost(this);
+    this.setBounds(bounds);
+    fabrikAddPin(this, 'in', 'in', 'any');
+    fabrikAddPin(this, 'out', 'out', 'any');
+    this.setText(fabrikPrintValue(null), { force: true });
+  }
+  setBounds(paneBounds) {
+    paneBounds = fabrikViewApplyBounds(this, paneBounds);
+    if (!this.contentPane) return;
+    fabrikPlaceInnerContent(this, paneBounds.width(), paneBounds.height());
+    fabrikLayoutPins(this);
+    if (!this.$fabrikApplyingLayout && !this.isFabrikProto) fabrikRememberCurrentLayout(this);
+  }
+  renderOn(ctx) {
+    fabrikRenderHostOn(this, ctx);
+  }
+  fullBounds() {
+    return fabrikHostFullBounds(this);
+  }
+  acceptsDroppingMorphs() {
+    return false;
+  }
+  dragEnded(p, evt, wasDrag) {
+    fabrikPartDragEnded.call(this, p, evt, wasDrag);
+  }
+  setText(text, opts) {
+    let r = TextPane.prototype.setText.call(this, text, opts);
+    fabrikGrowContent(this);
+    fabrikSyncPaneChrome(this);
+    return r;
+  }
+  fabrikPinChanged(pin) {
+    if (pin.pinName !== 'in') return;
+    this.setText(fabrikPrintValue(pin.value), { force: true });
+  }
+  fabrikPaneHeight() {
+    return FabrikListView.prototype.fabrikPaneHeight.call(this);
+  }
+  getScrollPosition() {
+    return FabrikListView.prototype.getScrollPosition.call(this);
+  }
+  _scrollContentTo(scrollPos) {
+    return FabrikListView.prototype._scrollContentTo.call(this, scrollPos);
+  }
+  scrollByLines(lineCount) {
+    return FabrikListView.prototype.scrollByLines.call(this, lineCount);
+  }
+  onPointerDown(p, evt) {
+    return fabrikPartOnPointerDown.call(this, p, evt);
+  }
+  dragMovedBy(delta, p, evt) {
+    return fabrikPartDragMovedBy.call(this, delta, p, evt);
+  }
+  onPointerMove(p, evt) {
+    return fabrikViewOnPointerMove(this, p, evt);
+  }
+  onPointerUp(p, evt) {
+    return fabrikViewOnPointerUp(this, p, evt);
+  }
+  morphCopy(asChild) {
+    let copy = new FabrikEvalView(fabrikCopyHostFrame(this));
+    copy.setText(fabrikViewText(this), { force: true });
+    fabrikAdoptCopiedHost(this, copy, asChild);
+    return copy;
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+class FabrikSliderView extends Morph {
+  constructor(bounds) {
+    super(bounds);
+    fabrikStyleHost(this);
+    let pad = 4;
+    let w = bounds.width();
+    let h = bounds.height();
+    let view = this;
+    this.slider = this.addMorph(
+      new SliderMorph(
+        rect(pad, pad, Math.max(8, w - pad * 2), Math.max(8, h - pad * 2)),
+        function (frac) {
+          if (view.$fabrikSliderQuiet) return;
+          let n = Math.round(frac * 100);
+          if (n < 0) n = 0;
+          if (n > 100) n = 100;
+          fabrikEmit(view, 'valueOut', n);
+        },
+        { menuButton: false }
+      )
+    );
+    let slider = fabrikSliderOf(this);
+    if (slider) slider.valExtent = 0.12;
+    this.setBounds(bounds);
+    fabrikAddPin(this, 'value', 'in', 'any');
+    fabrikAddPin(this, 'valueOut', 'out', 'any');
+    this.$fabrikSliderQuiet = true;
+    if (slider && slider.setValue) slider.setValue(0);
+    this.$fabrikSliderQuiet = false;
+  }
+  setBounds(paneBounds) {
+    paneBounds = fabrikViewApplyBounds(this, paneBounds);
+    let pad = 4;
+    let w = paneBounds.width();
+    let h = paneBounds.height();
+    let slider = fabrikSliderOf(this);
+    if (slider && slider.setBounds)
+      slider.setBounds(rect(pad, pad, Math.max(8, w - pad * 2), Math.max(8, h - pad * 2)));
+    fabrikLayoutPins(this);
+    if (!this.$fabrikApplyingLayout && !this.isFabrikProto) fabrikRememberCurrentLayout(this);
+  }
+  renderOn(ctx) {
+    fabrikRenderHostOn(this, ctx);
+  }
+  fullBounds() {
+    return fabrikHostFullBounds(this);
+  }
+  acceptsDroppingMorphs() {
+    return false;
+  }
+  dragEnded(p, evt, wasDrag) {
+    fabrikPartDragEnded.call(this, p, evt, wasDrag);
+  }
+  fabrikPinChanged(pin) {
+    if (!pin || pin.pinName !== 'value') return;
+    let slider = fabrikSliderOf(this);
+    if (!slider) return;
+    let n = pin.value;
+    if (typeof n !== 'number') n = parseFloat(n);
+    if (n !== n) return;
+    if (n < 0) n = 0;
+    if (n > 100) n = 100;
+    this.$fabrikSliderQuiet = true;
+    slider.setValue(n / 100);
+    this.$fabrikSliderQuiet = false;
+  }
+  onPointerDown(p, evt) {
+    return fabrikPartOnPointerDown.call(this, p, evt);
+  }
+  dragMovedBy(delta, p, evt) {
+    return fabrikPartDragMovedBy.call(this, delta, p, evt);
+  }
+  onPointerMove(p, evt) {
+    return fabrikViewOnPointerMove(this, p, evt);
+  }
+  onPointerUp(p, evt) {
+    return fabrikViewOnPointerUp(this, p, evt);
+  }
+  morphCopy(asChild) {
+    let copy = new FabrikSliderView(fabrikCopyHostFrame(this));
+    fabrikAdoptCopiedHost(this, copy, asChild);
+    let src = fabrikSliderOf(this);
+    let dst = fabrikSliderOf(copy);
+    if (src && dst && src.getValue && dst.setValue) {
+      copy.$fabrikSliderQuiet = true;
+      dst.setValue(src.getValue());
+      copy.$fabrikSliderQuiet = false;
+    }
+    return copy;
   }
   static new(...args) {
     return new this(...args);
@@ -2210,6 +2568,20 @@ class FabrikFunctionView extends TextPane {
   }
   dragEnded(p, evt, wasDrag) {
     fabrikPartDragEnded.call(this, p, evt, wasDrag);
+  }
+  morphCopy(asChild) {
+    let copy = new FabrikFunctionView(fabrikCopyHostFrame(this), {
+      source: this.fabrikSource || fabrikViewText(this),
+      inputs: this.fabrikInputs,
+      outputType: this.fabrikOutputType,
+    });
+    copy.fabrikSource = this.fabrikSource;
+    copy.fabrikInputs = this.fabrikInputs;
+    copy.fabrikOutputType = this.fabrikOutputType;
+    copy.fabrikPartName = this.fabrikPartName;
+    if (this.fabrikPartName && copy.setName) copy.setName(this.fabrikPartName);
+    fabrikAdoptCopiedHost(this, copy, asChild);
+    return copy;
   }
   static new(...args) {
     return new this(...args);
@@ -2398,7 +2770,7 @@ class FabrikBin extends PanelMorph {
         if (
           !m.$fabrikBinPlaced &&
           m.isFabrikProto &&
-          (m.className === 'FabrikFunctionView' || m.className === 'FabrikListView' || m.className === 'FabrikTextView')
+          (m.className === 'FabrikFunctionView' || m.className === 'FabrikListView' || m.className === 'FabrikTextView' || m.className === 'FabrikEvalView')
         ) {
           fabrikSetFrame(m, 0, 0, 80, 32);
           fabrikFitBinProto(m);
@@ -2725,6 +3097,15 @@ function fabrikStamp(proto, dest, at) {
         ? proto.contentPane.shape.string
         : 'normal JS\n  text in a string';
     m.setText(t, { force: true });
+  } else if (kind === 'evalView') {
+    m = new FabrikEvalView(rect(at.x, at.y, fabrikGrid(180), fabrikGrid(40)));
+    let evs =
+      proto.contentPane && proto.contentPane.shape && proto.contentPane.shape.string
+        ? proto.contentPane.shape.string
+        : '';
+    m.setText(evs, { force: true });
+  } else if (kind === 'sliderView') {
+    m = new FabrikSliderView(rect(at.x, at.y, fabrikGrid(180), fabrikGrid(32)));
   }
   else if (kind === 'functionView') {
     m = new FabrikFunctionView(rect(at.x, at.y, fabrikGrid(260), fabrikGrid(96)), {
@@ -2741,7 +3122,7 @@ function fabrikStamp(proto, dest, at) {
   else m = proto.morphCopy();
   if (!m) return null;
   dest.addMorph(m);
-  if (kind !== 'listView' && kind !== 'textView' && kind !== 'functionView' && proto.className !== 'LineMorph') {
+  if (kind !== 'listView' && kind !== 'textView' && kind !== 'evalView' && kind !== 'sliderView' && kind !== 'functionView' && proto.className !== 'LineMorph') {
     m.moveBy(at.subPt(m.getBounds().topLeft));
   }
   if (m.className !== 'LineMorph') fabrikSnapMorph(m);
@@ -2767,12 +3148,21 @@ function fabrikGuessPinType(name) {
   return 'text';
 }
 
-function fabrikFnParamNames(fn) {
-  if (typeof fn !== 'function' || !fn.toString) return [];
-  let src = fn.toString();
+function fabrikParamNamesFromSource(src) {
+  src = src == null ? '' : '' + src;
   let open = src.indexOf('(');
   let close = src.indexOf(')');
-  if (open < 0 || close <= open) return [];
+  if (open < 0 || close <= open) {
+    let arrow = src.indexOf('=>');
+    if (arrow > 0) {
+      let left = src.slice(0, arrow);
+      while (left.length && (left.charAt(0) == ' ' || left.charAt(0) == '\n' || left.charAt(0) == '\t')) left = left.slice(1);
+      if (left.indexOf('async') == 0) left = left.slice(5);
+      while (left.length && (left.charAt(0) == ' ' || left.charAt(0) == '\n' || left.charAt(0) == '\t')) left = left.slice(1);
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(left)) return [left];
+    }
+    return [];
+  }
   let parts = src.slice(open + 1, close).split(',');
   let names = [];
   for (let i = 0; i < parts.length; i++) {
@@ -2785,6 +3175,126 @@ function fabrikFnParamNames(fn) {
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(p)) names.push(p);
   }
   return names;
+}
+
+function fabrikFunctionNameFromSource(src) {
+  src = src == null ? '' : '' + src;
+  let head = 'function ';
+  let at = src.indexOf(head);
+  if (at < 0) return '';
+  at = at + head.length;
+  let end = at;
+  while (end < src.length) {
+    let ch = src.charAt(end);
+    if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch === '_') end = end + 1;
+    else break;
+  }
+  return end > at ? src.substring(at, end) : '';
+}
+
+function fabrikFnParamNames(fn) {
+  if (typeof fn !== 'function' || !fn.toString) return [];
+  return fabrikParamNamesFromSource(fn.toString());
+}
+
+function fabrikFunctionViewForTextBox(tb) {
+  let host = fabrikHostForTextBox(tb);
+  return host && host.className === 'FabrikFunctionView' ? host : null;
+}
+
+function fabrikHostForTextBox(tb) {
+  /** Walk TextBox → TextMorph → Fabrik text/eval/function view. */
+  let m = tb && tb.morph ? tb.morph : tb;
+  while (m) {
+    let n = m.className;
+    if (n === 'FabrikFunctionView' || n === 'FabrikTextView' || n === 'FabrikEvalView') return m;
+    m = m.owner;
+  }
+  return null;
+}
+
+function fabrikDisconnectPin(pin) {
+  if (!pin) return;
+  let world = (pin.world && pin.world()) || Lively;
+  if (!world || !world.fabrikWires) return;
+  let next = [];
+  for (let i = 0; i < world.fabrikWires.length; i++) {
+    let w = world.fabrikWires[i];
+    if (w.fromPin === pin || w.toPin === pin) {
+      if (w.remove) w.remove();
+    } else next.push(w);
+  }
+  world.fabrikWires = next;
+}
+
+function fabrikSyncFunctionPins(fv, paramNames) {
+  if (!fv.fabrikPins) fv.fabrikPins = [];
+  let wanted = {};
+  for (let i = 0; i < paramNames.length; i++) wanted[paramNames[i]] = true;
+  let kept = [];
+  for (let i = 0; i < fv.fabrikPins.length; i++) {
+    let p = fv.fabrikPins[i];
+    if (p.pinDir === 'out' || p.pinDir === 'bi') {
+      kept.push(p);
+      continue;
+    }
+    if (wanted[p.pinName]) {
+      kept.push(p);
+      continue;
+    }
+    fabrikDisconnectPin(p);
+    if (p.remove) p.remove();
+  }
+  fv.fabrikPins = kept;
+  for (let j = 0; j < paramNames.length; j++) {
+    if (!fabrikPinNamed(fv, paramNames[j])) fabrikAddPin(fv, paramNames[j], 'in', fabrikGuessPinType(paramNames[j]));
+  }
+  if (!fabrikPinNamed(fv, 'result')) fabrikAddPin(fv, 'result', 'out', fv.fabrikOutputType || 'any');
+  fabrikLayoutPins(fv);
+}
+
+function fabrikAcceptFunctionSource(fv) {
+  if (!fv) return 'no view';
+  let src = fv.contentPane && fv.contentPane.shape ? fv.contentPane.shape.string : '';
+  src = src == null ? '' : '' + src;
+  fv.fabrikSource = src;
+  let name = fabrikFunctionNameFromSource(src);
+  let params = fabrikParamNamesFromSource(src);
+  let inputs = [];
+  for (let i = 0; i < params.length; i++) inputs.push({ name: params[i], type: fabrikGuessPinType(params[i]) });
+  fv.fabrikInputs = inputs;
+  if (name) {
+    fv.fabrikPartName = name;
+    if (fv.setName) fv.setName(name);
+  }
+  fabrikSyncFunctionPins(fv, params);
+  fabrikFitFunctionView(fv);
+  if (fv.fabrikRun) fv.fabrikRun();
+  if (fv.contentPane && fv.contentPane._savedTextSnapshot !== undefined) fv.contentPane._savedTextSnapshot = src;
+  if (fv.contentPane && fv.contentPane.shape) fv.contentPane.shape.editorID = null;
+  return name || 'function';
+}
+
+function fabrikInstallFunctionSave() {
+  if (typeof TextBox === 'undefined' || !TextBox || !TextBox.prototype) return;
+  if (TextBox.prototype.$fabrikFunctionSave) return;
+  TextBox.prototype.$fabrikFunctionSave = true;
+  let prev = TextBox.prototype.handleKeyboardShortcuts;
+  TextBox.prototype.handleKeyboardShortcuts = function (evt) {
+    let k = evt.key && evt.key.length === 1 ? evt.key.toLowerCase() : evt.key;
+    if (k == 's') {
+      let host = fabrikHostForTextBox(this);
+      if (host && !host.isFabrikProto) {
+        if (host.className === 'FabrikFunctionView') fabrikAcceptFunctionSource(host);
+        else if (host.className === 'FabrikTextView') fabrikAcceptTextView(host);
+        else if (host.className === 'FabrikEvalView') fabrikAcceptEvalView(host);
+        if (evt && evt.preventDefault) evt.preventDefault();
+        if (evt && evt.stopPropagation) evt.stopPropagation();
+        return;
+      }
+    }
+    if (prev) return prev.call(this, evt);
+  };
 }
 
 function fabrikPartFromGlobalName(name, at) {
@@ -2883,6 +3393,33 @@ function fabrikInstallWorldMenu(world) {
   return menu;
 }
 
+function fabrikClearParts(world) {
+  /** Remove stamped parts, panels, and wires; keep the parts bin and Fabrik menus. */
+  world = world || Lively;
+  if (!world) return;
+  fabrikClearLiveWire(world);
+  if (world.$fabrikRubber && world.$fabrikRubber.remove) world.$fabrikRubber.remove();
+  world.$fabrikRubber = null;
+  world.$fabrikWiringFrom = null;
+  let wires = world.fabrikWires || [];
+  world.fabrikWires = [];
+  for (let i = 0; i < wires.length; i++) {
+    if (wires[i] && wires[i].remove) wires[i].remove();
+  }
+  let kids = [];
+  if (world.submorphs) for (let i = 0; i < world.submorphs.length; i++) kids.push(world.submorphs[i]);
+  if (world.$submorphs) for (let i = 0; i < world.$submorphs.length; i++) kids.push(world.$submorphs[i]);
+  for (let i = 0; i < kids.length; i++) {
+    let m = kids[i];
+    if (!m) continue;
+    let cn = m.className;
+    if (cn === 'FabrikBin' || cn === 'MenuMorph' || cn === 'HaloMorph' || cn === 'HaloHandle' || cn === 'HandMorph') continue;
+    if (cn === 'FabrikWire' || cn === 'FabrikRubberWire' || fabrikIsArrangedPart(m)) {
+      if (m.remove) m.remove();
+    }
+  }
+}
+
 function fabrikInstallViewMenu(world) {
   if (!world) return null;
   let prior = world.get && world.get('fabrikViewMenu');
@@ -2908,6 +3445,9 @@ function fabrikInstallViewMenu(world) {
     }),
     menuItem('make new panel', function () {
       fabrikMakeNewPanel(world);
+    }),
+    menuItem('clear parts', function () {
+      fabrikClearParts(world);
     }),
   ];
   let menu = new MenuMorph(rect(at.x, at.y, fabrikMenuWidth(), 24 + items.length * 20), items);
@@ -3136,6 +3676,10 @@ function fabrikPopulateBin(bin) {
   let tv = new FabrikTextView(rect(0, 0, 180, 44));
   tv.setText('normal JS\n  text in a string', { force: true });
   fabrikMakeBinItem(bin, tv, 'textView', 'textView', 'views');
+  let ev = new FabrikEvalView(rect(0, 0, 180, 32));
+  fabrikMakeBinItem(bin, ev, 'evalView', 'evalView', 'views');
+  let sl = new FabrikSliderView(rect(0, 0, 180, 28));
+  fabrikMakeBinItem(bin, sl, 'sliderView', 'sliderView', 'views');
   let fv = new FabrikFunctionView(rect(0, 0, 180, 32), {
     source: '(v) => v',
     inputs: [{ name: 'v', type: 'any' }],
@@ -3211,7 +3755,7 @@ function fabrikIsArrangedPart(m) {
   if (cn === 'FabrikPin' || cn === 'FabrikWire' || cn === 'FabrikRubberWire') return false;
   if (cn === 'FabrikBin' || cn === 'FabrikBinPartsPane' || cn === 'MenuMorph') return false;
   if (cn === 'PanelTitleBar') return false;
-  if (cn === 'FabrikListView' || cn === 'FabrikTextView' || cn === 'FabrikFunctionView') return true;
+  if (cn === 'FabrikListView' || cn === 'FabrikTextView' || cn === 'FabrikEvalView' || cn === 'FabrikSliderView' || cn === 'FabrikFunctionView') return true;
   if (m.isFabrikPanel) return true;
   if (m.fabrikKind || m.fabrikPins) return true;
   return false;
@@ -3623,6 +4167,7 @@ function openFabrik(world) {
   world.$fabrikViewMode = 'edit';
   world.$fabrikLayoutsReady = false;
   world.isFabrikWorld = true;
+  fabrikInstallFunctionSave();
   fabrikInstallShiftChrome(world);
 
   let bin = world.addMorph(new FabrikBin(fabrikBinRect(world)));
@@ -3656,6 +4201,7 @@ function fabrikBuildWorld(world) {
   return world;
 }
 
+fabrikInstallFunctionSave();
 if (typeof Lively === 'object' && Lively) fabrikOfferOpenMenu(Lively);
 
-//written on 2026-11-03 11:22 EST
+//written on 2026-11-05 13:28 EST

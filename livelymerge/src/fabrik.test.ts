@@ -346,6 +346,221 @@ describe('Fabrik', () => {
     ).toBe('true,true,true,true');
   }, 20000);
 
+  it('ctrl-S in a function view installs that function on the part', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let fv = new FabrikFunctionView(rect(40, 40, 220, 40), {
+          source: 'function (v) { return v; }',
+          inputs: [{ name: 'v', type: 'any' }],
+        });
+        Lively.addMorph(fv);
+        fv.setText('function twice(n) { return n * 2; }', { force: true });
+        let tb = fv.contentPane.shape;
+        tb.handleKeyboardShortcuts({ key: 's', ctrlKey: true, preventDefault() {}, stopPropagation() {} });
+        let inN = fabrikPinNamed(fv, 'n');
+        let oldV = fabrikPinNamed(fv, 'v');
+        if (inN) inN.value = 6;
+        fv.fabrikRun();
+        let out = fabrikPinNamed(fv, 'result');
+        let hit = fabrikHandleHit(fv, pt(fv.shape.topLeft.x + fv.shape.extent.x - 2, fv.shape.topLeft.y + 2));
+        return [
+          fv.getName() === 'twice',
+          fv.fabrikPartName === 'twice',
+          !!inN,
+          !oldV,
+          out && out.value === 12,
+          hit === 'move',
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true');
+  }, 20000);
+
+  it('text view ctrl-S emits; eval view prints then evals; slider is 0-100 i/o', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let tv = new FabrikTextView(rect(40, 40, 180, 40));
+        Lively.addMorph(tv);
+        let tvIn = fabrikPinNamed(tv, 'text');
+        tv.setText('hello', { force: true });
+        tv.contentPane.shape.handleKeyboardShortcuts({
+          key: 's',
+          ctrlKey: true,
+          preventDefault() {},
+          stopPropagation() {},
+        });
+        let textOut = fabrikPinNamed(tv, 'textOut');
+
+        let ev = new FabrikEvalView(rect(40, 100, 180, 40));
+        Lively.addMorph(ev);
+        let evIn = fabrikPinNamed(ev, 'in');
+        let nilShown = ev.contentPane && ev.contentPane.shape ? '' + ev.contentPane.shape.string : '';
+        evIn.receive(50);
+        let shown = ev.contentPane && ev.contentPane.shape ? '' + ev.contentPane.shape.string : '';
+        ev.setText('55', { force: true });
+        ev.contentPane.shape.handleKeyboardShortcuts({
+          key: 's',
+          ctrlKey: true,
+          preventDefault() {},
+          stopPropagation() {},
+        });
+        let evOut = fabrikPinNamed(ev, 'out');
+
+        let sl = new FabrikSliderView(rect(40, 160, 180, 32));
+        Lively.addMorph(sl);
+        let slIn = fabrikPinNamed(sl, 'value');
+        let slOut = fabrikPinNamed(sl, 'valueOut');
+        let slider = fabrikSliderOf(sl);
+        if (slider && slider.emitValueFunction) slider.emitValueFunction.call(sl, 0.4);
+        let emitted = slOut && slOut.value;
+        slIn.receive(75);
+        let frac = slider && slider.getValue ? slider.getValue() : -1;
+        let binEv = Lively.get('fabrikBin').findKindIn('views', 'evalView');
+        let binSl = Lively.get('fabrikBin').findKindIn('views', 'sliderView');
+        let binNil = binEv && binEv.contentPane && binEv.contentPane.shape ? '' + binEv.contentPane.shape.string : '';
+        let noBi =
+          tvIn.pinDir === 'in' &&
+          textOut.pinDir === 'out' &&
+          evIn.pinDir === 'in' &&
+          evOut.pinDir === 'out' &&
+          slIn.pinDir === 'in' &&
+          slOut.pinDir === 'out';
+        return [
+          !!(textOut && textOut.value === 'hello'),
+          nilShown === 'nil',
+          shown === '50',
+          !!(evOut && evOut.value === 55 && typeof evOut.value === 'number'),
+          noBi,
+          emitted === 40,
+          Math.abs(frac - 0.75) < 0.02,
+          binNil === 'nil',
+          !!(binSl && binSl.className === 'FabrikSliderView' && fabrikPinNamed(binSl, 'valueOut')),
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('eval view prints at most 3 decimals; halo rotate sticks near 45 degrees', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        let ev = new FabrikEvalView(rect(40, 40, 120, 32));
+        Lively.addMorph(ev);
+        fabrikPinNamed(ev, 'in').receive(1.23456);
+        let shown = ev.contentPane && ev.contentPane.shape ? '' + ev.contentPane.shape.string : '';
+        return [
+          shown === '1.235',
+          fabrikPrintValue(50) === '50',
+          fabrikPrintValue(Math.PI) === '3.142',
+          Math.abs(stickyRotation(0.05)) < 1e-9,
+          Math.abs(stickyRotation(Math.PI / 4 + 0.04) - Math.PI / 4) < 1e-9,
+          Math.abs(stickyRotation(0.4) - 0.4) < 1e-9,
+          Math.abs(stickyRotation(0.5, Math.PI / 4) - Math.PI / 4) < 1e-9,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('rotated slider pins track the part and remain hittable for wiring', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let sl = new FabrikSliderView(rect(120, 80, 180, 32));
+        Lively.addMorph(sl);
+        let pin = fabrikPinNamed(sl, 'valueOut');
+        sl.transform.rotation = Math.PI / 2;
+        let loc = fabrikPinAttachLocal(pin, fabrikHostXY(7));
+        let g = pin.globalize(pt(loc.x, loc.y));
+        let c = fabrikPinCenterWorld(pin);
+        let away = fabrikPinAwayWorldInto(pin, fabrikHostXY(8));
+        let ax = away.x;
+        let ay = away.y;
+        let stub = fabrikWireStubWorld(pin);
+        let fb = sl.fullBounds();
+        let pInOwner = sl.owner ? sl.owner.localize(g) : g;
+        let pInHost = sl.localize(g);
+        let hitPin = pin.includesPt(pInHost);
+        let found = fabrikPinAtWorld(Lively, g);
+        let ev = new FabrikEvalView(rect(300, 80, 120, 40));
+        Lively.addMorph(ev);
+        fabrikConnect(pin, fabrikPinNamed(ev, 'in'));
+        let wire = Lively.fabrikWires[Lively.fabrikWires.length - 1];
+        fabrikWireRefreshGeom(wire);
+        return [
+          Math.abs(c.x - g.x) < 2 && Math.abs(c.y - g.y) < 2,
+          Math.abs(ax) < 0.08 && Math.abs(ay - 1) < 0.08,
+          Math.abs(stub.x - (c.x + ax * 20)) < 2 && Math.abs(stub.y - (c.y + ay * 20)) < 2,
+          fb.includesPt(pInOwner),
+          hitPin,
+          found === pin,
+          Math.abs(wire.$ax - c.x) < 2 && Math.abs(wire.$ay - c.y) < 2,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('halo copy of a rotated slider keeps the inner slider in the frame', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let sl = new FabrikSliderView(rect(120, 80, 180, 32));
+        Lively.addMorph(sl);
+        sl.setRotation(Math.PI / 4);
+        let copy = sl.morphCopy();
+        Lively.addMorph(copy);
+        let inner = fabrikSliderOf(copy);
+        let mid = inner ? inner.boundsInWorld().center() : pt(0, 0);
+        let fb = copy.fullBounds();
+        return [
+          copy.className === 'FabrikSliderView',
+          !!(inner && inner.className === 'SliderMorph' && inner.owner === copy),
+          !!(fabrikPinNamed(copy, 'value') && fabrikPinNamed(copy, 'valueOut')),
+          fb.includesPt(mid),
+          Math.abs((copy.transform.rotation || 0) - Math.PI / 4) < 0.05,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true');
+  }, 20000);
+
+  it('function views with n inputs are tall enough for inset pin layout', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let fv = new FabrikFunctionView(rect(40, 40, 220, 24), {
+          source: 'function triple(a, b, c) { return a; }',
+          inputs: [
+            { name: 'a', type: 'any' },
+            { name: 'b', type: 'any' },
+            { name: 'c', type: 'any' },
+          ],
+        });
+        Lively.addMorph(fv);
+        let need = 2 * FABRIK_GRID + 3 * FABRIK_PIN_W;
+        let h = fv.getBounds().height();
+        fv.setBounds(rect(fv.getBounds().topLeft.x, fv.getBounds().topLeft.y, 220, 16));
+        let h2 = fv.getBounds().height();
+        let a = fabrikPinNamed(fv, 'a');
+        let c = fabrikPinNamed(fv, 'c');
+        let ay = a.getBounds().topLeft.y;
+        let cb = c.getBounds().topLeft.y + c.getBounds().height();
+        let gap = c.getBounds().topLeft.y - (a.getBounds().topLeft.y + a.getBounds().height());
+        return [
+          h >= need,
+          h2 >= need,
+          ay >= FABRIK_GRID - 1,
+          cb <= h2 - FABRIK_GRID + 1,
+          gap >= 0,
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true');
+  }, 20000);
+
   it('list halo follows the pane frame, not the text extent', () => {
     const { rt } = makeFabrik();
     expect(
@@ -393,7 +608,7 @@ describe('Fabrik', () => {
           wm.getBounds().width() <= 205,
           Math.abs(wm.getBounds().topLeft.y - 20) < 8,
           Math.abs(wm.getBounds().topLeft.x - 20) < 8 && Math.abs(vm.getBounds().topLeft.x - 20) < 8,
-          !!(vm && vm.findItem && vm.findItem('user view') >= 0 && vm.findItem('layout view') >= 0 && vm.findItem('make new panel') >= 0),
+          !!(vm && vm.findItem && vm.findItem('user view') >= 0 && vm.findItem('layout view') >= 0 && vm.findItem('make new panel') >= 0 && vm.findItem('clear parts') >= 0),
           Math.abs(belowGap - 20) < 8,
           openIx >= 0 && openIx < transIx,
           hasMake,
@@ -406,6 +621,37 @@ describe('Fabrik', () => {
         ].join(',');
       })()`),
     ).toBe('true,true,true,true,true,true,true,true,true,true,true,true,true,true');
+  }, 20000);
+
+  it('clear parts removes world parts and wires but keeps the parts bin', () => {
+    const { rt } = makeFabrik();
+    expect(
+      rt.eval(`(() => {
+        fabrikSetView('edit', Lively);
+        let hadCats = !!Lively.get('categories');
+        let hadWires = Lively.fabrikWires.length >= 9;
+        let vm = Lively.get('fabrikViewMenu');
+        vm.setSelectionString('clear parts');
+        let leftover = 0;
+        Lively.eachSubmorph(function (m) {
+          if (m.owner !== Lively) return;
+          if (m.className === 'FabrikFunctionView' || m.className === 'FabrikListView' || m.className === 'FabrikTextView') leftover = leftover + 1;
+        });
+        let bin = Lively.get('fabrikBin');
+        let proto = bin && bin.findKindIn('views', 'textView');
+        return [
+          hadCats,
+          hadWires,
+          vm.findItem('clear parts') >= 0,
+          leftover === 0,
+          !Lively.get('categories'),
+          Lively.fabrikWires.length === 0,
+          !!(bin && bin.className === 'FabrikBin' && bin.world() === Lively),
+          !!(proto && proto.isFabrikProto),
+          !!(Lively.get('worldMenu') && Lively.get('fabrikViewMenu')),
+        ].join(',');
+      })()`),
+    ).toBe('true,true,true,true,true,true,true,true,true');
   }, 20000);
 
   it('parts bin lists shapes, parts, and views in a scrollable pane', () => {
@@ -486,7 +732,7 @@ describe('Fabrik', () => {
           !!starMatch,
           noHandles && lineHit && lineCloned,
           !!(parts && parts.length === 5),
-          partKids === 12 && hiddenKids === 0,
+          partKids === 14 && hiddenKids === 0,
           partSrc.indexOf('browserCategoryNames') >= 0,
           bin.partsPane && bin.partsPane.className === 'FabrikBinPartsPane' && !!bin.partsPane.scrollByLines,
           paneStayed,
@@ -798,7 +1044,7 @@ describe('Fabrik', () => {
         Lively.onPointerUp(pt(body.x + 20, body.y + 12), { actorID: 't' });
         let listUntouched = Math.abs(src.getBounds().topLeft.x - x0) < 4;
         srcB = src.boundsInWorld();
-        let moveH = pt(srcB.topLeft.x + 2, srcB.topLeft.y + 2);
+        let moveH = pt(srcB.topLeft.x + srcB.width() - 2, srcB.topLeft.y + 2);
         Lively.onPointerDown(moveH, { actorID: 't' });
         Lively.onPointerMove(pt(moveH.x + 24, moveH.y + 16), { actorID: 't' });
         Lively.onPointerUp(pt(moveH.x + 24, moveH.y + 16), { actorID: 't' });
@@ -826,7 +1072,7 @@ describe('Fabrik', () => {
         fabrikEstablishPartFrames(stamped);
         let framesAtDrop = !!fabrikGetLayout(stamped, 'edit') && !fabrikGetLayout(stamped, 'layout');
         let tb = stamped.boundsInWorld();
-        let stampMove = pt(tb.topLeft.x + 2, tb.topLeft.y + 2);
+        let stampMove = pt(tb.topLeft.x + tb.width() - 2, tb.topLeft.y + 2);
         let stampX0 = stamped.getBounds().topLeft.x;
         Lively.onPointerDown(stampMove, { actorID: 't' });
         Lively.onPointerMove(pt(stampMove.x + 32, stampMove.y), { actorID: 't' });
