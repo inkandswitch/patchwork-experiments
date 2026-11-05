@@ -115,7 +115,7 @@ function makeWorld() {
   const src = readFileSync(join(__dirname, '..', 'newdefs.js'), 'utf8');
   // Strip the trailing top-level init(): it boots a demo world (including its own
   // demo line) that would fight this test's world.
-  rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+  rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
   // World-coord vertices (30,330) → (90,330): line origin lands at (30,330), so
   // line-local coords are world − (30,330) and vertex 0 sits at local (0,0).
   rt.eval(`
@@ -194,7 +194,7 @@ const lineOverlayMessage = (
   vertsFlat: number[] | null,
   opts: { end?: boolean; sid?: string } = {},
 ) => ({
-  type: 'lm-eph',
+  type: 'lm-eph-changes',
   v: 1,
   actor: 'actor-remote',
   sid: opts.sid ?? 'eph-remote-session',
@@ -255,7 +255,7 @@ describe('line vertex drag: ephemeral until drop', () => {
 
     // Peers watch live: per-frame messages carry the flat ephemeral vertex list.
     const mid: any = handle.sentEphemeral[handle.sentEphemeral.length - 1];
-    expect(mid.type).toBe('lm-eph');
+    expect(mid.type).toBe('lm-eph-changes');
     expect(mid.end).toBeUndefined();
     expect(mid.objects[0].id).toBe(lineId);
     const midVerts = Array.from(mid.objects[0].props.vertices) as number[];

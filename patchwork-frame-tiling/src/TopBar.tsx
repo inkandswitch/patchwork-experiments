@@ -33,6 +33,71 @@ const HomeIcon = () => (
   </svg>
 );
 
+const BotIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden
+  >
+    <path d="M12 8V4H8" />
+    <rect width="16" height="12" x="4" y="8" rx="2" />
+    <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
+  </svg>
+);
+
+/** For an overlay whose icon we don't draw: a window floating over another. */
+const OverlayIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+    <rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <rect x="7" y="7" width="5.5" height="5" rx="1" fill="currentColor" />
+  </svg>
+);
+
+const OVERLAY_ICONS: Record<string, () => JSX.Element> = { Bot: BotIcon };
+
+/**
+ * One button per overlay (components tagged `"overlay"`), toggling it. The
+ * overlay decides what toggling means and reports back whether it's open.
+ */
+const OverlayButtons = ({
+  items,
+  open,
+  onToggle,
+}: {
+  items: SlotTool[];
+  open: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) => {
+  if (items.length === 0) return null;
+  return (
+    <div className="tile-topbar__group">
+      {items.map((item) => {
+        const Icon = (item.icon && OVERLAY_ICONS[item.icon]) || OverlayIcon;
+        const pressed = open.has(item.id);
+        return (
+          <button
+            key={item.id}
+            className="tile-topbar__btn"
+            title={item.name}
+            aria-label={item.name}
+            aria-pressed={pressed}
+            data-pressed={pressed || undefined}
+            onClick={() => onToggle(item.id)}
+          >
+            <Icon />
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const PlusIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
     <path
@@ -268,6 +333,9 @@ export const TopBar = ({
   contactUrl,
   rootFolderHandle,
   trayItems,
+  overlays,
+  openOverlays,
+  onToggleOverlay,
   onHome,
   onOpen,
 }: {
@@ -277,6 +345,9 @@ export const TopBar = ({
   contactUrl?: AutomergeUrl;
   rootFolderHandle?: DocHandle<FolderDoc>;
   trayItems: SlotTool[];
+  overlays: SlotTool[];
+  openOverlays: ReadonlySet<string>;
+  onToggleOverlay: (id: string) => void;
   onHome: () => void;
   onOpen: (view: PanelView) => void;
 }) => {
@@ -304,6 +375,12 @@ export const TopBar = ({
       <div className="tile-topbar__spacer" />
 
       <Tray items={trayItems} />
+
+      <OverlayButtons
+        items={overlays}
+        open={openOverlays}
+        onToggle={onToggleOverlay}
+      />
 
       <div className="tile-topbar__group">
         <button

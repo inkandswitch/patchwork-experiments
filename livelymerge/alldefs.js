@@ -1116,7 +1116,7 @@ w.inspect = function (obj, optionalBounds) {
   }
   let p = w.InspectorPanel.new(r, obj);
   w.Lively.addMorph(p);
-  p.startStepping('showSelectedValue', false, 500);
+  p.startStepping(500, 'showSelectedValue', false);
   return p;
 };
 w.inspectString = function (obj) {
@@ -1204,14 +1204,21 @@ w.deleteClassNamed = function (className) {
 };
 w.methodsContaining = function (searchString) {
   // w.methodsContaining('Pane').length
+  // w.methodsContaining('blue') includes Color.class.blue (class constants / non-fn statics)
   let lcKey = searchString.toLowerCase(); //For case-insensitive compare
   let found = [];
   w.allMethodSpecs().forEach((spec) => {
+    let specLc = spec.toLowerCase();
+    // Spec names always count — allMethodSpecs includes class constants such as
+    // Color.class.blue, which are not functions and have no searchable method body.
+    if (specLc.indexOf(lcKey) >= 0) {
+      found.push(spec);
+      return;
+    }
     let method = w.methodFromSpec(spec);
     if (typeof method !== 'function') return;
     let bodyLc = method.toString().toLowerCase();
-    let specLc = spec.toLowerCase();
-    if (bodyLc.indexOf(lcKey) >= 0 || specLc.indexOf(lcKey) >= 0) found.push(spec);
+    if (bodyLc.indexOf(lcKey) >= 0) found.push(spec);
   });
   return found;
 };
@@ -1369,7 +1376,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.world().changed();
   };
   setTimeout(() => {
-    w.Lively.spiral.startStepping('animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 }, 50);
+    w.Lively.spiral.startStepping(50, 'animatedSpiral', { goDist: 2, turnAngle: 60, nSteps: 26 });
   }, 2000);
 };
 
@@ -2010,7 +2017,7 @@ w.Morph.proto.inspect = function () {
   // w.Lively.submorphs.first().inspect()
   let p = w.InspectorPanel.new(w.rect(500, 100, 300, 300), this);
   w.Lively.addMorph(p);
-  p.startStepping('showSelectedValue', false, 500);
+  p.startStepping(500, 'showSelectedValue', false);
   return p;
 };
 w.Morph.proto.morphMenu = function () {
@@ -2057,7 +2064,9 @@ w.Morph.proto.restartSteppingOnCopy = function (copy, specHook) {
   copy.steppingSpecs.forEach((spec) => {
     if (!this.isStepping(spec.methodName)) return;
     if (specHook && specHook(spec, copy)) return;
-    copy.startStepping(spec.methodName, spec.arg, spec.stepPeriod, spec.nextStepTime);
+    let args = spec.$args != null ? spec.$args : [];
+    let fresh = copy.startStepping(spec.$stepPeriod, spec.methodName, ...args);
+    if (fresh) fresh.$nextStepTime = spec.$nextStepTime;
   });
 };
 w.Morph.proto.moveBy = function (delta) {
@@ -2374,13 +2383,19 @@ w.Morph.proto.showHalo = function () {
   // console.log('showHalo() on ' + this.asString());
   this.world().addMorph(w.HaloMorph.new(this));
 };
-w.Morph.proto.startStepping = function (method, argIfAny, msTime, nextStepTimeIfAny) {
+w.Morph.proto.startStepping = function (msTime, method, ...args) {
+  // startStepping(msPerTick, methodName)
+  // startStepping(msPerTick, methodName, arg)
+  // startStepping(msPerTick, methodName, arg1, arg2, ...)
   // Replace any existing step with the same method name on this morph
   this.stopStepping(method);
-  let spec = w.StepSpec.new(this, method, argIfAny, msTime, nextStepTimeIfAny);
+  let spec = w.StepSpec.new(this, method, msTime);
+  // Rest `args` may be a host Array; push into the LM $args array element-wise.
+  for (let i = 0; i < args.length; i++) spec.$args.push(args[i]);
   if (!this.steppingSpecs) this.steppingSpecs = [];
   this.steppingSpecs.push(spec);
   this.world().startSteppingSpec(spec);
+  return spec;
 };
 w.Morph.proto.stopStepping = function (methodName) {
   if (!this.steppingSpecs) this.steppingSpecs = [];
@@ -2401,7 +2416,7 @@ w.Morph.proto.subBounds = function (paneSpec) {
 };
 w.Morph.proto.testTransform = function (whenDone) {
   // Spin a bit, then reset and optionally run next
-  this.startStepping('rotateBy', Math.PI / 10, 25);
+  this.startStepping(25, 'rotateBy', Math.PI / 10);
   w.setTimeout(() => {
     this.stopStepping();
     this.transform.rotation = 0;
@@ -2891,17 +2906,20 @@ w.SimpleTransform.proto.invertPt = function (p) {
 
 w.StepSpec = w.newClass('StepSpec');
 w.StepSpec.proto.asString = function () {
-  return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.stepPeriod}ms)`;
+  return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.$stepPeriod}ms)`;
 };
 w.StepSpec.proto.copyForMorph = function (morph) {
-  return w.StepSpec.new(morph, this.methodName, this.arg, this.stepPeriod, this.nextStepTime);
+  let copy = w.StepSpec.new(morph, this.methodName, this.$stepPeriod, this.$nextStepTime);
+  let src = this.$args || [];
+  for (let i = 0; i < src.length; i++) copy.$args.push(src[i]);
+  return copy;
 };
-w.StepSpec.proto.initialize = function (morph, method, argIfAny, msTime, nextStepTimeIfAny) {
+w.StepSpec.proto.initialize = function (morph, method, msTime, nextStepTimeIfAny) {
   this.stepMorph = morph;
   this.methodName = method;
-  this.arg = argIfAny;
-  this.stepPeriod = msTime;
-  this.nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
+  this.$args = [];
+  this.$stepPeriod = msTime;
+  this.$nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
 };
 
 w.TextCharSpec = w.newClass('TextCharSpec');
@@ -4491,7 +4509,7 @@ w.InspectorPanel.proto.initPrintAndEvalPanes = function () {
   this.printPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.3, 0.0, 0.7, 0.6)));
   this.printPane.setText('Var value asString()');
   this.evalPane = this.addMorph(w.TextPane.new(panelBounds, w.rect(0.0, 0.6, 1.0, 0.4)));
-  this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
+  this.evalPane.setText("Eval here with 'this' bound to this " + this.target.className);
   this.evalPane.contentPane.setWorkspaceObj(this.target);
 };
 w.InspectorPanel.proto.initialize = function (initialBounds, target) {
@@ -6041,7 +6059,7 @@ w.syncOnScreenKeyboardWithFocus = function (worldIfAny) {
   kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
   world.addMorph(kb);
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   w._onScreenKeyboardMorph = kb;
   w._refreshPadModifierStyles();
 };
@@ -6062,7 +6080,7 @@ w.toggleOnScreenKeyboard = function (worldIfAny) {
   let kb = w.OnScreenKeyboardMorph.new(w.defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
   world.addMorph(kb);
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   w._onScreenKeyboardMorph = kb;
   w._refreshPadModifierStyles();
   return kb;
@@ -6100,7 +6118,7 @@ w.WorldMorph.proto.addHand = function (handMorph) {
 };
 w.WorldMorph.proto.makeBouncer = function () {
   // w.Lively.makeBouncer()
-  // w.Lively.startStepping("makeBouncer", , 250)
+  // w.Lively.startStepping(250, "makeBouncer")
   if (!w.bouncers) w.bouncers = [];
   let world = w.Lively;
   if (!world) return null;
@@ -6165,7 +6183,7 @@ w.WorldMorph.proto.makeBouncer = function () {
     world.changed();
   };
   w.bouncers.push(bug);
-  bug.startStepping('bouncerStep', null, 50);
+  bug.startStepping(50, 'bouncerStep');
   return bug;
 };
 w.WorldMorph.proto.handleStepList = function () {
@@ -6173,13 +6191,14 @@ w.WorldMorph.proto.handleStepList = function () {
   // This avoids stepping corruption when other code calls stopStepping/removeMorph
   // while we're processing due steps.
   let now = Date.now();
-  let due = this.stepList.filter((spec) => spec.nextStepTime < now);
+  let due = this.stepList.filter((spec) => spec.$nextStepTime < now);
   due.forEach((spec) => {
     // If spec was removed during earlier step processing, skip it.
     if (!this.stepList.includes(spec)) return;
-    spec.nextStepTime = now + spec.stepPeriod;
+    spec.$nextStepTime = now + spec.$stepPeriod;
     try {
-      if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+      let args = spec.$args != null ? spec.$args : [];
+      if (args.length > 0) spec.stepMorph[spec.methodName](...args);
       else spec.stepMorph[spec.methodName]();
     } catch (err) {
       let morphName = spec.stepMorph.className || 'Morph';
@@ -6601,9 +6620,9 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
     'Halo help',
     'Text help',
     'Init hand',
-    'Open Transcript',
-    'Open Console',
-    'Restart Console',
+    'Open transcript',
+    'Open console',
+    'Clear console',
     w.menuToggleLabel(w.longClickForHalosLabel, window.longClickForHalos),
     w.menuToggleLabel(w.onScreenKeyboardLabel, w.useOnScreenKbd),
   ];
@@ -6628,14 +6647,14 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
       w.refreshWorldMenuItems(this);
     }
     if (item == 'Init hand') this.world().initHand(true);
-    if (item == 'Open Transcript') {
+    if (item == 'Open transcript') {
       let p = w.openTranscript();
       if (p) {
         p.setPanelTitle('Transcript');
         w.Transcript = p;
       }
     }
-    if (item == 'Open Console') {
+    if (item == 'Open console') {
       let p = w.openTranscript();
       if (p) {
         p.setPanelTitle('Console');
@@ -6643,9 +6662,9 @@ w.WorldMorph.proto.showWorldMenuAt = function (pt, optsIfAny) {
         if (p.transcriptPane) p.transcriptPane.setConsoleMirror(true);
       }
     }
-    if (item == 'Restart Console') {
+    if (item == 'Clear console') {
       let con = w.Console;
-      if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
+      if (con && con.clear) con.clear();
     }
     this.shape.selectLineAt(0); // deselect after actions
   });
@@ -7034,7 +7053,7 @@ w.LineMorph.proto.beClosed = function (on) {
   return this;
 };
 w.LineMorph.proto.startHandleStepping = function () {
-  w.Morph.proto.startStepping.call(this, 'stepHoverHandles', null, 200);
+  w.Morph.proto.startStepping.call(this, 200, 'stepHoverHandles');
 };
 w.LineMorph.proto.morphCopy = function () {
   let worldVerts = this.shape.vertices.map((v) => this.globalize(v));
@@ -8442,8 +8461,8 @@ w.TranscriptTextPane.proto.remove = function () {
   return w.Morph.proto.remove.call(this);
 };
 
-w.TranscriptPanelMorph = w.PanelMorph.subClass('TranscriptPanelMorph');
-w.TranscriptPanelMorph.proto.initialize = function (initialBounds) {
+w.TranscriptPanel = w.PanelMorph.subClass('TranscriptPanel');
+w.TranscriptPanel.proto.initialize = function (initialBounds) {
   w.PanelMorph.proto.initialize.call(this, initialBounds);
   let panelBounds = this.paneLayoutBounds();
   this.transcriptPane = this.addMorph(w.TranscriptTextPane.new(panelBounds, w.rect(0, 0, 1, 1)));
@@ -8451,17 +8470,25 @@ w.TranscriptPanelMorph.proto.initialize = function (initialBounds) {
   this.layoutChrome();
   this.relayoutContentPanes();
 };
-w.TranscriptPanelMorph.proto.clear = function () {
+w.TranscriptPanel.proto.clear = function () {
   if (this.transcriptPane) this.transcriptPane.clear();
 };
-w.TranscriptPanelMorph.proto.nextPut = function (str) {
+w.TranscriptPanel.proto.nextPut = function (str) {
   if (this.transcriptPane) this.transcriptPane.nextPut(str);
 };
-w.TranscriptPanelMorph.proto.setConsoleMirror = function (on) {
+w.TranscriptPanel.proto.setConsoleMirror = function (on) {
   if (this.transcriptPane) this.transcriptPane.setConsoleMirror(on);
 };
-w.TranscriptPanelMorph.proto.receivesConsoleOutput = function () {
+w.TranscriptPanel.proto.receivesConsoleOutput = function () {
   return this.transcriptPane && this.transcriptPane.receivesConsoleOutput();
+};
+w.TranscriptPanel.proto.remove = function () {
+  // Title-bar close only removes the panel — disconnect console mirror here so a
+  // later Open console reconnects cleanly (see newdefs TranscriptPanel.remove).
+  if (this.transcriptPane) this.transcriptPane.setConsoleMirror(false);
+  if (w.Console === this) w.Console = null;
+  if (w.Transcript === this) w.Transcript = null;
+  return w.PanelMorph.proto.remove.call(this);
 };
 
 w.openTranscript = function () {
@@ -8473,7 +8500,7 @@ w.openTranscript = function () {
   let rh = Math.max(80, gb.height() / 2 - 2 * m);
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
-  let panel = w.TranscriptPanelMorph.new(w.rect(rx, ry, rw, rh));
+  let panel = w.TranscriptPanel.new(w.rect(rx, ry, rw, rh));
   w.Lively.addMorph(panel);
   panel.beTopMorph();
   w._lastTranscriptPanel = panel;

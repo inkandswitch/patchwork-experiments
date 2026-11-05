@@ -40,6 +40,7 @@ patchwork-view {
 }
 
 .tile-frame {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
@@ -47,6 +48,23 @@ patchwork-view {
   background: var(--tile-fill-offset);
   color: var(--tile-fg);
   overflow: hidden;
+}
+
+/*
+ * Overlays: components tagged "overlay", each in its own full-frame layer
+ * above the panels. The layers let pointer events through, so an overlay's
+ * own surface opts back in (`pointer-events: auto`). Below the top bar's
+ * popovers (z-index 50), above the drop zones (20).
+ */
+.tile-overlays,
+.tile-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tile-overlays {
+  z-index: 40;
 }
 
 /* App-level top strip */
@@ -107,6 +125,10 @@ patchwork-view {
 .tile-topbar__btn:hover:not(:disabled) {
   background: var(--tile-fill-offset);
   opacity: 1;
+}
+
+.tile-topbar__btn[data-pressed] {
+  background: var(--tile-fill-offset);
 }
 
 .tile-topbar__btn:disabled {
@@ -421,6 +443,21 @@ patchwork-view {
   position: relative;
 }
 
+/* A panel's content lives in a frame-owned container that's moved between
+   slots as the layout changes (so tools aren't remounted); it fills the body. */
+.tile-panel__content {
+  position: absolute;
+  inset: 0;
+}
+
+.tile-panel__content-inner {
+  display: contents;
+}
+
+.tile-park {
+  display: none;
+}
+
 .tile-panel__view {
   position: absolute;
   inset: 0;
@@ -476,6 +513,30 @@ patchwork-view {
 }
 
 .tile-panel__grip:active {
+  cursor: grabbing;
+}
+
+/* The datatype icon before the title: a drag handle for the document. */
+.tile-panel__doc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--tile-fg);
+  opacity: 0.7;
+  cursor: grab;
+  border-radius: 5px;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.tile-panel__doc-icon:hover {
+  opacity: 1;
+  background: var(--tile-fill-sunk);
+}
+
+.tile-panel__doc-icon:active {
   cursor: grabbing;
 }
 

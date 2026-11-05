@@ -161,7 +161,7 @@ const boxOverlayMessage = (
   y: number,
   opts: { end?: boolean; actor?: string; sid?: string } = {},
 ) => ({
-  type: 'lm-eph',
+  type: 'lm-eph-changes',
   v: 1,
   actor: opts.actor ?? 'actor-remote',
   ...(opts.sid ? { sid: opts.sid } : {}),
@@ -186,6 +186,11 @@ const boxOverlayMessage = (
   ],
 });
 
+/** The messages that carry interaction overlays (hand-only messages — my hand's
+ *  position/heartbeat — ride the same channel; see handPresence.test.ts). */
+const objectMessages = (handle: { sentEphemeral: unknown[] }) =>
+  handle.sentEphemeral.filter((m: any) => m && m.objects && m.objects.length > 0);
+
 describe('ephemeral interaction streaming: sender', () => {
   it('broadcasts overlays per frame while dragging, then a final end message with the committed values', () => {
     const { handle, rt, dispatch, runFrame } = makeWorld();
@@ -193,17 +198,19 @@ describe('ephemeral interaction streaming: sender', () => {
 
     dispatch('pointerdown', 50, 30);
     runFrame();
-    expect(handle.sentEphemeral.length).toBe(0); // no motion yet — clicks don't stream
+    expect(objectMessages(handle).length).toBe(0); // no motion yet — clicks don't stream
 
     dispatch('pointermove', 60, 40);
     runFrame();
     dispatch('pointermove', 70, 50);
     runFrame();
-    const midCount = handle.sentEphemeral.length;
+    const midCount = objectMessages(handle).length;
     expect(midCount).toBeGreaterThanOrEqual(2); // one batched message per move frame
+    // ... and exactly one message per frame: the hand rides on the overlay message.
+    expect(handle.sentEphemeral.length).toBe(3); // pointerdown frame (hand announce) + 2 move frames
 
     const mid: any = handle.sentEphemeral[handle.sentEphemeral.length - 1];
-    expect(mid.type).toBe('lm-eph');
+    expect(mid.type).toBe('lm-eph-changes');
     expect(mid.v).toBe(1);
     expect(mid.actor).toBe('actor-test');
     expect(mid.end).toBeUndefined();
@@ -257,7 +264,7 @@ describe('ephemeral interaction streaming: receiver', () => {
     expect(rt.eval(`Lively.testBox.getBounds().topLeft.x`)).toBe(30); // back to committed
   }, 60_000);
 
-  it('an end:true overlay is held past its deadline until the commit syncs in, then lapses invisibly', () => {
+  it('an end:true overlay is held until the commit syncs in, then lapses invisibly', () => {
     const { rt, handle, runFrame } = makeWorld();
     const boxId = rt.eval(`Lively.testBox.$id`) as string;
 
@@ -265,9 +272,9 @@ describe('ephemeral interaction streaming: receiver', () => {
     runFrame();
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
 
-    // ~340ms > the 250ms end deadline, but the document still has the pre-drag
-    // position (sync is not prompt now that idle replicas make no doc writes):
-    // dropping the overlay here would snap the morph back. It must be held.
+    // ~340ms later the document still has the pre-drag position (the commit takes an
+    // unpredictable time to sync in): dropping the overlay would snap the morph back.
+    // There is no deadline on an end overlay; it must be held.
     for (let i = 0; i < 10; i++) runFrame();
     expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
@@ -284,16 +291,14 @@ describe('ephemeral interaction streaming: receiver', () => {
     expect(rt.eval(`Lively.testBox.getBounds().topLeft.y`)).toBe(90);
   }, 60_000);
 
-  it('an end:true overlay whose values already match the document lapses at the short deadline (elided commit)', () => {
+  it('an end:true overlay whose values already match the document lapses on the very next sweep (elided commit)', () => {
     const { rt, handle, runFrame } = makeWorld();
     const boxId = rt.eval(`Lively.testBox.$id`) as string;
 
     // A drag that ended where it started: the sender's commit was elided, so the
     // end message carries the document's current values (box at 30,20).
     handle.deliverEphemeral(boxOverlayMessage(boxId, 30, 20, { end: true }));
-    runFrame();
-    expect(rt.eval(`Lively.testBox.$transform != null`)).toBe(true);
-    for (let i = 0; i < 10; i++) runFrame(); // ~340ms > 250ms end deadline
+    runFrame(); // applied and swept in the same frame: the document already agrees
     expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(30);
   }, 60_000);
@@ -306,7 +311,7 @@ describe('ephemeral interaction streaming: receiver', () => {
     handle.deliverEphemeral(boxOverlayMessage(boxId, 120, 90, { end: true }));
     runFrame();
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(120);
-    for (let i = 0; i < 20; i++) runFrame(); // ~680ms > 250ms deadline + 300ms wait
+    for (let i = 0; i < 20; i++) runFrame(); // ~680ms > the 300ms wait
     expect(rt.eval(`Lively.testBox.$transform == null`)).toBe(true);
     expect(rt.eval(`Lively.testBox.transform.translation.x`)).toBe(30); // back to committed
   }, 60_000);
@@ -353,9 +358,9 @@ describe('ephemeral interaction streaming: receiver', () => {
   }, 60_000);
 
   it('applies a message whose actor collides with ours but whose sid is foreign (shared-hand actor ids)', () => {
-    // The multi-hand feature can leave two users holding the SAME $actorID
-    // (initHand hands out 0, 1, 2...; clicking a hand adopts its persisted id).
-    // Echo suppression must key on the session id, not the actor.
+    // Two sessions can in principle hold the SAME actor id (the old multi-hand
+    // feature made this routine); echo suppression must key on the session id,
+    // not the actor.
     const { rt, handle, runFrame } = makeWorld();
     const boxId = rt.eval(`Lively.testBox.$id`) as string;
     const myActor = rt.eval(`$actorID`) as string;
@@ -384,7 +389,7 @@ describe('ephemeral interaction streaming: receiver', () => {
 
     handle.deliverEphemeral(boxOverlayMessage(boxId, 120, 90, { end: true }));
     runFrame();
-    for (let i = 0; i < 10; i++) runFrame(); // past the 250ms end deadline → holding + nudging
+    for (let i = 0; i < 10; i++) runFrame(); // commit hasn't landed → holding + nudging
     expect(rt.eval(`typeof lmSyncNudgeCounter`)).toBe('number');
     const first = rt.eval(`lmSyncNudgeCounter`) as number;
 

@@ -170,15 +170,19 @@ describe('drag preserves ephemeral/persistent status', () => {
     rt.eval(`
       Lively.targetBox = Lively.addMorph(new Morph(rect(400, 100, 120, 90)));
       Lively.$chip = Lively.addEphemeralMorph(new Morph(rect(100, 100, 40, 30)));
-      Lively.$hand = new HandMorph('actor-test', pt(0, 0), Color.red);
-      Lively.$hand.owner = Lively;
+      Lively.$hand = Lively.localHand(pt(0, 0));
     `);
     const before = docEntryCount(handle);
     rt.eval(`Lively.$hand.grabMorph(pt(110, 110));`);
-    expect(rt.eval(`Lively.$hand.ephemeralSubmorphs().includes(Lively.$chip)`)).toBe(true);
+    // Cargo is not a submorph of the (per-user) hand: it stays in the world's
+    // ephemeral layer, riding on its ephemeral transform.
+    expect(rt.eval(`Lively.$hand.isLaden() && Lively.$hand.$carrying.includes(Lively.$chip)`)).toBe(true);
+    expect(rt.eval(`Lively.ephemeralSubmorphs().includes(Lively.$chip)`)).toBe(true);
+    expect(rt.eval(`Lively.$chip.$transform != null`)).toBe(true);
     rt.eval(`Lively.$hand.dropMorph(pt(450, 140));`);
     expect(rt.eval(`Lively.$chip.owner === Lively.targetBox`)).toBe(true);
     expect(rt.eval(`Lively.targetBox.ephemeralSubmorphs().includes(Lively.$chip)`)).toBe(true);
+    expect(rt.eval(`Lively.$hand.isLaden()`)).toBe(false);
     expect(docEntryCount(handle)).toBe(before);
   }, 60_000);
 });

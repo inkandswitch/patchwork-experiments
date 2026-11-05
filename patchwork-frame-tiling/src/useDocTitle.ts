@@ -175,3 +175,25 @@ export function useEffectiveTool(
 
   return { ...supported, toolId };
 }
+
+/**
+ * The Lucide icon name a datatype declares (`icon` on its plugin), tracking
+ * the registry so a late-registering datatype picks up its icon.
+ */
+export function useDatatypeIcon(type: string | undefined): string | undefined {
+  const [registryVersion, setRegistryVersion] = useState(0);
+
+  useEffect(() => {
+    const registry = getRegistry("patchwork:datatype");
+    return registry.on("changed", () => setRegistryVersion((v) => v + 1));
+  }, []);
+
+  return useMemo(() => {
+    if (!type) return undefined;
+    const description = getRegistry("patchwork:datatype").get(type) as
+      | { icon?: string }
+      | undefined;
+    return description?.icon;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, registryVersion]);
+}

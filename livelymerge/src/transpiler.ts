@@ -598,7 +598,15 @@ function resolveInFunction(
   currentScope: LexicalScope,
   funcScope: LexicalScope,
 ): Binding | null {
-  return builder.resolve(name, currentScope) ?? builder.resolve(name, funcScope);
+  // Body scopes are parented to the enclosing scope, not to funcScope, so a plain
+  // resolve from currentScope would let an outer binding shadow a parameter. Check
+  // the function's own block scopes, then its parameters, before leaving it.
+  const boundary = funcScope.parent;
+  for (let scope: LexicalScope | null = currentScope; scope && scope !== boundary; scope = scope.parent) {
+    const binding = scope.bindings.get(name);
+    if (binding) return binding;
+  }
+  return funcScope.bindings.get(name) ?? builder.resolve(name, currentScope) ?? builder.resolve(name, funcScope);
 }
 
 function registerFunctionBodyDeclarations(

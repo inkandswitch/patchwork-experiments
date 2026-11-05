@@ -23,7 +23,11 @@ import './styles.css';
 import { createLivelymergeRuntime, type LivelymergeRuntime } from './livelymergeRuntime';
 
 let runtime: LivelymergeRuntime;
-let alreadyInitialized = false;
+/** The runtime whose initUI() has run. Per runtime (one per mounted document), not per
+ *  page: a page-level flag skipped initUI when switching documents in place or coming
+ *  back to one, leaving the new document without listeners or a frame loop. The
+ *  identity check still absorbs React's double-invoked effects for the same runtime. */
+let initializedRuntime: LivelymergeRuntime | null = null;
 
 const DEFAULT_DRAWER_HEIGHT = 250;
 const MIN_DRAWER_HEIGHT = 120;
@@ -166,7 +170,17 @@ function AutomergeDocStats({ handle }: { handle: DocHandle<LivelymergeDoc> }) {
   );
 }
 
-export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
+/** The version stamp a defs file declares (`let KITDEFS_WRITTEN_ON = '…'`), if any. */
+function defsStamp(source: string): string | null {
+  return (
+    /\bFABRIK_WRITTEN_ON = '([^']+)'/.exec(source)?.[1] ??
+    /\bKITDEFS_WRITTEN_ON = '([^']+)'/.exec(source)?.[1] ??
+    /\bNEWDEFS_WRITTEN_ON = '([^']+)'/.exec(source)?.[1] ??
+    null
+  );
+}
+
+export const LivelymergeEditor = ({ docUrl, bootSource }: { docUrl: AutomergeUrl; bootSource?: string }) => {
   const docHandle = useDocHandle<LivelymergeDoc>(docUrl, { suspense: true })!;
   // One runtime per doc handle — recreating it on every render would wipe the shadow
   // table and all per-user ($-prefixed) state, and reset the GC's once-per-id
@@ -287,22 +301,47 @@ export const LivelymergeEditor = ({ docUrl }: { docUrl: AutomergeUrl }) => {
         cancelAnimationFrame(uiRafId);
         (window as any)._uiRafId = null;
       }
+      // Tell peers this session's hand is gone (see newdefs.js "Hands"): switching
+      // documents inside Patchwork unmounts the tool without a pagehide.
+      try {
+        const bye = (window as any)._ephByeMsg;
+        if (bye) docHandle.broadcast(bye);
+      } catch {
+        /* best effort */
+      }
     };
-  }, []);
+  }, [docHandle]);
 
   useEffect(() => {
-    if (!alreadyInitialized) {
+    const rt = runtime;
+    const firstInit = initializedRuntime !== runtime;
+    // Always sync bundled defs when their stamp changes — an already-mounted
+    // document used to skip this and keep the previous FabrikPin/world-menu code.
+    if (bootSource) {
       doCatchingErrors(() => {
-        runtime.change(() => {
-          const g = (globalThis as any).$global;
-          if (typeof g?.initUI === 'function') {
-            g.initUI();
-          }
-        });
+        const loaded = rt.eval(
+          `typeof FABRIK_WRITTEN_ON === 'string' ? FABRIK_WRITTEN_ON : typeof KITDEFS_WRITTEN_ON === 'string' ? KITDEFS_WRITTEN_ON : typeof NEWDEFS_WRITTEN_ON === 'string' ? NEWDEFS_WRITTEN_ON : null`,
+        );
+        if (loaded !== defsStamp(bootSource)) rt.eval(bootSource);
       });
-      alreadyInitialized = true;
     }
-  }, [docUrl]);
+    doCatchingErrors(() => {
+      rt.change(() => {
+        const g = (globalThis as any).$global;
+        if (firstInit && typeof g?.initUI === 'function') {
+          g.initUI();
+        }
+        if (firstInit && typeof g?.populateLively === 'function') {
+          g.populateLively();
+        } else if (g?.Lively && g.Lively.isFabrikWorld && typeof g?.initFabrik === 'function') {
+          g.initFabrik();
+        } else if (typeof g?.fabrikOfferOpenMenu === 'function') {
+          g.fabrikOfferOpenMenu();
+        }
+      });
+    });
+    initializedRuntime = rt;
+  }, [runtime, bootSource]);
 
   useEffect(() => {
     const onResize = () => setDrawerHeight((h) => clampDrawerHeight(h));

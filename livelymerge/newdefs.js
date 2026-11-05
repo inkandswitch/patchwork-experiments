@@ -1,3 +1,4 @@
+//written on 2026-10-11 16:15 PDT
 // newdefs.js — class-based Livelymerge definitions (full catalog)
 // Conventional ES classes; no w.* prefixes in source.
 
@@ -78,7 +79,7 @@ let kbdDefaultShiftTable = {
 let kbdShiftTable = { ...kbdDefaultShiftTable };
 let $useOnScreenKbd = false;
 let longClickForHalosLabel = 'Long click for halos';
-let onScreenKeyboardLabel = 'Show on-screen keyboard';
+let onScreenKeyboardLabel = 'On-screen keyboard';
 let TRANSCRIPT_MAX_BEFORE_TRUNC = 1000;
 let TRANSCRIPT_KEEP_LEN = 500;
 let TRANSCRIPT_MARKER_RECURSIVE = '---recursive call ---';
@@ -97,6 +98,7 @@ let _evalJustFailed = false;
 let _alldefsSourceLines = null;
 let _lastErrorReport = null;
 let _errorRecoveryInProgress = false;
+let _errorPresentInProgress = false;
 let traceMe = false;
 let debugReparent = false;
 let copyPasteBuffer = null;
@@ -121,6 +123,10 @@ function deleteFromArrayPred(xs, pred) {
   }
 }
 function isClass(fn) {
+  // Runtime Object is the implicit root of every LM class prototype chain
+  // (see $obj → object-prototype). Treat it as a class so the system browser
+  // can list Object.prototype methods (e.g. inspect).
+  if (fn === Object) return true;
   return typeof fn === 'function' && /^\s*class\s+/.test(fn.toString());
 }
 function findSuperclassOf(sub) {
@@ -129,7 +135,7 @@ function findSuperclassOf(sub) {
   let superProto = Object.getPrototypeOf(sub.prototype);
   if (!superProto) return null;
   for (const cName of allClassNames()) {
-    let cls = $global[cName];
+    let cls = classNamed(cName);
     if (cls !== sub && cls.prototype === superProto) return cls;
   }
   return null;
@@ -146,23 +152,56 @@ function subclassDepth(cls) {
 }
 function allClassNames() {
   // allClassNames().length ==> 27
-  return Object.getOwnPropertyNames($global)
+  // Object is the runtime root (not stored on $global — see getRuntimeParams);
+  // include it so the system browser can show Object.prototype methods.
+  let names = Object.getOwnPropertyNames($global)
     .sort()
-    .filter((name) => isClass($global[name]));
+    .filter((name) => name !== 'Object' && isClass($global[name]));
+  names.push('Object');
+  return names.sort();
+}
+function classNamed(name) {
+  // Resolve a class by browser/list name. Object lives in the eval scope, not $global.
+  if (name === 'Object') return Object;
+  return $global[name];
 }
 function allClassNamesInSuperclassOrder() {
   // allClassNamesInSuperclassOrder()
   return allClassNames().sort(function (a, b) {
-    return subclassDepth($global[a]) - subclassDepth($global[b]);
+    return subclassDepth(classNamed(a)) - subclassDepth(classNamed(b));
   });
 }
 function classStaticNames(cls) {
   // Statics only. The class transpiler also mirrors instance methods onto the class
   // object (the prototype literal reads them back); those are not statics.
+  // Hide the ubiquitous `static new(...)` factory (browsers show statics with a
+  // trailing '*', e.g. 'new*') — not other statics whose names merely start with
+  // "new".
+  // Runtime Object's host statics (keys, create, …) are not LM class members —
+  // don't list them as Object.class.* in the browser.
+  // Also skip Fun bookkeeping (`toString` → live.$codeForShow, length, name, prototype).
+  if (cls === Object) return [];
   let proto = cls.prototype;
   return Object.getOwnPropertyNames(cls)
     .filter((name) => !(proto && proto[name] === cls[name]))
+    .filter((name) => name !== 'new')
+    .filter((name) => !checkpointOmitClassFunName(name))
     .sort();
+}
+function isNativeFunctionSource(src) {
+  /** True for host natives (body is only the native-code marker), not LM sources that mention natives. */
+  return typeof src === 'string' && /\{\s*\[native code\]\s*\}/.test(src);
+}
+function checkpointOmitClassFunName(name) {
+  /** Class-Fun own names that are runtime bookkeeping, not LM statics. */
+  return (
+    name === 'prototype' ||
+    name === 'length' ||
+    name === 'name' ||
+    name === 'toString' ||
+    name === 'caller' ||
+    name === 'arguments'
+  );
 }
 function classInstanceMemberNames(cls) {
   // Method (and accessor) names on the class's prototype, minus bookkeeping keys.
@@ -212,7 +251,7 @@ function nameOfClass(cls) {
   if (!cls) return null;
   let names = allClassNames();
   for (let i = 0; i < names.length; i++) {
-    if ($global[names[i]] === cls) return names[i];
+    if (classNamed(names[i]) === cls) return names[i];
   }
   return null;
 }
@@ -286,7 +325,7 @@ function fragmentForSpec(spec) {
   // legacy-format (or a global function) and must keep the assignment form.
   let parts = methodSpecKey(spec).split('.');
   if (parts.length < 2) return null;
-  let cls = $global[parts[0]];
+  let cls = classNamed(parts[0]);
   if (!isClass(cls)) return null;
   if (parts.length == 2 && parts[1] === 'constructor') return constructorBodyOf(cls);
   let method = methodFromSpec(spec);
@@ -307,7 +346,7 @@ function liveMethodPaneTextForSpec(spec) {
 function deleteAccessorHalf(className, kind, name) {
   // Delete one half of an accessor slot ('get'/'set'); the surviving half is
   // re-installed from its fragment source.
-  let cls = $global[className];
+  let cls = classNamed(className);
   if (!cls || !cls.prototype) return false;
   let desc = Object.getOwnPropertyDescriptor(cls.prototype, name);
   if (!desc || (!desc.get && !desc.set)) return false;
@@ -331,7 +370,7 @@ function allClassNamesWithStatics() {
   let classNames = [];
   for (const name of allClassNames()) {
     classNames.push(name);
-    if (classStaticNames($global[name]).length > 0) classNames.push(name + '.class');
+    if (classStaticNames(classNamed(name)).length > 0) classNames.push(name + '.class');
   }
   return classNames;
 }
@@ -373,6 +412,27 @@ class Color {
   }
   lighter() {
     return this.mixedWith(Color.white, 0.5);
+  }
+  luminance() {
+    /** WCAG relative luminance, 0 (black) to 1 (white): sRGB channels linearized,
+     * then weighted by how strongly the eye responds to each. */
+    let lin = (c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+    return 0.2126 * lin(this.r) + 0.7152 * lin(this.g) + 0.0722 * lin(this.b);
+  }
+  contrastRatioWith(other) {
+    /** WCAG contrast ratio, 1 (identical) to 21 (black on white). */
+    let a = this.luminance();
+    let b = other.luminance();
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  }
+  contrastingBlackOrWhite() {
+    /** Whichever of black and white stands out more against this color — e.g. for
+     * an outline or text drawn on top of it. Black wins once luminance exceeds
+     * about 0.18, so yellow, green, cyan and orange get black; blue, red, purple
+     * and dark gray get white. */
+    return this.contrastRatioWith(Color.black) >= this.contrastRatioWith(Color.white)
+      ? Color.black
+      : Color.white;
   }
   mixedWith(other, proportion) {
     // Mix with another color
@@ -532,8 +592,8 @@ function populateLively() {
 
 Everywhere you see text, you can edit it, search, and evaluate JavaScript expressions as in 'Text help' also in the screen menu.
   355/113 -- select this and press ctrl-P
-  help -- select this and press ctrl-F
-
+  demo -- select this and press ctrl-F
+              look for executable comments
 `,
       'Welcome to Livelymerge! (' + new Date().toLocaleString() + ')',
     ),
@@ -544,14 +604,16 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
   testTransforms();
 
   bugImage = new EmojiMorph('LADY BEETLE', 64);
-  // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug)...
-  Lively.spiral = Lively.addMorph(new Morph(rect(50, 210, 1, 1)));
-  Lively.spiral.pen = new Pen(pt(60, 210)).withBug();
+  // Cute bug drawing a spiral (uses bugImage at scale 0.5 via Pen.withBug). The
+  // bug morph itself hosts the pen and the stepping method; there is no separate
+  // (invisible-but-not-quite) controller morph cluttering the world.
+  let spiralPen = new Pen(pt(60, 210)).withBug();
+  Lively.bug = spiralPen.bug;
+  Lively.bug.pen = spiralPen;
   // withBug adds the emoji ephemerally (cheap while stepping); promote so other
   // replicas see the demo bug. Short one-shot spiral — sync cost is fine.
-  if (Lively.spiral.pen.bug && Lively.spiral.pen.bug.bePersistent)
-    Lively.spiral.pen.bug.bePersistent();
-  Lively.spiral.animatedSpiral = function (argsObj) {
+  if (Lively.bug.bePersistent) Lively.bug.bePersistent();
+  Lively.bug.animatedSpiral = function (argsObj) {
     if (!this.args) {
       this.args = argsObj;
       this.pen.setPenColor(Color.red);
@@ -560,7 +622,7 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
     this.spiralI++;
     if (this.spiralI > this.args.nSteps) {
       this.stopStepping();
-      this.pen.bug.moveTo(this.pen.location.addPt(pt(0, 20)));
+      this.moveTo(this.pen.location.addPt(pt(0, 20)));
       this.world().changed();
       return;
     }
@@ -573,10 +635,13 @@ Everywhere you see text, you can edit it, search, and evaluate JavaScript expres
 
   setTimeout(() => {
     // The world may have been re-initialized since this was scheduled (e.g. a
-    // fresh initLively()); there is no spiral to animate then.
-    if (!Lively || !Lively.spiral) return;
-    Lively.spiral.startStepping('animatedSpiral',
-      { goDist: 2, turnAngle: 60, nSteps: 26 }, 50); // was 26
+    // fresh initLively()); there is no bug to animate then.
+    if (!Lively || !Lively.bug) return;
+    Lively.bug.startStepping(50, 'animatedSpiral', {
+      goDist: 2,
+      turnAngle: 60,
+      nSteps: 26,
+    }); // was 26
   }, 2000);
 
 }
@@ -816,10 +881,19 @@ class Set {
 // messages (peer-to-peer through the sync server, never persisted), and applies
 // incoming ones to the same $-overlays on its side.
 //
+// The same channel carries HANDS (see the "Hands" section): every user's hand is
+// visible to everyone but persisted by no one. A hand message goes out whenever my
+// hand moved, riding on the frame's overlay message when there is one (one message
+// per frame per user, drag or no drag), plus a heartbeat every $HAND_HEARTBEAT_MS
+// while idle; receivers drop a peer's hand after $HAND_TTL_MS of silence or on its
+// `bye` (sent from pagehide / tool unmount). Hands are keyed by `sid`.
+//
 // Wire format — plain JSON, and deliberately NO $-prefixed keys: LM reads/writes of
 // $-names on HOST objects route to the ephemeral-property sidecar, not the object,
 // so $-keys on a message would be invisible from LM code.
-//   { type: 'lm-eph', v: 1, actor, sid, end?, objects: [{ id, props: { transform, bounds, vertices? } }] }
+//   { type: 'lm-eph-changes', v: 1, actor, sid, end?,
+//     objects: [{ id, props: { transform, bounds, vertices? } }],
+//     hand?: { x, y, colorIndex, name?, carrying?: [morphId, ...] } | { bye: true } }
 // Values are className-tagged trees ({ c: 'Point', x, y }, ...). Receivers decode by
 // prototype delegation (Object.create($global[c].prototype) + fields), validate
 // every number, and may ONLY write the whitelisted $-props (see
@@ -828,26 +902,28 @@ class Set {
 // `vertices` (line reshapes only, gated on $vertexDragActive) is a flat
 // [x0, y0, x1, y1, ...] number array — NOT the class-tagged codec, whose v1
 // deliberately carries no arrays; it has its own validator (ephValidVerticesValue).
+// `hand` is plain numbers/strings (x, y = the hand's hotspot in world coords; colorIndex =
+// palette index; carrying = ids of the doc morphs the hand is carrying, for the
+// drag-shadow tint) with its own validator (ephValidHandPayload).
 //
 // Echo suppression uses `sid`, a random per-SESSION replica id ($ephSessionID),
-// NOT `actor`: $actorID is the acting-USER id and the multi-hand feature rebinds
-// it to small shared integers (initHand gives hands ids 0, 1, 2, ... and clicking
-// a hand adopts its id via activateHand — hands are persisted, so two users can
-// easily hold the SAME $actorID). Comparing on actor made such replicas drop every
-// message from each other as an "echo". `actor` is still sent for attribution;
-// receivers fall back to it only for messages from pre-`sid` senders.
+// NOT `actor`. `actor` ($actorID, the Automerge actor id) is sent for attribution
+// (hand colors on drag shadows and unsaved-text borders); receivers fall back to it
+// for echo suppression only for messages from pre-`sid` senders. (Historically the
+// multi-hand testing feature rebound $actorID to small shared integers, so two
+// users could hold the same actor — that feature is gone, but sid stays the
+// identity: it is what a hand IS.)
 //
 // Timing policy is entirely receiver-side: an overlay lapses $EPH_OVERLAY_MS after
 // the last message about it, so a sender that dies mid-drag self-heals. The final
 // message (sent from finishPointerDrag AFTER the commit, so it carries exactly the
-// committed values) is flagged end:true; the receiver gives it the short
-// $EPH_OVERLAY_END_MS deadline — but does NOT drop the overlay at that deadline
-// unless this replica's document already shows the committed values. Document sync
-// is not prompt: now that idle replicas make no doc writes (op economy), a commit
-// can take arbitrarily long to sync in, and dropping the overlay early would snap
-// the morph back to its stale pre-drag position until then. So the sweep holds an
-// end overlay (which already shows the committed values) until the document catches
-// up, giving up after $EPH_OVERLAY_COMMIT_WAIT_MS if the commit never arrives.
+// committed values) is flagged end:true; the receiver does NOT put a timer on that
+// overlay at all — it holds it (the overlay already shows the committed values) until
+// this replica's document actually contains those values, then drops it invisibly.
+// The commit takes an unpredictable time to sync in (a round trip through the sync
+// server at minimum, sometimes far longer), and any fixed deadline would sometimes
+// expire first and snap the morph back to its stale pre-drag position. The only
+// timer is the $EPH_OVERLAY_COMMIT_WAIT_MS give-up, in case the commit never arrives.
 //
 // GC note: decoded overlays are shadow objects reachable only through $-props
 // (ephemeral-live, swept once the lease cleanup nulls them), and window._ephOverlays
@@ -872,14 +948,63 @@ function ephStreamEnd(morph) {
   ephBroadcast(objs, true);
 }
 function flushEphemeralStream() {
-  /** Once per frame (see onFrame): one batched message for all active overlays. */
-  if (!$uiState || !$uiState.ephStreamMorphs || $uiState.ephStreamMorphs.length === 0) return;
+  /** Once per frame (see onFrame): one batched message for all active overlays —
+   * plus my hand, which rides on that message, or gets one of its own when it moved
+   * or its heartbeat is due (see ephHandDue). */
+  if (!$uiState) return;
   if (!window.handle || !window.handle.broadcast) return;
   let objs = new window.Array();
-  $uiState.ephStreamMorphs.forEach((m) => {
-    if (m.$transform != null) objs.push(ephOverlayEntryFor(m));
-  });
-  if (objs.length > 0) ephBroadcast(objs, false);
+  if ($uiState.ephStreamMorphs)
+    $uiState.ephStreamMorphs.forEach((m) => {
+      if (m.$transform != null) objs.push(ephOverlayEntryFor(m));
+    });
+  if (objs.length > 0 || ephHandDue(ephFrameNow())) ephBroadcast(objs, false);
+}
+function ephFrameNow() {
+  /** The frame clock (rAF timestamp of the current frame) — what leases and hand
+   * heartbeats are measured against. */
+  return $uiState && $uiState.lastFrameTime != null ? $uiState.lastFrameTime : 0;
+}
+function ephHandDue(now) {
+  /** Does my hand need to go on the wire this frame? Yes if it was never sent,
+   * moved since the last send, or the heartbeat interval elapsed. */
+  if (!$uiState || !topLevelMorph || !topLevelMorph.myHand) return false;
+  let hand = topLevelMorph.myHand();
+  if (!hand) return false;
+  if ($uiState.handSentAt == null) return true;
+  let loc = hand.hotspot();
+  if (loc.x !== $uiState.handSentX || loc.y !== $uiState.handSentY) return true;
+  let hb = $HAND_HEARTBEAT_MS != null ? $HAND_HEARTBEAT_MS : 1000;
+  return now - $uiState.handSentAt >= hb;
+}
+function ephHandPayload(now) {
+  /** My hand as a host object for the wire (see the format comment above), or null
+   * when this session has no hand yet (no pointer event so far). Records what was
+   * sent so ephHandDue can tell motion from idleness. */
+  if (!topLevelMorph || !topLevelMorph.myHand) return null;
+  let hand = topLevelMorph.myHand();
+  if (!hand) return null;
+  let loc = hand.hotspot();
+  let h = new window.Object();
+  h.x = loc.x;
+  h.y = loc.y;
+  h.colorIndex = hand.$colorIndex != null ? hand.$colorIndex : 0;
+  let name = window._lmUserName;
+  if (typeof name === 'string' && name.length > 0) h.name = name;
+  if (hand.isLaden()) {
+    // Only doc morphs: peers can't resolve an ephemeral morph's id anyway.
+    let ids = new window.Array();
+    hand.$carrying.forEach((m) => {
+      if (ids.length < 32 && m.$id != null && !m.isEphemeralSubmorph()) ids.push(m.$id);
+    });
+    if (ids.length > 0) h.carrying = ids;
+  }
+  if ($uiState) {
+    $uiState.handSentX = loc.x;
+    $uiState.handSentY = loc.y;
+    $uiState.handSentAt = now;
+  }
+  return h;
 }
 function ephOverlayEntryFor(morph) {
   // Host objects throughout (new window.Object/Array): handle.broadcast needs plain
@@ -909,12 +1034,16 @@ function ephOverlayEntryFor(morph) {
 }
 function ephBroadcast(objs, isEnd) {
   let msg = new window.Object();
-  msg.type = 'lm-eph';
+  msg.type = 'lm-eph-changes';
   msg.v = 1;
   msg.actor = $actorID;
   msg.sid = $ephSessionID; // replica identity for echo suppression (see above)
   if (isEnd) msg.end = true;
   msg.objects = objs;
+  // My hand rides on every message (so a drag's end message from ephStreamEnd
+  // carries it too, and the same frame's flush won't send it again).
+  let hand = ephHandPayload(ephFrameNow());
+  if (hand != null) msg.hand = hand;
   window.handle.broadcast(msg);
 }
 function ephEncodeValue(v, depth) {
@@ -991,6 +1120,22 @@ function ephValidVerticesValue(arr) {
   for (let i = 0; i < arr.length; i++) if (!ephFiniteNumber(arr[i])) return false;
   return true;
 }
+function ephValidHandPayload(h) {
+  /** `hand`: either { bye: true } or a finite hotspot with an optional small
+   * palette index, short name, and a short list of morph-id strings. */
+  if (h == null || typeof h !== 'object') return false;
+  if (h.bye === true) return true;
+  if (!ephFiniteNumber(h.x) || !ephFiniteNumber(h.y)) return false;
+  if (h.colorIndex != null && !(Number.isInteger(h.colorIndex) && h.colorIndex >= 0 && h.colorIndex < 1024))
+    return false;
+  if (h.name != null && !(typeof h.name === 'string' && h.name.length <= 32)) return false;
+  if (h.carrying != null) {
+    let ids = h.carrying;
+    if (typeof ids.length !== 'number' || ids.length > 32) return false;
+    for (let i = 0; i < ids.length; i++) if (typeof ids[i] !== 'string') return false;
+  }
+  return true;
+}
 function processEphemeralInbound() {
   /** Once per frame (see onFrame): drain the inbound queue, then sweep lapsed overlays. */
   if (!window._ephemeralMessages || !window._ephOverlays) return;
@@ -1000,17 +1145,67 @@ function processEphemeralInbound() {
     window._ephemeralMessages = new window.Array();
   }
   ephSweepOverlays(now);
+  ephSweepHands(now);
 }
 function ephApplyMessage(m, now) {
-  if (!m || m.type !== 'lm-eph' || m.v !== 1) return;
+  if (!m || m.type !== 'lm-eph-changes' || m.v !== 1) return;
   // Echo safety on the per-session replica id — NEVER on actor alone: two users
   // can legitimately hold the same $actorID (see the comment block above). The
   // actor comparison remains only for messages from pre-`sid` senders.
   if (m.sid != null ? m.sid === $ephSessionID : m.actor === $actorID) return;
+  if (m.hand != null) ephApplyHand(m, now);
   let objs = m.objects;
   if (!objs) return;
   let n = Math.min(objs.length, 32);
   for (let i = 0; i < n; i++) ephApplyOverlayEntry(objs[i], !!m.end, now);
+}
+function ephApplyHand(m, now) {
+  /** A peer's hand: create it on first sight (per-user, reachable only through the
+   * world's $hands, so it never enters the document), move it, stamp $lastSeen for
+   * ephSweepHands, and note what it carries so the drag-shadow tint can show its
+   * color. Keyed by sid — a hand IS a session. */
+  let world = topLevelMorph;
+  if (!world || !world.handForSid) return;
+  let h = m.hand;
+  if (!ephValidHandPayload(h)) return;
+  if (typeof m.sid !== 'string' || m.sid.length === 0) return;
+  let hand = world.handForSid(m.sid);
+  if (hand && hand.$isLocal) return; // can't happen (echoes are dropped above); be safe
+  if (h.bye === true) {
+    if (hand) world.removeHand(hand);
+    return;
+  }
+  let p = pt(h.x, h.y);
+  if (!hand) {
+    let cap = $HAND_MAX_REMOTE != null ? $HAND_MAX_REMOTE : 64;
+    if (world.remoteHandCount() >= cap) return;
+    let ci = h.colorIndex != null ? h.colorIndex : 0;
+    hand = new HandMorph(typeof m.actor === 'string' ? m.actor : null, p, handColorForIndex(ci));
+    hand.$sid = m.sid;
+    hand.$isLocal = false;
+    hand.$colorIndex = ci;
+    world.addHand(hand);
+  }
+  hand.moveHotspotTo(p);
+  hand.$lastSeen = now;
+  hand.$name = typeof h.name === 'string' && h.name.length > 0 ? h.name : null;
+  hand.setCarryingIds(h.carrying);
+  hand.changed();
+}
+function ephSweepHands(now) {
+  /** Drop peers' hands that have gone quiet for $HAND_TTL_MS. A jump in the frame
+   * clock means THIS tab was hidden (rAF paused) — that says nothing about the
+   * peers, so such a frame skips expiry rather than blinking every hand off. */
+  let world = topLevelMorph;
+  if (!world || !world.$hands || world.$hands.length === 0 || !$uiState) return;
+  let ttl = $HAND_TTL_MS != null ? $HAND_TTL_MS : 4000;
+  let last = $uiState.handSweepAt;
+  $uiState.handSweepAt = now;
+  if (last != null && now - last > ttl) return;
+  let stale = world.$hands.filter(
+    (hand) => !hand.$isLocal && hand.$lastSeen != null && now - hand.$lastSeen > ttl,
+  );
+  stale.forEach((hand) => world.removeHand(hand));
 }
 function ephApplyOverlayEntry(entry, isEnd, now) {
   if (!entry || typeof entry.id !== 'string' || !entry.props) return;
@@ -1048,7 +1243,9 @@ function ephApplyOverlayEntry(entry, isEnd, now) {
   // The lease record: a host object of numbers only (never LM heap objects — see
   // the GC note above).
   let lease = new window.Object();
-  lease.deadline = now + (isEnd ? $EPH_OVERLAY_END_MS || 250 : $EPH_OVERLAY_MS || 1000);
+  // An end overlay is eligible for removal right away — but only once the commit has
+  // landed (see ephSweepOverlays), so its deadline is simply `now`.
+  lease.deadline = isEnd ? now : now + ($EPH_OVERLAY_MS || 1000);
   if (isEnd) {
     // The end message carries exactly the values the sender committed. Record them
     // so the sweep can hold the overlay until this replica's document has caught
@@ -1177,6 +1374,10 @@ function morphWithId(root, id) {
   });
   return found;
 }
+function morphNamed(name) {
+  /** morphNamed('sun') — the world's nearest morph with that part name (see Morph.get), or null. */
+  return Lively.get(name);
+}
 
 function initUI() {
   // Per-user UI state: ephemeral (never in the Automerge document), survives across
@@ -1257,17 +1458,37 @@ function initUI() {
 
   $actorID = window.Automerge.getActorId(window.handle.doc());
 
-  // Receiver-side overlay lifetimes (the sender never dictates timing): lapse after
-  // this much silence about an ongoing interaction / after its end:true message.
+  // Receiver-side overlay lifetimes (the sender never dictates timing): an in-progress
+  // overlay lapses after this much silence about it. (End overlays have no deadline;
+  // they wait for the commit — see the timing-policy comment above.)
   $EPH_OVERLAY_MS = 1000;
-  $EPH_OVERLAY_END_MS = 250;
-  // How long past its deadline an end overlay may wait for the sender's committed
-  // values to sync into this replica's document, and how long an unreachable
-  // morph's lease is kept before it's abandoned. See ephSweepOverlays.
+  // How long an end overlay may wait for the sender's committed values to sync into
+  // this replica's document, and how long an unreachable morph's lease is kept
+  // before it's abandoned. See ephSweepOverlays.
   $EPH_OVERLAY_COMMIT_WAIT_MS = 30000;
   $EPH_OVERLAY_ABANDON_MS = 60000;
   // Minimum spacing between sync nudges (see ephNudgeSync); <= 0 disables nudging.
   $EPH_SYNC_NUDGE_MS = 5000;
+  // Hands (see the "Hands" section): my own hand is drawn in place of the OS cursor
+  // when $DRAW_LOCAL_HAND is true; peers' hands are kept alive by heartbeats
+  // ($HAND_HEARTBEAT_MS between hand messages while idle) and dropped after
+  // $HAND_TTL_MS of silence — receiver-side, like the overlay leases above.
+  $DRAW_LOCAL_HAND = true;
+  $HAND_HEARTBEAT_MS = 1000;
+  $HAND_TTL_MS = 4000;
+  $HAND_MAX_REMOTE = 64;
+  // Hand colors, indexed by the `ci` a sender picks from a hash of its session id
+  // (so my hand looks the same on every screen). Per-user: never in the document.
+  $HAND_PALETTE = [
+    Color.green,
+    Color.blue,
+    Color.red,
+    Color.orange,
+    Color.cyan,
+    Color.yellow,
+    new Color(0.8, 0, 0.8),
+    Color.darkGray,
+  ];
   // Per-session replica id for ephemeral-message echo suppression. Session-unique
   // and never persisted; preserved across re-inits (like the overlay table) so a
   // mid-session initUI can't make this replica re-apply its own in-flight messages.
@@ -1287,6 +1508,31 @@ function initUI() {
     };
     window.handle.on('ephemeral-message', $lmEphListener);
   }
+  // Goodbye for my hand (see ephApplyHand): prebuilt here, INSIDE the transaction,
+  // because the pagehide listener below runs outside one and must not touch the LM
+  // heap (same rule as the canvas listeners). Rebuilt on every re-init — same sid.
+  let ephByeMsg = new window.Object();
+  ephByeMsg.type = 'lm-eph-changes';
+  ephByeMsg.v = 1;
+  ephByeMsg.actor = $actorID;
+  ephByeMsg.sid = $ephSessionID;
+  ephByeMsg.objects = new window.Array();
+  let ephByeHand = new window.Object();
+  ephByeHand.bye = true;
+  ephByeMsg.hand = ephByeHand;
+  window._ephByeMsg = ephByeMsg;
+  // Display name for the label peers draw next to my hand: resolved asynchronously
+  // from the Patchwork account's contact doc into a window slot (the promise settles
+  // outside any transaction; ephHandPayload reads the slot inside one).
+  try {
+    getUserName()
+      .then(function (name) {
+        window._lmUserName = name ? String(name).slice(0, 24) : null;
+      })
+      .catch(function () {});
+  } catch (_nameErr) {
+    /* ignore */
+  }
   // Fresh UI init must not inherit stale soft-shift state.
   $shiftKeyPressedFlag = false; // per-user soft-shift resets on session start
   if (topLevelMorph) topLevelMorph.$shiftKeyDown = false;
@@ -1296,6 +1542,22 @@ function initUI() {
 
   if (window._uiAbortController) window._uiAbortController.abort();
   window._uiAbortController = new window.AbortController();
+
+  // Tell peers my hand is gone when this page goes away (TTL is the backstop for
+  // crashes and hidden tabs). Tied to the abort signal so re-inits don't stack
+  // listeners; guarded for the headless test harness (no window.addEventListener).
+  if (typeof window.addEventListener === 'function') {
+    let byeSignal = window._uiAbortController.signal;
+    addEventListener(
+      window,
+      'pagehide',
+      () => {
+        if (window.handle && window.handle.broadcast && window._ephByeMsg)
+          window.handle.broadcast(window._ephByeMsg);
+      },
+      byeSignal ? { signal: byeSignal } : null,
+    );
+  }
 
   canvas.style.touchAction = 'none';
   addEventListener(canvas, 'pointerdown', (e) => window._canvasEvents.push(e));
@@ -1380,7 +1642,10 @@ function initUI() {
         : 0;
     if ($uiState.externalChangeCountSeen === n) return;
     $uiState.externalChangeCountSeen = n;
+    if (topLevelMorph.migrateLegacyHands) topLevelMorph.migrateLegacyHands();
     topLevelMorph.repairSubmorphOwnership();
+    // Session log UI: refresh only when remotes changed (no per-panel poll).
+    if (typeof refreshOpenSessionLogs === 'function') refreshOpenSessionLogs(false);
   }
 
   function processEvents() {
@@ -1971,6 +2236,11 @@ function newPanelLocation(extentIfAny) {
    * world bottom, wrap to panelLocation.y and shift X by ~300.
    */
   let extent = extentIfAny != null ? extentIfAny : pt(400, 300);
+  // Checkpoint / reload may omit these lets — fall back to the usual cascade origin.
+  if (panelLocation == null || typeof panelLocation.copy !== 'function')
+    panelLocation = pt(400, 60);
+  if (panelLocationDelta == null || typeof panelLocationDelta.addPt !== 'function')
+    panelLocationDelta = pt(20, 20);
   if ($nextPanelLocation == null) $nextPanelLocation = panelLocation.copy();
   let worldB = Lively && Lively.getBounds ? Lively.getBounds() : getBounds();
   let worldBottom = worldB.bottom();
@@ -2047,22 +2317,87 @@ class SimpleTransform {
   }
 }
 
+/** Affine 2×3 matrix {a,c,e, b,d,f} for x'=ax+cy+e, y'=bx+dy+f. */
+function affineIdentity() {
+  return { a: 1, c: 0, e: 0, b: 0, d: 1, f: 0 };
+}
+function affineFromSimpleTransform(tfm, extraTyIfAny) {
+  /** Match {@link SimpleTransform#transformPt}: scale, canvas-rotate(+r), translate (+ optional Y). */
+  let sx = tfm.scale && tfm.scale.x != null ? tfm.scale.x : 1;
+  let sy = tfm.scale && tfm.scale.y != null ? tfm.scale.y : 1;
+  let r = tfm.rotation || 0;
+  let cos = Math.cos(r);
+  let sin = Math.sin(r);
+  let tx = tfm.translation ? tfm.translation.x : 0;
+  let ty = (tfm.translation ? tfm.translation.y : 0) + (extraTyIfAny || 0);
+  return { a: cos * sx, c: -sin * sy, e: tx, b: sin * sx, d: cos * sy, f: ty };
+}
+function affineCompose(outer, inner) {
+  /** outer ∘ inner — apply inner first (local), then outer. */
+  return {
+    a: outer.a * inner.a + outer.c * inner.b,
+    c: outer.a * inner.c + outer.c * inner.d,
+    e: outer.a * inner.e + outer.c * inner.f + outer.e,
+    b: outer.b * inner.a + outer.d * inner.b,
+    d: outer.b * inner.c + outer.d * inner.d,
+    f: outer.b * inner.e + outer.d * inner.f + outer.f,
+  };
+}
+function affineInvert(m) {
+  let det = m.a * m.d - m.c * m.b;
+  if (Math.abs(det) < 1e-12) return affineIdentity();
+  let id = 1 / det;
+  return {
+    a: m.d * id,
+    c: -m.c * id,
+    e: (m.c * m.f - m.d * m.e) * id,
+    b: -m.b * id,
+    d: m.a * id,
+    f: (m.b * m.e - m.a * m.f) * id,
+  };
+}
+function affineTransformPt(m, p) {
+  return pt(m.a * p.x + m.c * p.y + m.e, m.b * p.x + m.d * p.y + m.f);
+}
+function simpleTransformFromAffine(m) {
+  /**
+   * Decompose into SimpleTransform (scale, rotate, translate). Assumes the matrix
+   * came from composing such transforms (positive scales preferred).
+   */
+  let sx = Math.sqrt(m.a * m.a + m.b * m.b);
+  let sy = Math.sqrt(m.c * m.c + m.d * m.d);
+  let rotation = sx > 1e-9 ? Math.atan2(m.b, m.a) : Math.atan2(-m.c, m.d);
+  let det = m.a * m.d - m.c * m.b;
+  if (det < 0) sy = -sy;
+  if (sx < 1e-9) sx = 1;
+  if (Math.abs(sy) < 1e-9) sy = 1;
+  return new SimpleTransform(pt(m.e, m.f), rotation, pt(sx, sy));
+}
+
 //  StepSpec
 // ----------
 // One entry in a morph stepping schedule.
+// Schedule bookkeeping ($args / $stepPeriod / $nextStepTime) is ephemeral so
+// per-tick rewrites never become Automerge ops; only the owning morph's
+// $steppingSpecs / world's $stepList keep the StepSpec reachable (and local).
 class StepSpec {
-  constructor(morph, method, argIfAny, msTime, nextStepTimeIfAny) {
+  constructor(morph, method, msTime, nextStepTimeIfAny) {
     this.stepMorph = morph;
     this.methodName = method;
-    this.arg = argIfAny;
-    this.stepPeriod = msTime;
-    this.nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
+    // Always an LM array (built by startStepping via .push). Never assign a host
+    // array literal containing LM values — that throws / double-wraps args.
+    this.$args = [];
+    this.$stepPeriod = msTime;
+    this.$nextStepTime = nextStepTimeIfAny != null ? nextStepTimeIfAny : Date.now();
   }
   toString() {
-    return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.stepPeriod}ms)`;
+    return `StepSpec(${this.stepMorph.className}.${this.methodName} every ${this.$stepPeriod}ms)`;
   }
   copyForMorph(morph) {
-    return new StepSpec(morph, this.methodName, this.arg, this.stepPeriod, this.nextStepTime);
+    let copy = new StepSpec(morph, this.methodName, this.$stepPeriod, this.$nextStepTime);
+    let src = this.$args || [];
+    for (let i = 0; i < src.length; i++) copy.$args.push(src[i]);
+    return copy;
   }
   static new(...args) {
     return new this(...args);
@@ -2094,19 +2429,21 @@ class Pen {
     if (this.bug) this.bug.moveTo(this.location);
   }
   makeHandShape(location, color) {
-    /* (Lively.addMorph(new Morph(null,
-    new Pen().makeHandShape(pt(100, 100), Color.red)))) */
+    /** The macOS arrow cursor, tip at `location` (the hand's hotspot: it is the
+     * shape's top-left corner, so HandMorph#location lands on it). Filled with the
+     * hand's color where the real cursor is black, and outlined in whichever of black
+     * and white contrasts more with that color (the real cursor's white outline is
+     * lost against yellow or green).
+     * (Lively.addMorph(new Morph(null,
+     * new Pen().makeHandShape(pt(100, 100), Color.red)))) */
     this.setPenColor(color);
     this.location = location;
-    this.vertices = [this.location];
-    for (let i = 1; i <= 3; i++) {
-      this.go(20);
-      this.turn(120);
-    }
+    this.vertices = macCursorVertices(location);
     let handShape = this.polyLine();
+    handShape.closed = true;
     handShape.setColor(color);
     handShape.setBorderWidth(1);
-    handShape.setBorderColor(Color.black);
+    handShape.setBorderColor(color.contrastingBlackOrWhite());
     return handShape;
   }
   makeMorph() {
@@ -2164,6 +2501,20 @@ class Pen {
   static new(...args) {
     return new this(...args);
   }
+}
+function macCursorVertices(tip) {
+  /** The macOS arrow cursor outline with its tip at world-pt `tip`, in CSS px at 1x
+   * (about 13x20). Traced clockwise: down the left edge, into the notch, down the
+   * tail, back up the tail's right side and out to the right wing. */
+  return [
+    [0, 0],
+    [0, 17],
+    [4.6, 13.2],
+    [7.6, 19.7],
+    [10.6, 18.3],
+    [7.6, 12],
+    [13, 12],
+  ].map((v) => pt(tip.x + v[0], tip.y + v[1]));
 }
 
 // +--------------------+
@@ -2884,6 +3235,24 @@ class TextBox extends Shape {
     if (evt.key == 'Control') return;
     if (evt.key == 'Alt') return;
     if (evt.key == 'Enter') {
+      // Session-log draft (Cursor-style): Enter sends; Shift-Enter inserts a newline.
+      // Detect via owner chain — never $flags (those are replica-local and won't sync).
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) {
+        let panel = sessionLogPanelForTextBox(this);
+        let shift =
+          !!(evt && evt.shiftKey) ||
+          (typeof effectiveShiftKey === 'function' && effectiveShiftKey(evt)) ||
+          !!$shiftKeyPressedFlag ||
+          !!(topLevelMorph && topLevelMorph.$shiftKeyDown);
+        if (shift) {
+          this.paste(String.fromCharCode(evt.keyCode));
+          return;
+        }
+        if (panel && typeof panel.submitPrompt === 'function') {
+          panel.submitPrompt();
+          return;
+        }
+      }
       this.paste(String.fromCharCode(evt.keyCode));
       return;
     }
@@ -2986,58 +3355,90 @@ class TextBox extends Shape {
     let newLineStarts = [];
     let ctx = this.getTextContext(this.font);
     let str = this.string != null ? String(this.string) : '';
-    let lineStart = 0;
+    let insetX = this.inset && this.inset.x != null ? this.inset.x : 0;
+    let border = this.borderWidth != null ? this.borderWidth : 0;
+    let maxW = this.extent.x - insetX * 2 - border * 2;
+    if (!(maxW > 8)) maxW = Math.max(8, this.extent.x);
     let lineTopLeft = this.topLeft.addPt(this.inset);
-    let lineNo = 0;
-    let bottomY = null;
+    let lh = this.lineHeight;
+    let lineW = this.extent.x;
     if (str.length === 0) {
       // Empty text still occupies one line of height so caret/selection are visible.
-      newLines.push(new TextLineSpec(lineTopLeft, pt(this.extent.x, this.lineHeight), ''));
+      newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), ''));
       newLineStarts.push(0);
-      bottomY = lineTopLeft.y + this.lineHeight + 2;
+      lineTopLeft = lineTopLeft.addPt(pt(0, lh));
     } else {
-      let inAlpha = false;
-      let alphaBreak = 0;
+      let lineStart = 0;
+      let tokenStart = 0;
       for (let idx = 0; idx < str.length; idx++) {
         let c = str[idx];
-        let isAlpha = /^[a-zA-Z0-9]*$/.test(c);
-        if (c == '\n' || c == '\r' || idx == str.length - 1) {
-          let thisLine = new TextLineSpec(
-            lineTopLeft,
-            pt(this.extent.x, this.lineHeight),
-            str.slice(lineStart, idx + 1),
-          );
-          newLines.push(thisLine);
+        if (c == '\n' || c == '\r') {
+          newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), str.slice(lineStart, idx + 1)));
           newLineStarts.push(lineStart);
-          lineNo++;
-          lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
+          lineTopLeft = lineTopLeft.addPt(pt(0, lh));
           lineStart = idx + 1;
-        } else if (!this.noBreak) {
-          let maybeLine = str.slice(lineStart, idx + 1);
-          let metrics = ctx.measureText(maybeLine);
-          if (metrics.width >= this.extent.x) {
-            let thisLine = new TextLineSpec(
-              lineTopLeft,
-              pt(this.extent.x, this.lineHeight),
-              str.slice(lineStart, alphaBreak),
-            );
-            newLines.push(thisLine);
+          tokenStart = lineStart;
+        } else if (!this.noBreak && idx > lineStart) {
+          let piece = str.slice(lineStart, idx + 1);
+          let w = 0;
+          if (ctx && ctx.measureText) {
+            let m = ctx.measureText(piece);
+            if (m) w = m.width;
+          }
+          if (!(w > 0)) w = piece.length * 8;
+          if (w > maxW) {
+            // Break before the current identifier. If that name is itself wider
+            // than maxW, hard-wrap at idx — never emit an empty line.
+            let breakAt = tokenStart > lineStart ? tokenStart : idx;
+            newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), str.slice(lineStart, breakAt)));
             newLineStarts.push(lineStart);
-            lineNo++;
-            lineTopLeft = lineTopLeft.addPt(pt(0, this.lineHeight));
-            lineStart = alphaBreak;
+            lineTopLeft = lineTopLeft.addPt(pt(0, lh));
+            lineStart = breakAt;
+            tokenStart = lineStart;
+            idx = breakAt - 1;
+          } else {
+            let ident =
+              (c >= 'a' && c <= 'z') ||
+              (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') ||
+              c == '_';
+            if (c == ' ') tokenStart = idx + 1;
+            else if (!ident) {
+              let next = idx + 1 < str.length ? str[idx + 1] : '';
+              let nextIdent =
+                (next >= 'a' && next <= 'z') ||
+                (next >= 'A' && next <= 'Z') ||
+                (next >= '0' && next <= '9') ||
+                next == '_';
+              if (nextIdent) tokenStart = idx + 1;
+            }
           }
-          if (!inAlpha && isAlpha) {
-            alphaBreak = idx;
-            inAlpha = true;
+        } else {
+          let ident =
+            (c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '_';
+          if (c == ' ') tokenStart = idx + 1;
+          else if (!ident) {
+            let next = idx + 1 < str.length ? str[idx + 1] : '';
+            let nextIdent =
+              (next >= 'a' && next <= 'z') ||
+              (next >= 'A' && next <= 'Z') ||
+              (next >= '0' && next <= '9') ||
+              next == '_';
+            if (nextIdent) tokenStart = idx + 1;
           }
-          inAlpha = isAlpha;
         }
       }
-      bottomY = lineTopLeft.y + 2;
+      if (lineStart < str.length) {
+        newLines.push(new TextLineSpec(lineTopLeft, pt(lineW, lh), str.slice(lineStart)));
+        newLineStarts.push(lineStart);
+        lineTopLeft = lineTopLeft.addPt(pt(0, lh));
+      }
     }
     this.reconcileComposedLines(newLines, newLineStarts);
-    return bottomY;
+    return lineTopLeft.y + 2;
   }
   reconcileComposedLines(newLines, newLineStarts) {
     /** Update lines/lineStarts to match the freshly composed layout with value
@@ -3244,11 +3645,7 @@ class TextBox extends Shape {
       let term = this.selectedTextString();
       let hits = methodsContaining(term);
       if (!hits || hits.length === 0) {
-        // (was `let pt = ... : pt(120, 120)` — the local `pt` shadowed the global
-        //  pt() and referenced itself in its own initializer: a TDZ ReferenceError
-        //  whenever the pointer location was unknown.)
-        let at = getPointerLocation() ? getPointerLocation().copy() : pt(120, 120);
-        showFindNoMatchesMenu(Lively, at, term);
+        showFindNoMatchesMenu(Lively, null, term);
       } else {
         // Per-user tool window; promote via the halo's P handle to share it.
         Lively.addEphemeralMorph(
@@ -3257,9 +3654,20 @@ class TextBox extends Shape {
       }
     }
     if (k == 's') {
-      // SAVE (eval all)
+      // SAVE (eval all) — session-log draft sends; history never evals prose as code.
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) {
+        let panel = sessionLogPanelForTextBox(this);
+        if (panel && typeof panel.submitPrompt === 'function') {
+          panel.submitPrompt();
+          return;
+        }
+      }
+      if (typeof isSessionLogHistoryTextBox === 'function' && isSessionLogHistoryTextBox(this)) return;
       if (this.localStorageKey) {
         storageSetItem(this.localStorageKey, this.string);
+        if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
+      } else if (this.automergeKey) {
+        automergeSetItem(this.automergeKey, this.string);
         if (typeof this.onTextSaved === 'function') this.onTextSaved(this);
       } else {
         // The browser method pane shows bare class fragments; wrap them in a
@@ -3290,12 +3698,16 @@ class TextBox extends Shape {
       }
     }
     if (k == 'd') {
-      // DO IT
+      // DO IT — never eval session-log prose.
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) return;
+      if (typeof isSessionLogHistoryTextBox === 'function' && isSessionLogHistoryTextBox(this)) return;
       let range = this.evalSelectionRange();
       this.wsEval.call(this.workspaceObj, this.string.slice(range[0], range[1]));
     }
     if (k == 'p') {
-      // PRINT IT
+      // PRINT IT — never eval session-log prose.
+      if (typeof isSessionLogPromptTextBox === 'function' && isSessionLogPromptTextBox(this)) return;
+      if (typeof isSessionLogHistoryTextBox === 'function' && isSessionLogHistoryTextBox(this)) return;
       let range = this.evalSelectionRange();
       let start = range[0];
       let end = range[1]; // exclusive
@@ -3652,6 +4064,10 @@ class TextBox extends Shape {
   setLocalStorageKey(key) {
     // Back door for localStoarage access
     this.localStorageKey = key;
+  }
+  setAutomergeKey(key) {
+    // Shared Automerge kv (Lively.amStore); Ctrl-S writes via automergeSetItem.
+    this.automergeKey = key;
   }
   setNoBreak(ifSo) {
     // Call with true to suppress line breaks
@@ -4283,6 +4699,126 @@ class Morph {
     let name = '' + className;
     return this.find((m) => m && m.className === name);
   }
+
+  // Part names (after Lively Kernel's morph.setName / morph.get)
+  // ------------------------------------------------------------
+  // A name labels a morph as a "part" so code can find it by role, e.g.
+  //   clock.get('hourHand').rotateBy(0.1)
+  // instead of holding a reference to it. Names are plain strings in the
+  // persistent field `name`, so they are shared by every replica and survive
+  // reloads. They are not required to be unique: lookups answer the nearest
+  // match (see get), and getAllNamed answers every match.
+  setName(name) {
+    /**
+     * Name this morph (answers this, so calls chain). null or '' removes the name.
+     *   new Morph(rect(0, 0, 40, 40)).setName('sun')
+     */
+    let s = name == null ? '' : '' + name;
+    if (s === '') {
+      if (this.name != null) this.name = null;
+    } else if (this.name !== s) {
+      this.name = s;
+    }
+    return this;
+  }
+  getName() {
+    /** This morph's part name, or null. */
+    return this.name != null && this.name !== '' ? this.name : null;
+  }
+  isNamed(name) {
+    return this.name != null && this.name === '' + name;
+  }
+  getSubmorphNamed(name) {
+    /**
+     * The nearest DESCENDANT named `name` (not this morph itself), or null.
+     * Breadth-first, so a direct submorph beats a deeper one; siblings are tried
+     * frontmost first. Includes ephemeral (per-user) submorphs.
+     */
+    let n = '' + name;
+    let level = this.allSubmorphsTopFirst();
+    while (level.length) {
+      let next = [];
+      for (let i = 0; i < level.length; i++) {
+        if (level[i].isNamed(n)) return level[i];
+        let subs = level[i].allSubmorphsTopFirst();
+        for (let j = 0; j < subs.length; j++) next.push(subs[j]);
+      }
+      level = next;
+    }
+    return null;
+  }
+  getOwnerNamed(name) {
+    /** The nearest OWNER (ancestor) named `name`, or null. */
+    let n = '' + name;
+    for (let o = this.owner; o != null; o = o.owner) if (o.isNamed(n)) return o;
+    return null;
+  }
+  get(name) {
+    /**
+     * Find the part named `name` nearest to this morph — the usual way to reach
+     * a part from a method, the way Lively Kernel's morph.get(name) works:
+     *   1. this morph itself, if so named;
+     *   2. else the nearest descendant (getSubmorphNamed);
+     *   3. else climb the owner chain: at each owner, try the owner and then
+     *      its other branches, so siblings and cousins are found before more
+     *      distant relatives.
+     * Climbing ends at the world, so `world.get(name)` (or morphNamed(name))
+     * searches everything in it. Answers null when no part has that name.
+     */
+    let n = '' + name;
+    if (this.isNamed(n)) return this;
+    let found = this.getSubmorphNamed(n);
+    if (found) return found;
+    let searched = this;
+    for (let o = this.owner; o != null; o = o.owner) {
+      if (o.isNamed(n)) return o;
+      let subs = o.allSubmorphsTopFirst();
+      for (let i = 0; i < subs.length; i++) {
+        if (subs[i] === searched) continue;
+        if (subs[i].isNamed(n)) return subs[i];
+        found = subs[i].getSubmorphNamed(n);
+        if (found) return found;
+      }
+      searched = o;
+    }
+    return null;
+  }
+  getAllNamed(name) {
+    /** Every morph named `name` in this morph's tree (itself included), breadth-first. */
+    let n = '' + name;
+    let out = [];
+    let level = [this];
+    while (level.length) {
+      let next = [];
+      for (let i = 0; i < level.length; i++) {
+        if (level[i].isNamed(n)) out.push(level[i]);
+        let subs = level[i].allSubmorphsTopFirst();
+        for (let j = 0; j < subs.length; j++) next.push(subs[j]);
+      }
+      level = next;
+    }
+    return out;
+  }
+  partNames() {
+    /** Names of the named morphs in this morph's tree (not itself), breadth-first, no duplicates. */
+    let out = [];
+    let level = this.allSubmorphsTopFirst();
+    while (level.length) {
+      let next = [];
+      for (let i = 0; i < level.length; i++) {
+        let n = level[i].getName();
+        if (n != null && out.indexOf(n) < 0) out.push(n);
+        let subs = level[i].allSubmorphsTopFirst();
+        for (let j = 0; j < subs.length; j++) next.push(subs[j]);
+      }
+      level = next;
+    }
+    return out;
+  }
+  copyPartNameTo(copy) {
+    /** Copies keep their part name, so a copied assembly's parts can still find each other. */
+    if (this.getName() != null) copy.name = this.name;
+  }
   eachSubmorph(fn) {
     /**
      * Iterate my submorphs (persistent + ephemeral) in DRAW order — backmost
@@ -4294,7 +4830,8 @@ class Morph {
     list.forEach(fn);
   }
   toString() {
-    return 'a ' + this.className + ' (' + this.shape.toString() + ')';
+    let named = this.getName() != null ? " named '" + this.name + "'" : '';
+    return 'a ' + this.className + named + ' (' + this.shape.toString() + ')';
   }
   beTopMorph() {
     // Promote my top-level ancestor to the front of its zBand in the world.
@@ -4393,9 +4930,9 @@ class Morph {
     return this.beginPointerDrag(p, evt);
   }
   dropOnTopMorphAt(worldDropPt, anchorLocal) {
-    // Reparent under worldDropPt while preserving world position of a local anchor.
-    // anchorLocal: point in this morph's local coords to keep fixed (e.g. relativize(grab)).
-    // If omitted, uses shape bounds topLeft (halo grab/copy, etc.).
+    // Reparent under the morph at worldDropPt, preserving full on-screen appearance
+    // (see reparentToOwnerPreservingWorldAnchor). anchorLocal is kept for callers /
+    // API compatibility; the reparent uses the morph's world affine, not only that point.
     let world = this.world();
     if (!world) return;
     // Find deepest accepting owner at drop point (front-most path), not just world children.
@@ -4477,40 +5014,59 @@ class Morph {
     if (scrollY) q = pt(q.x, q.y + scrollY);
     return this.owner.globalize(q);
   }
+  localToWorldAffine() {
+    /**
+     * Affine map from this morph's local coords to world, matching {@link globalize}
+     * (including per-user $scrollOffsetY as extra Y translation at each level).
+     * Orphans (owner == null, not the world) use their local transform as the whole map
+     * — e.g. a morphCopy that has already baked world appearance.
+     */
+    if (!this.owner) {
+      if (this.className === 'WorldMorph') return affineIdentity();
+      return affineFromSimpleTransform(this.transform, this.$scrollOffsetY || 0);
+    }
+    let m = affineIdentity();
+    let morph = this;
+    while (morph && morph.owner) {
+      let scrollY = morph.$scrollOffsetY || 0;
+      let local = affineFromSimpleTransform(morph.transform, scrollY);
+      m = affineCompose(local, m);
+      morph = morph.owner;
+    }
+    return m;
+  }
+  applyAffineAsLocalTransform(m) {
+    /** Install affine `m` as this morph's local SimpleTransform (in-place when possible). */
+    let nt = simpleTransformFromAffine(m);
+    let tfm = this.transform;
+    if (tfm.translation && tfm.translation.setToPt) tfm.translation.setToPt(nt.translation);
+    else tfm.translation = nt.translation.copy();
+    tfm.rotation = nt.rotation;
+    if (tfm.scale && tfm.scale.setToPt) tfm.scale.setToPt(nt.scale);
+    else tfm.scale = nt.scale.copy();
+  }
   hasSubmorphs() {
     if (this.submorphs != null && this.submorphs.length > 0) return true;
     return this.$submorphs != null && this.$submorphs.length > 0;
-  }
-  inaHand() {
-    if (this.owner == null) return false;
-    if (this.owner.isaHand()) return true;
-    return this.owner.inaHand();
   }
   includesPt(p) {
     // p is in owner (or world for root children) coordinates; convert to local
     return this.shape.includesPt(this.relativize(p));
   }
-  inspect() {
-    // Lively.submorphs.first().inspect()
-    let p = new InspectorPanel(null, this);
-    Lively.addEphemeralMorph(p);
-    p.startStepping('showSelectedValue', false, 500);
-    return p;
-  }
   isaHand() {
     return false;
   }
   isInWorld() {
-    /** True while this morph is attached to the world, including riding in a hand.
-     * remove()/removeMorph leave the owner back-pointer set (see remove), so walk
-     * the chain checking real membership in each owner's submorph/hand lists. */
+    /** True while this morph is attached to the world. remove()/removeMorph leave
+     * the owner back-pointer set (see remove), so walk the chain checking real
+     * membership in each owner's submorph lists. (A morph a hand carries stays a
+     * world child — see HandMorph#carry — so hands need no case here.) */
     let m = this;
     while (m.owner != null) {
       let o = m.owner;
       let attached =
         (o.submorphs != null && o.submorphs.includes(m)) ||
-        (o.$submorphs != null && o.$submorphs.includes(m)) ||
-        (o.hands != null && o.hands.includes(m));
+        (o.$submorphs != null && o.$submorphs.includes(m));
       if (!attached) return false;
       m = o;
     }
@@ -4538,11 +5094,17 @@ class Morph {
     return this.relativize(this.owner.localize(pt));
   }
   morphCopy() {
+    /**
+     * Structural copy whose on-screen appearance matches this morph in the world
+     * (parent rotation/scale baked into the copy's local transform). Owner is left
+     * null so shift-drag / halo Copy can reparent without a dangling parent chain.
+     */
     let copy = new Morph(this.bounds, this.shape.copy());
-    copy.owner = this.owner;
-    copy.transform = this.transform.copy(); // may not need to copy
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex; // keeps submorph stacking on recursive copies
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
       let sub = m.morphCopy();
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
@@ -4560,14 +5122,6 @@ class Morph {
     // moves) and orphaned the old one.
     this.transform.translation.moveBy(delta);
     if (this.bounds) this.bounds.moveBy(delta);
-  }
-  myOwningHand() {
-    let m = this.owner;
-    while (m) {
-      if (m.className === 'HandMorph') return m;
-      m = m.owner;
-    }
-    return null;
   }
   nullTransformation() {
     return new SimpleTransform(pt(0, 0), 0, pt(1, 1));
@@ -4710,19 +5264,19 @@ class Morph {
     this.eachSubmorph((each) => {
       ctx.save();
       let pf = this.world().$pointerFocus;
-      let inHand = each.inaHand();
+      // Carried by a hand (mine, or a peer's — see HandMorph#setCarryingIds).
+      let carrier = each.$carriedBy != null ? each.$carriedBy : null;
       let haloGrabOrCopyShadow =
         pf &&
         pf.className === 'HaloHandle' &&
         ['Grab', 'Copy'].includes(pf.handleName) &&
         pf.target === each;
-      if (inHand || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
-        let owningHand = each.myOwningHand ? each.myOwningHand() : null;
+      if (carrier || (pf === each && each.shape.shapeType != 'TextBox') || haloGrabOrCopyShadow) {
         let world = this.world ? this.world() : null;
         let focusActorID = each.$dragActorID != null ? each.$dragActorID : $actorID;
         let focusHand =
-          !owningHand && world && world.handForID ? world.handForID(focusActorID) : null;
-        let handForShadow = owningHand || focusHand;
+          !carrier && world && world.handForID ? world.handForID(focusActorID) : null;
+        let handForShadow = carrier || focusHand;
         let handColor = handForShadow && handForShadow.handColor ? handForShadow.handColor() : null;
         if (handColor && handColor.r != null && handColor.g != null && handColor.b != null) {
           let rr = Math.floor(handColor.r * 255.999);
@@ -4807,7 +5361,9 @@ class Morph {
   }
   reparentToOwnerPreservingWorldAnchor(newOwner, anchorLocal, ephemeralEdge) {
     /**
-     * Reparent under newOwner while keeping anchorLocal at same world point.
+     * Reparent under newOwner while keeping this morph's on-screen appearance
+     * continuous: full world transform (translation, rotation, scale), not only
+     * the world position of anchorLocal. Used by hand grab/drop and halo Grab/Copy.
      * The attachment edge keeps its kind — an ephemeral submorph stays in
      * $submorphs lists, a persistent one in submorphs lists — so a drag never
      * silently promotes an ephemeral morph into the document. Pass ephemeralEdge
@@ -4820,14 +5376,13 @@ class Morph {
     // newOwner's tree, attached by the right kind of edge.
     let targetList = wantEphemeral ? newOwner.$submorphs : newOwner.submorphs;
     if (this.owner === newOwner && targetList && targetList.indexOf(this) >= 0) return;
-    let p = anchorLocal == null ? this.shape.getBounds().topLeft : anchorLocal;
-    let anchorWorld = this.globalize(p);
-    // both removers take this morph out of the previous owner's lists
+    // Capture appearance before the owner chain changes.
+    let worldAffine = this.localToWorldAffine();
     if (wantEphemeral) newOwner.addEphemeralMorph(this);
     else newOwner.addMorph(this);
-    let ownerPt = newOwner.localize(anchorWorld);
-    let rotScale = this.transform.transformPt(p).subPt(this.transform.translation);
-    this.transform.translation.setToPt(ownerPt.subPt(rotScale));
+    // newLocal = invert(newOwner→world) ∘ (old local→world)
+    let ownerAffine = newOwner.localToWorldAffine();
+    this.applyAffineAsLocalTransform(affineCompose(affineInvert(ownerAffine), worldAffine));
     this.syncBoundsFromGeometry();
     this.changed();
   }
@@ -4836,7 +5391,10 @@ class Morph {
     copy.$steppingSpecs.forEach((spec) => {
       if (!this.isStepping(spec.methodName)) return;
       if (specHook && specHook(spec, copy)) return;
-      copy.startStepping(spec.methodName, spec.arg, spec.stepPeriod, spec.nextStepTime);
+      // Order: msPerTick, method, ...args. Preserve nextStepTime on the new spec.
+      let args = spec.$args != null ? spec.$args : [];
+      let fresh = copy.startStepping(spec.$stepPeriod, spec.methodName, ...args);
+      if (fresh) fresh.$nextStepTime = spec.$nextStepTime;
     });
   }
   restyle() {
@@ -4929,14 +5487,21 @@ class Morph {
     if (!this.$steppingSpecs) this.$steppingSpecs = [];
     return this.$steppingSpecs;
   }
-  startStepping(method, argIfAny, msTime, nextStepTimeIfAny) {
-    // Replace any existing step with the same method name on this morph
+  startStepping(msTime, method, ...args) {
+    // startStepping(msPerTick, methodName)
+    // startStepping(msPerTick, methodName, arg)
+    // startStepping(msPerTick, methodName, arg1, arg2, ...)
+    // Replace any existing step with the same method name on this morph.
     this.stopStepping(method);
-    const spec = new StepSpec(this, method, argIfAny, msTime, nextStepTimeIfAny);
+    const spec = new StepSpec(this, method, msTime);
+    // Rest `args` may be a host Array (LM Array.isArray is false for those).
+    // Push element-wise into the LM $args array — never `this.$args = [lmValue]`.
+    for (let i = 0; i < args.length; i++) spec.$args.push(args[i]);
     this.steppingSpecs().push(spec);
     // Morph.world() returns `this` when unowned — only a real WorldMorph can schedule.
     let world = this.world();
     if (world && world.startSteppingSpec) world.startSteppingSpec(spec);
+    return spec;
   }
   stopStepping(methodName) {
     if (methodName) {
@@ -5017,7 +5582,7 @@ class Morph {
       if (done) done();
       return;
     }
-    this.startStepping('animateFromToStep', null, ms);
+    this.startStepping(ms, 'animateFromToStep');
   }
   animateFromToCancel() {
     /**
@@ -5109,7 +5674,7 @@ class Morph {
     // loop's runtime.change transaction.
     this.$testTransformStepsLeft = 20; // ~500ms at 25ms/step
     this.$testTransformWhenDone = whenDone;
-    this.startStepping('testTransformStep', null, 25);
+    this.startStepping(25, 'testTransformStep');
   }
   testTransformStep() {
     this.rotateBy(Math.PI / 10);
@@ -5198,19 +5763,13 @@ class ImageMorph extends Morph {
     let ownerPts = corners.map((c) => tfm.transformPt(c));
     return unionPts(ownerPts);
   }
-  demo() {
-    // Demo: ladybug emoji drawn directly (no canvas bake — see EmojiMorph).
-    let morph = new EmojiMorph('LADYBUG', 64);
-    morph.transform.translation = pt(280, 120);
-    Lively.addMorph(morph);
-    return morph;
-  }
   morphCopy() {
     let copy = new ImageMorph(this.shape.copy());
-    copy.owner = this.owner;
-    copy.transform = this.transform.copy();
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
       let sub = m.morphCopy();
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
@@ -5253,8 +5812,10 @@ class ImageMorph extends Morph {
   }
   bouncerStep() {
     /**
-     * Step for {@link WorldMorph#makeBouncer}. Uses $-local pen/velocity; only
-     * moveTo/setRotation touch the shared document when the bug is persistent.
+     * Step for {@link WorldMorph#makeBouncer}. Velocity/pen are $-local. Position
+     * and rotation go through {@link Morph#transform}, which is `$transform` after
+     * makeBouncer installs the ephemeral overlay — so per-tick motion stays out of
+     * Automerge even when the bug itself is persistent (`makeBouncer(true)`).
      */
     let world = this.world();
     let pen = this.$pen;
@@ -5286,11 +5847,18 @@ class ImageMorph extends Morph {
     if (bounds.bottomRight().x > worldBounds.bottomRight().x && this.$velocity.x > 0) bounceX();
 
     bounds = this.collisionBounds();
-    let subs = world.submorphs || [];
+    // withBug attaches ephemerally ($submorphs); persistent world morphs live in
+    // submorphs. allSubmorphs() covers both so bugs bounce off boxes and each other.
+    let subs = world.allSubmorphs ? world.allSubmorphs() : world.submorphs || [];
     for (let i = 0; i < subs.length; i++) {
       let other = subs.at ? subs.at(i) : subs[i];
       if (other === this) continue;
-      let otherBounds = other.getBounds();
+      if (other.isaHand && other.isaHand()) continue;
+      if (other.className === 'HaloMorph' || other.className === 'HaloHandle') continue;
+      let otherBounds =
+        other.collisionBounds && typeof other.collisionBounds === 'function'
+          ? other.collisionBounds()
+          : other.getBounds();
       if (!bounds.overlapsRect(otherBounds)) continue;
       if (prevBounds.overlapsRect(otherBounds)) continue;
       let axis = bounds.overlapBounceAxis(otherBounds, this.$velocity);
@@ -5318,12 +5886,19 @@ class EmojiMorph extends ImageMorph {
     this._emojiSize = size;
     this._emojiChar = EmojiMorph.prototype.resolveChar(emojiName);
   }
+  demo() {
+    // new EmojiMorph('LADYBUG', 64).demo()
+    // drag it around - it's fun
+    this.transform.translation = pt(280, 120);
+    Lively.addMorph(this);
+  }
   morphCopy() {
     let copy = new EmojiMorph(this._emojiName, this._emojiSize);
-    copy.owner = this.owner;
-    copy.transform = this.transform.copy();
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     copy.submorphs = this.submorphs.map((m) => {
       let sub = m.morphCopy();
       sub.owner = copy; // not this.owner — repairSubmorphOwnership trusts the back-pointer
@@ -5566,6 +6141,7 @@ class LineMorph extends Morph {
     this.syncShapeFromVertices();
   }
   morphCopy() {
+    /** Vertices are already globalized; leave owner null (world appearance is in transform). */
     let worldVerts = this.shape.vertices.map((v) => this.globalize(v));
     let copy = new LineMorph(worldVerts, {
       borderWidth: this.shape.borderWidth,
@@ -5575,9 +6151,10 @@ class LineMorph extends Morph {
       beClosed: this.shape.closed,
       handleRadius: this.handleRadius,
     });
-    copy.owner = this.owner;
+    copy.owner = null;
     if (this.zIndex != null) copy.zIndex = this.zIndex;
     this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
     return copy;
   }
   morphMenu() {
@@ -6107,6 +6684,11 @@ class SimpleButtonMorph extends TextMorph {
     return false;
   }
   onPointerUp(p, evt) {
+    if (this.isSessionLogSendButton) {
+      let panel = this.owner;
+      while (panel && panel.className !== 'SessionLogPanel') panel = panel.owner;
+      if (panel && typeof panel.submitPrompt === 'function') panel.submitPrompt();
+    }
     this.$dragActorID = null;
     this.$hitPoint = null;
     return true;
@@ -6179,7 +6761,7 @@ function menuSeparatorDisplay() {
 /**
  * Build a menu entry with its label beside its action — easier to read and to
  * edit live (findItem / addItemBefore / removeItem) than a string list + switch.
- * Prefer: menuItem('Open Transcript', () => { Transcript = openTranscript(); })
+ * Prefer: menuItem('Open transcript', () => { Transcript = openTranscript(); })
  * Also accepted by MenuMorph: ['label', action] tuples.
  *
  * Note: MenuMorph expands these into plain string labels in itemList plus a
@@ -6244,17 +6826,31 @@ function menuItemFrom(labelOrItem, actionIfAny) {
 function methodSelectorPaneMenuSpec(panel) {
   /** Pane menu for method-selector list panes (browser message list, method-list panel, …). */
   return {
-    items: [
-      'spawn this method to its own window',
-      'export this method to the OS paste buffer',
-      menuSeparator,
-      'delete this method',
-    ],
+    items: function () {
+      let items = [
+        'spawn this method to its own window',
+        'export this method to the OS paste buffer',
+        menuSeparator,
+        'delete this method',
+      ];
+      if (
+        typeof fabrikMakePartFromGlobal === 'function' &&
+        panel &&
+        panel.selectedClass == 'globals' &&
+        panel.selectedMethod
+      ) {
+        items.push(menuSeparator);
+        items.push('make a Fabrik part');
+      }
+      return items;
+    },
     onSelect: (item, pane) => {
       if (isMenuSeparator(item)) return;
       if (item == 'spawn this method to its own window') panel.spawnMethodCopyToWindow();
       if (item == 'export this method to the OS paste buffer') panel.exportMethodCopyToOSPaste();
       if (item == 'delete this method') panel.promptDeleteThisMethod();
+      if (item == 'make a Fabrik part' && typeof fabrikMakePartFromGlobal === 'function')
+        fabrikMakePartFromGlobal(panel);
     },
   };
 }
@@ -6360,20 +6956,32 @@ class ListMorph extends Morph {
   }
   setList(list) {
     this.itemList = list || [];
+    // ListPanes already clip long lines visually; ellipsis truncation only hides
+    // useful name text. Free-floating menus still truncate so they don't grow huge.
+    let ownerName = this.owner && this.owner.className;
+    let inListPane =
+      ownerName === 'ListPane' ||
+      ownerName === 'FabrikListView' ||
+      !!(this.owner && this.owner.scrollByLines);
     let lim = menuItemMaxChars != null ? menuItemMaxChars : 15;
     if (this.className === 'MenuMorph') lim = Math.max(lim, 48);
-    this.displayItems = this.itemList.map((item) =>
-      isMenuSeparator(item) ? menuSeparatorDisplay() : truncateString(menuItemLabel(item), lim),
-    );
+    this.displayItems = this.itemList.map((item) => {
+      if (isMenuSeparator(item)) return menuSeparatorDisplay();
+      let label = menuItemLabel(item);
+      return inListPane ? label : truncateString(label, lim);
+    });
     let itemText = '';
     this.displayItems.forEach((item) => (itemText += item + '\n'));
     this.shape.setText(itemText);
     let ctx = this.shape.getTextContext(this.shape.font);
-    let inListPane = this.owner && this.owner.className === 'ListPane';
     if (ctx && !inListPane) {
       let maxW = 0;
       this.displayItems.forEach((item) => {
-        maxW = Math.max(maxW, ctx.measureText(item).width);
+        let w = ctx.measureText(item).width;
+        // Stub/broken canvases often return a tiny constant; fall back to an em estimate
+        // so menus built from a headless peer still get a usable shared width.
+        if (!(w > 0) || w < String(item).length * 2) w = String(item).length * 8;
+        maxW = Math.max(maxW, w);
       });
       let insetX = this.shape.inset ? this.shape.inset.x : 2;
       let isPaneSelMenu = this.className === 'MenuMorph' && this._paneMenuOwnerScrollPane;
@@ -6464,7 +7072,7 @@ class MenuMorph extends ListMorph {
   findItem(s) {
     /**
      * Index of the first item whose label includes s (case-insensitive), or -1.
-     * Separators are skipped. Example: wm.findItem('todo') → index of "ToDo List".
+     * Separators are skipped. Example: wm.findItem('todo') → index of "ToDo list".
      */
     let needle = ('' + (s != null ? s : '')).toLowerCase();
     if (!needle) return -1;
@@ -6554,7 +7162,10 @@ function isScrollPaneMorph(m) {
     n === 'ScrollPane' ||
     n === 'TextPane' ||
     n === 'ListPane' ||
-    n === 'TranscriptTextPane'
+    n === 'TranscriptTextPane' ||
+    n === 'FabrikListView' ||
+    n === 'FabrikTextView' ||
+    n === 'FabrikFunctionView'
   );
 }
 function scrollPaneAtWorldPt(world, worldPt) {
@@ -6789,7 +7400,7 @@ class ScrollPane extends Morph {
   showPaneMenu(ptIfAny, optsIfAny) {
     if (!this.paneMenu || !this.world()) return false;
     let spec = this.paneMenu;
-    let items = spec.items || [];
+    let items = typeof spec.items === 'function' ? spec.items() : spec.items || [];
     if (items.length == 0) return false;
     let opts = optsIfAny || {};
     let worldPt = ptIfAny
@@ -6823,7 +7434,8 @@ class ScrollPane extends Morph {
   showPaneMenuFromMenuButton() {
     /** Fleeting pane menu from the scrollbar menuButton (opens on pointer-down). */
     if (!this.paneMenu || !this.world()) return null;
-    let items = this.paneMenu.items || [];
+    let spec = this.paneMenu;
+    let items = typeof spec.items === 'function' ? spec.items() : spec.items || [];
     if (items.length === 0) return null;
     let menu = this.showPaneMenu(this.paneMenuAnchorInWorld(), {
       fleeting: true,
@@ -6897,16 +7509,16 @@ class TextPane extends ScrollPane {
   defaultPaneMenuSpec() {
     return {
       items: [
-        'cut',
-        'copy',
-        'paste',
+        'cut(x)',
+        'copy(c)',
+        'paste(v)',
         'paste...',
-        'do it',
-        'printit',
-        'find',
-        'undo',
+        'do it(d)',
+        'printit(p)',
+        'find(f)',
+        'undo(z)',
         menuSeparator,
-        'save',
+        'save(s)',
         'cancel',
       ],
       onSelect: function (item, pane) {
@@ -6977,6 +7589,9 @@ class TextPane extends ScrollPane {
   }
   setLocalStorageKey(key) {
     this.contentPane.shape.setLocalStorageKey(key);
+  }
+  setAutomergeKey(key) {
+    this.contentPane.shape.setAutomergeKey(key);
   }
   setText(text, opts) {
     let force = opts && opts.force;
@@ -7091,6 +7706,18 @@ class TranscriptTextPane extends TextPane {
   }
   onTextBoundsChanged(priorScrollPos) {
     this.onTextContentBoundsChanged(priorScrollPos, true);
+    // Session log history is shared; remote agent appends rewrite the TextBox
+    // without going through the sender's scroll helper — pin to bottom here.
+    // Guard against scroll → bounds → scroll re-entry (was a crash suspect).
+    if (this.owner && this.owner.className === 'SessionLogPanel') {
+      if (this._sessionLogPinReentry) return;
+      this._sessionLogPinReentry = true;
+      try {
+        this._scrollTranscriptBottomQuiet();
+      } finally {
+        this._sessionLogPinReentry = false;
+      }
+    }
   }
   receivesConsoleOutput() {
     return !!this._consoleMirroring;
@@ -7101,6 +7728,25 @@ class TranscriptTextPane extends TextPane {
   }
   scrollTranscriptToBottom() {
     this._scrollTranscriptBottomQuiet();
+  }
+  setText(text, opts) {
+    /**
+     * Like TextPane.setText but without scrollToTop — transcripts and session logs
+     * grow downward; jumping to the top on every rewrite is wrong.
+     */
+    let force = opts && opts.force;
+    if (!force && this.hasUnsavedChanges()) return false;
+    let normalized = text != null ? String(text) : '';
+    let priorScroll = typeof this.getScrollPosition === 'function' ? this.getScrollPosition() : null;
+    let oldH = this.contentPane && this.contentPane.shape ? this.contentPane.shape.extent.y : 0;
+    this.contentPane.setText(normalized);
+    this._savedTextSnapshot = normalized;
+    if (this.contentPane && this.contentPane.shape) this.contentPane.shape.editorID = null;
+    let newH = this.contentPane && this.contentPane.shape ? this.contentPane.shape.extent.y : 0;
+    if (newH !== oldH && typeof this.onTextBoundsChanged === 'function') {
+      this.onTextBoundsChanged(priorScroll, true);
+    }
+    return true;
   }
   setConsoleMirror(on) {
     this._transcriptReentry++;
@@ -7197,11 +7843,14 @@ class SliderMorph extends Morph {
     if (!this.showsMenuButton || !this.menuButton) return;
     let bnds = this.shape.getBounds();
     let frac = this.menuButtonFraction;
+    let minPx = 4; // short panes (e.g. category strip) need a hittable target
     if (this.isVertical()) {
-      let topH = bnds.height() * frac;
+      let topH = Math.max(minPx, bnds.height() * frac);
+      if (topH > bnds.height()) topH = bnds.height();
       this.menuButton.setBounds(rect(0, 0, bnds.width(), topH));
     } else {
-      let leftW = bnds.width() * frac;
+      let leftW = Math.max(minPx, bnds.width() * frac);
+      if (leftW > bnds.width()) leftW = bnds.width();
       this.menuButton.setBounds(rect(0, 0, leftW, bnds.height()));
     }
   }
@@ -7342,15 +7991,18 @@ class SliderMorph extends Morph {
     );
   }
   trackBounds() {
-    /** Track area; 10% reserved for pane menu button (top if vertical, left if horizontal). */
+    /** Track area; 10% (min 4px) reserved for pane menu button (top if vertical, left if horizontal). */
     let bnds = this.shape.getBounds();
     if (!this.showsMenuButton) return bnds.copy();
     let frac = this.menuButtonFraction;
+    let minPx = 4;
     if (this.isVertical()) {
-      let topH = bnds.height() * frac;
+      let topH = Math.max(minPx, bnds.height() * frac);
+      if (topH > bnds.height()) topH = bnds.height();
       return rect(0, topH, bnds.width(), Math.max(0, bnds.height() - topH));
     }
-    let leftW = bnds.width() * frac;
+    let leftW = Math.max(minPx, bnds.width() * frac);
+    if (leftW > bnds.width()) leftW = bnds.width();
     return rect(leftW, 0, Math.max(0, bnds.width() - leftW), bnds.height());
   }
   tweakValue(tweak) {
@@ -7614,6 +8266,44 @@ function promptOkToCancelEditsMenu(world, atPt, onResult) {
     rect(anchor.x, anchor.y, menu.getBounds().width(), menu.getBounds().height()),
   );
   if (world.promote) world.promote(menu);
+}
+function checkpointDownloadFileName() {
+  /** Basename for browser Downloads — fixed name; the OS keeps versions/dates. */
+  return 'xdefs.js';
+}
+function showCheckpointSavedNotice(world, info) {
+  /**
+   * Fleeting OK dialog after Checkpoint to Downloads: file name, write date, byte count.
+   */
+  let name = info && info.name != null ? '' + info.name : 'xdefs.js';
+  let when = info && info.when != null ? '' + info.when : new Date().toLocaleString();
+  let bytes = info && info.bytes != null ? info.bytes : 0;
+  let titleLine = 'Checkpoint to Downloads';
+  let fileLine = '  file: ' + name;
+  let whenLine = '  when: ' + when;
+  let bytesLine = '  bytes: ' + bytes;
+  let okLine = '  OK';
+  let anchor = fleetingMenuAnchorPt(null);
+  let wdt = 280;
+  if (fileLine.length * 7 > wdt) wdt = fileLine.length * 7;
+  if (whenLine.length * 7 > wdt) wdt = whenLine.length * 7;
+  let menu = new MenuMorph(
+    rect(anchor.x, anchor.y, wdt, 24 + 5 * 20),
+    [titleLine, fileLine, whenLine, bytesLine, okLine],
+    function () {
+      menu.remove();
+    },
+  );
+  let bg = Color.yellow;
+  menu.shape.boxColor = bg;
+  menu.shape.fill = bg;
+  menu.isFleetingMenu = true;
+  world.addEphemeralMorph(menu);
+  menu.setBounds(
+    rect(anchor.x, anchor.y, menu.getBounds().width(), menu.getBounds().height()),
+  );
+  if (world.promote) world.promote(menu);
+  return menu;
 }
 //  PanelTitleBar
 // ---------------
@@ -7990,12 +8680,12 @@ class PanelMorph extends Morph {
     this.$watchAsCall = !!asReplaceMethodCall;
     // MethodPanel may call this from its constructor before addMorph — defer stepping.
     if (this.world() && this.world().startSteppingSpec)
-      this.startStepping('tickMethodConflict', null, 2000);
+      this.startStepping(2000, 'tickMethodConflict');
     else setTimeout(() => {
       if (this.$watchSpec == null) return;
       if (this.isStepping && this.isStepping('tickMethodConflict')) return;
       if (this.world() && this.world().startSteppingSpec)
-        this.startStepping('tickMethodConflict', null, 2000);
+        this.startStepping(2000, 'tickMethodConflict');
     }, 0);
     this.tickMethodConflict();
   }
@@ -8132,6 +8822,9 @@ class MethodPanel extends PanelMorph {
     // Hack to read from localStorage...
     if (optionalTitle && optionalTitle.startsWith('localStorage.'))
       text = localStorage.getItem(optionalTitle.slice(13));
+    // Shared Automerge kv (mirrors localStorage.* for multiplayer docs).
+    if (optionalTitle && optionalTitle.startsWith('automerge.'))
+      text = automergeGetItem(optionalTitle.slice(10));
     const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
     this.initTextPane(text != null ? text : '', optionalTitle);
@@ -8142,6 +8835,8 @@ class MethodPanel extends PanelMorph {
     this.textPane.setText(string);
     if (optionalTitle && optionalTitle.startsWith('localStorage.'))
       this.textPane.setLocalStorageKey(optionalTitle.slice(13));
+    if (optionalTitle && optionalTitle.startsWith('automerge.'))
+      this.textPane.setAutomergeKey(optionalTitle.slice(10));
     this.setPanelTitle(optionalTitle ? optionalTitle : 'Text Panel');
     this.layoutChrome();
     this.relayoutContentPanes();
@@ -8149,12 +8844,20 @@ class MethodPanel extends PanelMorph {
   }
   maybeWatchMethodConflict(string, optionalTitle) {
     if (optionalTitle && String(optionalTitle).startsWith('localStorage.')) return;
+    if (optionalTitle && String(optionalTitle).startsWith('automerge.')) return;
     let text = string != null ? String(string) : '';
     let watchSpec = null;
     let asCall = !!parseReplaceMethodCallString(text);
-    if (optionalTitle && methodSpecKey(optionalTitle) && !String(optionalTitle).includes('['))
-      watchSpec = methodSpecKey(optionalTitle);
-    else if (asCall) {
+    if (optionalTitle && methodSpecKey(optionalTitle) && !String(optionalTitle).includes('[')) {
+      let key = methodSpecKey(optionalTitle);
+      // Titles may be browser-style labels ('Rectangle bottom', 'Color blue*').
+      watchSpec = key.includes('.') ? key : methodSpecFromListLabel(key);
+    }
+    if (!watchSpec && asCall) {
+      let parsed = parseReplaceMethodCallString(text);
+      if (parsed) watchSpec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
+    } else if (asCall && watchSpec && methodFromSpec(watchSpec) == null) {
+      // Friendly title didn't resolve; fall back to the replaceMethod text.
       let parsed = parseReplaceMethodCallString(text);
       if (parsed) watchSpec = fragmentChangeSpec(parsed.className, parsed.fragmentText);
     }
@@ -8165,6 +8868,1321 @@ class MethodPanel extends PanelMorph {
   }
 }
 
+// +----------------------------------+
+// |  Patchwork Tool Adapters         |
+// +----------------------------------+
+// Other tools open in this page can register a ToolAdapter on
+// window.__patchworkToolAdapters (protocol v1, see
+// llm-canvas/src/tldraw/toolAdapter.ts): a handful of JSON-in/JSON-out
+// primitives. Behavior lives here, in ordinary Morphic methods built on those
+// primitives. Adapters are host objects: look them up on every use (never
+// store one in a morph), and pass them host values (hostArray / hostObject).
+
+function toolAdapterRegistry() {
+  let reg = window.__patchworkToolAdapters;
+  return reg && reg.version === 1 ? reg : null;
+}
+function patchworkToolAdapters() {
+  /** Infos of every live adapter: patchworkToolAdapters().map((i) => i.id) */
+  let reg = toolAdapterRegistry();
+  if (!reg) return [];
+  let infos = reg.list();
+  let out = [];
+  for (let i = 0; i < infos.length; i++) out.push(infos[i]);
+  return out;
+}
+function toolAdapterForDoc(kind, docUrl) {
+  /** The live adapter of `kind` showing `docUrl` (ids change per mount; doc urls don't). */
+  let infos = patchworkToolAdapters();
+  for (let i = 0; i < infos.length; i++) {
+    if (infos[i].kind === kind && infos[i].docUrl === docUrl) return toolAdapterRegistry().get(infos[i].id);
+  }
+  return null;
+}
+function hostArray(items) {
+  let arr = new window.Array();
+  for (let i = 0; i < items.length; i++) arr.push(items[i]);
+  return arr;
+}
+function hostObject(fields) {
+  let obj = new window.Object();
+  let keys = Object.keys(fields);
+  for (let i = 0; i < keys.length; i++) if (fields[keys[i]] != null) obj[keys[i]] = fields[keys[i]];
+  return obj;
+}
+function linkTLDraw() {
+  /** linkTLDraw() — put a TLDrawLinkMorph in the world for the first open TLDraw canvas. */
+  let infos = patchworkToolAdapters().filter((i) => i.kind === 'tldraw');
+  if (infos.length === 0) {
+    showNotifyMenu('no TLDraw canvas (llm-canvas 0.0.20 or later) is open in this page');
+    return null;
+  }
+  let link = new TLDrawLinkMorph(infos[0].docUrl);
+  link.moveBy(pt(120, 120));
+  Lively.addMorph(link);
+  link.startLinkStepping();
+  return link;
+}
+
+//  TLDrawLinkMorph
+// -----------------
+// A visible proxy for one TLDraw canvas. It stores only the canvas's doc url;
+// every method re-finds the live adapter. Edit onCanvasEvent to react to what
+// happens over there.
+class TLDrawLinkMorph extends Morph {
+  constructor(docUrl) {
+    let b = rect(0, 0, 240, 180);
+    super(b, new Shape('Rectangle', b, Color.paleLavender, 1, Color.gray));
+    this.docUrl = docUrl;
+  }
+  adapter() {
+    let a = toolAdapterForDoc('tldraw', this.docUrl);
+    if (!a) throw new Error('TLDraw canvas …' + this.docTail() + ' is not open in this page');
+    return a;
+  }
+  docTail() {
+    return String(this.docUrl).slice(-5);
+  }
+
+  // Primitives, wrapped
+  shapes() {
+    let list = this.adapter().shapes();
+    let out = [];
+    for (let i = 0; i < list.length; i++) out.push(list[i]);
+    return out;
+  }
+  selectedIds() {
+    let ids = this.adapter().selectedIds();
+    let out = [];
+    for (let i = 0; i < ids.length; i++) out.push(ids[i]);
+    return out;
+  }
+  addShape(type, x, y, text, color) {
+    return this.adapter().createShape(hostObject({ type: type, x: x, y: y, text: text, color: color }));
+  }
+  addBox(x, y, text, color) {
+    return this.addShape('geo', x, y, text, color || 'light-violet');
+  }
+  addNote(x, y, text, color) {
+    return this.addShape('note', x, y, text, color || 'yellow');
+  }
+  rotateShapes(ids, radians) {
+    this.adapter().rotateShapes(hostArray(ids), radians);
+  }
+  nudgeShapes(ids, dx, dy) {
+    this.adapter().nudge(hostArray(ids), dx, dy);
+  }
+  zoomToFit() {
+    this.adapter().zoomToFit();
+  }
+  selectedIdsOrNotify() {
+    let ids = this.selectedIds();
+    if (ids.length === 0) showNotifyMenu('select something in TLDraw first');
+    return ids;
+  }
+  rotateSelectionBy(degrees) {
+    let ids = this.selectedIdsOrNotify();
+    if (ids.length) this.rotateShapes(ids, (degrees * Math.PI) / 180);
+  }
+  nudgeSelection(dx, dy) {
+    let ids = this.selectedIdsOrNotify();
+    if (ids.length) this.nudgeShapes(ids, dx, dy);
+  }
+
+  // Behaviors
+  spinSelection(degrees, ms) {
+    /** Rotate the TLDraw selection by `degrees` in 10 steps over `ms`. */
+    let ids = this.selectedIdsOrNotify();
+    if (ids.length === 0) return;
+    this.$spin = { ids: ids, stepRad: (degrees * Math.PI) / 180 / 10, stepsLeft: 10 };
+    this.startStepping(Math.max(16, Math.round((ms || 1000) / 10)), 'spinStep');
+  }
+  spinStep() {
+    let spin = this.$spin;
+    if (!spin || spin.stepsLeft <= 0) return this.stopStepping('spinStep');
+    spin.stepsLeft--;
+    this.rotateShapes(spin.ids, spin.stepRad);
+  }
+  todoNotes() {
+    /** One TLDraw note per open [ ] item in todoList(). */
+    let items = openTodoItems();
+    for (let i = 0; i < items.length; i++) this.addNote((i % 4) * 240, Math.floor(i / 4) * 240, items[i]);
+    return items.length;
+  }
+  logShapes() {
+    let list = this.shapes();
+    log('TLDraw …' + this.docTail() + ': ' + list.length + ' shapes');
+    for (let i = 0; i < list.length; i++) {
+      let s = list[i];
+      log('  ' + s.type + ' ' + s.id + ' @' + Math.round(s.x) + ',' + Math.round(s.y) + (s.text ? ' "' + s.text + '"' : ''));
+    }
+  }
+
+  // Events: drained from the adapter's queue in a step, never from a host callback
+  startLinkStepping() {
+    this.startStepping(400, 'linkStep');
+  }
+  linkStep() {
+    let status = this.pollCanvas();
+    let key = status + '|' + this.mapSignature();
+    if (key !== this.$renderKey) {
+      this.$renderKey = key;
+      this.$status = status;
+      this.changed();
+    }
+  }
+  hostShapeList() {
+    /** Host array of shapes with id/x/y/rotation — cheap enough to scan every step. */
+    let a = toolAdapterForDoc('tldraw', this.docUrl);
+    return a ? a.shapes() : [];
+  }
+  mapSignature() {
+    /** A string that changes whenever the mini-map would. */
+    let list;
+    let sel;
+    try {
+      list = this.hostShapeList();
+      sel = this.selectedIds().join(',');
+    } catch (err) {
+      return '';
+    }
+    let s = sel;
+    for (let i = 0; i < list.length; i++) {
+      let r = list[i];
+      s += ';' + r.id + ':' + Math.round(r.x) + ',' + Math.round(r.y) + ',' + Math.round((r.rotation || 0) * 100);
+    }
+    return s;
+  }
+  pollCanvas() {
+    /** Deliver queued canvas events; answer the status line. */
+    let a = toolAdapterForDoc('tldraw', this.docUrl);
+    if (!a) return 'not open in this page';
+    let events = a.drainEvents();
+    for (let i = 0; i < events.length; i++) this.onCanvasEvent(events[i]);
+    return a.shapes().length + ' shapes · ' + a.selectedIds().length + ' selected';
+  }
+  onCanvasEvent(evt) {
+    /** Called for each TLDraw event: { type: 'selection', ids } or { type: 'shapes', added, removed, updated }. */
+  }
+  linkTitle() {
+    return 'TLDraw ⇄ …' + this.docTail();
+  }
+
+  renderMeOn(ctx) {
+    if (!this.hasChanged) return;
+    super.renderMeOn(ctx);
+    let b = this.shape.getBounds();
+    let left = b.topLeft.x;
+    let top = b.topLeft.y;
+    let cx = left + b.width() / 2;
+    ctx.save();
+    ctx.fillStyle = 'black';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(truncateString(this.linkTitle(), 34), cx, top + 13);
+    ctx.font = '11px sans-serif';
+    ctx.fillText(this.$status || 'menu → reconnect', cx, top + 29);
+    ctx.restore();
+    if (b.height() > 80) this.renderMapOn(ctx, rect(left + 6, top + 40, b.width() - 12, b.height() - 46));
+  }
+  renderMapOn(ctx, area) {
+    /** Mini-map of the canvas: each shape as its (rotated) box, arrows as lines, selection in blue. */
+    let list;
+    let selected;
+    try {
+      list = this.shapes();
+      selected = this.selectedIds();
+    } catch (err) {
+      return;
+    }
+    let ax = area.topLeft.x;
+    let ay = area.topLeft.y;
+    ctx.save();
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = '#bbb';
+    ctx.lineWidth = 1;
+    ctx.fillRect(ax, ay, area.width(), area.height());
+    ctx.strokeRect(ax, ay, area.width(), area.height());
+    if (list.length === 0) return ctx.restore();
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < list.length; i++) {
+      let s = list[i];
+      let reach = Math.max(s.w || 0, s.h || 0);
+      minX = Math.min(minX, s.x - reach * 0.2);
+      minY = Math.min(minY, s.y - reach * 0.2);
+      maxX = Math.max(maxX, s.x + reach);
+      maxY = Math.max(maxY, s.y + reach);
+      if (s.line) {
+        minX = Math.min(minX, s.line[0], s.line[2]);
+        minY = Math.min(minY, s.line[1], s.line[3]);
+        maxX = Math.max(maxX, s.line[0], s.line[2]);
+        maxY = Math.max(maxY, s.line[1], s.line[3]);
+      }
+    }
+    let pad = 6;
+    let scale = Math.min((area.width() - 2 * pad) / Math.max(1, maxX - minX), (area.height() - 2 * pad) / Math.max(1, maxY - minY));
+    let ox = ax + pad + (area.width() - 2 * pad - (maxX - minX) * scale) / 2;
+    let oy = ay + pad + (area.height() - 2 * pad - (maxY - minY) * scale) / 2;
+    ctx.beginPath();
+    ctx.rect(ax, ay, area.width(), area.height());
+    ctx.clip();
+    for (let i = 0; i < list.length; i++) {
+      let s = list[i];
+      let isSel = selected.indexOf(s.id) >= 0;
+      ctx.strokeStyle = isSel ? '#2f6fed' : '#555';
+      ctx.lineWidth = isSel ? 2 : 1;
+      if (s.line) {
+        ctx.beginPath();
+        ctx.moveTo(ox + (s.line[0] - minX) * scale, oy + (s.line[1] - minY) * scale);
+        ctx.lineTo(ox + (s.line[2] - minX) * scale, oy + (s.line[3] - minY) * scale);
+        ctx.stroke();
+        continue;
+      }
+      ctx.save();
+      ctx.translate(ox + (s.x - minX) * scale, oy + (s.y - minY) * scale);
+      ctx.rotate(s.rotation || 0);
+      ctx.fillStyle = s.type === 'note' ? '#fde68a' : '#ede9fe';
+      ctx.fillRect(0, 0, Math.max(2, (s.w || 0) * scale), Math.max(2, (s.h || 0) * scale));
+      ctx.strokeRect(0, 0, Math.max(2, (s.w || 0) * scale), Math.max(2, (s.h || 0) * scale));
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+  menuItems() {
+    return [
+      'reconnect',
+      'add box',
+      'add note',
+      'ToDo list → notes',
+      'spin selection 60°',
+      'nudge selection →',
+      'zoom to fit',
+      'log shapes',
+    ];
+  }
+  morphMenu() {
+    return {
+      items: this.menuItems(),
+      onSelect: function (item, link) {
+        try {
+          link.doMenuItem(item);
+        } catch (err) {
+          showNotifyMenu(err && err.message ? err.message : '' + err);
+        }
+      },
+    };
+  }
+  doMenuItem(item) {
+    if (item === 'reconnect') this.startLinkStepping();
+    if (item === 'add box') this.addBox(0, 0, 'from Morphic');
+    if (item === 'add note') this.addNote(200, 0, 'from Morphic');
+    if (item === 'ToDo list → notes') this.todoNotes();
+    if (item === 'spin selection 60°') this.spinSelection(60, 1000);
+    if (item === 'nudge selection →') this.nudgeSelection(40, 0);
+    if (item === 'zoom to fit') this.zoomToFit();
+    if (item === 'log shapes') this.logShapes();
+  }
+  morphCopy() {
+    let copy = new TLDrawLinkMorph(this.docUrl);
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
+    this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
+    return copy;
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+//  Linking by document
+// ---------------------
+// linkToDoc(url) needs no shared page: it edits the TLDraw document itself
+// through window.repo, and learns the TLDraw selection from the presence
+// broadcasts peers send on that doc. The host-side half (repo.find, the
+// broadcast listener, Automerge writes) is compiled as host code, so its
+// promise/event callbacks never run Livelymerge code outside a transaction.
+
+function hostDocLinkerSource() {
+  return `
+  var state = prior || { handles: {}, pending: {}, errors: {}, presence: {} };
+  // Two presence formats carry a TLDraw instance_presence record:
+  //   llm-canvas: [userId, record]
+  //   tldraw4 (automerge-repo Presence): { __presence: { type: 'update', channel: 'presence', value: record } }
+  //                                  or { __presence: { type: 'snapshot', state: { presence: record } } }
+  function notePresence(url, m) {
+    var rec;
+    if (Array.isArray(m) && m.length >= 2) rec = m[1];
+    else if (m && m.__presence) {
+      var p = m.__presence;
+      if (p.type === 'update' && p.channel === 'presence') rec = p.value;
+      else if (p.type === 'snapshot' && p.state && 'presence' in p.state) rec = p.state.presence;
+      else return;
+      if (rec == null) rec = { typeName: 'instance_presence', selectedShapeIds: [] };
+    } else return;
+    if (!rec || rec.typeName !== 'instance_presence') return;
+    state.presence[url] = { ids: (rec.selectedShapeIds || []).slice(), at: Date.now() };
+  }
+  // Presence arrives from remote peers as ephemeral messages; a TLDraw view in
+  // this same repo shares our handle, and a handle never hears its own
+  // broadcasts, so tap what it sends as well.
+  // Taps call through window._lmDocLinker, so an edited parser applies to handles tapped earlier.
+  function tap(url, h) {
+    if (h.__lmPresenceTapV2) return;
+    h.__lmPresenceTapV2 = true;
+    var hear = function (m) {
+      try { window._lmDocLinker.notePresence(url, m); } catch (e) {}
+    };
+    var send = h.broadcast;
+    h.broadcast = function (m) {
+      hear(m);
+      return send.apply(this, arguments);
+    };
+    h.on('ephemeral-message', function (e) { hear(e && e.message); });
+  }
+  function find(url) {
+    if (state.handles[url]) return tap(url, state.handles[url]);
+    if (state.pending[url]) return;
+    state.pending[url] = true;
+    delete state.errors[url];
+    Promise.resolve(window.repo.find(url))
+      .then(function (h) {
+        state.handles[url] = h;
+        tap(url, h);
+      }, function (err) {
+        state.errors[url] = String((err && err.message) || err);
+      })
+      .then(function () { delete state.pending[url]; });
+  }
+  function doc(url) {
+    var h = state.handles[url];
+    return h ? h.doc() : null;
+  }
+  function recordsOfType(url, typeName) {
+    var d = doc(url);
+    if (!d || !d.store) return [];
+    return Object.keys(d.store)
+      .map(function (k) { return d.store[k]; })
+      .filter(function (r) { return r && r.typeName === typeName; });
+  }
+  function title(url) {
+    var pages = recordsOfType(url, 'page').sort(function (a, b) { return a.index < b.index ? -1 : 1; });
+    return pages.length && pages[0].name != null ? String(pages[0].name) : null;
+  }
+  function putRecord(url, rec) {
+    state.handles[url].change(function (d) { d.store[rec.id] = rec; });
+  }
+  function setFields(url, updates) {
+    state.handles[url].change(function (d) {
+      updates.forEach(function (u) {
+        var r = d.store[u.id];
+        if (!r) return;
+        Object.keys(u.fields).forEach(function (k) { r[k] = u.fields[k]; });
+      });
+    });
+  }
+  function heads(url) {
+    return state.handles[url].heads().slice();
+  }
+  // Put every shape back as it was at oldHeads: re-create deleted ones,
+  // delete added ones, restore the rest. Answers { added, deleted, restored }.
+  function revertShapesTo(url, oldHeads) {
+    var h = state.handles[url];
+    var then = h.view(oldHeads.slice()).doc().store;
+    var counts = { added: 0, deleted: 0, restored: 0 };
+    var plain = function (r) { return JSON.parse(JSON.stringify(r)); };
+    h.change(function (d) {
+      Object.keys(d.store).forEach(function (k) {
+        if (d.store[k].typeName === 'shape' && !then[k]) { delete d.store[k]; counts.deleted++; }
+      });
+      Object.keys(then).forEach(function (k) {
+        if (then[k].typeName !== 'shape') return;
+        var old = plain(then[k]);
+        var now = d.store[k];
+        if (!now) { d.store[k] = old; counts.added++; return; }
+        if (JSON.stringify(old) === JSON.stringify(now)) return;
+        Object.keys(old).forEach(function (f) {
+          if (JSON.stringify(old[f]) !== JSON.stringify(now[f])) now[f] = old[f];
+        });
+        counts.restored++;
+      });
+    });
+    return counts;
+  }
+  return { state: state, find: find, notePresence: notePresence, doc: doc, recordsOfType: recordsOfType, title: title, putRecord: putRecord, setFields: setFields, heads: heads, revertShapesTo: revertShapesTo };
+`;
+}
+function hostDocLinker() {
+  // Rebuilt when this source is edited; `prior` carries over already-found doc handles.
+  let src = hostDocLinkerSource();
+  let old = window._lmDocLinker;
+  if (!old || window._lmDocLinkerSource !== src) {
+    window._lmDocLinker = new window.Function('prior', src)(old ? old.state : null);
+    window._lmDocLinkerSource = src;
+  }
+  return window._lmDocLinker;
+}
+function toHost(value) {
+  /** Deep copy of plain LM data (objects, arrays, primitives) as host values. */
+  if (value == null || typeof value !== 'object') return value;
+  if (Array.isArray(value)) return hostArray(value.map(toHost));
+  let obj = new window.Object();
+  let keys = Object.keys(value);
+  for (let i = 0; i < keys.length; i++) if (value[keys[i]] !== undefined) obj[keys[i]] = toHost(value[keys[i]]);
+  return obj;
+}
+function automergeUrlFrom(text) {
+  /** 'automerge:…' from a bare id, an automerge url, or a Patchwork link containing one. */
+  let s = String(text || '').trim();
+  let m = s.match(/automerge:([1-9A-HJ-NP-Za-km-z]+)/);
+  if (m) return 'automerge:' + m[1];
+  m = s.match(/([1-9A-HJ-NP-Za-km-z]{20,})\/?$/);
+  return m ? 'automerge:' + m[1] : null;
+}
+function linkToDoc(url) {
+  /** linkToDoc('automerge:…') — link to a TLDraw (llm-canvas) doc by url; no shared page needed. */
+  let docUrl = automergeUrlFrom(url);
+  if (!docUrl) {
+    showNotifyMenu("'" + url + "' doesn't look like a Patchwork doc url");
+    return null;
+  }
+  if (!window.repo) {
+    showNotifyMenu('no Patchwork repo in this page');
+    return null;
+  }
+  let link = new TLDrawDocLinkMorph(docUrl);
+  link.moveBy(pt(120, 180));
+  Lively.addMorph(link);
+  link.startLinkStepping();
+  return link;
+}
+
+//  TLDrawDocLinkMorph
+// --------------------
+// Same behaviors as TLDrawLinkMorph, with primitives that edit the TLDraw
+// document directly. "Selected" means the latest selection a TLDraw peer
+// broadcast; failing that, the shapes this link created.
+class TLDrawDocLinkMorph extends TLDrawLinkMorph {
+  constructor(docUrl) {
+    super(docUrl);
+    this.madeIds = [];
+  }
+  linkTitle() {
+    let name = null;
+    try {
+      name = hostDocLinker().title(this.docUrl);
+    } catch (err) {}
+    return 'TLDraw ⇄ ' + (name || '…' + this.docTail());
+  }
+  tlDoc() {
+    let linker = hostDocLinker();
+    linker.find(this.docUrl);
+    let doc = linker.doc(this.docUrl);
+    if (doc) {
+      if (!doc.store) throw new Error('doc …' + this.docTail() + ' is not a TLDraw canvas');
+      return doc;
+    }
+    let err = linker.state.errors[this.docUrl];
+    throw new Error(err ? 'could not open doc …' + this.docTail() + ': ' + err : 'doc …' + this.docTail() + ' is still loading');
+  }
+  shapeRecords() {
+    this.tlDoc();
+    let recs = hostDocLinker().recordsOfType(this.docUrl, 'shape');
+    let out = [];
+    for (let i = 0; i < recs.length; i++) out.push(recs[i]);
+    return out;
+  }
+  shapeWidth(r) {
+    let p = r.props;
+    let scale = (p && p.scale) || 1;
+    return (r.type === 'note' ? 200 : (p && p.w) || 100) * scale;
+  }
+  shapeHeight(r) {
+    let p = r.props;
+    let scale = (p && p.scale) || 1;
+    let growY = (p && p.growY) || 0;
+    return ((r.type === 'note' ? 200 : (p && p.h) || 24) + growY) * scale;
+  }
+  richTextString(rt) {
+    if (!rt) return null;
+    if (rt.text != null) return String(rt.text);
+    let parts = [];
+    let kids = rt.content || [];
+    for (let i = 0; i < kids.length; i++) {
+      let s = this.richTextString(kids[i]);
+      if (s != null) parts.push(s);
+    }
+    return parts.length ? parts.join(rt.type === 'doc' ? '\n' : '') : null;
+  }
+
+  // Primitives
+  shapes() {
+    return this.shapeRecords().map((r) => {
+      let p = r.props;
+      let line = null;
+      if (r.type === 'arrow' && p && p.start && p.end)
+        line = [r.x + p.start.x, r.y + p.start.y, r.x + p.end.x, r.y + p.end.y];
+      return {
+        id: r.id,
+        type: r.type,
+        x: r.x,
+        y: r.y,
+        rotation: r.rotation,
+        w: this.shapeWidth(r),
+        h: this.shapeHeight(r),
+        line: line,
+        color: p ? p.color : null,
+        text: p ? this.richTextString(p.richText) : null,
+      };
+    });
+  }
+  hostShapeList() {
+    return hostDocLinker().recordsOfType(this.docUrl, 'shape');
+  }
+  mapSignature() {
+    let list = this.hostShapeList();
+    let p = hostDocLinker().state.presence[this.docUrl];
+    let s = p ? p.ids.join(',') : '';
+    for (let i = 0; i < list.length; i++) {
+      let r = list[i];
+      s += ';' + r.id + ':' + Math.round(r.x) + ',' + Math.round(r.y) + ',' + Math.round((r.rotation || 0) * 100);
+    }
+    return s;
+  }
+  presenceSelection() {
+    let p = hostDocLinker().state.presence[this.docUrl];
+    let out = [];
+    if (p) for (let i = 0; i < p.ids.length; i++) out.push(p.ids[i]);
+    return out;
+  }
+  selectedIds() {
+    let ids = this.presenceSelection();
+    if (ids.length) return ids;
+    let store = this.tlDoc().store;
+    return this.madeIds.filter((id) => store[id] != null);
+  }
+  addShape(type, x, y, text, color) {
+    this.tlDoc();
+    let linker = hostDocLinker();
+    let pages = linker.recordsOfType(this.docUrl, 'page');
+    let pageId = null;
+    for (let i = 0; i < pages.length; i++) if (pageId == null || pages[i].id < pageId) pageId = pages[i].id;
+    if (pageId == null) throw new Error('doc …' + this.docTail() + ' has no page');
+    let shapes = linker.recordsOfType(this.docUrl, 'shape');
+    let maxIndex = null;
+    for (let i = 0; i < shapes.length; i++) {
+      let r = shapes[i];
+      if (r.parentId === pageId && (maxIndex == null || r.index > maxIndex)) maxIndex = r.index;
+    }
+    let richText = { type: 'doc', content: [text ? { type: 'paragraph', content: [{ type: 'text', text: String(text) }] } : { type: 'paragraph' }] };
+    if (type !== 'geo' && type !== 'note') throw new Error("addShape by doc supports 'geo' and 'note', not '" + type + "'");
+    let props = { color: color || 'black', labelColor: 'black', size: 'm', font: 'draw', align: 'middle', verticalAlign: 'middle', growY: 0, url: '', scale: 1, richText: richText };
+    if (type === 'note') props.fontSizeAdjustment = 0;
+    if (type === 'geo') {
+      props.w = 160;
+      props.h = 90;
+      props.geo = 'rectangle';
+      props.dash = 'draw';
+      props.fill = 'solid';
+    }
+    let id = 'shape:lm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    let rec = {
+      id: id,
+      typeName: 'shape',
+      type: type,
+      x: x,
+      y: y,
+      rotation: 0,
+      index: maxIndex ? maxIndex + 'V' : 'a1',
+      parentId: pageId,
+      isLocked: false,
+      opacity: 1,
+      meta: {},
+      props: props,
+    };
+    hostDocLinker().putRecord(this.docUrl, toHost(rec));
+    this.madeIds.push(id);
+    return id;
+  }
+  rotateShapes(ids, radians) {
+    /** Rotate each shape about its own center (records rotate about their top-left). */
+    let store = this.tlDoc().store;
+    let updates = [];
+    for (let i = 0; i < ids.length; i++) {
+      let r = store[ids[i]];
+      if (!r) continue;
+      let hw = this.shapeWidth(r) / 2;
+      let hh = this.shapeHeight(r) / 2;
+      let r1 = r.rotation || 0;
+      let r2 = r1 + radians;
+      let cx = r.x + hw * Math.cos(r1) - hh * Math.sin(r1);
+      let cy = r.y + hw * Math.sin(r1) + hh * Math.cos(r1);
+      updates.push({
+        id: ids[i],
+        fields: {
+          rotation: r2,
+          x: cx - (hw * Math.cos(r2) - hh * Math.sin(r2)),
+          y: cy - (hw * Math.sin(r2) + hh * Math.cos(r2)),
+        },
+      });
+    }
+    if (updates.length) hostDocLinker().setFields(this.docUrl, toHost(updates));
+  }
+  nudgeShapes(ids, dx, dy) {
+    let store = this.tlDoc().store;
+    let updates = [];
+    for (let i = 0; i < ids.length; i++) {
+      let r = store[ids[i]];
+      if (r) updates.push({ id: ids[i], fields: { x: r.x + dx, y: r.y + dy } });
+    }
+    if (updates.length) hostDocLinker().setFields(this.docUrl, toHost(updates));
+  }
+  zoomToFit() {
+    throw new Error('zoom to fit needs the canvas open in this page');
+  }
+
+  // Revert point: the doc version to go back to (Automerge heads, kept as strings)
+  markRevertPoint() {
+    this.tlDoc();
+    let heads = hostDocLinker().heads(this.docUrl);
+    let marked = [];
+    for (let i = 0; i < heads.length; i++) marked.push(String(heads[i]));
+    this.revertHeads = marked;
+    this.revertMarkedAt = new Date().toLocaleTimeString();
+  }
+  revertToMark() {
+    /** Put every shape back as it was when the revert point was marked. */
+    if (!this.revertHeads || this.revertHeads.length === 0) throw new Error('no revert point marked yet');
+    this.tlDoc();
+    let c = hostDocLinker().revertShapesTo(this.docUrl, hostArray(this.revertHeads));
+    this.madeIds = [];
+    showNotifyMenu('reverted to ' + this.revertMarkedAt + ': ' + c.restored + ' restored, ' + c.deleted + ' removed, ' + c.added + ' re-created');
+  }
+  menuItems() {
+    let items = super.menuItems();
+    items.push('mark revert point');
+    items.push('revert canvas to mark' + (this.revertMarkedAt ? ' (' + this.revertMarkedAt + ')' : ''));
+    return items;
+  }
+  doMenuItem(item) {
+    if (item === 'mark revert point') return this.markRevertPoint();
+    if (item.startsWith('revert canvas to mark')) return this.revertToMark();
+    super.doMenuItem(item);
+  }
+  pollCanvas() {
+    let store;
+    try {
+      store = this.tlDoc().store;
+    } catch (err) {
+      return err.message;
+    }
+    if (!this.revertHeads) this.markRevertPoint();
+    let shapeCount = hostDocLinker().recordsOfType(this.docUrl, 'shape').length;
+    let p = hostDocLinker().state.presence[this.docUrl];
+    if (p && p.ids.length) return shapeCount + ' shapes · ' + p.ids.length + ' selected';
+    let made = 0;
+    for (let i = 0; i < this.madeIds.length; i++) if (store[this.madeIds[i]] != null) made++;
+    return shapeCount + ' shapes · ' + made + ' made here';
+  }
+  morphCopy() {
+    let copy = new TLDrawDocLinkMorph(this.docUrl);
+    copy.owner = null;
+    copy.applyAffineAsLocalTransform(this.localToWorldAffine());
+    if (this.zIndex != null) copy.zIndex = this.zIndex;
+    this.restartSteppingOnCopy(copy);
+    this.copyPartNameTo(copy);
+    return copy;
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+function openTodoItems() {
+  /** The open [ ] items of todoList(), continuation lines joined. */
+  let lines = String(todoList).split('\n');
+  let items = [];
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i].trim();
+    if (line.startsWith('*/')) break;
+    if (line.startsWith('[ ]')) items.push(line.slice(3).trim());
+    else if (line.startsWith('[')) items.push(null);
+    else if (items.length && items[items.length - 1] != null && line) items[items.length - 1] += ' ' + line;
+  }
+  return items.filter((s) => s != null);
+}
+
+// +----------------------------------+
+// |  System Browser Categories       |
+// +----------------------------------+
+// Edit classNamesInCategory() and methodNamesInCategory() to reorganize the
+// system browser. categoryForClassName / categoryForMethodName are derived.
+// Packages (e.g. QBF) may call registerBrowserCategoryClasses/Methods when loaded.
+// Extras live in per-user `$` maps (plain JS) so name-lists stay reliable in LM.
+$browserCategoryClassExtras = null;
+$browserCategoryMethodExtras = null;
+
+function browserCategoryClassExtras() {
+  if ($browserCategoryClassExtras == null) $browserCategoryClassExtras = {};
+  return $browserCategoryClassExtras;
+}
+function browserCategoryMethodExtras() {
+  if ($browserCategoryMethodExtras == null) $browserCategoryMethodExtras = {};
+  return $browserCategoryMethodExtras;
+}
+function mergeBrowserCategoryMaps(base, extras) {
+  /** Shallow merge of category→name-list maps; extras append without duplicating. */
+  let out = {};
+  let baseKeys = Object.keys(base || {});
+  for (let i = 0; i < baseKeys.length; i++) {
+    let k = baseKeys[i];
+    out[k] = (base[k] || []).slice();
+  }
+  let extraKeys = Object.keys(extras || {});
+  for (let i = 0; i < extraKeys.length; i++) {
+    let k = extraKeys[i];
+    if (!out[k]) out[k] = [];
+    let list = extras[k] || [];
+    for (let j = 0; j < list.length; j++) {
+      if (out[k].indexOf(list[j]) < 0) out[k].push(list[j]);
+    }
+  }
+  return out;
+}
+function registerBrowserCategoryClasses(category, names) {
+  /** Replace (or add) a package's class list for `category`. Called when a package loads. */
+  browserCategoryClassExtras()[category] = (names || []).slice();
+}
+function registerBrowserCategoryMethods(category, names) {
+  /** Replace (or add) a package's global-method list for `category`. Called when a package loads. */
+  browserCategoryMethodExtras()[category] = (names || []).slice();
+}
+function packageBrowserCategoryClassExtras() {
+  /**
+   * Registered extras plus any live package hooks (e.g. qbfBrowserCategoryClasses).
+   * Hooks mean a package can contribute categories just by being loaded.
+   */
+  let extras = browserCategoryClassExtras();
+  if (typeof qbfBrowserCategoryClasses === 'function')
+    extras = mergeBrowserCategoryMaps(extras, { QBF: qbfBrowserCategoryClasses() });
+  return extras;
+}
+function packageBrowserCategoryMethodExtras() {
+  let extras = browserCategoryMethodExtras();
+  if (typeof qbfBrowserCategoryMethods === 'function')
+    extras = mergeBrowserCategoryMaps(extras, { QBF: qbfBrowserCategoryMethods() });
+  return extras;
+}
+
+function classNamesInCategory() {
+  /**
+   * Map category name → class names in that category.
+   * This (with methodNamesInCategory) is the editable catalog; package extras merge in.
+   */
+  return mergeBrowserCategoryMaps(
+    {
+      'Classes and Objects': ['Map', 'Set'],
+      Geometry: ['Point', 'Rectangle', 'SimpleTransform', 'StepSpec'],
+      'Colors and Style': ['Color', 'HuePickerMorph', 'StylePane', 'StylePanel'],
+      'Basic Graphics': [
+        'Shape',
+        'Ellipse',
+        'PolyLine',
+        'ImageShape',
+        'Pen',
+        'TextCharSpec',
+        'TextLineSpec',
+        'TextBox',
+      ],
+      Morphs: [
+        'Morph',
+        'ImageMorph',
+        'EmojiMorph',
+        'LineMorph',
+        'SimpleButtonMorph',
+        'WorldMorph',
+      ],
+      'Text Lists and Menus': ['TextMorph', 'ListMorph', 'MenuMorph'],
+      Panes: ['ScrollPane', 'ListPane', 'TextPane', 'TranscriptTextPane', 'SliderMorph'],
+      Panels: [
+        'PanelTitleBar',
+        'PanelMorph',
+        'MethodPanel',
+        'BrowserPanel',
+        'InspectorPanel',
+        'MethodListPanel',
+        'ErrorStackPanel',
+        'TranscriptPanel',
+        'SessionLogPanel',
+      ],
+      'Hands and Halos': [
+        'HaloHandle',
+        'HaloMorph',
+        'HandMorph',
+        'LineVertexHandle',
+        'LineMidpointHandle',
+      ],
+      'On-screen keyboard': ['KbdKeyMorph', 'OnScreenKeyboardMorph'],
+      'Patchwork tools': ['TLDrawLinkMorph', 'TLDrawDocLinkMorph'],
+    },
+    packageBrowserCategoryClassExtras(),
+  );
+}
+
+function methodNamesInCategory() {
+  /**
+   * Map category name → global function names belonging with that category.
+   * Names not listed here surface under "Unclassified globals".
+   * Package extras (registerBrowserCategoryMethods) merge in at read time.
+   */
+  return mergeBrowserCategoryMaps(
+    {
+      'Classes and Objects': [
+        'isClass',
+        'findSuperclassOf',
+        'subclassDepth',
+        'allClassNames',
+        'classNamed',
+        'allClassNamesInSuperclassOrder',
+        'classStaticNames',
+        'classInstanceMemberNames',
+        'nameOfClass',
+        'allClassNamesWithStatics',
+        'classMemberRows',
+        'memberRowSortKey',
+        'accessorForRow',
+        'clearArray',
+        'collectionIndexKey',
+        'deleteFromArray',
+        'deleteFromArrayPred',
+        'ensureCollectionIndex',
+        'classNamesInCategory',
+        'methodNamesInCategory',
+        'categoryForClassName',
+        'categoryForMethodName',
+        'browserCategoryNames',
+        'browserCategoryClassExtras',
+        'browserCategoryMethodExtras',
+        'mergeBrowserCategoryMaps',
+        'registerBrowserCategoryClasses',
+        'registerBrowserCategoryMethods',
+        'packageBrowserCategoryClassExtras',
+        'packageBrowserCategoryMethodExtras',
+        'allGlobalFunctionNames',
+        'unclassifiedGlobalFunctionNames',
+        'classNamesForBrowserCategory',
+        'globalNamesForBrowserCategory',
+      ],
+      Geometry: [
+        'pt',
+        'ptPolar',
+        'rect',
+        'unionPts',
+        'viewportBounds',
+        'getBounds',
+        'newPanelLocation',
+        'newPanelRect',
+        'fleetingMenuAnchorPt',
+        'errorReportPanelBounds',
+        'testTransforms',
+        'affineIdentity',
+        'affineFromSimpleTransform',
+        'affineCompose',
+        'affineInvert',
+        'affineTransformPt',
+        'simpleTransformFromAffine',
+      ],
+      'Colors and Style': [
+        'hsvToColor',
+        'baseColorFromPaint',
+        'colorAlphaFromPaint',
+        'paintWithAlpha',
+        'colorsEqual',
+        'colorByStyleName',
+        'styleColorNames',
+        'styleNameForColor',
+        'styleSnapshotFromMorph',
+        'copyStyleSnapshot',
+        'styleSnapshotsEqual',
+        'applyStyleSnapshotToMorph',
+        'morphDefaultLineWidth',
+        'morphLineStyleIsBorder',
+        'lineWidthCaptionText',
+        'roundLineWidth',
+      ],
+      'Basic Graphics': [
+        'render',
+        'isHtmlCanvasLike',
+        'isHtmlImageLike',
+        'truncateString',
+        'dropNewline',
+      ],
+      Morphs: [
+        'morphWithId',
+        'morphNamed',
+        'worldPtHitsMorphOrSubmorphs',
+        'scrollPaneAtWorldPt',
+        'isScrollPaneMorph',
+        'initLively',
+        'populateLively',
+        'init',
+        'initUI',
+        'getUserName',
+      ],
+      'Text Lists and Menus': [
+        'menuItem',
+        'menuItemFrom',
+        'menuItemLabel',
+        'menuItemAction',
+        'menuItemCaption',
+        'menuToggleLabel',
+        'menuSeparatorDisplay',
+        'isMenuItemSpec',
+        'isMenuSeparator',
+        'expandMenuItemEntry',
+        'refreshWorldMenuItems',
+        'showFindNoMatchesMenu',
+        'showNotifyMenu',
+        'showPasteHistoryMenu',
+        'promptConfirmMenu',
+        'checkpointDownloadFileName',
+        'showCheckpointSavedNotice',
+        'downloadTextFile',
+        'checkpointToRepo',
+        'promptOkToCancelEditsMenu',
+      ],
+      'Clipboard and Paste': [
+        'addPasteBufferItem',
+        'latestPasteBufferItem',
+        'copyTextToOSClipboard',
+        'copyTextToOSClipboardExecCommand',
+      ],
+      Panes: [
+        'hitScrollPaneMenuButtonAt',
+        'fleetingPaneMenuForScrollPane',
+        'removeFleetingPaneMenuFor',
+        'paneMenuIsFrontmostForPanel',
+        'keyboardFocusBelongsToScrollPane',
+        'textPaneWithKeyboardFocus',
+        'classSelectorPaneMenuSpec',
+        'methodSelectorPaneMenuSpec',
+        'categorySelectorPaneMenuSpec',
+      ],
+      Panels: [
+        'browseRecentChanges',
+        'browseSavedChanges',
+        'browseGlobalMethod',
+        'todoList',
+        'openTranscript',
+        'openSessionLog',
+        'sessionLog',
+        'sessionNote',
+        'submitSessionPrompt',
+        'sessionLogPanelForTextBox',
+        'isSessionLogPromptTextBox',
+        'isSessionLogHistoryTextBox',
+        'findSessionLogPanel',
+        'sessionLogPanelIsInWorld',
+        'refreshOpenSessionLogs',
+        'openErrorStackPanel',
+      ],
+      'Hands and Halos': [],
+      'Pointer and keyboard events': [
+        'setPointerLocation',
+        'getPointerLocation',
+        'pointerEventCanvasLocalPt',
+        'onPointerDown',
+        'onPointerDownNow',
+        'onPointerMove',
+        'onPointerUp',
+        'onWheel',
+        'onKeyDown',
+        'onKeyPress',
+        'onKeyUp',
+        'effectiveShiftKey',
+        'effectiveMetaKey',
+        'isShiftKeyPressed',
+        'isMetaKeyPressed',
+        'isLockKeyPressed',
+        'setShiftKeyPressed',
+        'setMetaKeyPressed',
+        'setLockKeyPressed',
+        'consumeSoftShiftKey',
+        'consumeSoftMetaKey',
+        'toggleMetaKeyPressed',
+      ],
+      'On-screen keyboard': [
+        'defaultOnScreenKeyboardBounds',
+        'onScreenKeyboardBoundsForWorld',
+        'morphIsUnderOnScreenKeyboard',
+        'pressPadShiftKey',
+        'pressPadMetaKey',
+        'padModifierHighlightOn',
+        'clearOskPadModifierState',
+        'getKbdShiftTable',
+        'clearKeyboardFocusUnlessTypingOrOsk',
+        'pointerOnOskKeyUI',
+        'shouldShowOnScreenKeyboardForWorld',
+        'syncOnScreenKeyboardWithFocus',
+        'toggleOnScreenKeyboard',
+        'saveOnScreenKeyboardChrome',
+      ],
+      'Source and Errors': [
+        'constructorBodyFromSource',
+        'constructorBodyOf',
+        'isLegacyFunctionShow',
+        'looksLikeLegacyMethodText',
+        'replaceMethodCallString',
+        'parseReplaceMethodCallString',
+        'fragmentChangeSpec',
+        'fragmentForSpec',
+        'liveMethodPaneTextForSpec',
+        'deleteAccessorHalf',
+        'deleteClassNamed',
+        'deleteMethodWithSpec',
+        'methodFromSpec',
+        'methodSpecKey',
+        'methodSpecFromListLabel',
+        'methodListLabelForSpec',
+        'methodsContaining',
+        'allMethodSpecs',
+        'noteMethodChanges',
+        'exportPartsForSelection',
+        'exportStringForSelection',
+        'exportSelectionsForEntireSystem',
+        'exportMethodShouldOmit',
+        'exportEntireSystem',
+        'exportBootableSystemString',
+        'checkpointToRepo',
+        'downloadTextFile',
+        'viewExportedSystem',
+        'checkpointValueSource',
+        'checkpointOmitGlobalName',
+        'checkpointOmitClassFunName',
+        'isNativeFunctionSource',
+        'exportClassDataPropertyLines',
+        'exportTopLevelDataLines',
+        'ensureAlldefsSourceLines',
+        'alldefsSourceExcerpt',
+        'defsSourceFile',
+        'isDefsStackFile',
+        'isAlldefsStackFile',
+        'shortStackFileName',
+        'extractDefsLineFromFrame',
+        'extractAlldefsLineFromFrame',
+        'evaluateWithErrorRecovery',
+        'handleRuntimeError',
+        'presentError',
+        'recoverFromRuntimeError',
+        'formatErrorReport',
+        'errorReportHeader',
+        'errorPanelTitle',
+        'formatStackTraceForReport',
+        'formatStackFrameLine',
+        'parseStackFrameLine',
+        'stackFrameFromRawLine',
+        'stackFramesFromError',
+        'stackFrameListLabel',
+        'stackFrameLabelName',
+        'stackFrameHighlightName',
+        'stackFrameSourceText',
+        'stackNameToMethodSpec',
+        'stackTraceLines',
+        'scrubStackFrameUrls',
+        'triggerTestError',
+        'inspect',
+        'inspectString',
+        'log',
+        'hasTranscriptConsoleTargets',
+      ],
+      'Timing and Stats': ['msToRun', 'stats'],
+      Storage: [
+        'storageGetItem',
+        'storageKeys',
+        'storageSetItem',
+        'storageEditItem',
+        'automergeEnsureStore',
+        'automergeGetItem',
+        'automergeKeys',
+        'automergeSetItem',
+        'automergeEditItem',
+        'saveRecentChanges',
+        'recentChangesSince',
+        'recentDateStr',
+        'timeSheet',
+      ],
+      Ephemeral: [
+        'ephApplyMessage',
+        'ephApplyOverlayEntry',
+        'ephBroadcast',
+        'ephCommitLanded',
+        'ephDecodeValue',
+        'ephEncodeValue',
+        'ephFiniteNumber',
+        'ephNudgeSync',
+        'ephOverlayEntryFor',
+        'ephStreamEnd',
+        'ephStreamRegister',
+        'ephSweepOverlays',
+        'ephValidBoundsValue',
+        'ephValidPointValue',
+        'ephValidTransformValue',
+        'ephValidVerticesValue',
+        'flushEphemeralStream',
+        'processEphemeralInbound',
+      ],
+      'Patchwork tools': [
+        'toolAdapterRegistry',
+        'patchworkToolAdapters',
+        'toolAdapterForDoc',
+        'hostArray',
+        'hostObject',
+        'linkTLDraw',
+        'linkToDoc',
+        'automergeUrlFrom',
+        'hostDocLinker',
+        'hostDocLinkerSource',
+        'toHost',
+        'openTodoItems',
+      ],
+    },
+    packageBrowserCategoryMethodExtras(),
+  );
+}
+
+function categoryForClassName(className) {
+  /** Derived from classNamesInCategory(); null if unclassified. */
+  let map = classNamesInCategory();
+  let cats = Object.keys(map);
+  for (let i = 0; i < cats.length; i++) {
+    let list = map[cats[i]] || [];
+    if (list.indexOf(className) >= 0) return cats[i];
+  }
+  return null;
+}
+
+function categoryForMethodName(methodName) {
+  /** Derived from methodNamesInCategory(); null if unclassified. */
+  let map = methodNamesInCategory();
+  let cats = Object.keys(map);
+  for (let i = 0; i < cats.length; i++) {
+    let list = map[cats[i]] || [];
+    if (list.indexOf(methodName) >= 0) return cats[i];
+  }
+  return null;
+}
+
+function browserCategoryNames() {
+  /** Category names: class catalog order, then any method-only categories. */
+  let fromClasses = Object.keys(classNamesInCategory());
+  let fromMethods = Object.keys(methodNamesInCategory());
+  let seen = {};
+  let out = [];
+  for (let i = 0; i < fromClasses.length; i++) {
+    seen[fromClasses[i]] = true;
+    out.push(fromClasses[i]);
+  }
+  for (let i = 0; i < fromMethods.length; i++) {
+    if (!seen[fromMethods[i]]) out.push(fromMethods[i]);
+  }
+  return out;
+}
+
+function allGlobalFunctionNames() {
+  /** Same filter the system browser uses for the globals message list. */
+  return Object.getOwnPropertyNames($global)
+    .sort()
+    .filter((msg) => msg[0] == msg[0].toLowerCase())
+    .filter((msg) => typeof $global[msg] == 'function' && !isClass($global[msg]));
+}
+
+function unclassifiedGlobalFunctionNames() {
+  return allGlobalFunctionNames().filter((n) => categoryForMethodName(n) == null);
+}
+
+function classNamesForBrowserCategory(category) {
+  /**
+   * Class-pane entries for a browser category selection (without the leading 'globals').
+   * 'All' → every class; 'Unclassified globals' → none.
+   */
+  if (category === 'Unclassified globals') return [];
+  if (category === 'All' || category == null) return allClassNames();
+  let listed = classNamesInCategory()[category] || [];
+  let known = allClassNames();
+  return listed.filter((n) => known.indexOf(n) >= 0 || n === 'Object');
+}
+
+function globalNamesForBrowserCategory(category) {
+  /** Message-pane names when 'globals' is selected under the given category. */
+  if (category === 'All' || category == null) return allGlobalFunctionNames();
+  if (category === 'Unclassified globals') return unclassifiedGlobalFunctionNames();
+  let allowed = methodNamesInCategory()[category] || [];
+  let all = allGlobalFunctionNames();
+  return all.filter((n) => allowed.indexOf(n) >= 0);
+}
+
+function categorySelectorPaneMenuSpec(panel) {
+  /** Pane menu for the system-browser category strip. */
+  return {
+    items: () => {
+      let items = ['Browse category…', menuSeparator, 'All', 'Unclassified globals'];
+      let cats = browserCategoryNames();
+      if (cats.length > 0) {
+        items.push(menuSeparator);
+        for (let i = 0; i < cats.length; i++) items.push(cats[i]);
+      }
+      return items;
+    },
+    onSelect: (item, pane) => {
+      if (isMenuSeparator(item)) return;
+      if (item === 'Browse category…') return;
+      panel.setBrowserCategory(item);
+    },
+  };
+}
+
+function browserPanelDefaultExtent() {
+  /** Default System Browser size (same as {@link newPanelRect} / {@link BrowserPanel}). */
+  return pt(400, 300);
+}
+
+function browserPanelPaneSpecs() {
+  /**
+   * Fractional pane placement inside {@link BrowserPanel#paneLayoutBounds}.
+   * category + classNames stack on the left (40%); methodNames is the top-right
+   * band (60% × 40%); methodDefinition is the lower 60%.
+   */
+  return {
+    category: rect(0.0, 0.0, 0.4, 0.08),
+    classNames: rect(0.0, 0.08, 0.4, 0.32),
+    methodNames: rect(0.4, 0.0, 0.6, 0.4),
+    methodDefinition: rect(0.0, 0.4, 1.0, 0.6),
+  };
+}
+
+function browserPanelUserPaneBounds(contentBounds) {
+  /** Approximate user-view rectangles for the four browser panes, in the same
+   * coordinate space as `contentBounds` (panel-local content box). */
+  let box = contentBounds;
+  if (!box) {
+    let e = browserPanelDefaultExtent();
+    let th = typeof PanelTitleBar === 'function' && PanelTitleBar.prototype ? PanelTitleBar.prototype.HEIGHT : 24;
+    box = rect(0, th, e.x, Math.max(8, e.y - th));
+  }
+  let specs = browserPanelPaneSpecs();
+  return {
+    category: box.scaleRect(specs.category),
+    classNames: box.scaleRect(specs.classNames),
+    methodNames: box.scaleRect(specs.methodNames),
+    methodDefinition: box.scaleRect(specs.methodDefinition),
+  };
+}
+
 //  BrowserPanel
 // --------------
 // Class + method browser with list panes.
@@ -8172,8 +10190,10 @@ class BrowserPanel extends PanelMorph {
   constructor(initialBounds) {
     const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
+    this.selectedCategory = 'All';
     this.selectedClass = null;
     this.selectedMethod = null;
+    this.initCategoryPane();
     this.initClassPane();
     this.initMessagePane();
     this.initMethodPane();
@@ -8181,13 +10201,16 @@ class BrowserPanel extends PanelMorph {
     this.layoutChrome();
     this.relayoutContentPanes();
   }
+  classListForSelectedCategory() {
+    return ['globals'].concat(classNamesForBrowserCategory(this.selectedCategory || 'All'));
+  }
   deleteThisClass() {
     let className = this.selectedClassName();
     if (!className) return;
     if (!deleteClassNamed(className)) return;
     this.selectedClass = null;
     this.selectedMethod = null;
-    this.classPane.setList(['globals'].concat(allClassNamesWithStatics()));
+    this.refreshClassListForCategory();
     if (this.messagePane) this.messagePane.setList(['message names']);
     if (this.methodPane) this.methodPane.setText('Method text', { force: true });
     this.updateBrowserTitle();
@@ -8220,11 +10243,25 @@ class BrowserPanel extends PanelMorph {
     addPasteBufferItem(exportText);
     copyTextToOSClipboard(exportText);
   }
-  initClassPane() {
-    /** Class list (upper-left) in the system browser. */
+  initCategoryPane() {
+    /** Category strip above the class list only — message/method keep full height. */
     let panelBounds = this.paneLayoutBounds();
-    this.classPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 0.4, 0.4)));
-    this.classPane.setList(['globals'].concat(allClassNames()));
+    this.categoryPane = this.addMorph(new ListPane(panelBounds, browserPanelPaneSpecs().category));
+    this.categoryPane.setList([this.selectedCategory || 'All']);
+    this.categoryPane.setPaneMenu(categorySelectorPaneMenuSpec(this));
+    // One-item list: click (including re-click of the already-selected line) opens Browse category…
+    this.categoryPane.onSelect(() => {
+      let at =
+        getPointerLocation() ||
+        (this.categoryPane.paneMenuAnchorInWorld && this.categoryPane.paneMenuAnchorInWorld());
+      this.categoryPane.showPaneMenu(at, { fleeting: true });
+    });
+  }
+  initClassPane() {
+    /** Class list (upper-left, under category) in the system browser. */
+    let panelBounds = this.paneLayoutBounds();
+    this.classPane = this.addMorph(new ListPane(panelBounds, browserPanelPaneSpecs().classNames));
+    this.classPane.setList(this.classListForSelectedCategory());
     this.classPane.setPaneMenu(classSelectorPaneMenuSpec(this));
     this.classPane.onSelect((classSelection) => {
       let applyClass = () => {
@@ -8254,9 +10291,9 @@ class BrowserPanel extends PanelMorph {
     });
   }
   initMessagePane() {
-    /** Method name list (upper-right) in the system browser. */
+    /** Method name list (upper-right) — full height of the top band. */
     let panelBounds = this.paneLayoutBounds();
-    this.messagePane = this.addMorph(new ListPane(panelBounds, rect(0.4, 0.0, 0.6, 0.4)));
+    this.messagePane = this.addMorph(new ListPane(panelBounds, browserPanelPaneSpecs().methodNames));
     this.messagePane.setList(['message names']);
     this.messagePane.setPaneMenu(methodSelectorPaneMenuSpec(this));
     this.messagePane.onSelect((methodSelection, shiftKey) => {
@@ -8266,22 +10303,31 @@ class BrowserPanel extends PanelMorph {
         this.updateBrowserTitle();
         let methodString = null;
         let headerString = '';
-        let cls = this.selectedClassName() ? $global[this.selectedClassName()] : null;
-        if (this.selectedClass == 'globals') {           // Global methods
-          methodString = $global[this.selectedMethod].toString();
-          headerString = this.selectedMethod + ' = ';
+        let cls = this.selectedClassName() ? classNamed(this.selectedClassName()) : null;
+        if (this.selectedClass == 'globals') {
+          // Global methods
+          let gfn = $global[this.selectedMethod];
+          methodString =
+            typeof gfn == 'function'
+              ? gfn.toString()
+              : '// not a function: ' + this.selectedMethod + ' = ' + gfn;
+          headerString = typeof gfn == 'function' ? this.selectedMethod + ' = ' : '';
         } else if (this.selectedMethod === 'constructor') {
           // Class fragment; save installs it via replaceMethod (keeps the prototype).
           methodString = constructorBodyOf(cls);
-        } else if (/^(get|set) /.test(this.selectedMethod)) { // Accessor halves
+        } else if (/^(get|set) /.test(this.selectedMethod)) {
+          // Accessor halves
           let fn = accessorForRow(cls, this.selectedMethod);
           methodString = fn ? fn.toString() : '// missing accessor ' + this.selectedMethod;
-        } else if (this.selectedMethod.endsWith('*')) {  // Class methods
+        } else if (this.selectedMethod.endsWith('*')) {
+          // Class methods
           let name = this.selectedMethod.slice(0, -1);
           methodString = cls[name].toString();
           // Legacy-format statics keep the assignment form; fragments stand alone.
-          if (isLegacyFunctionShow(methodString)) headerString = this.selectedClass + '.' + name + ' = ';
-        } else {                                         // Proto methods
+          if (isLegacyFunctionShow(methodString))
+            headerString = this.selectedClass + '.' + name + ' = ';
+        } else {
+          // Proto methods
           methodString = cls.prototype[this.selectedMethod].toString();
           if (isLegacyFunctionShow(methodString))
             headerString = this.selectedClass + '.prototype.' + this.selectedMethod + ' = ';
@@ -8307,7 +10353,7 @@ class BrowserPanel extends PanelMorph {
   initMethodPane() {
     /** Editable method source (lower) in the system browser. */
     let panelBounds = this.paneLayoutBounds();
-    this.methodPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.4, 1.0, 0.6)));
+    this.methodPane = this.addMorph(new TextPane(panelBounds, browserPanelPaneSpecs().methodDefinition));
     this.methodPane.setText('Method text');
     // Class fragments in this pane save via replaceMethod (see the ctrl-S handler);
     // the globals pane and legacy '<spec> = function ...' text keep plain eval.
@@ -8347,14 +10393,13 @@ class BrowserPanel extends PanelMorph {
   messageListForSelection(classSelection) {
     /** Names shown in the message pane for a class-pane selection. */
     if (classSelection == 'globals') {
-      // Lowercase-first names only: classes get their own list entries.
-      return Object.getOwnPropertyNames($global)
-        .sort()
-        .filter((msg) => msg[0] == msg[0].toLowerCase());
+      return globalNamesForBrowserCategory(this.selectedCategory || 'All');
     }
     // Pin constructor at the top; methods, accessor halves ('get foo' / 'set foo'),
     // and statics (marked with '*') sorted by member name.
-    let cls = $global[classSelection.endsWith('.class') ? classSelection.split('.')[0] : classSelection];
+    let cls = classNamed(
+      classSelection.endsWith('.class') ? classSelection.split('.')[0] : classSelection,
+    );
     let rows = classSelection.endsWith('.class')
       ? classStaticNames(cls).map((each) => each + '*')
       : classMemberRows(cls).concat(classStaticNames(cls).map((each) => each + '*'));
@@ -8363,7 +10408,13 @@ class BrowserPanel extends PanelMorph {
       let kb = memberRowSortKey(b);
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
-    return classSelection.endsWith('.class') ? rows : ['constructor'].concat(rows);
+    // Runtime Object is not an ES class Fun — no editable constructor fragment.
+    if (classSelection === 'Object' || classSelection.endsWith('.class')) return rows;
+    return ['constructor'].concat(rows);
+  }
+  refreshClassListForCategory() {
+    if (!this.classPane) return;
+    this.classPane.setList(this.classListForSelectedCategory());
   }
   refreshMessageListForSelectedClass() {
     if (!this.selectedClass || !this.messagePane) return;
@@ -8403,11 +10454,35 @@ class BrowserPanel extends PanelMorph {
       new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), text, this.selectedClass),
     );
   }
+  setBrowserCategory(category) {
+    /** Switch the browser to a category (from the category pane menu). */
+    let cat = category != null ? '' + category : 'All';
+    this.selectedCategory = cat;
+    this.selectedClass = null;
+    this.selectedMethod = null;
+    if (this.categoryPane) this.categoryPane.setList([cat]);
+    this.refreshClassListForCategory();
+    if (this.messagePane) this.messagePane.setList(['message names']);
+    if (this.methodPane) this.methodPane.setText('Method text', { force: true });
+    this.stopMethodConflictWatch();
+    this.updateBrowserTitle();
+  }
+  browseClass(className) {
+    /**
+     * Open this browser on `className`: pick its category (or All), then select the class.
+     * Used by the halo B (Browse) handle.
+     */
+    if (!className) return this;
+    let cat = categoryForClassName(className) || 'All';
+    this.setBrowserCategory(cat);
+    if (this.classListForSelectedCategory().indexOf(className) < 0) this.setBrowserCategory('All');
+    if (this.classPane) this.classPane.setSelectionString(className);
+    return this;
+  }
   updateBrowserTitle() {
-    let t = 'System Browser';
-    if (this.selectedClass) t = this.selectedClass;
-    if (this.selectedMethod) t = this.selectedClass + ' ' + this.selectedMethod;
-    this.setPanelTitle(t);
+    let cat = this.selectedCategory || 'All';
+    if (this.selectedClass) this.setPanelTitle(cat + ': ' + this.selectedClass);
+    else this.setPanelTitle(cat === 'All' ? 'System Browser' : cat);
   }
   static new(...args) {
     return new this(...args);
@@ -8638,7 +10713,7 @@ class InspectorPanel extends PanelMorph {
     this.printPane = this.addMorph(new TextPane(panelBounds, rect(0.3, 0.0, 0.7, 0.6)));
     this.printPane.setText('Var value toString()');
     this.evalPane = this.addMorph(new TextPane(panelBounds, rect(0.0, 0.6, 1.0, 0.4)));
-    this.evalPane.setText('Eval here with this bound to this ' + this.target.className);
+    this.evalPane.setText("Eval here with 'this' bound to this " + this.target.className);
     this.evalPane.contentPane.setWorkspaceObj(this.target);
   }
   initVarsPane() {
@@ -8694,6 +10769,8 @@ class MethodListPanel extends PanelMorph {
   constructor(initialBounds, methodSpecs, recentMethodsIfAny, optionalTitle, searchStringIfAny) {
     const bounds = initialBounds != null ? initialBounds : newPanelRect(400, 300);
     super(bounds);
+    // Canonical specs (`Class.prototype.foo`, `Color.blue`, …). The list pane
+    // shows browser-style labels (`Class foo`, `Color blue*`); selection maps back.
     this.methodSpecs = methodSpecs;
     this.recents = recentMethodsIfAny;
     this.searchString = searchStringIfAny || null;
@@ -8711,7 +10788,7 @@ class MethodListPanel extends PanelMorph {
     if (!deleteMethodWithSpec(spec)) return;
     if (this.methodSpecs) {
       this.methodSpecs = this.methodSpecs.filter((s) => methodSpecKey(s) !== spec);
-      this.methodsPane.setList(this.methodSpecs);
+      this.refreshMethodsList();
     }
     if (this.printPane) this.printPane.setText('Selected method', { force: true });
     this._occurrenceLastSpec = null;
@@ -8728,9 +10805,10 @@ class MethodListPanel extends PanelMorph {
     /** Method-spec list (upper) for search results and recent changes. */
     let panelBounds = this.paneLayoutBounds();
     this.methodsPane = this.addMorph(new ListPane(panelBounds, rect(0.0, 0.0, 1.0, 0.4)));
-    this.methodsPane.setList(this.methodSpecs);
+    this.refreshMethodsList();
     this.methodsPane.setPaneMenu(methodSelectorPaneMenuSpec(this));
-    this.methodsPane.onSelect((spec, shiftKey) => {
+    this.methodsPane.onSelect((label, shiftKey) => {
+      let spec = this.specForListLabel(label);
       let applySpec = () => {
         // Fragment members display as bare class fragments (like the browser's
         // method pane) and re-save via replaceMethod through fragmentSaveClassName;
@@ -8746,7 +10824,7 @@ class MethodListPanel extends PanelMorph {
             fragmentClassName = parsed.className;
             preamble = '';
           } else {
-            preamble = spec.slice(0, spec.indexOf('[') - 1) + ' = ';
+            preamble = methodSpecKey(spec) + ' = ';
           }
         } else {
           let fragment = fragmentForSpec(spec);
@@ -8756,7 +10834,7 @@ class MethodListPanel extends PanelMorph {
             preamble = '';
           } else {
             methodString = methodFromSpec(spec);
-            preamble = spec + ' = ';
+            preamble = methodSpecKey(spec) + ' = ';
           }
         }
         this._fragmentClassName = fragmentClassName;
@@ -8765,7 +10843,7 @@ class MethodListPanel extends PanelMorph {
         this._occurrenceLastSpec = spec;
         // Search / occurrence lists only — not recent-changes (dated specs) or stacks.
         if (!this.recents && this.className !== 'ErrorStackPanel' && !spec.includes('['))
-          this.watchMethodAgainstPane(spec, this.printPane);
+          this.watchMethodAgainstPane(methodSpecKey(spec), this.printPane);
         else this.stopMethodConflictWatch();
         if (this.searchString)
           this.printPane.contentPane.shape.selectSearchString(this.searchString);
@@ -8784,7 +10862,11 @@ class MethodListPanel extends PanelMorph {
             ? replaceMethodCallString(fragmentClassName, '' + methodString)
             : preamble + methodString;
           Lively.addEphemeralMorph(
-            new MethodPanel(this.rectForSpawnedPanel(28, 320, 220), spawnText, spec),
+            new MethodPanel(
+              this.rectForSpawnedPanel(28, 320, 220),
+              spawnText,
+              methodListLabelForSpec(spec),
+            ),
           );
         }
       };
@@ -8793,7 +10875,10 @@ class MethodListPanel extends PanelMorph {
         this.promptOkToCancelEdits((okToCancel) => {
           if (!okToCancel) {
             if (this._occurrenceLastSpec != null)
-              this.methodsPane.setSelectionString(this._occurrenceLastSpec, true);
+              this.methodsPane.setSelectionString(
+                methodListLabelForSpec(this._occurrenceLastSpec),
+                true,
+              );
             return;
           }
           applySpec();
@@ -8822,7 +10907,9 @@ class MethodListPanel extends PanelMorph {
     return text;
   }
   methodCopyTitle() {
-    return this._occurrenceLastSpec || 'Method copy';
+    return this._occurrenceLastSpec
+      ? methodListLabelForSpec(this._occurrenceLastSpec)
+      : 'Method copy';
   }
   methodFromRecentSpec(spec) {
     let found = null;
@@ -8832,12 +10919,19 @@ class MethodListPanel extends PanelMorph {
     });
     return found;
   }
+  methodListLabels() {
+    return (this.methodSpecs || []).map((s) => methodListLabelForSpec(s));
+  }
   promptDeleteThisMethod() {
     let spec = this.selectedMethodSpec();
     if (!spec) return;
-    this.promptConfirm('Do you really want to delete ' + spec + '?', ' yes', ' NO', (ok) => {
+    let shown = methodListLabelForSpec(spec);
+    this.promptConfirm('Do you really want to delete ' + shown + '?', ' yes', ' NO', (ok) => {
       if (ok) this.deleteThisMethod();
     });
+  }
+  refreshMethodsList() {
+    if (this.methodsPane) this.methodsPane.setList(this.methodListLabels());
   }
   selectedMethodSpec() {
     if (this._occurrenceLastSpec) return methodSpecKey(this._occurrenceLastSpec);
@@ -8846,6 +10940,12 @@ class MethodListPanel extends PanelMorph {
     let ix = text.indexOf(' =');
     if (ix < 0) return null;
     return text.slice(0, ix).trim();
+  }
+  specForListLabel(label) {
+    let labels = this.methodListLabels();
+    let idx = labels.indexOf(label);
+    if (idx >= 0) return this.methodSpecs[idx];
+    return methodSpecFromListLabel(label);
   }
   spawnMethodCopyToWindow() {
     let text = this.methodCopyText();
@@ -8880,7 +10980,8 @@ class ErrorStackPanel extends MethodListPanel {
       );
     let self = this;
     this.methodsPane.onSelect(function (label, shiftKey) {
-      let idx = self.methodSpecs.indexOf(label);
+      let idx = self.methodListLabels().indexOf(label);
+      if (idx < 0) idx = self.methodSpecs.indexOf(label);
       if (idx >= 0) self.showStackFrame(idx);
       if (shiftKey && idx >= 0 && self.printPane) {
         let text = self.printPane.contentPane.shape.string;
@@ -8889,10 +10990,12 @@ class ErrorStackPanel extends MethodListPanel {
         );
       }
     });
-    if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodSpecs[0]);
+    if (this.stackFrames.length) this.methodsPane.setSelectionString(this.methodListLabels()[0]);
   }
   refreshStackSources() {
-    let idx = this.methodSpecs.indexOf(this._occurrenceLastSpec);
+    let labels = this.methodListLabels();
+    let idx = labels.indexOf(methodListLabelForSpec(this._occurrenceLastSpec));
+    if (idx < 0) idx = this.methodSpecs.indexOf(this._occurrenceLastSpec);
     if (idx < 0 && this.stackFrames.length) idx = 0;
     if (idx >= 0) this.showStackFrame(idx);
   }
@@ -8920,10 +11023,10 @@ class ErrorStackPanel extends MethodListPanel {
   }
 }
 
-//  TranscriptPanelMorph
+//  TranscriptPanel
 // ----------------------
 // Panel hosting a TranscriptTextPane.
-class TranscriptPanelMorph extends PanelMorph {
+class TranscriptPanel extends PanelMorph {
   constructor(initialBounds) {
     // Open with 'openTranscript()' ;
     // Show with 'Transcript.push("Hi there")' ;
@@ -8945,6 +11048,145 @@ class TranscriptPanelMorph extends PanelMorph {
   }
   setConsoleMirror(on) {
     if (this.transcriptPane) this.transcriptPane.setConsoleMirror(on);
+  }
+  remove() {
+    /**
+     * Title-bar close only removes the panel morph — it does not cascade
+     * remove() to the transcript pane — so disconnect mirroring here. Otherwise
+     * a closed console stays in `_transcriptConsoleTargets` and a later
+     * Open console cannot cleanly own the mirror alone.
+     */
+    if (this.transcriptPane) this.transcriptPane.setConsoleMirror(false);
+    if (typeof Console !== 'undefined' && Console === this) Console = null;
+    if (typeof Transcript !== 'undefined' && Transcript === this) Transcript = null;
+    return Morph.prototype.remove.call(this);
+  }
+  static new(...args) {
+    return new this(...args);
+  }
+}
+
+//  SessionLogPanel
+// ----------------------
+// Shared human↔agent session log (backed by Lively.sessionLogText).
+// Ephemeral chrome per replica — only the text is document-shared. Putting the
+// full panel tree in the doc caused recursive error cascades (tool panels
+// stair-stepping down the screen). Draft: Enter sends, Shift-Enter newline
+// (Cursor-style; no Send button). Detection uses owner-chain helpers — never $-flags.
+class SessionLogPanel extends TranscriptPanel {
+  constructor(initialBounds) {
+    super(initialBounds);
+    this.setPanelTitle('Session log — Enter to send');
+    this._lastSeenLog = null;
+    this._syncReentry = 0;
+    if (this.transcriptPane) {
+      this.transcriptPane.setConsoleMirror(false);
+      this.transcriptPane.boundsSpec = rect(0, 0, 1, 0.72);
+    }
+    this.initPromptPane();
+    this.layoutChrome();
+    this.relayoutContentPanes();
+    this.syncFromSharedLog(true);
+    this.focusPrompt();
+  }
+  initPromptPane() {
+    // Drop a leftover Send button from older session-log builds.
+    if (this.sendBtn) {
+      try {
+        if (typeof this.removeMorph === 'function') this.removeMorph(this.sendBtn);
+      } catch (_e) {}
+      this.sendBtn = null;
+    }
+    if (!this.promptPane) {
+      let panelBounds = this.paneLayoutBounds();
+      this.promptPane = this.addMorph(new TextPane(panelBounds, rect(0, 0.72, 1, 0.28)));
+      this.promptPane.setText('');
+      if (this.promptPane._savedTextSnapshot !== undefined) this.promptPane._savedTextSnapshot = '';
+    } else {
+      this.promptPane.boundsSpec = rect(0, 0.72, 1, 0.28);
+    }
+    return this.promptPane;
+  }
+  ensureSessionPromptUi() {
+    if (this.transcriptPane) this.transcriptPane.boundsSpec = rect(0, 0, 1, 0.72);
+    this.initPromptPane();
+    this.setPanelTitle('Session log — Enter to send');
+    this.layoutChrome();
+    this.relayoutContentPanes();
+    this.syncFromSharedLog(true);
+    this.focusPrompt();
+    return this;
+  }
+  focusPrompt() {
+    let world = this.world && this.world();
+    let morph = this.promptPane && this.promptPane.contentPane;
+    if (world && morph && world.setKeyboardFocus) world.setKeyboardFocus(morph);
+  }
+  relayoutContentPanes() {
+    if (this.collapsed) return;
+    let cb = this.paneLayoutBounds();
+    if (this.transcriptPane && this.transcriptPane.setPaneBoundsIn) this.transcriptPane.setPaneBoundsIn(cb);
+    if (this.promptPane && this.promptPane.setPaneBoundsIn) this.promptPane.setPaneBoundsIn(cb);
+  }
+  submitPrompt() {
+    let shape =
+      this.promptPane && this.promptPane.contentPane && this.promptPane.contentPane.shape;
+    let raw = shape ? String(shape.string || '') : '';
+    let msg = raw.replace(/^\s+|\s+$/g, '');
+    if (!msg) return false;
+    submitSessionPrompt(msg);
+    if (this.promptPane && this.promptPane.contentPane) {
+      this.promptPane.contentPane.setText('');
+      this.promptPane._savedTextSnapshot = '';
+    }
+    this.focusPrompt();
+    return true;
+  }
+  _isNearBottom() {
+    let pane = this.transcriptPane;
+    if (!pane || !pane.scrollBar || typeof pane.scrollBar.getValue !== 'function') return true;
+    let v = pane.scrollBar.getValue();
+    return v == null || v > 0.92;
+  }
+  syncFromSharedLog(forceScroll) {
+    if (this._syncReentry > 0) return;
+    this._syncReentry = (this._syncReentry || 0) + 1;
+    try {
+      let t = String((typeof Lively !== 'undefined' && Lively && Lively.sessionLogText) || '');
+      if (!forceScroll && t === this._lastSeenLog) return;
+      this._lastSeenLog = t;
+      let pane = this.transcriptPane;
+      let content = pane && pane.contentPane;
+      if (!content) return;
+      // Prefer TranscriptTextPane.setText (no scroll-to-top); fall back to content morph.
+      if (typeof pane.setText === 'function') pane.setText(t, { force: true });
+      else {
+        content.setText(t);
+        if (pane._savedTextSnapshot !== undefined) pane._savedTextSnapshot = t;
+      }
+      // Chat-style: pin once. Deferred pins + bounds hooks previously risked
+      // re-entrant layout during the same frame as presentError cascades.
+      if (pane._scrollTranscriptBottomQuiet) pane._scrollTranscriptBottomQuiet();
+      else if (typeof pane.scrollTranscriptToBottom === 'function') pane.scrollTranscriptToBottom();
+    } finally {
+      this._syncReentry--;
+      if (this._syncReentry < 0) this._syncReentry = 0;
+    }
+  }
+  sessionLogStep() {
+    // Kept for older live patches; sync is event-driven now (see ensureLocalSessionLogStepping).
+    this.syncFromSharedLog(false);
+  }
+  ensureLocalSessionLogStepping() {
+    // No 400ms poll — that path was burning Automerge ops. Local sessionLog()
+    // already calls refreshOpenSessionLogs; remotes hitch on externalChangeCount
+    // inside maybeRepairAfterMerge. Just clear any leftover stepper from old builds.
+    if (this.isStepping && this.isStepping('sessionLogStep')) this.stopStepping('sessionLogStep');
+  }
+  remove() {
+    this.stopStepping();
+    if (typeof SessionLog !== 'undefined' && SessionLog === this) SessionLog = null;
+    return super.remove();
   }
   static new(...args) {
     return new this(...args);
@@ -9022,13 +11264,9 @@ class HaloHandle extends Morph {
       // unrotated targets.)
       this.$scaleAnchorLocal = this.target.shape.getBounds().topLeft.copy();
       this.$scaleAnchorInOwner = this.target.transform.transformPt(this.$scaleAnchorLocal);
-      this.$scaleAnchorWorld = this.target.owner
-        ? this.target.owner.globalize(this.$scaleAnchorInOwner)
-        : this.$scaleAnchorInOwner.copy();
-      this.$scaleStartPointerWorld = worldP.copy();
       this.scaleTransformDrag = effectiveShiftKey(evt);
       this.$scaleStartTransform = this.target.transform.scale.copy();
-      // Start-of-drag frame for the resize preview (SimpleTransform.copy()
+      // Start-of-drag frame for the resize / transform-scale math (SimpleTransform.copy()
       // aliases its points, so build one with copies).
       let tfm = this.target.transform;
       this.$scaleStartTfm = new SimpleTransform(
@@ -9038,7 +11276,7 @@ class HaloHandle extends Morph {
       );
       this.$scaleStartShapeExtent = this.target.shape.getBounds().extent.copy();
       this.$scaleDesiredExtent = null;
-      // Where the grab started, in start-local coordinates. Resizing is
+      // Where the grab started, in start-local coordinates. Scaling is
       // RELATIVE: start extent + the handle's movement along the shape's own
       // axes. The handle sits on the halo frame, not on the shape's corner,
       // so snapping the corner to it would make a rotated morph's size jump
@@ -9070,52 +11308,37 @@ class HaloHandle extends Morph {
     this.moveBy(delta); // the handle itself tracks the pointer
     if (['Copy', 'Drag', 'Grab'].includes(this.handleName)) this.target.moveBy(delta);
     if (this.handleName == 'Scale') {
+      // Both modes stretch via transform.scale about the shape topLeft (re-pinned).
+      // Plain Z: preview only — dragEnded writes a real setBounds and restores scale.
+      // Shift-Z: keep the scale factors (independent sx/sy from local handle motion).
       let cornerPos = this.getBounds().center();
+      let cornerInOwner = this.target.owner ? this.target.owner.localize(cornerPos) : cornerPos;
+      let scrollY = this.target.$scrollOffsetY;
+      if (scrollY) cornerInOwner = pt(cornerInOwner.x, cornerInOwner.y - scrollY);
+      // Desired local extent from handle motion in the start-of-drag frame (relative,
+      // not corner-snapping — see the note at $scaleStartCornerLocal).
+      let localCorner = this.$scaleStartTfm.invertPt(cornerInOwner);
+      let ext = this.$scaleStartShapeExtent
+        .addPt(localCorner.subPt(this.$scaleStartCornerLocal))
+        .maxPt(pt(1, 1));
+      if (!this.scaleTransformDrag) this.$scaleDesiredExtent = ext;
+      let e0 = this.$scaleStartShapeExtent;
+      let s0 = this.$scaleStartTransform;
+      let sx = (s0.x * ext.x) / Math.max(e0.x, 0.001);
+      let sy = (s0.y * ext.y) / Math.max(e0.y, 0.001);
       if (this.scaleTransformDrag) {
-        // Uniform transform scale: ratio of the pointer's distance from the
-        // anchor (the shape's rendered topLeft corner, which stays fixed).
-        let startDist = Math.max(this.$scaleStartPointerWorld.dist(this.$scaleAnchorWorld), 1);
-        let r = p.dist(this.$scaleAnchorWorld) / startDist;
-        r = Math.max(0.05, Math.min(24, r));
-        this.target.transform.scale = pt(
-          this.$scaleStartTransform.x * r,
-          this.$scaleStartTransform.y * r,
-        );
-        // The transform scales about the morph's local origin; re-pin the
-        // anchor in owner coordinates (as setRotation does for the center).
-        let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
-        this.target.transform.translation = this.target.transform.translation.addPt(
-          this.$scaleAnchorInOwner.subPt(after),
-        );
-      } else {
-        // Resize preview: per-frame feedback lives ONLY on the ephemeral
-        // transform — the frozen shape is stretched via the scale, with the
-        // anchor re-pinned — so neither the shape nor any submorph relayout
-        // touches the document while the pointer moves. The one real
-        // setBounds (+ subclass relayout) happens in dragEnded.
-        let cornerInOwner = this.target.owner ? this.target.owner.localize(cornerPos) : cornerPos;
-        let scrollY = this.target.$scrollOffsetY;
-        if (scrollY) cornerInOwner = pt(cornerInOwner.x, cornerInOwner.y - scrollY);
-        // Desired final local extent: the start extent adjusted by the
-        // handle's movement, measured in the start-of-drag frame so the
-        // preview's own scale edits don't feed back into the math. (Relative,
-        // not corner-snapping — see the note at $scaleStartCornerLocal.)
-        let localCorner = this.$scaleStartTfm.invertPt(cornerInOwner);
-        let ext = this.$scaleStartShapeExtent
-          .addPt(localCorner.subPt(this.$scaleStartCornerLocal))
-          .maxPt(pt(1, 1));
-        this.$scaleDesiredExtent = ext;
-        let e0 = this.$scaleStartShapeExtent;
-        let s0 = this.$scaleStartTransform;
-        this.target.transform.scale = pt(
-          (s0.x * ext.x) / Math.max(e0.x, 0.001),
-          (s0.y * ext.y) / Math.max(e0.y, 0.001),
-        );
-        let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
-        this.target.transform.translation = this.target.transform.translation.addPt(
-          this.$scaleAnchorInOwner.subPt(after),
-        );
+        sx = Math.max(0.05, Math.min(24, sx));
+        sy = Math.max(0.05, Math.min(24, sy));
       }
+      let sc = this.target.transform.scale;
+      if (sc && sc.setToPt) sc.setToPt(pt(sx, sy));
+      else this.target.transform.scale = pt(sx, sy);
+      // Transform scales about the morph local origin; re-pin the anchor in owner space.
+      let after = this.target.transform.transformPt(this.$scaleAnchorLocal);
+      let pin = this.$scaleAnchorInOwner.subPt(after);
+      if (this.target.transform.translation.moveBy) this.target.transform.translation.moveBy(pin);
+      else
+        this.target.transform.translation = this.target.transform.translation.addPt(pin);
       if (this.target.syncBoundsFromGeometry) this.target.syncBoundsFromGeometry();
       this.target.changed();
       let world = this.target.world();
@@ -9331,7 +11554,8 @@ class HaloMorph extends Morph {
       case 'Browse': {
         let className = this.target && this.target.className ? this.target.className : 'Morph';
         let browser = Lively.addEphemeralMorph(new BrowserPanel());
-        browser.classPane.setSelectionString(className);
+        if (browser && browser.browseClass) browser.browseClass(className);
+        else if (browser && browser.classPane) browser.classPane.setSelectionString(className);
         break;
       }
       case 'Inspect':
@@ -9357,39 +11581,159 @@ class HaloMorph extends Morph {
 // +---------+
 // |  Hands  |
 // +---------+
-// Alt-drag hand morph for submorph pickup.
+// A hand is a user's cursor in the world: visible to everyone, persisted by no one.
+// Each session has exactly one, created on its first pointer event and kept in the
+// world's per-user $hands list (never the document); peers see it through the
+// ephemeral-message channel (see "Ephemeral interaction streaming"), which also
+// removes it when the user leaves. Alt-click picks up the morph under the hand,
+// Alt-click again drops it, Alt+Shift-click picks up a copy.
+
+function handColorIndexForSid(sid) {
+  /** Stable palette index for a session id, so a hand has the same color on every
+   * screen (the sender picks it and sends it as `ci`). */
+  let s = sid == null ? '' : String(sid);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  let n = $HAND_PALETTE && $HAND_PALETTE.length > 0 ? $HAND_PALETTE.length : 1;
+  return ((h % n) + n) % n;
+}
+function handColorForIndex(ci) {
+  let palette = $HAND_PALETTE;
+  if (!palette || palette.length === 0) return Color.red;
+  let n = palette.length;
+  let i = typeof ci === 'number' && Number.isInteger(ci) ? ((ci % n) + n) % n : 0;
+  return palette[i];
+}
 
 //  HandMorph
 // -----------
-// Alt-drag hand for picking up submorph trees.
+// Per-user object (a shadow, never promoted): every ordinary property write on it —
+// its transform included, once per pointer move — is free. The one rule: nothing
+// persistent may point at a hand through an ordinary property (`owner` above all),
+// or the GC would promote the hand into the document. So a hand never OWNS what it
+// carries; see carry().
 class HandMorph extends Morph {
   constructor(id, location, color) {
     super(null, new Pen().makeHandShape(location, color));
-    this.actorID = id;
-    // Per-hand last point for move deltas — must not share the world pointerLocation
-    // (WorldMorph updates that before/after hand moves).
+    this.actorID = id; // the user's Automerge actor id, for attribution lookups (handForID)
+    // The hotspot: where the pointer is. The hand's geometry keeps a fixed offset
+    // from it (moves are deltas), so this — not the bounds — is what goes on the wire.
+    // Must not share the world pointerLocation (WorldMorph updates that before/after
+    // hand moves), and never seeds it (construction is often at the world origin).
     this.$handPointerLocation = location ? location.copy() : this.location();
-    // Do not seed global pointerLocation from hand construction (often world origin).
+  }
+  hotspot() {
+    return this.$handPointerLocation ? this.$handPointerLocation : this.location();
+  }
+  moveHotspotTo(p) {
+    /** Put the hotspot at world-pt `p` by moving the whole hand (its geometry keeps
+     * its offset). Returns the delta moved. Used for my own pointer moves and for
+     * peers' hand messages alike. */
+    let d = p.subPt(this.hotspot());
+    this.$handPointerLocation = p;
+    if (d.x !== 0 || d.y !== 0) this.moveBy(d);
+    return d;
+  }
+  carrying() {
+    /** Morphs this (local) hand is carrying; lazily created, per-user. */
+    if (!this.$carrying) this.$carrying = [];
+    return this.$carrying;
+  }
+  isLaden() {
+    return this.$carrying != null && this.$carrying.length > 0;
+  }
+  carry(morph, anchorLocal) {
+    /**
+     * Pick `morph` up. It does NOT become my submorph: a persistent morph's `owner`
+     * edge would promote this per-user hand into the document, and peers (who have
+     * no copy of my hand) would watch the morph vanish. Instead it works like the
+     * halo's Grab handle: the morph becomes a world child at its current place,
+     * rides along on its ephemeral $transform (moveBy in onPointerMove), streams
+     * live to peers, and the document sees one write when it is dropped.
+     */
+    let world = this.world();
+    morph.reparentToOwnerPreservingWorldAnchor(world, anchorLocal);
+    morph.beTopMorph(); // above its siblings while in the air (op-free if already there)
+    morph.$handGrabAnchorLocal = anchorLocal;
+    morph.beginEphemeralTransform();
+    morph.$dragActorID = this.actorID; // drag-shadow tint (see Morph#renderOn)
+    morph.$carriedBy = this;
+    this.carrying().push(morph);
+    if (!morph.isEphemeralSubmorph()) ephStreamRegister(morph); // peers can't resolve ephemeral ids
   }
   dropMorph(p, evt) {
-    let worldPt = p ? p : this.location();
-    // Cargo can sit in either list: grabs preserve the morph's edge kind, so an
-    // ephemeral morph rides in the hand's $submorphs. (allSubmorphs is a fresh array.)
-    this.allSubmorphs().forEach((morphToDrop) => {
-      let anchorLocal = morphToDrop.$handGrabAnchorLocal;
-      if (!anchorLocal) anchorLocal = morphToDrop.shape.getBounds().topLeft;
-      morphToDrop.dropOnTopMorphAt(worldPt, anchorLocal);
-      morphToDrop.$handGrabAnchorLocal = null;
+    let worldPt = p ? p : this.hotspot();
+    let cargo = this.$carrying ? this.$carrying.slice() : [];
+    this.$carrying = [];
+    cargo.forEach((m) => {
+      let anchorLocal = m.$handGrabAnchorLocal;
+      if (!anchorLocal) anchorLocal = m.shape.getBounds().topLeft;
+      // Same order as the pointer-drag protocol (dragEnded, then finishPointerDrag):
+      // the drop reparents through the still-ephemeral transform, the commit lands
+      // it in the document, and the end message then carries the committed values.
+      m.dropOnTopMorphAt(worldPt, anchorLocal);
+      m.commitEphemeralTransform();
+      ephStreamEnd(m);
+      m.$handGrabAnchorLocal = null;
+      m.$dragActorID = null;
+      m.$carriedBy = null;
     });
   }
   grabMorph(p, evt) {
-    let worldPt = p ? p : this.location();
+    let worldPt = p ? p : this.hotspot();
     let morphUnder = this.world().topMorphAt(worldPt);
     if (!morphUnder || morphUnder === this || morphUnder.className == 'WorldMorph') return false;
-    let anchorLocal = morphUnder.localize(worldPt);
-    morphUnder.$handGrabAnchorLocal = anchorLocal;
-    morphUnder.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
+    this.carry(morphUnder, morphUnder.localize(worldPt));
     return true;
+  }
+  setCarryingIds(ids) {
+    /** Peers' hands only: the doc morphs (by id) the peer says it is carrying, so
+     * Morph#renderOn can tint their drag shadows with this hand's color. Ids that
+     * don't resolve yet (the morph hasn't synced in) are simply retried next time. */
+    let world = this.world();
+    let next = [];
+    if (ids != null) for (let i = 0; i < ids.length; i++) next.push(ids[i]);
+    let prev = this.$carryingIds;
+    if (prev && world)
+      prev.forEach((id) => {
+        if (next.includes(id)) return;
+        let m = morphWithId(world, id);
+        if (m && m.$carriedBy === this) m.$carriedBy = null;
+      });
+    if (world)
+      next.forEach((id) => {
+        let m = morphWithId(world, id);
+        if (m && (m.$carriedBy == null || m.$carriedBy === this)) m.$carriedBy = this;
+      });
+    this.$carryingIds = next.length > 0 ? next : null;
+  }
+  releaseCargo() {
+    /** This hand is going away: drop the tint edges it holds (both kinds). */
+    if (this.$carryingIds) this.setCarryingIds(null);
+    if (this.$carrying) {
+      this.$carrying.forEach((m) => {
+        if (m.$carriedBy === this) m.$carriedBy = null;
+      });
+      this.$carrying = [];
+    }
+  }
+  renderNameLabelOn(ctx) {
+    /** Small name tag beside a peer's hand, in the hand's color. World coords. */
+    let name = this.$name;
+    if (!name) return;
+    let loc = this.hotspot();
+    let color = this.handColor();
+    ctx.save();
+    ctx.font = '12px sans-serif';
+    ctx.textBaseline = 'top';
+    let w = ctx.measureText(name).width;
+    ctx.fillStyle = color && color.fillStyle ? color.fillStyle : 'black';
+    ctx.fillRect(loc.x + 12, loc.y + 22, w + 8, 16);
+    // Same rule as the hand's outline: black or white, whichever reads on this color.
+    ctx.fillStyle =
+      color && color.contrastingBlackOrWhite ? color.contrastingBlackOrWhite().fillStyle : 'white';
+    ctx.fillText(name, loc.x + 16, loc.y + 24);
+    ctx.restore();
   }
   handColor() {
     if (!this.shape) return null;
@@ -9406,40 +11750,43 @@ class HandMorph extends Morph {
   }
   onPointerDown(p, evt) {
     this.$hitPoint = p;
-    this.$handPointerLocation = p;
+    this.moveHotspotTo(p);
     setPointerLocation(p);
     // Hand operations are explicit (Alt-click), so normal clicks still edit/select panes.
-    // Switching active hand when clicking another is handled in WorldMorph.onPointerDown
-    // (hands live in world.hands, not the submorph tree, so inactive hands never get events).
     if (!evt.altKey) return false;
     if (evt.shiftKey) {
-      // Alt+Shift click means copy target into hand.
-      if (this.hasSubmorphs()) return false; // no sense to copy if laden
+      // Alt+Shift click means pick up a copy of the target.
+      if (this.isLaden()) return false; // no sense to copy if laden
       let morphUnder = this.world().topMorphAt(p);
       if (!morphUnder || morphUnder.className == 'WorldMorph' || morphUnder === this) return false;
-      let copy = morphUnder.morphCopy();
-      let anchorLocal = copy.localize(p);
-      copy.$handGrabAnchorLocal = anchorLocal;
-      copy.reparentToOwnerPreservingWorldAnchor(this, anchorLocal);
+      // Anchor in the source's local shape space (morphCopy keeps that geometry).
+      let anchorLocal = morphUnder.localize(p);
+      let copy = morphUnder.morphCopy(); // bakes world appearance; owner left null
+      // The fresh copy is in no submorph list yet, so it can't infer its edge kind —
+      // pass the original's, so ephemeral morphs copy as ephemeral (cf. HaloHandle Copy).
+      copy.reparentToOwnerPreservingWorldAnchor(
+        this.world(),
+        anchorLocal,
+        morphUnder.isEphemeralSubmorph(),
+      );
+      this.carry(copy, anchorLocal);
       return true;
     }
-    if (this.hasSubmorphs()) this.dropMorph(p, evt);
+    if (this.isLaden()) this.dropMorph(p, evt);
     else this.grabMorph(p, evt);
     return true;
   }
   onPointerMove(p, evt) {
-    let prev = this.$handPointerLocation ? this.$handPointerLocation : this.location();
-    let d = p.subPt(prev);
-    this.$handPointerLocation = p;
+    let d = this.moveHotspotTo(p);
     setPointerLocation(p);
-    this.moveBy(d);
-    // Submorphs ride under transform; do not move them separately.
+    // Cargo is not under my transform (see carry): move it by the same world delta.
+    if (this.$carrying && (d.x !== 0 || d.y !== 0)) this.$carrying.forEach((m) => m.moveBy(d));
   }
   onPointerUp(p, evt) {
-    this.$handPointerLocation = p;
+    this.moveHotspotTo(p);
     setPointerLocation(p);
     // $hitPoint is per-replica; it can be missing (e.g. after a reload while laden) — treat that as a drop.
-    if (this.hasSubmorphs() && (!this.$hitPoint || this.$hitPoint.dist(p) > 2)) this.dropMorph();
+    if (this.isLaden() && (!this.$hitPoint || this.$hitPoint.dist(p) > 2)) this.dropMorph(p, evt);
   }
   static new(...args) {
     return new this(...args);
@@ -9492,7 +11839,7 @@ function syncOnScreenKeyboardWithFocus(worldIfAny) {
   kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = true;
   world.addEphemeralMorph(kb); // OSK is per-user UI
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
 }
@@ -9513,7 +11860,7 @@ function toggleOnScreenKeyboard(worldIfAny) {
   let kb = new OnScreenKeyboardMorph(defaultOnScreenKeyboardBounds(world));
   kb._openedViaFocusSync = false;
   world.addEphemeralMorph(kb); // OSK is per-user UI
-  kb.startStepping('stepRefreshLockLabels', null, 200);
+  kb.startStepping(200, 'stepRefreshLockLabels');
   $onScreenKeyboardMorph = kb;
   _refreshPadModifierStyles();
   return kb;
@@ -10072,11 +12419,205 @@ function openTranscript() {
   let rh = Math.max(80, gb.height() / 2 - 2 * m);
   let rx = gb.width() / 2 + m / 2;
   let ry = m;
-  let panel = new TranscriptPanelMorph(rect(rx, ry, rw, rh));
+  let panel = new TranscriptPanel(rect(rx, ry, rw, rh));
   Lively.addEphemeralMorph(panel);
   panel.beTopMorph();
   return panel;
 }
+
+/** Max chars kept in the shared session log (AM-friendly). */
+let SESSION_LOG_MAX_CHARS = 120000;
+
+function sessionLogPreview(value, maxChars) {
+  let s = value == null ? '' : '' + value;
+  s = s.replace(/\s+/g, ' ').replace(/^\s+|\s+$/g, '');
+  let n = maxChars == null ? 140 : maxChars;
+  if (s.length <= n) return s;
+  return s.slice(0, n) + '…';
+}
+
+function sessionLogPanelForTextBox(box) {
+  /** Walk TextBox → TextMorph → … → SessionLogPanel. */
+  let m = box && box.morph;
+  while (m) {
+    if (m.className === 'SessionLogPanel') return m;
+    m = m.owner;
+  }
+  return null;
+}
+
+function isSessionLogPromptTextBox(box) {
+  let panel = sessionLogPanelForTextBox(box);
+  if (!panel || !panel.promptPane || !panel.promptPane.contentPane) return false;
+  return panel.promptPane.contentPane.shape === box;
+}
+
+function isSessionLogHistoryTextBox(box) {
+  let panel = sessionLogPanelForTextBox(box);
+  if (!panel || !panel.transcriptPane || !panel.transcriptPane.contentPane) return false;
+  return panel.transcriptPane.contentPane.shape === box;
+}
+
+/**
+ * Append a line to the shared session log (Lively.sessionLogText) and refresh open panels.
+ */
+function sessionLog(who, msg) {
+  let w = who == null ? '?' : '' + who;
+  let m = msg == null ? '' : '' + msg;
+  let stamp;
+  try {
+    stamp = new Date().toLocaleTimeString();
+  } catch (_e) {
+    stamp = '' + Date.now();
+  }
+  let line = '[' + stamp + '] ' + w + ': ' + m.replace(/\s+$/, '') + '\n';
+  if (typeof Lively === 'undefined' || !Lively) {
+    if (typeof console !== 'undefined' && console.log) console.log(line.replace(/\n$/, ''));
+    return line;
+  }
+  let prev = Lively.sessionLogText == null ? '' : '' + Lively.sessionLogText;
+  let next = prev + line;
+  let max = Number(SESSION_LOG_MAX_CHARS) || 120000;
+  if (next.length > max) next = next.slice(next.length - max);
+  Lively.sessionLogText = next;
+  refreshOpenSessionLogs(true);
+  return line;
+}
+
+function refreshOpenSessionLogs(forceScroll) {
+  let panel = findSessionLogPanel();
+  if (panel && typeof panel.syncFromSharedLog === 'function') panel.syncFromSharedLog(!!forceScroll);
+  if (typeof SessionLog !== 'undefined' && SessionLog && SessionLog !== panel && SessionLog.syncFromSharedLog) {
+    SessionLog.syncFromSharedLog(!!forceScroll);
+  }
+}
+
+function sessionLogPanelIsInWorld(panel) {
+  /**
+   * True when panel is under the real WorldMorph. Morph.world() returns `this`
+   * when unowned, so a detached panel looks "rooted" unless we check class /
+   * identity against Lively.
+   */
+  if (!panel || typeof panel.world !== 'function') return false;
+  let w = panel.world();
+  if (!w || w === panel) return false;
+  if (typeof Lively !== 'undefined' && Lively && w === Lively) return true;
+  return w.className === 'WorldMorph';
+}
+
+function findSessionLogPanel() {
+  if (typeof Lively === 'undefined' || !Lively) return null;
+  let lists = [];
+  try {
+    if (Lively.submorphs) lists.push(Lively.submorphs);
+  } catch (_e) {}
+  try {
+    if (typeof Lively.ephemeralSubmorphs === 'function') lists.push(Lively.ephemeralSubmorphs());
+  } catch (_e2) {}
+  for (let li = 0; li < lists.length; li++) {
+    let list = lists[li];
+    if (!list) continue;
+    for (let i = 0; i < list.length; i++) {
+      let m = list[i];
+      if (m && m.className === 'SessionLogPanel' && sessionLogPanelIsInWorld(m)) return m;
+    }
+  }
+  // Stale global from a prior open — only accept if still attached.
+  if (typeof SessionLog !== 'undefined' && SessionLog && sessionLogPanelIsInWorld(SessionLog)) {
+    return SessionLog;
+  }
+  return null;
+}
+
+function openSessionLog() {
+  /**
+   * Opens (or raises) the session log chrome on this replica (ephemeral).
+   * Log text lives in Lively.sessionLogText so peers share content without
+   * syncing the panel morph tree (which previously cascade-crashed).
+   */
+  try {
+    // Always drop prior SessionLogPanels (persistent leftovers from the brief
+    // addMorph experiment were invisible / menu no-ops after reload).
+    try {
+      let kill = function (m) {
+        if (!m || m.className !== 'SessionLogPanel') return;
+        try {
+          if (typeof m.stopStepping === 'function') m.stopStepping();
+        } catch (_s) {}
+        try {
+          if (typeof m.remove === 'function') m.remove();
+        } catch (_rm) {}
+      };
+      let pers = (Lively && Lively.submorphs) || [];
+      for (let i = pers.length - 1; i >= 0; i--) kill(pers[i]);
+      if (Lively && typeof Lively.ephemeralSubmorphs === 'function') {
+        let eph = Lively.ephemeralSubmorphs() || [];
+        for (let j = eph.length - 1; j >= 0; j--) kill(eph[j]);
+      }
+    } catch (_scan) {}
+    SessionLog = null;
+
+    let gb = getBounds();
+    if (!gb || !Lively) {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('openSessionLog: no world bounds or Lively');
+      }
+      return null;
+    }
+    let m = 8;
+    let rw = Math.max(160, gb.width() / 2 - 2 * m);
+    let rh = Math.max(120, gb.height() / 2 - 2 * m);
+    // Lower-right quadrant (mirrors transcript’s upper-right placement).
+    let rx = gb.width() - rw - m;
+    let ry = gb.height() - rh - m;
+    let panel = new SessionLogPanel(rect(rx, ry, rw, rh));
+    Lively.addEphemeralMorph(panel);
+    panel.beTopMorph();
+    if (typeof panel.ensureLocalSessionLogStepping === 'function') panel.ensureLocalSessionLogStepping();
+    if (typeof panel.ensureSessionPromptUi === 'function') panel.ensureSessionPromptUi();
+    SessionLog = panel;
+    if (!(Lively.sessionLogText || '').length) {
+      sessionLog(
+        'system',
+        'Session log opened. Type in the bottom draft; Enter sends, Shift-Enter for newline.',
+      );
+    } else {
+      panel.syncFromSharedLog(true);
+    }
+    return panel;
+  } catch (err) {
+    if (typeof console !== 'undefined' && console.error) {
+      console.error('openSessionLog failed', err);
+    }
+    // Do not call presentError here — menu/frame handlers already will, and a
+    // nested presentError was part of the stair-step cascade.
+    return null;
+  }
+}
+
+function sessionNote(msg) {
+  return sessionLog('Dan', msg);
+}
+
+/**
+ * Human prompt accept: append to the shared log and queue for the agent.
+ * Enter / Ctrl-S in the draft pane — never evaluates the prose as code.
+ */
+function submitSessionPrompt(msg) {
+  let text = msg == null ? '' : String(msg).replace(/^\s+|\s+$/g, '');
+  if (!text) return null;
+  sessionLog('Dan', text);
+  if (typeof Lively !== 'undefined' && Lively) {
+    if (!Lively.sessionPrompts) Lively.sessionPrompts = [];
+    Lively.sessionPrompts.push({
+      at: Date.now(),
+      text: text,
+    });
+    Lively.sessionPromptLatest = text;
+  }
+  return text;
+}
+
 //  WorldMorph
 // ------------
 // Root morph: pointer routing, halos, hands, world menu.
@@ -10095,16 +12636,47 @@ class WorldMorph extends Morph {
     this.$keyboardFocus = null;
     this.$pointerLocation = null; // last pointer in world coords; see setPointerLocation
     this.$shiftKeyDown = false; // maintained here
-    this.hands = null;
+    // Hands live in $hands (per-user, see ephemeralHands) — never a persistent slot.
   }
-  addHand(handMorph) {
-    // maybe should check for duplicate adds
-    if (!this.hands) this.hands = [];
-    if (handMorph.actorID == null) handMorph.actorID = $actorID;
-    this.hands.push(handMorph);
-    handMorph.owner = this;
+  addHand(hand) {
+    /** Register a hand (mine or a peer's) in the per-user list. The next frame's
+     * render draws it — no synchronous render here (headless callers have no ctx). */
+    hand.owner = this; // a shadow object's edge: free, and never promotes anything
+    this.ephemeralHands().push(hand);
     this.updateCursorForHands();
-    this.render(canvas.getContext('2d')); // hand should now appear
+    return hand;
+  }
+  ephemeralHands() {
+    /** The hands in this world — mine and my peers' — per-user and never in the
+     * document; lazily created, like {@link Morph#ephemeralSubmorphs}. */
+    if (!this.$hands) this.$hands = [];
+    return this.$hands;
+  }
+  localHand(p) {
+    /** This session's hand, created on first use with its hotspot at world-pt `p`
+     * (the pointer). Color from a hash of the session id, so peers agree. */
+    let hand = this.handForSid($ephSessionID);
+    if (hand) return hand;
+    if (p == null) p = getPointerLocation();
+    if (p == null) p = pt(0, 0);
+    let ci = handColorIndexForSid($ephSessionID);
+    hand = new HandMorph($actorID, p, handColorForIndex(ci));
+    hand.$sid = $ephSessionID;
+    hand.$isLocal = true;
+    hand.$colorIndex = ci;
+    return this.addHand(hand);
+  }
+  migrateLegacyHands() {
+    /** Hands used to be persistent (world.hands, created by an 'Init hand' menu
+     * item) — every pointer move was four document writes, and nothing ever removed
+     * them. Drop the old list: one register write, once per legacy document. Runs
+     * from maybeRepairAfterMerge, so a replica on old code re-adding hands gets
+     * undone too. */
+    if (this.hands != null) this.hands = null;
+  }
+  remoteHandCount() {
+    if (!this.$hands) return 0;
+    return this.$hands.filter((hand) => !hand.$isLocal).length;
   }
   cycleHaloAt(pt) {
     let candidates = this.morphsAtPointInDepthOrder(pt);
@@ -10162,38 +12734,26 @@ class WorldMorph extends Morph {
     return this.handForID(actorID);
   }
   handForID(id) {
-    if (!this.hands || this.hands.length == 0) return null;
-    let matched = this.hands.find((hand) => hand.actorID == id);
-    if (matched) return matched;
-    return null;
+    /** A hand of the user with Automerge actor id `id` (attribution: drag-shadow
+     * tint, unsaved-text borders), or null. A session that reloaded shows up with a
+     * new actor AND a new sid, so this is normally unique; if two sessions ever
+     * shared an actor this answers the first. */
+    if (id == null || !this.$hands || this.$hands.length == 0) return null;
+    let matched = this.$hands.find((hand) => hand.actorID == id);
+    return matched ? matched : null;
   }
-  handAt(pt, excludeIfAny) {
-    /** Frontmost hand whose bounds contain world-pt `pt`, optionally skipping one hand. */
-    if (!this.hands || this.hands.length == 0) return null;
-    for (let i = this.hands.length - 1; i >= 0; i--) {
-      let hand = this.hands[i];
-      if (excludeIfAny && hand === excludeIfAny) continue;
-      // Hands are owned by the world but not in submorphs; owner coords == world coords.
-      if (hand.fullBounds && hand.fullBounds().includesPt(pt)) return hand;
-    }
-    return null;
-  }
-  activateHand(hand, p, evt) {
-    /** Make `hand` the local active user (testing multi-hand). */
-    if (!hand) return false;
-    $actorID = hand.actorID;
-    if (evt) evt.actorID = hand.actorID;
-    // Avoid a jump on the first move after switching.
-    hand.$handPointerLocation = p ? p : getPointerLocation();
-    if (p) setPointerLocation(p);
-    return true;
+  handForSid(sid) {
+    /** The hand of session `sid` (a hand IS a session; see ephApplyHand), or null. */
+    if (sid == null || !this.$hands || this.$hands.length == 0) return null;
+    let matched = this.$hands.find((hand) => hand.$sid == sid);
+    return matched ? matched : null;
   }
   handleStepList() {
     // Fire all due specs without mutating stepList structure during iteration.
     // This avoids stepping corruption when other code calls stopStepping/removeMorph
     // while we're processing due steps.
     let now = Date.now();
-    let due = this.activeStepList().filter((spec) => spec.nextStepTime < now);
+    let due = this.activeStepList().filter((spec) => spec.$nextStepTime < now);
     due.forEach((spec) => {
       // If spec was removed during earlier step processing, skip it.
       if (!this.activeStepList().includes(spec)) return;
@@ -10212,17 +12772,18 @@ class WorldMorph extends Morph {
       // and the spec re-anchors at `now`.
       let maxCatchUpSteps = 4;
       let runs = 1;
-      spec.nextStepTime += spec.stepPeriod;
-      while (spec.stepPeriod > 0 && spec.nextStepTime < now && runs < maxCatchUpSteps) {
-        spec.nextStepTime += spec.stepPeriod;
+      spec.$nextStepTime += spec.$stepPeriod;
+      while (spec.$stepPeriod > 0 && spec.$nextStepTime < now && runs < maxCatchUpSteps) {
+        spec.$nextStepTime += spec.$stepPeriod;
         runs++;
       }
-      if (spec.nextStepTime < now) spec.nextStepTime = now + spec.stepPeriod;
+      if (spec.$nextStepTime < now) spec.$nextStepTime = now + spec.$stepPeriod;
       for (let i = 0; i < runs; i++) {
         // The step itself may stop or remove the stepper; don't run it again.
         if (i > 0 && !this.activeStepList().includes(spec)) return;
         try {
-          if (spec.arg) spec.stepMorph[spec.methodName](spec.arg);
+          let args = spec.$args != null ? spec.$args : [];
+          if (args.length > 0) spec.stepMorph[spec.methodName](...args);
           else spec.stepMorph[spec.methodName]();
         } catch (err) {
           let morphName = spec.stepMorph.className || 'Morph';
@@ -10248,22 +12809,6 @@ class WorldMorph extends Morph {
     });
     console.log('hitMorph ' + hitMorph.toString() + '/n at ' + pt.toString());
     return hitMorph; */
-  }
-  initHand(start) {
-    if (start == false) {
-      this.hands = null;
-      this.updateCursorForHands();
-      return;
-    }
-    if (!this.hands) this.hands = [];  //Means we're using hands
-    // for testing we give new hands IDs of 0, 1, 2, 3, 4, etc
-      let id = this.hands.length;
-      $actorID = id;  // now we act like another user N
-    let color = Color[['green', 'blue', 'red', 'yellow', 'cyan'][id%5]];
-    console.log('creating hand morph');
-    const hm = new HandMorph($actorID, getPointerLocation(), color);
-    console.log('adding hand morph');
-    this.addHand(hm);
   }
   isSteppingMorph(morph, methodName) {
     return this.activeStepList().some((spec) => {
@@ -10300,12 +12845,15 @@ class WorldMorph extends Morph {
     return false;
   }
   makeBouncer(shared) {
-    // Wandering-bug demo. Spawn is local; the bug is then made persistent so
-    // other replicas see it move (each moveTo writes Automerge — intentional
-    // for multi-screen demos / op-cost experiments). Step state stays $-local.
-    //  Lively.makeBouncer(true) 
-    //  Lively.makeBouncer(false) 
-    //  Lively.unMakeBouncer()
+    // Wandering-bug demo — UX viz of lean ephemeral motion in both modes.
+    //   Lively.makeBouncer()       — local only (ephemeral attach); motion is Automerge-free
+    //   Lively.makeBouncer(true)   — persistent morph so peers see it; motion still uses
+    //                                $transform + ephemeral streaming (not per-tick doc writes)
+    //   Lively.unMakeBouncer()     - recall the bugs one by one
+    //
+    // Attachment ephemerality alone is not enough for a *shared* bug: moveTo would
+    // rewrite _transform every tick. beginEphemeralTransform installs the same
+    // overlay drags use, so ticks stay $-local; ephStreamRegister lets peers watch.
 
     if (!$bouncers) $bouncers = [];
     let world = Lively;
@@ -10315,19 +12863,26 @@ class WorldMorph extends Morph {
     let bug = pen.bug;
     if (!bug) return null;
 
-    // withBug attaches ephemerally (cheap for spiral); 
-    if (shared && bug.bePersistent) bug.bePersistent();  // bug gets shared here
-    
+    // withBug attaches ephemerally; promote only when sharing across replicas.
+    if (shared && bug.bePersistent) bug.bePersistent();
+
     bug.$pen = pen;
     bug.$velocity = pt(Math.random() * 12 - 6, Math.random() * 12 - 6);
+    // Install $transform/$bounds before the first step so moveTo/rotation never
+    // touch _transform (critical for shared bugs; harmless for local ones).
+    if (bug.beginEphemeralTransform) bug.beginEphemeralTransform();
     bug.syncRotationToVelocity();
+    if (typeof ephStreamRegister === 'function') ephStreamRegister(bug);
     $bouncers.push(bug);
-    bug.startStepping('bouncerStep', null, 50);
+    bug.startStepping(50, 'bouncerStep');
     return bug;
   }
   unMakeBouncer() {
     if (!$bouncers || $bouncers.length === 0) return;
-    $bouncers.pop().remove();
+    let bug = $bouncers.pop();
+    if (typeof ephStreamEnd === 'function') ephStreamEnd(bug);
+    if (bug.commitEphemeralTransform) bug.commitEphemeralTransform();
+    bug.remove();
   }
   morphsAtPointInDepthOrder(pt) {
     // Return deepest hit morph first, then owner chain up toward world.
@@ -10349,7 +12904,8 @@ class WorldMorph extends Morph {
     return chain;
   }
   myHand() {
-    return this.handForID($actorID);
+    /** This session's hand, or null before its first pointer event (see localHand). */
+    return this.handForSid($ephSessionID);
   }
   onKeyDown(evt) {
     // Match browser modifier state (handles Shift+N and both Shift keys reliably).
@@ -10404,17 +12960,9 @@ class WorldMorph extends Morph {
       this.cycleHaloAt(p);
       return true;
     }
-    // Hands are drawn from this.hands, not the submorph tree. If the active hand
-    // (cursor) is over another hand, clicking it switches $actorID to that hand.
-    let activeHand = this.handForID(evt.actorID);
-    let handUnder = this.handAt(p, activeHand);
-    if (handUnder) {
-      this.activateHand(handUnder, p, evt);
-      return true;
-    }
-    // this.removeExistingHalos();  // OK here?
-    let hand = activeHand;
-    if (hand && evt.altKey) {
+    // My hand (drawn from $hands, not the submorph tree) takes Alt-clicks: pick up / drop.
+    let hand = this.localHand(p);
+    if (evt.altKey) {
       hand.onPointerDown(p, evt);
       return true;
     }
@@ -10436,19 +12984,16 @@ class WorldMorph extends Morph {
     return hit;
   }
   onPointerMove(p, evt) {
-    let hand = this.handForID(evt.actorID);
-    if (hand) {
-      // Hand must see the previous location to compute its delta; update shared
-      // pointerLocation only after the hand has moved.
-      hand.onPointerMove(p, evt);
-      setPointerLocation(p);
-    } else {
-      setPointerLocation(p);
-    }
+    // My hand follows the pointer (a delta move — it must see the previous location
+    // first, so the shared pointerLocation is updated after it). Per-user state
+    // only: the hand is a shadow object, so this costs no document writes.
+    let hand = this.localHand(p);
+    hand.onPointerMove(p, evt);
+    setPointerLocation(p);
     // Hover UI must track every move — including mid-drag ($pointerFocus set) and
     // while a hand carries morphs — so it runs before the early returns below.
     this.updateHoverUI(p);
-    if (hand && hand.hasSubmorphs()) return true;
+    if (hand.isLaden()) return true;
     if (this.$pointerFocus) {
       // pointerFocus expects pt in its owner's coords (e.g. SliderMorph in ListPane)
       let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
@@ -10458,12 +13003,10 @@ class WorldMorph extends Morph {
   }
   onPointerUp(p, evt) {
     setPointerLocation(p);
-    let hand = this.handForID(evt.actorID);
-    if (hand) {
-      let handHandled = hand.hasSubmorphs() || evt.altKey;
-      hand.onPointerUp(p, evt);
-      if (handHandled) return true;
-    }
+    let hand = this.localHand(p);
+    let handHandled = hand.isLaden() || evt.altKey;
+    hand.onPointerUp(p, evt);
+    if (handHandled) return true;
     let result;
     if (this.$pointerFocus) {
       let pForFocus = this.$pointerFocus.owner ? this.$pointerFocus.owner.localize(p) : p;
@@ -10497,23 +13040,33 @@ class WorldMorph extends Morph {
     });
     halos.forEach((halo) => halo.remove());
   }
-  removeHand(handMorph) {
-    this.hands = this.hands.filter((m) => m !== handMorph);
+  removeHand(hand) {
+    /** A peer left (its `bye`, or $HAND_TTL_MS of silence — see ephSweepHands). */
+    if (!this.$hands) return;
+    let ix = this.$hands.indexOf(hand);
+    if (ix >= 0) this.$hands.splice(ix, 1);
+    if (hand.releaseCargo) hand.releaseCargo();
     this.updateCursorForHands();
   }
   render(ctx) {
     this.handleStepList();
     this.renderOn(ctx);
-    if (this.hands)
-      this.hands.forEach((hand) => {
-        ctx.save();
-        const tfm = hand.transform;
-        ctx.translate(tfm.translation.x, tfm.translation.y);
-        ctx.rotate(tfm.rotation);
-        ctx.scale(tfm.scale.x, tfm.scale.y);
-        hand.renderOn(ctx);
-        ctx.restore();
-      });
+    // Hands last, so they sit above everything. Mine is drawn in place of the OS
+    // cursor (see updateCursorForHands) unless $DRAW_LOCAL_HAND is off.
+    let hands = this.$hands;
+    if (!hands || hands.length === 0) return;
+    let drawLocal = $DRAW_LOCAL_HAND !== false;
+    hands.forEach((hand) => {
+      if (hand.$isLocal && !drawLocal) return;
+      ctx.save();
+      const tfm = hand.transform;
+      ctx.translate(tfm.translation.x, tfm.translation.y);
+      ctx.rotate(tfm.rotation);
+      ctx.scale(tfm.scale.x, tfm.scale.y);
+      hand.renderOn(ctx);
+      ctx.restore();
+      if (!hand.$isLocal && hand.renderNameLabelOn) hand.renderNameLabelOn(ctx);
+    });
   }
   setKeyboardFocus(morphOrNull) {
     /*
@@ -10562,7 +13115,7 @@ class WorldMorph extends Morph {
     'B' - Browse: Open a browser to edit the code for this object
     'I' -  Inspect: Open an inspector on this object
     'Z' - Scale: Drag the handle to resize the object (changes bounds)
-    Shift-drag Z: drag to grow or shrink via transform.scale (shape and submorphs)
+    Shift-drag Z: scale via transform.scale (independent X/Y; shape and submorphs)
     Note that on platforms that do not offer meta keys, halos can still be accessed by enabling the "Long click for halos" option in the world menu.  This may occasionally prove bothersome when selecting in text, but you can always turn the feature off again.
     [Long-press is currently $LONG_CLICK_MS ==> 700 ms
     and $LONG_CLICK_MOVE_CANCEL_PX ==> 7 pixels]
@@ -10578,9 +13131,8 @@ class WorldMorph extends Morph {
         `MORPHIC
     The graphics model of this system is Morphic, and the UI is taken very closely from Squeak and Lively.
     All objects ("morphs") on the screen are in a tree of morphs (owners) and submorphs, similar to the parent/children structure of HTML.  The root of this tree is a WorldMorph, and any morph can access it with the method "world()".
-    Each user is associated with a "hand" that can pick up any morph (removing it from its prior owner (may be the "world")), and drop it on another object that then becomes its new owner. The hand is the sole source of pointer and keyboard events.
-    Every morph has a 2-D coordinate transform between its bounds (in its owner's oordinate system) and its submorphs and other graphical content)).
-    Please note: hands and transforms are not currently used`,
+    Each user is associated with a "hand" -- their cursor, drawn in their color and visible to everyone else in the world. Alt-click picks up the morph under the hand, Alt-click again drops it on the object underneath (which becomes its new owner), and Alt+Shift-click picks up a copy.
+    Every morph has a 2-D coordinate transform between its bounds (in its owner's coordinate system) and its submorphs and other graphical content.`,
         'Morphic help',
       ),
     );
@@ -10622,11 +13174,12 @@ class WorldMorph extends Morph {
      */
     let opts = optsIfAny || {};
     let items = [
-      menuItem('ToDo List', () => storageEditItem('ToDoList')),
+      menuItem('ToDo list', () => browseGlobalMethod('todoList')),
       menuItem('System browser', function () {
         this.world().addEphemeralMorph(new BrowserPanel());
       }),
       menuItem('Recent changes', () => browseRecentChanges()),
+      menuItem('Link TLDraw canvas', () => linkTLDraw()),
       menuItem('Morphic help', function () {
         this.world().showMorphicHelp();
       }),
@@ -10636,22 +13189,34 @@ class WorldMorph extends Morph {
       menuItem('Text help', function () {
         this.world().showTextHelp();
       }),
-      menuItem('Init hand', function () {
-        this.world().initHand(true);
-      }),
-      menuItem('Open Transcript', () => {
+    ];
+    if (typeof initFabrik === 'function') {
+      items.push(
+        menuItem('Open Fabrik', function () {
+          initFabrik();
+        }),
+      );
+    }
+    items = items.concat([
+      menuItem('Open transcript', () => {
         Transcript = openTranscript();
       }),
-      menuItem('Open Console', () => {
+      menuItem('Open session log', () => {
+        let p = openSessionLog();
+        if (!p && typeof console !== 'undefined' && console.warn) {
+          console.warn('Open session log: openSessionLog() returned null');
+        }
+      }),
+      menuItem('Open console', () => {
         let p = openTranscript();
         p.setPanelTitle('Console');
         p.transcriptPane.setConsoleMirror(true);
         Console = p;
         log('Console ready — use log(msg) or console.log(msg); errors also appear.');
       }),
-      menuItem('Restart Console', () => {
+      menuItem('Clear console', () => {
         let con = Console;
-        if (con && con.transcriptPane) con.transcriptPane.setConsoleMirror(true);
+        if (con && con.clear) con.clear();
       }),
       menuItem(menuToggleLabel(longClickForHalosLabel, $longClickForHalos), function () {
         $longClickForHalos = !$longClickForHalos;
@@ -10664,8 +13229,15 @@ class WorldMorph extends Morph {
         refreshWorldMenuItems(this);
         this.shape.selectLineAt(0);
       }),
-    ];
-    let menu = new MenuMorph(pos.extent(pt(220, 24 + items.length * 20)), items);
+      menuItem('Write checkpoint', function () {
+        let world = this.world();
+        let name = checkpointDownloadFileName();
+        let when = new Date().toLocaleString();
+        let bytes = checkpointToRepo(name);
+        showCheckpointSavedNotice(world, { name: name, when: when, bytes: bytes });
+      }),
+    ]);
+    let menu = new MenuMorph(pos.extent(pt(200, 24 + items.length * 20)), items);
     // Deselect after non-toggle actions (toggles refresh the list themselves).
     let priorSelect = menu.actionFn;
     menu.setSelectFn(function (item, shiftKey) {
@@ -10742,9 +13314,11 @@ class WorldMorph extends Morph {
     return walk(this, pt);
   }
   updateCursorForHands() {
-    let canvas = canvas ? canvas : null;
-    if (!canvas) return;
-    canvas.style.cursor = this.hands && this.hands.length > 0 ? 'none' : 'default';
+    /** My hand replaces the OS cursor while $DRAW_LOCAL_HAND is on. */
+    let c = typeof canvas !== 'undefined' ? canvas : null;
+    if (!c || !c.style) return;
+    let drawLocal = $DRAW_LOCAL_HAND !== false;
+    c.style.cursor = drawLocal && this.myHand() ? 'none' : 'default';
   }
   world() {
     // Note should be cleaner -- see other implementations
@@ -10752,6 +13326,12 @@ class WorldMorph extends Morph {
   }
   static new(...args) {
     return new this(...args);
+  }
+  pwmPing() {
+    // Tiny live-collab smoke: returns a string peers can eval; also flashes a note.
+    let note = new TextMorph(rect(420, 400, 280, 24), 'pong from Grok (live install)');
+    Lively.addMorph(note);
+    return 'pong';
   }
 }
 
@@ -10790,9 +13370,9 @@ function exportPartsForSelection(selection, optsIfAny) {
       });
     return { header, classDef, lines };
   }
-  let cls = $global[classSelection];
+  let cls = classNamed(classSelection);
   if (!cls || !cls.prototype) return null;
-  if (includeClassDef && isClass(cls)) classDef = cls.toString();
+  if (includeClassDef && isClass(cls) && cls !== Object) classDef = cls.toString();
   let lines = classMemberRows(cls)
     .map((row) => {
       let isAccessor = /^(get|set) /.test(row);
@@ -10824,7 +13404,7 @@ function exportSelectionsForEntireSystem() {
   let selections = ['globals'];
   allClassNamesInSuperclassOrder().forEach((className) => {
     selections.push(className);
-    if (classStaticNames($global[className]).length > 0) selections.push(className + '.class');
+    if (classStaticNames(classNamed(className)).length > 0) selections.push(className + '.class');
   });
   return selections;
 }
@@ -10836,7 +13416,7 @@ function methodFromSpec(spec) {
   // methodFromSpec('Point.constructor')           — the class constructor Fun itself
   let parts = spec.split('.');
   if (parts.length == 1) return $global[parts[0]];
-  let cls = $global[parts[0]];
+  let cls = classNamed(parts[0]);
   if (cls == null) return null;
   if (parts.length == 2 && parts[1] === 'constructor' && isClass(cls)) return cls;
   if (parts.length == 2) return cls[parts[1]];
@@ -10851,6 +13431,64 @@ function methodSpecKey(spec) {
   if (!spec) return spec;
   if (spec.includes('[')) return spec.slice(0, spec.indexOf('[') - 1).trim();
   return spec;
+}
+function methodListLabelForSpec(spec) {
+  /**
+   * Display label for method-list / search panels — matches system-browser title style:
+   *   'Rectangle.prototype.bottom'      -> 'Rectangle bottom'
+   *   'Morph.prototype.get transform'   -> 'Morph get transform'
+   *   'Color.blue'                      -> 'Color blue*'
+   *   'Point.constructor'               -> 'Point constructor'
+   *   'rect'                            -> 'rect'
+   * Recent-changes keep their date suffix: 'Rectangle bottom [10:15 …]'.
+   * Already-friendly labels (no dots / space form) are returned unchanged.
+   */
+  if (!spec) return spec;
+  let key = methodSpecKey(spec);
+  let dateSuffix = '';
+  if (spec !== key && String(spec).includes('[')) {
+    dateSuffix = String(spec).slice(String(spec).indexOf('[') - 1);
+  }
+  let parts = key.split('.');
+  let label;
+  if (parts.length === 1) {
+    label = key;
+  } else if (parts.length === 2 && parts[1] === 'constructor') {
+    label = parts[0] + ' constructor';
+  } else if (parts.length === 2) {
+    // Class.staticName — browsers mark statics with a trailing '*'.
+    label = parts[0] + ' ' + parts[1] + '*';
+  } else if (parts.length >= 3 && parts[1] === 'prototype') {
+    // Class.prototype.member — member may be 'get foo' / 'set foo'.
+    label = parts[0] + ' ' + parts.slice(2).join('.');
+  } else if (parts.length >= 3 && (parts[1] === 'proto' || parts[1] === 'class')) {
+    // Legacy alldefs-style specs.
+    label = parts[0] + ' ' + parts.slice(2).join('.') + (parts[1] === 'class' ? '*' : '');
+  } else {
+    label = key;
+  }
+  return label + dateSuffix;
+}
+function methodSpecFromListLabel(label) {
+  /**
+   * Reverse of methodListLabelForSpec (without a date suffix). Prefer looking up
+   * via MethodListPanel.methodSpecs when available — this is a fallback.
+   */
+  if (!label) return label;
+  let base = String(label);
+  if (base.includes('[')) base = base.slice(0, base.indexOf('[') - 1).trim();
+  if (base.endsWith('*')) {
+    let body = base.slice(0, -1);
+    let sp = body.indexOf(' ');
+    if (sp < 0) return body;
+    return body.slice(0, sp) + '.' + body.slice(sp + 1);
+  }
+  let sp = base.indexOf(' ');
+  if (sp < 0) return base;
+  let className = base.slice(0, sp);
+  let member = base.slice(sp + 1);
+  if (member === 'constructor') return className + '.constructor';
+  return className + '.prototype.' + member;
 }
 function deleteMethodWithSpec(spec) {
   /** Remove a live method by spec (`Morph.prototype.foo`, `Color.gray`, `init`, …). */
@@ -10867,7 +13505,7 @@ function deleteMethodWithSpec(spec) {
     else if (parts.length == 3 && parts[1] == 'prototype') {
       // Also drop the class-Fun mirror (the transpiler stores instance methods on
       // the class object too); otherwise the name would resurface as a bogus static.
-      let cls = $global[parts[0]];
+      let cls = classNamed(parts[0]);
       if (cls[parts[2]] === cls.prototype[parts[2]]) delete cls[parts[2]];
       delete cls.prototype[parts[2]];
     } else return false;
@@ -10878,7 +13516,8 @@ function deleteMethodWithSpec(spec) {
   }
 }
 function deleteClassNamed(className) {
-  if (!className || className == 'globals' || !$global[className]) return false;
+  if (!className || className == 'globals' || className == 'Object' || !$global[className])
+    return false;
   try {
     delete $global[className];
     return true;
@@ -10889,32 +13528,61 @@ function deleteClassNamed(className) {
 }
 function methodsContaining(searchString) {
   // methodsContaining('Pane').length
+  // methodsContaining('blue') includes Color.blue (class constants / non-fn statics)
   let lcKey = searchString.toLowerCase(); //For case-insensitive compare
   let found = [];
   allMethodSpecs().forEach((spec) => {
+    let specLc = spec.toLowerCase();
+    // Spec names always count — allMethodSpecs includes class constants such as
+    // Color.blue, which are not functions and have no searchable method body.
+    if (specLc.indexOf(lcKey) >= 0) {
+      found.push(spec);
+      return;
+    }
     let method = methodFromSpec(spec);
     if (typeof method !== 'function') return;
     let bodyLc = method.toString().toLowerCase();
-    let specLc = spec.toLowerCase();
-    if (bodyLc.indexOf(lcKey) >= 0 || specLc.indexOf(lcKey) >= 0) found.push(spec);
+    if (bodyLc.indexOf(lcKey) >= 0) found.push(spec);
   });
   return found;
 }
-function showFindNoMatchesMenu(world, pt, searchString) {
+function showFindNoMatchesMenu(world, atIfAny, searchString) {
   /** Fleeting notifier for find-in-methods when there are zero hits (no panel required). */
-  if (!world) return;
   let term = '' + (searchString != null ? searchString : '');
   let msg =
     "no occurrences of '" + term.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "' were found";
-  let menu = new MenuMorph(
-    rect(pt.x, pt.y, Math.max(280, 24 + Math.min(msg.length, 80) * 7), 48),
-    [msg],
-    function () {
-      menu.remove();
-    },
-  );
+  return showNotifyMenu(msg, atIfAny, world);
+}
+function showNotifyMenu(msg, atIfAny, worldIfAny) {
+  /**
+   * showNotifyMenu('Hello') — one-line fleeting notice, dismissed by clicking it.
+   * Opens at the pointer, else at atIfAny, else mid-screen; always wholly on screen.
+   */
+  let world = worldIfAny || Lively;
+  if (!world) return null;
+  msg = '' + msg;
+  let w = Math.max(280, 24 + Math.min(msg.length, 80) * 7);
+  let menu = new MenuMorph(rect(0, 0, w, 48), [msg], function () {
+    menu.remove();
+  });
   menu.isFleetingMenu = true;
   world.addEphemeralMorph(menu);
+  // setList during construction can disturb bounds, so measure after adding.
+  let mb = menu.getBounds();
+  let mw = mb.width();
+  let mh = mb.height();
+  let screen = getBounds();
+  let pos = getPointerLocation();
+  let at;
+  if (pos) at = pt(pos.x + 3, pos.y + 2);
+  else if (atIfAny != null) at = pt(atIfAny.x, atIfAny.y);
+  else at = pt(screen.center().x - mw / 2, screen.center().y - mh / 2);
+  let s0 = screen.topLeft;
+  let x = Math.max(s0.x, Math.min(at.x, s0.x + screen.width() - mw));
+  let y = Math.max(s0.y, Math.min(at.y, s0.y + screen.height() - mh));
+  menu.setBounds(rect(x, y, mw, mh));
+  if (world.promote) world.promote(menu);
+  return menu;
 }
 function noteMethodChanges(evalString) {
   /* recentChanges is an array of triples as in the last line here
@@ -11018,7 +13686,7 @@ function allMethodSpecs() {
       if (typeof $global[name] == 'function' && !isClass($global[name])) methodSpecs.push(name);
     });
   allClassNamesInSuperclassOrder().forEach((className) => {
-    let cls = $global[className];
+    let cls = classNamed(className);
     classMemberRows(cls).forEach((row) => {
       methodSpecs.push(className + '.prototype.' + row);
     });
@@ -11029,34 +13697,317 @@ function allMethodSpecs() {
   });
   return methodSpecs;
 }
-function exportEntireSystem() {
-  // exportEntireSystem() — full system source; viewExportedSystem() to browse
-  let parts = exportSelectionsForEntireSystem().map((selection) =>
-    exportStringForSelection(selection, { includeHeader: true, includeClassDef: true }),
+function checkpointValueSource(v) {
+  /** Best-effort JS source for a non-function value in a checkpoint file. */
+  if (v === null) return 'null';
+  if (v === undefined) return 'undefined';
+  let t = typeof v;
+  if (t === 'number' || t === 'boolean') return String(v);
+  if (t === 'string') return JSON.stringify(v);
+  if (t === 'function') return null;
+  // LM arrays throw on unknown property reads (e.g. `.r`) — detect before Color check.
+  try {
+    if (typeof v.length === 'number' && typeof v.push === 'function' && !v.fillStyle) {
+      try {
+        return JSON.stringify(v);
+      } catch (eArr) {
+        return 'null /* checkpoint: unsaved array */';
+      }
+    }
+  } catch (eLen) {}
+  // Color (and Color-like) swatches
+  try {
+    if (v && typeof v.r === 'number' && typeof v.g === 'number' && typeof v.b === 'number') {
+      return 'new Color(' + v.r + ', ' + v.g + ', ' + v.b + ')';
+    }
+  } catch (eColor) {}
+  if (v && typeof v.toString === 'function') {
+    try {
+      let s = v.toString();
+      if (/^(pt\(|rect\(|new |Color\.)/.test(s)) return s;
+    } catch (e) {}
+  }
+  try {
+    return JSON.stringify(v);
+  } catch (e2) {
+    return 'null /* checkpoint: unsaved ' + t + ' */';
+  }
+}
+function checkpointOmitGlobalName(name) {
+  /** Host / runtime globals that must not be rewritten into a checkpoint file. */
+  if (exportMethodShouldOmit(name)) return true;
+  if (name && name.charAt(0) === '$') return true;
+  let omit = {
+    Date: 1,
+    Number: 1,
+    String: 1,
+    RegExp: 1,
+    Promise: 1,
+    Array: 1,
+    Object: 1,
+    Boolean: 1,
+    Error: 1,
+    Math: 1,
+    JSON: 1,
+    console: 1,
+    parseInt: 1,
+    parseFloat: 1,
+    isNaN: 1,
+    isFinite: 1,
+    eval: 1,
+    undefined: 1,
+    NaN: 1,
+    Infinity: 1,
+    global: 1,
+    window: 1,
+    document: 1,
+    canvas: 1,
+    ctx: 1,
+    localStorage: 1,
+    setTimeout: 1,
+    clearTimeout: 1,
+    setInterval: 1,
+    clearInterval: 1,
+    requestAnimationFrame: 1,
+    cancelAnimationFrame: 1,
+    Automerge: 1,
+    handle: 1,
+    runtime: 1,
+    Lively: 1,
+    topLevelMorph: 1,
+  };
+  return !!omit[name];
+}
+function exportClassDataPropertyLines(className, cls) {
+  /**
+   * Non-function class and prototype data (Color.red, PanelTitleBar.prototype.HEIGHT, …).
+   * Returns a single string block (not an array) for safe use under LM.
+   */
+  let block = '';
+  let appendLine = function (line) {
+    block = block.length === 0 ? line : block + '\n' + line;
+  };
+  let own = Object.getOwnPropertyNames(cls);
+  for (let i = 0; i < own.length; i++) {
+    let name = own[i];
+    if (checkpointOmitClassFunName(name) || name === 'new') continue;
+    if (cls.prototype && cls.prototype[name] === cls[name]) continue;
+    let v = cls[name];
+    if (typeof v === 'function') continue;
+    let src = checkpointValueSource(v);
+    if (src == null) continue;
+    appendLine(className + '.' + name + ' = ' + src + ';');
+  }
+  if (cls.prototype) {
+    let protoNames = Object.getOwnPropertyNames(cls.prototype);
+    for (let j = 0; j < protoNames.length; j++) {
+      let name = protoNames[j];
+      if (name === 'constructor' || name === 'className') continue;
+      let desc = Object.getOwnPropertyDescriptor(cls.prototype, name);
+      if (!desc || desc.get || desc.set) continue;
+      if (typeof desc.value === 'function') continue;
+      let src = checkpointValueSource(desc.value);
+      if (src == null) continue;
+      appendLine(className + '.prototype.' + name + ' = ' + src + ';');
+    }
+  }
+  return block;
+}
+function exportTopLevelDataLines() {
+  /** Snapshot of important non-function globals the demo world expects before init. */
+  // Build with string concat only — LM `[]` is an Automerge array.
+  let block = '';
+  let appendLine = function (line) {
+    block = block.length === 0 ? line : block + '\n' + line;
+  };
+  let consider = function (name) {
+    let v;
+    try {
+      v = $global[name];
+    } catch (e) {
+      return;
+    }
+    if (v === undefined) return;
+    if (typeof v === 'function') return;
+    let src = checkpointValueSource(v);
+    if (src == null) return;
+    appendLine(name + ' = ' + src + ';');
+  };
+  consider('menuItemMaxChars');
+  consider('menuSeparator');
+  consider('paneSelectionMenuNarrowBy');
+  consider('paneSelectionMenuMinWidth');
+  consider('longClickForHalosLabel');
+  consider('onScreenKeyboardLabel');
+  consider('TRANSCRIPT_KEEP_LEN');
+  consider('TRANSCRIPT_MAX_BEFORE_TRUNC');
+  consider('TRANSCRIPT_MARKER_RECURSIVE');
+  consider('TRANSCRIPT_MARKER_STOPPED');
+  consider('pasteBufferItems');
+  consider('kbdDefaultShiftTable');
+  consider('kbdShiftTable');
+  // Cascading panel placement (world-menu browsers / help / inspector).
+  consider('panelLocation');
+  consider('panelLocationDelta');
+  consider('NEWDEFS_WRITTEN_ON');
+  consider('traceMe');
+  consider('debugReparent');
+  if (block.length === 0) return '';
+  return block;
+}
+function exportBootableSystemString() {
+  /**
+   * Full system source suitable for re-eval under the Livelymerge runtime
+   * (classes first, then globals, Color data statics, trailing init).
+   * Unlike the flat browser export, this skips host natives and emits class data.
+   * Builds with string concat (not arrays) — LM `[]` is an Automerge array and
+   * join/forEach on it is unsafe for a multi-hundred-KB export.
+   */
+  let out = '';
+  let append = (s) => {
+    if (s == null || s === '') return;
+    out = out.length === 0 ? s : out + '\n\n' + s;
+  };
+  append(
+    '// xdefs.js — live-system checkpoint ' +
+      new Date().toISOString() +
+      '\n// Generated by checkpointToRepo(). Load via the LM runtime (replaceMethod in scope).',
   );
-  let text = parts.filter((part) => part && part.length > 0).join('\n\n');
-  storageSetItem('system.export', text);
-  storageSetItem('system.export.timestamp', new Date().toLocaleString());
+  append('$uiState = null;');
+  let classNames = allClassNamesInSuperclassOrder();
+  for (let ci = 0; ci < classNames.length; ci++) {
+    let className = classNames[ci];
+    if (className === 'Object') continue;
+    let cls = classNamed(className);
+    if (!cls || !isClass(cls)) continue;
+    append('// ----- ' + className + ' -----');
+    append(cls.toString());
+    let rows = classMemberRows(cls);
+    for (let ri = 0; ri < rows.length; ri++) {
+      let row = rows[ri];
+      let isAccessor = /^(get|set) /.test(row);
+      let name = isAccessor ? row.slice(4) : row;
+      if (exportMethodShouldOmit(name)) continue;
+      let fn = isAccessor ? accessorForRow(cls, row) : cls.prototype[row];
+      if (typeof fn != 'function') continue;
+      let src = fn.toString();
+      if (isNativeFunctionSource(src)) continue;
+      if (!isLegacyFunctionShow(src)) {
+        append(replaceMethodCallString(className, src) + ';');
+        continue;
+      }
+      if (!isAccessor) append(className + '.prototype.' + row + ' = ' + src + ';');
+    }
+    let statics = classStaticNames(cls);
+    for (let si = 0; si < statics.length; si++) {
+      let name = statics[si];
+      if (typeof cls[name] !== 'function') continue;
+      if (exportMethodShouldOmit(name)) continue;
+      let src = cls[name].toString();
+      if (isNativeFunctionSource(src)) continue;
+      if (!isLegacyFunctionShow(src)) {
+        append(replaceMethodCallString(className, src) + ';');
+        continue;
+      }
+      append(className + '.' + name + ' = ' + src + ';');
+    }
+    let dataLines = exportClassDataPropertyLines(className, cls);
+    if (dataLines && dataLines.length) append(dataLines);
+  }
+  append('// ----- globals -----');
+  let globalNames = Object.getOwnPropertyNames($global).sort();
+  for (let gi = 0; gi < globalNames.length; gi++) {
+    let name = globalNames[gi];
+    if (typeof $global[name] !== 'function') continue;
+    if (isClass($global[name])) continue;
+    if (checkpointOmitGlobalName(name)) continue;
+    let src = $global[name].toString();
+    if (isNativeFunctionSource(src)) continue;
+    append(name + ' = ' + src + ';');
+  }
+  let topData = exportTopLevelDataLines();
+  if (topData && topData.length) {
+    append('// ----- top-level data -----');
+    append(topData);
+  }
+  append('init()');
+  return out;
+}
+function downloadTextFile(filename, text) {
+  /**
+   * Browser download of a text file (no Node fs). Uses a data: URL — the LM
+   * `window` proxy breaks `URL.createObjectURL` / unbound host methods.
+   */
+  let name = filename || 'download.txt';
+  let slash = name.lastIndexOf('/');
+  if (slash >= 0) name = name.slice(slash + 1);
+  let doc = window.document;
+  let a = doc.createElement('a');
+  a.href = 'data:text/javascript;charset=utf-8,' + window.encodeURIComponent(text);
+  a.download = name;
+  a.style.display = 'none';
+  doc.body.appendChild(a);
+  a.click();
+  doc.body.removeChild(a);
+  return name;
+}
+function checkpointToRepo(pathIfAny) {
+  /**
+   * Write a bootable checkpoint file (default xdefs.js) mirroring the live system.
+   * In Patchwork / the browser there is no filesystem: this triggers a download via
+   * {@link downloadTextFile}. Optional host-only hook: `window.checkpointWriteFile`
+   * (must be a real host function — do not assign an LM function that calls
+   * writeFileSync; that API does not exist here). Returns byte length.
+   */
+  let path = pathIfAny || 'xdefs.js';
+  let text = exportBootableSystemString();
+  try {
+    storageSetItem('system.checkpoint.timestamp', new Date().toLocaleString());
+    storageSetItem('system.checkpoint.path', path);
+    storageSetItem('system.checkpoint.length', '' + text.length);
+  } catch (e) {}
+  let wrote = false;
+  try {
+    // Only the host `window` hook — never a free LM global named checkpointWriteFile
+    // (users sometimes assign one that closes over writeFileSync and then blows up).
+    let hostWriter = window && window.checkpointWriteFile;
+    if (typeof hostWriter === 'function') {
+      hostWriter(path, text);
+      wrote = true;
+    }
+  } catch (e2) {
+    wrote = false;
+  }
+  if (!wrote) downloadTextFile(path, text);
+  return text.length;
+}
+function exportEntireSystem() {
+  // exportEntireSystem() — bootable checkpoint source; viewExportedSystem() to browse
+  // Prefer checkpointToRepo('xdefs.js') when a host write hook is available.
+  let text = exportBootableSystemString();
+  try {
+    storageSetItem('system.export', text);
+    storageSetItem('system.export.timestamp', new Date().toLocaleString());
+  } catch (e) {
+    // Huge strings may fail in Automerge-backed storage; length is still returned.
+  }
   return text.length;
 }
 function viewExportedSystem() {
   let text = storageGetItem('system.export') || storageGetItem('system.methods');
-  if (!text) text = '// No export yet. Run exportEntireSystem() first.';
+  if (!text) text = '// No export yet. Run exportEntireSystem() or checkpointToRepo() first.';
   let ts =
-    storageGetItem('system.export.timestamp') || storageGetItem('system.methods.timestamp') || '';
-  let title = ts ? 'alldefs export (' + ts + ')' : 'alldefs export';
+    storageGetItem('system.export.timestamp') ||
+    storageGetItem('system.checkpoint.timestamp') ||
+    storageGetItem('system.methods.timestamp') ||
+    '';
+  let title = ts ? 'system export (' + ts + ')' : 'system export';
   Lively.addEphemeralMorph(new MethodPanel(null, text, title));
   return text.length;
 }
 function exportMethodShouldOmit(name) {
-  if (
-    name === 'downloadTextFile' ||
-    name === '_finishSystemExport' ||
-    name === 'viewExportedSystem' ||
-    name === 'exportEntireSystem' ||
-    name === 'exportMethodShouldOmit' ||
-    name === 'exportOmitMethodNames'
-  )
+  // Keep checkpoint / download helpers in checkpoints so a booted xdefs can re-export.
+  if (name === '_finishSystemExport' || name === 'viewExportedSystem' || name === 'exportOmitMethodNames')
     return true;
   if (name.indexOf('exportCatalog') === 0) return true;
   if (
@@ -11204,7 +14155,7 @@ function stackFrameSourceText(frame) {
   return null;
 }
 function stackFrameListLabel(frame) {
-  if (frame.methodSpec) return frame.methodSpec;
+  if (frame.methodSpec) return methodListLabelForSpec(frame.methodSpec);
   if (frame.name === 'eval' || frame.name === '<anonymous>') {
     if (_lastEvalSource)
       return 'eval: ' + truncateString(_lastEvalSource.replace(/\s+/g, ' ').trim(), 52);
@@ -11353,21 +14304,34 @@ function openErrorStackPanel(err, contextIfAny, titleIfAny) {
   return panel;
 }
 function presentError(err, contextIfAny) {
-  let report = formatErrorReport(err, contextIfAny);
-  _lastErrorReport = report;
-  console.error(report);
-  // Open Console: show the report even when $console mirroring is unavailable.
-  _routeConsoleToTranscripts('error', report);
-  let panel = openErrorStackPanel(err, contextIfAny);
-  if (!_alldefsSourceLines) {
-    // ensureAlldefsSourceLines is currently disabled and returns null.
-    let loading = ensureAlldefsSourceLines();
-    if (loading && loading.then)
-      loading.then(function () {
-        if (panel && panel.refreshStackSources) panel.refreshStackSources();
-      });
+  // Re-entry (error while opening/painting an error panel) used to spawn a new
+  // cascaded tool window every frame — stair-step down the screen.
+  if (_errorPresentInProgress || _errorRecoveryInProgress) {
+    try {
+      console.error('error during presentError', err);
+    } catch (_e) {}
+    return null;
   }
-  return panel;
+  _errorPresentInProgress = true;
+  try {
+    let report = formatErrorReport(err, contextIfAny);
+    _lastErrorReport = report;
+    console.error(report);
+    // Open Console: show the report even when $console mirroring is unavailable.
+    _routeConsoleToTranscripts('error', report);
+    let panel = openErrorStackPanel(err, contextIfAny);
+    if (!_alldefsSourceLines) {
+      // ensureAlldefsSourceLines is currently disabled and returns null.
+      let loading = ensureAlldefsSourceLines();
+      if (loading && loading.then)
+        loading.then(function () {
+          if (panel && panel.refreshStackSources) panel.refreshStackSources();
+        });
+    }
+    return panel;
+  } finally {
+    _errorPresentInProgress = false;
+  }
 }
 function recoverFromRuntimeError(err, contextIfAny) {
   if (_errorRecoveryInProgress) {
@@ -11429,6 +14393,71 @@ function storageEditItem(key) {
   //storageEditItem('ToDoList')
   Lively.addEphemeralMorph(new MethodPanel(null, 'to do list', 'localStorage.' + key));
 }
+
+// Shared Automerge key/value store (mirrors storage* but syncs across peers).
+// Lives on Lively.amStore — ordinary (non-$) properties on the world, so every
+// replica of this document sees the same strings. Ctrl-S in an automergeEditItem
+// panel writes back through automergeSetItem.
+function automergeEnsureStore() {
+  if (!Lively.amStore) Lively.amStore = {};
+  return Lively.amStore;
+}
+function automergeGetItem(key) {
+  let store = automergeEnsureStore();
+  let v = store[key];
+  return v == null ? null : '' + v;
+}
+function automergeKeys() {
+  return Object.keys(automergeEnsureStore());
+}
+function automergeSetItem(key, value) {
+  // automergeSetItem('ToDoList', 'Items yet to do in Livelymerge:');
+  // automergeGetItem('ToDoList');
+  // automergeKeys();
+  automergeEnsureStore()[key] = value == null ? '' : '' + value;
+}
+function automergeEditItem(key) {
+  // automergeEditItem('ToDoList')
+  let panel = new MethodPanel(null, 'to do list', 'automerge.' + key);
+  Lively.addEphemeralMorph(panel);
+  return panel;
+}
+
+/**
+ * Open a MethodPanel on a global function — same text + title as BrowserPanel
+ * "spawn this method to its own window" (globals pane).
+ */
+function browseGlobalMethod(name) {
+  let n = name == null ? '' : '' + name;
+  let text = typeof liveMethodPaneTextForSpec === 'function' ? liveMethodPaneTextForSpec(n) : null;
+  if (!text) {
+    let gfn = typeof $global !== 'undefined' ? $global[n] : null;
+    text =
+      typeof gfn === 'function'
+        ? n + ' = ' + gfn.toString()
+        : n + ' = function ' + n + '() {\n  /*\n  */\n}\n';
+  }
+  // Title form matches BrowserPanel.methodCopyTitle for globals.
+  let panel = new MethodPanel(null, text, 'globals ' + n);
+  Lively.addEphemeralMorph(panel);
+  return panel;
+}
+
+/**
+ * ToDo scratchpad as a normal global method — body is one long comment of tasks.
+ * World menu → ToDo list opens a method panel; edit and Ctrl-S to save.
+ */
+function todoList() {
+  /* Livelymerge to do items:
+  [X] fix the world menu access to the todo list
+  [ ] Provide for changeing method and class categories
+      use a pane menu in appropriate places
+  [ ] The session log top pane should be read-only
+  [ ] Should be possible to collapse the sesson log.
+  [ ] Also need an option to truncate it
+  */
+}
+
 function saveRecentChanges() {
   // saveRecentChanges();
   let changes = recentChanges.slice(-50);
@@ -11499,6 +14528,7 @@ function msToRun(fn) {
 
 function inspect(obj, optionalBounds) {
   // inspect(pt(3, 5));
+  // Also: pt(3, 5).inspect() — see Object.prototype.inspect below.
   let r;
   if (optionalBounds != null) {
     let o = optionalBounds;
@@ -11508,9 +14538,15 @@ function inspect(obj, optionalBounds) {
   }
   let p = new InspectorPanel(r, obj);
   Lively.addEphemeralMorph(p);
-  p.startStepping('showSelectedValue', false, 500);
+  p.startStepping(500, 'showSelectedValue', false);
   return p;
 }
+// OO entry point for every LM object (Point, Morph, …). Morph no longer defines
+// its own inspect — it inherits this. Primitives still need the global inspect().
+Object.prototype.inspect = function (optionalBounds) {
+  // pt(3, 4).inspect();  Lively.submorphs.first().inspect();
+  return inspect(this, optionalBounds);
+};
 function inspectString(obj) {
   /**
    * Compact display for the inspector print pane. Prefer each type's toString();
@@ -11586,4 +14622,7 @@ function inspectString(obj) {
     return t + ': object';
   }
 }
+// Live stamp — eval `NEWDEFS_WRITTEN_ON` in Morphic to confirm this build is loaded.
+let NEWDEFS_WRITTEN_ON = '2026-10-11 16:15 PDT';
 init()
+//written on 2026-10-11 16:15 PDT

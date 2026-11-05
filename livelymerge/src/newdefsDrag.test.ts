@@ -102,7 +102,7 @@ describe('newdefs full-stack drag', () => {
     // Load all class/function defs into the heap/global. Strip the trailing
     // top-level init(): it boots a demo world whose rAF closure and timers go
     // stale (and crash) once the test's own initUI()/initLively() replace them.
-    rt.eval(src.replace(/\binit\(\)\s*$/, ''));
+    rt.eval(src.replace(/\binit\(\)\s*(?:\/\/[^\n]*\s*)*$/, ''));
 
     // Build a minimal world with one draggable box (skip heavy populateLively).
     rt.eval(`

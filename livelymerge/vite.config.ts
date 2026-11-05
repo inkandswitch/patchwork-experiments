@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
@@ -13,6 +14,12 @@ const external = patchworkExternals.filter(
 
 export default defineConfig({
   base: './',
+
+  test: {
+    // Only this tree's tests: stale `.claude/worktrees/*` copies would otherwise run too.
+    exclude: [...configDefaults.exclude, '**/.claude/**'],
+  },
+
   plugins: [react(), tailwindcss(), cssInjectedByJsPlugin({ relativeCSSInjection: true })],
 
   resolve: {
