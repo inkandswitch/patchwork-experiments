@@ -11,6 +11,11 @@
 // - presence: where each player is (their avatar), at 20 Hz while playing.
 // - sends: shots, so peers see the tracer; nobody keeps them.
 // - local (this closure): your body, keys, ammo.
+//
+// A level also has a look: a sky, a light haze that hides the void past the
+// walls, and a warm low sun that casts shadows (the stage's atmosphere). Only
+// a laid-out level (its trait says look: "arena") gives it; a boat with a few
+// targets on its deck keeps its own.
 
 import css from "./play.css?inline";
 import { BODY, look, lookDir, step } from "./walk.js";
@@ -22,6 +27,16 @@ const MAG = 12;
 const RELOAD_MS = 1200;
 const SHOT_MS = 110; // between shots
 const FOV = 75;
+const HIT_MS = 260; // how long the hit marker shows
+const FLASH_MS = 60; // how long a muzzle flash shows
+
+/** The level's sky, haze and sun (the stage's atmosphere; STAGE.md). */
+export const ATMOSPHERE = Object.freeze({
+  sky: { top: "#5d8fc9", horizon: "#f0dcc0", bottom: "#d8c3a2" },
+  fog: { color: "#ecd9bd", near: 45, far: 190 },
+  // low and to one side: from a corner spawn, shadows fall across the view
+  sun: { direction: [-0.6, 0.55, -0.5], color: "#ffe2bc", intensity: 2.6, shadows: true },
+});
 
 const el = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
@@ -92,8 +107,16 @@ export default {
       const m = new THREE.LineBasicMaterial({ color: new THREE.Color().setHSL(hue / 360, 0.9, 0.6), transparent: true, opacity: 0.9 });
       const line = new THREE.Line(g, m);
       line.userData.noPick = true;
+      // the muzzle flash: a small hot spike where the shot leaves, drawn out
+      // along it, briefly (a child of the tracer, so it goes with it)
+      const flash = new THREE.Mesh(new THREE.OctahedronGeometry(0.025), new THREE.MeshBasicMaterial({ color: 0xffc860, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+      flash.position.set(...from);
+      flash.lookAt(...to);
+      flash.scale.set(1, 1, 3.5);
+      line.add(flash);
       world.add(line);
-      tracers.push({ line, until: performance.now() + 120 });
+      const now = performance.now();
+      tracers.push({ line, flash, until: now + 120, flashUntil: now + FLASH_MS });
       api.invalidate();
       // playing, tick() prunes them; watching, a loop of their own does (else
       // a peer's shot hangs in the air until you play)
@@ -117,12 +140,20 @@ export default {
     function pruneTracers() {
       const now = performance.now();
       for (let i = tracers.length - 1; i >= 0; i--) {
-        if (now < tracers[i].until) continue;
-        tracers[i].line.removeFromParent();
-        tracers[i].line.geometry.dispose();
-        tracers[i].line.material.dispose();
+        const t = tracers[i];
+        if (now >= t.flashUntil) t.flash.visible = false;
+        if (now < t.until) continue;
+        t.line.removeFromParent();
+        disposeTracer(t);
         tracers.splice(i, 1);
       }
+    }
+
+    function disposeTracer(t) {
+      t.line.geometry.dispose();
+      t.line.material.dispose();
+      t.flash.geometry.dispose();
+      t.flash.material.dispose();
     }
 
     function avatarFor(session, hue) {
@@ -204,7 +235,7 @@ export default {
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
       const now = performance.now();
       const reloading = now < reloadUntil;
-      const key = JSON.stringify([playing, paused, free, standing, targets.length, board, ammo, reloading, now < hitUntil, [...names]]);
+      const key = JSON.stringify([playing, paused, free, standing, targets.length, board, ammo, reloading, hitUntil > now ? hitUntil : 0, [...names]]);
       if (key === hudKey) return;
       hudKey = key;
       const scoreList = el("ol", { class: "arena-scores" }, ...board.slice(0, 6).map(([viewer, n]) => el("li", { "data-you": viewer === api.viewer }, el("span", {}, nameOf(viewer)), el("strong", {}, String(n)))));
@@ -228,7 +259,9 @@ export default {
         return;
       }
       show(
-        el("div", { class: "arena-crosshair", "data-hit": now < hitUntil }),
+        el("div", { class: "arena-crosshair" }),
+        // the hit marker: four ticks round the crosshair, fading (play.css)
+        now < hitUntil ? el("div", { class: "arena-hit" }) : null,
         el("div", { class: "arena-top" }, el("span", {}, `${standing} of ${targets.length} standing`), board.length ? scoreList : null),
         el("div", { class: "arena-ammo", "data-empty": ammo === 0 }, reloading ? "Reloading…" : `${ammo} / ${MAG}`),
         el("div", { class: "arena-help" }, free ? "WASD move · Drag to look · Click shoot · Space jump · Shift run · R reload · Esc stop" : "WASD move · Space jump · Shift run · Click shoot · R reload · Esc stop"),
@@ -307,13 +340,13 @@ export default {
       const d = lookDir(body.yaw, body.pitch);
       const hit = api.raycast(e, d, { far: 300 });
       const to = hit ? hit.point : [e[0] + d[0] * 300, e[1] + d[1] * 300, e[2] + d[2] * 300];
-      // from just below and right of the eye, where a gun would be
-      const from = [e[0] + Math.cos(body.yaw) * 0.25, e[1] - 0.25, e[2] - Math.sin(body.yaw) * 0.25];
+      // from just below, right of and ahead of the eye, where a gun's muzzle would be
+      const from = [e[0] + Math.cos(body.yaw) * 0.22 - Math.sin(body.yaw) * 0.55, e[1] - 0.22, e[2] - Math.sin(body.yaw) * 0.22 - Math.cos(body.yaw) * 0.55];
       tracer(from, to, hueOf(api.viewer));
       api.send("shot", { from, to });
       const o = hit ? scene?.objects?.[hit.id] : null;
       if (o && isTarget(o) && !isDown(o)) {
-        hitUntil = now + 180;
+        hitUntil = now + HIT_MS;
         const yaw = body.yaw;
         api.change((dd) => {
           const t = dd.objects?.[hit.id];
@@ -499,12 +532,12 @@ export default {
         { id: "reset", name: "Stand targets up", show: ["menu"], state: (target, { scene: sc }) => (Object.values(sc?.objects ?? {}).some(isDown) ? {} : null), run: () => resetTargets() },
       ],
       hud: () => [],
+      // only a laid-out level has the arena's look (see the top): adding a
+      // target to a boat writes the level trait too, but not its look
+      atmosphere: () => (scene?.d?.traits?.["arena.level"]?.look === "arena" ? ATMOSPHERE : null),
       dispose() {
         stop();
-        for (const t of tracers) {
-          t.line.geometry.dispose();
-          t.line.material.dispose();
-        }
+        for (const t of tracers) disposeTracer(t);
       },
     };
   },

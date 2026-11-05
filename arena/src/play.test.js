@@ -1,7 +1,7 @@
 // The play extension against a stand-in for the scene's api: what it asks of
 // the stage when you start, walk, shoot and stop.
 import { describe, it, expect, beforeEach } from "vitest";
-import play, { hueOf, scores } from "./play.js";
+import play, { ATMOSPHERE, hueOf, scores } from "./play.js";
 
 class Obj {
   constructor() {
@@ -9,6 +9,9 @@ class Obj {
     this.userData = {};
     this.position = { set: (...v) => (this.pos = v) };
     this.rotation = { set: (...v) => (this.rot = v) };
+    this.scale = { set: (...v) => (this.scl = v) };
+    this.lookAt = (...v) => (this.looking = v);
+    this.visible = true;
     this.parent = null;
   }
   add(...o) {
@@ -49,6 +52,7 @@ const THREE = {
   MeshBasicMaterial: disposable,
   CylinderGeometry: disposable,
   SphereGeometry: disposable,
+  OctahedronGeometry: disposable,
   BoxGeometry: disposable,
   Vector3: class {
     constructor(...v) {
@@ -217,6 +221,60 @@ describe("playing", () => {
     delete f.peers.s2;
     x.update(scene(doc), {}, { scene: scene(doc) });
     expect(f.world.children.length).toBe(1); // only the tracer is left
+  });
+
+  it("a shot flashes at the muzzle, ahead of the eye, and the flash goes before the tracer", () => {
+    x.commands.find((c) => c.id === "play").run(null);
+    f.calls.loops[0](1 / 60);
+    f.calls.arms[0].handlers.press({ button: 0, locked: true });
+    const line = f.world.children.find((c) => c.geometry?.points);
+    const flash = line.children[0];
+    expect(flash.material).toBeTruthy();
+    // looking down -z: the muzzle is ahead (-z), right (+x) and below the eye
+    const [fx, fy, fz] = flash.pos;
+    const eye = f.calls.camera.at(-1).position;
+    expect(fz).toBeLessThan(eye[2] - 0.3);
+    expect(fx).toBeGreaterThan(eye[0]);
+    expect(fy).toBeLessThan(eye[1]);
+    expect(f.calls.sends.at(-1).data.from).toEqual([fx, fy, fz]);
+    const t0 = performance.now();
+    const real = performance.now;
+    performance.now = () => t0 + 80;
+    f.calls.loops[0](1 / 60);
+    expect(flash.visible).toBe(false);
+    expect(f.world.children).toContain(line);
+    performance.now = () => t0 + 200;
+    f.calls.loops[0](1 / 60);
+    performance.now = real;
+    expect(f.world.children).not.toContain(line);
+  });
+
+  it("a hit shows the hit marker for a moment", () => {
+    const overlay = document.createElement("div");
+    f.api.overlay = () => overlay;
+    x = play.create(f.api);
+    x.update(scene(doc), {}, { scene: null });
+    x.commands.find((c) => c.id === "play").run(null);
+    f.api.raycast = (from, dir) => (dir[2] < -0.9 ? { id: "t1", point: [0, 1.4, -5], normal: [0, 0, 1], distance: 5 } : null);
+    expect(overlay.querySelector(".arena-hit")).toBeNull();
+    f.calls.arms.at(-1).handlers.press({ button: 0, locked: true });
+    expect(overlay.querySelector(".arena-hit")).not.toBeNull();
+    expect(overlay.querySelector(".arena-crosshair")).not.toBeNull();
+  });
+
+  it("a laid-out level has the arena's sky, haze and shadowing sun; any other scene keeps its own", () => {
+    expect(x.atmosphere()).toBeNull();
+    // a target added to a boat: the level trait (its kinds), but no look
+    doc.traits = { "arena.level": { kinds: {} } };
+    x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
+    expect(x.atmosphere()).toBeNull();
+    doc.traits = { "arena.level": { kinds: {}, look: "arena" } };
+    x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
+    const a = x.atmosphere();
+    expect(a).toBe(ATMOSPHERE);
+    expect(a.sun.shadows).toBe(true);
+    expect(a.fog.far).toBeGreaterThan(a.fog.near);
+    expect(Object.keys(a.sky)).toEqual(["top", "horizon", "bottom"]);
   });
 
   it("colours are stable per player", () => {
