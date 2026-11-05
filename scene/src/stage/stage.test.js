@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
-import { bestWidget, hitChain, initialCamera, mergeLooks, sameTransform, statusOf, widgetWins } from "./stage.js";
+import { bestWidget, hitChain, initialCamera, mergeAtmosphere, mergeLooks, sameTransform, statusOf, widgetWins } from "./stage.js";
 
 vi.mock("@inkandswitch/patchwork-plugins", () => {
   const registries = new Map();
@@ -316,6 +316,30 @@ describe("the stage, mounted", () => {
     expect(api.nameOf("b")).toBe("B!");
     expect(api.nameOf("zz")).toBeNull();
     expect(m.debug.looks().get("a")).toEqual({ name: "Ace of spades", sourceUrl: null });
+  });
+
+  it("atmosphere: the running extensions' merged in running order, handed to the viewport; gone when its giver stops", async () => {
+    exts["t.kit"] = recorder("t.kit", () => ({ atmosphere: () => ({ sky: { top: "#336699" }, fog: { color: "#ffffff", near: 10, far: 90 }, exposure: 1.2 }) }));
+    exts["t.always"] = recorder("t.always", () => ({ atmosphere: () => ({ fog: null, sun: { direction: [0, 1, 0], shadows: true } }) }));
+    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    await settle();
+    // t.kit runs before t.always: its fog is cleared by the later null, its sky and exposure kept
+    const merged = { sky: { top: "#336699" }, exposure: 1.2, sun: { direction: [0, 1, 0], shadows: true } };
+    expect(m.debug.atmosphere()).toEqual(merged);
+    expect(m.debug.viewport.atmosphere).toEqual({ sky: { top: "#336699", horizon: "#336699", bottom: "#336699" }, sun: { direction: [0, 1, 0], color: "#ffffff", intensity: 1.5, shadows: true }, exposure: 1.2 });
+    m.local.swap((v) => ({ ...v, kits: { on: [], off: ["t.kit"] } }));
+    await settle();
+    expect(m.debug.atmosphere()).toEqual({ sun: { direction: [0, 1, 0], shadows: true } });
+    expect(m.debug.viewport.atmosphere.sky).toBeUndefined();
+  });
+
+  it("no extension gives an atmosphere: the viewport is never told one", async () => {
+    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const spy = vi.spyOn(m.debug.viewport, "setAtmosphere");
+    await settle();
+    expect(m.debug.atmosphere()).toBeNull();
+    expect(spy).not.toHaveBeenCalled();
+    expect(m.debug.viewport.atmosphere).toBeNull();
   });
 
   it("collect() and run(invocation): commands by target, state decides", async () => {
@@ -637,5 +661,17 @@ describe("two stages on one scene", () => {
     A.local.swap((v) => ({ ...v, kits: { on: [], off: ["t.kit"] } }));
     await until(() => !B.debug.viewport.poses.has("a"));
     expect(A.debug.viewport.poses.has("a")).toBe(false);
+  });
+});
+
+describe("mergeAtmosphere", () => {
+  it("later fields win per field, whole; undefined keeps, null clears; nothing is null", () => {
+    expect(mergeAtmosphere([])).toBeNull();
+    expect(mergeAtmosphere([null, undefined, 3])).toBeNull();
+    expect(mergeAtmosphere([{ sky: { top: "#000" } }, { sky: { horizon: "#fff" } }])).toEqual({ sky: { horizon: "#fff" } });
+    expect(mergeAtmosphere([{ fog: { color: "#fff", far: 9 }, exposure: 2 }, { fog: undefined, sun: { direction: [1, 1, 0] } }])).toEqual({ fog: { color: "#fff", far: 9 }, exposure: 2, sun: { direction: [1, 1, 0] } });
+    expect(mergeAtmosphere([{ fog: { color: "#fff", far: 9 } }, { fog: null }])).toBeNull();
+    // only the fields the stage knows
+    expect(mergeAtmosphere([{ weather: "rain" }])).toBeNull();
   });
 });

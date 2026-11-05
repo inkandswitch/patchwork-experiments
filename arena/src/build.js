@@ -8,6 +8,11 @@ import { encodeGLB } from "./glb.js";
 import { KINDS, sampleArena } from "./level.js";
 
 const LEVEL = "arena.level";
+// The kinds' art changes now and then. Their GLBs are remembered in the level
+// trait under "<kind>@<ART>", so a level drawn with older art gets this art's
+// GLBs for what's added to it, not the old ones.
+export const ART = 2;
+export const kindKey = (kind) => `${kind}@${ART}`;
 const ADDABLE = [
   ["target", "Add target", { "arena.target": {} }],
   ["crate", "Add crate", null],
@@ -44,9 +49,13 @@ export default {
     /** Each kind's GLB doc, made the first time it's needed (and remembered in the level trait). */
     async function kindUrls(kinds) {
       const known = { ...(api.doc()?.traits?.[LEVEL]?.kinds ?? {}) };
+      const urls = {};
       const made = {};
       for (const kind of kinds) {
-        if (known[kind]) continue;
+        if (known[kindKey(kind)]) {
+          urls[kind] = known[kindKey(kind)];
+          continue;
+        }
         const file = await api.repo.create2({
           "@patchwork": { type: "file" },
           name: `${KINDS[kind].name}.glb`,
@@ -54,9 +63,9 @@ export default {
           mimeType: "model/gltf-binary",
           content: kindGLB(kind),
         });
-        known[kind] = made[kind] = file.url;
+        urls[kind] = made[kindKey(kind)] = file.url;
       }
-      return { urls: known, made };
+      return { urls, made };
     }
 
     function writeLevelTrait(d, made) {
@@ -82,9 +91,12 @@ export default {
         // Only the sample arena says so: a target added to a boat leaves the
         // boat's kits alone.
         if (d.view && d.view.kits === undefined) d.view.kits = [];
+        // and it has the arena's look (sky, haze, sun: play.js); a scene
+        // that only had a target added keeps its own
+        d.traits[LEVEL].look = "arena";
         for (const b of blocks) {
           const id = api.newId("o");
-          d.objects[id] = levelObject(b, d.traits[LEVEL].kinds[b.kind] ?? urls[b.kind], gid);
+          d.objects[id] = levelObject(b, d.traits[LEVEL].kinds[kindKey(b.kind)] ?? urls[b.kind], gid);
           d.order.push(id);
         }
       });
@@ -109,7 +121,7 @@ export default {
         writeLevelTrait(d, made);
         if (!d.objects) d.objects = {};
         if (!d.order) d.order = [];
-        d.objects[id] = levelObject({ name, transform, traits }, d.traits[LEVEL].kinds[kind] ?? urls[kind], null);
+        d.objects[id] = levelObject({ name, transform, traits }, d.traits[LEVEL].kinds[kindKey(kind)] ?? urls[kind], null);
         d.order.push(id);
       });
       api.local.swap((l) => ({ ...l, selected: id }));

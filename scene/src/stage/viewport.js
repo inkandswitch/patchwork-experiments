@@ -1,8 +1,9 @@
 // The stage's renderer (STAGE.md, "Inside the stage"): the WebGL renderer,
-// lights, object nodes and their display, the camera rig (orbit, hold,
-// limits), picking with vertex snap, the extensions' drawing layers (world
-// groups, an on-top pass, DOM labels) and the frame loop. It draws nothing of
-// its own beyond the objects: no grid, axes, gizmo, selection or dimensions
+// lights and the extensions' atmosphere (sky, fog, sun), object nodes and
+// their display, the camera rig (orbit, hold, limits), picking with vertex
+// snap, the extensions' drawing layers (world groups, an on-top pass, DOM
+// labels) and the frame loop. It draws nothing of its own beyond the objects
+// and the sky: no grid, axes, gizmo, selection or dimensions
 // (those are extensions now), and it listens to no input but the orbit's.
 // It knows nothing about automerge; the stage drives it from the scene doc.
 
@@ -12,17 +13,20 @@ import {
   Color,
   DirectionalLight,
   Float32BufferAttribute,
+  Fog,
   Group,
   HemisphereLight,
   LineBasicMaterial,
   LineSegments,
   Matrix3,
   Matrix4,
+  Mesh,
   PerspectiveCamera,
   Plane,
   PMREMGenerator,
   Raycaster,
   Scene,
+  ShaderMaterial,
   Sphere,
   SRGBColorSpace,
   Vector2,
@@ -133,6 +137,129 @@ export function toBox3(box) {
 
 /** Light intensities (see the constructor). keyFrom: the key light's direction, from the origin. */
 export const LIGHTS = Object.freeze({ key: 1.5, keyFrom: [0.45, 1, 0.6], headlight: 0.45, hemisphere: 0.35, environment: 0.35 });
+
+// ─── atmosphere ─────────────────────────────────────────────────────────────
+
+const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+/** An sRGB hex colour as given ("#rgb", "#rrggbb" or a number), or null. */
+function hexColour(v) {
+  if (typeof v === "string" && HEX.test(v.trim())) return v.trim().toLowerCase();
+  if (Number.isInteger(v) && v >= 0 && v <= 0xffffff) return `#${v.toString(16).padStart(6, "0")}`;
+  return null;
+}
+const finite = (v) => (v == null || v === "" ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+
+/**
+ * An atmosphere (STAGE.md, "Atmosphere") made safe to draw: colours checked,
+ * numbers finite, the sun's direction a unit vector; whatever can't be used
+ * is left out, and nothing usable at all is null. A sky missing a colour takes
+ * a neighbour's; fog without a colour takes the sky's horizon; a sun without
+ * a direction stands where the key light does.
+ * @returns {{ sky?: { top, horizon, bottom }, fog?: { color, near, far }, sun?: { direction, color, intensity, shadows }, exposure?: number } | null}
+ */
+export function cleanAtmosphere(a) {
+  if (!a || typeof a !== "object") return null;
+  const out = {};
+  if (a.sky && typeof a.sky === "object") {
+    const t = hexColour(a.sky.top), h = hexColour(a.sky.horizon), b = hexColour(a.sky.bottom);
+    const horizon = h ?? t ?? b;
+    if (horizon) out.sky = { top: t ?? horizon, horizon, bottom: b ?? horizon };
+  }
+  if (a.fog && typeof a.fog === "object") {
+    const color = hexColour(a.fog.color) ?? out.sky?.horizon ?? null;
+    const near = Math.max(0, finite(a.fog.near) ?? 0);
+    const far = finite(a.fog.far);
+    if (color && far != null && far > near) out.fog = { color, near, far };
+  }
+  if (a.sun && typeof a.sun === "object") {
+    const d = Array.isArray(a.sun.direction) ? a.sun.direction.slice(0, 3).map(finite) : [];
+    const len = d.length === 3 && d.every((v) => v != null) ? Math.hypot(d[0], d[1], d[2]) : 0;
+    const from = len > 1e-9 ? d : LIGHTS.keyFrom;
+    const n = Math.hypot(from[0], from[1], from[2]);
+    const intensity = finite(a.sun.intensity);
+    out.sun = {
+      direction: from.map((v) => v / n),
+      color: hexColour(a.sun.color) ?? "#ffffff",
+      intensity: intensity != null && intensity >= 0 ? intensity : LIGHTS.key,
+      shadows: a.sun.shadows === true,
+    };
+  }
+  const exposure = finite(a.exposure);
+  if (exposure != null && exposure > 0) out.exposure = exposure;
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * The lights an atmosphere (cleanAtmosphere's) asks for. No atmosphere is
+ * exactly the stage's own rig (LIGHTS): a white key light high to one side,
+ * a headlight, a grey sky/ground and the environment. A sun replaces the key
+ * light (its direction, colour, strength, shadows), and the headlight
+ * dims to a third, as there's no lamp on the camera outdoors and a full one
+ * would fill the sun's shadows in; a sky tints the sky/ground light with its
+ * top and bottom; exposure scales every light.
+ */
+export function lighting(atm) {
+  const x = atm?.exposure ?? 1;
+  return {
+    hemisphere: { intensity: LIGHTS.hemisphere * x, sky: atm?.sky?.top ?? "#ffffff", ground: atm?.sky?.bottom ?? "#3a3a3a" },
+    key: {
+      intensity: (atm?.sun?.intensity ?? LIGHTS.key) * x,
+      color: atm?.sun?.color ?? "#ffffff",
+      from: atm?.sun ? [...atm.sun.direction] : [...LIGHTS.keyFrom],
+      shadows: !!atm?.sun?.shadows,
+    },
+    headlight: (atm?.sun ? LIGHTS.headlight / 3 : LIGHTS.headlight) * x,
+    environment: LIGHTS.environment * x,
+  };
+}
+
+/**
+ * Where a shadow-casting sun stands so its shadow map just covers the
+ * scene's box: on the box's bounding sphere's centre, `direction` (unit,
+ * toward the sun) twice its radius out, an orthographic frustum the sphere's
+ * size, and a normal bias of about a texel and a half.
+ * @param {{ min: number[], max: number[] }} box  @param {number[]} direction  @param {number} mapSize
+ */
+export function sunFrame(box, direction, mapSize = 2048) {
+  const c = [0, 1, 2].map((i) => (box.min[i] + box.max[i]) / 2);
+  const r = Math.max(0.5 * Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]), 0.05);
+  return {
+    target: c,
+    position: c.map((v, i) => v + direction[i] * 2 * r),
+    radius: r,
+    near: r * 0.5,
+    far: r * 3.5,
+    normalBias: ((2 * r) / mapSize) * 1.5,
+  };
+}
+
+// The sky: one triangle over the whole screen, drawn first, that turns each
+// pixel back into the direction it looks along and shades that by height:
+// horizon to top above, horizon to bottom below, and a soft sun where there
+// is one. It writes no depth and is never picked or boxed.
+const SKY_VERTEX = /* glsl */ `
+varying vec3 vDir;
+void main() {
+  vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
+  vDir = (inverse(viewMatrix) * vec4(view.xyz / view.w, 0.0)).xyz;
+  gl_Position = vec4(position.xy, 1.0, 1.0);
+}`;
+const SKY_FRAGMENT = /* glsl */ `
+uniform vec3 top;
+uniform vec3 horizon;
+uniform vec3 bottom;
+uniform vec3 sunDir;
+uniform vec3 sunColor;
+uniform float sunOn;
+varying vec3 vDir;
+void main() {
+  vec3 d = normalize(vDir);
+  vec3 c = d.y > 0.0 ? mix(horizon, top, pow(d.y, 0.55)) : mix(horizon, bottom, pow(-d.y, 0.4));
+  float s = max(dot(d, sunDir), 0.0);
+  c += sunOn * sunColor * (smoothstep(0.9993, 0.9997, s) * 1.5 + pow(s, 16.0) * 0.3);
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}`;
 
 // ─── pure helpers (tested without WebGL) ────────────────────────────────────
 
@@ -443,6 +570,17 @@ export function nearestScreenVertex(array, { count, stride = 3, offset = 0 }, mv
   return best;
 }
 
+const SHADOW_MAP = 2048;
+
+/** Let every mesh under root cast and receive the sun's shadows (or not). */
+function castShadows(root, on) {
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = on;
+    o.receiveShadow = on;
+  });
+}
+
 /** The object id a node belongs to: the nearest ancestor (or itself) that carries one. */
 function objectIdOf(o) {
   for (let p = o; p; p = p.parent) if (p.userData?.objectId) return p.userData.objectId;
@@ -503,7 +641,6 @@ export class Viewport {
     room.dispose();
     const tc2 = performance.now();
     this.scene.environment = this.envTexture;
-    this.scene.environmentIntensity = LIGHTS.environment;
     this.initControls(this.canvas);
 
     this.readTheme();
@@ -571,6 +708,13 @@ export class Viewport {
     this.sceneRadius = 1;
     this.materialRules = [];
     this.materialRulesKey = "[]";
+    /** the extensions' atmosphere, cleaned (setAtmosphere); null: the stage's own look */
+    this.atmosphere = null;
+    this.atmosphereKey = "null";
+    /** the sky's mesh, made the first time a sky is asked for */
+    this.sky = null;
+    /** does the sun cast shadows (objects cast and receive them)? */
+    this.shadows = false;
     /** GLB contents prepared but not attached yet (their shaders are compiling) */
     this.compiling = new Set();
     /** the last frame's main pass, from renderer.info */
@@ -603,6 +747,8 @@ export class Viewport {
     this.headlight = new DirectionalLight(0xffffff, LIGHTS.headlight);
     this.headlight.position.set(0.5, 1, 0.8);
     this.camera.add(this.headlight);
+    // how much the environment map (made with the renderer) adds
+    this.scene.environmentIntensity = LIGHTS.environment;
 
     this.content = new Group();
     this.content.name = "objects";
@@ -663,7 +809,13 @@ export class Viewport {
     for (const [k, v] of Object.entries(THEME_VARS)) next[k] = resolveCssColor(this.themeRoot, v, DEFAULT_THEME[k]);
     // a new object per read, so whoever keeps it can tell that it changed
     this.theme = Object.freeze(next);
-    this.renderer?.setClearColor(color(this.theme.bg), 1);
+    this.renderer?.setClearColor(this.clearColor(), 1);
+  }
+
+  /** What shows where nothing is drawn: the theme's background, or fog's colour when there's fog and no sky. */
+  clearColor() {
+    const a = this.atmosphere;
+    return a?.fog && !a.sky ? new Color(a.fog.color) : color(this.theme.bg);
   }
 
   applyTheme() {
@@ -719,6 +871,7 @@ export class Viewport {
     }
     this.depthBox = depth.isEmpty() ? null : depth;
     this.sceneRadius = all.isEmpty() ? 1 : Math.max(all.getBoundingSphere(new Sphere()).radius, 1e-4);
+    if (this.shadows) this.fitSun(box);
   }
 
   render() {
@@ -771,6 +924,124 @@ export class Viewport {
     this.labels.update((w) => this.screenOf(w));
     const ms = performance.now() - tStart;
     if (ms > 16 && this.perf.slowFrames.length < 500) this.perf.slowFrames.push({ at: +tStart.toFixed(1), ms: +ms.toFixed(1), calls: this.stats.calls });
+  }
+
+  // ─── atmosphere ───────────────────────────────────────────────────────────
+
+  /**
+   * The extensions' atmosphere, merged by the stage (STAGE.md, "Atmosphere"):
+   * a sky, fog, a sun and exposure. null (or nothing usable) is the stage's
+   * own look, exactly: no sky, no fog, the key light, no shadows. Only a
+   * change does anything.
+   */
+  setAtmosphere(atm) {
+    const next = cleanAtmosphere(atm);
+    const key = JSON.stringify(next);
+    if (key === this.atmosphereKey) return;
+    this.atmosphereKey = key;
+    this.atmosphere = next;
+    if (!this.scene) return;
+    const l = lighting(next);
+    this.hemi.intensity = l.hemisphere.intensity;
+    this.hemi.color.set(l.hemisphere.sky);
+    this.hemi.groundColor.set(l.hemisphere.ground);
+    this.keyLight.intensity = l.key.intensity;
+    this.keyLight.color.set(l.key.color);
+    this.keyLight.position.set(...l.key.from);
+    this.keyLight.target.position.set(0, 0, 0);
+    this.keyLight.target.updateMatrixWorld();
+    this.headlight.intensity = l.headlight;
+    this.scene.environmentIntensity = l.environment;
+    // one Fog, kept while there is fog: replacing it would recompile every material
+    if (!next?.fog) this.scene.fog = null;
+    else if (this.scene.fog) {
+      this.scene.fog.color.set(next.fog.color);
+      this.scene.fog.near = next.fog.near;
+      this.scene.fog.far = next.fog.far;
+    } else this.scene.fog = new Fog(next.fog.color, next.fog.near, next.fog.far);
+    this.setSky(next?.sky ?? null, next?.sun ?? null);
+    this.setShadows(l.key.shadows);
+    this.renderer?.setClearColor(this.clearColor(), 1);
+    // the sun's shadow frame is fitted with the depth box
+    this.contentChanged();
+  }
+
+  setSky(sky, sun) {
+    if (!sky) {
+      if (this.sky) this.sky.visible = false;
+      return;
+    }
+    if (!this.sky) {
+      const g = new BufferGeometry();
+      g.setAttribute("position", new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+      const material = new ShaderMaterial({
+        name: "sky",
+        uniforms: {
+          top: { value: new Color() },
+          horizon: { value: new Color() },
+          bottom: { value: new Color() },
+          sunDir: { value: new Vector3(0, 1, 0) },
+          sunColor: { value: new Color() },
+          sunOn: { value: 0 },
+        },
+        vertexShader: SKY_VERTEX,
+        fragmentShader: SKY_FRAGMENT,
+        depthTest: false,
+        depthWrite: false,
+      });
+      this.sky = new Mesh(g, material);
+      this.sky.name = "sky";
+      this.sky.frustumCulled = false;
+      this.sky.renderOrder = -1e9; // before everything
+      this.sky.userData.noPick = true;
+      this.sky.raycast = () => {};
+      this.scene.add(this.sky);
+    }
+    const u = this.sky.material.uniforms;
+    u.top.value.set(sky.top);
+    u.horizon.value.set(sky.horizon);
+    u.bottom.value.set(sky.bottom);
+    u.sunOn.value = sun ? 1 : 0;
+    if (sun) {
+      u.sunDir.value.set(...sun.direction);
+      u.sunColor.value.set(sun.color);
+    }
+    this.sky.visible = true;
+  }
+
+  /** Turn the sun's shadows on or off: the light, the renderer's shadow map, and every object casting and receiving. */
+  setShadows(on) {
+    if (this.shadows === on) return;
+    this.shadows = on;
+    this.keyLight.castShadow = on;
+    if (on) {
+      this.keyLight.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
+      this.keyLight.shadow.bias = -0.0004;
+    }
+    if (this.renderer) {
+      this.renderer.shadowMap.enabled = on;
+      // drawn again only when something moves (fitSun), not every frame
+      this.renderer.shadowMap.autoUpdate = false;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
+    for (const e of this.objects.values()) if (e.content) castShadows(e.content, on);
+  }
+
+  /** Stand the sun where its shadow map covers `box` (the objects'); called with the depth box. */
+  fitSun(box) {
+    if (!this.atmosphere?.sun || box.isEmpty()) return;
+    const f = sunFrame({ min: box.min.toArray(), max: box.max.toArray() }, this.atmosphere.sun.direction, SHADOW_MAP);
+    this.keyLight.position.set(...f.position);
+    this.keyLight.target.position.set(...f.target);
+    this.keyLight.target.updateMatrixWorld();
+    const cam = this.keyLight.shadow.camera;
+    cam.left = cam.bottom = -f.radius;
+    cam.right = cam.top = f.radius;
+    cam.near = f.near;
+    cam.far = f.far;
+    cam.updateProjectionMatrix();
+    this.keyLight.shadow.normalBias = f.normalBias;
+    if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
   }
 
   /** Run fn(dt, now) before every frame; while any loop is live every frame renders. @returns {() => void} off */
@@ -1062,6 +1333,7 @@ export class Viewport {
     entry.stats = prepared.stats;
     this.removePlaceholder(entry);
     entry.body.add(prepared.content);
+    if (this.shadows) castShadows(prepared.content, true);
     this.queueBVH(prepared.content);
     this.applyMaterials(entry);
     this.contentChanged();

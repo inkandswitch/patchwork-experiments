@@ -5,15 +5,19 @@ import { encodeGLB } from "../glb.js";
 import { prepareGLB } from "../gltf-content.js";
 import { defaultSnapRadius } from "../hand.js";
 import {
+  LIGHTS,
   LabelLayer,
   Viewport,
+  cleanAtmosphere,
   contentExtras,
   declutter,
   depthRange,
   intersectLimits,
+  lighting,
   nearestScreenVertex,
   reseatTarget,
   resetOrbitMotion,
+  sunFrame,
   toBox3,
 } from "./viewport.js";
 
@@ -600,5 +604,87 @@ describe("content and depth", () => {
     off();
     vp.applyTheme();
     expect(fn).toHaveBeenCalledOnce();
+  });
+});
+
+describe("atmosphere", () => {
+  /** What the lights, fog and sky are, as plain values. */
+  const rig = (vp) => ({
+    hemi: [vp.hemi.intensity, vp.hemi.color.getHex(), vp.hemi.groundColor.getHex()],
+    key: [vp.keyLight.intensity, vp.keyLight.color.getHex(), r6(vp.keyLight.position.toArray()), r6(vp.keyLight.target.position.toArray()), vp.keyLight.castShadow],
+    headlight: vp.headlight.intensity,
+    environment: vp.scene.environmentIntensity,
+    fog: vp.scene.fog,
+    sky: !!vp.sky?.visible,
+    shadows: vp.shadows,
+  });
+
+  it("cleans what it's given: colours checked, numbers finite, a unit sun; nothing usable is null", () => {
+    expect(cleanAtmosphere(null)).toBeNull();
+    expect(cleanAtmosphere({ sky: { top: "blue" }, fog: { color: "#fff", near: 5, far: 2 }, exposure: -1 })).toBeNull();
+    const a = cleanAtmosphere({ sky: { top: "#336699", bottom: 0x102030 }, fog: { far: 80 }, sun: { direction: [0, 3, 4], intensity: "2", shadows: 1 }, exposure: 0.5 });
+    expect(a.sky).toEqual({ top: "#336699", horizon: "#336699", bottom: "#102030" });
+    // fog without a colour takes the horizon's
+    expect(a.fog).toEqual({ color: "#336699", near: 0, far: 80 });
+    expect(a.sun).toEqual({ direction: [0, 0.6, 0.8], color: "#ffffff", intensity: 2, shadows: false });
+    expect(a.exposure).toBe(0.5);
+    // a sun with no direction stands where the key light does
+    const k = Math.hypot(...LIGHTS.keyFrom);
+    expect(cleanAtmosphere({ sun: {} }).sun.direction).toEqual(LIGHTS.keyFrom.map((v) => v / k));
+  });
+
+  it("no atmosphere is the stage's own lighting, exactly", () => {
+    expect(lighting(null)).toEqual({
+      hemisphere: { intensity: LIGHTS.hemisphere, sky: "#ffffff", ground: "#3a3a3a" },
+      key: { intensity: LIGHTS.key, color: "#ffffff", from: [...LIGHTS.keyFrom], shadows: false },
+      headlight: LIGHTS.headlight,
+      environment: LIGHTS.environment,
+    });
+    const vp = headless();
+    const before = rig(vp);
+    expect(before).toMatchObject({ hemi: [LIGHTS.hemisphere, 0xffffff, 0x3a3a3a], key: [LIGHTS.key, 0xffffff, LIGHTS.keyFrom, [0, 0, 0], false], headlight: LIGHTS.headlight, fog: null, sky: false, shadows: false });
+    // nothing to say changes nothing
+    vp.setAtmosphere(null);
+    vp.setAtmosphere({ weather: "rain" });
+    expect(rig(vp)).toEqual(before);
+    expect(vp.sky).toBeNull();
+  });
+
+  it("a sun replaces the key light, a sky tints the sky light, exposure scales them all; taken away, today's rig is back", () => {
+    const vp = headless();
+    const before = rig(vp);
+    cube(vp, "a", [0, 0, 0], 2);
+    vp.setAtmosphere({ sky: { top: "#4080c0", horizon: "#e0d0b0", bottom: "#806040" }, fog: { color: "#e0d0b0", near: 20, far: 120 }, sun: { direction: [0, 1, 0], color: "#ffeecc", intensity: 2, shadows: true }, exposure: 2 });
+    expect(vp.keyLight.intensity).toBe(4);
+    expect(vp.keyLight.color.getHexString()).toBe("ffeecc");
+    // the headlight dims under a sun (and exposure scales it too)
+    expect(vp.headlight.intensity).toBeCloseTo((LIGHTS.headlight / 3) * 2);
+    expect(vp.scene.environmentIntensity).toBeCloseTo(LIGHTS.environment * 2);
+    expect(vp.hemi.color.getHexString()).toBe("4080c0");
+    expect(vp.scene.fog.near).toBe(20);
+    expect(vp.sky.visible).toBe(true);
+    // shadows: the light casts, and so does what's there
+    expect(vp.keyLight.castShadow).toBe(true);
+    expect(vp.objects.get("a").content.castShadow).toBe(true);
+    expect(vp.objects.get("a").content.receiveShadow).toBe(true);
+    // the sky is never picked and never counts toward the scene's box
+    expect(vp.sceneBox().max.toArray()).toEqual([1, 1, 1]);
+    vp.setCamera({ position: [0, 0, 10], target: [0, 0, 0] });
+    expect(vp.pick(100, 5)).toBeNull();
+
+    vp.setAtmosphere(null);
+    expect(rig(vp)).toEqual(before);
+    expect(vp.objects.get("a").content.castShadow).toBe(false);
+  });
+
+  it("the sun's shadow map covers the scene's box", () => {
+    const f = sunFrame({ min: [-2, 0, -2], max: [2, 2, 2] }, [0, 1, 0], 1024);
+    expect(f.target).toEqual([0, 1, 0]);
+    expect(f.radius).toBeCloseTo(3);
+    expect(f.position).toEqual([0, 7, 0]);
+    // the whole sphere lies between near and far
+    expect(f.near).toBeLessThanOrEqual(2 * f.radius - f.radius);
+    expect(f.far).toBeGreaterThanOrEqual(3 * f.radius);
+    expect(f.normalBias).toBeCloseTo((6 / 1024) * 1.5);
   });
 });

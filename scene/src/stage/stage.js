@@ -21,7 +21,7 @@
 //   - the router (router.js): DOM input → events, down the chain.
 //   - the doc loop: core migration, derive, the running set, extension
 //     migrations, display and content; then the update flush (once per UI
-//     pass): each instance's update(), scheduled work, lenses.
+//     pass): each instance's update(), scheduled work, lenses, atmosphere.
 
 import css from "./stage.css?inline";
 import * as THREE from "three";
@@ -150,6 +150,24 @@ export function mergeLooks(lenses, objects) {
     }
   }
   return out;
+}
+
+/**
+ * Atmospheres stacked in running order, as lenses are: each one's fields
+ * (sky, fog, sun, exposure) over the earlier ones', a field left undefined
+ * kept, null clearing it. A field's value is taken whole (one sky, not a top
+ * from here and a horizon from there). null when nothing is left.
+ * @param {Iterable<object | null>} list
+ * @returns {{ sky?, fog?, sun?, exposure? } | null}
+ */
+export function mergeAtmosphere(list) {
+  const out = {};
+  for (const a of list ?? []) {
+    if (!a || typeof a !== "object") continue;
+    for (const k of ["sky", "fog", "sun", "exposure"]) if (a[k] !== undefined) out[k] = a[k];
+  }
+  for (const k of Object.keys(out)) if (out[k] == null) delete out[k];
+  return Object.keys(out).length ? out : null;
 }
 
 /** A stable key for a lens map, to tell whether it changed. */
@@ -577,6 +595,8 @@ export default function Stage(handle, element) {
 
   let looks = new Map(); // id → { sourceUrl?, name? }: what this viewer sees instead
   let lastLooksKey = "[]";
+  let atmosphere = null; // the running extensions' atmosphere, merged (mergeAtmosphere)
+  let lastAtmosphereKey = "null";
   const nameOf = (id) => looks.get(id)?.name ?? derive().objects[id]?.name ?? null;
 
   // ─── the doc → the viewport ───────────────────────────────────────────────
@@ -830,6 +850,23 @@ export default function Stage(handle, element) {
       applyDoc(m);
       // names through a lens changed: let every extension read them again
       displayChanged();
+    }
+    // the atmosphere, stacked the same way; the viewport hears only a change
+    const atm = mergeAtmosphere(
+      running.map((r) => {
+        try {
+          return r.instance.atmosphere?.() ?? null;
+        } catch (err) {
+          console.warn(`[scene] extension “${r.id}”: atmosphere failed`, err);
+          return null;
+        }
+      }),
+    );
+    const atmKey = JSON.stringify(atm);
+    if (atmKey !== lastAtmosphereKey) {
+      lastAtmosphereKey = atmKey;
+      atmosphere = atm;
+      viewport.setAtmosphere(atm);
     }
     const ms = now() - t0;
     spend(ms);
@@ -1606,6 +1643,7 @@ export default function Stage(handle, element) {
     root,
     scene,
     looks: () => looks,
+    atmosphere: () => atmosphere,
     /** does this extension hold an arm, an open session or a pose (so a doc-caused stop waits)? */
     busy,
     stats: () => ({

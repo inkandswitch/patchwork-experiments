@@ -169,6 +169,12 @@ try {
   const aRun = await P("running('a')");
   check("designer A keeps the editor (the arena-level kit): toolbar, sidebar, grid, the build commands", ["scene.toolbar", "scene.sidebar", "scene.grid", "arena.build", "arena"].every((id) => aRun.includes(id)) && !!(await P("rect('.toolbar')")) && !!(await P(`rect('${sampleBtn}')`)), aRun);
 
+  // the level's look: the arena's atmosphere, in both views (a sky, haze, a sun casting shadows on every block)
+  const look = (w) => js(`(() => { const v = window.__p.${w}.viewport; let meshes = 0, cast = 0; v.content.traverse((o) => { if (o.isMesh) { meshes++; if (o.castShadow && o.receiveShadow) cast++; } }); return { atmosphere: v.atmosphere, sky: !!v.sky?.visible, fog: !!v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, sunCasts: v.keyLight.castShadow, meshes, cast }; })()`);
+  await until("!!window.__p.A.viewport.atmosphere && !!window.__p.B.viewport.atmosphere", 3000);
+  const looks = { a: await look("A"), b: await look("B") };
+  check("a laid-out level has the arena's look in both views: sky, haze, and a sun whose shadows every block casts and takes", ["a", "b"].every((w) => looks[w].sky && looks[w].fog && looks[w].shadowMap && looks[w].sunCasts && looks[w].meshes > 0 && looks[w].cast === looks[w].meshes), looks);
+
   await js("window.__p.A.viewport.frame(window.__p.A.viewport.sceneBox())");
   await sleep(400);
   await shot("level");
@@ -383,6 +389,8 @@ try {
   check("Add target puts a target on the deck where you look", !!ht && Math.abs(ht.position[0] - 1) < 0.05 && Math.abs(ht.position[2] - 4) < 0.05 && Math.abs(ht.position[1] - deckTop[1]) < 0.05, { ht, deckTop });
   await until("window.__p.running('a').includes('arena')");
   check("hybrid: the target's trait starts the arena", (await P("running('a')")).includes("arena"), await P("running('a')"));
+  const hv = await js("(() => { const v = window.__p.A.viewport; return { atmosphere: v.atmosphere, sky: !!v.sky, fog: v.scene.fog, shadowMap: v.renderer.shadowMap.enabled, key: [v.keyLight.intensity, v.keyLight.position.toArray()] }; })()");
+  check("hybrid: a deck with a target keeps the stage's own look (no arena sky, haze or sun)", hv.atmosphere === null && !hv.sky && hv.fog === null && !hv.shadowMap && hv.key[0] === 1.5, hv);
   await js("Math.random = () => 0");
   await until("!!window.__p.hostA.querySelector('.arena-play')");
   await click(await P("rect('.arena-play')"));

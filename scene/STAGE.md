@@ -381,6 +381,7 @@ How poses and loops behave:
 |---|---|
 | `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. If what's shown changed in the same flush as the doc or local state (a rebuilt GLB lands as its status goes back to idle), that second call comes too, right after the first. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
 | `looks()` → `Map id → { sourceUrl?, name? }` | the stage (lenses combine in running order; later wins per field) |
+| `atmosphere()` → `{ sky?, fog?, sun?, exposure? }` or null | the stage, every flush: sky, fog and sun (see "Atmosphere" below) |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
@@ -437,6 +438,40 @@ and selecting an object (or clicking on nothing) replaces the dimension.
 `api.collect(name)` returns `[{ id, value }]` from running extensions that
 have that field, in running order. The stage never reads the value.
 
+**Atmosphere.** How the world around the objects looks: a sky, fog, a sun.
+
+```js
+atmosphere() → null | {
+  sky?: { top, horizon, bottom },          // sRGB hex ("#rrggbb"); a missing one takes a neighbour's
+  fog?: { color?, near, far },             // metres from the eye; color defaults to the sky's horizon
+  sun?: { direction: [x, y, z],            // toward the sun (need not be unit)
+          color?, intensity?,              // default white, the key light's 1.5
+          shadows?: boolean },             // default false
+  exposure?: number,                       // scales every light; default 1
+}
+```
+
+- The stage asks every running extension at every flush and stacks the
+  answers in running order, as it does lenses: a later extension's field
+  wins whole (one sky, never a top from one and a horizon from another), a
+  field left undefined is kept, and `null` clears an earlier one's. The
+  viewport hears only a change (by key). Something that changes on its own
+  (a day passing) asks for a flush with `api.schedule`.
+- **None at all is the stage's own look, exactly**: the theme's background,
+  no fog, the white key light high to one side, no shadows. The model's CAD
+  view never gives one.
+- The **sky** is a gradient behind everything, horizon to top above and
+  horizon to bottom below, with a soft disc where the sun is. It writes no
+  depth and is never picked, boxed or framed. Without a sky, fog's colour
+  is the background.
+- **Fog** fades the objects and world groups toward its colour, from `near`
+  to `far`. The on-top pass has none.
+- The **sun** replaces the key light, and dims the headlight to a third
+  (outdoors there's no lamp on the camera, and a full one fills the shadows
+  in). A sky tints the sky/ground light with its top and bottom. With
+  `shadows`, every object casts and takes them, from one shadow map fitted
+  to the objects' box and redrawn only when something moves.
+
 ---
 
 ## Inside the stage (for whoever builds it)
@@ -450,7 +485,7 @@ have that field, in running order. The stage never reads the value.
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds |
 | `stage/host.js` | starting and stopping extensions, the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, migrations, content loading, lenses, status, prefs, kits, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/stage.js` | the mount and the doc loop (derive, migrations, content loading, lenses, atmosphere, status, prefs, kits, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old
@@ -471,6 +506,8 @@ taken out. It keeps the following:
 - **Widgets:** `worldLayer(owner, { onTop })` and `pickWidget(x, y)`.
 - **Labels:** `labels.sync(owner, items)`.
 - **Poses:** `setPose(id, transform | null)`, `worldOf(id)`.
+- **Atmosphere:** `setAtmosphere(merged | null)` (sky, fog, sun; the
+  pure parts are `cleanAtmosphere`, `lighting` and `sunFrame`).
 - **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn)`,
   `afterRender(fn)`, `invalidate()`, `dispose()`.
 

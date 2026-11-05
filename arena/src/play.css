@@ -54,22 +54,47 @@
   text-align: center;
   opacity: 0.85;
 }
+/* four ticks round a gap, and a dot: readable on sky and on sand */
 .scene-stage .arena-crosshair:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
   background:
-    linear-gradient(#fff, #fff) center / 2px 8px no-repeat,
-    linear-gradient(#fff, #fff) center / 8px 2px no-repeat;
-  filter: drop-shadow(0 0 1px #000);
+    linear-gradient(#fff, #fff) center top / 2px 11px no-repeat,
+    linear-gradient(#fff, #fff) center bottom / 2px 11px no-repeat,
+    linear-gradient(#fff, #fff) left center / 11px 2px no-repeat,
+    linear-gradient(#fff, #fff) right center / 11px 2px no-repeat,
+    radial-gradient(circle, #fff 0 1.6px, transparent 2.2px) center / 6px 6px no-repeat;
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
 }
-.scene-stage .arena-crosshair[data-hit]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+/* a hit: four red ticks on the diagonals, out past the crosshair, fading */
+.scene-stage .arena-hit:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
   background:
-    linear-gradient(45deg, transparent 45%, #ff5a4a 45% 55%, transparent 55%),
-    linear-gradient(-45deg, transparent 45%, #ff5a4a 45% 55%, transparent 55%);
+    linear-gradient(45deg, transparent 47%, #ff4a3a 47% 53%, transparent 53%),
+    linear-gradient(-45deg, transparent 47%, #ff4a3a 47% 53%, transparent 53%);
+  /* cut the middle out, so only the ends of the X show */
+  mask: radial-gradient(circle, transparent 0 11px, #000 11.5px);
+  filter: drop-shadow(0 0 1px #000);
+  animation: arena-hit 260ms ease-out forwards;
+}
+@keyframes arena-hit {
+  from {
+    opacity: 1;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.15);
+  }
 }
 .scene-stage .arena-top:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
@@ -80,6 +105,7 @@
   padding: 8px 12px;
   border-radius: 10px;
   background: rgb(20 22 28 / 0.6);
+  text-shadow: 0 1px 2px #000;
 }
 .scene-stage .arena-scores:where(:not(.about-embed *), .about-embed .scene-tool *) {
   margin: 0;
@@ -104,8 +130,11 @@
 }
 .scene-stage .arena-ammo:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
-  right: 16px;
-  bottom: 14px;
+  right: 12px;
+  bottom: 12px;
+  padding: 4px 14px;
+  border-radius: 10px;
+  background: rgb(20 22 28 / 0.6);
   font-size: 22px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -122,8 +151,11 @@
   /* clear of the ammo (right) and the corner buttons (left); wraps when narrow */
   width: max-content;
   max-width: calc(100% - 240px);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgb(20 22 28 / 0.5);
   text-align: center;
-  opacity: 0.7;
+  color: rgb(255 255 255 / 0.85);
   text-shadow: 0 1px 2px #000;
 }
 .scene-stage .arena-resume:where(:not(.about-embed *), .about-embed .scene-tool *) {
