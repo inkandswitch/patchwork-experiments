@@ -1,5 +1,6 @@
 /**
- * glb.js — a dependency-free glTF 2.0 binary (GLB) encoder.
+ * glb.js (a fork, not a kit copy: check-kit leaves it alone) — a dependency-free
+ * glTF 2.0 binary (GLB) encoder.
  *
  * Copied from scene/src/glb.js and extended with textures (embedded images,
  * TEXCOORD_0, baseColorTexture, KHR_texture_transform, alpha modes and
