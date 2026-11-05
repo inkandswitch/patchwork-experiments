@@ -1,28 +1,46 @@
 // Publish the geometry showcase to a real sync server and print its URL.
 //
 //   node probes/publish-showcase-scene.mjs [--sync wss://…] [--settle 8000]
+//   node probes/publish-showcase-scene.mjs --dry-run [--out showcase-doc.json]
 //
 // Makes NEW docs on every run (no dedupe): an implicit sculpture (twisted
-// strands), tower and hull, an OpenSCAD plinth that imports the sculpture, a flow field whose body
-// is the hull's scene render, an About note, a render doc per object, and the
-// scene. Nothing is built here: the first scene to open builds every render
-// (the hull first; the flow follows once the hull's GLB exists).
+// strands), tower and hull, an OpenSCAD plinth that imports the sculpture, a
+// flow field whose body is the hull's scene render, a Camber hull with a flow
+// linked to its render, an About note, a render doc per object, and the scene.
+// Nothing is built here: the first scene to open builds every render (the
+// hulls first; each flow follows once its hull's GLB exists).
+//
+// The scene is in the stage's shape (README "scene — the composition",
+// STAGE.md): groups only organise (no transform, no parent; `group` files
+// one in another), objects are filed in a group with `group` and attached to
+// another object with `parent` (transform relative to it), the starting view
+// is `view.home`, and `view.kits` suggests the model kit (the editor).
+//
+// --dry-run touches no network: every doc gets a made-up automerge URL, the
+// scene is checked (already in the current shape, nothing dangling), and
+// every doc is written to --out as { scene, docs: { url: doc } } (content
+// bytes as strings), default <tmpdir>/showcase-doc.json.
 //
 // Docs of other packages' datatypes are written by shape (see each package's
 // datatype.js); this script imports their sources only for example text and
 // param defaults, at runtime, from this checkout.
-import { readFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Repo, initSubduction } from "@automerge/automerge-repo"
-import { newRenderDoc } from "../src/datatype.js"
+import { newRenderDoc, DEFAULT_VIEW } from "../src/datatype.js"
 import { defaultParams } from "../src/staleness.js"
+import { needsCoreMigration } from "../src/migrate.js"
+import { isGroup, resolveGroups } from "../src/groups.js"
+import { resolveParents, worldMatrix } from "../src/hierarchy.js"
+import { applyMatrix } from "../src/transform.js"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, "../..")
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
 )
+const DRY = !!args["dry-run"]
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com"
 
 const { EXAMPLES } = await import(resolve(repoRoot, "implicit/src/examples.js"))
@@ -31,16 +49,37 @@ const flowPlugins = (await import(resolve(repoRoot, "flow-field/src/index.js")))
 const specs = (plugins, id) => plugins.find((p) => p.type === "scene:source" && p.id === id).params
 const example = (id) => EXAMPLES.find((e) => e.id === id)
 
-await initSubduction()
-const repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
-const create = async (value) => (await (repo.create2 ? repo.create2(value) : repo.create(value)))
+// ─── where docs go: a real repo, or (dry run) a map with made-up urls ─────────
 const made = []
-const make = async (value) => {
-  const h = await create(value)
-  made.push(h.url)
-  return h.url
+const docs = {}
+let repo = null
+let make
+if (DRY) {
+  const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+  let n = 0
+  const fakeUrl = () => {
+    n++
+    let id = ""
+    for (let i = 0; i < 28; i++) id += B58[(n * 7919 + i * 104729 + ((n >> (i % 16)) & 31)) % 58]
+    return `automerge:${id}`
+  }
+  make = async (value) => {
+    const url = fakeUrl()
+    docs[url] = structuredClone(value)
+    made.push(url)
+    return url
+  }
+} else {
+  const { Repo, initSubduction } = await import("@automerge/automerge-repo")
+  await initSubduction()
+  repo = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
+  make = async (value) => {
+    const h = await (repo.create2 ? repo.create2(value) : repo.create(value))
+    made.push(h.url)
+    return h.url
+  }
+  console.log(`connected to ${SYNC}`)
 }
-console.log(`connected to ${SYNC}`)
 
 // ─── sources ───────────────────────────────────────────────────────────────
 const implicitDoc = (title, ex, notes = "") => ({
@@ -93,6 +132,7 @@ const flow = await make({
   body: { url: rHull, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 140 },
 })
 const flowParams = (id, over) => ({ ...defaultParams(specs(flowPlugins, id)), ...over })
+// (the slice's height and the rake's seed height are handles: drag them in the scene)
 const rStream = await render("Flow past the hull", flow, "flow-field-streamlines",
   flowParams("flow-field-streamlines", { rakeRows: 2, seedHeight: -0.04, rowSpacing: 0.08, step: 0.01, maxSteps: 400, tubeRadius: 0.005 }))
 const rSlice = await render("Flow past the hull", flow, "flow-field-slice",
@@ -120,55 +160,93 @@ const rCamberSlice = await render("Flow past the camber hull", camberFlow, "flow
 
 // ─── the scene ─────────────────────────────────────────────────────────────
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale })
-const group = (name, parent, transform, infoUrl = null) => ({
-  kind: "group", name, parent, sourceUrl: null, providerId: null, renderUrl: null,
-  visible: true, color: null, opacity: 1, wireframe: false, transform, infoUrl,
-})
-const object = (name, parent, sourceUrl, providerId, renderUrl, transform, color = null, extra = {}) => ({
-  kind: "object", name, parent, sourceUrl, providerId, renderUrl,
+// A group organises: it hides, fades and carries an About; it has no transform.
+const group = (name, infoUrl = null) => ({ kind: "group", name, group: null, visible: true, opacity: 1, infoUrl })
+// An object filed in `group`; `parent` is an object it's attached to (its transform is then relative to it).
+const object = (name, { group = null, parent = null }, sourceUrl, providerId, renderUrl, transform, color = null, extra = {}) => ({
+  kind: "object", name, group, parent, sourceUrl, providerId, renderUrl,
   visible: true, color, opacity: 1, wireframe: false, transform, ...extra,
 })
 
+// Positions put each part's lowest point on the ground (see its render's bounds).
+// Where each grouping stands; the objects in it are placed there themselves.
+const DISPLAY = [-0.55, 0, 0.35]
+const FLOW = [0.35, 0.42, -0.95]
+const CAMBER = [-0.45, 0.22, -2.25]
+const at = (base, p = [0, 0, 0]) => p.map((v, i) => v + base[i])
+
 const objects = {
-  // positions put each part's lowest point on the ground (see its render's bounds)
-  gDisplay: group("Sculpture on a plinth", null, T([-0.55, 0, 0.35]), about),
-  plinth: object("Plinth", "gDisplay", plinth, "openscad-model", rPlinth, T(), "#e6e1d8"),
-  sculpture: object("Twisted strands", "gDisplay", sculpture, "implicit-mesh", rSculpture, T([0, 0.479, 0], [0, 0.4, 0]), "#b08d57"),
-  tower: object("Twisted tower", null, tower, "implicit-mesh", rTower, T([0.25, 0.257, 0.3]), "#7f9cc4", { infoUrl: about }),
-  gFlow: group("Hull in a flow", null, T([0.35, 0.42, -0.95]), about),
-  hull: object("Hull", "gFlow", hull, "implicit-mesh", rHull, T(), "#f1efe9"),
+  gDisplay: group("Sculpture on a plinth", about),
+  plinth: object("Plinth", { group: "gDisplay" }, plinth, "openscad-model", rPlinth, T(at(DISPLAY)), "#e6e1d8"),
+  sculpture: object("Twisted strands", { group: "gDisplay" }, sculpture, "implicit-mesh", rSculpture, T(at(DISPLAY, [0, 0.479, 0]), [0, 0.4, 0]), "#b08d57"),
+  tower: object("Twisted tower", {}, tower, "implicit-mesh", rTower, T([0.25, 0.257, 0.3]), "#7f9cc4", { infoUrl: about }),
+  gFlow: group("Hull in a flow", about),
+  hull: object("Hull", { group: "gFlow" }, hull, "implicit-mesh", rHull, T(at(FLOW)), "#f1efe9"),
   // attached to the hull: the flow is in the hull render's frame, so identity
-  streamlines: object("Streamlines", "hull", flow, "flow-field-streamlines", rStream, T()),
-  slice: object("Pressure slice", "hull", flow, "flow-field-slice", rSlice, T(), null, { opacity: 0.85 }),
-  gCamber: group("Camber hull in a flow", null, T([-0.45, 0.22, -2.25]), about),
-  camber: object("Camber hull", "gCamber", camber, "camber-hull-surface", rCamber, T(), "#efe9dc"),
-  camberStreamlines: object("Streamlines", "camber", camberFlow, "flow-field-streamlines", rCamberStream, T()),
-  camberSlice: object("Pressure slice", "camber", camberFlow, "flow-field-slice", rCamberSlice, T(), null, { opacity: 0.85 }),
+  streamlines: object("Streamlines", { group: "gFlow", parent: "hull" }, flow, "flow-field-streamlines", rStream, T()),
+  slice: object("Pressure slice", { group: "gFlow", parent: "hull" }, flow, "flow-field-slice", rSlice, T(), null, { opacity: 0.85 }),
+  gCamber: group("Camber hull in a flow", about),
+  camber: object("Camber hull", { group: "gCamber" }, camber, "camber-hull-surface", rCamber, T(at(CAMBER)), "#efe9dc"),
+  camberStreamlines: object("Streamlines", { group: "gCamber", parent: "camber" }, camberFlow, "flow-field-streamlines", rCamberStream, T()),
+  camberSlice: object("Pressure slice", { group: "gCamber", parent: "camber" }, camberFlow, "flow-field-slice", rCamberSlice, T(), null, { opacity: 0.85 }),
 }
 const order = ["gDisplay", "plinth", "sculpture", "tower", "gFlow", "hull", "streamlines", "slice", "gCamber", "camber", "camberStreamlines", "camberSlice"]
 
-// world = group · local; groups are translations only here. Anchors are vertices
-// of the built meshes (bow and stern on the waterline; the plinth's floor and cap
-// corners for the strands' bounds), so neither dimension reads "off surface".
-const world = (g, p) => p.map((v, i) => v + objects[g].transform.position[i])
-const anchor = (objectId, g, local) => ({ objectId, local, world: world(g, local) })
+// Anchors are vertices of the built meshes (bow and stern on the waterline; the
+// plinth's floor and cap corners for the strands' bounds), so neither dimension
+// reads "off surface". `world` is the anchor through its object's world matrix.
+const parents = resolveParents(objects)
+const anchor = (objectId, local) => ({ objectId, local, world: applyMatrix(worldMatrix(objects, objectId, parents), local) })
 const dims = {
-  hullLength: { a: anchor("hull", "gFlow", [0.4971, -0.005, -0.005]), b: anchor("hull", "gFlow", [-0.4983, -0.005, -0.005]), label: null },
-  plinthHeight: { a: anchor("plinth", "gDisplay", [0.159, 0, 0.159]), b: anchor("plinth", "gDisplay", [0.149, 0.32, 0.149]), label: null },
+  hullLength: { a: anchor("hull", [0.4971, -0.005, -0.005]), b: anchor("hull", [-0.4983, -0.005, -0.005]), label: null },
+  plinthHeight: { a: anchor("plinth", [0.159, 0, 0.159]), b: anchor("plinth", [0.149, 0.32, 0.149]), label: null },
 }
 
-const scene = await make({
+const sceneDoc = {
   "@patchwork": { type: "scene" },
   title: "Geometry showcase",
   objects,
   order,
   dimensions: dims,
-  view: { units: "mm", grid: true, axes: true, bounds: false },
-  camera: { position: [3.9, 2.9, 3.4], target: [0.3, 0.22, -1.15] },
-})
+  traits: {},
+  view: {
+    ...DEFAULT_VIEW,
+    units: "mm",
+    kits: ["model"], // the editor; a viewer can turn kits on and off for themselves
+    home: { position: [3.9, 2.9, 3.4], target: [0.3, 0.22, -1.15] },
+  },
+  camera: null,
+}
+
+// ─── checks: the stage opens this as it is ───────────────────────────────────
+const problems = []
+if (needsCoreMigration(sceneDoc)) problems.push("the stage would migrate it (an old shape somewhere)")
+const groups = resolveGroups(objects)
+for (const [id, o] of Object.entries(objects)) {
+  if (isGroup(o) && ("transform" in o || "parent" in o)) problems.push(`group ${id} has a transform or parent`)
+  if (o.group != null && !isGroup(objects[o.group])) problems.push(`${id}.group isn't a group`)
+  if (o.parent != null && (!objects[o.parent] || isGroup(objects[o.parent]))) problems.push(`${id}.parent isn't an object`)
+  if (o.parent != null && groups.get(id) !== groups.get(o.parent)) problems.push(`${id} is filed apart from what it's attached to`)
+  for (const k of ["sourceUrl", "renderUrl", "infoUrl"]) if (o[k] && !made.includes(o[k])) problems.push(`${id}.${k} is no doc made here`)
+}
+if (new Set(order).size !== order.length || order.length !== Object.keys(objects).length || order.some((id) => !objects[id])) problems.push("order doesn't list every object once")
+if (problems.length) {
+  for (const p of problems) console.error(`  ${p}`)
+  process.exit(1)
+}
+
+const scene = await make(sceneDoc)
 console.log(`scene ${scene}`)
 
+if (DRY) {
+  const out = resolve(args.out && args.out !== true ? args.out : resolve(tmpdir(), "showcase-doc.json"))
+  writeFileSync(out, JSON.stringify({ scene, docs }, null, 2))
+  console.log(`dry run: ${made.length} docs (nothing published) → ${out}`)
+  process.exit(0)
+}
+
 // ─── flush, then prove every doc is there from a repo that has never seen it ──
+const { Repo } = await import("@automerge/automerge-repo")
 await repo.flush?.()
 await new Promise((r) => setTimeout(r, Number(args.settle ?? 8000)))
 const checker = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] })
