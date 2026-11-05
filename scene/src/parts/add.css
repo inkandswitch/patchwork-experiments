@@ -1,6 +1,7 @@
-/* scene.add: the empty-scene hint, the drop hint and the provider chooser,
-   over the view (old styles.css .empty, .drop-hint and .chooser). The hints
-   never take the pointer: a drop lands on the canvas under them. */
+/* scene.add: the empty scene's start screen, the drop hint and the provider
+   chooser, over the view (old styles.css .empty, .drop-hint and .chooser).
+   The hints never take the pointer, so a drop lands on the canvas under
+   them; only the start screen's buttons do. */
 
 .scene-stage .stage-overlay.add-layer > .add-empty:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
@@ -15,6 +16,49 @@
 
 .scene-stage .add-empty p:where(:not(.about-embed *), .about-embed .scene-tool *) {
   margin: 0.25em 0;
+}
+
+.scene-stage .add-empty .add-start:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin-bottom: var(--studio-space-md, 1rem);
+  color: var(--scene-fg);
+}
+
+.scene-stage .add-empty .add-start[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .add-empty .add-start-title:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.scene-stage .add-empty .add-templates:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.scene-stage .add-empty .add-template:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 9rem;
+  max-width: 14rem;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: normal;
+}
+
+.scene-stage .add-empty .add-template-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-weight: 600;
+}
+
+.scene-stage .add-empty .add-template-description:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 11px;
+  color: var(--scene-muted);
 }
 
 .scene-stage .add-empty .hint:where(:not(.about-embed *), .about-embed .scene-tool *) {

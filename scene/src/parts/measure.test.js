@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, until, settle } from "../test/stage-harness.js";
+import { PLAY, mountStage, object, until, settle } from "../test/stage-harness.js";
 import measure, { anchorFor, anchorWorld, HINT_FIRST, HINT_SECOND } from "./measure.js";
 import dimensions, { dimensionRef } from "./dimensions.js";
 
-const MEASURE = { meta: { id: "scene.measure" }, module: measure };
+const MEASURE = { meta: { id: "scene.measure", activities: ["edit"] }, module: measure };
 const DIMENSIONS = { meta: { id: "scene.dimensions" }, module: dimensions };
-const KIT = { id: "model", extensions: ["scene.measure", "scene.dimensions"] };
 
 let s = null;
 afterEach(() => {
@@ -15,8 +14,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount({ objects = { a: object({ name: "A", transform: { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }, extensions = [], kits = [KIT], doc = {} } = {}) {
-  s = await mountStage({ extensions: [MEASURE, DIMENSIONS, ...extensions], kits, doc: { objects, order: Object.keys(objects), ...doc } });
+async function mount({ objects = { a: object({ name: "A", transform: { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }, extensions = [], doc = {} } = {}) {
+  s = await mountStage({ extensions: [MEASURE, DIMENSIONS, ...extensions], doc: { objects, order: Object.keys(objects), ...doc } });
   return s;
 }
 
@@ -88,7 +87,7 @@ describe("scene.measure", () => {
   it("a click on nothing places nothing, but is still the measure's", async () => {
     const clicks = [];
     const other = { meta: { id: "t.other" }, module: { create: () => ({ input: { click: () => (clicks.push(1), true) } }) } };
-    await mount({ extensions: [other], kits: [{ id: "model", extensions: ["scene.measure", "t.other"] }] });
+    await mount({ extensions: [other] });
     s.click();
     expect(clicks).toEqual([1]); // not armed: it isn't the measure's
     run();
@@ -116,7 +115,7 @@ describe("scene.measure", () => {
   it("other keys pass through while armed", async () => {
     const keys = [];
     const keymap = { meta: { id: "t.keys" }, module: { create: () => ({ input: { key: (ev) => (keys.push(ev.key), true) } }) } };
-    await mount({ extensions: [keymap], kits: [{ id: "model", extensions: ["scene.measure", "t.keys"] }] });
+    await mount({ extensions: [keymap] });
     run();
     s.key("m");
     s.key("Escape", { code: "Escape" });
@@ -165,12 +164,11 @@ describe("scene.measure", () => {
   });
 
   it("stopping the extension disarms it", async () => {
-    await mount();
+    await mount({ extensions: [PLAY] });
     run();
     await settle();
     expect(s.local.get().armed).toBe("scene.measure");
-    s.local.swap((m) => ({ ...m, kits: { on: [], off: ["model"] } }));
-    await settle();
+    await s.activity("play");
     expect(s.local.get().armed).toBeNull();
     expect(s.canvas.style.cursor).toBe("");
   });

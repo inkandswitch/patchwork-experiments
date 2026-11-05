@@ -1,6 +1,7 @@
 // The stage, mounted (no WebGL): extensions registered as plugins, started by
-// trait, kit and `always`, in running order; the api they get; presence
-// between two mounted stages; prefs and kits kept per scene.
+// trait, by declaring none (general) and `always`, in running order, as this
+// viewer's activity calls for them; the api they get; presence between two
+// mounted stages; prefs kept per scene; templates.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeRepo, flush } from "../test/fake-repo.js";
 import { assoc } from "./atom.js";
@@ -77,7 +78,8 @@ function recorder(id, instance = () => ({}), moduleExtra = {}) {
 const EXT_PLUGINS = [
   { id: "t.scene", traits: ["t.scene"] },
   { id: "t.obj", traits: ["t.obj"] },
-  { id: "t.kit" },
+  { id: "t.edit", activities: ["edit"] },
+  { id: "t.play", activities: ["play"] },
   { id: "t.always", always: true },
   { id: "t.dropped", traits: ["t.dropped"], drops: ["t-deck"] },
 ];
@@ -94,7 +96,9 @@ for (const p of EXT_PLUGINS) {
 const forgetModules = () => {
   for (const p of EXT_PLUGINS) delete getRegistry("scene:extension").get(p.id).module;
 };
-getRegistry("scene:kit").register({ type: "scene:kit", id: "t.kit", name: "Test kit", extensions: ["t.kit"] });
+// a template, whose create() is per test too
+let template = null;
+getRegistry("scene:template").register({ type: "scene:template", id: "t.template", name: "Test level", load: async () => ({ create: (ctx) => template?.(ctx) }) });
 
 // ─── mounting ───────────────────────────────────────────────────────────────
 
@@ -214,7 +218,7 @@ describe("the stage, mounted", () => {
     expect(m.element.querySelector("style")).toBeTruthy(); // stage.css (vitest inlines CSS as "")
   });
 
-  it("runs what the doc's traits, the kits and `always` call for, in running order", async () => {
+  it("runs what the doc's traits, the general extensions and `always` call for, in running order", async () => {
     // the scene extension loads last
     let release;
     const slow = new Promise((r) => (release = r));
@@ -225,39 +229,51 @@ describe("the stage, mounted", () => {
       return scene;
     };
     try {
-      const h = newScene({ traits: { "t.scene": {} }, objects: { a: card({ traits: { "t.obj": {} } }) }, order: ["a"], view: { kits: ["t.kit"] } });
+      const h = newScene({ traits: { "t.scene": {} }, objects: { a: card({ traits: { "t.obj": {} } }) }, order: ["a"] });
       const m = mount(h);
       await settle();
-      expect(running(m)).toEqual(["t.obj:objects", "t.kit:viewer", "t.always:viewer"]);
+      expect(running(m)).toEqual(["t.obj:objects", "t.edit:general", "t.always:general"]);
       release();
       await settle();
-      expect(running(m)).toEqual(["t.scene:scene", "t.obj:objects", "t.kit:viewer", "t.always:viewer"]);
-      expect(m.debug.host.collect("update").map((x) => x.id)).toEqual(["t.scene", "t.obj", "t.kit", "t.always"]);
+      expect(running(m)).toEqual(["t.scene:scene", "t.obj:objects", "t.edit:general", "t.always:general"]);
+      expect(m.debug.host.collect("update").map((x) => x.id)).toEqual(["t.scene", "t.obj", "t.edit", "t.always"]);
+      expect(m.local.get().activity).toBe("edit");
+      expect(m.local.get().activities).toEqual({ current: "edit", available: ["edit", "play"] });
     } finally {
       getRegistry("scene:extension").get("t.scene").load = async () => ext("t.scene").module;
     }
   });
 
-  it("stops a kit's extension at once when the viewer turns the kit off: its overlay goes, then dispose", async () => {
-    exts["t.kit"] = recorder("t.kit", (api) => {
-      api.overlay().textContent = "kit overlay";
-      api.edge("left").textContent = "kit edge";
+  it("starts a joining viewer where the doc says: an editing extension doesn't run in play", async () => {
+    const m = mount(newScene({ view: { activity: "play" } }));
+    await settle();
+    expect(m.local.get().activity).toBe("play");
+    expect(running(m)).toEqual(["t.play:general", "t.always:general"]);
+  });
+
+  it("stops an editing extension at once when the viewer switches to play: its overlay goes, then dispose", async () => {
+    exts["t.edit"] = recorder("t.edit", (api) => {
+      api.overlay().textContent = "edit overlay";
+      api.edge("left").textContent = "edit edge";
       api.labels().set([{ key: "k", text: "label", screen: { x: 1, y: 1 } }]);
       return {};
     });
-    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const m = mount(newScene());
     await settle();
-    const r = exts["t.kit"];
-    expect(m.root.querySelector(".stage-overlay").textContent).toBe("kit overlay");
-    expect(m.root.querySelector('[data-edge="left"]').textContent).toBe("kit edge");
+    const r = exts["t.edit"];
+    expect(m.root.querySelector(".stage-overlay").textContent).toBe("edit overlay");
+    expect(m.root.querySelector('[data-edge="left"]').textContent).toBe("edit edge");
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(1);
-    m.local.swap((v) => ({ ...v, kits: { on: [], off: ["t.kit"] } }));
+    m.local.swap((v) => ({ ...v, activity: "play" }));
     expect(r.disposed).toBe(1);
     expect(r.api.signal.aborted).toBe(true);
     expect(m.root.querySelector(".stage-overlay")).toBeNull();
     expect(m.root.querySelector('[data-edge="left"]').children).toHaveLength(0);
     expect(m.root.querySelectorAll(".labels .label")).toHaveLength(0);
-    expect(running(m)).toEqual(["t.always:viewer"]);
+    expect(running(m)).toEqual(["t.always:general"]);
+    await settle();
+    expect(running(m)).toEqual(["t.play:general", "t.always:general"]);
+    expect(m.local.get().activities.current).toBe("play");
     // after the abort, acquiring is a no-op
     expect(r.api.overlay().isConnected).toBe(false);
     expect(typeof r.api.camera.limit({ minPolar: 0 })).toBe("function");
@@ -319,22 +335,22 @@ describe("the stage, mounted", () => {
   });
 
   it("atmosphere: the running extensions' merged in running order, handed to the viewport; gone when its giver stops", async () => {
-    exts["t.kit"] = recorder("t.kit", () => ({ atmosphere: () => ({ sky: { top: "#336699" }, fog: { color: "#ffffff", near: 10, far: 90 }, exposure: 1.2 }) }));
+    exts["t.edit"] = recorder("t.edit", () => ({ atmosphere: () => ({ sky: { top: "#336699" }, fog: { color: "#ffffff", near: 10, far: 90 }, exposure: 1.2 }) }));
     exts["t.always"] = recorder("t.always", () => ({ atmosphere: () => ({ fog: null, sun: { direction: [0, 1, 0], shadows: true } }) }));
-    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const m = mount(newScene());
     await settle();
-    // t.kit runs before t.always: its fog is cleared by the later null, its sky and exposure kept
+    // t.edit runs before t.always: its fog is cleared by the later null, its sky and exposure kept
     const merged = { sky: { top: "#336699" }, exposure: 1.2, sun: { direction: [0, 1, 0], shadows: true } };
     expect(m.debug.atmosphere()).toEqual(merged);
     expect(m.debug.viewport.atmosphere).toEqual({ sky: { top: "#336699", horizon: "#336699", bottom: "#336699" }, sun: { direction: [0, 1, 0], color: "#ffffff", intensity: 1.5, shadows: true }, exposure: 1.2 });
-    m.local.swap((v) => ({ ...v, kits: { on: [], off: ["t.kit"] } }));
+    m.local.swap((v) => ({ ...v, activity: "play" }));
     await settle();
     expect(m.debug.atmosphere()).toEqual({ sun: { direction: [0, 1, 0], shadows: true } });
     expect(m.debug.viewport.atmosphere.sky).toBeUndefined();
   });
 
   it("no extension gives an atmosphere: the viewport is never told one", async () => {
-    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const m = mount(newScene());
     const spy = vi.spyOn(m.debug.viewport, "setAtmosphere");
     await settle();
     expect(m.debug.atmosphere()).toBeNull();
@@ -399,7 +415,7 @@ describe("the stage, mounted", () => {
     expect(api.remove("nope")).toBeNull();
   });
 
-  it("prefs and kits are this viewer's, kept per scene", async () => {
+  it("prefs are this viewer's, kept per scene; the activity isn't kept: opening again starts where the doc says", async () => {
     const h = newScene({ view: { units: "m" } });
     const m = mount(h);
     await settle();
@@ -408,19 +424,50 @@ describe("the stage, mounted", () => {
     expect(api.pref("nothing", 7)).toBe(7);
     api.setPref("units", "mm");
     expect(api.pref("units", "cm")).toBe("mm");
-    m.local.swap((v) => ({ ...v, kits: { on: ["t.kit"], off: [] } }));
+    m.local.swap((v) => ({ ...v, activity: "play" }));
     await settle();
-    expect(running(m)).toContain("t.kit:viewer");
+    expect(running(m)).toContain("t.play:general");
     expect(JSON.parse(localStorage.getItem(`scene-prefs:${h.url}`))).toEqual({ units: "mm" });
-    expect(JSON.parse(localStorage.getItem(`scene-kits:${h.url}`))).toEqual({ on: ["t.kit"], off: [] });
-    // a second open of the same scene starts with them
+    expect(Object.keys(localStorage).filter((k) => k.includes(h.url) && !k.startsWith("scene-prefs:") && !k.startsWith("scene-camera:"))).toEqual([]);
+    // a second open of the same scene starts with the prefs, and in the doc's activity
     m.cleanup();
     mounted.splice(mounted.indexOf(m), 1);
     m.element.remove();
     const again = mount(h);
     await settle();
     expect(again.local.get().prefs).toEqual({ units: "mm" });
-    expect(running(again)).toContain("t.kit:viewer");
+    expect(again.local.get().activity).toBe("edit");
+    expect(running(again)).toContain("t.edit:general");
+  });
+
+  it("template(id): the template writes the doc through a drop context, and this viewer starts where it now says", async () => {
+    const seen = [];
+    template = (ctx) => {
+      seen.push(Object.keys(ctx).sort());
+      ctx.change((d) => {
+        d.view.activity = "play";
+        d.traits["t.scene"] = {};
+      });
+    };
+    try {
+      const m = mount(newScene());
+      await settle();
+      expect(m.local.get().activity).toBe("edit");
+      const api = exts["t.always"].api;
+      expect(await api.template("t.template")).toBe(true);
+      await settle();
+      expect(seen[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "local", "newId", "notify", "registry", "repo", "scene"]));
+      expect(m.local.get().activity).toBe("play");
+      expect(running(m)).toEqual(["t.scene:scene", "t.play:general", "t.always:general"]);
+      expect(await api.template("nope")).toBe(false);
+      template = () => {
+        throw new Error("no room");
+      };
+      expect(await api.template("t.template")).toBe(false);
+      expect(api.local.get().notices.at(-1)).toMatchObject({ text: "That template failed: no room", kind: "error" });
+    } finally {
+      template = null;
+    }
   });
 
   it("drop(): the module that takes the datatype lays it out; its trait starts it", async () => {
@@ -510,16 +557,16 @@ describe("the stage, mounted", () => {
 
   it("an armed extension is local.armed and has the input first; stopping it disarms", async () => {
     const order = [];
-    exts["t.kit"] = recorder("t.kit", (api) => {
+    exts["t.edit"] = recorder("t.edit", (api) => {
       api.arm({ key: (ev) => (order.push(["armed", ev.key]), true) });
       return {};
     });
     exts["t.always"] = recorder("t.always", () => ({ input: { key: (ev) => (order.push(["always", ev.key]), true) } }));
-    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const m = mount(newScene());
     await settle();
-    expect(m.local.get().armed).toBe("t.kit");
+    expect(m.local.get().armed).toBe("t.edit");
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "a", code: "KeyA", bubbles: true }));
-    m.local.swap((v) => ({ ...v, kits: { on: [], off: ["t.kit"] } }));
+    m.local.swap((v) => ({ ...v, activity: "play" }));
     expect(m.local.get().armed).toBeNull();
     m.root.dispatchEvent(new KeyboardEvent("keydown", { key: "b", code: "KeyB", bubbles: true }));
     expect(order).toEqual([
@@ -530,11 +577,11 @@ describe("the stage, mounted", () => {
 
   it("an immersive arm is local.immersive while it's on", async () => {
     let disarm = null;
-    exts["t.kit"] = recorder("t.kit", (api) => {
+    exts["t.edit"] = recorder("t.edit", (api) => {
       disarm = api.arm({}, { immersive: true });
       return {};
     });
-    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const m = mount(newScene());
     await settle();
     expect(m.local.get().immersive).toBe(true);
     disarm();
@@ -573,25 +620,25 @@ describe("the stage, mounted", () => {
 
   it("widgetAt: the widget's owner is offered the press first; its open session keeps it busy", async () => {
     const got = [];
-    exts["t.kit"] = recorder("t.kit", () => ({
+    exts["t.edit"] = recorder("t.edit", () => ({
       input: {
         widgetAt: () => ({ onTop: true, handle: "h1" }),
-        press: (ev) => (got.push(["kit", ev.widget.handle, ev.widget.owner]), { move() {}, end() {}, cancel: () => got.push(["cancel"]) }),
+        press: (ev) => (got.push(["edit", ev.widget.handle, ev.widget.owner]), { move() {}, end() {}, cancel: () => got.push(["cancel"]) }),
       },
     }));
     exts["t.always"] = recorder("t.always", () => ({ input: { press: () => (got.push(["always"]), {}) } }));
-    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    const m = mount(newScene());
     await settle();
     const canvas = m.root.querySelector(".canvas");
     const opts = { bubbles: true, cancelable: true, clientX: 5, clientY: 5, button: 0, pointerId: 1, pointerType: "mouse" };
-    expect(m.debug.busy("t.kit")).toBe(false);
+    expect(m.debug.busy("t.edit")).toBe(false);
     canvas.dispatchEvent(new PointerEvent("pointerdown", { ...opts, buttons: 1 }));
-    expect(got).toEqual([["kit", "h1", "t.kit"]]);
-    expect(m.debug.busy("t.kit")).toBe(true);
+    expect(got).toEqual([["edit", "h1", "t.edit"]]);
+    expect(m.debug.busy("t.edit")).toBe(true);
     // released under the slop with no tap: cancelled, and no longer busy
     canvas.dispatchEvent(new PointerEvent("pointerup", { ...opts, buttons: 0 }));
     expect(got.at(-1)).toEqual(["cancel"]);
-    expect(m.debug.busy("t.kit")).toBe(false);
+    expect(m.debug.busy("t.edit")).toBe(false);
   });
 });
 
@@ -647,18 +694,18 @@ describe("two stages on one scene", () => {
   });
 
   it("a hold dropped by the extension stopping is put back on the peer", async () => {
-    const h = shared({ view: { kits: ["t.kit"] }, objects: { a: card() }, order: ["a"] });
+    const h = shared({ objects: { a: card() }, order: ["a"] });
     const A = mount(h, "viewer:alice");
     await settle();
-    const apiA = exts["t.kit"].api;
-    exts["t.kit"] = recorder("t.kit");
+    const apiA = exts["t.edit"].api;
+    exts["t.edit"] = recorder("t.edit");
     forgetModules();
     const B = mount(h, "viewer:bob");
     await settle();
     apiA.pose.hold("a", { position: [5, 0, 0] });
     await until(() => B.debug.viewport.poses.has("a"));
-    // A's viewer turns the kit off: the hold is released as a put-back
-    A.local.swap((v) => ({ ...v, kits: { on: [], off: ["t.kit"] } }));
+    // A's viewer switches to play: the hold is released as a put-back
+    A.local.swap((v) => ({ ...v, activity: "play" }));
     await until(() => !B.debug.viewport.poses.has("a"));
     expect(A.debug.viewport.poses.has("a")).toBe(false);
   });

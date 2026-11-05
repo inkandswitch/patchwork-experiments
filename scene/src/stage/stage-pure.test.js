@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { assoc, createAtom } from "./atom.js";
-import { activeSet, chosenKits, docReason, expandKits } from "./activation.js";
+import { activeSet, availableActivities, currentActivity, docReason } from "./activation.js";
 import { chainOrder, holdersFor, offer } from "./chain.js";
 
 describe("the local atom", () => {
@@ -18,54 +18,77 @@ describe("the local atom", () => {
 
 describe("activation", () => {
   const metas = [
-    { id: "tabletop", traits: ["tabletop.seats", "tabletop.hidden"], requires: ["hand", "keys"] },
-    { id: "arena", traits: ["arena.target"] },
-    { id: "hand" },
+    { id: "tabletop", traits: ["tabletop.seats", "tabletop.hidden"], requires: ["hand", "keys"], activities: ["play"] },
+    { id: "arena", traits: ["arena.target"], activities: ["play"] },
+    { id: "arena.edit", traits: ["arena.target"], activities: ["edit"] },
+    { id: "hand", activities: ["edit"] },
     { id: "keys" },
-    { id: "select" },
-    { id: "outline", requires: ["sidebar"] },
-    { id: "sidebar" },
-    { id: "kits", always: true },
+    { id: "select", activities: ["edit"] },
+    { id: "outline", requires: ["sidebar"], activities: ["edit"] },
+    { id: "sidebar", activities: ["edit"] },
+    { id: "boat", traits: ["boat.hull"], activities: ["sail"] },
+    { id: "switch", always: true },
   ];
-  const kits = [
-    { id: "model", extensions: ["select", "outline", "hand", "missing"] },
-    { id: "layout", kits: ["model", "layout"], extensions: ["keys"] },
-  ];
+  const ids = (set) => set.map((r) => [r.id, r.scope]);
+  const doc = { traits: { "tabletop.seats": {} }, objects: { c: { traits: { "arena.target": {} } } } };
 
-  it("expands kits in order, nested where named, once each, ignoring cycles", () => {
-    expect(expandKits(kits, ["layout"])).toEqual(["select", "outline", "hand", "missing", "keys"]);
-    expect(expandKits(kits, ["nope"])).toEqual([]);
+  it("in play: the scene's, then some objects', then the general ones; requirements follow whatever their activities, lending no scope", () => {
+    expect(ids(activeSet({ metas, doc, activity: "play" }))).toEqual([
+      ["tabletop", "scene"],
+      ["hand", "general"],
+      ["keys", "general"],
+      ["arena", "objects"],
+      ["switch", "general"],
+    ]);
   });
 
-  it("the scene's, then some objects', then the viewer's kits', then always; requirements follow, lending no scope", () => {
-    const doc = { traits: { "tabletop.seats": {} }, objects: { c: { traits: { "arena.target": {} } } } };
-    const set = activeSet({ metas, kits, kitIds: ["model"], doc });
-    expect(set.map((r) => [r.id, r.scope])).toEqual([
-      ["tabletop", "scene"],
-      ["hand", "viewer"],
-      ["keys", "viewer"],
-      ["arena", "objects"],
-      ["select", "viewer"],
-      ["outline", "viewer"],
-      ["sidebar", "viewer"],
-      ["kits", "viewer"],
+  it("in edit: the editing parts, in registry order; traits the doc lacks (the boat's) run nothing", () => {
+    expect(ids(activeSet({ metas, doc, activity: "edit" }))).toEqual([
+      ["arena.edit", "objects"],
+      ["hand", "general"],
+      ["keys", "general"],
+      ["select", "general"],
+      ["outline", "general"],
+      ["sidebar", "general"],
+      ["switch", "general"],
     ]);
+  });
+
+  it("a required extension keeps its own scope, and declaring traits it lacks isn't a reason", () => {
+    const m = [
+      { id: "game", traits: ["game.board"], requires: ["rules", "board"] },
+      { id: "rules", traits: ["rules.x"] },
+      { id: "board", traits: ["game.board"], activities: ["edit"] },
+    ];
+    const d = { traits: { "game.board": {} } };
+    expect(ids(activeSet({ metas: m, doc: d, activity: "play" }))).toEqual([
+      ["game", "scene"],
+      ["rules", "general"],
+      ["board", "scene"],
+    ]);
+    expect(ids(activeSet({ metas: m, doc: {}, activity: "edit" }))).toEqual([]);
   });
 
   it("an object trait is the objects' reason; a scene trait the scene's", () => {
     expect(docReason(metas[0], { objects: { a: { traits: { "tabletop.hidden": {} } } } })).toBe("objects");
     expect(docReason(metas[0], { traits: { "tabletop.seats": {} }, objects: {} })).toBe("scene");
-    expect(docReason(metas[4], { objects: {} })).toBeNull();
+    expect(docReason(metas[5], { objects: {} })).toBeNull();
   });
 
-  it("an empty kit list and no traits leave only what is always on", () => {
-    expect(activeSet({ metas, kits, kitIds: [], doc: { objects: {} } }).map((r) => r.id)).toEqual(["kits"]);
+  it("available: edit always, then what every extension with a reason takes part in (registry order)", () => {
+    expect(availableActivities(metas, { objects: {} })).toEqual(["edit"]);
+    expect(availableActivities(metas, doc)).toEqual(["edit", "play"]);
+    expect(availableActivities(metas, { traits: { "boat.hull": {} } })).toEqual(["edit", "sail"]);
+    expect(availableActivities([{ id: "review", activities: ["review"] }], {})).toEqual(["edit", "review"]);
   });
 
-  it("kits: the doc's suggestion (else model), plus what this viewer turned on, minus what they turned off", () => {
-    expect(chosenKits(null, {})).toEqual(["model"]);
-    expect(chosenKits(null, { view: { kits: [] } })).toEqual([]);
-    expect(chosenKits({ on: ["layout"], off: ["model"] }, { view: { kits: ["model", "x"] } })).toEqual(["x", "layout"]);
+  it("current: this viewer's, else the doc's, else edit; but only one on offer, else edit", () => {
+    const both = ["edit", "play"];
+    expect(currentActivity(null, {}, both)).toBe("edit");
+    expect(currentActivity(null, { view: { activity: "play" } }, both)).toBe("play");
+    expect(currentActivity("edit", { view: { activity: "play" } }, both)).toBe("edit");
+    expect(currentActivity("play", {}, ["edit"])).toBe("edit");
+    expect(currentActivity(null, { view: { activity: "sail" } }, both)).toBe("edit");
   });
 });
 
@@ -73,8 +96,8 @@ describe("the input chain", () => {
   const running = [
     { id: "tabletop", meta: { traits: ["tabletop.seats", "tabletop.hidden"] }, scope: "scene" },
     { id: "arena", meta: { traits: ["arena.target"] }, scope: "objects" },
-    { id: "select", meta: {}, scope: "viewer" },
-    { id: "gizmo", meta: {}, scope: "viewer" },
+    { id: "select", meta: {}, scope: "general" },
+    { id: "gizmo", meta: {}, scope: "general" },
   ];
   const traits = { card: ["tabletop.hidden"], crate: ["arena.target"], table: [] };
   const holders = (chain) => holdersFor(running, chain, (id) => traits[id] ?? []);
@@ -84,7 +107,7 @@ describe("the input chain", () => {
     expect(chainOrder({ running, holders: holders(["crate"]) })).toEqual(["arena", "tabletop", "select", "gizmo"]);
   });
 
-  it("armed, then the widget's owner, then the hit chain's holders, then the scene's, then the viewer's — each once", () => {
+  it("armed, then the widget's owner, then the hit chain's holders, then the scene's, then the general ones — each once", () => {
     expect(chainOrder({ running, armed: "select", widgetOwner: "gizmo", holders: holders(["card"]) })).toEqual(["select", "gizmo", "tabletop"]);
     expect(chainOrder({ running, armed: "gone" })).toEqual(["tabletop", "select", "gizmo"]);
   });

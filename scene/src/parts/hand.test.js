@@ -24,10 +24,9 @@ afterEach(() => {
  * ground under every ray, content boxes for every object, and pose holds
  * recorded.
  */
-async function mount({ doc = {}, extensions = [], kit = ["scene.hand"], content = {} } = {}) {
+async function mount({ doc = {}, before = [], extensions = [], content = {} } = {}) {
   s = await mountStage({
-    extensions: [HAND, ...extensions],
-    kits: [{ id: "model", extensions: kit }],
+    extensions: [...before, HAND, ...extensions],
     doc: { ...doc, objects: { a: object({ name: "A" }), ...(doc.objects ?? {}) } },
   });
   const api = s.api("scene.hand");
@@ -286,7 +285,6 @@ describe("scene.hand carrying", () => {
     const { x } = await mount({
       doc: { view: { tool: "hand" }, objects: { a: object({ transform: { position: [0, 0.1, 0], rotation: [0, 0, Math.PI], scale: 1 } }) } },
       extensions: [rules],
-      kit: ["scene.hand", "t.rules"],
     });
     let session = x().input.press(press("a"));
     session.move(move(3, 0));
@@ -354,7 +352,7 @@ describe("scene.hand carrying", () => {
         }),
       },
     };
-    const { api, stub } = await mount({ extensions: [grabber], kit: ["t.grab", "scene.hand"] });
+    const { api, stub } = await mount({ before: [grabber] });
     api.ray = (x, y) => down(x / 10, y / 10); // port px → a spot on the table
     s.pointer("pointerdown", 10, 10);
     s.pointer("pointermove", 30, 10);
@@ -375,7 +373,7 @@ describe("scene.hand carrying", () => {
       meta: { id: "t.grab" },
       module: { create: (api) => ({ input: { press: (ev) => api.collect("carry")[0]?.value("a", ev) ?? null } }) },
     };
-    const { api, stub } = await mount({ extensions: [grabber], kit: ["t.grab", "scene.hand"] });
+    const { api, stub } = await mount({ before: [grabber] });
     api.ray = (x, y) => down(x / 10, y / 10);
     s.pointer("pointerdown", 10, 10);
     s.pointer("pointermove", 30, 10);

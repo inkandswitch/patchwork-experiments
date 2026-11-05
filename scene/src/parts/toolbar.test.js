@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object } from "../test/stage-harness.js";
+import { PLAY, mountStage, object } from "../test/stage-harness.js";
 import toolbar from "./toolbar.js";
 import { keyMatches, keyLabel, commandState, shownOn, flatCommands } from "./toolbar-commands.js";
 
@@ -98,10 +98,10 @@ describe("scene.toolbar", () => {
     log = [];
     s = await mountStage({
       extensions: [
-        { meta: { id: "scene.toolbar" }, module: toolbar },
+        { meta: { id: "scene.toolbar", activities: ["edit"] }, module: toolbar },
         { meta: { id: "t.tools" }, module: fakeTools(log) },
+        PLAY,
       ],
-      kits: [{ id: "model", extensions: ["scene.toolbar", "t.tools"] }],
       doc: { objects: { a: object() }, order: ["a"] },
     });
   }, 30_000);
@@ -150,11 +150,9 @@ describe("scene.toolbar", () => {
   });
 
   it("drops an extension's controls when it stops", async () => {
-    s.local.swap((m) => ({ ...m, kits: { on: [], off: ["model"] } }));
-    await s.settle();
+    await s.activity("play");
     expect(s.root.querySelector(".toolbar")).toBeNull();
-    s.local.swap((m) => ({ ...m, kits: { on: [], off: [] } }));
-    await s.settle();
+    await s.activity("edit");
     expect(control("frame")).toBeTruthy();
   });
 });

@@ -11,7 +11,6 @@ const DIMS = { meta: { id: "scene.dimensions" }, module: dimensions };
 const MEASURE = { meta: { id: "scene.measure" }, module: measure };
 const SELECT = { meta: { id: "scene.select" }, module: select };
 const KEYS = { meta: { id: "scene.keys" }, module: keys };
-const KIT = { id: "model", extensions: ["scene.dimensions"] };
 const T = (position = [0, 0, 0], rotation = [0, 0, 0], scale = 1) => ({ position, rotation, scale });
 const free = (world) => ({ objectId: null, local: null, world });
 const on = (objectId, local, world = [0, 0, 0]) => ({ objectId, local, world });
@@ -23,8 +22,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount({ objects = { a: object({ name: "A", transform: T([1, 0, 0]) }) }, dims = {}, extensions = [], kits = [KIT], doc = {} } = {}) {
-  s = await mountStage({ extensions: [DIMS, ...extensions], kits, doc: { objects, order: Object.keys(objects), dimensions: dims, ...doc } });
+async function mount({ objects = { a: object({ name: "A", transform: T([1, 0, 0]) }) }, dims = {}, before = [], extensions = [], doc = {} } = {}) {
+  s = await mountStage({ extensions: [...before, DIMS, ...extensions], doc: { objects, order: Object.keys(objects), dimensions: dims, ...doc } });
   return s;
 }
 
@@ -194,8 +193,7 @@ describe("scene.dimensions", () => {
   it("Delete and Escape reach the selected dimension through the key map", async () => {
     await mount({
       dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null }, d2: { a: free([0, 0, 0]), b: free([0, 0, 2]), label: null } },
-      extensions: [SELECT, KEYS],
-      kits: [{ id: "model", extensions: ["scene.keys", "scene.select", "scene.dimensions"] }],
+      before: [KEYS, SELECT],
     });
     selectDim("d1");
     s.local.swap((m) => ({ ...m, hovered: "a" }));
@@ -278,13 +276,12 @@ describe("scene.dimensions", () => {
     expect(label("d1").hasAttribute("data-selected")).toBe(false);
   });
 
-  // The model kit lists dimensions before select; with one selection that
-  // order carries no meaning, so here it's the other way round.
+  // The editor runs dimensions before select; with one selection that order
+  // carries no meaning, so here it's the other way round.
   it("with selection listed first: a label click selects the dimension, a click on an object or on nothing replaces it", async () => {
     await mount({
       dims: { d1: { a: free([0, 0, 0]), b: free([0, 0, 1]), label: null } },
-      extensions: [SELECT],
-      kits: [{ id: "model", extensions: ["scene.select", "scene.dimensions"] }],
+      before: [SELECT],
     });
     expect(s.local.get().running.map((r) => r.id)).toEqual(["scene.select", "scene.dimensions"]);
     s.local.swap((m) => ({ ...m, selected: "a" }));
@@ -337,7 +334,7 @@ describe("scene.dimensions", () => {
 
 describe("measure and dimensions together", () => {
   it("a measured dimension is drawn, listed and selected", async () => {
-    await mount({ extensions: [MEASURE], kits: [{ id: "model", extensions: ["scene.measure", "scene.dimensions"] }] });
+    await mount({ before: [MEASURE] });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     const p = panel();
     s.api("scene.measure").run({ ext: "scene.measure", command: "measure", target: null });

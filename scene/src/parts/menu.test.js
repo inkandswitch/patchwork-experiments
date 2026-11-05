@@ -80,12 +80,6 @@ describe("scene.menu", () => {
     log = [];
     s = await mountStage({
       extensions: [{ meta: { id: "scene.menu" }, module: menu }, ...exts],
-      kits: [
-        {
-          id: "model",
-          extensions: ["scene.menu", ...exts.map((e) => e.meta.id)],
-        },
-      ],
       doc: { objects: { a: object({ name: "Hull" }) }, order: ["a"] },
     });
   };

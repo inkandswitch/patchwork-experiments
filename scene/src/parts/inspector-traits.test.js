@@ -45,6 +45,8 @@ const GAME = {
   meta: {
     id: "t.game",
     traits: ["t.target", "t.zone", "t.hidden", "t.seats", "t.level"],
+    // laid out while editing, and played: a scene with its traits offers play
+    activities: ["edit", "play"],
     describes: {
       "t.target": { name: "Target", on: "object", blurb: "Can be shot", fields: [{ key: "points", label: "Points", kind: "integer", default: 10 }] },
       "t.zone": {
@@ -81,10 +83,6 @@ afterEach(() => {
 async function mount({ objects = {}, doc = {}, extensions = [GAME] } = {}) {
   s = await mountStage({
     extensions: [SIDEBAR, INSPECTOR, ...extensions],
-    kits: [
-      { id: "model", name: "Model", extensions: ["t.sidebar", "scene.inspector"] },
-      { id: "extra", name: "Extra", extensions: [] },
-    ],
     doc: { objects, order: Object.keys(objects), ...doc },
   });
   return s;
@@ -103,7 +101,7 @@ async function select(id) {
   await settle();
 }
 async function fire(input, value) {
-  if (input.type === "checkbox") input.checked = value;
+  if (input.type === "checkbox" || input.type === "radio") input.checked = value;
   else input.value = value;
   input.dispatchEvent(new Event("change", { bubbles: true }));
   await settle();
@@ -258,25 +256,36 @@ describe("scene.inspector: the Scene, with nothing selected", () => {
     expect(Object.keys(s.doc().traits).sort()).toEqual(["t.level", "t.seats"]);
   });
 
-  it("Opens with: the suggested kits as checkboxes, written to doc.view.kits in place, with a note about each viewer's own", async () => {
+  it("Starts in: the activities the scene offers, written to doc.view.activity, with a note about each viewer's own", async () => {
     await mount({ objects: {} });
-    const box = (kit) => $(`.opens-with input[data-kit="${kit}"]`);
-    expect([...$(".opens-with").querySelectorAll("label")].map((l) => l.textContent.trim())).toEqual(["Model", "Extra"]);
-    // no list in the doc: the default, the model kit
-    expect(box("model").checked).toBe(true);
-    expect(box("extra").checked).toBe(false);
-    expect($(".opens-with-note").textContent).toMatch(/Each viewer can still turn kits on or off for themselves/);
-    await fire(box("extra"), true);
-    expect(s.doc().view.kits).toEqual(["model", "extra"]);
-    expect(box("extra").checked).toBe(true);
-    // it's only a suggestion: this viewer's own choice is left as it was
-    expect(s.local.get().kits?.on ?? []).not.toContain("extra");
-    await fire(box("extra"), false);
-    expect(s.doc().view.kits).toEqual(["model"]);
-    // a peer's change shows
-    s.change((d) => d.view.kits.push("extra"));
+    const radio = (a) => $(`.starts-in input[data-activity="${a}"]`);
+    const labels = () => [...$(".starts-in").querySelectorAll("label")].map((l) => l.textContent.trim());
+    // a plain scene offers only editing
+    expect(labels()).toEqual(["Edit"]);
+    expect(radio("edit").checked).toBe(true);
+    expect($(".starts-in-note").textContent).toMatch(/Editing is all this scene offers/);
+    // the game's trait makes play a choice
+    s.change((d) => {
+      d.traits["t.level"] = {};
+    });
     await settle();
-    expect(box("extra").checked).toBe(true);
+    expect(labels()).toEqual(["Edit", "Play"]);
+    expect(radio("edit").checked).toBe(true);
+    expect($(".starts-in-note").textContent).toMatch(/Each viewer can switch for themselves/);
+    await fire(radio("play"), true);
+    expect(s.doc().view.activity).toBe("play");
+    expect(radio("play").checked).toBe(true);
+    // it's where people start: this viewer, already here, stays editing
+    expect(s.local.get().activity).toBe("edit");
+    expect(running()).toContain("scene.inspector");
+    await fire(radio("edit"), true);
+    expect("activity" in s.doc().view).toBe(false);
+    // a peer's change shows
+    s.change((d) => {
+      d.view.activity = "play";
+    });
+    await settle();
+    expect(radio("play").checked).toBe(true);
   });
 });
 

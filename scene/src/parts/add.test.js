@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { PLAY, mountStage, object, settle } from "../test/stage-harness.js";
 import { getRegistry } from "../test/plugins-mock.js";
-import add, { accepts, baseName, mimeOf, ROW_MIME } from "./add.js";
+import add, { accepts, baseName, mimeOf, templatesOf, ROW_MIME } from "./add.js";
 
-const ADD = { meta: { id: "scene.add" }, module: add };
-const KIT = { id: "model", extensions: ["scene.add"] };
+const ADD = { meta: { id: "scene.add", activities: ["edit"] }, module: add };
 
 /** A drag event carrying `data` ({ mime: value }) and `files`. */
 function dragEvent(type, data = {}, files = []) {
@@ -38,7 +37,7 @@ describe("scene.add", () => {
   });
 
   async function mount(opts = {}) {
-    s = await mountStage({ extensions: [ADD, ...(opts.extensions ?? [])], kits: [KIT], doc: opts.doc ?? {} });
+    s = await mountStage({ extensions: [ADD, ...(opts.extensions ?? [])], templates: opts.templates ?? [], doc: opts.doc ?? {} });
     stl = s.repo.add({ "@patchwork": { type: "file" }, name: "part.stl", extension: "stl", mimeType: "model/stl", content: new Uint8Array(84) });
     return s;
   }
@@ -62,6 +61,68 @@ describe("scene.add", () => {
     expect(mimeOf("a.bin", "")).toBe("application/octet-stream");
     expect(mimeOf("a.glb", "x/y")).toBe("x/y");
     expect(baseName("part.v2.stl")).toBe("part.v2");
+    expect(templatesOf([{ id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot" }, { name: "no id" }, { id: "b" }])).toEqual([
+      { id: "a", name: "Arena", icon: "Swords", description: "Walk and shoot" },
+      { id: "b", name: "b", icon: null, description: null },
+    ]);
+  });
+
+  it("with no templates installed, the empty scene only says how to add something", async () => {
+    await mount();
+    expect(s.port.querySelector(".add-start").hidden).toBe(true);
+  });
+
+  it("an empty scene is a start screen: every template and Blank; a template writes the doc and starts this viewer where it says", async () => {
+    const made = [];
+    const level = {
+      meta: { id: "t.level", name: "Test level", icon: "Swords", description: "A room to play in" },
+      module: {
+        async create(ctx) {
+          made.push(Object.keys(ctx).sort());
+          const id = await ctx.addObject(stl.url, { name: "Crate" });
+          ctx.change((d) => {
+            d.traits["t.game"] = {};
+            d.view.activity = "play";
+          });
+          return id;
+        },
+      },
+    };
+    const game = { meta: { id: "t.game", traits: ["t.game"], activities: ["play"] }, module: { create: () => ({}) } };
+    await mount({ extensions: [game], templates: [level, { meta: { id: "t.empty", name: "Nothing much" }, module: { create() {} } }] });
+    const start = s.port.querySelector(".add-start");
+    expect(start.hidden).toBe(false);
+    expect(start.querySelector(".add-start-title").textContent).toBe("Start from:");
+    const buttons = () => [...start.querySelectorAll("button[data-template]")];
+    expect(buttons().map((b) => [b.dataset.template, b.querySelector(".add-template-name").textContent])).toEqual([
+      ["t.level", "Test level"],
+      ["t.empty", "Nothing much"],
+      ["", "Blank"],
+    ]);
+    expect(buttons()[0].querySelector(".add-template-description").textContent).toBe("A room to play in");
+    expect(buttons()[0].dataset.icon).toBe("Swords");
+    // the drop hint is still there under it
+    expect(s.port.querySelector(".add-empty").textContent).toContain("Drop a document here, or paste its URL.");
+    buttons()[0].click();
+    await settle();
+    await settle();
+    expect(made).toHaveLength(1);
+    expect(made[0]).toEqual(expect.arrayContaining(["addObject", "change", "doc", "newId", "registry", "repo"]));
+    expect(objectsOf(s).map((o) => o.name)).toEqual(["Crate"]);
+    expect(s.doc().view.activity).toBe("play");
+    // its maker lands in the game: editing parts (this one) stop
+    expect(s.local.get().activity).toBe("play");
+    expect(s.local.get().running.map((r) => r.id)).toEqual(["t.game"]);
+  });
+
+  it("Blank puts the start screen away for this view, leaving the drop hint", async () => {
+    await mount({ templates: [{ meta: { id: "t.level", name: "Test level" }, module: { create() {} } }] });
+    const start = s.port.querySelector(".add-start");
+    start.querySelector('button[data-template=""]').click();
+    await settle();
+    expect(start.hidden).toBe(true);
+    expect(s.port.querySelector(".add-empty").hidden).toBe(false);
+    expect(objectsOf(s)).toEqual([]);
   });
 
   it("says how to add something while the scene is empty, and not otherwise", async () => {
@@ -270,13 +331,12 @@ describe("scene.add", () => {
   });
 
   it("takes its chooser, hints and listeners away when it stops", async () => {
-    await mount();
+    await mount({ extensions: [PLAY] });
     getRegistry("scene:source").register({ type: "scene:source", id: "alt-stl", name: "Other STL", supportedDatatypes: ["file"], extensions: ["stl"], params: [], load: async () => ({}) });
     await drop({ "text/plain": stl.url });
     expect(s.port.querySelector(".add-chooser")).toBeTruthy();
-    // turn the kit off for this viewer: the extension stops at once
-    s.local.swap((m) => ({ ...m, kits: { on: [], off: ["model"] } }));
-    await settle();
+    // this viewer switches to play: the extension stops at once
+    await s.activity("play");
     expect(s.local.get().running.map((r) => r.id)).not.toContain("scene.add");
     expect(s.port.querySelector(".add-chooser")).toBeNull();
     expect(s.port.querySelector(".add-empty")).toBeNull();

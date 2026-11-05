@@ -14,7 +14,7 @@
 // STAGE.md): groups only organise (no transform, no parent; `group` files
 // one in another), objects are filed in a group with `group` and attached to
 // another object with `parent` (transform relative to it), the starting view
-// is `view.home`, and `view.kits` suggests the model kit (the editor).
+// is `view.home`, and with no `view.activity` everyone starts editing.
 //
 // --dry-run touches no network: every doc gets a made-up automerge URL, the
 // scene is checked (already in the current shape, nothing dangling), and
@@ -211,7 +211,6 @@ const sceneDoc = {
   view: {
     ...DEFAULT_VIEW,
     units: "mm",
-    kits: ["model"], // the editor; a viewer can turn kits on and off for themselves
     home: { position: [3.9, 2.9, 3.4], target: [0.3, 0.22, -1.15] },
   },
 }

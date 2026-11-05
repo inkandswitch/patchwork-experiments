@@ -31,7 +31,7 @@ function fakeCamera({ touched = false } = {}) {
  * own need WebGL). `world.box` is the scene's box; `world.loaded` the ids whose content is in.
  */
 async function mount(doc = {}) {
-  const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }], kits: [{ id: "model", extensions: ["scene.frame"] }], doc });
+  const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }], doc });
   const api = s.api("scene.frame");
   const world = { box: null, loaded: new Set(), boxes: {} };
   const camera = fakeCamera();
@@ -100,7 +100,7 @@ describe("scene.frame: commands and double-click", () => {
   });
 
   it("Set home view writes this camera to doc.view.home; it's a menu command, disabled without a camera", async () => {
-    const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }], kits: [{ id: "model", extensions: ["scene.frame"] }] });
+    const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }] });
     const c = s.instance("scene.frame").commands.find((k) => k.id === "set-home");
     expect(c.show).toEqual(["menu"]);
     // no WebGL, so no camera yet
@@ -226,7 +226,7 @@ describe("scene.frame: auto-framing", () => {
 describe("scene.frame with the key map", () => {
   it("F frames everything", async () => {
     const { default: keys } = await import("./keys.js");
-    const s = await mountStage({ extensions: [{ meta: { id: "scene.frame" }, module: frame }, { meta: { id: "scene.keys" }, module: keys }], kits: [{ id: "model", extensions: ["scene.keys", "scene.frame"] }] });
+    const s = await mountStage({ extensions: [{ meta: { id: "scene.keys" }, module: keys }, { meta: { id: "scene.frame" }, module: frame }] });
     const camera = fakeCamera();
     s.api("scene.frame").camera = camera.rig;
     s.api("scene.frame").sceneBox = () => B3;

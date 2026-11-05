@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { mountStage } from "../test/stage-harness.js";
 import axes, { axisLabels, axisLength, triadLabels } from "./axes.js";
 
-const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.axes" }, module: axes }], kits: [{ id: "model", extensions: ["scene.axes"] }], doc });
+const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.axes" }, module: axes }], doc });
 const run = (s) => s.api("scene.axes").run({ ext: "scene.axes", command: "axes", target: null });
 const layer = (s) => s.debug.viewport.layers.get("scene.axes").values().next().value;
 const labelEls = (s, cls) => [...s.root.querySelectorAll(`.labels .${cls}`)];

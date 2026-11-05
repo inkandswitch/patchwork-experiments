@@ -3,7 +3,7 @@
 
 /**
  * @param {{
- *   running: { id: string, meta: object, scope: "scene" | "objects" | "viewer" }[],  // running order
+ *   running: { id: string, meta: object, scope: "scene" | "objects" | "general" }[],  // running order
  *   armed?: string | null,          // the top of the arm stack
  *   widgetOwner?: string | null,    // the extension whose widget is under the pointer
  *   holders?: Map<string, string>,  // extension id → the nearest object in the hit chain carrying one of its traits
@@ -20,7 +20,7 @@ export function chainOrder({ running, armed = null, widgetOwner = null, holders 
   push(widgetOwner);
   for (const r of running) if (holders.has(r.id)) push(r.id);
   for (const r of running) if (r.scope === "scene") push(r.id);
-  for (const r of running) if (r.scope === "viewer") push(r.id);
+  for (const r of running) if (r.scope === "general") push(r.id);
   return out;
 }
 

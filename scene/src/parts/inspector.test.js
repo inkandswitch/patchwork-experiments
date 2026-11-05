@@ -54,11 +54,9 @@ beforeAll(() => {
 });
 
 async function mount({ objects, extensions = [], doc = {}, repo } = {}) {
-  const ids = extensions.map((e) => e.meta.id);
   s = await mountStage({
     repo,
     extensions: [SIDEBAR, INSPECTOR, ...extensions],
-    kits: [{ id: "model", extensions: ["t.sidebar", "scene.inspector", ...ids] }],
     doc: { objects, order: Object.keys(objects), ...doc },
   });
   return s;

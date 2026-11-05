@@ -20,7 +20,6 @@ function snap(objects, view = {}) {
 async function mount({ objects = {}, view = {}, extensions = [] } = {}) {
   const s = await mountStage({
     extensions: [GIZMO, ...extensions],
-    kits: [{ id: "model", extensions: ["scene.gizmo", ...extensions.map((e) => e.meta.id)] }],
     doc: { objects, order: Object.keys(objects), view },
   });
   // no WebGL here: give the viewport a camera, looking at the origin

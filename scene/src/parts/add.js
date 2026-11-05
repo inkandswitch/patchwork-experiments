@@ -10,7 +10,13 @@
 //     datatype its own way, e.g. a deck as its cards); otherwise to the scene
 //     providers that can show it: none says so, one is used, several ask
 //     (the chooser). The new object is selected (local.selected).
-//   - While the scene has nothing in it, says how to add something.
+//   - While the scene has nothing in it, it's a start screen: "Start from:"
+//     every registered scene:template (from the registry's metadata, so
+//     nothing is loaded to offer one) and Blank, then how to add something.
+//     A template runs through api.template (it writes the doc, view.activity
+//     included, and the stage starts this viewer where it says: an arena's
+//     maker lands in the game). Blank only puts the choice away, for this
+//     view; the drop hint stays.
 // Pastes, drops and keys inside an embedded document (marked with the
 // stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
 
@@ -40,6 +46,12 @@ export function mimeOf(name, type) {
 /** A file's name without its extension (what the object is called). Pure. */
 export const baseName = (name) => String(name ?? "").replace(/\.[^.]+$/, "");
 
+/** scene:template metadata as the start screen offers it: those with an id, in registry order. Pure. */
+export const templatesOf = (list) =>
+  (Array.isArray(list) ? list : [])
+    .filter((t) => t && typeof t.id === "string")
+    .map((t) => ({ id: t.id, name: String(t.name ?? t.id), icon: typeof t.icon === "string" ? t.icon : null, description: typeof t.description === "string" ? t.description : null }));
+
 /** Is someone typing into this element? */
 function isTyping(el) {
   if (!el || el.nodeType !== 1) return false;
@@ -66,7 +78,11 @@ function create(api) {
   const root = api.root ?? hints.closest(".scene-stage") ?? port;
 
   const empty = el("div", "add-empty");
-  empty.append(el("p", null, "Drop a document here, or paste its URL."), el("p", "hint", "Anything with a scene provider works — STL and GLB files out of the box."));
+  const start = el("div", "add-start");
+  start.setAttribute("role", "group");
+  start.setAttribute("aria-label", "Start from");
+  start.hidden = true;
+  empty.append(start, el("p", null, "Drop a document here, or paste its URL."), el("p", "hint", "Anything with a scene provider works — STL and GLB files out of the box."));
   empty.hidden = true;
   const dropHint = el("div", "add-drop-hint", "Drop to add to the scene");
   dropHint.hidden = true;
@@ -74,6 +90,77 @@ function create(api) {
 
   const chooserLayer = api.overlay();
   chooserLayer.classList.add("add-chooser-layer");
+
+  // ── the start screen ─────────────────────────────────────────────────────
+  let templates = []; // templatesOf(the scene:template registry)
+  let blank = false; // Blank was chosen: no more asking, in this view
+  let starting = false; // a template is running
+  let startKey = null;
+
+  function renderStart() {
+    const show = !blank && templates.length > 0;
+    if (start.hidden === show) start.hidden = !show;
+    if (!show) return;
+    const key = JSON.stringify(templates);
+    if (key === startKey) return;
+    startKey = key;
+    const list = el("div", "add-templates");
+    for (const t of templates) {
+      const b = el("button", "button add-template");
+      b.type = "button";
+      b.dataset.template = t.id;
+      if (t.icon) b.dataset.icon = t.icon;
+      b.append(el("span", "add-template-name", t.name));
+      if (t.description) b.append(el("span", "add-template-description", t.description));
+      b.addEventListener("click", () => void startFrom(t.id));
+      list.append(b);
+    }
+    const none = el("button", "button add-template add-blank");
+    none.type = "button";
+    none.dataset.template = "";
+    none.append(el("span", "add-template-name", "Blank"), el("span", "add-template-description", "Add your own documents"));
+    none.addEventListener("click", () => {
+      blank = true;
+      renderStart();
+    });
+    list.append(none);
+    start.replaceChildren(el("p", "add-start-title", "Start from:"), list);
+  }
+
+  async function startFrom(id) {
+    if (starting) return;
+    starting = true;
+    for (const b of start.querySelectorAll("button")) b.disabled = true;
+    try {
+      await api.template(id);
+    } finally {
+      starting = false;
+      if (live()) for (const b of start.querySelectorAll("button")) b.disabled = false;
+    }
+  }
+
+  Promise.resolve(api.registry("scene:template"))
+    .then((reg) => {
+      if (!live() || !reg) return;
+      const read = () => {
+        let list = [];
+        try {
+          list = reg.filter?.(() => true) ?? [];
+        } catch {
+          list = [];
+        }
+        templates = templatesOf(list);
+        if (live()) renderStart();
+      };
+      read();
+      try {
+        const off = reg.on?.("changed", read);
+        if (typeof off === "function") api.signal.addEventListener("abort", off, { once: true });
+      } catch {
+        // what's installed now is what's offered
+      }
+    })
+    .catch(() => {});
 
   // ── the provider chooser ─────────────────────────────────────────────────
   let choosing = null; // { box, done, disarm }
@@ -285,6 +372,7 @@ function create(api) {
     },
     // for tests and other code holding the instance
     add,
+    startFrom,
   };
 }
 

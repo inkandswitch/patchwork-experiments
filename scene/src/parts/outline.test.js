@@ -63,12 +63,11 @@ function vessel() {
 }
 
 let s = null;
-async function mount(doc, { extra = [], repo, kit = null } = {}) {
+async function mount(doc, { extra = [], repo } = {}) {
   const exts = [{ meta: { id: "scene.outline" }, module: outline }, { meta: { id: "t.sidebar" }, module: sidebar }, ...extra];
   s = await mountStage({
     repo,
     extensions: exts,
-    kits: [{ id: "model", extensions: kit ?? exts.map((e) => e.meta.id) }],
     doc,
   });
   return s;
@@ -509,7 +508,7 @@ describe("scene.outline: dropping documents on rows", () => {
     const deck = repo.add({ "@patchwork": { type: "test-deck" } });
     const got = [];
     const layout = { create: () => ({}), drop: async (ctx, info) => (got.push(info), true) };
-    await mount({ objects: { g1: grp("G") }, order: ["g1"] }, { repo, extra: [{ meta: { id: "t.deck", drops: ["test-deck"] }, module: layout }], kit: ["scene.outline", "t.sidebar"] });
+    await mount({ objects: { g1: grp("G") }, order: ["g1"] }, { repo, extra: [{ meta: { id: "t.deck", traits: ["test.deck"], drops: ["test-deck"] }, module: layout }] });
     atRow("g1", 0.5, docDrop(deck.url));
     await settle();
     expect(got).toHaveLength(1);

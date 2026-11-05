@@ -14,7 +14,8 @@ multiplayer); [the report](REPORT.md) records what changed and why.
 |---|---|
 | **Stage** | The core: the doc, loading and building object content, rendering, picking, the camera rig, drawing layers, the input router, presence, lenses. It has no UI and no opinion about what a click means. |
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
-| **Kit** | A `scene:kit` plugin: a named list of extensions (and kits). Pure data. |
+| **Activity** | What a viewer is doing in a scene: `"edit"`, `"play"` (an open set: later `"review"`, `"sail"`). One per view, never in the doc. Extensions say which they take part in. |
+| **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
 | **Surface** | An extension that presents others' contributions (toolbar, sidebar, menu, key map), read with `api.collect(name)`. |
 | **Contribution** | A field on an extension's instance that some other extension may collect. The stage reads only the ones listed under "instance". |
 | **Invocation** | A command call as a value: `{ ext, command, target, value? }`. |
@@ -56,7 +57,8 @@ this view and by the stage.
 | `status` | stage | `{ [id]: { state, reason?, text, title } }` load and build state. `text` and `title` are for people; code branches on `state` and, for `"stale"`, `reason`: `"deps"`, `"contested"`, `"pinned"` or `"out-of-date"` |
 | `theme` | stage | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | stage, via `notify` | `[{ id, text, kind, at }]` |
-| `kits` | kit surfaces | `{ on: [], off: [] }` this viewer's change to the doc's suggested kits (persisted per scene) |
+| `activity` | stage (on joining, and after a template), activity surfaces | what this viewer chose to do: `"edit"`, `"play"`, …; null until the stage has the doc. Not persisted. See "Activities" |
+| `activities` | stage | `{ current, available }`: the activity that runs and the ones this scene offers. **Read the activity here**: `current` is `activity` when it's available, else `"edit"` |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
 | `selected` | any (selection, the outline, add, a game, dimensions) | the selection: one target (an object or group id, or a ref such as `"dimension:<id>"`; see "Targets and refs"), or null |
 | `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? "move"` |
@@ -74,63 +76,95 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
 
 ```js
 { type: "scene:extension", id, name,
-  traits?:   string[],                // active when the scene or any object has one of these trait keys
-  drops?:    string[],                // may lay out a dropped doc of this datatype ("*": any)
-  always?:   boolean,
-  requires?: string[],                // ids that run whenever this does
-  describes?: { [traitKey]: description },  // what its traits are, for authoring them (below)
+  traits?:     string[],              // active when the scene or any object has one of these trait keys
+  activities?: string[],              // the activities it takes part in; absent = every one
+  drops?:      string[],              // may lay out a dropped doc of this datatype ("*": any)
+  always?:     boolean,
+  requires?:   string[],              // ids that run whenever this does
+  describes?:  { [traitKey]: description },  // what its traits are, for authoring them (below)
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean> } } }
 
-{ type: "scene:kit", id, name, icon?, extensions: string[], kits?: string[] }
+{ type: "scene:template", id, name, icon?, description?,
+  async load() { return { create(ctx) → Promise } } }
 ```
 
 **The running set** is a pure function of three things: the registry's
-metadata, the doc, and this viewer's kits. It is computed by
+metadata, the doc, and this viewer's activity. It is computed by
 `activeSet` in `src/stage/activation.js`. The stage recomputes it after every
-doc or kit change, starts what's new and stops what's gone.
+doc change and every switch of activity, starts what's new and stops what's
+gone.
 
-**Kits:**
-- *Suggested kits* are `doc.view.kits ?? ["model"]`.
-- *This viewer's kits* are `(suggested ∪ local.kits.on) \ local.kits.off`,
-  so a later change to the suggestion still reaches everyone.
-- The suggestion is the doc's, edited by anyone: the inspector's "Opens
-  with" (nothing selected) edits `doc.view.kits` in place, and the Kits
-  button's "Suggest for everyone" writes this viewer's list there.
-- Both are `src/kits.js` (pure), for the stage and any kit surface. Another
-  tab of the same viewer changing them (or prefs) is picked up from
-  `localStorage`'s `storage` event.
-
-Each running extension has a **scope**, from its own reasons:
+An extension runs when both of these hold:
+- **it takes part in the current activity**: its `activities` include it,
+  or it declares none;
+- **it has a reason of its own**, which also gives its scope:
 
 | Scope | Reason | Offered input at |
 |---|---|---|
 | `scene` | a scene trait | step 5, every event |
 | `objects` | only object traits | step 4, and only when the event's hit chain reaches one of its objects (one with its trait) |
-| `viewer` | a kit, `always`, or only `requires` | step 6 |
+| `general` | it declares no traits at all (a general-purpose part: the editor's toolbar, the key map, notices), or `always` | step 6 |
 
-If several reasons apply, the earliest step wins. `requires` makes an
-extension run but never lends it scope.
+An extension that declares traits the doc doesn't have has no reason, and
+doesn't run. If several reasons apply, the earliest step wins.
+
+`requires` pulls the required extensions in whenever the requirer runs,
+whatever *their* activities (a table in play brings the hand and the key
+map, which are editing parts too). It never lends scope: a required
+extension's own reasons decide it, and with none it's `general`.
 
 **Order:**
 - `scene` extensions, in registry order;
 - then `objects` extensions, in registry order;
-- then `viewer` extensions, in the order of the flattened kit list, then
-  `always` ones in registry order;
+- then `general` extensions, in registry order;
 - each extension's `requires` follow it.
 
-This order (`local.running`) is the only order anything combines in: input,
-lenses, `collect`, landing rules. The order extensions happened to start in
-never counts.
+Registry order is the order plugins were registered in, so a package's
+general extensions run in the order its `plugins` list gives them (the
+scene's `src/index.js` lists the editor's parts in the order input should
+reach them). This order (`local.running`) is the only order anything
+combines in: input, lenses, `collect`, landing rules. The order extensions
+happened to start in never counts.
+
+**Activities.** What a viewer is doing is one value per view, never
+persisted and never in the doc:
+- **Available**: `"edit"`, then every activity declared by an extension with
+  a reason of its own (a doc reason, or `general`/`always`), in registry
+  order. So a plain model offers only `"edit"`, and a scene with an arena's
+  traits offers `"edit"` and `"play"`.
+- **Joining** starts a viewer where the doc says: the first time the stage
+  has the doc, `local.activity` becomes `doc.view.activity ?? "edit"`. A later
+  change to `view.activity` (the inspector's "Starts in") moves nobody who's
+  already here.
+- **Current**: `local.activity` when it's available, else `"edit"`
+  (`currentActivity`; `availableActivities` gives the list). A choice that
+  isn't on offer yet (the arena's plugins haven't registered, a peer's undo
+  took its traits) is kept, and comes back into force when it is.
+- **One place to read it**: the stage publishes both as `local.activities` =
+  `{ current, available }`. Parts read the current activity there, never by
+  working it out from `local.activity`.
+- **Switching** is a write of `local.activity` (the switcher, `scene.activity`,
+  shows a segmented control when more than one is available). What the new
+  activity doesn't call for stops at once.
 
 **Drops** are not activation. To lay out a dropped document, the add
 extension calls `api.drop(info)`. That loads each module whose `drops` match
 and calls its `drop(ctx, info)` until one returns true, where:
 - `ctx` is a temporary api: doc, change, repo, `addObject`, `newId`,
-  registry, local;
+  registry, local, notify;
 - `info` is `{ url, doc, handle, group, at: { point, hitId } | null }`.
 
 A drop writes traits into the doc, and those traits are what activate the
 extension.
+
+**Templates** start an empty scene. An empty scene's start screen (the add
+extension's) lists every registered `scene:template` from the registry's
+metadata (`name`, `icon`, `description`; nothing is loaded to offer one),
+and Blank. Choosing one calls `api.template(id)`, which loads it and runs
+`create(ctx)` with the same `ctx` a drop gets. The template writes whatever
+it needs into the doc: objects, traits, and `view.activity`. Then this
+viewer starts where the doc now says, as joining does, so an arena
+template that writes `"play"` lands its maker in the game.
 
 **Describing traits.** `describes` says what an extension's traits are, so a
 surface can write them without a script (the inspector's Behaviours and "Add
@@ -177,8 +211,8 @@ describes: {
   `init` and the defaults present when it was added are written.
 
 **Stopping:**
-- An extension that leaves the running set because of a kit change stops at
-  once.
+- An extension that leaves the running set because this viewer switched
+  activity stops at once.
 - One that leaves because of a doc change keeps running for 2 s, and for as
   long as it, or an extension it `requires`, has an arm, an open session or
   a pose hold (the hand carrying the table's card), so a peer's undo doesn't
@@ -223,7 +257,7 @@ overlays, labels) is left to the DOM. It offers each event down a chain:
    then its groups (nearest first). The event gets `holder`, the nearest such
    object;
 5. **`scene` scope**, in running order;
-6. **`viewer` scope**, in running order;
+6. **`general` scope**, in running order;
 7. **the stage default**. An unclaimed press orbits (left button) or pans
    (right button); the wheel zooms. The default is skipped while the camera
    is held.
@@ -379,6 +413,7 @@ that extension.
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, passthrough). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info)` | |
+| `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
 
 **Picking and camera**
 
@@ -404,7 +439,7 @@ How the camera parts behave:
 |---|---|
 | `THREE` | the stage's three.js |
 | `world({ onTop? })` | a `Group` owned by the extension. Its meshes are widgets the owner gets first refusal of. `onTop` groups are drawn in a second pass over everything (depth-tested among themselves, lit) |
-| `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together: one gives way to an overlapping label of higher (or equal, earlier) `rank` (default 1), and rank 2 and up never hide. The model's: dimensions 3, axes 2, bounds 1, grid 0 |
+| `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together: one gives way to an overlapping label of higher (or equal, earlier) `rank` (default 1), and rank 2 and up never hide. The editor's: dimensions 3, axes 2, bounds 1, grid 0 |
 | `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas and lets the pointer through, except that its direct children catch it by default (a rule with no specificity, so any extension rule wins): a full-size child (a HUD) sets `pointer-events: none`. An edge sits beside it, and the canvas shrinks to fit |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
 | `pose` | `{ hold(id, transform), release(id, { landed? }) }` |
@@ -503,8 +538,8 @@ atmosphere() → null | {
   viewport hears only a change (by key). Something that changes on its own
   (a day passing) asks for a flush with `api.schedule`.
 - **None at all is the stage's own look, exactly**: the theme's background,
-  no fog, the white key light high to one side, no shadows. The model's CAD
-  view never gives one.
+  no fog, the white key light high to one side, no shadows. The editor
+  never gives one.
 - The **sky** is a gradient behind everything, horizon to top above and
   horizon to bottom below, with a soft disc where the sun is. It writes no
   depth and is never picked, boxed or framed. Without a sky, fog's colour
@@ -524,13 +559,13 @@ atmosphere() → null | {
 | Module | Holds |
 |---|---|
 | `stage/atom.js` | the local value |
-| `stage/activation.js` | the running set and scopes (pure) |
+| `stage/activation.js` | the running set, scopes and activities (pure) |
 | `stage/chain.js` | the chain order (pure) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
 | `stage/presence.js` | the presence protocol, sends, remote pose holds |
-| `stage/host.js` | starting and stopping extensions, the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, kits, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/host.js` | starting and stopping extensions, this viewer's activity (joining, `local.activities`), the api each gets, ownership |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, the activity, templates, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old

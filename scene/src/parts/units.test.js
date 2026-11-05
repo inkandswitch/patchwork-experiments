@@ -4,7 +4,7 @@ import { mountStage } from "../test/stage-harness.js";
 import units from "./units.js";
 import { UNIT_OPTIONS } from "../units.js";
 
-const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.units" }, module: units }], kits: [{ id: "model", extensions: ["scene.units"] }], doc });
+const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.units" }, module: units }], doc });
 
 describe("scene.units", () => {
   it("offers the units as a picker for the scene, valued from the pref (the doc's view.units as the suggestion)", async () => {

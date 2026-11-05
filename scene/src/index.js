@@ -3,8 +3,8 @@
 //
 // The `scene` tool is the stage (src/stage/stage.js): a scene with no UI of
 // its own. Everything you see or do in it comes from `scene:extension`
-// plugins, and the ones this package ships are below; the "model" kit is
-// those that together make the scene editor. See STAGE.md.
+// plugins, and the ones this package ships are below: the parts that together
+// make the scene editor (in the "edit" activity). See STAGE.md.
 
 const SOURCE_UNITS = [
   { value: "mm", label: "Millimetres" },
@@ -90,10 +90,18 @@ export const plugins = [
     },
   },
   // ─── extensions: the parts the scene editor is made of ───
+  // None declares traits, so each runs in every scene ("general" scope), in
+  // this order, which is the order input is offered to them; those that say
+  // `activities: ["edit"]` only while someone is editing. The key map and
+  // notices serve every activity. The sidebar shows panels in running order:
+  // Objects, Inspector, then Dimensions, so those two come before measure
+  // (which brings dimensions in right after it); neither claims canvas input,
+  // so being early changes nothing else.
   {
     type: "scene:extension",
     id: "scene.toolbar",
     name: "Toolbar",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/toolbar.js")).default;
     },
@@ -102,6 +110,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.sidebar",
     name: "Side panel",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/sidebar.js")).default;
     },
@@ -126,6 +135,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.menu",
     name: "Context menu",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/menu.js")).default;
     },
@@ -134,14 +144,34 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.frame",
     name: "Frame",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/frame.js")).default;
     },
   },
   {
     type: "scene:extension",
+    id: "scene.outline",
+    name: "Objects",
+    activities: ["edit"],
+    async load() {
+      return (await import("./parts/outline.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
+    id: "scene.inspector",
+    name: "Inspector",
+    activities: ["edit"],
+    async load() {
+      return (await import("./parts/inspector.js")).default;
+    },
+  },
+  {
+    type: "scene:extension",
     id: "scene.measure",
     name: "Measure",
+    activities: ["edit"],
     requires: ["scene.dimensions"],
     async load() {
       return (await import("./parts/measure.js")).default;
@@ -151,6 +181,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.handles",
     name: "Handles",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/handles.js")).default;
     },
@@ -159,6 +190,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.gizmo",
     name: "Transform gizmo",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/gizmo.js")).default;
     },
@@ -167,6 +199,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.hand",
     name: "Hand",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/hand.js")).default;
     },
@@ -175,6 +208,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.dimensions",
     name: "Dimensions",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/dimensions.js")).default;
     },
@@ -183,30 +217,16 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.select",
     name: "Selection",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/select.js")).default;
     },
   },
   {
     type: "scene:extension",
-    id: "scene.outline",
-    name: "Objects",
-    async load() {
-      return (await import("./parts/outline.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
-    id: "scene.inspector",
-    name: "Inspector",
-    async load() {
-      return (await import("./parts/inspector.js")).default;
-    },
-  },
-  {
-    type: "scene:extension",
     id: "scene.grid",
     name: "Grid",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/grid.js")).default;
     },
@@ -215,6 +235,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.axes",
     name: "Axes",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/axes.js")).default;
     },
@@ -223,6 +244,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.bounds",
     name: "Bounds",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/bounds.js")).default;
     },
@@ -231,6 +253,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.units",
     name: "Units",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/units.js")).default;
     },
@@ -239,6 +262,7 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.legends",
     name: "Legends",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/legends.js")).default;
     },
@@ -247,50 +271,19 @@ export const plugins = [
     type: "scene:extension",
     id: "scene.add",
     name: "Add documents",
+    activities: ["edit"],
     async load() {
       return (await import("./parts/add.js")).default;
     },
   },
+  // what this viewer is doing, and switching it (only shown when there's a choice)
   {
     type: "scene:extension",
-    id: "scene.kits",
-    name: "Kits",
+    id: "scene.activity",
+    name: "Activity",
     always: true,
     async load() {
-      return (await import("./parts/kits.js")).default;
+      return (await import("./parts/activity.js")).default;
     },
-  },
-  // the scene editor: in this order, which is the order input is offered in
-  {
-    type: "scene:kit",
-    id: "model",
-    name: "Model",
-    icon: "Box",
-    extensions: [
-      "scene.toolbar",
-      "scene.sidebar",
-      "scene.notices",
-      "scene.keys",
-      "scene.menu",
-      "scene.frame",
-      // The sidebar shows panels in running order: Objects, Inspector, then
-      // Dimensions, as the old tool had them. So these two come before
-      // measure (which brings dimensions in right after it). Neither claims
-      // canvas input, so being early changes nothing else.
-      "scene.outline",
-      "scene.inspector",
-      "scene.measure",
-      "scene.handles",
-      "scene.gizmo",
-      "scene.hand",
-      "scene.dimensions",
-      "scene.select",
-      "scene.grid",
-      "scene.axes",
-      "scene.bounds",
-      "scene.units",
-      "scene.legends",
-      "scene.add",
-    ],
   },
 ];

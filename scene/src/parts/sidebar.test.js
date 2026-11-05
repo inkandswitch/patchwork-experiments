@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object } from "../test/stage-harness.js";
+import { PLAY, mountStage, object } from "../test/stage-harness.js";
 import sidebar, { isFolded } from "./sidebar.js";
 import keys from "./keys.js";
 
@@ -53,18 +53,18 @@ describe("scene.sidebar", () => {
     s = await mountStage({
       ...(again ? { repo: again.repo, handle: again.handle } : {}),
       extensions: [
-        { meta: { id: "scene.sidebar" }, module: sidebar },
+        { meta: { id: "scene.sidebar", activities: ["edit"] }, module: sidebar },
         { meta: { id: "scene.keys" }, module: keys },
         {
-          meta: { id: "t.core" },
+          meta: { id: "t.core", activities: ["edit"] },
           module: panelsExt(["objects", "inspector", "dimensions"], calls),
         },
         {
           meta: { id: "t.table", traits: ["test.flag"] },
           module: panelsExt(["test.table"], calls),
         },
+        PLAY,
       ],
-      kits: [{ id: "model", extensions: ["scene.sidebar", "scene.keys", "t.core"] }],
       doc: {
         objects: { a: object({ traits: { "test.flag": {} } }) },
         order: ["a"],
@@ -117,10 +117,9 @@ describe("scene.sidebar", () => {
 
   it("mounts and disposes panels as their extensions come and go", async () => {
     await mount();
-    // running order: the scene-scope extension first, then the kit's
+    // running order: the scene-scope extension first, then the general ones
     expect(calls.mounted).toEqual(["test.table", "objects", "inspector", "dimensions"]);
-    s.local.swap((m) => ({ ...m, kits: { on: [], off: ["model"] } }));
-    await s.settle();
+    await s.activity("play");
     expect(calls.disposed).toEqual(expect.arrayContaining(["objects", "inspector", "dimensions"]));
     expect(s.root.querySelector(".sidebar")).toBeNull();
   }, 30_000);

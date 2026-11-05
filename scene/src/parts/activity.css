@@ -1,0 +1,42 @@
+/* scene.activity: the activity switcher at the bottom left of the view, a
+   segmented control over the stage's .button primitive (the pressed one is
+   what this viewer is doing). It sits above the other overlays, so a game's
+   full-size HUD never covers it. */
+
+.scene-stage > .viewport > .stage-overlay.activity-layer {
+  z-index: 2;
+}
+
+.scene-stage .activity-layer > .activity-switch:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: var(--studio-space-xs, 0.375rem);
+  bottom: var(--studio-space-xs, 0.375rem);
+  display: flex;
+  max-width: calc(100% - 12px);
+  box-shadow: var(--scene-shadow);
+  border-radius: var(--studio-radius-sm, 4px);
+}
+
+.scene-stage .activity-layer > .activity-switch[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .activity-switch > .activity-option:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 0;
+}
+
+.scene-stage .activity-switch > .activity-option + .activity-option:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin-left: -1px;
+}
+
+.scene-stage .activity-switch > .activity-option:first-child:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-top-left-radius: var(--studio-radius-sm, 4px);
+  border-bottom-left-radius: var(--studio-radius-sm, 4px);
+}
+
+.scene-stage .activity-switch > .activity-option:last-child:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  border-top-right-radius: var(--studio-radius-sm, 4px);
+  border-bottom-right-radius: var(--studio-radius-sm, 4px);
+}

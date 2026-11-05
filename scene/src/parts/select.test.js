@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
-import { mountStage, object, until, settle } from "../test/stage-harness.js";
+import { PLAY, mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
 import { peerColor, peerSelections, hashString } from "../peers.js";
 
-const SELECT = { meta: { id: "scene.select" }, module: select };
-const KIT = { id: "model", extensions: ["scene.select"] };
+const SELECT = { meta: { id: "scene.select", activities: ["edit"] }, module: select };
 const group = (name, parent = null, extra = {}) => ({ kind: "group", name, group: parent, visible: true, opacity: 1, ...extra });
 const layer = (name, grp, extra = {}) => object({ name, group: grp, ...extra });
 
@@ -16,8 +15,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-async function mount({ objects = { a: object({ name: "A" }), b: object({ name: "B" }) }, extensions = [], kits = [KIT], doc = {} } = {}) {
-  s = await mountStage({ extensions: [SELECT, ...extensions], kits, doc: { objects, order: Object.keys(objects), ...doc } });
+async function mount({ objects = { a: object({ name: "A" }), b: object({ name: "B" }) }, extensions = [], doc = {} } = {}) {
+  s = await mountStage({ extensions: [SELECT, ...extensions], doc: { objects, order: Object.keys(objects), ...doc } });
   return s;
 }
 
@@ -242,7 +241,7 @@ describe("scene.select: commands", () => {
   it("Remove takes an object out (after every beforeRemove) and clears the selection", async () => {
     const seen = [];
     const dims = { meta: { id: "t.dims" }, module: { create: () => ({ beforeRemove: (d, ids) => seen.push([...ids]) }) } };
-    await mount({ extensions: [dims], kits: [{ id: "model", extensions: ["scene.select", "t.dims"] }] });
+    await mount({ extensions: [dims] });
     const c = s.instance("scene.select").commands.find((x) => x.id === "remove");
     expect(c.key).toEqual(["Delete", "Backspace"]);
     expect(c.show).toEqual(["menu", "inspector"]);
@@ -291,14 +290,13 @@ describe("scene.select: commands", () => {
 });
 
 describe("scene.select: stopping", () => {
-  it("takes its boxes and presence keys with it when its kit is turned off", async () => {
-    await mount();
+  it("takes its boxes and presence keys with it when this viewer switches to an activity it isn't in", async () => {
+    await mount({ extensions: [PLAY] });
     boxes({ a: { min: [0, 0, 0], max: [1, 1, 1] } });
     s.local.swap((m) => ({ ...m, selected: "a" }));
     await settle();
     await until(() => mineSent().selected === "a");
-    s.local.swap((m) => ({ ...m, kits: { on: [], off: ["model"] } }));
-    await settle();
+    await s.activity("play");
     expect(s.instance("scene.select")).toBeFalsy();
     expect(s.debug.viewport.layers.get("scene.select")).toBeUndefined();
     await until(() => !("scene.select" in (lastPresence()?.keys ?? {})));

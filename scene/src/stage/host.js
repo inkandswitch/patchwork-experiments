@@ -1,7 +1,8 @@
 // Starting and stopping extensions (STAGE.md, "Activation" and "Stopping").
 //
 // The running set is a pure function of the registry's metadata, the doc and
-// this viewer's kits (activation.js activeSet). sync(doc) recomputes it, starts
+// what this viewer is doing (their activity: activation.js activeSet).
+// sync(doc) recomputes it, starts
 // what's new (load → module.create(api)) and stops what's gone. What an
 // extension acquires through its api is the stage's business: makeApi hands
 // back the api together with a release() that gives all of it back, in the
@@ -10,13 +11,20 @@
 // An extension that leaves because of the doc (a peer's undo took its trait
 // away) lingers for LINGER_MS, and for as long as it's busy (an arm, an open
 // session, a pose hold), so nobody's game is torn down under them. One that
-// leaves because of this viewer's kits stops at once.
+// leaves because this viewer switched activity stops at once.
+//
+// The activity: local.activity is this viewer's (null until they join: the
+// first doc with a view sets it to where the doc says to start, so a later
+// change to that never moves someone already here). The one that runs is
+// published as local.activities.current, with the ones on offer: it is
+// local.activity when the scene offers it, else "edit" (currentActivity).
+// Everything that needs to know what's being done reads it there.
 //
 // Running order (activeSet's order) is the only order anything here reports
 // in: local.running, instances(), collect(). The order extensions finished
 // loading in never counts.
 
-import { activeSet, chosenKits, takesDrop } from "./activation.js";
+import { DEFAULT_ACTIVITY, activeSet, availableActivities, currentActivity, takesDrop } from "./activation.js";
 
 /** How long an extension the doc no longer calls for keeps running. */
 export const LINGER_MS = 2_000;
@@ -56,14 +64,16 @@ export function mergeOrder(prev, want, lingering) {
   return out;
 }
 
+/** The same activities? */
+const sameActivities = (a, b) => !!a && a.current === b.current && a.available.length === b.available.length && a.available.every((x, i) => x === b.available[i]);
+
 /** Same list of { id, scope }? */
 const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.every((r, i) => r.id === b[i].id && r.scope === b[i].scope);
 
 /**
  * @param {{
  *   registry: () => Promise<object | null>,     // the scene:extension registry
- *   kitRegistry?: () => Promise<object | null>, // the scene:kit registry
- *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.kits in, local.running out)
+ *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.activity in; local.running and local.activities out)
  *   makeApi: (rec: object) => { api: object, release: () => void },
  *   makeDropContext?: (id: string) => object,
  *   busy?: (id: string) => boolean,             // an arm, an open session or a pose hold
@@ -75,7 +85,6 @@ const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.eve
  */
 export function createHost({
   registry,
-  kitRegistry = async () => null,
   local,
   makeApi,
   makeDropContext = () => ({}),
@@ -88,50 +97,40 @@ export function createHost({
   let dead = false;
   let isReady = false;
   let reg = null;
-  let kitReg = null;
   // rec: { id, meta, scope, state: "loading" | "running" | "failed" | "stopped",
   //        instance, api, release, controller, signal, linger: timer | null }
   const recs = new Map();
   let order = []; // running order: every rec's id
   let lastDoc = null; // the doc the running set was last worked out for
-  let pending = null; // a doc sync() was given before the registries arrived
+  let pending = null; // a doc sync() was given before the registry arrived
+  let syncing = false; // in sync(): a call from inside it (local.activity set on joining) runs after
   const offs = [];
 
-  const ready = Promise.all([
-    Promise.resolve()
-      .then(registry)
-      .catch(() => null),
-    Promise.resolve()
-      .then(kitRegistry)
-      .catch(() => null),
-  ]).then(([r, k]) => {
-    if (dead) return;
-    reg = r ?? null;
-    kitReg = k ?? null;
-    isReady = true;
-    for (const x of [reg, kitReg]) {
+  const ready = Promise.resolve()
+    .then(registry)
+    .catch(() => null)
+    .then((r) => {
+      if (dead) return;
+      reg = r ?? null;
+      isReady = true;
       try {
-        const off = x?.on?.("changed", () => sync(lastDoc));
+        const off = reg?.on?.("changed", () => sync(lastDoc));
         if (typeof off === "function") offs.push(off);
       } catch {
         // a registry without change events: what's installed at open is what runs
       }
-    }
-    if (pending) {
-      const d = pending;
-      pending = null;
-      sync(d);
-    }
-  });
+      if (pending) {
+        const d = pending;
+        pending = null;
+        sync(d);
+      }
+    });
 
-  function wanted(doc) {
-    const metas = listOf(reg);
-    const kits = listOf(kitReg);
-    return {
-      metas,
-      kits,
-      set: activeSet({ metas, kits, kitIds: chosenKits(local.get().kits, doc), doc }),
-    };
+  /** What runs for this doc, with this viewer's activity as it is now. */
+  function wanted(metas, doc) {
+    const available = availableActivities(metas, doc);
+    const current = currentActivity(local.get().activity, doc, available);
+    return { activities: { current, available }, set: activeSet({ metas, doc, activity: current }) };
   }
 
   // ─── starting ─────────────────────────────────────────────────────────────
@@ -222,8 +221,8 @@ export function createHost({
   // ─── the running set ──────────────────────────────────────────────────────
 
   /**
-   * Recompute the running set for this doc (and the viewer's kits as they
-   * are in local now): start what's new, stop what's gone.
+   * Recompute the running set for this doc (and the viewer's activity as it
+   * is in local now): start what's new, stop what's gone.
    */
   function sync(doc) {
     if (dead) return;
@@ -231,8 +230,31 @@ export function createHost({
       pending = doc ?? pending ?? {};
       return;
     }
-    const d = doc ?? lastDoc ?? {};
-    const { metas, kits, set } = wanted(d);
+    if (syncing) {
+      pending = doc ?? pending ?? lastDoc ?? {};
+      return;
+    }
+    syncing = true;
+    try {
+      syncNow(doc ?? lastDoc ?? {});
+    } finally {
+      syncing = false;
+    }
+    if (pending && !dead) {
+      const d = pending;
+      pending = null;
+      sync(d);
+    }
+  }
+
+  function syncNow(d) {
+    // joining: this viewer starts where the doc says (once there is a doc)
+    if (local.get().activity == null && d.view && typeof d.view === "object") {
+      const start = typeof d.view.activity === "string" ? d.view.activity : DEFAULT_ACTIVITY;
+      local.swap((m) => (m.activity != null ? m : { ...m, activity: start }));
+    }
+    const metas = listOf(reg);
+    const { activities, set } = wanted(metas, d);
     const want = new Map(set.map((w) => [w.id, w]));
     for (const w of set) {
       const rec = recs.get(w.id);
@@ -247,12 +269,12 @@ export function createHost({
       }
     }
     // Which of the gone ones did the doc send away? Those the previous doc,
-    // with this viewer's kits as they are now, would still run.
+    // with this viewer's activity as it is now, would still run.
     let docCaused = null;
     let stopped = false;
     for (const rec of [...recs.values()]) {
       if (want.has(rec.id) || rec.linger != null) continue;
-      docCaused ??= new Set(activeSet({ metas, kits, kitIds: chosenKits(local.get().kits, lastDoc ?? {}), doc: lastDoc ?? {} }).map((w) => w.id));
+      docCaused ??= new Set(wanted(metas, lastDoc ?? {}).set.map((w) => w.id));
       if (rec.state === "running" && docCaused.has(rec.id)) linger(rec);
       else {
         stop(rec);
@@ -262,6 +284,7 @@ export function createHost({
     const lingering = new Set([...recs.values()].filter((r) => r.linger != null).map((r) => r.id));
     order = mergeOrder(order, set.map((w) => w.id), lingering).filter((id) => recs.has(id));
     lastDoc = d;
+    local.swap((m) => (sameActivities(m.activities, activities) ? m : { ...m, activities: Object.freeze({ current: activities.current, available: Object.freeze(activities.available) }) }));
     publish();
     if (stopped) onChange();
   }

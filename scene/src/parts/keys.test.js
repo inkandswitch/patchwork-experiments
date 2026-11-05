@@ -95,7 +95,6 @@ describe("scene.keys", () => {
         { meta: { id: "t.one" }, module: commandsExt("one", log) },
         { meta: { id: "t.two" }, module: commandsExt("two", log) },
       ],
-      kits: [{ id: "model", extensions: ["scene.keys", "t.one", "t.two"] }],
       doc: {
         objects: { a: object({ traits: { "test.flag": {} } }), b: object() },
         order: ["a", "b"],

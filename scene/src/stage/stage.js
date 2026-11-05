@@ -11,7 +11,8 @@
 //     room). The port holds the viewport's canvas and labels, and the
 //     extensions' overlays. The root is focusable and hears the keys.
 //   - local state (atom.js): one frozen value shared by the stage and every
-//     extension; kits and prefs are kept per scene in localStorage.
+//     extension; prefs are kept per scene in localStorage. What this viewer
+//     is doing (local.activity) is not kept: joining starts where the doc says.
 //   - the viewport, its theme, and the camera (this viewer's, in localStorage).
 //   - content: the render manager (render-doc objects) and the GLB queue
 //     (passthrough objects), their state → local.status.
@@ -31,7 +32,7 @@ import { createAtom, assoc } from "./atom.js";
 import { createHost } from "./host.js";
 import { createRouter } from "./router.js";
 import { createPresence } from "./presence.js";
-import { traitKeys } from "./activation.js";
+import { DEFAULT_ACTIVITY, traitKeys } from "./activation.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import * as ops from "../ops.js";
 import { createRenderManager } from "../render-manager.js";
@@ -285,13 +286,6 @@ function writeJSON(key, value) {
   }
 }
 
-const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
-
-/** A viewer's kits as stored: { on, off }. */
-export function cleanKits(v) {
-  return Object.freeze({ on: Object.freeze(strings(v?.on)), off: Object.freeze(strings(v?.off)) });
-}
-
 /** A viewer's prefs as stored: a plain object. */
 export function cleanPrefs(v) {
   return Object.freeze(v && typeof v === "object" && !Array.isArray(v) ? { ...v } : {});
@@ -347,7 +341,6 @@ export default function Stage(handle, element) {
 
   // ─── local state ──────────────────────────────────────────────────────────
 
-  const kitsKey = `scene-kits:${sceneUrl}`;
   const prefsKey = `scene-prefs:${sceneUrl}`;
   const cameraKey = `scene-camera:${sceneUrl}`;
   const local = createAtom({
@@ -358,18 +351,18 @@ export default function Stage(handle, element) {
     status: Object.freeze({}),
     theme: null,
     notices: Object.freeze([]),
-    kits: cleanKits(readJSON(kitsKey)),
+    // this viewer's activity: null until the host has the doc and starts them where it says
+    activity: null,
+    activities: Object.freeze({ current: DEFAULT_ACTIVITY, available: Object.freeze([DEFAULT_ACTIVITY]) }),
     prefs: cleanPrefs(readJSON(prefsKey)),
   });
 
-  // Another tab of this viewer changed its kits or prefs for this scene: take
-  // theirs, so neither tab writes back a stale copy over the other's choice.
+  // Another tab of this viewer changed its prefs for this scene: take theirs,
+  // so neither tab writes back a stale copy over the other's choice.
   const onStorage = (e) => {
-    if (e.key !== kitsKey && e.key !== prefsKey) return;
-    const kits = e.key === kitsKey;
-    const next = kits ? cleanKits(readJSON(kitsKey)) : cleanPrefs(readJSON(prefsKey));
-    const field = kits ? "kits" : "prefs";
-    local.swap((m) => (JSON.stringify(m[field]) === JSON.stringify(next) ? m : { ...m, [field]: next }));
+    if (e.key !== prefsKey) return;
+    const next = cleanPrefs(readJSON(prefsKey));
+    local.swap((m) => (JSON.stringify(m.prefs) === JSON.stringify(next) ? m : { ...m, prefs: next }));
   };
   globalThis.addEventListener?.("storage", onStorage);
   cleanups.push(() => globalThis.removeEventListener?.("storage", onStorage));
@@ -1191,6 +1184,40 @@ export default function Stage(handle, element) {
   }
 
   /**
+   * Start the scene from a template (STAGE.md, "Templates"): load the
+   * scene:template and run its create() with a drop context, which writes
+   * whatever it needs into the doc. Then this viewer starts where the doc now
+   * says, as joining does (an arena's template says "play", so its maker
+   * lands in the game). True when it ran.
+   * @param {string} templateId
+   * @returns {Promise<boolean>}
+   */
+  async function applyTemplate(templateId) {
+    const reg = await getRegistry("scene:template");
+    if (dead || !reg) return false;
+    let mod;
+    try {
+      const loaded = await reg.load(templateId);
+      mod = loaded?.module?.default ?? loaded?.module;
+    } catch (err) {
+      notify(`Couldn't load that template: ${err?.message ?? err}`, "error");
+      return false;
+    }
+    if (dead) return false;
+    if (typeof mod?.create !== "function") return false;
+    try {
+      await mod.create(makeDropContext(templateId));
+    } catch (err) {
+      notify(`That template failed: ${err?.message ?? err}`, "error");
+      return false;
+    }
+    if (dead) return false;
+    const start = doc().view?.activity;
+    if (typeof start === "string") local.swap((m) => (m.activity === start ? m : { ...m, activity: start }));
+    return true;
+  }
+
+  /**
    * The api one extension gets, and release(): give back everything it
    * acquired, in the STAGE.md order (the host aborts its signal first and
    * calls dispose() after).
@@ -1303,6 +1330,7 @@ export default function Stage(handle, element) {
       rebuild,
       fixPoint,
       drop: (info) => host.drop(info),
+      template: (templateId) => applyTemplate(templateId),
 
       // picking and camera
       pick: (x, y, opts) => viewport.pick(x, y, opts),
@@ -1466,7 +1494,6 @@ export default function Stage(handle, element) {
 
   const host = createHost({
     registry: () => getRegistry("scene:extension"),
-    kitRegistry: () => getRegistry("scene:kit"),
     local,
     makeApi,
     makeDropContext,
@@ -1538,11 +1565,8 @@ export default function Stage(handle, element) {
 
   cleanups.push(
     local.watch((next, prev) => {
-      if (next.kits !== prev.kits) {
-        writeJSON(kitsKey, next.kits);
-        // a viewer's kit change stops what it turned off at once
-        host.sync(doc());
-      }
+      // switching activity stops what the new one doesn't call for at once
+      if (next.activity !== prev.activity) host.sync(doc());
       if (next.prefs !== prev.prefs) writeJSON(prefsKey, next.prefs);
       requestFlush();
     }),

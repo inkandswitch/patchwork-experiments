@@ -1,18 +1,19 @@
 // Which extensions run in a view: a function of the registry's metadata, the
-// doc and this viewer's kits (STAGE.md, "Activation"). Pure.
-
-import { chosenKits, suggestedKits } from "../kits.js";
-
-export { chosenKits, suggestedKits };
+// doc and what this viewer is doing (its activity: STAGE.md, "Activation").
+// Pure.
 
 const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+
+/** The activity a viewer starts in when nothing says otherwise, and the one always offered. */
+export const DEFAULT_ACTIVITY = "edit";
 
 /** The trait keys on one scene object (or group). */
 export const traitKeys = (o) => (o?.traits && typeof o.traits === "object" ? Object.keys(o.traits) : []);
 
 /**
  * Why the doc calls for this extension: "scene" (a scene trait), "objects"
- * (only object traits), or null. (`always` and kits are the viewer's reasons: see activeSet.)
+ * (only object traits), or null. (Declaring no traits at all, or `always`,
+ * is a reason of another kind: see ownReason.)
  */
 export function docReason(meta, d) {
   const traits = new Set(list(meta?.traits));
@@ -27,6 +28,24 @@ export function docReason(meta, d) {
 /** Does the doc call for it at all? */
 export const docWants = (meta, d) => docReason(meta, d) != null;
 
+/**
+ * Its own reason to run, whatever the activity: the doc's (above), else
+ * "general" when it declares no traits (a general-purpose part: the editor's
+ * toolbar, the key map) or is `always`, else null (traits the doc doesn't have).
+ */
+export function ownReason(meta, d) {
+  const r = docReason(meta, d);
+  if (r) return r;
+  if (meta?.always || !list(meta?.traits).length) return "general";
+  return null;
+}
+
+/** Does it take part in this activity? Declaring none means every one. */
+export function inActivity(meta, activity) {
+  const mine = list(meta?.activities);
+  return !mine.length || mine.includes(activity);
+}
+
 /** May this extension lay out a dropped doc of this datatype? */
 export function takesDrop(meta, type) {
   const drops = list(meta?.drops);
@@ -34,63 +53,66 @@ export function takesDrop(meta, type) {
 }
 
 /**
- * A kit list → the extension ids in it, in order (nested kits expanded where
- * they're named; each id once, first place wins; unknown kits and cycles ignored).
- * @param {Map<string, object> | object[]} kitMetas
- * @param {string[]} kitIds
+ * The activities this scene offers: "edit", then every activity declared by
+ * an extension with a reason of its own (registry order, each once). An
+ * extension whose traits the doc lacks offers nothing, so a plain model
+ * offers only "edit" and a scene with an arena's traits "edit" and "play".
+ * @param {object[]} metas  scene:extension metadata, registry order
+ * @param {object} doc
+ * @returns {string[]}
  */
-export function expandKits(kitMetas, kitIds) {
-  const byId = kitMetas instanceof Map ? kitMetas : new Map((kitMetas ?? []).map((k) => [k.id, k]));
-  const out = [];
-  const seen = new Set();
-  const visiting = new Set();
-  const walk = (kid) => {
-    const kit = byId.get(kid);
-    if (!kit || visiting.has(kid)) return;
-    visiting.add(kid);
-    for (const sub of list(kit.kits)) walk(sub);
-    for (const id of list(kit.extensions)) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      out.push(id);
-    }
-    visiting.delete(kid);
-  };
-  for (const kid of list(kitIds)) walk(kid);
+export function availableActivities(metas, doc) {
+  const out = [DEFAULT_ACTIVITY];
+  for (const m of metas ?? []) {
+    if (!m?.id || !ownReason(m, doc)) continue;
+    for (const a of list(m.activities)) if (!out.includes(a)) out.push(a);
+  }
   return out;
 }
 
 /**
- * The extensions that run, in chain order, each with its scope (STAGE.md,
- * "Activation"): the scene's (registry order), then those only some objects
- * call for (registry order), then this viewer's kits' (kit order), then
- * `always` (registry order). An extension's `requires` follow it; requiring
- * never lends scope (a required extension with no reason of its own is
- * "viewer"). Unknown ids are left out. Each extension appears once, with the
- * earliest scope any of its own reasons gives it.
- *
- * @param {{ metas: object[], kits: object[], kitIds: string[], doc: object }} o
- * @returns {{ id: string, meta: object, scope: "scene" | "objects" | "viewer" }[]}
+ * What this viewer is doing: their own choice, else what the doc starts
+ * people in (view.activity), else "edit"; but only among the available ones,
+ * and when it isn't one of them, "edit" (which always is).
+ * @param {string | null | undefined} mine  local.activity
+ * @param {object} doc
+ * @param {string[]} available  availableActivities(…)
+ * @returns {string}
  */
-export function activeSet({ metas, kits, kitIds, doc }) {
+export function currentActivity(mine, doc, available) {
+  const want = typeof mine === "string" ? mine : typeof doc?.view?.activity === "string" ? doc.view.activity : DEFAULT_ACTIVITY;
+  if (available.includes(want)) return want;
+  return available.includes(DEFAULT_ACTIVITY) ? DEFAULT_ACTIVITY : (available[0] ?? DEFAULT_ACTIVITY);
+}
+
+/**
+ * The extensions that run, in chain order, each with its scope (STAGE.md,
+ * "Activation"). One runs when it takes part in the activity and has a
+ * reason of its own; the scene's come first (registry order), then those
+ * only some objects call for (registry order), then the general ones
+ * (registry order). An extension's `requires` follow it, whatever their
+ * activities; requiring lends no scope (a required extension's own reasons
+ * decide it, and with none it's "general"). Unknown ids are left out. Each
+ * extension appears once.
+ *
+ * @param {{ metas: object[], doc: object, activity?: string }} o
+ * @returns {{ id: string, meta: object, scope: "scene" | "objects" | "general" }[]}
+ */
+export function activeSet({ metas, doc, activity = DEFAULT_ACTIVITY }) {
   const byId = new Map((metas ?? []).filter((m) => m?.id).map((m) => [m.id, m]));
-  const own = new Map(); // id → its own scope
+  const own = new Map(); // id → its own scope, whatever the activity
   for (const m of byId.values()) {
-    const r = docReason(m, doc);
+    const r = ownReason(m, doc);
     if (r) own.set(m.id, r);
   }
-  const kitMembers = expandKits(kits, kitIds).filter((id) => byId.has(id));
-  for (const id of kitMembers) if (!own.has(id)) own.set(id, "viewer");
-  for (const m of byId.values()) if (m.always && !own.has(m.id)) own.set(m.id, "viewer");
-
   const out = new Map();
   const add = (id) => {
     if (out.has(id) || !byId.has(id)) return;
-    out.set(id, { id, meta: byId.get(id), scope: own.get(id) ?? "viewer" });
+    out.set(id, { id, meta: byId.get(id), scope: own.get(id) ?? "general" });
     for (const r of list(byId.get(id).requires)) add(r);
   };
-  for (const scope of ["scene", "objects"]) for (const m of byId.values()) if (own.get(m.id) === scope) add(m.id);
-  for (const id of kitMembers) add(id);
-  for (const m of byId.values()) if (m.always) add(m.id);
+  for (const scope of ["scene", "objects", "general"]) {
+    for (const m of byId.values()) if (own.get(m.id) === scope && inActivity(m, activity)) add(m.id);
+  }
   return [...out.values()];
 }

@@ -8,7 +8,7 @@ const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kin
 const doc = () => ({ objects: { a: object({ name: "A" }), b: object({ name: "B", group: "g" }), g: group() }, order: ["a", "b", "g"] });
 
 async function mount(d = doc()) {
-  const s = await mountStage({ extensions: [{ meta: { id: "scene.bounds" }, module: bounds }], kits: [{ id: "model", extensions: ["scene.bounds"] }], doc: d });
+  const s = await mountStage({ extensions: [{ meta: { id: "scene.bounds" }, module: bounds }], doc: d });
   const api = s.api("scene.bounds");
   // no WebGL here: the boxes the stage would measure
   api.box = (id) => (id === "g" ? BOXES.b : (BOXES[id] ?? null));

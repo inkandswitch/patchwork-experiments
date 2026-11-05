@@ -77,7 +77,7 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
 
   async function mount(doc = {}) {
     repo ??= new FakeRepo();
-    s = await mountStage({ repo, extensions: EXTS, kits: [{ id: "model", extensions: EXTS.map((e) => e.meta.id) }], doc });
+    s = await mountStage({ repo, extensions: EXTS, doc });
     return s;
   }
   beforeEach(() => {

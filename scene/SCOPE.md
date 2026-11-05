@@ -15,7 +15,7 @@ Today an extension's scope comes from its own reasons (`activeSet` in
 |---|---|---|
 | `scene` | a trait on the scene | step 5, every pointer event; step 4 as well when one of its objects is in the hit chain |
 | `objects` | only traits on objects | step 4, and only when the hit chain reaches one of its objects, with `ev.holder` set to the nearest |
-| `viewer` | a kit, `always`, or only `requires` | step 6 |
+| `general` | no traits declared at all, `always`, or only `requires` | step 6 |
 
 `requires` makes an extension run but lends it no scope. Three details of
 the code matter below:
@@ -33,7 +33,7 @@ the code matter below:
 
 | Case | Traits today | What it needs from scope |
 |---|---|---|
-| CAD boat editor | none of its own; the model kit (`viewer`) | the editing kit has to win while you're editing, even over play traits on the same objects |
+| CAD boat editor | none of its own; the editor's parts (`general`, in the `"edit"` activity) | editing has to win while you're editing, even over play traits on the same objects (activities now settle this: a play extension doesn't run while editing) |
 | Game table | `tabletop.seats` on the scene; `tabletop.zone` and `tabletop.hidden` on objects | seats, zones and face-up all relative to the table |
 | Arena | `arena.level` on the scene; `arena.target` and `arena.spawn` on objects | walk and shoot anywhere; spawns where their objects are |
 | **Sailing sim** | (planned) | a boat that moves as one; a tiller and sheets on it; players walking the deck; a card table in the saloon; the whole thing inside an arena level |
@@ -72,7 +72,7 @@ one instance and handles many holders, rather than the stage creating an
 instance per holder. Per-holder instances look simpler, but they make
 cross-scope moves awkward (a card carried from one table to another, or
 onto the deck), they duplicate shared resources (deck resolvers), and they
-multiply overlays and HUD lines. The `scene`, `objects` and `viewer` labels
+multiply overlays and HUD lines. The `scene`, `objects` and `general` labels
 stay in `local.running` as a summary, but input stops reading them.
 
 **Code.** `api.holders()` returns the ids carrying any of this extension's
@@ -84,11 +84,11 @@ scene, or `undefined` if there's none. Both go in `host.js`, built on
 ## 2. Nested scopes and precedence
 
 **Options.**
-- **A. By scope class (today).** Object holders, then scene, then viewer;
+- **A. By scope class (today).** Object holders, then scene, then general;
   among holders, running order.
 - **B. By nearness.** Holders are ordered by their position in the hit
   chain, nearest first. The scene counts as the last link, so scene-placed
-  extensions come after every object holder. Viewer comes last.
+  extensions come after every object holder. General comes last.
 - **C. Explicit priority** in metadata or on the trait.
 
 **Tradeoffs.** B is what bubbling means, and it's what DESIGN.md's
@@ -225,7 +225,7 @@ while it moves:
 
 ## 7. `requires` and the parts it pulls in
 
-`requires` lends no scope, so a required part is `viewer` scope and runs
+`requires` lends no scope, so a required part is `general` scope and runs
 everywhere. In the sailing scene the tabletop requires `scene.hand`, a
 table's doc suggests the hand as the tool (`view.tool: "hand"`), and
 now a drag carries the arena's walls.

@@ -28,7 +28,7 @@ Contributions come from three scopes:
 |---|---|---|
 | **Object** | The object is in the scene: by its kind, source or tags | A deck draws and shuffles; a die rolls; a hull has a trim handle; a target can be shot |
 | **Scene** | The doc carries the trait | Seats, zones, the face-up rule; a snap grid; units; an arena's rules |
-| **Viewer** | Someone turns it on; it belongs to them, not to the doc | An editing kit; a camera style |
+| **General** | It needs nothing in the doc: it serves whatever the viewer is doing | The editor's toolbar and outline; the key map; notices |
 
 A contribution can provide:
 
@@ -45,20 +45,17 @@ nothing there contributes one. It isn't hidden.
 Docs name plugins by id and never carry code, so a contribution's code always
 comes from installed packages.
 
-### Kits: bundles over shared parts
+### Activities: what a viewer is doing
 
-A **kit** is a named set of contributions that gets mixed into a scene
-together. It isn't one built-in editor. There are many kits, one per task,
-for example:
+An **activity** is what someone is doing in a scene: editing it, playing
+it, later reviewing it or sailing it. It is one value per view, and each
+viewer has their own: one person can lay out the next room of a level while
+another plays the first. Every contribution says which activities it takes
+part in (none said means all of them), and a scene offers an activity when
+something with a reason to be there takes part in it. Editing is always on
+offer; a scene with an arena's traits also offers play.
 
-- general modelling;
-- hull fairing for a boat;
-- laying out a game table: seats, zones, snap points;
-- building an FPS level: spawns, targets, cover.
-
-Several kits can be on at once.
-
-A kit adds no new mechanism. It only chooses and arranges **shared parts**:
+Activities choose among **shared parts** without bundling them:
 
 - selection;
 - the transform gizmo and numeric transforms;
@@ -67,14 +64,27 @@ A kit adds no new mechanism. It only chooses and arranges **shared parts**:
 - measure and dimensions;
 - standard views.
 
-Those parts are common infrastructure. Each is written once as a contribution
-and any kit can pull it in, as can a game: the table could take selection for
-its setup step. Kits differ in which parts they include, what they add, and
-which surfaces present them.
+Those parts are common infrastructure. Each is written once as a
+contribution, takes part in editing, and anything can pull it into another
+activity by requiring it: a card table in play brings the hand and the key
+map, and nothing else of the editor.
 
-Like any contribution, a kit is a plugin, so another package can ship one.
-Which kits a scene suggests can be named in the doc; which ones are actually
-on belongs to each viewer.
+The doc says where people **start** (`view.activity`), and a template that
+makes a level says "play", so whoever opens it, its maker included, is in
+the game. Each viewer switches from there.
+
+**Why not kits.** This used to be kits: named lists of contributions,
+mixed into a scene together, suggested by the doc and turned on and off by
+each viewer. Kits answered "which tools do I have", and that turned out to
+be the wrong question. Joining a level dropped you into a level editor,
+because the doc suggested the editing kit and the game was just another
+thing switched on beside it; getting into the game meant knowing which kits
+to turn off. A kit was also a second, parallel way to make something run
+(beside traits), with its own ordering, nesting and per-viewer persistence,
+and every kit had to list the shared parts by name. An activity replaces all
+of that with one question, "what are you doing here", one value per view
+and one flag per contribution. What runs follows from the doc and that
+value; nothing is listed, nesting has no meaning, and nothing is kept.
 
 ### Arbitration
 
@@ -87,7 +97,7 @@ Input bubbles, and each step may claim it or pass:
 2. the object under the pointer;
 3. what that object is attached to, then its group;
 4. the scene's traits;
-5. viewer contributions;
+5. general contributions;
 6. otherwise drag orbits the camera.
 
 The other kinds of contribution combine as follows:
@@ -103,7 +113,7 @@ The other kinds of contribution combine as follows:
 drop and landing rules. Objects already contribute connectors and handles
 through their GLB or source. Still missing:
 
-- object-scope and viewer-scope activation;
+- object-scope and general activation;
 - gestures and the claiming chain (move, rotate and hand become
   contributions);
 - widgets in the stage's layers;
@@ -111,8 +121,8 @@ through their GLB or source. Still missing:
 - commands that take a target;
 - the stage itself, carved out of `src/tool.js`;
 - today's toolbar, outline, inspector, gizmo, measure and dimensions split
-  into shared parts, with a general modelling kit that bundles them the way
-  the scene looks now.
+  into shared parts that together, while editing, look the way the scene
+  looks now.
 
 ## Use cases that prove it's general
 
@@ -120,7 +130,7 @@ The model is only general if each of these can be built **purely from
 contributions**. Each must work without the stage knowing what it's for, and
 without any of them being the default the others are measured against.
 
-1. **Building (CAD, boats).** Editing kits over the shared parts:
+1. **Building (CAD, boats).** Editing, over the shared parts:
    - select then edit;
    - gizmo and handles;
    - snapping to grid, vertices and connectors;
@@ -129,8 +139,8 @@ without any of them being the default the others are measured against.
    - measure and dimensions;
    - outline, inspector, status bar.
 
-   Parametric sources contribute handles. A boat-specific kit adds its own
-   tools to the same parts.
+   Parametric sources contribute handles. A boat package adds its own
+   editing tools to the same parts.
 2. **Playing at a table (tabletop).**
    - Drag always carries; right-click actions at the pointer; hovering a
      card shows it full size.
@@ -138,8 +148,8 @@ without any of them being the default the others are measured against.
      in screen space.
    - A seat camera that can't go under the table.
    - Hidden cards through the deck's lens.
-   - No editing UI at all unless a viewer turns on a kit, such as the
-     table-layout kit.
+   - No editing UI at all while playing; switching to editing lays the
+     table out.
 3. **First-person (a little FPS with a HUD).**
    - Exclusive input while playing (pointer lock, mouse-look, WASD): an armed
      tool at the top of the chain.
@@ -149,8 +159,9 @@ without any of them being the default the others are measured against.
    - A HUD in the screen layer (crosshair, health, ammo, score).
    - Targets as objects that contribute "can be shot".
 
-   The level is ordinary scene objects, so it can be laid out with a
-   level kit (the shared parts plus spawns and targets) and then played. This is the case that exercises the
+   The level is ordinary scene objects, so it can be laid out while
+   editing (the shared parts plus spawns and targets) and then played. This
+   is the case that exercises the
    per-frame and exclusive-input primitives the other two don't need.
 
 ### Later: hybrids

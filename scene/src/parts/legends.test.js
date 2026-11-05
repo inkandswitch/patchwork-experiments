@@ -7,7 +7,7 @@ const LEGEND = { title: "Speed", unit: "m/s", min: 2, max: 3, stops: ["#000000",
 const group = (extra = {}) => ({ ...object({ name: "G", providerId: null }), kind: "group", ...extra });
 
 async function mount(doc, legendsById = {}) {
-  const s = await mountStage({ extensions: [{ meta: { id: "scene.legends" }, module: legends }], kits: [{ id: "model", extensions: ["scene.legends"] }], doc });
+  const s = await mountStage({ extensions: [{ meta: { id: "scene.legends" }, module: legends }], doc });
   // no WebGL here: what the stage would say each object's GLB carries
   s.api("scene.legends").content = (id) => (legendsById[id] ? { loaded: true, box: null, extras: { legend: legendsById[id] }, stats: null } : null);
   s.change((d) => (d.title = "content arrived"));

@@ -15,12 +15,13 @@ loads what is shown.
 The tool itself is a **stage** with no UI of its own: it keeps the doc,
 loads and builds content, renders, picks and routes input. Everything you
 see or do in a scene comes from **extensions** (`scene:extension` plugins),
-and the editor described under "Using it" is the **model kit**: 20 of them
-that this package ships (selection, gizmo, hand, outline, inspector,
-toolbar…), each its own module in `src/parts/`. Other packages add more
-(tabletop's game table, arena's first-person level), and any kit can be
-turned on or off per viewer. [STAGE.md](STAGE.md) is the contract between
-the stage and extensions; [DESIGN.md](DESIGN.md) says why it's built this way.
+and the editor described under "Using it" is 20 of them that this package
+ships (selection, gizmo, hand, outline, inspector, toolbar…), each its own
+module in `src/parts/`, which run while you **edit**. Other packages add more
+(tabletop's game table, arena's first-person level) and the activities they
+take part in, such as **play**; each viewer switches between the ones a
+scene offers. [STAGE.md](STAGE.md) is the contract between the stage and
+extensions; [DESIGN.md](DESIGN.md) says why it's built this way.
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -36,16 +37,24 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (21) | the parts in `src/parts/`, listed under "Layout" |
-| `scene:kit` | `model` | the scene editor: every part but `scene.kits`, in the order input is offered to them |
+| `scene:extension` | `scene.*` (21) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
-`scene.kits` (the Kits button, which turns kits on and off for you) runs in
-every scene.
+All but two of the editor's parts take part only in the `"edit"` activity;
+the key map (`scene.keys`) and notices serve every activity. `scene.activity`
+(the switcher: Play | Edit at the bottom left, shown only when a scene offers
+more than editing) runs in every scene.
 
 ## Using it
 
-This is the model kit, which a scene opens with unless its doc suggests
-other kits (`view.kits`; a game table suggests none).
+This is the editor: the `"edit"` activity, which every scene offers and a
+plain model offers alone. A scene whose doc says to start somewhere else
+(`view.activity`, the inspector's "Starts in"; an arena level starts in
+`"play"`) opens there, and the switcher changes it for you alone.
+
+An empty scene is a start screen: "Start from:" lists every installed
+template (`scene:template`: arena's "Arena level", say) and Blank. A template
+lays the scene out and says where to start, so choosing the arena puts you
+straight into the game.
 
 Make a Scene, then drop documents onto it from the sidebar (or drop `.stl` /
 `.glb` files from the desktop, or paste an automerge URL anywhere outside a
@@ -182,18 +191,21 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   drops: ["*"],                                                      // datatypes it may lay out when dropped
   requires: ["scene.hand", "scene.keys"],                            // what must run with it
   always: false,
+  activities: ["play"],                                              // the activities it takes part in (absent = all)
   describes: { "tabletop.seats": { name: "Seats", on: "scene", … } }, // for "Add behaviour…" (STAGE.md)
   async load() { return { create(api) { return instance }, drop?(ctx, info) } } }
 
-{ type: "scene:kit", id: "model", name: "Model", extensions: [...], kits?: [...] }
+{ type: "scene:template", id: "arena-level", name: "Arena level", icon?, description?,
+  async load() { return { create(ctx) } } }                           // lays out an empty scene
 ```
 
 - **What runs** is a function of the registry, the doc and this viewer's
-  kits: an extension runs when the scene or an object has one of its traits,
-  when a kit the viewer has on lists it, when it's
-  `always`, or when a running one `requires` it. The doc suggests kits
-  (`view.kits`, else `["model"]`); each viewer turns kits on and off for
-  themselves.
+  activity: an extension runs when it takes part in the activity and has a
+  reason, which is the scene or an object having one of its traits,
+  declaring no traits at all (a general part, like the toolbar), or
+  `always`; and whatever a running one `requires` comes along. A viewer
+  starts where the doc says (`view.activity`, else `"edit"`) and switches
+  for themselves.
 - **State** lives in three places: the doc (shared, kept), presence (shared,
   passing: selections, carries, avatars) and local (this view only:
   selection, the current tool, display prefs). Extensions talk to each other
@@ -201,8 +213,8 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   another.
 - **Input** is offered down a chain: the armed extension (measure, a game),
   the widget under the pointer, the extensions whose traits are on the object
-  under it, the scene's, then the viewer's kits in order. A press nobody
-  claims orbits.
+  under it, the scene's, then the general ones in registry order. A press
+  nobody claims orbits.
 - **Commands** are verbs with a target (an object, a ref such as a selected
   dimension's `"dimension:<id>"`, or null for the scene).
   Surfaces (toolbar, inspector, menu, key map) show and run them; the
@@ -513,7 +525,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
   view: { units: "m" | "cm" | "mm" | "in" | "ft", grid: boolean, axes: boolean, bounds: boolean,
           snap?: boolean,                                  // the hand snaps (absent = true)
           tool?: "move" | "rotate" | "hand" | "select" | string, // the tool a viewer starts with (absent = move)
-          kits?: string[],                                 // the kits a viewer starts with (absent = ["model"])
+          activity?: string,                               // the activity a viewer starts in (absent = "edit")
           home?: { position, target, fov? } },             // where a viewer with no saved camera starts
   traits: { [key: string]: any },   // extensions' data on the scene itself
   materialRules?: MaterialRule[]
@@ -655,8 +667,9 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 |---|---|
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
-| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions), `activation.js` and `chain.js` (pure: what runs, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the model kit's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add`, and `kits` (always on) |
+| `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), and `activity` (the switcher, always on) |
+| `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
 | `src/pick-accel.js` | lazy three-mesh-bvh for big meshes (built in idle time or on the first ray that crosses one) |
@@ -675,7 +688,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor (the model kit) between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand, and a scene extension of the page's own; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
+| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand, and a scene extension of the page's own; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
 
 ### The editor probe
 
@@ -702,19 +715,22 @@ the canvas and in the panel); a click on that label selects the dimension in
 place of a selected block (one selection; B hears it) and Delete removes it,
 and only it; Delete removes a selected object; P hides and shows
 the sidebar; a double-click frames an object; a right-click opens the menu
-(Select and Remove work); the Kits button turns Model off (no toolbar, no
-sidebar, the canvas fills the view) and on again; pasted automerge URLs add a
-GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
+(Select and Remove work); there's no activity switcher (a plain model offers
+only editing); pasted automerge URLs add a GLB and the STL, which builds,
+shows 20 mm bounds in mm, and rebuilds at
 200 mm when its unit param changes in the inspector's embedded controls; an
 object attached through the inspector keeps its world pose and follows its
 parent's gizmo drag. With nothing selected the inspector shows the Scene: its
-"Opens with" lists the kits, and ticking one writes `view.kits` (both views
-start its extensions; unticking stops them). Then, with arena/ built (its
-plugins are registered too; otherwise these are skipped), "Add behaviour…" on
-a block offers Target and Spawn point, not the scene-only Arena level; adding
-Target starts the arena extension in both views, and its × stops it. Paste,
-and choosing in a `<select>`, are the synthetic events (headless Chrome won't
-give a page the system clipboard or a select's popup).
+"Starts in" offers only Edit. Then, with arena/ built (its plugins are
+registered too; otherwise these are skipped), "Add behaviour…" on a block
+offers Target and Spawn point, not the scene-only Arena level; adding Target
+starts the arena's editing part in both views, and both now offer Play: the
+switcher shows Play | Edit, and "Starts in" lists Play, which writes
+`view.activity` and moves neither view. Play on A's switcher takes its editor
+away (no toolbar, no sidebar, the canvas fills the view; B keeps editing) and
+Edit brings it back; the Target's × stops the arena again and the switcher
+goes. Paste, and choosing in a `<select>`, are the synthetic events (headless
+Chrome won't give a page the system clipboard or a select's popup).
 
 ### The hand
 

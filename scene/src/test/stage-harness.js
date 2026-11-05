@@ -2,17 +2,27 @@
 //
 //   vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 //   import { mountStage } from "../test/stage-harness.js";
-//   const s = await mountStage({ extensions: [{ meta: { id: "scene.select" }, module }], kits: [...], doc: { objects: {…} } });
+//   const s = await mountStage({ extensions: [{ meta: { id: "scene.select" }, module }], doc: { objects: {…} } });
 //   s.local.get().selected; s.api("scene.select"); s.press(...); s.unmount();
 //
 // `extensions` are [{ meta, module }]: meta is the scene:extension plugin's
-// metadata (without load), module what its load() resolves to. The scene's
-// own datatypes and sources are registered too. Kits are scene:kit metadata.
+// metadata (without load), module what its load() resolves to. They are
+// registered in that order, which is the order the general ones run in. An
+// extension that declares no traits runs in every scene. The scene's own
+// datatypes and sources are registered too, and `templates` are
+// [{ meta, module }] for scene:template plugins.
+//
+// To see something stop when this viewer switches activity, give it
+// `activities: ["edit"]`, mount PLAY alongside (it offers "play") and call
+// s.activity("play").
 
 import { FakeRepo, flush } from "./fake-repo.js";
 import { getRegistry, resetRegistries } from "./plugins-mock.js";
 
 export { flush };
+
+/** An extension that does nothing but offer the "play" activity, so a test can switch to it. */
+export const PLAY = Object.freeze({ meta: { id: "t.play", activities: ["play"] }, module: { create: () => ({}) } });
 
 export const settle = async (n = 6) => {
   for (let i = 0; i < n; i++) await flush();
@@ -43,16 +53,16 @@ export const object = (extra = {}) => ({
 });
 
 /**
- * @param {{ extensions?: { meta: object, module: object }[], kits?: object[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string }} o
+ * @param {{ extensions?: { meta: object, module: object }[], templates?: { meta: object, module: object }[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string }} o
  */
-export async function mountStage({ extensions = [], kits = [], doc = {}, repo, handle, viewerId } = {}) {
+export async function mountStage({ extensions = [], templates = [], doc = {}, repo, handle, viewerId } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
     resetRegistries();
     const { plugins } = await import("../index.js");
     for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
     for (const { meta, module } of extensions) getRegistry("scene:extension").register({ type: "scene:extension", name: meta.id, ...meta, load: async () => module });
-    for (const k of kits) getRegistry("scene:kit").register({ type: "scene:kit", name: k.id, ...k });
+    for (const { meta, module } of templates) getRegistry("scene:template").register({ type: "scene:template", name: meta.id, ...meta, load: async () => module });
     const { SceneDatatype } = await import("../datatype.js");
     const init = {};
     SceneDatatype.init(init);
@@ -96,6 +106,11 @@ export async function mountStage({ extensions = [], kits = [], doc = {}, repo, h
     click(x = 10, y = 10, extra) {
       s.pointer("pointerdown", x, y, extra);
       s.pointer("pointerup", x, y, extra);
+    },
+    /** switch this viewer's activity, and let what it starts settle */
+    async activity(id) {
+      s.local.swap((m) => ({ ...m, activity: id }));
+      await settle();
     },
     key(key, extra = {}) {
       const e = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, code: extra.code ?? `Key${key.toUpperCase()}`, ...extra });

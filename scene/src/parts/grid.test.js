@@ -4,7 +4,7 @@ import { mountStage, object } from "../test/stage-harness.js";
 import grid, { rulerLabels, sceneExtent } from "./grid.js";
 import { gridFor } from "../units.js";
 
-const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.grid" }, module: grid }], kits: [{ id: "model", extensions: ["scene.grid"] }], doc });
+const mount = (doc = {}) => mountStage({ extensions: [{ meta: { id: "scene.grid" }, module: grid }], doc });
 const run = (s, command, value) => s.api("scene.grid").run({ ext: "scene.grid", command, target: null, value });
 const state = (s, target = null) => s.instance("scene.grid").commands.find((c) => c.id === "grid").state(target, { scene: s.api("scene.grid").scene(), local: s.local.get() });
 const caption = (s) => s.root.querySelector(".grid-caption");

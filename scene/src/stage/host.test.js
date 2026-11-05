@@ -51,24 +51,22 @@ describe("the host", () => {
   const metas = [
     { id: "seats", traits: ["seats"] },
     { id: "zones", traits: ["zone"] },
-    { id: "select" },
-    { id: "outline", requires: ["sidebar"] },
-    { id: "sidebar" },
-    { id: "kitsurface", always: true },
+    { id: "select", activities: ["edit"] },
+    { id: "outline", requires: ["sidebar"], activities: ["edit"] },
+    { id: "sidebar", activities: ["edit"] },
+    { id: "walk", activities: ["play"] },
+    { id: "switch", always: true },
     { id: "deck", traits: ["deck"], drops: ["deck-doc"] },
   ];
-  const kits = [{ id: "model", extensions: ["select", "outline"] }];
 
   function make({ delays = {}, instances = {}, mods = {} } = {}) {
     const all = {};
     for (const m of metas) all[m.id] = mods[m.id] ?? mod(m.id, log, instances[m.id]);
     for (const [k, v] of Object.entries(mods)) all[k] = v;
     const reg = registry(metas, all, delays);
-    const kitReg = registry(kits, {});
     const releases = [];
     const host = createHost({
       registry: async () => reg,
-      kitRegistry: async () => kitReg,
       local,
       makeApi: (rec) => ({
         api: { id: rec.id, signal: rec.signal },
@@ -82,13 +80,13 @@ describe("the host", () => {
       setTimer: timers.setTimeout,
       clearTimer: timers.clearTimeout,
     });
-    return { host, reg, kitReg, releases };
+    return { host, reg, releases };
   }
 
   beforeEach(() => {
     log = [];
     timers = fakeTimers();
-    local = createAtom({ kits: { on: [], off: [] }, running: [] });
+    local = createAtom({ activity: null, running: [] });
     busy = new Set();
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
@@ -104,36 +102,83 @@ describe("the host", () => {
     host.sync(doc({ traits: { seats: {} }, objects: { c: { traits: { zone: {} } } } }));
     await flush();
     // seats is still loading: everything else is running, in its place
-    expect(ids()).toEqual(["zones:objects", "select:viewer", "outline:viewer", "sidebar:viewer", "kitsurface:viewer"]);
+    expect(ids()).toEqual(["zones:objects", "select:general", "outline:general", "sidebar:general", "switch:general"]);
     release();
     await flush();
-    expect(ids()).toEqual(["seats:scene", "zones:objects", "select:viewer", "outline:viewer", "sidebar:viewer", "kitsurface:viewer"]);
-    expect(host.instances().map((r) => r.id)).toEqual(["seats", "zones", "select", "outline", "sidebar", "kitsurface"]);
+    expect(ids()).toEqual(["seats:scene", "zones:objects", "select:general", "outline:general", "sidebar:general", "switch:general"]);
+    expect(host.instances().map((r) => r.id)).toEqual(["seats", "zones", "select", "outline", "sidebar", "switch"]);
     // started out of order
     expect(log.filter((l) => l.startsWith("create")).at(-1)).toBe("create:seats");
   });
 
   it("collects a field from every running extension, in running order", async () => {
-    const { host } = make({ instances: { select: { commands: ["s"] }, kitsurface: { commands: ["k"] }, outline: { panels: [1] } } });
+    const { host } = make({ instances: { select: { commands: ["s"] }, switch: { commands: ["k"] }, outline: { panels: [1] } } });
     host.sync(doc());
     await flush();
     expect(host.collect("commands")).toEqual([
       { id: "select", value: ["s"] },
-      { id: "kitsurface", value: ["k"] },
+      { id: "switch", value: ["k"] },
     ]);
     expect(host.inputOf("select")).toBeUndefined();
     expect(host.instanceOf("nope")).toBeNull();
   });
 
-  it("stops at once what this viewer's kits turn off: signal aborted, then release, then dispose", async () => {
+  it("stops at once what this viewer's switch of activity leaves out: signal aborted, then release, then dispose", async () => {
     const { host } = make();
     host.sync(doc());
     await flush();
     log.length = 0;
-    local.swap((m) => ({ ...m, kits: { on: [], off: ["model"] } }));
+    local.swap((m) => ({ ...m, activity: "play" }));
     host.sync(doc());
-    expect(log).toEqual(["release:select:aborted", "dispose:select", "release:outline:aborted", "dispose:outline", "release:sidebar:aborted", "dispose:sidebar"]);
-    expect(ids()).toEqual(["kitsurface:viewer"]);
+    expect(log.filter((l) => !l.startsWith("create"))).toEqual(["release:select:aborted", "dispose:select", "release:outline:aborted", "dispose:outline", "release:sidebar:aborted", "dispose:sidebar"]);
+    await flush();
+    expect(ids()).toEqual(["walk:general", "switch:general"]);
+    expect(local.get().activities).toEqual({ current: "play", available: ["edit", "play"] });
+  });
+
+  it("joining starts this viewer where the doc says, and a later change to that doesn't move them", async () => {
+    const { host } = make();
+    host.sync(doc({ view: { activity: "play" } }));
+    await flush();
+    expect(local.get().activity).toBe("play");
+    expect(local.get().activities.current).toBe("play");
+    expect(ids()).toEqual(["walk:general", "switch:general"]);
+    host.sync(doc({ view: { activity: "edit" } }));
+    await flush();
+    expect(local.get().activity).toBe("play");
+    expect(ids()).toEqual(["walk:general", "switch:general"]);
+  });
+
+  it("no doc yet (no view): nothing is chosen for the viewer until there is one", async () => {
+    const { host } = make();
+    host.sync({});
+    await flush();
+    expect(local.get().activity).toBeNull();
+    host.sync(doc());
+    expect(local.get().activity).toBe("edit");
+  });
+
+  it("an activity the scene doesn't offer runs as edit, and the choice is kept for when it does", async () => {
+    const play = metas.find((m) => m.id === "walk");
+    play.traits = ["walkable"];
+    try {
+      const { host } = make();
+      local.swap((m) => ({ ...m, activity: "play" }));
+      host.sync(doc());
+      await flush();
+      expect(local.get().activities).toEqual({ current: "edit", available: ["edit"] });
+      expect(ids()).toContain("select:general");
+      // a trait arrives that offers play: this viewer was always going there
+      host.sync(doc({ traits: { walkable: {} } }));
+      await flush();
+      expect(local.get().activities).toEqual({ current: "play", available: ["edit", "play"] });
+      // the doc sent the editing parts away, so they linger as any would
+      expect(host.lingering("select")).toBe(true);
+      await timers.advance(LINGER_MS);
+      expect(ids()).toEqual(["walk:scene", "switch:general"]);
+    } finally {
+      delete play.traits;
+    }
   });
 
   it("keeps what the doc stopped calling for running 2 s, and while it's busy", async () => {
@@ -207,7 +252,7 @@ describe("the host", () => {
     try {
       reg.changed();
       await flush();
-      expect(ids()).toContain("late:viewer");
+      expect(ids()).toContain("late:general");
     } finally {
       metas.pop();
     }
@@ -225,7 +270,7 @@ describe("the host", () => {
     });
     host.sync(doc());
     await flush();
-    expect(ids()).not.toContain("select:viewer");
+    expect(ids()).not.toContain("select:general");
     expect(releases).toContain("select");
   });
 
@@ -235,6 +280,6 @@ describe("the host", () => {
     await flush();
     log.length = 0;
     host.dispose();
-    expect(log.filter((l) => l.startsWith("dispose"))).toEqual(["dispose:kitsurface", "dispose:sidebar", "dispose:outline", "dispose:select"]);
+    expect(log.filter((l) => l.startsWith("dispose"))).toEqual(["dispose:switch", "dispose:sidebar", "dispose:outline", "dispose:select"]);
   });
 });

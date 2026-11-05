@@ -16,9 +16,9 @@
 // menu) and the status line.
 //
 // Nothing selected: the Scene. Its Behaviours (the scene's own traits), and
-// Opens with: the kits the scene suggests to everyone (doc.view.kits), as
-// checkboxes over the scene:kit registry; each viewer still changes their own
-// from the Kits button.
+// Starts in: the activity everyone who opens the scene starts in
+// (doc.view.activity), a choice of those the scene offers
+// (local.activities.available); each viewer can still switch for themselves.
 //
 // Behaviours are traits, authored without a script: the ones the holder has
 // (each with its described fields and a ×), and "Add behaviour…", offering
@@ -29,7 +29,7 @@
 // trait's key, a field in it, an entry in a map trait (a seat); never the
 // whole traits map.
 //
-// Every write goes through api.ops (or, for traits and kits, a field-level
+// Every write goes through api.ops (or, for traits and Starts in, a field-level
 // api.change); a refusal (plan.ok === false) is said with api.notify and the
 // field shows the doc again. Fields being typed in are never overwritten.
 //
@@ -45,11 +45,13 @@ import { normalizeTransform } from "../transform.js";
 import { EMBED_ATTR } from "../embed.js";
 import { atKey, normalizeAt } from "../staleness.js";
 import { createParamForm } from "../param-form.js";
-import { suggestedKits } from "../kits.js";
+import { activityLabel } from "../activities.js";
 import { addableTraits, describedTraits, entriesOf, fieldWrite, formSpecs, layoutKey, newValue, shownValues, traitRows } from "./inspector-traits.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, isPassthrough, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 
 const ID = "scene.inspector";
+// each inspector's own radio group: two views of one scene on a page mustn't share one
+let startsGroups = 0;
 const OPEN_EVENT = "patchwork:open-document";
 const CONTROLS_TOOL = "scene-render-controls";
 // local keys whose change can't change what the inspector shows
@@ -128,10 +130,11 @@ function create(api) {
 
   const select = (id) => api.local.swap((m) => ((m.selected ?? null) === (id ?? null) ? m : { ...m, selected: id ?? null }));
 
-  // ─── what's installed: described traits, and kits ───────────────────────
+  const startsName = `starts-in-${++startsGroups}`;
+
+  // ─── what's installed: described traits ─────────────────────────────────
 
   let described = new Map(); // trait key → its description (inspector-traits.js)
-  let kitList = []; // scene:kit metadata, registry order
 
   /** Read a registry's metadata now and whenever it changes, and show it. */
   function watchRegistry(type, take) {
@@ -161,9 +164,8 @@ function create(api) {
       .catch(() => {});
   }
   watchRegistry("scene:extension", (list) => (described = describedTraits(list)));
-  watchRegistry("scene:kit", (list) => (kitList = list));
 
-  // ─── traits and kits, field by field ────────────────────────────────────
+  // ─── traits, field by field, and where the scene starts ─────────────────
 
   const isMap = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   const copy = (v) => JSON.parse(JSON.stringify(v));
@@ -222,18 +224,13 @@ function create(api) {
     });
   }
 
-  /** Suggest a kit to everyone, or stop: an edit of doc.view.kits in place (the default list is written out first). */
-  function suggestKit(kit, want) {
+  /** Start everyone who opens the scene in this activity: doc.view.activity ("edit", the default, is no key). */
+  function startIn(activity) {
     api.change((d) => {
       if (!d.view) d.view = {};
-      if (!Array.isArray(d.view.kits)) {
-        const list = suggestedKits(d).filter((k) => k !== kit);
-        d.view.kits = want ? [...list, kit] : list;
-        return;
-      }
-      const list = d.view.kits;
-      if (want && !list.includes(kit)) list.push(kit);
-      if (!want) for (let i = list.length - 1; i >= 0; i--) if (list[i] === kit) list.splice(i, 1);
+      if (activity === "edit") {
+        if ("activity" in d.view) delete d.view.activity;
+      } else if (d.view.activity !== activity) d.view.activity = activity;
     });
   }
 
@@ -493,42 +490,46 @@ function create(api) {
     };
   }
 
-  /** Nothing selected: the scene's own Behaviours, and the kits it opens with. */
+  /** Nothing selected: the scene's own Behaviours, and the activity it starts people in. */
   function buildScene() {
     teardown();
     const behaviours = behavioursView(null, "scene");
-    const kits = el("div", { class: "opens-with" });
+    const starts = el("div", { class: "starts-in", role: "radiogroup", "aria-label": "Starts in" });
+    const note = el("p", { class: "hint starts-in-note" });
     const root = el(
       "div",
       { class: "inspector", dataset: { kind: "scene" } },
       el("div", { class: "inspector-kind" }, "Scene"),
       behaviours.section,
-      el(
-        "div",
-        { class: "field-group opens-with-group" },
-        el("span", { class: "group-label", title: "The kits this scene suggests to everyone who opens it" }, "Opens with"),
-        kits,
-        el("p", { class: "hint opens-with-note" }, "Suggested to everyone who opens this scene. Each viewer can still turn kits on or off for themselves, from Kits."),
-      ),
+      el("div", { class: "field-group starts-in-group" }, el("span", { class: "group-label", title: "What everyone who opens this scene starts out doing" }, "Starts in"), starts, note),
     );
     body.replaceChildren(root);
-    view = { id: null, scene: true, root, behaviours, kits, kitsKey: null };
+    view = { id: null, scene: true, root, behaviours, starts, note, startsKey: null };
   }
 
-  function fillScene(scene) {
+  function fillScene(scene, local) {
     view.behaviours.update(scene);
-    const key = JSON.stringify(kitList.map((k) => [k.id, k.name ?? null]));
-    if (key !== view.kitsKey) {
-      view.kitsKey = key;
-      const rows = kitList.map((k) => {
-        const box = el("input", { type: "checkbox", dataset: { kit: k.id } });
-        box.addEventListener("change", () => suggestKit(k.id, box.checked));
-        return el("label", { class: "toggle" }, box, ` ${k.name ?? k.id}`);
-      });
-      view.kits.replaceChildren(...(rows.length ? rows : [el("p", { class: "hint" }, "No kits are installed.")]));
+    const available = Array.isArray(local?.activities?.available) && local.activities.available.length ? local.activities.available : ["edit"];
+    const key = available.join("\n");
+    if (key !== view.startsKey) {
+      view.startsKey = key;
+      view.starts.replaceChildren(
+        ...available.map((a) => {
+          const radio = el("input", { type: "radio", name: startsName, value: a, dataset: { activity: a } });
+          radio.addEventListener("change", () => {
+            if (radio.checked) startIn(a);
+          });
+          return el("label", { class: "toggle" }, radio, ` ${activityLabel(a)}`);
+        }),
+      );
+      view.note.textContent =
+        available.length > 1
+          ? "Everyone who opens this scene starts here. Each viewer can switch for themselves."
+          : "Editing is all this scene offers. A behaviour that's played (a game's) adds a choice.";
     }
-    const suggested = suggestedKits(scene.d);
-    for (const box of view.kits.querySelectorAll("input[data-kit]")) box.checked = suggested.includes(box.dataset.kit);
+    const want = scene.d?.view?.activity;
+    const start = available.includes(want) ? want : "edit";
+    for (const radio of view.starts.querySelectorAll("input[data-activity]")) radio.checked = radio.dataset.activity === start;
   }
 
   // the field shows `v`, unless someone is typing in it (or `force`)
@@ -697,7 +698,7 @@ function create(api) {
       if (!fresh && !force && last && last.scene === scene && !localChanged(last.local, local)) return;
       if (fresh) buildScene();
       last = { scene, local, name: null, content: "" };
-      fillScene(scene);
+      fillScene(scene, local);
       return;
     }
     const o = id ? scene?.objects?.[id] : null;

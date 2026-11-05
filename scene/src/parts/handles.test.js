@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { Box3, Vector3 } from "three";
-import { mountStage, object, settle } from "../test/stage-harness.js";
+import { PLAY, mountStage, object, settle } from "../test/stage-harness.js";
 import { FakeRepo } from "../test/fake-repo.js";
 import { getRegistry } from "../test/plugins-mock.js";
 import handles, { effectiveTool, handleLine, handlePlacement, dragValue, providerOf, GRAB_PX } from "./handles.js";
@@ -41,8 +41,7 @@ async function setup({ view = {}, params = { height: 0.2 } } = {}) {
   const render = repo.add({ params });
   const s = await mountStage({
     repo,
-    extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles" }, module: handles }, fakeArm],
-    kits: [{ id: "model", extensions: ["t.select", "scene.handles", "t.arm"] }],
+    extensions: [fakeSelect, { meta: { id: "scene.handles", name: "Handles", activities: ["edit"] }, module: handles }, fakeArm, PLAY],
     doc: { objects: { a: object({ name: "Slice", providerId: "slice-test", renderUrl: render.url }), g: object({ kind: "group", providerId: null }) }, view },
   });
   getRegistry("scene:source").register(SLICE);
@@ -267,7 +266,6 @@ describe("scene.handles on the stage", () => {
     const s = await mountStage({
       repo,
       extensions: [{ meta: { id: "scene.handles" }, module: handles }],
-      kits: [{ id: "model", extensions: ["scene.handles"] }],
       doc: { objects: { a: object({ providerId: "slice-later", renderUrl: render.url }) } },
     });
     current = s;
@@ -286,8 +284,7 @@ describe("scene.handles on the stage", () => {
     const before = render.listenerCount("change");
     await select(s, "a");
     expect(render.listenerCount("change")).toBe(before + 1);
-    s.local.swap((l) => ({ ...l, kits: { on: [], off: ["model"] } }));
-    await settle();
+    await s.activity("play");
     expect(s.instance("scene.handles")).toBeFalsy();
     expect(render.listenerCount("change")).toBe(before);
     expect(labelTexts(s)).toEqual([]);

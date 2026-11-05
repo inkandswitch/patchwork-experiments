@@ -43,7 +43,6 @@ describe("scene.notices", () => {
         { meta: { id: "scene.notices" }, module: notices },
         { meta: { id: "t.talker" }, module: talker },
       ],
-      kits: [{ id: "model", extensions: ["scene.notices", "t.talker"] }],
       doc: {
         objects: {
           a: object({ sourceUrl: "automerge:x" }),
