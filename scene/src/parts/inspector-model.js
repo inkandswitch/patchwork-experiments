@@ -96,8 +96,6 @@ export function formatCount(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(2)} M` : n >= 1e4 ? `${Math.round(n / 1e3)} k` : String(n);
 }
 
-const CONTESTED = /collaborator/i;
-
 /**
  * The status line under the inspector: [{ kind: "notes" | "error" | "warn", text }].
  *
@@ -138,7 +136,7 @@ export function statusParts(o, { status = null, load = null, content = null, sho
   }
   // only local.status: { state, text, title }
   if (status?.state === "warn") out.push({ kind: "error", text: `Provider “${o.providerId}” is not installed, so this object can't be rebuilt here.` });
-  else if (status?.state === "stale" && CONTESTED.test(status.title ?? "")) out.push({ kind: "warn", text: String(status.title) });
+  else if (status?.state === "stale" && status.reason === "contested") out.push({ kind: "warn", text: String(status.title) });
   else if (status?.state === "error" && status.title) out.push({ kind: "error", text: String(status.title) });
   return out;
 }

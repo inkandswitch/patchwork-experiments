@@ -35,10 +35,3 @@ export function createAtom(init = {}) {
 
 /** swap(assoc(key, value)): one key set, the rest kept (no swap when it's already that). */
 export const assoc = (key, v) => (m) => (m[key] === v ? m : { ...m, [key]: v });
-
-/** Call fn(next[key], prev[key]) when the key's value changes (by identity). */
-export function watchKey(atom, key, fn) {
-  return atom.watch((next, prev) => {
-    if (next[key] !== prev[key]) fn(next[key], prev[key]);
-  });
-}

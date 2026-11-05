@@ -193,8 +193,10 @@ function contestedText(s) {
 }
 
 /**
- * An object's load and build state, for local.status: { state, text, title },
- * or null when there's nothing to say (loaded, or not asked for yet).
+ * An object's load and build state, for local.status: { state, reason?, text,
+ * title }, or null when there's nothing to say (loaded, or not asked for
+ * yet). `text` and `title` are for people; a stale state's `reason` ("deps",
+ * "contested", "pinned", "out-of-date") is what code branches on.
  * @param {object} o  the object  @param {object} s  what the render manager or GLB queue last said
  */
 export function statusOf(o, s) {
@@ -210,9 +212,9 @@ export function statusOf(o, s) {
   if (s.building || s.status === "building") return { state: "building", text: "building", title: "Rebuilding…" };
   if (s.status === "error") return { state: "error", text: "error", title: s.error };
   if (s.glbError || s.parseError) return { state: "error", text: "error", title: s.glbError || s.parseError };
-  if (s.stale && s.depsUnavailable?.length) return { state: "stale", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
-  if (s.stale && s.contested) return { state: "stale", text: "stale", title: contestedText(s) };
-  if (s.stale) return { state: "stale", text: s.pinned ? "pinned" : "stale", title: s.pinned ? "Out of date; pinned, so it won't rebuild on its own" : "Out of date; rebuilding soon" };
+  if (s.stale && s.depsUnavailable?.length) return { state: "stale", reason: "deps", text: "stale", title: "Built from a linked document that can't be loaded here; Rebuild to build without it" };
+  if (s.stale && s.contested) return { state: "stale", reason: "contested", text: "stale", title: contestedText(s) };
+  if (s.stale) return { state: "stale", reason: s.pinned ? "pinned" : "out-of-date", text: s.pinned ? "pinned" : "stale", title: s.pinned ? "Out of date; pinned, so it won't rebuild on its own" : "Out of date; rebuilding soon" };
   if (s.phase === "loading" || (!s.hasGLB && s.phase !== "ready")) return { state: "loading", text: "loading", title: "Loading…" };
   return null;
 }
@@ -334,6 +336,7 @@ export default function Stage(handle, element) {
   const local = createAtom({
     hovered: null,
     armed: null,
+    immersive: false,
     running: Object.freeze([]),
     status: Object.freeze({}),
     theme: null,
@@ -341,6 +344,18 @@ export default function Stage(handle, element) {
     kits: cleanKits(readJSON(kitsKey)),
     prefs: cleanPrefs(readJSON(prefsKey)),
   });
+
+  // Another tab of this viewer changed its kits or prefs for this scene: take
+  // theirs, so neither tab writes back a stale copy over the other's choice.
+  const onStorage = (e) => {
+    if (e.key !== kitsKey && e.key !== prefsKey) return;
+    const kits = e.key === kitsKey;
+    const next = kits ? cleanKits(readJSON(kitsKey)) : cleanPrefs(readJSON(prefsKey));
+    const field = kits ? "kits" : "prefs";
+    local.swap((m) => (JSON.stringify(m[field]) === JSON.stringify(next) ? m : { ...m, [field]: next }));
+  };
+  globalThis.addEventListener?.("storage", onStorage);
+  cleanups.push(() => globalThis.removeEventListener?.("storage", onStorage));
 
   // ─── the viewport ─────────────────────────────────────────────────────────
 
@@ -836,6 +851,16 @@ export default function Stage(handle, element) {
     return w;
   }
 
+  // Arms that asked for `immersive` (a first-person view): while any is on,
+  // local.immersive says so, and decorations (grid, axes, bounds) stand aside.
+  const immersiveArms = new Set();
+  function setImmersive(token, on) {
+    if (on) immersiveArms.add(token);
+    else if (!immersiveArms.delete(token)) return;
+    const now = immersiveArms.size > 0;
+    if (!dead) local.swap((m) => (m.immersive === now ? m : { ...m, immersive: now }));
+  }
+
   const busy = (id) => {
     const own = owned.get(id);
     return !!own && (own.arms.size > 0 || own.sessions > 0 || own.holds.size > 0);
@@ -911,7 +936,7 @@ export default function Stage(handle, element) {
     try {
       if (typeof c.state === "function") {
         const st = c.state(target, { scene: scene(), local: local.get() });
-        if (st == null || st.disabled) return false;
+        if (!st || st.disabled) return false;
       } else if (target != null) return false;
       c.run(target, value);
       return true;
@@ -1258,13 +1283,16 @@ export default function Stage(handle, element) {
           disarmed: {
             value: () => {
               own.arms.delete(token);
+              setImmersive(token, false);
               return h.disarmed?.call(h);
             },
           },
         });
         const disarm = router.arm(id, wrapped, opts);
+        if (opts.immersive) setImmersive(token, true);
         return () => {
           own.arms.delete(token);
+          setImmersive(token, false);
           disarm();
         };
       },
@@ -1368,7 +1396,7 @@ export default function Stage(handle, element) {
     const widget = ev.widget;
     const hit = ev.hit;
     const chain = hit?.id && m.objects[hit.id] ? hitChain(hit.id, m.parents, m.groups, m.objects) : [];
-    const holders = holdersFor(running, chain, (oid) => traitKeys(m.objects[oid]));
+    const holders = holdersFor(running, chain, (oid) => traitKeys(m.objects[oid]), (oid) => m.objects[oid]);
     const order = chainOrder({ running, widgetOwner: widgetWins(widget, hit) ? widget.owner : null, holders });
     return { order, holderOf: (id) => holders.get(id) ?? null };
   }
@@ -1405,6 +1433,44 @@ export default function Stage(handle, element) {
       requestFlush();
     }),
   );
+
+  // ─── focus ────────────────────────────────────────────────────────────────
+
+  // Keys are heard on the root, so focus that left an element inside the
+  // stage for nowhere (the clicked button was replaced, as a HUD's Play is
+  // once pressed, or hidden) comes back to the root, and keys keep working.
+  const refocus = (e) => {
+    queueMicrotask(() => {
+      if (dead || !root.isConnected) return;
+      const a = document.activeElement;
+      if (a && a !== document.body) return;
+      if (e.type === "focusout" && e.target?.isConnected && root.contains(e.target) && !e.target.hidden) return; // left for the page
+      root.focus({ preventScroll: true });
+    });
+  };
+  root.addEventListener("click", refocus);
+  root.addEventListener("focusout", refocus);
+  cleanups.push(() => {
+    root.removeEventListener("click", refocus);
+    root.removeEventListener("focusout", refocus);
+  });
+
+  // ─── leaving the page ─────────────────────────────────────────────────────
+
+  // Patchwork doesn't run the tool's cleanup when the tab closes, so peers
+  // would keep this view (its avatar, its selection) until it times out. On
+  // pagehide it says bye at once; restored from the back-forward cache, it
+  // comes back as a new session.
+  const onPageHide = () => presence.goodbye();
+  const onPageShow = (e) => {
+    if (e.persisted) presence.hello();
+  };
+  globalThis.addEventListener?.("pagehide", onPageHide);
+  globalThis.addEventListener?.("pageshow", onPageShow);
+  cleanups.push(() => {
+    globalThis.removeEventListener?.("pagehide", onPageHide);
+    globalThis.removeEventListener?.("pageshow", onPageShow);
+  });
 
   // ─── the doc loop ─────────────────────────────────────────────────────────
 

@@ -1,8 +1,9 @@
 // scene.add: adding documents to the scene (ported from the old tool.js
 // addFromUrl, addFiles, choose and the root drag/paste handlers).
-//   - Drop documents (dnd.js payloads) or desktop files (.stl, .glb, …) on
-//     the port. Files become file docs first, named after the file. A
-//     "Drop to add" hint shows while an acceptable drag is over the port.
+//   - Drop documents (dnd.js payloads) or desktop files (.stl, .glb, …)
+//     anywhere in the stage. Files become file docs first, named after the
+//     file. A "Drop to add" hint shows while an acceptable drag is over the
+//     port.
 //     The outline's own row drags (ROW_MIME) are never ours.
 //   - Paste an automerge URL anywhere in the stage outside a text field.
 //   - Each URL goes first to api.drop (an extension that lays out that
@@ -10,15 +11,17 @@
 //     providers that can show it: none says so, one is used, several ask
 //     (the chooser). The new object is selected (local.selected).
 //   - While the scene has nothing in it, says how to add something.
-// Pastes, drops and keys inside an embedded document (.about-embed) are
-// that document's, never ours.
+// Pastes, drops and keys inside an embedded document (marked with the
+// stage's EMBED_ATTR, src/embed.js) are that document's, never ours.
 
 import css from "./add.css?inline";
-import { hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
+import { ROW_MIME, hasPatchworkDrop, parseAutomergeUrl, parsePatchworkDrop } from "../dnd.js";
 import { describeForHumans, describeSource, extensionOf } from "../providers.js";
+import { fromEmbed } from "../embed.js";
 
-/** The outline's row-drag mime: a row being moved, not a document being added. */
-export const ROW_MIME = "application/x-scene-object";
+export { fromEmbed };
+
+export { ROW_MIME };
 
 /** Is this a drag we take: documents or files, and not an outline row? Pure. */
 export function accepts(dt) {
@@ -36,16 +39,6 @@ export function mimeOf(name, type) {
 
 /** A file's name without its extension (what the object is called). Pure. */
 export const baseName = (name) => String(name ?? "").replace(/\.[^.]+$/, "");
-
-/** Did this DOM event start inside an embedded document (another tool) within `root`? */
-export function fromEmbed(e, root) {
-  const path = e.composedPath?.() ?? [];
-  for (const n of path.length ? path : [e.target]) {
-    if (n === root) return false;
-    if (n?.classList?.contains?.("about-embed")) return true;
-  }
-  return !!e.target?.closest?.(".about-embed");
-}
 
 /** Is someone typing into this element? */
 function isTyping(el) {
@@ -213,8 +206,9 @@ function create(api) {
     dropHint.hidden = !on;
   };
 
-  /** Where a drop landed: what's under it (or the ground), for api.drop's `at`. */
+  /** Where a drop landed: what's under it (or the ground), for api.drop's `at`; null off the port. */
   function dropAt(e) {
+    if (!(e.target instanceof Node) || !port.contains(e.target)) return null;
     const r = port.getBoundingClientRect();
     let hit = null;
     try {
@@ -225,25 +219,37 @@ function create(api) {
     return hit?.point ? { point: hit.point, hitId: hit.id ?? null } : null;
   }
 
-  api.listen(port, "dragenter", (e) => {
-    if (fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
+  // Anywhere in the stage takes a drop (the side panels too, as the old tool
+  // did), unless something under it already did (an outline row, which stops
+  // it). The hint shows only while the drag is over the port.
+  const inPort = (e) => e.target instanceof Node && port.contains(e.target);
+  api.listen(root, "dragenter", (e) => {
+    if (!inPort(e) || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
     depth++;
     showHint(true);
   });
-  api.listen(port, "dragover", (e) => {
-    if (fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
+  api.listen(root, "dragover", (e) => {
+    if (e.defaultPrevented || fromEmbed(e, root) || !accepts(e.dataTransfer)) return;
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
   });
-  api.listen(port, "dragleave", (e) => {
-    if (fromEmbed(e, root)) return;
+  api.listen(root, "dragleave", (e) => {
+    if (!inPort(e) || fromEmbed(e, root)) return;
     depth = Math.max(0, depth - 1);
     if (!depth) showHint(false);
   });
-  api.listen(port, "drop", (e) => {
-    if (fromEmbed(e, root)) return;
-    depth = 0;
-    showHint(false);
+  // any drop ends the drag, whoever takes it (heard first, so a row's drop can't skip it)
+  api.listen(
+    root,
+    "drop",
+    () => {
+      depth = 0;
+      showHint(false);
+    },
+    { capture: true },
+  );
+  api.listen(root, "drop", (e) => {
+    if (e.defaultPrevented || fromEmbed(e, root)) return;
     const dt = e.dataTransfer;
     if (!accepts(dt)) return;
     e.preventDefault();

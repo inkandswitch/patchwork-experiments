@@ -1,7 +1,8 @@
 // scene.outline: the object tree, as the sidebar panel "objects".
 //
 // Ported from tool.js's outline (expand state, rows, renderOutline, the
-// filter, keyboard navigation, row drag and drop, New group). It reads the
+// filter, keyboard navigation, row drag and drop, New group). A double-click
+// on a row, or Enter in the filter, frames it. It reads the
 // doc through api.scene(), writes it through api.ops planners, and selects by
 // writing local.selected. Everything else is someone else's:
 //   - Remove runs scene.select's "remove" command when it's running (it owns
@@ -20,7 +21,8 @@ import css from "./outline.css?inline";
 import { childrenMap, defaultExpanded, groupsWithHidden, inheritedDisplay, isGroup, outlineParents, searchOutline, visibleRows } from "../groups.js";
 import { treeOrder } from "../hierarchy.js";
 import { dropIntent, placementFor } from "../tree-drop.js";
-import { hasPatchworkDrop, parsePatchworkDrop } from "../dnd.js";
+import { ROW_MIME, hasPatchworkDrop, parsePatchworkDrop } from "../dnd.js";
+import { peerCss } from "../peers.js";
 
 /** The filter field appears once there are this many objects. */
 export const SEARCH_FROM = 8;
@@ -33,7 +35,7 @@ export const SEARCH_FROM = 8;
  * open side by side share one drag session and ids are only unique within a
  * scene.
  */
-export const ROW_MIME = "application/x-scene-object";
+export { ROW_MIME };
 
 /** The extension whose presence keys say what peers select and hover. */
 const SELECT_EXT = "scene.select";
@@ -58,59 +60,10 @@ export function readRowDrag(dt) {
   }
 }
 
-// ─── peer colours (the same formula as scene.select's, so a peer's row and
-// their box in the viewport match; copied, since parts don't import parts) ──
+// ─── peers ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_REMOTE = [0.6, 0.4, 0.9];
-const SPREAD = 60;
-const STEPS = 7;
-
-/** A stable 32-bit hash of a string (FNV-1a). */
-export function hashString(s) {
-  let h = 0x811c9dc5;
-  const str = String(s ?? "");
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-function rgbToHsl([r, g, b]) {
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, l];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h;
-  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-  else if (max === g) h = (b - r) / d + 2;
-  else h = (r - g) / d + 4;
-  return [h * 60, s, l];
-}
-
-function hslToRgb([h, s, l]) {
-  const k = (n) => (n + h / 30) % 12;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-  return [f(0), f(8), f(4)];
-}
-
-const isRgb = (c) => Array.isArray(c) && c.length >= 3 && c.slice(0, 3).every((n) => Number.isFinite(n));
-
-/**
- * A peer's colour: the theme's remote colour turned by a hue step picked from
- * a stable hash of who they are (viewer, else session).
- * @returns {string} a CSS rgb() colour
- */
-export function peerColor(remote, who) {
-  const [h, s, l] = rgbToHsl(isRgb(remote) ? remote : DEFAULT_REMOTE);
-  const step = (hashString(who) % STEPS) - (STEPS - 1) / 2;
-  const hue = (((h + (step * 2 * SPREAD) / (STEPS - 1)) % 360) + 360) % 360;
-  const [r, g, b] = hslToRgb([hue, s, l]).map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255));
-  return `rgb(${r} ${g} ${b})`;
-}
+/** A peer's colour, as CSS: the same as their box in the view (src/peers.js). */
+export const peerColor = peerCss;
 
 /**
  * Which rows peers have selected and hovered, from presence.get(): two maps
@@ -239,6 +192,13 @@ export default {
     const selectedId = () => api.local.get().selected ?? null;
     function select(id) {
       api.local.swap((l) => ((l.selected ?? null) === id ? l : { ...l, selected: id }));
+    }
+
+    /** Point the camera at a row's object (or the group's members). */
+    function frameRow(id) {
+      const o = api.scene().objects[id];
+      const box = !o ? null : isGroup(o) ? api.groupBox(id) : api.box(id);
+      if (box) api.camera.frame(box);
     }
 
     function write(plan) {
@@ -373,6 +333,7 @@ export default {
           if (first) {
             select(first);
             reveal(first);
+            frameRow(first);
           }
         }
       });
@@ -492,7 +453,7 @@ export default {
         const count = group ? el("span", { class: "count" }) : null;
         const pill = el("span", { class: "pill" });
         const remove = el("button", { type: "button", class: "icon-button remove", title: group ? "Remove group and everything in it" : "Remove from scene", "aria-label": "Remove from scene", onclick: () => removeRow(id) }, "×");
-        const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => select(id) }, name, count);
+        const main = el("button", { type: "button", class: "row-main", onclick: () => select(id), ondblclick: () => (select(id), frameRow(id)) }, name, count);
         // The name is the grab handle. Making the whole row draggable would
         // fight the colour input and the visibility checkbox inside it.
         main.draggable = true;

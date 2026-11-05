@@ -12,6 +12,7 @@ function panelsExt(ids, calls) {
         panels: ids.map((id) => ({
           id,
           title: id === "objects" ? "Objects" : id,
+          pinned: id === "inspector",
           mount(el, { head }) {
             calls.mounted.push(id);
             el.textContent = `${id} here`;
@@ -42,7 +43,7 @@ describe("panel order and folding (pure)", () => {
     expect(panelOrder(["a", "b"], null)).toEqual(["a", "b"]);
     expect(isFolded("objects", new Map(), ["t"])).toBe(true);
     expect(isFolded("objects", new Map([["objects", false]]), ["t"])).toBe(false);
-    expect(isFolded("inspector", new Map([["inspector", true]]), ["t"])).toBe(false);
+    expect(isFolded("inspector", new Map([["inspector", true]]), ["t"], true)).toBe(false); // pinned
     expect(isFolded("objects", new Map(), null)).toBe(false);
   });
 });

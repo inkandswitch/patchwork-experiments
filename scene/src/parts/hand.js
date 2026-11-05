@@ -21,16 +21,12 @@
 
 import { isGroup } from "../groups.js";
 import { createCarry, localTransform, snapCandidates, worldBox } from "./hand-carry.js";
+import { effectiveTool } from "../current-tool.js";
+
+export { effectiveTool };
 
 const TURN = Math.PI / 4;
 const RING_SEGMENTS = 48;
-
-/** The tool a plain drag uses (the shared convention): local, else the doc's suggestion, else move. */
-export function effectiveTool(doc, local) {
-  const v = doc?.view ?? {};
-  const t = local?.tool ?? v.tool ?? v.defaultMode ?? v.defaultGizmo ?? "move";
-  return t === "translate" ? "move" : t;
-}
 
 /** Can the hand pick this up: there, not a group, not locked? (A peer's hold is checked separately.) */
 export function carryableObject(o) {
@@ -45,7 +41,7 @@ export default {
     let ring = null;
 
     const doc = () => api.doc() ?? {};
-    const toolNow = () => effectiveTool(doc(), api.local.get());
+    const toolNow = () => effectiveTool(api.local.get(), doc());
     const canCarry = (id) => id != null && carryableObject(doc().objects?.[id]) && api.heldBy(id) == null;
 
     // ─── the ring ───────────────────────────────────────────────────────────
@@ -141,8 +137,6 @@ export default {
       const W0 = api.worldOf(id);
       const box = api.content(id)?.box ?? null;
       if (!W0 || !box) return null;
-      const parentId = api.scene().parents.get(id) ?? null;
-      const parentWorld = parentId ? api.worldOf(parentId) : null;
       const b0 = worldBox(box, W0);
       const grab = ev?.hit?.id === id && Array.isArray(ev.hit.point) ? ev.hit.point : null;
       const offset = Array.isArray(opts.offset)
@@ -172,11 +166,29 @@ export default {
         });
       }
 
+      // Its pose is local to its doc parent as the doc has it now (a peer may
+      // re-attach it, or move the parent, while it's carried), by the doc's
+      // own world for that parent, not one a peer is holding for the moment.
+      function localNow(W) {
+        const s = api.scene();
+        const parentId = s.parents.get(id) ?? null;
+        return localTransform(parentId ? s.world(parentId) : null, W);
+      }
+
       // after the carry moved it: hold it there (peers see it) and show the ring
       function shown(land) {
         if (!land || done) return;
-        api.pose.hold(id, localTransform(parentWorld, c.state.W));
+        api.pose.hold(id, localNow(c.state.W));
         showRing(land);
+      }
+
+      // A peer picked it up before we did (both grabbed it at once): theirs
+      // it is, so ours goes back.
+      function yieldIfTaken() {
+        if (!c || api.heldBy(id) == null) return false;
+        session.cancel();
+        api.notify("Someone else picked that up first.", "info");
+        return true;
       }
 
       function finish() {
@@ -191,28 +203,20 @@ export default {
           if (done) return;
           if (!doc().objects?.[id]) return; // removed meanwhile: nothing to carry
           if (!c) lift();
+          else if (yieldIfTaken()) return;
           const ray = rayOf(ev);
           if (ray) shown(c.move(ray, !!ev?.alt));
         },
         end(ev) {
           if (done) return;
+          if (yieldIfTaken()) return;
           const W = c && doc().objects?.[id] ? c.put(rayOf(ev), ev ? !!ev.alt : null) : null;
           finish();
           if (!W) {
             if (c) api.pose.release(id);
             return;
           }
-          const t = localTransform(parentWorld, W);
-          api.change((d) => {
-            const obj = d.objects?.[id];
-            if (!obj) return;
-            if (!obj.transform) obj.transform = { position: t.position, rotation: t.rotation, scale: t.scale };
-            else {
-              obj.transform.position = t.position;
-              obj.transform.rotation = t.rotation;
-              obj.transform.scale = t.scale;
-            }
-          });
+          api.change(api.ops.setTransform(api.scene(), id, localNow(W)));
           api.pose.release(id, { landed: true });
         },
         // a press that didn't move: not a carry, so the click goes on (to selection)
@@ -255,7 +259,7 @@ export default {
         key: "h",
         state(target, { scene, local }) {
           if (target != null) return null;
-          return { checked: effectiveTool(scene?.d, local) === "hand", title: "Hand: pick objects up and put them down (H)" };
+          return { checked: effectiveTool(local, scene?.d) === "hand", title: "Hand: pick objects up and put them down (H)" };
         },
         run() {
           api.local.swap((m) => (m.tool === "hand" ? m : { ...m, tool: "hand" }));
@@ -266,7 +270,7 @@ export default {
         name: "Snap",
         show: ["toolbar"],
         state(target, { scene, local }) {
-          if (target != null || effectiveTool(scene?.d, local) !== "hand") return null;
+          if (target != null || effectiveTool(local, scene?.d) !== "hand") return null;
           return {
             checked: (local?.prefs?.snap ?? scene?.d?.view?.snap ?? true) !== false,
             title: "Put pieces down on the nearest snap point (hold Alt to place freely)",

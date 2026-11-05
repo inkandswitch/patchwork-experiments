@@ -120,26 +120,27 @@ function create(api) {
 
   // ─── the drag ─────────────────────────────────────────────────────────────
 
+  // An object's doc parent's world, as the doc has it now: a peer may
+  // re-attach it, or move the parent, during the drag, and a pose or a
+  // put-down is local to whatever its parent is then.
+  const parentWorldNow = (id) => {
+    const scene = api.scene();
+    const p = scene.parents.get(id);
+    return p != null ? scene.world(p) : null;
+  };
+
+  /** What the gizmo would move: the object, or the group's movable roots. */
+  const movingIds = () => (target.kind === "object" ? [target.id] : groupRoots(api.scene(), target.id));
+
   /** What a drag starts from: the proxy's pose (for a cancel), and what it moves. */
   function start() {
-    const scene = api.scene();
-    const parentWorld = (id) => {
-      const p = scene.parents.get(id);
-      return p != null ? api.worldOf(p) : null;
-    };
     proxy.updateMatrix();
     drag = {
       kind: target.kind,
       id: target.id,
       from: { position: proxy.position.clone(), quaternion: proxy.quaternion.clone(), scale: proxy.scale.clone() },
       pivot: proxy.matrix.toArray(),
-      parentWorld: target.kind === "object" ? parentWorld(target.id) : null,
-      roots:
-        target.kind === "group"
-          ? groupRoots(scene, target.id)
-              .map((id) => ({ id, world: api.worldOf(id), parentWorld: parentWorld(id) }))
-              .filter((r) => r.world)
-          : [],
+      roots: target.kind === "group" ? movingIds().map((id) => ({ id, world: api.worldOf(id) })).filter((r) => r.world) : [],
       moved: null, // Map id → local transform, once it has moved
     };
   }
@@ -148,7 +149,16 @@ function create(api) {
   function carried() {
     proxy.updateMatrix();
     const now = proxy.matrix.toArray();
-    drag.moved = drag.kind === "object" ? new Map([[drag.id, localFrom(drag.parentWorld, now)]]) : groupMove(drag.pivot, now, drag.roots);
+    drag.moved =
+      drag.kind === "object"
+        ? new Map([[drag.id, localFrom(parentWorldNow(drag.id), now)]])
+        : groupMove(drag.pivot, now, drag.roots.map((r) => ({ ...r, parentWorld: parentWorldNow(r.id) })));
+    // a peer took hold of something here before we did: theirs, so ours goes back
+    if ([...drag.moved.keys()].some((id) => api.heldBy(id) != null)) {
+      session.cancel();
+      api.notify("Someone else is moving that.", "info");
+      return;
+    }
     for (const [id, t] of drag.moved) api.pose.hold(id, t);
     api.invalidate();
   }
@@ -210,6 +220,12 @@ function create(api) {
       fresh();
       tc.pointerHover(pointer(ev, -1));
       if (!tc.axis) return null;
+      // something here is in a peer's hands: the handle is still ours (nothing
+      // under it is pressed), but it doesn't move
+      if (movingIds().some((id) => api.heldBy(id) != null)) {
+        api.notify("Someone else is moving that.", "info");
+        return { tap: () => true, move() {}, end() {}, cancel() {} };
+      }
       fresh(); // the drag plane faces the camera along this handle's axis
       tc.pointerDown(pointer(ev, 0));
       if (!tc.dragging) return null;

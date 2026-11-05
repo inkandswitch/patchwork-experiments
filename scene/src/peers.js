@@ -1,5 +1,6 @@
-// Pure helpers for scene.select: peers' selections out of presence, and the
-// colour each peer is drawn in.
+// Peers' selections out of presence, and the colour each peer is drawn in:
+// shared by scene.select (boxes in the view) and scene.outline (rows), so a
+// peer's box and their row are always the same colour. Pure.
 
 const DEFAULT_REMOTE = [0.6, 0.4, 0.9];
 /** How far (degrees) a peer's hue may sit from the theme's remote hue, either way. */
@@ -55,6 +56,12 @@ export function peerColor(remote, who) {
   const step = (hashString(who) % STEPS) - (STEPS - 1) / 2; // −3 … 3
   const hue = (((h + (step * 2 * SPREAD) / (STEPS - 1)) % 360) + 360) % 360;
   return hslToRgb([hue, s, l]);
+}
+
+/** peerColor as a CSS rgb() colour. */
+export function peerCss(remote, who) {
+  const [r, g, b] = peerColor(remote, who).map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255));
+  return `rgb(${r} ${g} ${b})`;
 }
 
 /**

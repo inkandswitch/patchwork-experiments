@@ -23,6 +23,7 @@ import css from "./inspector.css?inline";
 import { isGroup } from "../groups.js";
 import { fromUnits, roundForDisplay, toUnits } from "../units.js";
 import { normalizeTransform } from "../transform.js";
+import { EMBED_ATTR } from "../embed.js";
 import { DEG, aboutFor, attachOptions, commandsFor, commandsKey, groupOptions, isPassthrough, lensNamed, shownIn, statusParts } from "./inspector-model.js";
 
 const ID = "scene.inspector";
@@ -336,7 +337,8 @@ function create(api) {
       section.replaceChildren();
       return;
     }
-    const embed = el("div", { class: "about-embed" });
+    // the stage's embed marker: keys, pastes and drops in there are that tool's
+    const embed = el("div", { class: "about-embed", [EMBED_ATTR]: "" });
     const v = document.createElement("patchwork-view");
     v.setAttribute("doc-url", about.url);
     if (about.toolId) v.setAttribute("tool-id", about.toolId);
@@ -448,6 +450,7 @@ function create(api) {
       {
         id: "inspector",
         title: "Inspector",
+        pinned: true, // never folds
         mount(host) {
           body = host;
           body.classList.add("inspector-body");

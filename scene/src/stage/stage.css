@@ -171,8 +171,9 @@
   white-space: nowrap;
 }
 
-/* Hidden always wins, whatever display an extension's rule sets. */
-.scene-stage [hidden] {
+/* Hidden always wins, whatever display an extension's rule sets (but not
+   inside a document embedded in the stage: that one's styles are its own). */
+.scene-stage [hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
   display: none !important;
 }
 
@@ -208,7 +209,10 @@
 }
 
 /* An overlay covers the port but lets the canvas have the pointer except
-   where it actually puts something. */
+   where it actually puts something: its direct children catch the pointer by
+   default. That rule has no specificity at all (:where), so any extension's
+   own rule wins, whatever order the stylesheets come in: a full-size child (a
+   HUD) just sets pointer-events: none. */
 .scene-stage > .viewport > .stage-overlay {
   position: absolute;
   inset: 0;
@@ -216,7 +220,7 @@
   z-index: 2;
 }
 
-.scene-stage > .viewport > .stage-overlay > * {
+:where(.scene-stage > .viewport > .stage-overlay > *) {
   pointer-events: auto;
 }
 

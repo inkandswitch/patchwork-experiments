@@ -7,7 +7,7 @@
 // list to doc.view.kits (and clears their delta, which it now matches).
 
 import css from "./kits.css?inline";
-import { chosenKits, suggestedKits } from "../stage/activation.js";
+import { chosenKits, suggestedKits } from "../kits.js";
 
 const strings = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
 

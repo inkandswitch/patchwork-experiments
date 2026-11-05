@@ -37,7 +37,8 @@ These rules follow from that:
   `local.prefs[key] ?? doc.view[key] ?? fallback`.
 - **Ids are opaque.** Any id in doc data may be missing at any time, because
   concurrent edits merge. Readers ignore references to missing objects.
-  Writers set fields; they never replace an object's whole map.
+  Writers set fields; they never replace an object's whole map (or its
+  transform: `ops.setTransform` writes only the numbers that changed).
 
 `api.local` is one value: a frozen plain object shared by all extensions in
 this view and by the stage.
@@ -50,17 +51,24 @@ this view and by the stage.
 |---|---|---|
 | `hovered` | stage | the object id under the pointer, or null |
 | `armed` | stage | the extension id on top of the arm stack, or null |
+| `immersive` | stage | true while an `immersive` arm is on (first-person play): decorations (grid, axes, bounds) stand aside |
 | `running` | stage | `[{ id, scope }]`, in chain order |
-| `status` | stage | `{ [id]: { state, text, title } }` load and build state |
+| `status` | stage | `{ [id]: { state, reason?, text, title } }` load and build state. `text` and `title` are for people; code branches on `state` and, for `"stale"`, `reason`: `"deps"`, `"contested"`, `"pinned"` or `"out-of-date"` |
 | `theme` | stage | the colour tokens (`{ accent: [r,g,b], … }`) |
 | `notices` | stage, via `notify` | `[{ id, text, kind, at }]` |
 | `kits` | kit surfaces | `{ on: [], off: [] }` this viewer's change to the doc's suggested kits (persisted per scene) |
 | `prefs` | any | this viewer's overrides of `doc.view` keys (persisted per scene) |
-| `selected` | selection | the selected id, or null |
-| `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"<ext>:<name>"`, or null. Read it as `local.tool ?? doc.view.tool ?? doc.view.defaultMode ?? null` |
+| `selected` | any (selection, the outline, add, a game) | the selected id, or null |
+| `tool` | tool surfaces | what a plain drag does: `"move"`, `"rotate"`, `"hand"`, `"select"` (no gizmo), `"<ext>:<name>"`. Read it with `effectiveTool(local, doc)` (`src/current-tool.js`): `local.tool ?? doc.view.tool ?? doc.view.defaultMode ?? doc.view.defaultGizmo ?? "move"`, old values (`"translate"`) mapped |
 
 Private local state lives in the extension's closure, or under a key prefixed
-`<id>.`.
+`<id>.`. Another extension doesn't write it: it runs one of the owner's
+commands instead (measure saves through `scene.dimensions`' `add`).
+
+Presence keys are the extension's own too, with one shared convention: the
+selection extension (`scene.select`) publishes `selected` and `hovered`, and
+surfaces (the outline) read them to mark peers' rows. Peer colours come from
+`src/peers.js`, so a peer's box and row match.
 
 ## Activation
 
@@ -85,13 +93,16 @@ doc or kit change, starts what's new and stops what's gone.
 - *Suggested kits* are `doc.view.kits ?? ["model"]`.
 - *This viewer's kits* are `(suggested ∪ local.kits.on) \ local.kits.off`,
   so a later change to the suggestion still reaches everyone.
+- Both are `src/kits.js` (pure), for the stage and any kit surface. Another
+  tab of the same viewer changing them (or prefs) is picked up from
+  `localStorage`'s `storage` event.
 
 Each running extension has a **scope**, from its own reasons:
 
 | Scope | Reason | Offered input at |
 |---|---|---|
 | `scene` | a scene trait, or a `legacy.scene` field | step 5, every event |
-| `objects` | only object traits or `legacy.objects` | step 4, and only when the event's hit chain reaches one of its objects |
+| `objects` | only object traits or `legacy.objects` | step 4, and only when the event's hit chain reaches one of its objects (one with its trait, or one of its `legacy.objects` fields) |
 | `viewer` | a kit, `always`, or only `requires` | step 6 |
 
 If several reasons apply, the earliest step wins. `requires` makes an
@@ -122,8 +133,9 @@ extension.
 - An extension that leaves the running set because of a kit change stops at
   once.
 - One that leaves because of a doc change keeps running for 2 s, and for as
-  long as it has an arm, an open session or a pose hold, so a peer's undo
-  doesn't tear down someone's game.
+  long as it, or an extension it `requires`, has an arm, an open session or
+  a pose hold (the hand carrying the table's card), so a peer's undo doesn't
+  tear down someone's game.
 
 When an extension stops:
 1. cancel its open session;
@@ -147,7 +159,9 @@ Rules for a migration:
 - It must be idempotent.
 - It must not create a map or list at a key that another peer might also
   create. The scene datatype's `init` and the core migration pre-create
-  `traits` and `view`.
+  `traits`, `view` and `dimensions` (the core migration runs on any scene doc
+  missing one), so an extension's `if (!d.traits) d.traits = {}` is only ever
+  a fallback.
 
 ## The input chain
 
@@ -228,8 +242,26 @@ is no `tap`, or it returns false, the session is cancelled and a `click` goes
 down the chain. While a session is open, presses from other pointers are
 swallowed.
 
+**A release that never comes.** A mouse that moves with no button down was
+released where the stage didn't hear it, and a lost pointer capture or
+leaving the window (blur, a hidden page) means the same: the gesture is
+cancelled (`cancel`: put back, never committed where nobody saw it land),
+so nothing stays open, held and following the bare pointer.
+
+**Ordering.** Running order decides only between extensions that would both
+claim the same event. An extension that handles an event without claiming it
+(returns false, to observe it) only hears it if it comes before the one that
+claims it: `scene.dimensions` lets go of its selection on a click, so the
+model kit lists it before `scene.select`.
+
 **Keys:**
 - They are heard on the tool's root, so only the focused view gets them.
+  Focus that leaves an element in the stage for nowhere (a clicked button
+  that was then removed) comes back to the root.
+- Keys, pastes and drops inside a document embedded in the stage (another
+  tool, such as the inspector's About) are that tool's. Whoever embeds marks
+  the container with `data-stage-embed` (`EMBED_ATTR`, `fromEmbed` in
+  `src/embed.js`).
 - A field being typed in keeps its keys; Escape blurs it.
 - A `keyup` goes to whoever claimed its `keydown`.
 - On blur, a hidden page or lost pointer lock, the stage sends a `keyup` for
@@ -242,9 +274,10 @@ swallowed.
 **Arming** is a stack:
 
 ```js
-const disarm = api.arm(handlers, { lock?: boolean, replace?: boolean })
+const disarm = api.arm(handlers, { lock?: boolean, replace?: boolean, immersive?: boolean })
 // handlers: the input functions above, plus move(ev) (every pointer move, dx/dy when locked),
-//           suspended?(), resumed?(), disarmed?(), lockLost?()
+//           leave() (the pointer left the canvas), suspended?(), resumed?(), disarmed?(),
+//           lockLost?({ refused })
 // returns disarm(); also api.relock() → Promise (call it from a press to take the lock again)
 ```
 
@@ -252,7 +285,11 @@ const disarm = api.arm(handlers, { lock?: boolean, replace?: boolean })
   arm is popped, then `resumed`.
 - With `replace`, the extension's own earlier arm is popped first.
 - An unclaimed event falls through to the rest of the chain.
-- Losing pointer lock (Esc) calls `lockLost` and does not disarm.
+- Losing pointer lock (Esc) calls `lockLost({ refused: false })` and does
+  not disarm. A lock the browser never granted (a sandboxed frame, a
+  headless browser), from `arm` or `relock`, calls `lockLost({ refused: true })`,
+  once per request, however the browser says no.
+- `immersive` (first-person play) sets `local.immersive` while the arm is on.
 
 ## `api`
 
@@ -265,10 +302,11 @@ that extension.
 |---|---|
 | `id`, `repo`, `handle`, `url`, `viewer`, `signal`, `Counter` | `Counter` is the stage's automerge Counter |
 | `doc()`, `change(fn)`, `newId(prefix)` | |
-| `scene()` | the snapshot: `{ d, objects, ids, parents, groups, traits, world(id) → 4×4 as stored, toLocal(id, p) }` |
+| `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids)` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids |
 | `registry(type)` | |
+| `port`, `root` | the element the canvas fills, and the stage's root (for DOM listeners: drops, pastes; focus) |
 
 **Local, prefs, presence**
 
@@ -285,7 +323,8 @@ that extension.
 | | |
 |---|---|
 | `nameOf(id)` | what this viewer sees, lenses applied |
-| `content(id)` | `{ loaded, box, extras, stats }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own |
+| `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test); never change it |
+| `loadState(id)` | a copy of what the render manager or GLB queue last said about it (notes, phase, contested, providerId…), or null |
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix (held poses included) |
 | `focus(ids)` | load these first |
@@ -299,7 +338,7 @@ that extension.
 |---|---|
 | `pick(x, y, { ground?, snapPx? })` | port-local px → hit (with vertex snap if asked) |
 | `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | |
-| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, limit(spec) → off, touched(), watch(fn) }` |
+| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
 
 How the camera parts behave:
 - **Hold.** While anything holds the camera, orbit is off and not updated,
@@ -317,11 +356,11 @@ How the camera parts behave:
 |---|---|
 | `THREE` | the stage's three.js |
 | `world({ onTop? })` | a `Group` owned by the extension. Its meshes are widgets the owner gets first refusal of. `onTop` groups are drawn in a second pass over everything (depth-tested among themselves, lit) |
-| `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together, and `rank` decides who gives way |
-| `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas. An edge sits beside it, and the canvas shrinks to fit |
+| `labels()` | `{ set(items) }`, where `item = { key, text, position? \| ends?: [p, p] \| screen?: { x, y }, className?, data?, rank?, onPointerDown? }`. Every extension's labels are decluttered together: one gives way to an overlapping label of higher (or equal, earlier) `rank` (default 1), and rank 2 and up never hide. The model's: dimensions 3, axes 2, bounds 1, grid 0 |
+| `overlay()`, `edge("top" \| "right" \| "bottom" \| "left")` | DOM owned by the extension. An overlay sits over the canvas and lets the pointer through, except that its direct children catch it by default (a rule with no specificity, so any extension rule wins): a full-size child (a HUD) sets `pointer-events: none`. An edge sits beside it, and the canvas shrinks to fit |
 | `style(css)`, `listen(target, type, fn, opts)`, `cursor(name)` | |
 | `pose` | `{ hold(id, transform), release(id, { landed? }) }` |
-| `heldBy(id)` | the peer session holding this object, or null |
+| `heldBy(id)` | the peer session holding this object, or null. While this view holds it too, only a peer that took hold first counts, so of two that grabbed it at once exactly one is told to let go (the hand and the gizmo put theirs back) |
 | `extent(box \| null)`, `invalidate()`, `loop(fn(dt, now))`, `afterRender(fn(renderer, size))`, `schedule(fn)` | |
 
 How poses and loops behave:
@@ -338,14 +377,14 @@ How poses and loops behave:
 
 | | Read by |
 |---|---|
-| `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }` |
+| `update(scene, local, prev)` | the stage, once per UI flush when the doc or local state changed; `prev` = `{ scene, local }`. Also when what's shown changed without either (content arrived, a pose was held or let go, a lens changed): then `scene === prev.scene` and `local === prev.local`. A pose alone moves boxes, so something that follows content should look at what has loaded (`content(id).loaded`, `local.status`), not the box |
 | `looks()` → `Map id → { sourceUrl?, name? }` | the stage (lenses combine in running order; later wins per field) |
 | `input` | the stage |
 | `receive(type, data, from)` | the stage |
 | `beforeRemove(draft, ids)` | the stage |
 | `needsMigration(doc)`, `migrate(draft)` | the stage |
 | `commands` | surfaces and key maps |
-| `panels` | sidebars |
+| `panels` | sidebars: `[{ id, title, pinned?, mount(body, { head, section }) → { update(scene, local), dispose() } }]`. A body set `hidden` hides its section; a `pinned` panel never folds |
 | `hud()` → `[{ text, state }]` | status surfaces |
 | `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the hand |
 | `carry(id, ev, opts)` → session | anything that wants to carry (the hand provides it) |
@@ -354,19 +393,23 @@ How poses and loops behave:
 A **command**:
 
 ```js
-{ id, name, key?,
+{ id, name,
+  key?: string | string[],   // KeyboardEvent.key values (letters in either case)
+  show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector"); [] none; absent all
   state(target, { scene, local }) → null | { title?, checked?, value?, choices?: [{ value, label }], disabled? },
   run(target, value?) }
 ```
 
-- `state` returning null means the command doesn't apply to that target.
+- `state` returning null (or false) means the command doesn't apply to that
+  target. Keys work whatever `show` says.
 - A command without `state` applies only to the null target, the scene.
 - A **target** is an object or group id, or null.
 - Surfaces call `api.run({ ext, command, target, value })`.
 - Toolbars show commands for the null target.
 - An inspector shows those for the selection, and a menu those for what was
   right-clicked.
-- A key map tries the hovered object, then the selection, then the scene.
+- A key map tries the selection, then the scene, then the hovered object
+  (so Delete removes what you chose, never what you merely passed over).
 
 `api.collect(name)` returns `[{ id, value }]` from running extensions that
 have that field, in running order. The stage never reads the value.
@@ -420,12 +463,16 @@ taken out. It keeps the following:
   - `scene:presence` carries `{ session, viewer, seq, at, keys }` or
     `{ session, bye: true }`;
   - `scene:send` carries `{ session, viewer, ext, type, data }`;
-  - `scene:pose` carries `{ session, id, parent, transform | null, landed? }`;
+  - `scene:pose` carries `{ session, id, parent, transform | null, since, landed? }`,
+    `since` being when the hold began on the holder's clock, so every view
+    ranks two holds of one object alike;
 - **behaviour:** each presence message is this view's whole state. There is
-  a heartbeat every 5 s, a TTL of 15 s and a bye on dispose. Presence goes
+  a heartbeat every 5 s, a TTL of 15 s and a bye on dispose, and on
+  `pagehide` (Patchwork doesn't run the cleanup when a tab closes); a page
+  back from the back-forward cache returns as a new session. Presence goes
   out at the highest rate any extension asked for (default 4 Hz), and poses
   are throttled to 50 ms per object;
 - **exposes:** `set(ext, key, value)`, `clear(ext)`, `get()`, `watch`,
   `rate(ext, hz)`, `send`, `onReceive`, `hold(ext, id, parent, transform)`,
   `release(ext, id, landedTransform?)`, `remoteHolds()`, `heldBy(id)`,
-  `watchHolds`, `dispose`.
+  `watchHolds`, `settle(id)`, `goodbye()`, `hello()`, `dispose`.

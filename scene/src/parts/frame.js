@@ -44,9 +44,16 @@ export default {
     let auto = !api.camera.touched();
     let left = null;
     let lastBox = "";
+    let lastLoad = null;
     let count = null;
 
     const frameAll = () => api.camera.frame(api.sceneBox());
+
+    // What has loaded (or failed) of what's shown: content arriving changes it, a pose doesn't.
+    const loadKey = (scene, local) =>
+      shownObjects(scene)
+        .map((id) => (api.content(id)?.loaded ? "1" : (local.status?.[id]?.state ?? "0")))
+        .join(",");
 
     // Has the person taken the camera since we last put it somewhere?
     const taken = () => (left ? !sameCamera(api.camera.get(), left) : api.camera.touched());
@@ -119,8 +126,12 @@ export default {
           auto = false;
           return;
         }
-        // only the doc or content arriving can change the scene's box (not hover)
-        if (prev.local && scene === prev.scene && local !== prev.local && local.status === prev.local.status) return;
+        // Only the doc, or content arriving, moves the box we follow: not hover,
+        // and not a pose held mid-drag (the stage updates for those too, with
+        // the same scene and local), or the camera would jump under the drag.
+        const load = loadKey(scene, local);
+        if (prev.local && scene === prev.scene && load === lastLoad) return;
+        lastLoad = load;
         autoFrame(scene, local);
       },
     };

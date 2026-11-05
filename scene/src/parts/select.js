@@ -14,7 +14,7 @@
 // and viewport.js setSelection / setRemoteSelections / the boxes in
 // rebuildHelpers.
 
-import { peerColor, peerSelections } from "./select-peers.js";
+import { peerColor, peerSelections } from "../peers.js";
 
 const ACCENT = [0.2, 0.9, 0.75];
 const REMOTE = [0.6, 0.4, 0.9];

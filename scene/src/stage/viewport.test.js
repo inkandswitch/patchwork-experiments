@@ -79,21 +79,19 @@ describe("LabelLayer", () => {
     expect(items(layer, "grid")[0].el.textContent).toBe("x");
   });
 
-  it("takes position (or the old world), or the middle of its ends", () => {
+  it("takes position, or the middle of its ends", () => {
     const layer = new LabelLayer(document.createElement("div"));
     layer.sync("o", [
       { key: "p", text: "p", position: [1, 2, 3] },
-      { key: "w", text: "w", world: [4, 5, 6] },
       { key: "e", text: "e", ends: [[0, 0, 0], [2, 0, 0]] },
       { key: "s", text: "s", screen: { x: 10, y: 20 } },
       { text: "no key" },
     ]);
-    const [p, w, e, s] = items(layer, "o");
+    const [p, e, s] = items(layer, "o");
     expect(p.world.toArray()).toEqual([1, 2, 3]);
-    expect(w.world.toArray()).toEqual([4, 5, 6]);
     expect(e.world.toArray()).toEqual([1, 0, 0]);
     expect(s.screen).toEqual({ x: 10, y: 20 });
-    expect(items(layer, "o")).toHaveLength(4);
+    expect(items(layer, "o")).toHaveLength(3);
     const seen = [];
     layer.update((v) => (seen.push(v.toArray()), { x: v.x * 10, y: v.y * 10 }));
     expect(s.el.style.transform).toContain("translate(10px, 20px)");
@@ -124,11 +122,11 @@ describe("LabelLayer", () => {
     expect(stop).toHaveBeenCalled();
   });
 
-  it("declutters every owner's labels together, by rank before class", () => {
+  it("declutters every owner's labels together, by their rank (1 when they don't say)", () => {
     const layer = new LabelLayer(document.createElement("div"));
-    // a grid label that asks for rank 1.5 beats a plain bounds label (class rank 1) where they overlap
+    // a label that asks for rank 1.5 beats one that says nothing (1) where they overlap, whatever their classes
     layer.sync("grid", [{ key: "g", text: "grid", className: "grid-label", position: [0, 0, 0], rank: 1.5 }]);
-    layer.sync("bounds", [{ key: "b", text: "bounds", className: "bounds-label", position: [0, 0, 0] }]);
+    layer.sync("bounds", [{ key: "b", text: "bounds", className: "dimension-label", position: [0, 0, 0] }]);
     for (const entries of layer.groups.values())
       for (const e of entries.values()) {
         Object.defineProperty(e.el, "offsetWidth", { value: 40 });
@@ -151,9 +149,9 @@ describe("declutter", () => {
     Object.defineProperty(el, "offsetHeight", { value: 14 });
     return { el, p: { x, y }, rank };
   }
-  it("lets a rank override the class's, and never hides rank 2 and up", () => {
+  it("ranks by the item's own rank, not its class, and never hides rank 2 and up", () => {
     const dim = label("dimension-label", 100, 100, -1); // ranked down below the grid
-    const grid = label("grid-label", 102, 100);
+    const grid = label("grid-label", 102, 100, 0);
     declutter([dim, grid]);
     expect(grid.el.style.visibility).toBe("");
     expect(dim.el.style.visibility).toBe("hidden");

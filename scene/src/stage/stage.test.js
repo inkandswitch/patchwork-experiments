@@ -486,6 +486,31 @@ describe("the stage, mounted", () => {
     ]);
   });
 
+  it("an immersive arm is local.immersive while it's on", async () => {
+    let disarm = null;
+    exts["t.kit"] = recorder("t.kit", (api) => {
+      disarm = api.arm({}, { immersive: true });
+      return {};
+    });
+    const m = mount(newScene({ view: { kits: ["t.kit"] } }));
+    await settle();
+    expect(m.local.get().immersive).toBe(true);
+    disarm();
+    expect(m.local.get().immersive).toBe(false);
+  });
+
+  it("focus left for nowhere (a clicked button that went away) comes back to the root", async () => {
+    const m = mount(newScene());
+    await settle();
+    const button = document.createElement("button");
+    m.root.append(button);
+    button.addEventListener("click", () => button.remove());
+    button.focus();
+    button.click();
+    await settle();
+    expect(document.activeElement).toBe(m.root);
+  });
+
   it("widgetAt: the widget's owner is offered the press first; its open session keeps it busy", async () => {
     const got = [];
     exts["t.kit"] = recorder("t.kit", () => ({

@@ -5,19 +5,9 @@
 
 import { IDENTITY_MATRIX, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 import { groupChain, isGroup } from "../groups.js";
+import { effectiveTool } from "../current-tool.js";
 
-/** Old docs' view.defaultMode / defaultGizmo values, as tools. */
-const LEGACY = { translate: "move", move: "move", rotate: "rotate", hand: "hand", select: "select" };
-
-/**
- * What a plain drag does for this viewer: the local choice, else the doc's
- * suggestion (view.tool, view.defaultMode, the old view.defaultGizmo), else
- * "move". "translate" reads as "move".
- */
-export function effectiveTool(local, doc) {
-  const v = local?.tool ?? doc?.view?.tool ?? doc?.view?.defaultMode ?? doc?.view?.defaultGizmo ?? "move";
-  return LEGACY[v] ?? v;
-}
+export { effectiveTool };
 
 /** The gizmo's three.js mode for a tool, or null when the tool has no gizmo. */
 export const modeFor = (tool) => (tool === "move" ? "translate" : tool === "rotate" ? "rotate" : null);

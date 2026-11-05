@@ -1,0 +1,113 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene editor probe</title>
+<!-- Driven by probes/editor-run.mjs: the BUILT scene tool (dist/) — the stage
+     with the model kit — on one doc, two peers (each peer's broadcasts reach
+     only the other). A locked board with connectors, blocks, pawns. The
+     runner clicks, drags and types with a real mouse and keyboard over CDP. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  body { display: flex; gap: 8px; }
+  #a { width: 1000px; height: 680px; flex: none; position: relative; }
+  #b { width: 380px; height: 380px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { encodeGLB } from "../src/glb.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+try {
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const box = (w, h, d, color, at = [0, 0, 0]) => {
+    const [x, y, z] = at, a = w / 2, c = d / 2;
+    const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
+    const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+    return { positions: f.flat().flatMap((i) => v[i]), color };
+  };
+  const file = (name, scene) => repo.add({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB(scene) });
+  const connectors = [];
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) connectors.push({ position: [i * 0.06, 0.04, j * 0.06] });
+  const boardGLB = file("board.glb", { meshes: [box(0.32, 0.04, 0.32, "#78a656")], extras: { connectors } });
+  const blockGLB = file("block.glb", { meshes: [box(0.05, 0.032, 0.05, "#e9b44c")] });
+  const pawnGLB = file("pawn.glb", { meshes: [box(0.016, 0.03, 0.016, "#3a78d8")] });
+  window.blockUrl = blockGLB.url;
+  const obj = (name, glb, position, extra = {}) => ({ name, sourceUrl: glb.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation: [0, 0, 0], scale: 1 }, ...extra });
+  const objects = { board: obj("Board", boardGLB, [0, 0, 0], { locked: true }) };
+  for (let i = 0; i < 3; i++) objects[`b${i}`] = obj(`Block ${i + 1}`, blockGLB, [0.25 + i * 0.07, 0, -0.1]);
+  for (let i = 0; i < 2; i++) objects[`p${i}`] = obj(`Pawn ${i + 1}`, pawnGLB, [-0.04 + i * 0.08, 0, 0.25]);
+  const scene = repo.add({
+    "@patchwork": { type: "scene" }, title: "Editor probe", objects, order: Object.keys(objects), dimensions: {},
+    view: { units: "cm", grid: true, axes: true, bounds: false, snap: true },
+    camera: { position: [0.1, 0.6, 0.75], target: [0.1, 0, 0] },
+  });
+  window.sceneHandle = scene;
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hostA = document.getElementById("a"), hostB = document.getElementById("b");
+  hostA.repo = repo; hostB.repo = repo;
+  hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
+  Tool(A, hostA);
+  Tool(B, hostB);
+  const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
+  const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
+  window.__p = {
+    A: dbgA, B: dbgB, hostA, hostB, errors,
+    doc: () => scene.doc(),
+    /** where an object's origin (plus an offset) is on the page, from A's camera */
+    screen(id, off = [0, 0, 0], dbg = dbgA) {
+      const m = dbg.viewport.worldOf(id);
+      if (!m) return null;
+      const p = dbg.viewport.project([m[12] + off[0], m[13] + off[1], m[14] + off[2]]);
+      const r = dbg.viewport.canvas.getBoundingClientRect();
+      return p && { x: r.left + p.x, y: r.top + p.y, visible: p.visible };
+    },
+    worldScreen(w, dbg = dbgA) {
+      const p = dbg.viewport.project(w);
+      const r = dbg.viewport.canvas.getBoundingClientRect();
+      return { x: r.left + p.x, y: r.top + p.y };
+    },
+    loaded: (dbg = dbgA) => ["board", "b0", "b1", "b2", "p0", "p1"].every((id) => dbg.viewport.contentOf(id)?.loaded),
+    running: (dbg = dbgA) => dbg.local.get().running.map((r) => r.id),
+    text: (sel, host = hostA) => [...host.querySelectorAll(sel)].map((e) => e.textContent.trim()),
+    rect: (sel, host = hostA) => { const e = host.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

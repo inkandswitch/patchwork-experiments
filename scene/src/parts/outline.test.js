@@ -140,8 +140,13 @@ describe("scene.outline", () => {
     expect(s.local.get().selected).toBe("bhd");
     await pass();
     expect(row("bhd").hasAttribute("data-selected")).toBe(true);
+    const framed = [];
+    const api = s.api("scene.outline");
+    api.camera = { ...api.camera, frame: (box) => framed.push(box) };
+    api.groupBox = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     row("battery").querySelector(".row-main").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
     expect(s.local.get().selected).toBe("battery");
+    expect(framed).toEqual([{ min: [0, 0, 0], max: [1, 1, 1], id: "battery" }]); // a double-click frames it too
   });
 
   it("reveals a selection made elsewhere: its ancestors open", async () => {
@@ -236,8 +241,13 @@ describe("scene.outline", () => {
     expect(row("vessel").hasAttribute("data-context")).toBe(true);
     expect(row("hull").hasAttribute("data-context")).toBe(false);
     expect($(".match-count").textContent).toBe("1 of 13");
+    const framed = [];
+    const api = s.api("scene.outline");
+    api.camera = { ...api.camera, frame: (box) => framed.push(box) };
+    api.box = (id) => ({ min: [0, 0, 0], max: [1, 1, 1], id });
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(s.local.get().selected).toBe("hull");
+    expect(framed.map((b) => b.id)).toEqual(["hull"]); // and frames it
     await pass();
     expect(row("hull").hasAttribute("data-selected")).toBe(true);
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));

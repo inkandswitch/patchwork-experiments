@@ -148,6 +148,13 @@ describe("scene.frame: auto-framing", () => {
     s.local.swap((m) => ({ ...m, hovered: "a" }));
     await s.settle();
     expect(camera.frames).toEqual([B1]);
+    // nor is a pose held mid-drag, though it moves the box
+    world.box = B3;
+    s.api("scene.frame").pose.hold("a", { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 });
+    await s.settle();
+    s.api("scene.frame").pose.release("a");
+    await s.settle();
+    expect(camera.frames).toEqual([B1]);
     world.box = B2;
     world.loaded.add("b");
     s.change((d) => (d.title = "b loaded"));

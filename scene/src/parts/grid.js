@@ -19,7 +19,7 @@ export function sceneExtent(box) {
  * The ruler ticks along X and Z, where they stay in view when framed; the
  * last one on each side says the unit. Pure.
  * @param {{ step: number, divisions: number }} grid  gridFor's result
- * @returns {{ key, position, text, className, data }[]}
+ * @returns {{ key, position, text, className, rank, data }[]}
  */
 export function rulerLabels(grid, unit) {
   const out = [];
@@ -29,8 +29,8 @@ export function rulerLabels(grid, unit) {
     if (i === 0) continue;
     const x = i * grid.step;
     const text = `${roundForDisplay(toUnits(x, unit))}${i === lastI ? ` ${unit}` : ""}`;
-    out.push({ key: `x${i}`, position: [x, 0, 0], text, className: "grid-label", data: { axis: "x" } });
-    out.push({ key: `z${i}`, position: [0, 0, x], text, className: "grid-label", data: { axis: "z" } });
+    out.push({ key: `x${i}`, position: [x, 0, 0], text, className: "grid-label", rank: 0, data: { axis: "x" } });
+    out.push({ key: `z${i}`, position: [0, 0, x], text, className: "grid-label", rank: 0, data: { axis: "z" } });
   }
   return out;
 }
@@ -48,6 +48,8 @@ export default {
     api.overlay().append(caption);
 
     const shown = () => api.pref("grid", true) !== false;
+    // what's drawn: shown, and not while an immersive arm (first-person play) is on
+    const drawn = () => shown() && !api.local.get().immersive;
     const color = (rgb, fallback) => (Array.isArray(rgb) ? new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace) : new THREE.Color(fallback));
     let key = null;
 
@@ -60,7 +62,7 @@ export default {
     }
 
     function redraw(theme) {
-      const on = shown();
+      const on = drawn();
       const unit = api.pref("units", "m");
       const grid = gridFor(sceneExtent(api.sceneBox()), unit);
       const next = on ? JSON.stringify([unit, grid.size, grid.divisions]) : "off";
@@ -103,7 +105,7 @@ export default {
         // only a doc change, a content change (same scene and local) or a pref or theme change can move the grid
         const was = prev.local;
         const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme) return;
+        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.immersive === was.immersive) return;
         if (was && local.theme !== was.theme) key = null;
         redraw(local.theme);
       },

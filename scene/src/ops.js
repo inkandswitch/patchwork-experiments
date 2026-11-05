@@ -164,7 +164,7 @@ export function removeObjects(snapshot, ids) {
         const o = d.objects?.[child];
         if (!o) continue;
         o.parent = null;
-        o.transform = fresh(transform);
+        writeTransform(o, fresh(transform));
       }
       if (d.objects) for (const g of gone) delete d.objects[g];
       removeFromOrder(d, gone);
@@ -353,7 +353,7 @@ export function moveRow(snapshot, id, place, order = orderedIds(snapshot)) {
       if (!o) return;
       if (reparent) {
         o.parent = plan.parent;
-        o.transform = fresh(plan.transform);
+        writeTransform(o, fresh(plan.transform));
       }
       if (regroup) o.group = group;
       if (!d.order) d.order = [];
@@ -393,10 +393,29 @@ export function setField(snapshot, id, key, value) {
 }
 
 /**
+ * Write a transform into an object, field by field and number by number,
+ * touching only the numbers that differ: never a new map or list where one is
+ * there, so a concurrent write to another number (someone typing X, a shot
+ * knocking it over) still lands. (In a change.)
+ */
+export function writeTransform(o, t) {
+  if (!o.transform || typeof o.transform !== "object") {
+    o.transform = { position: [...t.position], rotation: [...t.rotation], scale: t.scale };
+    return;
+  }
+  const x = o.transform;
+  for (const k of ["position", "rotation"]) {
+    if (!Array.isArray(x[k]) || x[k].length !== 3) x[k] = [...t[k]];
+    else for (let i = 0; i < 3; i++) if (x[k][i] !== t[k][i]) x[k][i] = t[k][i];
+  }
+  if (x.scale !== t.scale) x.scale = t.scale;
+}
+
+/**
  * Write whole local transforms: one (`id`, `transform`), or several at once as
  * a Map, an object or entries of id → transform (a group moved with the
- * gizmo). Each is normalised and written fresh. Ids that aren't there are
- * skipped.
+ * gizmo). Each is normalised and written field by field (writeTransform). Ids
+ * that aren't there are skipped.
  * @returns plan with `ids` (those written), or null when none is there
  */
 export function setTransform(snapshot, idOrMoved, transform) {
@@ -413,7 +432,7 @@ export function setTransform(snapshot, idOrMoved, transform) {
     (d) => {
       for (const [id, t] of moved) {
         const o = d.objects?.[id];
-        if (o) o.transform = { position: [...t.position], rotation: [...t.rotation], scale: t.scale };
+        if (o) writeTransform(o, t);
       }
     },
     { ids: moved.map(([id]) => id) },

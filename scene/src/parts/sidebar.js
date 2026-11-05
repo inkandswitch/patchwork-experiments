@@ -1,11 +1,11 @@
 // scene.sidebar: the panel stack at the right (old tool.js "panels", ~2029-2089).
 //
-// It presents every running extension's `panels` ([{ id, title, mount(el) }]):
+// It presents every running extension's `panels` ([{ id, title, pinned?, mount(el) }]):
 // each a <section> with a title that folds it. The order is doc.view.panels
 // first (old docs: the panels that start open, in that order), then running
 // order. A panel the doc lists nowhere starts folded when the doc lists any;
 // after that, folding is this viewer's alone (localStorage
-// "scene-panels:<url>"). The inspector never folds.
+// "scene-panels:<url>"). A `pinned` panel (the inspector's) never folds.
 //
 // mount(body, { head, section }) is called once per panel object; what it
 // returns gets update(scene, local) every flush and dispose() when its
@@ -19,7 +19,6 @@
 import css from "./sidebar.css?inline";
 
 const HIDDEN = "scene.sidebar.hidden";
-const NEVER_FOLDS = new Set(["inspector"]);
 
 function readFolds(key) {
   const out = new Map();
@@ -52,9 +51,9 @@ export function panelOrder(ids, listed) {
   return [...l.filter((id) => ids.includes(id)), ...ids.filter((id) => !l.includes(id))];
 }
 
-/** Is this panel folded: the viewer's choice, else folded when the doc lists others but not it. Pure. */
-export function isFolded(id, folds, listed) {
-  if (NEVER_FOLDS.has(id)) return false;
+/** Is this panel folded: never if pinned; else the viewer's choice, else folded when the doc lists others but not it. Pure. */
+export function isFolded(id, folds, listed, pinned = false) {
+  if (pinned) return false;
   if (folds.has(id)) return folds.get(id);
   return Array.isArray(listed) && !listed.includes(id);
 }
@@ -78,7 +77,7 @@ function create(api) {
 
   function toggleFold(id) {
     const entry = mounted.get(id);
-    if (!entry || NEVER_FOLDS.has(id)) return;
+    if (!entry || entry.panel.pinned) return;
     folds.set(id, !entry.section.hasAttribute("data-folded"));
     writeFolds(foldKey, folds);
     layout(api.doc().view?.panels ?? null, true);
@@ -94,7 +93,7 @@ function create(api) {
     const title = document.createElement("h3");
     title.className = "panel-title";
     title.textContent = String(panel.title ?? panel.id);
-    if (!NEVER_FOLDS.has(panel.id)) {
+    if (!panel.pinned) {
       title.dataset.collapse = "";
       title.tabIndex = 0;
       title.setAttribute("role", "button");
@@ -163,8 +162,8 @@ function create(api) {
       aside.replaceChildren(...order.map((id) => mounted.get(id).section));
     }
     for (const id of order) {
-      const { section, title } = mounted.get(id);
-      const fold = isFolded(id, folds, listed);
+      const { section, title, panel } = mounted.get(id);
+      const fold = isFolded(id, folds, listed, !!panel.pinned);
       section.toggleAttribute("data-folded", fold);
       if (title.dataset.collapse != null) title.setAttribute("aria-expanded", String(!fold));
     }

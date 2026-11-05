@@ -416,6 +416,16 @@ describe("plain writes", () => {
     expect(setTransform(doc, { nope: T() })).toBeNull();
   });
 
+  it("setTransform writes into the existing transform, so a concurrent edit of another number survives the merge", () => {
+    let a = Automerge.from({ objects: { hull: leaf("Hull", { x: 1 }) }, order: ["hull"], dimensions: {}, view: {} });
+    let b = Automerge.clone(a);
+    // someone types Z while someone else drags it up on the gizmo
+    a = Automerge.change(a, setTransformPart(a, "hull", "position", 2, 5));
+    b = Automerge.change(b, setTransform(b, "hull", T([1, 1, 0])));
+    const merged = Automerge.merge(a, b);
+    expect([...merged.objects.hull.transform.position]).toEqual([1, 1, 5]);
+  });
+
   it("setTransformPart writes one number and nothing else", () => {
     const doc = vessel();
     expect(apply(doc, setTransformPart(doc, "hull", "position", 1, 4)).objects.hull.transform).toEqual(T([1, 4, 0]));

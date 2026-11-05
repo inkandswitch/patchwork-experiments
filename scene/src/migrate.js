@@ -19,9 +19,17 @@ function hasOldGroups(objects) {
   return false;
 }
 
+/**
+ * The maps every scene has, made up front so extensions never create them
+ * (two peers each making one at once would leave one peer's writes in a map
+ * that loses the merge). Only for a scene doc (one with objects).
+ */
+const CONTAINERS = ["traits", "view", "dimensions"];
+const missingContainers = (d) => (d?.objects && typeof d.objects === "object" ? CONTAINERS.filter((k) => d[k] == null) : []);
+
 /** Is anything here in an older shape? */
 export function needsCoreMigration(d) {
-  return d?.view?.defaultGizmo !== undefined || hasOldGroups(d?.objects);
+  return d?.view?.defaultGizmo !== undefined || hasOldGroups(d?.objects) || missingContainers(d).length > 0;
 }
 
 /**
@@ -74,4 +82,5 @@ export function migrateCore(d) {
     delete d.view.defaultGizmo;
   }
   if (hasOldGroups(d.objects)) splitGroups(d.objects);
+  for (const k of missingContainers(d)) d[k] = {};
 }

@@ -207,7 +207,10 @@ export function createHost({
       if (dead || recs.get(rec.id) !== rec) return;
       let isBusy = false;
       try {
-        isBusy = rec.state === "running" && busy(rec.id);
+        // busy itself, or something it requires is (the hand carrying a card
+        // for the table): a requirer and what it requires are one gesture
+        const group = [rec.id, ...(Array.isArray(rec.meta?.requires) ? rec.meta.requires : [])];
+        isBusy = rec.state === "running" && group.some((id) => busy(id));
       } catch {
         // can't tell: let it go
       }

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
-import measure, { anchorFor, anchorWorld, HINT_FIRST, HINT_SECOND, DIM_SELECTED } from "./measure.js";
+import measure, { anchorFor, anchorWorld, HINT_FIRST, HINT_SECOND } from "./measure.js";
+import dimensions, { SELECTED as DIM_SELECTED } from "./dimensions.js";
 
 const MEASURE = { meta: { id: "scene.measure" }, module: measure };
-const KIT = { id: "model", extensions: ["scene.measure"] };
+const DIMENSIONS = { meta: { id: "scene.dimensions" }, module: dimensions };
+const KIT = { id: "model", extensions: ["scene.measure", "scene.dimensions"] };
 
 let s = null;
 afterEach(() => {
@@ -14,7 +16,7 @@ afterEach(() => {
 });
 
 async function mount({ objects = { a: object({ name: "A", transform: { position: [1, 0, 0], rotation: [0, 0, 0], scale: 1 } }) }, extensions = [], kits = [KIT], doc = {} } = {}) {
-  s = await mountStage({ extensions: [MEASURE, ...extensions], kits, doc: { objects, order: Object.keys(objects), ...doc } });
+  s = await mountStage({ extensions: [MEASURE, DIMENSIONS, ...extensions], kits, doc: { objects, order: Object.keys(objects), ...doc } });
   return s;
 }
 

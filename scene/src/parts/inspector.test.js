@@ -396,8 +396,10 @@ describe("scene.inspector: the pure side", () => {
     const o = object({ sourceUrl: "automerge:x", renderUrl: "automerge:y", providerId: "p" });
     expect(statusParts(o, { load: { notes: "1 triangle (ascii STL)" } })).toEqual([{ kind: "notes", text: "1 triangle (ascii STL)" }]);
     expect(statusParts(o, { status: { state: "warn" } })[0].text).toMatch(/Provider “p” is not installed/);
-    expect(statusParts(o, { status: { state: "stale", title: "Out of date; rebuilding soon" } })).toEqual([]);
-    expect(statusParts(o, { status: { state: "stale", title: "A collaborator built it differently" } })).toEqual([{ kind: "warn", text: "A collaborator built it differently" }]);
+    expect(statusParts(o, { status: { state: "stale", reason: "out-of-date", title: "Out of date; rebuilding soon" } })).toEqual([]);
+    expect(statusParts(o, { status: { state: "stale", reason: "contested", title: "Built differently" } })).toEqual([{ kind: "warn", text: "Built differently" }]);
+    // the reason decides, not the wording
+    expect(statusParts(o, { status: { state: "stale", reason: "deps", title: "A collaborator's linked document" } })).toEqual([]);
     const p = object({ sourceUrl: "automerge:x" });
     expect(statusParts(p, { content: { loaded: true, stats: { triangles: 20000, drawCalls: 1, instanced: 0 } } })).toEqual([{ kind: "notes", text: "20 k triangles · 1 draw call" }]);
     expect(statusParts(p, { status: { state: "error", title: "GLB failed" } })).toEqual([{ kind: "error", text: "GLB failed" }]);

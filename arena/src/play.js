@@ -64,6 +64,11 @@ export default {
 
     let playing = false;
     let paused = false; // the lock was lost: waiting for a click to take it back
+    // Pointer lock can be refused (a sandboxed frame, a headless browser, a
+    // page without focus). Then play goes on without it: drag to look, click
+    // to shoot. Losing a lock you had (Esc) pauses instead. The stage tells
+    // them apart: lockLost({ refused }).
+    let free = false; // playing without the lock
     let disarm = null;
     let releaseCamera = null;
     let stopLoop = null;
@@ -171,29 +176,35 @@ export default {
       const board = Object.entries(scores(objects)).sort((a, b) => b[1] - a[1]);
       const now = performance.now();
       const reloading = now < reloadUntil;
-      const key = JSON.stringify([playing, paused, standing, targets.length, board, ammo, reloading, now < hitUntil, [...names]]);
+      const key = JSON.stringify([playing, paused, free, standing, targets.length, board, ammo, reloading, now < hitUntil, [...names]]);
       if (key === hudKey) return;
       hudKey = key;
       const scoreList = el("ol", { class: "arena-scores" }, ...board.slice(0, 6).map(([viewer, n]) => el("li", { "data-you": viewer === api.viewer }, el("span", {}, nameOf(viewer)), el("strong", {}, String(n)))));
+      const show = (...kids) => hud.replaceChildren(...kids.filter((k) => k != null));
       if (!playing) {
-        hud.replaceChildren(
+        // the start bar with the scores under it, in one column (so a narrow view wraps rather than overlaps)
+        show(
           el(
             "div",
-            { class: "arena-start" },
-            el("button", { type: "button", class: "arena-play", onclick: () => start() }, "▶ Play"),
-            el("span", { class: "arena-count" }, targets.length ? `${standing} of ${targets.length} targets standing` : "No targets yet"),
-            standing < targets.length ? el("button", { type: "button", class: "arena-reset", onclick: () => resetTargets() }, "Stand them up") : null,
+            { class: "arena-lobby" },
+            el(
+              "div",
+              { class: "arena-start" },
+              el("button", { type: "button", class: "arena-play", onclick: () => start() }, "▶ Play"),
+              el("span", { class: "arena-count" }, targets.length ? `${standing} of ${targets.length} targets standing` : "No targets yet"),
+              standing < targets.length ? el("button", { type: "button", class: "arena-reset", onclick: () => resetTargets() }, "Stand them up") : null,
+            ),
+            board.length ? scoreList : null,
           ),
-          board.length ? scoreList : null,
         );
         return;
       }
-      hud.replaceChildren(
+      show(
         el("div", { class: "arena-crosshair", "data-hit": now < hitUntil }),
         el("div", { class: "arena-top" }, el("span", {}, `${standing} of ${targets.length} standing`), board.length ? scoreList : null),
         el("div", { class: "arena-ammo", "data-empty": ammo === 0 }, reloading ? "Reloading…" : `${ammo} / ${MAG}`),
-        el("div", { class: "arena-help" }, "WASD move · Space jump · Shift run · Click shoot · R reload · Esc stop"),
-        paused ? el("button", { type: "button", class: "arena-resume", onclick: () => api.relock() }, "Click to carry on") : null,
+        el("div", { class: "arena-help" }, free ? "WASD move · Drag to look · Click shoot · Space jump · Shift run · R reload · Esc stop" : "WASD move · Space jump · Shift run · Click shoot · R reload · Esc stop"),
+        paused ? el("button", { type: "button", class: "arena-resume", onclick: () => resume() }, "Click to carry on") : null,
       );
     }
 
@@ -319,27 +330,65 @@ export default {
       });
     }
 
+    function turn(dx, dy) {
+      const l = look(body.yaw, body.pitch, dx, dy);
+      body.yaw = l.yaw;
+      body.pitch = l.pitch;
+    }
+
+    /** Take the lock back after losing it (refused, lockLost says so and play goes on without it). */
+    function resume() {
+      Promise.resolve(api.relock()).catch(() => {});
+    }
+
+    /** The lock was refused: play on without it. */
+    function onRefused() {
+      if (!playing) return;
+      free = true;
+      paused = false;
+      render();
+    }
+
     function start() {
       if (playing) return;
       playing = true;
       paused = false;
+      free = false;
       spawn();
       ammo = MAG;
       api.presence.rate(20);
       releaseCamera = api.camera.hold();
       // a bare session: a press while playing is a shot, never a drag
       const shotSession = { move() {}, end() {}, cancel() {}, tap: () => true };
+      // without the lock: a drag looks around, a tap shoots
+      const lookSession = (ev) => {
+        let last = [ev.clientX ?? 0, ev.clientY ?? 0];
+        return {
+          move(e) {
+            const at = [e.clientX ?? last[0], e.clientY ?? last[1]];
+            turn(at[0] - last[0], at[1] - last[1]);
+            last = at;
+          },
+          end() {},
+          cancel() {},
+          tap() {
+            shoot();
+            return true;
+          },
+          cursor: "grabbing",
+        };
+      };
       disarm = api.arm(
         {
           move(ev) {
             if (!ev.locked || paused) return;
-            const l = look(body.yaw, body.pitch, ev.dx ?? 0, ev.dy ?? 0);
-            body.yaw = l.yaw;
-            body.pitch = l.pitch;
+            turn(ev.dx ?? 0, ev.dy ?? 0);
           },
           press(ev) {
             if (paused) return null; // the resume button takes it
-            if (ev.button === 0) shoot();
+            if (ev.button !== 0) return shotSession;
+            if (!ev.locked) return lookSession(ev);
+            shoot();
             return shotSession;
           },
           click: () => true,
@@ -358,9 +407,10 @@ export default {
             keys.delete(ev.code);
             return true;
           },
-          lockLost() {
-            paused = true;
+          lockLost({ refused = false } = {}) {
             keys.clear();
+            if (refused) return onRefused();
+            paused = true; // lost (Esc): wait for a click
             render();
           },
           resumed() {
@@ -370,9 +420,10 @@ export default {
           disarmed() {
             if (playing) stop();
           },
-          cursor: () => "none",
+          cursor: (ev) => (ev.locked ? "none" : "crosshair"),
         },
-        { lock: true, replace: true },
+        // immersive: the editor's decorations (grid, axes) stand aside while playing
+        { lock: true, replace: true, immersive: true },
       );
       stopLoop = api.loop((dt) => {
         if (!paused) tick(dt);
@@ -384,6 +435,7 @@ export default {
       if (!playing) return;
       playing = false;
       paused = false;
+      free = false;
       keys.clear();
       const d = disarm;
       disarm = null;
@@ -397,10 +449,12 @@ export default {
       render();
     }
 
-    // the lock came back (a click on "carry on")
+    // the lock was granted, or came back (a click on "carry on")
     const onLock = () => {
-      if (playing && paused && document.pointerLockElement) {
+      if (!playing || !document.pointerLockElement) return;
+      if (paused || free) {
         paused = false;
+        free = false;
         render();
       }
     };

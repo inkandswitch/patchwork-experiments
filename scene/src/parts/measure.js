@@ -5,9 +5,9 @@
 //   - the pointer's hover picks a point (the ground counts; a vertex within
 //     10 px snaps) and shows a rubber band from the first point, with its
 //     length in the viewer's units, and a glow when it snapped;
-//   - a click places the first point, then the second, which writes a
-//     dimension to doc.dimensions and selects it
-//     (local["scene.dimensions.selected"]);
+//   - a click places the first point, then the second, which hands the two
+//     anchors to scene.dimensions (its "add" command), which saves the
+//     dimension and selects it;
 //   - Escape clears the first point, else disarms.
 // It draws only the preview; the dimensions extension draws what's saved.
 
@@ -16,8 +16,8 @@ import { distance, makeAnchor } from "../anchors.js";
 import { applyMatrix } from "../transform.js";
 import { formatLength } from "../units.js";
 
-/** The dimensions extension's local key for its selected dimension. */
-export const DIM_SELECTED = "scene.dimensions.selected";
+/** The extension that owns doc.dimensions (and saves what's measured). */
+export const DIMENSIONS = "scene.dimensions";
 /** How near (px) a vertex must be to snap to it. */
 export const SNAP_PX = 10;
 
@@ -187,14 +187,14 @@ export function create(api) {
     }
     const first = a;
     const dimId = api.newId("d");
-    api.change((d) => {
-      if (!d.dimensions) d.dimensions = {};
-      d.dimensions[dimId] = { a: first, b: anchor, label: null };
-    });
+    const saved = api.run({ ext: DIMENSIONS, command: "add", value: { id: dimId, a: first, b: anchor } });
     a = null;
     hover = null;
-    api.local.swap((m) => ({ ...m, [DIM_SELECTED]: dimId }));
     draw();
+    if (!saved) {
+      api.notify("Dimensions aren't on here, so the measurement wasn't saved.", "error");
+      return null;
+    }
     return dimId;
   }
 

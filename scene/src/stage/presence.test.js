@@ -396,6 +396,38 @@ describe("pose holds", () => {
     expect(b.remoteHolds().get("o1").transform).toEqual(T(9));
   });
 
+  it("every view ranks two holds alike, whatever order it heard them in (the holder's own clock)", () => {
+    const pose = (session, since) => ({ type: "scene:pose", session, viewer: session, id: "o9", parent: null, transform: T(1), since, seq: 1 });
+    // b hears the later grab first
+    hb.inject(pose("late", 2_000));
+    hb.inject(pose("early", 1_500));
+    expect(b.heldBy("o9")).toBe("early");
+    expect(b.remoteHolds().get("o9").session).toBe("early");
+  });
+
+  it("while this view holds it too, only a peer that took it first counts", () => {
+    a.hold("hand", "o1", null, T(1));
+    clock.advance(100);
+    b.hold("hand", "o1", null, T(2)); // b grabbed it a moment later
+    expect(a.heldBy("o1")).toBe(null); // a was first: it's a's
+    expect(b.heldBy("o1")).toBe("sa"); // b should let go
+    expect(sent("A", "scene:pose")[0].since).toBeLessThan(sent("B", "scene:pose")[0].since);
+  });
+
+  it("goodbye (pagehide) puts holds back and leaves at once; hello comes back as a new session", () => {
+    a.hold("hand", "o1", null, T(1));
+    a.goodbye();
+    expect(b.heldBy("o1")).toBe(null);
+    expect(Object.keys(b.get())).toEqual([]);
+    a.set("ext", "k", 1);
+    clock.advance(HEARTBEAT_MS * 2);
+    expect(Object.keys(b.get())).toEqual([]); // quiet while away
+    a.hello();
+    expect(a.session).not.toBe("sa");
+    expect(Object.keys(b.get())).toEqual([a.session]);
+    expect(b.get()[a.session].keys).toEqual({ ext: { k: 1 } });
+  });
+
   it("ignores a pose that arrives after a later release", () => {
     a.hold("hand", "o1", null, T(1));
     const first = sent("A", "scene:pose")[0];

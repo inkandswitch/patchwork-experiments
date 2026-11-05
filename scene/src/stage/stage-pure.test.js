@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { assoc, createAtom, watchKey } from "./atom.js";
+import { assoc, createAtom } from "./atom.js";
 import { activeSet, chosenKits, docReason, expandKits } from "./activation.js";
 import { chainOrder, holdersFor, offer } from "./chain.js";
 
@@ -13,16 +13,6 @@ describe("the local atom", () => {
     expect(a.get()).toEqual({ x: 2 });
     expect(Object.isFrozen(a.get())).toBe(true);
     expect(seen).toEqual([[1, 2]]);
-  });
-  it("watches one key", () => {
-    const a = createAtom({ x: 1, y: 1 });
-    const fn = vi.fn();
-    const off = watchKey(a, "x", fn);
-    a.swap(assoc("y", 2));
-    a.swap(assoc("x", 3));
-    off();
-    a.swap(assoc("x", 4));
-    expect(fn.mock.calls).toEqual([[3, 1]]);
   });
 });
 
@@ -104,6 +94,13 @@ describe("the input chain", () => {
   it("holders: the nearest object up the hit chain with one of the extension's traits", () => {
     expect([...holders(["table", "card", "crate"])]).toEqual([["tabletop", "card"], ["arena", "crate"]]);
     expect(holders([]).size).toBe(0);
+  });
+
+  it("holders: an object with an old field the extension reads (legacy.objects) holds too", () => {
+    const old = [{ id: "table", meta: { traits: ["tabletop.seats"], legacy: { objects: ["zone"] } }, scope: "objects" }];
+    const objects = { card: { zone: "p1" }, box: {} };
+    expect([...holdersFor(old, ["box", "card"], () => [], (id) => objects[id])]).toEqual([["table", "card"]]);
+    expect(holdersFor(old, ["box"], () => [], (id) => objects[id]).size).toBe(0);
   });
 
   it("offers until something claims it; a failing handler is skipped", () => {

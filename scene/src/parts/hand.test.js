@@ -72,10 +72,10 @@ const transformOf = (id) => JSON.parse(JSON.stringify(s.doc().objects[id].transf
 describe("the effective tool", () => {
   it("is local, else the doc's suggestion (old names too), else move", () => {
     expect(effectiveTool({}, {})).toBe("move");
-    expect(effectiveTool({ view: { defaultMode: "hand" } }, {})).toBe("hand");
-    expect(effectiveTool({ view: { defaultGizmo: "translate" } }, {})).toBe("move");
-    expect(effectiveTool({ view: { tool: "rotate", defaultMode: "hand" } }, {})).toBe("rotate");
-    expect(effectiveTool({ view: { defaultMode: "hand" } }, { tool: "select" })).toBe("select");
+    expect(effectiveTool({}, { view: { defaultMode: "hand" } })).toBe("hand");
+    expect(effectiveTool({}, { view: { defaultGizmo: "translate" } })).toBe("move");
+    expect(effectiveTool({}, { view: { tool: "rotate", defaultMode: "hand" } })).toBe("rotate");
+    expect(effectiveTool({ tool: "select" }, { view: { defaultMode: "hand" } })).toBe("select");
   });
 });
 

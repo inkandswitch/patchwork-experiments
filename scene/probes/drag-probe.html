@@ -7,7 +7,7 @@
      fake sidebar whose rows start a drag with the same dataTransfer the
      Patchwork sidebar sets (sideboard/src/sideboard/document-list/item.tsx). -->
 <script type="importmap">
-{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js" } }
+{ "imports": { "@inkandswitch/patchwork-plugins": "./plugins-stub.js", "@automerge/automerge": "./automerge-stub.js" } }
 </script>
 <style>
   html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
@@ -101,9 +101,10 @@ try {
     mark: () => { const li = host.querySelector(".object-row[data-drop]"); return li ? { id: li.dataset.id, drop: li.dataset.drop } : null; },
     dragLog: (clear = false) => { const out = [...dragLog]; if (clear) dragLog.length = 0; return out; },
     marks: () => [...host.querySelectorAll(".object-row[data-drop]")].map((li) => `${li.dataset.id}:${li.dataset.drop}`),
-    hintHidden: () => host.querySelector(".drop-hint").hidden,
-    toast: () => { const t = host.querySelector(".toast"); return t.hidden ? null : t.textContent; },
-    clearToast: () => { host.querySelector(".toast").hidden = true; },
+    // the stage's parts: scene.add's drop hint, scene.notices' toasts
+    hintHidden: () => host.querySelector(".add-drop-hint")?.hidden ?? true,
+    toast: () => { const t = [...host.querySelectorAll(".toast")].at(-1); return t && !t.hidden ? t.textContent : null; },
+    clearToast: () => { for (const t of host.querySelectorAll(".toast")) t.remove(); },
     heads: () => scene.heads().join(","),
     doc: () => JSON.parse(JSON.stringify(scene.doc())),
     outline: () => [...host.querySelectorAll(".object-row")].map((r) => `${"  ".repeat(Number(r.dataset.depth || 0))}${r.querySelector(".name")?.textContent}`),

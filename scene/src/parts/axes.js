@@ -31,7 +31,7 @@ export function axisLabels(len) {
   return AXES.map((axis, i) => {
     const at = [0, 0, 0];
     at[i] = len * 1.07;
-    return { key: axis, position: at, text: axis.toUpperCase(), className: "axis-label", data: { axis } };
+    return { key: axis, position: at, text: axis.toUpperCase(), className: "axis-label", rank: 2, data: { axis } };
   });
 }
 
@@ -46,6 +46,7 @@ export function triadLabels(tips, height) {
     key: `triad-${axis}`,
     text: axis.toUpperCase(),
     className: "triad-label",
+    rank: 2,
     data: { axis },
     screen: { x: TRIAD_PAD + ((tips[i].x + 1) / 2) * TRIAD_PX, y: height - TRIAD_PAD - ((tips[i].y + 1) / 2) * TRIAD_PX },
   }));
@@ -68,6 +69,8 @@ export default {
     const pushLabels = () => labels.set([...axisItems, ...triadItems]);
 
     const shown = () => api.pref("axes", true) !== false;
+    // what's drawn: shown, and not while an immersive arm (first-person play) is on
+    const drawn = () => shown() && !api.local.get().immersive;
     let key = null;
     let theme = null;
 
@@ -91,7 +94,7 @@ export default {
     // ─── the world axes ──────────────────────────────────────────────────────
 
     function redraw() {
-      const on = shown();
+      const on = drawn();
       const len = on ? axisLength(api.sceneBox(), { grid: api.pref("grid", true) !== false, unit: api.pref("units", "m") }) : 0;
       const next = `${on}|${len}`;
       if (next === key) return;
@@ -194,13 +197,13 @@ export default {
       update(scene, local, prev) {
         const was = prev.local;
         const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme) return;
+        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.immersive === was.immersive) return;
         if (!triad.children.length || local.theme !== theme) {
           theme = local.theme;
           key = null;
           buildTriad();
         }
-        setTriad(shown());
+        setTriad(drawn());
         redraw();
       },
       dispose() {

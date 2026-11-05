@@ -15,9 +15,9 @@ export function sizeLabels(id, box, unit) {
   const mid = [0, 1, 2].map((i) => (min[i] + max[i]) / 2);
   const size = [0, 1, 2].map((i) => max[i] - min[i]);
   return [
-    { key: `${id}:x`, position: [mid[0], min[1], max[2]], text: formatLength(size[0], unit), className: "bounds-label", data: { axis: "x" } },
-    { key: `${id}:y`, position: [max[0], mid[1], max[2]], text: formatLength(size[1], unit), className: "bounds-label", data: { axis: "y" } },
-    { key: `${id}:z`, position: [max[0], min[1], mid[2]], text: formatLength(size[2], unit), className: "bounds-label", data: { axis: "z" } },
+    { key: `${id}:x`, position: [mid[0], min[1], max[2]], text: formatLength(size[0], unit), className: "bounds-label", rank: 1, data: { axis: "x" } },
+    { key: `${id}:y`, position: [max[0], mid[1], max[2]], text: formatLength(size[1], unit), className: "bounds-label", rank: 1, data: { axis: "y" } },
+    { key: `${id}:z`, position: [max[0], min[1], mid[2]], text: formatLength(size[2], unit), className: "bounds-label", rank: 1, data: { axis: "z" } },
   ];
 }
 
@@ -35,6 +35,8 @@ export default {
     layer.userData.noPick = true;
     const labels = api.labels();
     const shown = () => api.pref("bounds", false) === true;
+    // what's drawn: shown, and not while an immersive arm (first-person play) is on
+    const drawn = () => shown() && !api.local.get().immersive;
     let key = null;
 
     function clear() {
@@ -46,7 +48,7 @@ export default {
     }
 
     function redraw(scene, local) {
-      const on = shown();
+      const on = drawn();
       const unit = api.pref("units", "m");
       const selected = local.selected ?? null;
       const items = [];
@@ -90,7 +92,7 @@ export default {
       update(scene, local, prev) {
         const was = prev.local;
         const content = scene === prev.scene && local === was;
-        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.selected === was.selected) return;
+        if (was && scene === prev.scene && !content && local.prefs === was.prefs && local.theme === was.theme && local.selected === was.selected && local.immersive === was.immersive) return;
         redraw(scene, local);
       },
       dispose() {

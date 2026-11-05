@@ -34,6 +34,7 @@ export const POSE_MS = 50; // at most one pose per object per this long
 export const HOLD_TTL_MS = 3_000; // drop a remote hold not refreshed in this long (and a landed one after it)
 export const HOLD_KEEPALIVE_MS = 1_000; // resend a still pose this often, so peers don't time it out
 const SEEN_SENDS = 512; // how many send ids to remember for de-duplication
+const GONE = 256; // how many bye'd sessions to remember
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const isStr = (v) => typeof v === "string" && v.length > 0;
@@ -74,8 +75,8 @@ export function cleanKeys(keys) {
 
 /**
  * Which of several peers' holds on one object counts: one still held beats a
- * landed one, then the earliest, then the lower session id (so every view
- * picks the same).
+ * landed one, then the earliest, then the lower session id. `since` is the
+ * holder's own clock, sent with every pose, so every view picks the same.
  * @param {{ session: string, since: number, landed: object | null }[]} holds
  */
 export function winningHold(holds) {
@@ -114,15 +115,17 @@ function newSession() {
 export function createPresence({
   handle,
   viewer = null,
-  session = newSession(),
+  session: firstSession = newSession(),
   now = () => Date.now(),
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (t) => clearTimeout(t),
 }) {
   let dead = false;
+  let session = firstSession;
+  let away = false; // said bye on pagehide; hello() comes back as a new session
 
   function broadcast(msg) {
-    if (dead && !msg.bye) return;
+    if ((dead || away) && !msg.bye) return;
     try {
       handle?.broadcast?.(msg);
     } catch {
@@ -153,7 +156,7 @@ export function createPresence({
   function sendState() {
     clearTimer(sendTimer);
     sendTimer = null;
-    if (dead) return;
+    if (dead || away) return;
     sentAt = now();
     broadcast({ type: PRESENCE, session, viewer, seq: ++seq, at: sentAt, keys });
     clearTimer(heartbeat);
@@ -230,6 +233,9 @@ export function createPresence({
     if (!p) return;
     clearTimer(p.ttl);
     peers.delete(s);
+    // gone without a bye (crashed, closed): its pose bookkeeping goes too,
+    // once none of its holds is left
+    if (![...holds.values()].some((bySession) => bySession.has(s))) lastPose.delete(s);
     peersChanged();
   }
 
@@ -237,6 +243,7 @@ export function createPresence({
     const s = msg.session;
     if (msg.bye === true) {
       gone.add(s);
+      if (gone.size > GONE) gone.delete(gone.values().next().value);
       dropPeer(s);
       dropHoldsOf(s);
       return;
@@ -293,7 +300,7 @@ export function createPresence({
     h.timer = null;
     h.dirty = false;
     h.sentAt = now();
-    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, seq: ++poseSeq });
+    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq });
   }
 
   // A pose that stays still still has to reach peers often enough that they
@@ -310,7 +317,8 @@ export function createPresence({
     if (dead || !isStr(ext) || !isStr(id) || !isObj(transform)) return;
     let h = held.get(id);
     if (!h) {
-      h = { ext, id, parent: null, transform: null, sentAt: -Infinity, timer: null, dirty: false };
+      // since: when this hold began, on our clock; every peer ranks holds by it
+      h = { ext, id, parent: null, transform: null, since: now(), sentAt: -Infinity, timer: null, dirty: false };
       held.set(id, h);
     }
     h.ext = ext; // the latest holder owns the release
@@ -364,11 +372,18 @@ export function createPresence({
     return holdsView;
   }
 
+  /**
+   * The peer session holding this object, or null. While this view holds it
+   * too, only a peer whose hold began first counts (winningHold), so of two
+   * views that grabbed it at once, exactly one is told the other has it.
+   */
   function heldBy(id) {
     const bySession = holds.get(id);
     if (!bySession) return null;
-    const w = winningHold([...bySession.values()].filter((h) => !h.landed));
-    return w ? w.session : null;
+    const theirs = [...bySession.values()].filter((h) => !h.landed);
+    const mine = held.get(id);
+    const w = winningHold(mine ? [...theirs, { session, since: mine.since, landed: null }] : theirs);
+    return w && w.session !== session ? w.session : null;
   }
 
   function holdsChanged(ids) {
@@ -424,7 +439,10 @@ export function createPresence({
       prev.timer = setTimer(() => dropHold(id, s), HOLD_TTL_MS);
       return holdsChanged([id]);
     }
-    const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since: now(), timer: null };
+    // when the hold began, as its holder says (so every view ranks it the
+    // same); an older peer that doesn't say: when we first heard of it
+    const since = Number.isFinite(msg.since) ? msg.since : now();
+    const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since, timer: null };
     if (prev && prev !== h) clearTimer(prev.timer);
     h.viewer = typeof msg.viewer === "string" ? msg.viewer : null;
     h.parent = isStr(msg.parent) ? msg.parent : null;
@@ -455,6 +473,28 @@ export function createPresence({
   // say hello, so peers know we're here before our first key
   sendState();
 
+  // The page is going away (pagehide), and the tool's cleanup may never run:
+  // put our holds back and say bye now, then stay quiet.
+  function goodbye() {
+    if (dead || away) return;
+    for (const h of [...held.values()]) release(h.ext, h.id);
+    broadcast({ type: PRESENCE, session, bye: true });
+    away = true;
+    clearTimer(sendTimer);
+    sendTimer = null;
+    clearTimer(heartbeat);
+    heartbeat = null;
+  }
+
+  // Back from the back-forward cache: peers took our bye as final, so come
+  // back as a new session, with the state we have.
+  function hello() {
+    if (dead || !away) return;
+    away = false;
+    session = newSession();
+    sendState();
+  }
+
   function dispose() {
     if (dead) return;
     dead = true;
@@ -478,7 +518,7 @@ export function createPresence({
     receivers.clear();
     holdWatchers.clear();
     // the bye also ends our holds on every peer
-    broadcast({ type: PRESENCE, session, bye: true });
+    if (!away) broadcast({ type: PRESENCE, session, bye: true });
   }
 
   const listen = (bag) => (fn) => {
@@ -488,7 +528,9 @@ export function createPresence({
   };
 
   return {
-    session,
+    get session() {
+      return session;
+    },
     set,
     clear,
     get,
@@ -502,6 +544,8 @@ export function createPresence({
     heldBy,
     watchHolds: listen(holdWatchers),
     settle,
+    goodbye,
+    hello,
     dispose,
   };
 }

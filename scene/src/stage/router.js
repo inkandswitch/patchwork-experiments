@@ -11,6 +11,7 @@
 // target isn't the canvas (labels, overlays, edges) is left to the DOM.
 
 import { offer } from "./chain.js";
+import { fromEmbed } from "../embed.js";
 
 /** How far (px) a press may wander and still be a tap / click. */
 export const SLOP = 4;
@@ -381,6 +382,11 @@ export function createRouter(o) {
 
   function onPointerMove(e) {
     const g = gesture && gesture.pointerId === e.pointerId ? gesture : null;
+    // A mouse that moves with no button down was released where we didn't
+    // hear it (outside the window, behind a dialog): the gesture is cancelled
+    // (put back, never committed where nobody saw it land), rather than
+    // carrying on with the hover. (Chrome says so first, as a lost capture.)
+    if (g && !g.dead && g.pointerType === "mouse" && e.buttons === 0) return onPointerCancel(e);
     if (e.target !== canvas && !g) return;
     const locked = isLocked();
     if (!locked) lastAt = { clientX: e.clientX, clientY: e.clientY };
@@ -446,6 +452,15 @@ export function createRouter(o) {
     setCursor(null);
   }
 
+  // The browser took the capture away without a pointerup (the element was
+  // hidden, the capture lost to another): the gesture is cancelled, never
+  // committed.
+  function onLostCapture(e) {
+    const g = gesture;
+    if (!g || g.dead || !g.session || g.pointerId !== e.pointerId) return;
+    onPointerCancel(e);
+  }
+
   function onPointerLeave() {
     cancelHover();
     o.onHover?.(null);
@@ -480,18 +495,8 @@ export function createRouter(o) {
 
   const keyEvent = (type, e) => make(type, e, { noHit: true });
 
-  /** Is this key from a document embedded in the stage (the inspector's About)? Then it's that tool's. */
-  function fromEmbed(e) {
-    const path = e.composedPath?.() ?? [];
-    for (const n of path.length ? path : [e.target]) {
-      if (n === keyRoot) return false;
-      if (n?.classList?.contains?.("about-embed")) return true;
-    }
-    return !!e.target?.closest?.(".about-embed");
-  }
-
   function onKeyDown(e) {
-    if (fromEmbed(e)) return;
+    if (fromEmbed(e, keyRoot)) return;
     const target = e.composedPath?.()[0] ?? e.target;
     if (isTyping(target)) {
       if (e.key === "Escape") target.blur?.();
@@ -528,7 +533,7 @@ export function createRouter(o) {
   }
 
   function onKeyUp(e) {
-    if (fromEmbed(e)) return;
+    if (fromEmbed(e, keyRoot)) return;
     const code = e.code || e.key;
     const c = down.get(code);
     if (!c) return;
@@ -547,24 +552,54 @@ export function createRouter(o) {
     }
   }
 
-  const onBlur = () => releaseKeys();
+  // Leaving the window (Cmd-Tab, a native dialog) mid-gesture: its release
+  // may never come back to us, so the gesture is cancelled (put back) now.
+  function dropGesture() {
+    const g = gesture;
+    if (!g) return;
+    killGesture();
+    gesture = null;
+    release(g);
+    setCursor(null);
+  }
+  const onBlur = () => {
+    dropGesture();
+    releaseKeys();
+  };
   const onVisibility = () => {
-    if (doc.visibilityState === "hidden") releaseKeys();
+    if (doc.visibilityState !== "hidden") return;
+    dropGesture();
+    releaseKeys();
   };
 
   // ─── the arm stack ────────────────────────────────────────────────────────
 
   let lockRequested = false;
   let wasLocked = isLocked();
+  let refusalTold = true; // has the latest request's refusal been told (once, however the browser says it)
+
+  // The browser said no to the latest request (pointerlockerror, or the
+  // request's promise rejecting; often both): lockLost({ refused: true }), once.
+  function lockRefused(err) {
+    if (!lockRequested || refusalTold || isLocked()) return;
+    refusalTold = true;
+    if (err) console.warn("[scene] pointer lock refused", err);
+    for (const a of [...stack]) if (a.lock) call(a.owner, a.handlers, "lockLost", { refused: true });
+  }
 
   function requestLockNow() {
     lockRequested = true;
+    refusalTold = false;
+    let p;
     try {
-      const p = o.requestLock ? o.requestLock() : canvas.requestPointerLock?.();
-      return p && typeof p.then === "function" ? p : Promise.resolve();
+      p = o.requestLock ? o.requestLock() : canvas.requestPointerLock?.();
+      p = p && typeof p.then === "function" ? p : Promise.resolve();
     } catch (err) {
-      return Promise.reject(err);
+      p = Promise.reject(err);
     }
+    // the refusal is told through lockLost; the caller may still await it
+    p.catch((err) => lockRefused(err));
+    return p;
   }
   function exitLockNow() {
     lockRequested = false;
@@ -610,7 +645,7 @@ export function createRouter(o) {
     if (replace) for (const a of stack.filter((a) => a.owner === owner)) remove(a);
     const entry = { owner, handlers: handlers ?? {}, lock: !!lock, suspended: false };
     stack.push(entry);
-    if (entry.lock) requestLockNow().catch((err) => console.warn(`[scene] ${owner}: pointer lock refused`, err));
+    if (entry.lock) requestLockNow().catch(() => {}); // a refusal reaches it as lockLost({ refused: true })
     settle(prevTop);
     return () => {
       const before = top();
@@ -627,14 +662,12 @@ export function createRouter(o) {
     const now = isLocked();
     const lost = wasLocked && !now;
     wasLocked = now;
+    if (now) refusalTold = true; // granted: nothing to refuse
     if (!lost) return;
-    for (const a of [...stack]) if (a.lock) call(a.owner, a.handlers, "lockLost");
+    for (const a of [...stack]) if (a.lock) call(a.owner, a.handlers, "lockLost", { refused: false });
     releaseKeys();
   }
-  function onLockError() {
-    if (!lockRequested) return;
-    for (const a of [...stack]) if (a.lock) call(a.owner, a.handlers, "lockLost");
-  }
+  const onLockError = () => lockRefused(null);
 
   // ─── stopping ─────────────────────────────────────────────────────────────
 
@@ -658,6 +691,7 @@ export function createRouter(o) {
     [port, "contextmenu", onContextMenu, { capture: true }],
     [port, "wheel", onWheel, { capture: true, passive: false }],
     [canvas, "pointerleave", onPointerLeave, undefined],
+    [canvas, "lostpointercapture", onLostCapture, undefined],
     [keyRoot, "keydown", onKeyDown, undefined],
     [keyRoot, "keyup", onKeyUp, undefined],
     [win, "blur", onBlur, undefined],

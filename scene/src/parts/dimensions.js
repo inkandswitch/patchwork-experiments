@@ -218,6 +218,21 @@ export function create(api) {
     });
   }
 
+  /** Save a measured dimension (two anchors) and select it. @returns {string | null} its id */
+  function addDimension(value) {
+    const isAnchor = (x) => !!x && typeof x === "object" && Array.isArray(x.world);
+    if (!isAnchor(value?.a) || !isAnchor(value?.b)) return null;
+    const id = typeof value.id === "string" && value.id ? value.id : api.newId("d");
+    // fresh plain data: automerge won't take a value that's already in a doc
+    const dim = JSON.parse(JSON.stringify({ a: value.a, b: value.b, label: value.label ?? null }));
+    api.change((d) => {
+      if (!d.dimensions) d.dimensions = {};
+      d.dimensions[id] = dim;
+    });
+    select(id);
+    return id;
+  }
+
   function remove(id) {
     if (id == null) return;
     api.change((d) => {
@@ -395,6 +410,14 @@ export function create(api) {
   const applies = (target, { scene, local } = {}) => target == null && selectedOf(scene ?? api.scene(), local ?? api.local.get()) != null;
 
   const commands = [
+    {
+      // a measuring tool's way to save what it measured: run(null, { a, b, id?, label? })
+      id: "add",
+      name: "Add dimension",
+      show: [],
+      state: (target) => (target == null ? { title: "Save a dimension between two anchors" } : null),
+      run: (target, value) => addDimension(value),
+    },
     {
       id: "delete",
       name: "Delete dimension",

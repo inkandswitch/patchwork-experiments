@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { declutter, placeDimensionLabel } from "./stage/viewport.js";
 
+// the ranks the parts give their labels: dimensions 3, axes 2, bounds 1, grid 0
+const RANK = { "dimension-label": 3, "axis-label": 2, "bounds-label": 1, "grid-label": 0 };
+
 function label(cls, x, y, w = 40, h = 14) {
   const el = document.createElement("div");
   el.className = `label ${cls}`;
   el.textContent = cls;
   Object.defineProperty(el, "offsetWidth", { value: w });
   Object.defineProperty(el, "offsetHeight", { value: h });
-  return { el, p: { x, y } };
+  return { el, p: { x, y }, rank: RANK[cls] };
 }
 
 describe("label declutter", () => {

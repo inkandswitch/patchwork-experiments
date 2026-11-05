@@ -1,7 +1,6 @@
 /* scene.measure: the hint pill and the live length label (ported from
    styles.css .measure-hint and .dimension-label[data-preview]). */
 
-/* three classes, so it beats the stage's "overlay children take the pointer" */
 .scene-stage .stage-overlay > .measure-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   top: var(--studio-space-xs, 0.375rem);

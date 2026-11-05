@@ -75,3 +75,10 @@ export function parseAutomergeUrl(input) {
   if (idRe.test(s)) return `automerge:${s}`;
   return null;
 }
+
+/**
+ * The outline's own row-drag mime: a row being moved inside the tree, never a
+ * document being added. Only `types` is readable during dragover, so the kind
+ * of drag has to be legible from the mime alone.
+ */
+export const ROW_MIME = "application/x-scene-object";

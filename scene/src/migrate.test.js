@@ -55,3 +55,19 @@ describe("upgrading groups", () => {
     expect(other).toEqual(d);
   });
 });
+
+describe("the containers every scene has", () => {
+  it("makes traits, view and dimensions on a scene doc that lacks them, once", () => {
+    const d = { objects: { a: { name: "A" } }, order: ["a"] };
+    expect(needsCoreMigration(d)).toBe(true);
+    migrateCore(d);
+    expect(d).toMatchObject({ traits: {}, view: {}, dimensions: {} });
+    expect(needsCoreMigration(d)).toBe(false);
+    const kept = { objects: {}, traits: { x: 1 }, view: { units: "mm" }, dimensions: {} };
+    expect(needsCoreMigration(kept)).toBe(false);
+  });
+
+  it("leaves a doc that isn't a scene alone", () => {
+    expect(needsCoreMigration({})).toBe(false);
+  });
+});

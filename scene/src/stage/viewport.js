@@ -222,16 +222,10 @@ export function depthRange({ dist, radius, clear, held = null }) {
 
 // Which labels give way when they overlap: a label is hidden if it would cover
 // one of higher (or equal, earlier) rank, and rank NEVER_HIDE and up never
-// hide. An item's own `rank` decides; these class ranks are the fallback, so
-// labels ported from the old viewport keep their order.
-const LABEL_RANK = { "dimension-label": 3, "axis-label": 2, "triad-label": 2, "bounds-label": 1, "grid-label": 0 };
+// hide. Each item says its own `rank` (1 if it doesn't).
 const NEVER_HIDE = 2;
 
-function labelRank(entry) {
-  if (Number.isFinite(entry.rank)) return entry.rank;
-  for (const c of entry.el.classList) if (c in LABEL_RANK) return LABEL_RANK[c];
-  return 1;
-}
+const labelRank = (entry) => (Number.isFinite(entry.rank) ? entry.rank : 1);
 
 /** Hide labels that overlap one of higher rank. entries: { el, p: { x, y }, rank? }; caches each el's size. */
 export function declutter(entries) {
@@ -285,8 +279,8 @@ export function placeDimensionLabel(pa, pb, w, h, gap = 14) {
 /**
  * DOM labels that track 3D points, one set per owner (an extension id), so
  * each replaces its own and every owner's are decluttered together.
- * An item: { key (required), text, position? (world [x,y,z]; `world` is the
- * old name), ends?: [p, p] (a segment: placed off it when it's short),
+ * An item: { key (required), text, position? (world [x,y,z]), ends?: [p, p]
+ * (a segment: placed off it when it's short),
  * screen?: { x, y } (port px), className?, data? (data-* attributes), rank?,
  * onPointerDown? }.
  */
@@ -311,7 +305,7 @@ export class LabelLayer {
         this.el.append(el);
       }
       prev.delete(item.key);
-      const at = item.position ?? item.world ?? null;
+      const at = item.position ?? null;
       entry.ends = Array.isArray(item.ends) && item.ends.length === 2 ? item.ends.map(v3) : null;
       entry.world = at ? v3(at) : entry.ends ? entry.ends[0].clone().add(entry.ends[1]).multiplyScalar(0.5) : null;
       entry.screen = item.screen ?? null;

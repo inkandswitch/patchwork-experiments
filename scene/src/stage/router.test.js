@@ -540,6 +540,7 @@ describe("the arm stack", () => {
       lockEl = null;
       document.dispatchEvent(new Event("pointerlockchange"));
       expect(armed.lockLost).toHaveBeenCalledTimes(1);
+      expect(armed.lockLost).toHaveBeenCalledWith({ refused: false });
       expect(armed.keyup).toHaveBeenCalledTimes(1);
       expect(t.router.armedOwner()).toBe("fps");
       await t.router.relock("fps");
@@ -551,6 +552,56 @@ describe("the arm stack", () => {
     } finally {
       delete document.pointerLockElement;
     }
+  });
+});
+
+describe("a refused lock", () => {
+  it("is told once as lockLost({ refused: true }), however the browser says no", async () => {
+    const t = setup();
+    t.requestLock.mockImplementation(() => Promise.reject(new Error("WrongDocumentError")));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const armed = { lockLost: vi.fn() };
+    t.router.arm("fps", armed, { lock: true });
+    document.dispatchEvent(new Event("pointerlockerror"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(armed.lockLost.mock.calls).toEqual([[{ refused: true }]]);
+    // asked again (relock) and refused again: told again; the caller may await it too
+    await expect(t.router.relock("fps")).rejects.toThrow();
+    expect(armed.lockLost).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
+});
+
+describe("a release that never came", () => {
+  it("a mouse moving with no button down cancels the gesture: put back, never committed", () => {
+    const t = setup();
+    const session = { move: vi.fn(), end: vi.fn(), cancel: vi.fn() };
+    t.inputs.hand = { press: () => session };
+    down(t, { x: 10 });
+    move(t, { x: 30, buttons: 1 });
+    // released outside the window: the next move comes with nothing down
+    move(t, { x: 60, buttons: 0 });
+    expect(session.cancel).toHaveBeenCalledTimes(1);
+    expect(session.end).not.toHaveBeenCalled();
+    expect(session.move).toHaveBeenCalledTimes(1);
+    move(t, { x: 70, buttons: 0 });
+    expect(session.move).toHaveBeenCalledTimes(1);
+  });
+  it("leaving the window (blur) or a lost capture cancels it, never commits", () => {
+    const t = setup();
+    const session = { move: vi.fn(), end: vi.fn(), cancel: vi.fn() };
+    t.inputs.hand = { press: () => session };
+    down(t, { x: 10 });
+    move(t, { x: 30, buttons: 1 });
+    window.dispatchEvent(new Event("blur"));
+    expect(session.cancel).toHaveBeenCalledTimes(1);
+    up(t, { x: 30 });
+    expect(session.end).not.toHaveBeenCalled();
+    down(t, { x: 10, id: 2 });
+    ptr("lostpointercapture", t.canvas, { id: 2 });
+    expect(session.cancel).toHaveBeenCalledTimes(2);
+    expect(session.end).not.toHaveBeenCalled();
   });
 });
 

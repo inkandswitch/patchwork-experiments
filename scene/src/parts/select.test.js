@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, until, settle } from "../test/stage-harness.js";
 import select from "./select.js";
-import { peerColor, peerSelections, hashString } from "./select-peers.js";
+import { peerColor, peerSelections, hashString } from "../peers.js";
 
 const SELECT = { meta: { id: "scene.select" }, module: select };
 const KIT = { id: "model", extensions: ["scene.select"] };

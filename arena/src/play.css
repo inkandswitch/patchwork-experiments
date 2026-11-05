@@ -5,9 +5,12 @@
   font: 13px/1.3 var(--scene-font, system-ui, sans-serif);
   color: #fff;
 }
+/* an overlay's children catch the pointer by default; the HUD covers the
+   whole view, so it doesn't (only its buttons do) */
 .scene-stage .arena-hud:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   inset: 0;
+  pointer-events: none;
 }
 .scene-stage .arena button:where(:not(.about-embed *), .about-embed .scene-tool *) {
   pointer-events: auto;
@@ -17,16 +20,23 @@
   padding: 6px 14px;
   cursor: pointer;
 }
-.scene-stage .arena-start:where(:not(.about-embed *), .about-embed .scene-tool *) {
+.scene-stage .arena-lobby:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
+  left: 12px;
+  right: 12px;
+  display: grid;
+  justify-items: center;
   gap: 8px;
+}
+.scene-stage .arena-start:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 8px;
   align-items: center;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: 20px;
   background: rgb(20 22 28 / 0.72);
   pointer-events: auto;
 }
@@ -40,7 +50,8 @@
   color: #fff;
 }
 .scene-stage .arena-count:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  padding-right: 10px;
+  padding: 0 10px 0 4px;
+  text-align: center;
   opacity: 0.85;
 }
 .scene-stage .arena-crosshair:where(:not(.about-embed *), .about-embed .scene-tool *) {
@@ -79,10 +90,6 @@
   min-width: 140px;
 }
 .scene-stage .arena-start + .arena-scores:where(:not(.about-embed *), .about-embed .scene-tool *) {
-  position: absolute;
-  top: 56px;
-  left: 50%;
-  transform: translateX(-50%);
   padding: 6px 12px;
   border-radius: 10px;
   background: rgb(20 22 28 / 0.6);
@@ -112,9 +119,12 @@
   left: 50%;
   bottom: 14px;
   transform: translateX(-50%);
+  /* clear of the ammo (right) and the corner buttons (left); wraps when narrow */
+  width: max-content;
+  max-width: calc(100% - 240px);
+  text-align: center;
   opacity: 0.7;
   text-shadow: 0 1px 2px #000;
-  white-space: nowrap;
 }
 .scene-stage .arena-resume:where(:not(.about-embed *), .about-embed .scene-tool *) {
   position: absolute;

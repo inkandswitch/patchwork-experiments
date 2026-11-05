@@ -156,6 +156,25 @@ describe("the host", () => {
     expect(ids()).not.toContain("seats:scene");
   });
 
+  it("keeps lingering while something it requires is busy (the hand carrying the table's card)", async () => {
+    const seats = metas.find((m) => m.id === "seats");
+    seats.requires = ["sidebar"];
+    try {
+      const { host } = make();
+      host.sync(doc({ traits: { seats: {} } }));
+      await flush();
+      host.sync(doc());
+      busy.add("sidebar");
+      await timers.advance(LINGER_MS + BUSY_RECHECK_MS * 3);
+      expect(log).not.toContain("dispose:seats");
+      busy.delete("sidebar");
+      await timers.advance(BUSY_RECHECK_MS);
+      expect(log).toContain("dispose:seats");
+    } finally {
+      delete seats.requires;
+    }
+  });
+
   it("cancels the linger when the doc calls for it again", async () => {
     const { host } = make();
     host.sync(doc({ traits: { seats: {} } }));

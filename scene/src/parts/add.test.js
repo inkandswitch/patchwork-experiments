@@ -103,6 +103,17 @@ describe("scene.add", () => {
     expect(objectsOf(s).map((o) => o.name)).toEqual(["Dropped"]);
   });
 
+  it("takes a drop anywhere in the stage, not only on the canvas (the side panel too)", async () => {
+    await mount();
+    const panel = document.createElement("div");
+    s.root.append(panel);
+    const e = dragEvent("drop", { "text/x-patchwork-dnd": JSON.stringify({ items: [{ url: stl.url, name: "Beside" }] }) });
+    panel.dispatchEvent(e);
+    await settle();
+    expect(e.defaultPrevented).toBe(true);
+    expect(objectsOf(s).map((o) => o.name)).toEqual(["Beside"]);
+  });
+
   it("refuses what nothing can show, and a drop with no url", async () => {
     await mount();
     const todo = s.repo.add({ "@patchwork": { type: "todo" }, title: "x" });
@@ -176,7 +187,7 @@ describe("scene.add", () => {
     input.dispatchEvent(typed);
     expect(typed.defaultPrevented).toBe(false);
     const embed = document.createElement("div");
-    embed.className = "about-embed";
+    embed.setAttribute("data-stage-embed", "");
     const inner = document.createElement("span");
     embed.append(inner);
     s.root.append(embed);

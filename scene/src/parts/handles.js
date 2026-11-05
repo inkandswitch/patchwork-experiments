@@ -20,18 +20,14 @@ import css from "./handles.css?inline";
 import { handleSpecs, handleBase, closestOnLine, clampValue } from "../handles.js";
 import { applyMatrix } from "../transform.js";
 import { roundForDisplay } from "../units.js";
+import { effectiveTool } from "../current-tool.js";
+
+export { effectiveTool };
 
 /** How close (port px) the pointer must be to a knob to grab it. */
 export const GRAB_PX = 12;
 
 // ─── pure helpers (exported for tests) ──────────────────────────────────────
-
-/** What a plain drag does for this viewer: local choice, then the doc's suggestion. */
-export function effectiveTool(local, doc) {
-  const v = doc?.view ?? {};
-  const t = local?.tool ?? v.tool ?? v.defaultMode ?? v.defaultGizmo ?? "move";
-  return t === "translate" ? "move" : t;
-}
 
 /** The provider (scene:source metadata) an object was built by, or null. */
 export function providerOf(sources, providerId) {

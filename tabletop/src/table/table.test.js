@@ -145,6 +145,7 @@ function mount({ viewer = "alice", registries = {} } = {}) {
     notify: (m, kind) => calls.toasts.push([m, kind]),
     schedule: () => calls.refreshes++,
     overlay: () => (calls.overlay = document.createElement("div")),
+    presence: { get: () => calls.peers ?? {}, watch: (fn) => ((calls.presenceWatch = fn), () => {}) },
     style() {},
     box: () => null,
     camera: { set: (c) => (calls.camera = c) },
@@ -204,11 +205,23 @@ describe("the table extension", () => {
     });
     m.x.update(m.api.scene());
     const select = m.calls.overlay.querySelector(".tabletop-seat");
+    // bob's seat is his, but he isn't here
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Watching", "Player 1", "Player 2 (away)"]);
+    m.calls.peers = { s1: { viewer: "bob", keys: {} } };
+    m.calls.presenceWatch();
     expect([...select.options].map((o) => o.textContent)).toEqual(["Watching", "Player 1", "Player 2 (taken)"]);
     select.value = "p1";
     select.dispatchEvent(new Event("change"));
     expect(m.doc.traits[SEATS].p1.player).toBe("carol");
     expect(m.calls.camera).toEqual({ position: [0, 1, 1], target: [0, 0, 0] });
+    // taking a seat from someone who is here asks first
+    const confirm = vi.spyOn(globalThis, "confirm").mockReturnValue(false);
+    select.value = "p2";
+    select.dispatchEvent(new Event("change"));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(m.doc.traits[SEATS].p2.player).toBe("bob");
+    expect(select.value).toBe("p1");
+    confirm.mockRestore();
   });
 
   it("lays out a deck dropped on the table when its provider can", async () => {

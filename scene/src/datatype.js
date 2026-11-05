@@ -8,6 +8,8 @@ export const SceneDatatype = {
     doc.objects = {};
     doc.order = [];
     doc.dimensions = {};
+    // made here, so no two peers ever create it at once (STAGE.md, "Migrations")
+    doc.traits = {};
     doc.view = { ...DEFAULT_VIEW };
     doc.camera = null;
   },
