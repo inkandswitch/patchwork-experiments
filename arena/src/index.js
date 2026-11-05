@@ -15,6 +15,9 @@ export const plugins = [
     id: "arena",
     name: "Arena",
     traits: ["arena.level", "arena.target", "arena.spawn"],
+    // a level opens with no editing kit (see build.js), so it brings what
+    // playing needs: Enter to play goes through the key map, and notices
+    requires: ["scene.keys", "scene.notices"],
     async load() {
       return (await import("./play.js")).default;
     },

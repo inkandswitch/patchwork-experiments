@@ -77,6 +77,11 @@ export default {
         if (!d.order) d.order = [];
         d.objects[gid] = { kind: "group", name: "Arena", group: null, visible: true, opacity: 1 };
         d.order.push(gid);
+        // a level is for playing: whoever opens it gets the game, not the
+        // editor (the "Arena level" kit brings the editor back, per viewer).
+        // Only the sample arena says so: a target added to a boat leaves the
+        // boat's kits alone.
+        if (d.view && d.view.kits === undefined) d.view.kits = [];
         for (const b of blocks) {
           const id = api.newId("o");
           d.objects[id] = levelObject(b, d.traits[LEVEL].kinds[b.kind] ?? urls[b.kind], gid);
