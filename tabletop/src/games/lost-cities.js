@@ -34,7 +34,7 @@ Draw the top card of the deck, or the top card of any discard pile except the on
 
 The game ends when the last card of the deck is drawn. Each expedition you started scores the sum of its numbers minus 20, times one more than the number of wagers in it; one with 8 or more cards scores 20 more. Expeditions you never started score nothing.
 
-In this scene: choose your seat with the Seat picker at the top left of the table. Once both players are seated, your two clients shuffle the deck between them (a few seconds) so that neither of you knows its order. Your hand is the tray at your edge, and only you see its faces; a card's face appears for you once the other player's client has handed over its key, so play with both of you at the table. Carry the top card of the deck to your tray to draw it. A card played face up is seen by everyone. F flips a card while you carry it. Right-click a card in the deck to shuffle its pile.`;
+In this scene: choose your seat with the Seat picker at the top right of the table. Once both players are seated, your two clients shuffle the deck between them (a few seconds) so that neither of you knows its order. Your hand is the tray at your edge, and only you see its faces; a card's face appears for you once the other player's client has handed over its key, so play with both of you at the table. Carry the top card of the deck to your tray to draw it. A card played face up is seen by everyone. F flips a card while you carry it. Right-click a card in the deck to shuffle its pile.`;
 
 /** The underside every card shares: a back panel with a gold diamond. */
 const underside = () => [

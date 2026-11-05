@@ -119,11 +119,13 @@ arrives, so you see what you drew, and back over if you carry it out again
 (F decides for yourself). A revealed name shows in the outline and inspector
 and is never written back.
 
-**The Table panel**: pick your seat (or watch; sitting is written to the
-doc, so others see the seat as taken, and a seat with a `camera` moves your
-view there) and see what each deck is doing. A table opens on it.
+**The seat picker**, at the top right of the table: pick your seat (or
+watch; sitting is written to the doc, so others see the seat as taken, and a
+seat with a `camera` moves your view there). What each deck is doing shows
+as a line in the scene's notices, at the top left.
 
-**Shuffle** (`S` over a card, or *Shuffle pile* in the inspector) shuffles
+**Shuffle** (`S` over a card, or *Shuffle pile* in its right-click menu)
+shuffles
 the pile it's in — the cards of the same deck whose footprints overlap it by
 half or more — through its deck: a plain deck permutes its entries; a secure
 deck has the players reshuffle them.
@@ -151,7 +153,7 @@ createResolver({ repo, handle /* the deck doc */, viewer, onChange }) → {
                       //     nameOf(player) → their seat's name }
   looks(),            // → Map objectId → { sourceUrl, name } for what this viewer may see now
                       //   (only the deck's own objects are taken from it)
-  status(),           // → a line for the HUD and the Table panel, or null
+  status(),           // → a line for the HUD (the scene's notices), or null
   shuffle(ids),       // shuffle these objects' cards among themselves → how many (0: nothing to do)
   dispose(),
 }
@@ -176,7 +178,8 @@ See card-table's README for how, and for what it doesn't do yet.
 **Older tables.** Tables made before this package had a scene extension kept
 these as top-level fields (`seats`, `zone`, `hidden`) and their plain decks as
 `scene-secrets` docs; the extension moves them into traits (and renames the
-deck's type) the first time a table is opened.
+deck's type) the first time a table is opened; a table with no `view.kits`
+gets `[]`, so it opens without the editor's toolbar and sidebar.
 
 ## Documents
 
@@ -244,7 +247,11 @@ shuffled into one group, dealt, and the rest stacked. Its seats, empty
 (`tabletop.seats`). If anything is hidden, a doc per deck, made first, which
 its cards name (`tabletop.hidden`).
 Its view opens in the hand (`view.defaultMode: "hand"`) with snapping on, the
-grid and axes off, units in cm, and the Table panel first (`view.panels`).
+grid and axes off, units in cm, and suggests no kits (`view.kits: []`): a
+table opens with no toolbar or sidebar, just the seat picker, the scene's
+notices and its Kits button (where a viewer can turn the editor on for
+themselves). The extension `requires` what playing needs: the scene's hand,
+key map, right-click menu, framing and notices.
 
 ## Layout
 
@@ -258,7 +265,7 @@ grid and axes off, units in cm, and the Table panel first (`view.panels`).
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
 | `src/setup.js` | a game → a fresh scene doc and its decks: shuffle, deal, stack (pure) |
-| `src/table/extension.js` | the scene extension: decks, the Table panel, Shuffle, laying out a dropped deck, drawing face up, upgrading old tables |
+| `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, laying out a dropped deck, drawing face up, upgrading old tables |
 | `src/table/visibility.js` | who may see what: zones, seats, face up (pure) |
 | `src/table/plain-deck.js` | the plain deck: its datatype and resolver |
 | `src/glb.js` | the GLB encoder, copied from the scene package |
