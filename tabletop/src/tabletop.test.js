@@ -141,7 +141,7 @@ describe("setting up a table", () => {
     expect(pieces).toHaveLength(1 + 22 + 18 + 14 + 18 + 6);
     expect(objects.filter((o) => o.kind === "group").map((g) => g.name)).toContain("Level 1 (22)");
     expect(scene.order).toHaveLength(objects.length);
-    expect(scene.view).toMatchObject({ defaultMode: "hand", snap: true, panels: ["tabletop.table", "inspector"] });
+    expect(scene.view).toMatchObject({ defaultMode: "hand", snap: true, kits: [] });
 
     const board = pieces.find((o) => o.name === "Island board");
     expect(board).toMatchObject({ locked: true, parent: null, providerId: "file-glb", renderUrl: null, sourceUrl: game.doc().pieces.board.glbUrl, infoUrl: game.url });

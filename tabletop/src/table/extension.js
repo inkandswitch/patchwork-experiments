@@ -4,6 +4,12 @@
 // the table, and drawing a card into your hand face up. The scene itself knows
 // none of this (scene/README, "Extensions").
 //
+// It is built only from the scene's extension contract (scene/STAGE.md): the
+// hand, keys, menu, frame and notices it relies on are other extensions it
+// `requires`; its own UI is a seat picker over the table (an overlay), deck
+// trouble as HUD lines, and Shuffle as a command. Nothing here assumes a
+// sidebar or toolbar exists.
+//
 // Decks: a hidden object names its deck (trait tabletop.hidden: { by: url }).
 // A plain deck (plain-deck.js) is read here; any other kind through the
 // `tabletop:deck` plugin for its datatype (card-table's secure deck), whose
@@ -13,7 +19,6 @@
 import { HIDDEN, SEATS, ZONE, docUrl, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf, visibility, zones } from "./visibility.js";
 import { LEGACY_PLAIN_DECK, PLAIN_DECK, plainResolver } from "./plain-deck.js";
 
-export const PANEL = "tabletop.table";
 
 const el = (tag, props = {}, ...children) => {
   const e = document.createElement(tag);
@@ -30,6 +35,8 @@ const el = (tag, props = {}, ...children) => {
 /** Does this scene doc still have the fields the scene used to own? */
 export function needsMigration(d) {
   if (d?.seats !== undefined) return true;
+  // a table suggests no kits: playing needs none of the editing UI
+  if (d?.traits?.[SEATS] && d.view && d.view.kits === undefined) return true;
   return Object.values(d?.objects ?? {}).some((o) => o && (o.zone !== undefined || o.hidden !== undefined));
 }
 
@@ -39,8 +46,8 @@ export function migrate(d) {
     if (!d.traits) d.traits = {};
     if (d.traits[SEATS] === undefined && d.seats) d.traits[SEATS] = JSON.parse(JSON.stringify(d.seats));
     delete d.seats;
-    if (d.view && d.view.panels === undefined) d.view.panels = [PANEL, "inspector"];
   }
+  if (d.traits?.[SEATS] && d.view && d.view.kits === undefined) d.view.kits = [];
   for (const o of Object.values(d.objects ?? {})) {
     if (!o) continue;
     for (const [field, key] of [
@@ -65,16 +72,14 @@ export default {
     let looks = new Map();
     let regions = null;
     let dead = false;
+    // a deck learned something (a card's face, a shuffle): read the lens again
+    const refresh = () => {
+      if (dead) return;
+      if (scene) lens(scene);
+      api.schedule(() => {});
+    };
 
-    /** The resolver factory for a deck doc's datatype: { create, module } or null. */
-    async function deckProvider(type) {
-      if (!type || type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return { create: plainResolver, module: null };
-      const registry = await api.registry("tabletop:deck");
-      const p = registry?.filter?.((x) => Array.isArray(x.supportedDatatypes) && x.supportedDatatypes.includes(type))?.[0];
-      if (!p) return null;
-      const module = (await registry.load(p.id))?.module ?? null;
-      return module?.createResolver ? { create: module.createResolver, module } : null;
-    }
+    const deckProvider = (type) => deckProviderFor(api.registry, type);
 
     function watchDecks(urls) {
       for (const [url, deck] of decks) {
@@ -102,14 +107,14 @@ export default {
           if (dead || decks.get(url) !== deck) return;
           if (!provider) {
             deck.problem = `Some cards can't be shown: nothing installed reads “${type}” decks.`;
-            return api.refresh();
+            return refresh();
           }
-          deck.resolver = provider.create({ repo, handle: h, viewer, onChange: () => api.refresh() });
-          api.refresh();
+          deck.resolver = provider.create({ repo, handle: h, viewer, onChange: () => refresh() });
+          refresh();
         })().catch((err) => {
           console.warn("[tabletop] deck unavailable", url, err);
           deck.problem = `Some cards can't be shown: ${err?.message ?? err}`;
-          api.refresh();
+          refresh();
         });
       }
     }
@@ -142,80 +147,54 @@ export default {
     function shuffleStack(id) {
       const by = hiddenBy(scene?.objects?.[id]);
       const deck = by ? decks.get(by) : null;
-      if (!deck?.resolver?.shuffle) return api.toast(by ? "This deck can't be shuffled." : "Only cards in a deck can be shuffled.", "error");
+      if (!deck?.resolver?.shuffle) return api.notify(by ? "This deck can't be shuffled." : "Only cards in a deck can be shuffled.", "error");
       const n = deck.resolver.shuffle(stackOf(id));
-      if (!n) return api.toast("There's nothing here to shuffle with it.", "error");
-      api.toast(`Shuffling ${n} card${n === 1 ? "" : "s"}…`);
+      if (!n) return api.notify("There's nothing here to shuffle with it.", "error");
+      api.notify(`Shuffling ${n} card${n === 1 ? "" : "s"}…`);
     }
 
-    /** A deck dropped on the table: its cards, face down in a stack, in a group named for it. */
-    async function drop({ url, doc, handle, group }) {
-      const type = doc?.["@patchwork"]?.type ?? null;
-      if (type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return false; // it has no layout of its own
-      const provider = await deckProvider(type).catch(() => null);
-      if (!provider?.module?.placement) return false;
-      const place = provider.module.placement(doc);
-      if (!place) {
-        api.toast("That deck is already on a table.", "error");
-        return true;
+    // ── where you sit: a picker over the table, since a table has no sidebar ──
+    const overlay = api.overlay();
+    overlay.classList.add("tabletop-overlay");
+    const seatPicker = el("select", { class: "tabletop-seat", "aria-label": "Seat", title: "Where you sit: what's in your seat's private zone (your hand) is shown to you alone" });
+    seatPicker.addEventListener("change", () => sit(seatPicker.value || null));
+    const seatBar = el("label", { class: "tabletop-seatbar" }, el("span", {}, "Seat"), seatPicker);
+    overlay.append(seatBar);
+    api.style(SEAT_CSS);
+    let seatKey = "";
+    function drawSeats() {
+      const seats = Object.entries(seatsOf(scene));
+      seatBar.hidden = !seats.length;
+      const mine = seatOf(seatsOf(scene), viewer) ?? "";
+      const options = [["", "Watching"], ...seats.map(([id, s]) => [id, `${s?.name || id}${s?.player && s.player !== viewer ? " (taken)" : ""}`])];
+      const k = JSON.stringify(options);
+      if (k !== seatKey) {
+        seatKey = k;
+        seatPicker.replaceChildren(...options.map(([v, t]) => el("option", { value: v }, t)));
       }
-      const b = place.bounds;
-      const h = b ? Math.max(1e-4, b.max[1] - b.min[1]) : 0.001;
-      const gid = api.newId("g");
-      const ids = Array.from({ length: place.count }, () => api.newId("o"));
-      api.change((d) => {
-        if (!d.objects) d.objects = {};
-        if (!d.order) d.order = [];
-        d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, group: group ?? null, visible: true, opacity: 1 };
-        d.order.push(gid);
-        ids.forEach((oid, j) => {
-          d.objects[oid] = {
-            name: place.look.name,
-            sourceUrl: place.look.sourceUrl,
-            providerId: "file-glb",
-            renderUrl: null,
-            parent: null,
-            group: gid,
-            visible: true,
-            color: null,
-            opacity: 1,
-            wireframe: false,
-            // face down, a card's height apart: turned about its length, a card stands on its top
-            transform: { position: [0, +((j + 1) * h).toFixed(6), 0], rotation: [0, 0, Math.PI], scale: 1 },
-            traits: { [HIDDEN]: { by: url } },
-            ...(b ? { hint: { bounds: { min: [...b.min], max: [...b.max] } } } : {}),
-          };
-          d.order.push(oid);
-        });
-      });
-      provider.module.bind?.(handle, ids);
-      api.select(gid);
-      return true;
+      if (document.activeElement !== seatPicker) seatPicker.value = mine;
     }
 
-    // ── the Table panel: where you sit, and what the decks are waiting on ──
-    function tablePanel(body) {
-      const seat = el("select", { class: "tabletop-seat", "aria-label": "Seat", title: "Where you sit: what's in your seat's private zone (your hand) is shown to you alone" });
-      seat.addEventListener("change", () => sit(seat.value || null));
-      const deckList = el("ul", { class: "tabletop-decks" });
-      body.append(el("label", { class: "field" }, el("span", {}, "Seat"), seat), deckList);
-      let key = "";
-      return {
-        update() {
-          const seats = Object.entries(seatsOf(scene));
-          const mine = seatOf(seatsOf(scene), viewer) ?? "";
-          const options = [["", "Watching"], ...seats.map(([id, s]) => [id, `${s?.name || id}${s?.player && s.player !== viewer ? " (taken)" : ""}`])];
-          const lines = [...decks.values()].map((d) => [d.title || "Deck", d.problem ?? d.resolver?.status?.() ?? "Ready"]);
-          const k = JSON.stringify([options, lines]);
-          if (k !== key) {
-            key = k;
-            seat.replaceChildren(...options.map(([v, t]) => el("option", { value: v }, t)));
-            deckList.replaceChildren(...lines.map(([t, s]) => el("li", {}, el("strong", {}, t), ` — ${s}`)));
-          }
-          if (document.activeElement !== seat) seat.value = mine;
-        },
-        dispose() {},
+    /** What each hidden card looks like to this viewer: every deck speaks for its own cards. */
+    function lens(snapshot) {
+      looks = new Map();
+      if (!decks.size) return;
+      const objects = snapshot.objects;
+      const seats = seatsOf(snapshot);
+      const ctx = {
+        objects,
+        seats,
+        viewer,
+        players: seatedPlayers(seats),
+        openSeats: Object.entries(seats).filter(([, s]) => !s?.player).map(([id, s]) => s?.name || id),
+        visibleTo: visibility(snapshot, seats),
+        nameOf: (player) => Object.values(seats).find((s) => s?.player === player)?.name ?? "someone",
       };
+      for (const [url, deck] of decks) {
+        if (!deck.resolver) continue;
+        deck.resolver.update(ctx);
+        for (const [id, look] of deck.resolver.looks()) if (hiddenBy(objects[id]) === url) looks.set(id, look);
+      }
     }
 
     function sit(seatId) {
@@ -227,40 +206,24 @@ export default {
       });
       // each seat can say where its player looks from
       const cam = seatId ? seatsOf(api.scene())[seatId]?.camera : null;
-      if (cam) api.setCamera(cam);
+      if (cam) api.camera.set(cam);
     }
 
     return {
       needsMigration,
       migrate,
-      update(snapshot) {
+      update(snapshot, local, prev) {
+        if (snapshot === prev?.scene) return;
         scene = snapshot;
         regions = null;
-        const objects = snapshot.objects;
         const urls = new Set();
-        for (const o of Object.values(objects)) {
+        for (const o of Object.values(snapshot.objects)) {
           const by = hiddenBy(o);
           if (by) urls.add(by);
         }
         watchDecks(urls);
-        looks = new Map();
-        if (!urls.size) return;
-        const seats = seatsOf(snapshot);
-        const ctx = {
-          objects,
-          seats,
-          viewer,
-          players: seatedPlayers(seats),
-          openSeats: Object.entries(seats).filter(([, s]) => !s?.player).map(([id, s]) => s?.name || id),
-          visibleTo: visibility(snapshot, seats),
-          nameOf: (player) => Object.values(seats).find((s) => s?.player === player)?.name ?? "someone",
-        };
-        for (const [url, deck] of decks) {
-          if (!deck.resolver) continue;
-          deck.resolver.update(ctx);
-          // a deck speaks only for its own objects
-          for (const [id, look] of deck.resolver.looks()) if (hiddenBy(objects[id]) === url) looks.set(id, look);
-        }
+        lens(snapshot);
+        drawSeats();
       },
       looks: () => looks,
       hud() {
@@ -271,18 +234,16 @@ export default {
         }
         return out;
       },
-      panels: [{ id: PANEL, title: "Table", mount: tablePanel }],
       commands: [
         {
           id: "shuffle",
           name: "Shuffle pile",
-          title: "Shuffle the pile this card is in (S)",
           key: "s",
-          appliesTo: (id) => !!hiddenBy(scene?.objects?.[id]),
+          show: ["menu", "inspector"],
+          state: (id) => (id && hiddenBy(scene?.objects?.[id]) ? { title: "Shuffle the pile this card is in (S)" } : null),
           run: shuffleStack,
         },
       ],
-      drop,
       // a hidden card carried into your own zone turns face up for you
       landing(id, world) {
         if (!scene || !hiddenBy(scene.objects[id])) return null;
@@ -298,6 +259,77 @@ export default {
       },
     };
   },
+
+  /**
+   * A deck dropped on the table: its cards, face down in a stack, in a group
+   * named for it. Called by whatever adds documents to the scene, before the
+   * extension runs (its traits are what start it).
+   */
+  async drop(ctx, { url, doc, handle, group }) {
+    const type = doc?.["@patchwork"]?.type ?? null;
+    if (type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return false; // it has no layout of its own
+    const provider = await deckProviderFor(ctx.registry, type).catch(() => null);
+    if (!provider?.module?.placement) return false;
+    const place = provider.module.placement(doc);
+    if (!place) {
+      ctx.notify?.("That deck is already on a table.", "error");
+      return true;
+    }
+    const b = place.bounds;
+    const h = b ? Math.max(1e-4, b.max[1] - b.min[1]) : 0.001;
+    const gid = ctx.newId("g");
+    const ids = Array.from({ length: place.count }, () => ctx.newId("o"));
+    ctx.change((d) => {
+      if (!d.objects) d.objects = {};
+      if (!d.order) d.order = [];
+      d.objects[gid] = { kind: "group", name: `${place.name} (${place.count})`, group: group ?? null, visible: true, opacity: 1 };
+      d.order.push(gid);
+      ids.forEach((oid, j) => {
+        d.objects[oid] = {
+          name: place.look.name,
+          sourceUrl: place.look.sourceUrl,
+          providerId: "file-glb",
+          renderUrl: null,
+          parent: null,
+          group: gid,
+          visible: true,
+          color: null,
+          opacity: 1,
+          wireframe: false,
+          // face down, a card's height apart: turned about its length, a card stands on its top
+          transform: { position: [0, +((j + 1) * h).toFixed(6), 0], rotation: [0, 0, Math.PI], scale: 1 },
+          traits: { [HIDDEN]: { by: url } },
+          ...(b ? { hint: { bounds: { min: [...b.min], max: [...b.max] } } } : {}),
+        };
+        d.order.push(oid);
+      });
+    });
+    provider.module.bind?.(handle, ids);
+    ctx.local.swap((l) => ({ ...l, selected: gid }));
+    return true;
+  },
 };
+
+/** The resolver factory for a deck doc's datatype: { create, module } or null. */
+async function deckProviderFor(registry, type) {
+  if (!type || type === PLAIN_DECK || type === LEGACY_PLAIN_DECK) return { create: plainResolver, module: null };
+  const reg = await registry("tabletop:deck");
+  const p = reg?.filter?.((x) => Array.isArray(x.supportedDatatypes) && x.supportedDatatypes.includes(type))?.[0];
+  if (!p) return null;
+  const module = (await reg.load(p.id))?.module ?? null;
+  return module?.createResolver ? { create: module.createResolver, module } : null;
+}
+
+const SEAT_CSS = `
+.scene-stage .tabletop-overlay:where(:not(.about-embed *), .about-embed .scene-tool *) { position: absolute; inset: 0; pointer-events: none; }
+.scene-stage .tabletop-seatbar:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; align-items: center;
+  padding: 4px 6px 4px 10px; border-radius: 999px; pointer-events: auto;
+  background: var(--scene-panel-bg, rgb(255 255 255 / 0.9)); color: var(--scene-fg, #222);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.15); font: 13px system-ui, sans-serif;
+}
+.scene-stage .tabletop-seatbar[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) { display: none; }
+.scene-stage .tabletop-seat:where(:not(.about-embed *), .about-embed .scene-tool *) { font: inherit; border-radius: 999px; padding: 2px 6px; }
+`;
 
 export { docUrl };
