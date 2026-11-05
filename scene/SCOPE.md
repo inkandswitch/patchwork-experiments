@@ -256,10 +256,10 @@ arena each add a few lines.
 | inside an arena | `arena.level` stays a scene trait; targets on the boat just work (4) |
 | the tool fits the place | `view.tool` on the table and the boat (4); `carryable` (7) |
 | cameras that ride | `camera.follow` (5) |
-| one player per station; items in one person's hands | claims (9.1) |
+| one player per station; items in one person's hands; who simulates | claims, written in the doc, lapsing with their holder's presence (9.1) |
 | "F to use", reach, verbs you hold | the `scene.use` part; `from` and session-returning commands (9.2) |
 | crew you can see, holding things | avatars as presence in their frame, items claimed by their holder (9.3) |
-| the ship moves for everyone | one peer claims the simulation and holds the pose; inputs come from the stations' presence; handoff by Lamport order (9.4) |
+| the ship moves for everyone | one peer claims the simulation in the doc and streams the pose; inputs come from the stations' presence; handoff when its session leaves, settled by Automerge (9.4) |
 | cannonballs, spray | sends, simulated locally (9.5) |
 | the sea | an ocean extension: a surface layer, atmosphere, a water-height contribution (9.6) |
 
@@ -287,13 +287,31 @@ the use prompt serves a table, frames serve the arena.
 
 **What's missing.**
 
-1. **Claims.** One player at the helm; a bucket in one person's hands. Pose
-   holds already answer "who has this object", ranked by Lamport stamp then
-   session, so every view agrees. *Recommendation:* generalise holds to
-   **claims** on anything, an object or a station, with or without a pose:
-   `api.claim(id, kind?) → release`, `api.claimedBy(id, kind?)`. A pose hold
-   becomes a claim that carries a pose. Releasing on stop, the goodbye on
-   tab close, and silent-peer expiry all carry over unchanged.
+1. **Claims, in the doc.** One player at the helm; a bucket in one
+   person's hands; one peer simulating the ship. These are facts about the
+   shared world, so they live in the Automerge doc, not in presence.
+   *Recommendation:*
+   - **A claim is a field on the claimed object**: `claims: { [kind]: {
+     viewer, session } }` (kind: `"station"`, `"held"`, `"sim"`…). Taking
+     one writes it, letting go deletes it. `api.claim(id, kind) → release`,
+     `api.claimedBy(id, kind) → { viewer, session } | null`.
+   - **Concurrent claims are Automerge's to settle.** Two people taking the
+     helm at once both write the field; the merge picks the same winner on
+     every peer, and the one who lost it steps away when the merge arrives.
+     No ranking protocol of our own.
+   - **A claim counts only while its holder is here.** Readers treat a claim
+     whose session has no presence record as lapsed, so a tab that died at
+     the helm doesn't hold it forever, and nothing has to write a cleanup.
+     The next person to take it overwrites it. Releasing on stop and the
+     goodbye on tab close delete it at once.
+   - **Motion stays in presence.** A pose streamed while something moves
+     (a carried card, a sailing hull) is presence, as now; it would flood the
+     doc's history. A claim says who; the pose says where, right now.
+   - **Short drags may stay unclaimed.** Carrying a card across a table is
+     a gesture, not a fact worth recording, and the put-down is already one
+     write. The current presence holds (ranked by Lamport stamp) remain for
+     those, and an extension that wants a durable claim on a carried object
+     takes one.
 2. **A use prompt.** "F to raise the anchor" is a surface over commands:
    what the crosshair is on, within reach, offers its verbs as a prompt, and a
    key runs one. Two additions to the command shape:
@@ -312,22 +330,25 @@ the use prompt serves a table, frames serve the arena.
 3. **People and what they hold.** A bucket, plank or lantern goes in a
    player's hands, so it attaches to a person, not a scene object, and
    people are presence, not doc objects. *Recommendation:* an avatar is a
-   presence record (`{ on, position, yaw, pitch, holding }`, in the frame of
-   what it stands on, section 5). A held item stays a doc object, claimed by
-   its holder, whose displayed pose follows that holder's hands on every view.
+   presence record (`{ on, position, yaw, pitch }`, in the frame of what it
+   stands on, section 5). A held item stays a doc object with a `"held"`
+   claim naming its holder (item 1), and its displayed pose follows that
+   holder's hands on every view.
    Put down, it lands and attaches like anything carried (section 5). The
    avatar drawing becomes a shared part, so the arena's avatars and the
    ship's crew are one thing.
 4. **Who owns time.** The ship's motion (wind, heel, leeway, buoyancy) is
    simulated by one peer and followed by the rest. *Recommendation:* the
-   simulating peer **claims the ship's simulation** (item 1) and holds its
-   pose continuously (section 5). The others render the pose stream and
-   send their inputs (the helm's angle, the sails' trim) as presence of
-   whoever is at that station; the simulator reads them. When the simulating
-   peer leaves, its claim lapses and the next peer by Lamport order takes it,
-   starting from the last pose it saw. The doc records where the ship is now
-   and then, so a scene opened later starts in the right place. A one-person
-   ship simulates on its own client.
+   simulating peer **claims the ship's simulation** in the doc (item 1,
+   kind `"sim"`) and streams its pose continuously (section 5). The others
+   render the pose stream and send their inputs (the helm's angle, the
+   sails' trim) as presence of whoever is at that station; the simulator
+   reads them. When the simulating peer leaves, its claim lapses (its
+   session is gone from presence), any peer still here writes a new claim,
+   and Automerge settles who won; the winner starts from the last pose it
+   saw. The doc also records where the ship is now and then, so a scene
+   opened later starts in the right place. A one-person ship simulates on
+   its own client.
 5. **Ephemeral things.** Cannonballs in flight, spray and splashes are
    simulated by each peer locally from a send. Nothing is written until
    something lasting happens (a hole), and then only by the peer who fired.
@@ -354,8 +375,8 @@ the use prompt serves a table, frames serve the arena.
 | `stage/chain.js` | holders ordered by depth in the chain; scene placement is the last link; steps 4 and 5 merge |
 | `stage/router.js` | `ev.holders` for armed handlers |
 | `stage/host.js` | `api.holders()`, `api.holderOf(id)`; `pref(key, fallback, at)`; `camera.follow` |
-| `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world; holds generalised to claims (`claim`, `claimedBy`), with or without a pose |
-| `stage/stage.js` | `api.claim` / `api.claimedBy`; commands' `state` gets `from`; `run` may return a session |
+| `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world |
+| `stage/stage.js` | `api.claim` / `api.claimedBy` (claims as doc fields, lapsing with their holder's presence); commands' `state` gets `from`; `run` may return a session |
 | new part `scene.use` | the first-person use prompt over commands, held verbs |
 | new part for avatars | drawing people from presence, in their frame, with what they hold (shared by the arena and the ship) |
 | `parts/hand.js` | `carryable`; attach on landing; displayed world for moving parents |
