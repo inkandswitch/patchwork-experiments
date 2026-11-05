@@ -164,6 +164,28 @@ without any of them being the default the others are measured against.
    is the case that exercises the
    per-frame and exclusive-input primitives the other two don't need.
 
+4. **Sailing (a ship you crew together, the *Sea of Thieves* way).** The
+   boat built in the editor goes on the water, and its crew walk its deck
+   and work it with their hands:
+   - walk the deck of a moving, rocking ship, riding in its frame;
+   - walk up to a station (helm, sails, anchor, a cannon) and use it with a
+     prompt ("F to raise the anchor"), some verbs held as long as the key is
+     down; one player per station, and everyone sees who is where;
+   - carry things in your hands (a bucket, a plank, a lantern) that others
+     see you holding;
+   - one peer simulates the ship (wind, heel, buoyancy) and the rest follow
+     its pose, with a handoff when that peer leaves;
+   - cannonballs and spray simulated locally from sends; damage and water in
+     the doc;
+   - sky, sea and sun through atmosphere and an ocean extension.
+
+   This is the case that forces two decisions the others dodge: who owns
+   time, and what a person is (presence that rides in a frame and can hold
+   things). It also needs claims, a use prompt over commands, scopes that
+   move, and precedence by nearness. [SCOPE.md](SCOPE.md), sections 5, 6 and
+   9, lays out each with a recommendation. Each is a general capability, so
+   the arena and the table can use them first.
+
 ### Later: hybrids
 
 The real test, and deliberately not a goal yet. Kinds of scene should mix,

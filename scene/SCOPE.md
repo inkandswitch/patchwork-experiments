@@ -256,6 +256,96 @@ arena each add a few lines.
 | inside an arena | `arena.level` stays a scene trait; targets on the boat just work (4) |
 | the tool fits the place | `view.tool` on the table and the boat (4); `carryable` (7) |
 | cameras that ride | `camera.follow` (5) |
+| one player per station; items in one person's hands | claims (9.1) |
+| "F to use", reach, verbs you hold | the `scene.use` part; `from` and session-returning commands (9.2) |
+| crew you can see, holding things | avatars as presence in their frame, items claimed by their holder (9.3) |
+| the ship moves for everyone | one peer claims the simulation and holds the pose; inputs come from the stations' presence; handoff by Lamport order (9.4) |
+| cannonballs, spray | sends, simulated locally (9.5) |
+| the sea | an ocean extension: a surface layer, atmosphere, a water-height contribution (9.6) |
+
+## 9. Local interaction, the Sea of Thieves way
+
+The sailing sim should feel like *Sea of Thieves*: you walk up to something
+on a moving ship and use it, with your own hands, and everyone aboard sees
+you do it. Almost every interaction is local and physical. Sections 5 and 6
+already cover people riding in their object's frame and stations as arms;
+this section covers the rest. Each item is meant as a general capability of
+the stage or a shared part, not a ship feature: claims serve a review tool,
+the use prompt serves a table, frames serve the arena.
+
+**What already fits.**
+- **Taking a station is an arm** (section 6). The helm, a cannon or the
+  capstan pushes over walking, takes the keys (A/D steer, the mouse aims) and
+  perhaps the camera; Esc pops back to walking.
+- **Stations are objects with traits** (`sailing.helm`, `sailing.cannon`), so
+  their extensions hear events aimed at them. In first person the event's ray
+  is the crosshair, so what you're looking at is the hit chain.
+- **Effects are sends; damage is doc.** A shot fired, a splash or a shout is
+  `api.send`. A hole in the hull, the water in it, the sails' trim and the
+  anchor are fields on the ship's objects.
+- **Walking a moving deck** works against raycasts that see displayed poses.
+
+**What's missing.**
+
+1. **Claims.** One player at the helm; a bucket in one person's hands. Pose
+   holds already answer "who has this object", ranked by Lamport stamp then
+   session, so every view agrees. *Recommendation:* generalise holds to
+   **claims** on anything, an object or a station, with or without a pose:
+   `api.claim(id, kind?) → release`, `api.claimedBy(id, kind?)`. A pose hold
+   becomes a claim that carries a pose. Releasing on stop, the goodbye on
+   tab close, and silent-peer expiry all carry over unchanged.
+2. **A use prompt.** "F to raise the anchor" is a surface over commands:
+   what the crosshair is on, within reach, offers its verbs as a prompt, and a
+   key runs one. Two additions to the command shape:
+   - **reach:** `state(target, { …, from })` gets where the viewer is (the
+     eye, in world space), so a verb can say it applies only within arm's
+     length;
+   - **held verbs:** winding the capstan, bailing, pulling a sheet last as
+     long as the key is down. A command may return a session from `run`
+     (`move`, `end`, `cancel`, like a press), and the use surface keeps it
+     open while the key is held.
+
+   *Recommendation:* a shared part, `scene.use`, taking part in "play": it
+   reads the centre ray each frame, shows the nearest applicable verb, runs it
+   on its key, and keeps a held verb's session open. It's the first-person
+   counterpart of the right-click menu, over the same commands.
+3. **People and what they hold.** A bucket, plank or lantern goes in a
+   player's hands, so it attaches to a person, not a scene object, and
+   people are presence, not doc objects. *Recommendation:* an avatar is a
+   presence record (`{ on, position, yaw, pitch, holding }`, in the frame of
+   what it stands on, section 5). A held item stays a doc object, claimed by
+   its holder, whose displayed pose follows that holder's hands on every view.
+   Put down, it lands and attaches like anything carried (section 5). The
+   avatar drawing becomes a shared part, so the arena's avatars and the
+   ship's crew are one thing.
+4. **Who owns time.** The ship's motion (wind, heel, leeway, buoyancy) is
+   simulated by one peer and followed by the rest. *Recommendation:* the
+   simulating peer **claims the ship's simulation** (item 1) and holds its
+   pose continuously (section 5). The others render the pose stream and
+   send their inputs (the helm's angle, the sails' trim) as presence of
+   whoever is at that station; the simulator reads them. When the simulating
+   peer leaves, its claim lapses and the next peer by Lamport order takes it,
+   starting from the last pose it saw. The doc records where the ship is now
+   and then, so a scene opened later starts in the right place. A one-person
+   ship simulates on its own client.
+5. **Ephemeral things.** Cannonballs in flight, spray and splashes are
+   simulated by each peer locally from a send. Nothing is written until
+   something lasting happens (a hole), and then only by the peer who fired.
+6. **Water.** An ocean is an extension: a world layer drawing the surface,
+   the atmosphere for the sky, and a contribution that answers "how high is
+   the water here, now" for buoyancy and for the walker (wading, falling in).
+   Time-varying, so its clock comes from the simulation's owner.
+7. **Sound** is a new stage capability (positional audio attached to objects
+   and avatars). A first version doesn't need it.
+
+**How this bears on the earlier questions.**
+- Precedence by nearness (section 2) is what makes the use prompt right:
+  looking at the helm offers the helm's verbs before the ship's, and the
+  ship's before the world's.
+- Scopes move (section 5): stations, seats, spawns and held items all live in
+  the ship's frame.
+- Nesting has to hold all the way: a card table in the saloon of a ship
+  sailing through an arena level.
 
 ## Summary of changes, if all are taken
 
@@ -264,13 +354,18 @@ arena each add a few lines.
 | `stage/chain.js` | holders ordered by depth in the chain; scene placement is the last link; steps 4 and 5 merge |
 | `stage/router.js` | `ev.holders` for armed handlers |
 | `stage/host.js` | `api.holders()`, `api.holderOf(id)`; `pref(key, fallback, at)`; `camera.follow` |
-| `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world |
+| `stage/presence.js` | a held pose can be `continuous`, so readers use the displayed world; holds generalised to claims (`claim`, `claimedBy`), with or without a pose |
+| `stage/stage.js` | `api.claim` / `api.claimedBy`; commands' `state` gets `from`; `run` may return a session |
+| new part `scene.use` | the first-person use prompt over commands, held verbs |
+| new part for avatars | drawing people from presence, in their frame, with what they hold (shared by the arena and the ship) |
 | `parts/hand.js` | `carryable`; attach on landing; displayed world for moving parents |
 | `parts/menu.js` | sections by holder, nearest first |
 | tabletop | seats on the table object, per-holder seats, zones and face-up |
 | arena | the walker's body relative to what it stands on; `carryable` for blocks |
 | STAGE.md | "Activation" and "The input chain" rewritten around placements |
 
-None of this changes what runs (`activeSet`) or the stopping rules. The
+None of this changes what runs (`activeSet`) or the stopping rules. Section
+9's items are additions: each can land on its own, and the arena or the
+table can use each before the ship does. The
 first two rows are the decision that matters: once scope is where a trait
 sits, and precedence is nearness, the rest can follow one case at a time.
