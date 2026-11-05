@@ -302,12 +302,14 @@ export function localParts(root) {
 
 /**
  * Bytes → display-ready content.
- * @returns {Promise<{ content, materials: object[], legend: object | null, box: Box3 | null, parts: { box, matrix }[],
+ * @returns {Promise<{ content, materials: object[], legend: object | null, extras: object, box: Box3 | null, parts: { box, matrix }[],
  *   stats: { drawCalls: number, nodes: number, instanced: number, triangles: number, dequantized: number } }>}
  */
 export async function prepareGLB(bytes, rules = []) {
   const gltf = await loadGLTF(bytes);
   const content = gltf.scene;
+  // the scene's own extras (GLTFLoader puts them in userData), copied before anything below touches the graph
+  const extras = { ...(content.userData ?? {}) };
   const dequantized = dequantizePositions(content);
   const materials = prepareMaterials(content, gltf.parser);
   applyMaterialRules(materials, rules);
@@ -318,6 +320,7 @@ export async function prepareGLB(bytes, rules = []) {
     materials,
     snap,
     legend: findLegend(content),
+    extras,
     box: localBox(content),
     parts: localParts(content),
     stats: { drawCalls: inst.after, nodes: inst.before, instanced: inst.instanced, triangles: countTriangles(content), dequantized },

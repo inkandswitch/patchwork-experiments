@@ -1,0 +1,419 @@
+// Starting and stopping extensions (STAGE.md, "Activation" and "Stopping").
+//
+// The running set is a pure function of the registry's metadata, the doc and
+// this viewer's kits (activation.js activeSet). sync(doc) recomputes it, starts
+// what's new (load → module.create(api)) and stops what's gone. What an
+// extension acquires through its api is the stage's business: makeApi hands
+// back the api together with a release() that gives all of it back, in the
+// STAGE.md order. The host only decides when.
+//
+// An extension that leaves because of the doc (a peer's undo took its trait
+// away) lingers for LINGER_MS, and for as long as it's busy (an arm, an open
+// session, a pose hold), so nobody's game is torn down under them. One that
+// leaves because of this viewer's kits stops at once.
+//
+// Running order (activeSet's order) is the only order anything here reports
+// in: local.running, instances(), collect(). The order extensions finished
+// loading in never counts.
+
+import { activeSet, chosenKits, takesDrop } from "./activation.js";
+
+/** How long an extension the doc no longer calls for keeps running. */
+export const LINGER_MS = 2_000;
+/** While a lingering extension is busy, how often to look again. */
+export const BUSY_RECHECK_MS = 250;
+/** How many times one extension may migrate the doc in a session. */
+export const MAX_MIGRATIONS = 3;
+
+const MIGRATING_SCOPES = new Set(["scene", "objects"]);
+
+const listOf = (reg) => {
+  try {
+    return reg?.filter?.(() => true) ?? [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * The new running order: `want` (activeSet's ids, in order), with each id
+ * still lingering kept just after whatever preceded it last time. Pure.
+ * @param {string[]} prev    last running order
+ * @param {string[]} want    ids the running set calls for, in order
+ * @param {Set<string>} lingering
+ * @returns {string[]}
+ */
+export function mergeOrder(prev, want, lingering) {
+  const out = [...want];
+  for (let i = 0; i < prev.length; i++) {
+    const id = prev[i];
+    if (!lingering.has(id) || out.includes(id)) continue;
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.indexOf(prev[j]);
+      if (k >= 0) {
+        at = k + 1;
+        break;
+      }
+    }
+    out.splice(at, 0, id);
+  }
+  return out;
+}
+
+/** Same list of { id, scope }? */
+const sameRunning = (a, b) => Array.isArray(a) && a.length === b.length && a.every((r, i) => r.id === b[i].id && r.scope === b[i].scope);
+
+/**
+ * @param {{
+ *   registry: () => Promise<object | null>,     // the scene:extension registry
+ *   kitRegistry?: () => Promise<object | null>, // the scene:kit registry
+ *   local: { get(): object, swap(fn): object }, // the stage's local atom (local.kits in, local.running out)
+ *   makeApi: (rec: object) => { api: object, release: () => void },
+ *   makeDropContext?: (id: string) => object,
+ *   busy?: (id: string) => boolean,             // an arm, an open session or a pose hold
+ *   onChange?: () => void,                      // an extension started or stopped
+ *   lingerMs?: number,
+ *   setTimer?: (fn: () => void, ms: number) => any,
+ *   clearTimer?: (t: any) => void,
+ * }} o
+ */
+export function createHost({
+  registry,
+  kitRegistry = async () => null,
+  local,
+  makeApi,
+  makeDropContext = () => ({}),
+  busy = () => false,
+  onChange = () => {},
+  lingerMs = LINGER_MS,
+  setTimer = (fn, ms) => setTimeout(fn, ms),
+  clearTimer = (t) => clearTimeout(t),
+}) {
+  let dead = false;
+  let isReady = false;
+  let reg = null;
+  let kitReg = null;
+  // rec: { id, meta, scope, state: "loading" | "running" | "failed" | "stopped",
+  //        instance, api, release, controller, signal, linger: timer | null }
+  const recs = new Map();
+  let order = []; // running order: every rec's id
+  let lastDoc = null; // the doc the running set was last worked out for
+  let pending = null; // a doc sync() was given before the registries arrived
+  const attempts = new Map(); // id → migrations tried this session
+  const offs = [];
+
+  const ready = Promise.all([
+    Promise.resolve()
+      .then(registry)
+      .catch(() => null),
+    Promise.resolve()
+      .then(kitRegistry)
+      .catch(() => null),
+  ]).then(([r, k]) => {
+    if (dead) return;
+    reg = r ?? null;
+    kitReg = k ?? null;
+    isReady = true;
+    for (const x of [reg, kitReg]) {
+      try {
+        const off = x?.on?.("changed", () => sync(lastDoc));
+        if (typeof off === "function") offs.push(off);
+      } catch {
+        // a registry without change events: what's installed at open is what runs
+      }
+    }
+    if (pending) {
+      const d = pending;
+      pending = null;
+      sync(d);
+    }
+  });
+
+  function wanted(doc) {
+    const metas = listOf(reg);
+    const kits = listOf(kitReg);
+    return {
+      metas,
+      kits,
+      set: activeSet({ metas, kits, kitIds: chosenKits(local.get().kits, doc), doc }),
+    };
+  }
+
+  // ─── starting ─────────────────────────────────────────────────────────────
+
+  function start(w) {
+    const rec = { id: w.id, meta: w.meta, scope: w.scope, state: "loading", instance: null, api: null, release: null, controller: null, signal: null, linger: null };
+    recs.set(w.id, rec);
+    (async () => {
+      const loaded = await reg?.load?.(w.id);
+      const mod = loaded?.module?.default ?? loaded?.module;
+      if (dead || rec.state !== "loading") return;
+      if (typeof mod?.create !== "function") throw new Error("its module has no create()");
+      rec.controller = new AbortController();
+      rec.signal = rec.controller.signal;
+      const made = makeApi(rec);
+      rec.api = made.api;
+      rec.release = made.release;
+      try {
+        rec.instance = mod.create(rec.api) ?? {};
+      } catch (err) {
+        teardown(rec);
+        throw err;
+      }
+      rec.state = "running";
+      publish();
+      onChange();
+    })().catch((err) => {
+      if (rec.state === "loading") rec.state = "failed";
+      console.warn(`[scene] extension “${w.id}” failed to start`, err);
+    });
+  }
+
+  // ─── stopping ─────────────────────────────────────────────────────────────
+
+  // The signal aborts first, so nothing it does from here acquires anything;
+  // then the stage gives back what it holds (steps 1–7), then dispose (step 8).
+  function teardown(rec) {
+    rec.controller?.abort();
+    try {
+      rec.release?.();
+    } catch (err) {
+      console.warn(`[scene] extension “${rec.id}”: releasing what it held failed`, err);
+    }
+    if (rec.instance) {
+      try {
+        rec.instance.dispose?.();
+      } catch (err) {
+        console.warn(`[scene] extension “${rec.id}”: dispose failed`, err);
+      }
+    }
+  }
+
+  function stop(rec) {
+    if (rec.linger != null) clearTimer(rec.linger);
+    rec.linger = null;
+    const was = rec.state;
+    rec.state = "stopped";
+    recs.delete(rec.id);
+    order = order.filter((id) => id !== rec.id);
+    if (was === "running") teardown(rec);
+  }
+
+  function linger(rec) {
+    if (rec.linger != null) return;
+    const check = () => {
+      rec.linger = null;
+      if (dead || recs.get(rec.id) !== rec) return;
+      let isBusy = false;
+      try {
+        isBusy = rec.state === "running" && busy(rec.id);
+      } catch {
+        // can't tell: let it go
+      }
+      if (isBusy) {
+        rec.linger = setTimer(check, BUSY_RECHECK_MS);
+        return;
+      }
+      stop(rec);
+      publish();
+      onChange();
+    };
+    rec.linger = setTimer(check, lingerMs);
+  }
+
+  // ─── the running set ──────────────────────────────────────────────────────
+
+  /**
+   * Recompute the running set for this doc (and the viewer's kits as they
+   * are in local now): start what's new, stop what's gone.
+   */
+  function sync(doc) {
+    if (dead) return;
+    if (!isReady) {
+      pending = doc ?? pending ?? {};
+      return;
+    }
+    const d = doc ?? lastDoc ?? {};
+    const { metas, kits, set } = wanted(d);
+    const want = new Map(set.map((w) => [w.id, w]));
+    for (const w of set) {
+      const rec = recs.get(w.id);
+      if (!rec) start(w);
+      else {
+        rec.meta = w.meta;
+        rec.scope = w.scope;
+        if (rec.linger != null) {
+          clearTimer(rec.linger);
+          rec.linger = null;
+        }
+      }
+    }
+    // Which of the gone ones did the doc send away? Those the previous doc,
+    // with this viewer's kits as they are now, would still run.
+    let docCaused = null;
+    let stopped = false;
+    for (const rec of [...recs.values()]) {
+      if (want.has(rec.id) || rec.linger != null) continue;
+      docCaused ??= new Set(activeSet({ metas, kits, kitIds: chosenKits(local.get().kits, lastDoc ?? {}), doc: lastDoc ?? {} }).map((w) => w.id));
+      if (rec.state === "running" && docCaused.has(rec.id)) linger(rec);
+      else {
+        stop(rec);
+        stopped = true;
+      }
+    }
+    const lingering = new Set([...recs.values()].filter((r) => r.linger != null).map((r) => r.id));
+    order = mergeOrder(order, set.map((w) => w.id), lingering).filter((id) => recs.has(id));
+    lastDoc = d;
+    publish();
+    if (stopped) onChange();
+  }
+
+  /** local.running: the started extensions, in running order. */
+  function publish() {
+    if (dead) return;
+    const next = running().map(({ id, scope }) => Object.freeze({ id, scope }));
+    local.swap((m) => (sameRunning(m.running, next) ? m : { ...m, running: Object.freeze(next) }));
+  }
+
+  /** The started extensions, in running order. @returns {{ id, meta, scope }[]} */
+  function running() {
+    const out = [];
+    for (const id of order) {
+      const r = recs.get(id);
+      if (r?.state === "running") out.push(r);
+    }
+    return out;
+  }
+
+  // ─── reading what's running ───────────────────────────────────────────────
+
+  /** @returns {{ id, meta, scope, instance, api, signal }[]} started, in running order */
+  const instances = () => running();
+
+  /** @returns {object | null} a started extension's instance */
+  const instanceOf = (id) => {
+    const r = recs.get(id);
+    return r?.state === "running" ? r.instance : null;
+  };
+
+  /**
+   * Every running extension's `name` field, in running order.
+   * @returns {{ id: string, value: any }[]}
+   */
+  function collect(name) {
+    const out = [];
+    for (const r of running()) {
+      let value;
+      try {
+        value = r.instance[name];
+      } catch (err) {
+        console.warn(`[scene] extension “${r.id}”: reading ${name} failed`, err);
+        continue;
+      }
+      if (value !== undefined) out.push({ id: r.id, value });
+    }
+    return out;
+  }
+
+  /** An extension's `input`, or undefined. */
+  const inputOf = (id) => instanceOf(id)?.input ?? undefined;
+
+  /**
+   * Run the first migration this doc needs, from a `scene` or `objects`
+   * extension, in running order; each extension at most MAX_MIGRATIONS times
+   * a session (so a bug can't make it loop). A viewer-only extension never
+   * migrates.
+   * @param {object} doc
+   * @param {(fn: (draft: object) => void) => void} change
+   * @returns {boolean} whether it changed the doc (the caller syncs again from that change)
+   */
+  function migrate(doc, change) {
+    for (const r of running()) {
+      if (!MIGRATING_SCOPES.has(r.scope)) continue;
+      const x = r.instance;
+      if (typeof x.migrate !== "function" || typeof x.needsMigration !== "function") continue;
+      let needs = false;
+      try {
+        needs = !!x.needsMigration(doc);
+      } catch (err) {
+        console.warn(`[scene] extension “${r.id}”: needsMigration failed`, err);
+      }
+      if (!needs) continue;
+      const n = attempts.get(r.id) ?? 0;
+      if (n >= MAX_MIGRATIONS) continue;
+      attempts.set(r.id, n + 1);
+      try {
+        change((draft) => x.migrate(draft));
+        return true;
+      } catch (err) {
+        console.warn(`[scene] extension “${r.id}”: migrate failed`, err);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Lay out a dropped doc: load each module (registry order) whose `drops`
+   * match its datatype and call its drop(ctx, info) until one says true.
+   * Nothing is added to the running set here: the traits the drop writes
+   * are what start the extension.
+   * @param {{ url, doc, handle, group, at }} info
+   * @returns {Promise<boolean>}
+   */
+  async function drop(info) {
+    await ready;
+    if (dead) return false;
+    const type = info?.doc?.["@patchwork"]?.type ?? null;
+    for (const meta of listOf(reg)) {
+      if (!meta?.id || !takesDrop(meta, type)) continue;
+      let mod;
+      try {
+        const loaded = await reg.load(meta.id);
+        mod = loaded?.module?.default ?? loaded?.module;
+      } catch (err) {
+        console.warn(`[scene] extension “${meta.id}” failed to load`, err);
+        continue;
+      }
+      if (dead) return false;
+      if (typeof mod?.drop !== "function") continue;
+      try {
+        if (await mod.drop(makeDropContext(meta.id), info)) return true;
+      } catch (err) {
+        console.warn(`[scene] extension “${meta.id}”: drop failed`, err);
+      }
+      if (dead) return false;
+    }
+    return false;
+  }
+
+  /** Stop everything (last first) and stop listening. */
+  function dispose() {
+    if (dead) return;
+    for (const id of [...order].reverse()) {
+      const r = recs.get(id);
+      if (r) stop(r);
+    }
+    for (const r of [...recs.values()]) stop(r);
+    dead = true;
+    for (const off of offs) off();
+    offs.length = 0;
+  }
+
+  return {
+    ready,
+    sync,
+    running,
+    instances,
+    instanceOf,
+    collect,
+    inputOf,
+    migrate,
+    drop,
+    /** the record of an extension being started, running or lingering (for probes) */
+    record: (id) => recs.get(id) ?? null,
+    /** is this extension lingering after the doc stopped calling for it? */
+    lingering: (id) => recs.get(id)?.linger != null,
+    dispose,
+  };
+}

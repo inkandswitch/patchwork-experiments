@@ -1,0 +1,256 @@
+/* The stage's own styles: the scene's colour tokens and primitives (split
+   from ../styles.css, which the old tool still uses unchanged), the four edges
+   around the port, and the port's layers (canvas, labels, overlays). Anything
+   an extension draws brings its own CSS through api.style(). */
+
+@layer package {
+  :root,
+  :host,
+  [theme] {
+    --scene-bg: var(--editor-fill, white);
+    --scene-fg: var(--editor-line, black);
+    --scene-muted: var(--editor-line-offset-50, #888);
+    --scene-faint: var(--editor-line-offset-30, #aaa);
+    --scene-border: var(--editor-fill-offset-20, #ddd);
+    --scene-surface: var(--editor-fill-offset-10, #f4f4f4);
+    --scene-hover: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 6%);
+    --scene-viewport-bg: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 4%);
+    --scene-grid-major: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 40%);
+    --scene-grid-minor: color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 20%);
+    /* labels and field names: readable, but quieter than values */
+    --scene-label: color-mix(in oklch, var(--editor-line, black) 72%, var(--editor-fill, white));
+    --scene-object: color-mix(in oklch, color-mix(in oklch, var(--editor-fill, white), var(--editor-line, black) 45%), var(--studio-link, steelblue) 25%);
+    --scene-accent: var(--studio-primary, #35f7ca);
+    --scene-accent-fill: var(--studio-primary-fill, #35f7ca);
+    --scene-accent-line: var(--studio-primary-line, black);
+    --scene-accent-text: var(--editor-primary-text, var(--studio-primary, teal));
+    --scene-remote: var(--studio-secondary, mediumpurple);
+    --scene-danger: var(--studio-danger, crimson);
+    --scene-danger-text: var(--editor-danger-text, var(--studio-danger, crimson));
+    --scene-warning: var(--studio-warning, orange);
+    --scene-dimension: color-mix(in oklch, var(--studio-warning, orange) 80%, var(--editor-line, black));
+    --scene-axis-x: color-mix(in oklch, red 75%, var(--editor-line, black));
+    --scene-axis-y: color-mix(in oklch, limegreen 75%, var(--editor-line, black));
+    --scene-axis-z: color-mix(in oklch, dodgerblue 80%, var(--editor-line, black));
+    --scene-label-bg: color-mix(in oklch, var(--editor-fill, white) 82%, transparent);
+    --scene-shadow: var(--studio-shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.12));
+    --scene-family: var(--editor-family-sans, system-ui, sans-serif);
+    --scene-family-code: var(--editor-family-code, ui-monospace, monospace);
+  }
+}
+
+/* ─── the block: four edges around the port ──────────────────────────────── */
+
+/* An edge with nothing in it is display: none, so its row or column is sized
+   to nothing and the port takes the room. */
+.scene-tool.scene-stage {
+  container-type: inline-size;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-areas:
+    "top top top"
+    "left port right"
+    "bottom bottom bottom";
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  background: var(--scene-bg);
+  color: var(--scene-fg);
+  font-family: var(--scene-family);
+  font-size: 13px;
+  line-height: 1.35;
+  outline: none;
+}
+
+.scene-stage *:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  box-sizing: border-box;
+}
+
+.scene-stage > .stage-edge {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.scene-stage > .stage-edge:empty {
+  display: none;
+}
+
+.scene-stage > .stage-edge[data-edge="top"] {
+  grid-area: top;
+  flex-direction: column;
+}
+
+.scene-stage > .stage-edge[data-edge="bottom"] {
+  grid-area: bottom;
+  flex-direction: column;
+}
+
+.scene-stage > .stage-edge[data-edge="left"] {
+  grid-area: left;
+  flex-direction: row;
+}
+
+.scene-stage > .stage-edge[data-edge="right"] {
+  grid-area: right;
+  flex-direction: row;
+}
+
+/* ─── primitives ──────────────────────────────────────────────────────────── */
+
+.scene-stage .cluster:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--studio-space-xs, 0.375rem);
+}
+
+.scene-stage .button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font: inherit;
+  color: inherit;
+  background: var(--scene-surface);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--studio-transition-fast, 0.1s ease);
+}
+
+.scene-stage .button:hover:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-hover);
+}
+
+.scene-stage .button[aria-pressed="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill);
+  color: var(--scene-accent-line);
+  border-color: var(--scene-accent-fill);
+}
+
+.scene-stage .button.danger:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--scene-danger-text);
+}
+
+.scene-stage .button.link:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: none;
+  border-color: transparent;
+  color: var(--scene-accent-text);
+  padding: 3px 4px;
+}
+
+.scene-stage .button:disabled:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.scene-stage .toggle:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.scene-stage .tag:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 10px;
+  color: var(--scene-muted);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-round, 9999px);
+  padding: 0 5px;
+}
+
+.scene-stage .pill:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--scene-surface);
+  color: var(--scene-label);
+  border: 1px solid var(--scene-border);
+  white-space: nowrap;
+}
+
+/* Hidden always wins, whatever display an extension's rule sets. */
+.scene-stage [hidden] {
+  display: none !important;
+}
+
+/* ─── the port and its layers ─────────────────────────────────────────────── */
+
+/* Stacking, bottom to top: the canvas, the labels, the extensions' overlays,
+   the stage's own notice (no WebGL). */
+.scene-stage > .viewport {
+  grid-area: port;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  outline: none;
+  background: var(--scene-viewport-bg);
+  isolation: isolate;
+}
+
+.scene-stage > .viewport > .canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  touch-action: none;
+  z-index: 0;
+}
+
+.scene-stage > .viewport > .labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+/* An overlay covers the port but lets the canvas have the pointer except
+   where it actually puts something. */
+.scene-stage > .viewport > .stage-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.scene-stage > .viewport > .stage-overlay > * {
+  pointer-events: auto;
+}
+
+.scene-stage > .viewport > .no-webgl {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: var(--studio-space-lg, 1.5rem);
+  color: var(--scene-muted);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.scene-stage .label:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+  border-radius: var(--studio-radius-sm, 4px);
+  color: var(--scene-fg);
+  will-change: transform;
+}
+
+.scene-stage .label-leader:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 0;
+  border-top: 1px solid var(--scene-dimension);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
