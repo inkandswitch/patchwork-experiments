@@ -160,7 +160,15 @@ try {
   // level brings: the arena, what it requires (keys, notices) and the
   // always-on kit chooser. A turned the arena-level kit on, so A keeps it.
   check("Sample arena suggests no kits (doc.view.kits = [])", Array.isArray((await P("doc()")).view?.kits) && (await P("doc()")).view.kits.length === 0, (await P("doc()")).view);
-  const bSettled = await until("!window.__p.running('b').includes('scene.toolbar')", 6000);
+  // the lingering parts each stop on their own timer, so a poll can land
+  // between two of them: wait for the toolbar to go, then for the set to hold
+  let bSettled = await until("!window.__p.running('b').includes('scene.toolbar')", 6000);
+  for (let last = null, t0 = Date.now(); bSettled; await sleep(100)) {
+    const now = JSON.stringify(await P("running('b')"));
+    if (now === last) break;
+    last = now;
+    if (Date.now() - t0 > 4000) bSettled = false;
+  }
   const bRun = [...(await P("running('b')"))].sort();
   check("player B runs only the game: arena, its requires (keys, notices) and the kit chooser", bSettled && JSON.stringify(bRun) === JSON.stringify(["arena", "scene.keys", "scene.kits", "scene.notices"]), bRun);
   const bChrome = await P("chrome('b')");

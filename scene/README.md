@@ -182,6 +182,7 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   drops: ["*"],                                                      // datatypes it may lay out when dropped
   requires: ["scene.hand", "scene.keys"],                            // what must run with it
   always: false,
+  describes: { "tabletop.seats": { name: "Seats", on: "scene", … } }, // for "Add behaviour…" (STAGE.md)
   async load() { return { create(api) { return instance }, drop?(ctx, info) } } }
 
 { type: "scene:kit", id: "model", name: "Model", extensions: [...], kits?: [...] }
@@ -202,7 +203,8 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   the widget under the pointer, the extensions whose traits are on the object
   under it, the scene's, then the viewer's kits in order. A press nobody
   claims orbits.
-- **Commands** are verbs with a target (an object, or null for the scene).
+- **Commands** are verbs with a target (an object, a ref such as a selected
+  dimension's `"dimension:<id>"`, or null for the scene).
   Surfaces (toolbar, inspector, menu, key map) show and run them; the
   extension that owns a verb doesn't know which surfaces exist.
 - **Everything acquired through `api`** (layers, overlays, listeners,
@@ -685,8 +687,9 @@ node probes/editor-run.mjs     # --show to watch, --shots <dir> for the screensh
 Two views of one doc (A, and a small B; each one's broadcasts reach only the
 other): a locked 5×5 board with connectors, three blocks, two pawns, and an
 STL file in the repo. A real mouse and keyboard over CDP check the layout
-(toolbar along the top in one row, the sidebar at the right with Objects, then
-Dimensions, the canvas filling the rest); a click selects (the outline row is
+(toolbar along the top in one row, the sidebar at the right with Objects,
+the Inspector (showing the Scene: nothing is selected) and Dimensions, the
+canvas filling the rest); a click selects (the outline row is
 marked, the inspector shows it, B draws A's selection box and marks the row);
 Escape and a click on nothing deselect; G / R / H and the toolbar's buttons
 switch tools, Grid / Axes / Bounds toggle (per viewer, never the doc); a drag
@@ -695,15 +698,23 @@ mid-drag and then the landed transform; the hand carries a block onto a
 connector, Q turns it 45°, Esc puts it back, Alt puts one down between
 connectors; dragging the locked board orbits and writes nothing; F frames
 everything; M and two clicks on the board write a 24 cm dimension (label on
-the canvas and in the panel); Delete removes the selection; P hides and shows
+the canvas and in the panel); a click on that label selects the dimension in
+place of a selected block (one selection; B hears it) and Delete removes it,
+and only it; Delete removes a selected object; P hides and shows
 the sidebar; a double-click frames an object; a right-click opens the menu
 (Select and Remove work); the Kits button turns Model off (no toolbar, no
 sidebar, the canvas fills the view) and on again; pasted automerge URLs add a
 GLB and the STL, which builds, shows 20 mm bounds in mm, and rebuilds at
 200 mm when its unit param changes in the inspector's embedded controls; an
 object attached through the inspector keeps its world pose and follows its
-parent's gizmo drag. Paste is the one synthetic event (headless Chrome won't
-give a page the system clipboard).
+parent's gizmo drag. With nothing selected the inspector shows the Scene: its
+"Opens with" lists the kits, and ticking one writes `view.kits` (both views
+start its extensions; unticking stops them). Then, with arena/ built (its
+plugins are registered too; otherwise these are skipped), "Add behaviour…" on
+a block offers Target and Spawn point, not the scene-only Arena level; adding
+Target starts the arena extension in both views, and its × stops it. Paste,
+and choosing in a `<select>`, are the synthetic events (headless Chrome won't
+give a page the system clipboard or a select's popup).
 
 ### The hand
 

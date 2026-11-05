@@ -4,7 +4,9 @@
 <!-- Driven by probes/editor-run.mjs: the BUILT scene tool (dist/) — the stage
      with the model kit — on one doc, two peers (each peer's broadcasts reach
      only the other). A locked board with connectors, blocks, pawns. The
-     runner clicks, drags and types with a real mouse and keyboard over CDP. -->
+     runner clicks, drags and types with a real mouse and keyboard over CDP.
+       ?plugins=<url>,…  more BUILT plugin modules to register (the runner
+                         passes arena's, when it's built, for "Add behaviour"). -->
 <script type="importmap">
 { "imports": {
   "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
@@ -47,6 +49,8 @@ function peer(handle) {
 try {
   const { plugins } = await import("../dist/index.js");
   for (const p of plugins) getRegistry(p.type).register(p);
+  const more = (new URLSearchParams(location.search).get("plugins") ?? "").split(",").filter(Boolean);
+  for (const url of more) for (const p of (await import(url)).plugins) getRegistry(p.type).register(p);
   const repo = new FakeRepo();
   window.repo = repo;
   const box = (w, h, d, color, at = [0, 0, 0]) => {

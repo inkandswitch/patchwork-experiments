@@ -12,8 +12,12 @@
 // gizmo drag (B sees the pose mid-drag, then the landed transform); the hand
 // (snaps to a connector, Q turns, Esc puts back, Alt places freely); orbit on
 // the locked board; Measure; Delete; F; P; double-click; the context menu; the
-// Kits button; a pasted automerge URL. Prints a JSON report and exits
-// non-zero if any check fails.
+// Kits button; a pasted automerge URL; a dimension selected by its label and
+// deleted; the inspector's Scene section (Opens with) and "Add behaviour…"
+// (an arena Target on a block starts the arena extension; × stops it). The
+// arena's checks need arena/ built (its dist/ is registered alongside); without
+// it they are skipped and say so. Prints a JSON report and exits non-zero if
+// any check fails.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
@@ -29,12 +33,16 @@ const PORT = Number(arg("port", 4600));
 const CDP = Number(arg("cdp", 9600));
 if ([9222, 9333, 9334].includes(CDP)) throw new Error(`--cdp ${CDP} is reserved`);
 const SHOTS = resolve(arg("shots", join(process.env.TMPDIR || tmpdir(), "scene-editor-shots")));
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-if (!existsSync(join(root, "dist/index.js"))) throw new Error("no dist/: run pnpm build first");
+const pkg = resolve(fileURLToPath(new URL("..", import.meta.url)));
+if (!existsSync(join(pkg, "dist/index.js"))) throw new Error("no dist/: run pnpm build first");
+// served from the repo, so a sibling's built plugins can be registered too
+const root = resolve(pkg, "..");
+const ARENA = existsSync(join(root, "arena/dist/index.js"));
+const page = `/scene/probes/editor-probe.html${ARENA ? "?plugins=/arena/dist/index.js" : ""}`;
 
-const b = await browser({ root, port: PORT, cdp: CDP, page: "/probes/editor-probe.html", show: !!arg("show", false), timeout: 300_000 });
+const b = await browser({ root, port: PORT, cdp: CDP, page, show: !!arg("show", false), timeout: 300_000 });
 const { check, checks, details } = checklist();
-const report = { checks, details, shots: [] };
+const report = { checks, details, shots: [], skipped: [] };
 const P = (e) => b.js(`window.__p.${e}`);
 const A = (e) => b.js(`(() => { const p = window.__p, d = p.A; return (${e}); })()`);
 const Bv = (e) => b.js(`(() => { const p = window.__p, d = p.B; return (${e}); })()`);
@@ -82,7 +90,8 @@ try {
     check("toolbarAlongTop", t && Math.abs(t.y - st.y) < 1 && Math.abs(t.w - st.w) < 1 && L.oneRow === 1, { t, st, rows: L.oneRow });
     check("sidebarAtRight", s && Math.abs(s.r - st.r) < 1 && Math.abs(s.y - t.b) < 1 && Math.abs(s.b - st.b) < 1 && s.w > 200 && s.w < 400, { s });
     check("canvasFillsTheRest", c && Math.abs(c.x - st.x) < 1 && Math.abs(c.y - t.b) < 1 && Math.abs(c.r - s.x) < 1 && Math.abs(c.b - st.b) < 1, { c });
-    check("panelsObjectsThenDimensions", JSON.stringify(L.panels) === JSON.stringify(["Objects", "Dimensions"]), L.panels);
+    // nothing selected, the inspector shows the Scene, so its panel is there
+    check("panelsObjectsInspectorDimensions", JSON.stringify(L.panels) === JSON.stringify(["Objects", "Inspector", "Dimensions"]), L.panels);
     check("outlineRows", JSON.stringify(L.rows) === JSON.stringify(["Board", "Block 1", "Block 2", "Block 3", "Pawn 1", "Pawn 2"]), L.rows);
   }
 
@@ -279,6 +288,29 @@ try {
     check("measureDisarmed", (await A(`d.local.get().armed`)) == null, await A(`d.local.get().armed`));
   }
 
+  // ── a dimension: its label selects it (the one selection); Delete removes it ──
+  {
+    const ids0 = Object.keys((await doc()).dimensions ?? {});
+    const p = await scr("b2", [0, 0.0319, 0]);
+    await b.click(p.x, p.y);
+    const first = await selected();
+    const lab = await A(`p.rect('.dimension-label')`);
+    if (lab) await b.click(lab.x + lab.w / 2, lab.y + lab.h / 2);
+    await sleep(150);
+    const sel = await selected();
+    const marks = await A(`({ dimRow: !!p.hostA.querySelector('.dimension-row[data-selected]'), objRows: [...p.hostA.querySelectorAll('.object-row[data-selected]')].map((e) => e.dataset.id), gizmo: d.host.instanceOf("scene.gizmo")?.debug?.target?.id ?? null })`);
+    // selecting the dimension let go of the block: there is one selection
+    check("dimensionLabelSelects", first === "b2" && ids0.length === 1 && sel === `dimension:${ids0[0]}` && marks.dimRow && !marks.objRows.length && !marks.gizmo, { ids0, first, lab, sel, marks });
+    const peer = await b.waitFor(`Object.values(__p.B.presence.get()).some((s) => s.keys?.['scene.select']?.selected === ${JSON.stringify(sel)})`, 2000);
+    check("peerHearsDimensionSelected", peer);
+    await shot("7b-dimension-selected");
+    const n0 = Object.keys((await doc()).objects).length;
+    await b.key("Delete");
+    await sleep(200);
+    const after = { dims: Object.keys((await doc()).dimensions ?? {}), objects: Object.keys((await doc()).objects).length, selected: await selected(), label: await A(`p.rect('.dimension-label')`) };
+    check("deleteRemovesDimension", after.dims.length === 0 && after.objects === n0 && after.selected === null && !after.label, { n0, ...after });
+  }
+
   // ── Delete removes the selected block ───────────────────────────────────
   {
     const p = await scr("p0", [0, 0.015, 0]);
@@ -467,6 +499,60 @@ try {
       check("childFollowsParent", dx > 0.01 && JSON.stringify(c1.transform) === JSON.stringify(c0.transform) && Math.abs(w1[0] - w0[0] - dx) < 1e-6 && Math.abs(w1[2] - w0[2]) < 1e-6, { dx, w0, w1, local: c1.transform.position });
       await shot("16-attached-moved");
     } else check("childFollowsParent", false, "no gizmo handle found");
+  }
+
+  // ── the inspector: the Scene (Opens with), and "Add behaviour…" on a block ──
+  {
+    await b.key("Escape");
+    await clickEmpty();
+    const sc = await A(`(() => {
+      const r = p.hostA.querySelector('.inspector[data-kind="scene"]');
+      const s = r?.closest('section');
+      return r && { shown: !!s && !s.hidden && r.getBoundingClientRect().height > 40, kind: r.querySelector('.inspector-kind')?.textContent ?? null,
+        label: r.querySelector('.opens-with-group .group-label')?.textContent ?? null,
+        kits: [...r.querySelectorAll('.opens-with input[data-kit]')].map((e) => [e.dataset.kit, e.checked]),
+        addable: [...r.querySelectorAll('.behaviour-add option')].map((o) => o.textContent) };
+    })()`);
+    report.sceneInspector = sc;
+    const kitIds = (sc?.kits ?? []).map(([k]) => k);
+    check("sceneSectionOpensWith", (await selected()) === null && sc?.shown && sc.kind === "Scene" && sc.label === "Opens with" && kitIds.includes("model") && (!ARENA || kitIds.includes("arena-level")), sc);
+    await shot("17-scene-inspector");
+    if (!ARENA) report.skipped.push("opensWithWritesViewKits, addBehaviourStartsArena, removeBehaviourStopsArena: arena/ isn't built");
+    else {
+      // tick "Arena level" under Opens with: the doc suggests it, so both
+      // views (whose kits follow the doc's) run its arena.build; untick: they
+      // stop it (after a doc-caused stop's linger)
+      const box = async () => A(`(() => { const e = p.hostA.querySelector('.opens-with input[data-kit="arena-level"]'); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, checked: e.checked }; })()`);
+      const build = `__p.running().includes("arena.build") && __p.running(__p.B).includes("arena.build")`;
+      let cb = await box();
+      await b.click(cb.x, cb.y);
+      const on = { runs: await b.waitFor(build, 8000), kits: (await doc()).view.kits, box: (await box())?.checked };
+      cb = await box();
+      await b.click(cb.x, cb.y);
+      const off = { kits: (await doc()).view.kits, box: (await box())?.checked, stops: await b.waitFor(`!__p.running().includes("arena.build") && !__p.running(__p.B).includes("arena.build")`, 8000) };
+      check("opensWithWritesViewKits", on.kits?.includes("arena-level") && on.box && on.runs && !off.kits?.includes("arena-level") && off.kits?.includes("model") && !off.box && off.stops, { on, off });
+
+      // a block, selected from its outline row; "Add behaviour…" → Target
+      const row = await A(`(() => { const r = p.hostA.querySelector('.object-row[data-id="b2"] .row-main').getBoundingClientRect(); return { x: r.x + 30, y: r.y + r.height / 2 }; })()`);
+      await b.click(row.x, row.y);
+      const offered = await A(`[...p.hostA.querySelectorAll('.inspector-body .behaviour-add option')].map((o) => [o.value, o.textContent])`);
+      const wasRunning = (await P("running()")).includes("arena");
+      // a <select>'s popup isn't in the page in headless Chrome: pick as its change would
+      await A(`(() => { const s = p.hostA.querySelector('.inspector-body .behaviour-add'); s.value = "arena.target"; s.dispatchEvent(new Event("change")); return true; })()`);
+      const started = await b.waitFor(`__p.running().includes("arena") && __p.running(__p.B).includes("arena")`, 8000);
+      const card = await b.waitFor(`!!__p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`, 2000);
+      const t = (await obj("b2"))?.traits;
+      report.behaviour = { offered, wasRunning, traits: t };
+      check("addBehaviourStartsArena", (await selected()) === "b2" && offered.some(([v, l]) => v === "arena.target" && l === "Target") && !offered.some(([v]) => v === "arena.level") && !wasRunning && started && card && t?.["arena.target"] != null, report.behaviour);
+      await sleep(300);
+      await shot("18-behaviour-added");
+      // × on the card: the trait goes, and the arena stops (after a doc-caused stop's linger)
+      const x = await A(`p.rect('.inspector-body .behaviour[data-trait="arena.target"] .behaviour-remove')`);
+      if (x) await b.click(x.x + x.w / 2, x.y + x.h / 2);
+      const gone = (await obj("b2"))?.traits?.["arena.target"] === undefined;
+      const stopped = await b.waitFor(`!__p.running().includes("arena") && !__p.running(__p.B).includes("arena")`, 8000);
+      check("removeBehaviourStopsArena", !!x && gone && stopped && !(await A(`!!p.hostA.querySelector('.inspector-body .behaviour[data-trait="arena.target"]')`)), { x, gone, stopped, running: await P("running()") });
+    }
   }
 
   report.errors = (await P("errors")).filter((e) => !/KHR_parallel_shader_compile/.test(e));
