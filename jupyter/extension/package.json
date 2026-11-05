@@ -1,0 +1,55 @@
+{
+  "name": "@patchwork/jupyter-extension",
+  "version": "0.1.0",
+  "description": "Runs Jupyter notebooks on Patchwork's Automerge documents",
+  "license": "BSD-3-Clause",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "files": [
+    "lib/**/*.{d.ts,js,js.map}",
+    "style/**/*.{css,js}"
+  ],
+  "style": "style/index.css",
+  "sideEffects": [
+    "style/*.css",
+    "style/index.js"
+  ],
+  "styleModule": "style/index.js",
+  "scripts": {
+    "build": "tsc && jupyter-builder build .",
+    "build:lib": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@jupyter/ydoc": "~4.0.0",
+    "@jupyterlab/application": "^4.6.5",
+    "@jupyterlab/apputils": "^4.7.5",
+    "@jupyterlab/codemirror": "^4.6.5",
+    "@jupyterlab/coreutils": "^6.6.5",
+    "@jupyterlab/docregistry": "^4.6.5",
+    "@jupyterlab/mainmenu": "^4.6.5",
+    "@jupyterlab/nbformat": "^4.6.5",
+    "@jupyterlab/notebook": "^4.6.5",
+    "@jupyterlab/services": "^7.6.5",
+    "@lumino/coreutils": "^2.2.2",
+    "@lumino/disposable": "^2.1.4",
+    "@lumino/signaling": "^2.1.5"
+  },
+  "devDependencies": {
+    "@automerge/automerge": "3.3.2",
+    "@automerge/automerge-repo": "^2.5.0",
+    "@jupyter/builder": "^1.2.4",
+    "css-loader": "^7.1.5",
+    "style-loader": "^4.0.0",
+    "typescript": "~5.8.3",
+    "vitest": "^3.2.4",
+    "yjs": "^13.6.33"
+  },
+  "jupyterlab": {
+    "extension": true,
+    "outputDir": "labextension"
+  }
+}

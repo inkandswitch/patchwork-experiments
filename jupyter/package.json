@@ -1,0 +1,29 @@
+{
+  "name": "@patchwork/jupyter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The real Jupyter Notebook UI on Automerge, with Pyodide running offline",
+  "main": "dist/index.js",
+  "scripts": {
+    "setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && pnpm --dir extension install && pnpm install",
+    "build:extension": "PATH=\"$PWD/.venv/bin:$PATH\" pnpm --dir extension build",
+    "build:pyfs": "vite build --config pyfs/vite.config.ts",
+    "build:lite": ".venv/bin/python scripts/build_lite.py",
+    "build:tool": "rm -f dist/*.js && vite build",
+    "build": "pnpm build:extension && pnpm build:lite && pnpm build:pyfs && pnpm build:tool",
+    "test": "pnpm --dir extension test",
+    "push": "pnpm build && pushwork sync"
+  },
+  "devDependencies": {
+    "@automerge/automerge": "3.5.0",
+    "@automerge/automerge-repo": "2.6.0-subduction.49",
+    "@automerge/automerge-repo-storage-indexeddb": "2.6.0-subduction.49",
+    "@automerge/automerge-subduction": "0.20.1",
+    "@inkandswitch/patchwork-bootloader": "^0.2.7",
+    "@jupyterlab/nbformat": "^4.6.5",
+    "playwright-core": "^1.56.0",
+    "typescript": "~5.8.3",
+    "vite": "^5.4.19"
+  }
+}

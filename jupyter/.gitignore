@@ -1,0 +1,12 @@
+# local environment and caches
+/.venv/
+/.cache/
+/.jupyterlite.doit.db
+# build output
+/lite/static/
+/lite/.cache/
+/python/build/
+/python/*.egg-info/
+*.tsbuildinfo
+/extension/lib/
+/extension/labextension/

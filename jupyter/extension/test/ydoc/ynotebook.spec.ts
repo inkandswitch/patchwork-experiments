@@ -1,0 +1,799 @@
+// Copyright (c) Jupyter Development Team.
+// Distributed under the terms of the Modified BSD License.
+
+import type * as nbformat from '@jupyterlab/nbformat';
+import * as Y from 'yjs';
+import { IMapChange, NotebookChange, YNotebook } from '../src';
+
+describe('@jupyter/ydoc', () => {
+  // Fix awareness timeout open handle
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.clearAllTimers();
+  });
+
+  describe('YNotebook', () => {
+    describe('#toJSON', () => {
+      test('serializes equivalent notebooks identically regardless of object key insertion order', () => {
+        const content: nbformat.INotebookContent = {
+          nbformat: 4,
+          nbformat_minor: 5,
+          metadata: { custom: { z: 1, a: { y: 2, b: 3 } } },
+          cells: [
+            {
+              id: 'code-cell',
+              cell_type: 'code',
+              source: 'print(1)',
+              metadata: { tags: ['z', 'a'], custom: { z: 1, a: 2 } },
+              execution_count: null,
+              outputs: [
+                {
+                  // eslint-disable-next-line camelcase
+                  output_type: 'display_data',
+                  data: {
+                    'text/plain': ['z', 'a'],
+                    'application/json': { z: 1, a: 2 }
+                  },
+                  metadata: { custom: { z: 1, a: 2 } }
+                }
+              ]
+            },
+            {
+              id: 'markdown-cell',
+              cell_type: 'markdown',
+              source: '![image](attachment:image.png)',
+              metadata: {},
+              attachments: {
+                'image.png': {
+                  'image/png': 'image',
+                  'text/plain': 'description'
+                }
+              }
+            }
+          ]
+        };
+        const reversed = JSON.parse(
+          JSON.stringify(content, (_key, value: unknown) => {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+              return Object.entries(value)
+                .reverse()
+                .reduce(
+                  (result, [key, item]) => ({ ...result, [key]: item }),
+                  {}
+                );
+            }
+            return value;
+          })
+        );
+        const first = YNotebook.create({ data: content });
+        const second = YNotebook.create({ data: reversed });
+        try {
+          expect(first.toJSON()).toEqual(content);
+          expect(second.toJSON()).toEqual(content);
+          expect(JSON.stringify(first.toJSON())).toBe(
+            JSON.stringify(second.toJSON())
+          );
+          expect(JSON.stringify(first.source)).toBe(
+            JSON.stringify(second.source)
+          );
+          expect(first.dirty).toBe(false);
+          expect(second.dirty).toBe(false);
+        } finally {
+          first.dispose();
+          second.dispose();
+        }
+      });
+    });
+
+    describe('#constructor', () => {
+      test('should create a notebook without arguments', () => {
+        const notebook = YNotebook.create();
+        expect(notebook.cells.length).toBe(0);
+        expect(notebook.dirty).toBe(false);
+        notebook.dispose();
+      });
+    });
+
+    // Skipped for Automerge: these sync document state (dirty, hash) through
+    // the Y.Doc, while the Automerge model keeps state local to each peer.
+    describe.skip('state notifications after peer synchronization', () => {
+      test('exposes complete notebook content when saved state arrives before cells', () => {
+        const saved = YNotebook.create({
+          data: {
+            cells: [
+              {
+                id: 'first-cell',
+                cell_type: 'code',
+                source: 'print(1)',
+                metadata: {},
+                outputs: [],
+                execution_count: null
+              }
+            ],
+            metadata: { kernelspec: { name: 'python', display_name: 'Python' } }
+          }
+        });
+        saved.setState('hash', 'saved-hash');
+        saved.setState('dirty', false);
+        const joining = new YNotebook();
+        const snapshots: unknown[] = [];
+        joining.changed.connect((_, change) => {
+          if (change.stateChange?.some(value => value.name === 'hash')) {
+            snapshots.push(joining.source);
+          }
+        });
+        Y.applyUpdate(joining.ydoc, Y.encodeStateAsUpdate(saved.ydoc));
+        // No timer or microtask: state listeners must see a consistent model
+        // during the synchronous update itself.
+        expect(snapshots).toEqual([saved.source]);
+        joining.dispose();
+        saved.dispose();
+      });
+
+      test('keeps content consistent for subsequent cell replacement and state updates', () => {
+        const saved = YNotebook.create({
+          data: {
+            cells: [
+              {
+                id: 'first',
+                cell_type: 'code',
+                source: '',
+                metadata: {},
+                outputs: [],
+                execution_count: null
+              }
+            ]
+          }
+        });
+        const joining = new YNotebook();
+        Y.applyUpdate(joining.ydoc, Y.encodeStateAsUpdate(saved.ydoc));
+        const snapshots: unknown[] = [];
+        joining.changed.connect((_, change) => {
+          if (change.stateChange?.some(value => value.name === 'hash'))
+            snapshots.push(joining.source);
+        });
+        saved.transact(() => {
+          saved.source = {
+            nbformat: 4,
+            nbformat_minor: 5,
+            metadata: { title: 'updated notebook' },
+            cells: [
+              {
+                id: 'replacement',
+                cell_type: 'markdown',
+                source: 'changed',
+                metadata: {}
+              }
+            ]
+          };
+          saved.setState('hash', 'new-saved-hash');
+          saved.setState('dirty', false);
+        });
+        Y.applyUpdate(joining.ydoc, Y.encodeStateAsUpdate(saved.ydoc));
+        expect(snapshots).toEqual([saved.source]);
+        joining.dispose();
+        saved.dispose();
+      });
+    });
+
+    describe('#factory', () => {
+      test('should create a notebook with a cell', () => {
+        const cell: nbformat.ICodeCell = {
+          id: 'first-cell',
+          cell_type: 'code',
+          source: '',
+          metadata: {},
+          outputs: [],
+          execution_count: null
+        };
+
+        const notebook = YNotebook.create({
+          data: {
+            cells: [cell]
+          }
+        });
+        expect(notebook.cells).toHaveLength(1);
+        expect(notebook.cells[0].toJSON()).toEqual(cell);
+        expect(notebook.dirty).toBe(false);
+        notebook.dispose();
+      });
+
+      test('should create a notebook with metadata', () => {
+        const metadata: nbformat.INotebookMetadata = {
+          kernelspec: {
+            name: 'xeus-python',
+            display_name: 'Xeus Python'
+          }
+        };
+
+        const notebook = YNotebook.create({
+          data: {
+            nbformat: 1,
+            nbformat_minor: 0,
+            metadata
+          }
+        });
+        expect(notebook.cells).toHaveLength(0);
+        expect(notebook.nbformat).toEqual(1);
+        expect(notebook.nbformat_minor).toEqual(0);
+        expect(notebook.metadata).toEqual(metadata);
+        expect(notebook.dirty).toBe(false);
+        notebook.dispose();
+      });
+    });
+
+    describe('#disposed', () => {
+      test('should be emitted when the document is disposed', () => {
+        const notebook = YNotebook.create();
+        let disposed = false;
+        notebook.disposed.connect(() => {
+          disposed = true;
+        });
+        notebook.dispose();
+        expect(disposed).toEqual(true);
+      });
+    });
+
+    describe('metadata', () => {
+      test('should get metadata', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+
+        notebook.setMetadata(metadata);
+
+        expect(notebook.metadata).toEqual(metadata);
+        expect(notebook.dirty).toBe(true);
+        notebook.dispose();
+      });
+
+      test('should get all metadata', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+
+        notebook.setMetadata(metadata);
+
+        expect(notebook.getMetadata()).toEqual(metadata);
+        notebook.dispose();
+      });
+
+      test('should get one metadata', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+
+        notebook.setMetadata(metadata);
+
+        expect(notebook.getMetadata('orig_nbformat')).toEqual(1);
+        notebook.dispose();
+      });
+
+      test('should set one metadata', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+
+        notebook.setMetadata(metadata);
+        notebook.setMetadata('test', 'banana');
+
+        expect(notebook.getMetadata('test')).toEqual('banana');
+        notebook.dispose();
+      });
+
+      it.each([null, undefined, 1, true, 'string', { a: 1 }, [1, 2]])(
+        'should get single metadata %s',
+        value => {
+          const nb = YNotebook.create();
+          const metadata = {
+            orig_nbformat: 1,
+            kernelspec: {
+              display_name: 'python',
+              name: 'python'
+            },
+            test: value
+          };
+
+          nb.setMetadata(metadata);
+
+          expect(nb.getMetadata('test')).toEqual(value);
+          nb.dispose();
+        }
+      );
+
+      test('should update metadata', () => {
+        const notebook = YNotebook.create();
+        const metadata = notebook.getMetadata();
+        expect(metadata).toBeTruthy();
+        metadata.orig_nbformat = 1;
+        metadata.kernelspec = {
+          display_name: 'python',
+          name: 'python'
+        };
+        expect(notebook.dirty).toBe(false);
+        notebook.setMetadata(metadata);
+        {
+          const metadata = notebook.getMetadata();
+          expect(metadata.kernelspec!.name).toBe('python');
+          expect(metadata.orig_nbformat).toBe(1);
+        }
+        expect(notebook.dirty).toBe(true);
+        notebook.dirty = false;
+        notebook.updateMetadata({
+          orig_nbformat: 2
+        });
+        {
+          const metadata = notebook.getMetadata();
+          expect(metadata.kernelspec!.name).toBe('python');
+          expect(metadata.orig_nbformat).toBe(2);
+        }
+        expect(notebook.dirty).toBe(true);
+        notebook.dispose();
+      });
+
+      test('should emit all metadata changes', () => {
+        const notebook = YNotebook.create();
+
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+
+        const changes: IMapChange[] = [];
+        notebook.metadataChanged.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.metadata = metadata;
+
+        expect(changes).toHaveLength(2);
+        expect(changes).toEqual([
+          {
+            type: 'add',
+            key: 'orig_nbformat',
+            newValue: metadata.orig_nbformat
+          },
+          {
+            type: 'add',
+            key: 'kernelspec',
+            newValue: metadata.kernelspec
+          }
+        ]);
+
+        notebook.dispose();
+      });
+
+      test('should emit all metadata changes on update', () => {
+        const notebook = YNotebook.create();
+
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+
+        const changes: IMapChange[] = [];
+        notebook.metadataChanged.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.updateMetadata(metadata);
+
+        expect(changes).toHaveLength(2);
+        expect(changes).toEqual([
+          {
+            type: 'add',
+            key: 'orig_nbformat',
+            newValue: metadata.orig_nbformat
+          },
+          {
+            type: 'add',
+            key: 'kernelspec',
+            newValue: metadata.kernelspec
+          }
+        ]);
+
+        notebook.dispose();
+      });
+
+      test('should emit a add metadata change', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+        notebook.metadata = metadata;
+
+        const changes: IMapChange[] = [];
+        notebook.metadataChanged.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.setMetadata('test', 'banana');
+
+        expect(changes).toHaveLength(1);
+        expect(changes).toEqual([
+          { type: 'add', key: 'test', newValue: 'banana', oldValue: undefined }
+        ]);
+
+        notebook.dispose();
+      });
+
+      test('should emit a delete metadata change', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+        notebook.metadata = metadata;
+
+        const changes: IMapChange[] = [];
+        notebook.setMetadata('test', 'banana');
+
+        notebook.metadataChanged.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.deleteMetadata('test');
+
+        expect(changes).toHaveLength(1);
+        expect(changes).toEqual([
+          {
+            type: 'remove',
+            key: 'test',
+            newValue: undefined,
+            oldValue: 'banana'
+          }
+        ]);
+
+        notebook.dispose();
+      });
+
+      test('should emit an update metadata change', () => {
+        const notebook = YNotebook.create();
+        const metadata = {
+          orig_nbformat: 1,
+          kernelspec: {
+            display_name: 'python',
+            name: 'python'
+          }
+        };
+        notebook.metadata = metadata;
+
+        const changes: IMapChange[] = [];
+        notebook.setMetadata('test', 'banana');
+
+        notebook.metadataChanged.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.setMetadata('test', 'orange');
+
+        expect(changes).toHaveLength(1);
+        expect(changes).toEqual([
+          {
+            type: 'change',
+            key: 'test',
+            newValue: 'orange',
+            oldValue: 'banana'
+          }
+        ]);
+
+        notebook.dispose();
+      });
+    });
+
+    describe('#insertCell', () => {
+      test('should insert a cell', () => {
+        const notebook = YNotebook.create();
+        expect(notebook.dirty).toBe(false);
+        notebook.insertCell(0, { cell_type: 'code' });
+        expect(notebook.cells.length).toBe(1);
+        expect(notebook.dirty).toBe(true);
+        notebook.dispose();
+      });
+      test('should set cell source', () => {
+        const notebook = YNotebook.create();
+        expect(notebook.dirty).toBe(false);
+        const codeCell = notebook.insertCell(0, { cell_type: 'code' });
+        expect(notebook.dirty).toBe(true);
+        notebook.dirty = false;
+        expect(notebook.dirty).toBe(false);
+        codeCell.setSource('test');
+        expect(notebook.dirty).toBe(true);
+        expect(notebook.cells[0].getSource()).toBe('test');
+        notebook.dispose();
+      });
+      test('should update source', () => {
+        const notebook = YNotebook.create();
+        expect(notebook.dirty).toBe(false);
+        const codeCell = notebook.insertCell(0, { cell_type: 'code' });
+        expect(notebook.dirty).toBe(true);
+        notebook.dirty = false;
+        expect(notebook.dirty).toBe(false);
+        codeCell.setSource('test');
+        expect(notebook.dirty).toBe(true);
+        notebook.dirty = false;
+        expect(notebook.dirty).toBe(false);
+        codeCell.updateSource(0, 0, 'hello');
+        expect(notebook.dirty).toBe(true);
+        expect(codeCell.getSource()).toBe('hellotest');
+        notebook.dispose();
+      });
+
+      test('should emit a add cells change', () => {
+        const notebook = YNotebook.create();
+        const changes: NotebookChange[] = [];
+        notebook.changed.connect((_, c) => {
+          changes.push(c);
+        });
+        const codeCell = notebook.insertCell(0, { cell_type: 'code' });
+
+        expect(changes).toHaveLength(2);
+        expect(changes[0].stateChange).toEqual([
+          {
+            name: 'dirty',
+            oldValue: false,
+            newValue: true
+          }
+        ]);
+        expect(changes[1].cellsChange).toEqual([
+          {
+            insert: [codeCell]
+          }
+        ]);
+        notebook.dispose();
+      });
+    });
+
+    describe('#deleteCell', () => {
+      test('should emit a delete cells change', () => {
+        const notebook = YNotebook.create();
+        const changes: NotebookChange[] = [];
+        const codeCell = notebook.insertCell(0, { cell_type: 'code' });
+
+        notebook.changed.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.deleteCell(0);
+
+        expect(changes).toHaveLength(1);
+        expect(codeCell.isDisposed).toEqual(true);
+        expect(changes[0].cellsChange).toEqual([{ delete: 1 }]);
+        notebook.dispose();
+      });
+    });
+
+    describe('#moveCell', () => {
+      test('should emit add and delete cells changes when moving a cell', () => {
+        const notebook = YNotebook.create();
+        const changes: NotebookChange[] = [];
+        const codeCell = notebook.addCell({ cell_type: 'code' });
+        notebook.addCell({ cell_type: 'markdown' });
+        const raw = codeCell.toJSON();
+        notebook.changed.connect((_, c) => {
+          changes.push(c);
+        });
+        notebook.moveCell(0, 1);
+
+        expect(notebook.getCell(1)).not.toEqual(codeCell);
+        expect(notebook.getCell(1).toJSON()).toEqual(raw);
+        expect(changes[0].cellsChange).toHaveLength(3);
+        expect(changes[0].cellsChange).toEqual([
+          { delete: 1 },
+          { retain: 1 },
+          {
+            insert: [notebook.getCell(1)]
+          }
+        ]);
+        notebook.dispose();
+      });
+    });
+
+    describe('#fromJSON', () => {
+      test('should load a serialize notebook', () => {
+        const notebook = YNotebook.create();
+        notebook.fromJSON({
+          cells: [],
+          metadata: {
+            dummy: 42
+          },
+          nbformat: 4,
+          nbformat_minor: 5
+        });
+
+        expect(notebook.cells).toHaveLength(0);
+        expect(notebook.nbformat).toEqual(4);
+        expect(notebook.nbformat_minor).toEqual(5);
+        notebook.dispose();
+      });
+
+      test('should remove orig_nbformat', () => {
+        const notebook = YNotebook.create();
+        notebook.fromJSON({
+          cells: [],
+          metadata: {
+            dummy: 42,
+            orig_nbformat: 3
+          },
+          nbformat: 4,
+          nbformat_minor: 5
+        });
+
+        expect(notebook.getMetadata('orig_nbformat')).toEqual(undefined);
+        notebook.dispose();
+      });
+
+      test('should remove cell id for version <4.5', () => {
+        const notebook = YNotebook.create();
+        notebook.fromJSON({
+          cells: [
+            {
+              cell_type: 'code',
+              id: 'first-cell',
+              source: '',
+              metadata: {}
+            }
+          ],
+          metadata: {
+            dummy: 42
+          },
+          nbformat: 4,
+          nbformat_minor: 4
+        });
+
+        expect(notebook.cells).toHaveLength(1);
+        expect(notebook.cells[0].id).not.toEqual('first-cell');
+        notebook.dispose();
+      });
+    });
+
+    describe('#undo', () => {
+      describe('globally', () => {
+        test('should set dirty after undoing a change', () => {
+          const notebook = YNotebook.create();
+          expect(notebook.dirty).toBe(false);
+          notebook.addCell({ cell_type: 'code' });
+          expect(notebook.dirty).toBe(true);
+          notebook.dirty = false;
+          expect(notebook.dirty).toBe(false);
+
+          notebook.undo();
+
+          expect(notebook.dirty).toBe(true);
+        });
+
+        test('should not set dirty after undoing no change', () => {
+          const notebook = YNotebook.create();
+          expect(notebook.dirty).toBe(false);
+
+          notebook.undo();
+
+          expect(notebook.dirty).toBe(false);
+        });
+
+        test('should undo cell addition', () => {
+          const notebook = YNotebook.create();
+          notebook.addCell({ cell_type: 'code' });
+          notebook.undoManager.stopCapturing();
+          notebook.addCell({ cell_type: 'markdown' });
+
+          expect(notebook.cells.length).toEqual(2);
+
+          notebook.undo();
+
+          expect(notebook.cells.length).toEqual(1);
+        });
+
+        test('should undo cell source update', () => {
+          const notebook = YNotebook.create();
+          const codeCell = notebook.addCell({ cell_type: 'code' });
+          notebook.undoManager.stopCapturing();
+          notebook.addCell({ cell_type: 'markdown' });
+          notebook.undoManager.stopCapturing();
+          codeCell.updateSource(0, 0, 'print(hello);');
+
+          notebook.undo();
+
+          expect(notebook.cells.length).toEqual(2);
+          expect(notebook.getCell(0).getSource()).toEqual('');
+        });
+
+        test('should undo at global level when called locally', () => {
+          const notebook = YNotebook.create();
+          const codeCell = notebook.addCell({ cell_type: 'code' });
+          notebook.undoManager.stopCapturing();
+          const markdownCell = notebook.addCell({ cell_type: 'markdown' });
+          notebook.undoManager.stopCapturing();
+          codeCell.updateSource(0, 0, 'print(hello);');
+          notebook.undoManager.stopCapturing();
+          markdownCell.updateSource(0, 0, '# Title');
+
+          codeCell.undo();
+
+          expect(notebook.cells.length).toEqual(2);
+          expect(notebook.getCell(0).getSource()).toEqual('print(hello);');
+          expect(notebook.getCell(1).getSource()).toEqual('');
+        });
+      });
+
+      describe('per cells', () => {
+        test('should undo cell addition', () => {
+          const notebook = YNotebook.create({
+            disableDocumentWideUndoRedo: true
+          });
+          notebook.addCell({ cell_type: 'code' });
+          notebook.undoManager.stopCapturing();
+          notebook.addCell({ cell_type: 'markdown' });
+
+          expect(notebook.cells.length).toEqual(2);
+
+          notebook.undo();
+
+          expect(notebook.cells.length).toEqual(1);
+        });
+
+        test('should not undo cell source update', () => {
+          const notebook = YNotebook.create({
+            disableDocumentWideUndoRedo: true
+          });
+          const codeCell = notebook.addCell({ cell_type: 'code' });
+          notebook.undoManager.stopCapturing();
+          notebook.addCell({ cell_type: 'markdown' });
+
+          codeCell.updateSource(0, 0, 'print(hello);');
+
+          notebook.undo();
+
+          expect(notebook.cells.length).toEqual(1);
+          expect(notebook.getCell(0).getSource()).toEqual('print(hello);');
+        });
+
+        test('should only undo cell source update', () => {
+          const notebook = YNotebook.create({
+            disableDocumentWideUndoRedo: true
+          });
+          const codeCell = notebook.addCell({ cell_type: 'code' });
+          notebook.undoManager.stopCapturing();
+          const markdownCell = notebook.addCell({ cell_type: 'markdown' });
+          codeCell.updateSource(0, 0, 'print(hello);');
+          markdownCell.updateSource(0, 0, '# Title');
+
+          codeCell.undo();
+
+          expect(notebook.cells.length).toEqual(2);
+          expect(notebook.getCell(0).getSource()).toEqual('');
+          expect(notebook.getCell(1).getSource()).toEqual('# Title');
+        });
+      });
+    });
+  });
+});

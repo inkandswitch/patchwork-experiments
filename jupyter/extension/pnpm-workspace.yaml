@@ -1,0 +1,4 @@
+allowBuilds:
+  "@fortawesome/fontawesome-free": false
+  cbor-extract: false
+  esbuild: true

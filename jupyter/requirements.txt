@@ -1,0 +1,5 @@
+jupyterlab==4.6.5
+jupyterlite-core==0.8.7
+jupyterlite-pyodide-kernel==0.8.6
+jupyter_builder==1.2.4
+setuptools>=68
