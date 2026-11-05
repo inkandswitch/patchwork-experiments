@@ -1,0 +1,133 @@
+.scene-stage .arena:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font: 13px/1.3 var(--scene-font, system-ui, sans-serif);
+  color: #fff;
+}
+.scene-stage .arena-hud:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  inset: 0;
+}
+.scene-stage .arena button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  font: inherit;
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.scene-stage .arena-start:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgb(20 22 28 / 0.72);
+  pointer-events: auto;
+}
+.scene-stage .arena-play:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-css, #2bb39a);
+  color: #06120f;
+  font-weight: 600;
+}
+.scene-stage .arena-reset:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+}
+.scene-stage .arena-count:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding-right: 10px;
+  opacity: 0.85;
+}
+.scene-stage .arena-crosshair:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  background:
+    linear-gradient(#fff, #fff) center / 2px 8px no-repeat,
+    linear-gradient(#fff, #fff) center / 8px 2px no-repeat;
+  filter: drop-shadow(0 0 1px #000);
+}
+.scene-stage .arena-crosshair[data-hit]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background:
+    linear-gradient(45deg, transparent 45%, #ff5a4a 45% 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, #ff5a4a 45% 55%, transparent 55%);
+}
+.scene-stage .arena-top:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgb(20 22 28 / 0.6);
+}
+.scene-stage .arena-scores:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+  min-width: 140px;
+}
+.scene-stage .arena-start + .arena-scores:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgb(20 22 28 / 0.6);
+}
+.scene-stage .arena-scores li:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.scene-stage .arena-scores li[data-you]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: #7ff0d6;
+}
+.scene-stage .arena-ammo:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px #000;
+}
+.scene-stage .arena-ammo[data-empty]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: #ff7a6a;
+}
+.scene-stage .arena-help:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  opacity: 0.7;
+  text-shadow: 0 1px 2px #000;
+  white-space: nowrap;
+}
+.scene-stage .arena-resume:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  top: 58%;
+  transform: translateX(-50%);
+  background: rgb(20 22 28 / 0.85);
+  color: #fff;
+  padding: 10px 18px;
+}
+.scene-stage .label.arena-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: #fff;
+  background: rgb(20 22 28 / 0.6);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
