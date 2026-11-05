@@ -145,9 +145,12 @@ try {
   const names = await T("secretNames()");
   check("S shuffles the pile under the pointer (2 cards), through its command", /Shuffling 2 cards/.test(await T("toast()")) && names.faceDown === before8.under && names.under === before8.faceDown, { toast: await T("toast()"), names, before8 });
 
-  // flipped (F) while carried
+  // flipped (F) while carried: the carry takes F, so Frame all (also F) doesn't run
+  const camBeforeFlip = await T("camera()");
   await carry(await T('top("faceDown")'), await T("screen([0.25, 0, 0.05])"), { beforeRelease: () => b.key("f") });
   await settle();
+  const camAfterFlip = await T("camera()");
+  check("F while carrying flips, and doesn't reframe the view", near(camBeforeFlip.position, camAfterFlip.position, 1e-4) && near(camBeforeFlip.target, camAfterFlip.target, 1e-4), { camBeforeFlip, camAfterFlip });
   check("flipped (F) while carried and put down, it is face up", Math.abs((await T('rot("faceDown")'))[2]) < 1e-3, await T('rot("faceDown")'));
   check("and both see its face", (await look("a", "faceDown")) === "face" && (await look("b", "faceDown")) === "face", [await look("a", "faceDown"), await look("b", "faceDown")]);
 
