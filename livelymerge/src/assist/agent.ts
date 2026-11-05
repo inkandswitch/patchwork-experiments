@@ -392,7 +392,12 @@ export class Agent {
           const narration = typeof input.narration === 'string' ? input.narration.trim() : '';
           if (narration) {
             this.emit({ kind: 'text', text: narration });
-            void this.executor.narrate(narration).catch(() => {});
+            // The steps start WITH the sentence, not before it: wait until the voice
+            // reaches it (whatever is queued ahead plays first; synthesis overlaps that).
+            // Resolves either way if the sentence is skipped, canceled or fails.
+            await new Promise<void>((start) => {
+              this.executor.narrate(narration, { onStart: start }).then(start, start);
+            });
           }
           const r = await this.executor.perform(steps, { scale });
           const summary = r.steps.map((s) => ({

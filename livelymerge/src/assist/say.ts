@@ -2,8 +2,14 @@
  * Speech with word anchors. The AI's text carries inline markers,
  *   "I'll move {s1}this window{/} over {p2}here{/}."
  * and the executor fires the steps anchored to `s1` when the TTS reaches "this",
- * ending them when "window" has been spoken. M3 uses the browser's speechSynthesis
- * (word boundary events); ElevenLabs with character timestamps comes later.
+ * ending them when "window" has been spoken.
+ *
+ * Every sentence — narration, progress notes, `say` steps — goes through ONE queue
+ * and plays in the order it was asked for: a sentence reserves its place the moment
+ * `speak` is called and synthesizes meanwhile, so the network round trip overlaps
+ * whatever is still playing and nothing jumps the line. ElevenLabs (word times from
+ * the API's alignment), the browser's speechSynthesis (word boundary events), and
+ * mute (an estimate paces the anchors) all drive the same handlers.
  */
 export interface AnchorSpan {
   id: string;
@@ -91,7 +97,8 @@ export interface SpeakHandlers {
   onStart?(): void;
   /** Called as each word starts (index into parsed.words). */
   onWord?(index: number): void;
-  onSpanStart?(span: AnchorSpan): void;
+  /** `expectedMs`: how long the span's words will take to say, when the voice knows. */
+  onSpanStart?(span: AnchorSpan, expectedMs?: number): void;
   onSpanEnd?(span: AnchorSpan): void;
 }
 
@@ -101,31 +108,43 @@ export interface TtsWord {
   t1: number;
 }
 
+export interface TtsClip {
+  blob: Blob;
+  words: TtsWord[];
+}
+
 export interface SpeakOptions {
   rate?: number;
   voiceName?: string;
   /** chars/s used to estimate word timing when the engine gives no boundary events */
   estimatedCharsPerSec?: number;
-  /** Cut whatever is speaking or queued and start now (say steps, whose anchors must
-   *  line up with actions). Default: queue behind what is already speaking. */
+  /** Cut whatever is speaking or queued and start now. Default: queue behind what is
+   *  already speaking — sentences play in the order they were asked for. */
   takeover?: boolean;
-  /** An external voice (ElevenLabs): audio plus word times. null → the browser's engine. */
-  tts?: (text: string) => Promise<{ blob: Blob; words: TtsWord[] } | null>;
+  /** An external voice (ElevenLabs): audio plus word times. `previous` is the sentence
+   *  queued before this one, for prosody continuity. null → the browser's engine. */
+  tts?: (text: string, previous?: string) => Promise<TtsClip | null>;
   /** No sound at all: anchors are paced by the estimate, onStart fires at once. */
   mute?: boolean;
 }
 
-// ---- external-audio queue: one clip at a time, in order; a takeover empties it ----
+// ---- the queue: one sentence at a time, in the order asked; a takeover empties it ----
 
 interface Playing {
-  audio: HTMLAudioElement;
   stop: () => void;
 }
 let playing: Playing | null = null;
 let queueTail: Promise<void> = Promise.resolve();
 let queueGeneration = 0;
-/** The silent (muted) sentence being paced right now, if any. */
-let pacing: { stop: () => void } | null = null;
+/** The text of the last sentence queued (what the next one follows). */
+let lastQueuedText = '';
+/** An external voice that takes longer than this hands the sentence to the browser. */
+export const TTS_TIMEOUT_MS = 8000;
+
+/** The last sentence queued for speech, so a batch synthesized ahead can follow on from it. */
+export function lastQueuedSpeech(): string {
+  return lastQueuedText;
+}
 
 /** Stops every voice: the browser engine, any external clip (queued or playing), and
  *  a muted sentence being paced. */
@@ -133,8 +152,23 @@ export function stopAllSpeech(): void {
   queueGeneration++;
   queueTail = Promise.resolve();
   if (playing) playing.stop();
-  if (pacing) pacing.stop();
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(fallback), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(t);
+        resolve(fallback);
+      },
+    );
+  });
 }
 
 /**
@@ -149,23 +183,42 @@ export async function speak(
   isCanceled: () => boolean = () => false,
   isFast: () => boolean = () => false,
 ): Promise<void> {
-  if (opts.mute) return speakSilently(parsed, handlers, opts, isCanceled, isFast);
-  if (opts.tts && parsed.text.trim()) {
-    // Synthesize right away (the network round trip overlaps whatever is still
-    // playing), then take a slot in the playback queue.
-    let clip: { blob: Blob; words: TtsWord[] } | null = null;
-    try {
-      clip = await opts.tts(parsed.text);
-    } catch {
-      clip = null;
-    }
-    if (isCanceled()) return;
-    if (clip) return playClip(clip, parsed, handlers, opts, isCanceled, isFast);
+  if (opts.takeover) stopAllSpeech();
+  // Reserve a place in line NOW — order of asking is order of speaking — and
+  // synthesize meanwhile, so the round trip overlaps whatever is still playing.
+  const gen = queueGeneration;
+  const mySlot = queueTail;
+  let release!: () => void;
+  queueTail = new Promise<void>((r) => (release = r));
+  const previous = lastQueuedText;
+  lastQueuedText = parsed.text;
+  const clipP: Promise<TtsClip | null> =
+    !opts.mute && opts.tts && parsed.text.trim()
+      ? withTimeout(
+          opts.tts(parsed.text, previous).catch(() => null),
+          TTS_TIMEOUT_MS,
+          null,
+        )
+      : Promise.resolve(null);
+  try {
+    await mySlot;
+    if (gen !== queueGeneration || isCanceled()) return;
+    if (opts.mute) return await paceSilently(parsed, handlers, opts, isCanceled, isFast);
+    const clip = await clipP;
+    if (gen !== queueGeneration || isCanceled()) return;
+    if (clip) return await playClip(clip, parsed, handlers, opts, isCanceled, isFast);
+    return await speakWithBrowser(parsed, handlers, opts, isCanceled, isFast);
+  } finally {
+    release();
   }
-  return speakWithBrowser(parsed, handlers, opts, isCanceled, isFast);
 }
 
-function anchorTables(parsed: ParsedSay) {
+/**
+ * Fires the handlers in word order, never skipping one: `reach(i)` catches up to
+ * word i (spans ending before it, each word, spans starting on it), `finish()` runs
+ * everything left. `spanMs(first, last)` says how long a span's words will take.
+ */
+function anchorDriver(parsed: ParsedSay, handlers: SpeakHandlers, spanMs: (first: number, last: number) => number | undefined) {
   const starts = new Map<number, AnchorSpan[]>();
   const ends = new Map<number, AnchorSpan[]>();
   for (const s of parsed.spans) {
@@ -173,24 +226,15 @@ function anchorTables(parsed: ParsedSay) {
     (starts.get(first) ?? starts.set(first, []).get(first)!).push(s);
     (ends.get(last) ?? ends.set(last, []).get(last)!).push(s);
   }
-  return { starts, ends };
-}
-
-async function playClip(
-  clip: { blob: Blob; words: TtsWord[] },
-  parsed: ParsedSay,
-  handlers: SpeakHandlers,
-  opts: SpeakOptions,
-  isCanceled: () => boolean,
-  isFast: () => boolean,
-): Promise<void> {
-  const { starts, ends } = anchorTables(parsed);
   let reached = -1;
   const reach = (i: number) => {
     for (let w = reached + 1; w <= i && w < parsed.words.length; w++) {
       if (w > 0) for (const s of ends.get(w - 1) ?? []) handlers.onSpanEnd?.(s);
       handlers.onWord?.(w);
-      for (const s of starts.get(w) ?? []) handlers.onSpanStart?.(s);
+      for (const s of starts.get(w) ?? []) {
+        const { first, last } = spanWords(parsed, s);
+        handlers.onSpanStart?.(s, spanMs(first, last));
+      }
       reached = w;
     }
   };
@@ -199,6 +243,29 @@ async function playClip(
     if (reached >= 0 && reached < parsed.words.length) for (const s of ends.get(reached) ?? []) handlers.onSpanEnd?.(s);
     reached = parsed.words.length;
   };
+  return {
+    reach,
+    finish,
+    get reached() {
+      return reached;
+    },
+  };
+}
+
+/** Span length from the character count, for voices that give no word times. */
+function estimatedSpanMs(parsed: ParsedSay, cps: number) {
+  return (first: number, last: number) => ((parsed.words[last].end - parsed.words[first].start) / cps) * 1000;
+}
+
+/** Plays one synthesized clip (the queue slot is already ours), driving anchors from its word times. */
+function playClip(
+  clip: TtsClip,
+  parsed: ParsedSay,
+  handlers: SpeakHandlers,
+  opts: SpeakOptions,
+  isCanceled: () => boolean,
+  isFast: () => boolean,
+): Promise<void> {
   // Word start times by word index (words the alignment missed inherit the previous).
   const wordStart: number[] = parsed.words.map(() => 0);
   for (const w of clip.words) {
@@ -206,97 +273,73 @@ async function playClip(
     if (i >= 0) wordStart[i] = w.t0;
   }
   for (let i = 1; i < wordStart.length; i++) if (wordStart[i] < wordStart[i - 1]) wordStart[i] = wordStart[i - 1];
+  let clipDuration = NaN;
   // No alignment (a model without timestamps): spread the words over the clip's
   // duration by character position, once the duration is known.
   const estimateFromDuration = (duration: number) => {
-    if (clip.words.length > 0 || !Number.isFinite(duration) || duration <= 0) return;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    clipDuration = duration;
+    if (clip.words.length > 0) return;
     const total = Math.max(1, parsed.text.length);
     for (let i = 0; i < parsed.words.length; i++) wordStart[i] = (parsed.words[i].start / total) * duration;
   };
+  const cps = opts.estimatedCharsPerSec ?? 15;
+  const estimate = estimatedSpanMs(parsed, cps);
+  const driver = anchorDriver(parsed, handlers, (first, last) => {
+    const t0 = wordStart[first];
+    const t1 = last + 1 < wordStart.length ? wordStart[last + 1] : clipDuration;
+    return Number.isFinite(t1) && t1 > t0 ? (t1 - t0) * 1000 : estimate(first, last);
+  });
 
-  if (opts.takeover) stopAllSpeech();
-  const gen = queueGeneration;
-  const mySlot = queueTail;
-  let release!: () => void;
-  queueTail = new Promise<void>((r) => (release = r));
-  try {
-    await mySlot;
-    if (gen !== queueGeneration || isCanceled()) return;
-    await new Promise<void>((resolve) => {
-      const url = URL.createObjectURL(clip.blob);
-      const audio = new Audio(url);
-      let done = false;
-      let raf: number | null = null;
-      const end = () => {
-        if (done) return;
-        done = true;
-        if (raf != null) cancelAnimationFrame(raf);
-        clearInterval(poll);
-        if (playing && playing.audio === audio) playing = null;
-        URL.revokeObjectURL(url);
-        finish();
-        resolve();
-      };
-      const stop = () => {
-        try {
-          audio.pause();
-        } catch {
-          /* ignore */
-        }
-        end();
-      };
-      playing = { audio, stop };
-      const tick = () => {
-        if (done) return;
-        const t = audio.currentTime;
-        let i = reached;
-        while (i + 1 < wordStart.length && wordStart[i + 1] <= t + 0.02) i++;
-        if (i > reached) reach(i);
-        raf = requestAnimationFrame(tick);
-      };
-      const poll = setInterval(() => {
-        if (done) return;
-        if (isCanceled() || isFast()) stop();
-      }, 50);
-      audio.onended = end;
-      audio.onerror = end;
-      audio.onloadedmetadata = () => estimateFromDuration(audio.duration);
-      audio.onplay = () => {
-        estimateFromDuration(audio.duration);
-        raf = requestAnimationFrame(tick);
-      };
-      handlers.onStart?.();
-      audio.play().catch(() => end());
-    });
-  } finally {
-    release();
-  }
+  return new Promise<void>((resolve) => {
+    const url = URL.createObjectURL(clip.blob);
+    const audio = new Audio(url);
+    let done = false;
+    let raf: number | null = null;
+    const end = () => {
+      if (done) return;
+      done = true;
+      if (raf != null) cancelAnimationFrame(raf);
+      clearInterval(poll);
+      if (playing && playing.stop === stop) playing = null;
+      URL.revokeObjectURL(url);
+      driver.finish();
+      resolve();
+    };
+    const stop = () => {
+      try {
+        audio.pause();
+      } catch {
+        /* ignore */
+      }
+      end();
+    };
+    playing = { stop };
+    const tick = () => {
+      if (done) return;
+      const t = audio.currentTime;
+      let i = driver.reached;
+      while (i + 1 < wordStart.length && wordStart[i + 1] <= t + 0.02) i++;
+      if (i > driver.reached) driver.reach(i);
+      raf = requestAnimationFrame(tick);
+    };
+    const poll = setInterval(() => {
+      if (done) return;
+      if (isCanceled() || isFast()) stop();
+    }, 50);
+    audio.onended = end;
+    audio.onerror = end;
+    audio.onloadedmetadata = () => estimateFromDuration(audio.duration);
+    audio.onplay = () => {
+      estimateFromDuration(audio.duration);
+      raf = requestAnimationFrame(tick);
+    };
+    handlers.onStart?.();
+    audio.play().catch(() => end());
+  });
 }
 
-/** Mute: no engine; the words are paced by the estimate so anchored steps still happen,
- *  one sentence at a time through the same queue as the audio clips (so bubbles come
- *  one after another, not all at once). */
-async function speakSilently(
-  parsed: ParsedSay,
-  handlers: SpeakHandlers,
-  opts: SpeakOptions,
-  isCanceled: () => boolean,
-  isFast: () => boolean,
-): Promise<void> {
-  if (opts.takeover) stopAllSpeech();
-  const gen = queueGeneration;
-  const mySlot = queueTail;
-  let release!: () => void;
-  queueTail = new Promise<void>((r) => (release = r));
-  try {
-    await mySlot;
-    if (gen !== queueGeneration || isCanceled()) return;
-    await paceSilently(parsed, handlers, opts, isCanceled, isFast);
-  } finally {
-    release();
-  }
-}
-
+/** Mute: no engine; the words are paced by the estimate so anchored steps still happen. */
 function paceSilently(
   parsed: ParsedSay,
   handlers: SpeakHandlers,
@@ -305,16 +348,7 @@ function paceSilently(
   isFast: () => boolean,
 ): Promise<void> {
   const cps = opts.estimatedCharsPerSec ?? 15;
-  const { starts, ends } = anchorTables(parsed);
-  let reached = -1;
-  const reach = (i: number) => {
-    for (let w = reached + 1; w <= i && w < parsed.words.length; w++) {
-      if (w > 0) for (const s of ends.get(w - 1) ?? []) handlers.onSpanEnd?.(s);
-      handlers.onWord?.(w);
-      for (const s of starts.get(w) ?? []) handlers.onSpanStart?.(s);
-      reached = w;
-    }
-  };
+  const driver = anchorDriver(parsed, handlers, estimatedSpanMs(parsed, cps));
   return new Promise((resolve) => {
     let done = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
@@ -323,14 +357,13 @@ function paceSilently(
       done = true;
       timers.forEach((t) => clearTimeout(t));
       clearInterval(poll);
-      if (pacing && pacing.stop === end) pacing = null;
-      reach(parsed.words.length - 1);
-      if (reached >= 0 && reached < parsed.words.length) for (const s of ends.get(reached) ?? []) handlers.onSpanEnd?.(s);
+      if (playing && playing.stop === end) playing = null;
+      driver.finish();
       resolve();
     };
-    pacing = { stop: end };
+    playing = { stop: end };
     handlers.onStart?.();
-    for (let i = 0; i < parsed.words.length; i++) timers.push(setTimeout(() => reach(i), (parsed.words[i].start / cps) * 1000));
+    for (let i = 0; i < parsed.words.length; i++) timers.push(setTimeout(() => driver.reach(i), (parsed.words[i].start / cps) * 1000));
     timers.push(setTimeout(end, (parsed.text.length / cps) * 1000 + 50));
     const poll = setInterval(() => {
       if (isCanceled() || isFast()) end();
@@ -346,28 +379,7 @@ function speakWithBrowser(
   isFast: () => boolean = () => false,
 ): Promise<void> {
   const cps = opts.estimatedCharsPerSec ?? 15;
-  const starts = new Map<number, AnchorSpan[]>();
-  const ends = new Map<number, AnchorSpan[]>();
-  for (const s of parsed.spans) {
-    const { first, last } = spanWords(parsed, s);
-    (starts.get(first) ?? starts.set(first, []).get(first)!).push(s);
-    (ends.get(last) ?? ends.set(last, []).get(last)!).push(s);
-  }
-  let reached = -1;
-  const reach = (i: number) => {
-    // Words may be skipped by the engine; fire everything up to i in order.
-    for (let w = reached + 1; w <= i && w < parsed.words.length; w++) {
-      if (w > 0) for (const s of ends.get(w - 1) ?? []) handlers.onSpanEnd?.(s);
-      handlers.onWord?.(w);
-      for (const s of starts.get(w) ?? []) handlers.onSpanStart?.(s);
-      reached = w;
-    }
-  };
-  const finish = () => {
-    reach(parsed.words.length - 1);
-    if (reached >= 0 && reached < parsed.words.length) for (const s of ends.get(reached) ?? []) handlers.onSpanEnd?.(s);
-    reached = parsed.words.length;
-  };
+  const driver = anchorDriver(parsed, handlers, estimatedSpanMs(parsed, cps));
 
   return new Promise((resolve) => {
     let done = false;
@@ -376,7 +388,8 @@ function speakWithBrowser(
       if (done) return;
       done = true;
       timers.forEach((t) => clearTimeout(t));
-      finish();
+      if (playing && playing.stop === end) playing = null;
+      driver.finish();
       resolve();
     };
     // Estimated pacing: a timer per word, skipped once real boundaries show up.
@@ -386,13 +399,14 @@ function speakWithBrowser(
         const at = (parsed.words[i].start / cps) * 1000;
         timers.push(
           setTimeout(() => {
-            if (!sawBoundary && !done) reach(i);
+            if (!sawBoundary && !done) driver.reach(i);
           }, at),
         );
       }
     };
     const synth = typeof speechSynthesis !== 'undefined' ? speechSynthesis : null;
     if (!synth || !parsed.text.trim()) {
+      playing = { stop: end };
       handlers.onStart?.();
       schedule();
       timers.push(setTimeout(end, (parsed.text.length / cps) * 1000 + 50));
@@ -419,7 +433,7 @@ function speakWithBrowser(
       if (ev.name && ev.name !== 'word') return;
       sawBoundary = true;
       const i = parsed.words.findIndex((w) => w.start <= ev.charIndex && ev.charIndex < w.end);
-      if (i >= 0) reach(i);
+      if (i >= 0) driver.reach(i);
     };
     u.onend = end;
     u.onerror = end;
@@ -447,7 +461,12 @@ function speakWithBrowser(
         }
       } else quietMs = 0;
     }, 50);
-    if (opts.takeover) synth.cancel();
+    playing = {
+      stop: () => {
+        synth.cancel();
+        end();
+      },
+    };
     synth.speak(u);
   });
 }

@@ -201,6 +201,22 @@ describe('say anchors', () => {
     );
     expect(log).toEqual(['w0', '+a', '-a', 'w1', 'w2', '+b', '-b']);
   });
+  it('tells an anchored span how long its words will take', async () => {
+    const p = parseAnchors('go {a}over there{/} now');
+    let got: number | undefined;
+    await speak(p, { onSpanStart: (_s, ms) => (got = ms) }, { estimatedCharsPerSec: 100 });
+    // "over there" is 10 chars at 100 chars/s.
+    expect(got).toBeCloseTo(100, 0);
+  });
+  it('speaks sentences in the order asked, even when a later one synthesizes faster', async () => {
+    const order: string[] = [];
+    const tts = (text: string) =>
+      new Promise<null>((r) => setTimeout(() => r(null), text.startsWith('slow') ? 120 : 0));
+    const a = speak(parseAnchors('slow first sentence'), { onStart: () => order.push('a') }, { tts, estimatedCharsPerSec: 400 });
+    const b = speak(parseAnchors('quick second'), { onStart: () => order.push('b') }, { tts, estimatedCharsPerSec: 400 });
+    await Promise.all([a, b]);
+    expect(order).toEqual(['a', 'b']);
+  });
 });
 
 describe('events', () => {

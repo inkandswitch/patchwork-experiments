@@ -12,7 +12,7 @@ import { AI_INK_COLOR, AI_INK_WIDTH, animatePath, naturalDurationMs, shapeToPath
 import { SyntheticInput, sleep, type Modifiers } from './events';
 import type { Stroke } from './ink';
 import type { InkOverlay } from './overlay';
-import { parseAnchors, speak, stopAllSpeech, type SpeakOptions } from './say';
+import { lastQueuedSpeech, parseAnchors, speak, stopAllSpeech, type SpeakOptions, type TtsClip } from './say';
 import { getVoiceMode, synthesize } from './tts';
 import { compositeSnapshot, imageScale, type Snapshot } from './snapshot';
 
@@ -111,6 +111,8 @@ export class Executor {
   /** Something the user should know (e.g. the voice fell back); wired to the transcript. */
   onNotice: ((text: string) => void) | null = null;
   speakOptions: SpeakOptions = {};
+  /** Clips synthesized ahead for the running performance's say steps, by their text. */
+  private prefetched = new Map<string, Promise<TtsClip | null>>();
 
   /** Speech options for right now: the voice mode is read per sentence. */
   private voiceOptions(extra: Partial<SpeakOptions> = {}): SpeakOptions {
@@ -119,8 +121,37 @@ export class Executor {
       ...this.speakOptions,
       ...extra,
       mute: mode === 'mute',
-      tts: mode === 'elevenlabs' ? (text) => synthesize(text, (t) => this.onNotice?.(t)) : undefined,
+      tts:
+        mode === 'elevenlabs'
+          ? (text, previous) => this.prefetched.get(text) ?? synthesize(text, (t) => this.onNotice?.(t), previous)
+          : undefined,
     };
+  }
+
+  /**
+   * Synthesizes every `say` in a script as the performance starts, in script order,
+   * so no step waits on the network: by the time a say is reached its clip is
+   * (usually) here and it starts the moment the voice is free.
+   */
+  private prefetchSpeech(script: readonly Step[]): void {
+    if (getVoiceMode() !== 'elevenlabs') return;
+    const texts: string[] = [];
+    const walk = (steps: readonly Step[]) => {
+      for (const st of steps) {
+        if (st.type !== 'say') continue;
+        texts.push(parseAnchors(st.text).text);
+        for (const sub of Object.values(st.anchors ?? {})) walk(sub);
+      }
+    };
+    walk(script);
+    let previous = lastQueuedSpeech();
+    for (const text of texts) {
+      if (!text.trim()) continue;
+      if (!this.prefetched.has(text)) {
+        this.prefetched.set(text, synthesize(text, (t) => this.onNotice?.(t), previous).catch(() => null));
+      }
+      previous = text;
+    }
   }
 
   /** With a voice on, speech is heard, not read: bubbles for it only when muted. */
@@ -167,9 +198,11 @@ export class Executor {
     this.running++;
     if (this.cursorTimer != null) clearTimeout(this.cursorTimer);
     const results: StepResult[] = [];
+    this.prefetchSpeech(script);
     try {
       await this.runSteps(script, { scale, style, speakOpts, hintMs: 0 }, results);
     } finally {
+      this.prefetched.clear();
       this.running--;
       if (!this.holdFastForward) this.fastForward = false;
       this.input.releaseAll();
@@ -181,21 +214,23 @@ export class Executor {
   /**
    * Speaks `text` (with a bubble) WITHOUT taking the perform lock, so it can run
    * alongside a performance or an eval — the model's "let me open the halo" plays
-   * while its hands work. A `say` step inside the performance takes over the voice.
+   * while its hands work. Queued behind whatever is already speaking, never a
+   * takeover. `onStart` fires when this sentence is actually heard (the agent starts
+   * a perform's steps on it, so the first gesture and its sentence begin together).
    * Honors cancel and fast-forward.
    */
-  async narrate(text: string): Promise<void> {
+  async narrate(text: string, opts: { onStart?: () => void } = {}): Promise<void> {
     const parsed = parseAnchors(text);
     if (!parsed.text.trim()) return;
     const id = `narr${++this.bubbleSeq}`;
     let shown = false;
     try {
-      // Queued, never a takeover: narration plays back to back while the model thinks.
       // The bubble (muted only) appears when this sentence actually starts.
       await speak(
         parsed,
         {
           onStart: () => {
+            opts.onStart?.();
             if (this.speechBubbles()) {
               shown = true;
               this.overlay.showBubble({ id, kind: 'speech', text: parsed.text, at: null });
@@ -374,7 +409,10 @@ export class Executor {
     const parsed = parseAnchors(step.text);
     const bubbleId = `say${++this.bubbleSeq}`;
     let shown = false;
-    const pending: Promise<void>[] = [];
+    // One mouse, one pen: anchored groups run one after another in speech order, so a
+    // drag still under way when the next span arrives is finished before that span's
+    // steps start (they slip later rather than fighting over the pointer).
+    let chain: Promise<void> = Promise.resolve();
     const cps = ctx.speakOpts.estimatedCharsPerSec ?? 15;
     await speak(
       parsed,
@@ -385,19 +423,20 @@ export class Executor {
             this.overlay.showBubble({ id: bubbleId, kind: 'speech', text: parsed.text, at: null });
           }
         },
-        onSpanStart: (span) => {
+        onSpanStart: (span, expectedMs) => {
           const steps = step.anchors?.[span.id];
           if (!steps) return;
-          const hintMs = ((span.end - span.start) / cps) * 1000;
-          pending.push(this.runSteps(steps, { ...ctx, hintMs }, results));
+          const hintMs = expectedMs ?? ((span.end - span.start) / cps) * 1000;
+          chain = chain.then(() => this.runSteps(steps, { ...ctx, hintMs }, results));
         },
       },
-      // A say step takes the voice over: its anchors must line up with its actions.
-      this.voiceOptions({ ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate, takeover: true }),
+      // Queued, not a takeover: it follows the narration instead of cutting it off.
+      // Its anchors line up regardless, since they fire from its own word times.
+      this.voiceOptions({ ...ctx.speakOpts, rate: step.rate ?? ctx.speakOpts.rate }),
       () => this.canceled,
       () => this.fastForward,
     );
-    await Promise.all(pending);
+    await chain;
     if (shown) window.setTimeout(() => this.overlay.hideBubble(bubbleId), 2000);
     return parsed.text;
   }

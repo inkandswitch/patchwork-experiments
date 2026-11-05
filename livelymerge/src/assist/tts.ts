@@ -298,7 +298,8 @@ export function wordsFromAlignment(
  * Synthesizes `text`. null means "use the browser voice": disabled, no key, or a
  * failure (which also disables it for this page load when it is quota/auth).
  */
-export async function synthesize(text: string, notify?: (text: string) => void): Promise<TtsResult | null> {
+/** `previous`: the sentence spoken before this one (for prosody); defaults to the last one synthesized. */
+export async function synthesize(text: string, notify?: (text: string) => void, previous?: string): Promise<TtsResult | null> {
   if (!elevenEnabled() || disabledReason) return null;
   const key = getElevenKey(false);
   if (!key) return null;
@@ -312,7 +313,7 @@ export async function synthesize(text: string, notify?: (text: string) => void):
       text,
       model_id: getElevenModel(),
       // The sentence before this one, so prosody carries over instead of resetting.
-      ...(previousText ? { previous_text: previousText.slice(-300) } : {}),
+      ...((previous ?? previousText) ? { previous_text: (previous ?? previousText).slice(-300) } : {}),
       voice_settings: { ...getVoiceSettings(), use_speaker_boost: true },
     };
     const post = (path: string) =>
@@ -340,7 +341,7 @@ export async function synthesize(text: string, notify?: (text: string) => void):
         voiceNote = `"${getVoiceName()}" is a library voice (paid plans only via the API); using "${PREMADE_STANDIN}" instead. Premade voices work on every plan — see the Voice field's tooltip.`;
         console.warn('Talk & Draw: ElevenLabs —', voiceNote);
         notify?.(`ElevenLabs: ${voiceNote}`);
-        return synthesize(text, notify);
+        return synthesize(text, notify, previous);
       }
       // Quota, bad key, or rate limit: stop trying for this page load.
       if (res.status === 401 || res.status === 402 || res.status === 429 || /quota|credit|limit/i.test(detail)) {

@@ -204,13 +204,23 @@ primitives are fair game):
 on first use and kept per browser, word times from the API's character alignment so the
 anchors line up). The browser's `speechSynthesis` is the fallback — automatically, for the
 rest of the page load, when the key is missing or a request fails on quota/auth, with a
-note in the transcript. External clips play one at a time from a queue; a `say` step
-(takeover) empties it; cancel and ⏩ stop it. The drawer's Voice row toggles it and sets
-the voice name. `bubble: true` shows the text as a speech bubble while speaking.
+note in the transcript. Every sentence — progress notes, a perform's `narration`, `say`
+steps, the closing line — goes through ONE queue and plays in the order it was asked
+for: a sentence reserves its place when `speak` is called and synthesizes meanwhile
+(the round trip overlaps whatever is playing; 8 s timeout → browser voice), so a short
+sentence never jumps ahead of a longer one and nothing is cut short. A perform's steps
+start the moment its narration is heard (`narrate(text, {onStart})`), so the first
+gesture and its sentence begin together; a `say` step queues behind the narration
+rather than cutting it, and the executor synthesizes every `say` in a script up front
+so no step waits on the network. Cancel and ⏩ stop the queue. The drawer's Voice row
+toggles the voice and sets its name. `bubble: true` shows the text as a speech bubble
+while speaking.
 
 **Word anchors:** `"I'll move {s1}this window{/} over {p2}here{/}."` — `anchors.s1`
 runs when the TTS reaches "this"; a pen stroke inside with no duration is stretched to
-the span's estimated length. `{id}` without `{/}` marks the single next word.
+the span's length (from the clip's word times, else estimated). Anchored groups run one
+after another in speech order — one mouse, one pen — so a slow group delays the next
+rather than overlapping it. `{id}` without `{/}` marks the single next word.
 
 **Bubbles:** `speech_bubble` / `thought_bubble {text, at?, id?, hold?, duration?}`,
 anchored to `at`, else the AI cursor. Auto-dismiss after ~60 ms/char + 2 s unless
