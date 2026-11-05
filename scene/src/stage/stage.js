@@ -1033,6 +1033,7 @@ export default function Stage(handle, element) {
       addObject,
       registry: getRegistry,
       local: Object.freeze({ get: local.get, swap: local.swap }),
+      notify: (text, kind) => notify(text, kind, id),
     });
   }
 

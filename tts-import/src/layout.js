@@ -362,7 +362,7 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     objects,
     order,
     dimensions: {},
-    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand", ...(Object.keys(seats).length ? { panels: ["tabletop.table", "inspector", "objects"] } : {}) },
+    view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand", ...(Object.keys(seats).length ? { kits: [] } : {}) },
     camera: { position: [centre[0], r(span * 1.1), r(centre[2] + span * 1.0)], target: centre },
     ...(Object.keys(seats).length ? { traits: { "tabletop.seats": seats } } : {}),
   };

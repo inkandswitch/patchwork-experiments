@@ -21,6 +21,9 @@ export const plugins = [
     traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
     legacy: { scene: ["seats"], objects: ["zone", "hidden"] },
     drops: ["*"],
+    // playing needs these and nothing else: carry pieces, keys for verbs, a
+    // right-click menu, framing, and somewhere for notices
+    requires: ["scene.hand", "scene.keys", "scene.menu", "scene.frame", "scene.notices"],
     async load() {
       return (await import("./table/extension.js")).default;
     },

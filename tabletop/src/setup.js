@@ -205,7 +205,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       objects,
       order,
       dimensions: {},
-      view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand", panels: ["tabletop.table", "inspector"] },
+      view: { units: "cm", grid: false, axes: false, bounds: false, snap: true, defaultMode: "hand", kits: [] },
       camera: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
       ...(Object.keys(seats).length ? { traits: { "tabletop.seats": seats } } : {}),
     },

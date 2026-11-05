@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { HIDDEN, SEATS, ZONE, docUrl, isFaceUp, seatAt, seatOf, seatedPlayers, visibility, zones } from "./visibility.js";
 import { plainResolver } from "./plain-deck.js";
-import Extension, { PANEL, migrate, needsMigration } from "./extension.js";
+import Extension, { migrate, needsMigration } from "./extension.js";
 import { testScene } from "./test-scene.js";
 
 const T = (position, rotation = [0, 0, 0]) => ({ position, rotation, scale: 1 });
@@ -88,7 +88,7 @@ describe("old scenes", () => {
     expect(d.objects.card.traits[HIDDEN].by).toBe(DECK);
     expect(d.objects.card.hidden).toBeUndefined();
     expect(d.objects.board.traits).toBeUndefined();
-    expect(d.view.panels).toEqual([PANEL, "inspector"]);
+    expect(d.view.kits).toEqual([]); // a table suggests no editing kits
   });
 });
 
@@ -141,11 +141,13 @@ function mount({ viewer = "alice", registries = {} } = {}) {
       fn(doc);
     },
     newId: (p) => `${p}${Math.random().toString(36).slice(2, 8)}`,
-    select: (id) => (calls.selected = id),
-    toast: (m, kind) => calls.toasts.push([m, kind]),
-    refresh: () => calls.refreshes++,
+    local: { get: () => ({}), swap: (fn) => (calls.selected = fn({}).selected) },
+    notify: (m, kind) => calls.toasts.push([m, kind]),
+    schedule: () => calls.refreshes++,
+    overlay: () => (calls.overlay = document.createElement("div")),
+    style() {},
     box: () => null,
-    setCamera: (c) => (calls.camera = c),
+    camera: { set: (c) => (calls.camera = c) },
     registry: async (type) => registries[type] ?? null,
   };
   const x = Extension.create(api);
@@ -186,24 +188,22 @@ describe("the table extension", () => {
     await settle();
     const shuffle = m.x.commands.find((c) => c.id === "shuffle");
     expect(shuffle.key).toBe("s");
-    expect(shuffle.appliesTo("faceDown")).toBe(true);
-    expect(shuffle.appliesTo("board")).toBe(false);
+    expect(shuffle.state("faceDown")).not.toBeNull();
+    expect(shuffle.state("board")).toBeNull();
+    expect(shuffle.state(null)).toBeNull();
     // no boxes: the pile is what's on the same spot (faceDown alone)
     shuffle.run("faceDown");
     expect(m.calls.toasts.at(-1)[0]).toMatch(/nothing here to shuffle/);
   });
 
-  it("the Table panel: sit, and the seat's camera", () => {
+  it("the seat picker over the table: sit, and the seat's camera", () => {
     const m = mount({ viewer: "carol" });
     m.api.change((d) => {
       d.traits[SEATS] = seats(null, "bob");
       d.traits[SEATS].p1.camera = { position: [0, 1, 1], target: [0, 0, 0] };
     });
     m.x.update(m.api.scene());
-    const body = document.createElement("div");
-    const panel = m.x.panels.find((p) => p.id === PANEL).mount(body);
-    panel.update();
-    const select = body.querySelector("select");
+    const select = m.calls.overlay.querySelector(".tabletop-seat");
     expect([...select.options].map((o) => o.textContent)).toEqual(["Watching", "Player 1", "Player 2 (taken)"]);
     select.value = "p1";
     select.dispatchEvent(new Event("change"));
@@ -219,13 +219,16 @@ describe("the table extension", () => {
       load: async () => ({ module: { createResolver: () => ({ update() {}, looks: () => new Map() }), placement, bind } }),
     };
     const m = mount({ registries: { "tabletop:deck": registry } });
+    // the drop is the module's, called before the extension runs, with a small context
+    const ctx = { ...m.api, notify: m.api.notify };
     const url = "automerge:2SecureSecureSecureSecure9";
-    expect(await m.x.drop({ url, doc: { "@patchwork": { type: "secure-deck" } }, handle: {} })).toBe(true);
+    expect(await Extension.drop(ctx, { url, doc: { "@patchwork": { type: "secure-deck" } }, handle: {} })).toBe(true);
     const cards = Object.values(m.doc.objects).filter((o) => o.traits?.[HIDDEN]?.by === url);
     expect(cards).toHaveLength(3);
     expect(cards.every((c) => Math.abs(c.transform.rotation[2] - Math.PI) < 1e-9)).toBe(true);
     expect(bind).toHaveBeenCalledOnce();
     // not a deck: left to the scene
-    expect(await m.x.drop({ url: "automerge:2Other", doc: { "@patchwork": { type: "file" } }, handle: {} })).toBe(false);
+    expect(m.calls.selected).toMatch(/^g/);
+    expect(await Extension.drop(ctx, { url: "automerge:2Other", doc: { "@patchwork": { type: "file" } }, handle: {} })).toBe(false);
   });
 });
