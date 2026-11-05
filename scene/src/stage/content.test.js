@@ -12,6 +12,8 @@ import add from "../parts/add.js";
 import outline from "../parts/outline.js";
 import inspector from "../parts/inspector.js";
 import { Viewport } from "./viewport.js";
+import { getRegistry } from "../test/plugins-mock.js";
+import { encodeGLB } from "../glb.js";
 
 // A stand-in for scene.sidebar: mounts every collected panel and updates it each pass.
 const sidebar = {
@@ -270,5 +272,105 @@ describe("the stage's content loop (mounted, no WebGL)", () => {
     await flush();
     expect(Object.keys(s.doc().objects).length).toBe(before);
     expect(drop.defaultPrevented).toBe(false);
+  });
+  // ─── contract v3 through the stage: what loadProvider hands the manager ───
+
+  /** A provider registered after mount (the stage lists providers live), with a version, a clamped param and a dependency. */
+  function thingProvider() {
+    const calls = [];
+    const p = {
+      abortNext: false,
+      calls,
+      build: vi.fn(async ({ params }) => {
+        calls.push({ ...params });
+        if (p.abortNext) {
+          p.abortNext = false;
+          throw Object.assign(new Error("superseded"), { name: "AbortError" });
+        }
+        return { kind: "glb", glb: encodeGLB({ meshes: [{ positions: [0, 0, 0, params.n, 0, 0, 0, 1, 0] }] }) };
+      }),
+    };
+    getRegistry("scene:source").register({
+      type: "scene:source",
+      id: "t-thing",
+      name: "Thing",
+      supportedDatatypes: ["thing"],
+      version: 3,
+      params: [{ key: "n", kind: "integer", default: 4, min: 1, max: 10, cost: "cheap" }],
+      load: async () => ({ build: p.build, dependencies: (doc) => (doc.link ? [doc.link] : []) }),
+    });
+    return p;
+  }
+
+  it("builds with the provider's version, its params clamped to their specs, and its dependencies keyed", async () => {
+    await mount();
+    const p = thingProvider();
+    const dep = repo.add({ "@patchwork": { type: "hull" }, length: 1 });
+    const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing", link: dep.url });
+    await addByUrl(source.url);
+    const [id] = Object.keys(s.doc().objects);
+    expect(s.doc().objects[id].providerId).toBe("t-thing");
+    const render = await repo.find(s.doc().objects[id].renderUrl);
+    await wait(20);
+    await settle();
+    expect(p.calls).toEqual([{ n: 4 }]);
+    expect(render.doc().builtFrom.providerVersion).toBe(3);
+    expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
+
+    // out of range in the doc, clamped for build(); the stored value is kept as written
+    render.change((d) => (d.params.n = 999));
+    await wait(300);
+    await settle();
+    expect(p.calls.at(-1)).toEqual({ n: 10 });
+    expect(JSON.parse(render.doc().builtFrom.paramsKey)).toEqual({ n: 999 });
+
+    // a dependency edit rebuilds (debounced like a source edit), recording its new heads
+    const n = p.calls.length;
+    dep.change((d) => (d.length = 2));
+    await wait(1_000);
+    await settle();
+    expect(p.calls.length).toBe(n + 1);
+    expect(render.doc().builtFrom.deps).toEqual({ [dep.url]: dep.heads() });
+  });
+
+  it("a build the provider aborts (AbortError) is cancelled, not failed: no error shown, tried again", async () => {
+    await mount();
+    const p = thingProvider();
+    const source = repo.add({ "@patchwork": { type: "thing" }, title: "Thing" });
+    await addByUrl(source.url);
+    const [id] = Object.keys(s.doc().objects);
+    const render = await repo.find(s.doc().objects[id].renderUrl);
+    await wait(20);
+    await settle();
+    const built = render.doc().builtAt;
+    p.abortNext = true;
+    const n = p.calls.length;
+    render.change((d) => (d.params.n = 7));
+    await wait(400);
+    await settle();
+    expect(p.calls.length).toBe(n + 2); // the aborted one, then again at once
+    expect(render.doc()).toMatchObject({ status: "idle", error: null });
+    expect(render.doc().builtAt).toBeGreaterThan(built);
+    expect(s.api("scene.add").loadState(id)).toMatchObject({ status: "idle", error: null });
+    expect($(`.object-row[data-id="${id}"]`).textContent).not.toMatch(/error/);
+  });
+
+  it("never auto-rebuilds over a peer's build made from source changes this client hasn't synced", async () => {
+    await mount();
+    await addByUrl(file.url);
+    const [id] = Object.keys(s.doc().objects);
+    const render = await repo.find(s.doc().objects[id].renderUrl);
+    await wait(20);
+    await settle();
+    const built = render.doc().builtAt;
+    // a peer one edit ahead rebuilt; we see its build, not yet its edit
+    render.change((d) => {
+      d.builtFrom = { ...JSON.parse(JSON.stringify(d.builtFrom)), heads: ["a-change-we-have-not-synced"] };
+    });
+    await wait(1_000);
+    await settle();
+    expect(render.doc().builtAt).toBe(built);
+    expect(render.doc().builtFrom.heads).toEqual(["a-change-we-have-not-synced"]);
+    expect(s.api("scene.add").loadState(id)).toMatchObject({ behind: true, stale: false });
   });
 });
