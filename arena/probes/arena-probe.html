@@ -1,0 +1,167 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>arena probe</title>
+<!-- Driven by probes/arena-run.mjs. The BUILT scene tool (scene/dist: the
+     stage and its parts) with the BUILT arena plugins (arena/dist) in a stub
+     registry, on an in-memory repo. Two views of one doc (each view's
+     broadcasts reach only the other): A plays, B watches.
+       ?mode=empty   an empty scene (the runner lays out the sample arena)
+       ?mode=hybrid  a big tilted "deck" (a GLB that knows nothing of arenas)
+     The runner drives it with a real mouse and keyboard over CDP. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; }
+  body { display: flex; gap: 8px; }
+  #a { width: 960px; height: 580px; flex: none; position: relative; }
+  #b { width: 420px; height: 400px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { encodeGLB } from "../src/glb.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+const mode = new URLSearchParams(location.search).get("mode") ?? "empty";
+
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+/** A box's triangles as quads with normals, centred on x/z, standing on y = 0. */
+function box([w, h, d], color) {
+  const x = w / 2, z = d / 2;
+  const faces = [
+    [[1, 0, 0], [[x, 0, z], [x, 0, -z], [x, h, -z], [x, h, z]]],
+    [[-1, 0, 0], [[-x, 0, -z], [-x, 0, z], [-x, h, z], [-x, h, -z]]],
+    [[0, 1, 0], [[-x, h, z], [x, h, z], [x, h, -z], [-x, h, -z]]],
+    [[0, -1, 0], [[-x, 0, -z], [x, 0, -z], [x, 0, z], [-x, 0, z]]],
+    [[0, 0, 1], [[-x, 0, z], [x, 0, z], [x, h, z], [-x, h, z]]],
+    [[0, 0, -1], [[x, 0, -z], [-x, 0, -z], [-x, h, -z], [x, h, -z]]],
+  ];
+  const positions = [], normals = [], indices = [];
+  for (const [n, cs] of faces) {
+    const b = positions.length / 3;
+    for (const c of cs) positions.push(...c), normals.push(...n);
+    indices.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  return { positions, normals, indices, color };
+}
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const base = { "@patchwork": { type: "scene" }, title: "Arena probe", objects: {}, order: [], dimensions: {}, view: { units: "m", grid: false }, camera: null };
+  if (mode === "hybrid") {
+    // a "boat's deck": one big slab, tilted 6° about x, standing on nothing; plus a mast to bump into
+    const deck = repo.add({ "@patchwork": { type: "file" }, name: "deck.glb", extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [box([10, 0.5, 24], "#9a6b3f")] }) });
+    const mast = repo.add({ "@patchwork": { type: "file" }, name: "mast.glb", extension: "glb", mimeType: "model/gltf-binary", content: encodeGLB({ meshes: [box([0.5, 8, 0.5], "#d9d4c7")] }) });
+    const o = (name, url, position, rotation) => ({ name, sourceUrl: url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false, transform: { position, rotation, scale: 1 } });
+    base.objects = { deck: o("Deck", deck.url, [0, 0, 0], [0.105, 0, 0]), mast: o("Mast", mast.url, [0, 0.4, -4], [0.105, 0, 0]) };
+    base.order = ["deck", "mast"];
+    base.camera = { position: [14, 12, 18], target: [0, 0, 0] };
+  }
+  const scene = repo.add(base);
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hostA = document.getElementById("a"), hostB = document.getElementById("b");
+  hostA.repo = repo; hostB.repo = repo;
+  hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
+  Tool(A, hostA);
+  const dbgA = hostA.querySelector(".scene-stage").__sceneDebug;
+  Tool(B, hostB);
+  const dbgB = hostB.querySelector(".scene-stage").__sceneDebug;
+  const dbgOf = (w) => (w === "b" ? dbgB : dbgA);
+  const hostOf = (w) => (w === "b" ? hostB : hostA);
+  window.__p = {
+    A: dbgA, B: dbgB, hostA, hostB, errors, scene, mode,
+    doc: () => scene.doc(),
+    running: (w) => dbgOf(w).local.get().running.map((r) => r.id),
+    armed: (w) => dbgOf(w).local.get().armed ?? null,
+    objects: () => Object.entries(scene.doc().objects ?? {}).filter(([, o]) => o.kind !== "group").map(([id]) => id),
+    loaded(w) {
+      const ids = this.objects();
+      const vp = dbgOf(w).viewport;
+      return { total: ids.length, loaded: ids.filter((id) => vp.contentOf(id)?.loaded).length };
+    },
+    cam: (w) => dbgOf(w).viewport.getCamera(),
+    held: (w) => !dbgOf(w).viewport.controls.enabled,
+    locked: () => document.pointerLockElement === dbgA.viewport.canvas,
+    lockElement: () => document.pointerLockElement?.tagName ?? null,
+    text: (sel, w) => [...hostOf(w).querySelectorAll(sel)].map((e) => e.textContent.trim()),
+    rect(sel, w) {
+      const e = hostOf(w).querySelector(sel);
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+    },
+    canvasCentre(w) {
+      const r = dbgOf(w).viewport.canvas.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    },
+    byName: (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0] ?? null,
+    world: (id, w) => { const m = dbgOf(w).viewport.worldOf(id); return m && [m[12], m[13], m[14]]; },
+    /** what the arena draws in a view: avatars (groups) and tracers (lines) */
+    drawn(w) {
+      const set = dbgOf(w).viewport.layers.get("arena");
+      const out = { avatars: [], tracers: 0 };
+      for (const g of set ?? []) for (const c of g.children) {
+        if (c.isLine) out.tracers++;
+        else if (c.isGroup) out.avatars.push(c.position.toArray().map((v) => +v.toFixed(3)));
+      }
+      return out;
+    },
+    /** another view's presence keys, as this view sees them */
+    peerKeys: (w) => Object.values(dbgOf(w).presence.get()).map((p) => ({ viewer: p.viewer, keys: p.keys })),
+    labels: (w) => [...hostOf(w).querySelectorAll(".label")].map((e) => e.textContent.trim()).filter(Boolean),
+    notices: (w) => (dbgOf(w).local.get().notices ?? []).map((n) => n.text),
+    kitsOn(id, w) {
+      dbgOf(w).local.swap((l) => ({ ...l, kits: { on: [...new Set([...(l.kits?.on ?? []), id])], off: (l.kits?.off ?? []).filter((k) => k !== id) } }));
+    },
+    /** the camera's yaw (0 looks down -Z; turning left is positive) and pitch */
+    yawPitch(w) {
+      const c = dbgOf(w).viewport.getCamera();
+      const d = [c.target[0] - c.position[0], c.target[1] - c.position[1], c.target[2] - c.position[2]];
+      const l = Math.hypot(...d);
+      return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
+    },
+    /** fire a pointermove with movement at the canvas (what a locked mouse sends) */
+    nudge(dx, dy, w) {
+      const cv = dbgOf(w).viewport.canvas;
+      const r = cv.getBoundingClientRect();
+      cv.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, composed: true, pointerId: 1, pointerType: "mouse", clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, movementX: dx, movementY: dy }));
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

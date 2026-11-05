@@ -63,7 +63,7 @@ const THREE = {
 };
 
 function fakeApi(doc) {
-  const calls = { arms: [], disarmed: 0, holds: 0, released: 0, loops: [], camera: [], sends: [], presence: {}, rate: [] };
+  const calls = { listen: {}, arms: [], disarmed: 0, holds: 0, released: 0, loops: [], camera: [], sends: [], presence: {}, rate: [] };
   const world = new Obj();
   const peers = {};
   const api = {
@@ -74,7 +74,7 @@ function fakeApi(doc) {
     overlay: () => document.createElement("div"),
     world: () => world,
     labels: () => ({ set: (items) => (calls.labels = items) }),
-    listen() {},
+    listen: (target, type, fn) => (calls.listen[type] = fn),
     invalidate() {},
     notify() {},
     doc: () => doc,
@@ -151,7 +151,7 @@ describe("playing", () => {
     expect(scores(doc.objects)).toEqual({ me: 1 });
     // a second hit on a fallen target changes nothing
     const before = JSON.stringify(doc.objects.t1);
-    h.press({ button: 0 });
+    h.press({ button: 0, locked: true });
     expect(JSON.stringify(doc.objects.t1)).toBe(before);
   });
 
@@ -173,11 +173,38 @@ describe("playing", () => {
     expect(f.calls.presence.avatar).toBeUndefined();
   });
 
-  it("losing the lock pauses (no turning) until it comes back", () => {
+  it("under the lock a press shoots at once; without it a tap shoots and a drag looks", () => {
     x.commands.find((c) => c.id === "play").run(null);
+    const shots = () => f.calls.sends.filter((m) => m.type === "shot").length;
     const h = f.calls.arms[0].handlers;
-    h.lockLost();
+    h.press({ button: 0, locked: true });
+    expect(shots()).toBe(1);
+    const drag = h.press({ button: 0, locked: false, clientX: 100, clientY: 100 });
+    const cam0 = f.calls.camera.length;
+    drag.move({ clientX: 300, clientY: 100 });
+    drag.end({});
+    expect(shots()).toBe(1);
+    f.calls.loops[0](1 / 60);
+    const c = f.calls.camera.at(-1);
+    expect(f.calls.camera.length).toBeGreaterThan(cam0);
+    // turned right: looking off -Z toward +X
+    expect(c.target[0] - c.position[0]).toBeGreaterThan(0.3);
+  });
+
+  it("a refused lock plays on without it; a lost one pauses until it comes back", () => {
+    x.commands.find((c) => c.id === "play").run(null);
+    expect(f.calls.arms[0].opts).toMatchObject({ lock: true, immersive: true });
+    const h = f.calls.arms[0].handlers;
+    // refused: the stage says so
+    h.lockLost({ refused: true });
+    expect(h.press({ button: 0 })).not.toBeNull();
+    // granted later, then lost (Esc): paused, presses go to the resume button
+    Object.defineProperty(document, "pointerLockElement", { value: document.body, configurable: true });
+    f.calls.listen.pointerlockchange();
+    Object.defineProperty(document, "pointerLockElement", { value: null, configurable: true });
+    h.lockLost({ refused: false });
     expect(h.press({ button: 0 })).toBeNull();
+    delete document.pointerLockElement;
   });
 
   it("draws other players from presence, and their shots", () => {

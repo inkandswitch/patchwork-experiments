@@ -157,16 +157,36 @@ export default {
     const overlay = api.overlay();
     overlay.classList.add("tabletop-overlay");
     const seatPicker = el("select", { class: "tabletop-seat", "aria-label": "Seat", title: "Where you sit: what's in your seat's private zone (your hand) is shown to you alone" });
-    seatPicker.addEventListener("change", () => sit(seatPicker.value || null));
+    seatPicker.addEventListener("change", () => {
+      const want = seatPicker.value || null;
+      // a seat is the doc's (it lasts); whether its player is here is presence's
+      const now = seatsOf(api.scene());
+      const holder = want ? now[want]?.player : null;
+      if (holder && holder !== viewer && present().has(holder) && typeof globalThis.confirm === "function") {
+        if (!globalThis.confirm("Someone is sitting there now. Take their seat? (You'll see what's in their hand.)")) {
+          seatPicker.value = seatOf(now, viewer) ?? "";
+          return;
+        }
+      }
+      sit(want);
+    });
     const seatBar = el("label", { class: "tabletop-seatbar" }, el("span", {}, "Seat"), seatPicker);
     overlay.append(seatBar);
     api.style(SEAT_CSS);
+    // who is here changes without a doc change: a seat's (taken) / (away)
+    api.presence.watch(() => {
+      if (scene) drawSeats();
+    });
     let seatKey = "";
+    /** The viewers with this table open now (presence), this one included. */
+    const present = () => new Set([viewer, ...Object.values(api.presence.get() ?? {}).map((r) => r?.viewer).filter(Boolean)]);
     function drawSeats() {
       const seats = Object.entries(seatsOf(scene));
       seatBar.hidden = !seats.length;
       const mine = seatOf(seatsOf(scene), viewer) ?? "";
-      const options = [["", "Watching"], ...seats.map(([id, s]) => [id, `${s?.name || id}${s?.player && s.player !== viewer ? " (taken)" : ""}`])];
+      const here = present();
+      const note = (s) => (!s?.player || s.player === viewer ? "" : here.has(s.player) ? " (taken)" : " (away)");
+      const options = [["", "Watching"], ...seats.map(([id, s]) => [id, `${s?.name || id}${note(s)}`])];
       const k = JSON.stringify(options);
       if (k !== seatKey) {
         seatKey = k;
