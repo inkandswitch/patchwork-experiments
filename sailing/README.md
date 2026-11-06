@@ -7,7 +7,7 @@ helm, trims the sail, works the windlass, falls overboard and climbs back up
 the ladder. One view simulates; everyone else sees the same ship, played
 back smoothly, and takes over if that view goes.
 
-It is two scene extensions and a template for the scene tool (see
+It is two scene extensions, a template and parts for the scene tool (see
 [../scene/STAGE.md](../scene/STAGE.md)), not a tool of its own. How it's
 built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 
@@ -17,10 +17,21 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   screen. It lays out a sloop under way on a beam reach (sail up, anchor
   up), a sea with a north-easterly breeze, two buoys and an islet upwind,
   and opens in Play.
+- **From the parts bin, in any scene.** While editing, the sidebar's parts
+  list a *Sailing* group: drag **Sloop** onto the view and she's on the
+  water where you dropped her, rigged, her bow away from you (and the scene
+  gets a sea if it had none). The rest are her parts on their own: **Mast
+  and sail**, **Wheel**, **Windlass and anchor**, **Ladder**, to drag onto
+  a hull; **Red buoy**, **Green buoy** and **Islet** to sail past. Dropped on
+  a hull that's a ship, a part lines up with her bow and attaches under her
+  (on the sloop, each snaps to its place); a click instead of a drag puts it
+  where you're looking.
 - **By hand, in any scene.** With the inspector's *Add behaviour…*:
   - **Sea** on the scene (wind speed and direction, a seed, wave height);
-  - **Ship** on the hull object (its size comes from its box, or the
-    `extras.ship` its GLB declares; the spec field overrides);
+  - **Ship** on the hull object (its size and weight come from the
+    `extras.ship` its GLB declares, else its box; *Bow points* or the frame
+    say which way is forward when the model doesn't; the spec field
+    overrides);
   - attached under the hull: **Helm** on the wheel, **Sail** on the
     boom-and-sail (its `Sail` node is lowered and bellied in play),
     **Anchor** on the windlass, **Anchor (the hook)** on the anchor itself,
@@ -28,6 +39,30 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
   - **Float** on anything that should bob where it's moored.
 
   A ship sails only at the scene's root, and only on a scene with a sea.
+
+## Sailing a hull from another tool
+
+A hull drawn elsewhere (camber's, or any model) sails once she has a rig:
+
+1. Drop the hull's document into a scene, as any model. Build her at her
+   length (camber: *Scale to length*), or scale the object up to it: she
+   sails in metres either way. The parts are drawn for the 12 m sloop (the
+   mast's stays, the wheel), so they suit a hull of about that size.
+2. Give it **Ship** (*Add behaviour…*). If her model says where her bow
+   points and where her middle is on her waterline (camber's does:
+   `extras.ship.forward` and `origin`), that's all; else set *Ship frame*:
+   `{ "rotation": [0, -1.5708, 0] }` turns a model whose bow is +X, and a
+   `position` says where her middle is on her waterline. Her waterline is
+   her model's y = 0.
+3. Drag **Mast and sail**, **Wheel**, **Windlass and anchor** and
+   **Ladder** from the parts onto her deck (locked or not), and place them
+   with the gizmo. Each squares itself to her bow.
+4. Give the scene a sea if it hasn't one (the sloop part brings one; else
+   **Sea** on the scene), and play.
+
+Where you put the mast is where the sail pulls: forward and she bears away,
+aft and she rounds up. Her weight is her model's stated displacement, else
+the sloop's scaled to her size.
 
 ## Controls
 
@@ -57,4 +92,5 @@ pnpm install
 pnpm test          # vitest: the physics, the sea, the parts on a fake stage
 pnpm build
 node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
+node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
 ```

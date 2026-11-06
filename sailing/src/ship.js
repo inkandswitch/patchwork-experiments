@@ -12,6 +12,7 @@
 // the sections run from a rounded V forward to flat and wide aft.
 
 import { computeBounds, computeNormals, encodeGLB } from "./glb.js";
+import { SLOOP } from "./hull-model.js";
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -360,6 +361,38 @@ export const FIT = Object.freeze({
   ladder: { position: [halfBreadthAt(LADDER_Z), sheerAt(LADDER_Z), LADDER_Z], rotation: [0, 0, 0] },
   anchor: { position: [0, STEMHEAD[1] - 0.04, STEMHEAD[2] + 0.02], rotation: [0, 0, 0] },
 });
+
+/**
+ * Where each part stands on the hull (its foot, on the deck or the
+ * cockpit's sole), in the hull's frame: the hull's connectors, which the
+ * parts bin snaps a part with that tag to. A part's origin is LIFT above its
+ * foot (the wheel's axle), so a part put down on any deck stands right.
+ */
+export const STAND = Object.freeze({
+  mast: mastStep,
+  wheel: [0, COCKPIT.floor, WHEEL_Z],
+  windlass: FIT.windlass.position,
+  ladder: FIT.ladder.position,
+});
+export const LIFT = Object.freeze({ wheel: WHEEL_AXLE - COCKPIT.floor });
+
+/** The connector tag each part's stand takes (parts.js gives the parts the same). */
+export const TAGS = Object.freeze({ mast: "sailing.mast", wheel: "sailing.helm", windlass: "sailing.windlass", ladder: "sailing.ladder" });
+
+/**
+ * How near (in plan, metres) a part must be put to a stand to go to it, the
+ * bin's and the hand's alike: about a stride, and less than half the beam,
+ * so a ladder goes to the side it was put on.
+ */
+export const SNAP_RADIUS = 1.5;
+
+/** The hull's connectors (glTF extras, as the hand reads them): a stand for each part, and a ladder on either side, hanging outboard. */
+function connectors() {
+  const out = Object.entries(STAND).map(([kind, position]) => ({ position: [...position], rotation: [0, 0, 0], tags: [TAGS[kind]] }));
+  const [x, y, z] = STAND.ladder;
+  out.push({ position: [-x, y, z], rotation: [0, Math.PI, 0], tags: [TAGS.ladder] });
+  return out;
+}
 
 // The sail, in the rig's frame (origin at the gooseneck): the boom runs aft along +Z.
 const BOOM_LENGTH = 4.95;
@@ -964,7 +997,7 @@ function isletMeshes() {
 const PARTS = {
   // the hull says its own principal dimensions: its box also holds the cabin,
   // the sheer's rise to the bow and the lifelines, which stand above the deck
-  hull: { name: "Hull", meshes: hullMeshes, extras: () => ({ ship: { length: HULL.length, beam: HULL.beam, draft: HULL.draft, freeboard: HULL.freeboard } }) },
+  hull: { name: "Hull", meshes: hullMeshes, extras: () => ({ ship: { length: HULL.length, beam: HULL.beam, draft: HULL.draft, freeboard: HULL.freeboard }, connectors: connectors(), snapRadius: SNAP_RADIUS }) },
   mast: { name: "Mast", meshes: mastMeshes },
   rig: { name: "Boom and sail", meshes: rigMeshes, extras: () => ({ sail: sailFacts() }) },
   wheel: { name: "Wheel", meshes: wheelMeshes },
@@ -979,13 +1012,34 @@ const PARTS = {
 /** The kinds of part there are. */
 export const KINDS = Object.freeze(Object.keys(PARTS));
 
-/** The sail's size, in the rig's frame, for anyone who'd rather read it than measure the mesh. */
+/**
+ * The sail, in the rig's frame: as drawn (its tack, clew and head; the
+ * main's luff and foot; the main's area, roach and all, seen from abeam, and
+ * the jib's, rolled on her forestay), and `plan`, the sail the physics flies
+ * (sim.js): her main and jib as one foil, { tack, luff, foot, area }. That is
+ * the sloop's tuned plan (hull-model.js SLOOP.sail) put in the rig's frame,
+ * so a stock rig at its stand sails her exactly as she was tuned: the two
+ * sails' one centre of effort sits lower than the main's alone, which the
+ * drawn numbers can't say to a one-foil model. A rig that states no `plan`
+ * (one filed before it had one) leaves her sail to the hull.
+ */
 function sailFacts() {
   const { tack, clew, head } = SAIL;
   const luff = Math.hypot(...sub(head, tack));
   const foot = Math.hypot(...sub(clew, tack));
-  const area = 0.5 * Math.hypot(...cross(sub(clew, tack), sub(head, tack)));
-  return { tack: [...tack], clew: [...clew], head: [...head], luff, foot, area };
+  const { p, i } = sailShape();
+  let main = 0;
+  for (let k = 0; k < i.length; k += 3) {
+    const [a, b, c] = [i[k] * 3, i[k + 1] * 3, i[k + 2] * 3];
+    main += Math.abs((p[b + 1] - p[a + 1]) * (p[c + 2] - p[a + 2]) - (p[c + 1] - p[a + 1]) * (p[b + 2] - p[a + 2])) / 2;
+  }
+  const stay = [0, mastStep[1] + MAST_HEIGHT - 0.1, MAST_Z - 0.08];
+  const stem = [0, STEMHEAD[1], STEMHEAD[2] + 0.1];
+  const jib = 0.5 * Math.hypot(...cross(sub(stem, stay), sub(mastStep, stay)));
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const tuned = SLOOP.sail;
+  const plan = { tack: sub(tuned.tack, FIT.rig.position).map((v) => Math.round(v * 1e6) / 1e6 + 0), luff: tuned.luff, foot: tuned.foot, area: tuned.area };
+  return { tack: [...tack], clew: [...clew], head: [...head], luff, foot, main: r2(main), jib: r2(jib), plan };
 }
 
 /** A part's meshes (glb.js meshes: name and primitives). */

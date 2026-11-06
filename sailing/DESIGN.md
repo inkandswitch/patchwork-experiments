@@ -13,11 +13,12 @@ modules share.
 - **Units:** SI. Metres, seconds, kilograms, radians inside code; the doc
   may store degrees where a person edits it (`from` below) and says so.
 - **World:** +Y up, gravity 9.81 down. Sea level is y = 0.
-- **A ship's body frame:** its object's local frame. **Bow toward −Z**,
-  **starboard toward +X**, up +Y. The waterline is the body's y = 0 at rest
-  (the hull's model is built that way), so the keel is at −draft.
+- **A ship's body frame:** **bow toward −Z**, **starboard toward +X**, up
+  +Y. The waterline is the body's y = 0 at rest, so the keel is at −draft.
   (A person at yaw 0 looks down −Z, so standing at the helm facing forward is
-  the ship's yaw.)
+  the ship's yaw.) For the sloop it is her hull object's own frame; a hull
+  modelled some other way says where it sits in hers (below, "The ship's
+  frame").
 - **Wind direction:** `from` is the compass direction the wind blows
   *from*, in degrees, measured from −Z (north) toward +X (east), as sailors
   say it. A wind "from 0" blows toward +Z. Velocities in code are vectors.
@@ -31,10 +32,12 @@ modules share.
 | `ocean-material.js` | no (takes `THREE`) | The surface: a camera-following grid and a `ShaderMaterial` running the same Gerstner sum in the vertex shader, with finer normal-only detail, Fresnel sky reflection, subsurface tint, crest foam, sun glint, scene fog |
 | `wind.js` | yes | The true wind at (x, z, t): a base speed and direction from the doc, with gusts and veers from smooth deterministic noise |
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
-| `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder |
-| `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the ship and its parts as objects, under way on a beam reach (sail up, anchor up, her way in `sailing.ship.motion`) |
-| `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's turn for a helm angle, the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
-| `frames.js` | yes | Matrices (`apply`, `invert`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
+| `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
+| `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
+| `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks |
+| `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
+| `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
+| `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
 | `play.js` | no | The sailing extension in play: joins the parts below, runs them in one loop in the order a frame needs, and sets the presence rate |
 | `sea-view.js` | stage side thin | ctx.sea: the shared sea clock (pure: `seaTime`, `slew`, `follow`), the ocean and sky drawn (`drawSea`, which edit.js shares, with `seaClock`) only while the scene has a sea |
 | `sim.js` | stage side thin | ctx.sim: the "sim" claim and handoff, physics per ship, the holds, the stations' values, saving (pure helpers exported and tested) |
@@ -46,7 +49,11 @@ modules share.
 | `edit.js` | no | The sea while editing, at the sailors' clock when someone is sailing her meanwhile |
 
 `probes/sailing-run.mjs` plays all of it in a browser: two views of one
-doc, crewing her together (see its header).
+doc, crewing her together (see its header). `probes/camber-run.mjs` takes a
+hull drawn in camber (its built plugins, borrowed at dev time) from a bare
+sea to sailing: the Ship trait with her frame from her GLB, the parts
+dragged from the bin onto her deck, floating, sailing bow first, stood on
+and steered.
 
 ## Shared interfaces
 
@@ -101,26 +108,124 @@ state.boom                 // where the boom is (radians, + to starboard); missi
 // read(): speed forward through the water (− astern), pitch + bow up, leeway + to starboard,
 //         submerged: fraction of the whole hull's volume under water (~0.19 at rest)
 // spec extras: cg (body y of the centre of gravity), center ([x, z]); specFromBox(box, overrides)
+
+// sim.js: a ship's spec from what she's made of, in her body frame
+specFor(content, overrides, scale, { frame, rig: { matrix, sail } })
 ```
 
 The parts' GLBs (ship.js) are drawn in the ship's body frame, each with its
 origin where it pivots, and `FIT` gives each part's place on the hull. The
-boom-and-sail object ("rig") turns about its local Y (rotation[1] = boom
-angle, + to starboard); its sail is cambered to starboard, so with the boom
-to port it is mirrored on each view (looks.js), and flattened while it
-luffs; the gooseneck is 1.45 m over the deck, so the boom swings clear over
-a head in the cockpit. The wheel turns about its local Z
-(rotation[2]). The anchor hangs from its ring at its origin. The hull GLB's
-extras carry `ship: { length, beam, draft, freeboard }`, its principal
-dimensions (its box is bigger: cabin, sheer, lifelines), so a ship's spec
-comes from those when present and from its box otherwise.
+boom-and-sail object ("rig") swings about its own Y, on top of however it
+was put (its held rotation is placed · turnY(boom), + to starboard); its
+sail is cambered to starboard, so with the boom to port it is mirrored on
+each view (looks.js), and flattened while it luffs; the gooseneck is 1.45 m
+over the deck, so the boom swings clear over a head in the cockpit. The
+wheel turns about its own Z the same way (placed · turnZ). The anchor hangs
+from its ring at its origin.
+
+What a GLB may say, in its scene's extras:
+- a hull: `ship: { length, beam, draft, freeboard, displacement, forward,
+  up, origin }`, all in the GLB's own frame and units (metres): its
+  principal dimensions (its box is bigger: cabin, sheer, lifelines), about
+  her body's origin; `displacement` in kg, her mass; `forward` and `up`,
+  which way its bow and its deck face in the model (camber's: forward
+  [1, 0, 0]); `origin`, a point on the design waterline midships (the
+  middle of the waterline's length, on the centreline), where her body's
+  origin is. The waterline is the plane through `origin` square to `up`. A
+  GLB that states `forward` but no `origin` has it guessed: the middle of
+  its box, level with the model's y = 0. And `connectors` (as the hand
+  reads them, with tags) and `snapRadius`: the sloop's say where her mast,
+  wheel, windlass and ladders stand (`STAND`), 1.5 m of reach each, so the
+  parts bin and the hand snap each there;
+- a rig: `sail: { tack, clew, head, luff, foot, main, jib, plan }`, in its
+  own frame. The first are the sail as drawn (the main's points, luff and
+  foot; `main` 32 m², `jib` 31 m², the fore-triangle her rolled jib
+  fills). `plan: { tack, luff, foot, area }` is what the physics flies:
+  main and jib as one foil, whose centre of effort sits lower than the
+  main's alone. The sloop's is the `SLOOP` spec's sail, put in the rig's
+  frame, so a stock rig at its stand sails her exactly as physics.test.js
+  tuned her.
+
+A ship's spec (`specFor`) is, in order: her size from her GLB's dimensions
+or her box (in her body frame), else the sloop's; her mass from her
+displacement, else the sloop's scaled to her size; her sail from her rig's
+`plan`, its tack where the rig is placed (up its chain of parents, through
+her frame) and its size at the rig's scale, so moving the mast aft moves
+her centre of effort aft and she gripes up more; then the trait's `spec`
+overrides over all of it. A rig that states no `plan` (a scene's rig filed
+before it had one) leaves her the sloop's sail scaled to her hull, as
+before rigs were read.
+
+## The ship's frame
+
+The physics, the crew, the stations, the HUD and the looks all reason in
+her body frame (bow −Z). A hull modelled some other way (camber's: bow +X,
+the design waterline at Y = 0, metres) says where that frame sits in her
+hull object's frame, and `body.js` is the one place that converts:
+
+- `frameOf(trait, content)`: what her GLB says (`glbFrame`: turned to
+  `extras.ship.forward` and `up`, her origin its `origin`, else guessed as
+  above), with `sailing.ship.frame`'s `position` and `rotation` (in the
+  hull's frame), each where the trait gives it, over it: a trait that only
+  turns her keeps the GLB's origin. A hull that says nothing is her body.
+  The sloop states none.
+- sim.js turns the hull object's pose into her body's once, where she's
+  tracked (`toBody`: from the doc, from the pose last shown, after an
+  editor's move), and back where she's held and saved (`toObject`). Her
+  `motion` in the doc is her body's (velocity of her body's origin, world
+  spin). physics.js never sees the hull's frame. If her frame changes while
+  she sails (her model loads and says which way is forward, or someone sets
+  it), her hull stays where it is and her body turns in it.
+- `bodyOf(api, id)`: her body frame as drawn (worldOf · frame), rigid: in
+  metres whatever her hull object's scale, as `toBody` gives the physics (a
+  hull drawn a metre long and scaled to twelve is walked in metres), and
+  `bodyBoxOf(api, id)` her box in it, in metres too. The crew stand in it (their presence `position` is in it), the HUD and the
+  sail's dressing read it, and the camera's quarter view is off it.
+- Her bow fairlead, her anchor's drop point and the keel and rudder are
+  the spec's, so in her body frame already. The anchor lying on the bottom
+  is held in the frame of whatever it hangs from aboard.
+
+## Parts
+
+`parts.js` gives the parts bin (STAGE.md, "Parts") sailing's parts, each
+a scene:part in index.js under "Sailing":
+
+| Part | Pieces (the first is selected) | Tags | Traits |
+|---|---|---|---|
+| Sloop | the hull, and every part below at her stands | | `sailing.ship`, and a `sailing.sea` if the scene has none |
+| Mast and sail | the mast; the boom and sail under it | `sailing.mast` | `sailing.sail` |
+| Wheel | the wheel, its axle `LIFT` over where it stands | `sailing.helm` | `sailing.helm` |
+| Windlass and anchor | the windlass; the anchor under it, at the stemhead | `sailing.windlass` | `sailing.anchor`, `sailing.hook` |
+| Ladder | the ladder | `sailing.ladder` | `sailing.ladder` |
+| Red buoy, Green buoy | the buoy | | `sailing.float` |
+| Islet | the islet | | |
+
+- **Put on a ship** (her hull, or anything aboard her), a part squares
+  itself to her body frame: its bow is hers, it stands where it was put
+  (the bin's spot, or her stand for its tag), and its origin is its own
+  height above that. A ladder put on her port side turns to hang outboard.
+  Her frame is `frameOf(trait, ctx.content(ship))`, as the sim reads it;
+  until her model has loaded, only her trait's `frame` counts. Put anywhere
+  else, a part stands as the bin put it. A part that fits a stand writes its
+  tag on what it makes, so the hand snaps it to the same stand. If what it
+  was put on goes while its files are made, it puts nothing.
+- **The sloop** goes on the water at the scene's root (a ship sails only
+  there), under where she was dropped, her bow the way the bin faced her
+  (away from the viewer: you see her from astern), at rest with her sail up
+  and her anchor up. A ship brings her sea.
+- **Files:** each kind is the scene's one GLB doc under
+  `doc.assets["sailing/<kind>@<n>"]` (`ctx.file`), so ten buoys share one;
+  bump `<n>` (`fileKey`) when a kind's drawing changes. A stage without
+  `ctx.file` gets a doc of its own per kind, as before parts.
+- The template is the Sloop part's objects with her way on, the landmarks
+  (the buoy and islet parts, locked, in a group), the home view and "play".
 
 ## Traits (in the doc)
 
 | Trait | On | Fields |
 |---|---|---|
 | `sailing.sea` | scene | `{ wind: { speed, from }, seed, scale }` — speed m/s, from degrees |
-| `sailing.ship` | the hull object | `{ spec?, motion? }`: spec overrides; `motion: { velocity, spin }` (world) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
+| `sailing.ship` | the hull object | `{ frame?, spec?, motion? }`: `frame: { position?, rotation? }`, where her body frame sits in her hull's, each part over what her GLB says ("The ship's frame"); spec overrides; `motion: { velocity, spin }` (world, her body's) as last saved, beside its object's `transform`, where it last rested or was saved. Only a ship at the scene's root sails |
 | `sailing.helm` | a station under the ship | `{ angle }` -1..1, where the wheel was left |
 | `sailing.sail` | a station under the ship | `{ raised, sheet }` 0..1 |
 | `sailing.anchor` | a station under the ship (the windlass) | `{ down, rode, at? }` (`rode`: metres of chain out; `at`: where the anchor lies, world, while it's down). The windlass writes `down` and `rode`; only the simulator writes `at`: it drops the anchor on the bottom under the bow, clears `at` when it's up, and drops it again where she is when `at` is further from her bow than her rode allows (she was moved, or copied, while nobody sailed) |
@@ -185,7 +290,7 @@ ctx.sea.tick(dt, now, own, simulator)   // the clock on (its own, or following `
 // sim.js — createSim(api, ctx) → ctx.sim
 ctx.sim.ships()          // ids of the ships that sail (sailing.ship, at the scene's root)
 ctx.sim.read(shipId)     // what a sailor reads off her (published(): diagnostics, velocity, spin), as simulated or streamed, or null
-ctx.sim.stationsOf(shipId) → { helm, sail, anchor, ladder }   // object ids (null if missing)
+ctx.sim.stationsOf(shipId) → { helm, sail, anchor, ladder }   // object ids anywhere under her (a rig on a mast on the hull), null if missing
 ctx.sim.value(stationId) // the station's live value: its trait fields, with its holder's input over them
 ctx.sim.input(stationId, partial)   // this view's live input at a station it holds (presence), e.g. { angle }
 ctx.sim.commit(stationId, fields)   // a lasting change to a station's trait (doc), e.g. { raised: 0 }
@@ -266,7 +371,7 @@ it only while nobody's at the helm. The mainsheet is led aft: Q and E trim it
 from the helm as at the mast, and looking at the mast offers the sail's verbs.
 
 **People.** A person is presence: `{ on, position, yaw, pitch, station }`,
-with position local to the ship they stand on (or world when in the water),
+with position local to the ship they stand on (her body frame), or world when in the water,
 so a peer whose view of the hull lags still sees them on the deck. Walking
 keeps the body in the ship's frame between frames: each frame it goes out
 to the world through her drawn matrix, takes one step of the walker there

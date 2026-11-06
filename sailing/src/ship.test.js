@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { parseGLB } from "./glb.js";
 import { FIT, HULL, KINDS, deckAt, halfBreadthAt, partGLB, partMeshes, sheerAt } from "./ship.js";
+import { SLOOP } from "./hull-model.js";
 
 /** The union of a GLB's POSITION accessors' min/max (glTF requires them). */
 function glbBounds(bytes) {
@@ -134,7 +135,11 @@ describe("the parts, with their origins where they pivot", () => {
     expect(FIT.rig.position[1] + r.max[1]).toBeGreaterThan(FIT.mast.position[1] + 13);
     expect(FIT.rig.position[1] + r.max[1]).toBeLessThan(FIT.mast.position[1] + 14);
     const { json } = parseGLB(parts.rig.bytes);
-    expect(json.scenes[0].extras.sail.area).toBeGreaterThan(25);
+    const sail = json.scenes[0].extras.sail;
+    expect(sail.main + sail.jib).toBeGreaterThan(50);
+    // the plan the physics flies: the sloop's tuned sail, at its tack when the rig stands at its fitting
+    expect(sail.plan).toMatchObject({ luff: SLOOP.sail.luff, foot: SLOOP.sail.foot, area: SLOOP.sail.area });
+    sail.plan.tack.forEach((v, i) => expect(v + FIT.rig.position[i]).toBeCloseTo(SLOOP.sail.tack[i], 6));
   });
 
   it("the wheel is about a metre across, turning about its axle (Z) at its origin", () => {

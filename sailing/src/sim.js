@@ -19,8 +19,10 @@
 // stops or hides.
 
 import { createShip, specFromBox, MAX_SUBSTEPS, SUBSTEP } from "./physics.js";
-import { conjQ, eulerFromQuat, poseOfMatrix, quatFromEuler, rotateQ } from "./frames.js";
-import { ANCHOR, SHIP, SIM, STATION, partsOf, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
+import { mergeSpec } from "./hull-model.js";
+import { apply, eulerFromQuat, invert, matrixOfPose, multiply, poseOfMatrix, quatFromEuler, rotateQ, scaleOf } from "./frames.js";
+import { IDENTITY, bodyBox, frameMatrix, isIdentity, placeIn, shipFrame, toBody, toObject, yawOf } from "./body.js";
+import { ANCHOR, SHIP, SIM, STATION, parentOf, partsOf, rigTransform, shipsOf, stationKind, stationValue, wheelTransform } from "./traits.js";
 
 /** How often the simulator writes the ships to the doc (ms), if they've moved. */
 export const SAVE_EVERY_MS = 10000;
@@ -42,26 +44,58 @@ const round = (v, k) => Math.round(v * k) / k + 0;
 
 // ─── the ship from the doc (pure) ───────────────────────────────────────────
 
+/** The sloop's body box, for a hull that says nothing of its size. */
+const SLOOP_BOX = Object.freeze({ min: [-1.9, -1.9, -6], max: [1.9, 1.2, 6] });
+
 /**
- * A ship's spec from its hull's content: the principal dimensions its GLB
- * declares (extras.ship, about its origin) when it does, else its body box,
- * else the sloop's, all at the object's scale (as it's drawn); the trait's
- * spec overrides win.
+ * A ship's spec from her hull's content and her rig, at the hull object's
+ * scale (as she's drawn), in her body frame (`frame`: body.js):
+ * - her size: the principal dimensions her GLB declares (extras.ship),
+ *   about her body's origin (midships: body.js), else her box, else the
+ *   sloop's;
+ * - her mass: the displacement her GLB declares (kg), else the sloop's
+ *   scaled to her size;
+ * - her sail (`rig`: { matrix, sail }, the boom-and-sail as placed, in the
+ *   hull's frame, and its GLB's extras.sail): the plan it states
+ *   (extras.sail.plan: the sail the physics flies) where the rig puts it, at
+ *   the rig's scale; a rig that states none leaves the sloop's, scaled to
+ *   her hull;
+ * - the trait's spec overrides win over all of it.
  * @param {{ box?: { min, max } | null, extras?: object | null } | null} content
  * @param {object} [overrides]
  * @param {number} [scale]
+ * @param {{ frame?: { position, rotation }, rig?: { matrix: number[], sail?: object | null } | null }} [o]
  */
-export function specFor(content, overrides, scale = 1) {
+export function specFor(content, overrides, scale = 1, { frame = IDENTITY, rig = null } = {}) {
   const k = scale > 0 ? scale : 1;
   const dims = content?.extras?.ship;
-  let box = null;
+  const box = bodyBox(content?.box ?? null, frame);
+  let hull = box;
   if (dims && ["length", "beam", "draft", "freeboard"].every((key) => Number(dims[key]) > 0)) {
     const { length, beam, draft, freeboard } = dims;
-    box = { min: [-beam / 2, -draft, -length / 2], max: [beam / 2, freeboard, length / 2] };
-  } else box = content?.box ?? null;
-  if (!box && k === 1) return createShip(overrides).spec;
-  box ??= { min: [-1.9, -1.9, -6], max: [1.9, 1.2, 6] }; // the sloop's
-  return specFromBox({ min: box.min.map((v) => v * k), max: box.max.map((v) => v * k) }, overrides);
+    hull = { min: [-beam / 2, -draft, -length / 2], max: [beam / 2, freeboard, length / 2] };
+  }
+  hull ??= SLOOP_BOX;
+  const own = {};
+  const kg = Number(dims?.displacement);
+  if (kg > 0) own.mass = kg * k * k * k;
+  const sail = rig?.matrix ? sailOf(rig, frame, k) : null;
+  if (sail) own.sail = sail;
+  return mergeSpec(specFromBox({ min: hull.min.map((v) => v * k), max: hull.max.map((v) => v * k) }, own), overrides);
+}
+
+/**
+ * The sail a rig sets, in the body frame at the hull's scale `k`: its plan
+ * (extras.sail.plan, in the rig's frame) where the rig is placed, at its
+ * scale; null for a rig that states no plan.
+ */
+export function sailOf({ matrix, sail }, frame, k = 1) {
+  const plan = sail?.plan;
+  if (!plan || !isVec3(plan.tack) || !["luff", "foot", "area"].every((key) => Number(plan[key]) > 0)) return null;
+  const inBody = isIdentity(frame) ? matrix : multiply(invert(frameMatrix(frame)), matrix);
+  const tack = apply(inBody, plan.tack).map((v) => round(v * k, 1e6));
+  const s = scaleOf(matrix) * k;
+  return { tack, luff: plan.luff * s, foot: plan.foot * s, area: plan.area * s * s };
 }
 
 /** The bow's fairlead in the body frame, where the rode leaves (as physics.js puts it). */
@@ -203,11 +237,6 @@ export function transformOf(state, scale = 1) {
 /** A ship's motion as the doc keeps it (sailing.ship.motion). */
 export const motionOf = (state) => ({ velocity: state.velocity.map((v) => round(v, 1e3)), spin: state.spin.map((v) => round(v, 1e4)) });
 
-/** A point in the world, in the frame of a ship at `state` (unscaled): a part held under the hull. */
-export function toShip(state, p) {
-  return rotateQ(conjQ(state.quaternion), [p[0] - state.position[0], p[1] - state.position[1], p[2] - state.position[2]]);
-}
-
 /** What a sailor reads off a ship, as it goes out in presence: numbers rounded, plus the motion a successor starts from. */
 export function published(diag, state) {
   const r = (v) => round(v, 1e4);
@@ -278,12 +307,17 @@ export function createSim(api, ctx) {
 
   // ─── simulating ──────────────────────────────────────────────────────────
 
-  /** A ship to simulate from a world matrix (as shown; else the doc's transform) and the last motion known (else the doc's). */
-  function track(o, t, m, motion) {
+  /**
+   * A ship to simulate from her hull's world matrix (as shown; else the
+   * doc's transform) and the last motion known (else the doc's), her body
+   * through her frame.
+   */
+  function track(id, o, t, m, motion) {
     const doc = plainTransform(o.transform);
+    const frame = shipFrame(api, id);
     const pose = m ? poseOfMatrix(m) : { position: doc.position, quaternion: quatFromEuler(doc.rotation) };
-    const state = stateOf(pose, motion ?? o.traits[SHIP]?.motion, t);
-    return { state, good: state, seen: { transform: doc, motion: motionKey(o.traits[SHIP]?.motion) }, savedAt: Date.now(), saved: { position: state.position, quaternion: state.quaternion } };
+    const state = stateOf(toBody(pose, frame, doc.scale), motion ?? o.traits[SHIP]?.motion, t);
+    return { frame, state, good: state, seen: { transform: doc, motion: motionKey(o.traits[SHIP]?.motion) }, savedAt: Date.now(), saved: { position: state.position, quaternion: state.quaternion } };
   }
 
   function start(sc) {
@@ -291,7 +325,7 @@ export function createSim(api, ctx) {
     if (!release) return;
     ships.clear();
     // from the poses it last saw the simulator hold, and the last motion it knew
-    for (const id of shipsOf(sc)) ships.set(id, track(sc.objects[id], ctx.sea.clock(), shown.get(id) ?? api.worldOf(id), streamed[id]));
+    for (const id of shipsOf(sc)) ships.set(id, track(id, sc.objects[id], ctx.sea.clock(), shown.get(id) ?? api.worldOf(id), streamed[id]));
     shown.clear();
   }
 
@@ -334,22 +368,32 @@ export function createSim(api, ctx) {
       const o = sc.objects[id];
       const doc = plainTransform(o.transform);
       const motion = o.traits[SHIP]?.motion;
-      const spec = specFor(api.content(id), o.traits[SHIP]?.spec, doc.scale);
+      const frame = shipFrame(api, id);
+      const p = parts(sc, id);
+      const rig = p.sail ? { matrix: placeIn(sc, p.sail, id), sail: api.content(p.sail)?.extras?.sail } : null;
+      const spec = specFor(api.content(id), o.traits[SHIP]?.spec, doc.scale, { frame, rig });
       const key = JSON.stringify(spec);
       let s = ships.get(id);
-      if (!s) ships.set(id, (s = track(o, t, null)));
+      if (!s) ships.set(id, (s = track(id, o, t, null)));
+      if (JSON.stringify(s.frame) !== JSON.stringify(frame)) {
+        // her frame changed (her model loaded and said which way is forward, or someone set it):
+        // her hull stays where it is, and her body turns in it
+        s.state = { ...s.state, ...toBody(toObject(s.state, s.frame, doc.scale), frame, doc.scale) };
+        s.good = s.state;
+        s.frame = frame;
+      }
       if (s.key !== key) {
         s.model = createShip(spec);
         s.key = key;
       }
       if (movedByEditor(doc, motion, s.seen)) {
         // someone moved it (the editor): start again from there, at rest, and drop the anchor again
-        s.state = s.model.rest({ position: doc.position, yaw: doc.rotation[1], t });
+        const body = toBody({ position: doc.position, quaternion: quatFromEuler(doc.rotation) }, frame, doc.scale);
+        s.state = s.model.rest({ position: body.position, yaw: yawOf(body.quaternion), t });
         s.at = null;
       }
       s.seen = { transform: doc, motion: motionKey(motion) };
 
-      const p = parts(sc, id);
       const v = { helm: p.helm && value(p.helm, sc), sail: p.sail && value(p.sail, sc), anchor: p.anchor && value(p.anchor, sc) };
       anchorSpot(s, p.anchor, v.anchor, sc, spec);
       const controls = controlsOf(v, s.at, spec);
@@ -360,18 +404,20 @@ export function createSim(api, ctx) {
       s.good = s.state;
       s.read = published(s.model.read(s.state, controls, env), s.state);
 
-      hold(id, transformOf(s.state, doc.scale));
-      if (p.sail) {
-        const r = plainTransform(sc.objects[p.sail].transform);
-        hold(p.sail, { ...r, rotation: [r.rotation[0], s.read.boom, r.rotation[2]] });
-      }
+      const hull = toObject(s.state, frame, doc.scale);
+      hold(id, transformOf(hull, doc.scale));
+      // the boom swung about the mast from where the rig was put
+      if (p.sail) hold(p.sail, rigTransform(plainTransform(sc.objects[p.sail].transform), s.read.boom));
       // the wheel is its helmsman's to hold (stations.js), so it turns as their key does; else ours
       const at = p.helm && api.claimedBy(p.helm, STATION);
       if (p.helm && (!at || at.mine)) hold(p.helm, wheelTransform(plainTransform(sc.objects[p.helm].transform), controls.rudder));
       // the anchor lies on the bottom while it's down, and hangs at the bow (the doc's place) when it's up
       if (p.hook && controls.anchor) {
+        // upright on the bottom, in the frame of whatever it hangs from aboard
+        const under = placeIn(sc, parentOf(sc, p.hook), id);
+        const back = invert(multiply(matrixOfPose(hull.position, hull.quaternion, doc.scale), under));
         const scale = plainTransform(sc.objects[p.hook].transform).scale;
-        hold(p.hook, { position: toShip(s.state, controls.anchor.at).map((x) => x / doc.scale), rotation: eulerFromQuat(conjQ(s.state.quaternion)), scale });
+        hold(p.hook, { position: apply(back, controls.anchor.at), rotation: eulerFromQuat(poseOfMatrix(back).quaternion), scale });
       }
     }
     for (const id of holding) if (!held.has(id)) api.pose.release(id);
@@ -429,7 +475,8 @@ export function createSim(api, ctx) {
     }
     if (!due.length) return;
     const writes = due.map(([id, s]) => {
-      const t = transformOf(s.state, plainTransform(sc.objects[id].transform).scale);
+      const scale = plainTransform(sc.objects[id].transform).scale;
+      const t = transformOf(toObject(s.state, s.frame ?? IDENTITY, scale), scale);
       const motion = motionOf(s.state);
       s.seen = { transform: t, motion: motionKey(motion) };
       s.savedAt = now;

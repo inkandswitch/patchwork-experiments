@@ -142,7 +142,13 @@ try {
   const ids = await js(`(() => { const by = window.__p.byName; return { hull: by("Sloop"), wheel: by("Wheel"), rig: by("Boom and sail"), windlass: by("Windlass"), ladder: by("Ladder"), anchor: by("Anchor"), mast: by("Mast") }; })()`);
   report.ids = ids;
   const { hull, wheel, rig, windlass, ladder } = ids;
-  const local = async (id) => (await P("doc()")).objects[id].transform.position;
+  // where a part is on her (the hull's frame): up its chain of parents (the sail hangs from the mast), none of them turned
+  const local = async (id) => {
+    const d = await P("doc()");
+    let p = [0, 0, 0];
+    for (let at = id; at && at !== hull; at = d.objects[at].parent) p = p.map((v, i) => v + d.objects[at].transform.position[i]);
+    return p;
+  };
 
   // both in play, running only the sailing extension and what it requires
   const PLAY = ["sailing", "scene.activity", "scene.keys", "scene.notices", "scene.use"];
@@ -176,6 +182,8 @@ try {
   // ─── the template starts her under way ───────────────────────────────────
   const way = { s: await P(`read('${hull}', '${SIM}')`), f: await P(`read('${hull}', '${FOL}')`) };
   const start = (await P("doc()")).objects;
+  // the template's sea is seeded at random: kept, so a run that ends in irons can be told apart from one that doesn't
+  report.measured.sea = (await P("doc()")).traits["sailing.sea"];
   check("the template starts her under way: sail up, anchor up, making way on both views", start[rig].traits["sailing.sail"].raised === 1 && start[windlass].traits["sailing.anchor"].down === false && way.s?.speed > 1 && way.f?.speed > 1, { speed: { sim: n2(way.s?.speed), follower: n2(way.f?.speed) } });
   await shot("under-way", FOL);
 
@@ -454,6 +462,10 @@ try {
   const verbsL = await P("verbs('b')");
   check("in the water by the ladder, B's prompt offers to climb aboard", !!aimL && verbsL.some((v) => v.command === "climb"), { aimL, verbsL, me: await P("me('b')") });
   await focus("b", aimL);
+  // she still carries her way (a couple of m/s): beside the ladder again where she is now, so it's in reach when F lands
+  const mL3 = await P(`worldOf('${hull}', 'b')`);
+  const besideL3 = apply(mL3, [ld[0] + 0.9, 0, ld[2]]);
+  await P(`place('b', null, [${besideL3[0]}, 0, ${besideL3[2]}], ${headingOf(mL3) + Math.PI / 2}, 0.1)`);
   await press("f");
   await sleep(600);
   const back = await P("me('b')");

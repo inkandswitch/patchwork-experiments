@@ -8,10 +8,14 @@
 //   floats the ship, walks its deck and works its stations;
 // - "sailing.edit" draws the sea while editing (following the sailors' clock
 //   when someone is sailing her meanwhile);
-// - the "ship-at-sea" template lays out a sloop at anchor in an empty scene
-//   and starts it in play, so its maker is aboard at once.
-// A sea, a ship or a station in any other scene comes from the inspector's
-// "Add behaviour…", which reads `describes`.
+// - the "ship-at-sea" template lays out a sloop under way in an empty scene
+//   and starts it in play, so its maker is aboard at once;
+// - parts for the editor's parts bin (scene:part): the sloop whole (she
+//   brings her sea), and her mast and sail, wheel, windlass and anchor and
+//   ladder on their own, to drag onto any hull (one modelled elsewhere, with
+//   Ship on it); and buoys and an islet to sail past.
+// A sea, a ship or a station by hand comes from the inspector's "Add
+// behaviour…", which reads `describes`.
 
 const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.hook", "sailing.ladder", "sailing.float"];
 
@@ -33,8 +37,12 @@ const DESCRIBES = {
   "sailing.ship": {
     name: "Ship",
     on: "object",
-    blurb: "Floats and sails by the forces on it; what's attached under it rides along. Its size comes from its box unless the spec says otherwise",
-    fields: [{ key: "spec", label: "Spec overrides", kind: "json" }],
+    blurb: "Floats and sails by the forces on it; what's attached under it rides along. Its size and weight come from its model (or its box) unless the spec says otherwise; drag a mast, a wheel and a windlass onto it from the parts",
+    fields: [
+      // where her body frame (bow −Z, midships on the waterline) sits in her model, when her model doesn't say (camber's does); either part alone overrides the model's
+      { key: "frame", label: "Ship frame in the model ({ position, rotation }, radians)", kind: "json" },
+      { key: "spec", label: "Spec overrides", kind: "json" },
+    ],
   },
   "sailing.helm": {
     name: "Helm",
@@ -104,12 +112,31 @@ export const plugins = [
       return (await import("./edit.js")).default;
     },
   },
+  // the parts bin's (scene:part): what each is made of is parts.js
+  ...[
+    { id: "sloop", name: "Sloop", icon: "Sailboat", description: "A 12 m sloop, rigged and ready: hull, mast and sail, wheel, windlass and anchor, ladder. Brings a sea if the scene has none", traits: ["sailing.ship", "sailing.sea"] },
+    { id: "mast", name: "Mast and sail", icon: "Sailboat", description: "A mast with its boom and mainsail. On a ship it drives her: where you put it is where the sail pulls", tags: ["sailing.mast"], traits: ["sailing.sail"] },
+    { id: "wheel", name: "Wheel", icon: "LifeBuoy", description: "The helm: take it to steer, and trim the sheet from it", tags: ["sailing.helm"], traits: ["sailing.helm"] },
+    { id: "windlass", name: "Windlass and anchor", icon: "Anchor", description: "Lets go and weighs the ship's anchor; the anchor hangs at the bow", tags: ["sailing.windlass"], traits: ["sailing.anchor", "sailing.hook"] },
+    { id: "ladder", name: "Ladder", icon: "Ladder", description: "A way back aboard from the water, hung over the side", tags: ["sailing.ladder"], traits: ["sailing.ladder"] },
+    { id: "redBuoy", name: "Red buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
+    { id: "greenBuoy", name: "Green buoy", icon: "Circle", description: "A channel marker that rides the waves", traits: ["sailing.float"] },
+    { id: "islet", name: "Islet", icon: "Mountain", description: "A rock with a little grass, to sail round" },
+  ].map(({ id, ...p }) => ({
+    type: "scene:part",
+    id: `sailing.${id}`,
+    category: "Sailing",
+    ...p,
+    async load() {
+      return (await import("./parts.js"))[id];
+    },
+  })),
   {
     type: "scene:template",
     id: "ship-at-sea",
     name: "Ship at sea",
     icon: "Sailboat",
-    description: "A sloop at anchor on open water, with wind and waves, ready to sail",
+    description: "A sloop under way on open water, with wind and waves, ready to sail",
     async load() {
       return (await import("./template.js")).default;
     },

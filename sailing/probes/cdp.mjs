@@ -19,8 +19,12 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // for a big shader), or with `gpu` the machine's own (Metal, on a Mac)
 const gpuFlags = (gpu) => (gpu ? ["--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist"] : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]);
 
-/** Serve `root` on `port`; POST /report resolves `reports` (for pages that post one). */
-export async function serve(root, port) {
+/**
+ * Serve `root` on `port`; POST /report resolves `reports` (for pages that post one).
+ * `mounts` serves other directories under URL prefixes ({ "/camber/": dir }):
+ * a probe borrowing another package's build at dev time.
+ */
+export async function serve(root, port, mounts = {}) {
   const reports = [];
   const server = createServer((req, res) => {
     if (req.method === "POST" && req.url === "/report") {
@@ -32,8 +36,11 @@ export async function serve(root, port) {
       });
       return;
     }
-    const path = join(root, decodeURIComponent(new URL(req.url, "http://x").pathname));
-    if (!path.startsWith(root) || !existsSync(path) || statSync(path).isDirectory()) return void res.writeHead(404).end();
+    const url = decodeURIComponent(new URL(req.url, "http://x").pathname);
+    const mount = Object.keys(mounts).find((prefix) => url.startsWith(prefix));
+    const base = mount ? mounts[mount] : root;
+    const path = join(base, mount ? url.slice(mount.length) : url);
+    if (!path.startsWith(base) || !existsSync(path) || statSync(path).isDirectory()) return void res.writeHead(404).end();
     res.writeHead(200, { "content-type": MIME[extname(path)] ?? "application/octet-stream", "cache-control": "no-store" });
     createReadStream(path).pipe(res);
   });
@@ -43,10 +50,10 @@ export async function serve(root, port) {
 
 /**
  * Serve, launch, navigate. Returns the page driver.
- * @param {{ root: string, port: number, cdp: number, page: string, width?: number, height?: number, show?: boolean, gpu?: boolean, timeout?: number }} o
+ * @param {{ root: string, port: number, cdp: number, page: string, width?: number, height?: number, show?: boolean, gpu?: boolean, timeout?: number, mounts?: Record<string, string> }} o
  */
-export async function browser({ root, port, cdp, page, width = 1440, height = 900, show = false, gpu = false, timeout = 240_000 }) {
-  const { server, reports } = await serve(root, port);
+export async function browser({ root, port, cdp, page, width = 1440, height = 900, show = false, gpu = false, timeout = 240_000, mounts = {} }) {
+  const { server, reports } = await serve(root, port, mounts);
   const profile = mkdtempSync(join(process.env.TMPDIR || tmpdir(), "scene-probe-"));
   const chrome = spawn(
     CHROME,
@@ -82,12 +89,17 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
   await new Promise((r) => ws.addEventListener("open", r, { once: true }));
   let seq = 0;
   const pending = new Map();
+  const waiters = new Map(); // CDP event → resolve, for once()
   const logs = [];
   ws.addEventListener("message", (ev) => {
     const m = JSON.parse(ev.data);
     if (m.id && pending.has(m.id)) {
       pending.get(m.id)(m);
       pending.delete(m.id);
+    }
+    if (m.method && waiters.has(m.method)) {
+      waiters.get(m.method)(m.params);
+      waiters.delete(m.method);
     }
     if (m.method === "Runtime.consoleAPICalled") logs.push(`${m.params.type}: ${m.params.args.map((a) => a.value ?? a.description).join(" ")}`);
     if (m.method === "Runtime.exceptionThrown") logs.push(`exception: ${m.params.exceptionDetails?.exception?.description ?? m.params.exceptionDetails?.text}`);
@@ -97,6 +109,17 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
       const i = ++seq;
       pending.set(i, (m) => (m.error ? no(new Error(`${method}: ${m.error.message}`)) : r(m.result)));
       ws.send(JSON.stringify({ id: i, method, params }));
+    });
+  /** The next CDP event of this kind. */
+  const once = (method, ms = 3000) =>
+    new Promise((r, no) => {
+      waiters.set(method, r);
+      setTimeout(() => {
+        // only if it's still this one waiting (a later once() may have taken its place)
+        if (waiters.get(method) !== r) return;
+        waiters.delete(method);
+        no(new Error(`no ${method} within ${ms} ms`));
+      }, ms);
     });
   const js = async (expr) => {
     const r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
@@ -112,6 +135,7 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
   const modBits = (m) => (typeof m === "number" ? m : (m ?? []).reduce((a, k) => a | (MODS[k] ?? 0), 0));
   const BUTTON_BITS = { left: 1, right: 2, middle: 4 };
   const at = { x: 0, y: 0 };
+  let intercepting = false; // Input.setInterceptDrags is on (htmlDrag)
   async function mouse(type, x, y, { mods = 0, button = "left", buttons, clickCount = 1 } = {}) {
     at.x = x;
     at.y = y;
@@ -185,6 +209,40 @@ export async function browser({ root, port, cdp, page, width = 1440, height = 90
       await mouse("mouseReleased", ex, ey, { mods, button });
       await sleep(settle);
       return mid;
+    },
+    /**
+     * A drag the page starts itself (draggable elements, dataTransfer):
+     * press on `from`, move until Chrome starts it, then play it along
+     * `path` ([[x, y], …]) and drop at the last point (or `end: "cancel"`).
+     * Input.setInterceptDrags hands back the data the page's dragstart set,
+     * and dispatchDragEvent plays it at real coordinates, so dragover and
+     * drop fire on whatever is really there. `during(x, y)` runs after each
+     * step; their values are returned.
+     */
+    async htmlDrag([sx, sy], path, { end = "drop", during = null, mods = 0 } = {}) {
+      // once, and left on: asking again leaves the next drag's start unheard
+      if (!intercepting) await send("Input.setInterceptDrags", { enabled: true });
+      intercepting = true;
+      await mouse("mouseMoved", sx, sy);
+      const intercepted = once("Input.dragIntercepted");
+      await mouse("mousePressed", sx, sy);
+      for (let i = 1; i <= 6; i++) await mouse("mouseMoved", sx + i * 2, sy + i, { buttons: 1 });
+      const { data } = await intercepted;
+      const [fx, fy] = path[0];
+      await send("Input.dispatchDragEvent", { type: "dragEnter", x: fx, y: fy, data, modifiers: modBits(mods) });
+      const seen = [];
+      for (const [x, y] of path) {
+        // twice: crossing into a new element, Blink fires only enter / leave on the first
+        await send("Input.dispatchDragEvent", { type: "dragOver", x, y, data, modifiers: modBits(mods) });
+        await send("Input.dispatchDragEvent", { type: "dragOver", x, y, data, modifiers: modBits(mods) });
+        await sleep(16);
+        if (during) seen.push(await during(x, y));
+      }
+      const [lx, ly] = path.at(-1);
+      await send("Input.dispatchDragEvent", { type: end === "drop" ? "drop" : "dragCancel", x: lx, y: ly, data, modifiers: modBits(mods) });
+      await mouse("mouseReleased", lx, ly);
+      await sleep(150);
+      return { types: data.items.map((it) => it.mimeType), seen };
     },
     async shot(path, clip) {
       const r = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip: { ...clip, scale: 1 } } : {}) });

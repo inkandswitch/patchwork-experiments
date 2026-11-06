@@ -3,7 +3,9 @@
 // else drawn where they stand.
 //
 // Your body lives in the frame of the ship you stand on: its feet are local
-// to the hull, so the deck carries you as it rolls and sails. Each frame the
+// to her body frame (bow −Z, through her frame: body.js), so the deck
+// carries you as it rolls and sails, and "aft of the wheel" is aft whichever
+// way her model was drawn. Each frame the
 // body goes out to the world through the ship's displayed matrix, takes one
 // step of the walker there (the stage's rays see the hull as drawn, gravity
 // is world −Y, the velocity is the deck's), and comes back. Off the deck you
@@ -20,6 +22,7 @@
 import { BODY, DECK, SWIM, look, lookDir, step, swim } from "./walk.js";
 import { apply, headingOf, invert, onHeading, rotateM, unrotateM } from "./frames.js";
 import { QUARTER, isUnder, shipOf } from "./traits.js";
+import { bodyBoxOf, bodyOf } from "./body.js";
 
 const FOV = 60; // vertical: about 90° across at 16:9; wider puts more heaving sea in the corners of your eye
 const SEND_MS = 55; // presence, about 18 Hz
@@ -148,6 +151,8 @@ export function createCrew(api, ctx) {
   const keys = new Set();
 
   const clock = () => ctx.sea?.clock?.() ?? 0;
+  /** A ship's body frame as drawn (bow −Z), which a body aboard lives in; null when she's gone. */
+  const frameOfShip = (id) => bodyOf(api, id);
   const surfaceAt = (t) => (x, z) => ctx.sea?.ocean?.heightAt?.(x, z, t) ?? 0;
 
   // the walker's world: the stage's rays, which see the hull as drawn this frame
@@ -186,7 +191,7 @@ export function createCrew(api, ctx) {
     const helm = ctx.sim?.stationsOf?.(ship)?.helm;
     const at = helm ? standSpot(helm, m) : null;
     if (at) return at;
-    const box = api.content?.(ship)?.box;
+    const box = bodyBoxOf(api, ship); // metres, as m is
     const z = box ? box.max[2] - 1.2 : 0;
     const x = box ? (box.min[0] + box.max[0]) / 2 : 0;
     return groundAt(m, [x, 3, z]);
@@ -206,7 +211,7 @@ export function createCrew(api, ctx) {
   /** On the first ship's deck, by the wheel; in the water if there's no ship. */
   function spawn() {
     const ship = ctx.sim?.ships?.()[0] ?? null;
-    const m = ship ? api.worldOf(ship) : null;
+    const m = ship ? frameOfShip(ship) : null;
     if (m) {
       // beside the wheel, a little to one side or the other, so two who come aboard together aren't one
       const at = deckSpot(ship, m);
@@ -234,7 +239,7 @@ export function createCrew(api, ctx) {
     if (!body.onGround || station) return null;
     const hit = api.raycast([feetW[0], feetW[1] + 0.3, feetW[2]], [0, -1, 0], { far: 0.6 });
     const ship = hit?.id ? shipOf(api.scene(), hit.id) : null;
-    const to = ship && ship !== body.on ? api.worldOf(ship) : null;
+    const to = ship && ship !== body.on ? frameOfShip(ship) : null;
     if (!to) return null;
     Object.assign(body, reframe(body, m, to), { on: ship });
     return to;
@@ -244,7 +249,7 @@ export function createCrew(api, ctx) {
     const t = clock();
     const surface = surfaceAt(t);
     const input = wanted();
-    let m = body.on ? api.worldOf(body.on) : null;
+    let m = body.on ? frameOfShip(body.on) : null;
     if (body.on && !m) inWater(eye ? [eye[0], 0, eye[2]] : body.feet, [0, 0, 0], body.yaw); // the ship went
     if (body.on) {
       if (station?.spot) {
@@ -301,7 +306,7 @@ export function createCrew(api, ctx) {
   for (const type of ["pointerup", "pointercancel"]) api.listen(globalThis, type, () => (dragging = false), { capture: true });
   function follow() {
     const ship = ctx.sim?.ships?.()[0] ?? null;
-    const m = ship ? api.worldOf(ship) : null;
+    const m = ship ? frameOfShip(ship) : null;
     if (!m) return void (followAt = null);
     const at = [m[12], m[14]];
     if (!followAt) {
@@ -404,7 +409,7 @@ export function createCrew(api, ctx) {
     playing = true;
     paused = false;
     free = false;
-    if (!placed || (body.on && !api.worldOf(body.on))) spawn();
+    if (!placed || (body.on && !frameOfShip(body.on))) spawn();
     orbitFov = api.camera.get()?.fov ?? null; // given back on leaving: first person sees wider
     releaseCamera = api.camera.hold();
     // immersive: the editor's decorations stand aside while aboard
@@ -426,7 +431,7 @@ export function createCrew(api, ctx) {
     releaseCamera = null;
     eye = null;
     // back off the quarter of the ship you were on
-    const m = body.on ? api.worldOf(body.on) : null;
+    const m = body.on ? frameOfShip(body.on) : null;
     const fov = orbitFov != null ? { fov: orbitFov } : {};
     if (m) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target), ...fov });
     else api.camera.set(fov);
@@ -447,7 +452,7 @@ export function createCrew(api, ctx) {
     if (!playing) start();
     leave();
     const ship = shipOf(api.scene(), id);
-    const m = ship ? api.worldOf(ship) : null;
+    const m = ship ? frameOfShip(ship) : null;
     let spot = null;
     if (m) {
       spot = standSpot(id, m);
@@ -495,7 +500,7 @@ export function createCrew(api, ctx) {
 
   /** Climb aboard by a ship's ladder (from the water): on deck at its top, facing inboard. */
   function board(shipId) {
-    const m = api.worldOf(shipId);
+    const m = frameOfShip(shipId);
     if (!m) return false;
     if (!playing) start();
     leave();
@@ -572,7 +577,7 @@ export function createCrew(api, ctx) {
       seen.add(session);
       const a = avatarFor(session, hueOf(p.viewer ?? session));
       Object.assign(a, ease(a, rec, dt));
-      const at = placeOf(a, (id) => api.worldOf(id));
+      const at = placeOf(a, frameOfShip);
       a.group.visible = !!at;
       if (!at) continue;
       a.group.position.set(at.position[0], at.position[1], at.position[2]);
