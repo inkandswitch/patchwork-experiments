@@ -15,7 +15,7 @@ describe("provider metadata", () => {
     expect(sources.map((p) => p.id).sort()).toEqual(["flow-field-slice", "flow-field-streamlines"]);
     for (const p of sources) {
       expect(p.cost).toBe("expensive");
-      expect(p.version).toBe(2);
+      expect(p.version).toBe(3);
       for (const s of p.params) expect(["cheap", "expensive"], `${p.id}.${s.key}`).toContain(s.cost);
       expect(() => structuredClone({ ...p, load: undefined })).not.toThrow();
     }

@@ -35,14 +35,14 @@ import {
   MIN_PANELS,
   MAX_PANELS,
 } from "./body.js";
-import { acquireSection, sectionPathLabel, renderTitle } from "./section.js";
+import { acquireSection, sectionPathLabel, sectionPathChip, renderTitle } from "./section.js";
 import { isRenderDoc, renderKey } from "./render-read.js";
 import { loadGetRegistry } from "./registry.js";
 import { hasPatchworkDrop, parsePatchworkDrop, parseAutomergeUrl } from "./dnd.js";
 
-/** How long a burst of hull edits settles before the section is cut again. */
-export const HULL_DEBOUNCE_MS = 250;
-/** A section that couldn't be had here (hull not synced, no provider yet) is tried again, backing off to this. */
+/** How long a burst of edits to the linked body settles before the section is cut again. */
+export const BODY_DEBOUNCE_MS = 250;
+/** A section that couldn't be had here (body not synced, no provider yet) is tried again, backing off to this. */
 export const SECTION_RETRY_MS = 1_000;
 export const SECTION_RETRY_MAX_MS = 30_000;
 
@@ -111,7 +111,7 @@ export default function FlowFieldTool(handle, element) {
     armed: null, // kind waiting to be placed
     hover: null, // element id
     probe: null, // [x, y] world
-    linking: false, // the "Link hull…" URL box is open
+    linking: false, // the "Link body…" URL box is open
     confirmUnlink: false,
     notice: null, // { text, tone } shown in the Body section
   };
@@ -254,7 +254,7 @@ export default function FlowFieldTool(handle, element) {
       if (e.key === "Escape") ((view.linking = false), syncBody(handle.doc()));
     },
   });
-  const linkOpen = el("button", { type: "button", text: "Link hull…", onclick: () => ((view.linking = true), (view.notice = null), syncBody(handle.doc()), linkInput.focus()) });
+  const linkOpen = el("button", { type: "button", text: "Link body…", onclick: () => ((view.linking = true), (view.notice = null), syncBody(handle.doc()), linkInput.focus()) });
   const linkGo = el("button", { type: "button", text: "Link", onclick: () => linkTo(linkInput.value) });
   const linkCancel = el("button", { type: "button", text: "Cancel", onclick: () => ((view.linking = false), syncBody(handle.doc())) });
   const linkBox = el("div", { class: "cluster link-box" }, linkInput, linkGo, linkCancel);
@@ -265,7 +265,7 @@ export default function FlowFieldTool(handle, element) {
     linkBox,
     el("p", {
       class: "hint",
-      text: "Link a hull and the flow goes round its waterline, derived live from it. Best is the hull's 3D render from a scene (drag its row from the scene's outline onto the view): the flow then uses exactly the geometry the scene shows. A hull document itself works too, built with its provider's defaults.",
+      text: "Link a body (a hull, say) and the flow goes round its section at the waterline, cut live from its geometry. Anything a scene shows works: drag its row from the scene's outline onto the view. Best is an object's 3D render, which is exactly the geometry the scene shows; a GLB file is cut as it is; any other document a scene can build is built with its provider's defaults. The body is the object's own geometry in its own frame (where the scene places it doesn't count), so it should sit in the floating frame: bow to +x, waterline at z = 0, metres.",
     }),
   );
   const chipTitle = el("span", { class: "chip-title" });
@@ -303,7 +303,7 @@ export default function FlowFieldTool(handle, element) {
     { class: "confirm flow" },
     el("p", {
       class: "hint",
-      text: "Unlinking drops the waterplane body: its panels are derived from the hull and don't become elements. Switch to Slender body first to keep it as elements.",
+      text: "Unlinking drops the waterplane body: its panels are derived from the linked body and don't become elements. Switch to Slender body first to keep it as elements.",
     }),
     el(
       "div",
@@ -563,20 +563,20 @@ export default function FlowFieldTool(handle, element) {
     if (dead || seq !== linked.seq) return; // superseded, or unmounted
     if (r.handle && !linked.handle) {
       linked.handle = r.handle;
-      const onHull = () => {
+      const onBodyChange = () => {
         // a scene render changes all the time (status, "building"); only a
         // new GLB changes the body
         const d = r.handle.doc?.();
         if (isRenderDoc(d) && linked.renderKey != null && renderKey(d) === linked.renderKey) return;
         clearTimeout(linked.timer);
-        linked.timer = setTimeout(fetchSection, HULL_DEBOUNCE_MS);
+        linked.timer = setTimeout(fetchSection, BODY_DEBOUNCE_MS);
       };
-      r.handle.on?.("change", onHull);
-      linked.off = () => r.handle.off?.("change", onHull);
+      r.handle.on?.("change", onBodyChange);
+      linked.off = () => r.handle.off?.("change", onBodyChange);
     }
     if (r.ok || r.transient === false) linked.failures = 0;
     else {
-      // not available here yet (the hull hasn't synced, its provider hasn't
+      // not available here yet (the body hasn't synced, its provider hasn't
       // registered): try again, backing off, the way the scene host does
       const wait = Math.min(SECTION_RETRY_MAX_MS, SECTION_RETRY_MS * 2 ** linked.failures++);
       linked.retry = setTimeout(() => {
@@ -619,7 +619,7 @@ export default function FlowFieldTool(handle, element) {
       // "the doc's N elements are still there": keep N current, and drop it once they're gone
       const own = Object.keys(doc?.elements ?? {}).length;
       const note = own
-        ? `The doc's ${own} element${own === 1 ? " is" : "s are"} still there, superposed on the body. Delete ${own === 1 ? "it" : "them"} if the hull should stand alone.`
+        ? `The doc's ${own} element${own === 1 ? " is" : "s are"} still there, superposed on the body. Delete ${own === 1 ? "it" : "them"} if the body should stand alone.`
         : "";
       const text = [note, view.notice.text].filter(Boolean).join(" ");
       if (!text) view.notice = null;
@@ -634,11 +634,7 @@ export default function FlowFieldTool(handle, element) {
     }
     const path =
       linked.status === "ready"
-        ? linked.result?.path === "render"
-          ? "scene render"
-          : linked.result?.path === "exact"
-            ? "exact section"
-            : "mesh fallback"
+        ? sectionPathChip(linked.result)
         : linked.status === "pending"
           ? "not built yet"
           : linked.status === "error"
@@ -657,7 +653,7 @@ export default function FlowFieldTool(handle, element) {
           : linked.status === "ready"
             ? loops
               ? `${capitalize(sectionPathLabel(linked.result))}: ${loops} loop${loops === 1 ? "" : "s"} at z = ${fmt(linked.section.plane?.z ?? 0)} m. Edits to it show up here.`
-              : `The ${sectionPathLabel(linked.result)} has nothing at this plane.`
+              : `The ${sectionPathLabel(linked.result)} has nothing at this plane${linked.result?.miss ? `: ${linked.result.miss}` : ""}.`
             : "Cutting the section…";
     bodyStatus.dataset.tone = linked.status === "error" ? "error" : "";
     setValue(planeSelect, spec.plane.kind);
@@ -1324,22 +1320,20 @@ export default function FlowFieldTool(handle, element) {
   handle.on("change", onChange);
   render();
 
-  // a section or scene provider arriving (or going) can change the body: re-cut
+  // a scene provider arriving (or going) can change the body: re-cut
   const regOff = [];
   const onRegistry = () => {
     if (dead || !linked.url) return;
     clearTimeout(linked.timer);
-    linked.timer = setTimeout(fetchSection, HULL_DEBOUNCE_MS);
+    linked.timer = setTimeout(fetchSection, BODY_DEBOUNCE_MS);
   };
   loadGetRegistry().then((get) => {
     if (dead || !get) return;
-    for (const type of ["geometry:section", "scene:source"]) {
-      try {
-        const off = get(type)?.on?.("changed", onRegistry);
-        if (typeof off === "function") regOff.push(off);
-      } catch {
-        // no such registry here: nothing to follow
-      }
+    try {
+      const off = get("scene:source")?.on?.("changed", onRegistry);
+      if (typeof off === "function") regOff.push(off);
+    } catch {
+      // no such registry here: nothing to follow
     }
   });
 

@@ -29,7 +29,7 @@ export const FlowFieldDatatype = {
     doc.elements = seed.elements;
     doc.domain = seed.domain;
     doc.seeds = seed.seeds;
-    // no linked body (see README "Linking a hull"); docs made before the link existed lack the key, which means the same
+    // no linked body (see README "Linking a body"); docs made before the link existed lack the key, which means the same
     doc.body = null;
   },
   getTitle(doc) {

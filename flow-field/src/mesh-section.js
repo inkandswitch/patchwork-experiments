@@ -1,10 +1,22 @@
-// The fallback section: slice a provider's GLB with a horizontal plane.
-// Pure — bytes in, loops out.
+// A section of a GLB: slice its triangles with a horizontal plane.
+// Pure, apart from loading the meshopt decoder when a GLB needs it.
 //
-// When no geometry:section provider is installed for the linked doc, the flow
-// builds the doc with its scene:source provider (in memory) and cuts the
-// triangles of that GLB. The GLB is glTF Y-up; the section is in the floating
+// Every linked body is cut here, whatever it is: a scene render's GLB, a GLB
+// file doc, or the in-memory build of a doc some scene:source provider can
+// build (section.js). The GLB is glTF Y-up; the section is in the floating
 // frame, which the contract puts at x = X, y = −Z, z = Y (v2 §3).
+//
+// Read like the scene reads it: node transforms applied, line and point
+// primitives skipped, KHR_mesh_quantization (normalised integer attributes)
+// and EXT_meshopt_compression decoded (src/vendor/meshopt_decoder.module.js,
+// copied whole from three's examples/jsm/libs; meshoptimizer, MIT), and
+// EXT_mesh_gpu_instancing expanded to one copy of the mesh per instance, as
+// three's GLTFLoader draws it (whether or not the GLB lists the extension as
+// required). Draco isn't read (the scene doesn't show it either). Units: glTF
+// is metres; a GLB that declares `asset.extras.units` (the patchwork
+// convention, written by scene/src/glb.js) is scaled from those to metres.
+// The scene itself takes every GLB as metres, so for a GLB that declares
+// another unit the two disagree (the section notes say so).
 
 import { parseGLB } from "./glb.js";
 
@@ -17,22 +29,141 @@ const READERS = {
   5125: [4, (dv, o) => dv.getUint32(o, true)],
   5126: [4, (dv, o) => dv.getFloat32(o, true)],
 };
+/** A normalised integer component → [−1, 1] or [0, 1] (glTF 2.0 §3.11). */
+const NORMALIZE = {
+  5120: (c) => Math.max(c / 127, -1),
+  5121: (c) => c / 255,
+  5122: (c) => Math.max(c / 32767, -1),
+  5123: (c) => c / 65535,
+};
 
-/** An accessor's elements as a flat array (strides and offsets honoured). */
-export function readAccessor(json, bin, index) {
+/** Metres per unit (as scene/src/units.js), and the long names a writer might use. */
+export const METRES_PER_UNIT = Object.freeze({ m: 1, cm: 0.01, mm: 0.001, in: 0.0254, ft: 0.3048 });
+const LONG_UNITS = {
+  metre: "m", metres: "m", meter: "m", meters: "m",
+  centimetre: "cm", centimetres: "cm", centimeter: "cm", centimeters: "cm",
+  millimetre: "mm", millimetres: "mm", millimeter: "mm", millimeters: "mm",
+  inch: "in", inches: "in", foot: "ft", feet: "ft",
+};
+
+/**
+ * A GLB's length unit: `asset.extras.units` if it names one, else metres (the
+ * glTF spec, and the scene's convention). Never guessed from the size.
+ * @returns {{ unit: string, scale: number, declared: string|null, known: boolean }}
+ *   `scale` is metres per file unit; `known` is false for a declared unit
+ *   this can't read (it is then taken as metres).
+ */
+export function glbUnits(json) {
+  const raw = json?.asset?.extras?.units;
+  if (raw == null || raw === "") return { unit: "m", scale: 1, declared: null, known: true };
+  const s = String(raw).trim().toLowerCase();
+  const unit = s in METRES_PER_UNIT ? s : LONG_UNITS[s];
+  return unit ? { unit, scale: METRES_PER_UNIT[unit], declared: String(raw), known: true } : { unit: "m", scale: 1, declared: String(raw), known: false };
+}
+
+/** Extensions that change the geometry and that this doesn't read. */
+const UNREADABLE = {
+  KHR_draco_mesh_compression: "Draco compression",
+};
+
+/**
+ * An error about this peer, not the bytes: the GLB is fine, but this
+ * runtime can't decode it (no WebAssembly, the decoder chunk didn't load).
+ * Another peer may well read it, so callers treat it as transient.
+ */
+function peerError(message, cause) {
+  const err = new Error(message);
+  err.transient = true;
+  if (cause !== undefined) err.cause = cause;
+  return err;
+}
+
+/** Does this GLB carry meshopt-compressed buffer views? */
+const usesMeshopt = (json) => (json.bufferViews ?? []).some((v) => v?.extensions?.EXT_meshopt_compression);
+
+/**
+ * Parse a GLB, refusing what can't be read. Trailing bytes after the length
+ * in the header (padding some writers leave) are ignored.
+ * @returns {{ json: object, bin: Uint8Array|null, views: null }}
+ */
+export function readGLB(bytes) {
+  let u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (u8.byteLength >= 12) {
+    const length = new DataView(u8.buffer, u8.byteOffset, u8.byteLength).getUint32(8, true);
+    if (length >= 20 && length < u8.byteLength) u8 = u8.subarray(0, length);
+  }
+  const { json, bin } = parseGLB(u8);
+  for (const ext of json.extensionsRequired ?? [])
+    if (UNREADABLE[ext]) throw new Error(`glb: uses ${UNREADABLE[ext]} (${ext}), which can't be read here`);
+  return { json, bin, views: null };
+}
+
+/**
+ * Parse a GLB and decode any meshopt-compressed buffer views (loading the
+ * decoder only then). The result is what glbTriangles() and meshSection()
+ * take in place of bytes.
+ * @returns {Promise<{ json: object, bin: Uint8Array|null, views: Map<number, Uint8Array>|null }>}
+ */
+export async function decodeGLB(bytes) {
+  const g = readGLB(bytes);
+  if (!usesMeshopt(g.json)) return g;
+  let MeshoptDecoder;
+  try {
+    ({ MeshoptDecoder } = await import("./vendor/meshopt_decoder.module.js"));
+  } catch (err) {
+    throw peerError(`glb: meshopt-compressed, and the decoder couldn't be loaded here (${err?.message ?? err})`, err);
+  }
+  if (!MeshoptDecoder?.supported) throw peerError("glb: meshopt-compressed, and WebAssembly isn't available here to decode it");
+  try {
+    await MeshoptDecoder.ready;
+  } catch (err) {
+    throw peerError(`glb: meshopt-compressed, and the decoder didn't start here (${err?.message ?? err})`, err);
+  }
+  const views = new Map();
+  g.json.bufferViews.forEach((view, i) => {
+    const ext = view?.extensions?.EXT_meshopt_compression;
+    if (!ext) return;
+    if ((ext.buffer ?? 0) !== 0 || !g.bin) throw new Error("glb: meshopt data outside the BIN chunk");
+    const source = g.bin.subarray(ext.byteOffset ?? 0, (ext.byteOffset ?? 0) + ext.byteLength);
+    const target = new Uint8Array(ext.count * ext.byteStride);
+    MeshoptDecoder.decodeGltfBuffer(target, ext.count, ext.byteStride, source, ext.mode, ext.filter ?? "NONE");
+    views.set(i, target);
+  });
+  return { ...g, views };
+}
+
+/**
+ * An accessor's elements as a flat array (strides and offsets honoured,
+ * normalised integers mapped to their float range). `views` holds decoded
+ * (meshopt) buffer views by index, which replace the view's bytes.
+ */
+export function readAccessor(json, bin, index, views = null) {
   const acc = json.accessors?.[index];
   if (!acc) throw new Error(`glb: no accessor ${index}`);
   const comps = COMPONENTS[acc.type] ?? 1;
   const reader = READERS[acc.componentType];
   if (!reader) throw new Error(`glb: unsupported component type ${acc.componentType}`);
-  const [size, read] = reader;
+  const [size, raw] = reader;
+  const norm = acc.normalized ? NORMALIZE[acc.componentType] : null;
+  const read = norm ? (dv, o) => norm(raw(dv, o)) : raw;
   const out = new Float64Array(acc.count * comps);
   if (acc.bufferView == null) return out; // all zeros, per the spec (sparse accessors aren't read)
   const view = json.bufferViews?.[acc.bufferView];
-  if (!view || (view.buffer ?? 0) !== 0 || !bin) throw new Error("glb: accessor outside the BIN chunk");
-  const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+  if (!view) throw new Error(`glb: no buffer view ${acc.bufferView}`);
+  let data;
+  let base;
+  const decoded = views?.get?.(acc.bufferView);
+  if (decoded) {
+    data = decoded;
+    base = acc.byteOffset ?? 0;
+  } else {
+    if (view.extensions?.EXT_meshopt_compression) throw new Error("glb: meshopt-compressed (decode it with decodeGLB first)");
+    if ((view.buffer ?? 0) !== 0 || !bin) throw new Error("glb: accessor outside the BIN chunk");
+    data = bin;
+    base = (view.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+  }
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const stride = view.byteStride || comps * size;
-  const base = (view.byteOffset ?? 0) + (acc.byteOffset ?? 0);
   for (let i = 0; i < acc.count; i++)
     for (let c = 0; c < comps; c++) out[i * comps + c] = read(dv, base + i * stride + c * size);
   return out;
@@ -68,45 +199,95 @@ function nodeMatrix(node) {
   ];
 }
 
+/** Column-major T · R · S (three's Matrix4.compose). */
+function compose([tx, ty, tz], [qx, qy, qz, qw], [sx, sy, sz]) {
+  return nodeMatrix({ translation: [tx, ty, tz], rotation: [qx, qy, qz, qw], scale: [sx, sy, sz] });
+}
+
+const isTriangleMode = (mode) => mode == null || mode === 4 || mode === 5 || mode === 6;
+
 /**
- * Every triangle of a GLB, in the FLOATING frame, as a flat array of
- * 9 numbers per triangle. Node transforms are applied; line and point
- * primitives are skipped; strips and fans are unrolled.
- * @returns {{ triangles: Float64Array, meshes: string[] }}
+ * A node's EXT_mesh_gpu_instancing transforms, or null when it draws its mesh
+ * once. As three's GLTFLoader (what the scene uses): the extension on the
+ * node counts whether or not it is in extensionsRequired; with no attributes,
+ * or a mesh that has any line or point primitive, it is ignored; the count is
+ * the first attribute's; each instance is TRANSLATION · ROTATION · SCALE, in
+ * the node's own frame.
  */
-export function glbTriangles(bytes) {
-  const { json, bin } = parseGLB(bytes);
+function nodeInstances(json, bin, views, node) {
+  const attrs = node?.extensions?.EXT_mesh_gpu_instancing?.attributes;
+  if (!attrs || node.mesh == null) return null;
+  const mesh = json.meshes?.[node.mesh];
+  if (!mesh || !(mesh.primitives ?? []).every((p) => isTriangleMode(p.mode))) return null;
+  const read = {};
+  for (const key of Object.keys(attrs)) read[key] = readAccessor(json, bin, attrs[key], views);
+  const keys = Object.keys(read);
+  if (!keys.length) return null;
+  const first = keys[0];
+  const count = json.accessors[attrs[first]].count;
+  const T = read.TRANSLATION;
+  const R = read.ROTATION;
+  const S = read.SCALE;
+  const out = [];
+  for (let i = 0; i < count; i++)
+    out.push(
+      compose(
+        T ? [T[i * 3], T[i * 3 + 1], T[i * 3 + 2]] : [0, 0, 0],
+        R ? [R[i * 4], R[i * 4 + 1], R[i * 4 + 2], R[i * 4 + 3]] : [0, 0, 0, 1],
+        S ? [S[i * 3], S[i * 3 + 1], S[i * 3 + 2]] : [1, 1, 1],
+      ),
+    );
+  return out;
+}
+
+/**
+ * Every triangle of a GLB, in the FLOATING frame and in metres, as a flat
+ * array of 9 numbers per triangle. Node transforms are applied (and GPU
+ * instances expanded), then the GLB's units; line and point primitives are
+ * skipped; strips and fans are unrolled.
+ * @param {Uint8Array|ArrayBuffer|{ json, bin, views }} input  GLB bytes, or decodeGLB()'s result
+ * @returns {{ triangles: Float64Array, meshes: string[], units: ReturnType<typeof glbUnits>, zMin: number, zMax: number, instances: number }}
+ *   zMin / zMax: the triangles' extent up the floating z (null with no triangles).
+ *   instances: how many copies GPU-instanced nodes drew (0 with none).
+ */
+export function glbTriangles(input) {
+  const { json, bin, views } = input?.json ? input : readGLB(input);
+  const units = glbUnits(json);
+  const k = units.scale;
   const out = [];
   const names = [];
   const meshes = json.meshes ?? [];
   const nodes = json.nodes ?? [];
 
-  const emitMesh = (mi, M) => {
+  let instances = 0;
+  /** Emit a mesh once per matrix in Ms (reading its accessors once). */
+  const emitMesh = (mi, Ms) => {
     const mesh = meshes[mi];
     if (!mesh) return;
     let used = false;
     for (const prim of mesh.primitives ?? []) {
       const mode = prim.mode ?? 4;
-      if (mode !== 4 && mode !== 5 && mode !== 6) continue;
+      if (!isTriangleMode(mode)) continue;
       if (prim.attributes?.POSITION == null) continue;
-      const pos = readAccessor(json, bin, prim.attributes.POSITION);
+      const pos = readAccessor(json, bin, prim.attributes.POSITION, views);
       const count = pos.length / 3;
-      const idx = prim.indices != null ? readAccessor(json, bin, prim.indices) : null;
+      const idx = prim.indices != null ? readAccessor(json, bin, prim.indices, views) : null;
       const at = (i) => (idx ? idx[i] : i);
       const n = idx ? idx.length : count;
       const tri = [];
       if (mode === 4) for (let i = 0; i + 2 < n; i += 3) tri.push(at(i), at(i + 1), at(i + 2));
       else if (mode === 5) for (let i = 0; i + 2 < n; i++) tri.push(at(i), at(i + 1), at(i + 2));
       else for (let i = 1; i + 1 < n; i++) tri.push(at(0), at(i), at(i + 1));
-      for (const v of tri) {
-        if (!(v >= 0 && v < count)) continue;
-        const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
-        const X = M[0] * x + M[4] * y + M[8] * z + M[12];
-        const Y = M[1] * x + M[5] * y + M[9] * z + M[13];
-        const Z = M[2] * x + M[6] * y + M[10] * z + M[14];
-        // glTF (Y-up) → floating frame: x = X, y = −Z, z = Y
-        out.push(X, 0 - Z, Y);
-      }
+      for (const M of Ms)
+        for (const v of tri) {
+          if (!(v >= 0 && v < count)) continue;
+          const x = pos[v * 3], y = pos[v * 3 + 1], z = pos[v * 3 + 2];
+          const X = M[0] * x + M[4] * y + M[8] * z + M[12];
+          const Y = M[1] * x + M[5] * y + M[9] * z + M[13];
+          const Z = M[2] * x + M[6] * y + M[10] * z + M[14];
+          // glTF (Y-up, file units) → floating frame in metres: x = X, y = −Z, z = Y
+          out.push(k * X, 0 - k * Z, k * Y);
+        }
       used = true;
     }
     if (used) names.push(mesh.name ?? `mesh ${mi}`);
@@ -117,7 +298,11 @@ export function glbTriangles(bytes) {
     if (!node || seen.has(ni)) return;
     seen.add(ni);
     const M = mul(parent, nodeMatrix(node));
-    if (node.mesh != null) emitMesh(node.mesh, M);
+    if (node.mesh != null) {
+      const inst = nodeInstances(json, bin, views, node);
+      if (inst) instances += inst.length;
+      emitMesh(node.mesh, inst ? inst.map((I) => mul(M, I)) : [M]);
+    }
     for (const c of node.children ?? []) walk(c, M, seen);
   };
 
@@ -129,10 +314,18 @@ export function glbTriangles(bytes) {
     const children = new Set(nodes.flatMap((n) => n.children ?? []));
     const seen = new Set();
     nodes.forEach((_, ni) => !children.has(ni) && walk(ni, IDENTITY, seen));
-  } else meshes.forEach((_, mi) => emitMesh(mi, IDENTITY));
+  } else meshes.forEach((_, mi) => emitMesh(mi, [IDENTITY]));
   // a triangle list has 9 numbers per triangle; drop a dangling partial one
   const len = out.length - (out.length % 9);
-  return { triangles: Float64Array.from(out.slice(0, len)), meshes: names };
+  const triangles = Float64Array.from(out.slice(0, len));
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  for (let i = 2; i < triangles.length; i += 3) {
+    if (triangles[i] < zMin) zMin = triangles[i];
+    if (triangles[i] > zMax) zMax = triangles[i];
+  }
+  if (!triangles.length) zMin = zMax = null;
+  return { triangles, meshes: names, units, zMin, zMax, instances };
 }
 
 /**
@@ -322,11 +515,29 @@ export function sliceTriangles(t, z0) {
   return { loops, segments: segs.length, closedAcross };
 }
 
+const m2 = (v) => `${Number(v).toFixed(2)} m`;
+
 /**
- * A SectionResult from a GLB, cut at z0 (floating frame).
+ * Why a cut found nothing, in words, or "" when it found loops.
+ * @param {{ triangles: number, zMin: number, zMax: number }} t  the GLB's triangle count and z extent
  */
-export function meshSection(bytes, z0 = 0, plane = { kind: "waterline" }) {
-  const { triangles, meshes } = glbTriangles(bytes);
+export function missReason({ triangles, zMin, zMax }, z0, loops) {
+  if (loops > 0) return "";
+  if (!triangles) return "the GLB has no triangles (only lines or points, or nothing)";
+  if (z0 > zMax) return `the body spans z = ${m2(zMin)} to ${m2(zMax)}, and the plane at z = ${m2(z0)} is above it`;
+  if (z0 < zMin) return `the body spans z = ${m2(zMin)} to ${m2(zMax)}, and the plane at z = ${m2(z0)} is below it`;
+  return `nothing closed crosses the plane at z = ${m2(z0)} (the body spans ${m2(zMin)} to ${m2(zMax)})`;
+}
+
+/**
+ * A SectionResult from a GLB, cut at z0 (floating frame, metres).
+ * @param {Uint8Array|ArrayBuffer|{ json, bin, views }} input  GLB bytes, or decodeGLB()'s result
+ *   (a meshopt-compressed GLB has to be decoded first: see sliceGLB)
+ * @returns {{ frame, units, plane, loops, meta: { lengthWL, beamWL, triangles, zMin, zMax, units, notes, miss? } }}
+ *   `meta.miss` says why, when there are no loops.
+ */
+export function meshSection(input, z0 = 0, plane = { kind: "waterline" }) {
+  const { triangles, meshes, units, zMin, zMax, instances } = glbTriangles(input);
   const { loops, segments, closedAcross } = sliceTriangles(triangles, z0);
   let lengthWL = 0;
   let beamWL = 0;
@@ -340,15 +551,31 @@ export function meshSection(bytes, z0 = 0, plane = { kind: "waterline" }) {
     lengthWL = maxx - minx;
     beamWL = maxy - miny;
   }
+  const count = triangles.length / 9;
+  const unitNote = !units.known
+    ? `; GLB units “${units.declared}” unknown, read as metres`
+    : units.unit !== "m"
+      ? `; GLB in ${units.unit}, scaled to metres (the scene draws every GLB as metres, so it shows this one at a different size)`
+      : "";
   const notes =
-    `mesh slice of ${triangles.length / 9} triangles (${meshes.join(", ") || "no meshes"}) at z = ${z0.toFixed(3)} m: ` +
+    `mesh slice of ${count} triangles (${meshes.join(", ") || "no meshes"}) at z = ${z0.toFixed(3)} m: ` +
     `${loops.length} loop${loops.length === 1 ? "" : "s"} from ${segments} cuts` +
-    (closedAcross ? `, ${closedAcross} closed straight across an open end` : "");
+    (closedAcross ? `, ${closedAcross} closed straight across an open end` : "") +
+    (instances ? `; ${instances} GPU instance${instances === 1 ? "" : "s"} expanded` : "") +
+    unitNote;
+  const meta = { lengthWL, beamWL, triangles: count, zMin, zMax, units: units.unit, notes };
+  const miss = missReason({ triangles: count, zMin, zMax }, z0, loops.length);
+  if (miss) meta.miss = miss;
   return {
     frame: "floating",
     units: "m",
     plane: { kind: plane?.kind === "z" ? "z" : "waterline", z: z0 },
     loops,
-    meta: { lengthWL, beamWL, notes },
+    meta,
   };
+}
+
+/** meshSection() of GLB bytes, decoding meshopt compression first if it has any. */
+export async function sliceGLB(bytes, z0 = 0, plane = { kind: "waterline" }) {
+  return meshSection(await decodeGLB(bytes), z0, plane);
 }

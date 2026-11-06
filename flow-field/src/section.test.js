@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { getRegistry, resetRegistries } from "@inkandswitch/patchwork-plugins";
-import { acquireSection, sectionPathLabel, defaultParams } from "./section.js";
+import { acquireSection, sectionPathLabel, sectionPathChip, defaultParams, isGlbFile, matchProviders } from "./section.js";
 import streamSource from "./scene-streamlines.js";
 import sliceSource from "./scene-slice.js";
 import { flowFingerprint, flowDependencies, hashString, stableStringify } from "./fingerprint.js";
 import { FlowFieldDatatype } from "./datatype.js";
 import { parseGLB } from "./glb.js";
 import { readAccessor } from "./mesh-section.js";
-import { prismGLB, transomWaterline, halfBreadth } from "./test/hull-fixtures.js";
+import { prismGLB, transomWaterline, halfBreadth, circleLoop } from "./test/hull-fixtures.js";
 
 const HULL = "automerge:hull1111111111111111111111";
 const FLOW = "automerge:flow1111111111111111111111";
@@ -28,25 +28,22 @@ function fakeRepo(docs) {
 }
 const hullDoc = (scale = 1) => ({ "@patchwork": { type: "test-hull" }, title: "Test hull", scale });
 
-/** An exact section provider for "test-hull": the waterline, scaled by doc.scale. */
-const exactProvider = (spy = {}) => ({
+/**
+ * A geometry:section provider for "test-hull", as camber registers one. The
+ * flow must never load or call it: it cuts geometry itself.
+ */
+const sectionProvider = (spy = {}) => ({
   type: "geometry:section",
   id: "test-hull-section",
   name: "Test hull section",
   supportedDatatypes: ["test-hull"],
   planes: ["waterline", "z"],
   async load() {
+    spy.loads = (spy.loads ?? 0) + 1;
     return {
-      section(doc, request) {
-        spy.request = request;
-        if (spy.throw) throw new Error("boom");
-        const k = doc.scale ?? 1;
-        return {
-          frame: "floating",
-          units: "m",
-          plane: { kind: request.plane.kind, z: request.plane.z ?? 0 },
-          loops: [{ points: transomWaterline().map(([x, y]) => [x * k, y * k]), closed: true }],
-        };
+      section() {
+        spy.calls = (spy.calls ?? 0) + 1;
+        return { frame: "floating", units: "m", plane: { kind: "waterline", z: 0 }, loops: [{ points: circleLoop(8), closed: true }] };
       },
     };
   },
@@ -81,52 +78,168 @@ const flowDoc = (body) => {
 beforeEach(() => resetRegistries());
 
 describe("acquireSection", () => {
-  it("prefers an exact geometry:section provider, passing the plane", async () => {
-    const spy = {};
-    getRegistry("geometry:section").register(exactProvider(spy));
-    getRegistry("scene:source").register(meshProvider());
-    const repo = fakeRepo({ [HULL]: hullDoc() });
-    const r = await acquireSection({ url: HULL, plane: { kind: "z", z: -0.3 }, repo });
-    expect(r.ok).toBe(true);
-    expect(r.path).toBe("exact");
-    expect(r.providerId).toBe("test-hull-section");
-    expect(spy.request).toEqual({ plane: { kind: "z", z: -0.3 } });
-    expect(r.section.plane).toEqual({ kind: "z", z: -0.3 });
-    expect(r.section.loops).toHaveLength(1);
-    expect(sectionPathLabel(r)).toBe("exact section (Test hull section)");
-  });
-
-  it("falls back to slicing a scene:source build (default params) when there is no section provider, or it fails", async () => {
+  it("builds a source doc with its scene:source provider's default params and cuts the GLB, at the plane asked for", async () => {
     const spy = {};
     getRegistry("scene:source").register(meshProvider(spy));
     const repo = fakeRepo({ [HULL]: hullDoc() });
     const r = await acquireSection({ url: HULL, plane: { kind: "waterline" }, repo });
     expect(r.ok).toBe(true);
-    expect(r.path).toBe("mesh");
+    expect(r.path).toBe("source");
+    expect(r.providerId).toBe("test-hull-surface");
     expect(spy.params).toEqual({ detail: 7 });
     expect(r.section.loops).toHaveLength(1);
-    expect(sectionPathLabel(r)).toBe("mesh slice of Test hull");
+    expect(sectionPathLabel(r)).toBe("slice of Test hull's build (default params)");
+    expect(sectionPathChip(r)).toBe("built from Test hull (defaults)");
 
-    const broken = {};
-    getRegistry("geometry:section").register(exactProvider({ throw: true, ...broken }));
-    const again = await acquireSection({ url: HULL, plane: { kind: "waterline" }, repo });
-    expect(again.path).toBe("mesh");
-    expect(again.section.meta.notes).toMatch(/Test hull section failed \(boom\)/);
+    const z = await acquireSection({ url: HULL, plane: { kind: "z", z: -0.3 }, repo });
+    expect(z.section.plane).toEqual({ kind: "z", z: -0.3 });
+    expect(z.section.loops).toHaveLength(1);
   });
 
-  it("says why when there is nothing to cut a section with, or the link is bad", async () => {
+  it("never asks a geometry:section provider, even one that matches", async () => {
+    const sections = {};
+    getRegistry("geometry:section").register(sectionProvider(sections));
+    getRegistry("scene:source").register(meshProvider());
+    const repo = fakeRepo({ [HULL]: hullDoc() });
+    const r = await acquireSection({ url: HULL, plane: { kind: "waterline" }, repo });
+    expect(r.path).toBe("source");
+    expect(r.section.loops[0].points.length).toBeGreaterThan(8); // the prism's cut, not the provider's octagon
+    expect(sections).toEqual({}); // never loaded, never called
+    // with only a section provider there is no body: nothing here can build the doc
+    resetRegistries();
+    getRegistry("geometry:section").register(sectionProvider(sections));
+    const none = await acquireSection({ url: HULL, plane: { kind: "waterline" }, repo });
+    expect(none).toMatchObject({ ok: false, transient: true });
+    expect(none.error).toMatch(/nothing installed here can build “test-hull” documents/);
+    expect(sections).toEqual({});
+  });
+
+  it("prefers the most specific scene:source provider, as the scene host does, and falls through one that fails", async () => {
+    const wild = {};
+    getRegistry("scene:source").register({
+      type: "scene:source",
+      id: "anything",
+      name: "Anything",
+      supportedDatatypes: "*",
+      params: [],
+      async load() {
+        return { build: async () => ((wild.builds = (wild.builds ?? 0) + 1), { kind: "glb", glb: prismGLB(circleLoop(12)) }) };
+      },
+    });
+    const spy = {};
+    getRegistry("scene:source").register(meshProvider(spy));
+    const repo = fakeRepo({ [HULL]: hullDoc() });
+    const r = await acquireSection({ url: HULL, repo });
+    expect(r.providerId).toBe("test-hull-surface"); // registered second, but names the datatype
+    expect(wild.builds ?? 0).toBe(0);
+    expect(matchProviders([{ id: "w", supportedDatatypes: "*" }, { id: "f", supportedDatatypes: ["file"], extensions: ["stl"] }, { id: "d", supportedDatatypes: ["file"] }], { datatype: "file", extension: "stl" }).map((p) => p.id)).toEqual(["f", "d", "w"]);
+
+    resetRegistries();
+    getRegistry("scene:source").register({ ...meshProvider(), load: async () => ({ build: async () => { throw new Error("boom"); } }) });
+    getRegistry("scene:source").register({
+      type: "scene:source",
+      id: "anything",
+      name: "Anything",
+      supportedDatatypes: "*",
+      params: [],
+      load: async () => ({ build: async () => ({ kind: "glb", glb: prismGLB(circleLoop(12)) }) }),
+    });
+    const again = await acquireSection({ url: HULL, repo: fakeRepo({ [HULL]: hullDoc(2) }) });
+    expect(again.providerId).toBe("anything");
+    expect(again.section.meta.notes).toMatch(/Test hull failed \(boom\)/);
+  });
+
+  it("says why when there is nothing to build the body with, or the link is bad", async () => {
     const repo = fakeRepo({ [HULL]: hullDoc(), [FLOW]: { ...flowDoc(null), "@patchwork": { type: "flow-field" } } });
     expect(await acquireSection({ url: HULL, plane: {}, repo })).toMatchObject({
       ok: false,
-      error: expect.stringMatching(/no geometry:section or scene:source provider .*test-hull/),
+      error: expect.stringMatching(/nothing installed here can build “test-hull” documents/),
     });
     expect((await acquireSection({ url: "automerge:missing", repo })).error).toMatch(/couldn't load/);
     expect((await acquireSection({ url: FLOW, repo })).error).toMatch(/can't be the body/);
     expect((await acquireSection({ url: FLOW, repo, selfUrl: FLOW })).error).toMatch(/itself/);
     // a flow provider is never used to build a body (it would recurse)
     getRegistry("scene:source").register({ type: "scene:source", id: "flow-field-slice", supportedDatatypes: ["flow-field", "test-hull"], load: async () => ({}) });
-    expect((await acquireSection({ url: HULL, repo })).error).toMatch(/no geometry:section or scene:source/);
+    expect((await acquireSection({ url: HULL, repo })).error).toMatch(/nothing installed here can build/);
     expect(defaultParams([{ key: "a", default: 1 }, { key: "b", default: "x" }])).toEqual({ a: 1, b: "x" });
+  });
+});
+
+describe("a GLB file as the body", () => {
+  const FILE = "automerge:fi1e111111111111111111111";
+  const fileDoc = (bytes, extra = {}) => ({ "@patchwork": { type: "file" }, name: "Hull.glb", extension: "glb", mimeType: "model/gltf-binary", content: bytes, ...extra });
+
+  it("cuts the file's own bytes, with no scene:source provider (and no registry) at all", async () => {
+    const repo = fakeRepo({ [FILE]: fileDoc(prismGLB(transomWaterline())) });
+    const r = await acquireSection({ url: FILE, plane: { kind: "waterline" }, repo, getRegistry: () => { throw new Error("not asked"); } });
+    expect(r.ok).toBe(true);
+    expect(r.path).toBe("file");
+    expect(r.datatype).toBe("file");
+    expect(r.title).toBe("Hull.glb");
+    expect(r.section.loops).toHaveLength(1);
+    expect(r.section.meta.lengthWL).toBeCloseTo(10, 6);
+    expect(sectionPathLabel(r)).toBe("slice of the GLB file “Hull.glb”");
+    expect(sectionPathChip(r)).toBe("GLB file");
+    // a file-glb scene:source (the scene's passthrough) is never asked to build it
+    const spy = {};
+    getRegistry("scene:source").register({ type: "scene:source", id: "file-glb", supportedDatatypes: ["file"], extensions: ["glb"], params: [], passthrough: true, load: async () => ((spy.loaded = true), {}) });
+    expect((await acquireSection({ url: FILE, repo })).path).toBe("file");
+    expect(spy.loaded).toBeUndefined();
+  });
+
+  it("knows a GLB by its extension, its name, or its magic bytes", async () => {
+    const glb = prismGLB(transomWaterline());
+    expect(isGlbFile(fileDoc(glb))).toBe(true);
+    expect(isGlbFile(fileDoc(glb, { extension: undefined }))).toBe(true); // name "Hull.glb"
+    expect(isGlbFile(fileDoc(glb, { extension: undefined, name: "hull" }))).toBe(true); // sniffed
+    expect(isGlbFile(fileDoc(glb, { extension: ".GLB" }))).toBe(true);
+    expect(isGlbFile(fileDoc(glb, { extension: "stl", name: "Hull.stl" }))).toBe(false);
+    expect(isGlbFile(fileDoc(new TextEncoder().encode("solid x"), { extension: undefined, name: "hull" }))).toBe(false);
+    expect(isGlbFile({ "@patchwork": { type: "test-hull" }, extension: "glb" })).toBe(false);
+    const named = await acquireSection({ url: FILE, plane: { kind: "waterline" }, repo: fakeRepo({ [FILE]: fileDoc(glb, { extension: undefined }) }) });
+    expect(named.path).toBe("file");
+  });
+
+  it("scales a GLB that declares its units to metres", async () => {
+    const mm = transomWaterline().map(([x, y]) => [x * 1000, y * 1000]);
+    const glb = prismGLB(mm, { levels: [-1000, 500], units: "mm" });
+    const r = await acquireSection({ url: FILE, plane: { kind: "z", z: -0.5 }, repo: fakeRepo({ [FILE]: fileDoc(glb) }) });
+    expect(r.section.loops).toHaveLength(1);
+    expect(r.section.meta.lengthWL).toBeCloseTo(10, 6);
+    expect(r.section.meta.notes).toMatch(/GLB in mm, scaled to metres/);
+  });
+
+  it("says where the body is when the plane misses it, and still builds (the same on every peer)", async () => {
+    const glb = prismGLB(transomWaterline(), { levels: [0.2, 1.4] }); // floats above the waterline
+    const repo = fakeRepo({ [FILE]: fileDoc(glb) });
+    const r = await acquireSection({ url: FILE, plane: { kind: "waterline" }, repo });
+    expect(r.ok).toBe(true);
+    expect(r.section.loops).toEqual([]);
+    expect(r.miss).toBe("the body spans z = 0.20 m to 1.40 m, and the plane at z = 0.00 m is below it");
+    const above = await acquireSection({ url: FILE, plane: { kind: "z", z: 2 }, repo });
+    expect(above.miss).toMatch(/plane at z = 2\.00 m is above it/);
+    const res = await sliceSource.build({ doc: flowDoc({ url: FILE, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 60 }), params: { resolution: 20 }, repo, url: FLOW });
+    expect(res.meta.notes).toMatch(/linked body: the section has no loops at z = 0\.00 m, from a slice of the GLB file “Hull\.glb” \(the body spans z = 0\.20 m to 1\.40 m, and the plane at z = 0\.00 m is below it\), so no body/);
+  });
+
+  it("a file that isn't a readable GLB is no body, the same everywhere; one with no content here is transient", async () => {
+    const bad = await acquireSection({ url: FILE, repo: fakeRepo({ [FILE]: fileDoc(new Uint8Array([1, 2, 3, 4, 5])) }) });
+    expect(bad).toMatchObject({ ok: false, transient: false });
+    expect(bad.error).toMatch(/“Hull\.glb” can't be read as a GLB/);
+    const empty = await acquireSection({ url: FILE, repo: fakeRepo({ [FILE]: fileDoc(undefined) }) });
+    expect(empty).toMatchObject({ ok: false, transient: true });
+    expect(empty.error).toMatch(/has no content here/);
+  });
+
+  it("lists the file (only) as the flow's dependency, keyed by its heads; its contents aren't in the fingerprint", async () => {
+    const doc = flowDoc({ url: FILE, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 60 });
+    const repo = fakeRepo({ [FILE]: fileDoc(prismGLB(transomWaterline())) });
+    const fp = flowFingerprint(doc);
+    const res = await sliceSource.build({ doc, params: { resolution: 20 }, repo, url: FLOW });
+    expect(res.meta.notes).toMatch(/from a slice of the GLB file “Hull\.glb”/);
+    expect(flowDependencies(doc)).toEqual([FILE]);
+    expect(streamSource.dependencies(doc)).toEqual([FILE]);
+    expect(flowFingerprint(doc)).toBe(fp);
   });
 });
 
@@ -157,12 +270,12 @@ describe("the flow providers with a linked body", () => {
   });
 
   it("slice: masks the hull exactly, keeps every value finite, and says which path the section came by", async () => {
-    getRegistry("geometry:section").register(exactProvider());
+    getRegistry("scene:source").register(meshProvider());
     const repo = fakeRepo({ [HULL]: hullDoc() });
     const doc = flowDoc(body);
     const res = await sliceSource.build({ doc, params: { resolution: 80 }, repo, url: FLOW });
     expect(res.kind).toBe("glb");
-    expect(res.meta.notes).toMatch(/body: Waterplane \(2D panels\), \d+ source panels on 1 loop at z = 0\.00 m, from the exact section from Test hull section/);
+    expect(res.meta.notes).toMatch(/body: Waterplane \(2D panels\), \d+ source panels on 1 loop at z = 0\.00 m, from a mesh slice of Test hull's build \(default params\)/);
     expect(res.meta.notes).toMatch(/inside bodies masked/);
     const parsed = parseGLB(res.glb);
     const prim = parsed.json.meshes[0].primitives[0];
@@ -204,7 +317,7 @@ describe("the flow providers with a linked body", () => {
     );
     await expect(
       streamSource.build({ doc: flowDoc(body), params: { seedCount: 4 }, repo: fakeRepo({ [HULL]: hullDoc() }), url: FLOW }),
-    ).rejects.toThrow(/no geometry:section or scene:source provider/);
+    ).rejects.toThrow(/nothing installed here can build “test-hull” documents/);
     const r = await acquireSection({ url: HULL, plane: { kind: "waterline" }, repo: fakeRepo({}) });
     expect(r.transient).toBe(true);
   });

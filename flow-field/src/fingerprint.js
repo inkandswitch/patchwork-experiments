@@ -28,7 +28,8 @@ export function hashString(s) {
 /**
  * The link to a body is in the fingerprint (url, plane, model, panels), the
  * linked doc's contents are not: the scene host watches that doc through
- * dependencies() (by its heads, or by its glbUrl for a scene-render doc).
+ * dependencies() (by its glbUrl for a scene-render doc, else by its heads: a
+ * GLB file doc, or a source doc the flow builds itself).
  * A doc without a body hashes without a `body` key at all.
  *
  * Of `seeds`, only `count` is read by anything (the rake always runs across
@@ -50,12 +51,12 @@ export function flowFingerprint(doc) {
 
 /**
  * Other docs a build reads: the linked body, when there is one, and (for a
- * source-doc link only) whatever that doc's provider said it reads the last
- * time this body was acquired on this peer (upstream.js). This has to be
- * synchronous and can't load the body, so those are only known after a first
- * acquisition, and only picked up when the host next asks (after a flow-doc
- * edit). A scene-render link needs none of it: the render folds its own
- * dependencies into its GLB.
+ * source doc the flow builds itself) whatever that doc's provider said it
+ * reads the last time this body was acquired on this peer (upstream.js). This
+ * has to be synchronous and can't load the body, so those are only known
+ * after a first acquisition, and only picked up when the host next asks
+ * (after a flow-doc edit). A scene render needs none of it (it folds its own
+ * dependencies into its GLB), nor does a GLB file (it reads nothing else).
  */
 export function flowDependencies(doc) {
   const body = normalizeBodySpec(doc?.body);

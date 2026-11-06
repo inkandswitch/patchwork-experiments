@@ -1,6 +1,7 @@
 // A flow linked to a scene's render doc (the preferred link), the upstream
-// build cache and transitive dependencies of the legacy source-doc link, and
-// the compileFlow cache key.
+// build cache and transitive dependencies of a source-doc body, the
+// compileFlow cache key, and dropping a scene row (a render, or a passthrough
+// GLB file) onto the editor.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getRegistry, resetRegistries } from "@inkandswitch/patchwork-plugins";
 import { acquireSection, cleanSection, sectionPathLabel } from "./section.js";
@@ -10,7 +11,7 @@ import { flowDependencies } from "./fingerprint.js";
 import { compileFlow } from "./flow.js";
 import { clearUpstream, upstreamCacheSize, upstreamDepsOf } from "./upstream.js";
 import { FlowFieldDatatype } from "./datatype.js";
-import Tool, { HULL_DEBOUNCE_MS } from "./tool.js";
+import Tool, { BODY_DEBOUNCE_MS } from "./tool.js";
 import { parsePatchworkDrop, hasPatchworkDrop } from "./dnd.js";
 import { prismGLB, transomWaterline } from "./test/hull-fixtures.js";
 
@@ -190,7 +191,7 @@ describe("a linked scene render", () => {
   });
 });
 
-describe("a linked source doc (legacy): the upstream build cache", () => {
+describe("a linked source doc: the upstream build cache", () => {
   it("one hull edit costs one upstream build, shared by both providers (even concurrently)", async () => {
     const spy = {};
     registerMesh(spy);
@@ -268,7 +269,7 @@ describe("compileFlow's cache", () => {
   });
 });
 
-describe("dropping a render onto the editor", () => {
+describe("dropping a scene row onto the editor", () => {
   let element;
   let cleanup;
   let render;
@@ -320,11 +321,11 @@ describe("dropping a render onto the editor", () => {
     expect(q(".body-status").textContent).toMatch(/^Linked body not built yet/);
 
     render.change((d) => (d.status = "building")); // no GLB yet: nothing to do
-    await settle(HULL_DEBOUNCE_MS + 50);
+    await settle(BODY_DEBOUNCE_MS + 50);
     expect(q(".chip-path").textContent).toBe("not built yet");
 
     render.change((d) => ((d.status = "idle"), (d.glbUrl = GLB1)));
-    await settle(HULL_DEBOUNCE_MS + 50);
+    await settle(BODY_DEBOUNCE_MS + 50);
     expect(q(".chip-path").textContent).toBe("scene render");
     expect(q(".body-status").textContent).toMatch(/Slice of the scene render “Hull”: 1 loop at z = 0\.00 m/);
     const finds = repo.finds[GLB1];
@@ -332,16 +333,29 @@ describe("dropping a render onto the editor", () => {
     // status writes, a rename of nothing that matters: same GLB, no re-cut
     render.change((d) => (d.status = "building"));
     render.change((d) => (d.status = "idle"));
-    await settle(HULL_DEBOUNCE_MS + 50);
+    await settle(BODY_DEBOUNCE_MS + 50);
     expect(repo.finds[GLB1]).toBe(finds);
 
     render.change((d) => (d.glbUrl = GLB2));
-    await settle(HULL_DEBOUNCE_MS + 50);
+    await settle(BODY_DEBOUNCE_MS + 50);
     expect(repo.finds[GLB2]).toBe(1);
     expect(q(".chip-path").textContent).toBe("scene render");
 
     cleanup();
     cleanup = null;
     expect(render.listeners.size).toBe(0);
+  });
+
+  it("links a passthrough GLB object's file doc (a row with no render) and cuts the file as it is", async () => {
+    const h = fakeHandle("automerge:flow", flowDoc(null));
+    cleanup = Tool(h, element);
+    // what scene/src/parts/outline.js sets for a passthrough row: its sourceUrl, untyped
+    drop({ "text/x-patchwork-dnd": JSON.stringify({ source: "scene", items: [{ url: GLB1, name: "Sloop" }] }), "text/x-patchwork-urls": JSON.stringify([GLB1]), "text/plain": GLB1 });
+    expect(h.doc().body?.url).toBe(GLB1);
+    await settle();
+    expect(q(".chip-title").textContent).toBe("Hull.glb");
+    expect(q(".chip-path").textContent).toBe("GLB file");
+    expect(q(".body-status").textContent).toMatch(/Slice of the GLB file “Hull\.glb”: 1 loop at z = 0\.00 m/);
+    expect(flowDependencies(h.doc())).toEqual([GLB1]);
   });
 });

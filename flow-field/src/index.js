@@ -8,8 +8,11 @@ import { STREAMLINE_PARAMS, SLICE_PARAMS } from "./params.js";
  * Bump when a build makes different output from the same doc and params
  * (scene contract v3: renders built by an older version go stale once).
  * 2: linked bodies read from scene-render docs; params clamped to their specs.
+ * 3: the body is always cut here from geometry (a render, a GLB file, or a
+ *    source's default build), never asked of a geometry:section provider;
+ *    GLB units and quantized / meshopt GLBs read; build notes changed.
  */
-const VERSION = 2;
+const VERSION = 3;
 
 export const plugins = [
   {
@@ -39,8 +42,8 @@ export const plugins = [
     supportedDatatypes: ["flow-field"],
     params: STREAMLINE_PARAMS,
     // builds run in a worker (main thread if none starts), and a linked body
-    // can mean panel solves (and, for a source-doc link, an upstream build
-    // on the main thread)
+    // can mean panel solves (and, for a body that is a source doc, an
+    // upstream build on the main thread)
     cost: "expensive",
     version: VERSION,
     // dragged in the scene: the seed rake's height, up the field's z (the GLB's +Y)

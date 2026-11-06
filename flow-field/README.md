@@ -13,10 +13,11 @@ the stream surface around it is a closed, streamlined body about 10 m long
 which makes it a "double-body" flow, the usual first approximation of the
 flow under a hull.
 
-A flow can also be **linked to a hull**: best to the hull's 3D render in a
-scene (its `scene-render` doc), or to the hull doc itself. The flow then goes
-round that hull's waterline, derived every time it is drawn or built, so
-editing the hull updates the flow. See [Linking a hull](#linking-a-hull).
+A flow can also be **linked to a body**, a hull say: any geometry a scene can
+show. Best is the object's 3D render in a scene (its `scene-render` doc); a
+GLB file, or any doc a scene can build, works too. The flow cuts that
+geometry at the waterline itself, every time it is drawn or built, so editing
+the hull updates the flow. See [Linking a body](#linking-a-body).
 
 ```
 pnpm install && pnpm build && pnpm test
@@ -71,14 +72,14 @@ The **Body** section of the panel links a hull. See below.
   },
   domain: { min: [-6, -6, -4], max: [16, 6, 4] },   // metres
   seeds: { count: 15 },                              // per rake row, across the upstream face
-  body: null,                                        // or a link, see "Linking a hull"
+  body: null,                                        // or a link, see "Linking a body"
 }
 ```
 
 The frame is **engineering Z-up**, with x east, y north, z up, in metres.
 It is the scene contract's **floating frame**: a linked hull's bow points to
 +x and its design waterline is at z = 0, so a boat going ahead sees the stream
-heading 180°. Linking a hull to a doc still on the default heading of 0°
+heading 180°. Linking a body to a doc still on the default heading of 0°
 turns the stream to 180° (once), so the hull isn't modelled going astern.
 
 | kind | strength | field |
@@ -110,17 +111,19 @@ colormap. The material is white so the vertex colours show as baked.
 so renaming the doc doesn't rebuild anything. When the flow is linked, it also
 hashes the link (`url`, `plane`, `model`, `panels`), but not the linked doc's
 contents. Both providers report `dependencies(doc) = [body.url]` (plus, for a
-source-doc link, what its provider reads; see below). The scene host watches
-that doc: a linked scene render by its `glbUrl` (contract v3), so the flow
-rebuilds only when the render gets a new GLB, never on its status writes; a
-linked hull doc by its heads, so any hull edit rebuilds the flow. The build
-notes say which body model was used and which path the section came by, or
-why the body was left out.
+source doc the flow builds itself, what its provider reads; see below). The
+scene host watches that doc: a linked scene render by its `glbUrl` (contract
+v3), so the flow rebuilds only when the render gets a new GLB, never on its
+status writes; a GLB file doc, or a source doc, by its heads, so any edit
+rebuilds the flow. The build notes say which body model was used and which
+path the section came by, or why the body was left out.
 
 **Contract v3 metadata.** Both providers declare `cost: "expensive"` (a
 masked slice can take seconds, a linked body adds panel solves, and a
-source-doc link an upstream build) and `version: 2`; moving the builds into a
-worker didn't change a byte of their output, so the version stayed. Every
+source-doc body an upstream build) and `version: 3` (3: the body is always
+cut here from geometry, GLB units and meshopt are read, and the notes say
+so; moving the builds into a worker before that didn't change a byte of their
+output). Every
 param declares its own `cost`: `step`, `maxSteps`, `resolution` and `mask`
 change how much work a build does and are `expensive`, the rest only recolour
 or re-seed and are `cheap`. The param table lives in `src/params.js` and both
@@ -130,16 +133,16 @@ direct call, from a test or the editor, gets the same params the host would
 hand over).
 
 When the body can't be had **on this peer** (its doc, or a render's GLB file,
-hasn't loaded here, or nothing installed here can cut a section of a hull
-doc's datatype), the build throws instead of writing a body-less GLB. Such a
+hasn't loaded here, or nothing installed here can build a source doc's
+datatype), the build throws instead of writing a body-less GLB. Such a
 GLB would be recorded as up to date against the body's key and every other
 peer would keep it. Throwing keeps the last good render and leaves it stale,
 so a peer that can see the body rebuilds it. A link that is the same
 everywhere builds without the body and says so in the notes: a flow linked to
-itself, to another flow or to a flow's render, and a linked render that **has
-not been built yet** ("linked body not built yet"; it rebuilds when the render
-gets its first GLB, because its key changes). A hull-doc link's section
-provider version isn't part of freshness (see the caveats).
+itself, to another flow or to a flow's render, a GLB that can't be read, and
+a linked render that **has not been built yet** ("linked body not built yet";
+it rebuilds when the render gets its first GLB, because its key changes). A
+source-doc body's provider version isn't part of freshness (see the caveats).
 
 **`flow-field-streamlines`**: a rake of `seedCount` seeds per row (0 means the
 doc's `seeds.count`) across the upstream face, in `rakeRows` rows starting at
@@ -220,15 +223,15 @@ build that reaches its worker after a newer one of another version has
 started cancels itself the same way.
 
 Future work: the editor (`src/tool.js`) still compiles and samples the flow
-on the main thread, and the hull-doc link's upstream build runs on the main
+on the main thread, and a source-doc body's upstream build runs on the main
 thread. The masked slice with point elements and a panel body is the slow
 case above and would be worth profiling.
 
-## Linking a hull
+## Linking a body
 
 ```js
 body: {
-  url: "automerge:…",                       // a scene-render doc (preferred), or a hull doc
+  url: "automerge:…",                       // a scene-render doc (preferred), a GLB file doc, or any doc a scene can build
   plane: { kind: "waterline" },             // or { kind: "z", z: -0.4 } (m, floating frame)
   model: "waterplane-2d",                   // or "slender-body-3d"
   panels: 120,                              // resolution: panels, or line-source segments (16–400)
@@ -236,65 +239,113 @@ body: {
 ```
 
 Only the link is stored. The body's singularities are derived from a
-**section** of the linked doc whenever the flow is drawn or built, and they
-are never written to the doc. The doc's own `elements` still apply and are
-superposed on the body.
+**section** of the linked geometry whenever the flow is drawn or built, and
+they are never written to the doc. The doc's own `elements` still apply and
+are superposed on the body.
 
-**Link the render (preferred).** If the linked doc is a scene's
-`scene-render` doc, the flow reads it with `src/render-read.js` (a kit copy of
-`scene/src/render-read.js`) and slices its current GLB. That is exactly the
-geometry the scene shows, built once with the params the scene chose for it,
-and the render's own dependencies (an OpenSCAD part's imports, say) are
-already folded into it. No provider is called. The GLB is Y-up metres in the
-render's frame, mapped into the floating frame like any other mesh (x = X,
-y = −Z, z = Y), so the hull should sit in the floating frame in its render
-(bow to +x, design waterline at Y = 0). The host keys the dependency by
-`glbUrl`, so the flow rebuilds when the render gets a new GLB and not on its
-status writes. A render that hasn't been built yet gives a flow without the
-body, and the notes say "linked body not built yet"; it rebuilds by itself
-when the GLB arrives. A flow's own render, or any flow render, is refused as a
-body. The chip says **scene render** and names the render by its title
-("Hull (3D render)").
+**The body is a geometry source, and the flow cuts it itself.** Whatever is
+linked, the flow gets a GLB for it and slices that GLB's triangles with the
+plane (`src/mesh-section.js`). It never asks anything for a ready-made
+section: there is no `geometry:section` lookup. Anything a scene can show can
+be the body, by one of three paths, tried in this order:
 
-**Linking the hull doc itself** (the older way) still works, with caveats.
-The section then comes from:
+1. **render** (preferred): a scene's `scene-render` doc. The flow reads it
+   with `src/render-read.js` (a kit copy of `scene/src/render-read.js`) and
+   slices its current GLB. That is exactly the geometry the scene shows,
+   built once with the params the scene chose for it, and the render's own
+   dependencies (an OpenSCAD part's imports, say) are already folded into it.
+   No provider is called. The host keys the dependency by `glbUrl`, so the
+   flow rebuilds when the render gets a new GLB and not on its status writes.
+   A render that hasn't been built yet gives a flow without the body, and the
+   notes say "linked body not built yet"; it rebuilds by itself when the GLB
+   arrives. A flow's own render, or any flow render, is refused as a body.
+   The chip says **scene render** and names the render by its title ("Hull
+   (3D render)").
+2. **file**: a Patchwork `file` doc holding a GLB (its `extension`, or its
+   name, says `glb`; a file that names no extension is sniffed for the glTF
+   magic). That is what a scene shows directly for a passthrough object
+   (contract v3 §6: a GLB file gets no render doc), so dragging such a row out
+   of the scene's outline links the file. Its bytes are cut as they are; no
+   provider and no registry is needed. The dependency is the file doc, keyed
+   by its heads. The chip says **GLB file**. A file that isn't a readable GLB
+   gives no body, the same on every peer.
+3. **source**: any other doc some `scene:source` provider can build (a camber
+   hull, an OpenSCAD part, an STL file through the scene's `file-stl`, an
+   implicit body…). The most specific provider wins, as in the scene host
+   (datatype and extension, then datatype, then a wildcard), never one of the
+   flow field's own. The doc is built in memory with the provider's
+   **default** params (nothing is stored), and its GLB is sliced. If a
+   provider fails, the next one is tried and the notes say so. The chip says
+   **built from *provider* (defaults)**.
 
-1. a `geometry:section` provider for the linked doc's datatype
-   (`getRegistry("geometry:section")`, matched on `supportedDatatypes`), which
-   would give the exact waterline. **No package registers one yet**; the hook
-   stays so one can be added without changing the flow field.
-2. otherwise, a matching `scene:source` provider: the doc is built in memory
-   with the provider's **default** params (nothing is stored), and its GLB is
-   sliced as above.
+**The body is the object's own geometry, in its own frame.** Dragging a row
+out of the scene's outline links the object's render (or its source), not
+its place in the scene: any position, rotation or scale the scene gives the
+object doesn't count. A GLB file or STL that wasn't authored in the floating
+frame can look right in the scene and still miss the plane (the notes then
+say where the body is).
+
+**Reading a GLB** works the way the scene reads one. The GLB is glTF Y-up,
+mapped into the floating frame (x = X, y = −Z, z = Y), so the body should sit
+in the floating frame wherever it comes from: bow to +x, design waterline at
+Y = 0. Node transforms are applied (one mesh used by several nodes is cut
+once per node), and `EXT_mesh_gpu_instancing` is expanded to one copy per
+instance, as three's GLTFLoader draws it (whether or not the GLB lists it as
+required; a mesh with line or point primitives isn't instanced, as in three).
+Line and point primitives are skipped. `KHR_mesh_quantization` (normalised
+integer positions) and `EXT_meshopt_compression` (the Solander site's GLBs)
+are decoded, meshopt with `src/vendor/meshopt_decoder.module.js`
+(meshoptimizer's decoder, MIT, copied whole from three's
+`examples/jsm/libs`), loaded only when a GLB needs it. If this peer can't run
+the decoder (no WebAssembly, say, or the chunk didn't load), that failure is
+transient: the build throws and keeps the last good render, so a peer that
+can decode it rebuilds. Draco isn't read, and says so (the scene doesn't
+show Draco either).
+
+Units are metres, as glTF says. A GLB that declares `asset.extras.units` (the
+patchwork convention `scene/src/glb.js` writes: `mm`, `cm`, `m`, `in`, `ft`,
+or their long names) is scaled from those to metres, and the notes say so.
+Units are never guessed from the size. **The scene doesn't do this:** it
+draws every GLB as metres, so for a GLB that declares another unit the body
+the flow cuts and the object the scene shows differ in size by that factor.
+Nothing writes non-metre GLBs today (`scene/src/glb.js` always writes `m`);
+if something starts to, one side should change to match the other.
 
 The cut treats a vertex on the plane as above it and cuts every edge from the
 same end, so seams and on-plane vertices don't break loops. Points are
 welded, chains are joined across small gaps, and a chain that stays open is
 closed straight across its ends. A hull shell with no transom face slices to
-a U, and closing it draws the transom. The chip says **exact section** or
-**mesh fallback**, and so do the build notes. With no registry, no provider,
-or an unloadable doc, the flow is just the stream and the elements, and the
-notes and the panel say why.
+a U, and closing it draws the transom. When the plane misses the body the
+section is empty but the flow still builds (the same on every peer), and the
+panel and the notes say where the body is: "the body spans z = −1.20 m to
+0.40 m, and the plane at z = 0.80 m is above it", or that the GLB has no
+triangles. With no registry, no provider, or an unloadable doc, the flow is
+just the stream and the elements, and the notes and the panel say why.
 
-The caveats of a hull-doc link, all of which linking its render avoids:
+**Accuracy.** Cutting the mesh loses nothing against a native exact
+section at the same sampling: the cut of a default build matches the
+source's own section to float32 rounding.[^exact] Finer geometry is the
+source's business: the flow doesn't ask a provider for finer params (an
+expensive main-thread build, for a difference well under the panel model's
+own error). Link the render, built as fine as the scene wants, for more.
+
+The caveats of a source-doc body, all of which linking its render avoids:
 
 - The geometry is the provider's default build, not what the scene shows
-  (other params, maybe another frame). For camber the defaults put the hull
-  in the floating frame (`origin = "waterline"`, `rake = true`, contract v2
-  §3).
-- Each peer builds the hull again. Upstream builds are cached in module
+  (other params, maybe another frame).
+- Each peer builds the source again. Upstream builds are cached in module
   memory (`src/upstream.js`, an LRU of 8) keyed by the provider id and
-  version, its params, the hull's `fingerprint()` (or its heads, if the
+  version, its params, the source's `fingerprint()` (or its heads, if the
   provider has none) and the heads of the docs the provider says it reads, so
-  the slice and the streamlines (and the editor) share one build per hull
-  edit. It is still a full build (a remesh, for an implicit body) on the main
+  the slice and the streamlines (and the editor) share one build per edit.
+  It is still a full build (a remesh, for an implicit body) on the main
   thread.
 - Dependencies are transitive only after the fact. `dependencies(doc)` is
-  synchronous and can't load the hull, so the flow lists what the hull's
-  provider said it reads (`dependencies(hullDoc)`) the last time this peer
-  acquired that hull. That list is empty after a reload until the first
-  build, and the host only asks again after the flow doc changes, so an edit
-  to an OpenSCAD import may not rebuild the flow until then.
+  synchronous and can't load the source, so the flow lists what its provider
+  said it reads (`dependencies(sourceDoc)`) the last time this peer acquired
+  it. That list is empty after a reload until the first build, and the host
+  only asks again after the flow doc changes, so an edit to an OpenSCAD
+  import may not rebuild the flow until then.
 
 **Caches.** Besides the upstream builds, `compileFlow` keeps the last four
 panel solves, keyed by the section's geometry (`section.key`, a hash of its
@@ -303,16 +354,19 @@ makes a new section object, so keying on the geometry is what lets two
 builds of the same hull share one solve. Scene builds run in workers, each
 with its own copy of that cache (and the editor has the main thread's).
 
-**In the editor**, **Link hull…** takes a pasted URL (`automerge:…`, a
+**In the editor**, **Link body…** takes a pasted URL (`automerge:…`, a
 Patchwork `#doc=` link, or a bare id), or you can drop a document onto the
 view: from the sidebar (`text/x-patchwork-dnd`) or a scene's outline row
-(`text/x-patchwork-urls` / `text/plain` carrying the render doc's URL). The
+(`text/x-patchwork-dnd` / `text/x-patchwork-urls` / `text/plain` carrying the
+row's render doc, or for a passthrough GLB object its file doc). Any document
+is accepted at the drop; what it can be is settled when it is cut. The
 linked body is drawn as a locked outline, and a chip names the doc and the
 section path. The panel sets the plane, the model and the resolution. **Fit
 domain** puts the domain round the body. The editor subscribes to the linked
 doc. For a render it cuts the section again only when `renderKey` (its
-`glbUrl`) changes, 250 ms after it settles; for a hull doc, 250 ms after any
-edit settles. **Unlink** keeps what it can. A slender body becomes ordinary
+`glbUrl`) changes, 250 ms after it settles; for a file or a source doc,
+250 ms after any edit settles. It also cuts again when a `scene:source`
+provider registers or goes. **Unlink** keeps what it can. A slender body becomes ordinary
 point sources and sinks (at most 32 per loop, each carrying its run's total
 flux), so the flow barely changes. A waterplane body has no element
 equivalent, so the editor warns first and then drops it.
@@ -396,15 +450,28 @@ flow and a peak speed just over U (tested).
   out, and a hull at an angle makes no side force in either model. It trades
   the real section shape for an equivalent body of revolution: good for how
   the flow is displaced overall, poor right against a flat side or a chine.
-- With a hull-doc link, freshness follows the hull doc's heads, not the hull
-  provider's code. If camber changes how it builds (or a section provider is
-  installed after a render was built from the mesh fallback), linked flow
-  renders don't go stale until the hull or the flow doc changes. The notes say
+- With a source-doc body, freshness follows the source doc's heads, not its
+  provider's code. If camber changes how it builds (or another provider is
+  installed that would now win), linked flow renders don't go stale until the
+  source or the flow doc changes. The notes say
   which path and provider built each render. A render link has no such gap:
   a new hull build is a new GLB, and that rebuilds the flow.
 - Neither model makes lift or circulation. If you add line vortices of your
   own, they are superposed (and the panels stay impermeable to them), but no
   Kutta condition sets their strength.
+
+[^exact]: Measured on camber's hulls, which used to be cut by camber's own
+    `geometry:section` provider (`camber-hull-section`), the one exact path
+    the flow had; it was removed for this. Camber's section is itself a cut
+    of the solid it builds at the same default sampling (`sections`, `girth`)
+    as the GLB its `scene:source` draws. On all of camber's examples
+    (waterline and z = −0.02 m) the mesh cut matches it to 1.3–3.2 × 10⁻⁸ m,
+    area within 0.0003 %, waterline length and beam the same to 4 dp. The
+    finest build camber offers (`sections: 384, girth: 24`) differs from both
+    by 0.16–1.2 mm (0.02–0.14 % of the waterline length; area 0.06–0.99 %):
+    the discretisation error of the defaults, which camber's section shares.
+    For camber the defaults also put the hull in the floating frame
+    (`origin = "waterline"`, `rake = true`, contract v2 §3).
 
 ## Files
 
@@ -416,10 +483,11 @@ flow and a peak speed just over U (tested).
 | `src/field.js` | velocity, Cp, potential: the physics (pure); adds a linked body's velocity |
 | `src/body.js` | a linked body: loops, resampling, Hess–Smith source panels, slender-body line sources, the unlink snapshot (pure) |
 | `src/flow.js` | `compileFlow(doc, section)`: the doc's field plus its derived body, cached on the section's geometry (pure) |
-| `src/mesh-section.js` | a GLB's section: triangles → floating frame → plane cut → loops (pure) |
-| `src/section.js` | finding the linked doc and its section: a render's GLB; for a hull doc, an exact provider, else a mesh slice of its provider's build (main thread) |
+| `src/mesh-section.js` | a GLB's section: decode (quantization, meshopt) → triangles → floating frame, metres → plane cut → loops |
+| `src/vendor/meshopt_decoder.module.js` | meshoptimizer's decoder (MIT), copied whole from three; loaded only for a meshopt GLB |
+| `src/section.js` | finding the linked body's GLB and cutting it: a render's GLB, a GLB file's bytes, or a source doc's default build (main thread) |
 | `src/render-read.js` | kit copy of `scene/src/render-read.js` (v1): reading a `scene-render` doc and its GLB |
-| `src/upstream.js` | module memory for hull-doc links: the LRU of upstream builds, and the upstream provider's last `dependencies` |
+| `src/upstream.js` | module memory for source-doc bodies: the LRU of upstream builds, and the upstream provider's last `dependencies` |
 | `src/registry.js` | the host's plugin registry, late-bound |
 | `src/body-notes.js` | the build notes' line about the body |
 | `src/dnd.js` | copy of `scene/src/dnd.js`: dropped docs and pasted URLs |
@@ -438,7 +506,8 @@ flow and a peak speed just over U (tested).
 | `src/presets.js` | the preset flows |
 | `src/tool.js`, `src/styles.css` | the editor |
 | `probes/tool-probe.html` | mounts the built editor against an in-memory handle (`python3 -m http.server`, then open it; `?preset=spinning&color=speed`) |
-| `probes/body-probe.html` | the editor with a hull linked through a stub registry (`?model=slender-body-3d`, `?path=mesh`, `?z=`) |
+| `probes/body-probe.html` | the editor with a body linked through a stub registry (`?path=source\|render\|file`, `?fixture=solander-battery-cell.glb`, `?model=slender-body-3d`, `?z=`); posts what the panel says to `probe-server.mjs` |
+| `src/test/fixtures/` | two Solander 38 GLBs (meshopt + quantized; CC BY 4.0, see its README), copied from the scene's fixtures |
 | `probes/worker-probe.html`, `probes/probe-server.mjs` | the built providers in a real browser worker vs the main thread: timings, the longest frame gap, identical bytes, superseding; `?dist=` another origin for the blob path (see the page's header) |
 | `src/test/` | test fixtures: a stub `@inkandswitch/patchwork-plugins` (aliased in `vitest.config.ts`) and prism hull GLBs |
 
@@ -454,7 +523,10 @@ off the surface, a transom's corners (finite everywhere, capped), impermeability
 with elements superposed, the slender spheroid (closed, nearly tangent, peak
 speed), the dead-water closure, the unlink snapshot's flux, determinism, and the
 mesh slicer (on-plane vertices, seams, node transforms, open shells, two
-hulls). They also check the exact and fallback paths and graceful failure,
+hulls, GLB units, quantized and meshopt GLBs against three's bounds, GPU
+instancing as three draws it, an empty cut's z range). A decoder this peer
+can't run is a transient failure. They also check the source and GLB-file paths (and that a
+`geometry:section` provider is never loaded or called), graceful failure,
 `dependencies` and the fingerprint, the builds' masking and notes, and the
 editor's link, live update, plane and model controls, both kinds of unlink,
 and drop. For render links (`src/render-link.test.js`): the render's GLB is
