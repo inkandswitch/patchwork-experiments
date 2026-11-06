@@ -7,12 +7,13 @@ const byId = (id) => plugins.find((p) => p.id === id);
 const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 describe("sailing's plugins", () => {
-  it("are two scene extensions, parts for the bin and a template, and nothing else", () => {
+  it("are two scene extensions, parts for the bin and two templates, and nothing else", () => {
     expect(plugins.map((p) => [p.type, p.id])).toEqual([
       ["scene:extension", "sailing"],
       ["scene:extension", "sailing.edit"],
       ...["sloop", "mast", "wheel", "windlass", "ladder", "redBuoy", "greenBuoy", "islet"].map((id) => ["scene:part", `sailing.${id}`]),
       ["scene:template", "ship-at-sea"],
+      ["scene:template", "ship-at-anchor"],
     ]);
   });
 

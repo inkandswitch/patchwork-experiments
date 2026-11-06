@@ -123,15 +123,22 @@ export function partObject({ name, url, transform, parent = null, group = null, 
  * @param {{ parent: string | null, transform }} place  where the part goes
  * @param {{ [kind]: { url, hint } }} files
  * @param {(prefix: string) => string} newId
- * @param {{ group?: string | null, locked?: boolean }} [o]
+ * @param {{ group?: string | null, locked?: boolean, settings?: { [traitKey]: object } }} [o]
+ *   settings: trait fields to set over the pieces' own (the sail lowered, the anchor down)
  */
-export function objectsFor(part, place, files, newId, { group = null, locked = false } = {}) {
+export function objectsFor(part, place, files, newId, { group = null, locked = false, settings = null } = {}) {
   const [first, ...rest] = PIECES[part];
   const root = newId("o");
   const tags = TAGS[first.kind] ? [TAGS[first.kind]] : undefined;
-  const out = [[root, partObject({ name: first.name, ...files[first.kind], transform: place.transform, parent: place.parent, group, locked, traits: first.traits, tags })]];
+  const traitsOf = (traits) => {
+    if (!traits || !settings) return traits;
+    const out = {};
+    for (const [k, v] of Object.entries(traits)) out[k] = settings[k] ? { ...v, ...settings[k] } : v;
+    return out;
+  };
+  const out = [[root, partObject({ name: first.name, ...files[first.kind], transform: place.transform, parent: place.parent, group, locked, traits: traitsOf(first.traits), tags })]];
   for (const p of rest) {
-    out.push([newId("o"), partObject({ name: p.name, ...files[p.kind], transform: { position: p.at, rotation: [0, 0, 0] }, parent: root, traits: p.traits })]);
+    out.push([newId("o"), partObject({ name: p.name, ...files[p.kind], transform: { position: p.at, rotation: [0, 0, 0] }, parent: root, traits: traitsOf(p.traits) })]);
   }
   return out;
 }
@@ -225,12 +232,13 @@ export function part(name) {
  * @param {object} files  every kind she's made of, filed
  * @param {(prefix: string) => string} newId
  * @param {object} [ship]  her sailing.ship trait ({} at rest; the template gives her way)
+ * @param {{ settings?: { [traitKey]: object } }} [o]  her stations' settings over the parts' own (at anchor: sail down, anchor down)
  */
-export function sloopObjects({ position, yaw }, files, newId, ship = {}) {
+export function sloopObjects({ position, yaw }, files, newId, ship = {}, { settings = null } = {}) {
   const hull = newId("o");
   const out = [[hull, partObject({ name: "Sloop", ...files.hull, transform: { position: [position[0], 0, position[2]], rotation: [0, yaw, 0] }, traits: { [SHIP]: ship } })]];
   const square = [0, 0, 0, 1];
-  for (const p of ABOARD) out.push(...objectsFor(p, { parent: hull, transform: standing(PIECES[p][0].kind, STAND[p], square) }, files, newId));
+  for (const p of ABOARD) out.push(...objectsFor(p, { parent: hull, transform: standing(PIECES[p][0].kind, STAND[p], square) }, files, newId, { settings }));
   return out;
 }
 

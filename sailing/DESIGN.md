@@ -34,7 +34,7 @@ modules share.
 | `physics.js` | yes | The ship as a rigid body: buoyancy sampled over the hull against the ocean, keel and rudder as hydrofoils, the sail's lift and drag from the apparent wind (the boom swinging toward where the wind and sheet put it, no faster than 200°/s), hull resistance rising toward hull speed (and much more going astern), an anchor whose pull is bounded by what it holds. `step(state, controls, env, dt)` |
 | `glb.js`, `ship.js` | yes | A procedural sloop as GLB bytes: hull, deck, mast, boom and sail, wheel, capstan, ladder; the hull's connectors (`STAND`), the sail's size (`extras.sail`) |
 | `parts.js` | yes but for files | The parts bin's parts (scene:part): the sloop whole, mast and sail, wheel, windlass and anchor, ladder, buoys, islet; squared to the ship they're put on (`placement`), one GLB doc per kind per scene (`ctx.file`) |
-| `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks |
+| `layout.js`, `template.js` | no | The "Ship at sea" template: the sea trait, the Sloop part with her way on (`sailing.ship.motion`) on a beam reach, landmarks. "Ship at anchor" (`layOutShip(ctx, { anchored: true })`): head to wind, still, sail down and anchor down (`AT_ANCHOR`), off the islet (`ANCHORAGE`), in a moderate breeze (`ANCHORAGE_AIR`, 6.5 m/s: enough to get her out of irons once the anchor is up) |
 | `body.js` | yes | A ship's body frame: where it sits in her hull's (`frameOf`), her pose through it and back (`toBody`, `toObject`), her body frame as drawn (`bodyOf`), and where a thing aboard sits in her (`placeIn`) |
 | `traits.js` | yes | The doc's vocabulary: trait keys, claim kinds, station defaults, the wheel's and the boom's turn on top of how they were put (`wheelTransform`, `rigTransform`), the quarter view, and walking the tree as the stage resolves it (`parentOf` from `scene().parents`, `shipOf`, `partsOf`). Every part reads the doc through this |
 | `frames.js` | yes | Matrices (`apply`, `invert`, `multiply`, `matrixOf`, `rotateM`, `unrotateM`, `headingOf`, `onHeading`) and quaternions (`rotateQ`, `mulQ`, `quatFromEuler`, `eulerFromQuat`, `poseOfMatrix`) |
@@ -53,7 +53,13 @@ doc, crewing her together (see its header). `probes/camber-run.mjs` takes a
 hull drawn in camber (its built plugins, borrowed at dev time) from a bare
 sea to sailing: the Ship trait with her frame from her GLB, the parts
 dragged from the bin onto her deck, floating, sailing bow first, stood on
-and steered.
+and steered. `probes/aboard-run.mjs` sets a game aboard her with the tools
+themselves (Ship at anchor, then tabletop's Card table and Lost Cities
+parts, every package's built dist loaded as plugins, none imported) and
+plays it: seated views riding the table, drawing, carrying and flipping on
+it at anchor and under way, clicks and drags that mustn't board or move
+her, first person and back to the seat. `probes/publish-aboard.mjs` makes
+the same scene and publishes it.
 
 ## Shared interfaces
 
@@ -219,6 +225,8 @@ a scene:part in index.js under "Sailing":
   `ctx.file` gets a doc of its own per kind, as before parts.
 - The template is the Sloop part's objects with her way on, the landmarks
   (the buoy and islet parts, locked, in a group), the home view and "play".
+  At anchor, her stations' settings are set over the parts' own
+  (`sloopObjects(..., { settings })`): the sail lowered, the anchor down.
 
 ## Traits (in the doc)
 
@@ -266,13 +274,21 @@ traits mark, put back when it stops).
 local, prev)`, `receive(type, data, from)` and `dispose()`, and fills in
 what the others read. No part calls `api.loop`: play.js runs one loop and
 ticks them in the order a frame needs, and no part imports another (what
-they share of the doc is traits.js, of the maths frames.js):
+they share of the doc is traits.js, of the maths frames.js). play.js also
+answers the hand's `carryable` (traits.js `carryableAboard`): never the ship
+or anything with a sailing trait or tag, so a game played aboard can't carry
+off her mast; anything else aboard is the game's business. And the sail's
+verbs on the use prompt come from the sail station or what it hangs from
+below the hull (the mast), never from another traitless thing aboard (a card
+table): stations.js `sailOf`.
 
 ```js
 api.loop((dt, now) => {
   ctx.sea.tick(dt, now, ctx.sim.simulating(), ctx.sim.simulator()); // the clock first: what the ships step to
   ctx.sim.tick(dt);   // take over, follow, or step and hold the ships
-  ctx.crew.tick(dt);  // walk on the deck as it now is; draw everyone else
+  ctx.crew.tick(dt);  // walk on the deck as it now is; draw everyone else; not aboard, follow: the orbit rides
+                      //   the first ship sideways (api.camera.ride, a fallback ride, so a seat at a table
+                      //   aboard, riding her too, wins), or is moved each frame on a stage without rides
   looks.tick(dt);     // floats and sails, dressed
   hud.tick(dt);
   // and the presence rate, when it changes: 30 simulating, 20 aboard, else 0
@@ -299,7 +315,10 @@ ctx.sim.simulator()      // the simulating session, when it's someone else, else
 ctx.sim.tick()
 
 // crew.js — createCrew(api, ctx) → ctx.crew
-ctx.crew.input           // the extension's input handlers (click to come aboard: an arm with pointer lock)
+ctx.crew.input           // the extension's input handlers (click to come aboard: an arm with pointer lock). Only a click on
+                         //   the sea, the sky, a ship, a fitting of hers or anything not aboard a ship (the islet) (boardsOn): one on
+                         //   anything else aboard (a card) goes on. Seated (seatedView: the camera riding something, not her own
+                         //   fallback follow), only the sea or sky; the HUD (hudModel's `seated`) then offers Enter, no walking keys
 ctx.crew.start(), .stop() // come aboard (Enter: stations.js's "aboard"), and Esc back to the orbit off the quarter
 ctx.crew.me()            // { on: shipId | null, position (local to on, else world), yaw, pitch, eye: world [x,y,z], station: id | null, swimming,
                          //   playing, paused (the lock lost), free (the lock refused: drag to look), hint (the station's line) }

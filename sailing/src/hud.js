@@ -1,6 +1,9 @@
 // What you see over the view while sailing (DESIGN.md, "Play"): a crosshair
 // while aboard, a small sailing panel and one hint line saying what the keys
-// do here. Before you come aboard, the way in. The panel's dial is the boat
+// do here. Before you come aboard, the way in, and the panel shrinks to its
+// dial in the top left (the bottom of the view is a seated player's hand of
+// cards); seated at something aboard (the view rides it), the way in is a
+// small button up there too, with no walking keys (they're the game's). The panel's dial is the boat
 // bow-up with north on its rim, the apparent wind as a solid arrow (what the
 // sail feels) and the true wind as a hollow mark on the rim (where the
 // weather comes from); beside it her speed over the ground along her bow,
@@ -12,6 +15,7 @@
 
 import css from "./hud.css?inline";
 import { bodyOf } from "./body.js";
+import { seatedView } from "./crew.js";
 
 const KNOTS = 1.943844; // per m/s
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -51,17 +55,21 @@ const IRONS = "In irons, going astern: lower the sail and let her fall off, then
 
 /**
  * What the HUD shows, from what it reads. Pure.
- * @param {{ me: object, read?: object | null, speed?: number | null, wind?: number[] | null, sail?: { raised?, sheet? } | null, anchor?: { down? } | null }} o
+ * @param {{ me: object, read?: object | null, speed?: number | null, wind?: number[] | null, sail?: { raised?, sheet? } | null, anchor?: { down? } | null, seated?: boolean }} o
  *   me: ctx.crew.me(); read: ctx.sim.read(ship); speed: her speed to show (m/s), else speedOver(read);
- *   wind: the true wind at the ship [vx, vz]
+ *   wind: the true wind at the ship [vx, vz]; seated: the view rides something
+ *   (a seat at a table aboard her: crew.js seatedView), where the keys mean
+ *   that thing's verbs, so the walking keys aren't offered and a click on the
+ *   view doesn't come aboard (Enter or the button does)
  */
-export function hudModel({ me, read = null, speed = null, wind = null, sail = null, anchor = null }) {
+export function hudModel({ me, read = null, speed = null, wind = null, sail = null, anchor = null, seated = false }) {
   const state = !me?.playing ? "lobby" : me.paused ? "paused" : "aboard";
   const pct = (v, d) => `${Math.round((Number.isFinite(Number(v)) ? Number(v) : d) * 100)}%`;
   const c = read ? compass(read.heading) : null;
   let hint;
   let keys = "";
-  if (state === "lobby") (hint = "Click to come aboard"), (keys = WALK_KEYS);
+  if (state === "lobby" && seated) hint = "Come aboard (Enter)";
+  else if (state === "lobby") (hint = "Click to come aboard"), (keys = WALK_KEYS);
   else if (state === "paused") hint = "Click to carry on";
   else if (me.hint) hint = me.hint;
   else if (me.swimming) hint = "WASD swim · F at the ladder to climb aboard";
@@ -70,6 +78,7 @@ export function hudModel({ me, read = null, speed = null, wind = null, sail = nu
   const from = wind ? windFrom(wind) : null;
   return {
     state,
+    seated: state === "lobby" && !!seated,
     hint,
     keys,
     advice: state === "aboard" && inIrons(read, sail) ? IRONS : "",
@@ -182,8 +191,10 @@ export function createHud(api, ctx) {
       wind,
       sail: st?.sail ? ctx.sim.value(st.sail) : null,
       anchor: st?.anchor ? ctx.sim.value(st.anchor) : null,
+      seated: seatedView(api),
     });
     put("state", model.state, (v) => root.setAttribute("data-state", v));
+    put("seated", model.seated, (v) => root.toggleAttribute("data-seated", v));
     // before coming aboard the hint is a button (a click on the view does the same)
     const lobby = model.state === "lobby";
     put("lobby", lobby, (v) => ((button.hidden = !v), (hint.hidden = v)));

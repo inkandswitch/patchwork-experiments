@@ -159,3 +159,35 @@
 .scene-stage .sail-hud[data-state="paused"] .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
   top: 58%;
 }
+
+/* not aboard yet: the panel shrinks to its dial, top left, clear of what's
+   played at the bottom of the view (a seated player's hand of cards at a
+   table aboard her) */
+.scene-stage .sail-hud[data-state="lobby"] .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  top: var(--sail-gap);
+  bottom: auto;
+  padding: 4px;
+  border-radius: 50%;
+}
+.scene-stage .sail-hud[data-state="lobby"] .sail-read:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+.scene-stage .sail-hud[data-state="lobby"] .sail-dial:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: 52px;
+  height: 52px;
+}
+/* seated at something aboard (the view rides it): the way aboard is a small
+   button top left, the dial under it, and the top middle is the table's (the
+   far seat's name tag) */
+.scene-stage .sail-hud[data-seated] .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  left: var(--sail-gap);
+  transform: none;
+  justify-items: start;
+}
+.scene-stage .sail-hud[data-seated] .sail-hint button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 13px;
+  padding: 5px 12px;
+}
+.scene-stage .sail-hud[data-seated] .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  top: calc(var(--sail-gap) + 38px);
+}

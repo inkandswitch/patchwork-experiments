@@ -7,7 +7,7 @@ helm, trims the sail, works the windlass, falls overboard and climbs back up
 the ladder. One view simulates; everyone else sees the same ship, played
 back smoothly, and takes over if that view goes.
 
-It is two scene extensions, a template and parts for the scene tool (see
+It is two scene extensions, two templates and parts for the scene tool (see
 [../scene/STAGE.md](../scene/STAGE.md)), not a tool of its own. How it's
 built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 
@@ -16,7 +16,23 @@ built, and the conventions its modules share, are in [DESIGN.md](DESIGN.md).
 - **From the template.** In an empty scene, pick **Ship at sea** on the start
   screen. It lays out a sloop under way on a beam reach (sail up, anchor
   up), a sea with a north-easterly breeze, two buoys and an islet upwind,
-  and opens in Play.
+  and opens in Play. Or **Ship at anchor**: the same sloop lying head to
+  wind at anchor off the islet in a moderate breeze, sail down, anchor down,
+  somewhere still to set things up aboard (a card table in her cockpit:
+  tabletop's *Card table* and *Lost Cities* parts) and to get under way
+  from (raise the sail, weigh the anchor).
+- **Coming aboard.** Click the sea, the sky, the ship, a fitting of hers or
+  the shore (or press Enter). A click on something else aboard her, a card
+  on a table in her cockpit say, isn't a way aboard: it's that thing's (the
+  hand picks the card up). Seated at a table aboard her (your view riding
+  it), only Enter, the button or a click on the open sea or sky comes
+  aboard, so a stray click on the benches round the table doesn't throw you
+  into first person; the HUD then offers *Come aboard (Enter)* top left,
+  without the walking keys (S and D are the table's Shuffle and Draw), and
+  before you're aboard its panel is just the dial, top left, clear of your
+  hand of cards. In play the hand never carries the ship or her fittings
+  (anything with a sailing trait or tag: `carryable`), so a game aboard her
+  can't dismast her; a table and its cards are the game's to move.
 - **From the parts bin, in any scene.** While editing, the sidebar's parts
   list a *Sailing* group: drag **Sloop** onto the view and she's on the
   water where you dropped her, rigged, her bow away from you (and the scene
@@ -93,4 +109,6 @@ pnpm test          # vitest: the physics, the sea, the parts on a fake stage
 pnpm build
 node probes/sailing-run.mjs   # two views crewing her in headless Chrome (build scene/ too)
 node probes/camber-run.mjs    # a camber hull rigged from the parts bin and sailed (build ~/dev/camber/patchwork too)
+node probes/aboard-run.mjs    # Lost Cities at a table in her cockpit, two players, at anchor and under way (build scene/, tabletop/, card-table/ too)
+node probes/publish-aboard.mjs --dry-run   # make that scene with the tools and check it; without --dry-run, publish it
 ```

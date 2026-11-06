@@ -144,3 +144,30 @@ describe("the Ship at sea template", () => {
     expect(JSON.parse(JSON.stringify({ objects, traits, view }))).toEqual({ objects, traits, view });
   });
 });
+
+describe("the Ship at anchor template", () => {
+  it("lies head to wind off the islet, still, her sail down and her anchor down, in a moderate breeze, in play", async () => {
+    const { atAnchor } = await import("./template.js");
+    const { ANCHORAGE_AIR } = await import("./layout.js");
+    const doc = emptyScene();
+    const { ctx, calls } = fakeScene(doc);
+    await atAnchor.create(ctx);
+    expect(doc.traits["sailing.sea"].wind).toEqual({ speed: ANCHORAGE_AIR.speed, from: ANCHORAGE_AIR.from });
+    expect(ANCHORAGE_AIR.speed).toBeGreaterThanOrEqual(6); // enough to get her out of irons and away
+    expect(ANCHORAGE_AIR.speed).toBeLessThanOrEqual(7);
+    expect(doc.view.activity).toBe("play");
+    const by = (name) => Object.values(doc.objects).find((o) => o.name === name);
+    const hull = by("Sloop");
+    expect(hull.traits["sailing.ship"]).toEqual({}); // no way on
+    expect(hull.transform.rotation[1]).toBeCloseTo(headTo(ANCHORAGE_AIR.from)); // head to wind
+    expect(by("Boom and sail").traits["sailing.sail"]).toEqual({ raised: 0, sheet: 0.5 });
+    expect(by("Windlass").traits["sailing.anchor"]).toEqual({ down: true, rode: 25 });
+    // the islet lies upwind, its middle some 80 m off (its shore about 50)
+    const islet = by("Islet").transform.position;
+    const ahead = [-Math.sin(hull.transform.rotation[1]), -Math.cos(hull.transform.rotation[1])];
+    const along = islet[0] * ahead[0] + islet[2] * ahead[1];
+    expect(along).toBeGreaterThan(70);
+    expect(Math.hypot(islet[0], islet[2])).toBeLessThan(90);
+    expect(calls.notices.at(-1).text).toMatch(/at anchor/);
+  });
+});
