@@ -318,9 +318,10 @@ describe("under sail, 8 m/s of wind from the north", () => {
     expect(stopped).toBeLessThan(30);
     expect(most).toBeLessThan(40);
     expect(last.d.sailForce).toBeLessThan(800);
-    // then the wind pushes it back
+    // then the wind pushes it back, slowly (a keel going astern is all drag)
     expect(last.d.speed).toBeLessThan(0);
-    expect(-last.s.position[2]).toBeLessThan(most - 5);
+    expect(last.d.speed).toBeGreaterThan(-0.5);
+    expect(-last.s.position[2]).toBeLessThan(most - 3);
     // and from a standstill it gains nothing to windward
     let gained = 0;
     sail(ship, {
@@ -419,6 +420,10 @@ describe("the polar", () => {
     );
     const peak = polar.reduce((a, b) => (b.speed > a.speed ? b : a));
     expect(head).toBeLessThan(0.2); // no headway: it drifts back
+    expect(head).toBeGreaterThan(-0.5); // slowly: about half a knot astern, as a boat in irons does
+    // no traveller: she can't point much above 45°, so beating at 30° makes less ground to windward
+    const vmg = (twa) => polar.find((p) => p.twa === twa).speed * Math.cos(twa * DEG);
+    expect(vmg(30)).toBeLessThan(vmg(45) * 0.95);
     expect(peak.twa).toBeGreaterThanOrEqual(70);
     expect(peak.twa).toBeLessThanOrEqual(120);
     expect(peak.speed).toBeGreaterThan(3);
@@ -540,5 +545,55 @@ describe("integration", () => {
     for (let i = 0; i < n; i++) s = ship.step(s, controls, quick, 1 / 60);
     const ms = (performance.now() - t0) / n;
     expect(ms).toBeLessThan(0.5);
+  });
+});
+
+describe("the boom", () => {
+  it("swings across in a gybe over most of a second, not in a frame", () => {
+    const ship = createShip();
+    const env = { water: calm, wind: steady(8, 0) };
+    // running, wind on the starboard quarter, turning to starboard: the wind crosses the stern
+    let s = ship.rest({ yaw: -165 * DEG });
+    s.velocity = [3 * Math.sin(165 * DEG), 0, -3 * Math.cos(165 * DEG)];
+    const c = { sail: 1, sheet: 1, rudder: 1 };
+    let prev = null, biggest = 0, crossed = null;
+    for (let i = 0; i < 60 * 20; i++) {
+      s = ship.step(s, c, env, 1 / 60);
+      const b = ship.read(s, c, env).boom;
+      if (prev != null) biggest = Math.max(biggest, Math.abs(b - prev));
+      if (prev != null && Math.sign(b) !== Math.sign(prev) && crossed == null) crossed = i;
+      prev = b;
+    }
+    expect(crossed).not.toBeNull();
+    expect(biggest).toBeLessThan(4 * DEG); // per 1/60 s frame: 170° takes most of a second
+    expect(Number.isFinite(s.boom)).toBe(true);
+  });
+});
+
+describe("the anchor", () => {
+  it("a far-off anchor pulls no harder than it holds, and nothing goes to NaN", () => {
+    const ship = createShip();
+    let s = ship.rest();
+    const c = { sail: 0, anchor: { at: [0, -10, -300], rode: 15 } };
+    let fastest = 0;
+    for (let i = 0; i < 60 * 10; i++) {
+      s = ship.step(s, c, { water: calm }, 1 / 60);
+      fastest = Math.max(fastest, Math.hypot(...s.velocity));
+    }
+    for (const v of [...s.position, ...s.velocity, ...s.quaternion, ...s.spin]) expect(Number.isFinite(v)).toBe(true);
+    expect(fastest).toBeLessThan(15);
+  });
+
+  it("snubbing up at speed stops her without throwing her back", () => {
+    const ship = createShip();
+    let s = ship.rest();
+    s.velocity = [0, 0, -4];
+    const c = { sail: 0, anchor: { at: [0, -10, 0], rode: 25 } };
+    let astern = 0;
+    for (let i = 0; i < 60 * 30; i++) {
+      s = ship.step(s, c, { water: calm }, 1 / 60);
+      astern = Math.max(astern, s.velocity[2]); // + is back toward the anchor
+    }
+    expect(astern).toBeLessThan(0.6);
   });
 });

@@ -14,7 +14,7 @@ multiplayer); [the report](REPORT.md) records what changed and why.
 |---|---|
 | **Stage** | The core: the doc, loading and building object content, rendering, picking, the camera rig, drawing layers, the input router, presence, lenses. It has no UI and no opinion about what a click means. |
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
-| **Activity** | What a viewer is doing in a scene: `"edit"`, `"play"` (an open set: later `"review"`, `"sail"`). One per view, never in the doc. Extensions say which they take part in. |
+| **Activity** | What a viewer is doing in a scene: `"edit"`, `"play"` (an open set: an extension may declare any other). One per view, never in the doc. Extensions say which they take part in. |
 | **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
 | **Surface** | An extension that presents others' contributions (toolbar, sidebar, menu, key map), read with `api.collect(name)`. |
 | **Contribution** | A field on an extension's instance that some other extension may collect. The stage reads only the ones listed under "instance". |
@@ -402,7 +402,7 @@ that extension.
 |---|---|
 | `local` | `{ get, swap, watch(fn, select?) }` |
 | `pref(key, fallback)`, `setPref(key, value)` | read through local and then the doc, as above. Set writes local only |
-| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60) |
+| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz), shownAt(session) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60). `shownAt(session)` is the moment, on that peer's clock (ms, its `Date.now`), whose held poses this view is drawing now, or null before any pose of its has arrived: something else that peer streams with its own timestamps (a sea's clock) is shown at the same moment as its holds by asking this, never by guessing the playout delay |
 | `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
 | `notify(text, kind?)` | |
 
@@ -411,7 +411,7 @@ that extension.
 | | |
 |---|---|
 | `nameOf(id)` | what this viewer sees, lenses applied |
-| `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test); never change it |
+| `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test). Never change it, with one exception: **dressing**. An extension may move, scale or hide `root` and the nodes in it for objects that carry one of its own traits, each view for itself (a buoy bobbing on the waves, a sail lowered), and puts them back when it stops. Dressing is only a look: `box`, `worldOf`, picking and the shadow map go by the object's pose, not the dressed nodes, and nothing is sent |
 | `loadState(id)` | a copy of what the render manager or GLB queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…), or null |
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
@@ -463,7 +463,8 @@ How poses and loops behave:
   drawing the pose between the two either side of that moment (position and
   scale lerped, rotation slerped), timed by the sender's clock so the wire's
   jitter isn't shown. If the next pose is late it carries on along the last
-  step for one interval, then holds. A simulated hull and a carried card are
+  step for one interval, then eases back onto the last pose over another and
+  holds it there, so a drag that paused is shown where it really is. A simulated hull and a carried card are
   the same thing to the stage, so there is no flag for it: one kind of hold,
   always played back this way. The price, 75 ms more lag on a peer's view of
   a carry, buys a carry without the 20 Hz stutter too. A landed release still
@@ -545,12 +546,15 @@ A **command**:
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
   show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
   hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
-  state(target, { scene, local, from?, hit? }) → null | { title?, checked?, value?, choices?: [{ value, label }], disabled? },
+  state(target, { scene, local, from?, hit? }) → null | { title?, label?, checked?, value?, choices?: [{ value, label }], disabled? },
   run(target, value?) → void | session }
 ```
 
 - `state` returning null (or false) means the command doesn't apply to that
   target. Keys work whatever `show` says.
+- `label` is the verb's name for this target, over `name` ("Lower sail" where
+  `name` says "Raise sail"; "Someone's at the helm"). Every surface that shows
+  a command's name shows it.
 - A command without `state` applies only to the null target, the scene.
 - A **target** is an object or group id, a ref, or null (the scene). See
   "Targets and refs" below.
@@ -701,10 +705,13 @@ taken out. It keeps the following:
   back from the back-forward cache returns as a new session. Presence goes
   out at the highest rate any extension asked for (default 4 Hz), and poses
   at most once per object per 50 ms, or per presence interval if that's
-  shorter. A peer keeps a hold's last 8 poses as samples on the sender's
-  clock, with an offset from ours that follows the fastest delivery;
+  shorter. A pose is stamped (`at`) with when it was held, not when it went
+  (a trailing send carries a pose from a frame ago; a keepalive is stamped
+  when it goes). A peer keeps a hold's last 8 poses as samples on the
+  sender's clock, with an offset from ours per sender that follows the
+  fastest delivery, and the sender's interval as its last pose said;
 - **exposes:** `set(ext, key, value)`, `clear(ext)`, `get()`, `watch`,
   `rate(ext, hz)`, `send`, `onReceive`, `hold(ext, id, parent, transform)`,
   `release(ext, id, landedTransform?)`, `remoteHolds()` (each with
-  `samples`, `every`, `offset` for playback), `heldBy(id)`,
+  `samples`, `every`, `offset` for playback), `shownAt(session, t?)`, `heldBy(id)`,
   `watchHolds`, `settle(id)`, `goodbye()`, `hello()`, `dispose`.

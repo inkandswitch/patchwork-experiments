@@ -1,0 +1,161 @@
+/* sailing's HUD: a crosshair, a small sailing panel (a dial with the
+   apparent wind's arrow, in the wind colour, and the true wind's hollow mark
+   round a little boat; speed, heading, the true wind, the sail) and a hint
+   line. Soft dark translucent panels with light text, so it reads over a
+   bright sea and a grey one alike. The block's state is its data-state:
+   lobby (not aboard yet), aboard, paused (the lock was lost). */
+
+.scene-stage .sail-hud:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --sail-ink: #f6f3ea;
+  --sail-ink-muted: color-mix(in oklch, var(--sail-ink) 68%, transparent);
+  --sail-panel: color-mix(in oklch, #0b0d10 58%, transparent);
+  --sail-accent: var(--scene-accent-fill, #7ff0d6);
+  --sail-wind: #ffd27a;
+  --sail-gap: 12px;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font: 13px/1.3 var(--scene-family, system-ui, sans-serif);
+  color: var(--sail-ink);
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.4);
+}
+
+/* a dot in a thin ring: where the use prompt looks */
+.scene-stage .sail-hud .sail-crosshair:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 1.5px solid rgb(255 255 255 / 0.75);
+  background: radial-gradient(circle, #fff 0 1.6px, transparent 2.2px);
+  filter: drop-shadow(0 0 1px #000) drop-shadow(0 0 2px rgb(0 0 0 / 0.5));
+}
+.scene-stage .sail-hud:not([data-state="aboard"]) .sail-crosshair:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+/* the sailing panel, bottom left, clear of the stage's Play | Edit switch */
+.scene-stage .sail-hud .sail-panel:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: var(--sail-gap);
+  bottom: calc(var(--sail-gap) + 30px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 8px;
+  border-radius: 12px;
+  background: var(--sail-panel);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+}
+.scene-stage .sail-hud .sail-panel[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+.scene-stage .sail-hud .sail-dial:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: 76px;
+  height: 76px;
+  flex: none;
+  overflow: visible;
+}
+.scene-stage .sail-hud .sail-dial [data-part="ring"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  fill: rgb(255 255 255 / 0.06);
+  stroke: var(--sail-ink-muted);
+  stroke-width: 1.5;
+}
+.scene-stage .sail-hud .sail-dial [data-part="boat"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  fill: var(--sail-ink);
+}
+.scene-stage .sail-hud .sail-dial [data-part="north"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  fill: var(--sail-ink-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.scene-stage .sail-hud .sail-dial [data-part="wind"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  fill: none;
+  stroke: var(--sail-wind);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.scene-stage .sail-hud .sail-read:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 10px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.scene-stage .sail-hud .sail-read dt:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--sail-ink-muted);
+}
+.scene-stage .sail-hud .sail-read dd:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  font-weight: 600;
+}
+.scene-stage .sail-hud .sail-read [data-k="speed"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 18px;
+  line-height: 1.1;
+}
+.scene-stage .sail-hud .sail-dial [data-part="true"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  fill: none;
+  stroke: var(--sail-ink);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+/* what the keys do here, top middle (the bottom is the panel's, and the
+   notices' toasts); before coming aboard, the way in, there too: the ship
+   is in the middle */
+.scene-stage .sail-hud .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  position: absolute;
+  left: 50%;
+  top: var(--sail-gap);
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 2 * var(--sail-gap));
+  text-align: center;
+}
+.scene-stage .sail-hud .sail-hint > *:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--sail-panel);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.scene-stage .sail-hud .sail-hint [data-k="keys"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--sail-ink-muted);
+}
+.scene-stage .sail-hud .sail-hint [data-k="keys"]:empty:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .sail-hud .sail-hint [data-k="advice"]:empty:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+.scene-stage .sail-hud .sail-hint [data-k="advice"]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--sail-wind);
+}
+.scene-stage .sail-hud .sail-hint button:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  pointer-events: auto;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  border: 0;
+  padding: 8px 18px;
+  background: var(--sail-accent);
+  color: var(--scene-accent-line, #06120f);
+  text-shadow: none;
+  cursor: pointer;
+}
+.scene-stage .sail-hud .sail-hint button[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+/* paused: the hint moves into the middle of the view */
+.scene-stage .sail-hud[data-state="paused"] .sail-hint:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  top: 58%;
+}

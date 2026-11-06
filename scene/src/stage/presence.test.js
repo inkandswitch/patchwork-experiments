@@ -533,6 +533,31 @@ describe("pose streams, for playing back", () => {
     expect(b.remoteHolds().get("o8")).toMatchObject({ offset: 0, every: POSE_MS, samples: [{ at: clock.now(), transform: T(1) }] });
   });
 
+  it("a trailing pose is stamped when it was held, not when it went", () => {
+    a.hold("sim", "hull", null, T(0));
+    clock.advance(20);
+    const heldAt = clock.now();
+    a.hold("sim", "hull", null, T(1)); // waits for the 50 ms
+    clock.advance(POSE_MS);
+    const msg = sent("A", "scene:pose").at(-1);
+    expect(msg.transform).toEqual(T(1));
+    expect(msg.at).toBe(heldAt);
+  });
+
+  it("shownAt: the moment on a peer's clock whose holds are drawn now, behind by the playout delay", () => {
+    expect(b.shownAt("sa")).toBe(null); // nothing heard yet
+    a.rate("sim", 30);
+    a.hold("sim", "hull", null, T(0));
+    // one clock, delivered at once: 1.5 intervals at 30 Hz behind
+    expect(b.shownAt("sa")).toBeCloseTo(clock.now() - 1.5 * (1000 / 30));
+    // a peer whose clock is 5 s behind ours
+    ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o9", parent: null, transform: T(0), since: 1, seq: 1, at: clock.now() - 5_000, every: 50 });
+    expect(b.shownAt("sz")).toBe(clock.now() - 5_000 - 75);
+    // gone with a bye: unknown again
+    a.goodbye();
+    expect(b.shownAt("sa")).toBe(null);
+  });
+
   it("a new hold, or the same one moved to another parent, starts its samples afresh", () => {
     a.hold("hand", "o1", "g1", T(1));
     clock.advance(POSE_MS);

@@ -25,7 +25,7 @@
 // stage shows poses and extensions read keys. Time comes in through now /
 // setTimer / clearTimer so tests can drive it.
 
-import { addSample, clockOffset } from "./smooth.js";
+import { addSample, clockOffset, playoutDelay } from "./smooth.js";
 
 export const PRESENCE = "scene:presence";
 export const SEND = "scene:send";
@@ -268,6 +268,7 @@ export function createPresence({
     if (![...holds.values()].some((bySession) => bySession.has(s))) {
       lastPose.delete(s);
       offsets.delete(s);
+      everies.delete(s);
     }
     peersChanged();
   }
@@ -333,7 +334,8 @@ export function createPresence({
     h.timer = null;
     h.dirty = false;
     h.sentAt = now();
-    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq, at: h.sentAt, every: poseInterval(rates.values()) });
+    // stamped when it was held, not when it went: a trailing send carries a pose from a frame ago
+    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq, at: h.heldAt ?? h.sentAt, every: poseInterval(rates.values()) });
   }
 
   // A pose that stays still still has to reach peers often enough that they
@@ -342,7 +344,8 @@ export function createPresence({
     keepalive = null;
     if (dead || !held.size) return;
     const t = now();
-    for (const h of held.values()) if (!h.timer && t - h.sentAt >= HOLD_KEEPALIVE_MS) sendPose(h);
+    // a still pose is still there now
+    for (const h of held.values()) if (!h.timer && t - h.sentAt >= HOLD_KEEPALIVE_MS) (h.heldAt = t), sendPose(h);
     keepalive = setTimer(tickKeepalive, HOLD_KEEPALIVE_MS);
   }
 
@@ -351,12 +354,13 @@ export function createPresence({
     let h = held.get(id);
     if (!h) {
       // since: this hold's Lamport stamp, after every hold we've heard of; every peer ranks holds by it
-      h = { ext, id, parent: null, transform: null, since: ++lamport, sentAt: -Infinity, timer: null, dirty: false };
+      h = { ext, id, parent: null, transform: null, since: ++lamport, sentAt: -Infinity, heldAt: null, timer: null, dirty: false };
       held.set(id, h);
     }
     h.ext = ext; // the latest holder owns the release
     h.parent = isStr(parent) ? parent : null;
     h.transform = transform;
+    h.heldAt = now();
     h.dirty = true;
     if (!keepalive) keepalive = setTimer(tickKeepalive, HOLD_KEEPALIVE_MS);
     if (h.timer) return; // the trailing send will carry this pose
@@ -389,6 +393,7 @@ export function createPresence({
   const holds = new Map();
   const lastPose = new Map(); // session → Map object id → seq, so a late pose can't undo a release
   const offsets = new Map(); // session → our clock minus its (smooth.js clockOffset)
+  const everies = new Map(); // session → its pose interval (ms), as its last pose said
   const holdWatchers = new Set();
   let holdsView = null;
 
@@ -417,6 +422,18 @@ export function createPresence({
       }
     }
     return holdsView;
+  }
+
+  /**
+   * The moment, on a peer's clock (ms), whose poses this view is drawing at
+   * `t` (ours): its holds are played back that far behind (smooth.js). So
+   * anything else that peer streams with its own timestamps (a sea's clock)
+   * can be shown at the same moment as its holds. null before any pose of
+   * its has been heard.
+   */
+  function shownAt(s, t = now()) {
+    if (!offsets.has(s)) return null;
+    return t - offsets.get(s) - playoutDelay(everies.get(s) ?? POSE_MS);
   }
 
   /**
@@ -455,6 +472,7 @@ export function createPresence({
     for (const id of ids) dropHold(id, s, true);
     lastPose.delete(s);
     offsets.delete(s);
+    everies.delete(s);
     if (ids.length) holdsChanged(ids);
   }
 
@@ -504,6 +522,7 @@ export function createPresence({
     const sentAt = Number.isFinite(msg.at) ? msg.at : heard;
     offsets.set(s, Number.isFinite(msg.at) ? clockOffset(offsets.get(s) ?? null, sentAt, heard) : 0);
     h.every = cleanEvery(msg.every);
+    everies.set(s, h.every);
     h.samples = Object.freeze(addSample(h.samples, Object.freeze({ at: sentAt, transform: t }), h.every));
     clearTimer(h.timer);
     h.timer = setTimer(() => dropHold(id, s), HOLD_TTL_MS);
@@ -599,6 +618,7 @@ export function createPresence({
     hold,
     release,
     remoteHolds,
+    shownAt,
     heldBy,
     watchHolds: listen(holdWatchers),
     settle,

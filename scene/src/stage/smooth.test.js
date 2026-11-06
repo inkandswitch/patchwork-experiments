@@ -115,15 +115,19 @@ describe("poseAt", () => {
     expect(close(poseAt(s, 1050).transform.position, [1, 0, 0])).toBe(true);
   });
 
-  it("past the last: carries on along the last step for `ahead` ms, then holds there", () => {
+  it("past the last: carries on along the last step for `ahead` ms, eases back as long again, then holds the last", () => {
     const p = poseAt(s, 1125, { ahead: 50 });
     expect(p.settled).toBe(false);
     expect(close(p.transform.position, [2.5, 0, 0])).toBe(true);
     expect(sameRotation(p.transform.rotation, [0, 0.25, 0])).toBe(true);
+    expect(close(poseAt(s, 1150, { ahead: 50 }).transform.position, [3, 0, 0])).toBe(true); // furthest out
+    const back = poseAt(s, 1175, { ahead: 50 });
+    expect(back.settled).toBe(false);
+    expect(close(back.transform.position, [2.5, 0, 0])).toBe(true);
+    // a stream that stopped ends where the thing really is
     const held = poseAt(s, 1500, { ahead: 50 });
     expect(held.settled).toBe(true);
-    expect(close(held.transform.position, [3, 0, 0])).toBe(true);
-    expect(sameRotation(held.transform.rotation, [0, 0.3, 0])).toBe(true);
+    expect(held.transform).toEqual(s[2].transform);
     // no extrapolation asked for: the last, settled
     expect(poseAt(s, 1101)).toEqual({ transform: s[2].transform, settled: true });
   });

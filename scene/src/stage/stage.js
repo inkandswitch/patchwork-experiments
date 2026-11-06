@@ -1581,6 +1581,7 @@ export default function Stage(handle, element) {
         rate: (hz) => {
           if (live()) presence.rate(id, hz);
         },
+        shownAt: (session) => presence.shownAt(session),
       }),
       send: (type, data) => {
         if (live()) presence.send(id, type, data);

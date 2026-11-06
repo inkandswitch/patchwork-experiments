@@ -222,14 +222,16 @@ function create(api) {
     prompt.style.setProperty("--use-y", at ? `${at.y}px` : "50%");
   }
 
-  // A loop runs only while it's needed: looking in first person (the view
-  // moves every frame), or while a verb is held (its update).
+  // A loop runs only while it's needed: in first person, locked or not (the
+  // eye moves every frame, so what's in reach does; without the lock the
+  // look is still the hovered object), or while a verb is held (its update).
+  const firstPerson = (local) => locked(local) || !!local.immersive;
   function tick(dt) {
     held.tick(dt);
-    if (locked(api.local.get())) refresh();
+    if (firstPerson(api.local.get())) refresh();
   }
   function wantLoop() {
-    const need = held.size > 0 || locked(api.local.get());
+    const need = held.size > 0 || firstPerson(api.local.get());
     if (need && !offLoop) offLoop = api.loop(tick);
     else if (!need && offLoop) {
       offLoop();

@@ -5,8 +5,6 @@
 export const ACTIVITY_LABELS = Object.freeze({
   edit: "Edit",
   play: "Play",
-  review: "Review",
-  sail: "Sail",
 });
 
 /** An activity's label: from the table, else its id as words ("free-roam" → "Free roam"). */

@@ -9,7 +9,12 @@
 //
 // The integration runs at a fixed 120 Hz. `step` adds dt to the time it
 // owes (`state.acc`), takes as many whole substeps as fit and carries the
-// remainder, so any frame rate gives the same motion.
+// remainder, so any frame rate gives the same motion. Past MAX_SUBSTEPS in
+// one call the rest is dropped, not owed: the caller skips that time (sim.js).
+//
+// The boom is the one part with a state of its own (`state.boom`): it swings
+// toward where the wind and the sheet put it no faster than BOOM_RATE, so a
+// gybe takes most of a second, not a frame.
 
 import { buildHull, mergeSpec, SLOOP, specFromBox } from "./hull-model.js";
 import { liftSlope, foilCL, foilCD, sailCL, sailCD } from "./physics-foils.js";
@@ -17,8 +22,8 @@ import { liftSlope, foilCL, foilCD, sailCL, sailCD } from "./physics-foils.js";
 export { SLOOP, specFromBox };
 
 export const SUBSTEP = 1 / 120;
-// after a stall (a hidden tab) don't try to catch up more than this
-const MAX_SUBSTEPS = 30;
+/** After a stall (a hidden tab, a slow frame) no more than this many substeps in one step. */
+export const MAX_SUBSTEPS = 30;
 
 const G = 9.81;
 const RHO = 1025;
@@ -26,9 +31,18 @@ const RHO_AIR = 1.225;
 const NU = 1.19e-6; // sea water's kinematic viscosity
 const DEG = Math.PI / 180;
 const RUDDER_MAX = 35 * DEG;
-const BOOM_IN = 5 * DEG;
+// no traveller: the sheet pulls the boom down and in, never quite amidships
+const BOOM_IN = 10 * DEG;
 const BOOM_OUT = 85 * DEG;
+const BOOM_RATE = 200 * DEG; // per second: a gybe swings across in about a second
+// a chain's pull is bounded by what the anchor holds: past this it would drag
+const ANCHOR_HOLD = 0.5; // of the ship's weight
+// going astern the keel and rudder lead with their trailing edges, and the
+// transom pushes water: the hull's lengthwise resistance is this much more
+const STERNWAY = 6;
 const CE_HEIGHT = 0.38; // up the luff
+
+
 
 // Water's resistance to the hull moving through it other than lengthwise
 // (that is the resistance below): per column, a linear part so small
@@ -49,9 +63,10 @@ const ADDED_MASS = [0.6, 0.8, 0.05];
 const ADDED_INERTIA = [0.8, 0.5, 0.3];
 
 /**
- * @typedef {{ position: number[], quaternion: number[], velocity: number[], spin: number[], t: number, acc?: number }} ShipState
+ * @typedef {{ position: number[], quaternion: number[], velocity: number[], spin: number[], t: number, acc?: number, boom?: number }} ShipState
  * `velocity` is the body origin's, `spin` the world angular velocity; `acc`
- * is time owed to the integrator, less than one substep.
+ * is time owed to the integrator, less than one substep; `boom` where the
+ * boom is (radians, + to starboard; missing: where the wind puts it).
  * @typedef {{ rudder?: number, sail?: number, sheet?: number, anchor?: null | { at: number[], rode: number } }} ShipControls
  * @typedef {{ water?: { heightAt: Function, velocityAt: Function }, wind?: { at: Function } }} ShipEnv
  */
@@ -119,7 +134,9 @@ export function createShip(input) {
   const hullFront = 0.7 * B * spec.freeboard;
   const mastArea = 0.15 * spec.sail.luff;
   const anchorK = 2.5 * m; // a chain's catenary, as a spring
-  const anchorC = 2.0 * m;
+  // damped twice critically: a chain lying on the bottom soaks up a snatch, it doesn't hand it back
+  const anchorC = 4 * Math.sqrt(anchorK * m * (1 + ADDED_MASS[2]));
+  const anchorMax = ANCHOR_HOLD * m * G;
   const sqrtGL = Math.sqrt(G * L);
 
   // working state: the centre of gravity's position and velocity, the
@@ -135,6 +152,8 @@ export function createShip(input) {
   // what read() reports, filled in by forces()
   const diag = { boom: 0, awSpeed: 0, awAngle: 0, sailForce: 0, submerged: 0, surge: 0, sway: 0 };
   let subRatio = 0;
+  let boomAt = NaN; // the carried boom angle; NaN: not yet known (it starts where the wind puts it)
+  let boomGoal = 0; // where the wind and the sheet would put it
 
   function rotation() {
     const x = Q[0], y = Q[1], z = Q[2], w = Q[3];
@@ -319,7 +338,7 @@ export function createShip(input) {
         const r = s / sqrtGL / 0.4;
         const r4_ = r * r * r * r;
         const waves = m * G * (0.004 * r4_ + 0.016 * r4_ * r4_) * subRatio;
-        const f = -(u > 0 ? 1 : -1) * (friction + waves);
+        const f = -(u > 0 ? STERNWAY : -1) * (friction + waves);
         apply(r2 * f, r5 * f, r8 * f, ax, ay, az);
       }
     }
@@ -372,7 +391,9 @@ export function createShip(input) {
       // where the boom would lie if let go (amidships in a flat calm)
       const free = ux * ux + uz * uz > 1e-4 ? Math.atan2(ux, uz) : 0;
       const limit = BOOM_IN + (BOOM_OUT - BOOM_IN) * clamp(controls.sheet ?? 0.5, 0, 1);
-      const boom = free >= 0 ? Math.min(free, limit) : Math.max(free, -limit);
+      boomGoal = free >= 0 ? Math.min(free, limit) : Math.max(free, -limit);
+      if (!Number.isFinite(boomAt)) boomAt = boomGoal;
+      const boom = boomAt;
       diag.boom = boom;
       diag.awSpeed = Math.hypot(ux, uz);
       diag.awAngle = Math.atan2(-ux, uz);
@@ -434,7 +455,7 @@ export function createShip(input) {
         const nx = dx / d, ny = dy / d, nz = dz / d;
         // how fast the bow is moving away from the anchor
         const out = -((vx + w1 * az - w2 * ay) * nx + (vy + w2 * ax - w0 * az) * ny + (vz + w0 * ay - w1 * ax) * nz);
-        const pull = Math.max(0, anchorK * over + anchorC * out);
+        const pull = Math.min(anchorMax, Math.max(0, anchorK * over + anchorC * out));
         apply(pull * nx, pull * ny, pull * nz, ax, ay, az);
       }
     }
@@ -491,6 +512,7 @@ export function createShip(input) {
     const p = state.position ?? [0, 0, 0];
     const v = state.velocity ?? [0, 0, 0];
     const w = state.spin ?? [0, 0, 0];
+    boomAt = Number.isFinite(state.boom) ? state.boom : NaN;
     Q[0] = q[0];
     Q[1] = q[1];
     Q[2] = q[2];
@@ -523,6 +545,7 @@ export function createShip(input) {
       spin: [W[0], W[1], W[2]],
       t,
       acc,
+      boom: boomAt,
     };
   }
 
@@ -570,6 +593,7 @@ export function createShip(input) {
       for (let i = 0; i < n; i++) {
         forces(t, c, water, wind);
         integrate(SUBSTEP);
+        boomAt += clamp(boomGoal - boomAt, -BOOM_RATE * SUBSTEP, BOOM_RATE * SUBSTEP);
         t += SUBSTEP;
       }
       return store(t, acc);

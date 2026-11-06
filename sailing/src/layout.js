@@ -11,9 +11,9 @@
 // template's context has.
 
 import { FIT, partGLB } from "./ship.js";
+import { ANCHOR, HELM, HOOK, LADDER, QUARTER, SAIL, SEA, SHIP, FLOAT } from "./traits.js";
 
-export const SEA = "sailing.sea";
-export const SHIP = "sailing.ship";
+export { SEA, SHIP };
 
 /** The wind a new sea starts with: a working breeze from the north-east (speed m/s, from degrees). */
 export const WIND = Object.freeze({ speed: 7, from: 45 });
@@ -24,6 +24,10 @@ export const WIND = Object.freeze({ speed: 7, from: 45 });
  */
 export const headTo = (from) => (-from * Math.PI) / 180;
 
+/** How far off the wind she starts (radians, the wind on her starboard beam), and how fast (m/s). */
+export const REACH = (85 * Math.PI) / 180;
+export const WAY = 3;
+
 /** A point in a frame turned by `yaw` about +Y (and moved to `at`), in the world. */
 export function turn([x, y, z], yaw, at = [0, 0, 0]) {
   const c = Math.cos(yaw);
@@ -31,27 +35,29 @@ export function turn([x, y, z], yaw, at = [0, 0, 0]) {
   return [at[0] + x * c + z * s, at[1] + y, at[2] - x * s + z * c];
 }
 
-// What goes aboard: the part, its name, and the traits that make it a station.
+// What goes aboard: the part, its name, and the traits that make it what it
+// is. You join her under way, as you join a ship in Sea of Thieves: on a
+// beam reach, the sail up and drawing, the anchor up. (Lying head to wind at
+// anchor, a one-sail boat takes minutes to fall off once the anchor's up;
+// a jib to back is what a sailor would use, and she has none yet.)
 const ABOARD = [
   { kind: "mast", name: "Mast" },
-  { kind: "rig", name: "Boom and sail", traits: { "sailing.sail": { raised: 1, sheet: 0.5 } } },
-  { kind: "wheel", name: "Wheel", traits: { "sailing.helm": { angle: 0 } } },
-  { kind: "windlass", name: "Windlass", traits: { "sailing.anchor": { down: true, rode: 0 } } },
-  { kind: "anchor", name: "Anchor" },
-  { kind: "ladder", name: "Ladder" },
+  { kind: "rig", name: "Boom and sail", traits: { [SAIL]: { raised: 1, sheet: 0.5 } } },
+  { kind: "wheel", name: "Wheel", traits: { [HELM]: { angle: 0 } } },
+  { kind: "windlass", name: "Windlass", traits: { [ANCHOR]: { down: false, rode: 0 } } },
+  { kind: "anchor", name: "Anchor", traits: { [HOOK]: {} } },
+  { kind: "ladder", name: "Ladder", traits: { [LADDER]: {} } },
 ];
 
 // Landmarks, in the ship's heading frame (ahead is −Z), so they're in view
 // from astern whichever way the wind put the bow: something to sail past and
 // to see you're moving.
 const LANDMARKS = [
-  { kind: "redBuoy", name: "Red buoy", at: [-14, 0, -48] },
-  { kind: "greenBuoy", name: "Green buoy", at: [18, 0, -70] },
+  { kind: "redBuoy", name: "Red buoy", at: [-14, 0, -48], traits: { [FLOAT]: {} } },
+  { kind: "greenBuoy", name: "Green buoy", at: [18, 0, -70], traits: { [FLOAT]: {} } },
   { kind: "islet", name: "Islet", at: [-45, 0, -160], yaw: 0.6 },
 ];
 
-// The home view: off the starboard quarter, about 20 m out, looking at the deck.
-const HOME = { position: [12, 6.5, 16], target: [0, 2.5, 0] };
 
 /** An object for the scene doc: a passthrough GLB. */
 export function partObject({ name, url, transform, parent = null, group = null, traits, locked = false, hint }) {
@@ -89,15 +95,18 @@ async function filePart(repo, kind) {
 /**
  * Lay out a sloop at anchor on open water in one change: the sea trait, the
  * hull (a ship by its trait, its spec left to be read from its box), its
- * parts attached under it, landmarks in a group, a home view from the
- * stern quarter, and the doc's starting activity set to play, so whoever
+ * parts attached under it, landmarks in a group, the editor's home view
+ * from the stern quarter, and the doc's starting activity set to play, so whoever
  * opens it (its maker too) is aboard, not in the editor.
  * @param {{ repo, change, newId }} ctx
  * @param {{ wind?: { speed, from }, seed?: number, at?: number[] }} [opts]
  * @returns {Promise<string>} the hull's id
  */
 export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.random() * 1e9), at = [0, 0, 0] } = {}) {
+  // the landmarks lie upwind, in the wind's frame; she sails across it
   const yaw = headTo(wind.from);
+  const course = yaw + REACH;
+  const ahead = [-Math.sin(course), 0, -Math.cos(course)];
   const files = {};
   for (const kind of ["hull", ...ABOARD.map((p) => p.kind), ...LANDMARKS.map((l) => l.kind)]) files[kind] = await filePart(ctx.repo, kind);
 
@@ -110,13 +119,14 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
     if (!d.view) d.view = {};
     d.traits[SEA] = { wind: { speed: wind.speed, from: wind.from }, seed, scale: 1 };
     d.view.activity = "play";
-    d.view.home = { position: turn(HOME.position, yaw, at), target: turn(HOME.target, yaw, at) };
+    // where the editor opens (play opens off her quarter wherever she has sailed to: crew.js)
+    d.view.home = { position: turn(QUARTER.position, course, at), target: turn(QUARTER.target, course, at) };
 
     d.objects[hull] = partObject({
       name: "Sloop",
       ...files.hull,
-      transform: { position: at, rotation: [0, yaw, 0] },
-      traits: { [SHIP]: {} },
+      transform: { position: at, rotation: [0, course, 0] },
+      traits: { [SHIP]: { motion: { velocity: ahead.map((v) => v * WAY), spin: [0, 0, 0] } } },
     });
     d.order.push(hull);
     for (const p of ABOARD) {
@@ -135,6 +145,7 @@ export async function layOutShip(ctx, { wind = WIND, seed = Math.floor(Math.rand
         transform: { position: turn(l.at, yaw, at), rotation: [0, yaw + (l.yaw ?? 0), 0] },
         group,
         locked: true,
+        traits: l.traits,
       });
       d.order.push(id);
     }

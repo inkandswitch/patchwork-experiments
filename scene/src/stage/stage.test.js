@@ -743,13 +743,14 @@ describe("another view's hold, played back", () => {
     const deck = api.worldOf("deck");
     expect([deck[12], deck[13], deck[14]].map((v) => +v.toFixed(6))).toEqual([1.1, 1, 0]);
     expect(x(api.scene().world("deck"))).toBe(0);
-    // the next is late: carry on for one interval, then hold
+    // the next is late: carry on for one interval, then ease back onto the
+    // last that came and hold it (the sender may simply have stopped)
     M.debug.tickPoses(1200);
     expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2.5);
     M.debug.tickPoses(1400);
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(3);
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2);
     M.debug.tickPoses(1500);
-    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(3);
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2);
     // a landed release shows where it landed at once, as before
     clockNow = 1600;
     h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "hull", parent: null, transform: null, landed: T(7), seq: ++seq } });

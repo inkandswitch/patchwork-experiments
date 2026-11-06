@@ -147,7 +147,9 @@ export function blendTransform(a, b, t) {
 /**
  * The pose a stream shows at time `t` (on the samples' clock): between the
  * samples either side of it; the first before them; past the last, carried
- * on along the last step for up to `ahead` ms, then held.
+ * on along the last step for up to `ahead` ms (a late packet), then eased
+ * back onto the last over as long again and held there: a stream that went
+ * quiet because the thing stopped (a drag paused) ends where it really is.
  * @param {{ at: number, transform: object }[]} samples  in order of `at`
  * @param {number} t
  * @param {{ ahead?: number }} [o]
@@ -169,8 +171,11 @@ export function poseAt(samples, t, { ahead = 0 } = {}) {
   }
   const prev = samples[n - 2];
   const span = last.at - prev.at;
-  const over = Math.min(t - last.at, Math.max(0, ahead));
-  const settled = t - last.at >= ahead;
+  const past = t - last.at;
+  const reach = Math.max(0, ahead);
+  const settled = past >= 2 * reach;
+  // out along the last step, then back: how far past the last it is shown
+  const over = past <= reach ? past : Math.max(0, 2 * reach - past);
   if (!(span > 0) || over <= 0) return { transform: last.transform, settled };
   return { transform: blendTransform(prev.transform, last.transform, 1 + over / span), settled };
 }
