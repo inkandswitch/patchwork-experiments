@@ -18,7 +18,8 @@
 // the test sets it false.
 //
 // Time is Date.now (vitest's fake timers), and each view's loops run when the
-// test ticks the world. A peer's held pose shows at once. scene() is a
+// test ticks the world. A peer's held pose shows at once (worldOf is what's
+// drawn: holds included). camera.ride is recorded in view.rides. scene() is a
 // snapshot like the stage's: { d, objects, ids, parents, traits, world(id),
 // toLocal(id, p) }, its matrices column-major, Euler XYZ.
 
@@ -225,6 +226,7 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       seenLocal: null,
       abort: new AbortController(),
       camera: null,
+      rides: [],
     };
     views.set(session, view);
     gone.delete(session);
@@ -306,7 +308,20 @@ export function fakeWorld(doc, { content = {}, repo = fakeRepo(), registries = {
       style() {},
       cursor() {},
       box: () => null,
-      camera: { set: (c) => (view.camera = c), object: { position: { x: 0, y: 1, z: 1 } } },
+      camera: {
+        set: (c) => (view.camera = c),
+        get: () => view.camera,
+        // rides asked for, the live ones in order (the stage applies the latest)
+        ride(id, opts) {
+          const r = { id, opts: opts ?? null };
+          view.rides.push(r);
+          return () => {
+            const i = view.rides.indexOf(r);
+            if (i >= 0) view.rides.splice(i, 1);
+          };
+        },
+        object: { position: { x: 0, y: 1, z: 1 } },
+      },
       pose: {
         hold(id, transform) {
           holds.set(id, { session, transform: structuredClone(transform), at: Date.now() });

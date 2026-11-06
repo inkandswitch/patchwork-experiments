@@ -32,7 +32,7 @@ pnpm install && pnpm build && pnpm test
 | `tabletop:game` | `santorini`, `lost-cities` | games an empty tabletop-game can start from |
 | `scene:template` | `tabletop.lost-cities`, `tabletop.santorini` | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
 | `scene:extension` | `tabletop` | what makes a scene a table: seats, private zones, hidden cards and their decks, shuffling, dice (Tables, below) |
-| `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.die` | the editor's parts bin, under "Tabletop" (Parts and dice, below) |
+| `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.die`, `tabletop.table`, `tabletop.lost-cities` | the editor's parts bin, under "Tabletop" (Parts and dice, below) |
 | `patchwork:datatype` | `plain-deck` | a deck anyone can read (unlisted: a table makes it) |
 
 Other packages add kinds of deck as **`tabletop:deck`** plugins (card-table's
@@ -111,7 +111,7 @@ package installed shows a table's cards as their backs and nothing else.
 
 | trait | on | |
 |---|---|---|
-| `tabletop.seats` | the scene | `{ [seatId]: { name, player: <contact url> \| null, camera?: { position, target } } }` |
+| `tabletop.seats` | the scene | `{ [seatId]: { name, player: <contact url> \| null, camera?: { position, target, in? } } }`. `in`: an object id, the frame the camera is given in (a table aboard a ship); absent, the world |
 | `tabletop.zone` | an object | `{ seat, min: [x,y,z], max: [x,y,z] }`: a seat's private area, a box in the object's own frame |
 | `tabletop.hidden` | an object | `{ by: <deck url> }`: what it really is comes from that deck |
 | `tabletop.die` | an object | `{ faces?: { "+y": n, … } }`: a die; gives it Roll (R) in play (Rolling, below) |
@@ -134,9 +134,19 @@ arrives, so you see what you drew, and back over if you carry it out again
 and is never written back.
 
 **The seat picker**, at the top right of the table: pick your seat (or
-watch; a seat with a `camera` moves your view there). What each deck is doing
-shows as a line in the scene's notices, at the top left. A name tag over each
-hand tray says whose seat it is: "Player 1 · Ana", "Player 1 · Ana (away)",
+watch; a seat with a `camera` moves your view there). A seat camera `in` an
+object is put through that object as it's drawn now, and then rides it
+(the stage's `camera.ride`), so a table aboard a ship stays in front of you
+as she swings and bobs (her roll and pitch aren't followed: the view keeps
+the world's up, and the table heels in it). In first person (walking her
+deck) the walker has the camera: your seat's view waits until you stop, and
+whenever you stop walking while seated you're put back in your seat. A
+seat whose camera is `in` an object that's gone (its table deleted) leaves
+your view where it is, and a game's table laid down later in a scene whose
+seats look at a table that's gone gives those seats its own views. Shuffle
+and Draw aren't offered in first person (S and D walk); play from your seat. What each deck is doing
+shows as a line in the scene's notices, at the top left. A name tag on each
+hand tray, at the edge nearest its seat, on the tray's surface, says whose seat it is: "Player 1 · Ana", "Player 1 · Ana (away)",
 "Player 2 · free".
 
 Sitting writes you into the seat (`tabletop.seats[id].player`, which is all
@@ -182,7 +192,12 @@ takes cards out on the table: a card in someone's hand stays theirs even
 where a pile overlaps it. If a peer takes hold of the top card
 first, yours lets go and takes the card under it (once; then "Someone drew
 that one"). A seat whose hand has no card slots doesn't offer it: carry
-cards there instead. `probes/draw.mjs` checks it at a secure table.
+cards there instead. A card attached to something (a table aboard a ship)
+glides in that thing's frame and lands square to the tray, worked out from
+the doc, so every peer agrees whatever the ship is doing. Carried into your
+tray by hand, it turns face up against the tray as you see it (drawn), not
+where the doc last saved the ship. `probes/draw.mjs` checks it at a secure
+table.
 
 **Telling the others.** When someone shuffles, sits down, draws or rolls, everyone else
 gets a notice ("Player 1 shuffled the deck (44)"), sent with the scene's
@@ -265,7 +280,13 @@ Call `onChange` when `looks()` or `status()` changes. A deck with
 `placement` can be dropped (or pasted) onto any scene that isn't already
 showing it: its cards are laid out face down, tagged `"card"`, in a group
 named for it, stacked where it was dropped, or squared onto the nearest card
-slot of what it was dropped on, if one is within reach. Never in a hand: a
+slot of what it was dropped on, if one is within reach. It goes into the
+frame of what it was dropped on: that object, if anything is attached to it
+(a table, a hull), else whatever that object is attached to (a board on a
+table: onto the table), else the root, so a deck dropped at a table aboard a
+ship rides with her and one dropped at a table on the floor stays at the
+root, where it is seen. Never in a hand (the hands as they're drawn, as the
+drop point is: aboard a moving ship the doc's are elsewhere): a
 slot in a seat's private zone is passed over, and a deck dropped into one is
 refused ("Drop the deck on the table, not in a hand"), since every card in
 it would be that seat's to see.
@@ -402,13 +423,31 @@ The editor's parts bin has a **Tabletop** heading (`src/table/parts.js`):
   cards, and Draw doesn't count it.
 - **Die**: a d6, with the trait `tabletop.die` (Rolling, above). A scene with
   only a die in it is a table too, and offers play.
+- **Card table**: a table to play at, 0.76 × 1.20 m, its top 0.70 m up on a
+  pedestal, origin on the floor under its middle. Locked (nobody carries the
+  table about in play), with one connector at the middle of its top tagged
+  `"tabletop.game"`, which a game takes.
+- **Lost Cities**: the whole game's table (the template's layout,
+  `layOutTable`), set down on what it was put on: every piece under that
+  object in its frame (on a Card table: squarely in the middle of the top),
+  each seat's camera `in` it, a secure deck where card-table is installed.
+  It brings seats only to a scene that has none, and leaves the scene's
+  view, home, units and title alone. So a game aboard a ship is three steps:
+  start from *Ship at anchor* (sailing), drop a Card table in her cockpit,
+  drop Lost Cities on the table; everything rides with her.
+
+The Card table and Lost Cities square themselves to what they're put on:
+upright in its frame, turned only about its +Y (on a heeling deck they stand
+square to the deck, not plumb).
 
 Each is filed once per scene with `ctx.file` (`src/table/files.js`, shared
 with the templates) under `tabletop/<kind>@1`
 (`pawn`, `token`, `card-spot`, `d6`): ten pawns share one GLB. A part goes
 where the bin puts it, under what it was dropped on (and in that one's
-group), unlocked; if what it was dropped on goes while its file is made, it
-puts nothing. Parts never make or change seats.
+group), unlocked (the Card table locked); if what it was dropped on goes
+while its file is made, it puts nothing. The pieces never make or change
+seats; a game (Lost Cities) is the one part that does, and only where there
+are none.
 
 ## Layout
 
@@ -421,13 +460,14 @@ puts nothing. Parts never make or change seats.
 | `src/glyphs.js` | numbers made of boxes, for card faces |
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
-| `src/setup.js` | the one table writer: a game → a layout and its decks (shuffle, deal, stack; pure), and writing it into a scene doc |
+| `src/setup.js` | the one table writer: a game → a layout and its decks (shuffle, deal, stack; pure), set down on something (`placeLayout`), and writing it into a scene doc |
 | `src/table/template.js` | the Lost Cities and Santorini templates: the game's table in an empty scene, its art by `ctx.file` |
 | `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file`, and the file for a key |
 | `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, Draw, Roll, telling the others, laying out a dropped deck, drawing face up |
 | `src/table/visibility.js` | who may see what: zones, seats, face up (pure) |
 | `src/table/plain-deck.js` | the plain deck: its datatype and resolver |
-| `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, die (their art, and putting one in) |
+| `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, die, card table (their art, and putting one in), and Lost Cities as a part |
+| `src/table/frame.js` | 4 × 4 matrices for a table that sits on something (copied from the scene's transform.js) |
 | `src/table/dice.js` | dice: which side is up, and a roll worked out from its seed (pure) |
 | `src/table/slots.js` | card slots: which connectors take a card, in the world (the hand's rule, copied; pure) |
 | `probes/seats.mjs`, `probes/seats-probe.html` | two views at a Lost Cities table in headless Chrome: a present player's seat refused, an away one taken after a confirm (`cdp.mjs`, `fake-repo.js` and the stubs are copied from sailing's probes) |

@@ -44,9 +44,14 @@
 //   say nothing about which card it is.
 // - The scene opens in play, in the hand, with snapping on and the grid and
 //   axes off; the table extension's seat picker sits over the table.
+// - Set down on something (placeLayout: a Card table aboard a ship), every
+//   piece goes under that object in its frame, and each seat's camera says
+//   so (`camera.in`); the scene's view is left alone (writeTable's `view`).
 //   (A game with no seats, zones or hidden cards, such as Santorini, gives
 //   the table extension nothing to run on, so there is no play to open in
 //   yet and it opens in the editor, in the hand.)
+
+import { apply, composeMatrix, decompose, multiply } from "./table/frame.js";
 
 /** Where the i-th copy of a piece starts: a grid of `cols` from `at`, `gap` apart. [x, 0, z] */
 export function supplySpot(supply, i) {
@@ -279,6 +284,48 @@ export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = 
   };
 }
 
+/**
+ * A layout set down on something: the same table, every piece placed in the
+ * frame of `parent` (an object id) at `transform` there, rather than at the
+ * scene's root. Each piece the layout puts at the root goes under `parent`,
+ * its transform composed with `transform`; each seat's camera is moved the
+ * same way and says it's in `parent`'s frame (`camera.in`), so a seat's view
+ * goes where the table goes (a table aboard a ship). Pure: a new layout.
+ * @param {ReturnType<typeof tableLayout>} layout
+ * @param {{ parent?: string | null, transform?: { position?, rotation?, scale? } | null }} [at]
+ */
+export function placeLayout(layout, { parent = null, transform = null } = {}) {
+  const t = { position: [0, 0, 0], rotation: [0, 0, 0], scale: 1, ...(transform ?? {}) };
+  const plain = t.rotation.every((v) => !Number(v)) && (Number(t.scale) || 1) === 1;
+  // a turn or a scale: whole matrices; a plain shift: just added, so the numbers stay as they were
+  const M = plain ? null : composeMatrix(t);
+  const shift = (p) => p.map((v, i) => +(Number(v) + Number(t.position[i] ?? 0)).toFixed(6));
+  const place = (tr) => (plain ? { ...tr, position: shift(tr.position ?? [0, 0, 0]) } : decompose(multiply(M, composeMatrix(tr))));
+  const point = (p) => (plain ? shift(p) : apply(M, p).map((v) => +v.toFixed(6)));
+  const objects = {};
+  for (const [oid, o] of Object.entries(layout.objects)) {
+    const c = JSON.parse(JSON.stringify(o));
+    if (c.kind !== "group" && (c.parent ?? null) === null) {
+      c.parent = parent;
+      c.transform = place(c.transform ?? {});
+    }
+    objects[oid] = c;
+  }
+  const seats = {};
+  for (const [sid, s] of Object.entries(layout.seats ?? {})) {
+    const c = JSON.parse(JSON.stringify(s));
+    if (c.camera) {
+      c.camera = { ...c.camera, position: point(c.camera.position), target: point(c.camera.target ?? [0, 0, 0]) };
+      if (parent) c.camera.in = parent;
+      else delete c.camera.in;
+    }
+    seats[sid] = c;
+  }
+  const home = layout.view?.home;
+  const view = { ...layout.view, ...(home ? { home: { ...home, position: point(home.position), target: point(home.target ?? [0, 0, 0]) } } : {}) };
+  return { ...layout, objects, seats, view };
+}
+
 /** The deck a hidden object names before its doc exists (`deck:<id>`), or null. */
 const deckRef = (o) => {
   const by = o?.traits?.["tabletop.hidden"]?.by;
@@ -288,13 +335,17 @@ const deckRef = (o) => {
 /**
  * Write a layout into a scene doc (inside a change, or onto a plain skeleton):
  * its objects and their order, each hidden card naming its deck's url; the
- * seats, only if the scene has none; and the view. Throws, writing nothing,
- * if a deck has no url.
+ * seats, only if the scene has none (a seat there whose view is in an
+ * object that's gone takes this layout's view); and the view (not with `view: false`:
+ * a table set down in a scene that's already somewhere, such as aboard a
+ * ship, leaves that scene's view, home and units as they are). Throws,
+ * writing nothing, if a deck has no url.
  * @param {object} d  the scene doc (a draft)
  * @param {ReturnType<typeof tableLayout>} layout
  * @param {{ [deckId]: string }} deckUrls  each deck's doc, made already
+ * @param {{ view?: boolean }} [o]
  */
-export function writeTable(d, layout, deckUrls = {}) {
+export function writeTable(d, layout, deckUrls = {}, { view = true } = {}) {
   for (const o of Object.values(layout.objects)) {
     const deckId = deckRef(o);
     if (deckId != null && !deckUrls[deckId]) throw new Error(`no doc for deck “${deckId}”`);
@@ -310,6 +361,16 @@ export function writeTable(d, layout, deckUrls = {}) {
   }
   if (!d.traits) d.traits = {};
   if (Object.keys(layout.seats ?? {}).length && !d.traits["tabletop.seats"]) d.traits["tabletop.seats"] = JSON.parse(JSON.stringify(layout.seats));
+  else if (d.traits["tabletop.seats"]) {
+    // seats there already: one whose view is in a frame that's gone (the table it was at,
+    // deleted) takes this layout's view for it, so it looks at this table
+    for (const [sid, s] of Object.entries(d.traits["tabletop.seats"])) {
+      const frame = s?.camera?.in;
+      const fresh = layout.seats?.[sid]?.camera;
+      if (frame && !d.objects[frame] && fresh) s.camera = JSON.parse(JSON.stringify(fresh));
+    }
+  }
+  if (!view) return;
   if (!d.view) d.view = {};
   for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
 }

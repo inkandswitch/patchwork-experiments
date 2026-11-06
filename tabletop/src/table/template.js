@@ -25,7 +25,7 @@
 
 import { glbKey } from "../pieces.js";
 import { fileFor, glbFile } from "./files.js";
-import { kindsUsed, tableLayout, writeTable } from "../setup.js";
+import { kindsUsed, placeLayout, tableLayout, writeTable } from "../setup.js";
 import { deckProviderFor } from "./extension.js";
 import * as lostCitiesGame from "../games/lost-cities.js";
 import * as santoriniGame from "../games/santorini.js";
@@ -47,13 +47,19 @@ export function fnv(text) {
 export const gameFileKey = (gameId, kind, piece) => `tabletop/${gameId}/${kind}@${fnv(glbKey(piece))}`;
 
 /**
- * Lay a game's table out in the scene the drop context is for.
+ * Lay a game's table out in the scene the drop context is for: at the root,
+ * as a template does, or set down on something (`parent`, at `transform` in
+ * its frame: the games' parts, parts.js), every piece under it and each
+ * seat's view in its frame (setup.js placeLayout). `view: false` leaves the
+ * scene's view and title alone, for a table put into a scene that's already
+ * something else (a ship).
  * @param {object} ctx      the stage's drop context (STAGE.md, "Drops")
  * @param {string} gameId   for the files' keys
  * @param {{ fill(d) }} game  the game's module
- * @param {{ rng?: () => number }} [o]
+ * @param {{ rng?: () => number, parent?: string | null, transform?: object | null, view?: boolean }} [o]
+ * @returns {Promise<object | null>} the layout written (null when its parent went meanwhile)
  */
-export async function layOutTable(ctx, gameId, game, { rng = Math.random } = {}) {
+export async function layOutTable(ctx, gameId, game, { rng = Math.random, parent = null, transform = null, view = true } = {}) {
   const g = {};
   game.fill(g);
 
@@ -70,19 +76,28 @@ export async function layOutTable(ctx, gameId, game, { rng = Math.random } = {})
     secure = typeof ctx.registry === "function" && !!(await deckProviderFor(ctx.registry, SECURE_DECK).catch(() => null));
   }
 
-  const layout = tableLayout(g, { fileOf: (kind) => files[kind] ?? null, newId: ctx.newId, rng, secure });
+  const flat = tableLayout(g, { fileOf: (kind) => files[kind] ?? null, newId: ctx.newId, rng, secure });
+  const layout = parent || transform ? placeLayout(flat, { parent, transform }) : flat;
   const current = ctx.doc?.()?.title;
-  const named = !current || current === UNTITLED;
-  const title = named ? `${g.title || "Game"} table` : current;
+  const named = view && (!current || current === UNTITLED);
+  const title = named ? `${g.title || "Game"} table` : current || `${g.title || "Game"} table`;
 
   // the decks first, so the scene never names one that isn't there
   const urls = {};
   for (const [deckId, deck] of Object.entries(layout.decks)) urls[deckId] = (await ctx.repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
 
+  let put = false;
   ctx.change((d) => {
-    writeTable(d, layout, urls);
+    // set down on something that went while the files were made: nothing
+    if (parent && !d.objects?.[parent]) return;
+    writeTable(d, layout, urls, { view });
     if (named) d.title = title;
+    put = true;
   });
+  if (!put) {
+    ctx.notify?.("What that was put on has gone.");
+    return null;
+  }
 
   if (!secure) ctx.notify?.("No secure deck is installed here, so this table's deck is a plain one: anyone who opens the deck can read every hand.", "warn");
   if (Object.keys(layout.seats).length) ctx.notify?.("Pick a seat (top right) to play.", "info");
