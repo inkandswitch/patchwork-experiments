@@ -362,6 +362,7 @@ export function sceneDoc(p, built, { unit, infoUrl = null, infoToolId = null, ti
     objects,
     order,
     dimensions: {},
+    assets: {},
     // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
     traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
     view: {

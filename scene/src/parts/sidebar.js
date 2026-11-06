@@ -9,7 +9,8 @@
 // returns gets update(scene, local) every flush and dispose() when its
 // extension stops (or hands out a different panel under the same id). A panel
 // that has nothing to show hides itself by setting its body's `hidden`; the
-// sidebar then hides the whole section, title and all.
+// sidebar then hides the whole section, title and all, at once (it watches
+// the attribute), not only on the next flush.
 //
 // "Panel" (P) shows and hides the whole sidebar, per viewer (the pref
 // `scene.sidebar.hidden`, never the doc).
@@ -99,10 +100,25 @@ function create(api) {
     } catch (err) {
       console.warn(`[scene] panel “${panel.id}” (${ext}) failed to mount`, err);
     }
-    return { ext, panel, section, body, title, view };
+    // A body hidden or shown between flushes (a panel whose content arrives
+    // on its own: the parts bin's registry) shows or hides its section then.
+    const watch = typeof MutationObserver === "function" ? new MutationObserver(() => shown()) : null;
+    watch?.observe(body, { attributes: true, attributeFilter: ["hidden"] });
+    return { ext, panel, section, body, title, view, watch };
+  }
+
+  /** Each section shown as its body is; the sidebar only while one is. */
+  function shown() {
+    for (const entry of mounted.values()) {
+      const off = !!entry.body.hidden;
+      if (entry.section.hidden !== off) entry.section.hidden = off;
+    }
+    const any = [...mounted.values()].some((e) => !e.section.hidden);
+    if (aside.hidden !== !any) aside.hidden = !any;
   }
 
   function unmount(entry) {
+    entry.watch?.disconnect();
     try {
       entry.view?.dispose?.();
     } catch (err) {
@@ -159,11 +175,8 @@ function create(api) {
       } catch (err) {
         console.warn(`[scene] panel “${entry.panel.id}” (${entry.ext}) failed to update`, err);
       }
-      const off = !!entry.body.hidden;
-      if (entry.section.hidden !== off) entry.section.hidden = off;
     }
-    const any = [...mounted.values()].some((e) => !e.section.hidden);
-    if (aside.hidden !== !any) aside.hidden = !any;
+    shown();
   }
 
   return {

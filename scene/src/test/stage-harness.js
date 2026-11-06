@@ -9,8 +9,9 @@
 // metadata (without load), module what its load() resolves to. They are
 // registered in that order, which is the order the general ones run in. An
 // extension that declares no traits runs in every scene. The scene's own
-// datatypes and sources are registered too, and `templates` are
-// [{ meta, module }] for scene:template plugins.
+// datatypes and sources are registered too, `templates` are
+// [{ meta, module }] for scene:template plugins and `parts` the same for
+// scene:part plugins.
 //
 // To see something stop when this viewer switches activity, give it
 // `activities: ["edit"]`, mount PLAY alongside (it offers "play") and call
@@ -53,9 +54,9 @@ export const object = (extra = {}) => ({
 });
 
 /**
- * @param {{ extensions?: { meta: object, module: object }[], templates?: { meta: object, module: object }[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string }} o
+ * @param {{ extensions?: { meta: object, module: object }[], templates?: { meta: object, module: object }[], parts?: { meta: object, module: object }[], doc?: object, repo?: FakeRepo, handle?: object, viewerId?: string }} o
  */
-export async function mountStage({ extensions = [], templates = [], doc = {}, repo, handle, viewerId } = {}) {
+export async function mountStage({ extensions = [], templates = [], parts = [], doc = {}, repo, handle, viewerId } = {}) {
   repo ??= new FakeRepo();
   if (!handle) {
     resetRegistries();
@@ -63,6 +64,7 @@ export async function mountStage({ extensions = [], templates = [], doc = {}, re
     for (const p of plugins) if (p.type === "scene:source" || p.type === "patchwork:datatype") getRegistry(p.type).register(p);
     for (const { meta, module } of extensions) getRegistry("scene:extension").register({ type: "scene:extension", name: meta.id, ...meta, load: async () => module });
     for (const { meta, module } of templates) getRegistry("scene:template").register({ type: "scene:template", name: meta.id, ...meta, load: async () => module });
+    for (const { meta, module } of parts) getRegistry("scene:part").register({ type: "scene:part", name: meta.id, ...meta, load: async () => module });
     const { SceneDatatype } = await import("../datatype.js");
     const init = {};
     SceneDatatype.init(init);

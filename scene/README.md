@@ -37,7 +37,7 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (23) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
+| `scene:extension` | `scene.*` (24) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
 All but two of the editor's parts take part only in the `"edit"` activity;
 the key map (`scene.keys`) and notices serve every activity. `scene.activity`
@@ -216,6 +216,10 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
 
 { type: "scene:template", id: "arena-level", name: "Arena level", icon?, description?,
   async load() { return { create(ctx) } } }                           // lays out an empty scene
+
+{ type: "scene:part", id: "sailing.mast", name: "Mast and sail", icon?, category?, description?,
+  tags?: ["mast"], traits?: ["sailing.sail"],
+  async load() { return { create(ctx, at) } } }                       // puts something in, from the parts bin
 ```
 
 - **What runs** is a function of the registry, the doc and this viewer's
@@ -238,6 +242,13 @@ knowing what it means. [STAGE.md](STAGE.md) is the full contract. In short:
   dimension's `"dimension:<id>"`, or null for the scene).
   Surfaces (toolbar, inspector, menu, key map) show and run them; the
   extension that owns a verb doesn't know which surfaces exist.
+- **Parts** (`scene:part`) are what the editor's parts bin (`scene.parts`)
+  offers: drag one into the view and it lands where the pointer hits, under
+  the object it was dropped on (snapped to a connector that takes it, by the
+  hand's rule); click one to put it where you're looking. `create(ctx, at)`
+  gets the place in its parent's frame and in the world (`at.world`), and
+  `ctx.file(key, make)` gives the scene one file
+  doc per key, so ten buoys share one GLB.
 - **Everything acquired through `api`** (layers, overlays, listeners,
   loops, pose holds, presence keys) is the extension's, and goes when it
   stops.
@@ -547,6 +558,7 @@ It is tested by round-tripping through three's `GLTFLoader` (`src/glb.test.js`).
           activity?: string,                               // the activity a viewer starts in (absent = "edit")
           home?: { position, target, fov? } },             // where a viewer with no saved camera starts
   traits: { [key: string]: any },   // extensions' data on the scene itself
+  assets: { [key: string]: { url: AutomergeUrl, hint?: Object["hint"] } },  // the scene's own file docs (ctx.file: STAGE.md, "Parts")
   materialRules?: MaterialRule[]
 }
 Object = {
@@ -595,8 +607,8 @@ MaterialRule = {
 - **Only this shape is read.** Nothing upgrades a scene written in an
   older one (groups with transforms, `view.defaultGizmo` or
   `view.defaultMode`, a top-level `camera`), and extensions read only their
-  traits: such a scene is replaced, not read. `traits`, `view` and
-  `dimensions` are made with the doc (STAGE.md, "Shared maps").
+  traits: such a scene is replaced, not read. `traits`, `view`,
+  `dimensions` and `assets` are made with the doc (STAGE.md, "Shared maps").
 - `hint` is written by importers: `bounds` (metres, in the GLB's own frame)
   is drawn as a placeholder until the GLB loads and decides load order (bigger
   first, the selected object before everything).
@@ -687,7 +699,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `parts` (the parts bin; where a part lands is `parts-place.js`), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |
@@ -707,7 +719,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/hand.js` | the hand's pure parts: connectors (rotation, tags), default radius, nearest snap, footprint samples, resting height |
 | `src/handles.js` | handles: a provider's params dragged in place (which ones, where, the pointer → a value) |
 | `src/tree-drop.js` | where a drag lands in the outline: which band of a row means inside vs beside, and what parent and sibling that comes to |
-| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand, and a scene extension of the page's own; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
+| `probes/` | browser probes, each a page that mounts the BUILT tool against an in-memory repo plus a runner that drives it in headless Chrome over CDP with a real mouse and keyboard (`cdp.mjs` is what they share): `editor-probe.html` + `editor-run.mjs` the editor between two peers; `hand-probe.html` + `hand-run.mjs` carry pieces with the hand, and a scene extension of the page's own; `drag-probe.html` + `drag-run.mjs` drags into and within the outline; `parts-probe.html` + `parts-run.mjs` drags parts from the bin into the view; `solander-probe.html` + `solander-run.mjs` load a 507-object imported scene of real GLBs and measure it; `make-example-scene.mjs` writes `solander-scene.example.json`, a portable stand-in for the importer's scene; `publish-example-scene.mjs` uploads it to a real sync server; `publish-showcase-scene.mjs` makes the geometry showcase (implicit, OpenSCAD, flow-field and Camber sources, their render docs, and a scene in the stage's shape) and publishes it, or with `--dry-run [--out file]` checks it and writes every doc as JSON without touching the network |
 
 ### The editor probe
 

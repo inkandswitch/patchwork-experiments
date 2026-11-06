@@ -48,7 +48,7 @@ import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
-import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
+import { applyMatrix, composeMatrix, decomposeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
@@ -1347,6 +1347,7 @@ export default function Stage(handle, element) {
     if (dead) throw new Error("The scene was closed.");
     const id = newId("o");
     const transform = opts.transform ? normalizeTransform(opts.transform) : IDENTITY();
+    const hint = opts.hint && typeof opts.hint === "object" ? JSON.parse(JSON.stringify(opts.hint)) : null;
     handle.change((d) => {
       if (!d.objects) d.objects = {};
       if (!d.order) d.order = [];
@@ -1367,6 +1368,8 @@ export default function Stage(handle, element) {
         wireframe: false,
         transform: { position: [...transform.position], rotation: [...transform.rotation], scale: transform.scale },
       };
+      // what the file's maker said about it (ctx.file's hint): a placeholder box until it loads
+      if (hint) d.objects[id].hint = hint;
       // A URL with heads names a version: show that one. (A passthrough
       // object is shown straight from its file, so it has nothing to fix.)
       if (heads?.length && renderHandle) d.objects[id].at = { heads: [...heads] };
@@ -1435,7 +1438,60 @@ export default function Stage(handle, element) {
     return out;
   }
 
-  /** What a drop handler gets (STAGE.md, "Drops"): reads and writes, nothing to acquire. */
+  // ctx.file: the files being made here now, by key, so two drops at once
+  // make one
+  const filesMaking = new Map();
+
+  /**
+   * The scene's own file doc for `key` (STAGE.md, "Parts"): the one
+   * doc.assets[key] names, else one made now from make() and remembered
+   * there. Ten buoys share one GLB. Two peers making the same key at once
+   * each write theirs if the key is still empty; the merge keeps one in
+   * `assets`, and what each made keeps the file it made (two docs for one
+   * key, both shown alike; later drops all use the one `assets` kept).
+   * @param {string} key  namespaced and versioned: "sailing/mast@1"
+   * @param {() => { name, bytes, extension, mimeType, hint? } | Promise<…>} make
+   * @returns {Promise<{ url: string, hint: object | null }>}
+   */
+  async function sceneFile(key, make) {
+    if (typeof key !== "string" || !key) throw new Error("A file needs a key.");
+    const known = () => {
+      const a = doc().assets?.[key];
+      // fresh copies: automerge won't take a value that is already in a document
+      return typeof a?.url === "string" ? { url: a.url, hint: a.hint ? JSON.parse(JSON.stringify(a.hint)) : null } : null;
+    };
+    const have = known();
+    if (have) return have;
+    if (filesMaking.has(key)) return filesMaking.get(key);
+    const making = (async () => {
+      const f = await make();
+      if (!f?.bytes) throw new Error(`Nothing to make “${key}” from.`);
+      const file = await repo.create2({
+        "@patchwork": { type: "file" },
+        name: String(f.name ?? key),
+        extension: String(f.extension ?? ""),
+        mimeType: String(f.mimeType ?? "application/octet-stream"),
+        content: f.bytes,
+      });
+      if (dead) throw new Error("The scene was closed.");
+      const hint = f.hint ? JSON.parse(JSON.stringify(f.hint)) : null;
+      handle.change((d) => {
+        // made with the doc (datatype.js); a scene from before `assets` makes it here, and if
+        // two peers race at that, one's key is lost and that kind gets one more file next time
+        if (!d.assets) d.assets = {};
+        if (!d.assets[key]?.url) d.assets[key] = hint ? { url: file.url, hint } : { url: file.url };
+      });
+      return known() ?? { url: file.url, hint };
+    })();
+    filesMaking.set(key, making);
+    try {
+      return await making;
+    } finally {
+      filesMaking.delete(key);
+    }
+  }
+
+  /** What a drop handler, a template or a part gets (STAGE.md, "Drops"): reads and writes, nothing to acquire. */
   function makeDropContext(id) {
     return Object.freeze({
       id,
@@ -1448,10 +1504,57 @@ export default function Stage(handle, element) {
       change,
       newId,
       addObject,
+      file: sceneFile,
+      // read-only: a part squaring itself to what it's dropped on reads that
+      // object's GLB extras (a hull's stated bow)
+      content: (oid) => viewport.contentOf(oid),
       registry: getRegistry,
       local: Object.freeze({ get: local.get, swap: local.swap }),
       notify: (text, kind) => notify(text, kind, id),
     });
+  }
+
+  /**
+   * Put a part into the scene (STAGE.md, "Parts"): load the scene:part and
+   * run its create(ctx, at) with a drop context. `at` is { parent, transform },
+   * the transform in the parent's frame (world when parent is null); a parent
+   * that isn't there (or is a group) means the scene root, transform as given.
+   * The part gets `world` beside them, the same place in the world, for a
+   * part that would rather not ride along with what it was put on.
+   * What create returns is selected. Its id, or null.
+   * @param {string} partId
+   * @param {{ parent?: string | null, transform?: object } | null} [at]
+   * @returns {Promise<string | null>}
+   */
+  async function applyPart(partId, at = null) {
+    const reg = await getRegistry("scene:part");
+    if (dead || !reg) return null;
+    let mod;
+    try {
+      const loaded = await reg.load(partId);
+      mod = loaded?.module?.default ?? loaded?.module;
+    } catch (err) {
+      notify(`Couldn't load that part: ${err?.message ?? err}`, "error");
+      return null;
+    }
+    if (dead || typeof mod?.create !== "function") return null;
+    const objects = doc().objects ?? {};
+    const parent = typeof at?.parent === "string" && objects[at.parent] && !isGroup(objects[at.parent]) ? at.parent : null;
+    const transform = normalizeTransform(at?.transform);
+    const parentWorld = parent ? displayedWorld(parent) : null;
+    const world = parentWorld ? normalizeTransform(decomposeMatrix(multiplyMatrices(parentWorld, composeMatrix(transform)))) : transform;
+    const place = Object.freeze({ parent, transform, world });
+    let made;
+    try {
+      made = await mod.create(makeDropContext(partId), place);
+    } catch (err) {
+      notify(`That part failed: ${err?.message ?? err}`, "error");
+      return null;
+    }
+    if (dead) return null;
+    const id = typeof made === "string" && doc().objects?.[made] ? made : null;
+    if (id) local.swap((m) => (m.selected === id ? m : { ...m, selected: id }));
+    return id;
   }
 
   /**
@@ -1608,6 +1711,7 @@ export default function Stage(handle, element) {
       fixPoint,
       drop: (info) => host.drop(info),
       template: (templateId) => applyTemplate(templateId),
+      part: (partId, at) => applyPart(partId, at),
 
       // picking and camera
       pick: (x, y, opts) => viewport.pick(x, y, opts),

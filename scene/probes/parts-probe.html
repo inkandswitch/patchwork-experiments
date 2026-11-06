@@ -1,0 +1,104 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>scene parts probe</title>
+<!-- Driven by probes/parts-run.mjs: the BUILT scene tool (dist/), editing one
+     doc, with two scene:part plugins registered here (STAGE.md, "Parts"): a
+     crate (no tags) and a mast (tags ["mast"]), each one GLB made once per
+     scene through ctx.file and put where the bin says with addObject. The
+     scene has a hull (turned a quarter about Y, off the origin) whose GLB
+     has one connector tagged "mast", and nothing else, so drops elsewhere
+     land on the ground. The runner drags parts out of the bin with a real
+     mouse over CDP. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; }
+  #a { width: 1100px; height: 700px; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "../src/test/fake-repo.js";
+import { encodeGLB } from "../src/glb.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+
+try {
+  const { plugins } = await import("../dist/index.js");
+  for (const p of plugins) getRegistry(p.type).register(p);
+  const repo = new FakeRepo();
+  const box = (w, h, d, color, at = [0, 0, 0]) => {
+    const [x, y, z] = at, a = w / 2, c = d / 2;
+    const v = [[x-a,y,z-c],[x+a,y,z-c],[x+a,y,z+c],[x-a,y,z+c],[x-a,y+h,z-c],[x+a,y+h,z-c],[x+a,y+h,z+c],[x-a,y+h,z+c]];
+    const f = [[0,1,2],[0,2,3],[4,6,5],[4,7,6],[0,4,5],[0,5,1],[1,5,6],[1,6,2],[2,6,7],[2,7,3],[3,7,4],[3,4,0]];
+    return { positions: f.flat().flatMap((i) => v[i]), color };
+  };
+  // the hull: 0.8 wide, 0.4 high, 3 long (along its own Z); a mast step on deck, 0.6 forward of centre, 1.5 of reach (the bin's rule is the hand's)
+  const MAST_STEP = [0, 0.4, -0.6];
+  const hullGLB = repo.add({ "@patchwork": { type: "file" }, name: "hull.glb", extension: "glb", mimeType: "model/gltf-binary",
+    content: encodeGLB({ meshes: [box(0.8, 0.4, 3, "#c9b48a")], extras: { connectors: [{ position: MAST_STEP, tags: ["mast"] }], snapRadius: 1.5 } }) });
+  const hull = { name: "Hull", sourceUrl: hullGLB.url, providerId: "file-glb", renderUrl: null, parent: null, group: null, visible: true, color: null, opacity: 1, wireframe: false,
+    transform: { position: [0.3, 0, -0.2], rotation: [0, Math.PI / 2, 0], scale: 1 } };
+
+  // two parts, as a package would contribute them
+  const made = { crate: 0, mast: 0 };
+  const part = (kind, name, glb) => ({
+    async create(ctx, at) {
+      const file = await ctx.file(`probe/${kind}@1`, () => {
+        made[kind]++;
+        return { name: `${kind}.glb`, bytes: encodeGLB({ meshes: [glb] }), extension: "glb", mimeType: "model/gltf-binary", hint: { bounds: { min: [-0.1, 0, -0.1], max: [0.1, 0.2, 0.1] } } };
+      });
+      return ctx.addObject(file.url, { providerId: "file-glb", name, parent: at.parent, transform: at.transform, hint: file.hint });
+    },
+  });
+  const crate = part("crate", "Crate", box(0.2, 0.2, 0.2, "#a0703c"));
+  const mast = part("mast", "Mast", box(0.06, 1.6, 0.06, "#e8e2d0"));
+  getRegistry("scene:part").register({ type: "scene:part", id: "probe.crate", name: "Crate", icon: "Package", category: "Probe", description: "A box", load: async () => crate });
+  getRegistry("scene:part").register({ type: "scene:part", id: "probe.mast", name: "Mast", icon: "Sailboat", category: "Rig", tags: ["mast"], traits: ["probe.rig"], load: async () => mast });
+
+  const scene = repo.add({
+    "@patchwork": { type: "scene" }, title: "Parts probe", objects: { hull }, order: ["hull"], dimensions: {}, traits: {}, assets: {},
+    view: { units: "m", grid: true, axes: false, bounds: false, snap: true, home: { position: [2.2, 3.2, 3.2], target: [0.2, 0, -0.2] } },
+  });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const pageOf = (w) => { const p = dbg.viewport.project(w); const r = dbg.viewport.canvas.getBoundingClientRect(); return p && { x: r.left + p.x, y: r.top + p.y }; };
+  window.__p = {
+    dbg, host, errors, made, MAST_STEP,
+    doc: () => scene.doc(),
+    files: () => repo.created.filter((h) => h.doc()?.["@patchwork"]?.type === "file").map((h) => ({ url: h.url, name: h.doc().name })),
+    loaded: () => !!dbg.viewport.contentOf("hull")?.loaded,
+    /** page coords of a point in the hull's own frame */
+    onHull: (p) => { const m = dbg.viewport.worldOf("hull"); return pageOf([m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12], m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13], m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]]); },
+    world: pageOf,
+    /** what's under a page point: { id, point } (port-local picking) */
+    pickAt: (x, y) => { const r = dbg.viewport.canvas.getBoundingClientRect(); const h = dbg.viewport.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id, point: h.point }; },
+    toLocal: (id, p) => dbg.scene().toLocal(id, p),
+    canvas: () => { const r = dbg.viewport.canvas.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
+    // scrolled into the sidebar's view first: the inspector, once something is selected, pushes the bin down
+    item: (id) => { const e = host.querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    panel: () => { const s = host.querySelector('section[data-panel="parts"]'); return s && { hidden: s.hidden, categories: [...s.querySelectorAll(".parts-category")].map((e) => e.textContent), parts: [...s.querySelectorAll(".part-name")].map((e) => e.textContent), does: [...s.querySelectorAll(".part-does")].map((e) => e.textContent) }; },
+    sidebar: () => [...host.querySelectorAll(".sidebar > section")].filter((s) => !s.hidden).map((s) => s.dataset.panel),
+    ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
+    selected: () => dbg.local.get().selected ?? null,
+    camera: () => dbg.viewport.getCamera(),
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

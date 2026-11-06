@@ -99,6 +99,9 @@ const forgetModules = () => {
 // a template, whose create() is per test too
 let template = null;
 getRegistry("scene:template").register({ type: "scene:template", id: "t.template", name: "Test level", load: async () => ({ create: (ctx) => template?.(ctx) }) });
+// a part, likewise
+let partCreate = null;
+getRegistry("scene:part").register({ type: "scene:part", id: "t.part", name: "Test part", load: async () => ({ create: (ctx, at) => partCreate?.(ctx, at) }) });
 
 // ─── mounting ───────────────────────────────────────────────────────────────
 
@@ -468,6 +471,87 @@ describe("the stage, mounted", () => {
     } finally {
       template = null;
     }
+  });
+
+  it("part(id, at): create(ctx, at) with the parent checked and the transform filled in; what it returns is selected", async () => {
+    const seen = [];
+    partCreate = async (ctx, at) => {
+      seen.push({ keys: Object.keys(ctx).sort(), at, parentContent: ctx.content(at.parent ?? "") });
+      const { url } = await ctx.file("t/block@1", () => ({ name: "block.glb", bytes: new Uint8Array([1, 2, 3]), extension: "glb", mimeType: "model/gltf-binary", hint: { bounds: { min: [0, 0, 0], max: [1, 1, 1] } } }));
+      const id = ctx.newId("o");
+      ctx.change((d) => {
+        d.objects[id] = card({ name: "Block", sourceUrl: url, parent: at.parent, transform: at.transform });
+        d.order.push(id);
+      });
+      return id;
+    };
+    try {
+      const h = newScene({ objects: { hull: card({ name: "Hull", transform: { position: [10, 0, 0], rotation: [0, 0, 0], scale: 2 } }), g: { kind: "group", name: "G", visible: true, opacity: 1 } }, order: ["hull", "g"] });
+      const m = mount(h);
+      await settle();
+      const api = exts["t.always"].api;
+      const id = await api.part("t.part", { parent: "hull", transform: { position: [1, 2, 3] } });
+      expect(seen[0].keys).toEqual(expect.arrayContaining(["addObject", "change", "content", "doc", "file", "newId", "notify", "registry", "repo", "scene"]));
+      // what it's dropped on can be read (a hull's stated bow), as api.content
+      expect(seen[0].parentContent).toEqual(api.content("hull"));
+      // and the same place in the world, for a part that would rather not ride along
+      expect(seen[0].at).toEqual({ parent: "hull", transform: { position: [1, 2, 3], rotation: [0, 0, 0], scale: 1 }, world: { position: [12, 4, 6], rotation: [0, 0, 0], scale: 2 } });
+      expect(h.doc().objects[id]).toMatchObject({ name: "Block", parent: "hull" });
+      expect(m.local.get().selected).toBe(id);
+      // a parent that's gone or a group: the scene root
+      await api.part("t.part", { parent: "nope", transform: {} });
+      await api.part("t.part", { parent: "g" });
+      expect(seen.slice(1).map((s) => s.at.parent)).toEqual([null, null]);
+      // nothing returned, or no such part: null, nothing selected anew
+      partCreate = () => null;
+      expect(await api.part("t.part", null)).toBe(null);
+      expect(await api.part("nope", null)).toBe(null);
+      partCreate = () => {
+        throw new Error("no room");
+      };
+      expect(await api.part("t.part", null)).toBe(null);
+      expect(api.local.get().notices.at(-1)).toMatchObject({ text: "That part failed: no room", kind: "error" });
+    } finally {
+      partCreate = null;
+    }
+  });
+
+  it("ctx.file(key, make): one file doc per key, made once and remembered in doc.assets", async () => {
+    const h = newScene();
+    expect(h.doc().assets).toEqual({});
+    mount(h);
+    await settle();
+    let made = 0;
+    let ctx = null;
+    template = (c) => {
+      ctx = c;
+    };
+    try {
+      await exts["t.always"].api.template("t.template");
+    } finally {
+      template = null;
+    }
+    const make = async () => {
+      made++;
+      return { name: "buoy.glb", bytes: new Uint8Array([9]), extension: "glb", mimeType: "model/gltf-binary", hint: { bounds: { min: [0, 0, 0], max: [1, 2, 1] } } };
+    };
+    // two at once, then one later: one file
+    const [a, b] = await Promise.all([ctx.file("t/buoy@1", make), ctx.file("t/buoy@1", make)]);
+    const c = await ctx.file("t/buoy@1", make);
+    expect(made).toBe(1);
+    expect(a.url).toBe(b.url);
+    expect(c).toEqual(a);
+    expect(a.hint).toEqual({ bounds: { min: [0, 0, 0], max: [1, 2, 1] } });
+    expect(h.doc().assets["t/buoy@1"]).toEqual({ url: a.url, hint: a.hint });
+    const file = await repo.find(a.url);
+    expect(file.doc()).toMatchObject({ "@patchwork": { type: "file" }, name: "buoy.glb", extension: "glb", mimeType: "model/gltf-binary" });
+    // another key is another file; a scene written without assets gets the map
+    h.change((d) => delete d.assets);
+    const other = await ctx.file("t/mast@1", async () => ({ name: "mast.glb", bytes: new Uint8Array([1]), extension: "glb", mimeType: "model/gltf-binary" }));
+    expect(other.url).not.toBe(a.url);
+    expect(other.hint).toBe(null);
+    expect(h.doc().assets).toEqual({ "t/mast@1": { url: other.url } });
+    await expect(ctx.file("", make)).rejects.toThrow();
   });
 
   it("drop(): the module that takes the datatype lays it out; its trait starts it", async () => {

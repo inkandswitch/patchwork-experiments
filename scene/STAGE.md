@@ -16,6 +16,7 @@ multiplayer); [the report](REPORT.md) records what changed and why.
 | **Extension** | A `scene:extension` plugin. Everything a person sees or does beyond a rendered scene and an orbiting camera comes from one. |
 | **Activity** | What a viewer is doing in a scene: `"edit"`, `"play"` (an open set: an extension may declare any other). One per view, never in the doc. Extensions say which they take part in. |
 | **Template** | A `scene:template` plugin: a way to start an empty scene (an arena level), offered on its start screen. |
+| **Part** | A `scene:part` plugin: something to put into a scene (a mast, a buoy, a target), offered in the editor's parts bin. |
 | **Surface** | An extension that presents others' contributions (toolbar, sidebar, menu, key map), read with `api.collect(name)`. |
 | **Contribution** | A field on an extension's instance that some other extension may collect. The stage reads only the ones listed under "instance". |
 | **Invocation** | A command call as a value: `{ ext, command, target, value? }`. |
@@ -87,6 +88,11 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
 
 { type: "scene:template", id, name, icon?, description?,
   async load() { return { create(ctx) → Promise } } }
+
+{ type: "scene:part", id, name, icon?, category?, description?,
+  tags?:   string[],                  // the connector tags it fits (as an object's tags, for the hand)
+  traits?: string[],                  // the traits it brings, shown in the bin as what it does
+  async load() { return { create(ctx, at) → Promise<string | null> } } }
 ```
 
 **The running set** is a pure function of three things: the registry's
@@ -153,8 +159,11 @@ persisted and never in the doc:
 **Drops** are not activation. To lay out a dropped document, the add
 extension calls `api.drop(info)`. That loads each module whose `drops` match
 and calls its `drop(ctx, info)` until one returns true, where:
-- `ctx` is a temporary api: doc, change, repo, `addObject`, `newId`,
-  registry, local, notify;
+- `ctx` is a temporary api, **the drop context**: `id` (the plugin's),
+  `repo`, `handle`, `url`, `viewer`, `doc`, `scene`, `change`, `newId`,
+  `addObject`, `file` (see "Parts"), `content` (read-only, as `api.content`:
+  a part reads what it's dropped on), `registry`, `local`, `notify`.
+  Templates and parts get the same one;
 - `info` is `{ url, doc, handle, group, at: { point, hitId } | null }`.
 
 A drop writes traits into the doc, and those traits are what activate the
@@ -168,6 +177,65 @@ and Blank. Choosing one calls `api.template(id)`, which loads it and runs
 it needs into the doc: objects, traits, and `view.activity`. Then this
 viewer starts where the doc now says, as joining does, so an arena
 template that writes `"play"` lands its maker in the game.
+
+**Parts** are what you put into a scene once it's started: a mast on a hull,
+a buoy in the sea, a target in a level. A template is a way to start a
+scene; a part is a piece of one. Any package may contribute them, and the
+stage knows none of them.
+
+- **The plugin** is metadata the bin reads without loading anything: `name`,
+  `icon` (a lucide name), `category` (the bin's heading), `description`,
+  `tags` (the connector tags it fits: a connector that lists tags takes only
+  parts with one of them, as it does the hand's pieces) and `traits` (what
+  it brings, shown as what it does, by the name an extension's `describes`
+  gives it).
+- **`api.part(id, at)`** → `Promise<string | null>` loads the part and runs
+  `create(ctx, at)` with the drop context, then selects the id it returns.
+  `at` is `{ parent, transform, world }`: `parent` an object id or null,
+  `transform` (`{ position, rotation, scale }`) in the parent's frame, the
+  world's when `parent` is null, and `world` the same place in the world.
+  The stage checks `parent` (gone, or a group: null) and fills the transform
+  in. The part may ignore or adjust `at` (turn itself to its parent's bow,
+  set itself on the waterline, put itself at the root at `world` rather than
+  ride along), may make several objects, and returns the one to select (or
+  null). A part that throws is a notice, and null. A part that awaits before
+  it writes (making its files) checks, in the change that writes, that its
+  parent is still there.
+- **`ctx.file(key, make)`** → `Promise<{ url, hint }>`: the scene's own file
+  doc for `key`, made once and reused, so ten buoys share one GLB. When the
+  scene has none yet, `make()` → `{ name, bytes, extension, mimeType, hint? }`
+  (or a promise of it) is called, a `file` doc is made from it, and the stage
+  remembers it at `doc.assets[key] = { url, hint? }`. `hint` is an object's
+  `hint` (`{ bounds, … }`, README), handed back as a fresh copy to write on
+  what's made from it (`addObject(url, { hint })` does). Keys are namespaced
+  and versioned, `"sailing/mast@1"`, so new art gets a new key and scenes
+  made with the old keep theirs. Two calls at once in one view make one
+  file; two peers at once each write theirs only if the key is still empty,
+  and the merge keeps one in `assets`: what each peer made keeps the file it
+  made (two docs for one key, shown alike), and later drops use the one kept.
+  Nothing deletes a file `assets` names.
+- **The bin** (`scene.parts`, editing only) is a sidebar panel listing every
+  registered part by category, with a search once there are eight or more.
+  With none registered there is no panel. Drag one into the view and it
+  lands where the pointer hits; a click puts it where the view is looking
+  (the middle of the view, on whatever is there). Either way:
+  - on an object (locked or not), it goes under that object (`parent`),
+    placed at the point in that object's frame; whether it rides along is
+    the part's to say (`at.world`);
+  - it snaps by the hand's rule (`snapCandidates`, `nearestSnap`): to the
+    nearest of that object's connectors that takes it (one that lists tags
+    takes only a part with one of them) within the object's `snapRadius`,
+    in plan. Alt, or the Snap pref off, places it freely. A part writes its
+    `tags` on the object it makes, so the hand sees the same fit;
+  - it stands upright in the world, facing a snapped connector's way, else
+    its parent's (the parent's +Z, seen from above), else the viewer (its +Z
+    toward the eye);
+  - while dragging, a ring shows where it will land: accent when snapped,
+    muted when not, labelled with what it goes on.
+
+  The drag is the browser's own, carrying `application/x-scene-part` =
+  `{ part }`, so a part can be dragged into another scene open beside this
+  one. The maths is `src/parts/parts-place.js`.
 
 **Describing traits.** `describes` says what an extension's traits are, so a
 surface can write them without a script (the inspector's Behaviours and "Add
@@ -246,7 +314,11 @@ is written again by its holder (see "Claims"). Every scene doc is made with
 `traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
 and so does every tool that writes a scene doc whole (tabletop's tables, the
 TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
-a fallback.
+a fallback. `init` makes `assets` too, as do tabletop and the TTS importer;
+a scene made before `assets` existed gets it from its first `ctx.file`. Two
+peers doing that at once each make a map, the merge keeps one, and the other
+peer's key is lost: that kind gets one more file doc on its next drop, and
+nothing already in the scene changes.
 
 ## The input chain
 
@@ -416,11 +488,12 @@ that extension.
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
 | `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
 | `focus(ids)` | load these first |
-| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`) |
+| `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads?, hint? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`) |
 | `rebuild(id)` | |
 | `fixPoint(id)` | the `at` (`{ heads, deps? }`) that would fix a render-doc object at exactly what its render was last built from, or null (not built here yet, not loaded, passthrough). Fixing is a plain field write: `api.change(ops.setField(scene, id, "at", point))`; `undefined` follows the latest again |
 | `drop(info)` | |
 | `template(id)` → `Promise<boolean>` | run a `scene:template` (see "Templates"); true when it ran |
+| `part(id, at)` → `Promise<string \| null>` | run a `scene:part` at `{ parent, transform }` (see "Parts"); selects and returns what it made |
 
 **Picking and camera**
 
@@ -652,7 +725,7 @@ atmosphere() → null | {
 | `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples |
 | `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions, this viewer's activity (joining, `local.activities`), the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, the activity, templates, camera saving), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, the activity, templates, parts and the scene's files, camera saving), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old

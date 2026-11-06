@@ -1,0 +1,99 @@
+/* scene.parts: the parts bin, a sidebar panel. Each part is a button you can
+   drag into the view or click; grouped by category, with a search. */
+
+.scene-stage .scene-parts:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scene-stage .scene-parts .parts-search[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *),
+.scene-stage .scene-parts .parts-none[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage .scene-parts .parts-filter:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: var(--scene-bg);
+  border: 1px solid var(--scene-border);
+  border-radius: var(--studio-radius-sm, 4px);
+  padding: 3px 6px;
+}
+
+.scene-stage .scene-parts .parts-list:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scene-stage .scene-parts .parts-category:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--scene-muted);
+}
+
+.scene-stage .scene-parts .parts-items:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 4px;
+}
+
+.scene-stage .scene-parts .part:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  text-align: left;
+  white-space: normal;
+  cursor: grab;
+}
+
+.scene-stage .scene-parts .part:active:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  cursor: grabbing;
+}
+
+/* the icon's place: the part's initial, with its lucide name in data-icon for a host to draw */
+.scene-stage .scene-parts .part-icon:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--studio-radius-sm, 4px);
+  background: var(--scene-surface);
+  border: 1px solid var(--scene-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--scene-muted);
+}
+
+.scene-stage .scene-parts .part-text:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.scene-stage .scene-parts .part-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-stage .scene-parts .part-does:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  font-size: 10px;
+  color: var(--scene-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-stage .scene-parts .parts-none:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin: 0;
+  color: var(--scene-muted);
+  font-size: 12px;
+}

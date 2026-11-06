@@ -42,6 +42,8 @@ if (!existsSync(join(pkg, "dist/index.js"))) throw new Error("no dist/: run pnpm
 const root = resolve(pkg, "..");
 const ARENA = existsSync(join(root, "arena/dist/index.js"));
 const page = `/scene/probes/editor-probe.html${ARENA ? "?plugins=/arena/dist/index.js" : ""}`;
+// does arena's build offer parts (scene:part)? Then the bin has something to show.
+const ARENA_PARTS = ARENA && (await import(join(root, "arena/dist/index.js")).then((m) => m.plugins.some((p) => p.type === "scene:part")).catch(() => false));
 
 const b = await browser({ root, port: PORT, cdp: CDP, page, show: !!arg("show", false), timeout: 300_000 });
 const { check, checks, details } = checklist();
@@ -93,8 +95,10 @@ try {
     check("toolbarAlongTop", t && Math.abs(t.y - st.y) < 1 && Math.abs(t.w - st.w) < 1 && L.oneRow === 1, { t, st, rows: L.oneRow });
     check("sidebarAtRight", s && Math.abs(s.r - st.r) < 1 && Math.abs(s.y - t.b) < 1 && Math.abs(s.b - st.b) < 1 && s.w > 200 && s.w < 400, { s });
     check("canvasFillsTheRest", c && Math.abs(c.x - st.x) < 1 && Math.abs(c.y - t.b) < 1 && Math.abs(c.r - s.x) < 1 && Math.abs(c.b - st.b) < 1, { c });
-    // nothing selected, the inspector shows the Scene, so its panel is there
-    check("panelsObjectsInspectorDimensions", JSON.stringify(L.panels) === JSON.stringify(["Objects", "Inspector", "Dimensions"]), L.panels);
+    // nothing selected, the inspector shows the Scene, so its panel is there;
+    // the parts bin comes last, and only when a package offers parts (arena's do)
+    const panels = ["Objects", "Inspector", "Dimensions", ...(ARENA_PARTS ? ["Parts"] : [])];
+    check("panelsObjectsInspectorDimensions", JSON.stringify(L.panels) === JSON.stringify(panels), { panels: L.panels, want: panels });
     check("outlineRows", JSON.stringify(L.rows) === JSON.stringify(["Board", "Block 1", "Block 2", "Block 3", "Pawn 1", "Pawn 2"]), L.rows);
   }
 

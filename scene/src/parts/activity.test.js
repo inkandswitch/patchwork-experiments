@@ -104,6 +104,7 @@ describe("the scene package's own extensions", () => {
       "scene.units",
       "scene.legends",
       "scene.add",
+      "scene.parts",
       "scene.activity",
     ]);
     expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["scene.notices", "scene.keys", "scene.activity"]);

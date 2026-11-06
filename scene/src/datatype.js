@@ -11,6 +11,8 @@ export const SceneDatatype = {
     // once (STAGE.md, "Shared maps")
     doc.dimensions = {};
     doc.traits = {};
+    // the scene's own file docs, by key (ctx.file: STAGE.md, "Parts")
+    doc.assets = {};
     doc.view = { ...DEFAULT_VIEW };
   },
   getTitle(doc) {

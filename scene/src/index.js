@@ -96,7 +96,7 @@ export const plugins = [
   // notices serve every activity. The sidebar shows panels in running order:
   // Objects, Inspector, then Dimensions, so those two come before measure
   // (which brings dimensions in right after it); neither claims canvas input,
-  // so being early changes nothing else.
+  // so being early changes nothing else. Parts comes last.
   {
     type: "scene:extension",
     id: "scene.toolbar",
@@ -299,6 +299,18 @@ export const plugins = [
     activities: ["edit"],
     async load() {
       return (await import("./parts/add.js")).default;
+    },
+  },
+  // the parts bin: every scene:part, to drag into the view or click to put
+  // where you're looking. Its panel comes last in the sidebar (Objects,
+  // Inspector, Dimensions, Parts), and only when some package offers a part.
+  {
+    type: "scene:extension",
+    id: "scene.parts",
+    name: "Parts",
+    activities: ["edit"],
+    async load() {
+      return (await import("./parts/parts.js")).default;
     },
   },
   // what this viewer is doing, and switching it (only shown when there's a choice)
