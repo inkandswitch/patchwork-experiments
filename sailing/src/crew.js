@@ -21,7 +21,7 @@
 
 import { BODY, DECK, SWIM, look, lookDir, step, swim } from "./walk.js";
 import { apply, headingOf, invert, onHeading, rotateM, unrotateM } from "./frames.js";
-import { QUARTER, isUnder, shipOf } from "./traits.js";
+import { QUARTER, isUnder, sailingThing, shipOf } from "./traits.js";
 import { bodyBoxOf, bodyOf } from "./body.js";
 
 const FOV = 60; // vertical: about 90° across at 16:9; wider puts more heaving sea in the corners of your eye
@@ -114,6 +114,33 @@ export function placeOf(a, worldOf) {
   const m = worldOf(a.on);
   return m ? { position: apply(m, a.pos), yaw: a.yaw + headingOf(m) } : null;
 }
+
+/**
+ * Does a click come aboard? On the sea or the sky (nothing hit), a ship or
+ * anything of hers (a sailing trait or tag: the mast, the wheel), or
+ * anything not aboard a ship at all (the islet, its lighthouse, a buoy):
+ * yes. On something aboard her that isn't hers (a card or the table in her
+ * cockpit, which the hand takes a click on), no: it goes on down the chain.
+ * `seated`: the viewer's view is riding something (a seat at a table aboard
+ * her, the stage's camera.riding()); then only the sea or the sky does (the
+ * hull round the table is where stray clicks land), or the button, or Enter.
+ * @param {{ objects }} scene  @param {{ id?: string } | null} hit  @param {{ seated?: boolean }} [o]
+ */
+export function boardsOn(scene, hit, { seated = false } = {}) {
+  const id = hit?.id;
+  if (id == null) return true;
+  if (seated) return false;
+  const o = scene?.objects?.[id];
+  if (!o) return true;
+  const ship = shipOf(scene, id);
+  return ship == null || ship === id || sailingThing(o);
+}
+
+/** Is this viewer's view riding something other than the ship's own follow (a seat at a table aboard her)? */
+export const seatedView = (api) => {
+  const r = api?.camera?.riding?.();
+  return !!r && !r.fallback;
+};
 
 /** A stable hue for a person. */
 export function hueOf(key) {
@@ -298,8 +325,12 @@ export function createCrew(api, ctx) {
   // Before coming aboard the camera is the orbit's, and it goes where the
   // ship goes (sideways only: no bobbing), so a sailing ship stays in view.
   // A camera nobody has moved (not even from a saved view) starts off the
-  // ship's quarter.
+  // ship's quarter. On a stage that has rides (camera.ride) it's a fallback
+  // ride: anything else riding (a seat at a table aboard her) wins over it,
+  // and nothing follows twice; else, as before, moved here each frame.
   let followAt = null;
+  let riding = null; // { ship, off }
+  let framed = false; // the quarter view for a camera nobody moved: once, on first sight of her (stop() puts you off her quarter itself)
   let dragging = false;
   // (the release in the capture phase: the stage stops a claimed one at the port)
   api.listen(api.port, "pointerdown", () => (dragging = true), { capture: true });
@@ -307,13 +338,20 @@ export function createCrew(api, ctx) {
   function follow() {
     const ship = ctx.sim?.ships?.()[0] ?? null;
     const m = ship ? frameOfShip(ship) : null;
+    if (riding && riding.ship !== (m ? ship : null)) {
+      riding.off?.();
+      riding = null;
+    }
     if (!m) return void (followAt = null);
     const at = [m[12], m[14]];
     if (!followAt) {
       followAt = at;
-      if (!api.camera.touched?.()) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target) });
+      if (!framed && !api.camera.touched?.()) api.camera.set({ position: onHeading(m, QUARTER.position), target: onHeading(m, QUARTER.target) });
+      framed = true;
+      if (!riding && typeof api.camera.ride === "function") riding = { ship, off: api.camera.ride(ship, { turn: false, rise: false, fallback: true }) };
       return;
     }
+    if (riding) return;
     const dx = at[0] - followAt[0];
     const dz = at[1] - followAt[1];
     if (dragging || Math.hypot(dx, dz) < 1e-3) return;
@@ -602,9 +640,11 @@ export function createCrew(api, ctx) {
 
   return {
     input: {
-      // a click on the view comes aboard (Enter does too: stations.js's "aboard")
-      click() {
-        if (playing) return false;
+      // a click on the sea, the sky, the ship or the shore comes aboard (Enter
+      // does too: stations.js's "aboard"); not one on something else aboard
+      // her, nor (seated at a table aboard) anything but the sea and sky (boardsOn)
+      click(ev) {
+        if (playing || !boardsOn(api.scene(), ev?.hit ?? null, { seated: seatedView(api) })) return false;
         start();
         return true;
       },
@@ -648,6 +688,8 @@ export function createCrew(api, ctx) {
     },
     dispose() {
       stop();
+      riding?.off?.();
+      riding = null;
       for (const a of avatars.values()) a.mat.dispose();
       avatars.clear();
       for (const g of Object.values(shared)) g.dispose?.();

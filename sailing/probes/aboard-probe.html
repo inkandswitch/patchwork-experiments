@@ -1,0 +1,315 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>aboard probe</title>
+<!-- Driven by probes/aboard-run.mjs (checks) and probes/publish-aboard.mjs
+     (publishing what it builds). The BUILT scene tool (scene/dist) with the
+     BUILT sailing, tabletop and card-table plugins (sailing/dist,
+     tabletop/dist, card-table/dist: a secure deck) in a stub registry, on an
+     in-memory repo, on an EMPTY scene. Two views of one doc, A (Ana) and B
+     (Ben), each view's broadcasts reaching only the other, a few ms late.
+     build() makes the scene the way a person would, through the stage's own
+     calls: the start screen's "Ship at anchor" template (A clicks it), then
+     the parts bin's Card table in her cockpit and Lost Cities on the table
+     (api.part). B opens it after. Nothing here imports another package's
+     source: each package's built dist is loaded as its plugins. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 700px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+/** A doc as JSON, its bytes as { $bytes: base64 }, so it can leave the page. */
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+
+// 4 × 4, column-major
+const apply = (m, p) => [0, 1, 2].map((r) => m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Where the Card table goes in the sloop's cockpit, in her hull's frame: between the benches, forward of the wheel, its long side across her. */
+const COCKPIT_TABLE = { position: [0, 0.72, 2.85], rotation: [0, Math.PI / 2, 0], scale: 1 };
+/** The middle of the Card table's top, in its frame (tabletop's TABLE.h, and the baize). */
+const TABLE_TOP = [0, 0.7006, 0];
+/** The scene's home view: over the cockpit from her starboard quarter, in her hull's frame. */
+const HOME = { position: [2.4, 3.1, 6.4], target: [0, 1.3, 2.85] };
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../tabletop/dist/index.js", "../../card-table/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  // an empty scene, as the scene datatype's init makes it
+  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(A, hosts.a);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  const objects = () => scene.doc().objects ?? {};
+  const byName = (n) => Object.entries(objects()).find(([, o]) => o.name === n)?.[0] ?? null;
+  const withTrait = (t) => Object.entries(objects()).find(([, o]) => o.traits?.[t])?.[0] ?? null;
+  const deckUrl = () => Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean) ?? null;
+  const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
+  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const ids = {};
+  /** any running extension's api in a view: the stage's public calls (api.part) */
+  const apiOf = (w) => {
+    for (const id of ["sailing", "tabletop", "scene.use", "scene.hand", "scene.add"]) { const a = dbg[w].host.record(id)?.api; if (a) return a; }
+    return null;
+  };
+  const ctx = (w) => dbg[w]?.host.record("sailing")?.instance?.debug ?? null;
+  const hidden = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
+  const zoneOf = (id) => {
+    const s = dbg.a.scene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(objects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return null;
+  };
+  /** a world point → page px in a view (null off screen) */
+  const page = (w, p) => {
+    const v = dbg[w].viewport;
+    const r = v.canvas.getBoundingClientRect();
+    const q = v.project(p);
+    return q?.visible === false ? null : { x: r.left + q.x, y: r.top + q.y };
+  };
+
+  const P = (window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url }, ids,
+    get A() { return dbg.a; },
+    get B() { return dbg.b; },
+    templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+
+    /**
+     * The scene, as a person makes it: Ship at anchor from the start screen,
+     * the Card table into her cockpit, Lost Cities onto the table, a home
+     * view over the cockpit. → the ids, or { error }.
+     */
+    async build({ title = "Lost Cities aboard" } = {}) {
+      const button = hosts.a.querySelector('[data-template="ship-at-anchor"]');
+      if (!button) return { error: "no Ship at anchor on the start screen", templates: P.templates("a") };
+      button.click();
+      for (let i = 0; i < 300 && !(withTrait("sailing.ship") && dbg.a.host.record("sailing")?.api); i++) await sleep(50);
+      const hull = withTrait("sailing.ship");
+      if (!hull) return { error: "no ship" };
+      const api = apiOf("a");
+      // the title first: the deck doc is named for the scene
+      api.change((d) => { d.title = title; });
+      const table = await api.part("tabletop.table", { parent: hull, transform: COCKPIT_TABLE });
+      if (!table) return { error: "no Card table", notices: P.notices("a") };
+      const board = await api.part("tabletop.lost-cities", { parent: table, transform: { position: TABLE_TOP, rotation: [0, 0, 0], scale: 1 } });
+      if (!board) return { error: "no Lost Cities", notices: P.notices("a") };
+      // where the scene opens for someone new: over the cockpit, not fitted to the islet
+      const m = dbg.a.scene().world(hull);
+      api.change((d) => { d.view.home = { position: apply(m, HOME.position).map((v) => +v.toFixed(4)), target: apply(m, HOME.target).map((v) => +v.toFixed(4)) }; });
+      dbg.a.local.swap((l) => ({ ...l, selected: null }));
+      Object.assign(ids, {
+        hull, table, board,
+        hand1: Object.entries(objects()).find(([, o]) => o.traits?.["tabletop.zone"]?.seat === "p1")?.[0],
+        hand2: Object.entries(objects()).find(([, o]) => o.traits?.["tabletop.zone"]?.seat === "p2")?.[0],
+        rig: withTrait("sailing.sail"), windlass: withTrait("sailing.anchor"), wheel: withTrait("sailing.helm"), mast: byName("Mast"),
+      });
+      return { ...ids };
+    },
+    openB() { if (!dbg.b) { Tool(B, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
+
+    /** the doc's shape, for the checks */
+    shape() {
+      const o = objects();
+      const pieces = Object.entries(o).filter(([id, x]) => x.kind !== "group" && id !== ids.hull && id !== ids.table && (x.traits?.["tabletop.hidden"] || x.traits?.["tabletop.zone"] || id === ids.board));
+      return {
+        title: scene.doc().title,
+        activity: scene.doc().view?.activity ?? null,
+        home: scene.doc().view?.home ?? null,
+        tableParent: o[ids.table]?.parent ?? null,
+        tableLocked: !!o[ids.table]?.locked,
+        pieces: pieces.length,
+        piecesUnderTable: pieces.filter(([, x]) => x.parent === ids.table).length,
+        seats: scene.doc().traits?.["tabletop.seats"] ?? null,
+        deckType: deck()?.["@patchwork"]?.type ?? null,
+        deckTitle: deck()?.title ?? null,
+        sail: o[ids.rig]?.traits?.["sailing.sail"] ?? null,
+        anchor: o[ids.windlass]?.traits?.["sailing.anchor"] ?? null,
+        shipLocked: !!o[ids.hull]?.locked,
+      };
+    },
+    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    picker: (w) => select(w)?.options.length ?? 0,
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    immersive: (w) => !!dbg[w]?.local.get().immersive,
+    phase: () => deck()?.phase ?? null,
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    faces: (w) => [...(dbg[w]?.looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    claims: (w) => dbg[w].claims().map((c) => c.kind),
+    simulating: (w) => !!ctx(w)?.sim.simulating(),
+    loaded(w) {
+      const vp = dbg[w].viewport;
+      const all = Object.keys(objects()).filter((id) => objects()[id].kind !== "group");
+      return { total: all.length, loaded: all.filter((id) => vp.contentOf(id)?.loaded).length };
+    },
+    loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
+    where() {
+      const out = { p1: [], p2: [], table: [] };
+      for (const id of hidden()) out[zoneOf(id) ?? "table"].push(id);
+      return out;
+    },
+    /** the pile at the deck's spot (layout [0.3, 0] on the table), top first */
+    pile() {
+      const s = dbg.a.scene();
+      const at = (id) => s.toLocal(ids.table, s.world(id).slice(12, 15));
+      return hidden().filter((id) => { const p = at(id); return Math.hypot(p[0] - 0.3, p[2]) < 0.01; }).sort((p, q) => at(q)[1] - at(p)[1]);
+    },
+    transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
+    parentOf: (id) => objects()[id]?.parent ?? null,
+    /** an object's doc pose in the table's frame: its position, and whether its +Y is the table's (the doc's) */
+    onTable(id) {
+      const s = dbg.a.scene();
+      const m = s.world(id), t = s.world(ids.table);
+      const up = [m[4], m[5], m[6]], tu = [t[4], t[5], t[6]];
+      const dot = (up[0] * tu[0] + up[1] * tu[1] + up[2] * tu[2]) / (Math.hypot(...up) * Math.hypot(...tu));
+      return { local: s.toLocal(ids.table, m.slice(12, 15)).map((v) => +v.toFixed(4)), up: +dot.toFixed(4), parent: objects()[id]?.parent ?? null };
+    },
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => e.querySelector(".use-name")?.textContent?.trim() ?? e.textContent.trim()),
+    worldOf: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m ? [...m] : null; },
+    /** a point in an object's frame, as drawn, on a view's page */
+    pageOf(id, local, w) { const m = dbg[w].viewport.worldOf(id); return m ? page(w, apply(m, local)) : null; },
+    cam: (w) => dbg[w].viewport.getCamera(),
+    held: (w) => dbg[w].viewport.holds > 0,
+    /** where the seat's view puts the camera now: its camera through the drawn table */
+    seatView(sid, w) {
+      const c = P.seats()[sid]?.camera;
+      const m = c?.in ? dbg[w].viewport.worldOf(c.in) : null;
+      return m ? { position: apply(m, c.position), target: apply(m, c.target) } : null;
+    },
+    /** the name tags a view shows: text and page px */
+    tags: (w) => [...hosts[w].querySelectorAll(".label.tabletop-seat-tag")].map((e) => { const r = e.getBoundingClientRect(); return { text: e.textContent.trim(), x: r.x + r.width / 2, y: r.y + r.height / 2, shown: e.style.display !== "none" && r.width > 0 }; }),
+    me: (w) => ctx(w)?.crew.me() ?? null,
+    /** what the sailing HUD says in a view: its state, the way-in button, the keys line, and where its panel is */
+    hud(w) {
+      const h = hosts[w].querySelector(".sail-hud");
+      if (!h) return null;
+      const btn = h.querySelector(".sail-hint button");
+      const panel = h.querySelector(".sail-panel");
+      const r = panel && !panel.hidden ? panel.getBoundingClientRect() : null;
+      const host = hosts[w].getBoundingClientRect();
+      return { state: h.dataset.state, seated: h.hasAttribute("data-seated"), button: btn && !btn.hidden ? btn.textContent : null, keys: h.querySelector('[data-k="keys"]')?.textContent ?? "", panel: r ? { left: r.left - host.left, top: r.top - host.top, bottom: r.bottom - host.top, width: r.width, hostHeight: host.height } : null };
+    },
+    /** a fitting's position in the hull's frame, as the doc has it */
+    hullLocal(id) { const s = dbg.a.scene(); return s.toLocal(ids.hull, s.world(id).slice(12, 15)).map((v) => +v.toFixed(3)); },
+    /** a station's live value (the simulating view's) */
+    live: (id, k) => Number(ctx("a")?.sim.value(id)?.[k]),
+    /** put a view's body somewhere aboard: local to ship `on` */
+    place: (w, on, position, yaw, pitch) => ctx(w).crew.place(on, position, yaw, pitch),
+    read: (w) => ctx(w)?.sim.read(ids.hull) ?? null,
+    commit: (w, id, fields) => ctx(w).sim.commit(id, fields),
+    /** an editor's move of the hull: her doc transform turned to `yaw` (the sim starts again from there, at rest) */
+    turnHull(yaw) { scene.change((d) => { d.objects[ids.hull].transform.rotation = [0, yaw, 0]; }); return true; },
+    wind: () => scene.doc().traits?.["sailing.sea"]?.wind ?? null,
+    /** the sea's wind freshened (as the inspector's Sea field writes it) */
+    setWind(speed) { scene.change((d) => { d.traits["sailing.sea"].wind.speed = speed; }); return true; },
+    /**
+     * Sample, every animation frame for `ms`, where a point on the table is
+     * on each view's page, and where the table is in the world.
+     */
+    async sampleTable(ms = 10000) {
+      const out = { a: [], b: [], world: [] };
+      const t0 = performance.now();
+      await new Promise((done) => {
+        const f = () => {
+          for (const w of ["a", "b"]) { const p = P.pageOf(ids.table, TABLE_TOP, w); if (p) out[w].push([p.x, p.y]); }
+          const m = dbg.a.viewport.worldOf(ids.table);
+          if (m) out.world.push([m[12], m[13], m[14], Math.atan2(m[8], m[10])]);
+          if (performance.now() - t0 < ms) requestAnimationFrame(f); else done();
+        };
+        requestAnimationFrame(f);
+      });
+      return out;
+    },
+    /** a page point over object `id` in view `w` (around its origin, until a pick hits it) */
+    aimAt(id, w, local = null) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const p0 = m && v.project(local ? apply(m, local) : [m[12], m[13], m[14]]);
+      if (!p0) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 1.5 * Math.sqrt(k);
+        const x = p0.x + rad * Math.cos(a), y = p0.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+    /** the doc snapshot to publish: the scene, its deck and its files */
+    snapshot() {
+      const urls = [scene.url, deckUrl(), ...Object.values(scene.doc().assets ?? {}).map((a) => a.url)].filter(Boolean);
+      return { scene: scene.url, deck: deckUrl(), docs: Object.fromEntries(urls.map((u) => [u, portable(repo.handles.get(u).doc())])) };
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

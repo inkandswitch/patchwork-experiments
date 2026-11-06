@@ -18,6 +18,14 @@ describe("the HUD's model", () => {
     expect(m.hint).toBe("Click to come aboard");
     expect(m.keys).toMatch(/WASD/);
     expect(m.panel).toBe(false);
+    expect(m.seated).toBe(false);
+  });
+
+  it("seated at a table aboard (the view rides it): Enter to come aboard, and no walking keys beside the game's", () => {
+    const m = hudModel({ me: { playing: false }, seated: true });
+    expect(m).toMatchObject({ state: "lobby", seated: true, hint: "Come aboard (Enter)", keys: "" });
+    // aboard, seated means nothing: you're walking
+    expect(hudModel({ me: { playing: true }, seated: true })).toMatchObject({ state: "aboard", seated: false });
   });
 
   it("aboard: the walking keys, a station's own hint, swimming, paused, no lock", () => {

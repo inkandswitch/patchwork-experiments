@@ -88,6 +88,27 @@ export function shipOf(scene, id) {
   return null;
 }
 
+/** Does an object carry a sailing trait, or a sailing tag (a mast's stand: "sailing.mast")? Then it's the ship's own. */
+export function sailingThing(o) {
+  if (!o) return false;
+  if (o.traits && Object.keys(o.traits).some((k) => k.startsWith("sailing."))) return true;
+  return Array.isArray(o.tags) && o.tags.some((t) => typeof t === "string" && t.startsWith("sailing."));
+}
+
+/**
+ * Whether the hand may carry `id` in play (scene.hand's `carryable`): never
+ * a ship, nor anything of hers (a sailing trait or tag: the mast, the sail,
+ * the wheel, the windlass and anchor, the ladder; she'd be dismasted by a
+ * game of cards); anything else aboard (a table and its cards) is no
+ * business of sailing's (undefined).
+ */
+export function carryableAboard(scene, id) {
+  const o = scene?.objects?.[id];
+  if (!o) return undefined;
+  if (o.traits?.[SHIP] || sailingThing(o)) return false;
+  return undefined;
+}
+
 /** The ships that sail: objects with the ship trait at the scene's root (one attached under something goes where that goes). */
 export const shipsOf = (scene) => (scene?.ids ?? []).filter((id) => scene.objects[id]?.traits?.[SHIP] && !parentOf(scene, id));
 

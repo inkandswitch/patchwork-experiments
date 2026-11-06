@@ -17,7 +17,7 @@
 // mast. Looking at the mast (a part of the ship with no traits of its own)
 // offers the sail's verbs.
 
-import { ANCHOR, HELM, RODE, SAIL, STATION, shipOf, wheelTransform } from "./traits.js";
+import { ANCHOR, HELM, RODE, SAIL, STATION, isUnder, shipOf, wheelTransform } from "./traits.js";
 
 export { RODE };
 
@@ -285,8 +285,9 @@ export function stationCommands(api, ctx) {
 
   /**
    * The sail station a look at `target` works: the station itself, or (the
-   * mast) a part of a ship with no traits of its own, when the ship's sail
-   * station is within reach. Else null.
+   * mast) what the sail station hangs from below the hull, with no traits
+   * of its own, when that station is within reach. Else null. (Anything
+   * else aboard, a table in the cockpit say, is no part of the sail.)
    */
   function sailOf(c, target) {
     if (traitOf(c, target, SAIL)) return reach(c, target) ? target : null;
@@ -294,7 +295,8 @@ export function stationCommands(api, ctx) {
     if (!o || (o.traits && Object.keys(o.traits).length)) return null;
     const ship = shipOf(c.scene, target);
     const id = ship && ship !== target ? ctx.sim.stationsOf(ship)?.sail : null;
-    return id && reach(c, id) ? id : null;
+    if (!id || id === target || !isUnder(c.scene, id, target)) return null;
+    return reach(c, id) ? id : null;
   }
   /** The sail station to run a sail verb on (the prompt has checked reach): the target, or its ship's. */
   const sailNow = (target) => {

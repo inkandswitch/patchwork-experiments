@@ -9,7 +9,8 @@
 // - "sailing.edit" draws the sea while editing (following the sailors' clock
 //   when someone is sailing her meanwhile);
 // - the "ship-at-sea" template lays out a sloop under way in an empty scene
-//   and starts it in play, so its maker is aboard at once;
+//   and starts it in play, so its maker is aboard at once; "ship-at-anchor"
+//   lays her out lying at anchor off an islet, sail down, in a moderate breeze;
 // - parts for the editor's parts bin (scene:part): the sloop whole (she
 //   brings her sea), and her mast and sail, wheel, windlass and anchor and
 //   ladder on their own, to drag onto any hull (one modelled elsewhere, with
@@ -139,6 +140,16 @@ export const plugins = [
     description: "A sloop under way on open water, with wind and waves, ready to sail",
     async load() {
       return (await import("./template.js")).default;
+    },
+  },
+  {
+    type: "scene:template",
+    id: "ship-at-anchor",
+    name: "Ship at anchor",
+    icon: "Anchor",
+    description: "A sloop lying at anchor off an islet in a moderate breeze, sail down: somewhere to set things up aboard, and to get under way from",
+    async load() {
+      return (await import("./template.js")).atAnchor;
     },
   },
 ];

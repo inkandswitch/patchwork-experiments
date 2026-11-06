@@ -1,9 +1,9 @@
 // People aboard: the frame maths (pure), riding a moving deck, and the crew
 // against a stand-in for the stage's api (arms, the camera, presence, rays).
 import { describe, it, expect, vi } from "vitest";
-import { behind, createCrew, deckStep, ease, ladderTop, overboard, placeOf, reframe } from "./crew.js";
+import { behind, boardsOn, createCrew, deckStep, ease, ladderTop, overboard, placeOf, reframe } from "./crew.js";
 import { apply, headingOf, invert, onHeading, rotateM as rotate, unrotateM as unrotate } from "./frames.js";
-import { shipOf } from "./traits.js";
+import { carryableAboard, shipOf } from "./traits.js";
 import { BODY, DECK, SWIM } from "./walk.js";
 
 // ─── matrices ───────────────────────────────────────────────────────────────
@@ -473,6 +473,18 @@ describe("the crew", () => {
     expect(s.cam.fov).toBe(50); // the orbit's own, not first person's
   });
 
+  it("after Esc, a view someone else sets (a seat at a table aboard) isn't taken back to her quarter", () => {
+    const s = stage({ touched: false });
+    const crew = s.make();
+    s.frames(1); // first sight: the quarter, once
+    crew.start();
+    s.frames(2);
+    s.key("Escape");
+    s.api.camera.set({ position: [1, 2, 3], target: [0, 1, 0] });
+    s.frames(3);
+    expect(close(s.cam.position, [1, 2, 3], 1e-9)).toBe(true);
+  });
+
   it("over the side you swim, in the world, head above the water; the ladder brings you back aboard", () => {
     const s = stage();
     const crew = s.make();
@@ -609,6 +621,76 @@ describe("the crew", () => {
     s.api.port.remove();
   });
 
+  it("on a stage with rides, follows by a fallback ride (sideways only), once, and lets go when it stops", () => {
+    const s = stage();
+    const rides = [];
+    s.api.camera.ride = (id, opts) => {
+      const r = { id, opts };
+      rides.push(r);
+      return () => rides.splice(rides.indexOf(r), 1);
+    };
+    const crew = s.make();
+    s.frames(3);
+    expect(rides).toEqual([{ id: "hull", opts: { turn: false, rise: false, fallback: true } }]);
+    // the stage moves the camera now: the crew doesn't as well
+    s.ship.m = matrix([3, 0.5, -1]);
+    s.frames(1);
+    expect(s.sets).toEqual([]);
+    crew.dispose();
+    expect(rides).toEqual([]);
+  });
+
+  it("a click comes aboard from the sea or the sky, the ship or a fitting of hers; not from something else aboard her", () => {
+    const s = stage();
+    s.api.scene().objects.card = { traits: { "tabletop.hidden": {} }, tags: ["card"] };
+    s.api.scene().objects.mast = { tags: ["sailing.mast"] };
+    s.api.scene().parents.set("card", "hull");
+    s.api.scene().parents.set("mast", "hull");
+    const scene = s.api.scene();
+    expect(boardsOn(scene, null)).toBe(true);
+    expect(boardsOn(scene, { id: "hull" })).toBe(true);
+    expect(boardsOn(scene, { id: "wheel" })).toBe(true);
+    expect(boardsOn(scene, { id: "mast" })).toBe(true);
+    expect(boardsOn(scene, { id: "card" })).toBe(false);
+    const crew = s.make();
+    s.ctx.crew = crew;
+    expect(crew.input.click({ hit: { id: "card" } })).toBe(false);
+    expect(crew.me().playing).toBe(false);
+    expect(crew.input.click({ hit: { id: "hull" } })).toBe(true);
+    expect(crew.me().playing).toBe(true);
+  });
+
+  it("a click on the shore comes aboard: the islet and its lighthouse, at the root, are nobody's", () => {
+    const s = stage();
+    s.api.scene().objects.islet = { name: "Islet" };
+    s.api.scene().objects.light = { name: "Lighthouse" };
+    s.api.scene().parents.set("light", "islet");
+    expect(boardsOn(s.api.scene(), { id: "islet" })).toBe(true);
+    expect(boardsOn(s.api.scene(), { id: "light" })).toBe(true);
+    const crew = s.make();
+    s.ctx.crew = crew;
+    expect(crew.input.click({ hit: { id: "islet" } })).toBe(true);
+    expect(crew.me().playing).toBe(true);
+  });
+
+  it("seated at a table aboard (the view riding it), only the sea or the sky comes aboard: not the hull round the table", () => {
+    const s = stage();
+    s.api.scene().objects.islet = { name: "Islet" };
+    expect(boardsOn(s.api.scene(), { id: "hull" }, { seated: true })).toBe(false);
+    expect(boardsOn(s.api.scene(), { id: "islet" }, { seated: true })).toBe(false);
+    expect(boardsOn(s.api.scene(), null, { seated: true })).toBe(true);
+    let ride = { id: "table", fallback: false };
+    s.api.camera.riding = () => ride;
+    const crew = s.make();
+    s.ctx.crew = crew;
+    expect(crew.input.click({ hit: { id: "hull" } })).toBe(false);
+    expect(crew.me().playing).toBe(false);
+    // only the ship's own follow (a fallback): not seated
+    ride = { id: "hull", fallback: true };
+    expect(crew.input.click({ hit: { id: "hull" } })).toBe(true);
+    expect(crew.me().playing).toBe(true);
+  });
+
   it("a camera nobody has moved opens off the ship's quarter", () => {
     const s = stage({ shipAt: [10, 0, 5], yaw: Math.PI / 2, touched: false });
     s.make();
@@ -618,5 +700,24 @@ describe("the crew", () => {
     expect(close(s.cam.target, [10, 2.5, 5])).toBe(true);
     s.frames(3);
     expect(s.sets.length).toBe(1); // once; then it only follows
+  });
+});
+
+describe("the hand aboard (scene.hand's carryable)", () => {
+  it("never the ship nor a fitting of hers; anything else aboard is no business of sailing's", () => {
+    const scene = {
+      objects: {
+        hull: { traits: { "sailing.ship": {} } },
+        mast: { tags: ["sailing.mast"] },
+        rig: { traits: { "sailing.sail": {} } },
+        anchor: { traits: { "sailing.hook": {} } },
+        table: { locked: true },
+        card: { traits: { "tabletop.hidden": {} }, tags: ["card"] },
+        buoy: { traits: { "sailing.float": {} } },
+      },
+      parents: new Map([["mast", "hull"], ["rig", "mast"], ["anchor", "hull"], ["table", "hull"], ["card", "table"]]),
+    };
+    for (const id of ["hull", "mast", "rig", "anchor", "buoy"]) expect(carryableAboard(scene, id)).toBe(false);
+    for (const id of ["table", "card", "nothing"]) expect(carryableAboard(scene, id)).toBeUndefined();
   });
 });

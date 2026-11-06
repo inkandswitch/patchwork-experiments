@@ -105,8 +105,12 @@ function stage() {
       windlass: { traits: { "sailing.anchor": { down: true, rode: 0 } } },
       ladder: {},
       mast: {},
+      // a card table in her cockpit, and a board on it: aboard, but no part of her rig
+      table: {},
+      board: {},
     },
-    parents: new Map([["wheel", "hull"], ["rig", "hull"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"]]),
+    // the boom and sail hang from the mast, as the sloop's parts put them
+    parents: new Map([["wheel", "hull"], ["rig", "mast"], ["windlass", "hull"], ["ladder", "hull"], ["mast", "hull"], ["table", "hull"], ["board", "table"]]),
   };
   const s = {
     scene,
@@ -119,7 +123,7 @@ function stage() {
     holds: {}, // id → transform
     released: [], // [id, opts]
   };
-  const worlds = { hull: at(0, 0, 0), wheel: at(0, 1.6, 4), rig: at(0, 2.3, -1.6), windlass: at(0, 1.5, -4.3), ladder: at(1.8, 1.2, 0.4), mast: at(0, 1.4, -1.6) };
+  const worlds = { hull: at(0, 0, 0), wheel: at(0, 1.6, 4), rig: at(0, 2.3, -1.6), windlass: at(0, 1.5, -4.3), ladder: at(1.8, 1.2, 0.4), mast: at(0, 1.4, -1.6), table: at(0, 0.7, -0.6), board: at(0, 1.4, -0.6) };
   s.api = {
     scene: () => s.scene,
     worldOf: (id) => worlds[id] ?? null,
@@ -237,6 +241,10 @@ describe("the commands", () => {
     expect(s.cmd("sail").state("mast", s.look([0, 2.5, 6]))).toBe(null); // out of reach of the sail
     expect(s.cmd("sail").state("hull", near)).toBe(null); // the deck isn't the mast
     expect(s.cmd("sail").state("windlass", near)).toBe(null); // a station of its own
+    // something else aboard within reach of the sail, with no traits: no part of the sail
+    expect(s.cmd("sail").state("table", near)).toBe(null);
+    expect(s.cmd("sail").state("board", near)).toBe(null);
+    expect(s.cmd("haul").state("board", near)).toBe(null);
     const session = s.cmd("haul").run("mast");
     session.update(1);
     session.end();
