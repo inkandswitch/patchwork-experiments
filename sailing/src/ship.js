@@ -337,7 +337,9 @@ function ellipsoid(shape, at, [rx, ry, rz], rows = 10, segs = 16) {
 
 const MAST_Z = -1.6;
 const MAST_HEIGHT = 14;
-const BOOM_HEIGHT = 1.0; // the gooseneck, above the deck at the mast
+// the gooseneck, above the deck at the mast: high enough that the boom
+// swings clear over a head standing in the cockpit (sole 0.72, eye 1.6 up)
+const BOOM_HEIGHT = 1.45;
 const COCKPIT = { z0: 1.95, z1: 5.15, half: 0.8, floor: 0.72 };
 const CABIN = { z0: -1.3, z1: 1.95, half: 0.95, top: 1.72 };
 const WHEEL_Z = 4.25;
@@ -741,7 +743,8 @@ function rigMeshes() {
   const fittings = new Shape();
   box(fittings, [-0.05, -0.06, -0.1], [0.05, 0.06, 0.04]);
   parts.push(prim(fittings, PAINT.bronze, { roughness: 0.35, metallic: 0.8 }));
-  parts.push(prim(sailShape(), PAINT.sail, { roughness: 0.9 }));
+  // the sail is its own mesh (node "Sail"), so a view can lower it to the boom
+  const cloth = [prim(sailShape(), PAINT.sail, { roughness: 0.9 })];
   // battens: four stiff strips in pockets, darker against the cloth
   const battens = new Shape();
   const sail = sailShape();
@@ -754,8 +757,11 @@ function rigMeshes() {
     }
     tube(battens, pts, 0.018, 4);
   }
-  parts.push(prim(battens, "#d8d2c3", { roughness: 0.8 }));
-  return [{ name: "Boom and sail", primitives: parts }];
+  cloth.push(prim(battens, "#d8d2c3", { roughness: 0.8 }));
+  return [
+    { name: "Boom and sail", primitives: parts },
+    { name: "Sail", primitives: cloth },
+  ];
 }
 
 // ─── Fittings ─────────────────────────────────────────────────────────────

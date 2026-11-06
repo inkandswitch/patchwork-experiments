@@ -6,13 +6,14 @@
 // - "sailing" plays: in a scene whose doc has a sailing trait (the sea on
 //   the scene; the ship and its stations on objects), the "play" activity
 //   floats the ship, walks its deck and works its stations;
-// - "sailing.edit" draws the sea and the ship at its mooring while editing;
+// - "sailing.edit" draws the sea while editing (following the sailors' clock
+//   when someone is sailing her meanwhile);
 // - the "ship-at-sea" template lays out a sloop at anchor in an empty scene
 //   and starts it in play, so its maker is aboard at once.
 // A sea, a ship or a station in any other scene comes from the inspector's
 // "Add behaviour…", which reads `describes`.
 
-const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"];
+const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 // what the traits are, for the scene's inspector ("Add behaviour…"), so a
 // ship can be rigged without a script. Who's at a station and who simulates
@@ -44,7 +45,7 @@ const DESCRIBES = {
   "sailing.sail": {
     name: "Sail",
     on: "object",
-    blurb: "A station that trims the ship's sail; swings about its own Y axis as the boom does",
+    blurb: "A station that trims the ship's sail; swings about its own Y axis as the boom does. Its \"Sail\" node is lowered and bellied each view",
     fields: [
       { key: "raised", label: "Raised", kind: "number", default: 1, min: 0, max: 1, step: 0.01 },
       { key: "sheet", label: "Sheet (0 in, 1 out)", kind: "number", default: 0.5, min: 0, max: 1, step: 0.01 },
@@ -59,6 +60,21 @@ const DESCRIBES = {
       { key: "rode", label: "Rode out (m)", kind: "number", default: 0, min: 0, step: 0.5 },
     ],
   },
+  "sailing.hook": {
+    name: "Anchor (the hook)",
+    on: "object",
+    blurb: "The anchor itself, attached under the ship: it lies on the bottom while the windlass has it down",
+  },
+  "sailing.ladder": {
+    name: "Ladder",
+    on: "object",
+    blurb: "A way aboard from the water, on the ship it's attached to",
+  },
+  "sailing.float": {
+    name: "Float",
+    on: "object",
+    blurb: "Rides the waves where it's moored: bobs and tilts with the sea, in Play",
+  },
 };
 
 export const plugins = [
@@ -70,10 +86,10 @@ export const plugins = [
     activities: ["play"],
     describes: DESCRIBES,
     // playing brings no editor, so it says what it needs: Enter to play
-    // goes through the key map, notices, the camera framing the scene as it
-    // loads, and the use prompt ("F to take the helm") over its stations'
-    // commands. While aboard, play holds the camera and framing stands aside.
-    requires: ["scene.keys", "scene.notices", "scene.autoframe", "scene.use"],
+    // goes through the key map, notices, and the use prompt ("F to take the
+    // helm") over its stations' commands. No framing: the camera opens off
+    // the ship's quarter (crew.js), not fitted to the islet on the horizon.
+    requires: ["scene.use", "scene.keys", "scene.notices"],
     async load() {
       return (await import("./play.js")).default;
     },

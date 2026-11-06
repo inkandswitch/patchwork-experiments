@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 import { plugins } from "./index.js";
 
 const byId = (id) => plugins.find((p) => p.id === id);
-const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor"];
+const TRAITS = ["sailing.sea", "sailing.ship", "sailing.helm", "sailing.sail", "sailing.anchor", "sailing.hook", "sailing.ladder", "sailing.float"];
 
 describe("sailing's plugins", () => {
   it("are two scene extensions and a template, and nothing else", () => {
@@ -34,7 +34,7 @@ describe("sailing's plugins", () => {
   });
 
   it("brings what playing needs without the editor: keys, notices, framing and the use prompt", () => {
-    expect(byId("sailing").requires).toEqual(["scene.keys", "scene.notices", "scene.autoframe", "scene.use"]);
+    expect(byId("sailing").requires).toEqual(["scene.use", "scene.keys", "scene.notices"]);
     expect(byId("sailing.edit").requires).toBeUndefined();
   });
 

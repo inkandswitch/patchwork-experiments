@@ -1,0 +1,217 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>sailing probe</title>
+<!-- Driven by probes/sailing-run.mjs. The BUILT scene tool (scene/dist: the
+     stage and its parts) with the BUILT sailing plugins (sailing/dist) in a
+     stub registry, on an in-memory repo. Two views of one doc, A and B, each
+     view's broadcasts (presence, poses) reaching only the other, a few ms
+     late. A starts the scene from the "Ship at sea" template; B joins when
+     the runner calls joinB(). The runner drives both with a real mouse and
+     keyboard over CDP, and reads what each view shows through window.__p. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 800px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Sailing probe", objects: {}, order: [], traits: {}, dimensions: {}, view: { units: "m", grid: false }, camera: null });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hostA = document.getElementById("a"), hostB = document.getElementById("b");
+  hostA.repo = repo; hostB.repo = repo;
+  hostA.viewerId = "viewer:a"; hostB.viewerId = "viewer:b";
+  const cleanups = { a: Tool(A, hostA), b: null };
+  const dbg = { a: hostA.querySelector(".scene-stage").__sceneDebug, b: null };
+  const hosts = { a: hostA, b: hostB };
+
+  const P = (window.__p = {
+    errors, scene, repo, hostA, hostB,
+    get A() { return dbg.a; },
+    get B() { return dbg.b; },
+    joinB() {
+      if (dbg.b) return;
+      cleanups.b = Tool(B, hostB);
+      dbg.b = hostB.querySelector(".scene-stage").__sceneDebug;
+    },
+    /** close a view: its stage disposed (a clean leave: the claims go, a bye is said) */
+    close(w) { cleanups[w]?.(); cleanups[w] = null; dbg[w] = null; },
+    doc: () => scene.doc(),
+    /** a doc change from outside both views (as an editor's would land) */
+    change: (fn) => scene.change(fn),
+    running: (w) => dbg[w].local.get().running.map((r) => r.id),
+    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    armed: (w) => dbg[w].local.get().armed ?? null,
+    session: (w) => dbg[w].presence.session,
+    objects: () => Object.entries(scene.doc().objects ?? {}).filter(([, o]) => o.kind !== "group").map(([id]) => id),
+    byName: (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0] ?? null,
+    loaded(w) {
+      const ids = this.objects();
+      const vp = dbg[w].viewport;
+      return { total: ids.length, loaded: ids.filter((id) => vp.contentOf(id)?.loaded).length };
+    },
+    /** the sailing extension's parts in a view (play.js's debug: ctx) */
+    ctx: (w) => dbg[w].host.record("sailing")?.instance?.debug ?? null,
+    /** the displayed world matrix of an object, as a view draws it */
+    worldOf: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m ? [...m] : null; },
+    cam: (w) => dbg[w].viewport.getCamera(),
+    held: (w) => !dbg[w].viewport.controls.enabled,
+    me: (w) => P.ctx(w)?.crew.me() ?? null,
+    read: (id, w) => P.ctx(w)?.sim.read(id) ?? null,
+    clock: (w) => P.ctx(w)?.sea.clock() ?? null,
+    simulating: (w) => !!P.ctx(w)?.sim.simulating(),
+    value: (id, w) => P.ctx(w)?.sim.value(id) ?? null,
+    stations: (ship, w) => P.ctx(w)?.sim.stationsOf(ship) ?? null,
+    /** put a view's body somewhere: local to ship `on`, else world */
+    place: (w, on, position, yaw, pitch) => P.ctx(w).crew.place(on, position, yaw, pitch),
+    /** the use prompt's verbs, as shown */
+    verbs: (w) => [...hosts[w].querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => ({ command: e.dataset.command, name: e.querySelector(".use-name")?.textContent ?? "", disabled: e.hasAttribute("data-disabled"), held: e.hasAttribute("data-held") })),
+    text: (sel, w) => [...hosts[w].querySelectorAll(sel)].map((e) => e.textContent.trim()),
+    rect(sel, w) {
+      const e = hosts[w].querySelector(sel);
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+    },
+    viewRect(w) { const r = hosts[w].getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
+    canvasCentre(w) {
+      const r = dbg[w].viewport.canvas.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    },
+    /** the camera's yaw (0 looks down -Z; left is positive) and pitch */
+    yawPitch(w) {
+      const c = dbg[w].viewport.getCamera();
+      const d = [c.target[0] - c.position[0], c.target[1] - c.position[1], c.target[2] - c.position[2]];
+      const l = Math.hypot(...d);
+      return { yaw: Math.atan2(-d[0], -d[2]), pitch: Math.asin(d[1] / l) };
+    },
+    /** the avatars sailing draws in a view: their world positions */
+    avatars(w) {
+      const out = [];
+      for (const g of dbg[w].viewport.layers.get("sailing") ?? []) for (const c of g.children) if (c.isGroup && c.visible) out.push(c.position.toArray());
+      return out;
+    },
+    labels: (w) => [...hosts[w].querySelectorAll(".label")].map((e) => e.textContent.trim()).filter(Boolean),
+    /** what the stage draws with: sky, fog, shadows */
+    look(w) {
+      const v = dbg[w].viewport;
+      return { atmosphere: v.atmosphere, sky: !!v.sky?.visible, fog: !!v.scene.fog, shadowMap: v.renderer.shadowMap.enabled };
+    },
+    /** the doc's hull transform changes, counted from watchDoc() */
+    watchDoc(id) {
+      const seen = { n: 0, writes: 0, last: JSON.stringify(scene.doc().objects[id]?.transform) };
+      scene.on("change", () => {
+        seen.writes++;
+        const t = JSON.stringify(scene.doc().objects[id]?.transform);
+        if (t !== seen.last) (seen.n++, (seen.last = t));
+      });
+      P.docSeen = seen;
+    },
+    /** sample a view's displayed hull every animation frame for `ms`: [t, x, y, z, yaw, roll] */
+    async sampleFrames(id, w, ms = 1500) {
+      const out = [];
+      const t0 = performance.now();
+      await new Promise((done) => {
+        const f = () => {
+          const m = dbg[w]?.viewport.worldOf(id);
+          if (m) out.push([performance.now() - t0, m[12], m[13], m[14], Math.atan2(m[8], m[10]), Math.asin(Math.max(-1, Math.min(1, m[1])))]);
+          if (performance.now() - t0 < ms) requestAnimationFrame(f);
+          else done();
+        };
+        requestAnimationFrame(f);
+      });
+      return out;
+    },
+    /** per frame for `ms`: the hull's height over the water under its origin, at the clock the view draws the sea at */
+    async sampleFloat(id, w, ms = 2000) {
+      const out = [];
+      const t0 = performance.now();
+      await new Promise((done) => {
+        const f = () => {
+          const m = dbg[w]?.viewport.worldOf(id);
+          const sea = P.ctx(w)?.sea;
+          if (m && sea) out.push(m[13] - sea.ocean.heightAt(m[12], m[14], sea.clock()));
+          if (performance.now() - t0 < ms) requestAnimationFrame(f);
+          else done();
+        };
+        requestAnimationFrame(f);
+      });
+      return out;
+    },
+    /**
+     * Where to put the pointer (client px) so a view's pick lands on `id`
+     * (or something attached under it): the box's middle, else the nearest
+     * point of a spiral around it that hits. null if none does.
+     */
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const parents = dbg[w].scene().parents;
+      const under = (h) => { for (let at = h, n = 0; at != null && n < 32; at = parents.get(at), n++) if (at === id) return true; return false; };
+      // around its origin (where a station pivots: what's in reach), then its box's middle
+      const m = v.worldOf(id);
+      const box = v.objectBox(id);
+      const c = box && !box.isEmpty() ? box.getCenter(new box.min.constructor()) : null;
+      for (const at of [m && [m[12], m[13], m[14]], c && [c.x, c.y, c.z]]) {
+        const p = at && v.project(at);
+        if (!p) continue;
+        for (let k = 0; k < 900; k++) {
+          const a = k * 0.6, rad = 4.4 * Math.sqrt(k);
+          const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+          if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+          const hit = v.pick(x, y);
+          if (hit && under(hit.id)) return { x: r.left + x, y: r.top + y, id: hit.id };
+        }
+      }
+      return null;
+    },
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

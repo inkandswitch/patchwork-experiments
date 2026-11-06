@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import template from "./template.js";
 import { FIT } from "./ship.js";
-import { headTo, layOutShip, turn } from "./layout.js";
+import { REACH, WAY, headTo, layOutShip, turn } from "./layout.js";
 
 /** A template's context: just what layout.js uses, and a notify. */
 function fakeScene(doc) {
@@ -37,7 +37,7 @@ describe("the Ship at sea template", () => {
     expect(Number.isInteger(sea.seed)).toBe(true);
     expect(doc.view.activity).toBe("play");
     expect(calls.notices.at(-1).kind).toBe("info");
-    expect(calls.notices.at(-1).text).toMatch(/Play/);
+    expect(calls.notices.at(-1).text).toMatch(/come aboard/);
   });
 
   it("files each part as a GLB doc, and every object shows one passthrough", async () => {
@@ -68,16 +68,19 @@ describe("the Ship at sea template", () => {
     const hullId = await layOutShip(ctx, { seed: 7 });
     const hull = doc.objects[hullId];
     expect(hull.name).toBe("Sloop");
-    expect(hull.traits).toEqual({ "sailing.ship": {} }); // no spec: read from its box
+    // no spec (read from its box), only the way she has on
+    expect(Object.keys(hull.traits["sailing.ship"])).toEqual(["motion"]);
     expect(hull.parent).toBeNull();
     expect(doc.traits["sailing.sea"].seed).toBe(7);
 
     const byName = Object.fromEntries(Object.values(doc.objects).map((o) => [o.name, o]));
     const aboard = ["Mast", "Boom and sail", "Wheel", "Windlass", "Anchor", "Ladder"];
     for (const name of aboard) expect(byName[name].parent).toBe(hullId);
+    // she's under way: the sail up and drawing, the anchor up
     expect(byName["Boom and sail"].traits).toEqual({ "sailing.sail": { raised: 1, sheet: 0.5 } });
     expect(byName.Wheel.traits).toEqual({ "sailing.helm": { angle: 0 } });
-    expect(byName.Windlass.traits).toEqual({ "sailing.anchor": { down: true, rode: 0 } });
+    expect(byName.Windlass.traits).toEqual({ "sailing.anchor": { down: false, rode: 0 } });
+    expect(byName.Anchor.traits).toEqual({ "sailing.hook": {} });
     expect(byName.Mast.traits).toBeUndefined();
     // transforms in the hull's frame: where FIT puts them
     expect(byName.Wheel.transform.position).toEqual(FIT.wheel.position);
@@ -87,16 +90,21 @@ describe("the Ship at sea template", () => {
     for (const name of aboard) expect(byName[name].locked).toBe(false);
   });
 
-  it("lies head to wind, with landmarks ahead and a home view off the stern quarter", async () => {
+  it("sails across the wind with way on, the landmarks upwind, and a home view off her stern quarter", async () => {
     const doc = emptyScene();
     const { ctx } = fakeScene(doc);
     const hullId = await layOutShip(ctx, { wind: { speed: 5, from: 90 } });
     const yaw = doc.objects[hullId].transform.rotation[1];
-    expect(yaw).toBeCloseTo(headTo(90));
-    // the bow (body −Z) points where the wind comes from: east, +X
+    expect(yaw).toBeCloseTo(headTo(90) + REACH);
+    // the wind (from the east, +X) comes over her starboard bow, nearly abeam
     const bow = turn([0, 0, -1], yaw);
-    expect(bow[0]).toBeCloseTo(1);
-    expect(bow[2]).toBeCloseTo(0);
+    const windward = [1, 0, 0];
+    expect(bow[0] * windward[0] + bow[2] * windward[2]).toBeCloseTo(Math.cos(REACH));
+    expect(turn([1, 0, 0], yaw)[0]).toBeGreaterThan(0.9); // starboard faces the wind
+    // moving the way she points
+    const v = doc.objects[hullId].traits["sailing.ship"].motion.velocity;
+    expect(v[0] / WAY).toBeCloseTo(bow[0]);
+    expect(v[2] / WAY).toBeCloseTo(bow[2]);
 
     const group = Object.entries(doc.objects).find(([, o]) => o.kind === "group");
     expect(group[1].name).toBe("Landmarks");
@@ -105,16 +113,16 @@ describe("the Ship at sea template", () => {
     for (const m of marks) {
       expect(m.locked).toBe(true);
       expect(m.parent).toBeNull();
-      // ahead of the bow, so the stern-quarter view looks past the ship at them
+      // upwind, where she can reach them
       const p = m.transform.position;
-      expect(p[0] * bow[0] + p[2] * bow[2]).toBeGreaterThan(30);
+      expect(p[0] * windward[0] + p[2] * windward[2]).toBeGreaterThan(30);
     }
 
     const { position, target } = doc.view.home;
     const d = Math.hypot(position[0] - target[0], position[1] - target[1], position[2] - target[2]);
     expect(d).toBeGreaterThan(17);
     expect(d).toBeLessThan(23);
-    // astern (against the bow) and to starboard (+X in the body: turn([1,0,0]))
+    // astern of her (against the bow) and to starboard (+X in the body: turn([1,0,0]))
     const stbd = turn([1, 0, 0], yaw);
     expect(position[0] * bow[0] + position[2] * bow[2]).toBeLessThan(-5);
     expect(position[0] * stbd[0] + position[2] * stbd[2]).toBeGreaterThan(5);
