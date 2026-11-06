@@ -1,0 +1,97 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ship probe</title>
+<!-- Driven by probes/ship-shots.mjs. Builds every part's GLB with the real
+     src/ship.js, loads the bytes with three's GLTFLoader (borrowed from the
+     scene package's node_modules: this page is a dev probe, not part of any
+     build), puts them together the way the template does (FIT, in the hull's
+     frame) and shows them from a named view. ?water=0 hides the sea. -->
+<script type="importmap">
+{ "imports": {
+  "three": "/scene/node_modules/three/build/three.module.js",
+  "three/addons/": "/scene/node_modules/three/examples/jsm/"
+} }
+</script>
+<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc3e0; }</style>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { FIT, partGLB } from "../src/ship.js";
+
+const q = new URLSearchParams(location.search);
+const W = innerWidth, H = innerHeight;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+document.body.append(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#a9cbe6");
+scene.fog = new THREE.Fog("#a9cbe6", 150, 900);
+const camera = new THREE.PerspectiveCamera(45, W / H, 0.05, 3000);
+scene.add(new THREE.HemisphereLight("#dfefff", "#2a4058", 1.4));
+const sun = new THREE.DirectionalLight("#fff4e0", 2.6);
+sun.position.set(30, 40, 18);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 18, bottom: -6, near: 1, far: 120 });
+scene.add(sun);
+if (q.get("water") !== "0") {
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: "#1f4f6e", roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.88 }));
+  sea.rotation.x = -Math.PI / 2;
+  sea.receiveShadow = true;
+  scene.add(sea);
+}
+
+const loader = new GLTFLoader();
+const load = (kind) => new Promise((ok, no) => {
+  const { bytes } = partGLB(kind);
+  loader.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), "", (g) => ok(g.scene), no);
+});
+const shadows = (o) => o.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; } });
+
+const ship = await load("hull");
+shadows(ship);
+const yaw = Number(q.get("yaw") ?? 0);
+ship.rotation.y = yaw;
+scene.add(ship);
+const parts = {};
+for (const kind of ["mast", "rig", "wheel", "windlass", "ladder", "anchor"]) {
+  const o = await load(kind);
+  shadows(o);
+  o.position.set(...FIT[kind].position);
+  o.rotation.set(...FIT[kind].rotation);
+  ship.add(o);
+  parts[kind] = o;
+}
+for (const [kind, at] of [["redBuoy", [-14, 0, -48]], ["greenBuoy", [18, 0, -70]], ["islet", [-45, 0, -160]]]) {
+  const o = await load(kind);
+  o.position.set(...at);
+  scene.add(o);
+}
+parts.rig.rotation.y = Number(q.get("boom") ?? 0.35);
+parts.wheel.rotation.z = Number(q.get("helm") ?? 0);
+
+// views, in the ship's frame
+const VIEWS = {
+  quarter: [[12, 6.5, 16], [0, 3, 0]],
+  far: [[22, 9, 30], [0, 6, -4]],
+  side: [[24, 3, 0], [0, 4.5, 0]],
+  bow: [[-7, 4, -17], [0, 3, 0]],
+  top: [[6, 24, 4], [0, 0, 0]],
+  under: [[16, -0.6, 2], [0, -0.3, 0]],
+  helm: [[3.2, 3.3, 9.5], [0, 1.4, 2.5]],
+  foredeck: [[2.8, 3.2, -9.5], [0, 1.2, -4]],
+};
+window.view = (name) => {
+  const [p, t] = VIEWS[name];
+  const v = new THREE.Vector3(...p).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  const tt = new THREE.Vector3(...t).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  camera.position.copy(v);
+  camera.lookAt(tt);
+  renderer.render(scene, camera);
+  return true;
+};
+window.view(q.get("view") ?? "quarter");
+window.ready = true;
+</script>

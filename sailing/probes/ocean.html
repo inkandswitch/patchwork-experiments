@@ -1,0 +1,124 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ocean probe</title>
+<!-- The sea on its own, drawn as the stage would draw it: three's renderer
+     with sRGB output and no tone mapping, the stage's sky gradient (copied
+     from scene/src/stage/viewport.js), linear fog in the horizon's colour
+     and a sun. Driven by probes/ocean-run.mjs, which serves three.js at
+     /three/ and calls window.__render(view) for each screenshot. -->
+<script type="importmap">
+{ "imports": { "three": "/three/three.module.js" } }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+  canvas { display: block; }
+</style>
+<script type="module">
+import * as THREE from "three";
+import { createOcean } from "../src/ocean.js";
+import { createOceanSurface } from "../src/ocean-material.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+window.__errors = errors;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1);
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.append(renderer.domElement);
+
+const scene = new THREE.Scene();
+// a far plane well short of the horizon, as the stage's camera often has: the sea must reach the horizon anyway
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 1500);
+
+// the stage's sky
+const SKY_VERTEX = `
+varying vec3 vDir;
+void main() {
+  vec4 view = inverse(projectionMatrix) * vec4(position.xy, 1.0, 1.0);
+  vDir = (inverse(viewMatrix) * vec4(view.xyz / view.w, 0.0)).xyz;
+  gl_Position = vec4(position.xy, 1.0, 1.0);
+}`;
+const SKY_FRAGMENT = `
+uniform vec3 top;
+uniform vec3 horizon;
+uniform vec3 bottom;
+uniform vec3 sunDir;
+uniform vec3 sunColor;
+uniform float sunOn;
+varying vec3 vDir;
+void main() {
+  vec3 d = normalize(vDir);
+  vec3 c = d.y > 0.0 ? mix(horizon, top, pow(d.y, 0.55)) : mix(horizon, bottom, pow(-d.y, 0.4));
+  float s = max(dot(d, sunDir), 0.0);
+  c += sunOn * sunColor * (smoothstep(0.9993, 0.9997, s) * 1.5 + pow(s, 16.0) * 0.3);
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+}`;
+const skyGeo = new THREE.BufferGeometry();
+skyGeo.setAttribute("position", new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+const skyMat = new THREE.ShaderMaterial({
+  uniforms: {
+    top: { value: new THREE.Color() },
+    horizon: { value: new THREE.Color() },
+    bottom: { value: new THREE.Color() },
+    sunDir: { value: new THREE.Vector3(0, 1, 0) },
+    sunColor: { value: new THREE.Color() },
+    sunOn: { value: 1 },
+  },
+  vertexShader: SKY_VERTEX,
+  fragmentShader: SKY_FRAGMENT,
+  depthTest: false,
+  depthWrite: false,
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+sky.frustumCulled = false;
+sky.renderOrder = -1e9;
+scene.add(sky);
+
+let sea = null;
+let surface = null;
+let key = null;
+
+/**
+ * Draw one view. view: { wind: { speed, from }, seed, scale, eye: [x, y, z],
+ * yaw (deg, 0 looks down −Z), pitch (deg), t, sky: { top, horizon, bottom },
+ * sun: { direction, color, intensity }, fog: { near, far } | null }
+ */
+window.__render = (view) => {
+  const k = JSON.stringify([view.wind, view.seed, view.scale]);
+  if (k !== key) {
+    key = k;
+    sea = createOcean({ wind: view.wind, seed: view.seed ?? 1, scale: view.scale ?? 1 });
+    if (surface) surface.setSea(sea);
+    else {
+      surface = createOceanSurface(THREE, sea);
+      scene.add(surface.object);
+    }
+  }
+  const atm = view;
+  skyMat.uniforms.top.value.set(atm.sky.top);
+  skyMat.uniforms.horizon.value.set(atm.sky.horizon);
+  skyMat.uniforms.bottom.value.set(atm.sky.bottom ?? atm.sky.horizon);
+  skyMat.uniforms.sunDir.value.set(...atm.sun.direction).normalize();
+  skyMat.uniforms.sunColor.value.set(atm.sun.color);
+  scene.fog = atm.fog ? new THREE.Fog(atm.fog.color ?? atm.sky.horizon, atm.fog.near, atm.fog.far) : null;
+
+  const [x, y, z] = view.eye;
+  // the eye rides the water: y is height above the surface under it
+  const ground = sea.heightAt(x, z, view.t);
+  camera.position.set(x, ground + y, z);
+  camera.rotation.order = "YXZ";
+  camera.rotation.set(THREE.MathUtils.degToRad(view.pitch ?? 0), THREE.MathUtils.degToRad(-(view.yaw ?? 0)), 0);
+  camera.updateMatrixWorld();
+  surface.update(view.t, camera.position, atm.sun, atm.sky);
+  const t0 = performance.now();
+  renderer.render(scene, camera);
+  const gl = renderer.getContext();
+  gl.finish();
+  return { ms: +(performance.now() - t0).toFixed(1), hs: sea.stats.hs, whitecaps: sea.stats.whitecaps, foamAt: surface.object.material.uniforms.uFoamAt.value, triangles: renderer.info.render.triangles, errors };
+};
+window.__ready = true;
+</script>
