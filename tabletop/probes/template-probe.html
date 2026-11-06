@@ -1,0 +1,139 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabletop template probe</title>
+<!-- Driven by probes/publish-table.mjs --template lost-cities. The BUILT
+     scene tool (scene/dist) with the BUILT tabletop and card-table plugins
+     (tabletop/dist, card-table/dist: a secure deck) in a stub registry, on an
+     in-memory repo, on an EMPTY scene (as the scene datatype's init makes
+     it). Two views of one doc, A (Ana) and B (Ben), each view's broadcasts
+     reaching only the other, a few ms late. A starts the scene from the
+     start screen's template (api.template, by clicking its button); B
+     opens it after that. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 700px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import * as lostCities from "../src/games/lost-cities.js";
+import * as santorini from "../src/games/santorini.js";
+import { kindsUsed } from "../src/setup.js";
+import { gameFileKey } from "../src/table/template.js";
+
+const GAMES = { "lost-cities": lostCities, santorini };
+const gameId = new URLSearchParams(location.search).get("game") || "lost-cities";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+/** A doc as JSON, its bytes as { $bytes: base64 }, so it can leave the page. */
+const portable = (doc) =>
+  JSON.parse(JSON.stringify(doc, (k, v) => {
+    if (v instanceof Uint8Array) {
+      let s = "";
+      for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode(...v.subarray(i, i + 0x8000));
+      return { $bytes: btoa(s) };
+    }
+    return v;
+  }));
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  // an empty scene, as the scene datatype's init makes it
+  const scene = repo.add({ "@patchwork": { type: "scene" }, title: "Untitled scene", objects: {}, order: [], dimensions: {}, traits: {}, assets: {}, view: { units: "m", grid: true, axes: true, bounds: false, snap: true } });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  // A opens the empty scene; B opens it once there is a table (a view joins
+  // where the doc says, and a later change to view.activity moves nobody)
+  Tool(A, hosts.a);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: null };
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const objects = () => scene.doc().objects ?? {};
+  const deckUrl = () => Object.values(objects()).map((o) => o.traits?.["tabletop.hidden"]?.by).find(Boolean) ?? null;
+  const deck = () => (deckUrl() ? repo.handles.get(deckUrl())?.doc() ?? null : null);
+  const game = {};
+  GAMES[gameId].fill(game);
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url }, gameId,
+    /** the start screen's choices in a view */
+    templates: (w) => [...hosts[w].querySelectorAll("[data-template]")].map((b) => b.dataset.template),
+    openB() { if (!dbg.b) { Tool(B, hosts.b); dbg.b = hosts.b.querySelector(".scene-stage").__sceneDebug; } return true; },
+    /** choose a template on a view's start screen */
+    start(w, id) { const b = hosts[w].querySelector(`[data-template="${id}"]`); if (!b) return false; b.click(); return true; },
+    /** the assets keys the game's every kind should be filed under */
+    expectedKeys: () => kindsUsed(game).map((k) => gameFileKey(gameId, k, game.pieces[k])),
+    doc: () => ({ title: scene.doc().title, view: scene.doc().view, assets: scene.doc().assets, traits: scene.doc().traits, count: Object.values(objects()).filter((o) => o.kind !== "group").length }),
+    /** objects whose GLB isn't one of the scene's files, and objects that name a game as About */
+    strays() {
+      const urls = new Set(Object.values(scene.doc().assets ?? {}).map((a) => a.url));
+      return Object.entries(objects()).filter(([, o]) => o.kind !== "group" && (!urls.has(o.sourceUrl) || o.infoUrl)).map(([id]) => id);
+    },
+    deckType: () => deck()?.["@patchwork"]?.type ?? null,
+    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    picker: (w) => select(w)?.options.length ?? 0,
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    activity: (w) => dbg[w]?.local.get().activities?.current ?? null,
+    phase: () => deck()?.phase ?? null,
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    faces: (w) => [...(dbg[w]?.looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    /** what a view is still loading, and what failed to load */
+    loading: (w) => { const st = Object.values(dbg[w].local.get().status ?? {}); return { loading: st.filter((s) => s?.state === "loading").length, errors: st.filter((s) => s?.state === "error").length }; },
+    /** the table's docs as they are now, to publish: the scene, its deck and its files */
+    snapshot() {
+      const urls = [scene.url, deckUrl(), ...Object.values(scene.doc().assets ?? {}).map((a) => a.url)].filter(Boolean);
+      return { scene: scene.url, deck: deckUrl(), docs: Object.fromEntries(urls.map((u) => [u, portable(repo.handles.get(u).doc())])) };
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

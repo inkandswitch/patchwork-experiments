@@ -1,13 +1,28 @@
-// A game → a fresh `scene` doc with every piece where it starts, and a doc
-// for each of its decks. Pure. The scene doc's shape is the scene package's
-// (scene/README.md, "scene — the composition"), with this package's traits
-// on it (src/table/visibility.js); this package only writes it, it never
-// imports the scene.
+// A game → a table: every piece where it starts, and a doc for each of its
+// decks. The one writer both ways of making a table use:
+//
+//   const layout = tableLayout(game, { fileOf, newId, rng, gameUrl });   // pure
+//   // make each of layout.decks with repo.create2, then, in one change:
+//   writeTable(d, layout, deckUrls);
+//
+// - The game page's "Set up a table" (tool.js) writes it onto a skeleton
+//   scene doc it then creates; each kind shows the game's own GLB doc
+//   (`glbUrl`), which redraws when the game changes, and the game is each
+//   object's About.
+// - The scene's start screen (table/template.js) writes it into the empty
+//   scene it was opened on; each kind's GLB is the scene's own file
+//   (ctx.file), so the table stands alone.
+//
+// The scene doc's shape is the scene package's (scene/README.md, "scene —
+// the composition"), with this package's traits on it
+// (src/table/visibility.js); this package only writes it, it never imports
+// the scene.
 //
 // - Each visible piece kind with more than one copy gets a group, so the
 //   outline stays short; a single piece (the board) sits at the top level.
-// - Every copy is a passthrough object showing the kind's GLB file doc, with
-//   the game as its About (infoUrl), and the kind's box as its load hint.
+// - Every copy is a passthrough object showing its kind's GLB file doc
+//   (`fileOf(kind)` → { url, hint }), with the kind's box as its load hint,
+//   and the game as its About (infoUrl) when there is a game doc.
 // - Hidden kinds (`hidden: true`) go into their deck: shuffled together, dealt
 //   onto the snap points of the pieces the deck deals to, the rest stacked.
 //   In the scene each is its `back` piece (name, GLB, box) with the trait
@@ -17,12 +32,21 @@
 //   a `plain-deck` doc, or for a `secure` deck a `secure-deck` (the
 //   card-table package's; card-table/README.md), which lists the cards and
 //   which object is which position, and which the seated players shuffle
-//   between them so that nobody knows the order.
+//   between them so that nobody knows the order. With `secure: false`
+//   every deck is plain (a template where no secure deck is installed).
+//   Until the decks exist, a hidden card names its deck `deck:<id>`;
+//   writeTable puts each deck's url there.
 // - A piece with a `zone` makes its copy a seat's private area (trait tabletop.zone).
-// - The game's seats become the scene's (trait tabletop.seats).
-// - The scene opens in the hand, with snapping on, the grid and axes off, and
-//   the Table panel first.
-
+// - The game's seats become the scene's (trait tabletop.seats), unless the
+//   scene already has seats (a shared map is made once: scene/STAGE.md).
+// - A piece's `tags` go on each of its copies (the connectors they fit: a
+//   card slot is tagged "card"). A hidden card has its back's tags, so they
+//   say nothing about which card it is.
+// - The scene opens in play, in the hand, with snapping on and the grid and
+//   axes off; the table extension's seat picker sits over the table.
+//   (A game with no seats, zones or hidden cards, such as Santorini, gives
+//   the table extension nothing to run on, so there is no play to open in
+//   yet and it opens in the editor, in the hand.)
 
 /** Where the i-th copy of a piece starts: a grid of `cols` from `at`, `gap` apart. [x, 0, z] */
 export function supplySpot(supply, i) {
@@ -56,14 +80,44 @@ export function shuffle(list, rng = Math.random) {
   return a;
 }
 
+const DECK_PREFIX = "deck:";
+
+/** The piece kinds a table of this game shows: every visible kind it has copies of, and each card of a deck with its back. */
+export function kindsUsed(game) {
+  const pieces = game?.pieces ?? {};
+  const decks = game?.decks ?? {};
+  const used = new Set();
+  for (const kind of orderedKinds(game)) {
+    const p = pieces[kind];
+    if (!copies(p)) continue;
+    if (!p.hidden) used.add(kind);
+    else if (Object.hasOwn(decks, p.deck ?? "")) {
+      used.add(kind);
+      if (p.back && pieces[p.back]) used.add(p.back);
+    }
+  }
+  return [...used];
+}
+
+const copyBounds = (b) => (Array.isArray(b?.min) && Array.isArray(b?.max) ? { min: [...b.min], max: [...b.max] } : null);
+
 /**
- * @param {object} game     the tabletop-game doc; every piece must have its glbUrl
- * @param {string} gameUrl
- * @param {{ newId?: (prefix: string) => string, title?: string, rng?: () => number }} [o]
- * @returns {{ scene: object, decks: { [deckId]: object } }} docs ready for repo.create2:
- *   create each deck, then pass their urls to linkDecks(scene, urls) before creating the scene
+ * Lay a game out. Pure: it writes nothing and makes no docs.
+ * @param {object} game  the tabletop-game doc (or one a game's fill() filled)
+ * @param {{
+ *   fileOf: (kind: string) => { url: string, hint?: { bounds? } | null } | null,
+ *   newId?: (prefix: string) => string,
+ *   rng?: () => number,
+ *   gameUrl?: string | null,
+ *   secure?: boolean,
+ * }} o  fileOf: the GLB file doc a kind shows, and its box; gameUrl: the game,
+ *   as each object's About (none for a template's table); secure: false makes
+ *   every deck plain
+ * @returns {{ objects, order, seats, decks: { [deckId]: object }, view }} the scene's
+ *   objects (hidden ones naming their deck `deck:<id>`), their order, its seats
+ *   ({} for none), the deck docs to create, and its view settings
  */
-export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = {}) {
+export function tableLayout(game, { fileOf, newId, rng = Math.random, gameUrl = null, secure = true } = {}) {
   let n = 0;
   const id = newId ?? ((prefix) => `${prefix}${(n++).toString(36).padStart(4, "0")}`);
   const objects = {};
@@ -72,10 +126,16 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
   const pieces = game?.pieces ?? {};
   // every piece is filed in a group (or none), never attached to another
   const base = (name, group) => ({ name, parent: null, group, visible: true, color: null, opacity: 1, wireframe: false });
+  const files = new Map();
+  /** A kind's file: { url, bounds }, or it throws. */
   const drawn = (kind) => {
-    const p = pieces[kind];
-    if (!p?.glbUrl) throw new Error(`“${p?.name || kind}” has no GLB yet`);
-    return p;
+    if (!files.has(kind)) {
+      const p = pieces[kind];
+      const f = fileOf?.(kind);
+      if (!f?.url) throw new Error(`“${p?.name || kind}” has no GLB yet`);
+      files.set(kind, { url: f.url, bounds: copyBounds(f.hint?.bounds) });
+    }
+    return files.get(kind);
   };
   const group = (name) => {
     const gid = id("g");
@@ -83,18 +143,21 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
     order.push(gid);
     return gid;
   };
-  const place = (piece, { name, parent, transform }) => {
+  const place = (kind, { name, parent, transform }) => {
+    const piece = pieces[kind];
+    const file = drawn(kind);
     const oid = id("o");
     objects[oid] = {
       ...base(name, parent),
-      sourceUrl: piece.glbUrl,
+      sourceUrl: file.url,
       providerId: "file-glb",
       renderUrl: null,
       transform,
-      infoUrl: gameUrl,
-      infoToolId: "tabletop-game",
+      ...(gameUrl ? { infoUrl: gameUrl, infoToolId: "tabletop-game" } : {}),
       ...(piece.locked ? { locked: true } : {}),
-      ...(piece.bounds ? { hint: { bounds: { min: [...piece.bounds.min], max: [...piece.bounds.max] } } } : {}),
+      // what connectors it fits (a card: the card slots); public, so only ever a kind's, never a card's own
+      ...(Array.isArray(piece.tags) && piece.tags.length ? { tags: [...piece.tags] } : {}),
+      ...(file.bounds ? { hint: { bounds: copyBounds(file.bounds) } } : {}),
     };
     order.push(oid);
     return oid;
@@ -110,7 +173,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
     const parent = count > 1 ? group(`${piece.name || kind} (${count})`) : null;
     for (let i = 0; i < count; i++) {
       const yaw = Number(piece.supply?.yaw) || 0;
-      const oid = place(piece, {
+      const oid = place(kind, {
         name: count > 1 ? `${piece.name || kind} ${i + 1}` : piece.name || kind,
         parent,
         transform: { position: supplySpot(piece.supply, i), rotation: [0, yaw, 0], scale: 1 },
@@ -133,15 +196,15 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
     const backKind = [...backKinds][0];
     const back = backKind && pieces[backKind];
     if (!back) throw new Error(`“${deck.name || deckId}” has no back to show its cards as`);
-    drawn(backKind);
+    const backFile = drawn(backKind);
     for (const k of cards) drawn(k);
     const parent = group(`${deck.name || deckId} (${cards.length})`);
     const shuffled = shuffle(cards, rng);
     const secretObjects = {};
     const card = (kind, transform) => {
-      const oid = place(back, { name: back.name || "Card", parent, transform });
+      const oid = place(backKind, { name: back.name || "Card", parent, transform });
       objects[oid].traits = { "tabletop.hidden": { by: `${DECK_PREFIX}${deckId}` } };
-      secretObjects[oid] = { sourceUrl: pieces[kind].glbUrl, name: pieces[kind].name || kind };
+      secretObjects[oid] = { sourceUrl: drawn(kind).url, name: pieces[kind].name || kind };
     };
     // dealt face up onto the first copy of each target's snap points
     let next = 0;
@@ -160,7 +223,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       }
     }
     // the rest in a stack, bottom first; face down is a half turn about the card's length
-    const h = Number(back.bounds?.max?.[1]) || 0;
+    const h = Number(backFile.bounds?.max?.[1]) || 0;
     const [ax, az] = deck.at ?? [0, 0];
     for (let j = 0; next < shuffled.length; j++) {
       card(shuffled[next++], {
@@ -170,7 +233,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
       });
     }
     const deckTitle = deck.name || deckId;
-    if (deck.secure) {
+    if (deck.secure && secure) {
       // positions in the deck are its objects in the order they were made; the players' shuffle decides which card each is
       const ids = Object.keys(secretObjects);
       deckDocs[deckId] = {
@@ -178,7 +241,7 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
         title: deckTitle,
         group: "rfc3526-2048",
         faces: ids.map((oid) => ({ ...secretObjects[oid] })),
-        back: { sourceUrl: back.glbUrl, name: back.name || "Card", ...(back.bounds ? { bounds: { min: [...back.bounds.min], max: [...back.bounds.max] } } : {}) },
+        back: { sourceUrl: backFile.url, name: back.name || "Card", ...(backFile.bounds ? { bounds: copyBounds(backFile.bounds) } : {}) },
         slots: Object.fromEntries(ids.map((oid, k) => [oid, k])),
         phase: "waiting",
         participants: [],
@@ -197,37 +260,56 @@ export function tableScene(game, gameUrl, { newId, title, rng = Math.random } = 
   for (const [sid, s] of Object.entries(game?.seats ?? {})) {
     seats[sid] = { name: s?.name || sid, player: null, ...(s?.camera ? { camera: JSON.parse(JSON.stringify(s.camera)) } : {}) };
   }
-  const name = title ?? `${game?.title || "Game"} table`;
+  // Play only where the table has something to play with: seats, private
+  // zones or hidden cards are what start the table extension and so put play
+  // on offer. A table with none (Santorini: everything in plain sight, no
+  // seats) opens in the editor, with the hand as its tool, rather than
+  // claiming a play it can't start ("Starts in: Play" over an editor).
+  const playable = Object.keys(seats).length > 0 || Object.values(objects).some((o) => o?.traits?.["tabletop.zone"] || o?.traits?.["tabletop.hidden"]);
   return {
-    scene: {
-      "@patchwork": { type: "scene" },
-      title: name,
-      objects,
-      order,
-      dimensions: {},
-      assets: {},
-      // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
-      traits: Object.keys(seats).length ? { "tabletop.seats": seats } : {},
-      view: {
-        units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand", activity: "play",
-        home: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
-      },
-    },
+    objects,
+    order,
+    seats,
     decks: deckDocs,
+    view: {
+      units: "cm", grid: false, axes: false, bounds: false, snap: true, tool: "hand",
+      ...(playable ? { activity: "play" } : {}),
+      home: game?.camera ? JSON.parse(JSON.stringify(game.camera)) : { position: [0, 0.72, 0.6], target: [0, 0, -0.04] },
+    },
   };
 }
 
-const DECK_PREFIX = "deck:";
+/** The deck a hidden object names before its doc exists (`deck:<id>`), or null. */
+const deckRef = (o) => {
+  const by = o?.traits?.["tabletop.hidden"]?.by;
+  return typeof by === "string" && by.startsWith(DECK_PREFIX) ? by.slice(DECK_PREFIX.length) : null;
+};
 
-/** Point each hidden object at its deck's doc, now that the decks exist (in place; returns the scene). */
-export function linkDecks(scene, urls) {
-  for (const o of Object.values(scene.objects)) {
-    const by = o.traits?.["tabletop.hidden"]?.by;
-    if (typeof by === "string" && by.startsWith(DECK_PREFIX)) {
-      const url = urls[by.slice(DECK_PREFIX.length)];
-      if (!url) throw new Error(`no doc for deck “${by.slice(DECK_PREFIX.length)}”`);
-      o.traits["tabletop.hidden"] = { by: url };
-    }
+/**
+ * Write a layout into a scene doc (inside a change, or onto a plain skeleton):
+ * its objects and their order, each hidden card naming its deck's url; the
+ * seats, only if the scene has none; and the view. Throws, writing nothing,
+ * if a deck has no url.
+ * @param {object} d  the scene doc (a draft)
+ * @param {ReturnType<typeof tableLayout>} layout
+ * @param {{ [deckId]: string }} deckUrls  each deck's doc, made already
+ */
+export function writeTable(d, layout, deckUrls = {}) {
+  for (const o of Object.values(layout.objects)) {
+    const deckId = deckRef(o);
+    if (deckId != null && !deckUrls[deckId]) throw new Error(`no doc for deck “${deckId}”`);
   }
-  return scene;
+  if (!d.objects) d.objects = {};
+  if (!d.order) d.order = [];
+  for (const oid of layout.order) {
+    const o = JSON.parse(JSON.stringify(layout.objects[oid]));
+    const deckId = deckRef(o);
+    if (deckId != null) o.traits["tabletop.hidden"] = { by: deckUrls[deckId] };
+    d.objects[oid] = o;
+    d.order.push(oid);
+  }
+  if (!d.traits) d.traits = {};
+  if (Object.keys(layout.seats ?? {}).length && !d.traits["tabletop.seats"]) d.traits["tabletop.seats"] = JSON.parse(JSON.stringify(layout.seats));
+  if (!d.view) d.view = {};
+  for (const [k, v] of Object.entries(layout.view ?? {})) d.view[k] = v && typeof v === "object" ? JSON.parse(JSON.stringify(v)) : v;
 }

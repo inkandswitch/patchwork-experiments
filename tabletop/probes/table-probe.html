@@ -1,0 +1,209 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabletop table probe</title>
+<!-- Driven by probes/table.mjs. The BUILT scene tool (scene/dist) with the
+     BUILT tabletop and card-table plugins (tabletop/dist, card-table/dist) in
+     a stub registry, on an in-memory repo, at a Lost Cities table with a
+     PLAIN deck (so a shuffle is a doc write, not a crypto round), written by
+     the one table writer (src/setup.js). Two views of one doc, A (Ana) and B
+     (Ben), both open from the start, each view's broadcasts (presence, poses,
+     sends) reaching only the other, a few ms late. A secure-deck doc, bound
+     to nothing, waits in the repo for the runner to drop on the table. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  body { display: flex; gap: 8px; }
+  #a, #b { width: 700px; height: 520px; flex: none; position: relative; }
+</style>
+<div id="a"></div><div id="b"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+import { fill } from "../src/games/lost-cities.js";
+import { ensurePieceGLBs } from "../src/pieces.js";
+import { tableLayout, writeTable } from "../src/setup.js";
+import { faceUp, facesOf, DIE } from "../src/table/dice.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+// Two views of one handle. A broadcast from one reaches the other only, 5 ms late.
+function peer(handle) {
+  const eph = new Set();
+  const p = {
+    url: handle.url,
+    doc: () => handle.doc(),
+    heads: () => handle.heads?.(),
+    change: (fn) => handle.change(fn),
+    on: (ev, fn) => (ev === "ephemeral-message" ? eph.add(fn) : handle.on(ev, fn)),
+    off: (ev, fn) => (ev === "ephemeral-message" ? eph.delete(fn) : handle.off(ev, fn)),
+    broadcast: (message) => setTimeout(() => { for (const fn of p.other.eph) fn({ message, senderId: "peer" }); }, 5),
+    eph,
+  };
+  return p;
+}
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "../../card-table/dist/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  const ana = repo.add({ "@patchwork": { type: "contact" }, name: "Ana" });
+  const ben = repo.add({ "@patchwork": { type: "contact" }, name: "Ben" });
+  const game = repo.add({ "@patchwork": { type: "tabletop-game" }, title: "Lost Cities", about: "", pieces: {}, order: [], tables: [] });
+  game.change((d) => fill(d));
+  await ensurePieceGLBs(repo, game);
+  const g = game.doc();
+  const fileOf = (k) => (g.pieces[k]?.glbUrl ? { url: g.pieces[k].glbUrl, hint: g.pieces[k].bounds ? { bounds: g.pieces[k].bounds } : null } : null);
+  // the table: a plain deck
+  const layout = tableLayout(g, { fileOf, gameUrl: game.url, secure: false });
+  const deckUrls = {};
+  for (const [id, deck] of Object.entries(layout.decks)) deckUrls[id] = (await repo.create2(deck)).url;
+  const table = { "@patchwork": { type: "scene" }, title: "Table probe", objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} };
+  writeTable(table, layout, deckUrls);
+  const scene = repo.add(table);
+  // a second deck, secure, bound to no table: what someone drags on
+  const loose = tableLayout(g, { fileOf, secure: true }).decks.main;
+  const looseDeck = await repo.create2({ ...JSON.parse(JSON.stringify(loose)), slots: {} });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const A = peer(scene), B = peer(scene);
+  A.other = B; B.other = A;
+  const hosts = { a: document.getElementById("a"), b: document.getElementById("b") };
+  hosts.a.repo = repo; hosts.b.repo = repo;
+  hosts.a.viewerId = ana.url; hosts.b.viewerId = ben.url;
+  Tool(A, hosts.a);
+  Tool(B, hosts.b);
+  const dbg = { a: hosts.a.querySelector(".scene-stage").__sceneDebug, b: hosts.b.querySelector(".scene-stage").__sceneDebug };
+  const told = { a: [], b: [] };
+  setInterval(() => {
+    for (const w of ["a", "b"]) for (const n of dbg[w]?.local.get().notices ?? []) if (!told[w].includes(n)) told[w].push(n);
+  }, 20);
+  const select = (w) => hosts[w].querySelector(".tabletop-seat");
+  const objects = () => scene.doc().objects;
+  const hiddenIds = () => Object.keys(objects()).filter((id) => objects()[id].traits?.["tabletop.hidden"]);
+  const zoneObj = (seat) => Object.keys(objects()).find((id) => objects()[id].traits?.["tabletop.zone"]?.seat === seat) ?? null;
+  const zoneOf = (id) => {
+    const s = dbg.a.scene();
+    const m = s.world(id);
+    for (const [zid, o] of Object.entries(objects())) {
+      const z = o.traits?.["tabletop.zone"];
+      if (!z) continue;
+      const p = s.toLocal(zid, [m[12], m[13], m[14]]);
+      if (p.every((v, k) => v >= z.min[k] && v <= z.max[k])) return z.seat;
+    }
+    return null;
+  };
+  const canvasRect = (w) => dbg[w].viewport.canvas.getBoundingClientRect();
+  const screen = (p, w = "a") => { const q = dbg[w].viewport.project(p); const r = canvasRect(w); return q && { x: r.left + q.x, y: r.top + q.y, visible: q.visible !== false && q.x > 4 && q.y > 4 && q.x < r.width - 4 && q.y < r.height - 4 }; };
+  const yawOf = (m) => Math.atan2(m[8], m[10]);
+  const r6 = (v) => +(+v).toFixed(6);
+
+  window.__p = {
+    errors, viewers: { a: ana.url, b: ben.url }, looseDeck: looseDeck.url, deckUrl: deckUrls.main,
+    doc: () => JSON.parse(JSON.stringify(scene.doc())),
+    seats: () => scene.doc().traits?.["tabletop.seats"] ?? {},
+    picker: (w) => select(w)?.options.length ?? 0,
+    pick(w, sid) { const s = select(w); s.value = sid; s.dispatchEvent(new Event("change")); return s.value; },
+    activity: (w) => dbg[w].local.get().activities?.current ?? null,
+    tool: (w) => dbg[w].local.get().tool ?? null,
+    running: (w) => (dbg[w].local.get().running ?? []).map((r) => r.id),
+    notices: (w) => told[w].map((n) => n.text ?? String(n)),
+    deckDoc: async () => JSON.parse(JSON.stringify((await repo.find(deckUrls.main)).doc())),
+    where() {
+      const out = { p1: [], p2: [], table: [] };
+      for (const id of hiddenIds()) out[zoneOf(id) ?? "table"].push(id);
+      return out;
+    },
+    /** the pile at the deck's spot, top first */
+    pile() {
+      const s = dbg.a.scene();
+      return hiddenIds().filter((id) => { const m = s.world(id); return Math.hypot(m[12] - 0.3, m[14]) < 0.01; }).sort((p, q) => s.world(q)[13] - s.world(p)[13]);
+    },
+    transform: (id) => JSON.parse(JSON.stringify(objects()[id]?.transform ?? null)),
+    worldPos: (id, w = "a") => { const m = dbg[w].scene().world(id); return m && [r6(m[12]), r6(m[13]), r6(m[14])]; },
+    worldYaw: (id, w = "a") => { const m = dbg[w].scene().world(id); return m && r6(yawOf(m)); },
+    /** the matrix a view is drawing an object with (a pose if one holds it) */
+    shown: (id, w) => { const m = dbg[w].viewport.worldOf(id); return m && [...m].map(r6); },
+    /** what each hidden card in a hand shows in view w: id → face name/url */
+    handLooks(w) { const out = {}; const L = dbg[w].looks(); for (const id of hiddenIds()) { const z = zoneOf(id); if (!z) continue; const f = L?.get?.(id); out[id] = f ? `${z}:${f.name ?? ''}:${String(f.sourceUrl).slice(-6)}` : `${z}:-`; } return out; },
+    faces: (w) => [...(dbg[w].looks()?.keys?.() ?? [])].filter((id) => objects()[id]?.traits?.["tabletop.hidden"]),
+    hovered: (w) => dbg[w].local.get().hovered ?? null,
+    selected: (w) => dbg[w].local.get().selected ?? null,
+    loaded: (id, w = "a") => !!dbg[w].viewport.contentOf(id)?.loaded,
+    zoneObj,
+    board: () => Object.keys(objects()).find((id) => objects()[id].name === "Board") ?? null,
+    /** an object's card slots, in the world: [{ i, world, yaw, tags }] */
+    slots(id, w = "a") {
+      const c = dbg[w].viewport.contentOf(id);
+      const m = dbg[w].scene().world(id);
+      if (!c?.extras || !m) return null;
+      return (c.extras.connectors ?? []).map((k, i) => {
+        const [x, y, z] = k.position;
+        return { i, tags: k.tags ?? [], yaw: k.yaw == null ? null : r6(k.yaw + yawOf(m)), world: [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]].map(r6) };
+      });
+    },
+    snapRadius: (id, w = "a") => dbg[w].viewport.contentOf(id)?.extras?.snapRadius ?? null,
+    screen,
+    pickAt: (x, y, w = "a") => { const r = canvasRect(w); const h = dbg[w].viewport.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id ?? null, point: h.point?.map(r6) }; },
+    focus(w) { const r = hosts[w].querySelector(".scene-stage"); r.focus(); return document.activeElement === r || r.contains(document.activeElement); },
+    prompt: (w) => [...hosts[w].querySelectorAll(".use-prompt .use-verb")].map((e) => e.textContent.trim()),
+    rect(sel, w = "a") { const e = hosts[w].querySelector(sel); if (!e) return null; e.scrollIntoView?.({ block: "center" }); const r = e.getBoundingClientRect(); return r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height } : null; },
+    binParts: (w = "a") => [...hosts[w].querySelectorAll('.scene-parts .parts-group[data-category="Tabletop"] .part')].map((b) => b.dataset.part),
+    camera: (w = "a") => { const c = dbg[w].viewport.getCamera(); return JSON.parse(JSON.stringify(c)); },
+    canvas: (w = "a") => { const r = canvasRect(w); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
+    /** a doc dropped on a view's port at a page point, as dragging it from the sidebar does */
+    dropUrl(w, url, x, y) {
+      const target = document.elementFromPoint(x, y) ?? dbg[w].viewport.canvas;
+      const data = { "text/plain": url };
+      for (const type of ["dragenter", "dragover", "drop"]) {
+        const e = new Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(e, "dataTransfer", { value: { types: Object.keys(data), files: [], items: [], dropEffect: "none", getData: (t) => data[t] ?? "" } });
+        Object.defineProperty(e, "clientX", { value: x });
+        Object.defineProperty(e, "clientY", { value: y });
+        target.dispatchEvent(e);
+      }
+      return target.tagName;
+    },
+    /** what side a die shows in a view, read off the matrix that view draws it with */
+    dieShows(id, w) {
+      const m = dbg[w].viewport.worldOf(id);
+      if (!m) return null;
+      const k = Math.hypot(m[0], m[1], m[2]) || 1;
+      const rows = [[m[0], m[4], m[8]], [m[1], m[5], m[9]], [m[2], m[6], m[10]]].map((r) => r.map((v) => v / k));
+      return faceUp(rows, facesOf(objects()[id]?.traits?.[DIE]))?.value ?? null;
+    },
+    aimAt(id, w) {
+      const v = dbg[w].viewport;
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const p = m && v.project([m[12], m[13], m[14]]);
+      if (!p) return null;
+      for (let k = 0; k < 900; k++) {
+        const a = k * 0.6, rad = 2 * Math.sqrt(k);
+        const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+        if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+        const hit = v.pick(x, y);
+        if (hit?.id === id) return { x: r.left + x, y: r.top + y, id: hit.id };
+      }
+      return null;
+    },
+  };
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>
