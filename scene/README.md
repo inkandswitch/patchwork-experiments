@@ -158,7 +158,11 @@ themselves never add a dragged row.
   final pose is written. While it's carried, other people see it move (over
   `handle.broadcast`, below). An extension can ask for the piece to go
   down another way where it's put (tabletop turns a card face up in your
-  hand). A scene can open in the hand (`view.tool`); after that the
+  hand), or say something can't be carried at all (sailing: the ship and
+  her fittings). A piece attached to something is carried in that thing's
+  frame: a card on a table aboard a moving ship goes with the table, snaps
+  to its slots and goes down square to it, however she heels and swings.
+  A scene can open in the hand (`view.tool`); after that the
   menu is yours alone.
 - **Locked** (inspector): a locked object can't be carried or given the
   gizmo — a game board, say. Everything else about it still works.

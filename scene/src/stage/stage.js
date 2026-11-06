@@ -1508,6 +1508,9 @@ export default function Stage(handle, element) {
       // read-only: a part squaring itself to what it's dropped on reads that
       // object's GLB extras (a hull's stated bow)
       content: (oid) => viewport.contentOf(oid),
+      // read-only: an object's displayed world matrix (as api.worldOf), so a
+      // drop on something moving lands where it's seen
+      worldOf: displayedWorld,
       registry: getRegistry,
       local: Object.freeze({ get: local.get, swap: local.swap }),
       notify: (text, kind) => notify(text, kind, id),
@@ -1726,6 +1729,10 @@ export default function Stage(handle, element) {
         set: (cam) => viewport.setCamera(cam),
         frame: (box) => viewport.frame(box),
         hold: () => acquire(own.cameraHolds, () => viewport.hold()),
+        /** carry the orbit camera with a moving object (STAGE.md): the latest non-fallback ride applies */
+        ride: (oid, opts) => acquire(own.offs, () => viewport.ride(oid, opts)),
+        /** the ride that applies now, as { id, fallback }, or null (a seat's view riding a table: not a fallback) */
+        riding: () => viewport.riding(),
         limit: (spec) => acquire(own.offs, () => viewport.limit(spec)),
         touched: () => viewport.touched() || cameraRestored,
         watch: (fn) => acquire(own.offs, () => viewport.watchCamera(fn)),

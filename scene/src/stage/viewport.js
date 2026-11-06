@@ -40,6 +40,7 @@ import { rulesKey, sanitizeRules } from "../material-rules.js";
 import { buildBVH, installLazyBVH, wantsBVH } from "../pick-accel.js";
 import { defaultSnapRadius } from "../hand.js";
 import { onThemeChange, resolveCssColor } from "../theme.js";
+import { createRides } from "./ride.js";
 
 const DEFAULT_THEME = {
   bg: [0.96, 0.96, 0.96],
@@ -663,6 +664,8 @@ export class Viewport {
           console.error("scene: a frame loop failed", err);
         }
       }
+      // a ride carries the camera with what it's on, now that the loops have moved it
+      this.stepRide();
       // while held, the orbit neither moves the camera nor re-aims it
       const moved = this.holds > 0 ? false : this.controls.update();
       if (moved || this.needsRender || this.loops.size) {
@@ -687,6 +690,8 @@ export class Viewport {
     /** owner → Box3 the near plane must not cut (setExtent) */
     this.extents = new Map();
     this.loops = new Set();
+    /** the camera's rides (ride(): carried by a moving object) */
+    this.rides = createRides();
     this.afterHooks = new Set();
     this.themeListeners = new Set();
     this.cameraWatchers = new Set();
@@ -1657,6 +1662,44 @@ export class Viewport {
     this.invalidate();
   }
 
+  /**
+   * Carry the orbit camera with object `id` as it moves (./ride.js): each
+   * frame, after the loops, the camera and its target move by the shift of
+   * its point `at` (its frame; its origin), its turn about the vertical
+   * (`turn`) and its rise (`rise`). The latest
+   * ride that isn't a `fallback` applies, else the latest fallback; while
+   * the camera is held, none moves it.
+   * @param {string} id  @param {{ turn?: boolean, rise?: boolean, fallback?: boolean, at?: number[] }} [opts]
+   * @returns {() => void} off
+   */
+  ride(id, opts) {
+    // from where it's drawn now: a view set from it this frame is followed from this frame
+    const off = this.rides.add(id, opts, this.ok ? this.worldOf(id) : null);
+    this.invalidate();
+    return off;
+  }
+
+  /** The ride that applies now: { id, fallback }, or null. */
+  riding() {
+    const r = this.rides.current();
+    return r ? { id: r.id, fallback: r.fallback } : null;
+  }
+
+  /** One frame of the ride that applies (the frame loop's, after the loops). */
+  stepRide() {
+    if (!this.ok || !this.controls) return;
+    const out = this.rides.step({
+      worldOf: (id) => this.worldOf(id),
+      held: this.holds > 0,
+      position: this.camera.position.toArray(),
+      target: this.controls.target.toArray(),
+    });
+    if (!out) return;
+    this.camera.position.fromArray(out.position);
+    this.controls.target.fromArray(out.target);
+    this.needsRender = true;
+  }
+
   /** Is the camera held? */
   get held() {
     return this.holds > 0;
@@ -1767,10 +1810,12 @@ export class Viewport {
   /**
    * A raycaster hit as the stage hands it out. The normal is the hit face's,
    * in world, turned toward where the ray came from (meshes are double
-   * sided); null for lines and points.
+   * sided); null for lines and points. `back`: the ray met the face from
+   * behind (from inside a closed solid), as its own normal has it.
    */
   hitOf(h, ray) {
     let normal = null;
+    let back = false;
     if (h.face?.normal) {
       const m = h.object.matrixWorld.clone();
       if (h.object.isInstancedMesh && h.instanceId != null) {
@@ -1779,10 +1824,13 @@ export class Viewport {
         m.multiply(inst);
       }
       const n = h.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(m)).normalize();
-      if (n.dot(ray.direction) > 0) n.negate();
+      if (n.dot(ray.direction) > 0) {
+        n.negate();
+        back = true;
+      }
       normal = n.toArray();
     }
-    return { id: objectIdOf(h.object), point: h.point.toArray(), normal, distance: h.distance };
+    return { id: objectIdOf(h.object), point: h.point.toArray(), normal, distance: h.distance, back };
   }
 
   /** The nearest drawn hit among `targets` for the raycaster as it's aimed (that `accept` takes, if given). */

@@ -74,19 +74,31 @@ export function turning(m, t, lift = 0) {
 }
 
 /**
- * Turning a resting object over where it is (no carry): the world matrix it
- * ends at, flipped and set back down on whatever is under its footprint
- * (raycast must skip it), and how high it rises on the way. Pure.
+ * How far above a carried piece's top, or the point the pointer is on
+ * (whichever is higher), the rays that find what it rests on start: clear of
+ * a pile or a block beside it, but under a boom swinging over the table or a
+ * roof over the board (rays from the top of the whole scene came down on
+ * those). At least a quarter metre, or the piece's own size.
+ */
+export const castClearance = (b) => Math.max(0.25, b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
+
+/**
+ * Turning a resting object over where it is (no carry): the matrix it ends
+ * at, flipped and set back down on whatever is under its footprint (raycast
+ * must skip it), and how high it rises on the way. The rays start just above
+ * the turn it sweeps, not from the top of the scene. Pure; any frame (the
+ * object's parent's, with its raycast) whose +Y is up.
  * @returns {{ to: number[], lift: number }}
  */
-export function flipInPlace({ W, box, raycast, sceneTop = null }) {
+export function flipInPlace({ W, box, raycast }) {
   const turned = flipMatrix(W);
   const b = worldBox(box, turned);
   const centre = [(b.min[0] + b.max[0]) / 2, (b.min[2] + b.max[2]) / 2];
-  const top = Math.max(b.max[1], Number.isFinite(sceneTop) ? sceneTop : 0) + 1;
-  const land = landingFor({ W: turned, box, ray: { origin: [centre[0], top, centre[1]], dir: [0, -1, 0] }, raycast, sceneTop });
   const size = b.max[1] - b.min[1];
-  return { to: land ? translate(turned, land.delta) : turned, lift: turnRadius(box, W) + liftFor(size) };
+  const lift = turnRadius(box, W) + liftFor(size);
+  const from = b.max[1] + lift;
+  const land = landingFor({ W: turned, box, ray: { origin: [centre[0], from, centre[1]], dir: [0, -1, 0] }, raycast, castFrom: from });
+  return { to: land ? translate(turned, land.delta) : turned, lift };
 }
 
 /** Part way through `flipInPlace`: from `from` to `to`, rising `lift` as it turns. Pure. */
@@ -177,9 +189,12 @@ export function tablePoint(ray, raycast) {
  * the pointer's ray here: the world translation that puts it down, the
  * ring's spot and size, whether it snapped (and the yaw that asks for), how
  * high to float it, and what it rests on (`on`: an object id, or null for the
- * ground). null when the ray finds no table.
+ * ground). null when the ray finds no table. Any frame whose +Y is up (the
+ * hand works in the carried object's parent's), with a raycast in it;
+ * `castFrom`, the height the rays down start at, defaults to castClearance
+ * above the piece or the pointer's point.
  */
-export function landingFor({ W, box, ray, offset = [0, 0], alt = false, snaps = [], raycast, sceneTop = null }) {
+export function landingFor({ W, box, ray, offset = [0, 0], alt = false, snaps = [], raycast, castFrom = null }) {
   const b = worldBox(box, W);
   const at = tablePoint(ray, raycast);
   if (!at) return null;
@@ -194,11 +209,12 @@ export function landingFor({ W, box, ray, offset = [0, 0], alt = false, snaps = 
   }
   const dx = tx - center[0];
   const dz = tz - center[2];
-  const top = Math.max(b.max[1], Number.isFinite(sceneTop) ? sceneTop : 0) + 1;
+  // the rays down start just above it, or what the pointer is on, whichever is higher (castClearance)
+  const top = Number.isFinite(castFrom) ? castFrom : Math.max(b.max[1], at.point[1]) + castClearance(b);
   let rest = 0;
   let on = null;
   for (const [x, z] of footprintSamples([b.min[0] + dx, 0, b.min[2] + dz], [b.max[0] + dx, 0, b.max[2] + dz])) {
-    const h = raycast?.([x, top, z], [0, -1, 0]) ?? null;
+    const h = downOnto(raycast, x, top, z);
     const y = h?.point?.[1];
     if (Number.isFinite(y) && y > rest) {
       rest = y;
@@ -218,6 +234,27 @@ export function landingFor({ W, box, ray, offset = [0, 0], alt = false, snaps = 
 }
 
 /**
+ * What a ray straight down from (x, from, z) comes to rest on. A start
+ * inside something (a block taller than the clearance beside the pointer)
+ * says so: its ray down meets that thing's underside from behind, and one
+ * up meets its top from behind (`back`, the stage's raycast); the ray then
+ * starts again just over that top, and lands on it. A ray up that meets a
+ * face from in front (a boom's underside overhead) is no such thing: what
+ * the first ray found stands. A few steps at most (things inside things).
+ */
+export function downOnto(raycast, x, from, z) {
+  let h = raycast?.([x, from, z], [0, -1, 0]) ?? null;
+  for (let i = 0; i < 4 && h?.back; i++) {
+    const up = raycast([x, from, z], [0, 1, 0]);
+    const y = up?.point?.[1];
+    if (!up?.back || !Number.isFinite(y) || !(y > from)) break;
+    from = y + 1e-4;
+    h = raycast([x, from, z], [0, -1, 0]) ?? null;
+  }
+  return h;
+}
+
+/**
  * One carry: an object picked up at world matrix `W`. It keeps where the
  * object is now (`state.W`, floating while carried) and answers where it
  * would land.
@@ -226,11 +263,10 @@ export function landingFor({ W, box, ray, offset = [0, 0], alt = false, snaps = 
  *   offset?: number[],                       // [x, z]: where it was grabbed, from its footprint's centre
  *   snaps?: object[],                        // snapCandidates
  *   raycast: (origin: number[], dir: number[]) => { id?: string, point: number[] } | null,
- *   sceneTop?: () => number | null,
  *   landing?: (id: string, worldPoint: number[], hitId: string | null) => { faceUp?: boolean } | null,
  * }} o
  */
-export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, sceneTop = () => null, landing = () => null }) {
+export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, landing = () => null }) {
   const state = {
     W: W.slice(),
     last: null, // { ray, alt }: the pointer the last move had
@@ -240,7 +276,7 @@ export function createCarry({ id, W, box, offset = [0, 0], snaps = [], raycast, 
     turned: false,
     flips: 0, // times it has turned over: the part shows each one turning in the air
   };
-  const landFrom = (ray, alt) => landingFor({ W: state.W, box, ray, offset, alt, snaps, raycast, sceneTop: sceneTop() });
+  const landFrom = (ray, alt) => landingFor({ W: state.W, box, ray, offset, alt, snaps, raycast });
 
   // Where it lands from this pointer: a snap with a yaw turns it to face that
   // way first; somewhere that asks for it face up turns it face up (and back

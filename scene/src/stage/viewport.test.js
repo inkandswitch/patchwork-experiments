@@ -696,3 +696,30 @@ describe("atmosphere", () => {
     expect(f.normalBias).toBeCloseTo((6 / 1024) * 1.5);
   });
 });
+
+describe("riding along (camera.ride)", () => {
+  it("carries the orbit camera and its target with the object, not while held, and stops when let go", () => {
+    const vp = headless();
+    cube(vp, "hull", [0, 0, 0]);
+    lookFrom(vp, [0, 3, 10], [0, 0, 0]);
+    const off = vp.ride("hull");
+    vp.stepRide(); // the baseline
+    vp.applyDisplay("hull", { transform: { position: [2, 0, 0] } });
+    vp.stepRide();
+    expect(r6(vp.camera.position.toArray())).toEqual([2, 3, 10]);
+    expect(r6(vp.controls.target.toArray())).toEqual([2, 0, 0]);
+    // held (first person): it doesn't move the camera, and doesn't catch up after
+    const release = vp.hold();
+    vp.applyDisplay("hull", { transform: { position: [5, 0, 0] } });
+    vp.stepRide();
+    expect(vp.camera.position.x).toBeCloseTo(2);
+    release();
+    const before = vp.camera.position.toArray();
+    vp.stepRide();
+    expect(r6(vp.camera.position.toArray())).toEqual(r6(before));
+    off();
+    vp.applyDisplay("hull", { transform: { position: [9, 0, 0] } });
+    vp.stepRide();
+    expect(r6(vp.camera.position.toArray())).toEqual(r6(before));
+  });
+});

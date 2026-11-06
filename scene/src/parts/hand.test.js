@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 vi.mock("@inkandswitch/patchwork-plugins", () => import("../test/plugins-mock.js"));
 import { mountStage, object, settle } from "../test/stage-harness.js";
 import hand, { effectiveTool } from "./hand.js";
-import { composeMatrix } from "../transform.js";
+import { applyMatrix, composeMatrix, multiplyMatrices } from "../transform.js";
 
 const BOX = { min: [-0.1, 0, -0.1], max: [0.1, 0.1, 0.1] };
 const down = (x, z) => ({ origin: [x, 10, z], dir: [0, -1, 0] });
@@ -480,5 +480,119 @@ describe("Flip: turning a piece over where it lies", () => {
     stub.tick(0.05, 8);
     await settle();
     expect(composeMatrix(transformOf("a"))[5]).toBeCloseTo(-1);
+  });
+});
+
+describe("scene.hand on something that moves: in its parent's frame", () => {
+  // a table turned a quarter and moving: what's on it is carried on it
+  const tableAt = (x, yaw = Math.PI / 2, roll = 0) => composeMatrix({ position: [x, 0, 0], rotation: [roll, yaw, 0] });
+  const r6 = (a) => a.map((v) => Math.round(v * 1e6) / 1e6 + 0);
+
+  async function onTable() {
+    const m = await mount({ doc: { view: { tool: "hand" }, objects: { p: object({ transform: { position: [5, 0, 0], rotation: [0, Math.PI / 2, 0], scale: 1 } }), a: object({ parent: "p" }) } } });
+    const world = { p: tableAt(5) };
+    m.api.worldOf = (id) => (id === "p" ? world.p : id === "a" ? multiplyMatrices(world.p, composeMatrix(s.doc().objects.a.transform)) : null);
+    return { ...m, world };
+  }
+  // the pointer straight down onto a point given in the table's frame, as it is now
+  const onto = (world, local) => {
+    const w = applyMatrix(world.p, local);
+    return { type: "move", ray: { origin: [w[0], w[1] + 10, w[2]], dir: [0, -1, 0] }, alt: false };
+  };
+
+  it("keeps its pose on the table as the table moves, and lands where the pointer is on the table as it is now", async () => {
+    const { x, stub, world } = await onTable();
+    const grab = applyMatrix(world.p, [0, 0.05, 0]);
+    const session = x().input.press(press("a", { hit: { id: "a", point: grab, distance: 1 } }));
+    session.move(onto(world, [0.3, 0, 0.2]));
+    const held = stub.holds.at(-1)[1];
+    expect(r6([held.position[0], held.position[2]])).toEqual([0.3, 0.2]);
+    expect(held.position[1]).toBeGreaterThan(0); // floating
+    expect(r6(held.rotation)).toEqual([0, 0, 0]); // square to the table, not to the world
+    // the table sails on and turns: nothing about the card's pose on it changes
+    world.p = tableAt(9, Math.PI / 2 + 0.3);
+    stub.tick(0.05);
+    expect(stub.holds.at(-1)[1]).toEqual(held);
+    session.move(onto(world, [-0.1, 0, 0.4]));
+    session.end(onto(world, [-0.1, 0, 0.4]));
+    await settle();
+    const t = transformOf("a");
+    expect(r6(t.position)).toEqual([-0.1, 0, 0.4]);
+    expect(r6(t.rotation)).toEqual([0, 0, 0]);
+  });
+
+  it("on a heeled table it goes down square to the table, along the table's down", async () => {
+    const { x, world } = await onTable();
+    world.p = tableAt(5, Math.PI / 2, 0.15); // heeled
+    const session = x().input.press(press("a", { hit: { id: "a", point: applyMatrix(world.p, [0, 0.05, 0]), distance: 1 } }));
+    session.move(onto(world, [0.2, 0, -0.1]));
+    session.end(onto(world, [0.2, 0, -0.1]));
+    await settle();
+    const t = transformOf("a");
+    expect(r6(t.position)).toEqual([0.2, 0, -0.1]);
+    expect(r6(t.rotation)).toEqual([0, 0, 0]);
+  });
+
+  it("snaps to connectors on the table as they are on it", async () => {
+    const content = { board: { connectors: [{ position: [0.5, 0, 0], yaw: 0, tags: [] }], snapRadius: 0.2 } };
+    const m = await mount({
+      doc: { view: { tool: "hand" }, objects: { p: object(), board: object({ parent: "p" }), a: object({ parent: "p" }) } },
+      content,
+    });
+    const world = { p: tableAt(5) };
+    m.api.worldOf = (id) => (id === "p" ? world.p : ["a", "board"].includes(id) ? multiplyMatrices(world.p, composeMatrix(s.doc().objects[id].transform)) : null);
+    const session = m.x().input.press(press("a", { hit: { id: "a", point: applyMatrix(world.p, [0, 0.05, 0]), distance: 1 } }));
+    // the table moves after the pickup: the slot is where it is on the table
+    world.p = tableAt(6, Math.PI / 2 + 0.5);
+    session.move(onto(world, [0.45, 0, 0.05]));
+    session.end(onto(world, [0.45, 0, 0.05]));
+    await settle();
+    expect(r6(transformOf("a").position)).toEqual([0.5, 0, 0]);
+  });
+
+  it("draws the ring on the table, following it every frame", async () => {
+    const { api, x, stub, world } = await onTable();
+    const layers = [];
+    const w0 = api.world;
+    api.world = (o) => {
+      const g = w0(o);
+      layers.push(g);
+      return g;
+    };
+    const session = x().input.press(press("a", { hit: { id: "a", point: applyMatrix(world.p, [0, 0.05, 0]), distance: 1 } }));
+    session.move(onto(world, [0.3, 0, 0]));
+    const ring = layers[0].children[0];
+    const spot = (m) => r6([...applyMatrix(m, [0.3, 0.0005, 0])].map((v) => +v.toFixed(4)));
+    expect(r6(ring.position.toArray().map((v) => +v.toFixed(4)))).toEqual(spot(world.p));
+    world.p = tableAt(7);
+    stub.tick(0.05);
+    expect(r6(ring.position.toArray().map((v) => +v.toFixed(4)))).toEqual(spot(world.p));
+    session.end(onto(world, [0.3, 0, 0]));
+    expect(stub.loops.size).toBe(0);
+  });
+
+  it("Flip turns it over on the table: lands where it lay on it, the table's way up", async () => {
+    const { x, stub, world } = await onTable();
+    world.p = tableAt(5, Math.PI / 2, 0.15);
+    s.api("scene.hand").run({ ext: "scene.hand", command: "flip", target: "a" });
+    world.p = tableAt(8, Math.PI / 2 + 0.2, 0.1); // it moves while the card turns
+    stub.tick(0.05, 8);
+    await settle();
+    const t = transformOf("a");
+    expect(composeMatrix(t)[5]).toBeCloseTo(-1); // face down on the table
+    expect(r6([t.position[0], t.position[2]])).toEqual([0, 0]);
+    expect(t.position[1]).toBeCloseTo(0.1); // BOX turned over: resting on the table's top (y 0 in its frame)
+  });
+});
+
+describe("scene.hand: what another extension says may not be carried", () => {
+  it("a carryable rule returning false vetoes picking it up and flipping it; anything else allows", async () => {
+    const veto = { meta: { id: "t.veto" }, module: { create: () => ({ carryable: (id) => (id === "a" ? false : undefined) }) } };
+    const { x } = await mount({ doc: { view: { tool: "hand" }, objects: { b: object() } }, extensions: [veto] });
+    expect(x().input.press(press("a"))).toBe(null);
+    expect(x().input.cursor({ hit: { id: "a" } })).toBe(null);
+    expect(stateOf("flip", "a")).toBe(null);
+    expect(x().input.press(press("b", { hit: { id: "b", point: [0, 0.1, 0], distance: 1 } }))).not.toBe(null);
+    expect(stateOf("flip", "b")).not.toBe(null);
   });
 });

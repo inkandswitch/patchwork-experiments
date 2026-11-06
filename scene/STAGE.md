@@ -162,7 +162,9 @@ and calls its `drop(ctx, info)` until one returns true, where:
 - `ctx` is a temporary api, **the drop context**: `id` (the plugin's),
   `repo`, `handle`, `url`, `viewer`, `doc`, `scene`, `change`, `newId`,
   `addObject`, `file` (see "Parts"), `content` (read-only, as `api.content`:
-  a part reads what it's dropped on), `registry`, `local`, `notify`.
+  a part reads what it's dropped on), `worldOf` (read-only, as `api.worldOf`:
+  a drop on something moving lands where it's seen), `registry`, `local`,
+  `notify`.
   Templates and parts get the same one;
 - `info` is `{ url, doc, handle, group, at: { point, hitId } | null }`.
 
@@ -500,13 +502,30 @@ that extension.
 | | |
 |---|---|
 | `pick(x, y, { ground?, snapPx? })` | port-local px → hit (with vertex snap if asked) |
-| `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | |
-| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
+| `ray(x, y)`, `raycast(origin, dir, { far?, skip? })`, `project(p)` → `{ x, y, visible }` | a raycast hit is `{ id, point, normal, distance, back }`: `normal` faces the ray; `back` says the ray met the face from behind (from inside a closed solid) |
+| `camera` | `{ object, get(), set({ position, target?, quaternion?, fov?, near?, far? }), frame(box), hold() → release, ride(id, { turn?, rise?, fallback?, at? }) → off, riding() → { id, fallback } \| null, limit(spec) → off, touched(), watch(fn), onEnd(fn) → off }`. `onEnd`: someone finished moving the camera (an orbit, a zoom), never while it's held |
 
 How the camera parts behave:
 - **Hold.** While anything holds the camera, orbit is off and not updated,
   nothing auto-fits near and far unless the holder sets them, and nothing is
   saved. The last release re-seats the orbit target in front of the camera.
+- **Riding.** `ride(id, { turn = true, rise = true, fallback = false, at })`
+  carries the orbit camera with an object, as a passenger: every frame,
+  after the loops have moved what's drawn and before the orbit updates, the
+  camera and its target move by how the object moved since the last frame
+  (the shift of its point `at`, in its frame, else its origin; its turn
+  about the vertical through that point, if `turn`; its rise and fall, if
+  `rise`). Ride the point you look at (a seat rides the spot on the table
+  its view is aimed at) and it holds still on screen. It follows from the
+  frame it's asked in, so set the view from `worldOf` and ride at once.
+  Roll and pitch are never followed: the orbit keeps world up. One
+  ride applies at a time, the latest that isn't a `fallback`, else the
+  latest fallback (a ship keeping herself in view gives way to a seat at a
+  table aboard her). `riding()` says which applies now (a ship's HUD tells a
+  seated player's view, riding a table, from a spectator's). While the camera is held nothing rides it, and a ride
+  starts again from where the object is then, so first person wins and
+  nothing jumps after. It doesn't stop an orbit in progress. Set the view
+  first (from `worldOf`, say), then ride. `src/stage/ride.js` is the maths.
 - **Limits.** `limit({ minPolar, maxPolar, minDistance, maxDistance })`
   limits intersect.
 - **Saving.** The camera is this viewer's. It is kept in `localStorage`
@@ -608,7 +627,8 @@ claimed, `objects[id].claims[kind] = { viewer, session }`, or
 | `commands` | surfaces and key maps |
 | `panels` | sidebars: `[{ id, title, pinned?, mount(body, { head, section }) → { update(scene, local), dispose() } }]`. A body set `hidden` hides its section; a `pinned` panel never folds |
 | `hud()` → `[{ text, state }]` | status surfaces |
-| `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the hand |
+| `landing(id, worldPoint, hitId)` → `{ faceUp? }` | the hand. It carries, snaps, flips and puts down in the frame of the object's doc parent as drawn (the world at the root), so a piece on a moving table stays on it; the point it asks about is still in the world, as drawn |
+| `carryable(id)` → `false` to veto | the hand: false from any running extension and it neither picks `id` up nor flips it (anything else allows). Asked each time, so it may depend on what's happening (a ship under sail) |
 | `carry(id, ev, opts)` → session | anything that wants to carry (the hand provides it) |
 | `dispose()` | the stage |
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createCarry, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./hand-carry.js";
+import { castClearance, createCarry, downOnto, flipAt, flipInPlace, flipMatrix, landingFor, localTransform, rotateAbout, snapCandidates, tablePoint, translate, turnRadius, turning, worldBox, yawOfMatrix } from "./hand-carry.js";
 import { composeMatrix } from "../transform.js";
 
 const I = composeMatrix({});
@@ -9,6 +9,25 @@ const BOX = { min: [-0.1, 0, -0.1], max: [0.1, 0.1, 0.1] };
 // looking straight down at (x, z)
 const down = (x, z) => ({ origin: [x, 10, z], dir: [0, -1, 0] });
 const ground = () => null; // nothing to hit: the ground
+/**
+ * Solid boxes (axis-aligned) as the stage's raycast sees them: double sided,
+ * the nearest face along a vertical ray, `back` when it's met from inside.
+ * (Only vertical rays: what the footprint's rays are.)
+ */
+const solids = (...boxes) => (origin, dir) => {
+  if (dir[0] || dir[2]) return null;
+  let best = null;
+  for (const s of boxes) {
+    const [x, y, z] = origin;
+    if (x < s.min[0] || x > s.max[0] || z < s.min[2] || z > s.max[2]) continue;
+    const inside = y > s.min[1] && y < s.max[1];
+    const face = dir[1] < 0 ? (y >= s.max[1] ? s.max[1] : inside ? s.min[1] : null) : y <= s.min[1] ? s.min[1] : inside ? s.max[1] : null;
+    if (face == null) continue;
+    const d = Math.abs(face - y);
+    if (!best || d < best.distance) best = { id: s.id, point: [x, face, z], distance: d, back: inside };
+  }
+  return best;
+};
 
 describe("hand-carry maths", () => {
   it("turns about a world axis through the origin, keeping the translation", () => {
@@ -69,7 +88,7 @@ describe("hand-carry maths", () => {
     expect(land.radius).toBeCloseTo(0.1);
     expect(land.lift).toBeCloseTo(0.05);
     // a block under one corner of the footprint, 0.4 high: it rests on that
-    const block = (origin) => (origin[0] > 2 && origin[2] > 3 && origin[1] > 1 ? { id: "block", point: [origin[0], 0.4, origin[2]] } : null);
+    const block = solids({ id: "block", min: [2, 0, 3], max: [9, 0.4, 9] });
     land = landingFor({ W, box: BOX, ray: down(2, 3), raycast: block });
     expect(land.rest).toBeCloseTo(0.4);
     expect(land.on).toBe("block");
@@ -201,5 +220,79 @@ describe("turning over in the air", () => {
     expect(to[13]).toBeCloseTo(0.011);
     expect(close(flipAt(lying, to, 0, 0.1), lying)).toBe(true);
     expect(close(flipAt(lying, to, 1, 0.1), to)).toBe(true);
+  });
+});
+
+describe("under a boom: the rays start just above the piece, not the top of the scene", () => {
+  // a table top at 1.42, and a boom 1.4 m above it (2.81 to 2.88) across the whole table
+  const TABLE = 1.42;
+  const BOOM = [2.81, 2.88];
+  const cast = (origin, dir) => {
+    if (dir[1] >= 0) return null;
+    if (origin[1] > BOOM[1]) return { id: "boom", point: [origin[0], BOOM[1], origin[2]] };
+    if (origin[1] > TABLE) return { id: "table", point: [origin[0], TABLE, origin[2]] };
+    return null;
+  };
+  const CARD = { min: [-0.028, 0, -0.0435], max: [0.028, 0.0008, 0.0435] };
+  const onTable = composeMatrix({ position: [0, TABLE, 0] });
+  // the pointer, looking down from a seat under the boom
+  const pointer = (x, z) => ({ origin: [x, 2.2, z + 0.6], dir: [0, -0.78, -0.6].map((v, i, a) => v / Math.hypot(...a)) });
+
+  it("starts a quarter metre (or the piece's size) above the piece or the pointer's point", () => {
+    expect(castClearance(worldBox(CARD, onTable))).toBe(0.25);
+    expect(castClearance({ min: [0, 0, 0], max: [1, 0.2, 0.5] })).toBe(1);
+  });
+
+  it("a card carried across the table goes down on the table", () => {
+    const c = createCarry({ id: "card", W: onTable, box: CARD, raycast: cast });
+    const land = c.move(pointer(0.1, 0));
+    expect(land.on).toBe("table");
+    expect(land.rest).toBeCloseTo(TABLE);
+    expect(c.put()[13]).toBeCloseTo(TABLE);
+  });
+
+  it("Flip turns it over onto the table, not onto the boom", () => {
+    const { to } = flipInPlace({ W: onTable, box: CARD, raycast: cast });
+    expect(to[5]).toBeCloseTo(-1);
+    expect(to[13]).toBeCloseTo(TABLE + 0.0008); // turned over, its box is below its origin
+  });
+});
+
+describe("beside something taller than the clearance: the rays don't start inside it", () => {
+  // a 0.1 m piece on the floor, the pointer on the floor just beside a 1 m block
+  const PIECE = { min: [-0.05, 0, -0.05], max: [0.05, 0.1, 0.05] };
+  const block = solids({ id: "block", min: [0.02, 0, -1], max: [2, 1, 1] });
+
+  it("a ray down from inside the block climbs out over its top", () => {
+    const h = downOnto(block, 0.5, 0.35, 0);
+    expect(h.id).toBe("block");
+    expect(h.point[1]).toBeCloseTo(1);
+    expect(h.back).toBe(false);
+  });
+
+  it("the piece, part over the block, lands on top of it, not inside it", () => {
+    const land = landingFor({ W: I, box: PIECE, ray: down(0, 0), raycast: block });
+    expect(land.on).toBe("block");
+    expect(land.rest).toBeCloseTo(1);
+  });
+
+  it("clear of the block: the floor", () => {
+    const land = landingFor({ W: I, box: PIECE, ray: down(-0.2, 0), raycast: block });
+    expect(land.on).toBe(null);
+    expect(land.rest).toBe(0);
+  });
+
+  it("under a boom (a solid too) it still goes down on the table: the ray up meets the boom from below", () => {
+    const scene = solids({ id: "table", min: [-1, 0.68, -1], max: [1, 0.7, 1] }, { id: "boom", min: [-2, 2.1, -0.05], max: [2, 2.17, 0.05] });
+    // (the pointer from a seat under the boom, looking down at the table)
+    const ray = { origin: [0, 1.5, 0.6], dir: [0, -0.8, -0.6] };
+    const land = landingFor({ W: composeMatrix({ position: [0, 0.7, 0] }), box: PIECE, ray, raycast: (o, d) => (d[0] || d[2] ? { id: "table", point: [0, 0.7, 0] } : scene(o, d)) });
+    expect(land.on).toBe("table");
+    expect(land.rest).toBeCloseTo(0.7);
+  });
+
+  it("a face met from behind with nothing behind it overhead (a mesh's odd winding) is what it lands on", () => {
+    const odd = (origin, dir) => (dir[1] < 0 ? { id: "sole", point: [origin[0], 0.3, origin[2]], back: true } : null);
+    expect(downOnto(odd, 0, 0.6, 0).point[1]).toBeCloseTo(0.3);
   });
 });

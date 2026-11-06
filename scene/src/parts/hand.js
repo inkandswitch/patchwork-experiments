@@ -23,9 +23,21 @@
 //
 // The maths is ./hand-carry.js (plain arrays): this file is the stage side —
 // rays and raycasts, the pose hold peers see, the ring, the doc write.
+//
+// It all happens in the frame of what the object is attached to (its doc
+// parent; the world at the root): a card on a table aboard a ship is carried,
+// snapped, turned over and put down on that table as it moves, heels and
+// swings, not left behind in the world. The pointer's ray and every raycast
+// go through that frame as drawn this frame, "down" is the parent's −Y, the
+// snap points are in it, and the ring is drawn from it each frame.
+//
+// Any running extension may veto a carry: `carryable(id)` returning false
+// (collected each time) means the hand neither picks it up nor flips it (a
+// ship that's sailing; the things aboard her a game shouldn't move).
 
 import { isGroup } from "../groups.js";
 import { createCarry, flipAt, flipInPlace, localTransform, snapCandidates, turnRadius, turning, worldBox } from "./hand-carry.js";
+import { applyMatrix, decomposeMatrix, invertMatrix, multiplyMatrices } from "../transform.js";
 import { effectiveTool } from "../current-tool.js";
 
 export { effectiveTool };
@@ -39,6 +51,58 @@ export function carryableObject(o) {
   return !!o && !isGroup(o) && !o.locked;
 }
 
+// ─── a frame: the parent's, as drawn now (null: the world) ─────────────────
+
+const rotateDir = (m, d) => {
+  const v = [m[0] * d[0] + m[4] * d[1] + m[8] * d[2], m[1] * d[0] + m[5] * d[1] + m[9] * d[2], m[2] * d[0] + m[6] * d[1] + m[10] * d[2]];
+  const len = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / len, v[1] / len, v[2] / len];
+};
+
+/**
+ * Conversions between the world and a frame whose world matrix is `P()`
+ * (asked each time: it moves). With no frame (P() null) every one is the
+ * identity, so a carry at the root is exactly what it always was.
+ */
+export function frameConversions(P) {
+  const inv = () => {
+    const m = P();
+    return m ? invertMatrix(m) : null;
+  };
+  return {
+    /** a world matrix in the frame */
+    matrixIn: (W) => {
+      const i = inv();
+      return i ? multiplyMatrices(i, W) : W;
+    },
+    /** a frame matrix in the world */
+    matrixOut: (L) => {
+      const m = P();
+      return m ? multiplyMatrices(m, L) : L;
+    },
+    pointIn: (p) => {
+      const i = inv();
+      return i ? applyMatrix(i, p) : p;
+    },
+    pointOut: (p) => {
+      const m = P();
+      return m ? applyMatrix(m, p) : p;
+    },
+    /** a world ray { origin, dir } in the frame (dir unit) */
+    rayIn: (ray) => {
+      const i = ray ? inv() : null;
+      return i ? { origin: applyMatrix(i, ray.origin), dir: rotateDir(i, ray.dir) } : ray;
+    },
+    /** a world raycast, asked in the frame: its hit's point comes back in the frame */
+    raycastIn: (raycast) => (origin, dir) => {
+      const m = P();
+      if (!m) return raycast(origin, dir);
+      const hit = raycast(applyMatrix(m, origin), rotateDir(m, dir));
+      return hit?.point ? { ...hit, point: applyMatrix(invertMatrix(m), hit.point) } : hit;
+    },
+  };
+}
+
 export default {
   create(api) {
     const THREE = api.THREE;
@@ -49,11 +113,36 @@ export default {
 
     const doc = () => api.doc() ?? {};
     const toolNow = () => effectiveTool(api.local.get(), doc());
-    const canCarry = (id) => id != null && carryableObject(doc().objects?.[id]) && api.heldBy(id) == null && !flipping.has(id);
+    /** Does a running extension say this may not be carried (carryable(id) → false)? */
+    function vetoed(id) {
+      for (const { value } of api.collect("carryable")) {
+        if (typeof value !== "function") continue;
+        try {
+          if (value(id) === false) return true;
+        } catch (err) {
+          console.warn("[scene.hand] a carryable rule failed", err);
+        }
+      }
+      return false;
+    }
+    const canCarry = (id) => id != null && carryableObject(doc().objects?.[id]) && api.heldBy(id) == null && !flipping.has(id) && !vetoed(id);
+
+    /** The frame `id` is carried in: its doc parent now, as drawn (null at the root). */
+    function frameFor(id) {
+      const parentId = api.scene().parents.get(id) ?? null;
+      const P = () => (parentId ? (api.worldOf(parentId) ?? api.scene().world(parentId)) : null);
+      const f = frameConversions(P);
+      // the local transform to hold or write for a matrix in this frame: under its
+      // doc parent now (a peer may have re-attached it meanwhile)
+      f.pose = (L) => ((api.scene().parents.get(id) ?? null) === parentId ? decomposeMatrix(L) : localNow(id, f.matrixOut(L)));
+      f.parentId = parentId;
+      f.P = P;
+      return f;
+    }
 
     // ─── the ring ───────────────────────────────────────────────────────────
 
-    function showRing(land) {
+    function showRing(land, frame = null) {
       if (!layer) layer = api.world({ onTop: true });
       if (!ring) {
         const pts = [];
@@ -73,7 +162,14 @@ export default {
       const rgb = (land.snapped ? theme.accent : theme.muted) ?? (land.snapped ? [0.2, 0.9, 0.75] : [0.5, 0.5, 0.5]);
       ring.material.color.setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
       ring.position.set(land.spot[0], land.spot[1] + 0.0005, land.spot[2]);
+      ring.quaternion.identity();
       ring.scale.setScalar(Math.max(land.radius * 1.1, 1e-4));
+      // its spot is in the carried object's frame: lying on that, wherever it is now
+      const P = frame?.P?.();
+      if (P) {
+        ring.updateMatrix();
+        ring.matrix.premultiply(new THREE.Matrix4().fromArray(P)).decompose(ring.position, ring.quaternion, ring.scale);
+      }
       ring.visible = true;
       api.invalidate();
     }
@@ -124,8 +220,8 @@ export default {
       return localTransform(parentId ? (api.worldOf(parentId) ?? s.world(parentId)) : null, W);
     }
 
-    /** Every other shown object's connectors that take these tags, in world. */
-    function snapsFor(id, skip) {
+    /** Every other shown object's connectors that take these tags, in the carry's frame (`matrixIn`: world → it). */
+    function snapsFor(id, skip, matrixIn = (m) => m) {
       const s = api.scene();
       const tags = Array.isArray(s.objects[id]?.tags) ? s.objects[id].tags : [];
       const others = [];
@@ -135,7 +231,7 @@ export default {
         if (!extras?.connectors?.length) continue;
         if (!api.box(oid, { hints: false })) continue; // hidden: nothing to put it on
         const matrix = api.worldOf(oid);
-        if (matrix) others.push({ id: oid, matrix, connectors: extras.connectors, snapRadius: extras.snapRadius });
+        if (matrix) others.push({ id: oid, matrix: matrixIn(matrix), connectors: extras.connectors, snapRadius: extras.snapRadius });
       }
       return snapCandidates(others, tags);
     }
@@ -151,11 +247,14 @@ export default {
       if (api.signal.aborted) return null;
       const o = doc().objects?.[id];
       if (!o || isGroup(o)) return null;
-      const W0 = api.worldOf(id);
+      const Ww = api.worldOf(id);
       const box = api.content(id)?.box ?? null;
-      if (!W0 || !box) return null;
+      if (!Ww || !box) return null;
+      // everything from here is in its parent's frame (the world at the root)
+      const frame = frameFor(id);
+      const W0 = frame.matrixIn(Ww);
       const b0 = worldBox(box, W0);
-      const grab = ev?.hit?.id === id && Array.isArray(ev.hit.point) ? ev.hit.point : null;
+      const grab = ev?.hit?.id === id && Array.isArray(ev.hit.point) ? frame.pointIn(ev.hit.point) : null;
       const offset = Array.isArray(opts.offset)
         ? [Number(opts.offset[0]) || 0, Number(opts.offset[1]) || 0]
         : grab
@@ -167,7 +266,9 @@ export default {
       let c = null; // the carry, once lifted
       let skip = null;
       let done = false;
-      const raycast = (origin, dir) => api.raycast(origin, dir, { skip });
+      let land = null; // the last landing shown
+      let stopRing = null;
+      const raycast = frame.raycastIn((origin, dir) => api.raycast(origin, dir, { skip }));
 
       function lift() {
         skip = carriedBy(id);
@@ -176,11 +277,13 @@ export default {
           W: W0,
           box,
           offset,
-          snaps: api.pref("snap", true) === false ? [] : snapsFor(id, skip),
+          snaps: api.pref("snap", true) === false ? [] : snapsFor(id, skip, frame.matrixIn),
           raycast,
-          sceneTop: () => api.sceneBox()?.max?.[1] ?? null,
-          landing: landingAt,
+          // the rules ask about the world
+          landing: (oid, point, hitId) => landingAt(oid, frame.pointOut(point), hitId),
         });
+        // on something that moves: the ring goes with it, every frame
+        if (frame.parentId) stopRing = api.loop(() => !done && land && showRing(land, frame));
       }
 
       // Turning over shows as a turn in the air (`spin`: how far through),
@@ -201,16 +304,17 @@ export default {
             stopSpin?.();
             stopSpin = null;
           }
-          api.pose.hold(id, localNow(id, held()));
+          api.pose.hold(id, frame.pose(held()));
         });
       }
 
       // after the carry moved it: hold it there (peers see it) and show the ring
-      function shown(land) {
-        if (!land || done) return;
+      function shown(l) {
+        if (!l || done) return;
+        land = l;
         spinning();
-        api.pose.hold(id, localNow(id, held()));
-        showRing(land);
+        api.pose.hold(id, frame.pose(held()));
+        showRing(l, frame);
       }
 
       // A peer picked it up before we did (both grabbed it at once): theirs
@@ -226,6 +330,8 @@ export default {
         done = true;
         stopSpin?.();
         stopSpin = null;
+        stopRing?.();
+        stopRing = null;
         if (open === session) open = null;
         hideRing();
       }
@@ -237,19 +343,19 @@ export default {
           if (!doc().objects?.[id]) return; // removed meanwhile: nothing to carry
           if (!c) lift();
           else if (yieldIfTaken()) return;
-          const ray = rayOf(ev);
+          const ray = frame.rayIn(rayOf(ev));
           if (ray) shown(c.move(ray, !!ev?.alt));
         },
         end(ev) {
           if (done) return;
           if (yieldIfTaken()) return;
-          const W = c && doc().objects?.[id] ? c.put(rayOf(ev), ev ? !!ev.alt : null) : null;
+          const W = c && doc().objects?.[id] ? c.put(frame.rayIn(rayOf(ev)), ev ? !!ev.alt : null) : null;
           finish();
           if (!W) {
             if (c) api.pose.release(id);
             return;
           }
-          api.change(api.ops.setTransform(api.scene(), id, localNow(id, W)));
+          api.change(api.ops.setTransform(api.scene(), id, frame.pose(W)));
           api.pose.release(id, { landed: true });
         },
         // a press that didn't move: not a carry, so the click goes on (to selection)
@@ -288,17 +394,20 @@ export default {
     /** Turn `id` over where it lies: up, over and down again, then written. @returns whether it started */
     function flip(id) {
       if (api.signal.aborted || !canCarry(id)) return false;
-      const W0 = api.worldOf(id);
+      const Ww = api.worldOf(id);
       const box = api.content(id)?.box ?? null;
-      if (!W0 || !box) return false;
+      if (!Ww || !box) return false;
+      // in its parent's frame: it turns over on the table it lies on, wherever that is going
+      const frame = frameFor(id);
+      const W0 = frame.matrixIn(Ww);
       const skip = carriedBy(id);
-      const { to, lift } = flipInPlace({ W: W0, box, raycast: (origin, dir) => api.raycast(origin, dir, { skip }), sceneTop: api.sceneBox()?.max?.[1] ?? null });
+      const { to, lift } = flipInPlace({ W: W0, box, raycast: frame.raycastIn((origin, dir) => api.raycast(origin, dir, { skip })) });
       let t = 0;
       const end = (W) => {
         flipping.get(id)?.();
         flipping.delete(id);
         if (!W) return api.pose.release(id);
-        api.change(api.ops.setTransform(api.scene(), id, localNow(id, W)));
+        api.change(api.ops.setTransform(api.scene(), id, frame.pose(W)));
         api.pose.release(id, { landed: true });
       };
       flipping.set(
@@ -308,10 +417,10 @@ export default {
           if (!doc().objects?.[id] || api.heldBy(id) != null) return end(null);
           t += dt / TURN_OVER;
           if (t >= 1) return end(to);
-          api.pose.hold(id, localNow(id, flipAt(W0, to, t, lift)));
+          api.pose.hold(id, frame.pose(flipAt(W0, to, t, lift)));
         }),
       );
-      api.pose.hold(id, localNow(id, W0));
+      api.pose.hold(id, frame.pose(W0));
       return true;
     }
 
