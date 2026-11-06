@@ -8,13 +8,14 @@
 // "Arena level" on the empty scene's start screen, which lays out the sample
 // arena and starts the scene in play: A, and B joining after, are both in the
 // game, with no editor, each camera framing the whole level.
-// A switches to Edit (the editor and the arena's edit commands) and back to
-// Play, presses Play, walks with W/A/S/D, runs into a wall, climbs the ramp
+// A switches to Edit (the editor, the arena's edit command and the parts bin)
+// and back to Play, presses Play, walks with W/A/S/D, runs into a wall, climbs the ramp
 // onto the tower, jumps, turns to a target and shoots it with a click, stops
 // with Esc. B must see A's avatar move and A's tracer. Then a "hybrid"
-// scene: a tilted deck GLB that knows nothing of arenas, made a level from
-// the inspector's "Add behaviour…", a target put on it with "Add target",
-// played and walked on.
+// scene: a tilted deck GLB that knows nothing of arenas (the inspector's
+// "Add behaviour…" offers the arena's level), a target put on it by clicking
+// it in the parts bin while looking at the deck, which puts it under the deck
+// and makes the scene a level, played and walked on.
 // Prints a JSON report; exits non-zero if any check fails.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -179,8 +180,8 @@ try {
   await P("joinB()");
   const allLoaded = await until("(() => { const a = window.__p.loaded('a'), b = window.__p.loaded('b'); return a.total >= 29 && a.loaded === a.total && b.loaded === b.total; })()", 30_000);
   const lv = await P("loaded('a')");
-  const traits = await js(`(() => { const os = Object.values(window.__p.doc().objects); return { level: !!window.__p.doc().traits?.["arena.level"], kinds: Object.keys(window.__p.doc().traits?.["arena.level"]?.kinds ?? {}), targets: os.filter((o) => o.traits?.["arena.target"]).length, spawns: os.filter((o) => o.traits?.["arena.spawn"]).length }; })()`);
-  check("Arena level lays out the level (a level trait, 8 targets, 4 spawns)", traits.level && traits.targets === 8 && traits.spawns === 4 && traits.kinds.length === 7, traits);
+  const traits = await js(`(() => { const os = Object.values(window.__p.doc().objects); return { level: !!window.__p.doc().traits?.["arena.level"], kinds: Object.keys(window.__p.doc().assets ?? {}).filter((k) => k.startsWith("arena/")), targets: os.filter((o) => o.traits?.["arena.target"]).length, spawns: os.filter((o) => o.traits?.["arena.spawn"]).length }; })()`);
+  check("Arena level lays out the level (a level trait, 8 targets, 4 spawns, a GLB per kind in the scene's assets)", traits.level && traits.targets === 8 && traits.spawns === 4 && traits.kinds.length === 7, traits);
   check("and starts the scene in play (doc.view.activity)", (await P("doc()")).view?.activity === "play", (await P("doc()")).view);
   check("every block's GLB loads in both views", allLoaded, { a: lv, b: await P("loaded('b')") });
   await until("window.__p.running('a').includes('arena') && window.__p.running('b').includes('arena')");
@@ -216,12 +217,13 @@ try {
   await shot("game");
 
   // ─── the designer edits, and comes back ──────────────────────────────────
-  const addTargetBtn = `[data-ext="arena.edit"][data-command="add-target"]`;
   await click(await P(`rect('.activity-option[data-activity="edit"]')`));
-  await until(`window.__p.running('a').includes('scene.toolbar') && !!window.__p.hostA.querySelector('${addTargetBtn}')`, 6000);
+  await until(`window.__p.running('a').includes('scene.toolbar') && window.__p.running('a').includes('arena.edit')`, 6000);
   await settled("a");
-  const aEdit = { activity: await P("activity('a')"), run: await P("running('a')"), toolbar: await shown(".toolbar"), addTarget: await shown(addTargetBtn), play: !!(await P("rect('.arena-play')")) };
-  check("switched to Edit, A has the editor and the arena's edit commands (toolbar, sidebar, grid, Add target), not the game", aEdit.activity === "edit" && ["scene.toolbar", "scene.sidebar", "scene.grid", "arena.edit"].every((id) => aEdit.run.includes(id)) && !aEdit.run.includes("arena") && aEdit.toolbar && aEdit.addTarget && !aEdit.play, aEdit);
+  const aEdit = { activity: await P("activity('a')"), run: await P("running('a')"), toolbar: await shown(".toolbar"), play: !!(await P("rect('.arena-play')")) };
+  check("switched to Edit, A has the editor, the arena's editing and the parts bin (toolbar, sidebar, grid, scene.parts), not the game", aEdit.activity === "edit" && ["scene.toolbar", "scene.sidebar", "scene.grid", "scene.parts", "arena.edit"].every((id) => aEdit.run.includes(id)) && !aEdit.run.includes("arena") && aEdit.toolbar && !aEdit.play, aEdit);
+  const binParts = await js(`[...window.__p.hostA.querySelectorAll('.scene-parts .parts-group[data-category="Arena"] .part')].map((b) => b.dataset.part)`);
+  check("the bin offers the arena's parts, under Arena", JSON.stringify(binParts) === JSON.stringify(["arena.target", "arena.crate", "arena.spawn"]), binParts);
   check("only for A: B is still playing", (await P("activity('b')")) === "play" && JSON.stringify(await sorted("b")) === JSON.stringify(GAME), await P("running('b')"));
   check("the doc still starts people in play", (await P("doc()")).view?.activity === "play");
   await shot("edit");
@@ -442,20 +444,25 @@ try {
   // nothing selected: the inspector's Scene section, whose "Add behaviour…"
   // offers what the arena describes for a scene (the level)
   await until("!!window.__p.hostA.querySelector('.behaviour-add')");
-  const madeLevel = await P("addBehaviour('arena.level')");
-  check("hybrid: the inspector's Add behaviour… makes the scene an arena level", madeLevel && !!(await P("doc()")).traits?.["arena.level"], { madeLevel, traits: (await P("doc()")).traits });
-  const hTarget = `[data-ext="arena.edit"][data-command="add-target"]`;
-  check("hybrid: an arena trait brings the arena's edit commands, and offers Play", (await until(`!!window.__p.hostA.querySelector('${hTarget}')`)) && JSON.stringify(await P("activities('a')")) === '["edit","play"]' && (await P("activity('a')")) === "edit", { activities: await P("activities('a')"), running: await P("running('a')") });
-  // look at a spot on the deck (the target goes where you're looking)
-  await js("window.__p.A.viewport.setCamera({ position: [8, 9, 12], target: [1, 0.3, 4] })");
-  await sleep(200);
+  check("hybrid: the inspector's Add behaviour… offers the arena level", (await P("behaviours()")).includes("arena.level"), await P("behaviours()"));
+  // the bin's Target, clicked while looking at a spot on the deck: it goes
+  // there (the middle of the view), under the deck, standing upright
   const deckTop = await js("(() => { const h = window.__p.A.viewport.raycast([1, 50, 4], [0, -1, 0]); return h && h.point; })()");
-  await click(await P(`rect('${hTarget}')`));
+  await js(`window.__p.A.viewport.setCamera({ position: [8, 9, 12], target: ${JSON.stringify(deckTop)} })`);
+  await sleep(200);
+  const binTarget = `.scene-parts .part[data-part="arena.target"]`;
+  await js(`window.__p.hostA.querySelector('${binTarget}')?.scrollIntoView({ block: "center" })`);
+  check("hybrid: the parts bin offers the arena's target in a scene that isn't a level", await shown(binTarget), await P("text('.scene-parts')"));
+  await click(await P(`rect('${binTarget}')`));
   await until("window.__p.objects().length === 3", 5000);
-  await until("(() => { const a = window.__p.loaded('a'); return a.loaded === a.total; })()", 10_000);
-  const htid = await js("window.__p.objects().find((id) => window.__p.doc().objects[id].traits?.['arena.target'])");
-  const ht = await js(`window.__p.doc().objects['${htid}']?.transform`);
-  check("Add target puts a target on the deck where you look", !!ht && Math.abs(ht.position[0] - 1) < 0.05 && Math.abs(ht.position[2] - 4) < 0.05 && Math.abs(ht.position[1] - deckTop[1]) < 0.05, { ht, deckTop });
+  const htid = await js("window.__p.objects().find((id) => window.__p.doc().objects[id].traits?.['arena.target']) ?? null");
+  check("hybrid: the target part makes the scene a level, with the scene's own look", !!htid && JSON.stringify((await P("doc()")).traits?.["arena.level"]) === "{}", { htid, traits: (await P("doc()")).traits });
+  check("hybrid: the level brings the arena's editing, and offers Play", (await until("window.__p.running('a').includes('arena.edit')")) && JSON.stringify(await P("activities('a')")) === '["edit","play"]' && (await P("activity('a')")) === "edit", { activities: await P("activities('a')"), running: await P("running('a')") });
+  check("hybrid: the new target is selected", !!htid && (await P("A.local.get().selected")) === htid, await P("A.local.get().selected"));
+  await until("(() => { const a = window.__p.loaded('a'); return a.total === 3 && a.loaded === a.total; })()", 10_000);
+  const ht = await P(`world('${htid}')`);
+  const htUp = await js(`(() => { const m = window.__p.A.viewport.worldOf('${htid}'); return m && [m[4], m[5], m[6]].map((v) => v / Math.hypot(m[4], m[5], m[6])); })()`);
+  check("hybrid: it goes under the deck, on it where you're looking, upright", (await P("doc()")).objects[htid]?.parent === "deck" && !!ht && Math.hypot(ht[0] - deckTop[0], ht[1] - deckTop[1], ht[2] - deckTop[2]) < 0.05 && htUp?.[1] > 0.999, { ht, deckTop, up: htUp });
   check("hybrid: editing, the arena's game isn't running", !(await P("running('a')")).includes("arena"), await P("running('a')"));
   await click(await P(`rect('.activity-option[data-activity="play"]')`));
   await until("window.__p.running('a').includes('arena')");
