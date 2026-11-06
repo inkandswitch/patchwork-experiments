@@ -1,17 +1,19 @@
 // Plugin metadata only. This module runs in a worker: no imports, no DOM, and
 // every field except load() must survive structuredClone.
 //
-// The arena is not a datatype or a tool. It is two scene extensions and a
-// template (see the scene package's STAGE.md):
+// The arena is not a datatype or a tool. It is two scene extensions, a
+// template and three parts (see the scene package's STAGE.md):
 // - "arena" plays: in a scene whose doc has an arena trait (the level on the
 //   scene, targets and spawn points on objects), the "play" activity walks
 //   and shoots in it;
-// - "arena.edit" edits a level: while editing such a scene, commands put a
-//   target, crate or spawn point where you're looking;
+// - "arena.edit" edits a level: stands knocked-over targets back up;
 // - the "arena-level" template lays out the sample arena in an empty scene
-//   and starts it in play, so its maker is in the game at once.
-// The first arena trait in any other scene (a target on a boat's deck) comes
-// from the inspector's "Add behaviour…", which reads `describes`.
+//   and starts it in play, so its maker is in the game at once;
+// - the parts ("Arena" in the editor's parts bin) put a target, a crate or a
+//   spawn point into any scene: a boat's deck as well as a level. A target or
+//   a spawn point makes the scene a level if it isn't one yet.
+// A level trait on its own comes from the inspector's "Add behaviour…", which
+// reads `describes`.
 
 export const plugins = [
   {
@@ -73,6 +75,41 @@ export const plugins = [
     description: "A walled arena with crates, a tower, targets and spawn points, ready to play",
     async load() {
       return (await import("./template.js")).default;
+    },
+  },
+  {
+    type: "scene:part",
+    id: "arena.target",
+    name: "Target",
+    icon: "Target",
+    category: "Arena",
+    description: "A target to shoot down in play. Makes the scene a level",
+    traits: ["arena.target"],
+    async load() {
+      return (await import("./parts.js")).target;
+    },
+  },
+  {
+    type: "scene:part",
+    id: "arena.crate",
+    name: "Crate",
+    icon: "Package",
+    category: "Arena",
+    description: "A crate to hide behind or climb on",
+    async load() {
+      return (await import("./parts.js")).crate;
+    },
+  },
+  {
+    type: "scene:part",
+    id: "arena.spawn",
+    name: "Spawn point",
+    icon: "MapPin",
+    category: "Arena",
+    description: "Where players start in play, facing the way it faces. Makes the scene a level",
+    traits: ["arena.spawn"],
+    async load() {
+      return (await import("./parts.js")).spawn;
     },
   },
 ];

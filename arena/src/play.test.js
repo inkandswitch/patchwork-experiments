@@ -266,11 +266,11 @@ describe("playing", () => {
 
   it("a laid-out level has the arena's sky, haze and shadowing sun; any other scene keeps its own", () => {
     expect(x.atmosphere()).toBeNull();
-    // a target added to a boat: the level trait (its kinds), but no look
-    doc.traits = { "arena.level": { kinds: {} } };
+    // a target added to a boat: a bare level trait, no look
+    doc.traits = { "arena.level": {} };
     x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
     expect(x.atmosphere()).toBeNull();
-    doc.traits = { "arena.level": { kinds: {}, look: "arena" } };
+    doc.traits = { "arena.level": { look: "arena" } };
     x.update({ d: doc, objects: doc.objects }, {}, { scene: null });
     const a = x.atmosphere();
     expect(a).toBe(ATMOSPHERE);

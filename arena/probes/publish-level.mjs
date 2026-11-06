@@ -7,9 +7,9 @@
 // scene datatype makes one, then the "Arena level" template run on it with a
 // context built on this node repo, exactly as the start screen runs it. So
 // the doc is what a maker gets from New → scene → Arena level: the sample
-// arena in a group, one GLB file doc per kind of block (named in the level
-// trait), the arena's look, and `view.activity` "play", so whoever opens it
-// is in the game.
+// arena in a group, one GLB file doc per kind of block (kept in the scene's
+// assets, as the stage's ctx.file keeps them), the arena's look, and
+// `view.activity` "play", so whoever opens it is in the game.
 //
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
@@ -19,7 +19,7 @@
 // what it should once it comes back.
 
 import template from "../src/template.js";
-import { LEVEL, kindKey } from "../src/layout.js";
+import { kindKey } from "../src/layout.js";
 import { KINDS } from "../src/level.js";
 
 const args = Object.fromEntries(
@@ -61,17 +61,29 @@ const ctx = {
   change: (fn) => scene.change(fn),
   newId,
   notify: (text) => console.log(`  (the template says: ${text})`),
+  // the scene's own file doc for a key, made once (doc.assets[key])
+  async file(key, make) {
+    const known = scene.doc().assets?.[key];
+    if (known) return known;
+    const { name, bytes, extension, mimeType, hint = null } = make();
+    const file = await repo.create2({ "@patchwork": { type: "file" }, name, extension, mimeType, content: bytes });
+    scene.change((d) => {
+      if (!d.assets) d.assets = {};
+      if (!d.assets[key]) d.assets[key] = { url: file.url, hint };
+    });
+    return scene.doc().assets[key];
+  },
 };
 await template.create(ctx);
 
 // ─── checks: it opens in play, and every block shows a GLB made here ─────────
 const d = scene.doc();
-const kinds = d.traits?.[LEVEL]?.kinds ?? {};
-const glbs = Object.values(kinds);
+const assets = d.assets ?? {};
+const glbs = Object.values(assets).map((a) => a.url);
 const problems = [];
 if (d.view?.activity !== "play") problems.push(`view.activity is ${JSON.stringify(d.view?.activity)}, not "play"`);
 if ("kits" in (d.view ?? {})) problems.push("view still has kits");
-for (const kind of Object.keys(KINDS)) if (!kinds[kindKey(kind)]) problems.push(`no GLB for ${kind}`);
+for (const kind of Object.keys(KINDS)) if (!assets[kindKey(kind)]?.url) problems.push(`no GLB for ${kind}`);
 const blocks = Object.entries(d.objects).filter(([, o]) => o.kind !== "group");
 for (const [id, o] of blocks) if (!glbs.includes(o.sourceUrl)) problems.push(`${id} (${o.name}) shows a GLB that isn't the level's`);
 const targets = blocks.filter(([, o]) => o.traits?.["arena.target"]).length;

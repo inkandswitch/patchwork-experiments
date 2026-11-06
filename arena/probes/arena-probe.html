@@ -180,6 +180,8 @@ try {
     /** what this view is doing, and what the scene offers (the stage's local.activities) */
     activity: (w) => dbgOf(w).local.get().activities?.current ?? null,
     activities: (w) => dbgOf(w).local.get().activities?.available ?? [],
+    /** what the inspector's "Add behaviour…" offers */
+    behaviours: (w) => [...(hostOf(w).querySelector(".behaviour-add")?.options ?? [])].map((o) => o.value).filter(Boolean),
     /** pick a behaviour from the inspector's "Add behaviour…" (a native select: CDP can't open its list) */
     addBehaviour(key, w) {
       const sel = hostOf(w).querySelector(".behaviour-add");

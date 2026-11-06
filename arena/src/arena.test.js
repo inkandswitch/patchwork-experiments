@@ -155,7 +155,7 @@ describe("the level", () => {
   });
 
   it("kind GLBs are remembered per art version, so new art isn't hidden behind old", () => {
-    expect(kindKey("crate")).toBe(`crate@${ART}`);
+    expect(kindKey("crate")).toBe(`arena/crate@${ART}`);
     expect(ART).toBeGreaterThan(1);
   });
 
