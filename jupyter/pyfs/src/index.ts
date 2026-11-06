@@ -1,7 +1,9 @@
 import * as A from "@automerge/automerge/slim"
 import {
   initializeWasm,
+  parseAutomergeUrl,
   Repo,
+  stringifyAutomergeUrl,
   type AutomergeUrl,
   type DocHandle,
   type PeerId,
@@ -157,9 +159,15 @@ function forget(entry: Entry): void {
   if (entry.kind === "folder") for (const child of entry.children.values()) forget(child)
 }
 
-/** Bring a mounted folder in line with its document: load new links, drop removed ones. */
+/**
+ * Bring a mounted folder in line with its document: load new links, drop
+ * removed ones. Links are followed by the document they point at rather than
+ * their `type`, which folders synced by pushwork set to the file extension;
+ * documents that are neither files nor folders (e.g. notebooks) are skipped.
+ * Pinned links are opened live, so Python's writes land on the current version.
+ */
 async function reconcileFolder(entry: FolderEntry): Promise<void> {
-  const links = (entry.handle.doc().docs ?? []).filter(link => link.type === "file" || link.type === "folder")
+  const links = (entry.handle.doc().docs ?? []).filter(link => link?.name && link.url)
   const names = new Set(links.map(link => link.name))
   for (const [name, child] of entry.children) {
     if (names.has(name)) continue
@@ -169,14 +177,19 @@ async function reconcileFolder(entry: FolderEntry): Promise<void> {
   }
   await Promise.all(
     links
-      .filter(link => entry.children.get(link.name)?.handle.url !== link.url)
+      .filter(link => entry.children.get(link.name)?.handle.url !== liveUrl(link.url))
       .map(async link => {
-        const handle = await requireRepo().find<FileDoc | FolderDoc>(link.url)
+        const handle = await requireRepo().find<FileDoc | FolderDoc>(liveUrl(link.url))
+        if (!isFolder(handle.doc()) && !isFile(handle.doc())) return
         const previous = entry.children.get(link.name)
         if (previous) forget(previous)
         entry.children.set(link.name, await load(handle, `${entry.path}/${link.name}`))
       }),
   )
+}
+
+function liveUrl(url: AutomergeUrl): AutomergeUrl {
+  return stringifyAutomergeUrl({ documentId: parseAutomergeUrl(url).documentId })
 }
 
 function syncFile(entry: FileEntry): void {
@@ -283,6 +296,10 @@ function remove(path: string): void {
 
 function isFolder(doc: unknown): doc is FolderDoc {
   return Array.isArray((doc as FolderDoc | undefined)?.docs)
+}
+
+function isFile(doc: unknown): doc is FileDoc {
+  return !!doc && typeof doc === "object" && "content" in doc
 }
 
 function decodeText(bytes: Uint8Array): string | null {
