@@ -77,10 +77,16 @@ export function jsonEqual(a: unknown, b: unknown): boolean {
   return JSONExt.deepEqual(a as any, b as any);
 }
 
-/** Read a string that may be stored as text or as an immutable string. */
+/**
+ * Read a string that may be stored as text, as an immutable string, or as an
+ * nbformat multiline string (a list of lines, as Jupyter writes `.ipynb`).
+ */
 export function readString(value: unknown): string {
   if (value === undefined || value === null) {
     return '';
+  }
+  if (Array.isArray(value)) {
+    return Array.from(value as ArrayLike<unknown>, readString).join('');
   }
   return typeof value === 'string' ? value : String(value);
 }
