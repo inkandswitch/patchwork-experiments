@@ -24,6 +24,7 @@ import { HIDDEN, SEATS, docUrl, hiddenBy, seatAt, seatOf, seatedPlayers, seatsOf
 import { PLAIN_DECK, plainResolver } from "./plain-deck.js";
 import { CARD_TAGS, nearestSlot, worldSlots, yawOfMatrix } from "./slots.js";
 import { DIE, MAX_FACE, ROLL_SECONDS, faceUp, facesOf, pivotOf, rollPlan, scaleOf, upIn } from "./dice.js";
+import { apply, composeMatrix, invert, levelPose, multiply } from "./frame.js";
 
 
 const el = (tag, props = {}, ...children) => {
@@ -260,19 +261,43 @@ export default {
       }
       if (globalThis.document?.activeElement !== seatPicker) seatPicker.value = picked;
       if (!tags) return;
-      const items = [];
+      tagged = [];
       for (const z of zones(scene)) {
         const s = st.get(z.seat);
-        if (!s) continue;
-        const m = scene.world(z.id);
-        const c = [(z.min[0] + z.max[0]) / 2, z.max[1], (z.min[2] + z.max[2]) / 2];
-        const position = [0, 1, 2].map((r) => +(m[r] * c[0] + m[4 + r] * c[1] + m[8 + r] * c[2] + m[12 + r]).toFixed(4));
-        items.push({ key: z.id, text: `${s.seat?.name || z.seat} · ${occupant(s)}`, position, className: "tabletop-seat-tag", data: { state: s.state }, rank: 1 });
+        if (s) tagged.push({ z, text: `${s.seat?.name || z.seat} · ${occupant(s)}`, state: s.state, cam: s.seat?.camera ?? null });
       }
+      placeTags();
+    }
+    // Each tag on its hand as drawn (a table aboard a ship is where the
+    // ship is this frame, not where the doc last saved her), every frame
+    // while a hand is attached to something (which may be moving): on the
+    // tray's surface at its edge nearest the seat (seatTagAt), so your own
+    // sits just under your cards and the far one just past theirs, low on
+    // the table rather than up in the top of the view.
+    let tagged = []; // { z, text, state, cam }: what drawSeats last said
+    let tagLoop = null;
+    function placeTags() {
+      if (!tags || dead) return;
+      const items = tagged.map(({ z, text, state, cam }) => {
+        const m = api.worldOf?.(z.id) ?? scene.world(z.id);
+        const frame = cam?.in ? (api.worldOf?.(cam.in) ?? (scene.objects?.[cam.in] ? scene.world(cam.in) : null)) : null;
+        const eye = cam?.position && (!cam.in || frame) ? (frame ? apply(frame, cam.position) : cam.position) : null;
+        const position = apply(m, seatTagAt(z, eye ? apply(invert(m), eye) : null)).map((v) => +v.toFixed(4));
+        return { key: z.id, text, position, className: "tabletop-seat-tag", data: { state }, rank: 1 };
+      });
       const tk = JSON.stringify(items);
       if (tk !== tagKey) {
         tagKey = tk;
         tags.set(items);
+      }
+    }
+    /** Follow the hands each frame while any is attached to something, in play; else stop. */
+    function followTags(snapshot, local) {
+      const moving = local?.activities?.current === "play" && tagged.some(({ z }) => (snapshot.parents?.get?.(z.id) ?? null) != null);
+      if (moving && !tagLoop && api.loop) tagLoop = api.loop(placeTags);
+      else if (!moving && tagLoop) {
+        tagLoop();
+        tagLoop = null;
       }
     }
     /** Who a name tag says sits in a seat. */
@@ -437,7 +462,7 @@ export default {
         const zm = snap.world(z.id);
         for (const s of worldSlots(zm, c.extras, CARD_TAGS)) {
           any = true;
-          if (taken.every((p) => Math.hypot(p[0] - s.world[0], p[1] - s.world[2]) > s.radius / 2)) return { world: s.world, yaw: s.yaw ?? yawOfMatrix(zm) };
+          if (taken.every((p) => Math.hypot(p[0] - s.world[0], p[1] - s.world[2]) > s.radius / 2)) return { world: s.world, yaw: s.yaw ?? yawOfMatrix(zm), zone: z.id, local: s.local };
         }
       }
       return loading ? LOADING : any ? null : NO_SLOTS;
@@ -445,11 +470,12 @@ export default {
 
     /**
      * Can card `x` be drawn now: there, not on its way already, not held by a
-     * peer, not attached to anything, and out on the table (a card in a
-     * hand, even one a pile overlaps, is that seat's alone)?
+     * peer, and out on the table (a card in a hand, even one a pile overlaps,
+     * is that seat's alone)? A card attached to something (a table aboard a
+     * ship) glides in that thing's frame.
      */
     function canDraw(s, regions, x) {
-      if (!s.objects?.[x] || drawing.has(x) || api.heldBy?.(x) != null || (s.parents?.get?.(x) ?? null) != null) return false;
+      if (!s.objects?.[x] || drawing.has(x) || api.heldBy?.(x) != null) return false;
       const w = s.world(x);
       return !seatAt(s, regions, [w[12], w[13], w[14]]);
     }
@@ -460,6 +486,21 @@ export default {
       return stackOf(id)
         .filter((x) => canDraw(s, regions, x))
         .sort((p, q) => s.world(q)[13] - s.world(p)[13]);
+    }
+
+    /**
+     * Where a card goes to lie in a slot, as its doc transform: face up,
+     * turned the slot's way. At the root its world is its local; attached to
+     * something (a table aboard a ship), the slot (on the tray, as the doc
+     * has it) is put in that thing's frame, so it's the same on every peer
+     * whatever the ship is doing.
+     */
+    function slotPose(snap, id, slot, scale) {
+      const parent = snap.parents?.get?.(id) ?? null;
+      if (!parent || !slot.zone || !slot.local) return { position: slot.world.map((v) => +v.toFixed(6)), rotation: [0, +slot.yaw.toFixed(6), 0], scale };
+      const inTray = multiply(snap.world(slot.zone), composeMatrix({ position: slot.local.position, rotation: [0, slot.local.yaw ?? 0, 0] }));
+      const t = levelPose(multiply(invert(snap.world(parent)), inTray));
+      return { position: t.position.map((v) => +v.toFixed(6)), rotation: t.rotation.map((v) => +v.toFixed(6)), scale };
     }
 
     function draw(id) {
@@ -476,8 +517,8 @@ export default {
       const [id, ...rest] = pile;
       const t0 = api.scene().objects[id].transform ?? {};
       const from = { position: [...(t0.position ?? [0, 0, 0])].map(Number), rotation: [...(t0.rotation ?? [0, 0, 0])].map(Number), scale: Number(t0.scale) || 1 };
-      // face up, turned the slot's way (no parent: its world is its local)
-      const to = { position: slot.world.map((v) => +v.toFixed(6)), rotation: [0, +slot.yaw.toFixed(6), 0], scale: from.scale };
+      // face up, turned the slot's way, in its parent's frame
+      const to = slotPose(api.scene(), id, slot, from.scale);
       const entry = { slot, stop: null };
       drawing.set(id, entry);
       let t = 0;
@@ -663,8 +704,52 @@ export default {
       if (seatId && was !== seatId && seatsOf(api.scene())[seatId]?.player === viewer) announce("sat", { seat: seatId });
       // each seat can say where its player looks from
       const cam = seatId ? seatsOf(api.scene())[seatId]?.camera : null;
-      if (cam) api.camera.set(cam);
+      if (cam) seatView(cam);
+      else stopRiding();
       drawSeats();
+    }
+
+    // ── the seat's view ──
+    // A seat's camera may be in an object's frame (`in`: a table aboard a
+    // ship): the view is put there as that object is drawn now, and then
+    // rides with it (api.camera.ride, at the spot the view looks at), so the
+    // table stays in front of you as she swings and bobs. In first person
+    // (local.immersive: walking her deck) the camera is the walker's: the
+    // view waits until that ends, and whoever is seated is put back in their
+    // seat when it does.
+    let riding = null; // the ride's off
+    let waiting = false;
+    function stopRiding() {
+      riding?.();
+      riding = null;
+      waiting = false;
+    }
+    function seatView(cam) {
+      stopRiding();
+      if (api.local?.get?.()?.immersive) {
+        waiting = true;
+        return;
+      }
+      const { in: frame, ...view } = cam;
+      const m = frame ? (api.worldOf?.(frame) ?? (api.scene().objects?.[frame] ? api.scene().world(frame) : null)) : null;
+      // in a frame that's gone (its table deleted): no view to put you in; the view stays as it is
+      if (frame && !m) return;
+      if (m) {
+        view.position = apply(m, cam.position);
+        view.target = apply(m, cam.target ?? [0, 0, 0]);
+      }
+      api.camera.set(view);
+      // riding the spot it looks at, which so holds still on screen however she rolls
+      // (a stage without rides: the view is set once)
+      if (m && typeof api.camera.ride === "function") riding = api.camera.ride(frame, { at: [...(cam.target ?? [0, 0, 0])] }) ?? null;
+    }
+    /** Back from first person: in your seat again, if you have one. */
+    function backInSeat(local, prev) {
+      if (!(prev?.immersive && !local?.immersive) && !(waiting && !local?.immersive)) return;
+      waiting = false;
+      const mine = seatOf(seatsOf(api.scene()), viewer);
+      const cam = mine ? seatsOf(api.scene())[mine]?.camera : null;
+      if (cam) seatView(cam);
     }
 
     return {
@@ -683,7 +768,8 @@ export default {
           // (the hand not started yet: its command's write, done here)
           if (api.run?.({ ext: "scene.hand", command: "hand" }) !== true) api.local?.swap?.((m) => (m.tool === "hand" ? m : { ...m, tool: "hand" }));
         }
-        if (snapshot === prev?.scene) return;
+        backInSeat(local, prev?.local);
+        if (snapshot === prev?.scene) return followTags(snapshot, local);
         scene = snapshot;
         diceMoved(snapshot);
         regions = null;
@@ -695,6 +781,7 @@ export default {
         watchDecks(urls);
         lens(snapshot);
         drawSeats();
+        followTags(snapshot, local);
         reconcile();
       },
       looks: () => looks,
@@ -726,7 +813,8 @@ export default {
           key: "s",
           // on the use prompt, so hovering a pile says it can be shuffled
           show: ["use", "menu", "inspector"],
-          state: (id) => (id && hiddenBy(scene?.objects?.[id]) ? { title: "Shuffle the pile this card is in (S)" } : null),
+          // (not in first person: S walks back there, and playing is done from your seat)
+          state: (id, ctx) => (id && hiddenBy(scene?.objects?.[id]) && !(ctx?.local ?? api.local?.get?.())?.immersive ? { title: "Shuffle the pile this card is in (S)" } : null),
           run: shuffleStack,
         },
         {
@@ -735,6 +823,8 @@ export default {
           key: "d",
           show: ["use", "menu"],
           state(id, ctx) {
+            // (not in first person: D walks right there, and you draw from your seat)
+            if ((ctx?.local ?? api.local?.get?.())?.immersive) return null;
             const plan = drawPlan(id, ctx?.scene ?? scene, ctx?.local ?? api.local?.get?.());
             if (!plan) return null;
             const { slot, ...shown } = plan;
@@ -753,15 +843,26 @@ export default {
         },
       ],
       // a hidden card carried into your own zone turns face up for you
+      // (the point is where it's seen: against the trays as drawn, which aboard a moving ship is
+      // not where the doc last saved them; who may see it is still the doc's, visibility.js)
       landing(id, world) {
         if (!scene || !hiddenBy(scene.objects[id])) return null;
         const mine = seatOf(seatsOf(scene), viewer);
         if (!mine) return null;
         regions ??= zones(scene);
-        return seatAt(scene, regions, world) === mine ? { faceUp: true } : null;
+        const drawn = {
+          toLocal: (zid, p) => {
+            const m = api.worldOf?.(zid);
+            return m ? apply(invert(m), p) : scene.toLocal(zid, p);
+          },
+        };
+        return seatAt(drawn, regions, world) === mine ? { faceUp: true } : null;
       },
       dispose() {
         dead = true;
+        tagLoop?.();
+        tagLoop = null;
+        stopRiding();
         // (the stage puts back any card still on its way: its holds are released as it stops)
         for (const d of drawing.values()) d.stop?.();
         drawing.clear();
@@ -800,7 +901,7 @@ export default {
       ctx.notify?.("Drop the deck on the table, not in a hand.", "error");
       return true;
     }
-    const { x, y, z, yaw } = spot;
+    const { x, y, z, yaw, parent } = spot;
     const gid = ctx.newId("g");
     const ids = Array.from({ length: place.count }, () => ctx.newId("o"));
     ctx.change((d) => {
@@ -814,13 +915,14 @@ export default {
           sourceUrl: place.look.sourceUrl,
           providerId: "file-glb",
           renderUrl: null,
-          parent: null,
+          parent,
           group: gid,
           visible: true,
           color: null,
           opacity: 1,
           wireframe: false,
           // face down, a card's height apart: turned about its length, a card stands on its top
+          // (in the frame it was dropped into: its +Y is that frame's)
           transform: { position: [x, +(y + (j + 1) * h).toFixed(6), z], rotation: [0, yaw, Math.PI], scale: 1 },
           tags: [...CARD_TAGS],
           traits: { [HIDDEN]: { by: url } },
@@ -840,23 +942,69 @@ export default {
  * an object with a card slot within reach, that slot, squared to it. The
  * table's origin when the drop says nowhere. Never in a seat's private zone:
  * a slot there is passed over, and a point there is null (refused).
- * { x, y, z, yaw } | null
+ *
+ * It goes into the frame of what it was dropped on (`parent`): that object,
+ * if things are attached to it (a table, a hull), else whatever that object
+ * is attached to (a board on a table: beside the board, on the table), else
+ * the root. So a deck dropped on a table aboard a ship rides with her, and
+ * one dropped at a table on the floor stays at the root as it always did.
+ * The point is where it was seen (the drop context's worldOf, as drawn),
+ * and the yaw is in that frame.
+ * { x, y, z, yaw, parent } | null
  */
-function dropSpot(ctx, at) {
+export function dropSpot(ctx, at) {
   const p = Array.isArray(at?.point) && at.point.slice(0, 3).every((v) => Number.isFinite(Number(v))) ? at.point.map(Number) : [0, 0, 0];
-  const r6 = (v) => +v.toFixed(6);
+  const r6 = (v) => +v.toFixed(6) + 0;
   const snap = ctx.scene?.() ?? null;
   const regions = snap?.toLocal ? zones(snap) : [];
-  const inHand = (w) => regions.length > 0 && seatAt(snap, regions, w) != null;
+  // the hands as drawn, as the point is (aboard a moving ship the doc's are elsewhere)
+  const seen = {
+    toLocal: (zid, w) => {
+      const m = ctx.worldOf?.(zid);
+      return m ? apply(invert(m), w) : snap.toLocal(zid, w);
+    },
+  };
+  const inHand = (w) => regions.length > 0 && seatAt(seen, regions, w) != null;
   if (inHand(p)) return null;
-  const spot = { x: r6(p[0]), y: r6(p[1]), z: r6(p[2]), yaw: 0 };
-  if (!at?.hitId) return spot;
+  const hit = at?.hitId && snap?.objects?.[at.hitId] ? at.hitId : null;
+  const parent = hit ? frameFor(snap, hit) : null;
+  const drawn = (id) => ctx.worldOf?.(id) ?? snap.world(id);
+  // a world point and yaw in the frame it goes into
+  const into = (w, yaw) => {
+    if (!parent) return { x: r6(w[0]), y: r6(w[1]), z: r6(w[2]), yaw: r6(yaw), parent: null };
+    const m = drawn(parent);
+    const l = apply(invert(m), w);
+    return { x: r6(l[0]), y: r6(l[1]), z: r6(l[2]), yaw: r6(yaw - yawOfMatrix(m)), parent };
+  };
+  if (!hit) return into(p, 0);
   // not loaded yet, or a stage without content: the point will do
-  const extras = ctx.content?.(at.hitId)?.extras;
-  const m = extras ? snap?.world?.(at.hitId) : null;
+  const extras = ctx.content?.(hit)?.extras;
+  const m = extras ? drawn(hit) : null;
   const slot = m ? nearestSlot(worldSlots(m, extras, CARD_TAGS).filter((s) => !inHand(s.world)), p) : null;
-  if (!slot) return spot;
-  return { ...spot, x: r6(slot.world[0]), z: r6(slot.world[2]), yaw: r6(slot.yaw ?? yawOfMatrix(m)) };
+  if (!slot) return into(p, parent ? yawOfMatrix(drawn(parent)) : 0);
+  return into([slot.world[0], p[1], slot.world[2]], slot.yaw ?? yawOfMatrix(m));
+}
+
+/**
+ * Where a seat's name tag goes on its hand, in the hand's frame: on the
+ * tray's surface (its zone's floor), at the edge nearest the seat's eye
+ * (`eye`, in the same frame; the nearest point of the tray's footprint to
+ * it), else the middle of the tray. Pure.
+ * @param {{ min: number[], max: number[] }} z  @param {number[] | null} eye
+ */
+export function seatTagAt(z, eye) {
+  const mid = [(z.min[0] + z.max[0]) / 2, z.min[1], (z.min[2] + z.max[2]) / 2];
+  if (!eye) return mid;
+  const clamp = (v, k) => Math.min(z.max[k], Math.max(z.min[k], v));
+  return [clamp(eye[0], 0), z.min[1], clamp(eye[2], 2)];
+}
+
+/** The frame a deck dropped on `id` goes into: `id` if anything is attached to it, else its parent (null: the root). */
+function frameFor(snap, id) {
+  const parents = snap.parents;
+  if (!parents?.get) return null;
+  for (const p of parents.values()) if (p === id) return id;
+  return parents.get(id) ?? null;
 }
 
 /** What everyone at a table with hands and a plain deck is told. */

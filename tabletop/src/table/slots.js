@@ -21,7 +21,7 @@ export const yawOfMatrix = (m) => Math.atan2(m[8], m[10]);
  * @param {number[]} matrix  the object's world matrix (scene().world(id))
  * @param {{ connectors?: { position: number[], yaw?: number | null, tags?: string[] }[], snapRadius?: number | null } | null | undefined} extras  content(id).extras
  * @param {string[]} tags
- * @returns {{ world: number[], yaw: number | null, radius: number }[]}
+ * @returns {{ world: number[], yaw: number | null, radius: number, local: { position: number[], yaw: number } }[]}
  */
 export function worldSlots(matrix, extras, tags) {
   const m = matrix;
@@ -39,6 +39,8 @@ export function worldSlots(matrix, extras, tags) {
       world: [m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13], m[2] * x + m[6] * y + m[10] * z + m[14]],
       yaw: c.yaw == null || !Number.isFinite(Number(c.yaw)) ? null : Number(c.yaw) + turn,
       radius,
+      // where it is on its object (what a card lying in it is in that object's frame)
+      local: { position: [x, y, z], yaw: c.yaw == null || !Number.isFinite(Number(c.yaw)) ? 0 : Number(c.yaw) },
     });
   }
   return out;

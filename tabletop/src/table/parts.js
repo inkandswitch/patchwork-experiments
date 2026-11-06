@@ -14,11 +14,28 @@
 // A part goes where the bin says, under what it was dropped on (filed in
 // that one's group), and isn't locked: it's placed by hand, so the gizmo may
 // move it. If what it was dropped on went while its file was made (a peer
-// deleted it), it puts nothing. Parts never make or change seats: a table's
-// seats are the template's, the game page's or the inspector's.
+// deleted it), it puts nothing. The pieces never make or change seats: a
+// table's seats are the template's, the game page's, a game's part's or the
+// inspector's.
+//
+// Two more set a table up anywhere, a ship's cockpit say:
+// - the Card table: a table to play at, 0.76 × 1.20 m on a pedestal, its top
+//   0.70 m up, origin at its foot. Locked (a table isn't carried about in
+//   play), with one connector at the middle of its top that takes a game.
+// - Lost Cities: the whole game's table (template.js layOutTable), set down
+//   on what it was dropped on, every piece under that in its frame and each
+//   seat's view in it too (`camera.in`), so it all rides along. A game is
+//   the one part that brings seats, and only to a scene that has none (a
+//   table's seats are made once).
+// Either one put on something squares itself to it: upright in its frame,
+// turned only about its +Y, wherever it was put (on a heeling deck it stands
+// square to the deck, not plumb).
 
 import { DEFAULT_FACES, DIE } from "./dice.js";
 import { fileFor, glbFile } from "./files.js";
+import { composeMatrix } from "./frame.js";
+import { layOutTable } from "./template.js";
+import * as lostCitiesGame from "../games/lost-cities.js";
 
 // ─── what each is drawn as ──────────────────────────────────────────────────
 
@@ -75,6 +92,11 @@ function pawnProfile() {
   return profile;
 }
 
+/** The Card table's size (m): its top, and how high that is. */
+export const TABLE = Object.freeze({ w: 0.76, l: 1.2, h: 0.7, t: 0.03 });
+/** The tag a game's table fits: the Card table's top takes it. */
+export const GAME_TAG = "tabletop.game";
+
 /** A card spot's size: a little more than a card (lost-cities.js CARD). */
 const SPOT = { w: 0.066, l: 0.097, t: 0.0015 };
 
@@ -102,10 +124,32 @@ export const PIECES = Object.freeze({
     snapRadius: 0.04,
   },
   d6: { name: "Die", parts: d6Parts() },
+  table: tableDrawing(),
 });
+
+/** A table to play at: a top on a turned pedestal and a round foot, origin on the floor under its middle. */
+function tableDrawing() {
+  const { w, l, h, t } = TABLE;
+  const wood = "#6d4a2f";
+  const dark = "#4a3020";
+  return {
+    name: "Card table",
+    parts: [
+      { shape: "lathe", profile: [[0, 0], [0.26, 0], [0.26, 0.015], [0.2, 0.04], [0, 0.04]], segments: 40, color: dark, name: "foot" },
+      { shape: "lathe", profile: [[0, 0.04], [0.06, 0.04], [0.045, 0.1], [0.04, h - t - 0.06], [0.07, h - t - 0.01], [0.07, h - t], [0, h - t]], segments: 32, color: wood, name: "pedestal" },
+      { shape: "box", size: [w, t, l], at: [0, h - t, 0], color: wood, name: "top" },
+      { shape: "box", size: [w - 0.04, 0.0006, l - 0.04], at: [0, h, 0], color: "#2f5a45", name: "baize" },
+    ],
+    // where a game's table goes: the middle of the top, square to it
+    snapPoints: [{ position: [0, h + 0.0006, 0], yaw: 0, tags: [GAME_TAG] }],
+    snapRadius: 0.6,
+  };
+}
 
 /** What each part brings: the die is a die. */
 const TRAITS = { d6: { [DIE]: {} } };
+/** Parts written locked: the gizmo and the hand leave them where they are. */
+const LOCKED = new Set(["table"]);
 
 // ─── files ──────────────────────────────────────────────────────────────────
 
@@ -134,7 +178,7 @@ export function partObject(kind, { url, hint }, { transform = IDENTITY, parent =
     color: null,
     opacity: 1,
     wireframe: false,
-    locked: false,
+    locked: LOCKED.has(kind),
     transform: { position: [...t.position].map(Number), rotation: [...t.rotation].map(Number), scale: Number(t.scale) || 1 },
     ...(hint?.bounds ? { hint: { bounds: { min: [...hint.bounds.min], max: [...hint.bounds.max] } } } : {}),
     ...(traits ? { traits: structuredClone(traits) } : {}),
@@ -146,12 +190,13 @@ export function partObject(kind, { url, hint }, { transform = IDENTITY, parent =
  * id: its file first, then one change (in which it checks that what it was
  * put on is still there).
  */
-export function part(kind) {
+export function part(kind, { square = false } = {}) {
   return {
     async create(ctx, at) {
       const file = await fileFor(ctx, partKey(kind), () => makeFile(kind));
       const id = ctx.newId("o");
       const parent = at?.parent ?? null;
+      const transform = square && parent ? squared(at?.transform) : (at?.transform ?? IDENTITY);
       let put = false;
       ctx.change((d) => {
         if (parent && !d.objects?.[parent]) return;
@@ -159,7 +204,7 @@ export function part(kind) {
         if (!d.order) d.order = [];
         // under what it was put on, in that one's group (as addObject files it)
         const group = parent ? (d.objects[parent].group ?? null) : null;
-        d.objects[id] = partObject(kind, file, { transform: at?.transform ?? IDENTITY, parent, group });
+        d.objects[id] = partObject(kind, file, { transform, parent, group });
         d.order.push(id);
         put = true;
       });
@@ -169,7 +214,41 @@ export function part(kind) {
   };
 }
 
+/**
+ * A transform in a parent's frame, made upright in it: the same place and
+ * scale, turned only about the parent's +Y (the way it faced, seen from above).
+ */
+export function squared(t) {
+  const m = composeMatrix(t ?? IDENTITY);
+  const yaw = Math.atan2(m[8], m[10]);
+  return {
+    position: [...(t?.position ?? [0, 0, 0])].map((v) => +Number(v).toFixed(6)),
+    rotation: [0, Math.abs(yaw) < 1e-9 ? 0 : +yaw.toFixed(6), 0],
+    scale: Number(t?.scale) || 1,
+  };
+}
+
+/**
+ * A game's whole table as a part: laid out (template.js layOutTable) where
+ * it was put, under what it was put on, squared to it. Its seats only where
+ * the scene has none; the scene's view, title and home are left alone. The
+ * board is what's selected.
+ */
+export function gamePart(gameId, game) {
+  return {
+    async create(ctx, at) {
+      const parent = at?.parent ?? null;
+      const transform = parent ? squared(at?.transform) : (at?.transform ?? null);
+      const layout = await layOutTable(ctx, gameId, game, { parent, transform, view: false });
+      if (!layout) return null;
+      return layout.order.find((oid) => layout.objects[oid]?.kind !== "group" && layout.objects[oid]?.locked) ?? null;
+    },
+  };
+}
+
 export const pawn = part("pawn");
 export const token = part("token");
 export const cardSpot = part("card-spot");
 export const die = part("d6");
+export const cardTable = part("table", { square: true });
+export const lostCities = gamePart("lost-cities", lostCitiesGame);

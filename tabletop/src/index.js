@@ -16,7 +16,9 @@
 //
 // Pieces for any table are `scene:part`s, in the editor's parts bin under
 // "Tabletop": a pawn, a token, a card spot (a mat with one card slot) and a
-// die (src/table/parts.js). None of them makes seats.
+// die (src/table/parts.js). None of them makes seats. So are a Card table to
+// play at and Lost Cities, the whole game set down on whatever it's put on
+// (a Card table aboard a ship); the game brings seats if the scene has none.
 
 export const plugins = [
   {
@@ -157,6 +159,17 @@ export const plugins = [
     { id: "token", name: "Token", icon: "Coins", description: "A flat counter: a coin, a marker, a life" },
     { id: "cardSpot", part: "card-spot", name: "Card spot", icon: "RectangleVertical", description: "A mat with one card slot: a card or a dropped deck squares onto it" },
     { id: "die", name: "Die", icon: "Dice6", description: "A six-sided die. Press R over it in play to roll it", traits: ["tabletop.die"] },
+    // somewhere to play, and a whole game to put on it (anywhere: a ship's cockpit rides it along)
+    { id: "cardTable", part: "table", name: "Card table", icon: "RectangleHorizontal", description: "A table to play at, 0.76 × 1.2 m and 0.7 m high. A game dropped on it sits square in the middle of its top" },
+    {
+      id: "lostCities",
+      part: "lost-cities",
+      name: "Lost Cities",
+      icon: "Map",
+      description: "The whole two-player table, set down where you put it: board, deck, a private hand each, and seats if the scene has none",
+      tags: ["tabletop.game"],
+      traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
+    },
   ].map(({ id, part, ...p }) => ({
     type: "scene:part",
     id: `tabletop.${part ?? id}`,

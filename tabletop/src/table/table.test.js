@@ -507,9 +507,9 @@ describe("seats, held by claims", () => {
     const t = await room(seats(ANA, BEN), { views: [["A", ANA], ["C", "carol"]] });
     const tags = () => t.w.view("C").labels.map(({ key, text, position, data }) => ({ key, text, position, state: data.state }));
     expect(tags()).toEqual([
-      // the top of each zone's box, in the world (hand2 is turned round)
-      { key: "hand1", text: "Player 1 · Ana", position: [0, 0.15, 0.5], state: "taken" },
-      { key: "hand2", text: "Player 2 · Ben (away)", position: [0, 0.15, -0.5], state: "away" },
+      // on each tray, in the world (these seats have no camera to say which edge is theirs: the middle)
+      { key: "hand1", text: "Player 1 · Ana", position: [0, 0, 0.5], state: "taken" },
+      { key: "hand2", text: "Player 2 · Ben (away)", position: [0, 0, -0.5], state: "away" },
     ]);
     expect(t.w.view("A").labels[0].text).toBe("Player 1 · Ana");
     await t.pick("A", "");

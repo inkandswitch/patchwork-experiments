@@ -152,7 +152,7 @@ try {
   // the camera eases to the editor's view: let it stop before aiming at the ground
   await settled();
   const bin = await P("binParts('a')");
-  check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.die"]), bin);
+  check("the bin offers the Tabletop parts", J(bin) === J(["tabletop.pawn", "tabletop.token", "tabletop.card-spot", "tabletop.die", "tabletop.table", "tabletop.lost-cities"]), bin);
   const boardBox = await P(`slots(${J(board)})`);
   const xs = boardBox.map((s) => s.world[0]), zs = boardBox.map((s) => s.world[2]);
   const mid = [(Math.min(...xs) + Math.max(...xs)) / 2, 0, (Math.min(...zs) + Math.max(...zs)) / 2];
