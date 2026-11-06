@@ -37,12 +37,26 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:tool` | `scene-render-controls` | generic build-param form for a `scene-render` doc |
 | `scene:source` | `file-glb` | `file` docs with extension `glb` — `passthrough: true`: shown straight from the file, never built |
 | `scene:source` | `file-stl` | `file` docs with extension `stl` (binary + ASCII → GLB; params `unit` mm/cm/m/in, `up` z/y) |
-| `scene:extension` | `scene.*` (21) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
+| `scene:extension` | `scene.*` (23) | the parts in `src/parts/`, listed under "Layout", in the order input is offered to them |
 
 All but two of the editor's parts take part only in the `"edit"` activity;
 the key map (`scene.keys`) and notices serve every activity. `scene.activity`
 (the switcher: Play | Edit at the bottom left, shown only when a scene offers
 more than editing) runs in every scene.
+
+**Use** (`scene.use`, `src/parts/use.js`) is the use prompt, the
+first-person counterpart of the context menu: in play it shows the verbs
+for what you're looking at (the middle of the view under pointer lock, else
+what's under the pointer, or the nearest thing it's attached to that has
+any), up to three, as "[F] Take the helm", and the key runs one. It shows a
+command with a `key` whose `show` doesn't leave out `"use"`, and calls its
+`state` with two more fields, `from` (the eye, so a verb can need arm's
+reach) and `hit` (`{ id, point, distance }`). A `run` that returns a session
+(`{ end(), cancel(), update?(dt) }`) is held while the key is down
+(`hold: true` shows "hold F"): `update` every frame, `end` on release,
+`cancel` if focus goes, the target goes or the part stops. It runs only
+when a game lists it in `requires`, before `scene.keys`, so the prompt
+hears its keys first.
 
 ## Using it
 
@@ -673,7 +687,7 @@ URL heads (base58check change hashes, what `handle.heads()` returns).
 | `src/index.js` | plugin metadata only (worker-safe) |
 | `src/datatype.js` | the two datatypes |
 | `src/stage/` | the stage: `stage.js` (mount, doc loop, the api each extension gets), `viewport.js` (renderer, camera rig, picking, layers, labels, poses), `router.js` (DOM input → events, the chain, sessions, arming, pointer lock, keys), `presence.js` (the presence protocol, sends, pose holds), `host.js` (starting and stopping extensions, this viewer's activity), `activation.js` and `chain.js` (pure: what runs and what activities are on offer, in what order, who hears an event), `atom.js` (the local value) |
-| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), and `activity` (the switcher, always on) |
+| `src/parts/` | the editor's extensions, one module each (with its CSS and tests): `select`, `gizmo`, `hand`, `handles`, `measure`, `dimensions`, `grid`, `axes`, `bounds`, `units`, `legends`, `frame`, `toolbar`, `sidebar`, `keys`, `menu`, `notices`, `outline`, `inspector`, `add` (and the start screen), `use` (the use prompt, in play when a game requires it) and `activity` (the switcher, always on) |
 | `src/activities.js` | what activities are called, for the switcher and "Starts in" |
 | `src/ops.js` | pure doc planners for structural edits (remove, group, ungroup, file in, attach, move a row, set a transform): a snapshot in, a change function out |
 | `src/gltf-content.js` | GLB bytes → display-ready content: the shared loader (meshopt), dequantizing, default-material detection, material rules, InstancedMesh collapse |

@@ -1044,9 +1044,15 @@ export class Viewport {
     if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
   }
 
-  /** Run fn(dt, now) before every frame; while any loop is live every frame renders. @returns {() => void} off */
-  addLoop(fn) {
-    this.loops.add(fn);
+  /**
+   * Run fn(dt, now) before every frame; while any loop is live every frame
+   * renders. `first` runs it before every other loop (the stage's own, which
+   * moves what's drawn before anything reads it that frame).
+   * @returns {() => void} off
+   */
+  addLoop(fn, { first = false } = {}) {
+    if (first) this.loops = new Set([fn, ...this.loops]);
+    else this.loops.add(fn);
     this.invalidate();
     return () => this.loops.delete(fn);
   }

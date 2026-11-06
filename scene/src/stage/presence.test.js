@@ -9,6 +9,8 @@ import {
   PEER_TTL_MS,
   POSE_MS,
   HOLD_TTL_MS,
+  poseInterval,
+  cleanEvery,
 } from "./presence.js";
 
 // A clock whose timers run in due order when advanced.
@@ -473,6 +475,75 @@ describe("pose holds", () => {
     clock.advance(POSE_MS);
     a.hold("hand", "o1", null, T(2));
     expect(b.remoteHolds()).not.toBe(m);
+  });
+});
+
+describe("pose streams, for playing back", () => {
+  const T = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
+
+  it("the pose interval is POSE_MS, or faster when the presence rate is", () => {
+    expect(poseInterval([])).toBe(POSE_MS);
+    expect(poseInterval([10])).toBe(POSE_MS); // 10 Hz is slower than 20: poses still go at 20
+    expect(poseInterval([60])).toBeCloseTo(1000 / 60);
+    expect(cleanEvery(1000 / 60)).toBeCloseTo(1000 / 60);
+    expect(cleanEvery(1)).toBe(POSE_MS);
+    expect(cleanEvery("fast")).toBe(POSE_MS);
+  });
+
+  it("each pose carries the sender's clock and its interval", () => {
+    a.hold("sim", "hull", null, T(1));
+    const msg = sent("A", "scene:pose").at(-1);
+    expect(msg.at).toBe(clock.now());
+    expect(msg.every).toBe(POSE_MS);
+  });
+
+  it("raising the presence rate raises the pose rate too", () => {
+    a.rate("sim", 60);
+    for (let i = 0; i < 12; i++) {
+      a.hold("sim", "hull", null, T(i));
+      clock.advance(1000 / 60);
+    }
+    // 200 ms at 60 Hz: a pose a frame, not one per 50 ms
+    const poses = sent("A", "scene:pose").filter((m) => m.id === "hull");
+    expect(poses.length).toBeGreaterThanOrEqual(11);
+    expect(poses.at(-1).every).toBeCloseTo(1000 / 60);
+    expect(b.remoteHolds().get("hull").every).toBeCloseTo(1000 / 60);
+  });
+
+  it("a peer keeps the last few as samples on the sender's clock, with its clock's offset", () => {
+    for (let i = 0; i < 4; i++) {
+      a.hold("sim", "hull", null, T(i));
+      clock.advance(POSE_MS);
+    }
+    const h = b.remoteHolds().get("hull");
+    expect(h.samples.map((x) => x.transform.position[0])).toEqual([0, 1, 2, 3]);
+    expect(h.samples[1].at - h.samples[0].at).toBe(POSE_MS);
+    expect(h.offset).toBe(0); // one clock, delivered at once
+    expect(Object.isFrozen(h.samples)).toBe(true);
+  });
+
+  it("the offset is ours minus the sender's, from its stamps; an unstamped pose is timed on arrival", () => {
+    // a peer whose clock is 5 s behind ours, its poses 20 ms on the way
+    const pose = (seq, x, at) => ha.broadcast({ type: "scene:pose", session: "sz", viewer: "zed", id: "o9", parent: null, transform: T(x), since: 1, seq, at, every: 50 });
+    pose(1, 0, clock.now() - 5_020);
+    expect(b.remoteHolds().get("o9").offset).toBe(5_020);
+    expect(b.remoteHolds().get("o9").samples[0].at).toBe(clock.now() - 5_020);
+    // an older peer: no stamp, no interval
+    ha.broadcast({ type: "scene:pose", session: "sy", viewer: "yan", id: "o8", parent: null, transform: T(1), since: 1, seq: 1 });
+    expect(b.remoteHolds().get("o8")).toMatchObject({ offset: 0, every: POSE_MS, samples: [{ at: clock.now(), transform: T(1) }] });
+  });
+
+  it("a new hold, or the same one moved to another parent, starts its samples afresh", () => {
+    a.hold("hand", "o1", "g1", T(1));
+    clock.advance(POSE_MS);
+    a.hold("hand", "o1", "g1", T(2));
+    expect(b.remoteHolds().get("o1").samples).toHaveLength(2);
+    clock.advance(POSE_MS);
+    a.hold("hand", "o1", "g2", T(3));
+    expect(b.remoteHolds().get("o1").samples.map((x) => x.transform)).toEqual([T(3)]);
+    a.release("hand", "o1");
+    a.hold("hand", "o1", "g2", T(4));
+    expect(b.remoteHolds().get("o1").samples.map((x) => x.transform)).toEqual([T(4)]);
   });
 });
 

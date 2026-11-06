@@ -24,7 +24,7 @@ multiplayer); [the report](REPORT.md) records what changed and why.
 
 | | Shared? | Lasts? | Read | Write |
 |---|---|---|---|---|
-| **Doc** | yes | yes | `api.doc()`, `api.scene()` | `api.change(fn)` |
+| **Doc** | yes | yes | `api.doc()`, `api.scene()`, `api.claimedBy(id, kind)` | `api.change(fn)`, `api.claim(id, kind)` |
 | **Presence** | yes | no | `api.presence.get()`, `.watch(fn)` | `api.presence.set(key, value)`, `api.send(type, data)` |
 | **Local** | no (this view) | no | `api.local.get()` | `api.local.swap(fn)` |
 
@@ -80,6 +80,7 @@ only). Peer colours come from `src/peers.js`, so a peer's box and row match.
   activities?: string[],              // the activities it takes part in; absent = every one
   drops?:      string[],              // may lay out a dropped doc of this datatype ("*": any)
   always?:     boolean,
+  general?:    false,                 // no traits, yet not general: it runs only when something requires it
   requires?:   string[],              // ids that run whenever this does
   describes?:  { [traitKey]: description },  // what its traits are, for authoring them (below)
   async load() { return { create(api) → instance, drop?(ctx, info) → boolean | Promise<boolean> } } }
@@ -106,7 +107,9 @@ An extension runs when both of these hold:
 | `general` | it declares no traits at all (a general-purpose part: the editor's toolbar, the key map, notices), or `always` | step 6 |
 
 An extension that declares traits the doc doesn't have has no reason, and
-doesn't run. If several reasons apply, the earliest step wins.
+doesn't run. Nor does one that says `general: false`: a shared part that
+serves whatever needs it, and exists only when something running requires
+it (the use prompt, which a game brings into play). If several reasons apply, the earliest step wins.
 
 `requires` pulls the required extensions in whenever the requirer runs,
 whatever *their* activities (a table in play brings the hand and the key
@@ -221,7 +224,7 @@ describes: {
 When an extension stops:
 1. cancel its open session;
 2. pop its arms (unlock, release camera holds);
-3. release its pose holds as put-backs;
+3. release its pose holds as put-backs, and let go of its claims (no `onLost`);
 4. clear its presence keys;
 5. stop its loops, `afterRender` hooks and scheduled work;
 6. remove its world groups, disposing their geometry and materials;
@@ -237,7 +240,9 @@ replaced, not read.
 
 **Shared maps.** Nothing writes a map or list at a key that another peer
 might also create (two peers each making one at once would leave one peer's
-writes in a map that loses the merge). Every scene doc is made with
+writes in a map that loses the merge). Claims are the one exception: an
+object's `claims` map is made by its first claim, and a claim lost that way
+is written again by its holder (see "Claims"). Every scene doc is made with
 `traits`, `view` and `dimensions`: the scene datatype's `init` makes them,
 and so does every tool that writes a scene doc whole (tabletop's tables, the
 TTS importer), so an extension's `if (!d.traits) d.traits = {}` is only ever
@@ -381,11 +386,13 @@ that extension.
 
 | | |
 |---|---|
-| `id`, `repo`, `handle`, `url`, `viewer`, `signal`, `Counter` | `Counter` is the stage's automerge Counter |
+| `id`, `repo`, `handle`, `url`, `viewer`, `session`, `signal`, `Counter` | `Counter` is the stage's automerge Counter. `session`: this view's presence session, what its claims and holds name (two tabs of one viewer are two sessions; it changes on coming back from the back-forward cache) |
 | `doc()`, `change(fn)`, `newId(prefix)` | |
 | `scene()` | the snapshot: `{ d, objects, ids, parents, groups, members, traits, world(id) → 4×4 as stored, toLocal(id, p) }`. `members`: group id → the objects in it, at any depth |
 | `ops` | pure planners (`src/ops.js`). Each takes the snapshot and returns a change function or null: `api.change(ops.ungroup(api.doc(), id))` |
 | `remove(ids)` | remove in one change, after each extension's `beforeRemove(draft, ids)` tidy-up. Best effort only: concurrent edits can still leave dangling ids |
+| `claim(id, kind, { onLost? })` → release \| null | take a claim of `kind` on an object (`id` null: the scene); null when another view, or another extension here, holds a live one. See "Claims" |
+| `claimedBy(id, kind)` → `{ viewer, session, mine }` \| null | who holds it, if they're still here. `mine`: this view (any of its extensions) |
 | `registry(type)` | |
 | `port`, `root` | the element the canvas fills, and the stage's root (for DOM listeners: drops, pastes; focus) |
 
@@ -395,7 +402,7 @@ that extension.
 |---|---|
 | `local` | `{ get, swap, watch(fn, select?) }` |
 | `pref(key, fallback)`, `setPref(key, value)` | read through local and then the doc, as above. Set writes local only |
-| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz) }`. Keys are namespaced by the extension and cleared when it stops |
+| `presence` | `{ set(key, value), get() → { [session]: { viewer, at, keys: { [ext]: { … } } } }, watch(fn), rate(hz) }`. Keys are namespaced by the extension and cleared when it stops. `rate(hz)` raises how often this view's presence goes out, and its held poses with it (a simulation streaming a hull asks for 30 or 60) |
 | `send(type, data)` | a one-off message to the same extension on every other peer, delivered at most once and never replayed. Received through `instance.receive(type, data, { session, viewer })` |
 | `notify(text, kind?)` | |
 
@@ -407,7 +414,7 @@ that extension.
 | `content(id)` | `{ loaded, box, extras, stats, root }` or null. `extras` holds the GLB's extras: `connectors` (normalised), `snapRadius`, `legend`, and the scene's own. `root` is the live three.js node, for reading geometry (dimensions' on-surface test); never change it |
 | `loadState(id)` | a copy of what the render manager or GLB queue last said about it (notes, phase, contested, providerId, builtAt, builtHeads, bounds, retryAt, fixed, at, versionMissing…), or null |
 | `box(id, { hints })`, `groupBox(id)`, `sceneBox()` | world `{ min, max }`, or null |
-| `worldOf(id)` | the displayed world matrix (held poses included) |
+| `worldOf(id)` | the displayed world matrix: held poses, and peers' played back, included; what is drawn this frame. `scene().world(id)` is the doc's |
 | `focus(ids)` | load these first |
 | `providersFor(url, doc)`, `addObject(url, opts)` → id | `opts`: `{ providerId?, name?, group?, parent?, before?, transform?, heads? }`. `heads`, or heads in the URL (`automerge:<id>#<heads>`, a Patchwork link at a version), adds it fixed at that version of its source (the object's `at`) |
 | `rebuild(id)` | |
@@ -448,13 +455,71 @@ How the camera parts behave:
 
 How poses and loops behave:
 - **Holding a pose.** `pose.hold(id, transform)` shows an object at that
-  local transform while it's held, under its doc parent. Peers see it, with
-  50 ms throttling.
+  local transform while it's held, under its doc parent. Peers see it: at
+  most one pose per object goes out every 50 ms, or faster when this view's
+  presence rate is higher (`presence.rate(60)` streams at 60 Hz).
+- **Peers play holds back smoothly.** A peer doesn't snap to each pose it
+  hears. It plays the stream about 1.5 send intervals late (75 ms at 20 Hz),
+  drawing the pose between the two either side of that moment (position and
+  scale lerped, rotation slerped), timed by the sender's clock so the wire's
+  jitter isn't shown. If the next pose is late it carries on along the last
+  step for one interval, then holds. A simulated hull and a carried card are
+  the same thing to the stage, so there is no flag for it: one kind of hold,
+  always played back this way. The price, 75 ms more lag on a peer's view of
+  a carry, buys a carry without the 20 Hz stutter too. A landed release still
+  shows where it landed at once.
+- **Readers see what's drawn.** The playback moves before any extension's
+  loop runs each frame, so `worldOf` and `raycast` in a loop see this frame's
+  pose: a walker on a moving deck stands on the deck as drawn. The playback
+  alone doesn't call `update`; a new pose arriving does, as before. To follow
+  a moving object every frame, read `worldOf` in a loop.
 - **Releasing.** Call `release(id, { landed: true })` right after writing the
   put-down to the doc. Peers keep the pose until their doc shows the same
   transform, or 3 s pass. A plain release puts the object back at once.
 - **Loops.** While any loop runs, the stage renders every frame, and `dt` is
   clamped to 0.1 s.
+
+### Claims
+
+Who is at the helm, who simulates the ship, whose hands a bucket is in: facts
+about the shared world, so they're in the doc. A claim is a field on what's
+claimed, `objects[id].claims[kind] = { viewer, session }`, or
+`doc.claims[kind]` for the scene (`id` null). `kind` is any string
+(`"station"`, `"sim"`, `"held"`); kinds are independent.
+
+- **Taking** (`api.claim(id, kind, { onLost })`) writes the field and returns
+  a release, which deletes it if it's still this view's. It returns null when
+  someone else holds a live claim of that kind: another view, or another
+  extension of this one. Taking it again from the same extension returns the
+  same release.
+- **A claim counts only while its holder is here.** `claimedBy` reads a claim
+  whose session isn't in presence (and isn't this view's) as null: it has
+  lapsed, so a tab that died at the helm doesn't hold it forever, and nothing
+  has to clean up after it. The next taker writes over it. A lapse is a
+  presence change, not a doc change: something waiting to take over watches
+  presence or checks in its loop.
+- **The grace period.** A session this view has never heard from in presence
+  still counts for 6 s (a heartbeat and a second) from when this view first
+  read its claim: a peer that has just joined may write its claim before its
+  hello gets here, and a view that has just opened hasn't heard anyone's
+  hello yet. A session that was here and has gone (a bye, or silent for the
+  presence TTL) lapses at once.
+- **Concurrent takers are Automerge's to settle.** Two views taking the helm
+  at once both get a release; the merge keeps one claim on every peer. After
+  every doc change the stage looks at this view's claims: one whose field now
+  names another session is gone from this view, and its taker's `onLost` is
+  called once. One whose object was removed is lost too. One whose field is
+  simply missing lost no contest (two views giving an object its first
+  `claims` map at once keep only one of the maps), so the stage writes it
+  again. This is the one map two peers may both create: whichever wins, the
+  claims in it are re-asserted by their holders.
+- **Letting go.** The release, the extension stopping (no `onLost`: it let
+  go), and the page going away. On `pagehide` the view deletes its claims
+  before its bye; back from the back-forward cache, as a new session, it
+  writes them again, or calls `onLost` for any someone took meanwhile.
+- **Motion stays in presence.** A claim says who; a pose hold says where,
+  right now. The ship's simulator claims `"sim"` and streams the hull with
+  `pose.hold`.
 
 ## `instance`
 
@@ -478,9 +543,10 @@ A **command**:
 ```js
 { id, name,
   key?: string | string[],   // KeyboardEvent.key values (letters in either case)
-  show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector"); [] none; absent all
-  state(target, { scene, local }) → null | { title?, checked?, value?, choices?: [{ value, label }], disabled? },
-  run(target, value?) }
+  show?: string[],           // the surfaces that show it ("toolbar", "menu", "inspector", "use"); [] none; absent all
+  hold?: boolean,            // the use prompt shows it as "hold F" (the session is what holds)
+  state(target, { scene, local, from?, hit? }) → null | { title?, checked?, value?, choices?: [{ value, label }], disabled? },
+  run(target, value?) → void | session }
 ```
 
 - `state` returning null (or false) means the command doesn't apply to that
@@ -495,6 +561,22 @@ A **command**:
 - A key map tries the selection, then the scene, then the hovered object
   (so Delete removes what you chose, never what you merely passed over),
   whatever kind of target the selection is.
+- **The use prompt** (`scene.use`, in play, when a game requires it) shows
+  the verbs for what this viewer is looking at: the middle of the view while
+  an arm holds pointer lock, else the hovered object. Its target is that
+  object, or the nearest thing it's attached to (`scene().parents`) that has
+  a keyed command shown on `"use"`; it shows at most three, and a shown
+  verb's key runs it on that target. A game lists `"scene.use"` before
+  `"scene.keys"` in `requires`, so the prompt hears its keys first.
+- **Reach.** The use prompt calls `state` with two more fields: `from`, the
+  eye (world `[x, y, z]`), and `hit`, `{ id, point, distance }`, what the
+  look landed on (perhaps a part below the target). The key map and the menu
+  don't pass them, so a verb that needs `from` is used only from the prompt.
+- **Held verbs.** `run` may return a session, `{ end(), cancel(), update?(dt) }`.
+  The use prompt keeps it open while the key is down: `update(dt)` each
+  frame, `end()` when the key is let go, `cancel()` when the window or the
+  view loses focus, the target leaves the doc, or the prompt stops.
+  `api.run` discards what `run` returns, so elsewhere a held verb is a press.
 
 **Targets and refs.** A target is a string, or null for the scene:
 - an **object or group id** names that object;
@@ -563,9 +645,10 @@ atmosphere() → null | {
 | `stage/chain.js` | the chain order (pure) |
 | `stage/viewport.js` | the renderer |
 | `stage/router.js` | DOM to events, sessions, the arm stack, lock, keys, menu, cursor |
-| `stage/presence.js` | the presence protocol, sends, remote pose holds |
+| `stage/presence.js` | the presence protocol, sends, remote pose holds and their timed samples |
+| `stage/smooth.js` | playing back a peer's pose stream: the playout delay, the clock offset, the sample buffer, lerp and slerp (pure) |
 | `stage/host.js` | starting and stopping extensions, this viewer's activity (joining, `local.activities`), the api each gets, ownership |
-| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, the activity, templates, camera saving), the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
+| `stage/stage.js` | the mount and the doc loop (derive, content loading, lenses, atmosphere, status, prefs, the activity, templates, camera saving), remote holds' playback, claims, the default layout (port and edges); it answers the embedded build controls' `scene:rebuild` and `scene:render-context` events (`src/controls-tool.js`) and fires `scene:render-context-changed` at them when an object's `at` changes |
 | `ops.js` | pure doc planners |
 
 **Viewport** (`new Viewport({ port, themeRoot })`). This is the old
@@ -588,7 +671,7 @@ taken out. It keeps the following:
 - **Poses:** `setPose(id, transform | null)`, `worldOf(id)`.
 - **Atmosphere:** `setAtmosphere(merged | null)` (sky, fog, sun; the
   pure parts are `cleanAtmosphere`, `lighting` and `sunFrame`).
-- **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn)`,
+- **Drawing:** `setExtent(owner, box | null)`, `addLoop(fn, { first? })`,
   `afterRender(fn)`, `invalidate()`, `dispose()`.
 
 **Router** (`createRouter({ port, canvas, keyRoot, viewport, chainFor, inputOf, onHover, cameraHeld })`):
@@ -603,19 +686,25 @@ taken out. It keeps the following:
   - `scene:presence` carries `{ session, viewer, seq, at, keys }` or
     `{ session, bye: true }`;
   - `scene:send` carries `{ session, viewer, ext, type, data }`;
-  - `scene:pose` carries `{ session, id, parent, transform | null, since, landed? }`,
-    `since` being the hold's Lamport stamp: one past every stamp its holder
-    had seen. Of two holds on one object the lower stamp wins, then the lower
-    session id, so every view agrees, and a hold begun after hearing of
-    another always ranks after it. No clock is involved; it's the same kind
-    of rule Automerge uses to settle concurrent writes;
+  - `scene:pose` carries `{ session, id, parent, transform | null, since, landed?, at, every }`,
+    `at` being the sender's clock when it went and `every` its pose interval
+    (ms), which a peer plays the stream back by (`smooth.js`); `since` being
+    the hold's Lamport stamp: one past every stamp its holder had seen. Of
+    two holds on one object the lower stamp wins, then the lower session
+    id, so every view agrees, and a hold begun after hearing of another
+    always ranks after it. No clock is involved in ranking (`at` only times
+    playback); it's the same kind of rule Automerge uses to settle
+    concurrent writes;
 - **behaviour:** each presence message is this view's whole state. There is
   a heartbeat every 5 s, a TTL of 15 s and a bye on dispose, and on
   `pagehide` (Patchwork doesn't run the cleanup when a tab closes); a page
   back from the back-forward cache returns as a new session. Presence goes
   out at the highest rate any extension asked for (default 4 Hz), and poses
-  are throttled to 50 ms per object;
+  at most once per object per 50 ms, or per presence interval if that's
+  shorter. A peer keeps a hold's last 8 poses as samples on the sender's
+  clock, with an offset from ours that follows the fastest delivery;
 - **exposes:** `set(ext, key, value)`, `clear(ext)`, `get()`, `watch`,
   `rate(ext, hz)`, `send`, `onReceive`, `hold(ext, id, parent, transform)`,
-  `release(ext, id, landedTransform?)`, `remoteHolds()`, `heldBy(id)`,
+  `release(ext, id, landedTransform?)`, `remoteHolds()` (each with
+  `samples`, `every`, `offset` for playback), `heldBy(id)`,
   `watchHolds`, `settle(id)`, `goodbye()`, `hello()`, `dispose`.

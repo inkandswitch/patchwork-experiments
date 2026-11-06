@@ -2,7 +2,7 @@
 // them: the toolbar, the key map and the menu. Pure: no DOM, no api.
 
 /** The surfaces a command names in `show`. */
-export const SURFACES = Object.freeze(["toolbar", "menu", "inspector"]);
+export const SURFACES = Object.freeze(["toolbar", "menu", "inspector", "use"]);
 
 /**
  * Every running extension's commands, flattened, in running order then

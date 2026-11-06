@@ -16,7 +16,9 @@
 //   - the viewport, its theme, and the camera (this viewer's, in localStorage).
 //   - content: the render manager (render-doc objects) and the GLB queue
 //     (passthrough objects), their state → local.status.
-//   - presence, and other views' pose holds shown on the viewport.
+//   - presence, and other views' pose holds shown on the viewport, played
+//     back smoothly (smooth.js); claims, which are doc fields that count only
+//     while their holder's session is in presence.
 //   - the host, and the api each extension gets (everything it acquires is
 //     its own and is given back when it stops, in the STAGE.md order).
 //   - the router (router.js): DOM input → events, down the chain.
@@ -31,7 +33,8 @@ import { Viewport } from "./viewport.js";
 import { createAtom, assoc } from "./atom.js";
 import { createHost } from "./host.js";
 import { createRouter } from "./router.js";
-import { createPresence } from "./presence.js";
+import { HEARTBEAT_MS, createPresence } from "./presence.js";
+import { aheadOf, playoutDelay, poseAt } from "./smooth.js";
 import { DEFAULT_ACTIVITY, traitKeys } from "./activation.js";
 import { chainOrder, holdersFor } from "./chain.js";
 import * as ops from "../ops.js";
@@ -45,12 +48,20 @@ import { resolveParents, treeOrder, worldMatrix } from "../hierarchy.js";
 import { groupChain, inheritedDisplay, isGroup, outlineParents, resolveGroups } from "../groups.js";
 import { CONTEXT_CHANGED_EVENT, CONTEXT_EVENT, REBUILD_EVENT } from "../controls-tool.js";
 import { fileBytes } from "../file-content.js";
-import { applyMatrix, invertMatrix, normalizeTransform } from "../transform.js";
+import { applyMatrix, composeMatrix, invertMatrix, multiplyMatrices, normalizeTransform } from "../transform.js";
 
 /** Load priority for anything an extension asked to see first (api.focus). */
 const FOCUS_PRIORITY = 1e12;
 /** How long after the orbit stops the camera is saved. */
 const CAMERA_SAVE_MS = 500;
+/**
+ * How long a claim whose holder isn't in presence still counts, from when
+ * this view first read it so. A peer that has just joined writes its claim
+ * as its hello goes out, and the doc may get here first; and a view that has
+ * just opened hasn't heard anyone's hello yet. A heartbeat and a second
+ * covers a hello that went missing.
+ */
+export const CLAIM_GRACE_MS = HEARTBEAT_MS + 1_000;
 /** How long a notice stays in local.notices. */
 const NOTICE_MS = 6_000;
 // Doc and local changes reach the extensions at once while that has cost
@@ -314,6 +325,8 @@ export default function Stage(handle, element) {
     return t;
   };
   const perf = { sync: timings(), flush: timings() };
+  const raf = globalThis.requestAnimationFrame ? (f) => globalThis.requestAnimationFrame(f) : (f) => setTimeout(f, 16);
+  const caf = globalThis.cancelAnimationFrame ? (h) => globalThis.cancelAnimationFrame(h) : (h) => clearTimeout(h);
 
   // ─── the mount ────────────────────────────────────────────────────────────
 
@@ -676,35 +689,123 @@ export default function Stage(handle, element) {
       displayKeys.delete(id);
       hintKeys.delete(id);
       remotePosed.delete(id);
+      playing.delete(id);
     }
   }
 
   // ─── presence ─────────────────────────────────────────────────────────────
 
-  const presence = createPresence({ handle, viewer });
+  const presence = createPresence({ handle, viewer, now: () => Date.now() });
   const localHolds = new Map(); // object id → the extension holding its pose here
   const remotePosed = new Set(); // object ids showing another view's pose
+  const playing = new Set(); // of those, the ones still playing back (smooth.js)
+  let poseLoopOff = null;
+
+  /** Where another view's live hold is shown at `t` (our clock): its stream, played back a little late. */
+  function playback(h, t) {
+    if (!h.samples?.length) return { transform: h.transform, settled: true };
+    return poseAt(h.samples, t - h.offset - playoutDelay(h.every), { ahead: aheadOf(h.every) }) ?? { transform: h.transform, settled: true };
+  }
 
   // Another view's hold, shown here while its parent is the doc's parent; a
   // landed hold until the doc shows the same transform. Our own hold wins.
+  // A live hold is played back between its samples, every frame, until it
+  // has caught up with the last one (tickPoses).
   function applyRemoteHold(id) {
     if (dead || localHolds.has(id)) return;
     const h = presence.remoteHolds().get(id);
     const m = derive();
     const o = m.objects[id];
     let t = null;
+    let settled = true;
     if (h && o && (m.parents.get(id) ?? null) === (h.parent ?? null)) {
       if (h.landed) {
+        playing.delete(id);
         if (sameTransform(o.transform, h.landed)) return void presence.settle(id); // its watcher puts the doc's back
         t = h.landed;
-      } else t = h.transform;
+      } else ({ transform: t, settled } = playback(h, Date.now()));
     }
     if (t) {
       viewport.setPose(id, t);
       remotePosed.add(id);
-    } else if (remotePosed.delete(id)) viewport.setPose(id, null);
-    else return;
+      if (settled) playing.delete(id);
+      else {
+        playing.add(id);
+        startPoseLoop();
+      }
+    } else if (remotePosed.delete(id)) {
+      playing.delete(id);
+      viewport.setPose(id, null);
+    } else return;
     displayChanged();
+  }
+
+  /**
+   * One frame of playback: every remote hold still playing moves to where its
+   * stream is now. It runs before any extension's loop, so what they read
+   * that frame (worldOf, raycast: a walker on a moving deck) is what's
+   * drawn. It doesn't wake every extension's update: a pose moving between
+   * samples isn't news, its samples were (applyRemoteHold).
+   */
+  function tickPoses(t = Date.now()) {
+    if (dead) return;
+    const holds = presence.remoteHolds();
+    for (const id of [...playing]) {
+      const h = holds.get(id);
+      if (!h || h.landed || localHolds.has(id) || !remotePosed.has(id)) {
+        playing.delete(id);
+        continue;
+      }
+      const p = playback(h, t);
+      viewport.setPose(id, p.transform);
+      if (p.settled) playing.delete(id);
+    }
+    if (!playing.size) stopPoseLoop();
+  }
+
+  // The playback loop runs only while something is playing, so a still
+  // scene isn't redrawn every frame. Without WebGL there are no frames to
+  // join, so it keeps its own (what's shown still moves for worldOf).
+  function startPoseLoop() {
+    if (poseLoopOff || dead) return;
+    if (viewport.ok) {
+      poseLoopOff = viewport.addLoop(() => tickPoses(), { first: true });
+      return;
+    }
+    let frame = null;
+    const off = () => caf(frame);
+    const step = () => {
+      tickPoses();
+      if (poseLoopOff === off) frame = raf(step);
+    };
+    frame = raf(step);
+    poseLoopOff = off;
+  }
+  function stopPoseLoop() {
+    const off = poseLoopOff;
+    poseLoopOff = null;
+    off?.();
+  }
+
+  /**
+   * An object's displayed world matrix: the viewport's, which held and
+   * played-back poses have moved; without WebGL, the doc's chain with each
+   * shown pose in place of its transform.
+   */
+  function displayedWorld(oid) {
+    const w = viewport.worldOf(oid);
+    if (w) return w;
+    const m = derive();
+    if (!m.objects[oid]) return null;
+    if (!viewport.poses.size) return scene().world(oid);
+    let out = null;
+    const seen = new Set();
+    for (let id = oid; id != null && m.objects[id] && !seen.has(id); id = m.parents.get(id) ?? null) {
+      seen.add(id);
+      const local = composeMatrix(viewport.poses.get(id) ?? m.objects[id].transform);
+      out = out ? multiplyMatrices(local, out) : local;
+    }
+    return out;
   }
   cleanups.push(presence.watchHolds((_holds, ids) => ids.forEach(applyRemoteHold)));
   cleanups.push(
@@ -728,6 +829,7 @@ export default function Stage(handle, element) {
     localHolds.set(id, extId);
     own.holds.add(id);
     remotePosed.delete(id);
+    playing.delete(id);
     presence.hold(extId, id, m.parents.get(id) ?? null, t);
     viewport.setPose(id, t);
     displayChanged();
@@ -744,10 +846,179 @@ export default function Stage(handle, element) {
     displayChanged();
   }
 
+  // ─── claims ───────────────────────────────────────────────────────────────
+  //
+  // A claim is a fact about the shared world (who is at the helm, who
+  // simulates the ship, whose hands a bucket is in), so it's a doc field on
+  // what's claimed: objects[id].claims[kind] = { viewer, session }, or
+  // doc.claims[kind] for the scene. Taking one writes it, letting go deletes
+  // it. Concurrent takers are Automerge's to settle: both writes succeed
+  // here, the merge keeps one on every peer, and the view whose claim isn't
+  // there any more is told (onLost). A claim counts only while its session
+  // is in presence (or is this view's), so a tab that died holding one
+  // doesn't hold it forever and nothing has to clean up after it: the next
+  // taker writes over it.
+
+  const claims = new Map(); // claimKey → { id, kind, ext, onLost, release }: the claims this view holds
+  const claimSeen = new Map(); // claimKey + session → when this view first read that claim with its holder absent
+  const CLAIM_SEEN_MAX = 512;
+  // Sessions this view has heard in presence. One that has gone (a bye, or
+  // silent past the TTL) lapses at once; only one never heard gets the grace.
+  const metSessions = new Set();
+  const MET_MAX = 1024;
+  cleanups.push(
+    presence.watch((peers) => {
+      for (const s of Object.keys(peers)) {
+        if (metSessions.has(s)) continue;
+        metSessions.add(s);
+        if (metSessions.size > MET_MAX) metSessions.delete(metSessions.values().next().value);
+      }
+    }),
+  );
+  let away = false; // said goodbye on pagehide: claims are let go, and taken back on return
+  const claimKey = (oid, kind) => `${oid ?? ""}\u0000${kind}`;
+  const isKind = (kind) => typeof kind === "string" && kind.length > 0;
+
+  /** The doc's claim of this kind on an object (null: the scene), as stored, or null. */
+  function claimField(d, oid, kind) {
+    const holder = oid == null ? d : d.objects?.[oid];
+    const c = holder?.claims?.[kind];
+    return c && typeof c === "object" && typeof c.session === "string" ? c : null;
+  }
+
+  /**
+   * Who holds a claim: { viewer, session, mine }, or null when nobody does or
+   * the holder's session has left presence. A claim by a session this view
+   * has never heard from still counts for CLAIM_GRACE_MS from when it first
+   * read it: its holder may have just joined, or this view may have.
+   */
+  function claimedBy(oid, kind) {
+    if (!isKind(kind)) return null;
+    const c = claimField(doc(), oid, kind);
+    if (!c) return null;
+    const viewerOf = typeof c.viewer === "string" ? c.viewer : null;
+    if (c.session === presence.session) return Object.freeze({ viewer: viewerOf, session: c.session, mine: true });
+    if (!Object.hasOwn(presence.get(), c.session)) {
+      if (metSessions.has(c.session)) return null; // it was here, and has gone
+      const key = `${claimKey(oid, kind)}\u0000${c.session}`;
+      let first = claimSeen.get(key);
+      if (first == null) {
+        claimSeen.set(key, (first = Date.now()));
+        if (claimSeen.size > CLAIM_SEEN_MAX) claimSeen.delete(claimSeen.values().next().value);
+      }
+      if (Date.now() - first >= CLAIM_GRACE_MS) return null; // lapsed
+    }
+    return Object.freeze({ viewer: viewerOf, session: c.session, mine: false });
+  }
+
+  /** Write this view's claims (a fresh map per object only when it has none). */
+  function writeClaims(list) {
+    if (!list.length) return;
+    try {
+      handle.change((d) => {
+        for (const { id: oid, kind } of list) {
+          const holder = oid == null ? d : d.objects?.[oid];
+          if (!holder) continue;
+          if (!holder.claims) holder.claims = {};
+          holder.claims[kind] = { viewer, session: presence.session };
+        }
+      });
+    } catch (err) {
+      console.warn("[scene] couldn't write a claim", err);
+    }
+  }
+
+  /** Delete these claims from the doc where they're still this view's. */
+  function eraseClaims(list) {
+    const d = doc();
+    const mine = list.filter((e) => claimField(d, e.id, e.kind)?.session === presence.session);
+    if (!mine.length) return;
+    try {
+      handle.change((draft) => {
+        for (const { id: oid, kind } of mine) {
+          const holder = oid == null ? draft : draft.objects?.[oid];
+          if (holder?.claims?.[kind]?.session === presence.session) delete holder.claims[kind];
+        }
+      });
+    } catch (err) {
+      console.warn("[scene] couldn't let go of a claim", err);
+    }
+  }
+
+  /**
+   * Take a claim for an extension. Its release function, or null when
+   * someone else (another view, or another extension here) holds it.
+   * Taking it again from the same extension gives the same release.
+   */
+  function takeClaim(extId, own, oid, kind, onLost) {
+    if (!isKind(kind) || dead) return null;
+    if (oid != null && !doc().objects?.[oid]) return null;
+    const key = claimKey(oid, kind);
+    const held = claims.get(key);
+    if (held) {
+      if (held.ext !== extId) return null;
+      if (typeof onLost === "function") held.onLost = onLost;
+      return held.release;
+    }
+    const now = claimedBy(oid, kind);
+    if (now && !now.mine) return null;
+    const entry = { id: oid, kind, ext: extId, onLost: typeof onLost === "function" ? onLost : null, release: null };
+    entry.release = () => releaseClaim(entry);
+    claims.set(key, entry);
+    own.claims.add(entry);
+    if (!away) writeClaims([entry]);
+    return entry.release;
+  }
+
+  function releaseClaim(entry) {
+    const key = claimKey(entry.id, entry.kind);
+    if (claims.get(key) !== entry) return;
+    claims.delete(key);
+    owned.get(entry.ext)?.claims.delete(entry);
+    eraseClaims([entry]);
+  }
+
+  // After a doc change (or coming back from the back-forward cache), look
+  // at the claims this view holds. One whose field names someone else lost
+  // the merge (or lapsed here and was taken): it's let go, and its taker is
+  // told once. One whose field is missing lost no contest: two views each
+  // giving an object its first claims map at once keep only one map, and
+  // it may not be ours; that, or the goodbye on pagehide, is the only way a
+  // field we hold goes missing, so it's written again. One whose object has
+  // gone is lost. Done in a microtask, out of the doc's change event.
+  let recheckQueued = false;
+  function recheckClaims() {
+    if (recheckQueued || dead || !claims.size) return;
+    recheckQueued = true;
+    queueMicrotask(() => {
+      recheckQueued = false;
+      if (dead || away) return;
+      const d = doc();
+      const lost = [];
+      const rewrite = [];
+      for (const e of claims.values()) {
+        if (e.id != null && !d.objects?.[e.id]) lost.push(e);
+        else {
+          const c = claimField(d, e.id, e.kind);
+          if (!c) rewrite.push(e);
+          else if (c.session !== presence.session) lost.push(e);
+        }
+      }
+      writeClaims(rewrite);
+      for (const e of lost) {
+        claims.delete(claimKey(e.id, e.kind));
+        owned.get(e.ext)?.claims.delete(e);
+        try {
+          e.onLost?.();
+        } catch (err) {
+          console.warn(`[scene] extension “${e.ext}”: onLost failed`, err);
+        }
+      }
+    });
+  }
+
   // ─── the update flush ─────────────────────────────────────────────────────
 
-  const raf = globalThis.requestAnimationFrame ? (f) => globalThis.requestAnimationFrame(f) : (f) => setTimeout(f, 16);
-  const caf = globalThis.cancelAnimationFrame ? (h) => globalThis.cancelAnimationFrame(h) : (h) => clearTimeout(h);
   let flushQueued = false;
   let flushFrame = null;
   let uiSpent = 0;
@@ -1230,6 +1501,7 @@ export default function Stage(handle, element) {
       arms: new Set(), // live arm tokens
       sessions: 0, // open press sessions
       holds: new Set(), // object ids whose pose it holds
+      claims: new Set(), // the claims it holds (entries in `claims`)
       cameraHolds: new Set(),
       frame: new Set(), // loops and afterRender hooks
       offs: new Set(), // listeners, watchers, limits
@@ -1261,6 +1533,10 @@ export default function Stage(handle, element) {
       handle,
       url: handle.url,
       viewer,
+      /** this view's presence session: what its claims and holds name (it changes on coming back from the back-forward cache) */
+      get session() {
+        return presence.session;
+      },
       signal,
       Counter,
       doc,
@@ -1317,7 +1593,7 @@ export default function Stage(handle, element) {
       box: (oid, { hints = true } = {}) => boxOut(viewport.objectBox(oid, { hints })),
       groupBox: (gid, { hints = true } = {}) => boxOut(viewport.groupBox(gid, { hints })),
       sceneBox: () => boxOut(viewport.sceneBox()),
-      worldOf: (oid) => viewport.worldOf(oid) ?? (derive().objects[oid] ? scene().world(oid) : null),
+      worldOf: displayedWorld,
       focus: (ids) => {
         if (!live()) return;
         const list = ids == null ? [] : typeof ids === "string" ? [ids] : [...ids];
@@ -1401,6 +1677,8 @@ export default function Stage(handle, element) {
         release: (oid, { landed = false } = {}) => releasePose(id, own, oid, landed),
       }),
       heldBy: (oid) => presence.heldBy(oid),
+      claim: (oid, kind, { onLost } = {}) => (live() ? takeClaim(id, own, oid ?? null, kind, onLost) : null),
+      claimedBy: (oid, kind) => claimedBy(oid ?? null, kind),
       extent: (box) => {
         if (live()) viewport.setExtent(id, box ?? null);
       },
@@ -1453,8 +1731,9 @@ export default function Stage(handle, element) {
       own.sessions = 0;
       for (const give of [...own.cameraHolds]) give();
       own.cameraHolds.clear();
-      // 3: its pose holds, put back
+      // 3: its pose holds, put back, and its claims, let go
       for (const oid of [...own.holds]) releasePose(id, own, oid, false);
+      for (const e of [...own.claims]) releaseClaim(e);
       // 4: its presence keys (and its rate)
       presence.clear(id);
       // 5: loops, afterRender hooks, scheduled work
@@ -1613,11 +1892,22 @@ export default function Stage(handle, element) {
 
   // Patchwork doesn't run the tool's cleanup when the tab closes, so peers
   // would keep this view (its avatar, its selection) until it times out. On
-  // pagehide it says bye at once; restored from the back-forward cache, it
-  // comes back as a new session.
-  const onPageHide = () => presence.goodbye();
+  // pagehide it lets go of its claims and says bye at once; restored from
+  // the back-forward cache, it comes back as a new session and takes its
+  // claims back (unless someone else has taken one meanwhile: then that
+  // extension is told it lost it). Its claims would lapse with the bye
+  // anyway; deleting them only tells peers sooner, if the write gets out.
+  const onPageHide = () => {
+    if (away) return;
+    eraseClaims([...claims.values()]);
+    away = true;
+    presence.goodbye();
+  };
   const onPageShow = (e) => {
-    if (e.persisted) presence.hello();
+    if (!e.persisted || !away) return;
+    away = false;
+    presence.hello();
+    recheckClaims();
   };
   globalThis.addEventListener?.("pagehide", onPageHide);
   globalThis.addEventListener?.("pageshow", onPageShow);
@@ -1638,6 +1928,7 @@ export default function Stage(handle, element) {
     // other views' holds: a landed one the doc has caught up with goes, and a
     // hold whose parent the doc changed is shown (or not) again
     for (const id of [...presence.remoteHolds().keys()]) applyRemoteHold(id);
+    recheckClaims();
     requestFlush();
     perf.sync.add(now() - t0);
   }
@@ -1665,6 +1956,10 @@ export default function Stage(handle, element) {
     atmosphere: () => atmosphere,
     /** does this extension hold an arm, an open session or a pose (so a doc-caused stop waits)? */
     busy,
+    /** one frame of remote pose playback at `t` (our Date.now() clock), for tests */
+    tickPoses,
+    /** the claims this view holds: [{ id, kind, ext }] */
+    claims: () => [...claims.values()].map(({ id, kind, ext }) => ({ id, kind, ext })),
     stats: () => ({
       render: { ...viewport.stats },
       queue: queue.stats(),
@@ -1680,6 +1975,7 @@ export default function Stage(handle, element) {
     if (dead) return;
     // the extensions first, while everything they hold is still there to give back
     host.dispose();
+    stopPoseLoop();
     dead = true;
     router.dispose();
     presence.dispose();

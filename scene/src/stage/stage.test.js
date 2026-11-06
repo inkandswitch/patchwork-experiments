@@ -711,6 +711,72 @@ describe("two stages on one scene", () => {
   });
 });
 
+describe("another view's hold, played back", () => {
+  // A peer's poses, injected with the peer's clock stamps; our clock is Date.now, pinned.
+  let clockNow = 0;
+  const T = (x) => ({ position: [x, 0, 0], rotation: [0, 0, 0], scale: 1 });
+  const x = (m) => m[12]; // a world matrix's x translation (column-major)
+
+  it("plays a peer's stream back between its samples; worldOf (and what's attached) follows what's shown", async () => {
+    const h = newScene({ objects: { hull: card({ name: "Hull" }), deck: card({ name: "Deck", parent: "hull", transform: { position: [0, 1, 0], rotation: [0, 0, 0], scale: 1 } }) }, order: ["hull", "deck"] });
+    const M = mount(h, "viewer:me");
+    await settle();
+    const api = exts["t.edit"].api;
+    vi.spyOn(Date, "now").mockImplementation(() => clockNow);
+    // the sender's clock reads 0 when ours reads 1000; it sends every 50 ms
+    let seq = 0;
+    const pose = (at, transform) => {
+      clockNow = at + 1000;
+      h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", viewer: "viewer:peer", id: "hull", parent: null, transform, since: 1, seq: ++seq, at, every: 50 } });
+    };
+    pose(0, T(0));
+    // one sample: shown as it is
+    expect(M.debug.viewport.poses.get("hull").position).toEqual([0, 0, 0]);
+    pose(50, T(1));
+    pose(100, T(2));
+    // heard at 1100, played 75 ms late: a quarter of the way from 0 to 1
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(0.5);
+    M.debug.tickPoses(1130); // the sender's 55
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(1.1);
+    expect(x(api.worldOf("hull"))).toBeCloseTo(1.1);
+    // the deck rides on the hull as it's drawn, not as the doc has it
+    const deck = api.worldOf("deck");
+    expect([deck[12], deck[13], deck[14]].map((v) => +v.toFixed(6))).toEqual([1.1, 1, 0]);
+    expect(x(api.scene().world("deck"))).toBe(0);
+    // the next is late: carry on for one interval, then hold
+    M.debug.tickPoses(1200);
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(2.5);
+    M.debug.tickPoses(1400);
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(3);
+    M.debug.tickPoses(1500);
+    expect(M.debug.viewport.poses.get("hull").position[0]).toBeCloseTo(3);
+    // a landed release shows where it landed at once, as before
+    clockNow = 1600;
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "hull", parent: null, transform: null, landed: T(7), seq: ++seq } });
+    expect(M.debug.viewport.poses.get("hull").position).toEqual([7, 0, 0]);
+    M.debug.tickPoses(1700);
+    expect(M.debug.viewport.poses.get("hull").position).toEqual([7, 0, 0]);
+    // a put-back from a new hold drops it at once
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "hull", parent: null, transform: null, seq: ++seq } });
+    expect(M.debug.viewport.poses.has("hull")).toBe(false);
+  });
+
+  it("our own hold wins over a peer's playback", async () => {
+    const h = newScene({ objects: { a: card() }, order: ["a"] });
+    const M = mount(h, "viewer:me");
+    await settle();
+    const api = exts["t.edit"].api;
+    vi.spyOn(Date, "now").mockImplementation(() => clockNow);
+    clockNow = 1000;
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(0), since: 1, seq: 1, at: 0, every: 50 } });
+    clockNow = 1050;
+    h.emit("ephemeral-message", { message: { type: "scene:pose", session: "peer", id: "a", parent: null, transform: T(1), since: 1, seq: 2, at: 50, every: 50 } });
+    api.pose.hold("a", T(9));
+    M.debug.tickPoses(1100);
+    expect(M.debug.viewport.poses.get("a").position).toEqual([9, 0, 0]);
+  });
+});
+
 describe("mergeAtmosphere", () => {
   it("later fields win per field, whole; undefined keeps, null clears; nothing is null", () => {
     expect(mergeAtmosphere([])).toBeNull();

@@ -10,7 +10,10 @@
 //                   extension on every other peer. Never stored, never
 //                   replayed, delivered at most once.
 //   scene:pose      an object someone is holding (carrying, dragging on the
-//                   gizmo) and where it is right now, throttled per object.
+//                   gizmo, simulating) and where it is right now, at most
+//                   once per send interval per object, stamped with the
+//                   sender's clock and its interval. Peers keep the last few
+//                   as timed samples and play them back smoothly (smooth.js).
 //                   A release either puts it back or says where it landed.
 //
 // Every message carries the sending view's `session`, a random id made when
@@ -22,6 +25,8 @@
 // stage shows poses and extensions read keys. Time comes in through now /
 // setTimer / clearTimer so tests can drive it.
 
+import { addSample, clockOffset } from "./smooth.js";
+
 export const PRESENCE = "scene:presence";
 export const SEND = "scene:send";
 export const POSE = "scene:pose";
@@ -30,7 +35,7 @@ export const HEARTBEAT_MS = 5_000; // resend the whole state at least this often
 export const PEER_TTL_MS = 15_000; // drop a peer not heard from in this long
 export const DEFAULT_HZ = 4; // presence rate when no extension asks for more
 export const MAX_HZ = 60;
-export const POSE_MS = 50; // at most one pose per object per this long
+export const POSE_MS = 50; // at most one pose per object per this long, unless the presence rate is higher
 export const HOLD_TTL_MS = 3_000; // drop a remote hold not refreshed in this long (and a landed one after it)
 export const HOLD_KEEPALIVE_MS = 1_000; // resend a still pose this often, so peers don't time it out
 const SEEN_SENDS = 512; // how many send ids to remember for de-duplication
@@ -59,6 +64,22 @@ export function effectiveHz(rates) {
   let hz = DEFAULT_HZ;
   for (const r of rates) if (r > hz) hz = r;
   return Math.min(hz, MAX_HZ);
+}
+
+/**
+ * How often a held pose may go out (ms): every POSE_MS, or faster when an
+ * extension raised the presence rate past that (a simulation streaming a
+ * hull's pose asks for 30 or 60 Hz). Never slower than POSE_MS: the default
+ * presence rate is for hover and selections, not motion.
+ * @param {Iterable<number>} rates
+ */
+export function poseInterval(rates) {
+  return Math.min(POSE_MS, 1000 / effectiveHz(rates));
+}
+
+/** A sender's pose interval as it says it, checked; POSE_MS if it doesn't. */
+export function cleanEvery(v) {
+  return typeof v === "number" && v >= 1000 / MAX_HZ && v <= HOLD_KEEPALIVE_MS ? v : POSE_MS;
 }
 
 /**
@@ -244,7 +265,10 @@ export function createPresence({
     peers.delete(s);
     // gone without a bye (crashed, closed): its pose bookkeeping goes too,
     // once none of its holds is left
-    if (![...holds.values()].some((bySession) => bySession.has(s))) lastPose.delete(s);
+    if (![...holds.values()].some((bySession) => bySession.has(s))) {
+      lastPose.delete(s);
+      offsets.delete(s);
+    }
     peersChanged();
   }
 
@@ -309,7 +333,7 @@ export function createPresence({
     h.timer = null;
     h.dirty = false;
     h.sentAt = now();
-    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq });
+    broadcast({ type: POSE, session, viewer, id: h.id, parent: h.parent, transform: h.transform, since: h.since, seq: ++poseSeq, at: h.sentAt, every: poseInterval(rates.values()) });
   }
 
   // A pose that stays still still has to reach peers often enough that they
@@ -336,7 +360,7 @@ export function createPresence({
     h.dirty = true;
     if (!keepalive) keepalive = setTimer(tickKeepalive, HOLD_KEEPALIVE_MS);
     if (h.timer) return; // the trailing send will carry this pose
-    const wait = POSE_MS - (now() - h.sentAt);
+    const wait = poseInterval(rates.values()) - (now() - h.sentAt);
     if (wait <= 0) sendPose(h);
     else
       h.timer = setTimer(() => {
@@ -361,8 +385,10 @@ export function createPresence({
   }
 
   // ─── other views' pose holds ───────────────────────────────────────────────
-  const holds = new Map(); // object id → Map session → { session, viewer, parent, transform, landed, since, timer }
+  // object id → Map session → { session, viewer, parent, transform, landed, since, timer, samples, every }
+  const holds = new Map();
   const lastPose = new Map(); // session → Map object id → seq, so a late pose can't undo a release
+  const offsets = new Map(); // session → our clock minus its (smooth.js clockOffset)
   const holdWatchers = new Set();
   let holdsView = null;
 
@@ -374,7 +400,19 @@ export function createPresence({
         if (w)
           holdsView.set(
             id,
-            Object.freeze({ session: w.session, viewer: w.viewer, parent: w.parent, transform: w.transform, landed: w.landed, since: w.since }),
+            Object.freeze({
+              session: w.session,
+              viewer: w.viewer,
+              parent: w.parent,
+              transform: w.transform,
+              landed: w.landed,
+              since: w.since,
+              // for playing it back: the timed samples (sender's clock), its
+              // send interval, and our clock minus the sender's
+              samples: w.samples,
+              every: w.every,
+              offset: offsets.get(w.session) ?? 0,
+            }),
           );
       }
     }
@@ -416,6 +454,7 @@ export function createPresence({
     for (const [id, bySession] of holds) if (bySession.has(s)) ids.push(id);
     for (const id of ids) dropHold(id, s, true);
     lastPose.delete(s);
+    offsets.delete(s);
     if (ids.length) holdsChanged(ids);
   }
 
@@ -451,11 +490,21 @@ export function createPresence({
     // the hold's stamp, as its holder says (so every view ranks it the same)
     observe(msg.since);
     const since = msg.since;
-    const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since, timer: null };
+    const h = prev && !prev.landed ? prev : { session: s, viewer: null, parent: null, transform: null, landed: null, since, timer: null, samples: null, every: POSE_MS };
     if (prev && prev !== h) clearTimer(prev.timer);
     h.viewer = typeof msg.viewer === "string" ? msg.viewer : null;
-    h.parent = isStr(msg.parent) ? msg.parent : null;
+    const parent = isStr(msg.parent) ? msg.parent : null;
+    // a new parent is a new frame: the old samples aren't comparable
+    if (parent !== h.parent) h.samples = null;
+    h.parent = parent;
     h.transform = t;
+    // Timed by the sender's clock when it says (an older peer doesn't: then
+    // by ours, on arrival), so the wire's jitter isn't played back.
+    const heard = now();
+    const sentAt = Number.isFinite(msg.at) ? msg.at : heard;
+    offsets.set(s, Number.isFinite(msg.at) ? clockOffset(offsets.get(s) ?? null, sentAt, heard) : 0);
+    h.every = cleanEvery(msg.every);
+    h.samples = Object.freeze(addSample(h.samples, Object.freeze({ at: sentAt, transform: t }), h.every));
     clearTimer(h.timer);
     h.timer = setTimer(() => dropHold(id, s), HOLD_TTL_MS);
     let bySession = holds.get(id);

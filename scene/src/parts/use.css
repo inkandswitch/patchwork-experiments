@@ -1,0 +1,107 @@
+/* scene.use: the use prompt, under the crosshair (or the pointer). A soft
+   dark pill with light text, so it reads the same over a bright sea and a
+   night one; the keycap is the one light thing in it. */
+
+.scene-stage
+  .use-layer
+  > .use-prompt:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  --use-ink: #f6f3ea;
+  --use-ink-muted: color-mix(in oklch, var(--use-ink) 70%, transparent);
+  --use-pill: color-mix(in oklch, #0b0d10 62%, transparent);
+  --use-gap: 6px;
+  position: absolute;
+  left: var(--use-x, 50%);
+  top: var(--use-y, 50%);
+  transform: translate(-50%, 36px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  font-family: var(--scene-family);
+  font-size: 13px;
+  line-height: 1.2;
+  z-index: 5;
+}
+
+.scene-stage
+  .use-layer
+  > .use-prompt[hidden]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: none;
+}
+
+.scene-stage
+  .use-prompt
+  .use-verb:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  display: flex;
+  align-items: center;
+  gap: var(--use-gap);
+  padding: 4px 12px 4px 5px;
+  border-radius: var(--studio-radius-round, 9999px);
+  background: var(--use-pill);
+  color: var(--use-ink);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  max-width: min(22rem, 90vw);
+}
+
+.scene-stage
+  .use-prompt
+  .use-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  min-width: 1.6em;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--use-ink);
+  color: #15181c;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+  font-family: var(--scene-family);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  text-shadow: none;
+}
+
+.scene-stage
+  .use-prompt
+  .use-hold:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  margin-left: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--use-ink-muted);
+}
+
+.scene-stage
+  .use-prompt
+  .use-name:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the key is down: the cap pressed in, lit with the accent */
+.scene-stage
+  .use-prompt
+  .use-verb[data-held]
+  .use-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  background: var(--scene-accent-fill, var(--use-ink));
+  color: var(--scene-accent-line, #15181c);
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.25);
+  transform: translateY(1px);
+}
+
+/* applies, but not now (someone else is at it): there, dimmed */
+.scene-stage
+  .use-prompt
+  .use-verb[data-disabled]:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  color: var(--use-ink-muted);
+}
+
+.scene-stage
+  .use-prompt
+  .use-verb[data-disabled]
+  .use-key:where(:not(.about-embed *), .about-embed .scene-tool *) {
+  opacity: 0.5;
+}

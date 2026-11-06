@@ -110,4 +110,17 @@ describe("the scene package's own extensions", () => {
     expect(availableActivities(metas, doc)).toEqual(["edit"]);
     expect(plugins.some((p) => p.type === "scene:kit")).toBe(false);
   });
+
+  it("the use prompt runs only in play, and only when a game requires it, ahead of the key map", async () => {
+    const { plugins } = await import("../index.js");
+    const { activeSet, availableActivities } = await import("../stage/activation.js");
+    const game = { id: "t.game", traits: ["t.level"], activities: ["play"], requires: ["scene.use", "scene.keys"] };
+    const metas = [game, ...plugins.filter((p) => p.type === "scene:extension")];
+    const doc = { objects: {}, traits: { "t.level": {} } };
+    expect(activeSet({ metas, doc, activity: "play" }).map((r) => r.id)).toEqual(["t.game", "scene.use", "scene.keys", "scene.notices", "scene.activity"]);
+    expect(activeSet({ metas, doc, activity: "edit" }).map((r) => r.id)).not.toContain("scene.use");
+    // installing it offers play nowhere it isn't already
+    expect(availableActivities(metas, doc)).toEqual(["edit", "play"]);
+    expect(availableActivities(metas.slice(1), { objects: {}, traits: {} })).toEqual(["edit"]);
+  });
 });

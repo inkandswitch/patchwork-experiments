@@ -31,12 +31,13 @@ export const docWants = (meta, d) => docReason(meta, d) != null;
 /**
  * Its own reason to run, whatever the activity: the doc's (above), else
  * "general" when it declares no traits (a general-purpose part: the editor's
- * toolbar, the key map) or is `always`, else null (traits the doc doesn't have).
+ * toolbar, the key map) or is `always`, else null (traits the doc doesn't
+ * have, or `general: false`: a part that runs only when something requires it).
  */
 export function ownReason(meta, d) {
   const r = docReason(meta, d);
   if (r) return r;
-  if (meta?.always || !list(meta?.traits).length) return "general";
+  if (meta?.always || (!list(meta?.traits).length && meta?.general !== false)) return "general";
   return null;
 }
 

@@ -585,6 +585,14 @@ describe("content and depth", () => {
     expect(vp.loops.size).toBe(1);
     off();
     expect(vp.loops.size).toBe(0);
+    // `first` goes ahead of every loop already there (the stage's pose playback)
+    const a = () => {};
+    const b = () => {};
+    vp.addLoop(a);
+    const offB = vp.addLoop(b, { first: true });
+    expect([...vp.loops]).toEqual([b, a]);
+    offB();
+    expect([...vp.loops]).toEqual([a]);
     const offAfter = vp.afterRender(() => {});
     expect(vp.afterHooks.size).toBe(1);
     offAfter();

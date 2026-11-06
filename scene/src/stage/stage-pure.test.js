@@ -69,6 +69,19 @@ describe("activation", () => {
     expect(ids(activeSet({ metas: m, doc: {}, activity: "edit" }))).toEqual([]);
   });
 
+  it("general: false — no reason of its own: it runs only when required, and offers nothing", () => {
+    const m = [
+      { id: "game", traits: ["game.board"], activities: ["play"], requires: ["prompt"] },
+      { id: "prompt", general: false, activities: ["play"] },
+    ];
+    expect(ids(activeSet({ metas: m, doc: { traits: { "game.board": {} } }, activity: "play" }))).toEqual([
+      ["game", "scene"],
+      ["prompt", "general"],
+    ]);
+    expect(ids(activeSet({ metas: m, doc: {}, activity: "play" }))).toEqual([]);
+    expect(availableActivities(m, {})).toEqual(["edit"]);
+  });
+
   it("an object trait is the objects' reason; a scene trait the scene's", () => {
     expect(docReason(metas[0], { objects: { a: { traits: { "tabletop.hidden": {} } } } })).toBe("objects");
     expect(docReason(metas[0], { traits: { "tabletop.seats": {} }, objects: {} })).toBe("scene");

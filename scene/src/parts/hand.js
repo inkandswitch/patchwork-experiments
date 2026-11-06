@@ -115,12 +115,13 @@ export default {
     }
 
     // Its pose is local to its doc parent as the doc has it now (a peer may
-    // re-attach it, or move the parent, while it's carried), by the doc's
-    // own world for that parent, not one a peer is holding for the moment.
+    // re-attach it while it's carried), by that parent's world as drawn: a
+    // ship under sail is held where the sim has it, far from where the doc
+    // last saved it, and the piece goes down where it's seen.
     function localNow(id, W) {
       const s = api.scene();
       const parentId = s.parents.get(id) ?? null;
-      return localTransform(parentId ? s.world(parentId) : null, W);
+      return localTransform(parentId ? (api.worldOf(parentId) ?? s.world(parentId)) : null, W);
     }
 
     /** Every other shown object's connectors that take these tags, in world. */
