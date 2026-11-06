@@ -122,3 +122,41 @@ export function poseOfMatrix(m) {
   const n = Math.hypot(...q) || 1;
   return { position: [m[12], m[13], m[14]], quaternion: q.map((v) => v / n), scale: s };
 }
+
+/** a · b, both unit quaternions: b first, then a. */
+export function mulQ(a, b) {
+  const [ax, ay, az, aw] = a;
+  const [bx, by, bz, bw] = b;
+  return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
+}
+
+// ─── composing ──────────────────────────────────────────────────────────────
+
+/** a · b, column-major 4×4. */
+export function multiply(a, b) {
+  const out = new Array(16).fill(0);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++) out[c * 4 + r] += a[k * 4 + r] * b[c * 4 + k];
+  return out;
+}
+
+/** T · R · S from a position, a unit quaternion and a uniform scale. */
+export function matrixOfPose(position, q, scale = 1) {
+  const [x, y, z, w] = q;
+  const s = scale;
+  return [
+    (1 - 2 * (y * y + z * z)) * s, 2 * (x * y + z * w) * s, 2 * (x * z - y * w) * s, 0,
+    2 * (x * y - z * w) * s, (1 - 2 * (x * x + z * z)) * s, 2 * (y * z + x * w) * s, 0,
+    2 * (x * z + y * w) * s, 2 * (y * z - x * w) * s, (1 - 2 * (x * x + y * y)) * s, 0,
+    position[0], position[1], position[2], 1,
+  ];
+}
+
+/** A doc transform ({ position, rotation: Euler XYZ, scale }) as a matrix, as the stage composes it. Missing parts are identity. */
+export function matrixOf(t) {
+  const v = (a) => [0, 1, 2].map((i) => Number(a?.[i]) || 0);
+  const s = Number(t?.scale);
+  return matrixOfPose(v(t?.position), quatFromEuler(v(t?.rotation)), s > 0 ? s : 1);
+}
+
+/** The rotation that takes +X, +Y, +Z to the unit axes x, y, z (a right-handed basis), as a quaternion. */
+export const quatOfAxes = (x, y, z) => poseOfMatrix([...x, 0, ...y, 0, ...z, 0, 0, 0, 0, 1]).quaternion;

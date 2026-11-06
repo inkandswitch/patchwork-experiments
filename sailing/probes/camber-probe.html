@@ -1,0 +1,173 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>camber probe</title>
+<!-- Driven by probes/camber-run.mjs. A hull drawn in camber, rigged in the
+     editor and sailed. The BUILT scene tool (scene/dist) with the BUILT
+     sailing plugins (sailing/dist) and camber's BUILT plugins (served at
+     /camber/ from camber/patchwork/dist: its scene:source builds the hull's
+     GLB here, as a scene host would), in a stub registry, on an in-memory
+     repo. The scene starts with a sea and nothing else; the camber hull doc
+     is made from one of camber's examples (/camber-examples/). The runner
+     adds it, gives it the Ship trait, drags sailing's parts onto it from the
+     bin, and plays. A dev tool: no package imports another. -->
+<script type="importmap">
+{ "imports": {
+  "@inkandswitch/patchwork-plugins": "./plugins-stub.js",
+  "@automerge/automerge": "./automerge-stub.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; font: 13px system-ui, sans-serif; background: #222; overflow: hidden; }
+  #a { width: 1280px; height: 760px; position: relative; }
+</style>
+<div id="a"></div>
+<script type="module">
+import { getRegistry } from "@inkandswitch/patchwork-plugins";
+import { FakeRepo } from "./fake-repo.js";
+
+const errors = [];
+window.addEventListener("error", (e) => errors.push(`onerror: ${e.message}`));
+window.addEventListener("unhandledrejection", (e) => errors.push(`rejection: ${e.reason?.stack || e.reason}`));
+const origWarn = console.warn, origError = console.error;
+console.warn = (...a) => { errors.push(`warn: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origWarn(...a); };
+console.error = (...a) => { errors.push(`error: ${a.map((x) => x?.stack ?? String(x)).join(" ")}`); origError(...a); };
+
+const q = new URLSearchParams(location.search);
+const EXAMPLE = q.get("example") ?? "cuvature-kink-with-unmodified-pchip.json";
+const SEED = Number(q.get("seed") ?? 20251105);
+
+try {
+  for (const url of ["../../scene/dist/index.js", "../dist/index.js", "/camber/index.js"]) {
+    const { plugins } = await import(url);
+    for (const p of plugins) getRegistry(p.type).register(p);
+  }
+  const repo = new FakeRepo();
+  window.repo = repo;
+  // a camber hull doc, as camber saves one
+  const hullJson = await (await fetch(`/camber-examples/${EXAMPLE}`)).json();
+  const hullDoc = repo.add({ "@patchwork": { type: "camber-hull" }, title: hullJson.name ?? EXAMPLE.replace(/\.json$/, ""), ...hullJson });
+  // a scene with a sea in it and nothing else: a calm-ish breeze from the north-east
+  const scene = repo.add({
+    "@patchwork": { type: "scene" }, title: "Camber at sea", objects: {}, order: [], dimensions: {}, assets: {},
+    traits: { "sailing.sea": { wind: { speed: 7, from: 45 }, seed: SEED, scale: 1 } },
+    view: { units: "m", grid: false },
+    camera: null,
+  });
+  try { localStorage.clear(); } catch {}
+  const Tool = (await getRegistry("patchwork:tool").load("scene")).module;
+  const host = document.getElementById("a");
+  host.repo = repo;
+  host.viewerId = "viewer:a";
+  Tool(scene, host);
+  const dbg = host.querySelector(".scene-stage").__sceneDebug;
+  const v = dbg.viewport;
+  const apply = (m, p) => [m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12], m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13], m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]];
+  const pageOf = (w) => { const p = v.project(w); const r = v.canvas.getBoundingClientRect(); return p && { x: r.left + p.x, y: r.top + p.y }; };
+
+  const P = (window.__p = {
+    errors, scene, repo, host, dbg, hullUrl: hullDoc.url, example: EXAMPLE,
+    doc: () => scene.doc(),
+    change: (fn) => scene.change(fn),
+    /** a running extension's stage api (the bin's, while editing: part, addObject) */
+    api: (ext = "scene.parts") => dbg.host.record(ext)?.api ?? null,
+    running: () => dbg.local.get().running.map((r) => r.id),
+    activity: () => dbg.local.get().activities?.current ?? null,
+    setActivity: (a) => dbg.local.swap((m) => ({ ...m, activity: a })),
+    content: (id) => { const c = v.contentOf(id); return c && { loaded: c.loaded, box: c.box, ship: c.extras?.ship ?? null, connectors: c.extras?.connectors?.length ?? 0 }; },
+    worldOf: (id) => { const m = v.worldOf(id); return m ? [...m] : null; },
+    /** page coords of a point in an object's own frame */
+    onObject: (id, p) => pageOf(apply(v.worldOf(id), p)),
+    world: pageOf,
+    /** what's under a page point: { id, point } */
+    pickAt: (x, y) => { const r = v.canvas.getBoundingClientRect(); const h = v.pick(x - r.left, y - r.top, { ground: true }); return h && { id: h.id, point: h.point }; },
+    /** straight down onto whatever is there from `above` over a world point, leaving out `skip` (ids): { id, point } */
+    down: (p, skip = [], above = 20) => { const h = v.raycast([p[0], p[1] + above, p[2]], [0, -1, 0], { far: above + 40, skip: skip?.length ? (id) => skip.includes(id) : null }); return h && { id: h.id, point: h.point, distance: h.distance }; },
+    /**
+     * Where to put the pointer so the editor's pick lands on `id` at `local`
+     * (its own frame), as a person aims: the point's projection, else the
+     * nearest pixel around it whose pick lands within `tol` of it (the pick
+     * also takes lines a few pixels off: camber draws its sheer and stations).
+     */
+    aimLocal(id, local, tol = 0.01) {
+      const r = v.canvas.getBoundingClientRect();
+      const m = v.worldOf(id);
+      const p = v.project(apply(m, local));
+      if (!p) return null;
+      const toLocal = (w) => dbg.scene().toLocal(id, w);
+      let best = null;
+      for (let k = 0; k < 1200; k++) {
+        const a = k * 0.6, rad = 1.2 * Math.sqrt(k);
+        const x = Math.round(p.x + rad * Math.cos(a)), y = Math.round(p.y + rad * Math.sin(a));
+        const h = v.pick(x, y, { ground: true });
+        if (h?.id !== id) continue;
+        const l = toLocal(h.point);
+        const d = Math.hypot(l[0] - local[0], l[1] - local[1], l[2] - local[2]);
+        if (!best || d < best.d) best = { x: r.left + x, y: r.top + y, d, local: l };
+        if (d < tol) break;
+      }
+      return best;
+    },
+    canvas: () => { const r = v.canvas.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; },
+    item: (id) => { const e = host.querySelector(`.part[data-part="${id}"]`); if (!e) return null; e.scrollIntoView({ block: "center" }); const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; },
+    bin: () => [...host.querySelectorAll('section[data-panel="parts"] .part')].map((e) => e.dataset.part),
+    ring: () => dbg.host.instanceOf("scene.parts")?.debug?.ring() ?? null,
+    selected: () => dbg.local.get().selected ?? null,
+    cam: () => v.getCamera(),
+    setCam: (c) => v.setCamera(c),
+    byName: (n) => Object.entries(scene.doc().objects).find(([, o]) => o.name === n)?.[0] ?? null,
+    /** the sailing extension's parts (play.js's debug) */
+    ctx: () => dbg.host.record("sailing")?.instance?.debug ?? null,
+    me: () => P.ctx()?.crew.me() ?? null,
+    read: (id) => P.ctx()?.sim.read(id) ?? null,
+    clock: () => P.ctx()?.sea.clock() ?? null,
+    seaAt: (x, z) => { const s = P.ctx()?.sea; return s ? s.ocean.heightAt(x, z, s.clock()) : null; },
+    simulating: () => !!P.ctx()?.sim.simulating(),
+    stations: (ship) => P.ctx()?.sim.stationsOf(ship) ?? null,
+    place: (on, position, yaw, pitch) => P.ctx().crew.place(on, position, yaw, pitch),
+    verbs: () => [...host.querySelectorAll(".use-prompt:not([hidden]) .use-verb")].map((e) => ({ command: e.dataset.command, name: e.querySelector(".use-name")?.textContent ?? "", disabled: e.hasAttribute("data-disabled") })),
+    hovered: () => dbg.local.get().hovered ?? null,
+    canvasCentre() { const r = v.canvas.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; },
+    /** where to put the pointer so a pick lands on `id` (or under it): a spiral about its origin, then its box's middle */
+    aimAt(id) {
+      const r = v.canvas.getBoundingClientRect();
+      const parents = dbg.scene().parents;
+      const under = (h) => { for (let at = h, n = 0; at != null && n < 32; at = parents.get(at), n++) if (at === id) return true; return false; };
+      const m = v.worldOf(id);
+      const box = v.objectBox(id);
+      const c = box && !box.isEmpty() ? box.getCenter(new box.min.constructor()) : null;
+      for (const at of [m && [m[12], m[13], m[14]], c && [c.x, c.y, c.z]]) {
+        const p = at && v.project(at);
+        if (!p) continue;
+        for (let k = 0; k < 900; k++) {
+          const a = k * 0.6, rad = 4.4 * Math.sqrt(k);
+          const x = p.x + rad * Math.cos(a), y = p.y + rad * Math.sin(a);
+          if (x < 2 || y < 2 || x > r.width - 2 || y > r.height - 2) continue;
+          const hit = v.pick(x, y);
+          if (hit && under(hit.id)) return { x: r.left + x, y: r.top + y, id: hit.id };
+        }
+      }
+      return null;
+    },
+    /** per frame for `ms`: the world point `local` (the hull's frame) rides at [t, x, y, z, seaY under it] */
+    async track(id, local, ms = 2000) {
+      const out = [];
+      const t0 = performance.now();
+      await new Promise((done) => {
+        const f = () => {
+          const m = v.worldOf(id);
+          if (m) { const p = apply(m, local); out.push([performance.now() - t0, ...p, P.seaAt(p[0], p[2]) ?? 0, m[0], m[2]]); }
+          if (performance.now() - t0 < ms) requestAnimationFrame(f);
+          else done();
+        };
+        requestAnimationFrame(f);
+      });
+      return out;
+    },
+  });
+  window.__ready = true;
+} catch (err) {
+  errors.push(`setup: ${err?.stack ?? err}`);
+  window.__ready = "failed";
+  window.__p = { errors };
+}
+</script>

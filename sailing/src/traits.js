@@ -4,6 +4,8 @@
 // and the edit view read the doc through this, and none of them through
 // another part.
 
+import { eulerFromQuat, mulQ, quatFromEuler } from "./frames.js";
+
 export const SEA = "sailing.sea";
 export const SHIP = "sailing.ship";
 export const HELM = "sailing.helm";
@@ -38,11 +40,28 @@ export const RODE = 25;
 /** The wheel's turns from the middle to either lock. */
 export const WHEEL_TURNS = 1.25;
 
-/** The wheel's transform for a helm angle (-1..1): its doc transform turned about its own Z, + to starboard turning it clockwise as you face forward. */
-export function wheelTransform(t, angle) {
-  const r = t?.rotation ?? [0, 0, 0];
-  return { position: [...(t?.position ?? [0, 0, 0])], rotation: [r[0], r[1], -angle * WHEEL_TURNS * 2 * Math.PI], scale: t?.scale ?? 1 };
+/**
+ * A doc transform turned about one of its own axes (0 X, 1 Y, 2 Z) by
+ * `angle`, on top of how it was placed: placed · turn. Each angle is kept
+ * on the turn of 2π nearest the placed one plus the turn, so a wheel put
+ * down square reads as it turns (2.5 turns lock to lock, not wrapped).
+ */
+export function turnedAbout(t, axis, angle) {
+  const placed = [0, 1, 2].map((i) => Number(t?.rotation?.[i]) || 0);
+  const half = [0, 0, 0, Math.cos(angle / 2)];
+  half[axis] = Math.sin(angle / 2);
+  const rotation = eulerFromQuat(mulQ(quatFromEuler(placed), half)).map((v, i) => {
+    const near = placed[i] + (i === axis ? angle : 0);
+    return v + 2 * Math.PI * Math.round((near - v) / (2 * Math.PI)) + 0;
+  });
+  return { position: [...(t?.position ?? [0, 0, 0])], rotation, scale: t?.scale ?? 1 };
 }
+
+/** The wheel's transform for a helm angle (-1..1): turned about its own Z from where it was put, + to starboard turning it clockwise as you face forward. */
+export const wheelTransform = (t, angle) => turnedAbout(t, 2, -angle * WHEEL_TURNS * 2 * Math.PI);
+
+/** The boom-and-sail's transform for a boom angle (radians, + to starboard): swung about its own Y (the mast) from where it was put. */
+export const rigTransform = (t, boom) => turnedAbout(t, 1, boom);
 
 /** Off a ship's starboard quarter, looking at her deck, in her frame: the template's home view, and where the orbit opens in play. */
 export const QUARTER = Object.freeze({ position: Object.freeze([12, 6.5, 16]), target: Object.freeze([0, 2.5, 0]) });

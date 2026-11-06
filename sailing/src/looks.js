@@ -9,6 +9,7 @@
 import { SAIL_LUFF } from "./physics-foils.js";
 import { scaleOf, unrotateM } from "./frames.js";
 import { FLOAT } from "./traits.js";
+import { bodyOf } from "./body.js";
 
 const DEG = Math.PI / 180;
 const clamp = (x, lo, hi) => (x < lo ? lo : x > hi ? hi : x);
@@ -45,7 +46,8 @@ export const FLAT = 0.12;
 
 /**
  * Is the boom out to port, as drawn: the rig's aft-running axis (local +Z)
- * on the hull's port side (−X)? From the two displayed world matrices.
+ * on the ship's port side (her body's −X)? From the ship's body frame and
+ * the rig's world matrix, as displayed.
  */
 export function boomToPort(hull, rig) {
   if (!hull || !rig) return false;
@@ -97,7 +99,7 @@ export function createLooks(api, ctx) {
       const root = rig ? api.content(rig)?.root : null;
       if (!root) continue;
       // cambered to starboard as built: mirrored with the boom to port
-      const side = boomToPort(api.worldOf(ship), api.worldOf(rig)) ? -1 : 1;
+      const side = boomToPort(bodyOf(api, ship), api.worldOf(rig)) ? -1 : 1;
       const x = side * fullness(ctx.sim.read(ship));
       if (root.scale.x !== x) root.scale.x = x;
       const sail = root.getObjectByName?.("Sail") ?? null;

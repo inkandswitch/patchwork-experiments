@@ -357,3 +357,54 @@ export function fakeWorld(doc, { content = {} } = {}) {
     },
   };
 }
+
+/**
+ * A drop context (STAGE.md, "Drops" and "Parts"), as a template or a part
+ * gets one: the doc, its snapshot (parents resolved), change, newId, a repo
+ * that makes file docs, ctx.file (the scene's one doc per key, remembered at
+ * doc.assets[key]) and notify. What it made is in `calls`.
+ *   const { ctx, calls } = fakeDrop(doc);
+ * @param {object} doc
+ * @param {{ file?: boolean, content?: { [id]: object } }} [o]  file: false leaves ctx.file out (a stage older than parts)
+ */
+export function fakeDrop(doc, { file = true, content } = {}) {
+  const calls = { created: [], notices: [], made: [] };
+  let n = 0;
+  const repo = {
+    async create2(d) {
+      calls.created.push(d);
+      return { url: `automerge:file${calls.created.length}` };
+    },
+  };
+  const scene = () => {
+    const objects = doc.objects ?? {};
+    const parents = new Map();
+    for (const [id, o] of Object.entries(objects)) {
+      const p = o.parent;
+      parents.set(id, typeof p === "string" && p !== id && objects[p] && objects[p].kind !== "group" ? p : null);
+    }
+    return { d: doc, objects, ids: doc.order ?? Object.keys(objects), parents, traits: doc.traits ?? {} };
+  };
+  const ctx = {
+    repo,
+    doc: () => doc,
+    scene,
+    change: (fn) => fn(doc),
+    newId: (prefix) => `${prefix}${++n}`,
+    notify: (text, kind) => calls.notices.push({ text, kind }),
+    ...(content ? { content: (id) => content[id] ?? null } : {}),
+  };
+  if (file) {
+    ctx.file = async (key, make) => {
+      const have = doc.assets?.[key];
+      if (have?.url) return { url: have.url, hint: have.hint ?? null };
+      const f = await make();
+      calls.made.push({ key, ...f });
+      const made = await repo.create2({ "@patchwork": { type: "file" }, name: f.name, extension: f.extension, mimeType: f.mimeType, content: f.bytes });
+      if (!doc.assets) doc.assets = {};
+      doc.assets[key] = { url: made.url, ...(f.hint ? { hint: f.hint } : {}) };
+      return { url: made.url, hint: f.hint ?? null };
+    };
+  }
+  return { ctx, calls };
+}

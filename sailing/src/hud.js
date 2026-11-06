@@ -11,6 +11,7 @@
 // changes.
 
 import css from "./hud.css?inline";
+import { bodyOf } from "./body.js";
 
 const KNOTS = 1.943844; // per m/s
 const POINTS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -171,7 +172,7 @@ export function createHud(api, ctx) {
     const ship = me.on ?? ctx.sim?.ships?.()[0] ?? null;
     const st = ship ? ctx.sim.stationsOf?.(ship) : null;
     let wind = null;
-    const m = ship ? api.worldOf(ship) : null;
+    const m = ship ? bodyOf(api, ship) : null;
     if (m && ctx.sea?.wind) wind = ctx.sea.wind.at(m[12], m[14], ctx.sea.clock?.() ?? 0);
     const read = ship ? ctx.sim.read(ship) : null;
     const model = hudModel({

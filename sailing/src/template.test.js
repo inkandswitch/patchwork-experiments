@@ -4,25 +4,9 @@ import { describe, it, expect } from "vitest";
 import template from "./template.js";
 import { FIT } from "./ship.js";
 import { REACH, WAY, headTo, layOutShip, turn } from "./layout.js";
+import { fakeDrop } from "./test/fakes.js";
 
-/** A template's context: just what layout.js uses, and a notify. */
-function fakeScene(doc) {
-  const calls = { created: [], notices: [] };
-  let n = 0;
-  const ctx = {
-    repo: {
-      async create2(d) {
-        calls.created.push(d);
-        return { url: `automerge:glb${calls.created.length}` };
-      },
-    },
-    doc: () => doc,
-    change: (fn) => fn(doc),
-    newId: (prefix) => `${prefix}${++n}`,
-    notify: (text, kind) => calls.notices.push({ text, kind }),
-  };
-  return { ctx, calls };
-}
+const fakeScene = (doc, o) => fakeDrop(doc, o);
 
 const emptyScene = () => ({ objects: {}, order: [], traits: {}, view: {}, dimensions: {} });
 
@@ -40,7 +24,7 @@ describe("the Ship at sea template", () => {
     expect(calls.notices.at(-1).text).toMatch(/come aboard/);
   });
 
-  it("files each part as a GLB doc, and every object shows one passthrough", async () => {
+  it("files each kind of part as one GLB doc of the scene's, and every object shows one passthrough", async () => {
     const doc = emptyScene();
     const { ctx, calls } = fakeScene(doc);
     await template.create(ctx);
@@ -50,9 +34,13 @@ describe("the Ship at sea template", () => {
       expect(f.name).toMatch(/\.glb$/);
       expect(f.content).toBeInstanceOf(Uint8Array);
     }
+    // one per kind, under its versioned key
+    expect(Object.keys(doc.assets).sort()).toEqual(
+      ["anchor", "greenBuoy", "hull", "islet", "ladder", "mast", "redBuoy", "rig", "wheel", "windlass"].map((k) => `sailing/${k}@1`),
+    );
+    expect(calls.created).toHaveLength(10);
     const objects = Object.values(doc.objects).filter((o) => o.kind !== "group");
-    expect(calls.created).toHaveLength(objects.length);
-    const urls = new Set(calls.created.map((_, i) => `automerge:glb${i + 1}`));
+    const urls = new Set(Object.values(doc.assets).map((a) => a.url));
     for (const o of objects) {
       expect(urls.has(o.sourceUrl)).toBe(true);
       expect(o.providerId).toBe("file-glb");
@@ -60,6 +48,16 @@ describe("the Ship at sea template", () => {
       expect(o.hint.bounds.min).toHaveLength(3);
     }
     expect(doc.order).toHaveLength(Object.keys(doc.objects).length);
+  });
+
+  it("on a stage without ctx.file, files a doc of its own for each kind", async () => {
+    const doc = emptyScene();
+    const { ctx, calls } = fakeScene(doc, { file: false });
+    await template.create(ctx);
+    expect(calls.created).toHaveLength(10);
+    expect(doc.assets).toBeUndefined();
+    const urls = new Set(calls.created.map((_, i) => `automerge:file${i + 1}`));
+    for (const o of Object.values(doc.objects)) if (o.kind !== "group") expect(urls.has(o.sourceUrl)).toBe(true);
   });
 
   it("lays out the hull as a ship, with its parts attached under it in its frame", async () => {
@@ -73,19 +71,27 @@ describe("the Ship at sea template", () => {
     expect(hull.parent).toBeNull();
     expect(doc.traits["sailing.sea"].seed).toBe(7);
 
+    const ids = Object.fromEntries(Object.entries(doc.objects).map(([id, o]) => [o.name, id]));
     const byName = Object.fromEntries(Object.values(doc.objects).map((o) => [o.name, o]));
     const aboard = ["Mast", "Boom and sail", "Wheel", "Windlass", "Anchor", "Ladder"];
-    for (const name of aboard) expect(byName[name].parent).toBe(hullId);
+    for (const name of ["Mast", "Wheel", "Windlass", "Ladder"]) expect(byName[name].parent).toBe(hullId);
+    // the sail goes where the mast goes, the anchor where the windlass does
+    expect(byName["Boom and sail"].parent).toBe(ids.Mast);
+    expect(byName.Anchor.parent).toBe(ids.Windlass);
     // she's under way: the sail up and drawing, the anchor up
     expect(byName["Boom and sail"].traits).toEqual({ "sailing.sail": { raised: 1, sheet: 0.5 } });
     expect(byName.Wheel.traits).toEqual({ "sailing.helm": { angle: 0 } });
     expect(byName.Windlass.traits).toEqual({ "sailing.anchor": { down: false, rode: 0 } });
     expect(byName.Anchor.traits).toEqual({ "sailing.hook": {} });
     expect(byName.Mast.traits).toBeUndefined();
-    // transforms in the hull's frame: where FIT puts them
-    expect(byName.Wheel.transform.position).toEqual(FIT.wheel.position);
-    expect(byName["Boom and sail"].transform.position).toEqual(FIT.rig.position);
-    expect(byName.Anchor.transform.position).toEqual(FIT.anchor.position);
+    // transforms in the frame each hangs in, adding up to where FIT puts them on the hull
+    const near = (a, b) => a.forEach((v, i) => expect(v).toBeCloseTo(b[i], 9));
+    near(byName.Wheel.transform.position, FIT.wheel.position);
+    near(byName.Mast.transform.position, FIT.mast.position);
+    near(byName["Boom and sail"].transform.position.map((v, i) => v + byName.Mast.transform.position[i]), FIT.rig.position);
+    near(byName.Anchor.transform.position.map((v, i) => v + byName.Windlass.transform.position[i]), FIT.anchor.position);
+    near(byName.Ladder.transform.position, FIT.ladder.position);
+    for (const name of aboard) expect(byName[name].transform.rotation).toEqual([0, 0, 0]);
     // every station is a separate, movable object
     for (const name of aboard) expect(byName[name].locked).toBe(false);
   });
