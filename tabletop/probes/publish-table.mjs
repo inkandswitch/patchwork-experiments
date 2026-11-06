@@ -1,15 +1,36 @@
-// Publish a Lost Cities game and a table set up from it to a real sync
-// server, and print their Patchwork URLs.
+// Publish a Lost Cities table to a real sync server, and print its Patchwork
+// URLs. Two ways, the two ways a table is made:
 //
-//   node probes/publish-table.mjs [--sync wss://…] [--settle 8000]
-//   node probes/publish-table.mjs --dry-run
+//   node probes/publish-table.mjs [--sync wss://…] [--settle 8000] [--dry-run]
+//   node probes/publish-table.mjs --template lost-cities [--sync …] [--dry-run] [--show] [--shots <dir>]
 //
-// Makes NEW docs on every run (no dedupe), the way the package's own UI
-// would: a tabletop-game doc filled by the Lost Cities game (games/lost-cities.js
-// fill, as "Start from" does), every piece's GLB drawn into a file doc
-// (pieces.js ensurePieceGLBs, as the game page does while open), then "Set up
-// a table" (tool.js setUpTable): tableScene, a doc per deck, linkDecks, the
-// table's scene doc, and the table listed on the game.
+// Makes NEW docs on every run (no dedupe).
+//
+// The game page (default): as the package's own UI would. A tabletop-game
+// doc filled by the Lost Cities game (games/lost-cities.js fill, as "Start
+// from" does), every piece's GLB drawn into a file doc (pieces.js
+// ensurePieceGLBs, as the game page does while open), then "Set up a table"
+// (tool.js setUpTable): tableLayout with the game's GLBs, a doc per deck,
+// writeTable onto a skeleton scene doc, the scene doc, and the table listed
+// on the game.
+//
+// --template <game>: the scene's start screen. Needs scene/, tabletop/ and
+// card-table/ built. In headless Chrome, the BUILT scene tool with the BUILT
+// tabletop and card-table plugins is mounted twice on one EMPTY scene
+// (template-probe.html; an in-memory repo, two views A and B), and A picks
+// the template on the start screen (api.template); B opens it after. It checks:
+// - the start screen offers it;
+// - doc.assets has a file under its versioned key for every kind, and every
+//   object shows one of them (no game doc, no About);
+// - the view starts in play, and A is playing (a game with no seats, zones
+//   or hidden cards, Santorini, gives play nothing to run, so its doc
+//   writes no view.activity: A is in the editor, in the hand);
+// - the deck is a secure-deck (card-table is installed);
+// - with A and B seated, the secure deck reaches phase "playing" and each
+//   hand's faces reach its player.
+// Then (unless --dry-run) it publishes the table as the template left it
+// (before anyone sat): its files, its deck and the scene, each made anew on
+// the server with the urls between them rewritten.
 //
 // Lost Cities' deck is secure, so its doc is a `secure-deck` (the card-table
 // package's datatype). Setting up writes it as plain data, waiting for
@@ -19,20 +40,67 @@
 // --dry-run makes the docs in a repo with no network and checks them, but
 // publishes nothing.
 
+import { join, resolve, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
 import { fill } from "../src/games/lost-cities.js";
 import { ensurePieceGLBs } from "../src/pieces.js";
-import { linkDecks, tableScene } from "../src/setup.js";
+import { tableLayout, writeTable } from "../src/setup.js";
 
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1] && !all[i + 1].startsWith("--") ? all[i + 1] : true]] : acc), [])
 );
+// It publishes by default, so a flag it doesn't know (--help, a typo of
+// --dry-run) stops it here, before any repo exists, with the usage above.
+const KNOWN = new Set(["sync", "settle", "dry-run", "template", "show", "shots"]);
+const unknown = Object.keys(args).filter((k) => !KNOWN.has(k));
+const stray = process.argv.slice(2).filter((a, i, all) => !a.startsWith("--") && !(i > 0 && all[i - 1].startsWith("--") && args[all[i - 1].slice(2)] === a));
+if (unknown.length || stray.length) {
+  const lines = readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n");
+  const usage = lines.slice(0, lines.findIndex((l) => !l.startsWith("//"))).join("\n");
+  if (!unknown.includes("help")) console.error(`unknown argument${unknown.length + stray.length === 1 ? "" : "s"}: ${[...unknown.map((k) => `--${k}`), ...stray].join(" ")}\n`);
+  console.error(usage);
+  process.exit(unknown.includes("help") && unknown.length === 1 && !stray.length ? 0 : 2);
+}
 const DRY = !!args["dry-run"];
 const SYNC = args.sync ?? process.env.PATCHWORK_SYNC ?? "wss://subduction.sync.inkandswitch.com";
+
+const TEMPLATE = typeof args.template === "string" ? args.template : null;
 
 const { Repo, initSubduction } = await import("@automerge/automerge-repo");
 await initSubduction();
 const repo = DRY ? new Repo({ network: [] }) : new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
 if (!DRY) console.log(`connected to ${SYNC}`);
+
+/** Flush, wait, then prove every doc is there from a repo that has never seen it. `expect(url, doc)` → a problem or null. */
+async function verify(made, expect) {
+  await repo.flush?.();
+  await new Promise((r) => setTimeout(r, Number(args.settle ?? 8000)));
+  const checker = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
+  const within = (ms, p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timed out after ${ms} ms`)), ms))]);
+  const missing = [];
+  for (const url of made) {
+    try {
+      const got = (await within(30000, checker.find(url))).doc();
+      const problem = !got || !Object.keys(got).length ? "empty" : expect(url, got);
+      if (problem) missing.push(`${url} (${problem})`);
+    } catch (err) {
+      missing.push(`${url} (${err?.message ?? err})`);
+    }
+  }
+  console.log(`verified ${made.length - missing.length}/${made.length} docs from a fresh repo`);
+  if (missing.length) {
+    for (const m of missing) console.error(`  missing ${m}`);
+    console.error(`\nNOT verified: re-run, or raise --settle.`);
+    process.exit(1);
+  }
+}
+
+if (TEMPLATE) {
+  await fromTemplate(TEMPLATE);
+  await new Promise(() => {}); // the browser's stop() exits
+}
 
 // ─── the game, as TabletopGameDatatype.init writes it, then filled ──────────
 const game = await repo.create2({ "@patchwork": { type: "tabletop-game" }, title: "Untitled game", about: "", pieces: {}, order: [], tables: [] });
@@ -42,11 +110,14 @@ const drawn = await ensurePieceGLBs(repo, game);
 // ─── "Set up a table" (tool.js setUpTable) ──────────────────────────────────
 const g = game.doc();
 const title = `${g.title || "Game"} table ${(g.tables?.length ?? 0) + 1}`;
-const { scene: table, decks } = tableScene(g, game.url, { title });
+const fileOf = (kind) => (g.pieces[kind]?.glbUrl ? { url: g.pieces[kind].glbUrl, hint: g.pieces[kind].bounds ? { bounds: g.pieces[kind].bounds } : null } : null);
+const layout = tableLayout(g, { fileOf, gameUrl: game.url });
+const decks = layout.decks;
 // the decks first, so the scene never names one that isn't there
 const deckUrls = {};
 for (const [deckId, deck] of Object.entries(decks)) deckUrls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
-linkDecks(table, deckUrls);
+const table = { "@patchwork": { type: "scene" }, title, objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} };
+writeTable(table, layout, deckUrls);
 const scene = await repo.create2(table);
 game.change((d) => {
   if (!d.tables) d.tables = [];
@@ -79,29 +150,105 @@ if (DRY) {
   process.exit(0);
 }
 
-// ─── flush, then prove every doc is there from a repo that has never seen it ──
-await repo.flush?.();
-await new Promise((r) => setTimeout(r, Number(args.settle ?? 8000)));
-const checker = new Repo({ network: [], subductionWebsocketEndpoints: [SYNC] });
-const within = (ms, p) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`timed out after ${ms} ms`)), ms))]);
-const missing = [];
-for (const url of made) {
-  try {
-    const got = (await within(30000, checker.find(url))).doc();
-    if (!got || !Object.keys(got).length) missing.push(`${url} (empty)`);
-    else if (url === scene.url && got.view?.activity !== "play") missing.push(`${url} (came back without view.activity "play")`);
-    else if (url === game.url && got.tables?.[0] !== scene.url) missing.push(`${url} (came back without its table)`);
-    else if (glbs.includes(url) && !(got.content?.byteLength > 0)) missing.push(`${url} (a GLB doc with no bytes)`);
-  } catch (err) {
-    missing.push(`${url} (${err?.message ?? err})`);
-  }
-}
-console.log(`verified ${made.length - missing.length}/${made.length} docs from a fresh repo`);
-if (missing.length) {
-  for (const m of missing) console.error(`  missing ${m}`);
-  console.error(`\nNOT verified: re-run, or raise --settle.`);
-  process.exit(1);
-}
+await verify(made, (url, got) => {
+  if (url === scene.url && got.view?.activity !== "play") return 'came back without view.activity "play"';
+  if (url === game.url && got.tables?.[0] !== scene.url) return "came back without its table";
+  if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
+  return null;
+});
 console.log(`\n  table  https://patchwork.inkandswitch.com/#doc=${scene.url}`);
 console.log(`  game   https://patchwork.inkandswitch.com/#doc=${game.url}\n`);
 process.exit(0);
+
+// ─── --template: the start screen, in a mounted scene ───────────────────────
+async function fromTemplate(gameId) {
+  const { browser, checklist, sleep } = await import("./cdp.mjs");
+  const PKG = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const ROOT = resolve(PKG, "..");
+  for (const p of ["tabletop/dist/index.js", "scene/dist/index.js", "card-table/dist/index.js"]) if (!existsSync(join(ROOT, p))) throw new Error(`no ${p}: build it first`);
+  const SHOTS = resolve(typeof args.shots === "string" ? args.shots : join(process.env.TMPDIR || tmpdir(), "tabletop-template"));
+  const id = `tabletop.${gameId}`;
+  const b = await browser({ root: ROOT, port: 4773, cdp: 9773, page: `/tabletop/probes/template-probe.html?game=${encodeURIComponent(gameId)}`, width: 1416, height: 530, show: !!args.show, timeout: 240_000 });
+  // b.stop() exits the process; this keeps it alive until the publish is done
+  const done = (code) => b.stop(code);
+  const js = (expr, ms = 30_000) => Promise.race([b.js(expr), sleep(ms).then(() => { throw new Error(`no answer in ${ms} ms: ${expr.slice(0, 160)}`); })]);
+  const P = (e) => js(`window.__p.${e}`);
+  const until = (expr, ms = 10_000) => b.waitFor(`window.__p.${expr}`, ms, 40);
+  const list = checklist();
+  const { check } = list;
+  const report = { template: id, checks: list.checks, details: list.details, shots: [] };
+  const EXPECTED = /KHR_parallel_shader_compile|GPU stall due to ReadPixels/;
+  const shot = async (name) => report.shots.push(await b.shot(join(SHOTS, `template-${name}.png`)));
+  let snapshot = null;
+  try {
+    check("the page set up", (await b.waitFor("window.__ready", 30_000)) === true, await js("window.__p?.errors ?? null").catch(() => null));
+    check("the start screen offers the template", await until(`templates('a').includes(${JSON.stringify(id)})`, 15_000), await P("templates('a')"));
+    await shot("start");
+    await P(`start('a', ${JSON.stringify(id)})`);
+    const keys = await P("expectedKeys()");
+    const laid = await until(`doc().count > 0 && ${JSON.stringify(keys)}.every((k) => __p.doc().assets?.[k]?.url)`, 30_000);
+    const d = await P("doc()");
+    check("doc.assets has a file under its versioned key for every kind", laid && Object.keys(d.assets).length === keys.length, { want: keys.length, have: Object.keys(d.assets ?? {}).length, missing: keys.filter((k) => !d.assets?.[k]) });
+    check("every object shows one of the scene's files, and none names a game as About", (await P("strays()")).length === 0, await P("strays()"));
+    // play is on offer only where the table extension has a trait to run on
+    // (seats, zones, hidden cards); Santorini has none, so its doc doesn't
+    // claim play, and it opens in the editor, in the hand
+    const tabled = Object.keys(d.traits ?? {}).some((k) => k.startsWith("tabletop."));
+    const lands = tabled ? "play" : "edit";
+    check(`the view starts in ${tabled ? '"play"' : "the editor (no view.activity)"}, in the hand`, (tabled ? d.view?.activity === "play" : !("activity" in (d.view ?? {}))) && d.view?.tool === "hand", d.view);
+    check(`A lands in ${lands}`, await until(`activity('a') === ${JSON.stringify(lands)}`, 5000), await P("activity('a')"));
+    snapshot = await P("snapshot()");
+    const seated = Object.keys(d.traits?.["tabletop.seats"] ?? {});
+    if (seated.length) {
+      check("the deck is a secure-deck", (await P("deckType()")) === "secure-deck", await P("deckType()"));
+      check("A is told to pick a seat", await until("notices('a').includes('Pick a seat (top right) to play.')", 3000), await P("notices('a')"));
+      await P("openB()");
+      check("B opens the table in play, and both pickers are up", await until("activity('b') === 'play' && __p.picker('a') === 3 && __p.picker('b') === 3", 15_000), { b: await P("activity('b')"), a: await P("picker('a')"), pb: await P("picker('b')") });
+      await P(`pick('a', ${JSON.stringify(seated[0])})`);
+      await P(`pick('b', ${JSON.stringify(seated[1])})`);
+      const viewers = await P("viewers");
+      check("A and B seated", await until(`seats()[${JSON.stringify(seated[0])}].player === ${JSON.stringify(viewers.a)} && __p.seats()[${JSON.stringify(seated[1])}].player === ${JSON.stringify(viewers.b)}`), await P("seats()"));
+      const playing = await until("phase() === 'playing' && __p.faces('a').length >= 8 && __p.faces('b').length >= 8", 120_000);
+      check("the secure deck reaches phase playing, each hand's faces delivered", playing, { phase: await P("phase()"), faces: { a: (await P("faces('a')")).length, b: (await P("faces('b')")).length } });
+    }
+    await sleep(500);
+    check("nothing failed to load", (await P("loading('a')")).errors === 0, await P("loading('a')"));
+    await shot("seated");
+    const errors = (await P("errors")).filter((e) => !EXPECTED.test(e));
+    check("no errors on the page", errors.length === 0, errors);
+  } catch (err) {
+    check("ran to the end", false, String(err?.stack ?? err));
+  }
+  console.log(JSON.stringify(report, null, 2));
+  if (list.failed || !snapshot) return done(1);
+  const docs = snapshot.docs;
+  const count = Object.keys(docs).length;
+  if (DRY) {
+    console.log(`dry run: ${count} docs (nothing published)`);
+    return done(0);
+  }
+
+  // ─── publish the table as the template left it ────────────────────────────
+  // files first, then the deck, then the scene, each pointing at the new urls
+  const fromBytes = (v) => (v && typeof v === "object" && typeof v.$bytes === "string" ? new Uint8Array(Buffer.from(v.$bytes, "base64")) : v);
+  const revive = (doc) => JSON.parse(JSON.stringify(doc), (k, v) => fromBytes(v));
+  const renamed = new Map();
+  const rewrite = (doc) => {
+    let text = JSON.stringify(doc);
+    for (const [from, to] of renamed) text = text.split(from).join(to);
+    return revive(JSON.parse(text));
+  };
+  const files = Object.keys(docs).filter((u) => u !== snapshot.scene && u !== snapshot.deck);
+  for (const u of files) renamed.set(u, (await repo.create2(revive(docs[u]))).url);
+  if (snapshot.deck) renamed.set(snapshot.deck, (await repo.create2(rewrite(docs[snapshot.deck]))).url);
+  const table = await repo.create2(rewrite(docs[snapshot.scene]));
+  const made = [table.url, ...renamed.values()];
+  const glbs = files.map((u) => renamed.get(u));
+  await verify(made, (url, got) => {
+    if (url === table.url && got.view?.activity !== docs[snapshot.scene].view?.activity) return `came back with view.activity ${JSON.stringify(got.view?.activity)}`;
+    if (glbs.includes(url) && !(got.content?.byteLength > 0)) return "a GLB doc with no bytes";
+    return null;
+  });
+  console.log(`\n  table  https://patchwork.inkandswitch.com/#doc=${table.url}\n`);
+  return done(0);
+}

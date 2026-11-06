@@ -10,6 +10,13 @@
 // load() whose module has `fill(doc)`, which fills an empty tabletop-game doc
 // (inside a change). The game page offers every one that is registered, so
 // another package can add games without touching this one.
+//
+// The built-in games are also `scene:template`s, so an empty scene can start
+// as one of their tables without a game doc (src/table/template.js).
+//
+// Pieces for any table are `scene:part`s, in the editor's parts bin under
+// "Tabletop": a pawn, a token, a card spot (a mat with one card slot) and a
+// die (src/table/parts.js). None of them makes seats.
 
 export const plugins = [
   {
@@ -18,7 +25,7 @@ export const plugins = [
     type: "scene:extension",
     id: "tabletop",
     name: "Tabletop",
-    traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden"],
+    traits: ["tabletop.seats", "tabletop.zone", "tabletop.hidden", "tabletop.die"],
     // a table is played, and edited too: while editing, hidden cards still
     // stay hidden (only their deck says who may see them)
     activities: ["play", "edit"],
@@ -49,12 +56,23 @@ export const plugins = [
         blurb: "Drawn as itself (a card back) unless its deck says who may see what it really is",
         fields: [{ key: "by", label: "Deck", kind: "url" }],
       },
+      // (src/table/dice.js: the default is a d6's, opposite sides adding to seven)
+      "tabletop.die": {
+        name: "Die",
+        on: "object",
+        blurb: "Press R over it in play to roll it; everyone is told what it shows. Faces says which number each side shows, by the local axis out of that side",
+        fields: [{ key: "faces", label: "Faces", kind: "json", default: { "+y": 1, "-y": 6, "+x": 3, "-x": 4, "+z": 2, "-z": 5 } }],
+      },
     },
     drops: ["*"],
-    // playing needs these and nothing else: carry pieces, keys for verbs, a
-    // right-click menu, a camera that opens on the table, and somewhere for
-    // notices (not scene.frame: F is the hand's flip at a table)
-    requires: ["scene.hand", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
+    // playing needs these and nothing else: carry pieces, the use prompt
+    // (hover a pile: "[F] Flip  [S] Shuffle pile  [D] Draw to my hand", a die:
+    // "[R] Roll  [F] Flip"; play only, it does nothing
+    // while editing), keys for verbs, a right-click menu, a camera that opens
+    // on the table, and somewhere for notices (not scene.frame: F is the
+    // hand's flip at a table). scene.use comes before scene.keys, so the
+    // prompt hears its verbs' keys first (scene/STAGE.md, "The use prompt").
+    requires: ["scene.hand", "scene.use", "scene.keys", "scene.menu", "scene.autoframe", "scene.notices"],
     async load() {
       return (await import("./table/extension.js")).default;
     },
@@ -111,4 +129,41 @@ export const plugins = [
       return await import("./games/lost-cities.js");
     },
   },
+  // the games' tables on an empty scene's start screen: one click lays the
+  // table out in that scene, with its own art (src/table/template.js)
+  {
+    type: "scene:template",
+    id: "tabletop.lost-cities",
+    name: "Lost Cities",
+    icon: "Map",
+    description: "A two-player card table: five expeditions, a face-down deck and a private hand each",
+    async load() {
+      return (await import("./table/template.js")).lostCities;
+    },
+  },
+  {
+    type: "scene:template",
+    id: "tabletop.santorini",
+    name: "Santorini",
+    icon: "Castle",
+    description: "An island board with workers, building blocks and domes, everything in plain sight",
+    async load() {
+      return (await import("./table/template.js")).santorini;
+    },
+  },
+  // pieces for any table, in the editor's parts bin (src/table/parts.js)
+  ...[
+    { id: "pawn", name: "Pawn", icon: "PersonStanding", description: "A playing piece to move about the table" },
+    { id: "token", name: "Token", icon: "Coins", description: "A flat counter: a coin, a marker, a life" },
+    { id: "cardSpot", part: "card-spot", name: "Card spot", icon: "RectangleVertical", description: "A mat with one card slot: a card or a dropped deck squares onto it" },
+    { id: "die", name: "Die", icon: "Dice6", description: "A six-sided die. Press R over it in play to roll it", traits: ["tabletop.die"] },
+  ].map(({ id, part, ...p }) => ({
+    type: "scene:part",
+    id: `tabletop.${part ?? id}`,
+    category: "Tabletop",
+    ...p,
+    async load() {
+      return (await import("./table/parts.js"))[id];
+    },
+  })),
 ];

@@ -47,12 +47,22 @@ export function plainResolver({ handle, viewer, onChange }) {
       const listed = [...new Set(ids)].filter((id) => handle.doc()?.objects?.[id]);
       if (listed.length < 2) return 0;
       handle.change((d) => {
-        const entries = listed.map((id) => ({ ...d.objects[id] }));
+        // A whole new map, assigned once. Written key by key, two shuffles at
+        // once could merge into a mix of both permutations: one card twice and
+        // another gone. As one value, the merge keeps one shuffle whole and
+        // drops the other. (The scene doc's rule that writers set fields and
+        // never replace a whole map, scene/STAGE.md "Ids are opaque", doesn't
+        // apply: a plain deck's only writer, once it's made, is this.)
+        const copy = (e) => JSON.parse(JSON.stringify(e));
+        const entries = listed.map((id) => copy(d.objects[id]));
         for (let i = entries.length - 1; i > 0; i--) {
           const j = Math.floor(random() * (i + 1));
           [entries[i], entries[j]] = [entries[j], entries[i]];
         }
-        listed.forEach((id, i) => (d.objects[id] = entries[i]));
+        const next = {};
+        for (const [id, e] of Object.entries(d.objects)) next[id] = copy(e);
+        listed.forEach((id, i) => (next[id] = entries[i]));
+        d.objects = next;
       });
       return listed.length;
     },

@@ -5,7 +5,7 @@
 
 import css from "./styles.css?inline";
 import { ensurePieceGLBs } from "./pieces.js";
-import { linkDecks, orderedKinds, tableScene } from "./setup.js";
+import { orderedKinds, tableLayout, writeTable } from "./setup.js";
 
 const OPEN_EVENT = "patchwork:open-document";
 const DRAW_DEBOUNCE_MS = 400;
@@ -110,11 +110,18 @@ export default function TabletopGameTool(handle, element) {
       const d = doc();
       const n = (d.tables?.length ?? 0) + 1;
       const title = `${d.title || "Game"} table ${n}`;
-      const { scene: table, decks } = tableScene(d, handle.url, { title });
+      // each kind shows the game's own GLB, which redraws when the game changes
+      const fileOf = (kind) => {
+        const p = d.pieces?.[kind];
+        return p?.glbUrl ? { url: p.glbUrl, hint: p.bounds ? { bounds: p.bounds } : null } : null;
+      };
+      const layout = tableLayout(d, { fileOf, gameUrl: handle.url });
       // the decks first, so the scene never names one that isn't there
       const urls = {};
-      for (const [deckId, deck] of Object.entries(decks)) urls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
-      linkDecks(table, urls);
+      for (const [deckId, deck] of Object.entries(layout.decks)) urls[deckId] = (await repo.create2({ ...deck, title: `${title}: ${deck.title}` })).url;
+      // every map a scene has, made with it (scene/STAGE.md, "Shared maps")
+      const table = { "@patchwork": { type: "scene" }, title, objects: {}, order: [], dimensions: {}, assets: {}, traits: {}, view: {} };
+      writeTable(table, layout, urls);
       const scene = await repo.create2(table);
       handle.change((g) => {
         if (!g.tables) g.tables = [];

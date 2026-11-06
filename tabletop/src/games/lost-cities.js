@@ -23,6 +23,9 @@ export const EXPEDITIONS = [
 const COLUMN_X = (i) => +((i - 2) * 0.085).toFixed(4);
 const SLOT_GAP = 0.022; // cards in an expedition overlap, each showing its corner
 const HAND_Z = 0.5;
+// every slot takes cards only: a pawn carried over the board stays off them.
+// One tag for every card, never one per card (an object's tags are public).
+const cardSlot = () => ["card"];
 
 export const ABOUT = `Lost Cities — 2 players. 60 cards in five expeditions (yellow, blue, white, green, red): each has three wager cards and one each of 2 to 10. Each player starts with 8 cards.
 
@@ -34,7 +37,7 @@ Draw the top card of the deck, or the top card of any discard pile except the on
 
 The game ends when the last card of the deck is drawn. Each expedition you started scores the sum of its numbers minus 20, times one more than the number of wagers in it; one with 8 or more cards scores 20 more. Expeditions you never started score nothing.
 
-In this scene: choose your seat with the Seat picker at the top right of the table. Once both players are seated, your two clients shuffle the deck between them (a few seconds) so that neither of you knows its order. Your hand is the tray at your edge, and only you see its faces; a card's face appears for you once the other player's client has handed over its key, so play with both of you at the table. Carry the top card of the deck to your tray to draw it. A card played face up is seen by everyone. F flips a card while you carry it. Right-click a card in the deck to shuffle its pile.`;
+In this scene: choose your seat with the Seat picker at the top right of the table. Once both players are seated, your two clients shuffle the deck between them (a few seconds) so that neither of you knows its order. Your hand is the tray at your edge, and only you see its faces; a card's face appears for you once the other player's client has handed over its key, so play with both of you at the table. To draw, hover the deck (or a discard pile) and press D: its top card goes into your tray, face up for you alone. You can also carry it there. A card played face up is seen by everyone. F flips a card (hover it, or while you carry it). Hover the deck and press S to shuffle its pile.`;
 
 /** The underside every card shares: a back panel with a gold diamond. */
 const underside = () => [
@@ -48,6 +51,8 @@ function backCard() {
   return {
     name: "Card",
     count: 0,
+    // every card, face or back, fits the card slots and nothing else does
+    tags: ["card"],
     parts: [
       ...underside(),
       { shape: "box", size: [CARD.w - 0.004, 0.0002, CARD.l - 0.004], at: [0, CARD.t, 0], color: BACK },
@@ -90,19 +95,19 @@ function board() {
   EXPEDITIONS.forEach((ex, i) => {
     const x = COLUMN_X(i);
     parts.push({ shape: "box", size: [0.064, 0.0004, 0.095], at: [x, 0.004, 0], color: ex.color });
-    snapPoints.push({ position: [x, 0.0044, 0] }); // the discard pile: cards keep the way they face
+    snapPoints.push({ position: [x, 0.0044, 0], tags: cardSlot() }); // the discard pile: cards keep the way they face
     for (let k = 0; k < 12; k++) {
       const z = +(0.11 + k * SLOT_GAP).toFixed(4);
-      snapPoints.push({ position: [x, 0, z], yaw: 0 }, { position: [x, 0, -z], yaw: Math.PI });
+      snapPoints.push({ position: [x, 0, z], yaw: 0, tags: cardSlot() }, { position: [x, 0, -z], yaw: Math.PI, tags: cardSlot() });
     }
   });
-  snapPoints.push({ position: [0.3, 0, 0] }); // the deck
+  snapPoints.push({ position: [0.3, 0, 0], tags: cardSlot() }); // the deck
   return { name: "Board", count: 1, locked: true, parts, snapPoints, snapRadius: 0.03, supply: { at: [0, 0], cols: 1, gap: [0, 0] } };
 }
 
 function hand(seat, n, z, yaw) {
   const snapPoints = [];
-  for (let k = 0; k < 10; k++) snapPoints.push({ position: [+(-0.27 + k * 0.06).toFixed(3), 0.002, 0], yaw });
+  for (let k = 0; k < 10; k++) snapPoints.push({ position: [+(-0.27 + k * 0.06).toFixed(3), 0.002, 0], yaw, tags: cardSlot() });
   return {
     name: `Player ${n}'s hand`,
     count: 1,

@@ -20,12 +20,18 @@ export function glbKey(piece) {
   });
 }
 
-/** A piece's snap points ([x, y, z] or { position, yaw }) as the scene's connectors: { position, rotation? }. */
+/**
+ * A piece's snap points ([x, y, z] or { position, yaw?, tags? }) as the
+ * scene's connectors: { position, rotation?, tags? }. A connector with tags
+ * takes only objects with one of them (the hand's rule): a card slot is
+ * tagged "card", and so is every card.
+ */
 export function connectorsOf(points) {
   return (points ?? []).map((p) => {
     const position = [...(Array.isArray(p) ? p : p?.position ?? [0, 0, 0])].map(Number);
     const yaw = Array.isArray(p) ? null : p?.yaw;
-    return yaw == null ? { position } : { position, rotation: [0, Number(yaw), 0] };
+    const tags = Array.isArray(p) ? [] : (Array.isArray(p?.tags) ? p.tags : []).filter((t) => typeof t === "string" && t);
+    return { position, ...(yaw == null ? {} : { rotation: [0, Number(yaw), 0] }), ...(tags.length ? { tags: [...tags] } : {}) };
   });
 }
 

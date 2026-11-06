@@ -7,7 +7,8 @@ all out in a new [scene](../scene/README.md) and opens it in the scene's
 to the board's spaces and stack on whatever is already there. Rules are a
 description for the players, not enforced.
 
-Make a Tabletop game and pick one to start from:
+Make a Tabletop game and pick one to start from, or start an empty scene
+from **Lost Cities** or **Santorini** on its start screen (Templates, below):
 
 - **Santorini** (Gordon Hamilton): an island board of 5×5 spaces, 22 / 18 / 14
   building levels, 18 domes, and two workers each for three players.
@@ -29,7 +30,9 @@ pnpm install && pnpm build && pnpm test
 | `patchwork:datatype` | `tabletop-game` | a game (listed) |
 | `patchwork:tool` | `tabletop-game` | its page: about, pieces, set up a table, the tables set up so far, the definition as JSON |
 | `tabletop:game` | `santorini`, `lost-cities` | games an empty tabletop-game can start from |
-| `scene:extension` | `tabletop` | what makes a scene a table: seats, private zones, hidden cards and their decks, shuffling (Tables, below) |
+| `scene:template` | `tabletop.lost-cities`, `tabletop.santorini` | an empty scene's start screen: the game's table, laid out in that scene with its own art (Templates, below) |
+| `scene:extension` | `tabletop` | what makes a scene a table: seats, private zones, hidden cards and their decks, shuffling, dice (Tables, below) |
+| `scene:part` | `tabletop.pawn`, `tabletop.token`, `tabletop.card-spot`, `tabletop.die` | the editor's parts bin, under "Tabletop" (Parts and dice, below) |
 | `patchwork:datatype` | `plain-deck` | a deck anyone can read (unlisted: a table makes it) |
 
 Other packages add kinds of deck as **`tabletop:deck`** plugins (card-table's
@@ -66,17 +69,25 @@ tool by id. Without the scene installed the tables are just documents.
 
 ## How it fits the scene
 
-- Each kind of piece is drawn once, as a GLB `file` doc the game keeps
-  (`glbUrl`). Every copy of it, on every table, is a **passthrough** object
-  showing that doc (provider `file-glb`, no render doc). The game page redraws
-  a kind's GLB in place when its parts change, so tables already set up change
-  with it.
+- Each kind of piece is drawn once, as a GLB `file` doc. Every copy of it is
+  a **passthrough** object showing that doc (provider `file-glb`, no render
+  doc). Whose doc it is depends on how the table was made:
+  - **set up from the game page**: the game keeps it (`glbUrl`), and every
+    table set up from that game shares it. The game page redraws a kind's GLB
+    in place when its parts change, so tables already set up change with it.
+  - **started from a template**: the scene keeps it (`doc.assets`, by
+    `ctx.file`; scene/STAGE.md, "Parts"), under a key that names the game,
+    the kind and a hash of what it is drawn from
+    (`tabletop/lost-cities/back@1a2b3c4d`). There is no game doc, so the table
+    stands alone, and new art gets a new key: a table made with the old keeps
+    its own.
 - A board's spaces are **snap points** in its GLB (`extras.snapPoints`, see the
   scene's GLB conventions). The scene's hand does the snapping and stacking;
   nothing here is specific to Santorini.
 - The board is set up **locked**, so dragging it orbits instead.
-- Each copy's About (`infoUrl`) is the game, so selecting a piece in the scene
-  shows the rules.
+- On a table set up from the game page, each copy's About (`infoUrl`) is the
+  game, so selecting a piece in the scene shows the rules. A template's table
+  has no game doc, and no About.
 - Seats, private zones and hidden cards are this package's own, added to the
   scene by its scene extension (Tables, below); the scene doesn't know about
   them.
@@ -103,6 +114,7 @@ package installed shows a table's cards as their backs and nothing else.
 | `tabletop.seats` | the scene | `{ [seatId]: { name, player: <contact url> \| null, camera?: { position, target } } }` |
 | `tabletop.zone` | an object | `{ seat, min: [x,y,z], max: [x,y,z] }`: a seat's private area, a box in the object's own frame |
 | `tabletop.hidden` | an object | `{ by: <deck url> }`: what it really is comes from that deck |
+| `tabletop.die` | an object | `{ faces?: { "+y": n, … } }`: a die; gives it Roll (R) in play (Rolling, below) |
 
 **Who sees what** (`src/table/visibility.js`). A hidden object is drawn as
 itself — its public look, a card back — except:
@@ -112,23 +124,111 @@ itself — its public look, a card back — except:
 - otherwise, **face up** (its own +Y points up in the world), it's shown as
   what it is to everyone.
 
-So drawing a card is carrying it from the deck into your zone, playing it is
-putting it down face up, and turning one over (F while carrying) reveals it.
+So drawing a card is moving it from the deck into your zone (D, or carry
+it there), playing it is
+putting it down face up, and turning one over (F over it, or while carrying
+it) reveals it.
 A hidden card carried into your own zone from outside it turns face up as it
 arrives, so you see what you drew, and back over if you carry it out again
 (F decides for yourself). A revealed name shows in the outline and inspector
 and is never written back.
 
 **The seat picker**, at the top right of the table: pick your seat (or
-watch; sitting is written to the doc, so others see the seat as taken, and a
-seat with a `camera` moves your view there). What each deck is doing shows
-as a line in the scene's notices, at the top left.
+watch; a seat with a `camera` moves your view there). What each deck is doing
+shows as a line in the scene's notices, at the top left. A name tag over each
+hand tray says whose seat it is: "Player 1 · Ana", "Player 1 · Ana (away)",
+"Player 2 · free".
 
-**Shuffle** (`S` over a card, or *Shuffle pile* in its right-click menu)
-shuffles
-the pile it's in — the cards of the same deck whose footprints overlap it by
-half or more — through its deck: a plain deck permutes its entries; a secure
-deck has the players reshuffle them.
+Sitting writes you into the seat (`tabletop.seats[id].player`, which is all
+that decides whose hand you see) and takes a claim on the scene,
+`tabletop.seat:<id>` (the scene's claims: STAGE.md), which says you're here.
+So:
+- a seat whose player is here (their claim is live) can't be taken: "Ana is
+  sitting there". A view that has just opened sees that from its first frame,
+  as the stage counts a claim by someone not yet heard from for its first 6 s;
+- a seat whose player has gone (no live claim) can be taken, after a confirm
+  ("Ana is away. Take their seat? You'll see their hand.");
+- two people picking one seat at once: the merge keeps one claim, and the
+  other is told "Ana sat in Player 1 first; you're watching" (and writes
+  nothing);
+- the same person in two tabs is seated in both; a reload claims its seat
+  again; Watching lets go of it. Moving to another seat, or to Watching, in
+  either tab moves that person: the tab holding the old seat's claim lets go
+  of it rather than writing itself back;
+- if a merge gives the claim to one and the player to the other, the claim's
+  holder writes itself back in (that seat's player only).
+Claims decide who may take a seat, never who sees what: card visibility (and
+card-table's key delivery) reads only the doc's player, the same on every
+peer. `probes/seats.mjs` checks this in headless Chrome with two views.
+
+**Shuffle** (`S` over a card: the scene's use prompt shows it, with the
+hand's Flip, under the pointer; or *Shuffle pile* in its right-click menu)
+shuffles the pile it's in — the cards of the same deck whose footprints
+overlap it by half or more — through its deck: a plain deck permutes its
+entries, writing the whole map at once so two shuffles at the same moment
+keep one of them whole rather than mixing them; a secure deck has the players
+reshuffle them.
+
+**Draw** (`D` over a pile out on the table, on the use prompt; or *Draw to
+my hand* in its right-click menu; play only) takes the pile's top card into
+the first free card slot of your seat's tray: a connector tagged `card` with
+no card within half its snap radius. The card glides there as a pose hold, so
+everyone sees it travel, and lands face up, turned the slot's way, in one
+write; the zone rule then shows its face to you alone (and card-table hands
+your client its key). Watching, it's greyed out ("Sit down to draw"); with
+every slot taken, "Your hand is full". (At a table where no hand has a card
+slot, a TTS import say, Draw isn't offered at all, seated or not.) Draw only
+takes cards out on the table: a card in someone's hand stays theirs even
+where a pile overlaps it. If a peer takes hold of the top card
+first, yours lets go and takes the card under it (once; then "Someone drew
+that one"). A seat whose hand has no card slots doesn't offer it: carry
+cards there instead. `probes/draw.mjs` checks it at a secure table.
+
+**Telling the others.** When someone shuffles, sits down, draws or rolls, everyone else
+gets a notice ("Player 1 shuffled the deck (44)"), sent with the scene's
+`api.send`: only `shuffled { deck, n }`, `sat { seat }`, `drew { n }` and
+`rolled { die, value }` are heard, and only counts and ids are ever sent,
+never which card is which.
+
+What peers have to trust: these are a peer's word. A roll is checked: it's
+told only when the doc moved that die (within a few seconds either side of
+the message) and the side it landed on shows that number; otherwise nothing
+is said, so a die put down by hand on a 6 and "announced" isn't told as a
+roll. (It can't tell a fair seed from a chosen one: a modified client can
+still pick its outcome and roll it.) A shuffle isn't checked: "Ana shuffled
+the deck" may be said without any change to the deck. Nothing a message says
+ever changes the doc or what anyone sees.
+
+**Rolling.** An object with the trait `tabletop.die` (the inspector's "Add
+behaviour… Die", or the Die part) offers **R Roll** on the use prompt and the
+menu, in play only (R is the gizmo's Rotate while editing). The whole roll is
+worked out from one random seed first (`src/table/dice.js`): which side lands
+up, how it's turned, how far it skids. For about 0.6 s it's tossed and
+tumbled about the middle of its box as a pose hold, so everyone sees it in
+the air; then one write puts it where it landed, a landed release, and
+"You rolled 5" here and "Ana rolled 5" for everyone else. A peer who takes
+hold of it or moves it meanwhile has it: the roll writes nothing. The trait's
+`faces` says which number each side shows, by the local axis out of that
+side; the default is a d6's (`+y` 1, `-y` 6, `+x` 3, `-x` 4, `+z` 2, `-z`
+5), which the Die part is drawn to. Set it for a die modelled elsewhere.
+
+**The hand, always, in play.** A tool picked while editing (G, R, the
+toolbar's Move or Rotate) is the view's own local state and would outlive the
+switch back to Play, where nothing offers a way back: the table could no
+longer be carried or flipped. And a scene that became a table through a part
+(a die, a pawn) suggests no tool (`view.tool`), so the stage's default, Move,
+is in force. So whenever a view is playing at a table and the tool in force
+(the view's, else the doc's `view.tool`, else Move: the scene's
+`effectiveTool`, copied) isn't the hand, the extension runs the hand's own
+Hand command. This patches a stage-wide gap, an Edit tool outliving the
+switch to Play, which belongs in `scene.activity` in time.
+
+**Card slots.** A card slot is a connector tagged `"card"`, and every card on
+a table is tagged `"card"` (its back's tags: one tag for every card, never one
+of its own, since an object's tags are public). By the scene hand's rule, a
+tagged connector takes only objects with one of its tags, so a pawn carried
+over a Lost Cities tray stays off its slots. Santorini's spaces are untagged:
+anything may stand on them.
 
 **Decks.** A table can have any number, each a document of its own that its
 cards name. A plain deck is read here:
@@ -163,7 +263,12 @@ bind(handle, ids)   // the objects made for it, in deck order
 
 Call `onChange` when `looks()` or `status()` changes. A deck with
 `placement` can be dropped (or pasted) onto any scene that isn't already
-showing it: its cards are laid out face down in a group named for it.
+showing it: its cards are laid out face down, tagged `"card"`, in a group
+named for it, stacked where it was dropped, or squared onto the nearest card
+slot of what it was dropped on, if one is within reach. Never in a hand: a
+slot in a seat's private zone is passed over, and a deck dropped into one is
+refused ("Drop the deck on the table, not in a hand"), since every card in
+it would be that seat's to see.
 
 **What this protects against.** With a plain deck: this is a table, not a
 vault. Its doc is an ordinary document, and anyone who opens it (or the
@@ -209,8 +314,10 @@ Piece = {
   back?: kind,                       // the piece hidden copies look like (same size; count 0)
   deck?: deckId,
   parts: Part[],                     // what it looks like: metres, Y up, standing on y = 0
-  snapPoints?: ([x, y, z] | { position: [x, y, z], yaw?: number })[],
-                                     // spaces on it other pieces snap to (its own frame); a yaw turns them
+  snapPoints?: ([x, y, z] | { position: [x, y, z], yaw?: number, tags?: string[] })[],
+                                     // spaces on it other pieces snap to (its own frame); a yaw turns them;
+                                     // with tags, only pieces with one of them (["card"]: card slots)
+  tags?: string[],                   // the tagged spaces its copies fit (["card"]); a hidden card has its back's
   snapRadius?: number,               // how close is close enough; absent = the scene's default
   supply: { at: [x, z], cols: number, gap: [dx, dz], yaw?: number },
                                      // where the copies start: a grid of `cols` from `at`
@@ -235,20 +342,73 @@ as JSON at the bottom of the game page; applying it keeps each kind's GLB doc.
 
 ### A table
 
-A `scene` doc, made fresh each time: one group per visible kind with more than
-one copy, every copy at its supply spot, the board at the top level; each deck
-shuffled into one group, dealt, and the rest stacked. Its seats, empty
-(`tabletop.seats`). If anything is hidden, a doc per deck, made first, which
-its cards name (`tabletop.hidden`).
+One writer makes every table (`src/setup.js`): `tableLayout(game, { fileOf,
+newId, rng, gameUrl, secure })` lays the game out without writing anything,
+and `writeTable(d, layout, deckUrls)` writes it into a scene doc in one go.
+What it writes: one group per visible kind with more than one copy, every copy
+at its supply spot, the board at the top level; each deck shuffled into one
+group, dealt, and the rest stacked. Its seats, empty (`tabletop.seats`; only if
+the scene has none yet, as a shared map is made once). If anything is hidden,
+a doc per deck, made first, which its cards name (`tabletop.hidden`).
+The game page's "Set up a table" writes it onto a fresh `scene` doc (with
+every map a scene has) and creates that; a template writes it into the empty
+scene it was started on, in one `ctx.change`.
 Its view opens in the hand (`view.tool: "hand"`) with snapping on, the
 grid and axes off, units in cm, looking from the game's `camera`
-(`view.home`), and starts in play (`view.activity: "play"`): a
+(`view.home`), and, when it has seats, zones or hidden cards, starts in
+play (`view.activity: "play"`): a
 table opens with no toolbar or sidebar, just the seat picker, the scene's
 notices and its Play | Edit switch (where a viewer can step into the editor
 for themselves). The extension takes part in both activities (`activities:
 ["play", "edit"]`), so hidden cards stay hidden while someone edits, and it
-`requires` what playing needs: the scene's hand, key map, right-click menu,
+`requires` what playing needs: the scene's hand, use prompt (listed before
+the key map, so it hears its verbs' keys first), key map, right-click menu,
 framing and notices.
+
+A game with nothing for the extension to run on (no seats, zones or hidden
+cards: Santorini) has no play on offer, so its layout writes no
+`view.activity` (a doc that said "play" would show "Starts in: Play" over a
+scene that can't), and its table opens in the editor, in the hand.
+
+### Templates
+
+An empty scene's start screen offers **Lost Cities** and **Santorini**
+(`src/table/template.js`). One click lays the game's table out in that scene:
+the game is made in memory from its module's `fill()`, each kind's GLB is filed
+with `ctx.file` (above), the deck docs are made, and then one change writes the
+table; the stage then starts its maker where the doc says (play, at Lost
+Cities), and a notice says to pick a seat.
+
+A secure deck needs a `tabletop:deck` plugin for `secure-deck` (card-table).
+Where none is installed, the Lost Cities template makes a plain deck instead
+and says so: it plays the same, but anyone who opens the deck doc can read
+every hand. Everyone at such a table is told, every time they open it: at
+any table with hands (zones with seats) and a plain deck, the HUD says
+"This table's deck is a plain one: anyone who opens it can read every card,
+hands included." (A table without hands, a TTS import, stays quiet.)
+
+The game page stays the editor for custom games; its tables keep the live
+redraw. A template's table is a copy of the built-in game as it is now.
+
+### Parts and dice
+
+The editor's parts bin has a **Tabletop** heading (`src/table/parts.js`):
+
+- **Pawn** and **Token**: pieces to move about.
+- **Card spot**: a small mat with one card slot (a connector tagged `"card"`,
+  with a snap radius), so a card carried over it or a deck dropped on it
+  squares onto it. Untagged pieces (pawns, dice) don't snap there. It isn't a
+  hand: a card spot that isn't in a seat's zone is somewhere public to lay
+  cards, and Draw doesn't count it.
+- **Die**: a d6, with the trait `tabletop.die` (Rolling, above). A scene with
+  only a die in it is a table too, and offers play.
+
+Each is filed once per scene with `ctx.file` (`src/table/files.js`, shared
+with the templates) under `tabletop/<kind>@1`
+(`pawn`, `token`, `card-spot`, `d6`): ten pawns share one GLB. A part goes
+where the bin puts it, under what it was dropped on (and in that one's
+group), unlocked; if what it was dropped on goes while its file is made, it
+puts nothing. Parts never make or change seats.
 
 ## Layout
 
@@ -261,10 +421,20 @@ framing and notices.
 | `src/glyphs.js` | numbers made of boxes, for card faces |
 | `src/shapes.js` | parts → triangle meshes (pure) |
 | `src/pieces.js` | pieces → GLB file docs, redrawn when they change |
-| `src/setup.js` | a game → a fresh scene doc and its decks: shuffle, deal, stack (pure) |
-| `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, laying out a dropped deck, drawing face up |
+| `src/setup.js` | the one table writer: a game → a layout and its decks (shuffle, deal, stack; pure), and writing it into a scene doc |
+| `src/table/template.js` | the Lost Cities and Santorini templates: the game's table in an empty scene, its art by `ctx.file` |
+| `src/table/files.js` | the scene's own GLB files, for parts and templates: a piece's GLB for `ctx.file`, and the file for a key |
+| `src/table/extension.js` | the scene extension: decks, the seat picker, Shuffle, Draw, Roll, telling the others, laying out a dropped deck, drawing face up |
 | `src/table/visibility.js` | who may see what: zones, seats, face up (pure) |
 | `src/table/plain-deck.js` | the plain deck: its datatype and resolver |
+| `src/table/parts.js` | the parts bin's pieces: pawn, token, card spot, die (their art, and putting one in) |
+| `src/table/dice.js` | dice: which side is up, and a roll worked out from its seed (pure) |
+| `src/table/slots.js` | card slots: which connectors take a card, in the world (the hand's rule, copied; pure) |
+| `probes/seats.mjs`, `probes/seats-probe.html` | two views at a Lost Cities table in headless Chrome: a present player's seat refused, an away one taken after a confirm (`cdp.mjs`, `fake-repo.js` and the stubs are copied from sailing's probes) |
+| `probes/draw.mjs`, `probes/draw-probe.html` | two players at a secure Lost Cities table (card-table's built plugins too): A hovers the deck and presses D; the card lands in A's hand, A sees its face, B doesn't, B is told |
+| `probes/table.mjs`, `probes/table-probe.html` | two players at a plain-deck Lost Cities table (card-table's built plugins loaded for a dropped secure deck): the use prompt over the pile (Flip, Shuffle) and S telling B; a card squaring onto a tray slot and a pawn not; in Edit, the bin's Tabletop parts, R as the gizmo's Rotate, a dropped deck stacking at the point and squaring onto a discard slot; back in play with the hand, R rolling the die to the same face in both views |
+| `probes/publish-table.mjs` | publish a Lost Cities table set up as the game page does to a real sync server (`--dry-run` to only check); with `--template lost-cities` (or `santorini`), start an empty scene from the template in headless Chrome (`template-probe.html`), check its files, play, seats and the secure deck reaching play, and publish the table it made |
+| `src/test/fakes.js` | a stand-in stage for tests: shared doc, presence, claims, sends, poses, loops; and a drop context for templates (`fakeDrop`) (copied from sailing's) |
 | `src/glb.js` | the GLB encoder, copied from the scene package |
 
 ## Not yet
