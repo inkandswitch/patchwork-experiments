@@ -1,6 +1,6 @@
 // The build notes' account of a linked body: which model, how fine, and which
-// path the section came by (a slice of a scene render, an exact section, or a
-// slice of a provider's mesh).
+// path the section came by (a slice of a scene render, of a GLB file, or of a
+// provider's default build).
 // Pure.
 
 import { normalizeBodySpec, BODY_MODEL_LABELS } from "./body.js";
@@ -20,13 +20,14 @@ export function bodyNote(doc, field, result) {
     ? ""
     : result.path === "render"
       ? `, from a slice of the scene render “${result.providerName}”`
-      : result.path === "exact"
-        ? `, from the exact section from ${result.providerName}`
+      : result.path === "file"
+        ? `, from a slice of the GLB file “${result.providerName}”`
         : `, from a mesh slice of ${result.providerName}'s build (default params)`;
   if (body.failed) return `; linked body not applied: ${body.failed}${via}`;
   const at = `z = ${(body.z0 ?? 0).toFixed(2)} m`;
   const warn = (body.info?.warnings ?? []).map((w) => `; ${w}`).join("");
-  if (body.empty) return `; linked body: the section has no loops at ${at}${via}, so no body${warn}`;
+  const miss = result?.ok && result.miss ? ` (${result.miss})` : "";
+  if (body.empty) return `; linked body: the section has no loops at ${at}${via}${miss}, so no body${warn}`;
   const label = BODY_MODEL_LABELS[body.model] ?? body.model;
   const size =
     body.model === "waterplane-2d" ? `${body.info.panels} source panels` : `${body.info.segments} line-source segments`;

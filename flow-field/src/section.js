@@ -1,56 +1,116 @@
-// Getting a section of the linked doc (doc.body.url). Main thread only: it
+// Getting a section of the linked body (doc.body.url). Main thread only: it
 // uses the repo and the host's plugin registry, both late-bound.
 //
-// 0. render (preferred): the link is a scene's `scene-render` doc. Its
-//    current GLB (render-read.js) is what the scene shows, built with the
-//    params the scene chose, with the render's own dependencies already
-//    folded in; mesh-section.js cuts its triangles with the plane. No
-//    provider is called. A render with no GLB yet gives no body (not an
-//    error the build throws on): the host rebuilds the flow when the render
-//    gets a new glbUrl, since the url is in dependencies().
-// Otherwise the link is a source doc (a hull), the legacy path:
-// 1. exact: a `geometry:section` provider for the linked doc's datatype
-//    (scene contract v2 §2) answers with loops in the floating frame. None
-//    exists yet; the hook stays so one can be added without touching this.
-// 2. mesh fallback: a `scene:source` provider for that datatype builds the doc
-//    to a GLB in memory (nothing is stored), with its DEFAULT params, and
-//    mesh-section.js cuts its triangles with the plane. Builds are cached
-//    (upstream.js), so the two flow providers share one per hull edit.
-// Either can be missing; the result then says why, and the flow goes on
-// without a body.
+// The body is a geometry source, and the flow always cuts it itself
+// (mesh-section.js), whatever it is. Anything a scene can show will do:
+// 1. render (preferred): a scene's `scene-render` doc. Its current GLB
+//    (render-read.js) is what the scene shows, built with the params the
+//    scene chose, with the render's own dependencies already folded in. No
+//    provider is called. A render with no GLB yet gives no body (not an error
+//    the build throws on): the host rebuilds the flow when the render gets a
+//    new glbUrl, since the url is in dependencies().
+// 2. file: a Patchwork `file` doc holding a GLB (extension or name `.glb`, or
+//    glTF magic bytes): what a scene shows directly for a passthrough object
+//    (SCENE-CONTRACT v3 §6, no render doc). Its bytes are cut as they are.
+// 3. source: any other doc some `scene:source` provider can build (the most
+//    specific match first, as the scene host picks): it is built in memory
+//    (nothing is stored) with the provider's DEFAULT params and the GLB is
+//    cut. Builds are cached (upstream.js), so the two flow providers and the
+//    editor share one per edit of the source.
+// The flow never asks anything for a ready-made section (`geometry:section`):
+// cutting the geometry here works for every source alike.
 
 import { loadGetRegistry } from "./registry.js";
-import { meshSection } from "./mesh-section.js";
+import { sliceGLB } from "./mesh-section.js";
 import { normalizeLoops, planeZ } from "./body.js";
 import { stableStringify } from "./fingerprint.js";
 import { sectionKey } from "./flow.js";
-import { isRenderDoc, readRender, renderKey } from "./render-read.js";
+import { fileBytes, isRenderDoc, readRender, renderKey } from "./render-read.js";
 import { cachedUpstream, rememberUpstreamDeps } from "./upstream.js";
 
 export const OWN_DATATYPE = "flow-field";
 
-/** The contract's request for a plane. */
-export function sectionRequest(plane) {
-  return plane?.kind === "z" && Number.isFinite(plane.z) ? { plane: { kind: "z", z: plane.z } } : { plane: { kind: "waterline" } };
+/** The plane, made safe: a finite z plane, else the waterline. */
+export function normalizePlane(plane) {
+  return plane?.kind === "z" && Number.isFinite(plane.z) ? { kind: "z", z: plane.z } : { kind: "waterline" };
 }
 
-/** Copy of the scene host's provider matching: datatype (and extension, for file providers). */
+/** Lower-case, no leading dot (copy of scene/src/providers.js). */
+export function normalizeExtension(ext) {
+  return String(ext ?? "")
+    .trim()
+    .replace(/^\.+/, "")
+    .toLowerCase();
+}
+
+/** Extension from a file name, "" if none (copy of scene/src/providers.js). */
+export function extensionOf(name) {
+  const m = /\.([^./\\]+)$/.exec(String(name ?? ""));
+  return m ? m[1].toLowerCase() : "";
+}
+
+/** Copy of the scene host's source description: datatype, and extension (or the name's) for files. */
 export function describeSource(doc) {
   const datatype = doc?.["@patchwork"]?.type ?? null;
   let extension = null;
   if (datatype === "file" || doc?.extension != null) {
-    extension = String(doc?.extension ?? "").trim().replace(/^\.+/, "").toLowerCase() || null;
+    extension = normalizeExtension(doc?.extension) || extensionOf(doc?.name) || null;
   }
   return { datatype, extension };
 }
 
+/** Copy of the scene host's provider matching: datatype (and extension, for file providers). */
 export function providerMatches(p, { datatype, extension }) {
   const sd = p?.supportedDatatypes;
   const typeOk = sd === "*" || (Array.isArray(sd) && (sd.includes("*") || (datatype != null && sd.includes(datatype))));
   if (!typeOk) return false;
-  const exts = Array.isArray(p.extensions) ? p.extensions.map((e) => String(e).replace(/^\.+/, "").toLowerCase()) : null;
+  const exts = Array.isArray(p.extensions) ? p.extensions.map(normalizeExtension) : null;
   if (exts && exts.length > 0) return extension != null && exts.includes(extension);
   return true;
+}
+
+/**
+ * Copy of the scene host's matchProviders: the providers for a source, most
+ * specific first (datatype + extension, then datatype, then a wildcard),
+ * registry order among equals.
+ */
+export function matchProviders(providers, source) {
+  const score = (p) => {
+    const sd = p.supportedDatatypes;
+    const wild = sd === "*" || (Array.isArray(sd) && sd.includes("*"));
+    const hasExt = Array.isArray(p.extensions) && p.extensions.length > 0;
+    return (wild ? 0 : 2) + (hasExt ? 1 : 0);
+  };
+  return (providers ?? [])
+    .filter((p) => p && p.id && providerMatches(p, source))
+    .map((p, i) => ({ p, i, s: score(p) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map(({ p }) => p);
+}
+
+/** Copy of the scene host's wording for a source: ".stl files", "“camber-hull” documents". */
+export function describeForHumans({ datatype, extension }) {
+  if (datatype === "file" && extension) return `.${extension} files`;
+  if (datatype) return `“${datatype}” documents`;
+  return "this document";
+}
+
+const GLB_MAGIC = 0x46546c67; // "glTF"
+
+/**
+ * Is this a `file` doc holding a GLB? By its extension (or its name's), and
+ * for a file that names none, by its first four bytes.
+ */
+export function isGlbFile(doc) {
+  if (doc?.["@patchwork"]?.type !== "file") return false;
+  const { extension } = describeSource(doc);
+  if (extension) return extension === "glb";
+  try {
+    const b = fileBytes(doc);
+    return b.byteLength >= 4 && new DataView(b.buffer, b.byteOffset, 4).getUint32(0, true) === GLB_MAGIC;
+  } catch {
+    return false;
+  }
 }
 
 function list(registry) {
@@ -149,6 +209,12 @@ function upstreamDeps(mod, doc, url) {
 /** One of the flow field's own scene providers? (A flow can't be the body of a flow.) */
 const isFlowProviderId = (id) => typeof id === "string" && id.startsWith("flow-field");
 
+/** A cut section, with why it is empty (if it is) lifted onto the result. */
+function cut(raw, plane) {
+  const section = cleanSection(raw, plane);
+  return section.meta.miss ? { section, miss: section.meta.miss } : { section };
+}
+
 /**
  * Find the linked doc and cut its section.
  * @param {object} o
@@ -158,14 +224,16 @@ const isFlowProviderId = (id) => typeof id === "string" && id.startsWith("flow-f
  * @param {object} [o.handle]         the linked doc's handle, if already found
  * @param {Function} [o.getRegistry]  defaults to the host's (late-bound)
  * @param {string} [o.selfUrl]        the flow doc's own url (a flow can't be its own body)
- * @returns {Promise<{ ok: true, section, path: "render"|"exact"|"mesh", providerId, providerName, datatype, handle, doc, renderKey?, title? }
+ * @returns {Promise<{ ok: true, section, path: "render"|"file"|"source", providerId, providerName, datatype, handle, doc, miss?, renderKey?, title? }
  *                  | { ok: false, error: string, transient: boolean, pending?: true, datatype?, handle?, doc?, renderKey?, title? }>}
  *   `transient` failures are about this peer's situation, not the link: the
- *   doc hasn't loaded here, or nothing installed here can cut it. Another
+ *   doc hasn't loaded here, nothing installed here can build it, or this
+ *   runtime can't decode its GLB (a meshopt GLB with no WebAssembly). Another
  *   peer (or this one, later) may well succeed. The rest (a self-link, a flow
- *   linked to a flow, a render that hasn't been built: `pending`) are the same
- *   everywhere. For a render, `renderKey` is the key of the render as read;
- *   it changes exactly when its GLB does.
+ *   linked to a flow, a render that hasn't been built: `pending`, a file that
+ *   isn't a readable GLB) are the same everywhere. For a render, `renderKey`
+ *   is the key of the render as read; it changes exactly when its GLB does.
+ *   `miss` says why an ok section has no loops (the plane misses the body).
  */
 export async function acquireSection({ url, plane, repo, handle, getRegistry, selfUrl } = {}) {
   if (!url) return { ok: false, error: "no linked document", transient: false };
@@ -185,42 +253,24 @@ export async function acquireSection({ url, plane, repo, handle, getRegistry, se
   const { datatype } = source;
   const fail = (error, transient = true) => ({ ok: false, error, transient, datatype, handle: h, doc });
   if (datatype === OWN_DATATYPE) return fail("a flow field can't be the body of another flow field", false);
-  if (isRenderDoc(doc)) return renderSection({ url, doc, handle: h, plane, repo, selfUrl, fail });
+  const at = normalizePlane(plane);
+  const z = planeZ(at);
+  if (isRenderDoc(doc)) return renderSection({ url, doc, handle: h, plane: at, repo, selfUrl, fail });
+  if (isGlbFile(doc)) return fileSection({ doc, handle: h, plane: at, fail });
+
+  // any doc a scene:source provider can build: build it, then cut the GLB
   const get = getRegistry ?? (await loadGetRegistry());
-  if (!get) return fail("the plugin registry isn't available, so nothing can cut a section");
-  const request = sectionRequest(plane);
-  const z = planeZ(request.plane);
-  const notes = [];
-
-  // 1. an exact section
-  let sections = null;
-  try {
-    sections = get("geometry:section");
-  } catch {
-    sections = null;
-  }
-  for (const p of list(sections).filter((p) => providerMatches(p, source))) {
-    if (Array.isArray(p.planes) && !p.planes.includes(request.plane.kind)) continue;
-    try {
-      const mod = await loadModule(sections, p);
-      if (typeof mod?.section !== "function") throw new Error("it has no section()");
-      const result = await mod.section(doc, request);
-      return { ok: true, section: cleanSection(result, request.plane), path: "exact", providerId: p.id, providerName: p.name ?? p.id, datatype, handle: h, doc };
-    } catch (err) {
-      notes.push(`${p.name ?? p.id} failed (${err?.message ?? err})`);
-    }
-  }
-
-  // 2. slice the provider's mesh
+  if (!get) return fail("the plugin registry isn't available, so nothing can build the linked document");
   let sources = null;
   try {
     sources = get("scene:source");
   } catch {
     sources = null;
   }
-  const candidates = list(sources).filter(
-    (p) => providerMatches(p, source) && !(Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(OWN_DATATYPE)),
+  const candidates = matchProviders(list(sources), source).filter(
+    (p) => !isFlowProviderId(p.id) && !(Array.isArray(p.supportedDatatypes) && p.supportedDatatypes.includes(OWN_DATATYPE)),
   );
+  const notes = [];
   for (const p of candidates) {
     try {
       const mod = await loadModule(sources, p);
@@ -236,23 +286,49 @@ export async function acquireSection({ url, plane, repo, handle, getRegistry, se
         if (!(bytes instanceof Uint8Array)) throw new Error("it returned no GLB");
         return bytes;
       });
-      const section = cleanSection(meshSection(glb, z, request.plane), request.plane);
-      if (notes.length) section.meta.notes = `${section.meta.notes ?? ""}; ${notes.join("; ")}`;
-      return { ok: true, section, path: "mesh", providerId: p.id, providerName: p.name ?? p.id, datatype, handle: h, doc };
+      const c = cut(await sliceGLB(glb, z, at), at);
+      if (notes.length) c.section.meta.notes = `${c.section.meta.notes ?? ""}; ${notes.join("; ")}`;
+      return { ok: true, ...c, path: "source", providerId: p.id, providerName: p.name ?? p.id, datatype, handle: h, doc };
     } catch (err) {
       notes.push(`${p.name ?? p.id} failed (${err?.message ?? err})`);
     }
   }
-  const what = datatype ? `“${datatype}” documents` : "this document";
   return fail(
-    notes.length ? `no section of the linked document: ${notes.join("; ")}` : `no geometry:section or scene:source provider is installed for ${what}`,
+    notes.length
+      ? `no section of the linked document: ${notes.join("; ")}`
+      : `nothing installed here can build ${describeForHumans(source)} (no scene:source provider)`,
   );
 }
 
 /**
+ * The section of a linked GLB `file` doc: its bytes, cut as they are. A file
+ * that isn't a readable GLB is the same on every peer (not transient); one
+ * whose content isn't here, or that this peer can't decode, is.
+ */
+async function fileSection({ doc, handle, plane, fail }) {
+  const title = String(doc.name || doc.title || "GLB file");
+  const extra = { title };
+  let bytes;
+  try {
+    bytes = fileBytes(doc);
+  } catch (err) {
+    return { ...fail(`“${title}” has no content here (${err?.message ?? err})`), ...extra };
+  }
+  let raw;
+  try {
+    raw = await sliceGLB(bytes, planeZ(plane), plane);
+  } catch (err) {
+    // bad bytes are bad everywhere; a decoder this peer can't run is not
+    if (err?.transient === true) return { ...fail(`“${title}” can't be decoded here (${err?.message ?? err})`), ...extra };
+    return { ...fail(`“${title}” can't be read as a GLB (${err?.message ?? err})`, false), ...extra };
+  }
+  return { ok: true, ...cut(raw, plane), path: "file", providerId: null, providerName: title, datatype: "file", handle, doc, ...extra };
+}
+
+/**
  * The section of a linked scene-render doc: its current GLB, sliced. The GLB
- * is Y-up metres in the render's frame, mapped into the floating frame the
- * same way as the mesh fallback (x = X, y = −Z, z = Y).
+ * is Y-up metres in the render's frame, mapped into the floating frame like
+ * any other (x = X, y = −Z, z = Y).
  */
 async function renderSection({ url, doc, handle, plane, repo, selfUrl, fail }) {
   const title = renderTitle(doc);
@@ -274,9 +350,16 @@ async function renderSection({ url, doc, handle, plane, repo, selfUrl, fail }) {
     // glbUrl changes: no body, and no throw
     return { ...fail(`linked body not built yet (${why})`, false), pending: true, ...extra };
   }
-  const request = sectionRequest(plane);
-  const section = cleanSection(meshSection(r.glb, planeZ(request.plane), request.plane), request.plane);
-  return { ok: true, section, path: "render", providerId: doc.providerId ?? null, providerName: title, handle, doc, ...extra };
+  let raw;
+  try {
+    raw = await sliceGLB(r.glb, planeZ(plane), plane);
+  } catch (err) {
+    // the same bytes everywhere: not transient, unless it's this peer's
+    // decoder that's missing (no WebAssembly, the chunk didn't load)
+    if (err?.transient === true) return { ...fail(`the render's GLB can't be decoded here (${err?.message ?? err})`), ...extra };
+    return { ...fail(`the render's GLB can't be read (${err?.message ?? err})`, false), ...extra };
+  }
+  return { ok: true, ...cut(raw, plane), path: "render", providerId: doc.providerId ?? null, providerName: title, handle, doc, ...extra };
 }
 
 export const RENDER_DATATYPE = "scene-render";
@@ -290,15 +373,24 @@ export function renderTitle(render) {
 export function sectionPathLabel(r) {
   if (!r?.ok) return "";
   if (r.path === "render") return `slice of the scene render “${r.providerName}”`;
-  return r.path === "exact" ? `exact section (${r.providerName})` : `mesh slice of ${r.providerName}`;
+  if (r.path === "file") return `slice of the GLB file “${r.providerName}”`;
+  return `slice of ${r.providerName}'s build (default params)`;
+}
+
+/** The editor chip's few words for the path. */
+export function sectionPathChip(r) {
+  if (!r?.ok) return "";
+  if (r.path === "render") return "scene render";
+  if (r.path === "file") return "GLB file";
+  return `built from ${r.providerName} (defaults)`;
 }
 
 /**
  * For the scene providers: the section for a doc's body, or why there isn't one.
  * A transient failure THROWS: a body-less build would be recorded as up to
- * date against the hull's heads and every peer would keep it, when the
- * trouble is only that this peer can't see the hull or has nothing
- * installed to cut it. Throwing keeps the last good render and leaves it
+ * date against the body's key and every peer would keep it, when the
+ * trouble is only that this peer can't see the body or has nothing
+ * installed to build it. Throwing keeps the last good render and leaves it
  * stale, so a peer that can cut the section rebuilds it.
  * @returns {Promise<{ section: object|null, result: object|null }>}
  */

@@ -14,18 +14,24 @@
 <body>
 <div id="host"></div>
 <script type="module">
-  // Mounts the built editor with a hull linked as its body, against a stub
-  // plugin registry and an in-memory repo. Serve the package root:
-  //   python3 -m http.server 8765   →   http://localhost:8765/probes/body-probe.html
+  // Mounts the built editor with a body linked, against a stub plugin
+  // registry and an in-memory repo. Serve the package root:
+  //   node probes/probe-server.mjs . 8765   →   http://localhost:8765/probes/body-probe.html
+  // ?path=source             (default) a doc a scene:source provider builds; its GLB is cut
+  // ?path=render             a scene-render doc whose GLB file is cut
+  // ?path=file               a GLB file doc, cut as it is (no provider at all)
   // ?model=slender-body-3d   the 3D model instead of the waterplane panels
-  // ?path=mesh               no section provider: slice a scene:source GLB instead
+  // ?fixture=<name>          with path=file: the file is src/test/fixtures/<name> (e.g. a meshopt GLB)
   // ?z=0.5                   the editor's height slider
   // document.title becomes "ready <path>" once the section is in.
+  // A geometry:section provider is registered too: the flow must ignore it.
   import { getRegistry } from "@inkandswitch/patchwork-plugins";
   import { plugins } from "../dist/index.js";
   import { transomWaterline, prismGLB } from "../src/test/hull-fixtures.js";
   const q = new URLSearchParams(location.search);
+  const path = q.get("path") ?? "source";
   const HULL = "automerge:hu11111111111111111111111";
+  const GLB = "automerge:g1b1111111111111111111111";
 
   function memHandle(url, doc) {
     const listeners = new Set();
@@ -38,21 +44,30 @@
       off(e, f) { listeners.delete(f); },
     };
   }
-  const hull = memHandle(HULL, { "@patchwork": { type: "probe-hull" }, title: "Probe hull", scale: 1 });
-  window.hull = hull;
-  window.repo = { find: async (url) => (url === HULL ? hull : Promise.reject(new Error("unavailable"))) };
   const loop = (k) => transomWaterline(60).map(([x, y]) => [x * k, y * k]);
-  if (q.get("path") === "mesh") {
+  const glbFile = (name) => ({ "@patchwork": { type: "file" }, name, extension: "glb", mimeType: "model/gltf-binary", content: prismGLB(loop(1), { levels: [-1.2, 0.4] }) });
+  const fixture = q.get("fixture");
+  const fixtureBytes = fixture ? new Uint8Array(await (await fetch(`../src/test/fixtures/${fixture}`)).arrayBuffer()) : null;
+  const hull =
+    fixtureBytes
+      ? memHandle(HULL, { "@patchwork": { type: "file" }, name: fixture, extension: "glb", content: fixtureBytes })
+      : path === "render"
+      ? memHandle(HULL, { "@patchwork": { type: "scene-render" }, title: "Probe hull", parent: "automerge:src", providerId: "probe-hull-surface", glbUrl: GLB, status: "idle", error: null })
+      : path === "file"
+        ? memHandle(HULL, glbFile("Probe hull.glb"))
+        : memHandle(HULL, { "@patchwork": { type: "probe-hull" }, title: "Probe hull", scale: 1 });
+  const glb = memHandle(GLB, glbFile("render.glb"));
+  window.hull = hull;
+  window.repo = { find: async (url) => (url === HULL ? hull : url === GLB ? glb : Promise.reject(new Error("unavailable"))) };
+  window.sectionCalls = 0;
+  getRegistry("geometry:section").register({
+    type: "geometry:section", id: "probe-hull-section", name: "Probe hull section", supportedDatatypes: ["probe-hull"], planes: ["waterline", "z"],
+    async load() { window.sectionCalls++; return { section: () => { window.sectionCalls++; return { loops: [] }; } }; },
+  });
+  if (path === "source") {
     getRegistry("scene:source").register({
       type: "scene:source", id: "probe-hull-surface", name: "Probe hull", supportedDatatypes: ["probe-hull"], params: [],
       async load() { return { build: async ({ doc }) => ({ kind: "glb", glb: prismGLB(loop(doc.scale), { levels: [-1.2, 0.4] }) }) }; },
-    });
-  } else {
-    getRegistry("geometry:section").register({
-      type: "geometry:section", id: "probe-hull-section", name: "Probe hull section", supportedDatatypes: ["probe-hull"], planes: ["waterline", "z"],
-      async load() {
-        return { section: (doc, req) => ({ frame: "floating", units: "m", plane: { kind: req.plane.kind, z: req.plane.z ?? 0 }, loops: [{ points: loop(doc.scale), closed: true }] }) };
-      },
     });
   }
 
@@ -75,12 +90,17 @@
   const t0 = performance.now();
   for (let i = 0; i < 200; i++) {
     const path = document.querySelector(".chip-path")?.textContent ?? "";
-    if (/exact|mesh|no section/.test(path)) break;
+    if (/scene render|GLB file|built from|no section/.test(path)) break;
     await new Promise((r) => setTimeout(r, 20));
   }
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  document.title = `ready ${document.querySelector(".chip-path")?.textContent} ${(performance.now() - t0).toFixed(0)}ms`;
+  document.title = `ready ${document.querySelector(".chip-path")?.textContent} ${(performance.now() - t0).toFixed(0)}ms sectionCalls=${window.sectionCalls}`;
   window.__probeCleanup = true;
+  // served by probes/probe-server.mjs: post what the panel says, so a headless run can read it
+  fetch("/report", {
+    method: "POST",
+    body: JSON.stringify({ path, title: document.title, chip: document.querySelector(".chip-path")?.textContent, status: document.querySelector(".body-status")?.textContent, sectionCalls: window.sectionCalls }),
+  }).catch(() => {});
 </script>
 </body>
 </html>

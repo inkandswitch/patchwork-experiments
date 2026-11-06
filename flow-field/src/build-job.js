@@ -36,7 +36,7 @@ export function plain(v) {
 function notesResult(r) {
   if (!r) return null;
   const out = { ok: !!r.ok };
-  for (const k of ["pending", "transient", "error", "path", "providerName"]) if (r[k] !== undefined) out[k] = plain(r[k]);
+  for (const k of ["pending", "transient", "error", "path", "providerName", "miss"]) if (r[k] !== undefined) out[k] = plain(r[k]);
   return out;
 }
 

@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getRegistry, resetRegistries } from "@inkandswitch/patchwork-plugins";
-import Tool, { HULL_DEBOUNCE_MS, SECTION_RETRY_MS } from "./tool.js";
+import Tool, { BODY_DEBOUNCE_MS, SECTION_RETRY_MS } from "./tool.js";
 import { FlowFieldDatatype } from "./datatype.js";
 import { transomWaterline, prismGLB } from "./test/hull-fixtures.js";
+
+const FILE = "automerge:fi1e111111111111111111111";
 
 const HULL = "automerge:hu11111111111111111111111";
 
@@ -38,25 +40,8 @@ const flowDoc = () => {
   return d;
 };
 
-const sections = [];
-function registerExact() {
-  getRegistry("geometry:section").register({
-    type: "geometry:section",
-    id: "test-hull-section",
-    name: "Test hull section",
-    supportedDatatypes: ["test-hull"],
-    planes: ["waterline", "z"],
-    async load() {
-      return {
-        section(doc, request) {
-          sections.push(request);
-          const k = doc.scale ?? 1;
-          return { frame: "floating", units: "m", plane: { kind: request.plane.kind, z: request.plane.z ?? 0 }, loops: [{ points: transomWaterline().map(([x, y]) => [x * k, y * k]), closed: true }] };
-        },
-      };
-    },
-  });
-}
+/** Each build of the test hull, as the plane it was then cut at can't be seen: its doc's scale. */
+const builds = [];
 function registerMesh() {
   getRegistry("scene:source").register({
     type: "scene:source",
@@ -65,7 +50,13 @@ function registerMesh() {
     supportedDatatypes: ["test-hull"],
     params: [],
     async load() {
-      return { build: async () => ({ kind: "glb", glb: prismGLB(transomWaterline()) }) };
+      return {
+        build: async ({ doc }) => {
+          builds.push(doc.scale ?? 1);
+          const k = doc.scale ?? 1;
+          return { kind: "glb", glb: prismGLB(transomWaterline().map(([x, y]) => [x * k, y * k])) };
+        },
+      };
     },
   });
 }
@@ -77,7 +68,7 @@ let cleanup;
 let hull;
 beforeEach(() => {
   resetRegistries();
-  sections.length = 0;
+  builds.length = 0;
   getRegistry("patchwork:datatype").register({
     type: "patchwork:datatype",
     id: "test-hull",
@@ -103,14 +94,14 @@ const change = (input, value) => {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 };
 
-describe("linking a hull in the editor", () => {
+describe("linking a body in the editor", () => {
   it("links by pasted URL, shows a locked chip naming the doc and the section path, and writes only the link", async () => {
-    registerExact();
+    registerMesh();
     const h = fakeHandle("automerge:flow", flowDoc());
     cleanup = Tool(h, element);
     expect(q(".chip")).toBeTruthy();
     expect(q(".chip").closest("[hidden]")).toBeTruthy(); // not linked yet
-    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link hull…").click();
+    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link body…").click();
     const input = q('[aria-label="Linked document URL"]');
     input.value = `https://patchwork.inkandswitch.com/#doc=${HULL.slice(10)}`;
     [...element.querySelectorAll("button")].find((b) => b.textContent === "Link").click();
@@ -121,20 +112,20 @@ describe("linking a hull in the editor", () => {
     expect(q(".notice").textContent).toMatch(/now heads 180°/);
     await settle();
     expect(q(".chip-title").textContent).toBe("Hull Mk 1");
-    expect(q(".chip-path").textContent).toBe("exact section");
+    expect(q(".chip-path").textContent).toBe("built from Test hull (defaults)");
     expect(q(".body-chip").hidden).toBe(false);
-    expect(q(".body-chip").textContent).toMatch(/Hull Mk 1 · exact section/);
-    expect(q(".body-status").textContent).toMatch(/1 loop at z = 0\.00 m/);
-    expect(sections.at(-1)).toEqual({ plane: { kind: "waterline" } });
+    expect(q(".body-chip").textContent).toMatch(/Hull Mk 1 · built from Test hull \(defaults\)/);
+    expect(q(".body-status").textContent).toMatch(/Slice of Test hull's build \(default params\): 1 loop at z = 0\.00 m/);
+    expect(builds).toHaveLength(1);
     // nothing derived is stored
     expect(Object.keys(h.doc().elements)).toEqual(["bow", "stern"]);
   });
 
   it("keeps the 'elements are still there' notice in step with the doc as they're deleted", async () => {
-    registerExact();
+    registerMesh();
     const h = fakeHandle("automerge:flow", flowDoc());
     cleanup = Tool(h, element);
-    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link hull…").click();
+    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link body…").click();
     q('[aria-label="Linked document URL"]').value = HULL;
     [...element.querySelectorAll("button")].find((b) => b.textContent === "Link").click();
     expect(q(".notice").textContent).toMatch(/2 elements are still there/);
@@ -159,7 +150,7 @@ describe("linking a hull in the editor", () => {
     d.freestream.headingDeg = 180;
     const g = fakeHandle("automerge:flow2", d);
     cleanup = Tool(g, element);
-    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link hull…").click();
+    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link body…").click();
     q('[aria-label="Linked document URL"]').value = HULL;
     [...element.querySelectorAll("button")].find((b) => b.textContent === "Link").click();
     expect(q(".notice").textContent).toMatch(/2 elements are still there/);
@@ -170,12 +161,12 @@ describe("linking a hull in the editor", () => {
   });
 
   it("turns the stream round on linking even with no elements, but leaves a chosen heading alone", async () => {
-    registerExact();
+    registerMesh();
     const d = flowDoc();
     d.elements = {};
     const h = fakeHandle("automerge:flow", d);
     cleanup = Tool(h, element);
-    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link hull…").click();
+    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link body…").click();
     q('[aria-label="Linked document URL"]').value = HULL;
     [...element.querySelectorAll("button")].find((b) => b.textContent === "Link").click();
     expect(h.doc().freestream.headingDeg).toBe(180);
@@ -186,7 +177,7 @@ describe("linking a hull in the editor", () => {
     e.freestream.headingDeg = 20;
     const g = fakeHandle("automerge:flow2", e);
     cleanup = Tool(g, element);
-    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link hull…").click();
+    [...element.querySelectorAll("button")].find((b) => b.textContent === "Link body…").click();
     q('[aria-label="Linked document URL"]').value = HULL;
     [...element.querySelectorAll("button")].find((b) => b.textContent === "Link").click();
     expect(g.doc().freestream.headingDeg).toBe(20);
@@ -203,24 +194,52 @@ describe("linking a hull in the editor", () => {
     expect(q(".body-status").textContent).toMatch(/couldn't load the linked document/);
     available = true;
     await settle(SECTION_RETRY_MS + 100);
-    // found now, but nothing installed to cut it
-    expect(q(".body-status").textContent).toMatch(/no geometry:section or scene:source provider/);
-    registerExact();
-    await settle(HULL_DEBOUNCE_MS + 50);
-    expect(q(".chip-path").textContent).toBe("exact section");
+    // found now, but nothing installed to build it
+    expect(q(".body-status").textContent).toMatch(/nothing installed here can build “test-hull” documents/);
+    registerMesh();
+    await settle(BODY_DEBOUNCE_MS + 50);
+    expect(q(".chip-path").textContent).toBe("built from Test hull (defaults)");
     cleanup();
     cleanup = null;
     expect(hull.listeners.size).toBe(0);
   });
 
-  it("uses the mesh fallback when there is no section provider, and says so", async () => {
-    registerMesh();
+  it("never asks a geometry:section provider, and doesn't follow that registry", async () => {
+    const asked = [];
+    const sections = getRegistry("geometry:section");
+    const on = sections.on;
+    sections.on = (ev, fn) => (asked.push(ev), on(ev, fn));
+    try {
+      sections.register({ type: "geometry:section", id: "test-hull-section", supportedDatatypes: ["test-hull"], load: async () => (asked.push("load"), {}) });
+      registerMesh();
+      const d = flowDoc();
+      d.body = { url: HULL, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 60 };
+      cleanup = Tool(fakeHandle("automerge:flow", d), element);
+      await settle();
+      expect(q(".chip-path").textContent).toBe("built from Test hull (defaults)");
+      expect(asked).toEqual([]);
+    } finally {
+      sections.on = on;
+    }
+  });
+
+  it("links a GLB file doc and cuts it as it is; says where the body is when the plane misses it", async () => {
+    const file = fakeHandle(FILE, { "@patchwork": { type: "file" }, name: "Sloop.glb", extension: "glb", content: prismGLB(transomWaterline(), { levels: [-1, 0.5] }) });
+    globalThis.repo = { find: async (url) => (url === FILE ? file : Promise.reject(new Error("unavailable"))) };
     const d = flowDoc();
-    d.body = { url: HULL, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 60 };
-    cleanup = Tool(fakeHandle("automerge:flow", d), element);
+    d.body = { url: FILE, plane: { kind: "waterline" }, model: "waterplane-2d", panels: 60 };
+    const h = fakeHandle("automerge:flow", d);
+    cleanup = Tool(h, element);
     await settle();
-    expect(q(".chip-path").textContent).toBe("mesh fallback");
-    expect(q(".body-status").textContent).toMatch(/Mesh slice of Test hull/);
+    expect(q(".chip-title").textContent).toBe("Sloop.glb");
+    expect(q(".chip-path").textContent).toBe("GLB file");
+    expect(q(".body-status").textContent).toMatch(/Slice of the GLB file “Sloop\.glb”: 1 loop at z = 0\.00 m/);
+    change(q('[aria-label="Section plane"]'), "z");
+    change(q('[aria-label="Section height"]'), 0.8);
+    await settle();
+    expect(q(".body-status").textContent).toBe(
+      "The slice of the GLB file “Sloop.glb” has nothing at this plane: the body spans z = -1.00 m to 0.50 m, and the plane at z = 0.80 m is above it.",
+    );
   });
 
   it("reports a missing provider without breaking the view", async () => {
@@ -229,27 +248,27 @@ describe("linking a hull in the editor", () => {
     cleanup = Tool(fakeHandle("automerge:flow", d), element);
     await settle();
     expect(q(".chip-path").textContent).toBe("no section");
-    expect(q(".body-status").textContent).toMatch(/No body: no geometry:section or scene:source provider/);
+    expect(q(".body-status").textContent).toMatch(/No body: nothing installed here can build “test-hull” documents/);
   });
 
   it("follows hull edits live (debounced), and re-cuts when the plane changes", async () => {
-    registerExact();
+    registerMesh();
     const d = flowDoc();
     d.body = { url: HULL, plane: { kind: "waterline" }, model: "waterplane-2d" };
     const h = fakeHandle("automerge:flow", d);
     cleanup = Tool(h, element);
     await settle();
-    const before = sections.length;
+    const before = builds.length;
     hull.change((x) => (x.scale = 1.2));
     hull.change((x) => (x.scale = 1.3));
-    await settle(HULL_DEBOUNCE_MS + 50);
-    expect(sections.length).toBe(before + 1); // two edits, one re-cut
+    await settle(BODY_DEBOUNCE_MS + 50);
+    expect(builds.slice(before)).toEqual([1.3]); // two edits, one rebuild, of the latest
     change(q('[aria-label="Section plane"]'), "z");
     expect(h.doc().body.plane).toEqual({ kind: "z", z: 0 });
     change(q('[aria-label="Section height"]'), -0.4);
     expect(h.doc().body.plane).toEqual({ kind: "z", z: -0.4 });
     await settle();
-    expect(sections.at(-1)).toEqual({ plane: { kind: "z", z: -0.4 } });
+    expect(q(".body-status").textContent).toMatch(/1 loop at z = -0\.40 m/);
     change(q('[aria-label="Body model"]'), "slender-body-3d");
     change(q('[aria-label="Body panels"]'), 9999);
     expect(h.doc().body).toMatchObject({ model: "slender-body-3d", panels: 400 });
@@ -260,7 +279,7 @@ describe("linking a hull in the editor", () => {
   });
 
   it("unlinks a slender body into ordinary elements", async () => {
-    registerExact();
+    registerMesh();
     const d = flowDoc();
     d.body = { url: HULL, plane: { kind: "waterline" }, model: "slender-body-3d", panels: 60 };
     d.freestream.headingDeg = 180;
@@ -279,7 +298,7 @@ describe("linking a hull in the editor", () => {
   });
 
   it("warns before dropping a waterplane body on unlink", async () => {
-    registerExact();
+    registerMesh();
     const d = flowDoc();
     d.body = { url: HULL, plane: { kind: "waterline" }, model: "waterplane-2d" };
     const h = fakeHandle("automerge:flow", d);
@@ -297,7 +316,7 @@ describe("linking a hull in the editor", () => {
   });
 
   it("links a document dropped onto the view, and fits the domain round it", async () => {
-    registerExact();
+    registerMesh();
     const h = fakeHandle("automerge:flow", flowDoc());
     cleanup = Tool(h, element);
     const data = { "text/x-patchwork-dnd": JSON.stringify({ items: [{ url: HULL, name: "Mk 1" }] }) };
@@ -315,7 +334,7 @@ describe("linking a hull in the editor", () => {
   });
 
   it("paints the linked body's outline and a masked heatmap without errors", async () => {
-    registerExact();
+    registerMesh();
     const calls = {};
     const ctx = new Proxy(
       {},

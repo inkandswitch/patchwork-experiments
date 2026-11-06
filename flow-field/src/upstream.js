@@ -1,17 +1,18 @@
-// Module memory for the legacy source-doc link (doc.body.url is a hull doc,
-// not its scene render). No imports; shared by both scene providers and the
-// editor, which all load the same module.
+// Module memory for a body that is a source doc (doc.body.url is, say, a
+// camber hull or an OpenSCAD part, not its scene render or a GLB file). No
+// imports; shared by both scene providers and the editor, which all load the
+// same module.
 //
-// 1. An LRU of upstream builds. With a source-doc link, section.js builds the
-//    hull itself with the hull provider's defaults. The slice and the
-//    streamlines providers both do that after every hull edit, so without
-//    this one edit cost two (or, with the editor open, three) upstream builds.
-//    Entries are promises, so two builds that start together share one.
-// 2. The upstream provider's dependencies(hullDoc), from the last acquisition
-//    per body url. dependencies(flowDoc) has to be synchronous and can't load
-//    the hull, so flowDependencies() lists what was seen last time (an
-//    OpenSCAD part's imports, say). See README "Linking a hull" for the
-//    limits; linking the scene render instead has none of them.
+// 1. An LRU of upstream builds. For a source doc, section.js builds it itself
+//    with its provider's defaults. The slice and the streamlines providers
+//    both do that after every edit of the source, so without this one edit
+//    cost two (or, with the editor open, three) upstream builds. Entries are
+//    promises, so two builds that start together share one.
+// 2. The upstream provider's dependencies(sourceDoc), from the last
+//    acquisition per body url. dependencies(flowDoc) has to be synchronous
+//    and can't load the source, so flowDependencies() lists what was seen
+//    last time (an OpenSCAD part's imports, say). See README "Linking a body"
+//    for the limits; linking the scene render instead has none of them.
 
 const MAX_BUILDS = 8;
 const builds = new Map(); // key → Promise<Uint8Array>, oldest first
@@ -48,7 +49,7 @@ export function upstreamCacheSize() {
 
 const depsByBody = new Map(); // body url → AutomergeUrl[]
 
-/** Remember the upstream provider's dependencies(hullDoc) for this body url. */
+/** Remember the upstream provider's dependencies(sourceDoc) for this body url. */
 export function rememberUpstreamDeps(bodyUrl, deps) {
   const list = Array.isArray(deps) ? [...new Set(deps.filter((u) => typeof u === "string" && u && u !== bodyUrl))].sort() : [];
   if (list.length) depsByBody.set(bodyUrl, list);
