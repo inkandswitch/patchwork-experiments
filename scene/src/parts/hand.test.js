@@ -431,7 +431,7 @@ describe("Flip: turning a piece over where it lies", () => {
   it("is the hand's: on a piece, with the hand as the tool, from the menu or F", async () => {
     await mount({ doc: { view: { tool: "hand" } } });
     expect(command("flip").key).toBe("f");
-    expect(command("flip").show).toEqual(["menu"]);
+    expect(command("flip").show).toEqual(["menu", "use"]);
     expect(stateOf("flip", "a")).toMatchObject({ title: expect.stringContaining("(F)") });
     expect(stateOf("flip", null)).toBe(null);
     s.local.swap((m) => ({ ...m, tool: "move" }));

@@ -334,7 +334,7 @@ export default {
         id: "flip",
         name: "Flip",
         key: "f",
-        show: ["menu"],
+        show: ["menu", "use"],
         // the hand's verb, so only while the hand is the tool (in the editor F is Frame all)
         state(target, { scene, local }) {
           if (target == null || effectiveTool(local, scene?.d) !== "hand" || !canCarry(target)) return null;
